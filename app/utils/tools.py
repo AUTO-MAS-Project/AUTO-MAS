@@ -20,32 +20,12 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
 import time
 
-
-from .constants import ENCODINGS
-
-
-def decode_bytes(data: bytes) -> str:
-    """
-    尝试用多种编码解码 bytes, 全部失败则使用 latin1 保底
-
-    Args:
-        data(bytes): 要解码的字节串
-
-    Returns:
-        str: 解码后的字符串
-    """
-    if not data:
-        return ""
-
-    for encoding in ENCODINGS:
-        try:
-            return data.decode(encoding, errors="strict")
-        except (UnicodeDecodeError, LookupError):
-            continue
-    else:
-        return data.decode("latin1", errors="replace")
+from app.utils.platform.common.process_runner import (
+    decode_bytes,  # noqa: F401  # 兼容 re-export：io.py/LogMonitor.py 经 .tools 导入
+)
 
 
 def busy_wait(ms: float) -> None:
@@ -59,3 +39,22 @@ def busy_wait(ms: float) -> None:
     end = time.perf_counter() + ms / 1000.0
     while time.perf_counter() < end:
         pass
+
+
+_PRE_RELEASE_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
+_PRE_RELEASE_ABBR = {"alpha": "a", "beta": "b", "rc": "rc"}
+
+
+def to_pep440(version: str) -> str:
+    """把 ``vX.Y.Z[-phase.N]`` 版本号转成 PEP 440 写法。
+
+    ``v5.5.0-beta.3`` → ``5.5.0b3``；正式版 ``v5.4.0`` → ``5.4.0``。
+    """
+    matched = _PRE_RELEASE_RE.match(version)
+    if matched is None:
+        raise ValueError(f"版本号 {version} 无法转换成 PEP 440 写法")
+    major, minor, patch, phase, ordinal = matched.groups()
+    base = f"{major}.{minor}.{patch}"
+    if phase is None:
+        return base
+    return f"{base}{_PRE_RELEASE_ABBR[phase]}{ordinal}"

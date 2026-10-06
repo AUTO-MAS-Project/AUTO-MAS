@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas_plugin_maa_adapter"
+version = "0.0.1"
+description = """<!--{"zh_CN":"明日方舟 MAA 脚本适配","en":"Arknights MAA script adapter"}-->"""
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+keywords = [
+  """<!--{"zh_CN":["脚本","明日方舟","MAA"],"en":["script","arknights","maa"]}-->""",
+  "auto-mas-plugin",
+  "auto-mas-id:maa_adapter",
+]
+dependencies = ["auto_mas_core>=6,<7"]
+
+[project.urls]
+auto-mas-display-name = """<!--{"zh_CN":"MAA 适配","en":"MAA Adapter"}-->"""
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+maa_adapter = ["i18n/*.json", "base_preset.json"]

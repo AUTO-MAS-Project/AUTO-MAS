@@ -22,13 +22,28 @@
 
 
 import asyncio
-from fastapi import APIRouter, Body, Query
+from typing import Dict, List
 
+from fastapi import APIRouter, Body, Query
+from pydantic import BaseModel, Field
+
+from app.api import OutBase
 from app.core import Config
 from app.services import Updater
-from app.models.schema import *
+from app.services.update import UpdateDownloadSnapshot
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
+
+
+class UpdateCheckIn(BaseModel):
+    current_version: str = Field(..., description="当前前端版本号")
+    if_force: bool = Field(default=False, description="是否强制拉取更新信息")
+
+
+class UpdateCheckOut(OutBase):
+    if_need_update: bool = Field(..., description="是否需要更新前端")
+    latest_version: str = Field(..., description="最新前端版本号")
+    update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
 
 
 @router.get(

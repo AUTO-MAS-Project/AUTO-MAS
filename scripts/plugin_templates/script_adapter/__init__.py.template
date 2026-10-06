@@ -1,6 +1,9 @@
 """${plugin_name} 专项适配插件。"""
 
-from .plugin import Plugin
-from .schema import Config, PluginConfig, ScriptSchema, UserSchema
+from auto_mas_core import PLUGIN_API_VERSION
 
-__all__ = ["Plugin", "Config", "PluginConfig", "ScriptSchema", "UserSchema"]
+from .plugin import Plugin
+
+PLUGIN = Plugin
+
+__all__ = ["PLUGIN", "PLUGIN_API_VERSION", "Plugin"]

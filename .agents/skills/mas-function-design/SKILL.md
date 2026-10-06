@@ -19,12 +19,15 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 1. Keep a function focused on one decision unit or one orchestration step.
 2. Split when a function mixes domain decision and integration IO.
 3. Split when one function serves unrelated call paths.
-4. **单次使用禁止封装**：逻辑只在一处调用时写在调用点，不要抽 `_helper` / `_apply_*` / `_update_*`。
+4. **单次使用禁止封装**：逻辑只在一处调用时写在调用点，不要抽 `_helper` / `_apply_*` / `_update_*` / `_do_*` 薄壳。
 5. **禁止薄转发层**：不要写只转调另一个本地函数的包装（减少调用层级）；能内联就内联，允许轻量重复。
 6. 仅当同一非平凡逻辑多处复用、抽出后显著降低维护成本时才抽函数；函数过长用功能块注释分段，不为分段再抽一层。
-7. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
-8. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
-9. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
+7. **嵌套风格**：闭包、递归、`to_thread`/`gather` 回调嵌在调用方内部；嵌套函数仍禁止无用薄包装。
+8. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
+9. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
+10. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
+
+详表见 `mas-code-standards/references/inline-and-comments.md`（写代码前必读）。
 
 ## Signatures And Returns
 1. Use explicit named parameters for business-critical options.
@@ -71,11 +74,10 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 6. `models/schema`: no business logic functions.
 
 ## Naming
-1. Use verb-first names for actions (`load_*`, `build_*`, `merge_*`, `send_*`).
-2. Use `check_*` for validation returning status/result.
-3. Use `prepare_*` for pre-run setup.
-4. Use `finalize_*` or `cleanup_*` for teardown semantics.
-5. Avoid vague names like `handle` or `process` without scope words.
+1. Prefer **short** verb-first names (`load`, `scan`, `sync`, `precheck`); put description in the docstring, not in a long name.
+2. Common prefixes when needed: `load_*`, `build_*`, `merge_*`, `send_*`, `check_*`, `prepare_*`, `finalize_*` / `cleanup_*`.
+3. Avoid vague names like `handle` or `process` without scope words.
+4. Avoid names that only restate a thin wrapper (`_do_load` that just calls `_load`).
 
 ## Refactor Triggers
 1. Function exceeds clear readability for one screenful of logic.
@@ -94,8 +96,9 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 5. Side effects are visible and isolated.
 6. Placement follows `mas-module-boundary`.
 7. Shared schema semantics align with `mas-schema-naming`.
-8. One-off helpers were not extracted unless they created real reuse.
-9. Existing base-layer guarantees were reused instead of reimplemented in the function body.
-10. Optional values and temporary placeholders remain type-safe under basic static analysis.
-11. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
-12. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.
+8. One-off helpers were not extracted unless they created real reuse; nested locals only for closure/recursion/callbacks.
+9. Names are short; intent lives in docstrings and section comments.
+10. Existing base-layer guarantees were reused instead of reimplemented in the function body.
+11. Optional values and temporary placeholders remain type-safe under basic static analysis.
+12. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
+13. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.

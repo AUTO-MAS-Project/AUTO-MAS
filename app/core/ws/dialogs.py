@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -23,14 +23,14 @@
 
 import uuid
 import asyncio
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from pydantic import ValidationError
 
 from . import protocol
 from .dispatcher import Dispatcher
 from .publisher import Publisher
-from app.models.schema import WSEnvelope, WSDialogRequestData, WSDialogResponseData
+from .protocol import WSDialogRequestData, WSDialogResponseData, WSEnvelope
 from app.utils.logger import get_logger
 
 logger = get_logger("WS弹窗")
@@ -46,7 +46,7 @@ class _WSDialogs:
     """
 
     def __init__(self) -> None:
-        self._pending: Dict[str, asyncio.Future] = {}
+        self._pending: Dict[str, asyncio.Future[bool]] = {}
         self._requests: Dict[str, WSDialogRequestData] = {}
         Dispatcher.register(protocol.ID_MAIN, protocol.DIALOG_RESPONSE, self._on_response)
 
@@ -74,7 +74,7 @@ class _WSDialogs:
             bool: 用户选择第一个选项时为 True。
         """
         request_id = str(uuid.uuid4())
-        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         request = WSDialogRequestData(
             requestId=request_id,
             taskId=task_id,
@@ -101,7 +101,8 @@ class _WSDialogs:
     def _on_response(self, envelope: WSEnvelope) -> None:
         """处理前端弹窗响应，未匹配到等待方的响应直接丢弃。"""
         try:
-            data = WSDialogResponseData(**envelope.data)
+            # data 字段为 JsonValue 联合类型，取值校验由 pydantic 在构造时完成
+            data = WSDialogResponseData(**cast(Dict[str, Any], envelope.data))
         except ValidationError:
             logger.warning("弹窗响应数据不合法，已丢弃")
             return

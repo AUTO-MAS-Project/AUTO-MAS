@@ -1,6 +1,6 @@
 """统一基类 ``ConfigNode``：Entry / Collection 共享生命周期、工作区、信号、守卫。
 
-``ConfigNode`` 继承 ``BaseModel``（Wire schema），其上叠加：
+``ConfigNode`` 继承 ``BaseModel``（文档 schema），其上叠加：
 
 - 运行时私有状态（uid / parent / activation_state / deleted / locked / workspace）
 - 工作区两层 API：读 ``effective`` / 写 ``_build_workspace``
@@ -17,20 +17,43 @@ from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import ClassVar, Literal, Self, cast
+from typing import Any, ClassVar, Literal, Protocol, Self, cast, overload
 from uuid import UUID, uuid4
 
 from blinker import ANY, Signal
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from ..errors import ConfigAggregateError, DeletedNodeError
-from .manager import config_manager
+from .manager import add_x_token, config_manager, discard_x_token, x_tokens
 from .staging import StagedOp
-from app.utils.io import read_toml
-from ..wire import ExportContext, WireDict
+from app.utils.io import read_file
 
 # weakref.ref(parent) 的可调用引用；None 表示根节点
 ParentRef = Callable[[], "ConfigNode | None"]
+
+
+@dataclass
+class ExportContext:
+    """``model_dump`` 序列化上下文：按受众控制解密、响应式字段与 UI 显隐。
+
+    经 pydantic ``context=`` 传入；``encrypted()`` 等 field serializer 读取本对象。
+    ``mode="python"`` 导出与 audience **正交**（serializer 不做 audience/UI 裁剪）。
+    """
+
+    audience: Literal["api", "persist"] = "api"
+    """``api``：明文 + 含响应式，尊重 UI hide；``persist``：密文 + 无响应式，忽视 UI。"""
+
+    @classmethod
+    def from_dump(cls, context: object | None) -> ExportContext:
+        """从 ``model_dump(context=…)`` 归一化；无 context 时默认 ``audience=api``。"""
+        if isinstance(context, ExportContext):
+            return context
+        if isinstance(context, dict):
+            raw = context.get("audience", "api")
+            if raw not in ("api", "persist"):
+                raw = "api"
+            return cls(audience=raw)
+        return cls(audience="api")
 
 
 class NodeState(str, Enum):
@@ -53,6 +76,39 @@ class LockTicket:
     mode: Literal["s", "x"]
     token: UUID
     issuer: UUID
+    cascade: bool = True
+
+
+class _SignalAccessor(Protocol):
+    """``connect`` / ``disconnect`` 的访问签名。
+
+    两种调用（按是否传入 ``receiver`` 区分）：
+
+    - 直接订阅 ``connect(receiver, …)`` → 返回 ``SignalCallback``
+    - 装饰器 ``@connect(phase=…)`` → 返回装饰器 ``Callable[[SignalCallback], SignalCallback]``
+    """
+
+    @overload
+    def __call__(
+        self,
+        receiver: "SignalCallback",
+        *,
+        phase: str = "runtime",
+        kind: str | None = None,
+        group: str | None = None,
+        field: str | None = None,
+    ) -> "SignalCallback": ...
+
+    @overload
+    def __call__(
+        self,
+        receiver: None = None,
+        *,
+        phase: str = "runtime",
+        kind: str | None = None,
+        group: str | None = None,
+        field: str | None = None,
+    ) -> "Callable[[SignalCallback], SignalCallback]": ...
 
 
 class _SignalDescriptor:
@@ -61,20 +117,37 @@ class _SignalDescriptor:
     def __init__(self, *, is_disconnect: bool) -> None:
         self._is_disconnect = is_disconnect
 
-    def __get__(self, obj: "ConfigNode | None", owner: type["ConfigNode"]) -> Callable[
-        ...,
-        "SignalCallback | Callable[[SignalCallback], SignalCallback]",
-    ]:
+    def __get__(self, obj: "ConfigNode | None", owner: type["ConfigNode"]) -> _SignalAccessor:
         is_disconnect = self._is_disconnect
 
+        @overload
         def caller(
-            receiver: SignalCallback | None = None,
+            receiver: "SignalCallback",
             *,
             phase: str = "runtime",
             kind: str | None = None,
             group: str | None = None,
             field: str | None = None,
-        ) -> SignalCallback | Callable[[SignalCallback], SignalCallback]:
+        ) -> "SignalCallback": ...
+
+        @overload
+        def caller(
+            receiver: None = None,
+            *,
+            phase: str = "runtime",
+            kind: str | None = None,
+            group: str | None = None,
+            field: str | None = None,
+        ) -> "Callable[[SignalCallback], SignalCallback]": ...
+
+        def caller(
+            receiver: "SignalCallback | None" = None,
+            *,
+            phase: str = "runtime",
+            kind: str | None = None,
+            group: str | None = None,
+            field: str | None = None,
+        ) -> "SignalCallback | Callable[[SignalCallback], SignalCallback]":
             from .collection import ConfigCollection
 
             if issubclass(owner, ConfigCollection) and (
@@ -182,7 +255,7 @@ class ConfigNode(BaseModel):
     _lock_s: set[UUID] = PrivateAttr(default_factory=set)
     _lock_x: UUID | None = PrivateAttr(default=None)
     _workspace: "ConfigNode | None" = PrivateAttr(default=None)
-    _pending_wire: WireDict | None = PrivateAttr(default=None)
+    _pending_payload: dict[str, Any] | None = PrivateAttr(default=None)
     _is_workspace: bool = PrivateAttr(default=False)
     _staged_ops: list[StagedOp] = PrivateAttr(default_factory=list)
     # 其它 Task 在本节点 commit 持锁期间的 stage；外层释放锁时并入 _staged_ops
@@ -253,7 +326,8 @@ class ConfigNode(BaseModel):
         """
         if self.deleted:
             raise DeletedNodeError(self.uid)
-        if self.is_locked:
+        # X 持票者可写：token 精确匹配；S 锁 _lock_x 为 None，永不放行
+        if self.is_locked and self._lock_x not in x_tokens():
             raise ValueError("配置已锁定, 无法修改")
         lock = self._commit_lock
         if (
@@ -277,7 +351,7 @@ class ConfigNode(BaseModel):
                 return
             if self.deleted:
                 raise DeletedNodeError(self.uid)
-            if self.is_locked:
+            if self.is_locked and self._lock_x not in x_tokens():
                 raise ValueError("配置已锁定, 无法修改")
 
             batch = list(self._staged_ops)
@@ -512,28 +586,33 @@ class ConfigNode(BaseModel):
         """
         if self.activation_state != NodeState.INACTIVE:
             raise ValueError("不可重复 activate")
-        if self._pending_wire is not None:
-            payload = self._pending_wire
+        if self._pending_payload is not None:
+            payload: dict[str, Any] = self._pending_payload
         elif self.persist_path is not None:
-            payload = read_toml(self.persist_path)
+            loaded = read_file(self.persist_path)
+            # 配置根约定 YAML mapping；未知后缀时 read_file 可能返回 str
+            payload = loaded if isinstance(loaded, dict) else {}
         else:
-            payload = self._export_wire(
-                ExportContext(if_decrypt=True, include_reactive=False)
+            # 无 payload/file：用当前冷态字段作载荷（含默认值）→ 官方 model_dump
+            # persist：无响应式；加密字段以密文进入 activate（encrypted 解析器可接受）
+            payload = self.model_dump(
+                mode="json",
+                context=ExportContext(audience="persist"),
             )
         activate_error: ConfigAggregateError | None = None
         async with config_manager.transaction():
             self._build_workspace()
             self.effective._activation_state = NodeState.INITIALIZING
             try:
-                await self._activate_from_payload(payload or {})
+                await self._activate_from_payload(payload)
             except ConfigAggregateError as exc:
                 activate_error = exc
             self.effective._activation_state = NodeState.ACTIVE
-            self.effective._pending_wire = None
+            self.effective._pending_payload = None
         if activate_error is not None:
             raise activate_error
 
-    async def _activate_from_payload(self, payload: WireDict) -> None:
+    async def _activate_from_payload(self, payload: dict[str, Any]) -> None:
         raise NotImplementedError
 
     async def _delete(self) -> None:
@@ -544,37 +623,62 @@ class ConfigNode(BaseModel):
         self._build_workspace()
         if self.deleted:
             raise DeletedNodeError(self.uid)
-        self.effective._deleted = True
+        # 先递归子节点再给自己打标记：Collection.iter_children 经 values()/__getitem__
+        # 取成员，而后者对已软删的集合直接上抛 DeletedNodeError。先打标记的话，带
+        # 非空嵌套集合的 Entry（ScriptEntry.users / GameEntry.devices）连自己的成员
+        # 都枚举不出来，remove 与 remove_type 的级联会整笔 commit 失败。
         for child in self.iter_children():
             await child._delete()
+        self.effective._deleted = True
 
-    async def lock_s(self) -> LockTicket:
-        """共享锁：可叠加；禁一切热写；与 X 互斥。"""
+    async def lock_s(self, *, cascade: bool = True) -> LockTicket:
+        """共享锁：可叠加；禁一切热写；与 X 互斥。
+
+        ``cascade=True``（默认）覆盖全部子节点；``False`` 只锁本节点。
+        """
         if self._lock_x is not None:
             raise ValueError("已有 X 锁，无法加 S")
         token = uuid4()
 
         def register(node: ConfigNode) -> None:
             node._lock_s.add(token)
+            if not cascade:
+                return
             for child in node.iter_children():
                 register(child)
 
         register(self)
-        return LockTicket(mode="s", token=token, issuer=self.uid)
+        return LockTicket(mode="s", token=token, issuer=self.uid, cascade=cascade)
 
-    async def lock_x(self) -> LockTicket:
-        """独占锁：至多一个；禁一切热写；与任一 S 互斥。"""
+    async def lock_x(self, *, cascade: bool = True) -> LockTicket:
+        """独占锁：至多一个；与任一 S 互斥。
+
+        持票上下文可写本锁覆盖的节点（``_stage`` / ``commit`` 认 token）；
+        其它上下文与 S 持有者仍禁写。``cascade`` 同 ``lock_s``。
+        """
         if self._lock_x is not None or self._lock_s:
             raise ValueError("已有锁，无法加 X")
         token = uuid4()
 
         def register(node: ConfigNode) -> None:
             node._lock_x = token
+            if not cascade:
+                return
             for child in node.iter_children():
                 register(child)
 
         register(self)
-        return LockTicket(mode="x", token=token, issuer=self.uid)
+        add_x_token(token)
+        return LockTicket(mode="x", token=token, issuer=self.uid, cascade=cascade)
+
+    async def try_lock_x(self, *, cascade: bool = True) -> LockTicket | None:
+        """非阻塞取 X；冲突返回 ``None``，成功返回票据（语义同 ``lock_x``）。"""
+        if self._lock_x is not None or self._lock_s:
+            return None
+        try:
+            return await self.lock_x(cascade=cascade)
+        except ValueError:
+            return None
 
     async def unlock(self, ticket: LockTicket) -> None:
         """凭原凭证解锁；须在 ``ticket.issuer`` 节点调用。"""
@@ -586,6 +690,8 @@ class ConfigNode(BaseModel):
 
             def unregister(node: ConfigNode) -> None:
                 node._lock_s.discard(ticket.token)
+                if not ticket.cascade:
+                    return
                 for child in node.iter_children():
                     unregister(child)
 
@@ -597,10 +703,14 @@ class ConfigNode(BaseModel):
 
             def unregister(node: ConfigNode) -> None:
                 node._lock_x = None
+                if not ticket.cascade:
+                    return
                 for child in node.iter_children():
                     unregister(child)
 
             unregister(self)
+            # 差集移除：跨上下文 unlock 合法，勿用 ContextVar.reset
+            discard_x_token(ticket.token)
             return
         raise ValueError(f"未知锁模式: {ticket.mode!r}")
 
@@ -608,47 +718,58 @@ class ConfigNode(BaseModel):
         raise NotImplementedError
         yield  # type: ignore[unreachable]
 
-    # ──────────────── 导出 ────────────────
+    # ──────────────── 导出（pydantic model_dump / model_serializer）────────────────
 
-    def _export_wire(self, ctx: ExportContext) -> WireDict:
-        """实际导出业务逻辑；由 ``ctx`` 控制解密与响应式字段。"""
-        raise NotImplementedError
-
-    def model_dump(self, *, context: ExportContext | dict[str, object] | None = None, **kwargs: object) -> WireDict:  # type: ignore[override]
-        """FastAPI / 冷态响应导出。
-
-        默认：明文（``if_decrypt=True``）、携带响应式字段；读已提交 ``self``。
-        """
-        if isinstance(context, ExportContext):
-            ctx = context
-        elif isinstance(context, dict):
-            ctx = ExportContext(
-                if_decrypt=bool(context.get("if_decrypt", True)),
-                include_reactive=bool(context.get("include_reactive", True)),
-            )
-        else:
-            ctx = ExportContext(if_decrypt=True, include_reactive=True)
-        return self._export_wire(ctx)
-
-    async def to_dict(
+    def model_dump(
         self,
         *,
-        if_decrypt: bool = False,
-        include_reactive: bool = False,
-    ) -> WireDict:
+        mode: Literal["json", "python"] | str = "json",
+        include: Any = None,
+        exclude: Any = None,
+        context: ExportContext | dict[str, object] | None = None,
+        by_alias: bool | None = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        round_trip: bool = False,
+        warnings: bool | Literal["none", "warn", "error"] = True,
+        serialize_as_any: bool = False,
+        fallback: Any = None,
+    ) -> dict[str, Any]:
+        """导出配置文档：默认 ``mode=json``；经子类 ``@model_serializer`` 定形。
+
+        无 ``context`` 时默认 ``audience=api``（FastAPI / 冷态响应）。
+        落盘请用 ``to_dict`` 或显式 ``ExportContext(audience="persist")``。
+        """
+        ctx = ExportContext.from_dump(context)
+        return super().model_dump(
+            mode=mode,
+            include=include,
+            exclude=exclude,
+            context=ctx,
+            by_alias=by_alias,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+            round_trip=round_trip,
+            warnings=warnings,
+            serialize_as_any=serialize_as_any,
+            fallback=fallback,
+        )
+
+    async def to_dict(self) -> dict[str, Any]:
         """已激活节点导出 / 落盘。
 
-        校验 ``ACTIVE`` 与未软删；默认密文、不携带响应式字段。
+        校验 ``ACTIVE`` 与未软删；固定 ``audience=persist``（密文、无响应式）。
         """
         if self.activation_state != NodeState.ACTIVE:
             raise ValueError("to_dict 仅用于已激活节点")
         if self.deleted:
             raise DeletedNodeError(self.uid)
-        ctx = ExportContext(
-            if_decrypt=if_decrypt,
-            include_reactive=include_reactive,
+        return self.model_dump(
+            mode="json",
+            context=ExportContext(audience="persist"),
         )
-        return self._export_wire(ctx)
 
 
 from ..signals import ConfigEvent, SignalCallback, WrappedSignal  # noqa: E402

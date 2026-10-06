@@ -20,17 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import os
 import re
-import winreg
+
+from app.utils.platform import IS_WINDOWS
+
+if IS_WINDOWS:
+    import winreg
 from collections import defaultdict
 from contextlib import suppress
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
+from app.utils.constants import EMULATOR_PATH_BOOK
 
 logger = get_logger("模拟器管理工具")
 
@@ -60,10 +63,6 @@ def _normalize_fs_path_candidate(raw: str) -> str:
     return s.strip()
 
 
-def _executable_name_set(config: Dict) -> Set[str]:
-    return {x.lower() for x in (config.get("executables") or []) if x}
-
-
 def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:
     return [
         (emulator_type, cfg.get("registry_display_keywords") or [])
@@ -71,7 +70,9 @@ def _emulator_brand_keyword_rows() -> List[Tuple[str, List[str]]]:
     ]
 
 
-def _find_manager_exe_in_dir(directory: Path, executable_names: List[str]) -> Optional[Path]:
+def _find_manager_exe_in_dir(
+    directory: Path, executable_names: List[str]
+) -> Optional[Path]:
     for name in executable_names:
         if not name:
             continue
@@ -178,6 +179,9 @@ def _unique_uninstall_roots_from_book() -> List[str]:
 def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
     """单遍枚举卸载表：每个子键只读一次 DisplayName / UninstallString，再按品牌关键词分发。"""
 
+    if not IS_WINDOWS:
+        return {}
+
     acc: Dict[str, List[str]] = defaultdict(list)
     roots = _unique_uninstall_roots_from_book()
     if not roots:
@@ -209,7 +213,10 @@ def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
                                     if not isinstance(dn, str):
                                         continue
                                     matched: List[str] = []
-                                    for emulator_type, kw in _emulator_brand_keyword_rows():
+                                    for (
+                                        emulator_type,
+                                        kw,
+                                    ) in _emulator_brand_keyword_rows():
                                         if _match_registry_display_keywords(dn, kw):
                                             matched.append(emulator_type)
                                     if not matched:
@@ -223,13 +230,7 @@ def _collect_uninstall_paths_by_emulator_type() -> Dict[str, List[str]]:
     return {et: _dedupe_path_strings(paths) for et, paths in acc.items()}
 
 
-async def search_all_emulators() -> List[Dict[str, str]]:
-    """在线程中搜索所有支持的模拟器，避免阻塞事件循环。"""
-
-    return await asyncio.to_thread(_search_all_emulators_sync)
-
-
-def _search_all_emulators_sync() -> List[Dict[str, str]]:
+def search_all_emulators() -> List[Dict[str, str]]:
     """搜索所有支持的模拟器：仅卸载表 UninstallString 路径（全同步实现）。"""
 
     logger.info("开始搜索所有模拟器, mode=registry_uninstall")

@@ -24,17 +24,17 @@
 import asyncio
 import os
 from contextlib import suppress
-from typing import Optional
 
 from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
-from app.core import Config, TaskManager
+from app.api import OutBase
+from app.api.ws_command import ws_command
+from app.core import Config, TaskDispatcher
 from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import Dialogs, MainConnection, Publisher, protocol
+from app.core.ws.protocol import WSDialogRequestData
 from app.services import System
-from app.models.schema import *
-from app.api.ws_command import ws_command
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
@@ -107,7 +107,7 @@ async def get_pending_dialogs() -> list[WSDialogRequestData]:
 
 
 # 主连接建立后触发启动时调度队列
-MainConnection.on_connect(TaskManager.start_startup_queue)
+MainConnection.on_connect(TaskDispatcher.start_startup_queue)
 
 
 @router.websocket("/ws")
@@ -118,7 +118,7 @@ async def connect_websocket(websocket: WebSocket):
 
 
 # 关闭流程任务由模块持有，重复 /close 请求不重复触发
-_shutdown_task: Optional[asyncio.Task] = None
+_shutdown_task: asyncio.Task[None] | None = None
 
 
 async def _shutdown_backend() -> None:
@@ -128,7 +128,7 @@ async def _shutdown_backend() -> None:
     # 只做轻量任务清理后即通知前端可退出
     if is_backend_dev_mode():
         try:
-            await TaskManager.stop_task("ALL")
+            await TaskDispatcher.stop("ALL")
             with suppress(RuntimeError):
                 await System.cancel_power_task()
         except Exception as error:
@@ -174,7 +174,7 @@ async def close() -> OutBase:
 
     _shutdown_task = asyncio.create_task(_shutdown_backend())
 
-    def _on_done(task: asyncio.Task) -> None:
+    def _on_done(task: asyncio.Task[None]) -> None:
         if task.cancelled():
             return
         exc = task.exception()

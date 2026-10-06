@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas_plugin_ldplayer_adapter"
+version = "0.0.1"
+description = """<!--{"zh_CN":"雷电模拟器游戏适配","en":"LDPlayer emulator game adapter"}-->"""
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+keywords = [
+  """<!--{"zh_CN":["游戏","模拟器","雷电"],"en":["game","emulator","ldplayer"]}-->""",
+  "auto-mas-plugin",
+  "auto-mas-id:ldplayer_adapter",
+]
+dependencies = ["auto_mas_core>=6,<7"]
+
+[project.urls]
+auto-mas-display-name = """<!--{"zh_CN":"雷电适配","en":"LDPlayer Adapter"}-->"""
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ldplayer_adapter = ["i18n/*.json"]

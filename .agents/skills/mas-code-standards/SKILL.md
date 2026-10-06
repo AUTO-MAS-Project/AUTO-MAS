@@ -17,13 +17,22 @@ Primary style reference samples:
 Use these samples as style lenses only. For frontend engineering or UI decisions, prefer `mas-frontend-standards` and `mas-frontend-ui`; for Python modules, carry over the same values of explicit orchestration, compatibility-first changes, and operational logging, but always compare nearby files before applying style assumptions.
 
 ## Workflow
-1. Read [references/style-observations.md](references/style-observations.md), with priority on commit lenses `e541fa5f`, `727aafb`, and `e5d72bdb`.
-2. Sample 2 to 3 sibling files in the same module before editing.
-3. Keep the main execution path obvious; extract helpers only when they make the flow easier to follow.
-4. Match nearby naming, logging tone, comment style, and result contracts.
-5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
-6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
-7. Before creating any commit, run `yarn format` and then `yarn lint` from `frontend`. Review the formatter diff and include the intended formatting changes in the commit. Do not commit if either command fails.
+1. **Before any code write/refactor**: read [references/inline-and-comments.md](references/inline-and-comments.md) (内联、嵌套、命名、注释——全仓通用强制).
+2. Read [references/style-observations.md](references/style-observations.md), with priority on commit lenses `e541fa5f`, `727aafb`, and `e5d72bdb`.
+3. Sample 2 to 3 sibling files in the same module before editing.
+4. Keep the main execution path obvious; extract helpers only when the same non-trivial logic is reused in multiple places.
+5. Match nearby naming, logging tone, comment style, and result contracts.
+6. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
+7. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
+8. Before creating any commit, run `yarn format` and then `yarn lint` from `frontend`. Review the formatter diff and include the intended formatting changes in the commit. Do not commit if either command fails.
+
+## Inline / Nest / Name / Comment (mandatory)
+Full checklist: [references/inline-and-comments.md](references/inline-and-comments.md). Summary:
+
+1. Single-use logic stays at the call site — no module/class helper; no thin forwarders.
+2. Nest locals only for closure, recursion, or `to_thread`/`gather` callbacks; still no useless thin nested wrappers.
+3. Short verb-first names; put description and boundaries in docstrings/comments.
+4. Enough implementation comments (intent, steps, compatibility, failure); section comments for long flows; no narrating-the-next-line noise.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.
@@ -45,7 +54,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 9. For finite variants, prefer a small dict/registry mapping instead of many near-identical branches.
 10. Keep frequently edited task-configuration logic visible in the owning flow with a short comment instead of hiding it behind one-off helpers.
 11. Do not copy another script/domain's special-case logs, timeout exemptions, ignore lists, or workaround branches into a new module until that behavior is confirmed locally.
-12. If a new capability is used only once, keep it inline at the call site — do not invent a helper, `builder`, or `loader`. Prefer light duplication over a one-call wrapper. Extract only when the same non-trivial logic is reused in multiple places and extraction clearly reduces maintenance cost.
+12. If a new capability is used only once, keep it inline at the call site — do not invent a helper, `builder`, or `loader`. Prefer light duplication over a one-call wrapper. Extract only when the same non-trivial logic is reused in multiple places and extraction clearly reduces maintenance cost. See [references/inline-and-comments.md](references/inline-and-comments.md).
 13. Trust existing validators, config containers, and task bases when they already guarantee an invariant; do not add a second layer of fallback or correction.
 14. For new Python-heavy flows, keep signatures and call sites compatible with at least basic static type checking.
 15. Prefer deleting redundant imports, waits, and wrappers over preserving "explicit" but noisy scaffolding.
@@ -92,3 +101,4 @@ Protect these comments especially:
 11. Backend comments and config-class annotations use the project style rather than ad hoc prose.
 12. Existing useful comments were preserved or updated accurately, not removed as noise.
 13. Before every commit, both `yarn format` and `yarn lint` passed from `frontend`, with formatter changes reviewed before staging.
+14. Single-use helpers were not introduced; nested locals only where closure/recursion/callback requires them; names stay short with detail in comments/docstrings.

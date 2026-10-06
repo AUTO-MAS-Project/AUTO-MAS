@@ -16,6 +16,8 @@ from .fields import (
     RefField,
     Select,
     TriggerFieldBinding,
+    UiVisibility,
+    UiVisibilityBinding,
     VirtualFieldBinding,
     encrypted,
     legacy,
@@ -102,11 +104,29 @@ def trigger_field(path: str) -> Callable[[_F], _F]:
     return _decorator
 
 
+def ui_visibility(path: str) -> Callable[[Callable[..., UiVisibility]], Callable[..., UiVisibility]]:
+    """注册字段 UI 显隐求值；须为返回 ``UiVisibility`` 的同步方法。"""
+    group, field_name = parse_field_path(path)
+
+    def _decorator(func: Callable[..., UiVisibility]) -> Callable[..., UiVisibility]:
+        setattr(
+            func,
+            "__ui_visibility_binding__",
+            UiVisibilityBinding(
+                group=group, field_name=field_name, getter=func
+            ),
+        )
+        return func
+
+    return _decorator
+
+
 __all__ = [
     "ref",
     "collection",
     "virtual_field",
     "trigger_field",
+    "ui_visibility",
     "encrypted",
     "ui",
     "select",

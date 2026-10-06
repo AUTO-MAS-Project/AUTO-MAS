@@ -22,15 +22,17 @@
 
 import asyncio
 import json
-import uuid
 import platform
 import time
-from typing import Dict, Any, Optional
+import uuid
+from typing import Any, Dict, Optional
 
-from app.core import Config
-from app.utils import get_logger
+from app.utils import LazyProxy, get_logger
 
 logger = get_logger("信息上报")
+
+# 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
+Config = LazyProxy("app.core", "Config")
 
 
 class _MatomoHandler:
@@ -65,8 +67,8 @@ class _MatomoHandler:
             "idsite": self.site_id,
             "rec": "1",
             "action_name": "AUTO-MAS后端",
-            "_id": Config.get("Data", "UID")[:16],
-            "uid": Config.get("Data", "UID"),
+            "_id": Config.setting.data.uid[:16],
+            "uid": Config.setting.data.uid,
             "rand": str(uuid.uuid4().int)[:10],
             "apiv": "1",
             "h": time.strftime("%H"),

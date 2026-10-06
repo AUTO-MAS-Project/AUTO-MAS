@@ -19,6 +19,7 @@ from app.config import (
     ConfigGroup,
     CollectionChangeEvent,
 )
+from app.config.shortcuts import collection
 from blinker import Signal
 
 
@@ -77,7 +78,7 @@ async def test_add_type_then_add() -> None:
         _fail("commit 后 live._entry_types 应含新类型")
     if col._entry_types[PluginItem.__name__] is not PluginItem:
         _fail("_entry_types 应指向新类")
-    uid = col.add(PluginItem, wire={"info": {"name": "a", "tag": "t"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "a", "tag": "t"}})
     await col.commit()
     if col[uid].info.name != "a":
         _fail("add_type 后 add 失败")
@@ -100,7 +101,7 @@ async def test_add_type_signal_can_add_new_type() -> None:
     async def on_add_type(sender: object, event: CollectionChangeEvent) -> None:
         if event.kind != "add_type":
             return
-        uid = col.add(PluginItem, wire={"info": {"name": "from-signal"}})
+        uid = col.add(PluginItem, payload={"info": {"name": "from-signal"}})
         await col.commit()
         created.append(uid)
 
@@ -130,7 +131,7 @@ async def test_same_batch_remove_type_then_add_rejected() -> None:
     col.add_type(PluginItem)
     await col.commit()
     col.remove_type(PluginItem)
-    uid = col.add(PluginItem, wire={"info": {"name": "ghost"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "ghost"}})
     try:
         await col.commit()
         _fail("同批 remove_type 后 add 应在 commit 失败")
@@ -201,9 +202,9 @@ async def test_remove_type_cascade() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    u1 = col.add(PluginItem, wire={"info": {"name": "a"}})
-    u2 = col.add(PluginItem, wire={"info": {"name": "b"}})
-    uk = col.add(KeepItem, wire={"info": {"name": "keep"}})
+    u1 = col.add(PluginItem, payload={"info": {"name": "a"}})
+    u2 = col.add(PluginItem, payload={"info": {"name": "b"}})
+    uk = col.add(KeepItem, payload={"info": {"name": "keep"}})
     await col.commit()
     removes: list[UUID] = []
 
@@ -227,6 +228,79 @@ async def test_remove_type_cascade() -> None:
     _ok("remove_type 级联清空该类实例")
 
 
+async def test_delete_cascades_into_nested_collection() -> None:
+    """带非空嵌套集合的成员：remove 与 remove_type 都要能级联到孙节点。
+
+    回归：``_delete`` 曾先给自己打软删标记再 ``iter_children()``，而
+    ``Collection.iter_children`` 经 ``values()``/``__getitem__`` 取成员、后者对已软删
+    集合直接上抛 —— 于是 ``ScriptEntry.users`` / ``GameEntry.devices`` 一旦有成员，
+    整笔 commit 就炸 ``DeletedNodeError``，类型删不掉也发不出 remove 信号。
+    """
+
+    class Child(ConfigEntry):
+        class Info(ConfigGroup):
+            name: str = "c"
+
+        info: Info = Field(default_factory=Info)
+
+    class Parent(BoundEntry):
+        class Info(ConfigGroup):
+            name: str = "p"
+
+        info: Info = Field(default_factory=Info)
+        children: ConfigCollection[Child] = collection(Child)
+
+    # ── remove_type：孙节点随之软删，且照常发 remove ──
+    col = BoundCollection([Parent])
+    await col.activate()
+    uid = col.add(Parent, payload={"info": {"name": "a"}})
+    await col.commit()
+    parent = col[uid]
+    c1 = parent.children.add(Child)
+    c2 = parent.children.add(Child)
+    await parent.children.commit()
+    nested = parent.children
+    grandchildren = [nested.effective.data[c1], nested.effective.data[c2]]
+
+    removes: list[UUID] = []
+
+    async def on_remove(sender: object, event: CollectionChangeEvent) -> None:
+        if event.kind == "remove" and event.uid is not None:
+            removes.append(event.uid)
+
+    _reset_signal(type(col))
+    type(col).connect(on_remove, phase="runtime", kind="remove")
+    col.remove_type(Parent.__name__)
+    await col.commit()
+    type(col).disconnect(on_remove, phase="runtime", kind="remove")
+
+    if removes != [uid]:
+        _fail(f"remove_type 应对被删成员发 remove，收到 {removes}")
+    if not nested.deleted:
+        _fail("嵌套集合应随父成员软删")
+    if not all(g.deleted for g in grandchildren):
+        _fail("嵌套集合的成员应被级联软删")
+
+    # ── 普通 remove：同一条 _delete 递归，单独守一遍 ──
+    col2 = BoundCollection([Parent])
+    await col2.activate()
+    uid2 = col2.add(Parent, payload={"info": {"name": "b"}})
+    await col2.commit()
+    parent2 = col2[uid2]
+    c3 = parent2.children.add(Child)
+    await parent2.children.commit()
+    grandchild = parent2.children.effective.data[c3]
+
+    col2.remove(uid2)
+    await col2.commit()
+
+    if uid2 in col2:
+        _fail("普通 remove 应删掉该成员")
+    if not grandchild.deleted:
+        _fail("普通 remove 也应级联到嵌套集合成员")
+    _ok("删除级联穿透嵌套集合（remove 与 remove_type）")
+
+
 async def test_remove_type_guard_rollback() -> None:
     class PluginItem(BoundEntry):
         class Info(ConfigGroup):
@@ -238,7 +312,7 @@ async def test_remove_type_guard_rollback() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    uid = col.add(PluginItem, wire={"info": {"name": "x"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "x"}})
     await col.commit()
 
     async def refuse(
@@ -283,9 +357,9 @@ async def test_reload_type_preserves_uid_order() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    s = col.add(Spacer, wire={"info": {"name": "mid"}})
-    a = col.add(PluginItem, wire={"info": {"name": "a", "tag": "t1"}})
-    b = col.add(PluginItem, wire={"info": {"name": "b", "tag": "t2"}})
+    s = col.add(Spacer, payload={"info": {"name": "mid"}})
+    a = col.add(PluginItem, payload={"info": {"name": "a", "tag": "t1"}})
+    b = col.add(PluginItem, payload={"info": {"name": "b", "tag": "t2"}})
     await col.commit()
     # 顺序: mid, a, b → 调成 a, mid, b
     col.set_order([a, s, b])
@@ -328,7 +402,7 @@ async def test_reload_type_preserves_uid_order() -> None:
     if type(col[a]) is not PluginItem or type(col[b]) is not PluginItem:
         _fail("成员类应换为新 PluginItem")
     if col[a].info.name != "a" or col[a].info.tag != "t1":
-        _fail("Wire 字段应保留")
+        _fail("文档字段应保留")
     if getattr(col[a].info, "note", None) != "n":
         _fail("新类默认字段应生效")
     if col._entry_types["PluginItem"] is not PluginItem:
@@ -348,14 +422,14 @@ async def test_reload_type_activate_failure_rollback() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    uid = col.add(PluginItem, wire={"info": {"name": "keep", "tag": "old"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "keep", "tag": "old"}})
     await col.commit()
     old_cls = col._entry_types["PluginItem"]
 
     class PluginItem(BoundEntry):  # noqa: F811
         class Info(ConfigGroup):
             name: str = "p"
-            # 必填且无默认 → 旧 Wire 缺字段时 activate 可能仍用默认；改用校验器拒绝
+            # 必填且无默认 → 旧文档 缺字段时 activate 可能仍用默认；改用校验器拒绝
             tag: str = "x"
 
         info: Info = Field(default_factory=Info)
@@ -389,7 +463,7 @@ async def test_reload_type_locked_member() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    uid = col.add(PluginItem, wire={"info": {"name": "x"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "x"}})
     await col.commit()
     ticket = await col[uid].lock_x()
 
@@ -420,7 +494,7 @@ async def test_reload_type_str_force_rematerialize() -> None:
     await col.activate()
     col.add_type(PluginItem)
     await col.commit()
-    uid = col.add(PluginItem, wire={"info": {"name": "x"}})
+    uid = col.add(PluginItem, payload={"info": {"name": "x"}})
     await col.commit()
     old = col[uid]
     col.reload_type("PluginItem")  # 同类强制重建
@@ -461,6 +535,7 @@ async def main() -> int:
         test_add_type_rejects_non_bound,
         test_add_type_name_conflict,
         test_remove_type_cascade,
+        test_delete_cascades_into_nested_collection,
         test_remove_type_guard_rollback,
         test_reload_type_preserves_uid_order,
         test_reload_type_activate_failure_rollback,

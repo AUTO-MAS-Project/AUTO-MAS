@@ -52,7 +52,15 @@ Apply these constraints before selecting or combining sub-skills.
 6. For frontend work, load `mas-frontend-standards`; for UI or user-facing component behavior, also load `mas-frontend-ui`.
 7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments and fold them back into the selected sub-skills.
 8. Before creating any commit, run `yarn format` and then `yarn lint` from `frontend`. Review and include the formatter changes; do not commit while either command fails.
-9. **减少调用层级，能内联就内联（强制）**：仅使用一次的逻辑禁止抽函数/方法；禁止为一两行逻辑或「单次调用再包一层」的薄 helper（如 `_update_x` 只转调 `_apply_x`）。优先在调用点写清楚；允许为可读性做轻量重复。仅当同一非平凡逻辑在多处复用、且抽出后显著降低维护成本时才抽函数。函数过长时用功能块注释分段，不要为分段再抽一层。
+9. **编码通用强制（写任何代码前必读 `mas-code-standards` 的 inline-and-comments + 下列要点）**：
+   - **内联**：仅使用一次禁止抽函数/方法；禁止一两行或单次转发的薄 helper；能内联就内联；允许轻量重复；过长用功能块注释分段，不为分段再抽一层；仅多处复用且明显降本时才抽。
+   - **嵌套**：闭包 / 递归 / `to_thread`·`gather` 回调嵌在调用方内，勿再造模块级单次 helper；嵌套函数也禁止无用薄包装。
+   - **命名**：函数名短、动词优先；描述与边界写入 docstring / 注释，不靠拉长函数名。
+   - **注释**：实现须有足够意图/步骤/兼容/失败策略注释；公开函数用简短 docstring。
+10. Before writing or refactoring code, load `mas-code-standards` and `mas-function-design` for the rules above (even when the task is not “style-only”).
+11. **旧插件仅参考、禁止改代码**：`app/plugins/`（复数）与 `archive/old_plugins/` 只作开发期对照；正在开发的新插件系统在 `app/plugin/`（单数）、`app/core/plugin.py`、`app/api/plugin*.py` 等。除非用户**明确点名**要改旧路径，否则只改新系统；勿「顺手」同步旧实现。
+
+12. **环境管理**：本项目开发、测试与依赖安装统一使用 `uv` 环境，不使用 Conda 环境或其 Python 解释器。
 
 ## Routing Rules
 Choose sub-skills by task intent.
@@ -83,6 +91,7 @@ Use `mas-plan-schedule`.
 ## Combined Execution Order
 When multiple concerns appear, apply this order:
 
+0. **Always before coding**: `mas-code-standards`（含 `references/inline-and-comments.md`）+ `mas-function-design`（内联/嵌套/命名/注释）。
 1. `mas-frontend-standards`, when the task touches frontend code or docs.
 2. `mas-frontend-ui`, when the task touches UI or user-facing component behavior.
 3. `mas-code-standards`
@@ -117,3 +126,4 @@ When using this hub:
 7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
 8. Before every commit, `yarn format` and `yarn lint` passed from the `frontend` directory, and formatter changes were reviewed before staging.
 9. No single-use helpers or thin forwarder wrappers were introduced; call sites stay readable without extra indirection.
+10. Function names stay short with detail in docstrings/comments; nested locals only for closure/recursion/callbacks; enough implementation comments remain.

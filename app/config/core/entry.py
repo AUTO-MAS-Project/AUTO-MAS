@@ -6,10 +6,23 @@ import asyncio
 import inspect
 import weakref
 from pathlib import Path
-from typing import Annotated, ClassVar, Iterator, Self, cast, get_args, get_origin
+from typing import (
+    Any,
+    ClassVar,
+    Iterator,
+    Literal,
+    Self,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
+from types import UnionType
 from uuid import UUID
+from datetime import tzinfo
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PrivateAttr, SerializationInfo, model_serializer
+from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from .collection import ConfigCollection
 from ..fields.encrypted import EncryptedValue
@@ -19,18 +32,28 @@ from ..fields import (
     RefDeleteAction,
     RefField,
     UiHintsMap,
+    UiVisibility,
+    UiVisibilitySpec,
     Virtual,
     is_reactive_model_field,
+    is_trigger_model_field,
     is_virtual_model_field,
 )
-from ..fields.hints import LegacyMarker, build_ui_hints
+from ..fields.ann import strip_optional, unwrap_ann
+from ..fields.hints import (
+    ComponentHint,
+    LegacyMarker,
+    UiTablesList,
+    hint_for_field,
+    visibility_spec_for_field,
+)
 from ..shortcuts import virtual_field
-from .group import ConfigGroup
+from .group import ConfigGroup, ConfigTableColumn
 from .manager import config_manager
-from .node import ConfigNode, NodeState
+from .node import ConfigNode, ExportContext, NodeState
 from ..signals import FieldChangeEvent
 from .staging import StageKind, StagedOp
-from ..wire import ExportContext, WireDict
+from app.utils.constants import UTC8
 
 
 class _RefRemoveReceiver:
@@ -83,24 +106,34 @@ class _RefRemoveReceiver:
 
 
 class ConfigEntry(ConfigNode):
-    """L2 配置条目；Wire 形状 = 各 Group 字段顶层嵌套。"""
+    """L2 配置条目；文档形状 = 各 Group 字段顶层嵌套。"""
+
+    # 默认时区：子类可覆盖；date 字段收到 datetime 时未声明 tz() 则使用
+    timezone: ClassVar[tzinfo] = UTC8
 
     # 类级规格（每子类独立）
     _cfg_group_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_collection_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_virtual_specs: ClassVar[dict[tuple[str, str], str]] = {}
     _cfg_trigger_specs: ClassVar[dict[tuple[str, str], str]] = {}
+    # (group, field) → ("bool"|"literal", 触发值元组, 闲置值)
+    _cfg_trigger_modes: ClassVar[
+        dict[tuple[str, str], tuple[str, tuple[object, ...], object]]
+    ] = {}
     _cfg_ref_specs: ClassVar[dict[tuple[str, str], RefField]] = {}
     _cfg_ui_hints: ClassVar[UiHintsMap] = {}
+    _cfg_ui_tables: ClassVar[UiTablesList] = []
+    _cfg_ui_visibility: ClassVar[dict[tuple[str, str], UiVisibilitySpec]] = {}
 
     class Ui(ConfigGroup):
-        """前端组件提示虚拟组：``ui.hints``。"""
+        """前端组件提示虚拟组：``ui.hints`` / ``ui.tables``。"""
 
         hints: Virtual[UiHintsMap] = None
+        tables: Virtual[UiTablesList] = None
 
     ui: Ui = Field(default_factory=Ui)
 
-    # activate 后钉住的 ref 接收者（bound method）；wrapped 由 receiver.__signal_wrappers__ 挂住
+    # activate 后钉住的 ref 接收者；wrapped 由 receiver.__signal_wrappers__ 挂住
     _ref_receivers: list[object] = PrivateAttr(default_factory=list)
 
     def __init__(
@@ -108,23 +141,23 @@ class ConfigEntry(ConfigNode):
         *,
         parent: ConfigNode | None = None,
         uid: UUID | str | None = None,
-        wire: WireDict | None = None,
+        payload: dict[str, Any] | None = None,
         file: Path | None = None,
         **field_values: object,
     ) -> None:
-        # field_values 承接 pydantic model_validate 注入的字段（如 info=/data=），
-        # 转发给 BaseModel 以完成冷态字段填充（FastAPI Body 必需）。
+        # 未激活导入（官方）：field_values 承接 model_validate 注入的字段（如 info=/data=），
+        # 转发给 BaseModel 冷态填充（FastAPI Body）；热化仍走 activate，不在此完成。
         super().__init__(**field_values)
         self._parent_ref = weakref.ref(parent) if parent is not None else None
-        if wire is not None and file is not None:
-            raise ValueError("wire 与 file 互斥")
+        if payload is not None and file is not None:
+            raise ValueError("payload 与 file 互斥")
         if file is not None:
             if not self.is_root:
                 raise ValueError("仅根节点可 file=")
             config_manager.register_root(self, file)
         if uid is not None:
             self._uid = uid if isinstance(uid, UUID) else UUID(uid)
-        self._pending_wire = wire
+        self._pending_payload = payload
 
     @classmethod
     def build(
@@ -132,19 +165,19 @@ class ConfigEntry(ConfigNode):
         *,
         parent: ConfigNode | None = None,
         uid: UUID | str | None = None,
-        wire: WireDict | None = None,
+        payload: dict[str, Any] | None = None,
         file: Path | None = None,
         **field_values: object,
     ) -> Self:
         """类型友好的构造入口。
 
         Pydantic 插件会为具体子类合成仅含模型字段的 ``__init__``，导致 ``uid`` /
-        ``wire`` / ``file`` / ``parent`` 在类型检查中「不存在」。运行时仍可用
+        ``payload`` / ``file`` / ``parent`` 在类型检查中「不存在」。运行时仍可用
         ``Cls(...)``；需要完整构造参数且通过类型检查时请用 ``Cls.build(...)``。
         """
         self = object.__new__(cls)
         ConfigEntry.__init__(
-            self, parent=parent, uid=uid, wire=wire, file=file, **field_values
+            self, parent=parent, uid=uid, payload=payload, file=file, **field_values
         )
         return self
 
@@ -156,13 +189,26 @@ class ConfigEntry(ConfigNode):
         group_fields: list[str] = []
         collection_fields: list[str] = []
         ref_specs: dict[tuple[str, str], RefField] = {}
+        trigger_modes: dict[tuple[str, str], tuple[str, tuple[object, ...], object]] = (
+            {}
+        )
+        tables_by_cls: dict[type, list[str]] = {}
+        ui_hints: UiHintsMap = {}
+        ui_visibility: dict[tuple[str, str], UiVisibilitySpec] = {}
 
         for fname, finfo in cls.model_fields.items():
             ann = finfo.annotation
             origin = get_origin(ann) or ann
             if isinstance(ann, type) and issubclass(ann, ConfigGroup):
                 group_fields.append(fname)
+                if fname == "ui":
+                    continue
+                # 同一 ConfigTableColumn 子类的多个字段 = 一表多列
+                if issubclass(ann, ConfigTableColumn) and ann is not ConfigTableColumn:
+                    tables_by_cls.setdefault(ann, []).append(fname)
+                group_hints: list[ComponentHint] = []
                 for sub_name, sub_info in ann.model_fields.items():
+                    key = (fname, sub_name)
                     refs = [
                         m
                         for m in getattr(sub_info, "metadata", ())
@@ -174,7 +220,48 @@ class ConfigEntry(ConfigNode):
                             f"同一字段只能声明一个 ref()，收到 {len(refs)} 个"
                         )
                     if refs:
-                        ref_specs[(fname, sub_name)] = refs[0]
+                        ref_specs[key] = refs[0]
+                    if is_trigger_model_field(sub_info):
+                        raw, _meta = unwrap_ann(sub_info.annotation)
+                        raw = strip_optional(raw)
+                        t_origin = get_origin(raw)
+                        if t_origin is Union or t_origin is UnionType:
+                            raise TypeError(
+                                f"{cls.__name__}.{fname}.{sub_name}: "
+                                "触发器须为 bool 或 Literal（可 | None），"
+                                "禁止 bool 与 Literal 混用"
+                            )
+                        if raw is bool or t_origin is bool:
+                            trigger_modes[key] = ("bool", (True,), False)
+                        elif t_origin is Literal:
+                            values = get_args(raw)
+                            if not values:
+                                raise TypeError(
+                                    f"{cls.__name__}.{fname}.{sub_name}: "
+                                    "Literal 触发器至少需要一个字面量"
+                                )
+                            trigger_modes[key] = ("literal", values, None)
+                        else:
+                            raise TypeError(
+                                f"{cls.__name__}.{fname}.{sub_name}: "
+                                f"触发器值类型须为 bool 或 Literal[...]，收到 {raw!r}"
+                            )
+                    vis = visibility_spec_for_field(sub_info)
+                    if vis is not None:
+                        if key in ui_visibility:
+                            raise TypeError(
+                                f"{cls.__name__}.{fname}.{sub_name}: UI 显隐重复声明"
+                            )
+                        ui_visibility[key] = vis
+                    group_hints.append(
+                        hint_for_field(
+                            sub_name,
+                            sub_info,
+                            trigger_mode=trigger_modes.get(key),
+                        )
+                    )
+                if group_hints:
+                    ui_hints[fname] = group_hints
             elif isinstance(origin, type) and issubclass(origin, ConfigCollection):
                 if not any(
                     isinstance(m, NestedCollectionMarker) for m in finfo.metadata
@@ -209,17 +296,82 @@ class ConfigEntry(ConfigNode):
                         f"重复绑定（{trigger_specs[key]!r} 与 {tb.handler!r}）"
                     )
                 trigger_specs[key] = tb.handler
+            ub = getattr(member, "__ui_visibility_binding__", None)
+            if ub is not None:
+                key = (ub.group, ub.field_name)
+                if key in ui_visibility:
+                    raise TypeError(
+                        f"{cls.__name__}.{ub.group}.{ub.field_name}: "
+                        f"UI 显隐重复绑定（已有 {ui_visibility[key]!r}，又见 {ub.getter!r}）"
+                    )
+                ui_visibility[key] = ub.getter
 
         cls._cfg_group_fields = tuple(group_fields)
         cls._cfg_collection_fields = tuple(collection_fields)
         cls._cfg_ref_specs = ref_specs
         cls._cfg_virtual_specs = virtual_specs
         cls._cfg_trigger_specs = trigger_specs
-        cls._cfg_ui_hints = build_ui_hints(cls)
+        cls._cfg_trigger_modes = trigger_modes
+        cls._cfg_ui_hints = ui_hints
+        cls._cfg_ui_visibility = ui_visibility
+        cls._cfg_ui_tables = [
+            {
+                "key": col_cls._table_key,
+                "columns": columns,
+                "rows": list(col_cls.model_fields.keys()),
+                "transpose": bool(col_cls._table_transpose),
+            }
+            for col_cls, columns in tables_by_cls.items()
+        ]
+
+    def _ui_visibility(self, group: str, field: str) -> UiVisibility:
+        """同步求字段 UI 显隐；未声明默认 SHOW。"""
+        spec = type(self)._cfg_ui_visibility.get((group, field))
+        if spec is None:
+            return UiVisibility.SHOW
+        if isinstance(spec, UiVisibility):
+            return spec
+        # spec 为 Callable：直接调用
+        result = spec(self)
+        if inspect.isawaitable(result):
+            raise TypeError("UI 显隐仅支持同步函数")
+        if not isinstance(result, UiVisibility):
+            raise TypeError(
+                f"UI 显隐方法 {spec!r} 须返回 UiVisibility，收到 {type(result).__name__}"
+            )
+        return result
 
     @virtual_field("ui.hints")
     def _get_ui_hints(self) -> UiHintsMap:
-        return type(self)._cfg_ui_hints
+        """类级底板 + 实例显隐过滤 + editable；上锁时全部 editable=false。"""
+        out: UiHintsMap = {}
+        locked = self.is_locked
+        virtuals = type(self)._cfg_virtual_specs
+        for gname, hints in type(self)._cfg_ui_hints.items():
+            filtered: list[ComponentHint] = []
+            for hint in hints:
+                fname = str(hint.get("field", ""))
+                vis = self._ui_visibility(gname, fname)
+                if vis == UiVisibility.HIDE:
+                    continue
+                item = dict(hint)
+                # DISABLE / 虚拟 → 不可改；SHOW 默认可改；上锁再全量只读
+                item["editable"] = (
+                    False
+                    if locked
+                    or vis == UiVisibility.DISABLE
+                    or (gname, fname) in virtuals
+                    else True
+                )
+                filtered.append(item)  # type: ignore[arg-type]
+            if filtered:
+                out[gname] = filtered
+        return out
+
+    @virtual_field("ui.tables")
+    def _get_ui_tables(self) -> UiTablesList:
+        """类级表格布局声明（静态）。"""
+        return list(type(self)._cfg_ui_tables)
 
     # ──────────────── 构造后挂载 ────────────────
 
@@ -278,15 +430,22 @@ class ConfigEntry(ConfigNode):
             raise DeletedNodeError(self.uid)
         if (group, field) in type(self)._cfg_virtual_specs:
             return getattr(self, type(self)._cfg_virtual_specs[(group, field)])()
-        if (group, field) in type(self)._cfg_trigger_specs:
-            return False
+        tmode = type(self)._cfg_trigger_modes.get((group, field))
+        if tmode is not None:
+            return tmode[2]
         stored = getattr(self.effective, group).__dict__.get(field)
         if isinstance(stored, EncryptedValue):
             return stored.plaintext()
         return stored
 
-    def _dispatch_trigger(self, group: str, field: str) -> None:
-        result = getattr(self, type(self)._cfg_trigger_specs[(group, field)])()
+    def _dispatch_trigger(self, group: str, field: str, value: object = True) -> None:
+        handler = getattr(self, type(self)._cfg_trigger_specs[(group, field)])
+        # bool：无额外参；Literal：传入触发值
+        result = (
+            handler()
+            if type(self)._cfg_trigger_modes[(group, field)][0] == "bool"
+            else handler(value)
+        )
         if inspect.isawaitable(result):
             try:
                 loop = asyncio.get_running_loop()
@@ -304,11 +463,16 @@ class ConfigEntry(ConfigNode):
 
     # ──────────────── 更新 ────────────────
 
-    async def update(self, other: Self) -> None:
+    async def update(self, other: Self, *, check_visibility: bool = True) -> None:
         """用同类冷态 Entry 的 Group 字段更新本实例，自动 ``commit``；失败 ``raise ConfigAggregateError``。
 
         - 仅同步 ``_cfg_group_fields``（含触发器；跳过虚拟字段与 **未赋值** 字段），**不**改嵌套 Collection / 子 Node。
         - 未赋值判定：``other`` / 各 Group 的 ``model_fields_set``（FastAPI Body 部分字段可直接 ``await cfg.update(body)``）。
+        - ``check_visibility``：默认 ``True``，按 UI 显隐跳过 ``HIDE`` / ``DISABLE``
+          字段 —— 前端传参必须走这条，否则用户能改到界面上不给改的项。
+          程序内部调用传 ``False`` 可全量写入传入字段（如订阅期回写、迁移、
+          插件自身的批量落配置）；此时**仅**跳过虚拟字段与未赋值字段，
+          这两类与显隐无关：前者无存储、后者调用方压根没打算改。
         """
         if type(other) is not type(self):
             raise TypeError(
@@ -335,6 +499,11 @@ class ConfigEntry(ConfigNode):
             for fname, finfo in type(dst).model_fields.items():
                 if is_virtual_model_field(finfo) or fname not in src_set:
                     continue
+                # hide / disable：跳过（与前端不可改契约对齐；求值用热态 self）
+                if check_visibility:
+                    vis = self._ui_visibility(gname, fname)
+                    if vis in (UiVisibility.HIDE, UiVisibility.DISABLE):
+                        continue
                 try:
                     setattr(dst, fname, src.__dict__.get(fname))
                 except Exception as exc:  # noqa: BLE001
@@ -348,7 +517,7 @@ class ConfigEntry(ConfigNode):
 
     # ──────────────── 激活 ────────────────
 
-    async def _activate_from_payload(self, payload: WireDict) -> None:
+    async def _activate_from_payload(self, payload: dict[str, Any]) -> None:
         payload = payload or {}
         errors: list[Exception] = []
 
@@ -369,9 +538,8 @@ class ConfigEntry(ConfigNode):
                     if isinstance(value, EncryptedValue):
                         value = value.ciphertext()
                     ann = fld.annotation
-                    meta = list(getattr(fld, "metadata", ()) or ())
-                    if get_origin(ann) is Annotated:
-                        meta = list(get_args(ann)[1:]) + meta
+                    _, ann_meta = unwrap_ann(ann)
+                    meta = list(ann_meta) + list(getattr(fld, "metadata", ()) or ())
                     for marker in meta:
                         if isinstance(marker, LegacyMarker):
                             old_group = payload.get(marker.group)
@@ -384,14 +552,14 @@ class ConfigEntry(ConfigNode):
                 except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
 
-        # 嵌套 Collection：标准 activate（pending_wire）
+        # 嵌套 Collection：标准 activate（pending_payload）
         for cname in self._cfg_collection_fields:
             col = cast(ConfigCollection[ConfigNode], self.__dict__[cname])
             if col.activation_state != NodeState.INACTIVE:
                 continue
             nested = payload.get(cname)
             if isinstance(nested, dict):
-                col._pending_wire = cast(WireDict, nested)
+                col._pending_payload = cast(dict[str, Any], nested)
             try:
                 await col.activate()
             except Exception as exc:  # noqa: BLE001
@@ -438,7 +606,7 @@ class ConfigEntry(ConfigNode):
         ws._workspace = None
         ws._deleted = src._deleted
         ws._activation_state = src._activation_state
-        ws._pending_wire = src._pending_wire
+        ws._pending_payload = src._pending_payload
         ws._is_workspace = True
         for gname in self._cfg_group_fields:
             src_g = cast(ConfigGroup, src.__dict__[gname])
@@ -462,7 +630,7 @@ class ConfigEntry(ConfigNode):
                 object.__setattr__(live, fname, staged.__dict__.get(fname))
         self._deleted = self._workspace._deleted
         self._activation_state = self._workspace._activation_state
-        self._pending_wire = self._workspace._pending_wire
+        self._pending_payload = self._workspace._pending_payload
         self._workspace = None
 
     def _COMMIT_init(self) -> None:
@@ -478,7 +646,7 @@ class ConfigEntry(ConfigNode):
                 object.__setattr__(dst, fname, src.__dict__.get(fname))
         self._workspace._deleted = init._deleted
         self._workspace._activation_state = init._activation_state
-        self._workspace._pending_wire = init._pending_wire
+        self._workspace._pending_payload = init._pending_payload
         self._workspace._workspace = None
 
     # ──────────────── 迭代与导出 ────────────────
@@ -487,15 +655,44 @@ class ConfigEntry(ConfigNode):
         for cname in self._cfg_collection_fields:
             yield cast(ConfigCollection[ConfigNode], self.__dict__[cname])
 
-    def _export_wire(self, ctx: ExportContext) -> WireDict:
-        """Wire 导出：读已提交 ``self``，不经 ``effective``（事务 ws）。"""
-        out: WireDict = {}
+    # ──────────────── 导出（官方 model_serializer）────────────────
+
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self,
+        handler: SerializerFunctionWrapHandler,
+        info: SerializationInfo,
+    ) -> dict[str, Any]:
+        """Entry 文档：各 Group + 嵌套 Collection；persist 跳过 ``ui``。
+
+        不调用 ``handler(self)``：避免把运行时 PrivateAttr / 非文档字段带出；
+        嵌套导出统一 ``model_dump(mode=…, context=ctx)``。
+        ``mode=python`` 与 audience 正交：仍导出各组，不做 UI 裁剪（由 Group 侧处理）。
+        """
+        _ = handler
+        dump_mode = info.mode if info.mode in ("json", "python") else "json"
+        if dump_mode == "python":
+            # 内部代理：各组 / 嵌套 Collection 原样 python dump，不套 audience
+            out_py: dict[str, Any] = {}
+            for gname in self._cfg_group_fields:
+                out_py[gname] = cast(ConfigGroup, self.__dict__[gname]).model_dump(
+                    mode="python"
+                )
+            for cname in self._cfg_collection_fields:
+                out_py[cname] = cast(
+                    ConfigCollection[ConfigNode], self.__dict__[cname]
+                ).model_dump(mode="python")
+            return out_py
+        ctx = ExportContext.from_dump(info.context)
+        out: dict[str, Any] = {}
         for gname in self._cfg_group_fields:
-            if gname == "ui" and not ctx.include_reactive:
+            if gname == "ui" and ctx.audience != "api":
                 continue
-            out[gname] = cast(ConfigGroup, self.__dict__[gname]).model_dump(context=ctx)
+            out[gname] = cast(ConfigGroup, self.__dict__[gname]).model_dump(
+                mode=dump_mode, context=ctx
+            )
         for cname in self._cfg_collection_fields:
             out[cname] = cast(
                 ConfigCollection[ConfigNode], self.__dict__[cname]
-            )._export_wire(ctx)
+            ).model_dump(mode=dump_mode, context=ctx)
         return out

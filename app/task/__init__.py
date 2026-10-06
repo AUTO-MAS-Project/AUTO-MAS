@@ -1,6 +1,4 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -20,33 +18,51 @@
 
 #   Contact: DLmaster_361@163.com
 
-from importlib import import_module
-from typing import Any
+"""任务基础设计：四层嵌套任务，按层级拆分放置。
+
+层级自外向内（设计 §4.2-4.4 / §5.3-5.5），类名即该层做的事：
+
+1. ``app.core.task_dispatcher`` —— ``TaskDispatcher``：派发层，建 ``TaskItem``、启停。
+2. :mod:`app.task.script_expander` —— ``ScriptExpander``：把任务展开成脚本列表。
+3. :mod:`app.task.user_expander` —— ``UserExpander``：把单个脚本展开成用户列表。
+4. :mod:`app.task.mode_worker` —— ``ModeWorker``：干活的那层，跑单用户单模式。
+
+前三层都只做"展开 + 派发"，真正执行落在最内层的 Worker。
+
+支撑模块：:mod:`app.task.base` 是四层共用的可取消执行契约，
+:mod:`app.task.params` 是各层共用的传参件（``ExpandError`` / ``is_selected`` /
+``queue_script_ids``）。组合合法性由派发层 ``TaskDispatcher.start`` 一处判定并抛
+``ExpandError``；两层展开只按同一张表**产出**列表（§5.4 脚本、§5.5 用户），
+逻辑分别内联在各自的 ``main_task`` 里，不再重复校验。
+
+运行态的**状态**不在本包 —— 唯一事实源是 ``app.models.task`` 里的配置树
+（类级 ``connect`` 在配置类旁同步声明，字段变更直接推 ``TaskItem`` 载荷）。
+"""
+
+from .base import TaskBase
+from .mode_worker import (
+    MODE_WORKERS,
+    AutoProxyWorker,
+    ManualReviewWorker,
+    ModeWorker,
+    ScriptConfigWorker,
+)
+from .context import TaskContext
+from .params import ExpandError, is_selected, queue_script_ids
+from .script_expander import ScriptExpander
+from .user_expander import UserExpander
 
 __all__ = [
-    "MaaManager",
-    "SrcManager",
-    "GeneralManager",
-    "MaaEndManager",
+    "MODE_WORKERS",
+    "AutoProxyWorker",
+    "ExpandError",
+    "ManualReviewWorker",
+    "ModeWorker",
+    "ScriptExpander",
+    "ScriptConfigWorker",
+    "TaskContext",
+    "UserExpander",
+    "TaskBase",
+    "is_selected",
+    "queue_script_ids",
 ]
-
-_LAZY_EXPORTS = {
-    "MaaManager": ("app.task.MAA.manager", "MaaManager"),
-    "SrcManager": ("app.task.SRC.manager", "SrcManager"),
-    "GeneralManager": ("app.task.general.manager", "GeneralManager"),
-    "MaaEndManager": ("app.task.MaaEnd.manager", "MaaEndManager"),
-}
-
-
-def __getattr__(name: str) -> Any:
-    """按需导出任务管理器，避免包初始化时触发环形导入。"""
-
-    target = _LAZY_EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(name)
-
-    module_path, attr_name = target
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-    globals()[name] = value
-    return value

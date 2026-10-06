@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -34,7 +34,7 @@ from app.config import CollectionOrderItem
 from app.config.errors import ConfigAggregateError
 from app.core import Config
 from app.models.config import Setting, Webhook
-from app.models.schema import OutBase
+from app.api import OutBase
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -47,7 +47,7 @@ class SettingGetOut(OutBase):
 
 
 class SettingUpdateIn(BaseModel):
-    data: Setting = Field(..., description="全局设置补丁（Wire 形状）")
+    data: Setting = Field(..., description="全局设置补丁（文档形状）")
 
 
 class WebhookGetIn(BaseModel):
@@ -72,7 +72,7 @@ class WebhookCreateOut(OutBase):
 
 class WebhookUpdateIn(BaseModel):
     webhookId: str = Field(..., description="Webhook ID")
-    data: Webhook = Field(..., description="Webhook 补丁（Wire 形状）")
+    data: Webhook = Field(..., description="Webhook 补丁（文档形状）")
 
 
 class WebhookDeleteIn(BaseModel):

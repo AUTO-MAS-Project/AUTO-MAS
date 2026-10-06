@@ -46,19 +46,6 @@
         </a-space>
         <div class="control-spacer"></div>
         <a-space size="middle">
-          <a-select
-            v-if="status !== '运行' && showResumeScriptSelect"
-            v-model:value="localResumeFromScriptId"
-            placeholder="从指定脚本继续（默认第一个）"
-            style="width: 260px"
-            :loading="resumeScriptLoading"
-            :options="resumeScriptOptions || []"
-            :disabled="disabled"
-            allow-clear
-            size="large"
-            @change="onResumeScriptChange"
-            @dropdown-visible-change="onResumeDropdownVisibleChange"
-          />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
@@ -90,9 +77,6 @@ import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
 interface Props {
   selectedTaskId: string | null
   selectedMode: TaskCreateIn.mode | null
-  resumeFromScriptId?: string | null
-  resumeScriptOptions?: Array<{ label: string; value: string }>
-  resumeScriptLoading?: boolean
   taskOptions: ComboBoxItem[]
   taskOptionsLoading: boolean
   status: SchedulerStatus
@@ -105,7 +89,6 @@ interface Emits {
   (e: 'update:selectedTaskId', value: string | null): void
 
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
-  (e: 'update:resumeFromScriptId', value: string | null): void
 
   (e: 'start'): void
 
@@ -117,14 +100,10 @@ interface Emits {
 
   (e: 'refresh-tasks'): void
   (e: 'task-changed', value: string | null): void
-  (e: 'refresh-resume-scripts'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
-  resumeFromScriptId: null,
-  resumeScriptOptions: () => [],
-  resumeScriptLoading: false,
   runningTaskLabel: '',
   runningModeLabel: '',
 })
@@ -134,23 +113,12 @@ const emit = defineEmits<Emits>()
 // 本地状态，用于双向绑定
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
-const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
 // 脚本项按逐记录能力收窄模式；队列项继续使用通用模式。
 const selectedTaskOption = computed(() =>
   props.taskOptions.find(option => option.value === localSelectedTaskId.value)
 )
 const modeOptions = computed(() => getTaskModeOptions(selectedTaskOption.value?.supported_modes))
-
-// 仅当选中队列任务时显示恢复脚本下拉框。
-// 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
-const showResumeScriptSelect = computed(() => {
-  const selectedTaskId = localSelectedTaskId.value
-  if (!selectedTaskId) return false
-
-  const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
-  return Boolean(taskOption?.label.startsWith('队列 - '))
-})
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
@@ -196,14 +164,6 @@ watch(modeOptions, options => {
   emit('update:selectedMode', nextMode)
 })
 
-watch(
-  () => props.resumeFromScriptId,
-  newVal => {
-    localResumeFromScriptId.value = newVal ?? null
-  },
-  { immediate: true }
-)
-
 // 事件处理
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
@@ -212,14 +172,6 @@ const onTaskChange = (value: string) => {
 
 const onModeChange = (value: TaskCreateIn.mode) => {
   emit('update:selectedMode', value)
-}
-
-const onResumeScriptChange = (value: string | undefined) => {
-  emit('update:resumeFromScriptId', value ?? null)
-}
-
-const onResumeDropdownVisibleChange = (open: boolean) => {
-  if (open) emit('refresh-resume-scripts')
 }
 
 // 合并的按钮事件处理

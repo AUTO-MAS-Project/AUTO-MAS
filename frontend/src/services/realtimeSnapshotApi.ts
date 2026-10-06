@@ -1,11 +1,6 @@
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { request } from '@/api/core/request'
-import type {
-  WSDialogRequestData,
-  WSTaskMode,
-  WSTaskScriptIdentityData,
-  WSTaskScriptInfoData,
-} from '@/services/websocket/types'
+import type { TaskItemPayload, WSDialogRequestData } from '@/services/websocket/types'
 
 export interface PowerCountdownSnapshot {
   active: boolean
@@ -13,28 +8,25 @@ export interface PowerCountdownSnapshot {
   remaining: number
 }
 
-export interface TaskRuntimeSnapshotItem {
-  taskId: string
-  mode: WSTaskMode
-  queueId: string | null
-  scriptId: string | null
-  userId: string | null
-  stopping: boolean
-  scripts: WSTaskScriptIdentityData[]
-  task_info: WSTaskScriptInfoData[]
-  log: string
-}
-
-export interface TaskRuntimeSnapshot {
-  tasks: TaskRuntimeSnapshotItem[]
-  scheduledScripts: WSTaskScriptIdentityData[]
+/** ``POST /api/dispatch/get`` 响应（任务信息载荷即 TaskItem） */
+export interface TaskGetOut {
+  code?: number
+  status?: string
+  message?: string
+  order?: Array<{ uid: string; type: string }>
+  data?: Record<string, TaskItemPayload>
 }
 
 const get = <T>(url: string) => request<T>(OpenAPI, { method: 'GET', url })
+
+const post = <T>(url: string, body?: Record<string, unknown>) =>
+  request<T>(OpenAPI, { method: 'POST', url, body, mediaType: 'application/json' })
 
 /** HTTP 提供连接时点的初始权威状态；主 WS 只承载之后的增量事件。 */
 export const realtimeSnapshotApi = {
   getPendingDialogs: () => get<WSDialogRequestData[]>('/api/core/dialogs/pending'),
   getPowerCountdown: () => get<PowerCountdownSnapshot>('/api/dispatch/power/countdown-snapshot'),
-  getRuntimeTasks: () => get<TaskRuntimeSnapshot>('/api/dispatch/runtime-snapshot'),
+  /** 查询 TaskInfo；``taskId`` 省略时返回全部，载荷为 TaskItem。 */
+  getTasks: (taskId?: string | null) =>
+    post<TaskGetOut>('/api/dispatch/get', taskId ? { taskId } : {}),
 }

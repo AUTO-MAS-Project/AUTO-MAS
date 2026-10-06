@@ -1,46 +1,67 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+"""任务调度 API（``TaskDispatcher`` 为任务信息唯一事实源；含电源倒计时）。"""
 
-#   This file is part of AUTO-MAS.
+from __future__ import annotations
 
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
+from typing import Literal, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
-from app.core import Config, TaskManager
+from app.api import OutBase
+from app.config import CollectionOrderItem
+from app.core import Config, TaskDispatcher
+from app.models.task import TaskItem, TaskMode
 from app.services import System
-from app.models.schema import *
+from app.services.system import PowerCountdownSnapshot
+from app.task import ExpandError
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
+PowerSignal = Literal[
+    "NoAction",
+    "Shutdown",
+    "ShutdownForce",
+    "Reboot",
+    "Hibernate",
+    "Sleep",
+    "KillSelf",
+    "Logoff",
+]
 
-@router.get(
-    "/runtime-snapshot",
-    tags=["Get"],
-    summary="获取运行中任务初始快照",
-    response_model=TaskRuntimeSnapshot,
-    status_code=200,
-)
-async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
-    """返回当前运行任务；WS 只承载后续状态、日志与完成事件。"""
 
-    return TaskManager.get_runtime_snapshot()
+class TaskCreateIn(BaseModel):
+    """按设计 §5.1：mode + 可选 queue/script/user uid。"""
+
+    mode: TaskMode = Field(..., description="任务模式")
+    queueId: Optional[str] = Field(default=None, description="队列 uid")
+    scriptId: Optional[str] = Field(default=None, description="脚本 uid")
+    userId: Optional[str] = Field(default=None, description="用户 uid")
+
+
+class TaskCreateOut(OutBase):
+    taskId: str = Field(default="", description="新创建的任务ID")
+
+
+class DispatchIn(BaseModel):
+    taskId: str = Field(..., description="目标任务 ID")
+
+
+class TaskGetIn(BaseModel):
+    taskId: Optional[str] = None
+
+
+class TaskGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    data: dict[str, TaskItem] = Field(default_factory=dict)
+
+
+class PowerIn(BaseModel):
+    signal: PowerSignal = Field(..., description="电源操作信号")
+
+
+class PowerOut(OutBase):
+    signal: PowerSignal = Field(..., description="电源操作信号")
 
 
 @router.get(
@@ -51,8 +72,6 @@ async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
     status_code=200,
 )
 async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
-    """返回当前倒计时；WS 只承载后续逐秒更新与取消事件。"""
-
     return System.get_power_countdown_snapshot()
 
 
@@ -64,16 +83,21 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
     status_code=200,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
-
     try:
-        task_id = await TaskManager.add_task(
+        task_id = await TaskDispatcher.start(
             mode=task.mode,
-            id=task.taskId,
-            resume_from_script_id=task.resumeFromScriptId,
+            queue_id=task.queueId,
+            script_id=task.scriptId,
+            user_id=task.userId,
         )
+    except ExpandError as e:
+        return TaskCreateOut(code=400, status="error", message=str(e), taskId="")
     except Exception as e:
         return TaskCreateOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {e}",
+            taskId="",
         )
     return TaskCreateOut(taskId=str(task_id))
 
@@ -86,14 +110,37 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     status_code=200,
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
-
     try:
-        await TaskManager.stop_task(task.taskId)
+        await TaskDispatcher.stop(UUID(task.taskId))
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
+
+
+@router.post("/get", tags=["Get"], summary="查询任务", response_model=TaskGetOut)
+async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
+    try:
+        if body.taskId:
+            uid = UUID(body.taskId)
+            item = TaskDispatcher.get_task(uid)
+            items = [(uid, item)] if item is not None else []
+        else:
+            items = list(TaskDispatcher.running_items())
+        return TaskGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(item).__name__)
+                for uid, item in items
+            ],
+            data={str(uid): item for uid, item in items},
+        )
+    except Exception as e:
+        return TaskGetOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {e}",
+            order=[],
+            data={},
+        )
 
 
 @router.post(
@@ -104,14 +151,13 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def get_power() -> PowerOut:
-
     try:
         signal = Config.power_sign
     except Exception as e:
         return PowerOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message=f"{type(e).__name__}: {e}",
             signal="NoAction",
         )
     return PowerOut(signal=signal)
@@ -125,13 +171,10 @@ async def get_power() -> PowerOut:
     status_code=200,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
-
     try:
         Config.power_sign = task.signal
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
@@ -143,11 +186,8 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def cancel_power_task() -> OutBase:
-
     try:
         await System.cancel_power_task()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()

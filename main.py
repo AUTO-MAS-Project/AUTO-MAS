@@ -27,8 +27,6 @@ import time
 import ctypes
 import logging
 from pathlib import Path
-from typing import Any
-
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
@@ -39,7 +37,7 @@ logger = get_logger("主程序")
 
 
 class InterceptHandler(logging.Handler):
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
@@ -73,14 +71,6 @@ def main():
         )
         sys.exit(0)
 
-    from app.plugins.uv_backend import ensure_uv
-
-    if not ensure_uv():
-        logger.error(
-            "uv 包管理器安装失败，请手动安装: https://docs.astral.sh/uv/getting-started/installation/"
-        )
-        sys.exit(1)
-
     import asyncio
     import uvicorn
     from fastapi import FastAPI
@@ -96,9 +86,7 @@ def main():
         from pathlib import Path as _Path
 
         from app.core import Config
-        from app.plugins import PluginManager
-        from app.core.page_registry import register_builtin_pages
-        from app.core.script_types import validate_script_type_registry
+        from app.core.plugin_manager import Plugin
         from app.api import (
             core_router,
             info_router,
@@ -108,31 +96,35 @@ def main():
             setting_router,
             update_router,
             ocr_router,
-            plugins_router,
-            plugin_gateway_router,
+            plugin_router,
+            i18n_router,
+            queue_router,
+            plan_router,
+            scripts_router,
+            games_router,
             qr_login_router,
-            script_types_router,
         )
-        from app.plugins.system import get_core_plugin_routers
+        from app.plugin import uv as uv_tool
 
-        hmr_service: Any = None
         background_task = None
         _start_t = time.perf_counter()
 
-        # ---- 路由注册 ----
+        # ---- 路由注册（系统插件 API 须先于网关，避免 path 抢匹配）----
         app.include_router(core_router)
         app.include_router(info_router)
-        for core_plugin_router in get_core_plugin_routers():
-            app.include_router(core_plugin_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(tools_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)
-        app.include_router(plugins_router)
-        app.include_router(plugin_gateway_router)
-        app.include_router(script_types_router)
+        app.include_router(queue_router)
+        app.include_router(plan_router)
+        app.include_router(scripts_router)
+        app.include_router(games_router)
+        # 新插件系统：注册表/目录/自有配置/list/网关均在 plugin_router（网关最后挂）
+        app.include_router(plugin_router)
+        app.include_router(i18n_router)
         if qr_login_router is not None:
             app.include_router(qr_login_router)
 
@@ -147,9 +139,8 @@ def main():
             name="sounds",
         )
 
-        # ---- 核心初始化 ----
-        await Config.init_config()
-        register_builtin_pages()
+        # ---- 核心初始化：引导配置 → 插件系统 → 领域配置 ----
+        await Config.init_bootstrap_configs()
 
         if os.getenv("AUTO_MAS_DEV") == "1":
             import shutil
@@ -159,23 +150,18 @@ def main():
                     shutil.rmtree(pycache, ignore_errors=True)
             logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
-        await PluginManager.start(fast_startup=False)
-
-        # 注册插件市场主连接消息处理器
-        from app.plugins import market_channel
-
-        market_channel.register()
-
-        missing_script_types = validate_script_type_registry(Config)
-        if missing_script_types:
-            raise RuntimeError(
-                "脚本类型注册不完整，以下脚本未找到可用 provider: "
-                + "; ".join(missing_script_types)
+        try:
+            uv_tool.ensure()
+        except Exception as exc:
+            logger.error(
+                f"uv 不可用: {exc}；请使用 AUTO-MAS-Runtime，或安装系统 uv: "
+                "https://docs.astral.sh/uv/getting-started/installation/"
             )
+            raise
+        await Plugin.initialize()
+        await Config.init_domain_configs()
 
         async def initialize_background_services() -> None:
-            nonlocal hmr_service
-
             app.state.background_status = "running"
             try:
                 import importlib
@@ -217,15 +203,8 @@ def main():
 
                 await ArknightWin32Toolkit.init()
                 await MainTimer.start()
-                await PluginManager._finish_background_install()
 
-                if os.getenv("AUTO_MAS_DEV") == "1":
-                    from app.plugins.dev_hmr import DevPluginHMR
-
-                    hmr_service = DevPluginHMR(PluginManager)
-                    hmr_service.start()
-
-                if Config.get("Notify", "IfKoishiSupport"):
+                if Config.setting.notify.if_koishi_support:
                     from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
@@ -256,15 +235,16 @@ def main():
 
             from contextlib import suppress
 
-            from app.core.task_manager import TaskManager
+            from app.core.plugin_manager import Plugin as PluginRuntime
+            from app.core.task_dispatcher import TaskDispatcher
             from app.core.timer import MainTimer
             from app.core.ws import Dispatcher, MainConnection
-            from app.plugins.realtime import shutdown_plugin_realtime_tasks
             from app.runtime_tasks import RuntimeTasks
             from app.services import Matomo, System, Updater
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
-            if background_task is not None and not background_task.done():
+            # （yield 前已必然创建 background_task，无需判空）
+            if not background_task.done():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
@@ -278,18 +258,18 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            if hmr_service is not None:
-                await hmr_service.stop()
-
             await MainTimer.stop()
-            await TaskManager.stop_task("ALL")
+            await TaskDispatcher.stop("ALL")
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()
             await Updater.cancel_download(notify=False)
             await RuntimeTasks.shutdown()
-            await shutdown_plugin_realtime_tasks()
-            await PluginManager.stop()
+            await PluginRuntime.shutdown()
+            # 插件 on_teardown 可能已 commit；跳过防抖，全量落盘全部 file= 根
+            from app.config import config_manager
+
+            await config_manager.flush()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 

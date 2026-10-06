@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright 漏 2024-2025 DLmaster361
-#   Copyright 漏 2025 MoeSnowyFox
-#   Copyright 漏 2025-2026 AUTO-MAS Team
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -20,73 +20,73 @@
 
 #   Contact: DLmaster_361@163.com
 
+
+import os
+
+# Sentry 的 Loguru 集成会自行 ``logger.add(...)`` 且不传 diagnose，
+# 该 sink 会吃下 Loguru 的全局默认值并把局部变量值渲染进日志正文随事件外发。
+# 本文件是后端唯一导入 Loguru 的位置，在导入前收紧默认值即可覆盖该 sink；
+# 下方本项目自有的 sink 均显式传入 diagnose=False，不受影响。
+os.environ.setdefault("LOGURU_DIAGNOSE", "NO")
+
 import sys
 from pathlib import Path
-from typing import Any
 
 from loguru import logger as _logger
 
-LOG_FORMAT = (
-    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-    "<level>{level: <8}</level> | "
-    "<cyan>{extra[module]}</cyan> | "
-    "<level>{message}</level>"
-)
+from .security import sanitize_log_message
 
 (Path.cwd() / "debug").mkdir(parents=True, exist_ok=True)
+
 
 _logger.remove()
 
 
-def _add_logger_sink(*, sink: Any, level: str, colorize: bool = False, **kwargs: Any) -> None:
-    """添加日志输出，队列不可用时自动降级。"""
+def _sanitize_record(record):
+    """在每个 Loguru sink 写出前过滤敏感字段。"""
 
-    add_kwargs = {
-        "sink": sink,
-        "level": level,
-        "format": LOG_FORMAT,
-        "enqueue": True,
-        "backtrace": True,
-        "diagnose": True,
-        "colorize": colorize,
-        **kwargs,
-    }
-
-    try:
-        _logger.add(**add_kwargs)
-    except (PermissionError, OSError):
-        add_kwargs["enqueue"] = False
-        _logger.add(**add_kwargs)
+    record["message"] = sanitize_log_message(str(record["message"]))
+    return True
 
 
-_add_logger_sink(
+_logger.add(
     sink=Path.cwd() / "debug/app.log",
     level="INFO",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+    filter=_sanitize_record,
+    enqueue=True,
+    backtrace=True,
+    diagnose=False,
     rotation="1 week",
     retention="1 month",
     compression="zip",
 )
 
-_add_logger_sink(
+_logger.add(
     sink=sys.stderr,
     level="DEBUG",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+    filter=_sanitize_record,
+    enqueue=True,
+    backtrace=True,
+    diagnose=False,
     colorize=True,
 )
+
 
 _logger = _logger.patch(lambda record: record["extra"].setdefault("module", "未知模块"))
 
 
 def get_logger(module_name: str):
     """
-    获取指定模块名称的日志记录器。
+    获取指定模块名的日志记录器
 
     Args:
-        module_name (str): 模块名称。
+        module_name (str): 模块名称
 
     Returns:
-        loguru.Logger: 绑定模块字段后的日志记录器。
+        loguru.Logger: 日志记录器实例
     """
-
     return _logger.bind(module=module_name)
 
 

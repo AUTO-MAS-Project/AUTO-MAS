@@ -1,7 +1,8 @@
 """内置 Annotated 字段类型（自动纠正 vs 校验）。
 
-与一般字段同链；纠正型失败回退默认，校验型失败抛 ``ValueError``。
-路径类 Wire 形态统一为 ``str``，非法纠正回退空字符串。
+路径类内存为 ``pathlib.Path | None``，非法/空纠正为 ``None``；json 落盘走 pydantic 对 Path 的标准序列化。
+日期时间为标准库 ``date`` / ``time`` / ``datetime``：加载与导出走 pydantic 标准序列化；
+``date`` 字段若收到 ``datetime``，由 ConfigGroup 先强制目标时区再存为 ``date``。
 """
 
 from __future__ import annotations
@@ -9,7 +10,8 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import tzinfo
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
@@ -23,12 +25,6 @@ from app.utils.constants import (
     KEYBOARD_KEYS,
     RESERVED_NAMES,
 )
-
-# ──────────────────────────── 共享常量 ────────────────────────────
-
-DEFAULT_DATETIME = datetime.strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
-"""日期/时间校验失败时的默认回退时刻。"""
-
 
 # ──────────────────────────── 基础工具 ────────────────────────────
 
@@ -81,86 +77,106 @@ def _is_forbidden_path(resolved: Path, *, allow_cwd: bool) -> bool:
     return resolved in FORBIDDEN_PATH_EXACT
 
 
-def _normalize_path_input(value: object) -> str:
-    """输入 → 展开后的绝对路径字符串；空 → ``\"\"``；非法 → ``\"\"``。"""
+def _normalize_path_input(value: object) -> Path | None:
+    """输入 → 展开后的绝对 Path；空 / 非法 → ``None``。"""
+    if value is None:
+        return None
     if isinstance(value, Path):
-        text = "" if not value.parts else str(value)
-    elif value is None:
-        text = ""
+        if not value.parts:
+            return None
+        text = str(value)
     else:
         text = str(value).strip()
     if not text:
-        return ""
+        return None
     try:
         path = _expand_raw_path(text)
         if path.suffix.lower() == ".lnk":
             if not path.is_file():
-                return ""
+                return None
             target = _resolve_windows_shortcut(path)
             if target is None:
-                return ""
+                return None
             path = _expand_raw_path(str(target))
-        return path.as_posix()
+        return path
     except (OSError, ValueError, RuntimeError):
-        return ""
+        return None
 
 
-# ──────────────────────────── 路径类（纠正 → \"\"） ────────────────────────────
+# ──────────────────────────── 路径类（纠正 → None） ────────────────────────────
 
 
-def _validate_file_path(value: object) -> str:
+def _validate_file_path(value: object) -> Path | None:
     """已存在普通文件；禁止工作目录与 ``FORBIDDEN_*``。"""
-    text = _normalize_path_input(value)
-    if not text:
-        return ""
-    path = Path(text)
+    path = _normalize_path_input(value)
+    if path is None:
+        return None
     try:
         if not path.is_file() or _is_forbidden_path(path, allow_cwd=False):
-            return ""
+            return None
     except (OSError, ValueError):
-        return ""
-    return path.as_posix()
+        return None
+    return path
 
 
-def _validate_folder_path(value: object) -> str:
+def _validate_folder_path(value: object) -> Path | None:
     """已存在目录；禁止工作目录与 ``FORBIDDEN_*``。"""
-    text = _normalize_path_input(value)
-    if not text:
-        return ""
-    path = Path(text)
+    path = _normalize_path_input(value)
+    if path is None:
+        return None
     try:
         if not path.is_dir() or _is_forbidden_path(path, allow_cwd=False):
-            return ""
+            return None
     except (OSError, ValueError):
-        return ""
-    return path.as_posix()
+        return None
+    return path
 
 
-def _validate_script_root_path(value: object) -> str:
+def _validate_script_root_path(value: object) -> Path | None:
     """脚本根目录；放行工作目录，仍禁系统目录。"""
-    text = _normalize_path_input(value)
-    if not text:
-        return ""
-    path = Path(text)
+    path = _normalize_path_input(value)
+    if path is None:
+        return None
     try:
         if not path.is_dir() or _is_forbidden_path(path, allow_cwd=True):
-            return ""
+            return None
     except (OSError, ValueError):
-        return ""
-    return path.as_posix()
+        return None
+    return path
 
 
-def _validate_emulator_path(value: object) -> str:
-    """模拟器/游戏管理程序路径：须为已存在文件；禁止工作目录与 ``FORBIDDEN_*``。
-
-    带 ``emulator_type`` 的管理器 exe 定位仍由业务层完成；此处只做路径清洗与存在性。
-    """
-    return _validate_file_path(value)
+_EXECUTABLE_SUFFIXES = {".exe", ".bat", ".cmd", ".com"}
+"""可执行扩展名：Windows 可直接运行的程序 / 批处理。"""
 
 
-def _validate_loose_path(value: object) -> str:
+def _validate_executable_path(value: object) -> Path | None:
+    """可执行文件：在文件校验基础上补充后缀名校验；禁止工作目录与 ``FORBIDDEN_*``。"""
+    path = _validate_file_path(value)
+    if path is None:
+        return None
+    if path.suffix.lower() not in _EXECUTABLE_SUFFIXES:
+        return None
+    return path
+
+
+def _validate_loose_path(value: object) -> Path | None:
     """可不存在；仅展开与格式清洗。"""
     return _normalize_path_input(value)
+
+
+# ──────────────────────────── 时区标记 / date←datetime ────────────────────────────
+
+
+@dataclass(frozen=True)
+class TzMarker:
+    """字段级时区覆盖；置于 ``Annotated[date, tz(...)]``（date 收到 datetime 时用）。"""
+
+    tz: tzinfo
+
+
+def tz(info: tzinfo) -> TzMarker:
+    """声明字段目标时区（覆盖 ``ConfigEntry.timezone``）。"""
+    return TzMarker(tz=info)
 
 
 # ──────────────────────────── 字符串 / 其它 ────────────────────────────
@@ -190,50 +206,6 @@ def _validate_json_list_string(value: object) -> str:
     if not isinstance(parsed, list):
         raise ValueError("JSON 不是列表类型")
     return text
-
-
-def _validate_hhmm_string(value: object) -> str:
-    text = _to_string(value)
-    if not text:
-        return DEFAULT_DATETIME.strftime("%H:%M")
-    try:
-        datetime.strptime(text, "%H:%M")
-        return text
-    except ValueError:
-        return DEFAULT_DATETIME.strftime("%H:%M")
-
-
-def _validate_ymd_string(value: object) -> str:
-    text = _to_string(value)
-    if not text:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d")
-    try:
-        datetime.strptime(text, "%Y-%m-%d")
-        return text
-    except ValueError:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d")
-
-
-def _validate_ymd_hm_string(value: object) -> str:
-    text = _to_string(value)
-    if not text:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d %H:%M")
-    try:
-        datetime.strptime(text, "%Y-%m-%d %H:%M")
-        return text
-    except ValueError:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d %H:%M")
-
-
-def _validate_ymd_hms_string(value: object) -> str:
-    text = _to_string(value)
-    if not text:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
-        return text
-    except ValueError:
-        return DEFAULT_DATETIME.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _validate_url_string(value: object) -> str:
@@ -299,27 +271,23 @@ def _validate_cli_argument_list(value: object) -> str:
 
 JsonDictString = Annotated[str, AfterValidator(_validate_json_dict_string)]
 JsonListString = Annotated[str, AfterValidator(_validate_json_list_string)]
-HHMMString = Annotated[str, AfterValidator(_validate_hhmm_string)]
-YmdString = Annotated[str, AfterValidator(_validate_ymd_string)]
-YmdHmString = Annotated[str, AfterValidator(_validate_ymd_hm_string)]
-YmdHmsString = Annotated[str, AfterValidator(_validate_ymd_hms_string)]
 UrlString = Annotated[str, AfterValidator(_validate_url_string)]
 KeyboardKeyString = Annotated[str, AfterValidator(_validate_keyboard_key)]
 WindowsNameString = Annotated[str, AfterValidator(_validate_windows_name)]
 CliArgumentString = Annotated[str, AfterValidator(_validate_cli_argument)]
 CliArgumentListString = Annotated[str, AfterValidator(_validate_cli_argument_list)]
 
-FilePath = Annotated[str, BeforeValidator(_validate_file_path)]
-"""已存在文件路径（str）；展开 ``~``/``%ENV%``、解析 ``.lnk``；非法 → ``\"\"``。"""
+FilePath = Annotated[Path | None, BeforeValidator(_validate_file_path)]
+"""已存在文件路径；展开 ``~``/``%ENV%``、解析 ``.lnk``；非法 / 空 → ``None``。"""
 
-FolderPath = Annotated[str, BeforeValidator(_validate_folder_path)]
-"""已存在目录路径（str）；非法 → ``\"\"``。"""
+FolderPath = Annotated[Path | None, BeforeValidator(_validate_folder_path)]
+"""已存在目录路径；非法 / 空 → ``None``。"""
 
-ScriptRootPath = Annotated[str, BeforeValidator(_validate_script_root_path)]
-"""脚本根目录（str）；放行工作目录；非法 → ``\"\"``。"""
+ScriptRootPath = Annotated[Path | None, BeforeValidator(_validate_script_root_path)]
+"""脚本根目录；放行工作目录；非法 / 空 → ``None``。"""
 
-EmulatorPath = Annotated[str, BeforeValidator(_validate_emulator_path)]
-"""模拟器/游戏管理程序路径（str）；非法 → ``\"\"``。"""
+ExecutablePath = Annotated[Path | None, BeforeValidator(_validate_executable_path)]
+"""可执行文件路径；展开 ``~``/``%ENV%``、解析 ``.lnk``；非法 / 空 / 非可执行后缀 → ``None``。"""
 
-LoosePath = Annotated[str, BeforeValidator(_validate_loose_path)]
-"""宽松路径（str）；可不存在，仅展开清洗；非法 → ``\"\"``。"""
+LoosePath = Annotated[Path | None, BeforeValidator(_validate_loose_path)]
+"""宽松路径；可不存在，仅展开清洗；非法 / 空 → ``None``。"""

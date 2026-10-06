@@ -6,7 +6,7 @@
     api_key: Annotated[str, AfterValidator(strip), encrypted()] = ""
 
 内存常态为 ``EncryptedValue``（密文）；读路径 unwrap 为明文 ``str``；
-落盘默认导出密文，``if_decrypt=True`` 导出明文。
+落盘（``audience=persist``）导出密文，API（``audience=api``）导出明文。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pydantic_core import core_schema
 
 from app.utils.security import dpapi_decrypt, dpapi_encrypt
 
-from ..wire import ExportContext
+from ..core.node import ExportContext
 
 ENCRYPTED_PREFIX = "DPAPI:"
 """加密密文落盘前缀。"""
@@ -78,10 +78,11 @@ def _parse_encrypted(value: object) -> EncryptedValue:
 
 
 def _dump_encrypted(value: EncryptedValue, info: object) -> str:
+    # mode=python 与 audience 正交：仍导出字符串；明文/密文仍看 audience
     ctx = getattr(info, "context", None)
-    if isinstance(ctx, ExportContext) and ctx.if_decrypt:
+    if isinstance(ctx, ExportContext) and ctx.audience == "api":
         return value.plaintext()
-    if isinstance(ctx, dict) and ctx.get("if_decrypt"):
+    if isinstance(ctx, dict) and ctx.get("audience") == "api":
         return value.plaintext()
     return value.ciphertext()
 

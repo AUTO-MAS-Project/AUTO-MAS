@@ -10,32 +10,24 @@ from app.api.update import (
 
 
 class UpdateApiTest(unittest.IsolatedAsyncioTestCase):
-    async def test_download_with_target_version_sets_remote_version_before_starting(self):
-        original_version = Updater.remote_version
-        try:
-            with patch(
-                "app.api.update.Updater.start_download", AsyncMock(return_value=True)
-            ):
-                result = await download_update(target_version="v9.9.9")
+    # 目标版本经 start_download 透传进冻结的下载 job，不再改写 Updater.remote_version
 
-            self.assertEqual(result.code, 200)
-            self.assertEqual(Updater.remote_version, "v9.9.9")
-        finally:
-            Updater.remote_version = original_version
+    async def test_download_forwards_target_version_to_start_download(self):
+        start = AsyncMock(return_value=True)
+        with patch("app.api.update.Updater.start_download", start):
+            result = await download_update(target_version="v9.9.9")
+
+        self.assertEqual(result.code, 200)
+        start.assert_awaited_once_with(target_version="v9.9.9")
 
     async def test_download_returns_conflict_when_download_already_running(self):
-        original_version = Updater.remote_version
-        try:
-            with patch(
-                "app.api.update.Updater.start_download", AsyncMock(return_value=False)
-            ):
-                result = await download_update(target_version="v9.9.9")
+        start = AsyncMock(return_value=False)
+        with patch("app.api.update.Updater.start_download", start):
+            result = await download_update(target_version="v9.9.9")
 
-            self.assertEqual(result.code, 409)
-            self.assertEqual(result.message, "已有更新任务在进行中, 请勿重复操作")
-            self.assertEqual(Updater.remote_version, "v9.9.9")
-        finally:
-            Updater.remote_version = original_version
+        self.assertEqual(result.code, 409)
+        self.assertEqual(result.message, "已有更新任务在进行中, 请勿重复操作")
+        start.assert_awaited_once_with(target_version="v9.9.9")
 
     async def test_cancel_returns_conflict_when_no_download_is_running(self):
         with patch(

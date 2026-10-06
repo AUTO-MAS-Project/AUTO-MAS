@@ -85,30 +85,62 @@ export interface WSTaskNoticeData {
   message: string
 }
 
-export interface WSTaskUserInfoData {
-  user_id: string
-  name: string
-  status: string
+export enum WSTaskMode {
+  AUTO_PROXY = 'AutoProxy',
+  MANUAL_REVIEW = 'ManualReview',
+  SCRIPT_CONFIG = 'ScriptConfig',
 }
-
-export interface WSTaskScriptInfoData {
-  script_id: string
-  name: string
-  status: string
-  userList: WSTaskUserInfoData[]
-}
-
-export type WSTaskMode = 'AutoProxy' | 'ManualReview' | 'ScriptConfig'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
   scriptType: string
 }
 
-/** 任务信息快照 (type=task.info.updated) */
-export interface WSTaskInfoUpdatedData {
-  task_info: WSTaskScriptInfoData[]
+/** 与后端 ``TaskItem.model_dump`` 对齐的任务信息载荷（运行态 / HTTP / WS 共用） */
+export interface TaskUserItemPayload {
+  info: {
+    name: string
+    status: string
+    result?: string
+  }
+  log_record?: Record<string, unknown>
 }
+
+export interface TaskScriptItemPayload {
+  info: {
+    name: string
+    status: string
+    result?: string
+  }
+  current: {
+    index: string | null
+    /** Virtual：经 index → 用户最新 log_record 正文 */
+    log?: string
+  }
+  users: Record<string, TaskUserItemPayload>
+}
+
+export interface TaskItemPayload {
+  info: {
+    mode: WSTaskMode
+    queue_id: string | null
+    script_id: string | null
+    user_id: string | null
+    result?: string
+  }
+  current: {
+    index: string | null
+    /** Virtual：经 scripts[index].current.log → 当前用户 log_record */
+    log?: string
+  }
+  scripts: Record<string, TaskScriptItemPayload>
+}
+
+/**
+ * 任务信息更新 (type=task.info.updated)。
+ * data 段即 TaskItem API dump，无额外包装。
+ */
+export type WSTaskInfoUpdatedData = TaskItemPayload
 
 /** 当前任务日志 (type=task.log.updated) */
 export interface WSTaskLogUpdatedData {
@@ -120,15 +152,16 @@ export interface WSTaskCompletedData {
   result: string
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
-  task_info: WSTaskScriptInfoData[]
+  task: TaskItemPayload
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
   taskId: string
   mode: WSTaskMode
-  scripts: WSTaskScriptIdentityData[]
   queueId?: string | null
+  scriptId?: string | null
+  userId?: string | null
   taskName?: string | null
   taskType?: string | null
 }

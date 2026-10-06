@@ -1,6 +1,9 @@
 """最小 PyPI 插件示例包。"""
 
-from .plugin import Plugin
-from .schema import Config
+from auto_mas_core import PLUGIN_API_VERSION
 
-__all__ = ["Plugin", "Config"]
+from .plugin import Plugin
+
+PLUGIN = Plugin
+
+__all__ = ["PLUGIN", "PLUGIN_API_VERSION", "Plugin"]

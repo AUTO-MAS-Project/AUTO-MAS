@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+from datetime import datetime, timezone
 from typing import Annotated, Any, cast
 from uuid import UUID
 
@@ -31,13 +33,14 @@ from app.config import (
     FieldChangeEvent,
     NodeState,
     config_manager,
+    ui,
 )
 from app.config.errors import (
     ConfigAggregateError,
     DeletedNodeError,
 )
 from app.config.examples.reference_config import ExampleWebhook
-from app.config.types import HHMMString
+from app.utils.constants import UTC8
 
 
 def _fail(message: str) -> None:
@@ -147,7 +150,7 @@ async def test_fastapi_collection_export() -> None:
     col = WebhookCollection()
     await col.activate()
     col.add(
-        ExampleWebhook, wire={"info": {"name": "w1"}, "data": {"url": "https://a.b"}}
+        ExampleWebhook, payload={"info": {"name": "w1"}, "data": {"url": "https://a.b"}}
     )
     await col.commit()
 
@@ -165,13 +168,13 @@ async def test_fastapi_collection_export() -> None:
         _fail(f"集合响应应 200，实际 {resp.status_code}: {resp.text}")
     payload = resp.json()
     if set(payload) != {"order", "data"}:
-        _fail(f"集合 Wire 顶层应为 order/data，实际 {list(payload)}")
+        _fail(f"集合文档顶层应为 order/data，实际 {list(payload)}")
     if len(payload["order"]) != 1 or payload["order"][0]["type"] != "ExampleWebhook":
         _fail("集合 order 导出异常")
     only = next(iter(payload["data"].values()))
     if only["info"]["name"] != "w1" or only["data"]["url"] != "https://a.b":
-        _fail(f"集合成员 Wire 导出异常: {only}")
-    _ok("FastAPI 类型化 Collection 导出 Wire 文档")
+        _fail(f"集合成员文档导出异常: {only}")
+    _ok("FastAPI 类型化 Collection 导出配置文档")
 
 
 # ════════════════════ 冷态 → 热态链路 ════════════════════
@@ -267,24 +270,30 @@ async def test_hot_reject_invalid_literal_rollback() -> None:
 
 
 async def test_hot_autocorrect_field() -> None:
+    """Path 非法纠正为 None；date 字段收 datetime 时先转时区再存 date。"""
+    from datetime import date
+
+    from app.config import FilePath
+
     class G(ConfigGroup):
-        t: HHMMString = "08:00"
+        p: FilePath = None
+        d: date = date(2000, 1, 1)
 
     class Cfg(ConfigEntry):
         g: G = Field(default_factory=G)
 
     cfg = Cfg()
     await cfg.activate()
-    cfg.g.t = "25:99"  # 非法时刻 → 自动纠正为默认
+    cfg.g.p = "/no/such/file_zzzz.exe"
     await cfg.commit()
-    got_t = cast(str, cfg.g.t)
-    if got_t != "00:00":
-        _fail(f"非法时刻应自动纠正为默认，实际 {cfg.g.t!r}")
-    cfg.g.t = "09:30"
+    if cfg.g.p is not None:
+        _fail(f"非法 Path 应纠正为 None，实际 {cfg.g.p!r}")
+    # UTC 深夜 → UTC+8 次日
+    cfg.g.d = datetime(2000, 1, 1, 20, 0, tzinfo=timezone.utc)
     await cfg.commit()
-    if cfg.g.t != "09:30":
-        _fail("合法时刻应保留")
-    _ok("热态纠正型字段自动回退默认")
+    if cfg.g.d != date(2000, 1, 2):
+        _fail(f"date←datetime 应按 Entry.timezone 再取日期，实际 {cfg.g.d!r}")
+    _ok("热态 Path→None 纠正与 date←datetime 时区转换")
 
 
 async def test_hot_numeric_bounds() -> None:
@@ -398,13 +407,18 @@ async def test_locked_write_guard() -> None:
     e = ExampleWebhook()
     await e.activate()
     ticket = await e.lock_x()
+    e.info.name = "holder"
+    await e.commit()
+    if e.info.name != "holder":
+        _fail("X 持票者写入应生效")
+    other = contextvars.Context()
     try:
-        e.info.name = "x"
-        _fail("锁定后写入应失败")
+        other.run(setattr, e.info, "name", "x")
+        _fail("非持有者写入应失败")
     except ValueError:
         pass
     if e.info.name == "x":
-        _fail("锁定写入不应生效")
+        _fail("非持有者写入不应生效")
     await e.unlock(ticket)
     e.info.name = "ok"
     await e.commit()

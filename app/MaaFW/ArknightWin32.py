@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -45,7 +45,7 @@ from maa.custom_action import CustomAction
 
 from app.core import Config, MaaFWManager
 from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
+from app.core.ws.protocol import WSTaskNoticeData
 from app.utils import get_logger, busy_wait
 
 logger = get_logger("明日方舟PC工具")
@@ -61,8 +61,17 @@ class _ArknightWin32Toolkit:
         self.tasker = Tasker()
         self.listener = keyboard.Listener()
 
-        Config.ToolsConfig.arknights_pc_get_connected = self.get_connect_status
-        Config.ToolsConfig.bind("ArknightsPC", "Enabled", self.on_enabled_change)
+        # 新基类 Tools：回调挂到 virtual 依赖的 getter；enabled 变更用 FieldChange 订阅
+        Config.tools.arknights_pc_get_connected = self.get_connect_status
+        from app.config.signals import FieldChangeEvent
+        from app.models.config import Tools
+
+        async def _on_enabled(sender: object, event: FieldChangeEvent) -> None:
+            await self.on_enabled_change(bool(event.value))
+
+        Tools.connect(
+            _on_enabled, phase="runtime", group="arknights_pc", field="enabled"
+        )
 
         self.p = psutil.Process(os.getpid())
         self.original_nice = self.p.nice()
@@ -72,12 +81,12 @@ class _ArknightWin32Toolkit:
         pyautogui.PAUSE = 0
         pyautogui.FAILSAFE = False
 
-        await self.on_enabled_change(Config.ToolsConfig.get("ArknightsPC", "Enabled"))
+        await self.on_enabled_change(Config.tools.arknights_pc.enabled)
 
     async def on_enabled_change(self, enabled: bool) -> None:
         """启用状态改变回调"""
 
-        Config.ToolsConfig.arknights_pc_running = False
+        Config.tools.arknights_pc_running = False
 
         if enabled:
             # 提高进程优先级，启用1ms定时器精度
@@ -172,37 +181,38 @@ class _ArknightWin32Toolkit:
         else:
             return
 
-        if k == Config.ToolsConfig.get("ArknightsPC", "PauseKey"):
+        if k == Config.tools.arknights_pc.pause_key:
             logger.info("触发暂停键位")
-            Config.ToolsConfig.arknights_pc_running = (
-                not Config.ToolsConfig.arknights_pc_running
+            Config.tools.arknights_pc_running = (
+                not Config.tools.arknights_pc_running
             )
-            if Config.ToolsConfig.arknights_pc_running:
+            if Config.tools.arknights_pc_running:
                 logger.info("已恢复")
             else:
                 logger.info("已暂停")
             return
 
-        if not Config.ToolsConfig.arknights_pc_running:
+        if not Config.tools.arknights_pc_running:
             return
 
-        if k in Config.ToolsConfig.arknights_pc_keys and not self.get_connect_status():
+        if k in Config.tools.arknights_pc_keys and not self.get_connect_status():
             logger.warning("未连接到明日方舟客户端，按键操作无效")
             return
 
-        if k == Config.ToolsConfig.get("ArknightsPC", "SelectDeployedKey"):
+        pc = Config.tools.arknights_pc
+        if k == pc.select_deployed_key:
             logger.info("触发选中已部署干员")
             self.tasker.post_task("选中已部署干员[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "UseSkillKey"):
+        elif k == pc.use_skill_key:
             logger.info("触发释放技能")
             self.tasker.post_task("释放技能[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "RetreatKey"):
+        elif k == pc.retreat_key:
             logger.info("触发撤退干员")
             self.tasker.post_task("撤退干员[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "NextFrameKey"):
+        elif k == pc.next_frame_key:
             logger.info("触发下一帧")
             self.tasker.post_task("下一帧[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "AnotherQuitKey"):
+        elif k == pc.another_quit_key:
             logger.info("触发退出/暂停额外键位")
             asyncio.run_coroutine_threadsafe(self.click_pause_button(), Config.loop)
 

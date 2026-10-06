@@ -12,6 +12,8 @@
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
+- **任何代码编写/重构前**必须阅读 `mas-skills` Global Constraints §9 与 `.agents/skills/mas-code-standards/references/inline-and-comments.md`（内联、嵌套、禁止无用 helper、短函数名、注释），并加载 `mas-code-standards`、`mas-function-design`。
+- **旧插件仅参考**：`app/plugins/`、`archive/old_plugins/` 默认禁止修改；插件相关改动只针对新系统（`app/plugin/` 等），细则见 `mas-skills` §11。
 - `frontend` 指本仓库前端目录和前端任务；涉及 `frontend`、Vue、UI、组件、路由或前端 API 时，按 `.agents/skills` 中的前端 Skill 执行。
 - 除非用户明确要求，不要创建提交、推送分支、发布 Issue/PR，或切换到会丢失当前工作的分支。
 - 后端 schema 变更后只能通过生成器更新前端 API 代码；不要手改 OpenAPI 生成文件。

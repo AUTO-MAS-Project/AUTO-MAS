@@ -1,3 +1,7 @@
+from auto_mas_core import PLUGIN_API_VERSION
+
 from .plugin import Plugin
 
-__all__ = ["Plugin"]
+PLUGIN = Plugin
+
+__all__ = ["PLUGIN", "PLUGIN_API_VERSION", "Plugin"]

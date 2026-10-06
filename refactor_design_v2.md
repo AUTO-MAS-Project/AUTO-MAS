@@ -3,9 +3,11 @@
 > 版本：v3.7（2026-07-30）— **配置全量切流完成（1C + 2A）**
 > 基于原 config_framework_v2 + 9 份设计草稿 + 多轮评审
 > v3.1–v3.4：见版本注记与 §11–§12
-> v3.5：Collection 开放 Entry 类型集为框架一等能力
+> v3.5：Collection 开放 Entry 类型集为框架一等能力（**2026-08-03 起 §1.5 整节废弃**，见该节横幅）
 > v3.6：P6 切流注记
-> **v3.7：框架已迁入 `app/config/`；Global/Scripts/Games/Plan/Queue/Tools 全量 ConfigEntry；API/`AppConfig` 走新门面；ok_* 经 `automas.plugins` + `ScriptAdapterPlugin`；旧 ConfigBase 领域权威已废弃（仅留兼容别名/残桩）。首页与工具插件化仍不做。**
+> **v3.7：…**  
+> **2026-08-03 勘误**：§1.5「Collection 开放 Entry 类型集」及依赖该节的目标 13/14、§12.10 **整段废弃**。
+> **替代**：全 Collection 通用 `add_type` / `remove_type` / `reload_type`（无 open 开关；静态 `TEntry` 上界；REMOVE/RELOAD 级联或 rematerialize 均单事务）→ **`配置基类.md` §5.4**。
 
 ---
 
@@ -18,13 +20,14 @@
 **插件系统**：基于新的设计思路重新设计插件系统。旧 `app/plugins/` 中事件总线、生命周期钩子、Schema 工具等已退出主启动；运行时以 `app/plugin` + `auto_mas_core` 为准。
 
 几个关键决定：
+
 - **预设字段统一放在 `types.py`**，新增字段与现有的放同一文件
 - **UI 提示作为 Entry 的虚拟字段**：`ConfigEntry` 上挂载 `_ui.__ui_hints__`
 - **select 是注解标记**：与 `encrypted()` 同级
 - **取消 int 命名别名**，手写 `Field(ge=..., le=...)`
 - **配置基类位于 `app/config/`**（原 `config_framework_v2` 已迁入），按应用层级组织；可直接使用 `app/utils`
 - **本轮不做**首页组件插件化、工具页插件化（§5.10.2 / §5.10.4 / §6.4 仅保留草案，实施搁置）
-- **开放 Collection 的 Entry 类型集是配置基类能力**；插件增删/热重载必须调用 Collection API
+- **开放 Collection（§1.5 open/closed）已废弃**；现行规格为 **`配置基类.md` §5.4**（全集合 `add_type`/`remove_type`/`reload_type`）
 - **配置权威已全量切流**：`AppConfig` 根为 `setting/scripts/games/plans/queues/tools`；落盘 TOML；JSON→TOML 由 `app.config.migrate` 负责
 
 ---
@@ -52,18 +55,19 @@ app/config/
 
 配置基类**不是**独立发布框架，而是 AUTO-MAS 应用代码的一部分。包结构调整与 `app/utils` 复用按**应用层级**优化，`app.config` 直接引用 `app.utils`。
 
-| 旧文件 | 改造方式 |
-|--------|---------|
-| `support/constants.py` | 删除。常量移入 `types.py` 末尾、`fields/encrypted.py` |
-| `support/logger.py` | 删除，直接 `from app.utils.logger import get_logger` |
-| `support/security.py` | 删除，`encrypted.py` 直接 `from app.utils.security import ...` |
-| 落盘 IO | `app/utils/io.py` 提供 `read_toml`/`write_toml`（原子写、2 空格缩进）；配置根与插件配置宿主调用之；`wire.py` 只保留 dict↔模型形状 |
+| 旧文件                 | 改造方式                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `support/constants.py` | 删除。常量移入 `types.py` 末尾、`fields/encrypted.py`                                                                             |
+| `support/logger.py`    | 删除，直接 `from app.utils.logger import get_logger`                                                                              |
+| `support/security.py`  | 删除，`encrypted.py` 直接 `from app.utils.security import ...`                                                                    |
+| 落盘 IO                | `app/utils/io.py` 提供 `read_toml`/`write_toml`（原子写、2 空格缩进）；配置根与插件配置宿主调用之；`wire.py` 只保留 dict↔模型形状 |
 
 ### 1.3 预设字段补充
 
 原则：**只补主程序 `ConfigBase` 校验器已在用、且迁移后仍需要的类型**；不为「将来可能用」发明校验器。Wire 形态统一为 **`str`（路径也是 str）**，非法纠正回退 **空字符串**（覆盖当前 v2 `FilePath→Path`/`DEFAULT_FILE_PATH` 语义，以兼容 TOML 与旧配置）。
 
 **路径类**（对齐 `FileValidator`/`FolderValidator`/`ScriptRootPathValidator`/`EmulatorPathValidator`）：
+
 - `FilePath`：已存在文件。展开 `~`/`%ENV%`、解析 `.lnk`、禁止工作目录及 `FORBIDDEN_*`。非法→`""`。
 - `FolderPath`：已存在目录。同上，要求 `is_dir()`。非法→`""`。
 - `ScriptRootPath`：脚本根目录；**放行工作目录**。非法→`""`。
@@ -71,6 +75,7 @@ app/config/
 - `LoosePath`：可不存在；仅展开与格式清洗。非法→`""`。
 
 **字符串/其它（有现成校验器依据）**：
+
 - 保留：`UrlString`、`HHMMString`、`YmdString`、`YmdHmString`、`YmdHmsString`、`JsonDictString`、`JsonListString`、`KeyboardKeyString`
 - 新增：`WindowsNameString`（←`UserNameValidator`）、`CliArgumentString`（←`ArgumentValidator`）、`CliArgumentListString`（←`AdvancedArgumentValidator`）
 
@@ -92,14 +97,19 @@ class MyConfig(ConfigEntry):
 
 ### 1.5 Collection 开放 Entry 类型集（框架一等能力）
 
+> **【已废弃 / DEPRECATED】（2026-08-03）**  
+> 本节 **open/closed**、`register_entry_type` / `owner=` / `reload` / `adopt` 等**整体废弃**。  
+> **现行实现依据**：`配置基类.md` **§5.4**（全 Collection `add_type`/`remove_type`/`reload_type`；无启用标记；REMOVE 级联 / RELOAD 原位 rematerialize 均单事务）。  
+> 下文正文仅作历史参考。
+
 插件会动态增删/重载集合允许的 Entry 类。这是 **`ConfigCollection` 的运行时 API**，不是插件系统私有逻辑。完整规格写入 `配置基类.md` §5.3；此处给应用侧结论。
 
 #### 1.5.1 两种模式
 
-| 模式 | ClassVar | 含义 | 典型 |
-|------|----------|------|------|
-| **closed** | `_entry_type_mode = "closed"`（默认） | 构造时 `_entry_types` 固定；禁止运行时改类型表 | 队列项、固定结构嵌套 |
-| **open** | `_entry_type_mode = "open"` | `ACTIVE` 且集合**未锁**时可 `register` / `unregister` / `reload` | `scripts` / `games` |
+| 模式       | ClassVar                              | 含义                                                             | 典型                 |
+| ---------- | ------------------------------------- | ---------------------------------------------------------------- | -------------------- |
+| **closed** | `_entry_type_mode = "closed"`（默认） | 构造时 `_entry_types` 固定；禁止运行时改类型表                   | 队列项、固定结构嵌套 |
+| **open**   | `_entry_type_mode = "open"`           | `ACTIVE` 且集合**未锁**时可 `register` / `unregister` / `reload` | `scripts` / `games`  |
 
 #### 1.5.2 运行时 API（仅 open + ACTIVE + 集合未锁）
 
@@ -190,11 +200,11 @@ pyright 对 `-> type[ScriptEntry]` 会检查返回的类是否兼容。
 
 #### 1.5.4 与锁定、重载的关系
 
-| 操作 | Collection 锁 | 成员 Entry 锁 | 成员是否存在 |
-|------|---------------|---------------|--------------|
-| register 新类型 D | 须未锁 | — | — |
-| unregister 类型 C | 须未锁 | — | **必须为 0** |
-| reload 类型 C | 须未锁 | **该类型全部未锁** | 可有实例（会 rematerialize） |
+| 操作              | Collection 锁 | 成员 Entry 锁      | 成员是否存在                 |
+| ----------------- | ------------- | ------------------ | ---------------------------- |
+| register 新类型 D | 须未锁        | —                  | —                            |
+| unregister 类型 C | 须未锁        | —                  | **必须为 0**                 |
+| reload 类型 C     | 须未锁        | **该类型全部未锁** | 可有实例（会 rematerialize） |
 
 插件系统 **只调用上述 API**；不得直接改 `_entry_types`，不得在未满足守卫时强行 rematerialize。
 
@@ -254,10 +264,12 @@ class ComponentHint(TypedDict, total=False):
 ```
 
 **禁止出现在 hint 中的项**（目标 3）：
+
 - 任何 label/help/placeholder/description 文案
 - 任何 width/span/size/栅格列数
 
 **布局契约（前端独占）**：
+
 - 宽屏：组内按 Ant Design 24 栅格排布；**每组宽度比例由前端按组名预定义**；单组件放不下则换行。
 - 窄屏：每行固定 1 个组件。
 - 后端 `__ui_hints__` 只保证组内字段顺序；不参与宽度计算。
@@ -276,19 +288,23 @@ class Select:
 ```
 
 **形式①：Literal 值列表**。直接从 `Literal[]` 提取 value，前端查 i18n：
+
 ```python
 class Game(ConfigGroup):
     type: Literal["mumu", "ldplayer", "general"] = "mumu"
 ```
+
 输出 `{"field":"type","component":"select","options":[{"value":"mumu"}],"multiple":false}`
 
 **形式②：ref 引用**。识别 `RefField` 标记，实际值是 UUID，展示值从目标 Entry 的 `_display_name` 读取，同时输出 `{label, value}`：
+
 ```python
 class Data(ConfigGroup):
     script_ref: Annotated[str, ref("scripts")] = "-"
 ```
 
 **形式③：HTTP 端点**。`Select(endpoint="...")` 标记端路径，前端直接访问获取 `[{label,value},...]`：
+
 ```python
 class Data(ConfigGroup):
     emulator: Annotated[str, Select(endpoint="/api/plugins/xx/emulator-options")] = ""
@@ -305,11 +321,9 @@ class Status(ConfigGroup):
 
 ### 2.6 i18n 方案
 
-主程序 i18n 在 `res/i18n/`，插件 i18n 在 `src/locales/`。插件激活时合并到全局字典，通过 WS 触发前端热重载。key 约定：
-```
-cfg.<类名>.<组名>.<字段名>.label|help
-plugin.<插件名>.<widget|tool>.<id>.label|help
-```
+后端全局服务源代码固定在 `app/core/i18n.py`。主程序资源位于 `res/i18n/<locale>.json`；插件资源留在包内 `i18n/<locale>.json`，本地源码对应 `src/<import_name>/i18n/<locale>.json`，安装包通过 `importlib.resources` 读取。文件采用 Weblate 兼容的 monolingual JSON，键使用 `core.` 或 `plugins.<plugin_name>.` 前缀。
+
+服务从 `Config.plugin_registry` 读取全部登记项，按当前 locale → `en` → 原始键回退，投影为 Vue I18n 嵌套 messages，并提供 `/api/i18n/messages`、`/api/i18n/locales`、`/api/i18n/locale`。资源或语言设置变化时通过 WS 发布 `I18n / i18n.updated`，载荷只含 `revision`。
 
 ---
 
@@ -452,7 +466,7 @@ plugins/auto_mas_core/      # 核心插件（不发 PyPI，版本号=主程序�
 name = "automas-plugin-example"
 version = "1.2.0"
 dependencies = [
-  "auto-mas-core>=5.0,<6",
+  "auto_mas_core>=5.0,<6",
   "httpx>=0.27",
 ]
 
@@ -474,15 +488,17 @@ wants = []
 
 ### 5.4 核心插件与版本管理
 
-`auto-mas-core`：**不发 PyPI**，代码在 `plugins/auto_mas_core/`，版本号 = 主程序版本（读 `res/version.json`）。
+`auto_mas_core`：**不发 PyPI**，代码在 `plugins/auto_mas_core/`，版本号 = 主程序版本（读 `res/version.json`）。
 
 启动时：
+
 1. 将 core 的 `src/` 加入 `sys.path`
-2. 向 `importlib.metadata` 注册 **合成发行版**（或写入本地 `.dist-info` 等价物），使其它插件的 `Requires-Dist: auto-mas-core>=X,<Y` 可被解析
-3. 加载其余插件前校验对 `auto-mas-core` 的版本约束；失败 → 状态 `error`，不激活
+2. 向 `importlib.metadata` 注册 **合成发行版**（或写入本地 `.dist-info` 等价物），使其它插件的 `Requires-Dist: auto_mas_core>=X,<Y` 可被解析
+3. 加载其余插件前校验对 `auto_mas_core` 的版本约束；失败 → 状态 `error`，不激活
 
 **升级预检**（目标 7）：主程序更新通道在下载/替换前调用 `plugin_versions.precheck_core_bump(new_version)`：
-- 枚举已安装 + 本地插件对 `auto-mas-core` 的要求
+
+- 枚举已安装 + 本地插件对 `auto_mas_core` 的要求
 - 任一冲突 → **拒绝升级**，返回结构化结果：`{plugin, required, new_core}`，前端提示「下列插件与新版本不兼容」
 
 现有系统插件 `emulator`：**降级为普通本地/可发布插件**（`GameAdapterPlugin`），不再 `SYSTEM_PLUGIN_SPECS`；仅 `auto_mas_core` 保留「核心」地位。
@@ -526,6 +542,7 @@ class ExtensionPlugin(BasePlugin):
 ```
 
 加载流程：
+
 1. 发现双源 → 去重（本地优先）
 2. 解析发行依赖 + `requires_plugins` + 服务 `needs`
 3. **两层拓扑**：先按 `requires_plugins` 排序；同层内再按服务 `provides/needs` 排序；环 → 拒绝加载并报错
@@ -554,6 +571,7 @@ class PluginContext:
 ### 5.7 服务系统
 
 保留 `provide/set/get/inject/miss`。修订：
+
 - 去掉「服务变更自动重载消费者」；改为 `plugin_signals.service_changed.send(...)`
 - owner：`instance_id` → `plugin_name`
 
@@ -648,6 +666,7 @@ class HomepagePlugin(ExtensionPlugin):
 （基类定义见下；完整管理见 §6.3。）
 
 要点：
+
 - `game_type` 为工厂键；Entry 类经 `Config.games.register_entry_type`（§1.5）。
 - **卸载有实例 → EntryTypeInUseError**（须先删配置）。
 - **HMR → reload_entry_type**（集合未锁且该类型成员未锁）。
@@ -687,22 +706,22 @@ class ToolPlugin(ExtensionPlugin):
 
 #### 5.11.1 谁改类型表
 
-| 动作 | 调用方 | 框架 API |
-|------|--------|----------|
-| 插件加载，新增类型 D | `on_start` | `await col.register_entry_type(D, owner=plugin_name)` |
-| 插件卸载，删除类型 C | `on_stop` | `await col.unregister_entry_type("C", owner=...)` |
-| 插件热重载，换类 C' | HMR（非 on_stop） | `await col.reload_entry_type(C', owner=...)` |
+| 动作                 | 调用方            | 框架 API                                              |
+| -------------------- | ----------------- | ----------------------------------------------------- |
+| 插件加载，新增类型 D | `on_start`        | `await col.register_entry_type(D, owner=plugin_name)` |
+| 插件卸载，删除类型 C | `on_stop`         | `await col.unregister_entry_type("C", owner=...)`     |
+| 插件热重载，换类 C'  | HMR（非 on_stop） | `await col.reload_entry_type(C', owner=...)`          |
 
 任一 API 不满足 §1.5 守卫 → 抛错 → 插件加载失败 / **卸载被阻止** / HMR 被拒绝。  
 **不再**在卸载时把成员标成孤儿来「腾出」类型；有实例占用类型时卸载必须失败。
 
 #### 5.11.2 非类型表能力（仍用 Owned-Key）
 
-| 能力域 | 键 | 注册方 |
-|--------|-----|--------|
+| 能力域   | 键                | 注册方                         |
+| -------- | ----------------- | ------------------------------ |
 | 脚本类型 | `script_type_key` | `script_types`（指向插件实例） |
-| 游戏工厂 | `game_type` | `game_manager` |
-| 服务名 | service name | `ServiceRegistry` |
+| 游戏工厂 | `game_type`       | `game_manager`                 |
+| 服务名   | service name      | `ServiceRegistry`              |
 
 语义同前：异主冲突、同主替换、按 owner 卸载。  
 `script_type_key` / `game_type` 的 unregister 也要求：**没有仍依赖该键的运行中任务 / any_alive**；配置实例占用由 Collection 类型表守卫负责。
@@ -787,29 +806,29 @@ script_types.register(new_plugin, owner=plugin_name)  # 同主替换
 
 #### 5.12.1 原则
 
-1. **重载/改类型表是配置基类的事**；插件只触发。  
-2. **集合锁**挡住类型表变更；**成员锁**挡住该类型 reload。  
-3. **删类型**要求零实例 → 卸载与清配置顺序由用户保证。  
+1. **重载/改类型表是配置基类的事**；插件只触发。
+2. **集合锁**挡住类型表变更；**成员锁**挡住该类型 reload。
+3. **删类型**要求零实例 → 卸载与清配置顺序由用户保证。
 4. 实例稳定身份是 **uid**；`reload_entry_type` 可换 Python 对象，持有方按 uid 重取。
 
 #### 5.12.2 三类实例
 
-| 种类 | 存放 | 重载入口 |
-|------|------|----------|
+| 种类           | 存放                       | 重载入口                                               |
+| -------------- | -------------------------- | ------------------------------------------------------ |
 | A 插件自身配置 | `config/plugins/<名>.toml` | Entry 级：未锁则可 `rematerialize` 到新 `config_class` |
-| B 开放集合成员 | scripts/games toml | **仅** `Collection.reload_entry_type` |
-| C 嵌套成员 | 父 Entry 内 | 随父 Entry rematerialize |
+| B 开放集合成员 | scripts/games toml         | **仅** `Collection.reload_entry_type`                  |
+| C 嵌套成员     | 父 Entry 内                | 随父 Entry rematerialize                               |
 
 A 类同样：`entry.is_locked` 则拒绝插件配置热重载。
 
 #### 5.12.3 与旧「孤儿卸载」策略的关系
 
-| 场景 | v3.4 旧说 | v3.5 |
-|------|-----------|------|
-| 卸载时尚有该类型实例 | 标孤儿，允许卸载 | **`EntryTypeInUseError`，阻止卸载** |
-| 启动时类型未注册 | 孤儿占位 | 保留占位 + 插件加载后 `adopt` |
-| HMR | 可 unregister 空窗 | **只准 `reload_entry_type`** |
-| 字段选项 stale | 保留标 stale | 仍适用（端点 Select / Literal 收窄）；与类型表无关 |
+| 场景                 | v3.4 旧说          | v3.5                                               |
+| -------------------- | ------------------ | -------------------------------------------------- |
+| 卸载时尚有该类型实例 | 标孤儿，允许卸载   | **`EntryTypeInUseError`，阻止卸载**                |
+| 启动时类型未注册     | 孤儿占位           | 保留占位 + 插件加载后 `adopt`                      |
+| HMR                  | 可 unregister 空窗 | **只准 `reload_entry_type`**                       |
+| 字段选项 stale       | 保留标 stale       | 仍适用（端点 Select / Literal 收窄）；与类型表无关 |
 
 #### 5.12.4 字段级过期可选值（类型仍在时）
 
@@ -901,9 +920,9 @@ config/history/YYYY-MM-DD/username/HH-MM-SS.log    # 日志原文
   "type_key": "MAA",
   "username": "DLmaster",
   "data": {
-    "recruit_statistics": {"3": 10, "4": 5},
-    "drop_statistics": {"1-7": {"固源岩": 15, "代糖": 3}},
-    "sanity": {"current": 120, "full_at": 18.5}
+    "recruit_statistics": { "3": 10, "4": 5 },
+    "drop_statistics": { "1-7": { "固源岩": 15, "代糖": 3 } },
+    "sanity": { "current": 120, "full_at": 18.5 }
   }
 }
 ```
@@ -925,6 +944,7 @@ config/history/YYYY-MM-DD/username/HH-MM-SS.log    # 日志原文
 #### 6.2.4 合并规则
 
 遍历所有 data 的每个 key：
+
 - 首次出现 → 直接复制
 - 再次出现 → 检查类型：
   - 两边都是 `int/float` → 累加
@@ -932,6 +952,7 @@ config/history/YYYY-MM-DD/username/HH-MM-SS.log    # 日志原文
   - 类型冲突 → 该位置标记 `{"__error__": -1}`，后续该位置的合并跳过
 
 示例：
+
 ```python
 # 正常合并
 data1 = {"recruit_statistics": {"3": 10, "4": 5}}
@@ -1272,6 +1293,7 @@ async def delete_game(data: GameDeleteIn):
 ```
 
 要点：
+
 - `remove()` 仍只 stage；**守卫在 commit 应用前**执行（因 `is_alive` 为 async，不能放在同步 `remove()` 里）。
 - 守卫抛错 → 该 op 事务失败 → 工作区回滚，stage 可按现有 commit 错误聚合策略处理。
 - remove 信号仅在删除成功后发出；handle 释放挂在 remove 信号上，时序正确。
@@ -1393,6 +1415,7 @@ def _wrap(receiver, phase, kind, group, field):
 ```
 
 使用示例（按事件类型精确订阅）：
+
 ```python
 @collection.connect(phase="init", kind="add")    # 激活期新增
 @collection.connect(phase="runtime", kind="add")  # 运行时新增
@@ -1409,54 +1432,54 @@ def _wrap(receiver, phase, kind, group, field):
 
 ## 7. 全局对照
 
-| 维度 | 改造前 | 改造后 |
-|------|--------|--------|
-| 配置基类包结构 | 平铺 14 模块 | core/ + fields/ 子包 |
-| 预设字段 | types.py 中 12 个 | 增加路径/字符串校验类 |
-| int 别名 | 有 PortInt 等 | 手写 Field(ge=..., le=...) |
-| UI 提示 | Schema 四大模块 | `__ui_hints__` 虚拟字段 |
-| select | PluginField.select() | Select 注解标记三种形式 |
-| 旧字段迁移 | legacy_group/legacy_name | legacy() 注解 |
-| 文件 IO | wire.py 直写 | app/utils/io.py 原子写 |
-| 插件实例 | 多实例 | 单例 |
-| 插件配置 | 字典代理 | ConfigEntry 活对象 |
-| ctx | 10 项 | 6 项 |
-| 事件 | 自研 EventBus 850 行 | blinker 两个 Namespace |
-| 服务 | ServiceRegistry + 自动重载 | ServiceRegistry 简化 + 信号 |
-| 生命周期钩子 | @inject_*/@replace_* 体系 | 基类方法覆盖 |
-| 脚本适配 | ScriptAdapterDefinition + Hooks | ScriptAdapterPlugin 直接声明 |
-| 历史记录 | 四套 save_*_log 散布 | 统一 HistoryStore |
-| 模拟器管理 | EmulatorManager + 硬编码 EMULATOR_TYPE_BOOK | GameManager + GameAdapterPlugin + 框架 remove_guard |
-| 首页 / 工具 | 硬编码 | **本轮维持硬编码**（插件化搁置） |
+| 维度           | 改造前                                      | 改造后                                              |
+| -------------- | ------------------------------------------- | --------------------------------------------------- |
+| 配置基类包结构 | 平铺 14 模块                                | core/ + fields/ 子包                                |
+| 预设字段       | types.py 中 12 个                           | 增加路径/字符串校验类                               |
+| int 别名       | 有 PortInt 等                               | 手写 Field(ge=..., le=...)                          |
+| UI 提示        | Schema 四大模块                             | `__ui_hints__` 虚拟字段                             |
+| select         | PluginField.select()                        | Select 注解标记三种形式                             |
+| 旧字段迁移     | legacy_group/legacy_name                    | legacy() 注解                                       |
+| 文件 IO        | wire.py 直写                                | app/utils/io.py 原子写                              |
+| 插件实例       | 多实例                                      | 单例                                                |
+| 插件配置       | 字典代理                                    | ConfigEntry 活对象                                  |
+| ctx            | 10 项                                       | 6 项                                                |
+| 事件           | 自研 EventBus 850 行                        | blinker 两个 Namespace                              |
+| 服务           | ServiceRegistry + 自动重载                  | ServiceRegistry 简化 + 信号                         |
+| 生命周期钩子   | @inject*\*/@replace*\* 体系                 | 基类方法覆盖                                        |
+| 脚本适配       | ScriptAdapterDefinition + Hooks             | ScriptAdapterPlugin 直接声明                        |
+| 历史记录       | 四套 save\_\*\_log 散布                     | 统一 HistoryStore                                   |
+| 模拟器管理     | EmulatorManager + 硬编码 EMULATOR_TYPE_BOOK | GameManager + GameAdapterPlugin + 框架 remove_guard |
+| 首页 / 工具    | 硬编码                                      | **本轮维持硬编码**（插件化搁置）                    |
 
 ## 8. 被删除文件
 
-| 模块 | 行数 |
-|------|------|
-| event_bus / event_contract / event_factory / decorators / event | 882 |
-| log_pipeline / log | 436 |
-| lifecycle_hooks | 452 |
-| schema / fields / schema_utils / script_adapter_schema | 1884 |
-| cache_store / runtime_api | 801 |
-| config_store / script_config_store | 841 |
-| script_config_codec / plugin_script_config | 269 |
-| system | 86 |
-| support/security.py | 37 |
-| manager / loader / context（重写） | 3311 |
+| 模块                                                            | 行数 |
+| --------------------------------------------------------------- | ---- |
+| event_bus / event_contract / event_factory / decorators / event | 882  |
+| log_pipeline / log                                              | 436  |
+| lifecycle_hooks                                                 | 452  |
+| schema / fields / schema_utils / script_adapter_schema          | 1884 |
+| cache_store / runtime_api                                       | 801  |
+| config_store / script_config_store                              | 841  |
+| script_config_codec / plugin_script_config                      | 269  |
+| system                                                          | 86   |
+| support/security.py                                             | 37   |
+| manager / loader / context（重写）                              | 3311 |
 
 总计删除约 6,100 行，重写约 3,300 行。
 
 ## 9. 实施阶段
 
-| 期 | 内容 | 依赖 | 验证 |
-|----|------|------|------|
-| P1 | 包结构调整 + logger/加密改引 `app/utils` + types.py + io.py + wire 精简 | — | 现有测试通过 |
-| P2 | hints/select/legacy + `remove_guard` + `connect(kind=)` + **开放 Collection 类型 API**（register/unregister/reload/adopt） | P1 | 类型表守卫与 rematerialize 回滚单测 |
-| P3 | history.py + game_manager.py + script_types.py + 游戏/脚本 API | P2 | API 回归 + CRUD + 存活拒删 |
-| P4 | core 插件 + 加载器/HMR（§5.11 无空窗）+ ctx/services/versions + 单例化 | P2 | 插件冒烟 + HMR/增删冲突 |
-| P5 | ScriptAdapter + GameAdapter + 内建 task 薄插件 | P4 | 脚本/游戏冒烟；执行转发 `app/task` |
-| P6 | ConfigEntry 全量切换；旧 Schema / 钩子 / EventBus 退出主启动与业务热路径 | P2+P5 | 配置加载与核心 API 导入冒烟 |
-| P7 | 清理旧文件 | P4-P6 | grep 零残余 |
+| 期  | 内容                                                                                                                       | 依赖  | 验证                                |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------------------------- |
+| P1  | 包结构调整 + logger/加密改引 `app/utils` + types.py + io.py + wire 精简                                                    | —     | 现有测试通过                        |
+| P2  | hints/select/legacy + `remove_guard` + `connect(kind=)` + **开放 Collection 类型 API**（register/unregister/reload/adopt） | P1    | 类型表守卫与 rematerialize 回滚单测 |
+| P3  | history.py + game_manager.py + script_types.py + 游戏/脚本 API                                                             | P2    | API 回归 + CRUD + 存活拒删          |
+| P4  | core 插件 + 加载器/HMR（§5.11 无空窗）+ ctx/services/versions + 单例化                                                     | P2    | 插件冒烟 + HMR/增删冲突             |
+| P5  | ScriptAdapter + GameAdapter + 内建 task 薄插件                                                                             | P4    | 脚本/游戏冒烟；执行转发 `app/task`  |
+| P6  | ConfigEntry 全量切换；旧 Schema / 钩子 / EventBus 退出主启动与业务热路径                                                   | P2+P5 | 配置加载与核心 API 导入冒烟         |
+| P7  | 清理旧文件                                                                                                                 | P4-P6 | grep 零残余                         |
 
 P3 依赖 P2 的 `remove_guard` 与 `kind=` 后再接 GameManager。
 
@@ -1474,8 +1497,8 @@ P3 依赖 P2 的 `remove_guard` 与 `kind=` 后再接 GameManager。
 10. 路径预设 Wire 类型为 `str`，非法回退 `""`。
 11. **首页 / 工具本轮不插件化**，维持硬编码；对应基类草案搁置。Tools **存储与 API 已迁 ConfigEntry**。
 12. **游戏拒删在框架内**：`Collection.register_remove_guard`，commit 应用 remove 前检查。
-13. **开放 Collection**：`register/unregister/reload_entry_type` 为配置基类 API；仅 ACTIVE+未锁；删类型要求零实例；reload 要求该类型成员未锁。
-14. **域集合静态上界**：`ScriptCollection[ScriptEntry]` / `GamesCollection[GameEntry]`；插件 Entry 必须继承上界。
+13. ~~**开放 Collection**：`register/unregister/reload_entry_type`…~~ **已废弃**（§1.5）。
+14. ~~**域集合静态上界**：`ScriptCollection[ScriptEntry]`…~~ **已废弃**（§1.5）。
 15. **ok_script / okww**：主入口使用 `automas.plugins` 下的 v2 插件（`ScriptAdapterPlugin` + Entry 注册）；旧 entry point / `app.plugins` 适配层仅作运行时兼容，**不再是配置权威或主启动路径**。
 
 ### 10.16 全量切流 DoD（已完成）
@@ -1483,7 +1506,7 @@ P3 依赖 P2 的 `remove_guard` 与 `kind=` 后再接 GameManager。
 - [x] 框架包在 `app/config/`（`core/` + `fields/` + `definitions/`）
 - [x] `AppConfig` 根节点 `setting/scripts/games/plans/queues/tools`，`migrate` + `activate`
 - [x] API 读写新门面（Wire / Entry）
-- [x] 内建脚本与 ok_* 注册 `ConfigEntry` / `register_entry_type`
+- [x] 内建脚本与 ok\_\* 注册 `ConfigEntry` / `register_entry_type`
 - [x] 旧 `app.models.config` 领域类降为 Entry 别名；配置权威不在 ConfigBase
 - [x] `main.py` 仅新 `plugin_loader`
 - [x] P6：业务配置路径全量使用 `app.config` / `ConfigEntry`
@@ -1506,20 +1529,20 @@ P3 依赖 P2 的 `remove_guard` 与 `kind=` 后再接 GameManager。
 
 ### 12.1 拍板落地
 
-| 议题 | 决定 | 文档落点 |
-|------|------|----------|
-| 框架↔app 依赖 | 允许并鼓励复用 `app.utils`；按应用层级组织 | §0、§1.2、§10.1 |
-| 首页 / 工具 | 本轮搁置，不插件化 | §5.10、§6.4、P6 |
-| History `data` | 坚持 2/3 层数字树 | §6.2.3、§10.5 |
-| 游戏拒删 | 框架 `remove_guard`，非仅 API | §6.3.4–6.3.5、P2 |
+| 议题           | 决定                                       | 文档落点         |
+| -------------- | ------------------------------------------ | ---------------- |
+| 框架↔app 依赖  | 允许并鼓励复用 `app.utils`；按应用层级组织 | §0、§1.2、§10.1  |
+| 首页 / 工具    | 本轮搁置，不插件化                         | §5.10、§6.4、P6  |
+| History `data` | 坚持 2/3 层数字树                          | §6.2.3、§10.5    |
+| 游戏拒删       | 框架 `remove_guard`，非仅 API              | §6.3.4–6.3.5、P2 |
 
 ### 12.2 二次审查总判
 
-| 结论 | 说明 |
-|------|------|
+| 结论             | 说明                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------- |
 | **可行，可开工** | 拍板后范围更清晰：配置基类应用内收敛 + 插件单例/脚本/游戏主线；首页工具不进本轮降低前端耦合。 |
-| **剩余硬依赖** | P2 必须先交付 `remove_guard` + `connect(kind=)`，否则 GameManager 无法按设计接线。 |
-| **范围收缩收益** | 去掉 Homepage/Tool 后，P3/P5/P6 可专注脚本配置链与游戏进程唯一性，风险更可控。 |
+| **剩余硬依赖**   | P2 必须先交付 `remove_guard` + `connect(kind=)`，否则 GameManager 无法按设计接线。            |
+| **范围收缩收益** | 去掉 Homepage/Tool 后，P3/P5/P6 可专注脚本配置链与游戏进程唯一性，风险更可控。                |
 
 ### 12.3 对照原 18 条目标（v3.2）
 
@@ -1576,9 +1599,9 @@ v3.1 §11.5 四问均已关闭。若后续重启首页/工具插件化，另开�
 
 ### 12.10 v3.5 增量（Collection 开放类型集）
 
-1. 框架新增 `register_entry_type` / `unregister_entry_type` / `reload_entry_type` / `adopt_entry`（配置基类.md §5.3）。
-2. 插件增删/HMR **只能**调用上述 API；受 ACTIVE、集合锁、成员锁、实例占用约束。
-3. 静态检查：开放域用业务基类作 `ConfigCollection[TBound]`；closed 域保持精确类型。
-4. 启动未注册类型仍可占位，插件加载后 `adopt`；与「运行时删类型须零实例」并存。
+> **【已废弃】** 与 §1.5 一并废弃（2026-08-03）。下列条目不再实施。
 
-实施单测：有实例时 unregister 失败；有锁成员时 reload 失败；集合锁定时三类 API 均失败；`type[ScriptEntry]` 不兼容子类在 pyright 下报错（用例或文档示例）。
+1. ~~框架新增 `register_entry_type` / …~~
+2. ~~插件增删/HMR 只能调用上述 API~~
+3. ~~静态检查：开放域用业务基类作 `ConfigCollection[TBound]`~~
+4. ~~启动未注册类型占位 + `adopt`~~

@@ -44,7 +44,6 @@ from maa.controller import (
 )
 
 from .config import Config
-from app.models.emulator import DeviceInfo
 from app.utils import get_logger
 
 logger = get_logger("MaaFW管理")
@@ -131,29 +130,18 @@ class _MaaFWManager:
         return tasker
 
     @staticmethod
-    async def convert_adb(raw_info: DeviceInfo) -> AdbDevice:
-        """
-        将设备信息转换为ADB连接所需的地址格式
-
-        Args:
-            raw_info(DeviceInfo): 包含设备信息的对象
-
-        Returns:
-            AdbDevice: 表示 ADB 设备的对象
-
-        Raises:
-            RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
-        """
+    async def convert_adb(adb_address: str) -> AdbDevice:
+        """按设备配置上的 ADB 地址匹配 Toolkit 设备。"""
 
         for emulator in Toolkit.find_adb_devices():
-            if raw_info.adb_address == emulator.address:
+            if adb_address == emulator.address:
                 return emulator
-        else:
-            raise RuntimeError("无法找到指定设备")
+        raise RuntimeError("无法找到指定设备")
 
     async def get_adb_tasker(
         self,
-        device_info: DeviceInfo,
+        adb_address: str,
+        title: str = "",
         screencap_methods: int = MaaAdbScreencapMethodEnum.Default,
         input_methods: int = MaaAdbInputMethodEnum.Default,
         config: dict[str, Any] = {},
@@ -162,7 +150,8 @@ class _MaaFWManager:
         创建一个连接 ADB 的 MaaFW 任务管理器
 
         Args:
-            device_info(DeviceInfo): 包含设备信息的对象
+            adb_address(str): 设备配置上的 ADB 地址
+            title(str): 日志用设备名
             screencap_methods(int): 屏幕捕获方法，默认为 MaaAdbScreencapMethodEnum.Default
             input_methods(int): 输入方法，默认为 MaaAdbInputMethodEnum.Default
             config(dict[str, Any]): 其他配置项，默认为空字典
@@ -172,10 +161,10 @@ class _MaaFWManager:
             RuntimeError: 如果无法连接到指定设备或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
 
-        adb_device = await self.convert_adb(device_info)
+        adb_device = await self.convert_adb(adb_address)
 
         logger.info(
-            f"正在连接设备: {device_info.title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+            f"正在连接设备: {title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
         )
 
         controller = AdbController(
@@ -237,7 +226,8 @@ class _MaaFWManager:
     async def reconnect_adb_tasker(
         self,
         tasker: Tasker,
-        device_info: DeviceInfo,
+        adb_address: str,
+        title: str = "",
         screencap_methods: int = MaaAdbScreencapMethodEnum.Default,
         input_methods: int = MaaAdbInputMethodEnum.Default,
         config: dict[str, Any] = {},
@@ -247,7 +237,8 @@ class _MaaFWManager:
 
         Args:
             tasker(Tasker): 需要重新连接的 MaaFW 任务管理器实例
-            device_info(DeviceInfo): 包含设备信息的对象
+            adb_address(str): 设备配置上的 ADB 地址
+            title(str): 日志用设备名
             screencap_methods(int): 屏幕捕获方法，默认为 MaaAdbScreencapMethodEnum.Default
             input_methods(int): 输入方法，默认为 MaaAdbInputMethodEnum.Default
             config(dict[str, Any]): 其他配置项，默认为空字典
@@ -257,10 +248,10 @@ class _MaaFWManager:
             RuntimeError: 如果无法连接到指定设备或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
 
-        adb_device = await self.convert_adb(device_info)
+        adb_device = await self.convert_adb(adb_address)
 
         logger.info(
-            f"正在重新连接设备: {device_info.title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+            f"正在重新连接设备: {title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
         )
 
         controller = AdbController(

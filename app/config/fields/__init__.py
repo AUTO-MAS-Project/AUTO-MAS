@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .ann import strip_optional, unwrap_ann
 from .encrypted import (
     ENCRYPTED_PREFIX,
     EncryptedMarker,
@@ -14,10 +15,15 @@ from .hints import (
     LegacyMarker,
     OptionHint,
     Select,
+    TableHint,
     UiHintMarker,
     UiHintsMap,
-    build_ui_hints,
-    iter_legacy_markers,
+    UiTablesList,
+    UiVisibility,
+    UiVisibilityBinding,
+    UiVisibilitySpec,
+    hint_for_field,
+    visibility_spec_for_field,
     legacy,
     select,
     ui,
@@ -50,10 +56,15 @@ __all__ = [
     "LegacyMarker",
     "OptionHint",
     "Select",
+    "TableHint",
     "UiHintMarker",
     "UiHintsMap",
-    "build_ui_hints",
-    "iter_legacy_markers",
+    "UiTablesList",
+    "UiVisibility",
+    "UiVisibilityBinding",
+    "UiVisibilitySpec",
+    "hint_for_field",
+    "visibility_spec_for_field",
     "legacy",
     "select",
     "ui",
@@ -72,4 +83,6 @@ __all__ = [
     "is_trigger_model_field",
     "is_virtual_model_field",
     "parse_field_path",
+    "strip_optional",
+    "unwrap_ann",
 ]

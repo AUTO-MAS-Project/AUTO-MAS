@@ -3,18 +3,25 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "auto-mas-core"
-version = "5.2.0"
-description = "AUTO-MAS core system plugin and SDK"
+name = "auto_mas_core"
+version = "6.0.0"
+description = """<!--{"zh_CN":"AUTO-MAS 核心系统插件与开发者 SDK","en":"AUTO-MAS core system plugin and developer SDK"}-->"""
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
+# Keywords 文首元素为 tags_i18n HTML 注释；其后为门禁 token（勿改顺序语义）
+keywords = [
+  """<!--{"zh_CN":["核心","SDK"],"en":["core","SDK"]}-->""",
+  "auto-mas-plugin",
+  "auto-mas-id:auto_mas_core",
+]
 dependencies = []
 
-[project.entry-points."auto_mas.plugins"]
-auto_mas_core = "auto_mas_core.plugin:Plugin"
+[project.urls]
+Documentation = "https://doc.auto-mas.top/developer/"
+auto-mas-display-name = """<!--{"zh_CN":"AUTO-MAS 核心","en":"AUTO-MAS Core"}-->"""
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-auto_mas_core = ["py.typed"]
+auto_mas_core = ["py.typed", "i18n/*.json"]

@@ -59,8 +59,14 @@ list/
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
-!/plugins/okww_adapter/
-!/plugins/okww_adapter/**
+!/plugins/maa_adapter/
+!/plugins/maa_adapter/**
+!/plugins/mumu_adapter/
+!/plugins/mumu_adapter/**
+!/plugins/ldplayer_adapter/
+!/plugins/ldplayer_adapter/**
+!/plugins/win_process_adapter/
+!/plugins/win_process_adapter/**
 /plugins/**/__pycache__/
 /plugins/**/*.py[oc]
 /plugins/**/*.egg-info/

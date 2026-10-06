@@ -80,17 +80,13 @@
             <SchedulerTaskControl
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
-              v-model:resume-from-script-id="tab.resumeFromScriptId"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
-              :resume-script-options="tab.resumeScriptOptions || []"
-              :resume-script-loading="tab.resumeScriptLoading"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
-              @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
               @refresh-tasks="loadTaskOptions"
@@ -170,7 +166,6 @@ const {
   startTask,
   stopTask,
   handleTaskSelectionChange,
-  loadResumeScriptOptions,
 
   // 日志操作
   onLogScroll,

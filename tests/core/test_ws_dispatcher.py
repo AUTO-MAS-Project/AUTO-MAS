@@ -3,7 +3,7 @@ import unittest
 
 from app.core.ws.dispatcher import _WSDispatcher
 from app.core.ws.protocol import parse_envelope
-from app.models.schema import WSEnvelope
+from app.core.ws.protocol import WSEnvelope
 
 
 def _envelope(id: str, type: str, data: dict | None = None) -> WSEnvelope:

@@ -8,22 +8,29 @@ description: >-
 
 - 工作区 / 事务见 §3.2、§3.2.1；信号见 §3.3–§3.4。
 - **写路径**：字段 `setattr` / `add` / `remove` / `set_order` / `add_type` / `remove_type` / `reload_type` → 仅 stage，须显式 `await commit()`；`commit` 经 **`manager.node_commit`**（同 Task 嵌套空过；其它 Task 的 `commit` **等待**；持锁期间其它 Task `_stage` **入 pending**，释放时并入）；入口快照并清空 `_staged_ops`，再用 **`while batch` 排空**；**`send` 后若 `_staged_ops` 非空则 RAISE**（失败 ROLLBACK 本笔）。信号内嵌套 `commit` 须办完当次 stage。入口删/锁拒绝则保留 stage。Cancel 时 `batch` 非空则归还。
-- **类型表**：`add_type` / `remove_type` / `reload_type` 均为单条 StageKind；后两者的多成员变更在 **同一** `manager.transaction()` 内完成（禁止拆成多条 `COLLECTION_REMOVE`/`ADD` 冒充整笔回滚）。`reload_type`：导出 Wire → 删旧实例 → 换类 → 同 uid 原位 `build`+`activate`；不跑 remove_guard、不发中间 `remove`/`add`。规格 §5.4。`_COMMIT` 须写回 `_entry_types`。
+- **类型表**：`add_type` / `remove_type` / `reload_type` 均为单条 StageKind；后两者的多成员变更在 **同一** `manager.transaction()` 内完成（禁止拆成多条 `COLLECTION_REMOVE`/`ADD` 冒充整笔回滚）。`reload_type`：导出文档 payload → 删旧实例 → 换类 → 同 uid 原位 `build`+`activate`；不跑 remove_guard、不发中间 `remove`/`add`。规格 §5.4。`_COMMIT` 须写回 `_entry_types`。
 - **`activate`**：外层 `transaction()` + `_build_workspace()`。Entry/Collection 热化统一为 **赋值/结构 API → `commit`**；`_commit_op` 在 `INITIALIZING` 时走 `init_transaction` + `_build_init_workspace`（`ws._workspace`），`ACTIVE` 时走普通事务。Init **嵌套独立 ctx**；**禁止同节点重复建 init 壳**。详见 §3.2.1。
 - **工作区**：普通 `live._workspace`；init 为 `live._workspace._workspace`（`init_workspace` 属性）；无独立 `_init_workspace` 字段。
 - **`_delete`**：内部软删；外部勿直接调用（用 `Collection.remove` / 框架生命周期）。
 - **ref `on_delete` 例外**：`SET_DEFAULT` → stage default 后 **自动 `await entry.commit()`**；`CASCADE` → 仅 Collection 成员，走 **`parent.remove` + `await parent.commit()`**（须在 `send` 内办完）；非成员禁止。重复删等异常 **自然上抛并回滚**，不做幂等特判。
-- **`entry.update(other)` 例外**：接收同类冷态 Entry，只同步 **已赋值** Group 字段（跳过虚拟与 `model_fields_set` 未含项），**自动 commit**；失败 `raise ConfigAggregateError`（FastAPI Body 热补丁可直接 `await cfg.update(body)`）。
+- **`entry.update(other)` 例外**：接收同类冷态 Entry，只同步 **已赋值** Group 字段（跳过虚拟、`model_fields_set` 未含项、**UI hide/disable**），**自动 commit**；失败 `raise ConfigAggregateError`（FastAPI Body 热补丁可直接 `await cfg.update(body)`）。
+- **导出**：`model_dump` 默认 `audience=api`；`to_dict()` 固定 `audience=persist`。`mode=python` 与 audience 正交。
+- **Path / 时间**：`FilePath` 等存 `Path | None`（非法→`None`），json 走 pydantic 标准 Path 序列化；`date`/`time`/`datetime` 直接声明；`date` 收到 `datetime` 时经 `Entry.timezone`（默认 UTC+8）+ 可选 `tz()` 转时区后再存 date；`datetime` 字段不做时区强制；`ui(format="hm")` 指示仅时分控件。
+- **注解剥离**：`fields.ann.unwrap_ann` / `strip_optional` — 循环剥 Annotated/TypeAlias；各层禁止再手写一遍。
+- **表格列**：`ConfigTableColumn`；同列类多 Entry 字段 = 一表；`_table_key`（i18n，可 None）+ `_table_transpose`；导出 `ui.tables`。
+- **Trigger**：bool（闲置 False / handler 无参）或 `Literal|None`（闲置 None / handler(value)）；hints 分别为 `button` / `dropdown-button`。
 - **信号**：同 `(phase, group, field, sender)` **禁止重复 connect**（以 **signal 是否已连接该 wrapped** 为准；须先 disconnect）。`__signal_wrappers__` **只增不减**，仅作包装挂载点防 GC，不参与事务语义。
 
-## 编码：减少调用层级，能内联就内联
+## 编码：内联 / 嵌套 / 命名 / 注释
 
-> 与 `.agents/skills/mas-skills` **Global Constraints §9** 一致，配置基类与业务代码均适用。
+> 与 `.agents/skills/mas-skills` **Global Constraints §9**、`mas-code-standards/references/inline-and-comments.md` 一致；**写代码前必读**。
 
 - **禁止**为一两行逻辑（如 `isinstance` / `issubclass`、`dict.get` + 类型断言、单次 `validate_assignment`）再包一层 helper。
 - **禁止**薄转发：`_update_x` 只调用 `_apply_x`、或单次使用的 `_collection_view` / `_redact_*` 等。
 - 调用点直接写清楚；若因循环导入拿不到类型名，在**该调用点** `from ... import ...`（推迟导入），不要为此发明 `is_xxx()` 包装函数。
 - **仅调用一次的逻辑直接内联**；函数过长时用**功能块注释**分段，不要为分段再抽一层函数。
+- **嵌套**：闭包 / 递归 / 线程回调嵌在调用方内，勿另造模块级单次 helper。
+- **命名**：函数名短；描述放 docstring / 注释。
 - **已有模块级 import 的，不要在同一函数里再推迟导入同一符号**；只有 import 图形成环时才推迟。
 - 典型：`entry.py` 可顶层 `import ConfigCollection`；`manager.is_registered_collection` / `node._SignalDescriptor.__get__` 须推迟（`collection ↔ manager/node`）；`signals._wrap` 与 `manager.COMMIT` 可顶层或文件末尾 import `ConfigNode`（`node` 将 `signals` 放在类定义之后导入即可）。
 - 不要用 ClassVar 布尔标记（如 `_is_collection`）代替真实 `isinstance` / `issubclass`。
@@ -64,6 +71,6 @@ description: >-
 
 - 混淆发送者与接收者
 - connect 后对**同一接收者 + 同一 (phase, group, field, sender)** 再 connect 而未 disconnect（键已被占用；框架 **报错**）
-- 一层套一层的薄封装（尤其类型判定、Wire 窄化、单字段校验）
+- 一层套一层的薄封装（尤其类型判定、文档 payload 窄化、单字段校验）
 - 在无普通事务 / 无 `_workspace` 时调用 `init_transaction`
 - init handler 内对**同节点**再 `commit`（重复开启 init）

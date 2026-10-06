@@ -4,7 +4,7 @@
 
 ${description}
 
-这是一个带 Vue 页面插件。
+这是一个带 Vue 页面插件。依赖 `auto_mas_core>=6,<7`；能力经 `auto_mas_core` / `utils` / `plugin.http`（`@plugin_route`）直取，无 `PluginContext` / `on_load`。
 
 ## 开发
 

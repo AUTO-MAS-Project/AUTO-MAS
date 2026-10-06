@@ -3,3 +3,9 @@
 [![PyPI version](https://img.shields.io/pypi/v/automas_plugin_${plugin_name}?logo=pypi&logoColor=white)](https://pypi.org/project/automas_plugin_${plugin_name}/)
 
 ${description}
+
+## 开发约定
+
+- 依赖 `auto_mas_core>=6,<7`；只从 `auto_mas_core`（及 `utils` / `services` / `plugin.*`）导入。
+- 生命周期：实例在 **enable** 时构造（`config=`）；业务写在 `on_enable` / `on_disable`（无 `on_load`）。
+- 导入对照：`auto_mas_core.services` = 宿主业务；`auto_mas_core.plugin.services` / `.http` = 跨插件总线与 HTTP。

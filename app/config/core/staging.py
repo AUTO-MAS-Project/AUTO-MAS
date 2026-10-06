@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
-from ..wire import WireDict
 
 if TYPE_CHECKING:
     from .node import ConfigNode
@@ -35,7 +34,7 @@ class StagedOp:
     value: object = None
     entry_type: type[ConfigNode] | None = None
     uid: UUID | None = None
-    wire: WireDict | None = None
+    payload: dict[str, Any] | None = None
     order: tuple[UUID, ...] | None = None
 
     @classmethod
@@ -44,13 +43,13 @@ class StagedOp:
 
     @classmethod
     def collection_add(
-        cls, entry_type: type[ConfigNode], *, uid: UUID, wire: WireDict | None
+        cls, entry_type: type[ConfigNode], *, uid: UUID, payload: dict[str, Any] | None
     ) -> StagedOp:
         return cls(
             kind=StageKind.COLLECTION_ADD,
             entry_type=entry_type,
             uid=uid,
-            wire=wire,
+            payload=payload,
         )
 
     @classmethod

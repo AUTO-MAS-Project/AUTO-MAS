@@ -1,8 +1,11 @@
-from app.plugins.fields import PluginField
-from pydantic import BaseModel, ConfigDict
+from auto_mas_core import PluginConfig
+from pydantic import Field
 
 
-class Config(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class Config(PluginConfig):
+    """${plugin_title} 自有配置。"""
 
-    hello: str = PluginField(default="来自 ${plugin_title} 插件的问候", description="问候词")
+    hello: str = Field(
+        default="来自 ${plugin_title} 插件的问候",
+        description="问候词",
+    )

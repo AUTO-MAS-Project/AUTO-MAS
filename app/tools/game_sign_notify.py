@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
 
@@ -167,8 +167,8 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
         failed_channels.append("系统")
 
     # 邮件通知
-    if Config.get("Notify", "IfSendMail"):
-        to_address = Config.get("Notify", "ToAddress")
+    if Config.setting.notify.if_send_mail:
+        to_address = Config.setting.notify.to_address
         if not to_address:
             logger.warning("邮件通知已启用，但未配置收件地址")
             failed_channels.append("邮件")
@@ -184,8 +184,8 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
             failed_channels.append("邮件")
 
     # Server酱通知
-    if Config.get("Notify", "IfServerChan"):
-        send_key = Config.get("Notify", "ServerChanKey")
+    if Config.setting.notify.if_server_chan:
+        send_key = Config.setting.notify.server_chan_key
         if not send_key:
             logger.warning("Server酱通知已启用，但未配置 SendKey")
             failed_channels.append("Server酱")
@@ -201,8 +201,8 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
 
     # Webhook 通知
     try:
-        for uid, webhook in Config.Notify_CustomWebhooks.items():
-            if webhook.get("Info", "Enabled"):
+        for uid, webhook in Config.setting.custom_webhooks.items():
+            if webhook.info.enabled:
                 channel_name = f"Webhook {uid}"
                 if not await _send_notification_channel(
                     channel_name,
@@ -218,9 +218,7 @@ async def push_game_sign_notification(results: list[dict]) -> list[str]:
         failed_channels.append("Webhook")
 
     # Koishi 通知
-    if Config.get(
-        "Notify", "IfKoishiSupport"
-    ) and not await _send_notification_channel(
+    if Config.setting.notify.if_koishi_support and not await _send_notification_channel(
         "Koishi", lambda: Notify.send_koishi(plain_text)
     ):
         failed_channels.append("Koishi")

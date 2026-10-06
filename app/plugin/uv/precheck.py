@@ -11,14 +11,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from app.utils.tools import to_pep440
 
+from app.utils import ProcessRunner
+
 from ..errors import VersionConflict
 from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME
-from . import mirrors
-from .tool import pip
+from .ops import candidates, ensure, mark_ok
+
+# uv 日志常打印规范化名（``auto-mas-core``）；字面 ``auto_mas_core`` 也要认
+_CORE_IN_UV_OUT = re.compile(
+    rf"[+\s]{re.escape(canonicalize_name(CORE_DISTRIBUTION_NAME)).replace(r'\-', r'[-_.]')}==",
+    re.I,
+)
 
 if TYPE_CHECKING:
     from app.models.config import PluginRecord
@@ -40,7 +48,7 @@ async def check_core(
     path: Path | None = None,
     core_version: str,
 ) -> CoreCompat:
-    """``uv pip install --dry-run``：插件与 ``auto-mas-core==core_version`` 能否共解。
+    """``uv pip install --dry-run``：插件与 ``auto_mas_core==core_version`` 能否共解。
 
     - 本地造 stub wheel，经 ``--find-links`` 注入（不发 PyPI）。
     - 目标：``package==version`` 或本地 ``path``（pyproject 工程）。
@@ -61,7 +69,7 @@ async def check_core(
             )
         target_spec = f"{pkg}=={ver}"
 
-    with tempfile.TemporaryDirectory(prefix="auto-mas-core-check-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="auto_mas_core-check-") as tmp:
         tmp_path = Path(tmp)
         links = tmp_path / "links"
         links.mkdir()
@@ -92,8 +100,10 @@ async def check_core(
             zf.writestr(f"{safe}/__init__.py", "")
 
         last_err = ""
-        for mirror_url in mirrors.candidates():
-            result = await pip(
+        for mirror_url in candidates():
+            result = await ProcessRunner.run_process(
+                ensure(),
+                "pip",
                 "install",
                 target_spec,
                 "--dry-run",
@@ -113,7 +123,7 @@ async def check_core(
             if result.returncode != 0:
                 last_err = out[-2000:]
                 if re.search(r"No solution|because|incompatible|conflict", out, re.I):
-                    await mirrors.mark_ok(mirror_url)
+                    await mark_ok(mirror_url)
                     return CoreCompat(
                         ok=False,
                         required=CORE_DISTRIBUTION_NAME,
@@ -122,13 +132,13 @@ async def check_core(
                     )
                 continue
 
-            await mirrors.mark_ok(mirror_url)
-            if re.search(rf"[+\s]{re.escape(CORE_DISTRIBUTION_NAME)}==", out):
+            await mark_ok(mirror_url)
+            if _CORE_IN_UV_OUT.search(out):
                 return CoreCompat(ok=True)
             return CoreCompat(
                 ok=False,
                 required="(undeclared)",
-                detail="未声明 auto-mas-core 依赖，无法确认兼容",
+                detail="未声明 auto_mas_core 依赖，无法确认兼容",
             )
 
         return CoreCompat(

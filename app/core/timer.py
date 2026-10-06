@@ -25,8 +25,10 @@ from datetime import datetime, timedelta
 
 from app.services import Matomo
 from app.utils import get_logger
+from app.utils.constants import UTC8
+from app.models.task import TaskMode, TaskTriggerSource
 from .config import Config
-from .task_manager import TaskManager
+from .task_dispatcher import TaskDispatcher
 
 
 logger = get_logger("主业务定时器")
@@ -84,7 +86,7 @@ class _MainTimer:
 
             await self.timed_start()
 
-            if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+            if Config.tools.arknights_pc.enabled:
                 from app.MaaFW import ArknightWin32Toolkit
 
                 await ArknightWin32Toolkit.scheduled_task()
@@ -100,63 +102,57 @@ class _MainTimer:
 
         while True:
 
-            if (
-                datetime.strptime(
-                    Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
-                ).date()
-                != datetime.now().date()
-            ):
+            if Config.setting.data.last_statistics_upload.date() != datetime.now(
+                tz=UTC8
+            ).date():
                 await Matomo.send_event(
                     "App",
                     "Version",
                     Config.VERSION,
                     1 if "beta" in Config.VERSION else 0,
                 )
-                await Config.set(
-                    "Data",
-                    "LastStatisticsUpload",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
+                Config.setting.data.last_statistics_upload = datetime.now(tz=UTC8)
+                await Config.setting.commit()
 
             await asyncio.sleep(3600)
 
     @logger.catch()
     async def timed_start(self):
-        """定时启动代理任务"""
+        """定时启动代理任务（读 ``Config.queues`` + ``TaskDispatcher``）。"""
 
-        curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
-        curday = datetime.now().strftime("%A")
+        now = datetime.now()
+        curtime = now.strftime("%Y-%m-%d %H:%M")
+        curday = now.strftime("%A")
 
-        for uid, queue in Config.QueueConfig.items():
-
-            if not queue.get("Info", "TimeEnabled"):
+        for uid, queue in Config.queues.items():
+            if not queue.info.time_enabled:
                 continue
 
-            # 避免重复调起任务
-            if curtime == queue.get("Data", "LastTimedStart"):
+            # 避免同一分钟内重复调起
+            last = queue.data.last_timed_start.strftime("%Y-%m-%d %H:%M")
+            if curtime == last:
                 continue
 
-            for time_set in queue.TimeSet.values():
+            for time_set in queue.time_sets.values():
                 if (
-                    time_set.get("Info", "Enabled")
-                    and curday in time_set.get("Info", "Days")
-                    and curtime[11:16] == time_set.get("Info", "Time")
+                    time_set.info.enabled
+                    and curday in time_set.info.days
+                    and curtime[11:16] == time_set.info.time.strftime("%H:%M")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
                     try:
-                        await TaskManager.add_task(
-                            "AutoProxy",
-                            str(uid),
-                            new_task_info={
-                                "queueId": str(uid),
-                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                                "taskType": "定时代理",
-                            },
+                        await TaskDispatcher.start(
+                            mode=TaskMode.AUTO_PROXY,
+                            queue_id=str(uid),
+                            script_id=None,
+                            user_id=None,
+                            trigger_source=TaskTriggerSource.SCHEDULED_TASK,
                         )
-                    except (RuntimeError, ValueError) as error:
+                    except Exception as error:
                         logger.error(f"定时队列 {uid} 无法创建任务：{error}")
                         continue
-                    await queue.set("Data", "LastTimedStart", curtime)
+                    queue.data.last_timed_start = now
+                    await queue.commit()
 
                     # 定时任务触发游戏签到
                     self.schedule_game_sign_for_task()
@@ -164,10 +160,10 @@ class _MainTimer:
     def _schedule_game_sign_check(self) -> None:
         """派发签到检查，不阻塞每秒调度循环。"""
 
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+        if not Config.tools.game_sign.enabled:
             return
 
-        check_time = datetime.now()
+        check_time = datetime.now(tz=UTC8)
         if check_time.second != 0:
             return
 
@@ -211,69 +207,64 @@ class _MainTimer:
         仅在整分钟时执行（秒数 != 0 时跳过），因为调度精度为分钟级。
         """
 
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+        gs = Config.tools.game_sign
+        if not gs.enabled:
             return
 
-        now = check_time or datetime.now()
+        now = check_time or datetime.now(tz=UTC8)
         if now.second != 0:
             return
 
-        today = now.strftime("%Y-%m-%d")
+        today = now.date()
 
         # 检查是否所有启用的用户今日都已签到
         all_users_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            if account.get("GameSignAccount", "Enabled"):
-                if account.get("GameSignAccount", "LastSignDate") != today:
-                    all_users_signed = False
-                    break
+        for account in Config.tools.accounts.values():
+            if account.info.enabled and account.info.last_sign_date != today:
+                all_users_signed = False
+                break
 
         if all_users_signed:
             return
 
-        # 解析签到窗口
-        try:
-            window_start_str = Config.ToolsConfig.get("GameSign", "WindowStart")
-            window_end_str = Config.ToolsConfig.get("GameSign", "WindowEnd")
-            window_start = datetime.strptime(window_start_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
-            )
-            window_end = datetime.strptime(window_end_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
-            )
-        except (ValueError, TypeError):
+        # 窗口时间为 ui format hm：用 HH:MM 与当前时刻比较
+        now_hm = now.strftime("%H:%M")
+        window_start_hm = gs.window_start.strftime("%H:%M")
+        window_end_hm = gs.window_end.strftime("%H:%M")
+
+        if now_hm < window_start_hm:
             return
 
-        # 如果在窗口开始之前，跳过
-        if now < window_start:
-            return
-
-        # 如果在窗口结束之后，立即补签
-        if now > window_end:
+        if now_hm > window_end_hm:
             await self._execute_game_sign()
             return
 
-        # 确定计划签到时间
-        scheduled_time_str = Config.ToolsConfig.get("GameSign", "ScheduledTime")
+        scheduled_time_str = gs.scheduled_time
 
         if not scheduled_time_str:
-            # 首次进入窗口：计算今天的随机时间
+            # 首次进入窗口：按剩余秒数随机计划今日签到时刻
+            window_end = now.replace(
+                hour=gs.window_end.hour,
+                minute=gs.window_end.minute,
+                second=0,
+                microsecond=0,
+            )
             remaining_seconds = int((window_end - now).total_seconds())
             if remaining_seconds <= 0:
                 await self._execute_game_sign()
                 return
             random_offset = random.randint(0, remaining_seconds)
             scheduled_time = now + timedelta(seconds=random_offset)
-            await Config.ToolsConfig.set(
-                "GameSign", "ScheduledTime", scheduled_time.strftime("%H:%M")
-            )
+            gs.scheduled_time = scheduled_time.strftime("%H:%M")
+            await Config.tools.commit()
             return
 
         # 检查是否到达计划时间（分钟精度）
-        if now.strftime("%H:%M") == scheduled_time_str:
+        if now_hm == scheduled_time_str:
             await self._execute_game_sign()
-            # Prevent duplicate trigger within same minute
-            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+            # 同分钟内避免重复触发
+            gs.scheduled_time = ""
+            await Config.tools.commit()
 
     async def _execute_game_sign(self) -> None:
         """执行游戏签到并处理结果"""
@@ -283,7 +274,8 @@ class _MainTimer:
             run_all_sign_in,
         )
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).date()
+        gs = Config.tools.game_sign
 
         try:
             logger.info("开始执行游戏社区签到")
@@ -292,8 +284,9 @@ class _MainTimer:
             # 如果所有用户都已签到（无新结果），保留已有结果
             if not results:
                 logger.info("所有用户今日已签到，跳过")
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+                gs.last_sign_date = today
+                gs.scheduled_time = ""
+                await Config.tools.commit()
                 return
 
             # 格式化并合并结果
@@ -301,22 +294,23 @@ class _MainTimer:
             await Config.update_game_sign_results(formatted)
 
             # 清除计划时间
-            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+            gs.scheduled_time = ""
 
-            # 检查是否所有用户都已签到，更新全局 LastSignDate
+            # 检查是否所有用户都已签到，更新全局 last_sign_date
             all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                if account.get("GameSignAccount", "Enabled"):
-                    if account.get("GameSignAccount", "LastSignDate") != today:
-                        all_signed_after = False
-                        break
+            for account in Config.tools.accounts.values():
+                if account.info.enabled and account.info.last_sign_date != today:
+                    all_signed_after = False
+                    break
             if all_signed_after:
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                gs.last_sign_date = today
+
+            await Config.tools.commit()
 
             logger.success("游戏社区签到执行完成")
 
             # 如果启用通知，发送签到结果
-            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+            if gs.notify_enabled:
                 from app.tools.game_sign_notify import push_game_sign_notification
 
                 failed_channels = await push_game_sign_notification(results)
@@ -336,20 +330,20 @@ class _MainTimer:
         """任务生命周期触发的游戏签到（跳过已签到用户）
 
         由定时任务启动、任务结束等事件触发。
-        不受全局 LastSignDate 限制，仅按用户 LastSignDate 过滤。
+        不受全局 last_sign_date 限制，仅按用户 last_sign_date 过滤。
         """
-        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+        gs = Config.tools.game_sign
+        if not gs.enabled:
             return
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=UTC8).date()
 
         # 快速检查：是否所有用户都已签到
         all_signed = True
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            if account.get("GameSignAccount", "Enabled"):
-                if account.get("GameSignAccount", "LastSignDate") != today:
-                    all_signed = False
-                    break
+        for account in Config.tools.accounts.values():
+            if account.info.enabled and account.info.last_sign_date != today:
+                all_signed = False
+                break
         if all_signed:
             return
 
@@ -369,18 +363,18 @@ class _MainTimer:
 
             # 签到后检查是否所有用户都已完成
             all_signed_after = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                if account.get("GameSignAccount", "Enabled"):
-                    if account.get("GameSignAccount", "LastSignDate") != today:
-                        all_signed_after = False
-                        break
+            for account in Config.tools.accounts.values():
+                if account.info.enabled and account.info.last_sign_date != today:
+                    all_signed_after = False
+                    break
             if all_signed_after:
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+                gs.last_sign_date = today
+                gs.scheduled_time = ""
+                await Config.tools.commit()
 
             logger.info("任务触发的游戏签到已完成")
 
-            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+            if gs.notify_enabled:
                 from app.tools.game_sign_notify import push_game_sign_notification
 
                 failed_channels = await push_game_sign_notification(results)

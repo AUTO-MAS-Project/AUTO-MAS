@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas_plugin_win_process_adapter"
+version = "0.0.1"
+description = """<!--{"zh_CN":"Windows 通用进程游戏适配","en":"Windows general process game adapter"}-->"""
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+keywords = [
+  """<!--{"zh_CN":["游戏","进程"],"en":["game","process"]}-->""",
+  "auto-mas-plugin",
+  "auto-mas-id:win_process_adapter",
+]
+dependencies = ["auto_mas_core>=6,<7"]
+
+[project.urls]
+auto-mas-display-name = """<!--{"zh_CN":"通用进程适配","en":"Win Process Adapter"}-->"""
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+win_process_adapter = ["i18n/*.json"]

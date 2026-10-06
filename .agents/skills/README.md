@@ -30,6 +30,8 @@
 ## 使用方式
 
 1. AUTO-MAS 开发任务先读 `mas-skills/SKILL.md`。
-2. 按任务意图选择最小必要的子 Skill。
-3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
-4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+2. **写任何代码前**读 `mas-skills` §9 与 `mas-code-standards/references/inline-and-comments.md`，并加载 `mas-code-standards`、`mas-function-design`。
+3. 按任务意图选择最小必要的子 Skill。
+4. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
+5. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+6. **插件系统**：只改正在开发的新路径（`app/plugin/` 等）；`app/plugins/` 与 `archive/old_plugins/` 仅作参考，见 `mas-skills` §11。

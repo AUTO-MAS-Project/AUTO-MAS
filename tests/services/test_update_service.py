@@ -2,9 +2,18 @@ import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.update import _UpdateHandler
+
+
+class _FakeSetting:
+    """Config.setting 的最小替身：更新源字段 + 可断言的 commit。"""
+
+    def __init__(self) -> None:
+        self.updates = SimpleNamespace(source="GitHub")
+        self.commit = AsyncMock()
 
 
 class UpdateHandlerTest(unittest.IsolatedAsyncioTestCase):
@@ -55,7 +64,11 @@ class UpdateHandlerTest(unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_error_does_not_enter_retry_failure_path(self):
         handler = _UpdateHandler()
         handler.remote_version = "v9.9.9"
-        with patch("app.services.update.httpx.AsyncClient") as client:
+        with patch.object(
+            type(handler), "_get_download_source", return_value="GitHub"
+        ), patch.object(
+            type(handler), "_get_download_url", return_value=("", "")
+        ), patch("app.services.update.httpx.AsyncClient") as client:
             client.return_value.__aenter__.side_effect = asyncio.CancelledError
             with self.assertRaises(asyncio.CancelledError):
                 await handler.download_update()
@@ -77,15 +90,19 @@ class UpdateHandlerSwitchTest(unittest.IsolatedAsyncioTestCase):
         handler.cancel_download = AsyncMock(return_value=True)
         handler._start_download_task = MagicMock(return_value=True)
 
+        setting = _FakeSetting()
         with patch.object(
             type(handler), "_get_download_source", return_value="GitHub"
-        ), patch("app.services.update.Config.set", new_callable=AsyncMock) as set_config:
+        ), patch("app.services.update.Config.setting", setting):
             switched = await handler.switch_to_cnb()
 
         self.assertTrue(switched)
         handler.cancel_download.assert_awaited_once_with(notify=False)
-        set_config.assert_awaited_once_with("Update", "Source", "CNB")
-        handler._start_download_task.assert_called_once_with()
+        self.assertEqual(setting.updates.source, "CNB")
+        setting.commit.assert_awaited_once_with()
+        # 重启下载带上 job=（冻结源与版本），不是无参调用
+        handler._start_download_task.assert_called_once()
+        self.assertIn("job", handler._start_download_task.call_args.kwargs)
 
     async def test_switch_to_cnb_does_not_restart_when_config_save_fails(self):
         handler = _UpdateHandler()
@@ -94,13 +111,11 @@ class UpdateHandlerSwitchTest(unittest.IsolatedAsyncioTestCase):
         handler.cancel_download = AsyncMock(return_value=True)
         handler._start_download_task = MagicMock()
 
+        setting = _FakeSetting()
+        setting.commit.side_effect = RuntimeError("save failed")
         with patch.object(
             type(handler), "_get_download_source", return_value="GitHub"
-        ), patch(
-            "app.services.update.Config.set",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("save failed"),
-        ), patch(
+        ), patch("app.services.update.Config.setting", setting), patch(
             "app.services.update.Publisher.send",
             new_callable=AsyncMock,
         ):

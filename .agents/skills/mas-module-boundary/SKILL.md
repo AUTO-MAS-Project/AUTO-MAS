@@ -44,6 +44,7 @@ Disallowed examples:
 6. `app/utils/*`: generic helpers and low-level adapters only. No domain policy and no orchestrator imports.
 7. Script-config import/restore policy belongs to `core/task` orchestration, not `api` or `schema`: AUTO-MAS manages other scripts by swapping their config files/folders before and after task execution.
 8. Script success/failure heuristics based on log text, log timestamp, and process exit belong to orchestrators and log-monitor helpers, not to schema models or transport handlers.
+9. **新插件系统 vs 旧插件**：实现与修正只动 `app/plugin/`（单数）、`app/core/plugin.py`、相关 `app/api/plugin*.py`。`app/plugins/`（复数）与 `archive/old_plugins/` **只读参考**，默认禁止修改（见 `mas-skills` Global Constraints §11）。
 
 ## Placement Decision Tree
 1. Request/response contract or DTO typing -> `models/schema`

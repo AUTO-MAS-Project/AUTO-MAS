@@ -1,21 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from auto_mas_core import PluginContext
+from auto_mas_core import BasePlugin
+from auto_mas_core.utils import get_logger
 
 
-class Plugin:
-    ctx: "PluginContext"
+class Plugin(BasePlugin):
+    """示例插件入口（包顶层 ``PLUGIN`` 指向本类）。"""
 
-    def __init__(self, ctx: "PluginContext") -> None:
-        self.ctx: "PluginContext" = ctx
+    async def on_enable(self) -> None:
+        get_logger("demo").info("enabled, config=%s", self.config)
 
-    async def on_start(self) -> None:
-        # 从此处开始
-        self.ctx.logger.info("[{}] ".format(self.ctx.plugin_name))
-        self.ctx.logger.info(f"hello={self.ctx.config.get('hello')}")
-
-    async def on_stop(self, reason: str) -> None:
-        self.ctx.logger.info("[{}] 插件停止, reason={}".format(self.ctx.plugin_name, reason))
+    async def on_disable(self) -> None:
+        get_logger("demo").info("disabled")

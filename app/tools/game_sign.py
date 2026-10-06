@@ -27,6 +27,7 @@ from datetime import datetime
 import httpx
 
 from app.core import Config
+from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from .game_sign_result import build_skland_sign_results
 
@@ -112,32 +113,30 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
         签到结果列表，每项包含 account, game, platform, status, reward, reason
     """
     results = []
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(tz=UTC8).date()
 
     # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
     if not await _check_system_time():
         logger.warning("系统时间偏差过大，跳过本轮游戏社区签到")
         return results
 
-    for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        account_name = account.get("GameSignAccount", "Name") or "默认账号"
-        account_enabled = account.get("GameSignAccount", "Enabled")
+    for uid, account in Config.tools.accounts.items():
+        info = account.info
+        account_name = info.name or "默认账号"
         account_uid = str(uid)
         enabled_platforms = []
 
         # 跳过已禁用的用户
-        if not account_enabled:
+        if not info.enabled:
             continue
 
         # 非强制模式：跳过今日已签到的用户
-        if not force:
-            user_last_sign = account.get("GameSignAccount", "LastSignDate")
-            if user_last_sign == today:
-                logger.debug(f"[{account_name}] 今日已签到，跳过")
-                continue
+        if not force and info.last_sign_date == today:
+            logger.debug(f"[{account_name}] 今日已签到，跳过")
+            continue
 
         # 森空岛签到（方舟 + 终末地，一次调用获取两个游戏结果）
-        skland_token = account.get("GameSignAccount", "SklandToken")
+        skland_token = info.skland_token
         if skland_token:
             enabled_platforms.append("森空岛")
             logger.info(f"[{account_name}] 开始森空岛签到")
@@ -210,7 +209,7 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 })
 
         # 米游社签到
-        miyoushe_token = account.get("GameSignAccount", "MiyousheToken")
+        miyoushe_token = info.miyoushe_token
         if miyoushe_token:
             enabled_platforms.append("米游社")
             logger.info(f"[{account_name}] 开始米游社签到")
@@ -235,7 +234,7 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 })
 
         # 库街区签到
-        kuro_token = account.get("GameSignAccount", "KuroToken")
+        kuro_token = info.kuro_token
         if kuro_token:
             enabled_platforms.append("库街区")
             logger.info(f"[{account_name}] 开始库街区签到")
@@ -266,7 +265,8 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
             enabled_platforms=enabled_platforms,
         ):
             try:
-                await account.set("GameSignAccount", "LastSignDate", today)
+                info.last_sign_date = today
+                await account.commit()
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
 

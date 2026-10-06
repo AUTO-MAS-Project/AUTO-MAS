@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -35,7 +35,7 @@ from app.config import CollectionOrderItem
 from app.config.errors import ConfigAggregateError
 from app.core import Config
 from app.models.config import QueueEntry, QueueItemEntry, TimeSetEntry
-from app.models.schema import OutBase
+from app.api import OutBase
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 
@@ -65,7 +65,7 @@ class QueueGetOut(OutBase):
 
 class QueueUpdateIn(BaseModel):
     queueId: str = Field(..., description="队列 ID")
-    data: QueueEntry = Field(..., description="队列补丁（Wire 形状）")
+    data: QueueEntry = Field(..., description="队列补丁（文档形状）")
 
 
 class QueueDeleteIn(BaseModel):
@@ -102,7 +102,7 @@ class TimeSetCreateOut(OutBase):
 
 class TimeSetUpdateIn(QueueSetInBase):
     timeSetId: str = Field(..., description="定时项 ID")
-    data: TimeSetEntry = Field(..., description="定时项补丁（Wire 形状）")
+    data: TimeSetEntry = Field(..., description="定时项补丁（文档形状）")
 
 
 class TimeSetDeleteIn(QueueSetInBase):
@@ -137,7 +137,7 @@ class QueueItemCreateOut(OutBase):
 
 class QueueItemUpdateIn(QueueSetInBase):
     queueItemId: str = Field(..., description="队列项 ID")
-    data: QueueItemEntry = Field(..., description="队列项补丁（Wire 形状）")
+    data: QueueItemEntry = Field(..., description="队列项补丁（文档形状）")
 
 
 class QueueItemDeleteIn(QueueSetInBase):

@@ -33,9 +33,9 @@ interface DeclaredBootstrapPackage {
 
 const SYSTEM_BOOTSTRAP_PACKAGES: DeclaredBootstrapPackage[] = [
   {
-    name: 'auto-mas-core',
-    installSpec: 'auto-mas-core>=5.2.0',
-    displayLabel: 'auto-mas-core>=5.2.0',
+    name: 'auto_mas_core',
+    installSpec: 'auto_mas_core>=5.2.0',
+    displayLabel: 'auto_mas_core>=5.2.0',
     specifier: '>=5.2.0',
   },
 ]

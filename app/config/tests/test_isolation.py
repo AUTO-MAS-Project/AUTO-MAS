@@ -29,20 +29,12 @@ from app.config import (
 from app.config.examples.reference_config import (
     ExampleQueue,
     ExampleQueueItem,
-    ExampleScript,
     ExampleWebhook,
 )
 
-# ExampleQueueItem.ref("scripts") 热化需要已登记目标
-_scripts = ConfigCollection([ExampleScript], name="scripts")
-_scripts_ready = False
-
-
-async def _ensure_scripts() -> None:
-    global _scripts_ready
-    if not _scripts_ready:
-        await _scripts.activate()
-        _scripts_ready = True
+# ExampleQueueItem.ref("example_scripts") 热化需要已登记目标；
+# 登记是全局唯一的，故与同目录其它测试共用一份，见 ref_pool 模块说明
+from .ref_pool import ensure_scripts as _ensure_scripts
 
 
 def _fail(message: str) -> None:
@@ -58,7 +50,7 @@ def _reset_signal(cls: type) -> None:
 
 
 async def _loaded_webhook(*, name: str = "committed") -> ExampleWebhook:
-    entry = ExampleWebhook.build(wire={"info": {"name": name}})
+    entry = ExampleWebhook.build(payload={"info": {"name": name}})
     await entry.activate()
     return entry
 
@@ -177,12 +169,12 @@ async def test_phantom_read_staged_collection_add() -> None:
     """staged add 未 commit：枚举/成员不可见。"""
     await _ensure_scripts()
     queue = ExampleQueue.build(
-        wire={"info": {"name": "q"}, "items": {"order": [], "data": {}}}
+        payload={"info": {"name": "q"}, "items": {"order": [], "data": {}}}
     )
     await queue.activate()
     items = queue.items
     n0 = len(items)
-    uid = items.add(ExampleQueueItem, wire={"info": {"script_id": "-"}})
+    uid = items.add(ExampleQueueItem, payload={"info": {"script_id": "-"}})
     if len(items) != n0:
         _fail("staged add 不应改变 len")
     if uid in items:
@@ -198,7 +190,7 @@ async def test_phantom_read_uncommitted_collection_remove() -> None:
     await _ensure_scripts()
     root = ConfigCollection([ExampleQueue])
     await root.activate()
-    q_uid = root.add(ExampleQueue, wire={"info": {"name": "q"}, "items": {"order": [], "data": {}}})
+    q_uid = root.add(ExampleQueue, payload={"info": {"name": "q"}, "items": {"order": [], "data": {}}})
     await root.commit()
     queue = root[q_uid]
     item_uid = queue.items.add(ExampleQueueItem)

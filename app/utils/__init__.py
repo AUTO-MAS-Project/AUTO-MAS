@@ -21,51 +21,83 @@
 #   Contact: DLmaster_361@163.com
 
 
+"""工具包入口：统一急加载全部公开符号。"""
+
 from .constants import *
 from .logger import get_logger
-from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
-from .io import read_toml, write_toml
+from .paths import resource_path
+from .security import (
+    dpapi_decrypt,
+    dpapi_encrypt,
+    format_exception_reason,
+    sanitize_log_message,
+)
+from .supervision import is_backend_dev_mode, is_supervised
 
-_LAZY_EXPORTS = {
-    "ImageUtils": (".ImageUtils", "ImageUtils"),
-    "LogMonitor": (".LogMonitor", "LogMonitor"),
-    "strptime": (".LogMonitor", "strptime"),
-    "ProcessManager": (".ProcessManager", "ProcessManager"),
-    "ProcessRunner": (".ProcessManager", "ProcessRunner"),
-    "ProcessInfo": (".ProcessManager", "ProcessInfo"),
-    "ProcessResult": (".ProcessManager", "ProcessResult"),
-    "is_process_running": (".ProcessManager", "is_process_running"),
-    "MumuManager": (".emulator", "MumuManager"),
-    "LDManager": (".emulator", "LDManager"),
-    "search_all_emulators": (".emulator", "search_all_emulators"),
-    "EMULATOR_TYPE_BOOK": (".emulator", "EMULATOR_TYPE_BOOK"),
-    "decode_bytes": (".tools", "decode_bytes"),
-    "busy_wait": (".tools", "busy_wait"),
-    "WebSocketClient": (".websocket", "WebSocketClient"),
-    "create_ws_client": (".websocket", "create_ws_client"),
-    "get_path_runtime_lock": (".runtime_lock", "get_path_runtime_lock"),
-}
+from .io import read_file, write_file
+from .lazy import LazyProxy
+from .runtime_lock import get_path_runtime_lock
 
+from .LogMonitor import LogMonitor, strptime
+from .LogPatternExtractor import (
+    LogSignMatcher,
+    MultiLineAggregator,
+    RegexMatcher,
+    apply_patterns,
+    compile_log_signs,
+    compile_regex,
+    debug_pattern,
+    flush_patterns,
+    load_patterns,
+)
+from .ProcessManager import (
+    ProcessInfo,
+    ProcessManager,
+    ProcessResult,
+    ProcessRunner,
+    is_process_alive,
+    is_process_running,
+)
+from .tools import busy_wait, decode_bytes, to_pep440
+from .websocket import WebSocketClient, create_ws_client
 
-def __getattr__(name: str):
-    target = _LAZY_EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-    from importlib import import_module
-
-    module_name, attribute_name = target
-    value = getattr(import_module(module_name, __name__), attribute_name)
-    globals()[name] = value
-    return value
-
-
+# `.emulator`（MumuManager/LDManager/search_all_emulators/EMULATOR_TYPE_BOOK）不再顶层导出：
+# 子包仍引用已删除的 app.models.config.EmulatorConfig / app.models.emulator，
+# 且插件分支已由各自 adapter 接管。
 __all__ = [
+    "apply_patterns",
+    "busy_wait",
+    "compile_log_signs",
+    "compile_regex",
     "constants",
-    "get_logger",
-    "dpapi_encrypt",
+    "create_ws_client",
+    "debug_pattern",
+    "decode_bytes",
     "dpapi_decrypt",
+    "dpapi_encrypt",
+    "flush_patterns",
+    "format_exception_reason",
+    "get_logger",
+    "get_path_runtime_lock",
+    "is_backend_dev_mode",
+    "is_process_alive",
+    "is_process_running",
+    "is_supervised",
+    "LazyProxy",
+    "load_patterns",
+    "LogMonitor",
+    "LogSignMatcher",
+    "MultiLineAggregator",
+    "ProcessInfo",
+    "ProcessManager",
+    "ProcessResult",
+    "ProcessRunner",
+    "read_file",
+    "RegexMatcher",
+    "resource_path",
     "sanitize_log_message",
-    "read_toml",
-    "write_toml",
+    "strptime",
+    "to_pep440",
+    "WebSocketClient",
+    "write_file",
 ]

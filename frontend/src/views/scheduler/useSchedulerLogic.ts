@@ -6,6 +6,7 @@ import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import {
+  flattenTaskScripts,
   getTaskRuntimeState,
   getTaskRuntimeStates,
   onTaskRuntimeEvent,
@@ -18,10 +19,11 @@ import {
   WS_POWER_SIGN_UPDATED,
   WS_TASK_LOG_UPDATED,
   WS_TASK_NOTICE,
+  type TaskItemPayload,
   type WSTaskCompletedData,
-  type WSTaskInfoUpdatedData,
   type WSTaskLogUpdatedData,
   type WSTaskNoticeData,
+  WSTaskMode,
 } from '@/services/websocket/types'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem } from './schedulerConstants'
@@ -77,9 +79,6 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   status: tab.status,
   selectedTaskId: tab.selectedTaskId,
   selectedMode: tab.selectedMode,
-  resumeFromScriptId: tab.resumeFromScriptId ?? null,
-  resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
-  resumeScriptLoading: false,
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
@@ -91,8 +90,6 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
 const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...tab,
   ...getDefaultTabRuntimeState(),
-  resumeScriptOptions: tab.resumeScriptOptions || [],
-  resumeScriptLoading: false,
   subscriptionIds: [],
   logMode: tab.logMode || 'follow',
 })
@@ -126,9 +123,6 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       status: '空闲',
       selectedTaskId: null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-      resumeFromScriptId: null,
-      resumeScriptOptions: [],
-      resumeScriptLoading: false,
       taskId: null,
       taskQueue: [],
       userQueue: [],
@@ -190,7 +184,6 @@ initTabCounter()
 // 任务选项
 const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
-const scriptOptionsMap = ref<Record<string, string>>({})
 
 // 电源操作状态（倒计时弹窗由全局组件 GlobalPowerCountdown.vue 处理）
 const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
@@ -317,9 +310,6 @@ export function useSchedulerLogic() {
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.taskId || null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-      resumeFromScriptId: null,
-      resumeScriptOptions: [],
-      resumeScriptLoading: false,
       taskId: options?.taskId || null,
       taskQueue: [],
       userQueue: [],
@@ -468,79 +458,8 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
-  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
-  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
-  const isQueueTask = (tab: SchedulerTab) => {
-    const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
-    return Boolean(taskOption?.label.startsWith('队列 - '))
-  }
-
-  const loadScriptLabelMap = async () => {
-    try {
-      const response = await Service.getScriptComboxApiInfoComboxScriptPost()
-      if (response.code === 200 && Array.isArray(response.data)) {
-        const mapped: Record<string, string> = {}
-        response.data.forEach(item => {
-          if (item.value && item.label) {
-            mapped[item.value] = item.label
-          }
-        })
-        scriptOptionsMap.value = mapped
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.warn(`加载脚本下拉信息失败，将回退为脚本ID显示: ${errorMsg}`)
-    }
-  }
-
-  const loadResumeScriptOptions = async (tab: SchedulerTab) => {
-    if (!tab.selectedTaskId || !isQueueTask(tab)) {
-      tab.resumeScriptOptions = []
-      tab.resumeFromScriptId = null
-      return
-    }
-
-    tab.resumeScriptLoading = true
-    try {
-      await loadScriptLabelMap()
-      const response = await Service.getItemApiQueueItemGetPost({ queueId: tab.selectedTaskId })
-      if (response.code !== 200) {
-        tab.resumeScriptOptions = []
-        tab.resumeFromScriptId = null
-        return
-      }
-
-      const options: Array<{ label: string; value: string }> = []
-      const scriptSeen = new Set<string>()
-      response.index.forEach(item => {
-        const scriptId = response.data?.[item.uid]?.Info?.ScriptId
-        if (!scriptId || scriptSeen.has(scriptId)) return
-        scriptSeen.add(scriptId)
-        options.push({
-          value: scriptId,
-          label: scriptOptionsMap.value[scriptId] || scriptId,
-        })
-      })
-
-      tab.resumeScriptOptions = options
-      if (tab.resumeFromScriptId && !options.some(item => item.value === tab.resumeFromScriptId)) {
-        tab.resumeFromScriptId = null
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
-      tab.resumeScriptOptions = []
-      tab.resumeFromScriptId = null
-      message.error('加载队列脚本失败，无法按脚本ID恢复')
-    } finally {
-      tab.resumeScriptLoading = false
-    }
-  }
-
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
-    tab.resumeFromScriptId = null
-    await loadResumeScriptOptions(tab)
   }
 
   const startTask = async (tab: SchedulerTab) => {
@@ -550,12 +469,9 @@ export function useSchedulerLogic() {
     }
 
     try {
-      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
+      const requestBody: TaskCreateIn = {
         taskId: tab.selectedTaskId,
         mode: tab.selectedMode,
-      }
-      if (tab.resumeFromScriptId) {
-        requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
@@ -598,23 +514,39 @@ export function useSchedulerLogic() {
   /**
    * 构造停止任务的本地完成数据。
    *
-   * 沿用当前总览快照，避免补齐状态时把面板清空；result 留空以保留已有日志。
+   * 沿用当前总览，避免补齐状态时把面板清空；result 留空以保留已有日志。
    */
-  const buildStoppedCompletion = (tab: SchedulerTab): WSTaskCompletedData => ({
-    result: '',
-    outcome: 'cancelled',
-    error: null,
-    task_info: (tab.overviewData ?? []).map(script => ({
-      script_id: script.script_id,
-      name: script.name,
-      status: script.status,
-      userList: script.user_list.map(user => ({
-        user_id: user.user_id,
-        name: user.name,
-        status: user.status,
-      })),
-    })),
-  })
+  const buildStoppedCompletion = (tab: SchedulerTab): WSTaskCompletedData => {
+    const runtime = tab.taskId ? getTaskRuntimeState(tab.taskId) : undefined
+    const scripts: TaskItemPayload['scripts'] = {}
+    for (const script of tab.overviewData ?? []) {
+      scripts[script.script_id] = {
+        info: { name: script.name, status: script.status },
+        current: { index: null, log: '' },
+        users: Object.fromEntries(
+          (script.user_list ?? []).map(user => [
+            user.user_id,
+            { info: { name: user.name, status: user.status } },
+          ])
+        ),
+      }
+    }
+    return {
+      result: '',
+      outcome: 'cancelled',
+      error: null,
+      task: runtime?.task ?? {
+        info: {
+          mode: (tab.selectedMode as TaskItemPayload['info']['mode']) || WSTaskMode.AUTO_PROXY,
+          queue_id: null,
+          script_id: null,
+          user_id: null,
+        },
+        current: { index: null },
+        scripts,
+      },
+    }
+  }
 
   const stopTask = async (tab: SchedulerTab) => {
     if (!tab.taskId) return
@@ -710,19 +642,20 @@ export function useSchedulerLogic() {
     pendingLogUpdates.set(tab.key, timer)
   }
 
-  const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
-    if (!data.task_info || !Array.isArray(data.task_info)) {
-      logger.debug('没有task_info数据，保持现有overviewData')
+  const applyTaskInfoSnapshot = (tab: SchedulerTab, task: TaskItemPayload | null): boolean => {
+    const flat = flattenTaskScripts(task)
+    if (!flat.length && !task) {
+      logger.debug('没有 TaskItem 载荷，保持现有 overviewData')
       return false
     }
 
     const overviewPanel = overviewRefs.value.get(tab.key)
     if (overviewPanel && overviewPanel.applyTaskInfo) {
-      overviewPanel.applyTaskInfo(data.task_info)
+      overviewPanel.applyTaskInfo(flat)
     }
 
     try {
-      tab.overviewData = data.task_info.map((s, index) => ({
+      tab.overviewData = flat.map((s, index) => ({
         script_id: s.script_id || `script_${index}`,
         name: s.name || '未知脚本',
         status: s.status || '等待',
@@ -734,16 +667,16 @@ export function useSchedulerLogic() {
       }))
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
-      logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
+      logger.warn(`维护 overviewData 时出现问题: ${errorMsg}`)
     }
 
-    const newTaskQueue = data.task_info.map(item => ({
+    const newTaskQueue = flat.map(item => ({
       name: item.name || '未知任务',
       status: item.status || '等待',
     }))
 
     const newUserQueue: QueueItem[] = []
-    data.task_info.forEach(taskItem => {
+    flat.forEach(taskItem => {
       if (taskItem.userList && Array.isArray(taskItem.userList)) {
         taskItem.userList.forEach(user => {
           if (user.status === '运行') {
@@ -854,7 +787,7 @@ export function useSchedulerLogic() {
     // 这确保了调度台状态与实际任务执行状态严格同步
     logger.info('收到任务完成消息，设置任务状态为结束')
 
-    applyTaskInfoSnapshot(tab, data)
+    applyTaskInfoSnapshot(tab, data.task ?? null)
 
     // 清空日志并显示原始代理结果信息
     const resultText = data.result
@@ -1079,7 +1012,16 @@ export function useSchedulerLogic() {
           result: state.result ?? '',
           outcome: state.outcome,
           error: state.error,
-          task_info: state.taskInfo,
+          task: state.task ?? {
+            info: {
+              mode: state.mode ?? WSTaskMode.AUTO_PROXY,
+              queue_id: state.queueId,
+              script_id: state.scriptId,
+              user_id: state.userId,
+            },
+            current: { index: null },
+            scripts: {},
+          },
         }
       : null
 
@@ -1098,7 +1040,7 @@ export function useSchedulerLogic() {
     if (state.taskName) tab.runningTaskLabel = state.taskName
     const selectedTaskId = getRuntimeSelectedTaskId(state)
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId
-    applyTaskInfoSnapshot(tab, { task_info: state.taskInfo })
+    applyTaskInfoSnapshot(tab, state.task)
     subscribeToTask(tab)
   }
 
@@ -1211,13 +1153,6 @@ export function useSchedulerLogic() {
     // 获取后端当前的电源状态
     getPowerState()
 
-    // 为已有调度台预加载恢复脚本选项，确保刷新后恢复交互可用
-    schedulerTabs.value.forEach(tab => {
-      if (tab.status !== '运行' && isQueueTask(tab)) {
-        loadResumeScriptOptions(tab)
-      }
-    })
-
     // 为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     // 注意：subscribeToTask 内部会检查订阅是否已存在，避免重复订阅
     try {
@@ -1314,7 +1249,6 @@ export function useSchedulerLogic() {
     startTask,
     stopTask,
     handleTaskSelectionChange,
-    loadResumeScriptOptions,
 
     // 日志操作
     onLogScroll,

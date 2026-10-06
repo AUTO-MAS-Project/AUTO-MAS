@@ -1,0 +1,442 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+from __future__ import annotations
+
+import psutil
+import asyncio
+import win32gui
+import keyboard
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+from pathlib import Path
+from typing import Any
+
+from dataclasses import dataclass
+
+from auto_mas_core import DeviceStatus
+
+from .schema import LDPlayerGame
+
+
+@dataclass
+class _Snap:
+    """查询结果，只在本插件里用。"""
+
+    title: str
+    status: DeviceStatus
+    adb_address: str = ""
+
+
+from auto_mas_core.utils import ProcessRunner, get_logger, get_setting
+
+_CONFIG_GUARD_DELAY_SECONDS = 3.0
+_INSTANCE_LOCKS: dict[
+    tuple[asyncio.AbstractEventLoop, str, str], asyncio.Lock
+] = {}
+_INSTANCE_CONFIG_SNAPSHOTS: dict[tuple[str, str], bytes] = {}
+
+
+def _format_ldplayer_failure(action: str, result: Any) -> str:
+    """格式化 LDPlayer dnconsole 命令失败信息，包含 returncode（十六进制）、stdout、stderr。"""
+    parts = [f"雷电模拟器 {action} 失败: returncode={result.returncode} (0x{result.returncode & 0xFFFFFFFF:08X})"]
+    if result.stdout:
+        parts.append(f"stdout={result.stdout.strip()!r}")
+    if result.stderr:
+        parts.append(f"stderr={result.stderr.strip()!r}")
+    return ", ".join(parts)
+
+
+class LDPlayerDevice(BaseModel):
+    idx: int
+    title: str
+    top_hwnd: int
+    bind_hwnd: int
+    in_android: int
+    pid: int
+    vbox_pid: int
+    width: int
+    height: int
+    density: int
+
+
+class LDManager:
+    """
+    基于dnconsole.exe的模拟器管理
+    """
+
+    def __init__(self, entry: LDPlayerGame) -> None:
+        self.entry = entry
+        self.log = get_logger("雷电模拟器管理")
+        self.emulator_path = Path(entry.info.path) if entry.info.path else Path()
+
+    def _get_instance_key(self, idx: str) -> tuple[str, str]:
+        return str(self.emulator_path.resolve()).casefold(), str(idx)
+
+    def _get_instance_lock(self, idx: str) -> asyncio.Lock:
+        instance_key = self._get_instance_key(idx)
+        lock_key = (asyncio.get_running_loop(), *instance_key)
+        return _INSTANCE_LOCKS.setdefault(lock_key, asyncio.Lock())
+
+    def _get_instance_config_path(self, idx: str) -> Path | None:
+        idx_text = str(idx)
+        if not idx_text.isdecimal():
+            self.log.warning(f"无法保护雷电模拟器配置，实例索引无效: {idx}")
+            return None
+        return (
+            self.emulator_path.parent
+            / "vms"
+            / "config"
+            / f"leidian{idx_text}.config"
+        )
+
+    def _is_config_guard_enabled(self) -> bool:
+        try:
+            return bool(get_setting("Function", "IfBlockAd"))
+        except Exception as e:
+            self.log.warning(f"读取雷电模拟器配置保护开关失败: {e}")
+            return False
+
+    async def _capture_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        if instance_key in _INSTANCE_CONFIG_SNAPSHOTS:
+            return
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            snapshot = await asyncio.to_thread(config_path.read_bytes)
+        except Exception as e:
+            self.log.warning(f"读取雷电模拟器 {idx} 配置快照失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS[instance_key] = snapshot
+        self.log.info(f"已保存雷电模拟器 {idx} 启动前配置快照")
+
+    async def _verify_and_restore_instance_config(self, idx: str) -> None:
+        instance_key = self._get_instance_key(idx)
+        snapshot = _INSTANCE_CONFIG_SNAPSHOTS.get(instance_key)
+        if snapshot is None:
+            return
+
+        if not self._is_config_guard_enabled():
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            return
+
+        self.log.info(
+            f"雷电模拟器 {idx} 已关闭，等待 "
+            f"{_CONFIG_GUARD_DELAY_SECONDS:g} 秒后校验配置"
+        )
+        await asyncio.sleep(_CONFIG_GUARD_DELAY_SECONDS)
+
+        config_path = self._get_instance_config_path(idx)
+        if config_path is None:
+            return
+
+        try:
+            current = await asyncio.to_thread(config_path.read_bytes)
+        except FileNotFoundError:
+            self.log.warning(f"关闭后未找到雷电模拟器 {idx} 配置，将尝试恢复快照")
+            current = None
+        except Exception as e:
+            self.log.warning(f"校验雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        if current == snapshot:
+            _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+            self.log.info(f"雷电模拟器 {idx} 配置校验通过")
+            return
+
+        try:
+            await asyncio.to_thread(config_path.write_bytes, snapshot)
+        except Exception as e:
+            self.log.warning(f"恢复雷电模拟器 {idx} 配置失败: {e}")
+            return
+
+        _INSTANCE_CONFIG_SNAPSHOTS.pop(instance_key, None)
+        self.log.warning(f"雷电模拟器 {idx} 配置发生变化，已恢复启动前快照")
+
+    async def open(self, idx: str, package_name: str = "") -> _Snap:
+        async with self._get_instance_lock(idx):
+            return await self._open_locked(idx, package_name)
+
+    async def _open_locked(self, idx: str, package_name: str) -> _Snap:
+        self.log.info(f"开始启动模拟器 {idx}  - {package_name}")
+
+        status = DeviceStatus.UNKNOWN  # 初始化status变量
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.entry.info.max_wait_time
+        ):
+            status = await self.getStatus(idx)
+            if status == DeviceStatus.ONLINE:
+                return (await self.getInfo(idx))[idx]
+            elif status == DeviceStatus.OFFLINE:
+                break
+            await asyncio.sleep(0.1)
+
+        else:
+            raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
+
+        await self._capture_instance_config(idx)
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "launch",
+                "--index",
+                idx,
+                *(["--packagename", f'"{package_name}"'] if package_name else []),
+                timeout=self.entry.info.max_wait_time,
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 launch 超时（{self.entry.info.max_wait_time}s）")
+        # 参考命令 dnconsole.exe launch --index 0
+
+        if result.returncode != 0:
+            raise RuntimeError(_format_ldplayer_failure("launch", result))
+
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.entry.info.max_wait_time
+        ):
+            status = await self.getStatus(idx)
+            if status == DeviceStatus.ONLINE:
+                await asyncio.sleep(
+                    30
+                    if package_name != ""
+                    and self.entry.info.max_wait_time > 60
+                    else 3
+                )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
+                if get_setting("Function", "IfBlockAd"):
+                    await self._block_ads_via_adb(idx)
+                return (await self.getInfo(idx))[idx]
+
+            await asyncio.sleep(0.1)
+        else:
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
+
+    async def close(self, idx: str) -> DeviceStatus:
+        async with self._get_instance_lock(idx):
+            return await self._close_locked(idx)
+
+    async def _close_locked(self, idx: str) -> DeviceStatus:
+        status = await self.getStatus(idx)
+        if status not in [
+            DeviceStatus.ONLINE,
+            DeviceStatus.STARTING,
+            DeviceStatus.ERROR,
+            DeviceStatus.UNKNOWN,
+        ]:
+            self.log.warning(f"设备{idx}未在线，当前状态: {status}")
+            if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
+            return status
+        if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+            self.log.warning(f"设备{idx}状态无法确认，仍尝试发送雷电关闭命令")
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "quit",
+                "--index",
+                idx,
+                timeout=self.entry.info.max_wait_time,
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 quit 超时（{self.entry.info.max_wait_time}s）")
+        # 参考命令 dnconsole.exe quit --index 0
+
+        if result.returncode != 0:
+            raise RuntimeError(_format_ldplayer_failure("quit", result))
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.entry.info.max_wait_time
+        ):
+            status = await self.getStatus(idx)
+            if status == DeviceStatus.OFFLINE:
+                await self._verify_and_restore_instance_config(idx)
+                return DeviceStatus.OFFLINE
+            await asyncio.sleep(0.1)
+
+        else:
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                self.log.warning(f"雷电模拟器 {idx} 关闭命令已发送，但状态无法确认: {status}")
+                return status
+            raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
+
+    async def getStatus(
+        self, idx: str, data: LDPlayerDevice | None = None
+    ) -> DeviceStatus:
+        if data is None:
+            try:
+                data = (await self.get_device_info(idx))[idx]
+            except Exception as e:
+                self.log.error(f"获取模拟器 {idx} 信息失败: {e}")
+                return DeviceStatus.ERROR
+
+        # 计算状态码
+        if data.in_android == 1:
+            return DeviceStatus.ONLINE
+        elif data.in_android == 2:
+            if data.vbox_pid > 0:
+                return DeviceStatus.STARTING
+                # 雷电启动后, vbox_pid为-1, 目前不知道有什么区别
+            else:
+                return DeviceStatus.STARTING
+        elif data.in_android == 0:
+            return DeviceStatus.OFFLINE
+        else:
+            return DeviceStatus.UNKNOWN
+
+    async def getInfo(self, idx: str | None) -> dict[str, _Snap]:
+        data = await self.get_device_info(idx)
+        result: dict[str, _Snap] = {}
+
+        for idx, info in data.items():
+            status = await self.getStatus(idx, info)
+            result[idx] = _Snap(
+                title=info.title,
+                status=status,
+                adb_address=f"emulator-{5554 + int(idx) * 2}",
+            )
+
+        return result
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            self.log.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
+
+        result = (await self.get_device_info(idx))[idx]
+
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.entry.info.max_wait_time
+        ):
+            # 检查窗口可见性是否符合预期
+            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
+                return status
+
+            try:
+                combo = (self.entry.info.boss_key or "").strip()
+                if combo and combo != "[]":
+                    keyboard.press_and_release(combo)
+            except Exception as e:
+                self.log.error(f"发送BOSS键失败: {e}")
+
+            await asyncio.sleep(0.5)
+
+        else:
+            raise RuntimeError(f"隐藏设备{idx}窗口超时")
+
+    async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
+        """获取模拟器的信息"""
+
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "list2",
+                timeout=self.entry.info.max_wait_time,
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 list2 超时（{self.entry.info.max_wait_time}s）")
+
+        if result.returncode != 0:
+            raise RuntimeError(_format_ldplayer_failure("list2", result))
+        emulators: dict[str, LDPlayerDevice] = {}
+        data = result.stdout.strip()
+
+        for line in data.strip().splitlines():
+            parts = line.strip().split(",")
+            if len(parts) != 10:
+                raise ValueError(f"数据格式错误: {line}")
+            if idx is not None and parts[0] != idx:
+                continue
+            try:
+                emulators[parts[0]] = LDPlayerDevice(
+                    idx=int(parts[0]),
+                    title=parts[1],
+                    top_hwnd=int(parts[2]),
+                    bind_hwnd=int(parts[3]),
+                    in_android=int(parts[4]),
+                    pid=int(parts[5]),
+                    vbox_pid=int(parts[6]),
+                    width=int(parts[7]),
+                    height=int(parts[8]),
+                    density=int(parts[9]),
+                )
+            except Exception as e:
+                self.log.warning(f"解析失败: {line}, 错误: {e}")
+
+        if idx is not None and len(emulators) == 0:
+            raise RuntimeError("未找到对应模拟器信息")
+
+        return emulators
+
+    # ?wk雷电你都返回了什么啊
+
+    async def _block_ads_via_adb(self, idx: str) -> None:
+        adb_path = self.emulator_path.parent / "adb.exe"
+        adb_serial = f"emulator-{5554 + int(idx) * 2}"  # 雷电模拟器 ADB 设备名固定格式
+
+        for package in ["com.android.flysilkworm"]:
+            result = await ProcessRunner.run_process(
+                adb_path,
+                "-s",
+                adb_serial,
+                "shell",
+                "pm",
+                "disable-user",
+                "--user",
+                "0",
+                package,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                self.log.success(f"已禁用广告包: {package}")
+            else:
+                self.log.warning(f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")
+
+    async def get_adb_ports(self, pid: int) -> int:
+        """使用psutil获取adb端口"""
+        try:
+            process = psutil.Process(pid)
+            connections = process.net_connections(kind="inet")
+            for conn in connections:
+                if conn.status == psutil.CONN_LISTEN and conn.laddr.port != 2222:
+                    return conn.laddr.port
+            return 0  # 如果没有找到合适的端口，返回0
+        except:  # noqa: E722
+            return 0

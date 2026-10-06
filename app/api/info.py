@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+#   Copyright (c) 2024-2025 DLmaster361
+#   Copyright (c) 2025 MoeSnowyFox
+#   Copyright (c) 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -21,27 +21,69 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
+
 from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
-from app.core import Config
+from app.api import OutBase
+from app.core import Config, TaskDispatcher
 from app.core.history import history_store
-from app.plugins import PluginManager
-
-
-def _get_emulator_service():
-    service = PluginManager.service.get("emulator")
-    if service is None:
-        raise RuntimeError("emulator service is unavailable")
-    return service
-
-
-def _error_code(exc: Exception) -> int:
-    return 503 if "service is unavailable" in str(exc) else 500
-
-
-from app.models.schema import *
+from app.models.task import TaskMode
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
+
+
+class InfoOut(OutBase):
+    data: Dict[str, Any] = Field(..., description="收到的服务器数据")
+
+
+class VersionOut(OutBase):
+    if_need_update: bool = Field(..., description="后端代码是否需要更新")
+    current_time: str = Field(..., description="后端代码当前时间戳")
+    current_hash: str = Field(..., description="后端代码当前哈希值")
+
+
+class NoticeOut(OutBase):
+    if_need_show: bool = Field(..., description="是否需要显示公告")
+    data: Dict[str, str] = Field(
+        ..., description="公告信息, key为公告标题, value为公告内容"
+    )
+
+
+class ComboBoxItem(BaseModel):
+    label: str = Field(..., description="展示值")
+    value: Optional[str] = Field(..., description="实际值")
+    supported_modes: Optional[List[TaskMode]] = Field(
+        default=None, description="任务项支持的执行模式；非脚本项为空"
+    )
+
+
+class ComboBoxOut(OutBase):
+    data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class GetStageIn(BaseModel):
+    type: Literal[
+        "User",
+        "Today",
+        "ALL",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ] = Field(
+        ...,
+        description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
+    )
+
+
+class EmulatorDeleteIn(BaseModel):
+    emulatorId: str = Field(..., description="游戏配置 uid")
 
 
 @router.post(
@@ -79,7 +121,7 @@ async def get_git_version() -> VersionOut:
     status_code=200,
 )
 async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型")
+    stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
     try:
@@ -104,13 +146,14 @@ async def get_stage_combox(
     status_code=200,
 )
 async def get_script_combox() -> ComboBoxOut:
-
     try:
-        raw_data = await Config.get_script_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = [
+            ComboBoxItem(label=entry.info.name or str(uid), value=str(uid))
+            for uid, entry in Config.ScriptConfig.items()
+        ]
     except Exception as e:
         return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -123,13 +166,18 @@ async def get_script_combox() -> ComboBoxOut:
     status_code=200,
 )
 async def get_task_combox() -> ComboBoxOut:
-
     try:
-        raw_data = await Config.get_task_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = [
+            ComboBoxItem(
+                label=f"{entry.info.mode}:{uid}",
+                value=str(uid),
+                supported_modes=[entry.info.mode],
+            )
+            for uid, entry in TaskDispatcher.running_items()
+        ]
     except Exception as e:
         return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -141,14 +189,21 @@ async def get_task_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_plan_combox() -> ComboBoxOut:
-
+async def get_plan_combox(
+    body: dict = Body(default_factory=dict),
+) -> ComboBoxOut:
     try:
-        raw_data = await Config.get_plan_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        script_type = (body or {}).get("scriptType") or (body or {}).get("script_type")
+        data = []
+        for uid, entry in Config.PlanConfig.items():
+            if script_type and type(entry).__name__ != script_type:
+                continue
+            data.append(
+                ComboBoxItem(label=entry.info.name or str(uid), value=str(uid))
+            )
     except Exception as e:
         return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -156,18 +211,19 @@ async def get_plan_combox() -> ComboBoxOut:
 @router.post(
     "/combox/emulator",
     tags=["Get"],
-    summary="获取可选模拟器下拉框信息",
+    summary="获取可选游戏/模拟器下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
 )
 async def get_emulator_combox() -> ComboBoxOut:
-
     try:
-        raw_data = await _get_emulator_service().list_options()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = [
+            ComboBoxItem(label=entry.info.name or str(uid), value=str(uid))
+            for uid, entry in Config.GameConfig.items()
+        ]
     except Exception as e:
         return ComboBoxOut(
-            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -175,7 +231,7 @@ async def get_emulator_combox() -> ComboBoxOut:
 @router.post(
     "/combox/emulator/devices",
     tags=["Get"],
-    summary="获取可选模拟器多开实例下拉框信息",
+    summary="获取可选游戏多开实例下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
 )
@@ -183,11 +239,17 @@ async def get_emulator_devices_combox(
     emulator: EmulatorDeleteIn = Body(...),
 ) -> ComboBoxOut:
     try:
-        raw_data = await _get_emulator_service().list_device_options(emulator.emulatorId)
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        game = Config.GameConfig[UUID(emulator.emulatorId)]
+        data = [
+            ComboBoxItem(
+                label=dev.info.name or str(dev.uid),
+                value=str(dev.uid),
+            )
+            for dev in game.devices.values()
+        ]
     except Exception as e:
         return ComboBoxOut(
-            code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
     return ComboBoxOut(data=data)
 
@@ -224,26 +286,13 @@ async def get_notice_info() -> NoticeOut:
 async def confirm_notice() -> OutBase:
 
     try:
-        await Config.set("Data", "IfShowNotice", False)
+        Config.setting.data.if_show_notice = False
+        await Config.setting.commit()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
-
-
-# @router.post(
-#     "/apps_info", summary="获取可下载应用信息", response_model=InfoOut, status_code=200
-# )
-# async def get_apps_info() -> InfoOut:
-
-#     try:
-#         data = await Config.get_server_info("apps_info")
-#     except Exception as e:
-#         return InfoOut(
-#             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
-#         )
-#     return InfoOut(data=data)
 
 
 @router.post(

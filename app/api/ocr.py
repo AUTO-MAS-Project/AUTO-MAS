@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -30,7 +30,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 from app.utils import get_logger
-from app.models.schema import OutBase
+from app.api import OutBase
 
 if TYPE_CHECKING:
     from app.utils.OCR.OCRtool import OCRTool as OCRTool
@@ -172,10 +172,7 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
     """
     try:
         OCRTool = _ocr_tool()
-        # 初始化OCRTool
-        ocr_tool = OCRTool(
-            width=params.aspect_ratio_width, height=params.aspect_ratio_height
-        )
+        # 截图/区域方法均为 classmethod，无需实例化
 
         # 获取截图区域（如果没有提供自定义区域）
         if params.region is None:

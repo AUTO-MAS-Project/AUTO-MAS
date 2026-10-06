@@ -10,12 +10,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ENTRY_POINT_GROUPS = ("auto_mas.plugins", "automas.plugins")
 ROOT_SDK_NAME = "uv (AUTO-MAS)"
 ROOT_SDK_TYPE = "Python SDK"
 ROOT_MODULE_NAME = "auto-mas"
-CORE_PLUGIN_MODULE_NAME = "auto-mas-core"
+CORE_PLUGIN_MODULE_NAME = "auto_mas_core"
 WORKSPACE_EXCLUDES = {"pypi", "_generated"}
 
 
@@ -56,7 +55,11 @@ def discover_plugin_projects(workspace: Path) -> list[PluginProject]:
 
     projects: list[PluginProject] = []
     for item in sorted(plugins_dir.iterdir(), key=lambda path: path.name):
-        if not item.is_dir() or item.name in WORKSPACE_EXCLUDES or item.name.startswith("_"):
+        if (
+            not item.is_dir()
+            or item.name in WORKSPACE_EXCLUDES
+            or item.name.startswith("_")
+        ):
             continue
         pyproject = item / "pyproject.toml"
         if not pyproject.exists():
@@ -90,7 +93,13 @@ def _quote(value: str) -> str:
 
 def render_dependency_groups(projects: list[PluginProject]) -> str:
     distributions = sorted(project.distribution for project in projects)
-    lines = ["[dependency-groups]", "dev = [", '    "auto-mas-core",', "]", "plugins = ["]
+    lines = [
+        "[dependency-groups]",
+        "dev = [",
+        '    "auto_mas_core",',
+        "]",
+        "plugins = [",
+    ]
     for distribution in distributions:
         lines.append(f"    {_quote(distribution)},")
     lines.append("]")
@@ -101,7 +110,9 @@ def render_workspace(projects: list[PluginProject]) -> str:
     lines = ["[tool.uv.workspace]", "members = ["]
     for project in sorted(projects, key=lambda item: item.member):
         lines.append(f"    {_quote(project.member)},")
-    lines.extend(["]", "exclude = [", '    "plugins/pypi",', '    "plugins/_generated",', "]"])
+    lines.extend(
+        ["]", "exclude = [", '    "plugins/pypi",', '    "plugins/_generated",', "]"]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -114,7 +125,11 @@ def render_sources(projects: list[PluginProject]) -> str:
 
 def _is_header(line: str) -> bool:
     stripped = line.strip()
-    return stripped.startswith("[") and stripped.endswith("]") and not stripped.startswith("[[")
+    return (
+        stripped.startswith("[")
+        and stripped.endswith("]")
+        and not stripped.startswith("[[")
+    )
 
 
 def replace_table(text: str, header: str, replacement: str) -> str:
@@ -143,7 +158,9 @@ def replace_table(text: str, header: str, replacement: str) -> str:
 
 
 def render_root_pyproject(current: str, projects: list[PluginProject]) -> str:
-    updated = replace_table(current, "[dependency-groups]", render_dependency_groups(projects))
+    updated = replace_table(
+        current, "[dependency-groups]", render_dependency_groups(projects)
+    )
     updated = replace_table(updated, "[tool.uv.workspace]", render_workspace(projects))
     updated = replace_table(updated, "[tool.uv.sources]", render_sources(projects))
     return updated
@@ -163,19 +180,34 @@ def _create_pycharm_module_tree(project: PluginProject) -> ET.ElementTree:
         },
     )
     manager = ET.SubElement(root, "component", {"name": "NewModuleRootManager"})
-    content = ET.SubElement(manager, "content", {"url": f"file://$MODULE_DIR$/{project.member}"})
+    content = ET.SubElement(
+        manager, "content", {"url": f"file://$MODULE_DIR$/{project.member}"}
+    )
     if (project.path / "src").exists():
         ET.SubElement(
             content,
             "sourceFolder",
-            {"url": f"file://$MODULE_DIR$/{project.member}/src", "isTestSource": "false"},
+            {
+                "url": f"file://$MODULE_DIR$/{project.member}/src",
+                "isTestSource": "false",
+            },
         )
     if (project.path / ".venv").exists():
-        ET.SubElement(content, "excludeFolder", {"url": f"file://$MODULE_DIR$/{project.member}/.venv"})
+        ET.SubElement(
+            content,
+            "excludeFolder",
+            {"url": f"file://$MODULE_DIR$/{project.member}/.venv"},
+        )
 
-    ET.SubElement(manager, "orderEntry", {"type": "module", "module-name": ROOT_MODULE_NAME})
-    if project.distribution != "auto-mas-core":
-        ET.SubElement(manager, "orderEntry", {"type": "module", "module-name": CORE_PLUGIN_MODULE_NAME})
+    ET.SubElement(
+        manager, "orderEntry", {"type": "module", "module-name": ROOT_MODULE_NAME}
+    )
+    if project.distribution != "auto_mas_core":
+        ET.SubElement(
+            manager,
+            "orderEntry",
+            {"type": "module", "module-name": CORE_PLUGIN_MODULE_NAME},
+        )
     ET.SubElement(manager, "orderEntry", {"type": "sourceFolder", "forTests": "false"})
     ET.SubElement(
         manager,
@@ -244,10 +276,16 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
             continue
 
         order_entries = manager.findall("orderEntry")
-        jdk_entry = next((entry for entry in order_entries if entry.get("type") == "jdk"), None)
+        jdk_entry = next(
+            (entry for entry in order_entries if entry.get("type") == "jdk"), None
+        )
         if jdk_entry is None:
             source_entry = next(
-                (entry for entry in order_entries if entry.get("type") == "sourceFolder"),
+                (
+                    entry
+                    for entry in order_entries
+                    if entry.get("type") == "sourceFolder"
+                ),
                 None,
             )
             jdk_entry = ET.Element(
@@ -264,12 +302,17 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
             jdk_entry.set("jdkType", ROOT_SDK_TYPE)
 
         has_root_module_dep = any(
-            entry.get("type") == "module" and entry.get("module-name") == ROOT_MODULE_NAME
+            entry.get("type") == "module"
+            and entry.get("module-name") == ROOT_MODULE_NAME
             for entry in manager.findall("orderEntry")
         )
         if not has_root_module_dep:
             source_entry = next(
-                (entry for entry in manager.findall("orderEntry") if entry.get("type") == "sourceFolder"),
+                (
+                    entry
+                    for entry in manager.findall("orderEntry")
+                    if entry.get("type") == "sourceFolder"
+                ),
                 None,
             )
             module_entry = ET.Element(
@@ -282,14 +325,19 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
                 insert_at = list(manager).index(source_entry)
                 manager.insert(insert_at, module_entry)
 
-        if project.distribution != "auto-mas-core":
+        if project.distribution != "auto_mas_core":
             has_core_module_dep = any(
-                entry.get("type") == "module" and entry.get("module-name") == CORE_PLUGIN_MODULE_NAME
+                entry.get("type") == "module"
+                and entry.get("module-name") == CORE_PLUGIN_MODULE_NAME
                 for entry in manager.findall("orderEntry")
             )
             if not has_core_module_dep:
                 source_entry = next(
-                    (entry for entry in manager.findall("orderEntry") if entry.get("type") == "sourceFolder"),
+                    (
+                        entry
+                        for entry in manager.findall("orderEntry")
+                        if entry.get("type") == "sourceFolder"
+                    ),
                     None,
                 )
                 module_entry = ET.Element(
@@ -310,7 +358,9 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
                 for folder in content.findall("sourceFolder")
             )
             if not has_src and (project.path / "src").exists():
-                ET.SubElement(content, "sourceFolder", {"url": src_url, "isTestSource": "false"})
+                ET.SubElement(
+                    content, "sourceFolder", {"url": src_url, "isTestSource": "false"}
+                )
 
         ET.indent(tree, space="  ")
         tree.write(iml_path, encoding="utf-8", xml_declaration=True)
@@ -323,9 +373,15 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if pyproject.toml is out of sync")
+    parser.add_argument(
+        "--check", action="store_true", help="fail if pyproject.toml is out of sync"
+    )
     parser.add_argument("--write", action="store_true", help="update pyproject.toml")
-    parser.add_argument("--sync-idea", action="store_true", help="align existing PyCharm plugin modules with the root uv SDK")
+    parser.add_argument(
+        "--sync-idea",
+        action="store_true",
+        help="align existing PyCharm plugin modules with the root uv SDK",
+    )
     args = parser.parse_args()
 
     if args.check == args.write:
@@ -339,7 +395,10 @@ def main() -> int:
 
     if args.check:
         if current != expected:
-            print("pyproject.toml is out of sync with local plugin projects", file=sys.stderr)
+            print(
+                "pyproject.toml is out of sync with local plugin projects",
+                file=sys.stderr,
+            )
             return 1
         return 0
 

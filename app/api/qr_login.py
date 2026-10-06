@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
 
@@ -34,7 +34,7 @@
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 from app.core import Config
-from app.models.schema import OutBase
+from app.api import OutBase
 
 
 router = APIRouter(prefix="/api/tools/sign/miyoushe/qr", tags=["扫码登录"])

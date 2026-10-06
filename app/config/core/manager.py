@@ -8,15 +8,31 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator
 from collections.abc import Iterator
 from uuid import UUID
 
-from app.utils.io import write_toml
-from ..wire import WireDict, to_tomlable
+# 当前 asyncio 上下文持有的 X 锁 token。判定用差集而非 Token.reset：
+# 收尾兜底可能在另一个上下文里 unlock，reset 会抛 LookupError。
+_x_tokens: ContextVar[frozenset[UUID]] = ContextVar("mas_x_tokens", default=frozenset())
+
+
+def x_tokens() -> frozenset[UUID]:
+    """当前执行上下文持有的 X 锁 token 集合。"""
+    return _x_tokens.get()
+
+
+def add_x_token(token: UUID) -> None:
+    _x_tokens.set(_x_tokens.get() | {token})
+
+
+def discard_x_token(token: UUID) -> None:
+    _x_tokens.set(_x_tokens.get() - {token})
+
+from app.utils.io import write_file
 
 if TYPE_CHECKING:
-    from .node import ConfigNode
+    from .node import ConfigNode, NodeState
     from .collection import ConfigCollection
 
 type WorkspaceUnit = ConfigNode | type[ConfigNode]
@@ -82,9 +98,20 @@ class ConfigManager:
 
     def register_root(self, node: ConfigNode, path: Path) -> None:
         path = Path(path)
-        if path.suffix.lower() != ".toml":
-            raise ValueError(f"持久化文件必须是 .toml: {path}")
+        if path.suffix.lower() not in {".yaml", ".yml"}:
+            raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
         self._roots[node.uid] = RootRecord(node=node, path=path)
+
+    def unregister_root(self, node: ConfigNode) -> None:
+        """解除 ``file=`` 持久化根登记（幂等）。
+
+        与 ref 池 ``register_collection``（不可解除）不同：``_roots`` 允许显式摘掉，
+        供插件配置等临时根在禁用后离开 ``flush`` / 防抖扫描集。
+        调用方须先 ``commit`` 并完成对该根的落盘，再 unregister。
+        """
+        rec = self._roots.get(node.uid)
+        if rec is not None and rec.node is node:
+            del self._roots[node.uid]
 
     def get_file(self, root: ConfigNode) -> Path | None:
         rec = self._roots.get(root.uid)
@@ -298,8 +325,17 @@ class ConfigManager:
             path = self.get_file(root)
             if path is None:
                 continue
-            payload = await root.to_dict(if_decrypt=False)
-            write_toml(path, cast(WireDict, to_tomlable(payload)))
+            # register_root 在 __init__ 里登记，activate 是后一步，故「已登记未激活」
+            # 是正常生命周期状态：AppConfig 分两阶段热化（引导 3 个、领域 6 个），
+            # 其间任一次 commit 都会扫到另 6 个还没热化的根；父事务 ROLLBACK 也会把
+            # 节点退回 INACTIVE。而 to_dict 对非 ACTIVE 节点上抛，本方法又跑在
+            # schedule_debounced_save 的裸 create_task 里 —— 抛出即整轮落盘全灭，
+            # 且异常无人接收（只剩一句 never retrieved）。未激活的根本就没有可落盘的
+            # 状态，跳过不丢数据：activate 自己会补上该根的首次写。
+            if root.activation_state != NodeState.ACTIVE:
+                continue
+            # to_dict 已是 mode=json 文档；YAML 直接承载 null / 嵌套，无需适配层
+            write_file(path, await root.to_dict())
 
     async def flush(self) -> None:
         """立即全量落盘，跳过防抖等待。"""
@@ -311,4 +347,4 @@ class ConfigManager:
 config_manager = ConfigManager()
 """全局单例。"""
 
-from .node import ConfigNode  # noqa: E402
+from .node import ConfigNode, NodeState  # noqa: E402

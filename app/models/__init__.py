@@ -1,6 +1,4 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -20,11 +18,9 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""领域模型：``config`` 为配置字段表，``task`` 为任务执行契约与运行态配置树。
 
-from .ConfigBase import *
-from .config import *
-from .schema import *
-from .emulator import *
-from .task import *
+只暴露子模块，符号一律从 ``app.models.config`` / ``app.models.task`` 具名导入。
+"""
 
-__all__ = ["ConfigBase", "config", "schema", "emulator", "task"]
+__all__ = ["config", "task"]

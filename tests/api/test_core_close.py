@@ -81,8 +81,8 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
         ) as teardown, patch.object(
-            core_api.TaskManager, "stop_task", new_callable=AsyncMock
-        ) as stop_task, patch.object(
+            core_api.TaskDispatcher, "stop", new_callable=AsyncMock
+        ) as stop_all, patch.object(
             core_api.System, "cancel_power_task", new_callable=AsyncMock
         ), patch(
             "app.api.core.Publisher.send", new_callable=AsyncMock
@@ -95,7 +95,7 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
 
         # 开发模式：仅轻量任务清理，不执行完整 teardown（插件/定时器保持存活以复用）
         teardown.assert_not_awaited()
-        stop_task.assert_awaited_once_with("ALL")
+        stop_all.assert_awaited_once_with("ALL")
         send.assert_awaited_once()
         self.assertFalse(server.should_exit)
 

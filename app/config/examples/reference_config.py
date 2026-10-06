@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
+from uuid import UUID
 
 from pydantic import Field
 
@@ -10,7 +11,9 @@ from app.config import (
     ConfigCollection,
     ConfigEntry,
     ConfigGroup,
+    ConfigTableColumn,
     Trigger,
+    TriggerDecl,
     Virtual,
 )
 from app.config.shortcuts import collection, ref, trigger_field, virtual_field
@@ -39,6 +42,8 @@ class ExampleScript(ConfigEntry):
         name: str = "示例脚本"
         status: Virtual[str] = None
         refresh: Trigger = False
+        # 下拉组合按钮：Literal 触发值传给 handler
+        action: Annotated[Literal["ping", "reset"] | None, TriggerDecl()] = None
 
     info: Info = Field(default_factory=Info)
 
@@ -50,14 +55,34 @@ class ExampleScript(ConfigEntry):
     def on_refresh(self) -> None:
         _ = self.info.name
 
+    @trigger_field("info.action")
+    def on_action(self, value: Literal["ping", "reset"]) -> None:
+        _ = (self.info.name, value)
+
+
+class DeviceCol(ConfigTableColumn):
+    """表格列：同 Entry 上多个 DeviceCol 字段合成一表。"""
+
+    _table_key: ClassVar[str | None] = "devices"
+    _table_transpose: ClassVar[bool] = False
+    name: str = ""
+    enabled: bool = True
+
+
+class ExampleDeviceMatrix(ConfigEntry):
+    """表格样式示例。"""
+
+    left: DeviceCol = Field(default_factory=DeviceCol)
+    right: DeviceCol = Field(default_factory=DeviceCol)
+
 
 class ExampleQueueItem(ConfigEntry):
-    """队列项；``ref('scripts')`` 绑定到 ref 池中的脚本集合。"""
+    """队列项；``ref('example_scripts')`` 绑定到 ref 池中的脚本集合。"""
 
     class Info(ConfigGroup):
         script_id: Annotated[
-            str,
-            ref("scripts", default="-", allow_values=("-",)),
+            UUID | str,
+            ref("example_scripts", default="-", allow_values=("-",)),
         ] = "-"
 
     info: Info = Field(default_factory=Info)

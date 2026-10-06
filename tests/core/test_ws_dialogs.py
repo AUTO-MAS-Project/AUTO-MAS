@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.core.ws import protocol
 from app.core.ws.dialogs import Dialogs
-from app.models.schema import WSEnvelope
+from app.core.ws.protocol import WSEnvelope
 
 
 class WSDialogsTest(unittest.IsolatedAsyncioTestCase):

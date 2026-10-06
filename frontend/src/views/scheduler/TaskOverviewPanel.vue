@@ -69,12 +69,12 @@ const applyTaskInfo = (taskInfo: any[] | undefined) => {
   const { scriptCount, userCount } = getTaskInfoStats(taskInfo)
   logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
 
-  // 转换后端的 task_info 格式到前端的 Script 格式
+  // 转换扁平脚本列表到前端的 Script 格式（由 TaskItem.scripts 压平而来）
   const newTaskData = taskInfo.map((task: any, index: number) => ({
     script_id: task.script_id || `script_${index}`,
     name: task.name || '未知脚本',
     status: task.status || '等待',
-    user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
+    user_list: task.userList ? [...task.userList] : [],
   }))
 
   logger.debug('数据发生实际变化，更新组件')

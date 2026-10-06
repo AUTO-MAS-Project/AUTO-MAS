@@ -14,9 +14,9 @@ from uuid import UUID
 
 
 from .core.node import ConfigNode
-from .wire import CollectionOrderItem
 
 if TYPE_CHECKING:
+    from .core.collection import CollectionOrderItem
     from .core.entry import ConfigEntry
 
 type ConfigEvent = FieldChangeEvent | CollectionChangeEvent

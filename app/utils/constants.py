@@ -21,11 +21,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
 import os
-import sys
-import locale
-import subprocess
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -40,35 +37,77 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
-    "MaaFWConfig": "MaaFramework 项目",
-    "MaaFWUserConfig": "MaaFramework 项目",
+    "OkwwConfig": "ok-ww",
+    "OkNteConfig": "OK-NTE",
+    "M9AConfig": "M9A",
+    "M9AUserConfig": "M9A",
+    "MaaFWConfig": "MFW",
+    "HSRConfig": "HSR",
+    "BetterGIConfig": "BetterGI",
+    "ZzzOdConfig": "ZZZ-OD",
+    "BAAHConfig": "BAAH",
 }
 """配置类型映射表"""
 
-MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
+PLAN_CONSUMER_VALUES = ("maa", "maaend")
+"""计划表消费方列表"""
+
+MAA_RUN_MOOD_BOOK = {
+    "GreenTicketStore": "绿票商店",
+    "Annihilation": "剿灭",
+    "Routine": "日常",
+}
 """MAA运行模式映射表"""
+
+MAA_MODE_TIME_LIMIT_BOOK = {
+    "GreenTicketStore": "RoutineTimeLimit",
+    "Annihilation": "AnnihilationTimeLimit",
+    "Routine": "RoutineTimeLimit",
+}
+"""MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
+
+MAAEND_RUN_MOOD_BOOK = {
+    "Delivery": "送货",
+    "Routine": "日常",
+    "AutoCollect": "自动采集",
+}
+"""MaaEnd 自动代理运行模式映射表"""
+
+MAAEND_DELIVERY_TASK = "SeizeDeliveryJobs"
+"""MaaEnd v2 送货阶段使用的任务名称"""
+
+MAAEND_AUTO_COLLECT_TASK = "AutoCollect"
+"""MaaEnd 自动采集阶段使用的任务名称"""
+
+MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
+"""MaaEnd 抢委托送货的委托接收点选项"""
+
+MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
+"""MaaEnd 自动采集的三日周期模式"""
 
 MAA_TASKS = [
     "StartUp",
+    "DepotMaintain",
     "Fight",
     "Infrast",
     "Recruit",
     "Mall",
     "Award",
     "Roguelike",
-    "DepotMaintain",
+    "SwitchTheme",
 ]
 """MAA任务列表"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
+    "库存保持",
     "理智作战",
     "基建换班",
     "自动公招",
     "信用收支",
     "领取奖励",
     "自动肉鸽",
-    "库存保持",
+    "更换主题",
 ]
 """MAA任务列表"""
 
@@ -101,6 +140,10 @@ MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "30145",
     "30155",
     "30165",
+    # 无对应可刷关卡：家具零件（基建产出）、合成玉（源石兑换）、声望（战斗经验）
+    "3401",
+    "4003",
+    "5001",
 }
 """MAA 库存保持不可刷取物品 ID"""
 
@@ -125,21 +168,25 @@ ARKNIGHTS_PACKAGE_NAME = {
 }
 """明日方舟包名映射表"""
 
+ARKNIGHTS_VERSION_API_SERVER = {
+    "Official": "official",
+    "Bilibili": "b",
+}
+"""明日方舟版本接口服务器标识映射表
+
+仅收录已实测可用的服务器；外服与台服未找到稳定的公开版本接口，
+不在此表中的服务器会跳过客户端版本检查。
+"""
+
+ARKNIGHTS_OFFICIAL_APK_URL = "https://ak.hypergryph.com/downloads/android_lastest"
+"""明日方舟官服安卓包下载入口（302 跳转至启动器再跳至 CDN 实际包地址）"""
+
 MAA_TASK_TRANSITION_METHOD_BOOK = {
     "NoAction": "8",
     "ExitGame": "9",
     "ExitEmulator": "9",
 }
 """MAA任务切换方式映射表"""
-
-MAA_STARTUP_BASE = {
-    "$type": "StartUpTask",
-    "AccountName": "",
-    "Name": "开始唤醒",
-    "IsEnable": True,
-    "TaskType": "StartUp",
-}
-"""MAA开始唤醒基础配置"""
 
 MAA_ANNIHILATION_FIGHT_BASE = {
     "$type": "FightTask",
@@ -150,12 +197,14 @@ MAA_ANNIHILATION_FIGHT_BASE = {
     "EnableTargetDrop": False,
     "DropId": "",
     "DropCount": 0,
+    "IsInventoryTarget": False,
     "EnableTimesLimit": False,
     "TimesLimit": 999,
     "Series": 0,
     "StagePlan": ["Annihilation"],
     "IsDrGrandet": False,
     "UseExpiringMedicine": True,
+    "UseExpireMedicineForActivity": False,
     "UseCustomAnnihilation": True,
     "AnnihilationStage": "Annihilation",
     "HideUnavailableStage": True,
@@ -189,12 +238,14 @@ MAA_REMAIN_FIGHT_BASE = {
     "EnableTargetDrop": False,
     "DropId": "",
     "DropCount": 0,
+    "IsInventoryTarget": False,
     "EnableTimesLimit": False,
     "TimesLimit": 999,
     "Series": 0,
     "StagePlan": [""],
     "IsDrGrandet": False,
     "UseExpiringMedicine": False,
+    "UseExpireMedicineForActivity": False,
     "UseCustomAnnihilation": False,
     "AnnihilationStage": "Annihilation",
     "HideUnavailableStage": True,
@@ -218,6 +269,15 @@ MAA_REMAIN_FIGHT_BASE = {
 }
 """MAA剩余理智作战基础配置"""
 
+MAA_GREEN_TICKET_STORE_TASK = {
+    "$type": "CustomTask",
+    "Name": "绿票商店",
+    "IsEnable": True,
+    "TaskType": "Custom",
+    "CustomTaskName": "GreenTicket@Store@Begin",
+}
+"""MAA绿票商店任务配置：牛杂「绿票商店」的任务链，需 MAA v6.3.0 及以上"""
+
 MAAEND_SANITY_TASK_LABELS = {
     "OperatorProgression": "干员养成",
     "WeaponProgression": "武器养成",
@@ -238,13 +298,6 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
-    "VFTheHub": "枢纽区",
-    "VFOriginiumSciencePark": "源石研究园",
-    "VFOriginLodespring": "矿脉源区",
-    "VFPowerPlateau": "供能高地",
-    "WLWulingCity": "武陵城区",
-    "WLQingboStockade": "清波寨",
-    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -255,6 +308,9 @@ MAAEND_SANITY_TASK_TYPES = (
     "Essence",
 )
 """MaaEnd理智任务类型列表"""
+
+MAAEND_AUTO_ESSENCE_MENUS = ("Random", "Location", "Target")
+"""MaaEnd 基质刷取模式（随机、地点、目标）"""
 
 MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
@@ -268,17 +324,6 @@ MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     ),
 }
 """MaaEnd协议空间任务选项列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-    "WLMarkerStone",
-)
-"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
@@ -306,7 +351,6 @@ MAAEND_TASK_GROUPS = {
         "tasks": (
             ("VisitFriends", "拜访好友"),
             ("CreditShoppingN2", "信用点购物"),
-            ("SeizeEntrustTask", "抢委托"),
         ),
     },
     "Frontend": {
@@ -315,7 +359,7 @@ MAAEND_TASK_GROUPS = {
             ("AutoEcoFarm", "生态农场"),
             ("AutoSell", "售卖弹性物资"),
             ("EnvironmentMonitoring", "环境监测"),
-            ("AutoCollect", "自动采集"),
+            ("TrialOfSwordmancy", "选剑演武"),
         ),
     },
     "Rewards": {
@@ -325,6 +369,10 @@ MAAEND_TASK_GROUPS = {
             ("ResourceRecycleStation", "资源回收站"),
         ),
     },
+    "Statistics": {
+        "label": "数据统计",
+        "tasks": (("PullCountCalculator", "抽数计算"),),
+    },
 }
 """MaaEnd任务分组"""
 
@@ -333,10 +381,7 @@ MAAEND_TASKS = tuple(
     for group in MAAEND_TASK_GROUPS.values()
     for task_name, _ in group["tasks"]
 )
-"""MaaEnd托管任务列表"""
-
-MAAEND_CONTROLLER_TASKS = {"Win32-Front": MAAEND_TASKS}
-"""MaaEnd控制器支持的托管任务列表"""
+"""MaaEnd快速控制任务列表（不含独立送货和自动采集阶段）"""
 
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
@@ -344,7 +389,10 @@ MAAEND_SANITY_TASK_DEFAULTS = {
     "WeaponProgression": "WeaponEXP",
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
-    "AutoEssenceSpecifiedLocation": "VFTheHub",
+    "AutoEssenceSpecifiedLocation": "",
+    # Location 保持原有“指定地点”语义；Target 由用户显式切换。
+    "AutoEssenceMenu": "Location",
+    "AutoEssenceTargetWeapons": [],
 }
 """MaaEnd理智任务字段默认值"""
 
@@ -355,6 +403,8 @@ MAAEND_SANITY_TASK_FIELDS = (
     "CrisisDrills",
     "RewardsSetOption",
     "AutoEssenceSpecifiedLocation",
+    "AutoEssenceMenu",
+    "AutoEssenceTargetWeapons",
 )
 """MaaEnd理智任务字段列表"""
 
@@ -764,6 +814,11 @@ STARRAIL_STAGE_BOOK = {
     "Divergent_Universe_Gentle_Words": "饰品：商业公司 & 差分机（温柔话语）",
     "Divergent_Universe_Smelted_Heart": "饰品：盗贼 & 翁瓦克（浴火钢心）",
     "Divergent_Universe_Untoppled_Walls": "饰品：太空 & 仙舟（坚城不倒）",
+    "Simulated_Universe_World_3": "第三世界",
+    "Simulated_Universe_World_4": "第四世界",
+    "Simulated_Universe_World_5": "第五世界",
+    "Simulated_Universe_World_6": "第六世界",
+    "Simulated_Universe_World_8": "第八世界",
 }
 """星穹铁道关卡文本索引表"""
 
@@ -778,19 +833,6 @@ TIME_FIELDS = {
     "%f": "microsecond",
 }
 """时间字段映射表"""
-
-POWER_SIGN_MAP = {
-    "NoAction": "无动作",
-    "Shutdown": "关机",
-    "ShutdownForce": "强制关机",
-    "Reboot": "重启",
-    "Hibernate": "休眠",
-    "Sleep": "睡眠",
-    "KillSelf": "退出程序",
-    "Logoff": "注销此账户",
-}
-"""电源操作类型索引表"""
-
 
 RESERVED_NAMES = {
     "CON",
@@ -823,29 +865,200 @@ ILLEGAL_CHARS = set('<>:"/\\|?*')
 
 KEYBOARD_KEYS = frozenset(
     [
-        "\t", "\n", "\r", " ", "!", '"', "#", "$", "%", "&", "'", "(", ")", "*",
-        "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8",
-        "9", ":", ";", "<", "=", ">", "?", "@", "[", "\\", "]", "^", "_", "`",
-        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n",
-        "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "|",
-        "}", "~", "accept", "add", "alt", "altleft", "altright", "apps",
-        "backspace", "browserback", "browserfavorites", "browserforward",
-        "browserhome", "browserrefresh", "browsersearch", "browserstop",
-        "capslock", "clear", "convert", "ctrl", "ctrlleft", "ctrlright",
-        "decimal", "del", "delete", "divide", "down", "end", "enter", "esc",
-        "escape", "execute", "f1", "f10", "f11", "f12", "f13", "f14", "f15",
-        "f16", "f17", "f18", "f19", "f2", "f20", "f21", "f22", "f23", "f24",
-        "f3", "f4", "f5", "f6", "f7", "f8", "f9", "final", "fn", "hanguel",
-        "hangul", "hanja", "help", "home", "insert", "junja", "kana", "kanji",
-        "launchapp1", "launchapp2", "launchmail", "launchmediaselect", "left",
-        "modechange", "multiply", "nexttrack", "nonconvert", "num0", "num1",
-        "num2", "num3", "num4", "num5", "num6", "num7", "num8", "num9",
-        "numlock", "pagedown", "pageup", "pause", "pgdn", "pgup", "playpause",
-        "prevtrack", "print", "printscreen", "prntscrn", "prtsc", "prtscr",
-        "return", "right", "scrolllock", "select", "separator", "shift",
-        "shiftleft", "shiftright", "sleep", "space", "stop", "subtract", "tab",
-        "up", "volumedown", "volumemute", "volumeup", "win", "winleft",
-        "winright", "yen", "command", "option", "optionleft", "optionright",
+        "\t",
+        "\n",
+        "\r",
+        " ",
+        "!",
+        '"',
+        "#",
+        "$",
+        "%",
+        "&",
+        "'",
+        "(",
+        ")",
+        "*",
+        "+",
+        ",",
+        "-",
+        ".",
+        "/",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        ":",
+        ";",
+        "<",
+        "=",
+        ">",
+        "?",
+        "@",
+        "[",
+        "\\",
+        "]",
+        "^",
+        "_",
+        "`",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "o",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
+        "{",
+        "|",
+        "}",
+        "~",
+        "accept",
+        "add",
+        "alt",
+        "altleft",
+        "altright",
+        "apps",
+        "backspace",
+        "browserback",
+        "browserfavorites",
+        "browserforward",
+        "browserhome",
+        "browserrefresh",
+        "browsersearch",
+        "browserstop",
+        "capslock",
+        "clear",
+        "convert",
+        "ctrl",
+        "ctrlleft",
+        "ctrlright",
+        "decimal",
+        "del",
+        "delete",
+        "divide",
+        "down",
+        "end",
+        "enter",
+        "esc",
+        "escape",
+        "execute",
+        "f1",
+        "f10",
+        "f11",
+        "f12",
+        "f13",
+        "f14",
+        "f15",
+        "f16",
+        "f17",
+        "f18",
+        "f19",
+        "f2",
+        "f20",
+        "f21",
+        "f22",
+        "f23",
+        "f24",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "final",
+        "fn",
+        "hanguel",
+        "hangul",
+        "hanja",
+        "help",
+        "home",
+        "insert",
+        "junja",
+        "kana",
+        "kanji",
+        "launchapp1",
+        "launchapp2",
+        "launchmail",
+        "launchmediaselect",
+        "left",
+        "modechange",
+        "multiply",
+        "nexttrack",
+        "nonconvert",
+        "num0",
+        "num1",
+        "num2",
+        "num3",
+        "num4",
+        "num5",
+        "num6",
+        "num7",
+        "num8",
+        "num9",
+        "numlock",
+        "pagedown",
+        "pageup",
+        "pause",
+        "pgdn",
+        "pgup",
+        "playpause",
+        "prevtrack",
+        "print",
+        "printscreen",
+        "prntscrn",
+        "prtsc",
+        "prtscr",
+        "return",
+        "right",
+        "scrolllock",
+        "select",
+        "separator",
+        "shift",
+        "shiftleft",
+        "shiftright",
+        "sleep",
+        "space",
+        "stop",
+        "subtract",
+        "tab",
+        "up",
+        "volumedown",
+        "volumemute",
+        "volumeup",
+        "win",
+        "winleft",
+        "winright",
+        "yen",
+        "command",
+        "option",
+        "optionleft",
+        "optionright",
     ]
 )
 """键盘按键名称集合 (与 pyautogui.KEYBOARD_KEYS 一致, 内联以避免启动时导入 pyautogui)"""
@@ -1042,20 +1255,6 @@ DES_RULE = {
 """DES加密规则"""
 
 
-ENCODINGS = [
-    e
-    for e in dict.fromkeys(
-        ["utf-8", "utf-8-sig", locale.getpreferredencoding(), "gbk", "gb18030"]
-    )
-    if e
-]
-"""编码列表"""
-
-
-CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-"""创建子进程的标志"""
-
-
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 """匹配ANSI控制字符的正则表达式"""
 
@@ -1093,3 +1292,9 @@ EMULATOR_SPLASH_ADS_PATH_BOOK = {
     "ldplayer": [APPDATA_PATH / "leidian9/cache"],
 }
 """模拟器启动时广告路径"""
+
+CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+"""循环队列时间字段的持久化格式"""
+
+CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
+"""循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""

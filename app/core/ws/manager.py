@@ -24,7 +24,7 @@
 import json
 import asyncio
 from contextlib import suppress
-from typing import Awaitable, Callable, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, Set, cast
 
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import JsonValue
@@ -231,7 +231,8 @@ class _MainConnectionManager:
             return
 
         for hook in self._connect_hooks:
-            task = asyncio.create_task(hook())
+            # 连接回调均为 async 函数，调用结果必然是可等待协程
+            task = asyncio.create_task(cast(Coroutine[Any, Any, None], hook()))
             self._hook_tasks.add(task)
             self._hook_task_owners[task] = generation
 

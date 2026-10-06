@@ -1,6 +1,6 @@
 """L1 配置集合 ``ConfigCollection``：管理多个 ConfigEntry 成员。
 
-公开 Wire 字段仅 ``order`` + ``data``（§3.9）。
+公开文档字段仅 ``order`` + ``data``（§3.9）。
 
 Entry 类型表：构造时由 ``entry_types`` / ``_default_entry_types`` 灌入；
 运行时经 ``add_type`` / ``remove_type`` / ``reload_type`` 变更（全 Collection 通用，见规格 §5.4）。
@@ -9,19 +9,19 @@ Entry 类型表：构造时由 ``entry_types`` / ``_default_entry_types`` 灌入
 from __future__ import annotations
 
 import weakref
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import ClassVar, Generic, Iterator, Self, TypeVar, cast
+from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar, cast
 from uuid import UUID, uuid4
 
-from pydantic import Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, SerializationInfo, model_serializer
+from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import config_manager
-from .node import ConfigNode, NodeState
+from .node import ConfigNode, ExportContext, NodeState
 from ..signals import CollectionChangeEvent
 from .staging import StageKind, StagedOp
-from ..wire import CollectionOrderItem, ExportContext, WireDict
 
 TEntry = TypeVar("TEntry", bound=ConfigNode)
 
@@ -29,6 +29,13 @@ type RemoveGuard[E: ConfigNode] = Callable[
     [ConfigCollection[E], UUID, E], Awaitable[None]
 ]
 """commit 应用 remove 前的异步守卫；抛错则本笔事务失败回滚。"""
+
+
+class CollectionOrderItem(BaseModel):
+    """Collection 索引项：``{ uid, type }``。"""
+
+    uid: UUID
+    type: str  # Entry 子类名，如 "ExampleQueue"
 
 
 class ConfigCollection(ConfigNode, Generic[TEntry]):
@@ -50,17 +57,18 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         *,
         parent: ConfigNode | None = None,
         uid: UUID | str | None = None,
-        wire: WireDict | None = None,
+        payload: dict[str, Any] | None = None,
         file: Path | str | None = None,
         name: str | None = None,
         **field_values: object,
     ) -> None:
-        # field_values 承接 pydantic model_validate 注入的 order/data 字段（FastAPI Body 必需）。
+        # 未激活导入（官方）：field_values 承接 model_validate 注入的 order/data；
+        # 热化仍走 activate（add+commit），不在构造时落成员生命周期。
         # 嵌套字段须经 collection() 声明，不经本构造的 name=/file= 登记路径。
         super().__init__(**field_values)
         self._parent_ref = weakref.ref(parent) if parent is not None else None
-        if wire is not None and file is not None:
-            raise ValueError("wire 与 file 互斥")
+        if payload is not None and file is not None:
+            raise ValueError("payload 与 file 互斥")
         if file is not None:
             if not self.is_root:
                 raise ValueError("仅根节点可 file=")
@@ -93,7 +101,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     "嵌套 Collection 禁止 name=；请事后 register_collection"
                 )
             config_manager.register_collection(name, self)
-        self._pending_wire = wire
+        self._pending_payload = payload
 
     @classmethod
     def build(
@@ -102,7 +110,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         *,
         parent: ConfigNode | None = None,
         uid: UUID | str | None = None,
-        wire: WireDict | None = None,
+        payload: dict[str, Any] | None = None,
         file: Path | str | None = None,
         name: str | None = None,
         **field_values: object,
@@ -116,7 +124,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             entry_types,
             parent=parent,
             uid=uid,
-            wire=wire,
+            payload=payload,
             file=file,
             name=name,
             **field_values,
@@ -159,12 +167,10 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 # commit 时再核类型表（同批 remove_type / reload 可能导致 stage 时合法、此刻已失效）
                 registered = self.effective._entry_types.get(op.entry_type.__name__)
                 if registered is not op.entry_type:
-                    raise ValueError(
-                        f"不支持的 Entry 类型: {op.entry_type.__name__}"
-                    )
+                    raise ValueError(f"不支持的 Entry 类型: {op.entry_type.__name__}")
                 entry = cast(
                     TEntry,
-                    op.entry_type.build(uid=op.uid, wire=op.wire, parent=self),
+                    op.entry_type.build(uid=op.uid, payload=op.payload, parent=self),
                 )
                 await entry.activate()
                 self.effective.data[entry.uid] = entry
@@ -183,6 +189,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             elif op.kind == StageKind.COLLECTION_REMOVE:
                 assert op.uid is not None
                 entry = self.effective.data[op.uid]
+                if entry.is_locked:
+                    raise ValueError(f"成员已锁定，无法删除: {op.uid}")
                 # 先跑 remove_guard，再 mutate / send(remove)
                 for guard in self._remove_guards:
                     await guard(self, op.uid, entry)
@@ -239,6 +247,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 ]
                 for uid in doomed:
                     entry = self.effective.data[uid]
+                    if entry.is_locked:
+                        raise ValueError(f"成员已锁定，无法 remove_type: {uid}")
                     for guard in self._remove_guards:
                         await guard(self, uid, entry)
                     await entry._delete()
@@ -277,14 +287,14 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 if name not in self.effective._entry_types:
                     raise ValueError(f"未登记的 Entry 类型: {name}")
                 snapshot_order = list(self.effective.order)
-                wires: dict[UUID, WireDict] = {}
+                payloads: dict[UUID, dict[str, Any]] = {}
                 for item in snapshot_order:
                     if item.type != name:
                         continue
                     entry = self.effective.data[item.uid]
                     if entry.is_locked:
                         raise ValueError(f"成员已锁定，无法 reload_type: {item.uid}")
-                    wires[item.uid] = await entry.to_dict(if_decrypt=True)
+                    payloads[item.uid] = await entry.to_dict()
                 # 删除阶段（不跑 remove_guard、不发 remove）
                 for item in snapshot_order:
                     if item.type != name:
@@ -306,7 +316,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     new_entry = cast(
                         TEntry,
                         op.entry_type.build(
-                            uid=item.uid, wire=wires[item.uid], parent=self
+                            uid=item.uid, payload=payloads[item.uid], parent=self
                         ),
                     )
                     await new_entry.activate()
@@ -366,8 +376,25 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         for uid in self.keys():
             yield self[uid]
 
+    def items(self) -> Iterator[tuple[UUID, TEntry]]:
+        for uid in self.keys():
+            yield uid, self[uid]
+
+    def get(self, uid: UUID | str) -> TEntry | None:
+        """按 uid 取成员；不存在或已软删时返回 ``None``。"""
+        return self[uid] if uid in self else None
+
     def iter_children(self) -> Iterator[ConfigNode]:
         yield from self.values()
+
+    def list_entry_types(self) -> list[dict[str, str]]:
+        """当前可选 Entry 类型（与 ``add`` 解析同一张表）。只读，不进事务。"""
+        return [
+            {"name": name, "qualname": cls.__qualname__}
+            for name, cls in sorted(
+                self.effective._entry_types.items(), key=lambda item: item[0]
+            )
+        ]
 
     # ── 结构写：同步 stage，运行时须 await commit() ──
 
@@ -376,7 +403,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         entry_type: type[TEntry] | str,
         *,
         uid: UUID | str | None = None,
-        wire: WireDict | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> UUID:
         # ACTIVE：运行时追加；INITIALIZING：activate 热化复用本路径（→ init_add）
         if self.activation_state == NodeState.INACTIVE:
@@ -394,7 +421,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 )
             etype = entry_type
         resolved = uid if isinstance(uid, UUID) else UUID(uid) if uid else uuid4()
-        self._stage(StagedOp.collection_add(etype, uid=resolved, wire=wire))
+        self._stage(StagedOp.collection_add(etype, uid=resolved, payload=payload))
         return resolved
 
     def remove(self, uid: UUID | str) -> None:
@@ -404,9 +431,12 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             uid = UUID(uid)
         if uid not in self:
             raise KeyError(uid)
+        entry = self.effective.data[uid]
+        if entry.is_locked:
+            raise ValueError(f"成员已锁定，无法删除: {uid}")
         self._stage(StagedOp.collection_remove(uid))
 
-    def set_order(self, order: list[UUID | CollectionOrderItem]) -> None:
+    def set_order(self, order: Sequence[UUID | CollectionOrderItem]) -> None:
         if self.activation_state != NodeState.ACTIVE:
             raise ValueError("须先 activate")
         new_uids = [item if isinstance(item, UUID) else item.uid for item in order]
@@ -471,6 +501,13 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     f"类型名 {entry_type.__name__!r} 已登记为 {resolved!r}，"
                     f"与传入 {entry_type!r} 不同"
                 )
+        name = resolved.__name__
+        for item in self.effective.order:
+            if item.type != name:
+                continue
+            entry = self.effective.data[item.uid]
+            if entry.is_locked:
+                raise ValueError(f"成员已锁定，无法 remove_type: {item.uid}")
         self._stage(StagedOp.collection_remove_type(resolved))
 
     def reload_type(self, entry_type: type[TEntry] | str) -> None:
@@ -535,13 +572,15 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     # ──────────────── 激活 ────────────────
 
-    async def _activate_from_payload(self, payload: WireDict) -> None:
+    async def _activate_from_payload(self, payload: dict[str, Any]) -> None:
         payload = payload or {}
         order = payload.get("order")
         if not isinstance(order, list):
             order = []
         data_raw = payload.get("data")
-        data: WireDict = cast(WireDict, data_raw) if isinstance(data_raw, dict) else {}
+        data: dict[str, Any] = (
+            cast(dict[str, Any], data_raw) if isinstance(data_raw, dict) else {}
+        )
 
         # 清空冷态残留（写 effective / ws；外层 activate 已建工作区）
         object.__setattr__(self.effective, "order", [])
@@ -556,14 +595,15 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 type_name = str(item["type"])
                 raw = data.get(str(uid))
                 if isinstance(raw, ConfigNode):
-                    wire = raw._export_wire(
-                        ExportContext(if_decrypt=True, include_reactive=False)
+                    payload = raw.model_dump(
+                        mode="json",
+                        context=ExportContext(audience="persist"),
                     )
                 elif isinstance(raw, dict):
-                    wire = cast(WireDict, raw)
+                    payload = cast(dict[str, Any], raw)
                 else:
-                    wire = {}
-                self.add(type_name, uid=uid, wire=wire)
+                    payload = {}
+                self.add(type_name, uid=uid, payload=payload)
                 await self.commit()
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
@@ -586,7 +626,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         ws._workspace = None
         ws._deleted = src._deleted
         ws._activation_state = src._activation_state
-        ws._pending_wire = src._pending_wire
+        ws._pending_payload = src._pending_payload
         ws._is_workspace = True
         return ws
 
@@ -599,7 +639,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         self._entry_types = dict(shell._entry_types)
         self._deleted = shell._deleted
         self._activation_state = shell._activation_state
-        self._pending_wire = shell._pending_wire
+        self._pending_payload = shell._pending_payload
         self._workspace = None
 
     def _COMMIT_init(self) -> None:
@@ -612,13 +652,21 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         shell._entry_types = dict(init._entry_types)
         shell._deleted = init._deleted
         shell._activation_state = init._activation_state
-        shell._pending_wire = init._pending_wire
+        shell._pending_payload = init._pending_payload
         shell._workspace = None
 
-    # ──────────────── 导出 ────────────────
+    # ──────────────── 导出（官方 model_serializer）────────────────
 
-    def _export_wire(self, ctx: ExportContext) -> WireDict:
-        """Wire 导出：读已提交 ``self``，不经 ``effective``；跳过已软删成员。"""
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self,
+        handler: SerializerFunctionWrapHandler,
+        info: SerializationInfo,
+    ) -> dict[str, Any]:
+        """Collection 文档：``{ order, data }``；跳过已软删成员。"""
+        _ = handler
+        ctx = ExportContext.from_dump(info.context)
+        dump_mode = info.mode if info.mode in ("json", "python") else "json"
         return {
             "order": [
                 {"uid": str(item.uid), "type": item.type}
@@ -626,7 +674,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 if (entry := self.data.get(item.uid)) is not None and not entry.deleted
             ],
             "data": {
-                str(uid): entry._export_wire(ctx)
+                str(uid): entry.model_dump(mode=dump_mode, context=ctx)
                 for uid, entry in self.data.items()
                 if not entry.deleted
             },

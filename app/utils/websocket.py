@@ -23,16 +23,16 @@
 
 """出站 WebSocket 客户端
 
-后端作为客户端连接外部第三方进程（如 Koishi 通知服务、插件声明的外部服务）。
+后端作为客户端连接外部第三方进程（如 Koishi 通知服务）。
 与前端主连接（app/core/ws）分层管理，互不混用状态。
 心跳使用 WebSocket 协议层 ping/pong，不使用应用层业务消息。
 """
 
-import json
 import asyncio
-from typing import Optional, Callable, Any, Awaitable, Dict
+import json
+from typing import Any, Awaitable, Callable, Dict, Optional
 
-from websockets.asyncio.client import connect, ClientConnection
+from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
@@ -168,10 +168,6 @@ class WebSocketClient:
             if asyncio.iscoroutine(result):
                 await result
 
-    async def close(self, code: int = 1000, reason: str = "正常关闭"):
-        """兼容统一的关闭接口。"""
-        await self.disconnect()
-
     async def send(self, message: Dict[str, Any]) -> bool:
         """
         发送 JSON 消息
@@ -192,10 +188,6 @@ class WebSocketClient:
         except Exception as e:
             self.logger.error(f"发送消息失败: {type(e).__name__}: {e}")
             return False
-
-    async def send_json(self, data: Dict[str, Any]) -> bool:
-        """兼容 FastAPI WebSocket 的 send_json 接口。"""
-        return await self.send(data)
 
     async def send_auth(
         self,
@@ -418,15 +410,6 @@ class WebSocketClient:
             self.logger.info("已发送认证消息")
         return success
 
-    def set_auth_token(self, token: Optional[str]):
-        """
-        设置认证令牌（下次连接/重连时生效）
-
-        Args:
-            token: 认证令牌，设为 None 可清除
-        """
-        self._auth_token = token
-
 
 # ============== WebSocket 客户端管理器 ==============
 
@@ -456,34 +439,6 @@ class WSClientManager:
     def get_client(self, name: str) -> Optional[WebSocketClient]:
         """获取客户端实例"""
         return self._clients.get(name)
-
-    def get_session(self, name: str) -> Optional[WebSocketClient]:
-        """兼容旧接口：获取客户端实例。"""
-        return self._clients.get(name)
-
-    def has_client(self, name: str) -> bool:
-        """检查客户端是否存在"""
-        return name in self._clients
-
-    def is_system_client(self, name: str) -> bool:
-        """检查是否为系统客户端"""
-        return name in self._system_clients
-
-    def list_clients(self) -> Dict[str, Dict[str, Any]]:
-        """列出所有客户端及其状态"""
-        result = {}
-        for name, client in self._clients.items():
-            result[name] = {
-                "name": name,
-                "url": client.url,
-                "is_connected": client.is_connected,
-                "is_system": name in self._system_clients,
-                "ping_interval": client.ping_interval,
-                "ping_timeout": client.ping_timeout,
-                "reconnect_interval": client.reconnect_interval,
-                "max_reconnect_attempts": client.max_reconnect_attempts,
-            }
-        return result
 
     async def create_client(
         self,
@@ -525,27 +480,6 @@ class WSClientManager:
 
         self._clients[name] = client
         self._logger.info(f"已创建 WebSocket 客户端: {name} -> {url}")
-        return client
-
-    async def openws(
-        self,
-        name: str,
-        url: str,
-        ping_interval: float = 15.0,
-        ping_timeout: float = 30.0,
-        reconnect_interval: float = 5.0,
-        max_reconnect_attempts: int = -1,
-    ) -> WebSocketClient:
-        """正式的正向 WebSocket 打开接口。"""
-        client = await self.create_client(
-            name=name,
-            url=url,
-            ping_interval=ping_interval,
-            ping_timeout=ping_timeout,
-            reconnect_interval=reconnect_interval,
-            max_reconnect_attempts=max_reconnect_attempts,
-        )
-        await self.connect_client(name)
         return client
 
     async def connect_client(self, name: str) -> bool:
@@ -630,14 +564,6 @@ class WSClientManager:
         self._logger.info(f"已删除 WebSocket 客户端: {name}")
         return True
 
-    async def send_message(self, name: str, message: Dict[str, Any]) -> bool:
-        """发送消息"""
-        client = self._clients.get(name)
-        if not client or not client.is_connected:
-            return False
-
-        return await client.send(message)
-
     async def send_auth(
         self,
         name: str,
@@ -658,7 +584,7 @@ class WSClientManager:
         """Koishi 系统客户端自动认证（连接/重连时调用）"""
         from app.core import Config
 
-        token = Config.get("Notify", "KoishiToken")
+        token = Config.setting.notify.koishi_token
         if token:
             # 稍微延迟以确保连接稳定
             await asyncio.sleep(0.1)
@@ -697,12 +623,12 @@ class WSClientManager:
         from app.core import Config
 
         # 检查是否启用 Koishi 通知
-        if not Config.get("Notify", "IfKoishiSupport"):
+        if not Config.setting.notify.if_koishi_support:
             self._logger.info("Koishi 通知未启用，跳过系统客户端初始化")
             return False
 
         # 获取服务器地址并转换为 WebSocket URL
-        http_url = Config.get("Notify", "KoishiServerAddress")
+        http_url = Config.setting.notify.koishi_server_address
         if not http_url:
             self._logger.warning("Koishi 服务器地址为空，跳过系统客户端初始化")
             return False
@@ -733,33 +659,12 @@ class WSClientManager:
                 # 认证已在 on_connect 回调中自动处理
                 return True
             else:
-                self._logger.warning(f"Koishi 系统客户端连接失败，将在后台持续重连")
+                self._logger.warning("Koishi 系统客户端连接失败，将在后台持续重连")
                 return False
 
         except Exception as e:
             self._logger.error(f"初始化 Koishi 系统客户端失败: {type(e).__name__}: {e}")
             return False
-
-    async def update_system_client_koishi(self) -> bool:
-        """
-        更新 Koishi 系统客户端配置
-
-        当配置变更时调用，会断开旧连接并重新连接
-
-        Returns:
-            bool: 是否成功更新
-        """
-        # 如果客户端存在，先断开
-        if self.has_client(self.KOISHI_CLIENT_NAME):
-            await self.disconnect_client(self.KOISHI_CLIENT_NAME)
-            # 从系统客户端集合中移除以允许删除
-            self._system_clients.discard(self.KOISHI_CLIENT_NAME)
-            # 删除旧客户端
-            if self.KOISHI_CLIENT_NAME in self._clients:
-                del self._clients[self.KOISHI_CLIENT_NAME]
-
-        # 重新初始化
-        return await self.init_system_client_koishi()
 
 
 # 全局管理器实例
@@ -772,7 +677,7 @@ async def create_ws_client(
     port: int = 5140,
     path: str = "/ws",
     use_ssl: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> WebSocketClient:
     """
     创建 WebSocket 客户端实例

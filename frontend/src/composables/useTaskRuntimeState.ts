@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { realtimeSnapshotApi, type TaskRuntimeSnapshotItem } from '@/services/realtimeSnapshotApi'
+import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
@@ -7,18 +7,19 @@ import {
   WS_TASK_COMPLETED,
   WS_TASK_CREATED,
   WS_TASK_INFO_UPDATED,
+  type TaskItemPayload,
+  type TaskScriptItemPayload,
   type WSTaskCompletedData,
   type WSTaskCreatedData,
-  type WSTaskMode,
+  WSTaskMode,
   type WSTaskScriptIdentityData,
-  type WSTaskScriptInfoData,
 } from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('任务运行状态')
 
 const COMPLETED_STATE_RETENTION_MS = 5 * 60 * 1000
 const COMPLETED_STATE_CLEANUP_INTERVAL_MS = 30 * 1000
-const WAITING_STATUSES = new Set(['等待', '等待中'])
+const WAITING_STATUSES = new Set(['等待', '等待中', 'pending'])
 const RUNNING_STATUSES = new Set(['运行', '运行中'])
 const FAILED_STATUSES = new Set(['异常'])
 
@@ -28,9 +29,10 @@ export interface TaskRuntimeState {
   queueId: string | null
   scriptId: string | null
   userId: string | null
-  stopping: boolean
+  /** 关联脚本静态标识（创建通知带类型；/get 刷新时尽量保留已有类型） */
   scripts: WSTaskScriptIdentityData[]
-  taskInfo: WSTaskScriptInfoData[]
+  /** TaskItem API 载荷 */
+  task: TaskItemPayload | null
   log: string
   phase: 'created' | 'active' | 'completed'
   taskName: string | null
@@ -55,7 +57,6 @@ export type TaskRuntimeEvent =
 type TaskRuntimeListener = (event: TaskRuntimeEvent) => void | Promise<void>
 
 const taskStates = ref(new Map<string, TaskRuntimeState>())
-const scheduledScriptTypes = ref(new Set<string>())
 const lastTerminalFailureByType = ref(new Map<string, boolean>())
 const listeners = new Set<TaskRuntimeListener>()
 const taskSubscriptionIds = new Map<string, string[]>()
@@ -67,14 +68,41 @@ let completedStateCleanupTimer: number | null = null
 let snapshotGeneration = 0
 let mutationSequence = 0
 
-const cloneScripts = (scripts?: WSTaskScriptIdentityData[]) =>
-  (scripts ?? []).map(script => ({ ...script }))
+const emptyTask = (): TaskItemPayload => ({
+  info: {
+    mode: WSTaskMode.AUTO_PROXY,
+    queue_id: null,
+    script_id: null,
+    user_id: null,
+  },
+  current: { index: null },
+  scripts: {},
+})
 
-const cloneTaskInfo = (taskInfo?: WSTaskScriptInfoData[]) =>
-  (taskInfo ?? []).map(script => ({
-    ...script,
-    userList: (script.userList ?? []).map(user => ({ ...user })),
+const cloneTask = (task?: TaskItemPayload | null): TaskItemPayload | null => {
+  if (!task) return null
+  return structuredClone(task)
+}
+
+const currentLog = (task: TaskItemPayload | null | undefined): string => {
+  // 优先任务级 Virtual log；旧载荷无该字段时再从当前脚本 current.log 取
+  if (task?.current?.log) return task.current.log
+  if (!task?.current?.index) return ''
+  const script = task.scripts?.[task.current.index]
+  return script?.current?.log ?? ''
+}
+
+/** 从 TaskItem.scripts 合并脚本标识；已有 scriptType 优先保留。 */
+const identitiesFromTask = (
+  task: TaskItemPayload,
+  previous?: WSTaskScriptIdentityData[]
+): WSTaskScriptIdentityData[] => {
+  const prevById = new Map((previous ?? []).map(item => [item.scriptId, item.scriptType]))
+  return Object.keys(task.scripts ?? {}).map(scriptId => ({
+    scriptId,
+    scriptType: prevById.get(scriptId) ?? '',
   }))
+}
 
 const setTaskState = (state: TaskRuntimeState): void => {
   const next = new Map(taskStates.value)
@@ -112,9 +140,8 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   queueId: null,
   scriptId: null,
   userId: null,
-  stopping: false,
   scripts: [],
-  taskInfo: [],
+  task: null,
   log: '',
   phase: 'created',
   taskName: null,
@@ -125,17 +152,32 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   completedAt: null,
 })
 
+const applyTaskPayload = (
+  base: TaskRuntimeState,
+  task: TaskItemPayload,
+  patch: Partial<TaskRuntimeState> = {}
+): TaskRuntimeState => {
+  const cloned = cloneTask(task) ?? emptyTask()
+  return {
+    ...base,
+    mode: cloned.info.mode ?? base.mode,
+    queueId: cloned.info.queue_id ?? null,
+    scriptId: cloned.info.script_id ?? null,
+    userId: cloned.info.user_id ?? null,
+    scripts: identitiesFromTask(cloned, base.scripts),
+    task: cloned,
+    log: currentLog(cloned),
+    ...patch,
+  }
+}
+
 const ensureTaskSubscriptions = (taskId: string): void => {
   if (taskSubscriptionIds.has(taskId)) return
   taskSubscriptionIds.set(taskId, [
     subscribe({ id: taskId, type: WS_TASK_INFO_UPDATED }, message => {
       mutationSequence++
-      const current = taskStates.value.get(taskId)
-      const state: TaskRuntimeState = {
-        ...(current ?? createUnknownTaskState(taskId)),
-        phase: 'active',
-        taskInfo: cloneTaskInfo(message.data.task_info),
-      }
+      const current = taskStates.value.get(taskId) ?? createUnknownTaskState(taskId)
+      const state = applyTaskPayload(current, message.data, { phase: 'active' })
       setTaskState(state)
       emitRuntimeEvent({ type: 'info', state })
     }),
@@ -152,8 +194,10 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
     ...(current ?? createUnknownTaskState(data.taskId)),
     mode: data.mode,
     queueId: data.queueId ?? null,
-    scriptId: data.scripts[0]?.scriptId ?? null,
-    scripts: cloneScripts(data.scripts),
+    scriptId: data.scriptId ?? null,
+    userId: data.userId ?? null,
+    // 创建事件不再带脚本列表；脚本标识随首个 task.info.updated 的 TaskItem 载荷补齐
+    scripts: current?.scripts ?? [],
     phase: 'created',
     taskName: data.taskName ?? null,
     taskType: data.taskType ?? null,
@@ -169,68 +213,49 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
 
 const handleTaskCompleted = (taskId: string, data: WSTaskCompletedData): void => {
   mutationSequence++
-  const current = taskStates.value.get(taskId)
-  const state: TaskRuntimeState = {
-    ...(current ?? createUnknownTaskState(taskId)),
+  const current = taskStates.value.get(taskId) ?? createUnknownTaskState(taskId)
+  const state = applyTaskPayload(current, data.task ?? emptyTask(), {
     phase: 'completed',
-    taskInfo: cloneTaskInfo(data.task_info),
     result: data.result,
     outcome: data.outcome,
     error: data.error ?? null,
     completedAt: Date.now(),
-  }
+  })
   setTaskState(state)
   updateLastTerminalFailures(state)
   releaseTaskSubscriptions(taskId)
   emitRuntimeEvent({ type: 'completed', state })
 }
 
-const stateFromSnapshot = (
-  item: TaskRuntimeSnapshotItem,
-  current?: TaskRuntimeState
-): TaskRuntimeState => ({
-  ...(current ?? createUnknownTaskState(item.taskId)),
-  taskId: item.taskId,
-  mode: item.mode,
-  queueId: item.queueId,
-  scriptId: item.scriptId,
-  userId: item.userId,
-  stopping: item.stopping,
-  scripts: cloneScripts(item.scripts),
-  taskInfo: cloneTaskInfo(item.task_info),
-  log: item.log,
-  phase: 'active',
-  result: null,
-  outcome: null,
-  error: null,
-  completedAt: null,
-})
-
 export async function refreshTaskRuntimeSnapshot(): Promise<void> {
   const generation = ++snapshotGeneration
   const startedAtMutation = mutationSequence
   try {
-    const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
+    const response = await realtimeSnapshotApi.getTasks()
     if (generation !== snapshotGeneration) return
     if (startedAtMutation !== mutationSequence) {
       void refreshTaskRuntimeSnapshot()
       return
     }
 
-    const activeTaskIds = new Set((snapshot.tasks ?? []).map(item => item.taskId))
+    const data = response.data ?? {}
+    const activeTaskIds = new Set(Object.keys(data))
     const next = new Map(taskStates.value)
     const activeStates: TaskRuntimeState[] = []
     const removedTaskIds: string[] = []
 
-    scheduledScriptTypes.value = new Set(
-      (snapshot.scheduledScripts ?? []).map(script => script.scriptType)
-    )
-
-    for (const item of snapshot.tasks ?? []) {
-      const state = stateFromSnapshot(item, next.get(item.taskId))
-      next.set(item.taskId, state)
+    for (const [taskId, task] of Object.entries(data)) {
+      const current = next.get(taskId) ?? createUnknownTaskState(taskId)
+      const state = applyTaskPayload(current, task, {
+        phase: 'active',
+        result: null,
+        outcome: null,
+        error: null,
+        completedAt: null,
+      })
+      next.set(taskId, state)
       activeStates.push(state)
-      ensureTaskSubscriptions(item.taskId)
+      ensureTaskSubscriptions(taskId)
     }
 
     for (const [taskId, state] of next) {
@@ -245,7 +270,7 @@ export async function refreshTaskRuntimeSnapshot(): Promise<void> {
     removedTaskIds.forEach(taskId => emitRuntimeEvent({ type: 'removed', taskId }))
   } catch (error) {
     logger.warn(
-      `读取运行任务 HTTP 快照失败: ${error instanceof Error ? error.message : String(error)}`
+      `读取任务信息失败: ${error instanceof Error ? error.message : String(error)}`
     )
   }
 }
@@ -253,9 +278,11 @@ export async function refreshTaskRuntimeSnapshot(): Promise<void> {
 const statusMatches = (status: string | undefined, values: ReadonlySet<string>) =>
   Boolean(status && values.has(status))
 
-const scriptHasStatus = (script: WSTaskScriptInfoData, values: ReadonlySet<string>) =>
-  statusMatches(script.status, values) ||
-  (script.userList ?? []).some(user => statusMatches(user.status, values))
+const scriptHasStatus = (script: TaskScriptItemPayload | undefined, values: ReadonlySet<string>) => {
+  if (!script) return false
+  if (statusMatches(script.info?.status, values)) return true
+  return Object.values(script.users ?? {}).some(user => statusMatches(user.info?.status, values))
+}
 
 const getOrCreateScriptStatus = (
   statuses: Map<string, ScriptRuntimeStatus>,
@@ -270,10 +297,13 @@ const getOrCreateScriptStatus = (
 }
 
 const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
-  if (task.mode === 'ScriptConfig') return
+  if (task.mode === WSTaskMode.SCRIPT_CONFIG) return
 
+  const scripts = task.task?.scripts ?? {}
   const failedScriptIds = new Set(
-    task.taskInfo.filter(info => scriptHasStatus(info, FAILED_STATUSES)).map(info => info.script_id)
+    Object.entries(scripts)
+      .filter(([, script]) => scriptHasStatus(script, FAILED_STATUSES))
+      .map(([scriptId]) => scriptId)
   )
   const failAllTypes = task.outcome === 'error' && failedScriptIds.size === 0
   const failureByType = new Map<string, boolean>()
@@ -295,17 +325,13 @@ const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
 const scriptStatusesByType = computed(() => {
   const statuses = new Map<string, ScriptRuntimeStatus>()
 
-  for (const scriptType of scheduledScriptTypes.value) {
-    getOrCreateScriptStatus(statuses, scriptType).queued = true
-  }
-
   for (const task of taskStates.value.values()) {
-    if (task.mode === 'ScriptConfig' || task.phase === 'completed') continue
+    if (task.mode === WSTaskMode.SCRIPT_CONFIG || task.phase === 'completed') continue
 
-    const infoByScriptId = new Map(task.taskInfo.map(info => [info.script_id, info]))
+    const scripts = task.task?.scripts ?? {}
     for (const identity of task.scripts) {
       const status = getOrCreateScriptStatus(statuses, identity.scriptType)
-      const scriptInfo = infoByScriptId.get(identity.scriptId)
+      const scriptInfo = scripts[identity.scriptId]
 
       if (!scriptInfo || scriptHasStatus(scriptInfo, WAITING_STATUSES)) status.queued = true
       if (scriptInfo && scriptHasStatus(scriptInfo, RUNNING_STATUSES)) status.running = true
@@ -365,7 +391,6 @@ export function disposeTaskRuntimeState(): void {
     completedStateCleanupTimer = null
   }
   taskStates.value = new Map()
-  scheduledScriptTypes.value = new Set()
   lastTerminalFailureByType.value = new Map()
   bootstrapped = false
 }
@@ -381,6 +406,21 @@ export function getTaskRuntimeState(taskId: string): TaskRuntimeState | undefine
 
 export function getTaskRuntimeStates(): TaskRuntimeState[] {
   return [...taskStates.value.values()]
+}
+
+/** 把 TaskItem.scripts 压成总览树仍在用的扁平列表（仅 UI 适配）。 */
+export function flattenTaskScripts(task: TaskItemPayload | null | undefined) {
+  if (!task?.scripts) return []
+  return Object.entries(task.scripts).map(([scriptId, script]) => ({
+    script_id: scriptId,
+    name: script.info?.name || '未知脚本',
+    status: script.info?.status || '等待',
+    userList: Object.entries(script.users ?? {}).map(([userId, user]) => ({
+      user_id: userId,
+      name: user.info?.name || '',
+      status: user.info?.status || '',
+    })),
+  }))
 }
 
 export function useTaskRuntimeState() {

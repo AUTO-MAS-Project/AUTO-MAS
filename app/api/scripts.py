@@ -1,1128 +1,302 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-#   This file is part of AUTO-MAS.
+"""脚本配置 API（``Config.ScriptConfig``）。"""
 
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
+from __future__ import annotations
 
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
+from typing import Any, Optional
+from uuid import UUID
 
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
-#   Contact: DLmaster_361@163.com
-
-
-import asyncio
-import uuid
-from datetime import datetime
-from pathlib import Path
-from typing import Any
-
-from fastapi import APIRouter, Body, HTTPException, Query
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-
+from app.config import CollectionOrderItem
+from app.config.errors import ConfigAggregateError
 from app.core import Config
-from app.models.schema import *
-router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+from app.models.config import ScriptEntry, UserEntry
+from app.api import OutBase
+from app.utils import get_logger
+
+router = APIRouter(prefix="/api/scripts", tags=["脚本配置"])
+logger = get_logger("脚本配置 API")
 
 
-_MAAFW_IMAGE_SUFFIXES = {
-    ".avif",
-    ".bmp",
-    ".gif",
-    ".ico",
-    ".jpeg",
-    ".jpg",
-    ".png",
-    ".svg",
-    ".webp",
-}
+class ScriptCreateOut(OutBase):
+    scriptId: str = Field(default="", description="新脚本 uid")
+    data: ScriptEntry = Field(default_factory=ScriptEntry)
 
 
-def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
-    root_path = Path(root).resolve()
-    if not root_path.is_dir():
-        raise ValueError("MaaFW 项目目录不存在")
-
-    if not (root_path / "interface.json").is_file() and not (
-        root_path / "interface.jsonc"
-    ).is_file():
-        raise ValueError("MaaFW asset root must be an interface project root")
-
-    from automas_maafw_interface.service import MaaFWInterfaceService
-
-    MaaFWInterfaceService().load(root_path)
-
-    normalized_asset_path = asset_path.replace("\\", "/").strip()
-    relative_path = Path(normalized_asset_path)
-    if (
-        not normalized_asset_path
-        or relative_path.is_absolute()
-        or ".." in relative_path.parts
-    ):
-        raise ValueError("MaaFW 资源路径非法")
-
-    file_path = (root_path / relative_path).resolve()
-    if root_path not in file_path.parents:
-        raise ValueError("MaaFW 资源路径越界")
-    if file_path.suffix.lower() not in _MAAFW_IMAGE_SUFFIXES:
-        raise ValueError("仅支持 MaaFW 图片资源")
-    if not file_path.is_file():
-        raise FileNotFoundError("MaaFW 图片资源不存在")
-    return file_path
+class ScriptGetIn(BaseModel):
+    scriptId: Optional[str] = Field(default=None, description="缺省全部")
 
 
-def _build_maafw_agent_env_info_items(agent_plans: list[Any]) -> list[MaaFWAgentEnvInfo]:
-    return [
-        MaaFWAgentEnvInfo(
-            childExec=agent.childExec,
-            executable=agent.executable,
-            runtimeKind=agent.runtimeKind,
-            isolatedVenvPath=agent.isolatedVenvPath,
-            fallbackReason=agent.fallbackReason,
+class ScriptGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    data: dict[str, ScriptEntry] = Field(default_factory=dict)
+
+
+class ScriptUpdateIn(BaseModel):
+    scriptId: str
+    # 插件子类字段在基类上会被静默丢弃，补丁收原始结构、按实例真实类型校验
+    data: dict[str, Any] = Field(..., description="补丁：只传要改的字段")
+
+
+class ScriptDeleteIn(BaseModel):
+    scriptId: str
+
+
+class ScriptReorderIn(BaseModel):
+    indexList: list[str]
+
+
+class UserCreateOut(OutBase):
+    userId: str = Field(default="")
+    data: UserEntry = Field(default_factory=UserEntry)
+
+
+class UserGetIn(BaseModel):
+    scriptId: str
+    userId: Optional[str] = None
+
+
+class UserGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    data: dict[str, UserEntry] = Field(default_factory=dict)
+
+
+class UserUpdateIn(BaseModel):
+    scriptId: str
+    userId: str
+    data: dict[str, Any] = Field(..., description="补丁：只传要改的字段")
+
+
+class UserDeleteIn(BaseModel):
+    scriptId: str
+    userId: str
+
+
+class UserReorderIn(BaseModel):
+    scriptId: str
+    indexList: list[str]
+
+
+class ScriptCreateIn(BaseModel):
+    type: str = Field(default="", description="Entry 类名；仅一种可选类型时可省略")
+
+
+class ScriptTypesOut(OutBase):
+    data: list[dict[str, str]] = Field(default_factory=list)
+
+
+@router.post("/types", tags=["Get"], summary="可选脚本类型", response_model=ScriptTypesOut)
+async def list_script_types() -> ScriptTypesOut:
+    try:
+        rows = Config.ScriptConfig.list_entry_types()
+        by_type: dict[str, str] = {}
+        try:
+            from app.core.i18n import i18n
+            from app.core.plugin_manager import Plugin
+
+            messages = await i18n.get_messages()
+            # uid → 注册项拿 plugin_name；展示名走包内 i18n
+            for uid, decl in Plugin.script_types.items():
+                record = Config.plugin_registry.get(uid)
+                plugin_name = record.info.plugin_name if record is not None else ""
+                node: object = messages
+                for part in ("plugins", plugin_name, "script", "display_name"):
+                    if not isinstance(node, dict):
+                        node = ""
+                        break
+                    node = node.get(part, "")
+                label = node if isinstance(node, str) else ""
+                by_type[decl.entry_type.__name__] = label or decl.entry_type.__name__
+        except Exception:
+            by_type = {}
+        for row in rows:
+            row["display_name"] = by_type.get(row["name"], row["name"])
+        return ScriptTypesOut(data=rows)
+    except Exception as e:
+        return ScriptTypesOut(
+            code=500, status="error", message=f"{type(e).__name__}: {e}", data=[]
         )
-        for agent in agent_plans
-    ]
 
 
-SCRIPT_BOOK: dict[str, type[BaseModel]] = {
-    "MaaConfig": MaaConfig,
-    "SrcConfig": SrcConfig,
-    "MaaEndConfig": MaaEndConfig,
-    "MaaFWConfig": MaaFWConfig,
-    "GeneralConfig": GeneralConfig,
-    "PluginScriptConfig": PluginScriptConfig,
-}
-USER_BOOK: dict[str, type[BaseModel]] = {
-    "MaaConfig": MaaUserConfig,
-    "SrcConfig": SrcUserConfig,
-    "MaaEndConfig": MaaEndUserConfig,
-    "MaaFWConfig": MaaFWUserConfig,
-    "GeneralConfig": GeneralUserConfig,
-    "PluginScriptConfig": PluginUserConfig,
-}
-
-
-def _is_plugin_payload(payload: dict[str, Any]) -> bool:
-    return isinstance(payload.get("PluginData"), dict) or payload.get("type") in {
-        "PluginScriptConfig",
-        "PluginUserConfig",
-    }
-
-
-def _is_plugin_type(type_key: str) -> bool:
+@router.post("/add", tags=["Add"], summary="添加脚本", response_model=ScriptCreateOut)
+async def add_script(body: ScriptCreateIn = Body(default_factory=ScriptCreateIn)) -> ScriptCreateOut:
     try:
-        from app.core.script_types import script_type_registry
-
-        return not script_type_registry.get(type_key).is_builtin
-    except Exception:
-        return False
-
-
-def _script_schema_for_config(config: Any) -> type[BaseModel]:
-    return SCRIPT_BOOK.get(type(config).__name__, PluginScriptConfig)
-
-
-def _script_schema_for_payload(
-    type_key: str, payload: dict[str, Any]
-) -> type[BaseModel]:
-    if _is_plugin_payload(payload) or _is_plugin_type(type_key):
-        return PluginScriptConfig
-    return SCRIPT_BOOK.get(type_key, GeneralConfig)
-
-
-def _user_schema_for_script_config(config: Any) -> type[BaseModel]:
-    return USER_BOOK.get(type(config).__name__, PluginUserConfig)
-
-
-def _plugin_provider(type_key: str):
-    try:
-        from app.core.script_types import script_type_registry
-
-        return script_type_registry.get(type_key)
-    except Exception:
-        return None
-
-
-def _is_maafw_framework_script(script_config: Any) -> bool:
-    """判定脚本配置是否属于 MaaFW 框架运行链路。"""
-
-    from app.core.script_types import script_type_registry
-
-    # 插件形态脚本统一存为 PluginScriptConfig，类名不进注册表，
-    # 必须按 Meta.PluginTypeKey 解析 provider，否则通用 MaaFW 项目会被误判。
-    try:
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        if isinstance(script_config, PluginScriptConfig):
-            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
-            if not type_key:
-                return False
-            provider = script_type_registry.get(type_key)
-            return provider.metadata.get("framework") == "maafw"
-    except Exception:
-        pass
-
-    config_class_name = type(script_config).__name__
-    try:
-        provider = script_type_registry.get_by_script_config(script_config)
-        return provider.metadata.get("framework") == "maafw"
-    except Exception:
-        # 注册表未就绪或类名未注册时，回退到已知 legacy 类名。
-        return config_class_name == "MaaFWConfig"
-
-
-async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
-    """解析 MaaFW 框架脚本的表单态配置（插件形态与 legacy 均适用）。
-
-    插件形态脚本统一存为 PluginScriptConfig，真实配置在 PluginData.Config
-    （JSON 字符串），须经 storage_to_form 解码后才有 Info.Path / Update.* 字段；
-    legacy MaaFWConfig 直接 toDict 即为表单态。
-    """
-    from app.models.plugin_script_config import PluginScriptConfig
-
-    if isinstance(script_config, PluginScriptConfig):
-        from app.core.script_config_codec import storage_to_form
-
-        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
-        provider = _plugin_provider(type_key)
-        if provider is None:
-            raise RuntimeError(f"无法解析插件脚本类型: {type_key or '(空)'}")
-        raw = script_config.get("PluginData", "Config")
-        return await storage_to_form(provider, raw, "script")
-
-    payload = await script_config.toDict()
-    payload.pop("SubConfigsInfo", None)
-    return payload
-
-
-def _plugin_type_key_from_payload(payload: dict[str, Any]) -> str:
-    meta = payload.get("Meta")
-    if isinstance(meta, dict):
-        raw_type_key = meta.get("PluginTypeKey")
-        if isinstance(raw_type_key, str) and raw_type_key.strip():
-            return raw_type_key.strip()
-    return ""
-
-
-def _script_index_type(index_type: str, payload: dict[str, Any]) -> str:
-    """保留插件容器的稳定公开索引类型。"""
-
-    _ = payload
-    return index_type
-
-
-def _user_index_type(index_type: str, script_config: Any) -> str:
-    """保留插件容器的稳定公开索引类型。"""
-
-    _ = script_config
-    return index_type
-
-
-@router.post(
-    "/add",
-    tags=["Add"],
-    summary="添加脚本",
-    response_model=ScriptCreateOut,
-    status_code=200,
-)
-async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
-
-    try:
-        uid, config = await Config.add_script(script.type, script.scriptId)
-        data = _script_schema_for_config(config)(**(await config.toDict()))
+        col = Config.ScriptConfig
+        names = [row["name"] for row in col.list_entry_types()]
+        type_name = body.type or (names[0] if len(names) == 1 else "")
+        if not type_name:
+            return ScriptCreateOut(
+                code=400,
+                status="error",
+                message="须指定 type（先读 /api/scripts/types）",
+                scriptId="",
+                data=ScriptEntry(),
+            )
+        if type_name not in names:
+            return ScriptCreateOut(
+                code=400,
+                status="error",
+                message=f"不支持的脚本类型: {type_name}",
+                scriptId="",
+                data=ScriptEntry(),
+            )
+        uid = col.add(type_name)
+        await col.commit()
+        return ScriptCreateOut(scriptId=str(uid), data=col[uid])
     except Exception as e:
         return ScriptCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message=f"{type(e).__name__}: {e}",
             scriptId="",
-            data=GeneralConfig(**{}),
+            data=ScriptEntry(),
         )
-    return ScriptCreateOut(scriptId=str(uid), data=data)
 
 
-@router.post(
-    "/get",
-    tags=["Get"],
-    summary="查询脚本配置信息",
-    response_model=ScriptGetOut,
-    status_code=200,
-)
-async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
-
+@router.post("/get", tags=["Get"], summary="查询脚本", response_model=ScriptGetOut)
+async def get_scripts(body: ScriptGetIn = Body(...)) -> ScriptGetOut:
     try:
-        index, data = await Config.get_script(script.scriptId)
-        index = [
-            ScriptIndexItem(
-                **{
-                    **item,
-                    "type": _script_index_type(
-                        str(item.get("type") or ""),
-                        data.get(item.get("uid"), {}),
-                    ),
-                }
-            )
-            for item in index
-            if isinstance(item, dict)
-        ]
-        data = {
-            uid: _script_schema_for_payload(
-                next((_.type for _ in index if _.uid == uid), "General"),
-                cfg,
-            )(**cfg)
-            for uid, cfg in data.items()
-        }
+        col = Config.ScriptConfig
+        uids = [UUID(body.scriptId)] if body.scriptId else list(col.keys())
+        return ScriptGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): col[uid] for uid in uids},
+        )
     except Exception as e:
         return ScriptGetOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            message=f"{type(e).__name__}: {e}",
+            order=[],
             data={},
         )
-    return ScriptGetOut(index=index, data=data)
 
 
-@router.post(
-    "/update",
-    tags=["Update"],
-    summary="更新脚本配置信息",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
-
+@router.post("/update", tags=["Update"], summary="更新脚本", response_model=OutBase)
+async def update_script(body: ScriptUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_script(
-            script.scriptId, script.data.model_dump(exclude_unset=True)
-        )
+        entry = Config.ScriptConfig[UUID(body.scriptId)]
+        await entry.update(type(entry).model_validate(body.data))
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
-@router.post(
-    "/delete",
-    tags=["Delete"],
-    summary="删除脚本",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
-
+@router.post("/delete", tags=["Delete"], summary="删除脚本", response_model=OutBase)
+async def delete_script(body: ScriptDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_script(script.scriptId)
+        col = Config.ScriptConfig
+        col.remove(body.scriptId)
+        await col.commit()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
-@router.post(
-    "/order",
-    tags=["Update"],
-    summary="重新排序脚本",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
-
+@router.post("/order", tags=["Update"], summary="脚本排序", response_model=OutBase)
+async def order_scripts(body: ScriptReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_script(script.indexList)
+        col = Config.ScriptConfig
+        col.set_order([UUID(x) for x in body.indexList])
+        await col.commit()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
-@router.post(
-    "/import/file",
-    tags=["Update"],
-    summary="从文件加载脚本配置",
-    response_model=OutBase,
-    status_code=200,
-)
-async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.import_script_from_file(script.scriptId, script.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
+# ── 嵌套用户 /user ──
 
 
 @router.post(
-    "/export/file",
-    tags=["Action"],
-    summary="导出脚本配置到文件",
-    response_model=OutBase,
-    status_code=200,
+    "/user/add", tags=["Add"], summary="添加用户", response_model=UserCreateOut
 )
-async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
+async def add_user(body: UserGetIn = Body(...)) -> UserCreateOut:
     try:
-        await Config.export_script_to_file(script.scriptId, script.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/import/web",
-    tags=["Update"],
-    summary="从网络加载脚本配置",
-    response_model=OutBase,
-    status_code=200,
-)
-async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.import_script_from_web(script.scriptId, script.url)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/Upload/web",
-    tags=["Action"],
-    summary="上传脚本配置到网络",
-    response_model=OutBase,
-    status_code=200,
-)
-async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.upload_script_to_web(
-            script.scriptId, script.config_name, script.author, script.description
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/config/import",
-    tags=["Action"],
-    summary="从脚本目录导入配置文件",
-    response_model=OutBase,
-    status_code=200,
-)
-async def import_script_config_file(
-    config: ScriptConfigImportIn = Body(...),
-) -> OutBase:
-
-    try:
-        await Config.import_script_config_file(config.scriptId, config.userId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase(message="脚本配置文件已导入")
-
-
-@router.post(
-    "/user/get",
-    tags=["Get"],
-    summary="查询用户",
-    response_model=UserGetOut,
-    status_code=200,
-)
-async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
-
-    try:
-        index, data = await Config.get_user(user.scriptId, user.userId)
-        script_config = Config.ScriptConfig[uuid.UUID(user.scriptId)]
-        index = [
-            UserIndexItem(
-                **{
-                    **item,
-                    "type": _user_index_type(str(item.get("type") or ""), script_config),
-                }
-            )
-            for item in index
-            if isinstance(item, dict)
-        ]
-        schema_model = _user_schema_for_script_config(
-            script_config
-        )
-        data = {
-            uid: schema_model(**cfg)
-            for uid, cfg in data.items()
-        }
-    except Exception as e:
-        return UserGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return UserGetOut(index=index, data=data)
-
-
-@router.post(
-    "/user/add",
-    tags=["Add"],
-    summary="添加用户",
-    response_model=UserCreateOut,
-    status_code=200,
-)
-async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
-
-    try:
-        uid, config = await Config.add_user(user.scriptId)
-        schema_model = _user_schema_for_script_config(
-            Config.ScriptConfig[uuid.UUID(user.scriptId)]
-        )
-        data = schema_model(**(await config.toDict()))
+        users = Config.ScriptConfig[UUID(body.scriptId)].users
+        # 用户类型由脚本类类体收窄，每种脚本只登记一种用户类
+        uid = users.add(users.list_entry_types()[0]["name"])
+        await users.commit()
+        return UserCreateOut(userId=str(uid), data=users[uid])
     except Exception as e:
         return UserCreateOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            message=f"{type(e).__name__}: {e}",
             userId="",
-            data=GeneralUserConfig(**{}),
+            data=UserEntry(),
         )
-    return UserCreateOut(userId=str(uid), data=data)
 
 
-@router.post(
-    "/user/update",
-    tags=["Update"],
-    summary="更新用户配置信息",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
-
+@router.post("/user/get", tags=["Get"], summary="查询用户", response_model=UserGetOut)
+async def get_users(body: UserGetIn = Body(...)) -> UserGetOut:
     try:
-        await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
+        users = Config.ScriptConfig[UUID(body.scriptId)].users
+        uids = [UUID(body.userId)] if body.userId else list(users.keys())
+        return UserGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(users[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): users[uid] for uid in uids},
         )
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/delete",
-    tags=["Delete"],
-    summary="删除用户",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_user(user.scriptId, user.userId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/order",
-    tags=["Update"],
-    summary="重新排序用户",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_user(user.scriptId, user.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/infrastructure",
-    tags=["Update"],
-    summary="导入基建配置文件",
-    response_model=OutBase,
-    status_code=200,
-)
-async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/combox/infrastructure",
-    tags=["Get"],
-    summary="用户自定义基建排班可选项",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
-
-    try:
-        raw_data = await Config.get_user_combox_infrastructure(
-            user.scriptId, user.userId
-        )
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
-    "/maa/depot/items",
-    tags=["Get"],
-    summary="MAA 库存保持物品可选项",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
-
-    try:
-        raw_data = await Config.get_maa_depot_items(script.scriptId)
-        data = [ComboBoxItem(**item) for item in raw_data]
-    except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
-    "/webhook/get",
-    tags=["Get"],
-    summary="查询 webhook 配置",
-    response_model=WebhookGetOut,
-    status_code=200,
-)
-async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-
-    try:
-        index, data = await Config.get_webhook(
-            webhook.scriptId, webhook.userId, webhook.webhookId
-        )
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return WebhookGetOut(
+        return UserGetOut(
             code=500,
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            message=f"{type(e).__name__}: {e}",
+            order=[],
             data={},
         )
-    return WebhookGetOut(index=index, data=data)
 
 
 @router.post(
-    "/webhook/add",
-    tags=["Add"],
-    summary="添加webhook项",
-    response_model=WebhookCreateOut,
-    status_code=200,
+    "/user/update", tags=["Update"], summary="更新用户", response_model=OutBase
 )
-async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
-
+async def update_user(body: UserUpdateIn = Body(...)) -> OutBase:
     try:
-        uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
-        data = Webhook(**(await config.toDict()))
+        user = Config.ScriptConfig[UUID(body.scriptId)].users[UUID(body.userId)]
+        await user.update(type(user).model_validate(body.data))
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
-        return WebhookCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            webhookId="",
-            data=Webhook(**{}),
-        )
-    return WebhookCreateOut(webhookId=str(uid), data=data)
-
-
-@router.post(
-    "/webhook/update",
-    tags=["Update"],
-    summary="更新webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_webhook(
-            webhook.scriptId,
-            webhook.userId,
-            webhook.webhookId,
-            webhook.data.model_dump(exclude_unset=True),
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
 @router.post(
-    "/webhook/delete",
-    tags=["Delete"],
-    summary="删除webhook项",
-    response_model=OutBase,
-    status_code=200,
+    "/user/delete", tags=["Delete"], summary="删除用户", response_model=OutBase
 )
-async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-
+async def delete_user(body: UserDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_webhook(webhook.scriptId, webhook.userId, webhook.webhookId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        users = Config.ScriptConfig[UUID(body.scriptId)].users
+        # 删用户钩子：清本地 data/（框架点；无专项路径时仅打日志）
+        logger.info(
+            f"删除用户 {body.userId}（脚本 {body.scriptId}）；data/ 清理由订阅扩展"
         )
+        users.remove(body.userId)
+        await users.commit()
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
 
 
 @router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
+    "/user/order", tags=["Update"], summary="用户排序", response_model=OutBase
 )
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-
+async def order_users(body: UserReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_webhook(
-            webhook.scriptId, webhook.userId, webhook.indexList
-        )
+        users = Config.ScriptConfig[UUID(body.scriptId)].users
+        users.set_order([UUID(x) for x in body.indexList])
+        await users.commit()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()
-
-
-@router.post(
-    "/maafw/interface/preview",
-    tags=["MaaFW"],
-    summary="预览 MaaFW ProjectInterface",
-    response_model=MaaFWInterfacePreviewOut,
-    status_code=200,
-)
-async def preview_maafw_interface(
-    payload: MaaFWInterfacePreviewIn = Body(...),
-) -> MaaFWInterfacePreviewOut:
-    """读取 MaaFW 项目目录中的 interface.json，返回 MAS UI 可消费的摘要。"""
-    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
-    from automas_maafw_interface.service import MaaFWInterfaceService
-
-    try:
-        data = MaaFWInterfaceService().preview(Path(payload.path).resolve())
-    except MaaFWInterfaceLoadError as e:
-        return MaaFWInterfacePreviewOut(
-            code=400,
-            status="error",
-            message=str(e),
-            data=None,
-        )
-    except Exception as e:
-        return MaaFWInterfacePreviewOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=None,
-        )
-
-    return MaaFWInterfacePreviewOut(
-        message=f"已读取 MaaFW 项目 {data.project['name']}，共 {len(data.tasks)} 个任务",
-        data=data.model_dump(mode="json"),
-    )
-
-
-@router.post(
-    "/maafw/project/update",
-    tags=["MaaFW"],
-    summary="手动更新 MaaFW 项目资源",
-    response_model=MaaFWProjectUpdateOut,
-    status_code=200,
-)
-async def update_maafw_project(
-    payload: MaaFWProjectUpdateIn = Body(...),
-) -> MaaFWProjectUpdateOut:
-    """按脚本更新配置手动检查并应用 MaaFW 项目资源更新。"""
-    from automas_maafw_agent_env.service import MaaFWAgentEnvService
-    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
-    from automas_maafw_interface.service import MaaFWInterfaceService
-    from automas_maafw_project_update.service import MaaFWProjectUpdateService
-
-    logs: list[str] = []
-    current_version = ""
-
-    def append_log(message: str) -> None:
-        timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
-        for line in str(message).splitlines() or [""]:
-            logs.append(f"[{timestamp}] {line}")
-
-    try:
-        script_uuid = uuid.UUID(payload.scriptId)
-    except ValueError as e:
-        append_log(f"脚本 ID 无效: {e}")
-        return MaaFWProjectUpdateOut(
-            code=400,
-            status="error",
-            message=f"脚本 ID 无效: {e}",
-            data=MaaFWProjectUpdateData(
-                checked=False,
-                updated=False,
-                currentVersion=current_version,
-                logs=logs,
-            ),
-        )
-
-    try:
-        script_config = Config.ScriptConfig[script_uuid]
-        if not _is_maafw_framework_script(script_config):
-            append_log("指定脚本不是 MaaFW 项目")
-            return MaaFWProjectUpdateOut(
-                code=400,
-                status="error",
-                message="指定脚本不是 MaaFW 项目",
-                data=MaaFWProjectUpdateData(
-                    checked=False,
-                    updated=False,
-                    currentVersion=current_version,
-                    logs=logs,
-                ),
-            )
-
-        # 插件形态脚本的 Info.Path/Update.* 藏在 PluginData.Config，需先解码成表单态
-        script_form = await _resolve_maafw_script_form(script_config)
-        info_group = script_form.get("Info")
-        info_group = info_group if isinstance(info_group, dict) else {}
-        update_group = script_form.get("Update")
-        update_group = update_group if isinstance(update_group, dict) else {}
-
-        project_path_raw = str(info_group.get("Path") or "").strip()
-        if not project_path_raw:
-            append_log("请先配置 MaaFW 项目目录")
-            return MaaFWProjectUpdateOut(
-                code=400,
-                status="error",
-                message="请先配置 MaaFW 项目目录",
-                data=MaaFWProjectUpdateData(
-                    checked=False,
-                    updated=False,
-                    currentVersion=current_version,
-                    logs=logs,
-                ),
-            )
-
-        project_path = Path(project_path_raw).resolve()
-        interface_model = MaaFWInterfaceService().load(project_path)
-        current_version = interface_model.version or ""
-
-        mirror_cdk = (
-            update_group.get("MirrorChyanCDK")
-            or Config.get("Update", "MirrorChyanCDK")
-        )
-        channel = update_group.get("Channel") or Config.get("Update", "Channel")
-        source_config = None
-        try:
-            from automas_script_maafw.schema import build_source_config
-
-            source_config = build_source_config(script_form)
-        except Exception as e:
-            append_log(f"读取脚本更新源配置失败，回退默认更新源: {type(e).__name__}: {e}")
-        update_result = await MaaFWProjectUpdateService().update_if_needed(
-            project_path,
-            interface_model,
-            mirror_cdk=mirror_cdk,
-            channel=channel,
-            proxy=Config.proxy,
-            send_log=append_log,
-            source_config=source_config,
-        )
-
-        if update_result.updated:
-            refreshed_interface = MaaFWInterfaceService().load(
-                project_path,
-                force_reload=True,
-            )
-            append_log("MaaFW 项目已更新，准备 Agent Python 环境")
-            await asyncio.to_thread(
-                MaaFWAgentEnvService().prepare_env,
-                project_path,
-                refreshed_interface,
-                send_log=append_log,
-            )
-
-        return MaaFWProjectUpdateOut(
-            message=update_result.message,
-            data=MaaFWProjectUpdateData(
-                checked=update_result.checked,
-                updated=update_result.updated,
-                currentVersion=update_result.current_version,
-                latestVersion=update_result.latest_version,
-                source=update_result.source,
-                logs=logs,
-            ),
-        )
-    except KeyError:
-        append_log("脚本不存在或已被删除")
-        return MaaFWProjectUpdateOut(
-            code=404,
-            status="error",
-            message="脚本不存在或已被删除",
-            data=MaaFWProjectUpdateData(
-                checked=False,
-                updated=False,
-                currentVersion=current_version,
-                logs=logs,
-            ),
-        )
-    except MaaFWInterfaceLoadError as e:
-        append_log(f"MaaFW 项目更新失败: {e}")
-        return MaaFWProjectUpdateOut(
-            code=400,
-            status="error",
-            message=str(e),
-            data=MaaFWProjectUpdateData(
-                checked=False,
-                updated=False,
-                currentVersion=current_version,
-                logs=logs,
-            ),
-        )
-    except Exception as e:
-        append_log(f"MaaFW 项目更新失败: {type(e).__name__}: {e}")
-        return MaaFWProjectUpdateOut(
-            code=500,
-            status="error",
-            message=f"MaaFW 项目更新失败: {type(e).__name__}: {e}",
-            data=MaaFWProjectUpdateData(
-                checked=False,
-                updated=False,
-                currentVersion=current_version,
-                logs=logs,
-            ),
-        )
-
-
-@router.post(
-    "/maafw/agent-env/prepare",
-    tags=["MaaFW"],
-    summary="Prepare MaaFW runtime env",
-    response_model=MaaFWAgentEnvPrepareOut,
-    status_code=200,
-)
-async def prepare_maafw_agent_env(
-    payload: MaaFWAgentEnvPrepareIn = Body(...),
-) -> MaaFWAgentEnvPrepareOut:
-    """Prepare MaaFW Runner and agent Python envs before starting tasks."""
-
-    from automas_maafw_agent_env.service import MaaFWAgentEnvService
-    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
-    from automas_maafw_interface.service import MaaFWInterfaceService
-
-    logs: list[str] = []
-    root_path: Path | None = None
-    agent_plans: list[Any] = []
-    try:
-        root_path = Path(payload.path).resolve()
-        interface = MaaFWInterfaceService().load(root_path)
-        prepare_result = await asyncio.to_thread(
-            MaaFWAgentEnvService().prepare_env,
-            root_path,
-            interface,
-            send_log=logs.append,
-        )
-        agent_plans = prepare_result.plans
-        agents = _build_maafw_agent_env_info_items(agent_plans)
-        data = MaaFWAgentEnvPrepareData(
-            path=str(root_path),
-            agentCount=len(agents),
-            agents=agents,
-            logs=logs,
-        )
-    except MaaFWInterfaceLoadError as e:
-        return MaaFWAgentEnvPrepareOut(
-            code=400,
-            status="error",
-            message=str(e),
-            data=MaaFWAgentEnvPrepareData(
-                path=str(root_path or Path(payload.path)),
-                agentCount=0,
-                agents=[],
-                logs=logs,
-            ),
-        )
-    except Exception as e:
-        agents = _build_maafw_agent_env_info_items(agent_plans)
-        return MaaFWAgentEnvPrepareOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=MaaFWAgentEnvPrepareData(
-                path=str(root_path or Path(payload.path)),
-                agentCount=len(agents),
-                agents=agents,
-                logs=logs,
-            ),
-        )
-
-    return MaaFWAgentEnvPrepareOut(
-        message=f"MaaFW runtime env prepared, agent count: {data.agentCount}",
-        data=data,
-    )
-
-
-@router.get(
-    "/maafw/asset",
-    tags=["MaaFW"],
-    summary="读取 MaaFW 本地图片资源",
-    response_class=FileResponse,
-    status_code=200,
-)
-async def get_maafw_asset(
-    root: str = Query(..., description="MaaFW 项目根目录"),
-    path: str = Query(..., description="相对 MaaFW 项目根目录的图片路径"),
-) -> FileResponse:
-    """读取 MaaFW interface 描述、任务、选项中引用的本地图片资源。"""
-
-    try:
-        file_path = _maafw_asset_file_path(root, path)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    return FileResponse(file_path)
-
-
-def _select_maafw_window_controllers(interface, controller_name: str | None):
-    controllers = [
-        controller
-        for controller in interface.controller
-        if controller.type == "Win32"
-    ]
-    if not controller_name:
-        return controllers
-
-    controller = next(
-        (
-            item
-            for item in interface.controller
-            if item.name == controller_name
-        ),
-        None,
-    )
-    if controller is None:
-        raise ValueError(f"未找到 controller: {controller_name}")
-    if controller.type != "Win32":
-        raise ValueError(f"controller {controller_name} 不是 PC 窗口类型")
-    return [controller]
-
-
-@router.post(
-    "/maafw/windows/preview",
-    tags=["MaaFW"],
-    summary="扫描 MaaFW PC 客户端窗口",
-    response_model=MaaFWWindowPreviewOut,
-    status_code=200,
-)
-async def preview_maafw_windows(
-    payload: MaaFWWindowPreviewIn = Body(...),
-) -> MaaFWWindowPreviewOut:
-    """按 interface.json 中的 Win32 窗口规则扫描本机桌面窗口。"""
-    from automas_maafw_controller_win32.service import MaaFWWin32ControllerService
-    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
-    from automas_maafw_interface.service import MaaFWInterfaceService
-
-    try:
-        root_path = Path(payload.path).resolve()
-        interface = MaaFWInterfaceService().load(root_path)
-        controllers = _select_maafw_window_controllers(
-            interface,
-            payload.controllerName,
-        )
-        win32_service = MaaFWWin32ControllerService()
-        win32_windows = win32_service.list_windows()
-        windows: list[MaaFWDesktopWindowInfo] = []
-        for controller in controllers:
-            controller_payload = controller.model_dump(mode="json", by_alias=True)
-            for window in win32_service.match_controller_windows(
-                controller_payload,
-                win32_windows,
-            ):
-                windows.append(
-                    MaaFWDesktopWindowInfo(
-                        hWnd=window.hWnd,
-                        className=window.className,
-                        windowName=window.windowName,
-                        controllerName=window.controllerName,
-                        controllerType=window.controllerType,
-                    )
-                )
-        data = MaaFWWindowPreviewData(
-            path=str(root_path),
-            controllerName=payload.controllerName,
-            windows=windows,
-        )
-    except MaaFWInterfaceLoadError as e:
-        return MaaFWWindowPreviewOut(
-            code=400,
-            status="error",
-            message=str(e),
-            data=None,
-        )
-    except ValueError as e:
-        return MaaFWWindowPreviewOut(
-            code=400,
-            status="error",
-            message=str(e),
-            data=None,
-        )
-    except Exception as e:
-        return MaaFWWindowPreviewOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=None,
-        )
-
-    return MaaFWWindowPreviewOut(
-        message=f"已扫描到 {len(data.windows)} 个 MaaFW PC 客户端窗口",
-        data=data,
-    )

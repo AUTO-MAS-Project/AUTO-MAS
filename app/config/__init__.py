@@ -1,20 +1,15 @@
-"""AUTO-MAS 配置基类（统一 Node 抽象、Wire 文档、冷/热态、blinker 信号）。
+"""AUTO-MAS 配置基类（统一 Node 抽象、配置文档、冷/热态、blinker 信号）。
 
 由原 ``config_framework_v2`` 迁入 ``app.config``；设计规格见仓库根 ``配置基类.md``。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
-
-from app.utils.io import read_toml, write_toml
-
-from .core.collection import ConfigCollection
+from .core.collection import CollectionOrderItem, ConfigCollection
 from .core.entry import ConfigEntry
-from .core.group import ConfigGroup
+from .core.group import ConfigGroup, ConfigTableColumn
 from .core.manager import ConfigManager, RootRecord, TransactionContext, config_manager
-from .core.node import ConfigNode, LockTicket, NodeState
+from .core.node import ConfigNode, ExportContext, LockTicket, NodeState
 from .core.staging import StageKind, StagedOp
 from .errors import (
     ConfigAggregateError,
@@ -33,9 +28,13 @@ from .fields import (
     RefDeleteAction,
     RefField,
     Select,
+    TableHint,
     Trigger,
+    TriggerDecl,
     UiHintMarker,
     UiHintsMap,
+    UiTablesList,
+    UiVisibility,
     Virtual,
     encrypted,
     is_encrypted_model_field,
@@ -43,15 +42,14 @@ from .fields import (
     select,
     ui,
 )
-from .shortcuts import collection, ref, trigger_field, virtual_field
+from .shortcuts import collection, ref, trigger_field, ui_visibility, virtual_field
 from .signals import CollectionChangeEvent, FieldChangeEvent
 from .types import (
     CliArgumentListString,
     CliArgumentString,
-    EmulatorPath,
+    ExecutablePath,
     FilePath,
     FolderPath,
-    HHMMString,
     JsonDictString,
     JsonListString,
     KeyboardKeyString,
@@ -59,22 +57,8 @@ from .types import (
     ScriptRootPath,
     UrlString,
     WindowsNameString,
-    YmdHmString,
-    YmdHmsString,
-    YmdString,
+    tz,
 )
-from .wire import CollectionOrderItem, ExportContext, WireDict, to_tomlable
-
-
-def read_wire_toml(path: Path) -> WireDict:
-    """兼容入口：解析 TOML → Wire dict（委托 ``app.utils.io.read_toml``）。"""
-    return read_toml(path)
-
-
-def write_wire_toml(path: Path, payload: WireDict) -> None:
-    """兼容入口：Wire dict → TOML（经 ``to_tomlable`` + ``app.utils.io.write_toml``）。"""
-    write_toml(path, cast(WireDict, to_tomlable(payload)))
-
 
 __all__ = [
     # 核心
@@ -84,6 +68,7 @@ __all__ = [
     "ConfigEntry",
     "ConfigCollection",
     "ConfigGroup",
+    "ConfigTableColumn",
     "ConfigManager",
     "config_manager",
     "CollectionOrderItem",
@@ -92,14 +77,18 @@ __all__ = [
     # 字段
     "Virtual",
     "Trigger",
+    "TriggerDecl",
     "RefField",
     "RefDeleteAction",
     "OnDeleteCallback",
     "Select",
     "ComponentHint",
     "OptionHint",
+    "TableHint",
     "UiHintsMap",
+    "UiTablesList",
     "UiHintMarker",
+    "UiVisibility",
     "LegacyMarker",
     "ui",
     "select",
@@ -119,19 +108,15 @@ __all__ = [
     "collection",
     "virtual_field",
     "trigger_field",
-    # Wire
+    "ui_visibility",
+    # 导出
     "ExportContext",
-    "WireDict",
-    "to_tomlable",
-    "read_wire_toml",
-    "write_wire_toml",
     # 内置类型
     "FilePath",
     "FolderPath",
     "ScriptRootPath",
-    "EmulatorPath",
+    "ExecutablePath",
     "LoosePath",
-    "HHMMString",
     "JsonDictString",
     "JsonListString",
     "KeyboardKeyString",
@@ -139,9 +124,7 @@ __all__ = [
     "CliArgumentString",
     "CliArgumentListString",
     "UrlString",
-    "YmdHmString",
-    "YmdHmsString",
-    "YmdString",
+    "tz",
     # 异常
     "ConfigError",
     "ConfigAggregateError",

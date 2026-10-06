@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import tempfile
 import uuid
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.config import (
     ConfigEntry,
     ConfigGroup,
     CollectionChangeEvent,
+    ExportContext,
     FieldChangeEvent,
     LockTicket,
     NodeState,
@@ -54,17 +56,9 @@ def _reset_signal(cls: type) -> None:
 
 
 # ─────────────── ref 池：模块级脚本集合（name 全局唯一）───────────────
+# 同目录内多个测试文件共用一份登记，见 ref_pool 模块说明
 
-_scripts = ConfigCollection([ExampleScript], name="scripts")
-_scripts_loaded = False
-
-
-async def _ensure_scripts() -> ConfigCollection[ExampleScript]:
-    global _scripts_loaded
-    if not _scripts_loaded:
-        await _scripts.activate()
-        _scripts_loaded = True
-    return _scripts
+from .ref_pool import ensure_scripts as _ensure_scripts
 
 
 # ──────────────────────────── 测试 ────────────────────────────
@@ -73,7 +67,7 @@ async def _ensure_scripts() -> ConfigCollection[ExampleScript]:
 async def test_entry_init_with_data() -> None:
     cfg = ExampleWebhook.build(
         uid="11111111-1111-4111-8111-111111111111",
-        wire={"info": {"name": "构造注入", "enabled": False}},
+        payload={"info": {"name": "构造注入", "enabled": False}},
     )
     await cfg.activate()
     if str(cfg.uid) != "11111111-1111-4111-8111-111111111111":
@@ -83,9 +77,9 @@ async def test_entry_init_with_data() -> None:
     _ok("ConfigEntry 构造 uid/data")
 
 
-async def test_toml_roundtrip() -> None:
+async def test_yaml_roundtrip() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "webhook.toml"
+        path = Path(tmp) / "webhook.yaml"
         cfg = ExampleWebhook.build(file=path)
         await cfg.activate()
         cfg.info.name = "测试"
@@ -96,38 +90,38 @@ async def test_toml_roundtrip() -> None:
         loaded = ExampleWebhook.build(file=path)
         await loaded.activate()
         if loaded.info.name != "测试":
-            _fail("TOML 往返 name 不一致")
+            _fail("YAML 往返 name 不一致")
         if loaded.data.url != "https://example.com/hook":
-            _fail("TOML 往返 url 不一致")
-    _ok("Entry TOML 往返")
+            _fail("YAML 往返 url 不一致")
+    _ok("Entry YAML 往返")
 
 
-async def test_missing_toml_returns_default() -> None:
+async def test_missing_yaml_returns_default() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "missing.toml"
+        path = Path(tmp) / "missing.yaml"
         cfg = ExampleWebhook.build(file=path)
         await cfg.activate()
         if cfg.info.name != "示例 Webhook":
-            _fail("空 TOML 应保留默认")
-    _ok("缺失 TOML 返回默认")
+            _fail("空 YAML 应保留默认")
+    _ok("缺失 YAML 返回默认")
 
 
-async def test_rejects_non_toml_path() -> None:
+async def test_rejects_non_yaml_path() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "config.json"
         try:
             ExampleWebhook.build(file=path)
-            _fail("非 .toml 路径应拒绝")
+            _fail("非 .yaml 路径应拒绝")
         except ValueError:
             pass
-    _ok("拒绝非 TOML 路径")
+    _ok("拒绝非 YAML 路径")
 
 
 async def test_collection_init_with_data() -> None:
     uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
     col = ConfigCollection.build(
         [ExampleQueue],
-        wire={
+        payload={
             "order": [{"uid": str(uid), "type": "ExampleQueue"}],
             "data": {str(uid): {"info": {"name": "队列构造"}}},
         },
@@ -138,11 +132,11 @@ async def test_collection_init_with_data() -> None:
     if col[uid].info.name != "队列构造":
         _fail("Collection 构造 data 未生效")
     if col[uid].activation_state != NodeState.ACTIVE:
-        _fail(f"Wire 热化成员应为 ACTIVE，实际 {col[uid].activation_state}")
+        _fail(f"文档热化成员应为 ACTIVE，实际 {col[uid].activation_state}")
     dumped = await col[uid].to_dict()
     if dumped.get("info", {}).get("name") != "队列构造":
         _fail(f"成员 to_dict 异常: {dumped}")
-    _ok("ConfigCollection 构造 data（Wire 形状）")
+    _ok("ConfigCollection 构造 data（文档形状）")
 
 
 async def test_add_member_is_active() -> None:
@@ -239,7 +233,7 @@ async def test_ref_missing_target_raises() -> None:
             _fail(f"聚合错误应含目标 LookupError: {exc.errors}")
     if item.activation_state != NodeState.ACTIVE:
         _fail("部分失败后仍应 ACTIVE（事务已提交）")
-    if item._pending_wire is not None:
+    if item._pending_payload is not None:
         _fail("外层 COMMIT 后应清空 pending")
     _ok("ref 目标未登记时 activate 报错")
 
@@ -252,7 +246,7 @@ async def test_activate_collects_all_field_errors() -> None:
     class Cfg(ConfigEntry):
         info: Info = Field(default_factory=Info)
 
-    cfg = Cfg.build(wire={"info": {"a": -1, "b": -2}})
+    cfg = Cfg.build(payload={"info": {"a": -1, "b": -2}})
     try:
         await cfg.activate()
         _fail("非法字段应导致 activate 失败")
@@ -263,7 +257,7 @@ async def test_activate_collects_all_field_errors() -> None:
         _fail("字段失败后仍应 ACTIVE（成功路径已 COMMIT）")
     if cfg.info.a != 0 or cfg.info.b != 0:
         _fail(f"失败字段应保留先验值，实际 a={cfg.info.a} b={cfg.info.b}")
-    if cfg._pending_wire is not None:
+    if cfg._pending_payload is not None:
         _fail("COMMIT 后 pending 应清空")
     try:
         await cfg.activate()
@@ -282,9 +276,9 @@ async def test_activate_pending_survives_outer_rollback() -> None:
     class Cfg(ConfigEntry):
         info: Info = Field(default_factory=Info)
 
-    cfg = Cfg.build(wire={"info": {"name": "from-wire"}})
-    if cfg._pending_wire is None:
-        _fail("build(wire=) 应暂存 pending")
+    cfg = Cfg.build(payload={"info": {"name": "from-payload"}})
+    if cfg._pending_payload is None:
+        _fail("build(payload=) 应暂存 pending")
 
     from app.config.core.manager import config_manager
 
@@ -297,12 +291,12 @@ async def test_activate_pending_survives_outer_rollback() -> None:
 
     if cfg.activation_state != NodeState.INACTIVE:
         _fail("父 ROLLBACK 后应仍为 INACTIVE")
-    if cfg._pending_wire is None:
+    if cfg._pending_payload is None:
         _fail("父 ROLLBACK 后 live pending 应保留")
     await cfg.activate()
-    if cfg.info.name != "from-wire":
-        _fail(f"重试 activate 应消费原 wire，实际 name={cfg.info.name!r}")
-    if cfg._pending_wire is not None:
+    if cfg.info.name != "from-payload":
+        _fail(f"重试 activate 应消费原 payload，实际 name={cfg.info.name!r}")
+    if cfg._pending_payload is not None:
         _fail("成功 activate 后应清空 pending")
     _ok("嵌套 activate 父 ROLLBACK 保留 pending")
 
@@ -321,7 +315,7 @@ async def test_activate_init_handler_failure_keeps_prior() -> None:
     async def boom(sender: object, event: FieldChangeEvent) -> None:
         raise RuntimeError("init boom")
 
-    cfg = Cfg.build(wire={"info": {"name": "hot", "other": "ok"}})
+    cfg = Cfg.build(payload={"info": {"name": "hot", "other": "ok"}})
     try:
         await cfg.activate()
         _fail("init handler 失败应抛出聚合错误")
@@ -366,7 +360,7 @@ async def test_activate_init_add_handler_failure_keeps_prior() -> None:
 
     col = ConfigCollection.build(
         [Item],
-        wire={
+        payload={
             "order": [
                 {"uid": str(ok_uid), "type": "Item"},
                 {"uid": str(boom_uid), "type": "Item"},
@@ -430,7 +424,7 @@ async def test_init_add_failure_orphan_entry_may_reach_active() -> None:
 
     col = ConfigCollection.build(
         [Item],
-        wire={
+        payload={
             "order": [{"uid": str(boom_uid), "type": "Item"}],
             "data": {str(boom_uid): {"info": {"name": "boom"}}},
         },
@@ -486,7 +480,7 @@ async def test_partial_ref_connect_leaves_active_without_retry_activate() -> Non
 
         info: Info = Field(default_factory=Info)
 
-    item = Item.build(wire={"info": {"ok_ref": "-", "late_ref": "-"}})
+    item = Item.build(payload={"info": {"ok_ref": "-", "late_ref": "-"}})
     try:
         await item.activate()
         _fail("未登记 late 池应导致 activate 聚合错误")
@@ -522,12 +516,12 @@ async def test_encrypted_field() -> None:
         _fail("加密字段应存密文")
     if cfg.secrets.token != "hello-secret":
         _fail("加密字段读取应得明文")
-    dumped = await cfg.to_dict(if_decrypt=False)
+    dumped = await cfg.to_dict()
     if dumped["secrets"]["token"] == "hello-secret":
-        _fail("默认导出应为密文")
-    dumped_plain = await cfg.to_dict(if_decrypt=True)
+        _fail("默认 to_dict(persist) 应为密文")
+    dumped_plain = cfg.model_dump(context=ExportContext(audience="api"))
     if dumped_plain["secrets"]["token"] != "hello-secret":
-        _fail("if_decrypt=True 应导出明文")
+        _fail("audience=api 应导出明文")
     _ok("加密字段 encrypted() + EncryptedValue")
 
 
@@ -600,7 +594,7 @@ async def test_file_path_field() -> None:
     from app.config import FilePath
 
     class Paths(ConfigGroup):
-        binary: FilePath = ""
+        binary: FilePath = None
 
     class Cfg(ConfigEntry):
         paths: Paths = Field(default_factory=Paths)
@@ -611,30 +605,33 @@ async def test_file_path_field() -> None:
         file_path.write_text("x", encoding="utf-8")
         dir_path = root / "folder"
         dir_path.mkdir()
-        expected = file_path.resolve().as_posix()
+        expected = file_path.resolve()
 
         cfg = Cfg()
         await cfg.activate()
-        if cfg.paths.binary != "":
-            _fail("default should be empty str")
+        if cfg.paths.binary is not None:
+            _fail("default should be None")
 
         cfg.paths.binary = str(file_path)
         await cfg.commit()
         if cfg.paths.binary != expected:
-            _fail(f"should resolve to abs file path str, got {cfg.paths.binary!r}")
+            _fail(f"should resolve to abs Path, got {cfg.paths.binary!r}")
         dumped = await cfg.to_dict()
-        if dumped["paths"]["binary"] != expected:
-            _fail(f"wire should be posix str, got {dumped['paths']['binary']!r}")
+        if dumped["paths"]["binary"] != str(expected):
+            _fail(f"payload should be str(Path), got {dumped['paths']['binary']!r}")
+        py = cfg.model_dump(mode="python")
+        if not isinstance(py["paths"]["binary"], Path) or py["paths"]["binary"] != expected:
+            _fail(f"mode=python 应保留 Path: {py['paths']['binary']!r}")
 
         cfg.paths.binary = str(dir_path)
         await cfg.commit()
-        if cfg.paths.binary != "":
-            _fail("directory should correct to empty str")
+        if cfg.paths.binary is not None:
+            _fail("directory should correct to None")
 
         cfg.paths.binary = str(root / "missing.exe")
         await cfg.commit()
-        if cfg.paths.binary != "":
-            _fail("missing path should correct to empty str")
+        if cfg.paths.binary is not None:
+            _fail("missing path should correct to None")
 
         try:
             import win32com.client
@@ -657,10 +654,10 @@ async def test_file_path_field() -> None:
         shortcut.Save()
         cfg.paths.binary = str(dir_lnk)
         await cfg.commit()
-        if cfg.paths.binary != "":
-            _fail(".lnk to directory should correct to empty str")
+        if cfg.paths.binary is not None:
+            _fail(".lnk to directory should correct to None")
 
-    _ok("FilePath file validate, .lnk resolve, wire dump")
+    _ok("FilePath file validate, .lnk resolve, payload dump")
 
 
 async def test_ref_normalization() -> None:
@@ -672,7 +669,7 @@ async def test_ref_normalization() -> None:
     await item.activate()
     item.info.script_id = str(script_uid)
     await item.commit()
-    if item.info.script_id != str(script_uid):
+    if item.info.script_id != script_uid:
         _fail("ref 字段未归一化为有效 UUID")
     item.info.script_id = "not-a-uuid"
     await item.commit()
@@ -693,7 +690,7 @@ async def test_ref_duplicate_rejected() -> None:
             class Info(ConfigGroup):
                 script_id: Annotated[
                     str,
-                    ref("scripts"),
+                    ref("example_scripts"),
                     ref("others"),
                 ] = "-"
 
@@ -735,7 +732,7 @@ async def test_ref_on_delete_set_default() -> None:
     await item.activate()
     item.info.script_id = str(script_uid)
     await item.commit()
-    if item.info.script_id != str(script_uid):
+    if item.info.script_id != script_uid:
         _fail("ref 赋值失败")
 
     scripts.remove(script_uid)
@@ -755,7 +752,7 @@ async def test_ref_on_delete_cascade() -> None:
             script_id: Annotated[
                 str,
                 ref(
-                    "scripts",
+                    "example_scripts",
                     default="-",
                     allow_values=("-",),
                     on_delete=RefDeleteAction.CASCADE,
@@ -767,7 +764,7 @@ async def test_ref_on_delete_cascade() -> None:
     items = ConfigCollection([CascadeItem])
     await items.activate()
     item_uid = items.add(
-        CascadeItem, wire={"info": {"script_id": str(script_uid)}}
+        CascadeItem, payload={"info": {"script_id": str(script_uid)}}
     )
     await items.commit()
     if item_uid not in items:
@@ -801,7 +798,7 @@ async def test_same_collection_cascade() -> None:
     await peers.activate()
     a_uid = peers.add(Peer)
     await peers.commit()
-    b_uid = peers.add(Peer, wire={"info": {"peer_id": str(a_uid)}})
+    b_uid = peers.add(Peer, payload={"info": {"peer_id": str(a_uid)}})
     await peers.commit()
     if a_uid not in peers or b_uid not in peers:
         _fail("同集合成员应已加入")
@@ -852,7 +849,7 @@ async def test_failed_member_activate_reaches_active() -> None:
     try:
         col = ConfigCollection.build(
             [Item],
-            wire={
+            payload={
                 "order": [
                     {"uid": str(ok_uid), "type": "Item"},
                     {"uid": str(bad_uid), "type": "Item"},
@@ -951,7 +948,7 @@ async def test_forbid_same_node_nested_init_transaction() -> None:
         node.info.other = "dirty"
         await node.commit()
 
-    cfg = Cfg.build(wire={"info": {"name": "hot", "other": "keep"}})
+    cfg = Cfg.build(payload={"info": {"name": "hot", "other": "keep"}})
     try:
         try:
             await cfg.activate()
@@ -1028,7 +1025,7 @@ async def test_set_default_auto_commit_flushes_other_stages() -> None:
             script_id: Annotated[
                 str,
                 ref(
-                    "scripts",
+                    "example_scripts",
                     default="-",
                     allow_values=("-",),
                     on_delete=RefDeleteAction.SET_DEFAULT,
@@ -1095,7 +1092,7 @@ async def test_ref_on_delete_cascade_rejects_non_member() -> None:
             script_id: Annotated[
                 str,
                 ref(
-                    "scripts",
+                    "example_scripts",
                     default="-",
                     allow_values=("-",),
                     on_delete=RefDeleteAction.CASCADE,
@@ -1196,9 +1193,9 @@ async def test_trigger_field() -> None:
     api = cfg.model_dump()
     if api["info"].get("run") is not False:
         _fail(f"model_dump 应携带触发器为 False: {api['info'].get('run')}")
-    with_reactive = await cfg.to_dict(include_reactive=True)
+    with_reactive = cfg.model_dump(context=ExportContext(audience="api"))
     if with_reactive["info"].get("run") is not False:
-        _fail("to_dict(include_reactive=True) 应含触发器")
+        _fail("audience=api 应含触发器")
     _ok("触发器字段")
 
 
@@ -1222,37 +1219,143 @@ async def test_reactive_unbound_raises() -> None:
 
 
 async def test_lock() -> None:
+    """持票者可写；空上下文拒绝；解锁后任何人可写。"""
     cfg = ExampleWebhook()
     await cfg.activate()
     ticket = await cfg.lock_x()
+    cfg.info.name = "holder"
+    await cfg.commit()
+    if cfg.info.name != "holder":
+        _fail("X 持票者应能写入并提交")
+    other = contextvars.Context()
     try:
-        cfg.info.name = "locked"
-        _fail("锁定后赋值应失败")
+        other.run(setattr, cfg.info, "name", "blocked")
+        _fail("非持有者写入应拒绝")
     except ValueError:
         pass
+    if cfg.info.name != "holder":
+        _fail("非持有者写入不应生效")
     await cfg.unlock(ticket)
     cfg.info.name = "unlocked"
     await cfg.commit()
     if cfg.info.name != "unlocked":
         _fail("解锁后赋值失败")
+    _ok("配置锁定（持票者可写）")
 
-    # 已 stage 后加锁：commit 入口拒绝，且不清空 stage
-    before = cfg.info.name
-    cfg.info.name = "staged-then-locked"
-    ticket2 = await cfg.lock_x()
+
+async def test_lock_x_scope_and_foreign_commit() -> None:
+    """cascade 作用域、S 永不放行、非持有者 commit 不清空 stage、try_lock_x。"""
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    await col.commit()
+    entry = col[uid]
+    other = contextvars.Context()
+
+    t_col = await col.lock_x(cascade=False)
+    entry.info.name = "child-unlocked"
+    await entry.commit()
+    if entry.info.name != "child-unlocked":
+        _fail("cascade=False 不应锁住成员")
+    await col.unlock(t_col)
+
+    t_all = await col.lock_x(cascade=True)
+    entry.info.name = "holder-child"
+    await entry.commit()
+    if entry.info.name != "holder-child":
+        _fail("cascade=True 持票者应能写成员")
     try:
-        await cfg.commit()
-        _fail("锁定后 commit 应拒绝已暂存字段写")
+        other.run(setattr, entry.info, "name", "foreign")
+        _fail("非持有者写级联子节点应拒绝")
     except ValueError:
         pass
-    got_name = cast(str, cfg.info.name)
-    if got_name != before:
-        _fail("锁定拒绝 commit 后字段不应落盘")
-    await cfg.unlock(ticket2)
-    await cfg.commit()
-    if cfg.info.name != "staged-then-locked":
-        _fail("解锁后应能提交先前暂存")
-    _ok("配置锁定")
+    await col.unlock(t_all)
+
+    ts = await entry.lock_s()
+    try:
+        entry.info.name = "s-write"
+        _fail("S 锁下持票上下文也应禁写")
+    except ValueError:
+        pass
+    try:
+        other.run(setattr, entry.info, "name", "s-foreign")
+        _fail("S 锁下空上下文应禁写")
+    except ValueError:
+        pass
+    await entry.unlock(ts)
+
+    t_x = await entry.lock_x()
+    entry.info.name = "staged-by-holder"
+
+    async def foreign_commit() -> None:
+        await entry.commit()
+
+    task = other.run(asyncio.create_task, foreign_commit())
+    try:
+        await task
+        _fail("非持有者 commit 应拒绝")
+    except ValueError:
+        pass
+    if not entry._staged_ops:
+        _fail("非持有者 commit 失败后应保留 stage")
+    await entry.commit()
+    if entry.info.name != "staged-by-holder":
+        _fail("持票者随后应能提交先前暂存")
+    await entry.unlock(t_x)
+
+    got = await entry.try_lock_x()
+    if got is None:
+        _fail("空闲时应 try_lock_x 成功")
+    miss = await entry.try_lock_x()
+    if miss is not None:
+        _fail("已持 X 时 try_lock_x 应返回 None")
+    await entry.unlock(got)
+    _ok("X 作用域 / 外上下文 commit / try_lock_x")
+
+
+async def test_lock_x_multi_token_and_leak() -> None:
+    """同一上下文两把独立 X；残留 token 写不进他人持锁节点。"""
+    from app.config.core.manager import add_x_token
+
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    await col.commit()
+    entry = col[uid]
+    t_col = await col.lock_x(cascade=False)
+    t_ent = await entry.lock_x(cascade=False)
+    # 各自作用域：集合 token 写不了已锁成员（成员 token 不同，但本上下文两把都有）
+    col.add(ExampleScript)  # 集合持票可结构写
+    entry.info.name = "both"
+    await entry.commit()
+    await col.unlock(t_col)
+    await entry.unlock(t_ent)
+
+    cfg = ExampleWebhook()
+    await cfg.activate()
+    t1 = await cfg.lock_x()
+    stale = t1.token
+    await cfg.unlock(t1)
+    add_x_token(stale)
+    got = asyncio.Event()
+    done = asyncio.Event()
+
+    async def steal() -> None:
+        t2 = await cfg.lock_x()
+        got.set()
+        await done.wait()
+        await cfg.unlock(t2)
+
+    task = contextvars.Context().run(asyncio.create_task, steal())
+    await got.wait()
+    try:
+        cfg.info.name = "leaked"
+        _fail("残留旧 token 不应写入他人 X")
+    except ValueError:
+        pass
+    done.set()
+    await task
+    _ok("多 token 与泄漏安全")
 
 
 async def test_commit_cancelled_restores_batch() -> None:
@@ -1283,22 +1386,56 @@ async def test_commit_cancelled_restores_batch() -> None:
 
 
 async def test_collection_lock_blocks_commit() -> None:
+    """持票者可提交结构写；空上下文在 X 期间不能再 stage。"""
     col = ConfigCollection([ExampleScript])
     await col.activate()
     uid = col.add(ExampleScript)
     ticket = await col.lock_x()
-    try:
-        await col.commit()
-        _fail("锁定后 Collection.commit 应拒绝")
-    except ValueError:
-        pass
-    if uid in col:
-        _fail("锁定拒绝 commit 后成员不应落盘")
-    await col.unlock(ticket)
     await col.commit()
     if uid not in col:
-        _fail("解锁后应能提交先前暂存的 add")
-    _ok("Collection 锁定阻止 commit")
+        _fail("持票者应能提交 Collection.add")
+    other = contextvars.Context()
+    try:
+        other.run(col.add, ExampleScript)
+        _fail("非持有者不应再 stage add")
+    except ValueError:
+        pass
+    await col.unlock(ticket)
+    _ok("Collection 锁定：持票者可提交、外人拒写")
+
+
+async def test_collection_remove_rejects_locked_member() -> None:
+    """已锁成员不可 remove / remove_type；未锁成员可删。"""
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    uid2 = col.add(ExampleScript)
+    await col.commit()
+    ticket = await col[uid].lock_x()
+    try:
+        col.remove(uid)
+        _fail("已锁成员 remove 应拒绝")
+    except ValueError as exc:
+        if "已锁定" not in str(exc):
+            _fail(f"错误信息应含已锁定: {exc}")
+    col.remove(uid2)
+    await col.commit()
+    if uid2 in col:
+        _fail("未锁成员应能删除")
+    if uid not in col:
+        _fail("已锁成员不应被删")
+    try:
+        col.remove_type(ExampleScript)
+        _fail("含已锁成员时 remove_type 应拒绝")
+    except ValueError as exc:
+        if "已锁定" not in str(exc):
+            _fail(f"remove_type 错误信息应含已锁定: {exc}")
+    await col[uid].unlock(ticket)
+    col.remove(uid)
+    await col.commit()
+    if uid in col:
+        _fail("解锁后应能删除")
+    _ok("Collection remove 拒删已锁成员")
 
 
 async def test_lock_s_stacking() -> None:
@@ -1402,6 +1539,24 @@ async def test_collection_lock_s_subtree() -> None:
     _ok("Collection S 锁递归子树")
 
 
+async def test_lock_s_cascade_false_skips_members() -> None:
+    col = ConfigCollection([ExampleScript])
+    await col.activate()
+    uid = col.add(ExampleScript)
+    await col.commit()
+    ticket = await col.lock_s(cascade=False)
+    if ticket.cascade:
+        _fail("cascade=False 凭证应记下不覆盖子节点")
+    if not col.is_locked:
+        _fail("签发节点自身仍应锁定")
+    if col[uid].is_locked:
+        _fail("cascade=False 不应锁住成员")
+    await col.unlock(ticket)
+    if col.is_locked or col[uid].is_locked:
+        _fail("解锁应只解开当时锁住的节点")
+    _ok("cascade=False 不覆盖子节点")
+
+
 async def test_add_rejects_undeclared_type() -> None:
     col = ConfigCollection([ExampleScript])
     await col.activate()
@@ -1424,23 +1579,23 @@ async def test_add_rejects_undeclared_type() -> None:
     if uid not in col:
         _fail("add 按类名 str 应成功")
 
-    # Wire：type 必填；即使集合仅有单一类型也不可省略
+    # 文档：type 必填；即使集合仅有单一类型也不可省略
     member_uid = uuid.uuid4()
     cold_ok = ConfigCollection(
         [ExampleScript],
-        wire={
+        payload={
             "order": [{"uid": str(member_uid), "type": "ExampleScript"}],
-            "data": {str(member_uid): {"info": {"name": "from-wire"}}},
+            "data": {str(member_uid): {"info": {"name": "from-payload"}}},
         },
     )
     await cold_ok.activate()
-    if member_uid not in cold_ok or cold_ok[member_uid].info.name != "from-wire":
-        _fail("Wire 热化成员异常")
+    if member_uid not in cold_ok or cold_ok[member_uid].info.name != "from-payload":
+        _fail("文档热化成员异常")
 
     missing_type_uid = uuid.uuid4()
     cold_bad = ConfigCollection(
         [ExampleScript],
-        wire={
+        payload={
             "order": [{"uid": str(missing_type_uid)}],
             "data": {str(missing_type_uid): {"info": {"name": "x"}}},
         },
@@ -1450,12 +1605,12 @@ async def test_add_rejects_undeclared_type() -> None:
         _fail("缺少 order[].type 应报错（不可因唯一类型省略）")
     except Exception:
         pass
-    _ok("add 支持 type/str；Wire type 必填")
+    _ok("add 支持 type/str；文档 type 必填")
 
 
 async def test_collection_persistence() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "queue.toml"
+        path = Path(tmp) / "queue.yaml"
         root = ConfigCollection.build([ExampleQueue], file=path)
         await root.activate()
 
@@ -1543,7 +1698,7 @@ async def test_set_order_permutation_and_signal() -> None:
 
 async def test_observable_auto_save() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "autosave.toml"
+        path = Path(tmp) / "autosave.yaml"
         cfg = ExampleWebhook.build(file=path)
         await cfg.activate()
         cfg.info.name = "随改随存"
@@ -1682,9 +1837,9 @@ async def test_disconnect_by_subscription_key() -> None:
 async def main() -> int:
     tests = [
         test_entry_init_with_data,
-        test_toml_roundtrip,
-        test_missing_toml_returns_default,
-        test_rejects_non_toml_path,
+        test_yaml_roundtrip,
+        test_missing_yaml_returns_default,
+        test_rejects_non_yaml_path,
         test_collection_init_with_data,
         test_add_member_is_active,
         test_add_duplicate_uid_rejected,
@@ -1720,13 +1875,17 @@ async def main() -> int:
         test_trigger_field,
         test_reactive_unbound_raises,
         test_lock,
+        test_lock_x_scope_and_foreign_commit,
+        test_lock_x_multi_token_and_leak,
         test_lock_s_stacking,
         test_lock_s_x_mutex,
         test_unlock_bad_ticket,
         test_unlock_wrong_issuer,
         test_collection_lock_s_subtree,
+        test_lock_s_cascade_false_skips_members,
         test_commit_cancelled_restores_batch,
         test_collection_lock_blocks_commit,
+        test_collection_remove_rejects_locked_member,
         test_add_rejects_undeclared_type,
         test_collection_persistence,
         test_set_order_permutation_and_signal,

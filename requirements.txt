@@ -16,6 +16,7 @@ pycryptodome==3.23.0
 truststore==0.10.1
 pillow==12.1.1
 packaging==25.0
+pyproject-metadata==0.12.1
 rapidocr_onnxruntime==1.2.3
 pygetwindow==0.0.9
 pyautogui==0.9.54

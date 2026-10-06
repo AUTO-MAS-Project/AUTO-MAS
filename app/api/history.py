@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -30,7 +30,7 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core.history import history_store
-from app.models.schema import OutBase
+from app.api import OutBase
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 

@@ -18,8 +18,8 @@ from app.config import (
     ConfigEntry,
     ConfigGroup,
     FieldChangeEvent,
-    write_wire_toml,
 )
+from app.utils.io import write_file
 
 
 def _fail(message: str) -> None:
@@ -131,8 +131,8 @@ async def test_path_load_preserves_stored_paths() -> None:
                 "log_path": _norm(str(root / "logs" / "out.log")),
             },
         }
-        path = Path(tmp) / "general.toml"
-        write_wire_toml(path, stored)
+        path = Path(tmp) / "general.yaml"
+        write_file(path, stored)
 
         cfg = GeneralScriptConfig.build(file=path)
         await cfg.activate()
@@ -142,7 +142,7 @@ async def test_path_load_preserves_stored_paths() -> None:
         for key in ("script_path", "config_path", "log_path"):
             if getattr(cfg.script, key) != stored["script"][key]:
                 _fail(f"导入后 {key} 被改写")
-    _ok("path load 保留 TOML 内路径（init 不触发 runtime 联动）")
+    _ok("path load 保留 YAML 内路径（init 不触发 runtime 联动）")
 
 
 async def test_runtime_root_path_change_syncs_subpaths() -> None:
@@ -157,7 +157,7 @@ async def test_runtime_root_path_change_syncs_subpaths() -> None:
         new_root.mkdir()
 
         cfg = GeneralScriptConfig.build(
-            wire={
+            payload={
                 "info": {"name": "联动测试", "root_path": _norm(str(old_root))},
                 "script": {
                     "script_path": _norm(str(old_root / "bin" / "app.exe")),
@@ -193,8 +193,8 @@ async def test_import_deferred_sync_safe() -> None:
         root.mkdir()
         expected_script = _norm(str(root / "bin" / "app.exe"))
 
-        path = Path(tmp) / "general.toml"
-        write_wire_toml(
+        path = Path(tmp) / "general.yaml"
+        write_file(
             path,
             {
                 "info": {"root_path": _norm(str(root))},

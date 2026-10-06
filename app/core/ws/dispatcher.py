@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -24,7 +24,7 @@
 import asyncio
 from typing import Awaitable, Callable, Dict, List, Set, Tuple, Union
 
-from app.models.schema import WSEnvelope
+from .protocol import WSEnvelope
 from app.utils.logger import get_logger
 
 logger = get_logger("WS分发器")
