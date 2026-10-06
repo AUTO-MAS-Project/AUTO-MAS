@@ -2,17 +2,20 @@
 export const SATELLITE_CONFIG = {
   /** 长焦：透视收敛一些，前后卫星的大小差在两倍左右，近处的不至于糊到镜头上 */
   cameraFov: 24,
-  /** 镜头离星核的基准距离；容器太窄时会自动拉远，保证主轨道左右不出画 */
-  cameraDistance: 1130,
+  /**
+   * 镜头离星核的基准距离；容器太窄时会自动拉远，保证主轨道左右不出画。
+   * 轨道要斜到把星核整个圈住，上下得留出余量，所以比原先的 1130 远一些（卫星区相应加高）。
+   */
+  cameraDistance: 1210,
   /** 镜头默认俯视角（弧度） */
   cameraElevation: 0.14,
   cameraElevationMin: -0.05,
   cameraElevationMax: 0.6,
   /**
-   * 镜头注视点略低于星核。俯视时主轨道离镜头近的半圈会被透视往下拉，
+   * 镜头注视点低于星核。俯视时轨道离镜头近的半圈会被透视往下拉，
    * 不往下看一点，近处的卫星会顶到容器底边。
    */
-  cameraTargetY: -30,
+  cameraTargetY: -60,
   /** 鼠标视差：指针移到容器边缘时镜头最多偏转的角度 */
   parallaxYaw: 0.14,
   parallaxPitch: 0.06,
@@ -43,8 +46,10 @@ export const SATELLITE_CONFIG = {
 } as const
 
 /**
- * 轨道：先绕 x 轴倾斜 tiltX，再绕视线（z 轴）转 tiltZ。
- * 第二条几乎侧对镜头，卫星会从星核前后穿过；另外两条斜着交叉，像原子模型。
+ * 轨道：先绕 x 轴倾斜 tiltX，再绕视线（z 轴）转 tiltZ。两条内圈斜着交叉，像原子模型。
+ *
+ * 每条都斜到在画面上把星核整个圈住：默认视角加上鼠标视差、镜头慢摇的范围内，
+ * 卫星都不会从星核前面压过去（orbitClearance.test.ts 钉住）。拖动转视角时仍可能经过，停手转回正面就好。
  */
 export interface OrbitRing {
   radius: number
@@ -53,9 +58,9 @@ export interface OrbitRing {
 }
 
 export const ORBIT_RINGS: readonly OrbitRing[] = [
-  { radius: 430, tiltX: 0.14, tiltZ: 0 },
-  { radius: 270, tiltX: -0.1, tiltZ: 0.5 },
-  { radius: 300, tiltX: 0.3, tiltZ: -0.4 },
+  { radius: 430, tiltX: 0.26, tiltZ: 0 },
+  { radius: 270, tiltX: 0.5, tiltZ: 0.3 },
+  { radius: 310, tiltX: 0.42, tiltZ: -0.2 },
 ]
 
 export const SATELLITE_COLORS = {

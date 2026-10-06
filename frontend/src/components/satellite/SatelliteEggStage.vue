@@ -9,9 +9,15 @@
   </Transition>
 
   <Teleport to="body">
-    <!-- 原神，启动！白屏、七元素加载条、光门、点击进入 -->
+    <!-- 原神，启动！白屏、七元素加载条、光门、点击进入；加载期间点了也没用，和真的一样 -->
     <Transition name="egg-fade">
-      <div v-if="genshinOpen" class="egg-genshin" @click="closeGenshin">
+      <div
+        v-if="genshinOpen"
+        class="egg-genshin"
+        :class="{ 'is-ready': genshinReady }"
+        :style="{ '--enter-delay': `${GENSHIN_ENTER_MS}ms` }"
+        @click="genshinReady && closeGenshin()"
+      >
         <div class="egg-genshin-gate"></div>
         <div class="egg-genshin-content">
           <div class="egg-genshin-title">{{ t('home.satelliteEgg.genshinLaunch') }}</div>
@@ -40,6 +46,8 @@ import SatelliteRocketRace from './SatelliteRocketRace.vue'
 
 /** 原神七元素的颜色，按风、岩、雷、草、水、火、冰排 */
 const ELEMENT_COLORS = ['#74c2a8', '#fab632', '#af8ec1', '#a5c83b', '#4cc2f1', '#ef7938', '#9fd6e3']
+/** 「点击进入」这么久之后才出来，出来之前点了不算 */
+const GENSHIN_ENTER_MS = 3200
 const GENSHIN_MS = 5600
 const POLAROID_MS = 4200
 
@@ -48,9 +56,12 @@ const { t } = useI18n()
 const shutterKey = ref(0)
 const polaroid = ref<{ key: number; src: string; caption: string } | null>(null)
 const genshinOpen = ref(false)
+const genshinReady = ref(false)
 const race = ref<InstanceType<typeof SatelliteRocketRace> | null>(null)
 
 const timers = new Set<number>()
+/** 每次启动一个编号：上一次的计时器到点时，别把这一次的关掉 */
+let genshinLaunch = 0
 
 function later(callback: () => void, ms: number): void {
   const timer = window.setTimeout(() => {
@@ -82,13 +93,22 @@ function showPolaroid(src: string): void {
 
 function launchGenshin(): void {
   if (genshinOpen.value) return
+  const launch = ++genshinLaunch
   genshinOpen.value = true
+  genshinReady.value = false
   window.addEventListener('keydown', handleKeydown)
-  later(closeGenshin, GENSHIN_MS)
+  later(() => {
+    if (launch === genshinLaunch) genshinReady.value = true
+  }, GENSHIN_ENTER_MS)
+  later(() => {
+    if (launch === genshinLaunch) closeGenshin()
+  }, GENSHIN_MS)
 }
 
 function closeGenshin(): void {
+  genshinLaunch += 1
   genshinOpen.value = false
+  genshinReady.value = false
   window.removeEventListener('keydown', handleKeydown)
 }
 
@@ -196,9 +216,13 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   display: grid;
   place-items: center;
   overflow: hidden;
-  cursor: pointer;
+  cursor: default;
   background: radial-gradient(circle at 50% 46%, #ffffff 0%, #f7f4ec 58%, #e9e3d4 100%);
   font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+.egg-genshin.is-ready {
+  cursor: pointer;
 }
 
 .egg-genshin-content {
@@ -334,8 +358,8 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
   padding-left: 0.4em;
   opacity: 0;
   animation:
-    egg-genshin-enter 600ms 3.2s ease-out forwards,
-    egg-genshin-blink 1.6s 3.8s ease-in-out infinite;
+    egg-genshin-enter 600ms var(--enter-delay) ease-out forwards,
+    egg-genshin-blink 1.6s calc(var(--enter-delay) + 600ms) ease-in-out infinite;
 }
 
 @keyframes egg-genshin-enter {

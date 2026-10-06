@@ -430,8 +430,8 @@ function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant):
 <style scoped>
 .satellite-container {
   width: 100%;
-  /* 窗口越宽卫星区域越高：420 起步，宽屏上给星系多一点纵深 */
-  height: clamp(420px, 34vw, 540px);
+  /* 窗口越宽卫星区域越高：450 起步，宽屏上给星系多一点纵深 */
+  height: clamp(450px, 36vw, 580px);
   position: relative;
   overflow: hidden;
   user-select: none;
