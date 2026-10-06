@@ -111,17 +111,21 @@ interface BodyReader {
   cancel(reason?: unknown): Promise<void>
 }
 
-/** fetch 实现只需满足这些字段；正式环境注入 Electron net.fetch，测试注入全局 fetch。 */
+/** 请求实现返回的响应只需满足这些字段。 */
 export interface OnlineResponseLike {
   status: number
-  url: string
   headers: { get(name: string): string | null }
   body: { getReader(): BodyReader; cancel?(reason?: unknown): Promise<void> } | null
 }
 
+/**
+ * 请求实现必须**不跟随重定向**：3xx 连同 Location 原样返回，由服务逐跳校验后再请求下一跳。
+ * 正式环境用基于 Electron net.request 的实现（net.fetch 跟随重定向后 Response.url 为空，
+ * redirect: 'manual' 又会直接报错，拿不到 Location）；测试注入 `redirect: 'manual'` 的全局 fetch。
+ */
 export type OnlineFetch = (
   url: string,
-  init: { signal: AbortSignal; headers: Record<string, string> }
+  init: { signal: AbortSignal; headers: Record<string, string>; redirect: 'manual' }
 ) => Promise<OnlineResponseLike>
 
 export interface OnlineAppearanceLogger {
@@ -160,6 +164,8 @@ export const ONLINE_APPEARANCE_DEFAULTS = {
 export const APPEARANCE_SOURCES_FILE = 'appearance-sources.json'
 
 const SHA256_HEX = /^[0-9a-f]{64}$/i
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+const MAX_REDIRECTS = 5
 const APPEARANCE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/
 const CACHE_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:zip|part)$/i
 
@@ -408,24 +414,46 @@ export function createOnlineAppearanceService(
     return new OnlineAppearanceError('BAD_RESPONSE', `分享站返回了异常响应（HTTP ${status}）`)
   }
 
-  const assertSecureResponse = (response: OnlineResponseLike): void => {
-    if (!baseIsHttps) return
-    let protocol = 'https:'
-    try {
-      if (response.url) protocol = new URL(response.url).protocol
-    } catch {
-      protocol = ''
-    }
-    if (protocol !== 'https:') {
-      throw new OnlineAppearanceError('BAD_RESPONSE', '分享站被重定向到了不安全的地址，已拒绝')
-    }
-  }
-
   const cancelBody = (response: OnlineResponseLike | undefined): void => {
     try {
       void response?.body?.cancel?.().catch(() => undefined)
     } catch {
       // body 已被读取或锁定时 cancel 会抛错，无需处理。
+    }
+  }
+
+  /** 逐跳跟随重定向：每一跳先校验目标地址再请求，基址是 https 时拒绝任何一跳降级。 */
+  const fetchFollowingRedirects = async (
+    url: string,
+    init: { signal: AbortSignal; headers: Record<string, string> },
+    timedOut: () => boolean
+  ): Promise<OnlineResponseLike> => {
+    let current = url
+    for (let hops = 0; ; hops += 1) {
+      let response: OnlineResponseLike
+      try {
+        response = await fetchImpl(current, { ...init, redirect: 'manual' })
+      } catch {
+        throw networkError(timedOut())
+      }
+      if (!REDIRECT_STATUSES.has(response.status)) return response
+      cancelBody(response)
+      const location = response.headers.get('location')
+      let next: URL
+      try {
+        if (!location) throw new Error('缺少 Location')
+        next = new URL(location, current)
+      } catch {
+        throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回了无效的重定向')
+      }
+      if (next.protocol !== 'https:' && (baseIsHttps || next.protocol !== 'http:')) {
+        logger.warn(`已拒绝分享站重定向: ${current} -> ${next.toString()}`)
+        throw new OnlineAppearanceError('BAD_RESPONSE', '分享站被重定向到了不安全的地址，已拒绝')
+      }
+      if (hops >= MAX_REDIRECTS) {
+        throw new OnlineAppearanceError('BAD_RESPONSE', '分享站重定向次数过多')
+      }
+      current = next.toString()
     }
   }
 
@@ -439,15 +467,11 @@ export function createOnlineAppearanceService(
     }, settings.metadataTimeoutMs)
     let response: OnlineResponseLike | undefined
     try {
-      try {
-        response = await fetchImpl(url, {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        })
-      } catch {
-        throw networkError(timedOut)
-      }
-      assertSecureResponse(response)
+      response = await fetchFollowingRedirects(
+        url,
+        { signal: controller.signal, headers: { Accept: 'application/json' } },
+        () => timedOut
+      )
       if (response.status !== 200) throw statusError(response.status, notFound)
       if (!response.body) throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回了空响应')
       const reader = response.body.getReader()
@@ -636,15 +660,11 @@ export function createOnlineAppearanceService(
     let handle: fs.promises.FileHandle | undefined
     arm()
     try {
-      try {
-        response = await fetchImpl(
-          `${fileUrl(fileKey)}/download?version_no=${encodeURIComponent(String(versionNo))}`,
-          { signal: controller.signal, headers: { Accept: 'application/octet-stream' } }
-        )
-      } catch {
-        throw networkError(timedOut)
-      }
-      assertSecureResponse(response)
+      response = await fetchFollowingRedirects(
+        `${fileUrl(fileKey)}/download?version_no=${encodeURIComponent(String(versionNo))}`,
+        { signal: controller.signal, headers: { Accept: 'application/octet-stream' } },
+        () => timedOut
+      )
       if (response.status !== 200) throw statusError(response.status, '分享站上找不到这个版本')
       const declared = response.headers.get('content-length')
       if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared) > limit) {

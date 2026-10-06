@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: state.send } }],
   },
+  net: { request: vi.fn() },
 }))
 vi.mock('../services/environmentService', () => ({ getAppRoot: () => state.root }))
 vi.mock('../services/logger', () => ({

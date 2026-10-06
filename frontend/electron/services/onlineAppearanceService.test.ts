@@ -33,7 +33,12 @@ vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: state.send } }],
   },
-  net: { fetch: (...args: Parameters<typeof fetch>) => fetch(...args) },
+  // 测试一律注入全局 fetch；真用到 net.request 说明注入漏了。
+  net: {
+    request: () => {
+      throw new Error('tests must inject fetch')
+    },
+  },
 }))
 vi.mock('./environmentService', () => ({ getAppRoot: () => state.root }))
 vi.mock('./logger', () => ({
@@ -778,18 +783,109 @@ describe('online appearance prepare and install', () => {
     expect(service.install(tokens[4], false).success).toBe(true)
   })
 
-  it('rejects a redirect from an https base to a non-https URL', async () => {
-    const stubFetch: OnlineFetch = async () => ({
-      status: 200,
-      url: 'http://evil.example/api/v1/files',
-      headers: { get: () => null },
-      body: null,
+  describe('redirects from an https base', () => {
+    const LIST = { code: 0, message: 'ok', data: { items: [], pagination: { total: 0 } } }
+
+    /** 按 host 编排每一跳的响应，记下实际发出的请求；请求实现必须收到 redirect: 'manual'。 */
+    function scriptedFetch(hops: Record<string, string | null>) {
+      const requested: string[] = []
+      const fetchImpl: OnlineFetch = async (url, init) => {
+        requested.push(url)
+        expect(init.redirect).toBe('manual')
+        const target = hops[new URL(url).host]
+        if (target === undefined) throw new Error(`unexpected request: ${url}`)
+        if (target === null) {
+          return {
+            status: 200,
+            headers: { get: () => null },
+            body: new Response(JSON.stringify(LIST)).body as unknown as NonNullable<
+              Awaited<ReturnType<OnlineFetch>>['body']
+            >,
+          }
+        }
+        return {
+          status: 307,
+          headers: { get: (name: string) => (name.toLowerCase() === 'location' ? target : null) },
+          body: null,
+        }
+      }
+      return { fetchImpl, requested }
+    }
+
+    const listWith = (fetchImpl: OnlineFetch) =>
+      makeService({ baseUrl: 'https://share.example/api/v1', fetch: fetchImpl }).list({})
+
+    it('follows https hops and checks every hop before requesting it', async () => {
+      const { fetchImpl, requested } = scriptedFetch({
+        'share.example': 'https://share2.example/api/v1/files?moved=1',
+        'share2.example': null,
+      })
+      expect(await listWith(fetchImpl)).toMatchObject({ success: true, items: [] })
+      expect(requested.map(url => new URL(url).host)).toEqual(['share.example', 'share2.example'])
     })
-    const result = await makeService({
-      baseUrl: 'https://share.example/api/v1',
-      fetch: stubFetch,
-    }).list({})
-    expect(result).toMatchObject({ success: false, code: 'BAD_RESPONSE' })
+
+    it('refuses an https to http hop without requesting the http address', async () => {
+      const { fetchImpl, requested } = scriptedFetch({
+        'share.example': 'http://evil.example/api/v1/files',
+        'evil.example': null,
+      })
+      expect(await listWith(fetchImpl)).toMatchObject({ success: false, code: 'BAD_RESPONSE' })
+      expect(requested.map(url => new URL(url).host)).toEqual(['share.example'])
+    })
+
+    it('refuses a downgrade in the middle of an https chain', async () => {
+      const { fetchImpl, requested } = scriptedFetch({
+        'share.example': 'https://share2.example/hop',
+        'share2.example': 'http://evil.example/hop',
+        'evil.example': 'https://share3.example/final',
+        'share3.example': null,
+      })
+      expect(await listWith(fetchImpl)).toMatchObject({ success: false, code: 'BAD_RESPONSE' })
+      expect(requested.map(url => new URL(url).host)).toEqual(['share.example', 'share2.example'])
+    })
+
+    it('refuses a redirect without Location and a redirect loop', async () => {
+      const missing = scriptedFetch({ 'share.example': '' })
+      expect(await listWith(missing.fetchImpl)).toMatchObject({ code: 'BAD_RESPONSE' })
+      expect(missing.requested).toHaveLength(1)
+
+      const loop = scriptedFetch({ 'share.example': 'https://share.example/again' })
+      expect(await listWith(loop.fetchImpl)).toMatchObject({ code: 'BAD_RESPONSE' })
+      expect(loop.requested).toHaveLength(6)
+    })
+
+    it('applies the same check to package downloads', async () => {
+      const data = makePackage('theme-a', '版本一')
+      const requested: string[] = []
+      const fetchImpl: OnlineFetch = async (url, init) => {
+        requested.push(url)
+        if (new URL(url).pathname.endsWith('/download')) {
+          return {
+            status: 302,
+            headers: { get: () => 'http://evil.example/theme.zip' },
+            body: null,
+          }
+        }
+        const versions = {
+          code: 0,
+          message: 'ok',
+          data: [{ version_no: 1, file_size: data.length, sha256: sha256(data) }],
+        }
+        return (await fetch(
+          `data:application/json,${encodeURIComponent(JSON.stringify(versions))}`,
+          {
+            signal: init.signal,
+          }
+        )) as unknown as Awaited<ReturnType<OnlineFetch>>
+      }
+      const result = await makeService({
+        baseUrl: 'https://share.example/api/v1',
+        fetch: fetchImpl,
+      }).prepare('alpha', 1)
+      expect(result).toMatchObject({ success: false, code: 'BAD_RESPONSE' })
+      expect(requested.some(url => url.startsWith('http://evil.example'))).toBe(false)
+      expect(cacheFiles()).toEqual([])
+    })
   })
 
   it('clears only stale online-appearance files from the cache directory', () => {

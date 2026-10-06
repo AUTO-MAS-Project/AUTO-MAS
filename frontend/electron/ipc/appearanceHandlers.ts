@@ -11,6 +11,7 @@ import {
 } from '../services/appearanceService'
 import { getLogger } from '../services/logger'
 import { getAppRoot } from '../services/environmentService'
+import { createNetRequestFetch } from '../services/onlineAppearanceFetch'
 import {
   createOnlineAppearanceService,
   removeAppearanceSource,
@@ -88,7 +89,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
   isRegistered = true
 
   const online = createOnlineAppearanceService({
-    fetch: (url, init) => net.fetch(url, init),
+    fetch: createNetRequestFetch(net),
     userDataPath,
     cacheDir: onlineCacheDir,
     logger,
