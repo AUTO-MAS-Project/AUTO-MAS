@@ -26,6 +26,7 @@ import type {
 import type { MfwReuseChoice } from '@/views/scripts/components/scriptCreateFlow'
 import type { MaaFWUpdateProgressState } from '../Script/MaaFWScriptEdit/updateProgress'
 import type { MaaFWPresetQueueEntry } from '../User/maafwPresetQueue'
+import type { MaaFWQueueSource } from '../User/maafwQueueSource'
 
 // ════════════════════════════ 脚本页 ════════════════════════════
 
@@ -205,17 +206,27 @@ export interface MaaFWUserBasicInfoSectionEmits {
   save: [key: string, value: unknown]
 }
 
+/** 「配置导入」里「本脚本其他用户」的一项：同脚本的另一个用户，与它的队列在当前项目下的样子 */
+export type MaaFWUserQueueImportCandidate = { userId: string; name: string } & MaaFWQueueSource
+
 /** 用户页 `queueHeader`：「任务队列配置」标题与配置导入 / 配置恢复入口、队列提示、受管任务提示 */
 export interface MaaFWUserQueueHeaderSectionProps {
   /** 特调的队列提示，一行一个框（没有就是空数组） */
   queueHintLines: string[]
   /** 队列里残留受管任务时的提示；没有为 null */
   managedQueueAlert: { type: 'warning' | 'info'; message: string } | null
+  /** 「配置导入」→「本脚本其他用户」：队列不为空的其他用户（打开弹窗时页面现取，见 load-user-import） */
+  userImportCandidates: MaaFWUserQueueImportCandidate[]
+  userImportLoading: boolean
 }
 
 export interface MaaFWUserQueueHeaderSectionEmits {
   /** 点了「配置恢复」：页面打开恢复弹窗 */
   'open-restore': []
+  /** 打开了「配置导入」：页面取一次本脚本的用户列表 */
+  'load-user-import': []
+  /** 「配置导入」选了本脚本的另一个用户：页面用它的队列覆盖当前队列（只换任务队列） */
+  'import-from-user': [userId: string]
   /**
    * 「配置导入」把一份外壳配置写进了用户：页面把实际落盘的任务快照与特调一并改掉的用户信息字段
    * （如 M9A 的账号）换进本地状态

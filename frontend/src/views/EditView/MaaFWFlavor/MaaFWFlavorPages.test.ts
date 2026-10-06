@@ -295,6 +295,10 @@ const userState = (flavor: MaaFWFlavor) => ({
   addTaskCascaderOptions: [],
   hasNewTasks: false,
   handleAddTaskCascaderChange: fn('handleAddTaskCascaderChange'),
+  userImportCandidates: [],
+  userImportLoading: false,
+  loadUserImportCandidates: fn('loadUserImportCandidates'),
+  importQueueFromUser: fn('importQueueFromUser'),
   MAAFW_DISPLAY_NAME: 'MFW',
   restoreOpen: false,
   restoreTargets: [],
@@ -623,7 +627,16 @@ describe('用户页队列标题分节 queueHeader', () => {
     expect(html).not.toContain('<h3>任务队列配置</h3>')
     const attrs = received.get('flavor:queueHeader')!
     expect(Object.keys(attrs).sort()).toEqual(
-      ['managed-queue-alert', 'onImported', 'onOpenRestore', 'queue-hint-lines'].sort()
+      [
+        'managed-queue-alert',
+        'onImportFromUser',
+        'onImported',
+        'onLoadUserImport',
+        'onOpenRestore',
+        'queue-hint-lines',
+        'user-import-candidates',
+        'user-import-loading',
+      ].sort()
     )
     expect(attrs['queue-hint-lines']).toEqual(['提示'])
     ;(attrs.onOpenRestore as () => void)()

@@ -823,6 +823,12 @@ export default {
     shellQueueImportDone: '{count} 件のタスクをインポートしました',
     shellQueueImportSkippedTitle: '{count} 件を取り込めませんでした',
     shellQueueImportFailed: 'シェル設定のインポートに失敗しました',
+    queueImportFromUsers: 'このスクリプトの他のユーザー',
+    queueImportFromShell: 'シェル',
+    queueImportNoUsers: 'インポートできるユーザーがいません',
+    queueImportPasswordCount: 'パスワード {count} 件の再入力が必要',
+    queueTaskCount: '{count} 件のタスク',
+    queueInvalidCount: '{count} 件が無効',
     shellImportTitle: '既存の設定をアカウントとして取り込む',
     shellImportHint:
       'プロジェクトフォルダーに {source} の設定が {count} 件見つかりました。チェックした設定ごとにアカウントを作成し、アカウント名は設定名、タスクキューとタスクオプションも取り込みます。チェックしなければ空のアカウントを 1 人だけ作成します。',

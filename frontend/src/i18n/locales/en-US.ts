@@ -893,6 +893,12 @@ export default {
     shellQueueImportDone: 'Imported {count} tasks',
     shellQueueImportSkippedTitle: '{count} items were skipped',
     shellQueueImportFailed: 'Failed to import the shell config',
+    queueImportFromUsers: 'Other users of this script',
+    queueImportFromShell: 'Shell',
+    queueImportNoUsers: 'No users to import from',
+    queueImportPasswordCount: '{count} passwords to re-enter',
+    queueTaskCount: '{count} tasks',
+    queueInvalidCount: '{count} unavailable',
     shellImportTitle: 'Import existing configurations as accounts',
     shellImportHint:
       'Found {count} {source} configuration(s) in the project folder. Each one you check becomes an account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',

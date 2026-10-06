@@ -11,64 +11,127 @@
     :title="t('edit.shellQueueImportTitle')"
     :ok-text="t('edit.shellQueueImportOk')"
     :cancel-text="t('common.cancel')"
-    :ok-button-props="{ disabled: !picked || applying }"
+    :ok-button-props="{ disabled: !canApply }"
     :confirm-loading="applying"
     @ok="apply"
   >
-    <!-- 从哪儿读：默认按脚本的项目来源目录（后端先来源、再内嵌副本），也能临时改指别的目录——
-         用户把脚本位置挪了、或者平时用的是另一份外壳时用得上 -->
-    <div class="shell-queue-import-source">
-      <span class="shell-queue-import-dir" :title="shownDir">
-        {{ t('edit.shellQueueImportDir', { dir: shownDir }) }}
-      </span>
-      <a-button type="link" size="small" @click="pickDirectory">
-        {{ t('edit.mfwHotkeyImportPickDir') }}
-      </a-button>
-    </div>
+    <a-segmented
+      v-model:value="sourceKind"
+      block
+      class="queue-import-switch"
+      :options="sourceKindOptions"
+    />
 
-    <a-select
-      v-if="instances.length > 0"
-      v-model:value="picked"
-      class="shell-queue-import-select"
-      :options="instanceOptions"
-    />
-    <a-empty
-      v-else
-      class="shell-queue-import-empty"
-      :description="t('edit.shellQueueImportNone')"
-    />
+    <!-- 本脚本的其他用户：单选卡片，选中的那份队列覆盖当前用户的 -->
+    <template v-if="sourceKind === 'users'">
+      <a-spin :spinning="userLoading" class="queue-import-spin">
+        <div v-if="userCandidates.length > 0" class="queue-import-users" role="radiogroup">
+          <div
+            v-for="candidate in userCandidates"
+            :key="candidate.userId"
+            role="radio"
+            tabindex="0"
+            :aria-checked="pickedUserId === candidate.userId"
+            class="queue-import-user"
+            :class="{ 'queue-import-user-selected': pickedUserId === candidate.userId }"
+            @click="pickedUserId = candidate.userId"
+            @keydown.enter.prevent="pickedUserId = candidate.userId"
+            @keydown.space.prevent="pickedUserId = candidate.userId"
+          >
+            <div class="queue-import-user-head">
+              <span class="queue-import-user-name">{{ candidate.name }}</span>
+              <span class="queue-import-user-count">
+                {{ t('edit.queueTaskCount', { count: candidate.chips.length }) }}
+              </span>
+              <span v-if="candidate.invalidCount > 0" class="queue-invalid-tag">
+                {{ t('edit.queueInvalidCount', { count: candidate.invalidCount }) }}
+              </span>
+              <span v-if="candidate.passwordCount > 0" class="queue-password-tag">
+                {{ t('edit.queueImportPasswordCount', { count: candidate.passwordCount }) }}
+              </span>
+            </div>
+            <MaaFWQueueChips :chips="candidate.chips" />
+          </div>
+        </div>
+        <a-empty
+          v-else-if="!userLoading"
+          class="shell-queue-import-empty"
+          :description="t('edit.queueImportNoUsers')"
+        />
+      </a-spin>
+    </template>
+
+    <template v-else>
+      <!-- 从哪儿读：默认按脚本的项目来源目录（后端先来源、再内嵌副本），也能临时改指别的目录——
+           用户把脚本位置挪了、或者平时用的是另一份外壳时用得上 -->
+      <div class="shell-queue-import-source">
+        <span class="shell-queue-import-dir" :title="shownDir">
+          {{ t('edit.shellQueueImportDir', { dir: shownDir }) }}
+        </span>
+        <a-button type="link" size="small" @click="pickDirectory">
+          {{ t('edit.mfwHotkeyImportPickDir') }}
+        </a-button>
+      </div>
+
+      <a-select
+        v-if="instances.length > 0"
+        v-model:value="picked"
+        class="shell-queue-import-select"
+        :options="instanceOptions"
+      />
+      <a-empty
+        v-else
+        class="shell-queue-import-empty"
+        :description="t('edit.shellQueueImportNone')"
+      />
+    </template>
 
     <a-alert type="warning" show-icon :message="t('edit.shellQueueImportNote')" />
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, notification } from 'ant-design-vue'
 import { ImportOutlined } from '@ant-design/icons-vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
+import type { MaaFWUserQueueImportCandidate } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWQueueChips from './MaaFWQueueChips.vue'
 
 /**
- * 「配置导入」：把外壳（MFAAvalonia / MXU / MFW-PyQt6）里配好的任务队列与选项覆盖到当前用户。
- * 引导最后一步的「导入已有配置为账号」只在新建脚本时走一次，脚本建好之后再想同步就从这里。
+ * 「配置导入」：把本脚本另一个用户的队列，或外壳（MFAAvalonia / MXU / MFW-PyQt6）里配好的任务队列
+ * 与选项覆盖到当前用户。引导最后一步的「导入已有配置为账号」只在新建脚本时走一次，脚本建好之后
+ * 再想同步就从这里。
  *
- * 换算在后端（与引导那条同一条），这里只管选实例、把算好的快照交给父级换进本地状态；
+ * 「本脚本其他用户」：能不能导入要按 interface 与当前控制器 / 资源判断，数据由页面备好（打开时发
+ * `load-users` 让页面取一次用户列表），这里只显示、交回选中的用户，替换与落盘由页面做。
+ *
+ * 「外壳」：换算在后端（与引导那条同一条），这里只管选实例、把算好的快照交给父级换进本地状态；
  * 写库也由后端那次请求完成，这里不再走一次用户保存——同一个动作写两遍没有意义。
- *
- * 脚本与用户直接从路由取（页面自己也是这么拿的），免得为了一个按钮把 `queueHeader` 分节的属性
- * 契约撑大——那份契约是所有特调要替换这一节时照着实现的东西。
+ * 脚本与用户直接从路由取（页面自己也是这么拿的），不经 `queueHeader` 分节的属性契约。
  */
 
+const props = defineProps<{
+  userCandidates: MaaFWUserQueueImportCandidate[]
+  userLoading: boolean
+}>()
+
 const emit = defineEmits<{
+  /** 打开了弹窗：父级取一次本脚本的用户列表 */
+  'load-users': []
+  /** 「本脚本其他用户」选定了一个用户：父级用它的队列覆盖当前队列 */
+  'import-from-user': [userId: string]
   /**
    * 实际写进用户配置的任务快照（原始 JSON）与特调一并改掉的用户信息字段，
    * 由父级按用户页自己的形状换进本地状态
    */
   imported: [snapshot: Record<string, unknown>, info: Record<string, unknown>]
 }>()
+
+type SourceKind = 'users' | 'shell'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -84,6 +147,31 @@ const instances = ref<MaaFWShellInstanceItem[]>([])
 const picked = ref('')
 /** 「选择其他目录」选的那份；为空表示走脚本默认的来源目录 */
 const pickedDir = ref('')
+const sourceKind = ref<SourceKind>('users')
+const pickedUserId = ref('')
+
+const sourceKindOptions = computed(() => [
+  { value: 'users', label: t('edit.queueImportFromUsers') },
+  { value: 'shell', label: t('edit.queueImportFromShell') },
+])
+
+const pickedUser = computed(
+  () => props.userCandidates.find(item => item.userId === pickedUserId.value) || null
+)
+
+// 用户列表换了（重新读、interface 变了）选中的不在了就清掉，别让确定按钮指着一个看不见的用户
+watch(
+  () => props.userCandidates,
+  candidates => {
+    if (!candidates.some(item => item.userId === pickedUserId.value)) pickedUserId.value = ''
+  }
+)
+
+const canApply = computed(() => {
+  if (applying.value) return false
+  if (sourceKind.value === 'users') return Boolean(pickedUser.value?.entries.length)
+  return Boolean(picked.value)
+})
 
 const shownDir = computed(
   () =>
@@ -114,6 +202,9 @@ const showInstances = (found: MaaFWShellInstanceItem[]) => {
 }
 
 const openDialog = async () => {
+  sourceKind.value = 'users'
+  pickedUserId.value = ''
+  emit('load-users')
   pickedDir.value = ''
   loading.value = true
   try {
@@ -144,6 +235,15 @@ const pickDirectory = async () => {
 }
 
 const apply = async () => {
+  if (sourceKind.value === 'users') {
+    const candidate = pickedUser.value
+    if (!candidate || candidate.entries.length === 0) return
+    // 替换与落盘由父级做；没导进来的已经在卡片上标过，不再另弹通知
+    emit('import-from-user', candidate.userId)
+    modalOpen.value = false
+    message.success(t('edit.shellQueueImportDone', { count: candidate.entries.length }))
+    return
+  }
   applying.value = true
   try {
     // 列表从哪个目录读的就回哪个目录找：实例 ID 只是外壳里的文件名，换了目录可能撞名
@@ -208,5 +308,95 @@ const apply = async () => {
 
 .shell-queue-import-empty {
   margin-bottom: 12px;
+}
+
+.queue-import-switch {
+  margin-bottom: 12px;
+}
+
+/* 读用户列表时还没有内容，留出转圈的位置 */
+.queue-import-spin {
+  display: block;
+  min-height: 64px;
+}
+
+.queue-import-users {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  margin-bottom: 12px;
+  overflow-y: auto;
+}
+
+.queue-import-user {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.queue-import-user:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.queue-import-user-selected,
+.queue-import-user-selected:hover {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.queue-import-user-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-import-user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ant-color-text);
+  font-weight: 600;
+}
+
+.queue-import-user-count {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+/* 「N 个已失效」：虚线灰标签 */
+.queue-invalid-tag {
+  flex: none;
+  padding: 0 7px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 4px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* 「N 项密码需重填」：警告色标签 */
+.queue-password-tag {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--ant-color-warning-border);
+  border-radius: 4px;
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning-text);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 </style>

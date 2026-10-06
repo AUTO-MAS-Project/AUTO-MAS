@@ -867,6 +867,12 @@ export default {
     shellQueueImportDone: '已导入 {count} 个任务',
     shellQueueImportSkippedTitle: '有 {count} 项没导进来',
     shellQueueImportFailed: '导入外壳配置失败',
+    queueImportFromUsers: '本脚本其他用户',
+    queueImportFromShell: '外壳',
+    queueImportNoUsers: '没有可导入的用户',
+    queueImportPasswordCount: '{count} 项密码需重填',
+    queueTaskCount: '{count} 个任务',
+    queueInvalidCount: '{count} 个已失效',
     shellImportTitle: '导入已有配置为账号',
     shellImportHint:
       '在项目目录里找到 {count} 份 {source} 配置。勾选的每一份会创建一个账号，账号名就是配置名，任务队列和任务选项一起导入；不勾选就只建一个空的新账号。',

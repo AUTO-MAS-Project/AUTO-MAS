@@ -37,6 +37,7 @@ import { useMaaFWUserTaskContext } from './useMaaFWUserTaskContext'
 import { useMaaFWUserPersistence, type MaaFWUserIdHolder } from './useMaaFWUserPersistence'
 import { useMaaFWTaskQueue } from './useMaaFWTaskQueue'
 import { useMaaFWAddTaskMenu } from './useMaaFWAddTaskMenu'
+import { useMaaFWUserQueueImport } from './useMaaFWUserQueueImport'
 import { useMaaFWUserConfigRestore } from './useMaaFWUserConfigRestore'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
 import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
@@ -145,6 +146,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { presentQueuedTasks, syncControllerResourceSelection } = queue
 
   const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
+
+  const userImport = useMaaFWUserQueueImport({ scriptId, userIdHolder, queue })
 
   // 队列里残留的受管任务：只有真要拆用户（后端会拒绝运行）才给警告，其余是运行照常的轻提示
   const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
@@ -387,6 +390,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     handleFieldSave,
     ...queue,
     ...menu,
+    ...userImport,
     ...restore,
     loadUserData,
     reloadInterface,

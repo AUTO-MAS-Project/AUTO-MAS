@@ -58,7 +58,11 @@
             :is="sections.queueHeader"
             :queue-hint-lines="queueHintLines"
             :managed-queue-alert="managedQueueAlert"
+            :user-import-candidates="userImportCandidates"
+            :user-import-loading="userImportLoading"
             @open-restore="restoreOpen = true"
+            @load-user-import="loadUserImportCandidates"
+            @import-from-user="importQueueFromUser"
             @imported="handleShellImported"
           />
           <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
@@ -227,6 +231,10 @@ const {
   addTaskCascaderOptions,
   hasNewTasks,
   handleAddTaskCascaderChange,
+  userImportCandidates,
+  userImportLoading,
+  loadUserImportCandidates,
+  importQueueFromUser,
   MAAFW_DISPLAY_NAME,
   restoreOpen,
   restoreTargets,
