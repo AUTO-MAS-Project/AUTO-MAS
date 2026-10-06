@@ -85,6 +85,8 @@
             :add-task-cascader-options="addTaskCascaderOptions"
             :has-new-tasks="hasNewTasks"
             :preset-templates="presetTemplates"
+            :queue-templates="queueTemplates"
+            :queue-template-draft="queueTemplateDraft"
             :task-by-name="taskByName"
             :selected-task="selectedTask"
             :selected-task-id="selectedQueuedTask?.id || ''"
@@ -94,6 +96,10 @@
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
+            @save-queue-template="saveQueueTemplate"
+            @apply-queue-template="applyQueueTemplate"
+            @rename-queue-template="renameQueueTemplate"
+            @delete-queue-template="deleteQueueTemplate"
             @select-task="selectTask"
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
@@ -235,6 +241,12 @@ const {
   userImportLoading,
   loadUserImportCandidates,
   importQueueFromUser,
+  queueTemplates,
+  queueTemplateDraft,
+  saveQueueTemplate,
+  applyQueueTemplate,
+  renameQueueTemplate,
+  deleteQueueTemplate,
   MAAFW_DISPLAY_NAME,
   restoreOpen,
   restoreTargets,

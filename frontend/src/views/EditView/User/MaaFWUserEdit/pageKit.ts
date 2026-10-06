@@ -24,6 +24,7 @@ export type {
   MaaFWUserBasicInfoSectionProps,
   MaaFWUserHeaderSectionEmits,
   MaaFWUserHeaderSectionProps,
+  MaaFWQueueTemplateView,
   MaaFWUserQueueHeaderSectionEmits,
   MaaFWUserQueueHeaderSectionProps,
   MaaFWUserQueueImportCandidate,

@@ -26,7 +26,7 @@ import type {
 import type { MfwReuseChoice } from '@/views/scripts/components/scriptCreateFlow'
 import type { MaaFWUpdateProgressState } from '../Script/MaaFWScriptEdit/updateProgress'
 import type { MaaFWPresetQueueEntry } from '../User/maafwPresetQueue'
-import type { MaaFWQueueSource } from '../User/maafwQueueSource'
+import type { MaaFWQueueSource, MaaFWQueueSourceChip } from '../User/maafwQueueSource'
 
 // ════════════════════════════ 脚本页 ════════════════════════════
 
@@ -250,6 +250,9 @@ export type PresetTemplate = {
   entries: MaaFWPresetQueueEntry[]
 }
 
+/** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
+export type MaaFWQueueTemplateView = { name: string } & MaaFWQueueSource
+
 /** 用户页 `taskQueue`：任务队列两栏（左：队列与添加；右：选中任务的选项） */
 export interface MaaFWUserTaskQueueSectionProps {
   interfaceLoading: boolean
@@ -262,6 +265,11 @@ export interface MaaFWUserTaskQueueSectionProps {
   /** 「添加任务」里有用户没见过的任务：输入框后缀显示 NEW 而不是加号 */
   hasNewTasks: boolean
   presetTemplates: PresetTemplate[]
+  /** 「模板」→「我的模板」：本脚本的自定义模板 */
+  queueTemplates: MaaFWQueueTemplateView[]
+  /** 「存为模板」要存的任务：当前队列去掉虚影与受管任务 */
+  queueTemplateDraft: MaaFWQueueSourceChip[]
+  /** 「模板」弹窗是否打开 */
   showPresetModal: boolean
   taskByName: Map<string, MaaFWTaskInfo>
   selectedTask: MaaFWTaskInfo | null
@@ -276,6 +284,12 @@ export interface MaaFWUserTaskQueueSectionEmits {
   'update:showPresetModal': [value: boolean]
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]
+  /** 把当前队列存成模板（名称已去首尾空格、不与已有模板同名） */
+  saveQueueTemplate: [name: string]
+  /** 套用模板：直接替换队列，失效任务跳过 */
+  applyQueueTemplate: [name: string]
+  renameQueueTemplate: [name: string, nextName: string]
+  deleteQueueTemplate: [name: string]
   reorderTasks: [taskIds: string[]]
   selectTask: [taskId: string]
   moveTask: [taskId: string, direction: -1 | 1]

@@ -23,12 +23,12 @@
           <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
           <div class="column-actions">
             <a-button
-              v-if="presetTemplates.length > 0 && orderedTasks.length > 0"
+              v-if="orderedTasks.length > 0"
               type="link"
               size="small"
               @click="showPresetModalModel = true"
             >
-              {{ t('edit.presetTemplate') }}
+              {{ t('edit.queueTemplate') }}
             </a-button>
             <a-cascader
               v-model:value="addTaskCascaderValueModel"
@@ -48,50 +48,57 @@
           </div>
         </div>
         <div class="task-list">
+          <!-- 队列为空：先列我的模板，再列项目预设，哪组没有就不显示那组 -->
           <div
-            v-if="orderedTasks.length === 0 && presetTemplates.length > 0"
+            v-if="
+              orderedTasks.length === 0 && (queueTemplates.length > 0 || presetTemplates.length > 0)
+            "
             class="preset-section"
           >
-            <div
-              v-for="template in presetTemplates"
-              :key="template.preset.name"
-              class="preset-card"
-            >
-              <div class="preset-card-inner">
-                <div class="preset-header">
-                  <div class="preset-icon-wrap">
-                    <ThunderboltOutlined class="preset-icon" />
-                  </div>
-                  <div class="preset-info">
-                    <h3 class="preset-name">{{ getDisplayName(template.preset) }}</h3>
-                    <MaaFWDescriptionView
-                      v-if="template.preset.description"
-                      :content="template.preset.description"
-                      :base-path="previewData.path"
-                      class="preset-desc"
-                    />
-                  </div>
-                  <!-- 「应用预设」就放在标题右边，不再单占一行 -->
+            <template v-if="queueTemplates.length > 0">
+              <div class="preset-group-title">{{ t('edit.queueTemplateMine') }}</div>
+              <MaaFWQueueCard
+                v-for="template in queueTemplates"
+                :key="template.name"
+                kind="template"
+                :title="template.name"
+                :task-count="template.chips.length"
+                :invalid-count="template.invalidCount"
+                :chips="template.chips"
+              >
+                <template #actions>
                   <a-button
                     type="primary"
-                    class="preset-apply-button"
+                    :disabled="template.entries.length === 0"
+                    @click="emit('applyQueueTemplate', template.name)"
+                  >
+                    {{ t('edit.queueTemplateApply') }}
+                  </a-button>
+                </template>
+              </MaaFWQueueCard>
+            </template>
+            <template v-if="presetTemplates.length > 0">
+              <div class="preset-group-title">{{ t('edit.queueTemplatePresets') }}</div>
+              <MaaFWQueueCard
+                v-for="template in presetTemplates"
+                :key="template.preset.name"
+                kind="preset"
+                :title="getDisplayName(template.preset)"
+                :description="template.preset.description"
+                :base-path="previewData.path"
+                :chips="presetChips(template)"
+              >
+                <template #actions>
+                  <a-button
+                    type="primary"
                     :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
                     {{ t('edit.applyPreset2') }}
                   </a-button>
-                </div>
-
-                <div class="preset-tasks-preview">
-                  <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
-                    <span class="task-dot"></span>
-                    <span class="task-chip-name">
-                      {{ getDisplayName(entry.task) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+                </template>
+              </MaaFWQueueCard>
+            </template>
           </div>
           <a-empty
             v-else-if="orderedTasks.length === 0"
@@ -315,51 +322,18 @@
       </a-col>
     </a-row>
 
-    <a-modal
+    <MaaFWQueueTemplateModal
       v-model:open="showPresetModalModel"
-      :title="t('edit.presetTemplate')"
-      :footer="null"
-      width="720px"
-      class="preset-template-modal"
-    >
-      <div v-if="presetTemplates.length > 0" class="preset-section preset-section-modal">
-        <div v-for="template in presetTemplates" :key="template.preset.name" class="preset-card">
-          <div class="preset-card-inner">
-            <div class="preset-header">
-              <div class="preset-icon-wrap">
-                <ThunderboltOutlined class="preset-icon" />
-              </div>
-              <div class="preset-info">
-                <h3 class="preset-name">{{ getDisplayName(template.preset) }}</h3>
-                <MaaFWDescriptionView
-                  v-if="template.preset.description && previewData"
-                  :content="template.preset.description"
-                  :base-path="previewData.path"
-                  class="preset-desc"
-                />
-              </div>
-              <a-button
-                type="primary"
-                class="preset-apply-button"
-                :disabled="template.entries.length === 0"
-                @click="emit('applyPresetTemplate', template.preset.name)"
-              >
-                {{ t('edit.applyPreset2') }}
-              </a-button>
-            </div>
-            <div class="preset-tasks-preview">
-              <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
-                <span class="task-dot"></span>
-                <span class="task-chip-name">
-                  {{ getDisplayName(entry.task) }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <a-empty v-else :description="t('edit.noPresetTemplates')" />
-    </a-modal>
+      :queue-templates="queueTemplates"
+      :preset-templates="presetTemplates"
+      :draft="queueTemplateDraft"
+      :base-path="previewData?.path"
+      @apply-preset-template="presetName => emit('applyPresetTemplate', presetName)"
+      @save-queue-template="name => emit('saveQueueTemplate', name)"
+      @apply-queue-template="name => emit('applyQueueTemplate', name)"
+      @rename-queue-template="(name, nextName) => emit('renameQueueTemplate', name, nextName)"
+      @delete-queue-template="name => emit('deleteQueueTemplate', name)"
+    />
   </div>
 </template>
 
@@ -374,17 +348,19 @@ import {
   DeleteOutlined,
   HolderOutlined,
   PlusOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
+import MaaFWQueueCard from './MaaFWQueueCard.vue'
+import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
 import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
+  PresetTemplate,
 } from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
@@ -444,6 +420,9 @@ const showPresetModalModel = computed({
 })
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
+
+const presetChips = (template: PresetTemplate) =>
+  template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
 
 // 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签
 const selectedTaskMeta = computed(() => {
@@ -625,106 +604,11 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   padding: 12px;
 }
 
-.preset-section-modal {
-  max-height: 60vh;
-  overflow: auto;
-  padding: 0;
-}
-
-.preset-card {
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-}
-
-.preset-card-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-}
-
-.preset-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-/* 与图标同高（36px）、靠右，不随描述换行下坠 */
-.preset-apply-button {
-  flex: 0 0 auto;
-  height: 36px;
-  align-self: flex-start;
-}
-
-.preset-icon-wrap {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  flex: 0 0 auto;
-}
-
-.preset-icon {
-  font-size: 18px;
-}
-
-.preset-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.preset-name {
-  margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-}
-
-.preset-desc {
+/* 队列为空时的分组小标题：我的模板 / 项目预设 */
+.preset-group-title {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
-}
-
-.preset-tasks-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.task-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 3px 10px 3px 7px;
-  border-radius: 16px;
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font-size: 13px;
-}
-
-.task-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ant-color-success);
-  flex: 0 0 auto;
-}
-
-.task-chip-name {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
 }
 
 .task-row {

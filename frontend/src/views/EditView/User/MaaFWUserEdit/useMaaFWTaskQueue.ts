@@ -1,5 +1,9 @@
 import { computed, ref, watch, type Ref } from 'vue'
-import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from '../maafwPresetQueue'
+import {
+  buildPresetAppliedSnapshot,
+  selectPresetQueueEntries,
+  type MaaFWPresetQueueEntry,
+} from '../maafwPresetQueue'
 import { maafwMissingTaskName } from '../maafwTaskChanges'
 import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
 import {
@@ -112,6 +116,12 @@ export function useMaaFWTaskQueue({
       passwordFields: passwordFields.value,
       displayName: task => task.label || task.name,
     })
+  /** 「存为模板」要存的项：当前队列里去掉虚影与受管任务 */
+  const templateDraftEntries = computed<MaaFWPresetQueueEntry[]>(() =>
+    presentQueuedTasks.value
+      .filter(item => !isManagedMaaFWTask(item.task, managedTaskEntries.value))
+      .map(item => ({ id: item.id, task: item.task }))
+  )
   const presetTemplates = computed(() => {
     // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
     const activeTaskByName = availableTaskByName.value
@@ -312,6 +322,8 @@ export function useMaaFWTaskQueue({
     persistQueuedSnapshot,
     syncControllerResourceSelection,
     applyPresetTemplate,
+    passwordFields,
+    templateDraftEntries,
     describeQueueSnapshot,
     replaceQueueWith,
     deleteSelectedTask,

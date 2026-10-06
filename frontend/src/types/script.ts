@@ -318,6 +318,13 @@ export interface MaaFWScriptConfig {
     Resource?: string | string[] | null
     Tasks?: string | string[] | null
   }
+  /**
+   * 用户页任务队列的自定义模板（同一脚本的用户共用），JSON 文本；
+   * 读写见 views/EditView/User/maafwQueueSource.ts。脚本页不读不写。
+   */
+  Task?: {
+    Templates?: string
+  }
 }
 
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
