@@ -6,7 +6,7 @@
     @pointerdown="handlePointerDown"
     @pointermove="handlePointerMove"
     @pointerup="handlePointerUp"
-    @pointercancel="handlePointerCancel"
+    @pointercancel="cancelPress"
     @pointerleave="handlePointerLeave"
   >
     <div v-if="loading" class="loading-spinner"></div>
@@ -29,37 +29,14 @@ import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS } from '@/utils/scriptLogos'
-import { createCenterPokeCounter } from './satellite/centerPoke'
-import { CORE_CHARGE } from './satellite/config'
-import {
-  createDizzyDetector,
-  createKonamiMatcher,
-  maaPokeTally,
-  type MaaPokeEvent,
-} from './satellite/eggs'
+import { createFloatTextLayer, type FloatTextVariant } from './satellite/floatText'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
-import { SatelliteScene, type SatellitePick, type ScreenPoint } from './satellite/satelliteScene'
-
-type FloatTextVariant = 'star' | 'rainbow' | 'hint' | 'huge'
-
-interface PressState {
-  pointerId: number
-  target: SatellitePick
-  startX: number
-  startY: number
-  lastX: number
-  lastY: number
-  lastAt: number
-  startedAt: number
-  dragging: boolean
-}
+import { SatelliteScene, type ScreenPoint } from './satellite/satelliteScene'
+import { useSatelliteEggs } from './satellite/useSatelliteEggs'
+import { useSatellitePointer } from './satellite/useSatellitePointer'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
-/** 同时在飞的浮字上限；快速连点时先到的先让位，免得 DOM 和合成层无限堆 */
-const MAX_STAR_BURSTS = 12
-/** 按下后挪动超过这么多像素就算拖动，不再当点击 */
-const DRAG_THRESHOLD = 6
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('卫星动画')
@@ -74,7 +51,6 @@ const labelElement = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
-const dragging = ref(false)
 const hoveredSatellite = ref<number | null>(null)
 const hoveredType = ref<ScriptType | null>(null)
 
@@ -82,13 +58,38 @@ let scene: SatelliteScene | null = null
 let isUnmounted = false
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let disposeBackendReadyListener: (() => void) | null = null
-let press: PressState | null = null
 let lastFrameAt: number | null = null
 const frameScheduler = createAnimationFrameScheduler(requestAnimationFrame, cancelAnimationFrame)
-const centerPoke = createCenterPokeCounter()
-const konami = createKonamiMatcher()
-const dizzyDetector = createDizzyDetector()
-const activeStarBursts: HTMLSpanElement[] = []
+const floatTexts = createFloatTextLayer()
+const eggs = useSatelliteEggs({
+  getScene: () => scene,
+  isLowPower: () => performanceStore.isLowPower,
+  spawnText,
+  getContainerSize: () =>
+    container.value
+      ? { width: container.value.clientWidth, height: container.value.clientHeight }
+      : null,
+  requestRender,
+})
+const {
+  dragging,
+  handlePointerDown,
+  handlePointerMove,
+  handlePointerUp,
+  handlePointerLeave,
+  cancelPress,
+  updateCoreCharge,
+} = useSatellitePointer({
+  getScene: () => scene,
+  getContainer: () => container.value,
+  isLowPower: () => performanceStore.isLowPower,
+  isBackgrounded: () => performanceStore.isBackgrounded,
+  setHovered,
+  spawnText,
+  requestRender,
+  onCenterTap: eggs.pokeCenter,
+  onSatelliteTap: handleSatelliteTap,
+})
 
 /** 悬停标签：脚本名，有运行状态时带上状态 */
 const hoverLabel = computed(() => {
@@ -183,7 +184,7 @@ onMounted(async () => {
 
   requestRender()
   window.addEventListener('resize', handleResize)
-  window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('keydown', eggs.handleKeydown)
 
   void refreshSatelliteStatuses()
   startStatusPolling()
@@ -193,6 +194,7 @@ onMounted(async () => {
     const updateRes = await requestUpdateCheck(false)
     if (updateRes.code === 200 && updateRes.if_need_update && !isUnmounted) {
       scene?.setCenterGlowMode('rainbow')
+      requestRender()
     }
   } catch {
     // 静默失败，保持绿色
@@ -203,10 +205,10 @@ onUnmounted(() => {
   isUnmounted = true
   disposeBackendReadyListener?.()
   window.removeEventListener('resize', handleResize)
-  window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('keydown', eggs.handleKeydown)
   frameScheduler.cancel()
   stopStatusPolling()
-  disposeStarBursts()
+  floatTexts.dispose()
   scene?.dispose()
   scene = null
 })
@@ -275,13 +277,7 @@ function drawFrame(): void {
   const dt = lastFrameAt === null ? 16 : Math.min(100, now - lastFrameAt)
   lastFrameAt = now
   updateCoreCharge()
-
-  // 拖着星系猛转会转晕
-  if (!performanceStore.isLowPower && dizzyDetector.feed(scene.spinSpeed, dt, now)) {
-    scene.startDizzy(now)
-    spawnFloatText(scene.projectCenter(), t('home.satelliteEgg.dizzy'), 'hint')
-    logger.info('卫星彩蛋触发：转晕')
-  }
+  eggs.checkDizzy(dt, now)
 
   const busy = scene.renderFrame(now)
   updateLabelPosition()
@@ -353,293 +349,17 @@ function updateLabelPosition(): void {
 
 // ==================== 交互 ====================
 
-function toLocalPoint(event: MouseEvent): ScreenPoint | null {
-  const bounds = container.value?.getBoundingClientRect()
-  if (!bounds) return null
-  return { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
-}
-
-function pickAt(event: MouseEvent): SatellitePick {
-  if (!scene || performanceStore.isBackgrounded) return null
-  return scene.pick(event.clientX, event.clientY)
-}
-
-function handlePointerDown(event: PointerEvent): void {
-  if (event.button !== 0 || !scene) return
-
-  // 周哥在场时点哪都是请他回去
-  if (scene.isRevealing) {
-    scene.dismissZhouge(Date.now())
-    return
-  }
-
-  const target = pickAt(event)
-  press = {
-    pointerId: event.pointerId,
-    target,
-    startX: event.clientX,
-    startY: event.clientY,
-    lastX: event.clientX,
-    lastY: event.clientY,
-    lastAt: performance.now(),
-    startedAt: performance.now(),
-    dragging: false,
-  }
-  container.value?.setPointerCapture(event.pointerId)
-
-  // 按在中心图标上时给它一个压扁的形变，再冒一句 star!；
-  // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做
-  if (target === 'center' && !performanceStore.isLowPower) {
-    scene.setCenterPressed(true)
-    const local = toLocalPoint(event)
-    if (local) {
-      spawnFloatText(local, t('home.satelliteEgg.star'), scene.isCenterRainbow ? 'rainbow' : 'star')
-    }
-  }
-  requestRender()
-}
-
-function handlePointerMove(event: PointerEvent): void {
-  if (!scene) return
-
-  const bounds = container.value?.getBoundingClientRect()
-  if (bounds && bounds.width > 0) {
-    scene.setPointer(
-      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
-      1 - ((event.clientY - bounds.top) / bounds.height) * 2
-    )
-  }
-
-  if (!press || press.pointerId !== event.pointerId) {
-    const target = pickAt(event)
-    setHovered(typeof target === 'number' ? target : null)
-    return
-  }
-
-  const now = performance.now()
-  if (
-    !press.dragging &&
-    Math.hypot(event.clientX - press.startX, event.clientY - press.startY) > DRAG_THRESHOLD
-  ) {
-    // 挪远了就是在拖星系：之前的按压和蓄力都作废
-    press.dragging = true
-    dragging.value = true
-    setHovered(null)
-    releaseCenter()
-    scene.beginDrag()
-  }
-  if (press.dragging) {
-    scene.dragBy(event.clientX - press.lastX, event.clientY - press.lastY, now - press.lastAt)
-    requestRender()
-  }
-  press.lastX = event.clientX
-  press.lastY = event.clientY
-  press.lastAt = now
-}
-
-function handlePointerUp(event: PointerEvent): void {
-  if (!press || press.pointerId !== event.pointerId || !scene) return
-
-  const finished = press
-  press = null
-  container.value?.releasePointerCapture(event.pointerId)
-  releaseCenter()
-
-  if (finished.dragging) {
-    dragging.value = false
-    scene.endDrag()
-    requestRender()
-    return
-  }
-
-  const now = Date.now()
-  if (finished.target === 'center') {
-    const held = performance.now() - finished.startedAt
-    if (held >= CORE_CHARGE.chargeFull && !performanceStore.isLowPower) {
-      scene.shockwave(now)
-      logger.info('卫星彩蛋触发：冲击波')
-    } else if (held < CORE_CHARGE.chargeStart) {
-      registerCenterPoke()
-    }
-  } else if (typeof finished.target === 'number') {
-    handleSatelliteClick(finished.target, now)
-  }
-  requestRender()
-}
-
-function handlePointerCancel(): void {
-  cancelPress()
-}
-
-function handlePointerLeave(): void {
-  setHovered(null)
-  scene?.setPointer(0, 0)
-}
-
-function cancelPress(): void {
-  if (press?.dragging) {
-    scene?.endDrag()
-  }
-  press = null
-  dragging.value = false
-  releaseCenter()
-}
-
-function releaseCenter(): void {
-  scene?.setCenterPressed(false)
-  scene?.setCoreCharge(0)
-}
-
-/** 一直按着星核就蓄力，满了松手放冲击波 */
-function updateCoreCharge(): void {
-  if (!scene || !press || press.dragging || press.target !== 'center') return
-  if (performanceStore.isLowPower) return
-  const held = performance.now() - press.startedAt
-  scene.setCoreCharge(
-    (held - CORE_CHARGE.chargeStart) / (CORE_CHARGE.chargeFull - CORE_CHARGE.chargeStart)
-  )
-}
-
-function handleSatelliteClick(index: number, now: number): void {
+function handleSatelliteTap(index: number, now: number): void {
   if (!scene) return
   if (!scene.explode(index, now)) {
     scene.ping(index, now)
   }
-  if (scene.satelliteType(index) === 'MAA') {
-    handleMaaPoke(index, maaPokeTally.poke())
-  }
+  eggs.pokeSatellite(index)
 }
 
-function handleMaaPoke(index: number, event: MaaPokeEvent | null): void {
-  if (!event || !scene) return
-
-  const point = scene.projectSatellite(index)
-  if (event.kind === 'hint') {
-    if (point) spawnFloatText(point, t(`home.satelliteEgg.${event.hint}`), 'hint')
-    return
-  }
-  if (event.kind === 'countdown') {
-    if (point) spawnFloatText(point, String(event.remaining), 'hint')
-    return
-  }
-
-  void scene.revealZhouge(index)
-  window.setTimeout(() => {
-    if (!scene || !container.value) return
-    spawnFloatText(
-      { x: container.value.clientWidth / 2, y: container.value.clientHeight * 0.86 },
-      t('home.satelliteEgg.zhouge'),
-      'huge'
-    )
-  }, 650)
-  logger.info('卫星彩蛋触发：MAA 点满 325 下，周哥出场')
-}
-
-function registerCenterPoke(): void {
-  // 低性能模式下彩虹不会流动，触发了也只是一张静止的图，不给机会
-  if (!scene || performanceStore.isLowPower) return
-
-  const hit = centerPoke.poke(performance.now(), scene.isCenterRainbow)
-  if (!hit) return
-  scene.setCenterRainbow(true)
-  logger.info(hit === 'guarantee' ? '中心图标彩蛋触发：连点保底' : '中心图标彩蛋触发：炫彩图标')
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-  )
-}
-
-/** ↑↑↓↓←→←→BA 开超频；在输入框里打字不算 */
-function handleKeydown(event: KeyboardEvent): void {
-  if (!scene || performanceStore.isLowPower || isEditableTarget(event.target)) return
-  if (!konami.feed(event.key)) return
-
-  scene.startOverclock(Date.now())
-  spawnFloatText(scene.projectCenter(), t('home.satelliteEgg.overclock'), 'huge')
-  logger.info('卫星彩蛋触发：科乐美秘技超频')
-  requestRender()
-}
-
-// ==================== 浮字 ====================
-
-function removeStarBurst(element: HTMLSpanElement): void {
-  element.getAnimations().forEach(animation => animation.cancel())
-  element.remove()
-}
-
-/** 组件销毁时把还在飞的浮字连同动画一起收掉 */
-function disposeStarBursts(): void {
-  activeStarBursts.forEach(removeStarBurst)
-  activeStarBursts.length = 0
-}
-
-/**
- * 在容器里 point 处冒一句字。star / rainbow / hint 加速往上方飘走；
- * huge 是彩蛋大字，原地弹出来再淡掉。
- */
-function spawnFloatText(point: ScreenPoint, text: string, variant: FloatTextVariant): void {
+function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant): void {
   if (!container.value || isUnmounted) return
-
-  const element = document.createElement('span')
-  element.className = `star-burst star-burst-${variant}`
-  element.textContent = text
-  element.style.left = `${point.x}px`
-  element.style.top = `${point.y}px`
-  container.value.appendChild(element)
-  activeStarBursts.push(element)
-
-  while (activeStarBursts.length > MAX_STAR_BURSTS) {
-    const oldest = activeStarBursts.shift()
-    if (oldest) {
-      removeStarBurst(oldest)
-    }
-  }
-
-  const animation =
-    variant === 'huge'
-      ? element.animate(
-          [
-            { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 0 },
-            { offset: 0.18, transform: 'translate(-50%, -50%) scale(1.25)', opacity: 1 },
-            { offset: 0.3, transform: 'translate(-50%, -50%) scale(0.95)', opacity: 1 },
-            { offset: 0.8, transform: 'translate(-50%, -60%) scale(1)', opacity: 1 },
-            { transform: 'translate(-50%, -90%) scale(1.05)', opacity: 0 },
-          ],
-          { duration: 1900, easing: 'ease-out', fill: 'forwards' }
-        )
-      : riseAway(element)
-  animation.onfinish = () => {
-    const index = activeStarBursts.indexOf(element)
-    if (index >= 0) {
-      activeStarBursts.splice(index, 1)
-    }
-    element.remove()
-  }
-}
-
-/** 左右随机偏一点，整体向上；缓动是强 ease-in，越飞越快 */
-function riseAway(element: HTMLSpanElement): Animation {
-  const driftX = (Math.random() - 0.5) * 90
-  const riseY = 220 + Math.random() * 140
-  const spin = (Math.random() - 0.5) * 50
-  return element.animate(
-    [
-      { transform: 'translate(-50%, -50%) scale(0.6)', opacity: 0 },
-      {
-        offset: 0.22,
-        transform: `translate(calc(-50% + ${driftX * 0.3}px), calc(-50% - ${riseY * 0.3}px)) scale(1.08) rotate(${spin * 0.35}deg)`,
-        opacity: 1,
-      },
-      {
-        transform: `translate(calc(-50% + ${driftX}px), calc(-50% - ${riseY}px)) scale(0.92) rotate(${spin}deg)`,
-        opacity: 0,
-      },
-    ],
-    { duration: 1150, easing: 'cubic-bezier(0.5, 0, 1, 1)', fill: 'forwards' }
-  )
+  floatTexts.spawn(container.value, point, text, variant)
 }
 </script>
 

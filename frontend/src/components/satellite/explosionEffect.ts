@@ -86,7 +86,8 @@ export class SatelliteExplosion {
     this.group.position.copy(card.position)
     this.group.quaternion.copy(card.quaternion)
     this.group.scale.copy(card.scale)
-    this.group.renderOrder = RENDER_ORDER.effect
+    // renderOrder 不能设在 Group 上：three 会把它当成子物体的分组序号，碎片就排到所有叠加层
+    // （周哥的脸、冲击波）之后去画了。设在每块碎片上。
 
     for (let row = 0; row < rows; row++) {
       for (let column = 0; column < columns; column++) {
@@ -106,6 +107,7 @@ export class SatelliteExplosion {
           z: ICON_FACE_Z + 0.1,
         }
         mesh.position.set(origin.x, origin.y, origin.z)
+        mesh.renderOrder = RENDER_ORDER.effect
         this.group.add(mesh)
         this.fragments.push({
           mesh,

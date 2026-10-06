@@ -101,6 +101,8 @@ const PING_MS = 380
 const MAX_SPIN = 0.018
 /** 停手多久后镜头开始转回正面 */
 const AZIMUTH_RETURN_DELAY = 3500
+/** 松手前最后一次挪动在这么久以内，才算甩出去 */
+const FLING_WINDOW = 80
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
@@ -164,6 +166,7 @@ export class SatelliteScene {
   private previousAzimuth = 0
   private azimuthRate = 0
   private lastDragAt = -Infinity
+  private lastDragMoveAt = 0
   private dragging = false
   private readonly parallax = new THREE.Vector2()
   private readonly parallaxTarget = new THREE.Vector2()
@@ -229,8 +232,9 @@ export class SatelliteScene {
         map: createCanvasTexture(centerCanvas),
         transparent: true,
         opacity: 0,
-        // 只让图标实心的部分写深度，绕到背后的卫星和轨道按图标轮廓被挡住
-        alphaTest: 0.35,
+        // 图标外围全透明的地方不写深度，绕到背后的卫星和轨道按图标轮廓被挡住；
+        // 阈值压得很低，半透明的抗锯齿边照样画出来，边缘不发硬
+        alphaTest: 0.05,
       })
     )
     center.renderOrder = RENDER_ORDER.coreIcon
@@ -403,10 +407,10 @@ export class SatelliteScene {
     this.hovered = index
   }
 
-  /** 指针在容器里的归一化坐标（-1~1），镜头跟着轻轻偏转 */
+  /** 指针在容器里的归一化坐标（-1~1），镜头跟着轻轻偏转；拖出容器外的按边缘算 */
   setPointer(x: number, y: number): void {
     if (this.lowPerformance) return
-    this.parallaxTarget.set(x, y)
+    this.parallaxTarget.set(THREE.MathUtils.clamp(x, -1, 1), THREE.MathUtils.clamp(y, -1, 1))
   }
 
   beginDrag(): void {
@@ -428,12 +432,14 @@ export class SatelliteScene {
       const velocity = THREE.MathUtils.clamp(delta / dt, -MAX_SPIN, MAX_SPIN)
       this.spinVelocity += (velocity - this.spinVelocity) * 0.5
     }
+    this.lastDragMoveAt = performance.now()
   }
 
   endDrag(): void {
     this.dragging = false
     this.lastDragAt = this.lastTime ?? 0
-    if (this.lowPerformance) {
+    // 拖到一半停住再松手不该甩出去：离最后一次挪动隔久了就当没有惯性
+    if (this.lowPerformance || performance.now() - this.lastDragMoveAt > FLING_WINDOW) {
       this.spinVelocity = 0
     }
   }
@@ -498,8 +504,9 @@ export class SatelliteScene {
     this.dizzyAt = time
   }
 
+  /** 周哥的脸还在画面上；脸缩回去之后彩纸还会落一会儿，那时点击照常响应 */
   get isRevealing(): boolean {
-    return this.reveal !== null || this.revealPending
+    return this.revealPending || (this.reveal?.effect.faceShowing ?? false)
   }
 
   /** 周哥从第 index 颗卫星里出场；脸要先画好，所以是异步的 */
@@ -510,8 +517,11 @@ export class SatelliteScene {
     this.revealPending = false
     if (this.disposed) return
 
+    // 上一场的彩纸还没落完就直接收掉
+    this.reveal?.effect.dispose()
     const now = Date.now()
-    this.reveal = { effect: new ZhougeReveal(this.scene, faceCanvas, now), satellite: index }
+    const effect = new ZhougeReveal(this.scene, faceCanvas, now, this.renderer.getPixelRatio())
+    this.reveal = { effect, satellite: index }
     this.shockwave(now)
   }
 
@@ -571,14 +581,16 @@ export class SatelliteScene {
     this.stars.points.rotation.y += dt * 0.000006
 
     let busy = cameraMoving || appearElapsed !== null
-    for (const satellite of this.satellites) {
+    this.satellites.forEach((satellite, index) => {
       if (satellite.explosion?.update(time)) {
         this.finishExplosion(satellite)
       } else if (satellite.explosion) {
         busy = true
       }
       busy ||= time - satellite.punchAt < PUNCH_MS || time - satellite.pingAt < PING_MS
-    }
+      // 悬停放大是逐帧逼近的，没到位之前低性能模式也得接着出帧
+      busy ||= Math.abs(satellite.hover - (this.hovered === index ? 1 : 0)) > 0.01
+    })
     busy = this.updateShockwave(time, centerY) || busy
     busy = this.updateReveal(time) || busy
     busy ||= overclock > 0 || dizzy > 0 || knock !== 0
@@ -633,9 +645,12 @@ export class SatelliteScene {
       this.azimuth += this.spinVelocity * dt
       this.spinVelocity *= Math.exp(-dt / 700)
       if (Math.abs(this.spinVelocity) < 0.00002) this.spinVelocity = 0
-      this.elevation += (C.cameraElevation - this.elevation) * (1 - Math.exp(-dt / 1600))
 
-      // 停手一会儿后慢慢转回正面：默认构图是按正面摆的。低性能模式不为这个一直出帧
+      // 停手一会儿后俯仰角回到默认、慢慢转回正面：默认构图是按正面摆的。
+      // 低性能模式不为这个连续出帧，镜头停在用户拖到的角度
+      if (!this.lowPerformance) {
+        this.elevation += (C.cameraElevation - this.elevation) * (1 - Math.exp(-dt / 1600))
+      }
       const front = Math.round(this.azimuth / (Math.PI * 2)) * Math.PI * 2
       if (
         !this.lowPerformance &&
@@ -673,7 +688,7 @@ export class SatelliteScene {
     this.camera.updateMatrixWorld()
 
     const settling =
-      Math.abs(this.elevation - C.cameraElevation) > 0.001 ||
+      (!this.lowPerformance && Math.abs(this.elevation - C.cameraElevation) > 0.001) ||
       this.parallax.distanceToSquared(this.parallaxTarget) > 1e-6
     return this.dragging || this.spinVelocity !== 0 || settling || returning
   }

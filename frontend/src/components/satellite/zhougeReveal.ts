@@ -23,9 +23,15 @@ export class ZhougeReveal {
   private readonly confettiOrigin = new THREE.Vector3()
   private confettiAt: number | null = null
   private flyOutAt: number | null = null
+  private faceGone = false
   private flyOutFromScale = 0
 
-  constructor(scene: THREE.Scene, faceCanvas: HTMLCanvasElement, startTime: number) {
+  constructor(
+    scene: THREE.Scene,
+    faceCanvas: HTMLCanvasElement,
+    startTime: number,
+    pixelRatio: number
+  ) {
     this.scene = scene
     this.startTime = startTime
 
@@ -43,8 +49,14 @@ export class ZhougeReveal {
     this.confetti = createPointCloud(CONFETTI_COUNT, RENDER_ORDER.overlay)
     this.confetti.points.material.depthTest = false
     this.confetti.points.material.blending = THREE.NormalBlending
+    this.confetti.points.material.uniforms.uPixelRatio.value = pixelRatio
 
     scene.add(this.sprite, this.confetti.points)
+  }
+
+  /** 脸还在画面上（没缩回去） */
+  get faceShowing(): boolean {
+    return !this.faceGone
   }
 
   /** 已经在缩回去了就不再响应 */
@@ -72,6 +84,10 @@ export class ZhougeReveal {
       this.sprite.position.lerpVectors(this.flyOutFrom, from, eased)
       this.sprite.scale.setScalar(Math.max(0.001, this.flyOutFromScale * (1 - eased)))
       material.rotation = -Math.PI * 2 * eased
+      if (progress >= 1) {
+        this.faceGone = true
+        this.sprite.visible = false
+      }
     } else if (elapsed < FLY_IN_MS) {
       const progress = Math.max(0, elapsed / FLY_IN_MS)
       this.sprite.position.lerpVectors(from, stage, easeOutCubic(progress))
@@ -91,7 +107,7 @@ export class ZhougeReveal {
     }
     const confettiActive = this.updateConfetti(time)
 
-    return this.flyOutAt !== null && time - this.flyOutAt >= FLY_OUT_MS && !confettiActive
+    return this.faceGone && !confettiActive
   }
 
   dispose(): void {
