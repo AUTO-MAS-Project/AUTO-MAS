@@ -7,8 +7,31 @@ import {
   createRapidClickDetector,
   isAprilFools,
   KEY_CODES,
+  keyOfEvent,
   PITY_EGGS,
 } from './eggs'
+
+describe('keyOfEvent', () => {
+  it('开着中文输入法（key 是 Process）时按物理键位换回字母、数字', () => {
+    expect(keyOfEvent({ key: 'Process', code: 'KeyM' })).toBe('m')
+    expect(keyOfEvent({ key: 'Process', code: 'Digit6' })).toBe('6')
+    expect(keyOfEvent({ key: 'Process', code: 'Numpad4' })).toBe('4')
+    expect(keyOfEvent({ key: 'Process', code: 'ArrowUp' })).toBe('ArrowUp')
+  })
+
+  it('平时就用 key，大写、方向键原样交给匹配器', () => {
+    expect(keyOfEvent({ key: 'M', code: 'KeyM' })).toBe('M')
+    expect(keyOfEvent({ key: 'ArrowLeft', code: 'ArrowLeft' })).toBe('ArrowLeft')
+  })
+
+  it('输入法下照样敲得出 mas', () => {
+    const matcher = createCodeMatcher(KEY_CODES)
+    const typed = ['KeyM', 'KeyA', 'KeyS'].map(code =>
+      matcher.feed(keyOfEvent({ key: 'Process', code }))
+    )
+    expect(typed.at(-1)).toBe('mas')
+  })
+})
 
 const KONAMI = [
   'ArrowUp',

@@ -9,6 +9,7 @@ import {
   createKonamiMatcher,
   createRapidClickDetector,
   KEY_CODES,
+  keyOfEvent,
   pokePity,
   type KeyCode,
   type PityReward,
@@ -253,7 +254,8 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
     const scene = getScene()
     if (!scene || isEditableTarget(event.target)) return
 
-    if (konami.feed(event.key)) {
+    const key = keyOfEvent(event)
+    if (konami.feed(key)) {
       scene.startOverclock(Date.now())
       spawnText(scene.projectCenter(), t('home.satelliteEgg.overclock'), 'huge')
       logger.info('卫星彩蛋触发：科乐美秘技超频')
@@ -261,7 +263,7 @@ export function useSatelliteEggs(options: SatelliteEggsOptions) {
       return
     }
 
-    const code = codes.feed(event.key)
+    const code = codes.feed(key)
     if (code) {
       playCode(code)
       logger.info(`卫星彩蛋触发：口令 ${code}`)

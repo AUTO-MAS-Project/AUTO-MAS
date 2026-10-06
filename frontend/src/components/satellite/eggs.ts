@@ -1,5 +1,20 @@
 import type { ScriptType } from '@/types/script'
 
+// ==================== 按键 ====================
+
+/**
+ * 按下的是哪个键，给口令和秘技用。开着中文输入法时字母、数字键的 key 是 `Process`，
+ * 这时按物理键位（code）换回字母或数字，否则 mas、648 这些口令一个都敲不出来。
+ */
+export function keyOfEvent(event: Pick<KeyboardEvent, 'key' | 'code'>): string {
+  if (event.key !== 'Process' && event.key !== 'Unidentified') return event.key
+  const letter = /^Key([A-Z])$/.exec(event.code)
+  if (letter) return letter[1].toLowerCase()
+  const digit = /^(?:Digit|Numpad)([0-9])$/.exec(event.code)
+  if (digit) return digit[1]
+  return event.code
+}
+
 // ==================== 科乐美秘技 ====================
 
 /** ↑↑↓↓←→←→BA：主页上按出来就开超频 */
