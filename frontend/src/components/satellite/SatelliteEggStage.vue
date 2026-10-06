@@ -35,14 +35,30 @@
     </Transition>
   </Teleport>
 
-  <!-- 开发者头像绑在火箭上满场乱飞，按 commit 数打榜 -->
+  <!-- 开发者头像绑在火箭上满场乱飞，按 commit 数打榜；右上角的按钮和口令 mas 都能放飞 -->
+  <button
+    v-if="launcher"
+    type="button"
+    class="egg-launcher"
+    @pointerdown.stop
+    @click.stop="launchRockets"
+  >
+    <RocketOutlined />
+    <span>{{ t('home.satelliteEgg.rocketButton') }}</span>
+  </button>
   <SatelliteRocketRace ref="race" />
 </template>
 
 <script setup lang="ts">
+import { RocketOutlined } from '@ant-design/icons-vue'
 import { onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SatelliteRocketRace from './SatelliteRocketRace.vue'
+
+defineProps<{
+  /** 显示放飞按钮：实时场景在时才有，低性能模式只留静态图 */
+  launcher: boolean
+}>()
 
 /** 原神七元素的颜色，按风、岩、雷、草、水、火、冰排 */
 const ELEMENT_COLORS = ['#74c2a8', '#fab632', '#af8ec1', '#a5c83b', '#4cc2f1', '#ef7938', '#9fd6e3']
@@ -196,6 +212,37 @@ defineExpose({ showPolaroid, launchGenshin, launchRockets })
 .egg-polaroid-leave-to {
   opacity: 0;
   transform: translateY(60px) rotate(4deg);
+}
+
+/* ==================== 放飞按钮 ==================== */
+.egg-launcher {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--ant-color-primary-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ant-color-bg-elevated) 82%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--ant-box-shadow-tertiary);
+  color: var(--ant-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.egg-launcher:hover,
+.egg-launcher:focus-visible {
+  background: var(--ant-color-primary-bg);
+  transform: translateY(-1px);
 }
 
 /* ==================== 原神，启动！ ==================== */

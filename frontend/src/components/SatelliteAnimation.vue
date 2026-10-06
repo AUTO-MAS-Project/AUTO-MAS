@@ -17,7 +17,10 @@
       :status="hoveredStatus"
     />
     <SatelliteFloatLayer ref="floatLayer" />
-    <SatelliteEggStage ref="eggStage" />
+    <SatelliteEggStage
+      ref="eggStage"
+      :launcher="!loading && !performanceStore.lowPerformanceMode"
+    />
   </div>
 </template>
 

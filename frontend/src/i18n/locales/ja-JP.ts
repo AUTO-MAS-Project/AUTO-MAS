@@ -2722,6 +2722,7 @@ export default {
       rocketBoardLive: 'リアルタイム · dev ブランチ · 月曜から · {time}',
       rocketEmpty: '今週はまだコミットがありません。ロケットは発射台で待機中',
       rocketLaunch: '発射！',
+      rocketButton: '開発者ランキング',
     },
     satelliteStatus: {
       running: '実行中',

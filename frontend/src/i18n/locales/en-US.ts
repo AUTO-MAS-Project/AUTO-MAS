@@ -3340,6 +3340,7 @@ export default {
       rocketBoardLive: 'Live · dev branch · since Monday · {time}',
       rocketEmpty: 'No commits yet this week. The rockets are waiting on the pad',
       rocketLaunch: 'Liftoff!',
+      rocketButton: 'Developer leaderboard',
     },
     satelliteStatus: {
       running: 'Running',

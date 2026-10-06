@@ -3191,6 +3191,7 @@ export default {
       rocketBoardLive: '实时 · dev 分支 · 本周一以来 · {time}',
       rocketEmpty: '本周还没人提交，火箭在发射台待命',
       rocketLaunch: '发射！',
+      rocketButton: '开发者打榜',
     },
     satelliteStatus: {
       running: '运行中',
