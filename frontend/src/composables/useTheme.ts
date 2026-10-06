@@ -3,7 +3,7 @@ import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 import { createAppearanceCursorValue } from '@/components/appearanceCursor'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
-import type { InstalledAppearance } from '@/types/appearance'
+import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
 
 type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
 let resolvedAntTokens: AntTokens | undefined
@@ -684,6 +684,12 @@ export function useTheme() {
       }
     })
 
+  const upsertAppearance = (appearance: InstalledAppearance): void => {
+    const existingIndex = appearances.value.findIndex(item => item.id === appearance.id)
+    if (existingIndex === -1) appearances.value.push(appearance)
+    else appearances.value[existingIndex] = appearance
+  }
+
   const importAppearance = async (
     zipPath: string,
     replace = false
@@ -696,11 +702,24 @@ export function useTheme() {
         error: '当前环境不支持导入外观包',
       }
     }
-    if (result.success && result.appearance) {
-      const existingIndex = appearances.value.findIndex(item => item.id === result.appearance?.id)
-      if (existingIndex === -1) appearances.value.push(result.appearance)
-      else appearances.value[existingIndex] = result.appearance
+    if (result.success && result.appearance) upsertAppearance(result.appearance)
+    return result
+  }
+
+  // 只交主进程里已校验的临时包句柄，路径和下载地址都不经过渲染进程。
+  const installOnlineAppearance = async (
+    token: string,
+    replace = false
+  ): Promise<OnlineAppearanceInstallResult> => {
+    const result = await window.electronAPI.installOnlineAppearance?.(token, replace)
+    if (!result) {
+      return {
+        success: false,
+        code: 'UNSUPPORTED',
+        error: '当前环境不支持在线外观',
+      }
     }
+    if (result.success && result.appearance) upsertAppearance(result.appearance)
     return result
   }
 
@@ -800,6 +819,7 @@ export function useTheme() {
     setAppearance,
     loadAppearances,
     importAppearance,
+    installOnlineAppearance,
     removeAppearance,
     initAppearanceChangedListener,
     initTheme,

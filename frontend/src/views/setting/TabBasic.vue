@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { DeleteOutlined, QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons-vue'
+import {
+  CloudDownloadOutlined,
+  DeleteOutlined,
+  QuestionCircleOutlined,
+  UploadOutlined,
+} from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import { useLocale } from '@/composables/useLocale'
@@ -28,6 +33,7 @@ interface TabBasicProps {
   handleThemeModeChange(value: SelectValue): Promise<void>
   handleAppearanceChange(value: SelectValue): Promise<void>
   handleAppearanceImport(): Promise<void>
+  handleOnlineAppearanceOpen(): void
   handleAppearanceRemove(): Promise<void>
   handleThemeColorChange(value: SelectValue): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
@@ -52,6 +58,7 @@ const {
   handleThemeModeChange,
   handleAppearanceChange,
   handleAppearanceImport,
+  handleOnlineAppearanceOpen,
   handleAppearanceRemove,
   handleThemeColorChange,
   handleCursorEffectChange,
@@ -105,6 +112,10 @@ const handleLocaleChange = (value: unknown): void => {
               >
                 <template #icon><UploadOutlined /></template>
                 {{ t('setting.basic.importAppearance') }}
+              </a-button>
+              <a-button :disabled="appearanceBusy" @click="handleOnlineAppearanceOpen">
+                <template #icon><CloudDownloadOutlined /></template>
+                {{ t('setting.basic.onlineAppearance') }}
               </a-button>
               <a-button
                 v-if="appearanceValue.startsWith('appearance:')"
@@ -313,6 +324,7 @@ const handleLocaleChange = (value: unknown): void => {
 <style scoped>
 .appearance-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -323,10 +335,10 @@ const handleLocaleChange = (value: unknown): void => {
   min-width: 144px;
 }
 
-@media (max-width: 1200px) {
+/* 选择框加三个按钮在半栏里放不下时，选择框独占一行，按钮排到下一行。 */
+@media (max-width: 1440px) {
   .appearance-controls {
     align-items: stretch;
-    flex-wrap: wrap;
   }
 
   .appearance-controls :deep(.ant-select) {

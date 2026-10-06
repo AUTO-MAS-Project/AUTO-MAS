@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, net } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import {
@@ -10,10 +10,35 @@ import {
 } from '../services/appearanceService'
 import { getLogger } from '../services/logger'
 import { getAppRoot } from '../services/environmentService'
+import {
+  createOnlineAppearanceService,
+  removeAppearanceSource,
+  type OnlineAppearanceServiceOptions,
+} from '../services/onlineAppearanceService'
 import { clearAppearanceConfigIfCurrent } from '../utils/configFile'
 
 const logger = getLogger('外观包')
 let isRegistered = false
+
+const INVALID_ARGUMENT = { success: false, error: '参数无效' } as const
+
+export interface AppearanceHandlerOptions {
+  /** 仅供测试替换分享站地址、fetch 实现与目录。 */
+  online?: Partial<OnlineAppearanceServiceOptions>
+}
+
+/** 外观不再是分享站那份（本地导入覆盖或被移除）时删掉来源记录。 */
+function forgetAppearanceSource(id: string): void {
+  try {
+    if (removeAppearanceSource(userDataPath(), id, logger)) {
+      logger.info(`已清除外观来源记录: ${id}`)
+    }
+  } catch (error) {
+    logger.warn(
+      `清除外观来源记录失败: ${id}，${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
 
 function userDataPath(): string {
   return app.getPath('userData')
@@ -50,9 +75,19 @@ function clearInvalidAppearance(id: string) {
 }
 
 /** 注册自定义外观包的受限 IPC；素材始终由主进程校验并转换为 data URL。 */
-export function registerAppearanceHandlers(): void {
+export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {}): void {
   if (isRegistered) return
   isRegistered = true
+
+  const online = createOnlineAppearanceService({
+    fetch: (url, init) => net.fetch(url, init),
+    userDataPath,
+    cacheDir: () => path.join(app.getPath('temp'), 'auto-mas-online-appearance'),
+    logger,
+    ...options.online,
+  })
+  // 上次运行留下的临时包在内存里已没有 token，启动时一并清掉。
+  online.clearCacheDirectory()
 
   ipcMain.handle('appearance:list', () => listAppearances(userDataPath()))
 
@@ -88,6 +123,7 @@ export function registerAppearanceHandlers(): void {
     const result = importAppearancePackage(userDataPath(), resolved, replace === true)
     if (result.success) {
       logger.info(`外观包已导入: ${result.appearance?.id ?? 'unknown'}`)
+      if (result.appearance) forgetAppearanceSource(result.appearance.id)
       broadcastAppearanceChange()
     } else {
       logger.warn(`外观包导入失败: ${result.error ?? result.code ?? 'unknown'}`)
@@ -100,6 +136,7 @@ export function registerAppearanceHandlers(): void {
     const result = removeAppearance(userDataPath(), id)
     if (result.success) {
       logger.info(`外观包已移除: ${id}`)
+      forgetAppearanceSource(id)
       try {
         clearInvalidAppearance(id)
       } catch (error) {
@@ -112,5 +149,45 @@ export function registerAppearanceHandlers(): void {
       logger.warn(`外观包移除失败: ${id}，${result.error ?? '未知错误'}`)
     }
     return result
+  })
+
+  // ==================== 在线外观（分享站） ====================
+  // 渲染进程只能传查询条件、file_key、版本号和 token；URL、路径、哈希一律由主进程决定。
+
+  ipcMain.handle('appearance:online-list', (_event, query: unknown) => {
+    if (query === undefined || query === null) return online.list({})
+    if (typeof query !== 'object' || Array.isArray(query)) return INVALID_ARGUMENT
+    return online.list(query)
+  })
+
+  ipcMain.handle('appearance:online-detail', (_event, fileKey: unknown) => {
+    if (typeof fileKey !== 'string') return INVALID_ARGUMENT
+    return online.detail(fileKey)
+  })
+
+  ipcMain.handle('appearance:online-prepare', (_event, fileKey: unknown, versionNo: unknown) => {
+    if (typeof fileKey !== 'string' || typeof versionNo !== 'number') return INVALID_ARGUMENT
+    return online.prepare(fileKey, versionNo)
+  })
+
+  ipcMain.handle(
+    'appearance:online-install',
+    (_event, token: unknown, replace: unknown = false) => {
+      if (typeof token !== 'string' || typeof replace !== 'boolean') return INVALID_ARGUMENT
+      try {
+        const result = online.install(token, replace)
+        if (result.success) broadcastAppearanceChange()
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logger.warn(`在线外观安装出错: ${message}`)
+        return { success: false, code: 'IMPORT_FAILED', error: `安装外观时出错：${message}` }
+      }
+    }
+  )
+
+  ipcMain.handle('appearance:online-discard', (_event, token: unknown) => {
+    if (typeof token !== 'string') return { success: false }
+    return online.discard(token)
   })
 }

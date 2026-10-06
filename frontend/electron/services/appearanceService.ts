@@ -660,6 +660,22 @@ export function validateAppearanceManifest(value: unknown): AppearanceManifest {
   return normalizeManifest(value)
 }
 
+/**
+ * 只读解析外观 ZIP，校验与导入完全相同，但不写任何用户目录；用于安装前预览。
+ * 包无效时抛出 AppearanceError('INVALID_PACKAGE')。
+ */
+export function inspectAppearancePackage(zipPath: string): {
+  manifest: AppearanceManifest
+  previewUrl?: string
+} {
+  const { manifest, files } = parseArchive(zipPath)
+  const previewPath = manifest.preview?.toLowerCase()
+  const preview = previewPath
+    ? files.find(file => file.path.toLowerCase() === previewPath)
+    : undefined
+  return { manifest, ...(preview ? { previewUrl: toDataUrl(preview) } : {}) }
+}
+
 export function importAppearancePackage(
   userDataPath: string,
   zipPath: string,

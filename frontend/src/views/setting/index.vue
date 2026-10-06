@@ -28,6 +28,7 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
+import OnlineAppearanceModal from './components/OnlineAppearanceModal.vue'
 
 const { t } = useI18n()
 const {
@@ -38,6 +39,7 @@ const {
   activeAppearance,
   modalContextHolder,
   appearanceBusy,
+  onlineAppearanceOpen,
   themeModeOptions,
   appearanceValue,
   appearanceOptions,
@@ -47,6 +49,8 @@ const {
   handleAppearanceChange,
   handleAppearanceImport,
   handleAppearanceRemove,
+  handleOnlineAppearanceOpen,
+  installPreparedOnlineAppearance,
 } = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
@@ -359,6 +363,10 @@ onMounted(() => {
 <template>
   <div class="settings-container">
     <component :is="modalContextHolder" />
+    <OnlineAppearanceModal
+      v-model:open="onlineAppearanceOpen"
+      :install="installPreparedOnlineAppearance"
+    />
     <div class="settings-header">
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
@@ -382,6 +390,7 @@ onMounted(() => {
             :handle-theme-mode-change="handleThemeModeChange"
             :handle-appearance-change="handleAppearanceChange"
             :handle-appearance-import="handleAppearanceImport"
+            :handle-online-appearance-open="handleOnlineAppearanceOpen"
             :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
             :handle-cursor-effect-change="handleCursorEffectChange"

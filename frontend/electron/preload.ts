@@ -176,6 +176,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAppearance: (id: string) => ipcRenderer.invoke('appearance:remove', id),
   clearInvalidAppearance: (expectedId: string) =>
     ipcRenderer.invoke('appearance:clear-invalid', expectedId),
+  // 在线外观：下载、校验与安装都在主进程完成，渲染进程只拿 token。
+  listOnlineAppearances: (query?: { page?: number; pageSize?: number; keyword?: string }) =>
+    ipcRenderer.invoke('appearance:online-list', query),
+  getOnlineAppearance: (fileKey: string) => ipcRenderer.invoke('appearance:online-detail', fileKey),
+  prepareOnlineAppearance: (fileKey: string, versionNo: number) =>
+    ipcRenderer.invoke('appearance:online-prepare', fileKey, versionNo),
+  installOnlineAppearance: (token: string, replace = false) =>
+    ipcRenderer.invoke('appearance:online-install', token, replace),
+  discardOnlineAppearance: (token: string) =>
+    ipcRenderer.invoke('appearance:online-discard', token),
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)

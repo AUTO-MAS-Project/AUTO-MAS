@@ -3,6 +3,11 @@ import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
   InstalledAppearance,
+  OnlineAppearanceDetailResult,
+  OnlineAppearanceInstallResult,
+  OnlineAppearanceListResult,
+  OnlineAppearancePrepareResult,
+  OnlineAppearanceQuery,
 } from '@/types/appearance'
 
 // Electron API 类型定义
@@ -388,6 +393,17 @@ export interface ElectronAPI {
   importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
   removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
   clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
+  listOnlineAppearances?: (query?: OnlineAppearanceQuery) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (fileKey: string) => Promise<OnlineAppearanceDetailResult>
+  prepareOnlineAppearance?: (
+    fileKey: string,
+    versionNo: number
+  ) => Promise<OnlineAppearancePrepareResult>
+  installOnlineAppearance?: (
+    token: string,
+    replace?: boolean
+  ) => Promise<OnlineAppearanceInstallResult>
+  discardOnlineAppearance?: (token: string) => Promise<{ success: boolean }>
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 

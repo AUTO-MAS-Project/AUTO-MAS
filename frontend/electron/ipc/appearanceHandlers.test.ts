@@ -124,6 +124,65 @@ describe('appearance config cleanup IPC', () => {
     })
   })
 
+  it('local import and removal drop the online source record of that ID only', async () => {
+    const sourcesPath = path.join(state.root, 'userdata', 'appearance-sources.json')
+    const source = (fileKey: string) => ({
+      origin: 'https://data.auto-mas.top',
+      projectKey: 'auto-mas',
+      categoryKey: 'Appearance',
+      fileKey,
+      versionNo: 3,
+      sha256: 'b'.repeat(64),
+      installedAt: '2026-10-06T00:00:00.000Z',
+    })
+    fs.mkdirSync(path.dirname(sourcesPath), { recursive: true })
+    fs.writeFileSync(
+      sourcesPath,
+      JSON.stringify({ schemaVersion: 1, sources: { x: source('fx'), y: source('fy') } })
+    )
+    const { importAppearancePackage } = await import('../services/appearanceService')
+    vi.mocked(importAppearancePackage).mockReturnValueOnce({
+      success: true,
+      appearance: { id: 'x' } as never,
+    })
+    const zipPath = path.join(state.root, 'local.zip')
+    fs.writeFileSync(zipPath, 'zip')
+
+    const handler = state.handlers.get('appearance:import')!
+    expect(handler({}, zipPath, true)).toMatchObject({ success: true })
+    const afterImport = JSON.parse(fs.readFileSync(sourcesPath, 'utf8'))
+    expect(afterImport.schemaVersion).toBe(1)
+    expect(Object.keys(afterImport.sources)).toEqual(['y'])
+
+    expect(invoke('appearance:remove', 'y').success).toBe(true)
+    expect(JSON.parse(fs.readFileSync(sourcesPath, 'utf8')).sources).toEqual({})
+  })
+
+  it('registers the online appearance channels and rejects wrongly typed arguments', async () => {
+    for (const channel of [
+      'appearance:online-list',
+      'appearance:online-detail',
+      'appearance:online-prepare',
+      'appearance:online-install',
+      'appearance:online-discard',
+    ]) {
+      expect(state.handlers.has(channel)).toBe(true)
+    }
+    const call = (channel: string, ...args: unknown[]) => state.handlers.get(channel)!({}, ...args)
+    expect(await call('appearance:online-list', 'x')).toMatchObject({ success: false })
+    expect(await call('appearance:online-detail', 1)).toMatchObject({ success: false })
+    expect(await call('appearance:online-prepare', 'alpha', '1')).toMatchObject({ success: false })
+    expect(await call('appearance:online-install', 'token', 'yes')).toMatchObject({
+      success: false,
+    })
+    expect(await call('appearance:online-install', 'unknown-token')).toMatchObject({
+      success: false,
+      code: 'EXPIRED',
+    })
+    expect(await call('appearance:online-discard', null)).toEqual({ success: false })
+    expect(state.send).not.toHaveBeenCalled()
+  })
+
   it.each([null, '../x', '', 'X'])('rejects invalid expected package ID %s', id => {
     expect(invoke('appearance:clear-invalid', id).success).toBe(false)
     expect(readConfig().appearanceId).toBe('x')
