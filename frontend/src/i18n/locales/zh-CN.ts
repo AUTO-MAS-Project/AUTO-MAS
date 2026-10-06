@@ -3670,7 +3670,7 @@ export default {
     postTaskScriptPath: '队列运行后脚本路径选择成功',
     actionPlaceholder: '请选择操作',
     action: {
-      NoAction: '不执行任何操作',
+      NoAction: '无动作',
       Shutdown: '关机',
       ShutdownForce: '强制关机',
       Reboot: '重启',
@@ -3780,7 +3780,7 @@ export default {
       due: '已到点',
     },
     power: {
-      noAction: '不执行任何操作',
+      noAction: '无动作',
       shutdown: '关机',
       shutdownForce: '强制关机',
       reboot: '重启',
