@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
+import { createAnimationFrameScheduler } from './frameScheduler'
 
 describe('satellite animation frame scheduler', () => {
   it('keeps only one pending frame when animation startup overlaps', () => {
