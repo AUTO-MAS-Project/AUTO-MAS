@@ -4080,6 +4080,14 @@ class BetterGIUserConfig(ConfigBase):
         self.Notify_IfSendDropStatistics = ConfigItem(
             "Notify", "IfSendDropStatistics", True, BoolValidator()
         )
+        ## 任务报告节点详情的推送模式（一条龙/执行层分步表）：
+        ## 关闭 = 不注入；逐条 = 逐条带回时间戳；汇总 = 按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 

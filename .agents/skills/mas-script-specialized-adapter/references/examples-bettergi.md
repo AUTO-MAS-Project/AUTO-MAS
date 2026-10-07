@@ -66,3 +66,26 @@ BetterGI 已接入通用配置恢复（mas/native 双池 + 字段侧车 + viewOn
 - **清理存量死调用**：`ScriptConfigTask.on_crash` 曾调用未定义方法
   `_snapshot_one_dragon_config`（被 suppress 吞掉、永远静默失败），接入时
   已删除——不要重新引入同类「调了等于没调」的残留。
+
+## 节点详情注入（推送报告）
+
+- **不建 log_box 采集会话**：BGI 日志已由 LogMonitor 按相/按轮捕获进
+  `log_record`（执行层一条、原生一条龙每轮重试各一条），`one_dragon_report`
+  是权威解析器（Serilog 头行配对、致命信号判失败、任务名对齐、重试取轮）。
+  `AutoProxy.final_task` 解析出合并分步表后，经 `tools/push_log.py` 的
+  `steps_to_push_log` 转成 push_log 三元组——在这里再喂一套 log_box 逐行
+  规则只会复刻解析器的上下文判定，且单会话跨重试轮的分段比 log_record 更差，
+  会与判态侧形成两份并行语义（MaaEnd「聚合按任务名、判态按任务 id」同款分叉）。
+  若上游日志规则足够「行内自足」（如 ok 系、MaaEnd 的 stdout 标记行）才走
+  log_box 采集会话。
+- **开关与聚合**：开关 = 用户级 `Notify.PushLogMode`（关闭/逐条/汇总，前端在
+  用户编辑页基本信息区直接内联下拉，与 MaaEnd/ZzzOd 同型；共享组件
+  `UserNotifyConfig.vue` 保留 `showPushLogMode` 门控的呈现块，默认关闭、
+  按需传 prop 启用），关闭即不注入
+  （push_log 保持为空）；注入点在 `AutoProxy.final_task`（on_crash 后
+  final_task 仍会跑，崩溃前解析出的步骤同样进报告）。`manager.final_task`
+  用 `build_user_result_text` + `mirror_report_to_dispatch` 聚合，与 ZzzOd 同型。
+- **节点文本不带原因**：只保留「✅ 成功/❌ 失败: 任务名（含 N 处异常）」，
+  与 `app/tools/push_log.py` 的状态行契约及汇总式渲染对齐；完整原因在统计
+  通知的分步表里，节点时间戳取步骤开始时刻（naive 时刻须按今天组合，
+  直接 `timestamp()` 在 Windows 抛 OSError）。
