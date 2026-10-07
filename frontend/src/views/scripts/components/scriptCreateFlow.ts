@@ -1,5 +1,5 @@
+import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import {
   MAAFW_FLAVORS,
   isMaaFWFamily,
@@ -29,6 +29,11 @@ interface ScriptTypeOption {
   icon: string
 }
 
+export interface TemplateRequest {
+  page: number
+  keyword: string
+}
+
 interface CreateStep {
   key: CreateStepKey
   titleKey: string
@@ -37,7 +42,7 @@ interface CreateStep {
 interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
-  template: WebConfigTemplate | null
+  template: ShareTemplateItem | null
   mfwSourceMode?: MfwSourceMode
   mfwSourceScriptId?: string | null
 }
@@ -47,7 +52,7 @@ export type ScriptCreateRequest =
   /** 同一个 MFW 项目再建一个脚本：建好后从 sourceScriptId 的副本克隆，不再选目录 */
   | { kind: 'mfw-reuse'; type: MfwFamilyType; sourceScriptId: string }
   | { kind: 'general-custom' }
-  | { kind: 'general-template'; template: WebConfigTemplate }
+  | { kind: 'general-template'; template: ShareTemplateItem }
 
 // MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 create.card.after 插回原位
 const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [

@@ -531,8 +531,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .title-bar {
   height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -544,8 +544,8 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark {
-  background: #1f1f1f;
-  border-bottom: 1px solid #333;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .title-bar-left {
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
 .title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--ant-color-text);
   position: relative;
   z-index: 1;
 }
@@ -615,7 +615,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .title-text {
-  color: #fff;
+  color: var(--ant-color-text);
 }
 
 .startup-status {
@@ -627,7 +627,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .version-text {
-  color: #ffffff;
+  color: var(--ant-color-text);
 }
 
 .title-bar-center {
@@ -660,13 +660,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: #666;
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
 
 .title-bar-dark .control-button {
-  color: #ccc;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-button:hover {

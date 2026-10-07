@@ -177,6 +177,7 @@ class MaaFWRunnerService:
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
+        script_hotkeys: dict[str, dict[str, str]] | None = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -188,6 +189,7 @@ class MaaFWRunnerService:
             task_ids=task_ids,
             task_options=task_options,
             managed_env_root=managed_env_root,
+            script_hotkeys=script_hotkeys,
         )
 
     def create_job_payload(
@@ -199,6 +201,9 @@ class MaaFWRunnerService:
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
         run_deadline_at: float | None = None,
+        task_time_limit_seconds: int = 0,
+        task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -224,6 +229,9 @@ class MaaFWRunnerService:
             failureScreenshotPrefix=failure_screenshot_prefix,
             taskStartNotBefore=task_start_not_before,
             runDeadlineAt=run_deadline_at,
+            taskTimeLimitSeconds=task_time_limit_seconds,
+            taskTimeLimitOverrides=task_time_limit_overrides,
+            loopGuard=bool(loop_guard),
         )
 
     def prepare_environment(

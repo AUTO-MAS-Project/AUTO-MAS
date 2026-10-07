@@ -42,6 +42,42 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
+def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
+    """Fold the current configuration into ``Default`` and guarantee both sides.
+
+    MAA's native files are not guaranteed to ship ``Default``: direct control and
+    "source directory missing, keep the configuration in the install directory"
+    both copy the user's own gui.json / gui.new.json in as-is, and ``Current`` may
+    already be ``Default``. Folding and the fallback must therefore run
+    unconditionally, or the later hard indexing of ``Global`` /
+    ``Configurations["Default"]`` raises ``KeyError``.
+    """
+
+    if not isinstance(gui_set.get("Global"), dict):
+        gui_set["Global"] = {}
+
+    gui_configurations = gui_set.get("Configurations")
+    if not isinstance(gui_configurations, dict):
+        gui_configurations = gui_set["Configurations"] = {}
+    configurations = gui_new_set.get("Configurations")
+    if not isinstance(configurations, dict):
+        configurations = gui_new_set["Configurations"] = {}
+    gui_configurations.setdefault("Default", {})
+    configurations.setdefault("Default", {})
+    gui_set.setdefault("Current", "Default")
+
+    if gui_set["Current"] != "Default":
+        # The current configuration itself may be missing (hand-edited third-party
+        # files): fold it only when present, as the older verified AutoProxy /
+        # ScriptConfig code did, and otherwise keep each side's own Default.
+        current = gui_set["Current"]
+        if current in gui_configurations:
+            gui_configurations["Default"] = gui_configurations[current]
+        if current in configurations:
+            configurations["Default"] = configurations[current]
+        gui_set["Current"] = "Default"
+
+
 def maa_task_identity(task: object) -> tuple[str, str] | None:
     """Return the stable business identity of one MAA task.
 
@@ -70,24 +106,6 @@ def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
         if identity is None:
             return None
         signature.append(identity)
-    return tuple(signature)
-
-
-def maa_task_queue_signature(queue: object) -> tuple[tuple, ...] | None:
-    """Return the queue structure while ignoring each task's advanced settings."""
-
-    if not isinstance(queue, list):
-        return None
-
-    signature = []
-    for task in queue:
-        identity = maa_task_identity(task)
-        if identity is None:
-            return None
-        enabled = task.get("IsEnable", True)
-        if enabled is not None and not isinstance(enabled, bool):
-            return None
-        signature.append((*identity, enabled))
     return tuple(signature)
 
 
@@ -131,12 +149,17 @@ def restore_maa_default_task_queue(
 
 
 def is_valid_maa_task_queue(expected: object, current: object) -> bool:
-    """Allow task-setting edits only when the queue structure is unchanged."""
+    """Allow task-setting edits only when the queue layout is unchanged.
 
-    expected_signature = maa_task_queue_signature(expected)
+    IsEnable 是用户在原界面里最常动的任务开关，属于任务设置而不是队列结构：
+    算进签名会把「取消勾选一个任务」判成结构变化，整次会话的改动（含高级
+    设置）一起丢弃。这里只比对身份序列。
+    """
+
+    expected_layout = maa_task_queue_layout_signature(expected)
     return (
-        expected_signature is not None
-        and maa_task_queue_signature(current) == expected_signature
+        expected_layout is not None
+        and maa_task_queue_layout_signature(current) == expected_layout
     )
 
 

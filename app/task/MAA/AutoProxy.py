@@ -72,7 +72,12 @@ from app.utils.constants import (
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api
-from .base_preset import maa_task_identity, seed_maa_base_config
+from .base_preset import (
+    ensure_maa_default_configuration,
+    get_maa_base_preset,
+    maa_task_identity,
+    seed_maa_base_config,
+)
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -1478,18 +1483,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
-        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
-        if gui_set["Current"] != "Default":
-            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
-                gui_set["Current"]
-            ]
-            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
-            if gui_set["Current"] in gui_new_configurations:
-                gui_new_configurations["Default"] = gui_new_configurations[
-                    gui_set["Current"]
-                ]
-            gui_new_configurations.setdefault("Default", {})
-            gui_set["Current"] = "Default"
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
+        # Default 本身也可能缺失——直控/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_set, gui_new_set)
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
@@ -1543,6 +1539,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
+        # 存档队列里缺的任务（用户在 MAA 原生界面删掉过它）由随包预设补齐，
+        # 见下方 MAA_TASKS 装配循环
+        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
+            "TaskQueue"
+        ]
         # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
         activity_stage = None
         if self.mode == "Routine" and self.cur_user_config.get(
@@ -1600,6 +1601,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             source = _find_task_source(source_queue, zh_task, en_task)
             if source is None:
                 missing_sources.add(en_task)
+                # 缺了就补随包预设的同名任务，不能塞空壳：MAA 反序列化缺字段的
+                # 任务会回填它自己的占位默认值（信用收支落成
+                # {{ HighPriorityDefault }} / {{ BlacklistDefault }}）并落盘，
+                # 用户之后在 MAA 里再也改不回来
+                source = _find_task_source(preset_queue, zh_task, en_task)
             task_set[en_task] = source or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
@@ -2114,8 +2120,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         # MAA v6.18.0-beta.3 起任务出错时收尾标题改为「任务已完成，但出现错误！」，
-        # 只有全部成功才打「任务已全部完成！」，完成判定两个都要认。
-        elif "任务已全部完成！" in log or "任务已完成，但出现错误！" in log:
+        # 只有全部成功才打「任务已全部完成！」；v6.19.0-beta.1（5e502a811）又把
+        # 出错标题改为「任务已结束，以下任务出现错误:」并附失败任务清单，
+        # 完成判定三个都要认。
+        elif (
+            "任务已全部完成！" in log
+            or "任务已完成，但出现错误！" in log
+            or "任务已结束，以下任务出现错误" in log
+        ):
             # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if (
@@ -2209,6 +2221,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
         logger.info("MAA 收尾: 停止 MAA 进程")
+        # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
+        # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")

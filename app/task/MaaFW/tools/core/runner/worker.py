@@ -153,6 +153,8 @@ def main() -> int:
         screenshot_dir = payload.get("failureScreenshotDir")
         not_before = payload.get("taskStartNotBefore")
         deadline_at = payload.get("runDeadlineAt")
+        task_limit_seconds = payload.get("taskTimeLimitSeconds")
+        task_limit_overrides = payload.get("taskTimeLimitOverrides")
         runner = MaaFWRunner(
             plan,
             send_log=_emit_log,
@@ -160,6 +162,15 @@ def main() -> int:
             failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
             task_start_not_before=float(not_before) if not_before is not None else None,
             run_deadline_at=float(deadline_at) if deadline_at is not None else None,
+            task_time_limit_seconds=(
+                int(task_limit_seconds) if task_limit_seconds is not None else 0
+            ),
+            task_time_limit_overrides=(
+                {str(name): int(value) for name, value in task_limit_overrides.items()}
+                if isinstance(task_limit_overrides, dict)
+                else None
+            ),
+            loop_guard_enabled=payload.get("loopGuard") is True,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})

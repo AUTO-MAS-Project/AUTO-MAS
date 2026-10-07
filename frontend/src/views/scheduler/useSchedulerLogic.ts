@@ -29,8 +29,30 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
+import {
+  countQueueSelectedUsers,
+  countQueueUsers,
+  isRunnableQueueScriptId,
+  reconcileQueueScope,
+  toQueueUserIds,
+  type QueueScopeGroup,
+  type QueueUserScope,
+} from './schedulerQueueScope'
+import { buildStartTaskRequest } from './schedulerStartRequest'
 import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
+
+/** sessionStorage 里的勾选只当字符串数组用，坏数据直接忽略。 */
+const normalizePersistedQueueScope = (value: unknown): QueueUserScope => {
+  if (!value || typeof value !== 'object') return {}
+  const scope: QueueUserScope = {}
+  Object.entries(value as Record<string, unknown>).forEach(([scriptId, ids]) => {
+    if (Array.isArray(ids)) {
+      scope[scriptId] = ids.filter((id): id is string => typeof id === 'string')
+    }
+  })
+  return scope
+}
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -53,6 +75,11 @@ const STOP_COMPLETION_GRACE_MS = 1500
 let storageSaveTimer: number | null = null
 const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
+// 同一标签页可能连续刷新用户列表；旧请求不得覆盖较新的选择和加载状态。
+const latestUserOptionsRequest = new WeakMap<SchedulerTab, object>()
+// 队列运行范围同理：连续刷新时只有最新一次请求可以写回托管与勾选
+const latestQueueScopeRequest = new WeakMap<SchedulerTab, object>()
+const latestResumeOptionsRequest = new WeakMap<SchedulerTab, object>()
 // 序号断裂后正在等快照重建 buffer 的标签页，期间到达的增量直接丢弃、不重复拉快照
 const pendingLogResyncs = new Set<string>()
 // 手动启动还在等 /dispatch/start 返回的标签页：同队列的定时任务此时复用它的话，
@@ -60,6 +87,8 @@ const pendingLogResyncs = new Set<string>()
 const startingTabKeys = new Set<string>()
 // keep-alive 停用期间只更新 buffer，不往日志面板写；激活时一次性刷新
 let schedulerViewActive = true
+// 是否离开过调度台；用于区分「首次激活」与「切走再切回」
+let schedulerViewLeft = false
 // MaaEnd 失败导出弹窗全局去重，避免同一批错误连环弹窗
 let maaEndFailureModalOpen = false
 
@@ -107,9 +136,12 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeFromScriptId: tab.resumeFromScriptId ?? null,
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
-  selectedUserId: tab.selectedUserId ?? null,
+  selectedUserIds: tab.selectedUserIds ? [...tab.selectedUserIds] : undefined,
+  // 刷新后要恢复队列任务的勾选，否则界面上显示的默认全选会和用户上次的选择不一致
+  queueUserScope: { ...(tab.queueUserScope || {}) },
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
@@ -120,13 +152,22 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
 })
 
-const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
+const normalizePersistedTab = (
+  tab: SchedulerTab & { selectedUserId?: string | null }
+): SchedulerTab => ({
   ...tab,
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
   resumeScriptLoading: false,
+  selectedUserIds: Array.isArray(tab.selectedUserIds)
+    ? [...tab.selectedUserIds]
+    : tab.selectedUserId
+      ? [tab.selectedUserId]
+      : undefined,
   userOptions: tab.userOptions || [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
+  queueUserScope: normalizePersistedQueueScope(tab.queueUserScope),
   subscriptionIds: [],
   logMode: tab.logMode || 'follow',
 })
@@ -163,9 +204,10 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: null,
       logBuffer: '',
       lastLogContent: '',
@@ -353,9 +395,10 @@ export function useSchedulerLogic() {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: options?.taskId || null,
       logBuffer: '',
       lastLogContent: '',
@@ -552,68 +595,173 @@ export function useSchedulerLogic() {
     }
   }
 
+  /**
+   * 队列项 → 去重后的托管列表，顺序与队列一致。
+   * code 非 200 返回 null，由调用方决定是静默清空还是提示用户。
+   */
+  const fetchQueueScripts = async (
+    queueId: string
+  ): Promise<Array<{ scriptId: string; scriptName: string }> | null> => {
+    await loadScriptLabelMap()
+    const response = await Service.getItemApiQueueItemGetPost({ queueId })
+    if (response.code !== 200) return null
+
+    const scripts: Array<{ scriptId: string; scriptName: string }> = []
+    const scriptSeen = new Set<string>()
+    response.index.forEach(item => {
+      const scriptId = response.data?.[item.uid]?.Info?.ScriptId
+      // 未指定脚本（或脚本已失效）的队列项占位值是 "-"，后端同样跳过这类项
+      if (!isRunnableQueueScriptId(scriptId) || scriptSeen.has(scriptId)) return
+      scriptSeen.add(scriptId)
+      scripts.push({
+        scriptId,
+        scriptName: scriptOptionsMap.value[scriptId] || scriptId,
+      })
+    })
+    return scripts
+  }
+
   const loadResumeScriptOptions = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !isQueueTask(tab)) {
+      // 作废在途请求，并在这里收掉 loading：被作废的请求不会再去清它
+      latestResumeOptionsRequest.delete(tab)
       tab.resumeScriptOptions = []
       tab.resumeFromScriptId = null
+      tab.resumeScriptLoading = false
       return
     }
 
+    latestResumeOptionsRequest.delete(tab)
+
+    const requestedTaskId = tab.selectedTaskId
+    const request = {}
+    latestResumeOptionsRequest.set(tab, request)
+    const isStale = () =>
+      tab.selectedTaskId !== requestedTaskId || latestResumeOptionsRequest.get(tab) !== request
+
     tab.resumeScriptLoading = true
     try {
-      await loadScriptLabelMap()
-      const response = await Service.getItemApiQueueItemGetPost({ queueId: tab.selectedTaskId })
-      if (response.code !== 200) {
+      const scripts = await fetchQueueScripts(requestedTaskId)
+      if (isStale()) return
+      if (scripts === null) {
         tab.resumeScriptOptions = []
         tab.resumeFromScriptId = null
         return
       }
 
-      const options: Array<{ label: string; value: string }> = []
-      const scriptSeen = new Set<string>()
-      response.index.forEach(item => {
-        const scriptId = response.data?.[item.uid]?.Info?.ScriptId
-        if (!scriptId || scriptSeen.has(scriptId)) return
-        scriptSeen.add(scriptId)
-        options.push({
-          value: scriptId,
-          label: scriptOptionsMap.value[scriptId] || scriptId,
-        })
-      })
-
+      const options = scripts.map(script => ({ value: script.scriptId, label: script.scriptName }))
       tab.resumeScriptOptions = options
       if (tab.resumeFromScriptId && !options.some(item => item.value === tab.resumeFromScriptId)) {
         tab.resumeFromScriptId = null
       }
     } catch (error) {
+      if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
       tab.resumeScriptOptions = []
       tab.resumeFromScriptId = null
       message.error(t('scheduler.toast.loadQueueScriptsFailed'))
     } finally {
-      tab.resumeScriptLoading = false
+      if (!isStale()) {
+        tab.resumeScriptLoading = false
+      }
     }
   }
 
-  // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
-  const loadUserOptions = async (tab: SchedulerTab) => {
-    // 任务下拉还没加载完时判断不出任务类型，此时清空会把 sessionStorage 恢复出来的
-    // 选择一并抹掉，让刷新后的启动静默退化成跑全部用户。宁可什么都不做，等下拉打开时再刷。
+  /**
+   * 队列任务：拉取每个托管本次可运行的账号，供「本次运行范围」面板勾选。
+   *
+   * 加载失败必须显式暴露（queueScopeFailed），否则想取消某个账号的用户会以为已经
+   * 排除了它，实际却按全量跑，所以启动按钮会拦住这种情况并让用户重试。
+   */
+  const loadQueueScope = async (tab: SchedulerTab) => {
+    // 任务下拉还没加载完时判断不出任务类型，等选项可用后再刷新。
     if (!taskOptions.value.length) return
 
-    if (!tab.selectedTaskId || !isScriptTask(tab)) {
-      tab.userOptions = []
-      tab.selectedUserId = null
-      tab.userOptionsLoading = false
+    if (!tab.selectedTaskId || !isQueueTask(tab)) {
+      latestQueueScopeRequest.delete(tab)
+      tab.queueScopeGroups = []
+      tab.queueUserScope = {}
+      tab.queueScopeLoading = false
+      tab.queueScopeFailed = false
       return
     }
 
-    // 连续切换任务项时旧请求可能后返回；只有仍指向发起时那个脚本才允许写回状态
     const requestedTaskId = tab.selectedTaskId
-    const isStale = () => tab.selectedTaskId !== requestedTaskId
+    const request = {}
+    latestQueueScopeRequest.set(tab, request)
+    const isStale = () =>
+      tab.selectedTaskId !== requestedTaskId || latestQueueScopeRequest.get(tab) !== request
+
+    tab.queueScopeLoading = true
+    tab.queueScopeFailed = false
+    try {
+      const scripts = await fetchQueueScripts(requestedTaskId)
+      if (isStale()) return
+      if (scripts === null) {
+        tab.queueScopeGroups = []
+        tab.queueScopeFailed = true
+        return
+      }
+
+      const groups: QueueScopeGroup[] = []
+      for (const script of scripts) {
+        const response = await Service.getUserApiScriptsUserGetPost({
+          scriptId: script.scriptId,
+          userId: null,
+        })
+        if (isStale()) return
+        if (response.code !== 200) {
+          // 已经拿到的托管先留着，重试成功后会被整体替换
+          tab.queueScopeGroups = groups
+          tab.queueScopeFailed = true
+          return
+        }
+        groups.push({
+          scriptId: script.scriptId,
+          scriptName: script.scriptName,
+          users: toRunnableUserOptions(response),
+        })
+      }
+
+      tab.queueScopeGroups = groups
+      tab.queueUserScope = reconcileQueueScope(tab.queueUserScope || {}, groups)
+    } catch (error) {
+      if (isStale()) return
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载队列运行范围失败: ${errorMsg}`)
+      tab.queueScopeGroups = []
+      tab.queueScopeFailed = true
+    } finally {
+      if (!isStale()) {
+        tab.queueScopeLoading = false
+      }
+    }
+  }
+
+  // 列表用于展示与校正显式子集；全选始终由后端执行时筛选可运行用户。
+  const loadUserOptions = async (tab: SchedulerTab) => {
+    // 任务下拉还没加载完时判断不出任务类型，此时保留当前选择，等选项可用后再刷新。
+    if (!taskOptions.value.length) return
+
+    if (!tab.selectedTaskId || !isScriptTask(tab)) {
+      latestUserOptionsRequest.delete(tab)
+      tab.userOptions = []
+      tab.selectedUserIds = undefined
+      tab.userOptionsLoading = false
+      tab.userOptionsLoaded = false
+      return
+    }
+
+    // 切换任务或重复刷新时，仅最新请求可以写回用户列表与选择。
+    const requestedTaskId = tab.selectedTaskId
+    const request = {}
+    latestUserOptionsRequest.set(tab, request)
+    const isStale = () =>
+      tab.selectedTaskId !== requestedTaskId || latestUserOptionsRequest.get(tab) !== request
 
     tab.userOptionsLoading = true
+    tab.userOptionsLoaded = false
     try {
       const response = await Service.getUserApiScriptsUserGetPost({
         scriptId: requestedTaskId,
@@ -621,22 +769,18 @@ export function useSchedulerLogic() {
       })
       if (isStale()) return
       if (response.code !== 200) {
-        tab.userOptions = []
-        tab.selectedUserId = null
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
         return
       }
 
       const options = toRunnableUserOptions(response)
       tab.userOptions = options
-      if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
-        tab.selectedUserId = null
-      }
+      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, options)
+      tab.userOptionsLoaded = true
     } catch (error) {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
-      tab.userOptions = []
-      tab.selectedUserId = null
       message.error(t('scheduler.toast.loadScriptUsersFailed'))
     } finally {
       if (!isStale()) {
@@ -648,8 +792,19 @@ export function useSchedulerLogic() {
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    tab.selectedUserId = null
-    await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
+    tab.selectedUserIds = undefined
+    tab.userOptions = []
+    tab.userOptionsLoaded = false
+    // 换了任务就重新开始选，上一个队列的勾选不能带到新队列上
+    tab.queueUserScope = {}
+    tab.queueScopeGroups = []
+    tab.queueScopeFailed = false
+    await Promise.all([
+      loadResumeScriptOptions(tab),
+      loadUserOptions(tab),
+      loadQueueScope(tab),
+      loadCycleQueueFlag(tab),
+    ])
   }
 
   // 只有循环队列能选「循环运行」，先问后端拿队列类型再决定给不给这个模式
@@ -683,19 +838,58 @@ export function useSchedulerLogic() {
       return
     }
 
+    if (!taskOptions.value.some(option => option.value === tab.selectedTaskId)) {
+      message.error(t('scheduler.toast.taskOptionsUnavailable'))
+      return
+    }
+
+    if (
+      tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY &&
+      isScriptTask(tab) &&
+      tab.selectedUserIds !== undefined
+    ) {
+      if (!tab.userOptionsLoaded || tab.userOptionsLoading) {
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
+        return
+      }
+      if (!tab.selectedUserIds.length) {
+        message.error(t('scheduler.toast.needRunUsers'))
+        return
+      }
+    }
+
+    if (isQueueTask(tab)) {
+      if (tab.queueScopeLoading) {
+        message.error(t('scheduler.toast.loadQueueRunUsersFailed'))
+        return
+      }
+      if (tab.queueScopeFailed) {
+        message.error(t('scheduler.control.runScopeLoadFailed'))
+        return
+      }
+      const scopeGroups = tab.queueScopeGroups || []
+      // 与启动按钮同口径：有可勾选账号却一个都没勾才拦住；队列里本来就没有可运行账号时，
+      // 保持本 PR 之前的启动行为（交给各脚本自己报无用户）。
+      if (
+        countQueueUsers(scopeGroups) > 0 &&
+        countQueueSelectedUsers(tab.queueUserScope || {}, scopeGroups) === 0
+      ) {
+        message.error(t('scheduler.toast.needQueueRunUsers'))
+        return
+      }
+    }
+
     startingTabKeys.add(tab.key)
     try {
-      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
-        taskId: tab.selectedTaskId,
-        mode: tab.selectedMode,
-      }
-      if (tab.resumeFromScriptId) {
-        requestBody.resumeFromScriptId = tab.resumeFromScriptId
-      }
-      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
-      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
-        requestBody.userId = tab.selectedUserId
-      }
+      const requestBody = buildStartTaskRequest(
+        tab.selectedTaskId,
+        tab.selectedMode,
+        tab.resumeFromScriptId,
+        isScriptTask(tab) ? tab.selectedUserIds : undefined,
+        isQueueTask(tab)
+          ? toQueueUserIds(tab.queueUserScope || {}, tab.queueScopeGroups || [])
+          : undefined
+      )
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
 
@@ -895,12 +1089,29 @@ export function useSchedulerLogic() {
   // keep-alive 激活/停用：停用时不再驱动 Monaco 写入，激活时把攒下的内容一次性刷出
   const setSchedulerViewActive = (active: boolean) => {
     schedulerViewActive = active
-    if (!active) return
+    if (!active) {
+      schedulerViewLeft = true
+      return
+    }
     for (const tab of schedulerTabs.value) {
       const content = pendingLogContents.get(tab.key)
-      if (content === undefined) continue
-      clearPendingLogUpdate(tab.key)
-      applyLogContentUpdate(tab, content)
+      if (content !== undefined) {
+        clearPendingLogUpdate(tab.key)
+        applyLogContentUpdate(tab, content)
+      }
+
+      // 停在调度台以外时可能在队列配置页或托管管理里改了队列项/账号，回到调度台重新拉一次，
+      // 否则旧列表会让「勾选=本次运行」失真（新加的账号默认不在运行范围内）。
+      // 首次激活不重复拉：initialize 的预加载已经做过一次。
+      if (schedulerViewLeft && tab.status !== '运行') {
+        if (isQueueTask(tab)) {
+          void loadResumeScriptOptions(tab)
+          void loadQueueScope(tab)
+        } else if (isScriptTask(tab)) {
+          // 「本次运行范围」是脚本任务唯一的账号入口，不重拉就看不到已删账号
+          void loadUserOptions(tab)
+        }
+      }
     }
   }
 
@@ -1101,6 +1312,15 @@ export function useSchedulerLogic() {
     if (tabIndex !== -1) {
       const updatedTab: SchedulerTab = { ...tab }
       schedulerTabs.value.splice(tabIndex, 1, updatedTab)
+      // 刷新数组中的响应式对象，让外部启动或恢复的脚本也能直接再次运行。
+      const currentTab = schedulerTabs.value[tabIndex]
+      if (isScriptTask(currentTab)) {
+        void loadUserOptions(currentTab)
+      } else if (isQueueTask(currentTab)) {
+        // 队列任务结束（含页面在运行中被重载的情形）后重拉一次运行范围：
+        // groups 不持久化，不重拉就看不到账号，用户上次取消勾选的账号会被静默按全量跑
+        void loadQueueScope(currentTab)
+      }
     }
 
     const { playSound } = useAudioPlayer()
@@ -1355,6 +1575,13 @@ export function useSchedulerLogic() {
     tab.taskId = null
     tab.logMode = 'browse'
     schedulerTabs.value = [...schedulerTabs.value]
+    // 完成消息缺失时，快照确认结束也要准备下一轮的用户选择。
+    if (isScriptTask(tab)) {
+      void loadUserOptions(tab)
+    } else if (isQueueTask(tab)) {
+      // 跑完一轮后账号可能已经不可运行，重新拉一次让面板显示真实可选范围
+      void loadQueueScope(tab)
+    }
     saveTabsToStorage(schedulerTabs.value)
   }
 
@@ -1449,6 +1676,7 @@ export function useSchedulerLogic() {
       if (tab.status === '运行') return
       if (isQueueTask(tab)) {
         loadResumeScriptOptions(tab)
+        loadQueueScope(tab)
       } else if (isScriptTask(tab)) {
         loadUserOptions(tab)
       }
@@ -1533,6 +1761,7 @@ export function useSchedulerLogic() {
     handleTaskSelectionChange,
     loadResumeScriptOptions,
     loadUserOptions,
+    loadQueueScope,
 
     // keep-alive 激活/停用
     setSchedulerViewActive,

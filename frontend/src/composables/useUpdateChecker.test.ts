@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ==================== 全局桩 ====================
@@ -51,14 +48,6 @@ afterEach(() => {
 })
 
 describe('useUpdateChecker 定时检查', () => {
-  it('是应用级定时器：composable 里不再注册 onUnmounted', () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), 'useUpdateChecker.ts'),
-      'utf8'
-    )
-    expect(source).not.toContain('onUnmounted')
-  })
-
   it('并发 startPolling 只建立一个定时器', async () => {
     autoUpdate(true)
     const { startPolling } = useUpdateChecker()

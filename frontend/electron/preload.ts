@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
+  appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
+  appCancelQuit: (token?: number) => ipcRenderer.invoke('app-cancel-quit', token),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
@@ -63,7 +66,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopBackend: () => ipcRenderer.invoke('backend-stop'),
 
   // 配置文件操作
-  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
+  saveConfig: (config: unknown, defaults?: unknown) =>
+    ipcRenderer.invoke('save-config', config, defaults),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
@@ -163,6 +167,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
 
   getAppPath: (name: string) => ipcRenderer.invoke('get-app-path', name),
+
+  // 自定义外观包：主进程完成 ZIP 校验后只返回已声明素材的 data URL。
+  listAppearances: () => ipcRenderer.invoke('appearance:list'),
+  getAppearance: (id: string) => ipcRenderer.invoke('appearance:get', id),
+  importAppearance: (zipPath: string, replace = false) =>
+    ipcRenderer.invoke('appearance:import', zipPath, replace),
+  removeAppearance: (id: string) => ipcRenderer.invoke('appearance:remove', id),
+  clearInvalidAppearance: (expectedId: string) =>
+    ipcRenderer.invoke('appearance:clear-invalid', expectedId),
+  onAppearanceChanged: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('appearance-changed', listener)
+    return () => ipcRenderer.removeListener('appearance-changed', listener)
+  },
+  onThemeConfigChanged: (callback: (config: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, config: unknown) => callback(config)
+    ipcRenderer.on('theme-config-changed', listener)
+    return () => ipcRenderer.removeListener('theme-config-changed', listener)
+  },
 
   // ==================== 初始化 API ====================
 

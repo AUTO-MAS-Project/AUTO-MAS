@@ -114,15 +114,20 @@ async def _dispatch_community_notification(
 ) -> list[str] | None:
     """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
 
-    from app.tools.community_notify import push_community_notification
+    from app.tools.community_notify import (
+        NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+        push_community_notification,
+    )
 
     task = asyncio.create_task(push_community_notification(results))
     _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
     task.add_done_callback(_track_community_notification)
     try:
-        return await asyncio.wait_for(asyncio.shield(task), timeout=0.1)
+        return await asyncio.wait_for(
+            asyncio.shield(task), timeout=NOTIFICATION_FAST_PATH_WAIT_SECONDS
+        )
     except asyncio.TimeoutError:
-        logger.info("签到结果已落盘，通知渠道仍在后台发送")
+        logger.info("等待窗口内未返回，通知渠道仍在后台发送")
         return None
     except Exception as exc:
         _log_community_api_error("游戏社区通知服务异常", exc)

@@ -11,8 +11,9 @@
           <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
-            style="width: 140px"
+            class="power-select"
             size="large"
+            :dropdown-match-select-width="false"
             @change="onPowerActionChange"
           >
             <a-select-option
@@ -81,7 +82,8 @@
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
-              v-model:selected-user-id="tab.selectedUserId"
+              v-model:selected-user-ids="tab.selectedUserIds"
+              v-model:queue-user-scope="tab.queueUserScope"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"
@@ -93,10 +95,14 @@
               :status="tab.status"
               :is-cycle-queue="tab.isCycleQueue"
               :cycle-next-list="tab.cycleNextList || []"
+              :queue-scope-groups="tab.queueScopeGroups || []"
+              :queue-scope-loading="tab.queueScopeLoading"
+              :queue-scope-failed="tab.queueScopeFailed"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
               @refresh-users="() => loadUserOptions(tab)"
+              @refresh-queue-scope="() => loadQueueScope(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
               @refresh-tasks="loadTaskOptions"
@@ -179,6 +185,7 @@ const {
   handleTaskSelectionChange,
   loadResumeScriptOptions,
   loadUserOptions,
+  loadQueueScope,
 
   // keep-alive 激活/停用
   setSchedulerViewActive,
@@ -332,6 +339,13 @@ onDeactivated(() => {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
   margin-right: 8px;
+}
+
+/* 电源操作下拉：宽度随选项文案自适应（最小 140px 保持原有视觉宽度）。
+   固定 140px 会截断 ja/en 的「強制シャットダウン」「Force shut down」等长文案。 */
+.power-select {
+  width: max-content;
+  min-width: 140px;
 }
 
 /* 标签页样式 */

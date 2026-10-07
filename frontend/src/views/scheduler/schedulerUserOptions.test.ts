@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import {
+  scriptScopeGroup,
+  scriptScopeSelection,
+  toRunnableUserOptions,
+  toScriptUserIds,
+} from './schedulerUserOptions'
+import {
+  countQueueSelectedUsers,
+  withoutAllQueueUsers,
+  withQueueGroupSelection,
+  type QueueScopeGroup,
+} from './schedulerQueueScope'
 
 const user = (uid: string, info: Record<string, unknown>) => ({ uid, info })
 
@@ -53,5 +64,40 @@ describe('toRunnableUserOptions', () => {
     const payload = build([user('a', { Name: '甲', Status: true, RemainedDay: -1 })])
     payload.index.push({ uid: 'ghost' } as (typeof payload.index)[number])
     expect(toRunnableUserOptions(payload)).toEqual([{ value: 'a', label: '甲' }])
+  })
+})
+
+describe('脚本任务的本次运行范围', () => {
+  const users = [
+    { label: '甲', value: 'u1' },
+    { label: '乙', value: 'u2' },
+  ]
+  const group: QueueScopeGroup = { scriptId: 's1', scriptName: 'MAA', users }
+
+  it('没改动过就是全选，面板能看到全部账号', () => {
+    const scope = scriptScopeSelection(group, undefined)
+    expect(scope).toEqual({ s1: ['u1', 'u2'] })
+    expect(countQueueSelectedUsers(scope, [group])).toBe(2)
+  })
+
+  it('取消勾选写回 userIds 子集，勾满再回到不限制', () => {
+    const subset = withQueueGroupSelection(scriptScopeSelection(group, undefined), group, ['u1'])
+    expect(subset).toEqual({ s1: ['u1'] })
+    expect(toScriptUserIds(subset, group)).toEqual(['u1'])
+
+    const restored = withQueueGroupSelection(subset, group, ['u1', 'u2'])
+    expect(restored).toEqual({})
+    expect(toScriptUserIds(restored, group)).toBeUndefined()
+  })
+
+  it('取消全选写回空数组，启动守卫据此拦住', () => {
+    const cleared = withoutAllQueueUsers([group])
+    expect(toScriptUserIds(cleared, group)).toEqual([])
+    expect(countQueueSelectedUsers(cleared, [group])).toBe(0)
+  })
+
+  it('没选中任务时不生成分组', () => {
+    expect(scriptScopeGroup(null, 'MAA', users)).toBeNull()
+    expect(scriptScopeGroup('s1', 'MAA', users)).toEqual(group)
   })
 })

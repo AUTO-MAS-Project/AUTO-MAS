@@ -65,6 +65,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@ant-design/icons-vue', () => ({
   ArrowLeftOutlined: { render: () => null },
   HistoryOutlined: { render: () => null },
+  ImportOutlined: { render: () => null },
   QuestionCircleOutlined: { render: () => null },
 }))
 vi.mock('@/components/ConfigLockPanel.vue', () => ({
@@ -224,6 +225,7 @@ const scriptState = (flavor: MaaFWFlavor) => ({
   canLeaveCurrentStep: true,
   shellInstances: [{ id: 'i1' }],
   selectedShellInstanceIds: [],
+  importShellHotkeys: true,
   shellImporting: false,
   finishButtonLabel: '完成',
   handleFinishWizard: fn('handleFinishWizard'),
@@ -293,6 +295,16 @@ const userState = (flavor: MaaFWFlavor) => ({
   addTaskCascaderOptions: [],
   hasNewTasks: false,
   handleAddTaskCascaderChange: fn('handleAddTaskCascaderChange'),
+  userImportCandidates: [],
+  userImportLoading: false,
+  loadUserImportCandidates: fn('loadUserImportCandidates'),
+  importQueueFromUser: fn('importQueueFromUser'),
+  queueTemplates: [],
+  queueTemplateDraft: [],
+  saveQueueTemplate: fn('saveQueueTemplate'),
+  applyQueueTemplate: fn('applyQueueTemplate'),
+  renameQueueTemplate: fn('renameQueueTemplate'),
+  deleteQueueTemplate: fn('deleteQueueTemplate'),
   MAAFW_DISPLAY_NAME: 'MFW',
   restoreOpen: false,
   restoreTargets: [],
@@ -403,12 +415,19 @@ describe('MFW 页面分节替换', () => {
     expect(html).toContain(zhCN.edit.gameUpdate)
   })
 
-  it('外壳导入分节换掉后 v-model 照样双向绑定（selectedIds + update:selectedIds）', async () => {
+  it('外壳导入分节换掉后 v-model 照样双向绑定（selectedIds / importHotkeys 与对应 update 事件）', async () => {
     const maafw = resolveMaaFWFlavor('MaaFW')
     await renderScriptPage(maafw)
     const defaultReceived = received.get('default:shellImport')!
     expect(Object.keys(defaultReceived).sort()).toEqual(
-      ['disabled', 'instances', 'onUpdate:selectedIds', 'selected-ids'].sort()
+      [
+        'disabled',
+        'import-hotkeys',
+        'instances',
+        'onUpdate:importHotkeys',
+        'onUpdate:selectedIds',
+        'selected-ids',
+      ].sort()
     )
     const flavor = withSections(maafw, {
       shellImport: fakeSection('scriptPage', 'shellImport', async () =>
@@ -584,10 +603,14 @@ describe('用户页队列标题分节 queueHeader', () => {
     const start = html.indexOf('<div class="AFlex section-header"')
     const end = html.indexOf('<section data-section="default:taskQueue">')
     expect(start).toBeGreaterThanOrEqual(0)
-    expect(html.slice(start, end)).toBe(
-      '<div class="AFlex section-header"><h3>任务队列配置</h3><div class="AButton"> 配置恢复</div></div>' +
-        '<div class="AAlert flavor-queue-hint"></div>'.repeat(3)
-    )
+    expect(end).toBeGreaterThan(start)
+    const section = html.slice(start, end)
+    // 标题一行右侧并排两个入口：配置导入、配置恢复
+    expect(section).toContain('<h3>任务队列配置</h3>')
+    expect(section.indexOf('配置导入')).toBeGreaterThan(section.indexOf('<h3>'))
+    expect(section.indexOf('配置恢复')).toBeGreaterThan(section.indexOf('配置导入'))
+    // 一行一个提示框（两条提示 + 一条受管提示）
+    expect(section.match(/class="AAlert flavor-queue-hint"/g)).toHaveLength(3)
   })
 
   it('换成特调的 queueHeader：收到提示行、受管提示与 open-restore 监听，点了打开恢复弹窗', async () => {
@@ -610,7 +633,16 @@ describe('用户页队列标题分节 queueHeader', () => {
     expect(html).not.toContain('<h3>任务队列配置</h3>')
     const attrs = received.get('flavor:queueHeader')!
     expect(Object.keys(attrs).sort()).toEqual(
-      ['managed-queue-alert', 'onOpenRestore', 'queue-hint-lines'].sort()
+      [
+        'managed-queue-alert',
+        'onImportFromUser',
+        'onImported',
+        'onLoadUserImport',
+        'onOpenRestore',
+        'queue-hint-lines',
+        'user-import-candidates',
+        'user-import-loading',
+      ].sort()
     )
     expect(attrs['queue-hint-lines']).toEqual(['提示'])
     ;(attrs.onOpenRestore as () => void)()
