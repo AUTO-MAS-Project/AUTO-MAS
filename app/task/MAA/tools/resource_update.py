@@ -54,6 +54,7 @@ progress 回调上报，回调异常被忽略。重文件 I/O（进程扫描、�
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import os
 import shutil
@@ -91,8 +92,8 @@ _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
 
 # data/ 是每个 MAS 实例私有的（双实例各自一份暂存，双下载已接受）；
-# 锁文件放 %LOCALAPPDATA%，同一 Windows 用户的多个 MAS 进程互斥（跨用户
-# 会话共享同一 MAA 安装的场景极罕见，且后果只是交错重写、可自愈）。
+# 锁文件放 %LOCALAPPDATA%，同一 Windows 用户的多个 MAS 进程互斥；
+# 不协调不同 Windows 用户共享安装或未参与锁协议的外部手动启动。
 _WORK_DIR = Path.cwd() / "data" / "maa_resource_update"
 _STAGE_DIR = _WORK_DIR / "stage"
 _STAGE_ZIP = _WORK_DIR / "package.zip"
@@ -190,13 +191,20 @@ def _load_manifest() -> dict[str, object] | None:
 
 
 def _load_valid_manifest() -> dict[str, object] | None:
-    """线程内复核缓存；缺文件或内容改变时作废，读取异常交由调用方处理。"""
+    """线程内复核缓存内容与版本；不一致时作废，读取异常交由调用方处理。"""
     manifest = _load_manifest()
-    if manifest is not None and manifest["files"] != resource_tree_hashes(
-        _STAGE_DIR / "resource"
-    ):
+    if manifest is None:
+        return None
+    valid = manifest["files"] == resource_tree_hashes(_STAGE_DIR / "resource")
+    if valid:
+        try:
+            clock = read_resource_clock(_STAGE_DIR)
+        except (OSError, ValueError):
+            clock = None
+        valid = clock is not None and _parse_iso(manifest.get("target")) == clock
+    if not valid:
         _MANIFEST_FILE.unlink(missing_ok=True)
-        logger.warning("MAA 资源更新: 暂存资源不完整或内容已变化，作废缓存等待重建")
+        logger.warning("MAA 资源更新: 暂存内容或版本与清单不一致，作废缓存等待重建")
         return None
     return manifest
 
@@ -507,13 +515,16 @@ async def _refresh_stage(target: datetime, progress: _Progress | None = None) ->
 
 
 class _MachineLock:
-    def __init__(self) -> None:
+    def __init__(self, *, lock_file: Path | None = None) -> None:
+        self._lock_file = lock_file or _LOCK_FILE
         self._fh = None
+        self.contended = False
 
     def __enter__(self) -> "_MachineLock | None":
+        self.contended = False
         try:
-            _LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = open(_LOCK_FILE, "a+b")
+            self._lock_file.parent.mkdir(parents=True, exist_ok=True)
+            self._fh = open(self._lock_file, "a+b")
             self._fh.seek(0, 2)
             if self._fh.tell() == 0:
                 self._fh.write(b"\0")
@@ -521,16 +532,18 @@ class _MachineLock:
             self._fh.seek(0)
             import msvcrt
 
-            msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+            try:
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as e:
+                self.contended = e.errno in (errno.EACCES, errno.EDEADLK)
+                raise
             return self
         except ImportError:
             return self  # 非 Windows：无锁运行（MAS 仅发 Windows，此处只为不崩溃）
         except OSError as e:
-            if self._fh is None:
-                # 连锁文件都建不了：环境异常，明说并跳过，不与「被他人持有」混淆
-                logger.warning(f"MAA 资源更新: 机器锁不可用（本轮跳过）: {e}")
-            else:
-                # 锁被其他 MAS 实例持有：正常现象，不刷日志
+            if not self.contended:
+                logger.warning(f"MAA 资源更新: 文件锁不可用（跳过资源写入）: {e}")
+            if self._fh is not None:
                 self._fh.close()
                 self._fh = None
             return None
@@ -553,6 +566,29 @@ class _MachineLock:
         finally:
             self._fh.close()
             self._fh = None
+
+
+def _resource_access_lock(install: Path) -> _MachineLock:
+    key = hashlib.sha256(_path_key(install).encode("utf-8")).hexdigest()
+    return _MachineLock(
+        lock_file=_LOCK_FILE.with_name(f"maa_resource_access_{key}.lock")
+    )
+
+
+async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
+    """取得本安装的跨进程访问锁；调用方负责在子任务结束后释放。
+
+    运行与配置会话持有至 MAA 子任务结束，其他 MAS 更新器跳过被持有的安装。
+    争用只作用于本安装，下载阶段不持有访问锁；锁不可用时更新器也不会写入。
+    """
+    while True:
+        lock = _resource_access_lock(install)
+        acquired = lock.__enter__()
+        if acquired is not None:
+            return acquired
+        if not lock.contended:
+            return None
+        await asyncio.sleep(0.1)
 
 
 # --------------------------------------------------------------------------
@@ -672,11 +708,11 @@ async def _sweep(progress: _Progress | None = None) -> None:
             current = _format_clock(min(clocks.values()))
         try:
             target = await _fetch_latest_version(current)
-            state["last_query_at"] = now.isoformat()
+            state["last_query_at"] = datetime.now(timezone.utc).isoformat()
             write_file(_STATE_FILE, state)
         except _QueryError as e:
             state["query_fail_until"] = (
-                now + timedelta(seconds=_RETRY_INTERVAL)
+                datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
             ).isoformat()
             write_file(_STATE_FILE, state)
             logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
@@ -699,7 +735,7 @@ async def _sweep(progress: _Progress | None = None) -> None:
                 stage = _load_manifest()
             except _DownloadError as e:
                 state["download_fail_until"] = (
-                    now + timedelta(seconds=_RETRY_INTERVAL)
+                    datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
                 ).isoformat()
                 write_file(_STATE_FILE, state)
                 logger.warning(f"MAA 资源更新: 取包失败（1 小时后重试）: {e}")
@@ -742,11 +778,17 @@ async def _sweep(progress: _Progress | None = None) -> None:
         try:
             # 与配置会话加锁互斥；持锁复查占用，直至写线程收尾完成才放行。
             async with get_resource_write_lock(install):
-                configs = _snapshot_maa_configs()
-                if await asyncio.to_thread(_install_busy_now, install, configs):
-                    logger.info(f"MAA 资源更新: 合并前复查到占用，跳过 {install}")
-                    continue
-                applied = await _run_write_thread(_apply_stage, install, stage_clock)
+                with _resource_access_lock(install) as access:
+                    if access is None:
+                        logger.info(f"MAA 资源更新: 安装访问锁未取得，跳过 {install}")
+                        continue
+                    configs = _snapshot_maa_configs()
+                    if await asyncio.to_thread(_install_busy_now, install, configs):
+                        logger.info(f"MAA 资源更新: 合并前复查到占用，跳过 {install}")
+                        continue
+                    applied = await _run_write_thread(
+                        _apply_stage, install, stage_clock
+                    )
             if not applied:
                 logger.info(f"MAA 资源更新: 合并前版本已变化，跳过 {install}")
                 continue
@@ -779,6 +821,8 @@ async def _run_update() -> None:
             return
         with _MachineLock() as lock:
             if lock is None:
+                # 仍须经过 MaaManager 的安装访问锁：允许跳过重复下载，
+                # 不允许在另一个 MAS 正在写本安装时启动 MAA。
                 return
             await _sweep(_broadcast_progress)
     except Exception:

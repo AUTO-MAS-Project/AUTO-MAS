@@ -21,7 +21,7 @@
 
 
 import uuid
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -52,7 +52,11 @@ from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
-from .tools.resource_update import get_resource_write_lock, prepare_queue_resources
+from .tools.resource_update import (
+    acquire_resource_access_lock,
+    get_resource_write_lock,
+    prepare_queue_resources,
+)
 
 logger = get_logger("MAA 调度器")
 
@@ -84,6 +88,7 @@ class MaaManager(TaskExecuteBase):
         # prepared 要等 prepare() 整体返回, 中途被取消或失败时 final_task
         # 靠这个标志解锁（对齐 SRC 的 config_lock_acquired）
         self.config_lock_acquired = False
+        self._resource_access = ExitStack()
         self._device_provider = device_provider
 
     async def check(self) -> str:
@@ -181,13 +186,17 @@ class MaaManager(TaskExecuteBase):
         # lock() 首句即生效，但其内部的子配置遍历还有 await，取消可能打在
         # 半途：标志必须在调用前置位，final_task 才能对任何中断解锁。置位到
         # 生效之间没有让出点；取值放在置位前，脚本不存在时不会留下悬空标志。
-        # 配置会话不触发下载，只等本安装正在进行的资源写入；会话先加锁时，
-        # 更新器复查到占用便会跳过。两侧共用互斥，避免启动 GUI 与写入交错。
+        # 配置会话不触发下载，启动前取得安装访问锁并持有至子任务结束；
+        # 更新器跳过被占用的安装，两侧共用互斥，避免启动 GUI 与写入交错。
         while True:
             install = Path(script_config.get("Info", "Path"))
             async with get_resource_write_lock(install):
+                access = await acquire_resource_access_lock(install)
+                if access is not None:
+                    self._resource_access.push(access)
                 # 等写入期间配置还未锁定，用户可能改了路径，须按当前安装重等。
                 if Path(script_config.get("Info", "Path")) != install:
+                    self._resource_access.close()
                     continue
                 self.config_lock_acquired = True
                 await script_config.lock()
@@ -333,6 +342,10 @@ class MaaManager(TaskExecuteBase):
 
     async def final_task(self):
         """运行结束后的收尾工作"""
+
+        # spawn 已等待 MAA 子任务停止并收尾；剩余步骤不再读取资源。
+        # prepare 未完成、异常或主动取消也统一释放安装访问锁。
+        self._resource_access.close()
 
         if not self.prepared:
             # prepare() 未走完就结束：备份目录与模拟器实例可能还没建立，没有
