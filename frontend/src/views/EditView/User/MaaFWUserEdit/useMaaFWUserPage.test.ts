@@ -39,6 +39,7 @@ vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 vi.mock('vue-router', () => ({
   useRoute: () => mocks.route,
   useRouter: () => ({ replace: mocks.replace, push: mocks.push }),
+  onBeforeRouteLeave: vi.fn(),
 }))
 vi.mock('ant-design-vue', () => ({
   message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -168,7 +169,12 @@ describe('useMaaFWUserPage', () => {
     expect(page.loading.value).toBe(false)
 
     await expect(page.handleFieldSave('Info.Notes', 'y')).resolves.toBe(true)
-    expect(mocks.updateUser).toHaveBeenCalledWith('s1', 'u1', { Info: { Notes: 'y' } })
+    expect(mocks.updateUser).toHaveBeenCalledWith(
+      's1',
+      'u1',
+      { Info: { Notes: 'y' } },
+      { strict: true }
+    )
     scope.stop()
   })
 
@@ -300,8 +306,8 @@ describe('useMaaFWUserPersistence', () => {
     await handleFieldSave('userName', 'Bob')
     await handleFieldSave('Info.Account', 'acc')
     expect(mocks.updateUser.mock.calls).toEqual([
-      ['s1', 'u1', { Info: { Name: 'Bob' } }],
-      ['s1', 'u1', { Info: { Account: 'acc' } }],
+      ['s1', 'u1', { Info: { Name: 'Bob' } }, { strict: true }],
+      ['s1', 'u1', { Info: { Account: 'acc' } }, { strict: true }],
     ])
     scope.stop()
   })

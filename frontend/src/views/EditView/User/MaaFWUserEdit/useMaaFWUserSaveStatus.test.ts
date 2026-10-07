@@ -1,5 +1,6 @@
 import { effectScope } from 'vue'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { AppRequestError } from '@/utils/appError'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
 
 const deferred = () => {
@@ -19,10 +20,7 @@ const setup = () => {
 }
 
 describe('useMaaFWUserSaveStatus', () => {
-  beforeEach(() => vi.useFakeTimers())
-  afterEach(() => vi.useRealTimers())
-
-  it('保存中 → 已保存，两秒后回到空闲；全部写完才清掉「有未保存改动」', async () => {
+  it('排队 → 保存中 → 已保存：串行执行，全部写完才清掉「有未保存改动」', async () => {
     const { scope, status } = setup()
     const first = deferred()
     const second = deferred()
@@ -32,21 +30,23 @@ describe('useMaaFWUserSaveStatus', () => {
       order.push('first:start')
       await first.promise
       order.push('first:end')
-    })
+    }, 'Info.Notes')
     const secondSave = status.enqueueSave(async () => {
       order.push('second:start')
       await second.promise
-    })
+    }, 'Info.Account')
     expect(status.pendingCount()).toBe(2)
     expect(status.isSaving.value).toBe(true)
     expect(status.hasUnsavedChanges.value).toBe(true)
-    expect(status.saveStatus.value).toBe('saving')
+    expect(status.state.value).toBe('saving')
+    expect(status.fieldStates['Info.Notes']).toBe('saving')
 
     first.resolve()
     await firstSave
     expect(status.pendingCount()).toBe(1)
     expect(status.isSaving.value).toBe(true)
     expect(status.hasUnsavedChanges.value).toBe(true)
+    expect(status.fieldStates['Info.Notes']).toBe('saved')
 
     second.resolve()
     await secondSave
@@ -55,12 +55,9 @@ describe('useMaaFWUserSaveStatus', () => {
     expect(status.pendingCount()).toBe(0)
     expect(status.isSaving.value).toBe(false)
     expect(status.hasUnsavedChanges.value).toBe(false)
-    expect(status.saveStatus.value).toBe('saved')
-
-    await vi.advanceTimersByTimeAsync(1999)
-    expect(status.saveStatus.value).toBe('saved')
-    await vi.advanceTimersByTimeAsync(1)
-    expect(status.saveStatus.value).toBe('idle')
+    expect(status.state.value).toBe('saved')
+    expect(status.fieldStates['Info.Account']).toBe('saved')
+    expect(status.canLeave.value).toBe(true)
     scope.stop()
   })
 
@@ -81,46 +78,57 @@ describe('useMaaFWUserSaveStatus', () => {
     scope.stop()
   })
 
-  it('出错：状态带原因并把错误抛给调用方，后面的保存照常执行', async () => {
-    const { scope, status } = setup()
-    const failing = status.enqueueSave(async () => {
-      throw new Error('写入失败')
-    })
-    const gate = deferred()
-    const next = vi.fn(() => gate.promise)
-    const following = status.enqueueSave(next)
-
-    await expect(failing).rejects.toThrow('写入失败')
-    expect(status.saveStatus.value).toBe('error')
-    expect(status.saveErrorMessage.value).toBe('写入失败')
-    gate.resolve()
-    await following
-    expect(next).toHaveBeenCalledOnce()
-    expect(status.saveStatus.value).toBe('saved')
-    expect(status.saveErrorMessage.value).toBe('')
-    scope.stop()
-  })
-
-  it('出错后即使队列清空也保留「有未保存改动」', async () => {
+  it('写失败：状态是「失败已保留草稿」，禁止离开', async () => {
     const { scope, status } = setup()
     await expect(
       status.enqueueSave(async () => {
-        throw new Error('x')
-      })
-    ).rejects.toThrow('x')
+        throw new Error('写入失败')
+      }, 'Info.Notes')
+    ).rejects.toThrow('写入失败')
+
     expect(status.pendingCount()).toBe(0)
     expect(status.isSaving.value).toBe(false)
+    expect(status.state.value).toBe('failed_draft_kept')
+    expect(status.fieldStates['Info.Notes']).toBe('failed_draft_kept')
     expect(status.hasUnsavedChanges.value).toBe(true)
+    expect(status.canLeave.value).toBe(false)
     scope.stop()
   })
 
-  it('作用域销毁时清掉回到空闲的定时器', async () => {
+  it('参数被拒 / 断线无法确认：分别是 rejected 与 unknown，都不显示为已保存', async () => {
     const { scope, status } = setup()
-    await status.enqueueSave(async () => undefined)
-    expect(vi.getTimerCount()).toBe(1)
+    await expect(
+      status.enqueueSave(async () => {
+        throw new AppRequestError('invalid_input')
+      }, 'Info.Notes')
+    ).rejects.toThrow()
+    expect(status.state.value).toBe('rejected')
+
+    await expect(
+      status.enqueueSave(async () => {
+        throw new AppRequestError('network_unavailable')
+      }, 'Info.Account')
+    ).rejects.toThrow()
+    expect(status.state.value).toBe('unknown')
+    expect(status.fieldStates['Info.Account']).toBe('unknown')
+    expect(status.canLeave.value).toBe(false)
     scope.stop()
-    expect(vi.getTimerCount()).toBe(0)
-    await vi.advanceTimersByTimeAsync(5000)
-    expect(status.saveStatus.value).toBe('saved')
+  })
+
+  it('一次失败不阻塞后面的保存，成功后转回已保存并允许离开', async () => {
+    const { scope, status } = setup()
+    const failing = status.enqueueSave(async () => {
+      throw new Error('写入失败')
+    }, 'Info.Notes')
+    const next = vi.fn(async () => undefined)
+    const following = status.enqueueSave(next, 'Info.Notes')
+
+    await expect(failing).rejects.toThrow('写入失败')
+    await following
+    expect(next).toHaveBeenCalledOnce()
+    expect(status.state.value).toBe('saved')
+    expect(status.fieldStates['Info.Notes']).toBe('saved')
+    expect(status.canLeave.value).toBe(true)
+    scope.stop()
   })
 })

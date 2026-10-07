@@ -247,8 +247,8 @@ const scriptState = (flavor: MaaFWFlavor) => ({
 
 const userState = (flavor: MaaFWFlavor) => ({
   loading: false,
-  saveStatus: 'idle',
-  saveErrorMessage: '',
+  saveState: 'idle',
+  fieldStates: {},
   userIdHolder: { value: 'u1' },
   isEdit: true,
   configLocked: false,
