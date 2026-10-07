@@ -401,6 +401,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_exe_path: Path | None = None
         self.script_target_process_info: ProcessInfo | None = None
         self.log_monitor: LogMonitor | None = None
+        self._extra_scripts_started: bool = False
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
         # 运行时提示（找不到自动战斗脚本、切队回不到主界面）同样只推一次
@@ -999,8 +1000,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def main_task(self):
         await self.prepare()
 
-        # 先接管原神客户端更新：切号与一条龙都会拉起游戏，客户端停在旧版本时
-        # 只会让整轮任务白跑，所以这一步必须在最前面
+        # 前置脚本覆盖整轮任务，必须先于游戏更新、切号和执行层，重试不重复执行。
+        self._extra_scripts_started = True
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
+            )
+
+        # 切号与一条龙都会拉起游戏，客户端停在旧版本时只会让整轮任务白跑，
+        # 所以游戏更新仍先于它们执行。
         if not await ensure_game_updated(
             self.script_config,
             self.cur_user_config,
@@ -1084,12 +1093,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
             # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
             if not await self.kill_managed_process():
@@ -1145,11 +1148,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = (
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -1168,11 +1166,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
@@ -1781,14 +1774,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.wait_event.set()
 
     async def final_task(self):
-        # 结束时先清理进程与监控
-        if self.log_monitor is not None:
-            with suppress(Exception):
-                await self.log_monitor.stop()
-        await self.kill_managed_process()
+        try:
+            # 结束时先清理进程与监控
+            if self.log_monitor is not None:
+                with suppress(Exception):
+                    await self.log_monitor.stop()
+            await self.kill_managed_process()
 
-        # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
-        await self._close_game()
+            # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
+            await self._close_game()
+        finally:
+            # 整轮只收尾一次；前置被中止或进程清理异常时也尝试执行后置脚本。
+            if self._extra_scripts_started:
+                self._extra_scripts_started = False
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
