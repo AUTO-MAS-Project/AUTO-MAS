@@ -4171,7 +4171,7 @@ export default {
       coverRequired: '外观包里没有预览图，请选择一张封面',
       pickCover: '选择图片',
       usePackageCover: '改用包里的预览图',
-      coverSpec: 'PNG、JPEG 或 WebP，不超过 2 MB，建议 16:10',
+      coverSpec: 'PNG、JPEG 或 WebP，不超过 8 MB，建议 16:10',
       invalidCover: '这张图片不能用作封面',
       coverFilter: '图片',
       target: '上传为',

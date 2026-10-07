@@ -21,6 +21,7 @@
 
 
 import asyncio
+import io
 import json
 import os
 import re
@@ -30,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from PIL import Image, ImageOps
 
 from app.utils import LazyProxy, get_logger
 
@@ -75,6 +77,12 @@ APPEARANCE_MAX_MANIFEST_BYTES = 256 * 1024
 APPEARANCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 # 外观封面（主题商店列表里的预览图）上限，与 Electron 主进程取封面时的上限一致
 COVER_MAX_BYTES = 2 * 1024 * 1024
+# 封面来源图（包内 preview 或另选的图片）上限，与外观包单个文件上限一致；
+# 实际作者包的预览图常有 2–3 MB，上传前统一缩成商店用的小图，列表翻页才不至于动辄几十 MB。
+COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
+COVER_MAX_SIZE = (1280, 800)
+COVER_MAX_SOURCE_PIXELS = 40_000_000
+COVER_WEBP_QUALITY = (85, 70)
 # 外观包体积远大于通用脚本配置，上传给更长的超时
 UPLOAD_TIMEOUT = 120.0
 
@@ -570,24 +578,52 @@ class ConfigCenterClient:
 
     @staticmethod
     def _detect_cover(data: bytes, source: str) -> Tuple[str, bytes, str]:
-        """按文件头魔数确定封面格式, 返回 multipart 用的 (文件名, 内容, MIME)。
+        """校验封面来源图并统一缩成商店用的封面, 返回 multipart 用的 (文件名, 内容, MIME)。
+
+        来源图按文件头魔数只认 PNG / JPEG / WebP; 输出一律是长宽不超过 1280×800 的 WebP,
+        保持原比例, 体积不超过 COVER_MAX_BYTES。
 
         Raises:
-            ConfigCenterError: 体积超限或不是 PNG / JPEG / WebP, status_code 为 400。
+            ConfigCenterError: 体积超限、格式不对或无法解码, status_code 为 400。
         """
 
-        if len(data) > COVER_MAX_BYTES:
+        if len(data) > COVER_SOURCE_MAX_BYTES:
             raise ConfigCenterError(
-                f"{source}超过 {COVER_MAX_BYTES // 1024 // 1024} MB", status_code=400
+                f"{source}超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB",
+                status_code=400,
             )
-        if data.startswith(b"\x89PNG\r\n\x1a\n"):
-            return "cover.png", data, "image/png"
-        if data.startswith(b"\xff\xd8\xff"):
-            return "cover.jpg", data, "image/jpeg"
-        if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-            return "cover.webp", data, "image/webp"
+        is_png = data.startswith(b"\x89PNG\r\n\x1a\n")
+        is_jpeg = data.startswith(b"\xff\xd8\xff")
+        is_webp = len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        if not (is_png or is_jpeg or is_webp):
+            raise ConfigCenterError(
+                f"{source}只支持 PNG、JPEG 或 WebP 图片", status_code=400
+            )
+
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                # 先看尺寸再解码，挡住小文件解出巨图的情况
+                if image.width * image.height > COVER_MAX_SOURCE_PIXELS:
+                    raise ConfigCenterError(f"{source}尺寸过大", status_code=400)
+                image = ImageOps.exif_transpose(image)
+                image = image.convert(
+                    "RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB"
+                )
+                image.thumbnail(COVER_MAX_SIZE, Image.Resampling.LANCZOS)
+                for quality in COVER_WEBP_QUALITY:
+                    buffer = io.BytesIO()
+                    image.save(buffer, format="WEBP", quality=quality, method=4)
+                    output = buffer.getvalue()
+                    if len(output) <= COVER_MAX_BYTES:
+                        return "cover.webp", output, "image/webp"
+        except ConfigCenterError:
+            raise
+        except Exception as e:
+            raise ConfigCenterError(f"{source}无法解码: {e}", status_code=400) from e
+
         raise ConfigCenterError(
-            f"{source}只支持 PNG、JPEG 或 WebP 图片", status_code=400
+            f"{source}压缩后仍超过 {COVER_MAX_BYTES // 1024 // 1024} MB",
+            status_code=400,
         )
 
     @classmethod
@@ -661,9 +697,9 @@ class ConfigCenterClient:
                     )
                     if preview_info is None:
                         raise invalid(f"外观包里缺少预览图: {preview}")
-                    if preview_info.file_size > COVER_MAX_BYTES:
+                    if preview_info.file_size > COVER_SOURCE_MAX_BYTES:
                         raise invalid(
-                            f"外观包的预览图超过 {COVER_MAX_BYTES // 1024 // 1024} MB"
+                            f"外观包的预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB"
                         )
                     preview_data = archive.read(preview_info)
         except ConfigCenterError:
@@ -677,8 +713,8 @@ class ConfigCenterClient:
             cover_file = Path(cover_path)
             if not cover_file.is_file():
                 raise invalid("预览图不存在或不是文件")
-            if cover_file.stat().st_size > COVER_MAX_BYTES:
-                raise invalid(f"预览图超过 {COVER_MAX_BYTES // 1024 // 1024} MB")
+            if cover_file.stat().st_size > COVER_SOURCE_MAX_BYTES:
+                raise invalid(f"预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB")
             cover = cls._detect_cover(cover_file.read_bytes(), "预览图")
         elif preview_data is not None:
             cover = cls._detect_cover(preview_data, "外观包的预览图")

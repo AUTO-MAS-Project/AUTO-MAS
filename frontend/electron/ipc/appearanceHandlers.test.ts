@@ -315,8 +315,10 @@ describe('upload cover inspect IPC', () => {
     expect(inspectCover(writeFile('cover.png', webp)).dataUrl).toMatch(/^data:image\/webp;base64,/)
   })
 
-  it('rejects images over 2 MB, unknown formats, folders and missing files', () => {
-    const huge = Buffer.concat([PNG_1X1, Buffer.alloc(2 * 1024 * 1024)])
+  it('rejects images over 8 MB, unknown formats, folders and missing files', () => {
+    const big = Buffer.concat([PNG_1X1, Buffer.alloc(3 * 1024 * 1024)])
+    expect(inspectCover(writeFile('big.png', big))).toMatchObject({ success: true })
+    const huge = Buffer.concat([PNG_1X1, Buffer.alloc(8 * 1024 * 1024)])
     expect(inspectCover(writeFile('huge.png', huge))).toMatchObject({ success: false })
     expect(inspectCover(writeFile('fake.png', Buffer.from('GIF89a')))).toMatchObject({
       success: false,

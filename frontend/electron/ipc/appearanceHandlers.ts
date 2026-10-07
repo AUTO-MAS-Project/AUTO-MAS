@@ -17,7 +17,6 @@ import { createNetRequestFetch } from '../services/onlineAppearanceFetch'
 import {
   createOnlineAppearanceService,
   imageMimeFromMagic,
-  ONLINE_APPEARANCE_DEFAULTS,
   removeAppearanceSource,
   type OnlineAppearanceServiceOptions,
 } from '../services/onlineAppearanceService'
@@ -27,6 +26,8 @@ const logger = getLogger('外观包')
 let isRegistered = false
 
 const INVALID_ARGUMENT = { success: false, error: '参数无效' } as const
+// 封面来源图上限，与外观包单个文件上限及后端 COVER_SOURCE_MAX_BYTES 一致
+const COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface AppearanceHandlerOptions {
   /** 仅供测试替换分享站地址、fetch 实现与目录。 */
@@ -251,7 +252,8 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     }
   })
 
-  // 上传对话框里预览另选的封面：只读、限 2 MiB、按文件头认 PNG / JPEG / WebP，与后端上传时的检查一致。
+  // 上传对话框里预览另选的封面：只读、限 8 MiB、按文件头认 PNG / JPEG / WebP，与后端上传时的检查一致；
+  // 后端上传前会再统一缩成 1280×800 以内的 WebP 封面。
   ipcMain.handle('appearance:inspect-cover', (_event, imagePath: unknown) => {
     if (typeof imagePath !== 'string' || imagePath.length === 0) {
       return { success: false, error: '请选择封面图片' }
@@ -260,8 +262,8 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
       const resolved = path.resolve(imagePath)
       const stat = fs.statSync(resolved)
       if (!stat.isFile()) return { success: false, error: '选择的路径不是文件' }
-      if (stat.size > ONLINE_APPEARANCE_DEFAULTS.coverBytes) {
-        return { success: false, error: '封面图片不能超过 2 MB' }
+      if (stat.size > COVER_SOURCE_MAX_BYTES) {
+        return { success: false, error: '封面图片不能超过 8 MB' }
       }
       const data = fs.readFileSync(resolved)
       const mime = imageMimeFromMagic(data)

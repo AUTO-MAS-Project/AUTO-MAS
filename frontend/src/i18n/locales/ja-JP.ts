@@ -3679,7 +3679,7 @@ export default {
       coverRequired: 'パッケージにプレビュー画像がありません。カバー画像を選んでください',
       pickCover: '画像を選択',
       usePackageCover: 'パッケージのプレビューに戻す',
-      coverSpec: 'PNG・JPEG・WebP、2 MB まで、16:10 推奨',
+      coverSpec: 'PNG・JPEG・WebP、8 MB まで、16:10 推奨',
       invalidCover: 'この画像はカバーに使えません',
       coverFilter: '画像',
       target: 'アップロード先',

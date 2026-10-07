@@ -4311,7 +4311,7 @@ export default {
       coverRequired: 'The package has no preview image. Choose a cover image',
       pickCover: 'Choose image',
       usePackageCover: 'Use the package preview instead',
-      coverSpec: 'PNG, JPEG or WebP, up to 2 MB, 16:10 recommended',
+      coverSpec: 'PNG, JPEG or WebP, up to 8 MB, 16:10 recommended',
       invalidCover: 'This image cannot be used as a cover',
       coverFilter: 'Image',
       target: 'Upload as',
