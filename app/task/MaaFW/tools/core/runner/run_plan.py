@@ -65,7 +65,7 @@ from .pipeline_override import (
 # 一启动就 ``ModuleNotFoundError``；就算补上依赖，那个模块还会在导入期往
 # ``Path.cwd()/debug`` 挂一份 app.log 的 sink，让 worker 变成第二个写同一份
 # 轮转日志的进程。数法与 ``app/utils/paths.py`` 的 SOURCE_ROOT 同源，只是从
-# 本文件自己的位置往上数六层。守卫见 tests/task/test_maafw_worker_import_isolation.py。
+# 本文件自己的位置往上数六层。守卫见 tests/task/test_maafw_core.py。
 _SOURCE_ROOT = Path(__file__).resolve().parents[6]
 
 logger = logging.getLogger("automas.maafw.runner.run_plan")

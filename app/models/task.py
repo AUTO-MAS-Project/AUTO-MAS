@@ -138,6 +138,9 @@ class TaskItem(ABC):
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
     user_id: str | None  # 执行的用户ID
+    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
+    # 队列任务按脚本限定的本次运行用户；未列出的脚本不限，空集合表示该脚本本次整项跳过
+    user_ids_by_script: dict[str, frozenset[str]] | None = None
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
@@ -230,6 +233,19 @@ class TaskItem(ABC):
         return self.queue_id is not None
 
     @property
+    def current_script_id(self) -> str | None:
+        """当前正在执行的脚本ID；未开始或下标越界时为 None"""
+        if 0 <= self.current_index < len(self.script_list):
+            return self.script_list[self.current_index].script_id
+        return None
+
+    def script_user_scope(self, script_id: str) -> frozenset[str] | None:
+        """队列任务中该脚本本次要运行的用户；None 表示该脚本不限"""
+        if self.user_ids_by_script is None:
+            return None
+        return self.user_ids_by_script.get(script_id)
+
+    @property
     def target_user_id(self) -> str | None:
         """单独运行时指定的用户ID；未指定或非自动代理时为 None。
 
@@ -248,8 +264,18 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，队列任务指定了本次
+            运行范围时仅匹配当前脚本范围内的用户，指定 user_id 时仅匹配该用户；
+            均未指定或非 AutoProxy 模式时恒为 True。
         """
+
+        if self.mode == "AutoProxy":
+            scope = self.user_ids
+            if self.user_ids_by_script is not None:
+                # 队列任务按当前脚本取范围；未列入的脚本不受本次勾选影响
+                scope = self.script_user_scope(self.current_script_id or "")
+            if scope is not None:
+                return user_id in scope
 
         target = self.target_user_id
         return target is None or user_id == target

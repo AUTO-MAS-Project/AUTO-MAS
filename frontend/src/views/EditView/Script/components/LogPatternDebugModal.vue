@@ -364,9 +364,7 @@ const configPreview = computed(() => {
   color: var(--ant-color-error);
 }
 
-@media (prefers-color-scheme: dark) {
-  .debug-result-pane {
-    border-left-color: var(--ant-color-border);
-  }
+html.dark .debug-result-pane {
+  border-left-color: var(--ant-color-border);
 }
 </style>

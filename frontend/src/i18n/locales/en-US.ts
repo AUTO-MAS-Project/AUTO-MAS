@@ -221,6 +221,8 @@ export default {
     backendUpdateContactSupport:
       'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
+    closePreparationTimedOut:
+      'Saving changes before exit timed out. Exit was canceled; wait for saving to finish, then try again.',
     lightTheme: 'Light theme',
     test: 'Test',
     messageTemplate: 'Message template',
@@ -879,6 +881,38 @@ export default {
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
     createFirstUser: 'Create the first account',
+    shellQueueImport: 'Import config',
+    shellQueueImportTitle: 'Import config',
+    shellQueueImportOk: 'Replace queue',
+    shellQueueImportTaskCount: '{count} tasks in the shell',
+    shellQueueImportDefaultDir: "the script's project folder",
+    shellQueueImportDir: 'Reading from: {dir}',
+    shellQueueImportNone: 'No shell config in this folder',
+    shellQueueImportNote:
+      'This replaces the tasks and options of the current user with the ones from that config.',
+    shellQueueImportDone: 'Imported {count} tasks',
+    shellQueueImportSkippedTitle: '{count} items were skipped',
+    shellQueueImportFailed: 'Failed to import the shell config',
+    queueImportFromUsers: 'Other users of this script',
+    queueImportFromShell: 'Shell',
+    queueImportNoUsers: 'No users to import from',
+    queueImportPasswordCount: '{count} passwords to re-enter',
+    queueTaskCount: '{count} tasks',
+    queueInvalidCount: '{count} unavailable',
+    queueTemplate: 'Templates',
+    queueTemplateMine: 'My templates',
+    queueTemplatePresets: 'Project presets',
+    queueTemplateSaveCurrent: 'Save current queue as template',
+    queueTemplateApply: 'Apply',
+    queueTemplateRename: 'Rename',
+    queueTemplateDelete: 'Delete',
+    queueTemplateEmpty: 'No templates yet',
+    queueTemplateDeleteConfirm: 'Delete template "{name}"?',
+    queueTemplateSaveTitle: 'Save as template',
+    queueTemplateName: 'Template name',
+    queueTemplateNameExists: 'A template with this name already exists',
+    queueTemplateCurrentCount: 'Current queue: {count} tasks',
+    queueTemplateSave: 'Save',
     shellImportTitle: 'Import existing configurations as accounts',
     shellImportHint:
       'Found {count} {source} configuration(s) in the project folder. Each one you check becomes an account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',
@@ -1064,7 +1098,6 @@ export default {
     clickSaveConfigurationWhen: 'When you are done, click "Save and close" to end this session.',
     configurationManagement: 'Configuration management',
     k0MeansNoLimit: '0 means no limit',
-    presetTemplate: 'Preset template',
     k123456DigitCountLog: 'The digit count is detected automatically from the log',
     echoDomainNumberF2: 'Echo Domain number in the F2 list',
     sonanceCasketNumberF2: 'Sonance Casket number in the F2 list',
@@ -1078,10 +1111,6 @@ export default {
       'You (or the script) start the game; MAS only attaches to the window that is already open',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     masManagesGame: 'MAS starts and closes the game',
-    mfwAdbAddress: 'ADB address',
-    mfwAdbAddressPassed:
-      'When filled, MAS connects to this address instead of launching the emulator above, and does not close it when the task ends',
-    mfwAdbAddressPlaceholder: 'Leave empty to use the emulator selected above',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Starts the game together with the emulator. MAS fills this in from the project automatically; when it cannot tell or finds several, the field stays empty and the game is not started, and you can fill it in here',
@@ -1197,6 +1226,8 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
+    singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
+    loopGuard: 'Loop detection (experimental)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
@@ -1470,7 +1501,6 @@ export default {
     pushLogModeOff: 'Off',
     pushLogModeList: 'List',
     pushLogModeSummary: 'Summary',
-    noPresetTemplates: 'No preset templates',
     replace: 'Replace with',
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
@@ -1495,6 +1525,16 @@ export default {
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
     skipOnceDoneThis2: 'Skip once done this month',
+    taskTimeLimitOverrides: 'Per-task time limits',
+    taskTimeLimitSet: 'Set',
+    taskTimeLimitAllDefault: 'All follow the default',
+    taskTimeLimitChanged: 'Set per task: {n}',
+    taskTimeLimitModalSub: 'Leave empty to follow the default; 0 means unlimited',
+    taskTimeLimitDefault: 'Default {n} min',
+    taskTimeLimitDefaultUnlimited: 'Default: unlimited',
+    taskTimeLimitRestore: 'Restore',
+    taskTimeLimitRestoreAll: 'Restore all defaults',
+    taskTimeLimitSave: 'Save',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',
@@ -1521,9 +1561,20 @@ export default {
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
+    oknteLaunchViaLauncher: 'Launch via launcher UI',
+    oknteLaunchModeNeedsLaunchBeforeTask:
+      'Only available when "Launch the game before the task" is on',
+    oknteLaunchTypeSummary:
+      'Direct launch: the game starts quietly in the background and no launcher window shows up. Launcher UI: the launcher opens and MAS clicks "Start Game" for you',
+    oknteLaunchTypeHint:
+      'Direct launch: MAS starts the game silently with the /autoplay argument, and the launcher window never appears (recommended, default). Launcher UI: MAS opens the launcher and clicks "Start Game" for you — that click is simulated mouse input, so just keep the launcher window visible and unobstructed',
+    oknteLauncherClickNotice:
+      '"Launcher UI": MAS opens the launcher and clicks "Start Game" for you. Keep other windows from covering the launcher while a task runs, or the click can miss; if the game needs an update, it stays there longer',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
+    clientPathOptionalHint:
+      'Optional: leave empty to match the client by process name; setting it makes running-process detection and cleanup at task end more precise',
     clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
     selectFile: 'Select file',
     resetAutoLocate: 'Use auto',
@@ -1860,6 +1911,18 @@ export default {
       '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
     mssFlavorQueueEmpty:
       'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
+    mssFlavorDefense: 'Catastrophe Defense',
+    mssFlavorDefenseHint:
+      "When on, the personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's",
+    mssFlavorDefenseOff: 'Disabled',
+    mssFlavorDefenseDone: 'Played this period',
+    mssFlavorDefensePending: 'Not played this period',
+    mssFlavorDefenseArmed: 'Queued for this run',
+    mssFlavorDefenseGivenUp: 'Given up this period',
+    mssFlavorDefenseUnknown: 'State unknown',
+    mssFlavorDefensePeriod: 'Period started: {period}',
+    mssFlavorDefenseFailedDays: 'Days it did not finish: {days}',
+    mssFlavorDefenseSaveFailed: 'The switch was not saved, please try again',
     mssFlavorActivityFirst: 'Activity first',
     mssFlavorActivityFirstHint:
       'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
@@ -2141,19 +2204,17 @@ export default {
     baahRunTimeLimitHint:
       'Longest the run may go without new log output, in minutes; exceeding it counts as a failed run',
     baahConfigName: 'Default config name',
-    baahConfigNameHint:
-      'The config used normally; this app launches it as BAAH.exe <name>.json. With activity adaptation enabled it is replaced by the "Event-period config file name" while an event is running',
+    baahConfigNameHint: 'The config used normally; this app launches it as BAAH.exe <name>.json',
     baahConfigNamePlaceholder: 'Pick the config used normally',
-    baahActivityConfigName: 'Event-period config file name',
-    baahActivityConfigNameHint:
-      'With "Activity adaptation" enabled above, BAAH is started with this config while Blue Archive has an ongoing event; leave it empty, or when the event schedule cannot be fetched, the default config name is used instead',
-    baahActivityConfigNamePlaceholder: 'Leave empty to always use the default config',
-    baahIfActivityAdapt: 'Activity adaptation',
-    baahIfActivityAdaptHint:
-      'Switch the config file by the Blue Archive event schedule: the "Event-period config file name" while an event is running, otherwise the "Default config name"',
+    baahStageMode: 'Stage plan',
+    baahStageModeHint:
+      'Schedule which stages to run each day from a plan; "Fixed" keeps the stage settings you made inside BAAH. A plan runs either the same stages every day or a weekly schedule',
+    baahIfEventFirst: 'Event stages first',
+    baahIfEventFirstHint:
+      'While Blue Archive has an ongoing event, the event-stage task is moved to the front and turned on; with no event, or when the event schedule cannot be fetched, your task order is left untouched',
     baahActivityLineType: 'Event schedule server',
     baahActivityLineTypeHint:
-      'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on',
+      'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on. "Event stages first" also uses the server picked here',
     baahActivityLineCN: 'CN',
     baahActivityLineJP: 'JP',
     baahActivityLineGloble: 'Global',
@@ -2328,6 +2389,9 @@ export default {
     configRestoreCorruptedDesc:
       'Force restore skips the safety checks related to this file (pre-restore backup and occupancy guard) and may overwrite existing configs. Continue?',
     configRestoreForceAction: 'Force restore',
+    configRestoreUnrestorableTitle: 'This backup cannot be restored',
+    configRestoreUnrestorableDesc:
+      'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
@@ -2340,6 +2404,16 @@ export default {
       'This backup was created in {backup} config, while the current config source is {current}. Continuing switches the config source to {backup} and then writes the config there.',
     configRestoreCrossSourceShared:
       'Shared config is shared by every account of this managed script; restoring overwrites the config other accounts are currently using.',
+    // Shared native settings session: dialog shown when the backend discards this session's changes
+    configSessionDiscardedTitle: 'Settings not saved',
+    configSessionDiscardedStructure:
+      'This session changed the task queue structure (tasks added, removed, reordered or a different configuration profile), so it no longer matched the state when the settings were opened and none of these changes were written to the archive.\nNext: reopen the settings and adjust only task switches and advanced options before saving.',
+    configSessionDiscardedUnreadable:
+      'Reading the configuration written by the native program failed, so none of these changes were written to the archive.\nNext: make sure the program directory is accessible, then reopen the settings and edit again.',
+    configSessionDiscardedNotWritten:
+      'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
+    configSessionDiscardedUnknown:
+      'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
@@ -2376,6 +2450,8 @@ export default {
     maaSessionOpened: 'MAA setup opened',
     maaSessionStartFailed: 'Could not start the MAA setup session',
     maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaEditorReloadBlocked:
+      'Wait for changes to be saved and configuration operations to finish, then close the MAA setup window before refreshing.',
     maaViewOpened: 'MAA viewer opened',
     maaSessionTimeoutWarn:
       'The MAA setup session is about to time out and will be saved in 30 seconds',
@@ -3071,7 +3147,7 @@ export default {
       toolDesc:
         'The game community tool stores your community credentials and runs check-ins at startup, on schedule, or on demand.',
       privacyNotice:
-        'Signing in by QR code or password never saves the account, phone number, or password; the password is used for this sign-in only and is not written to config, logs, or notifications.',
+        'Community credentials are encrypted on this device for check-ins and daily notes. Keep them safe.',
       enable: 'Enable community tools',
       enableDesc: 'Runs community check-ins with the MAS task scheduler.',
       activityEnable: 'Enable daily notes',
@@ -3107,7 +3183,7 @@ export default {
       save: 'Save',
       userName: 'Name',
       miyoushe: 'Miyoushe',
-      miyoushePlaceholder: 'Open the site in a browser, press F12, and copy document.cookie',
+      miyoushePlaceholder: 'Paste an existing Miyoushe Cookie',
       qrLogin: 'Get a token by QR code',
       kuro: 'Kuro Games community',
       kuroPlaceholder: 'Paste the login credential you copied from Kuro BBS',
@@ -3141,7 +3217,7 @@ export default {
       saving: 'Saving the credentials...',
       saveTokenFailed: 'Could not save the token',
       scannedButSaveFailed: 'Scan succeeded, but the token could not be saved',
-      success: 'Signed in — the token is filled in for you',
+      success: 'Signed in — the token is saved to the selected account group',
       loginSuccess: 'Miyoushe QR sign-in succeeded',
       sklandLoginSuccess: 'Skland QR sign-in succeeded',
       queryFailed: 'Could not query the status',
@@ -3614,8 +3690,20 @@ export default {
     viewLabel: 'View:',
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
+    // Stage layout: the two ways a BAAH plan can be arranged
+    baahLayout: {
+      label: 'Layout:',
+      mixed: 'Mixed stages',
+      single: 'One type per day',
+      emptyOption: 'None',
+    },
     typeFallback: 'plan',
-    type: { maa: 'MAA plan', maaEnd: 'MaaEnd plan', mss: 'MSS plan' },
+    type: {
+      maa: 'MAA plan',
+      maaEnd: 'MaaEnd plan',
+      baah: 'BAAH plan',
+      mss: 'MSS plan',
+    },
     week: {
       ALL: 'Every day',
       Monday: 'Mon',
@@ -3647,6 +3735,42 @@ export default {
       stagePlaceholder: 'Enter a stage code',
       noSwitch: 'Keep as is',
       usedSuffix: '{label} (already used)',
+    },
+    // BAAH stage plan: every position of the six stage kinds is fixed, so the hints spell out what each one is and whether -1 is allowed
+    baah: {
+      event: 'Event stage',
+      wanted: 'Bounty hunt',
+      special: 'Special task',
+      exchange: 'Academy exchange',
+      hard: 'Hard stages',
+      normal: 'Normal stages',
+      eventHint: 'Event stage: stage number / sweep count (-1 = maximum)',
+      wantedHint: 'Bounty hunt: area / stage (-1 = last stage) / count (-1 = maximum)',
+      specialHint: 'Special task: area / stage (-1 = last stage) / count (-1 = maximum)',
+      exchangeHint: 'Academy exchange: academy / stage (-1 = last stage) / count (-1 = maximum)',
+      hardHint: 'Hard stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
+      normalHint: 'Normal stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
+      partStageIndex: 'Stage number',
+      partTimes: 'Times',
+      partRegion: 'Area',
+      partLevelHighest: 'Stage',
+      partLevel: 'Stage',
+      partAcademy: 'Academy',
+      partChapter: 'Chapter',
+      partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
+      // One row per thing in the one-kind-per-day layout, so the hint spells out that row's range
+      rowKind: 'Stage type',
+      rowStage: 'Stage name',
+      rowTimes: 'Battle count',
+      rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
+      rowStageHint:
+        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last stage from the end that can be raided (it steps one stage back when that one cannot be raided), while hard and normal stages only take a concrete stage number',
+      rowTimesHint: 'How many times to run it; "Max runs" sweeps every remaining run at once',
+      // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
+      stageHighest: 'Last raid-able',
+      timesMax: 'Max runs',
+      // The switch row above each stage kind in the mixed layout
+      partEnabled: 'Enabled',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',
@@ -3738,6 +3862,14 @@ export default {
     afterDoneDelayTip:
       'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
     afterDoneDelayUnit: 'min',
+    runScriptBefore: 'Run a script before the queue',
+    runScriptAfter: 'Run a script after the queue',
+    runCustomScriptBefore:
+      'Run once before the entire queue starts, without repeating for accounts or retries',
+    runCustomScriptAfter:
+      'Run once when the entire queue finishes, on success or failure, before the completion action; skipped on manual stop',
+    preTaskScriptPath: 'Pre-queue script path selected',
+    postTaskScriptPath: 'Post-queue script path selected',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',
@@ -3866,6 +3998,18 @@ export default {
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific managed script (defaults to the first)',
       userPlaceholder: 'Run one account only (defaults to all)',
+      selectAllUsers: 'Select all',
+      clearAllUsers: 'Clear all',
+      runScopeTitle: 'Run scope',
+      runScopeExpand: 'Expand',
+      runScopeCollapse: 'Collapse',
+      runScopeTip:
+        'Unchecked managed scripts and accounts are skipped this run; the selection is kept after the run',
+      runScopeSelected: '{selected}/{total} accounts selected',
+      runScopeLoading: 'Loading accounts…',
+      runScopeNoUsers: 'No account can run',
+      runScopeLoadFailed: 'Could not load accounts. Retry',
+      runScopeRetry: 'Retry',
       stop: 'Stop',
       start: 'Run',
     },
@@ -3880,6 +4024,7 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
+      waitingToRun: 'Waiting to run',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',
@@ -3904,8 +4049,12 @@ export default {
       noIdleTabs: 'No idle consoles to close',
       batchDeleted: 'Closed {count} consoles',
       loadQueueScriptsFailed: 'Could not load the queue. Try again',
-      loadScriptUsersFailed: 'Could not load the script accounts — cannot run a single account',
+      loadScriptUsersFailed: 'Could not load the script accounts. Retry before running',
+      needRunUsers: 'Select at least one account to run',
+      needQueueRunUsers: 'Select at least one account to run',
+      loadQueueRunUsersFailed: 'Queue accounts are still loading. Try again later',
       needTaskAndMode: 'Pick both a task and a mode',
+      taskOptionsUnavailable: 'Tasks are not loaded yet. Please retry shortly',
       taskStarted: 'Task started',
       startTaskFailed: 'Could not start the task',
       taskBegun: 'Task started',
@@ -4187,6 +4336,18 @@ export default {
       themeModeTip: 'Overall look of the interface',
       themeColor: 'Accent color',
       themeColorTip: 'Primary color of the interface',
+      importAppearance: 'Import appearance',
+      removeAppearance: 'Remove appearance',
+      applyAppearance: 'Apply appearance',
+      appearanceApplied: 'Appearance applied',
+      appearanceApplyFailed: 'Could not apply appearance',
+      appearanceImportFailed: 'Could not import appearance',
+      appearanceRemoveFailed: 'Could not remove appearance',
+      appearanceReplaceTitle: 'Appearance already exists',
+      appearanceReplaceContent: '“{name}” already exists. Replace it?',
+      replaceAppearance: 'Replace',
+      removeAppearanceTitle: 'Remove custom appearance',
+      removeAppearanceContent: 'Remove “{name}”?',
       cursorSection: 'Cursor effect',
       cursorAnim: 'Cursor animation',
       cursorTip:
@@ -4223,7 +4384,7 @@ export default {
         'Stops the system from sleeping while the app is running. The screen can still turn off.',
       telemetry: 'Anonymous telemetry',
       telemetryTip:
-        'Sends anonymized error and performance data to help diagnose problems; when off, no data is sent at all',
+        'Sends anonymized error, performance and usage data to help diagnose problems; when off, no data is sent at all',
       biliPolicy: 'Handle Bilibili game privacy prompts',
       biliIntro:
         'Turning this on means you have read and accepted the agreements below, and authorize the app to handle the related prompts for you in whatever way it deems appropriate:',
@@ -4239,6 +4400,15 @@ export default {
       voiceEnableTip: 'Play a voice prompt at certain moments',
       voiceType: 'Voice style',
       voiceTypeTip: 'How much the voice prompts say',
+      personalMssEntry: 'Not a mystery entrance',
+      personalMssEntryOn: 'Not a mystery entrance (enabled)',
+      personalMssHint: "Enter the password to enable Beichen's side-project MSS support",
+      personalMssPassword: 'Password',
+      personalMssPlaceholder: 'Enter the password',
+      personalMssWrong: 'Wrong password',
+      personalMssOn: 'Personal-edition MaaStellaSora jobs enabled',
+      personalMssOff: 'Personal-edition MaaStellaSora jobs disabled',
+      personalMssFailed: 'Failed to save, please try again',
     },
     display: {
       section: 'Virtual display',
@@ -4431,7 +4601,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used only for updating MAS itself; MaaFW script project updates take their own CDK on the script edit page',
+        'Used for MAS updates. Selecting MirrorChyan and setting a CDK also enables automatic MAA resource updates, which use the daily download quota. This MAS instance makes at most one resource-package request attempt per local calendar day, including failed or canceled attempts. Set a separate CDK for MaaFW projects on the script edit page.',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',

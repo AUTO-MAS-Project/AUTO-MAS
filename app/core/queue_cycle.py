@@ -243,7 +243,7 @@ def sort_for_preview(entries: list[CycleEntry]) -> list[CycleEntry]:
 
 # 计入成功的用户状态：BetterGI 执行层「部分失败」（有步骤失败但已跳过继续、不重试）
 # 按既有决策仍算跑成功，故显式放行，避免它被判成失败而触发重跑。
-_SUCCESS_USER_STATUSES = ("完成", "部分失败")
+SUCCESS_USER_STATUSES = ("完成", "部分失败")
 
 
 def is_script_success(script_status: str, user_statuses: Iterable[str]) -> bool:
@@ -258,5 +258,5 @@ def is_script_success(script_status: str, user_statuses: Iterable[str]) -> bool:
 
     statuses = list(user_statuses)
     return bool(statuses) and all(
-        status in _SUCCESS_USER_STATUSES for status in statuses
+        status in SUCCESS_USER_STATUSES for status in statuses
     )

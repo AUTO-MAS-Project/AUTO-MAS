@@ -27,6 +27,7 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -34,6 +35,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { decideRendererRecovery } from './rendererCrashRecovery'
+import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
@@ -209,6 +211,9 @@ let forceQuitInProgress = false
 let quitRequestInFlight = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
+let quitPreparationSequence = 0
+let activeQuitPreparation: number | null = null
+let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let rendererCrashes: number[] = []
@@ -481,6 +486,17 @@ function clearQuitFallback(): void {
   }
 }
 
+function cancelQuitRequest(token?: number): void {
+  if (coordinatedQuit || forceQuitInProgress) return
+  if (token !== undefined && token !== activeQuitPreparation) return
+  clearQuitFallback()
+  activeQuitPreparation = null
+  quitPreparationExpired = false
+  quitRequestInFlight = false
+  relaunchAfterQuit = false
+  showMainWindow()
+}
+
 function finishCoordinatedQuit(): void {
   if (coordinatedQuit) return
   coordinatedQuit = true
@@ -615,12 +631,18 @@ type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
@@ -768,6 +790,8 @@ function createWindow() {
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
+    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
+    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1713,6 +1737,46 @@ ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
+ipcMain.handle('app-prepare-quit', () => {
+  if (coordinatedQuit || forceQuitInProgress) return null
+  if (activeQuitPreparation !== null) return activeQuitPreparation
+  clearQuitFallback()
+  quitRequestInFlight = true
+  const token = ++quitPreparationSequence
+  activeQuitPreparation = token
+  quitPreparationExpired = false
+  quitFallbackTimer = setTimeout(() => {
+    quitFallbackTimer = null
+    quitPreparationExpired = true
+    logger.warn('退出前保存超时，撤销本次退出并等待页面保存完成')
+    // 保存请求不能撤回，保留请求锁，避免重复退出重新启动强制清理计时。
+    showMainWindow()
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return token
+})
+
+ipcMain.handle('app-confirm-quit', (_event, token: number) => {
+  if (
+    activeQuitPreparation === null ||
+    token !== activeQuitPreparation ||
+    quitPreparationExpired ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  activeQuitPreparation = null
+  clearQuitFallback()
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout('renderer 保存完成后关闭超时')
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return true
+})
+
+// 页面尚未保存时，后端还未进入关闭流程，允许取消主进程发出的退出请求。
+ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
+  cancelQuitRequest(token)
+})
+
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
@@ -1869,19 +1933,30 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', async (_event, config) => {
+ipcMain.handle('save-config', (_event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
+
+    if (
+      patch &&
+      typeof patch === 'object' &&
+      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
+    ) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('theme-config-changed', {
+            themeMode: config.themeMode,
+            themeColor: config.themeColor,
+            appearanceId: config.appearanceId ?? null,
+          })
+        }
+      }
+    }
 
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
@@ -2126,6 +2201,9 @@ app.whenReady().then(async () => {
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
+
+  registerAppearanceHandlers()
+  logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()

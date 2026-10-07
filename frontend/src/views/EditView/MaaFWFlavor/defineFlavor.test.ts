@@ -308,7 +308,7 @@ const FLAT_BEFORE = {
     managedAccountTask: null,
     managedTaskWarningKey: null,
     managedTaskNoticeKey: null,
-    slotCount: 2,
+    slotCount: 3,
     hasPrepareUserPage: true,
   },
 } as const

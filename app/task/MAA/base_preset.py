@@ -109,24 +109,6 @@ def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
     return tuple(signature)
 
 
-def maa_task_queue_signature(queue: object) -> tuple[tuple, ...] | None:
-    """Return the queue structure while ignoring each task's advanced settings."""
-
-    if not isinstance(queue, list):
-        return None
-
-    signature = []
-    for task in queue:
-        identity = maa_task_identity(task)
-        if identity is None:
-            return None
-        enabled = task.get("IsEnable", True)
-        if enabled is not None and not isinstance(enabled, bool):
-            return None
-        signature.append((*identity, enabled))
-    return tuple(signature)
-
-
 def restore_maa_default_task_queue(
     queue: object, default_queue: list[dict]
 ) -> tuple[list[dict], bool]:
@@ -167,12 +149,17 @@ def restore_maa_default_task_queue(
 
 
 def is_valid_maa_task_queue(expected: object, current: object) -> bool:
-    """Allow task-setting edits only when the queue structure is unchanged."""
+    """Allow task-setting edits only when the queue layout is unchanged.
 
-    expected_signature = maa_task_queue_signature(expected)
+    IsEnable 是用户在原界面里最常动的任务开关，属于任务设置而不是队列结构：
+    算进签名会把「取消勾选一个任务」判成结构变化，整次会话的改动（含高级
+    设置）一起丢弃。这里只比对身份序列。
+    """
+
+    expected_layout = maa_task_queue_layout_signature(expected)
     return (
-        expected_signature is not None
-        and maa_task_queue_signature(current) == expected_signature
+        expected_layout is not None
+        and maa_task_queue_layout_signature(current) == expected_layout
     )
 
 

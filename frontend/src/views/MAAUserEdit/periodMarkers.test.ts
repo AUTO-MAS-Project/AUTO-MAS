@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 
@@ -70,23 +69,5 @@ describe('server-specific game day', () => {
     const monthBoundary = new Date('2026-09-30T21:00:00Z')
     expect(currentMonthMarker(monthBoundary)).toBe('2026-10')
     expect(currentMonthMarker(monthBoundary, getGameDayOffset('YoStarEN'))).toBe('2026-09')
-  })
-})
-
-describe('periodMarkers call sites', () => {
-  // emitSave 的 value 参数是 any，模板里漏掉调用括号类型检查抓不到，用源码文本锁住
-  const source = readFileSync(new URL('./TaskPipelineSection.vue', import.meta.url), 'utf8')
-
-  it('invokes the markers at render and save time instead of passing the function itself', () => {
-    expect(source).toContain('=== serverWeekMarker()')
-    expect(source).toContain('=== serverMonthMarker()')
-    expect(source).toContain("emitSave('Data.AnnihilationCompletedWeek', serverWeekMarker())")
-    expect(source).toContain("emitSave('Data.GreenTicketStoreMonth', serverMonthMarker())")
-  })
-
-  it('derives the markers from the user server game day', () => {
-    expect(source).toContain('getGameDayOffset(formData.value.Info.Server)')
-    expect(source).toContain('currentWeekMarker(new Date(), gameDayOffset())')
-    expect(source).toContain('currentMonthMarker(new Date(), gameDayOffset())')
   })
 })

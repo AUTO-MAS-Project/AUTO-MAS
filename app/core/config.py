@@ -54,6 +54,7 @@ from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
     BAAHConfig,
+    BAAHPlanConfig,
     BAAHUserConfig,
     BetterGIConfig,
     BetterGIUserConfig,
@@ -188,7 +189,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.6.1"
+    VERSION = "v5.6.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -1970,12 +1971,14 @@ class AppConfig(GlobalConfig):
             materialize_user_fields,
             normalize_app_group_entries,
             read_app_group,
+            read_game,
             read_game_account,
+            read_team_list,
             restore_mas_backup,
             restore_onedragon_backup,
         )
         from app.utils.config_archive import dir_files
-        from app.utils.io import read_file
+        from app.utils.io import read_dict_file
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
 
@@ -1990,7 +1993,9 @@ class AppConfig(GlobalConfig):
             backup_idxs = {
                 int(rel.split("/", 1)[0])
                 for rel in dir_files(backup_dir)
-                if "/" in rel and rel.split("/", 1)[0].isdigit()
+                if "/" in rel
+                and rel.split("/", 1)[0].isascii()
+                and rel.split("/", 1)[0].isdigit()
             }
             for bound_script in self.ScriptConfig.values():
                 if not isinstance(bound_script, ZzzOdConfig):
@@ -2017,6 +2022,21 @@ class AppConfig(GlobalConfig):
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         if slot <= 0:
             raise ValueError("该用户还没有生成过配置备份")
+        backup_dir = get_mas_backup_dir(script_id, slot, ts)
+        if backup_dir is None:
+            raise ValueError(f"备份不存在: {ts}")
+        # 写入现场或归档前先读完备份源文件；坏备份不能通过 force 放行。
+        # 缺文件沿用读取器默认值，兼容旧备份。
+        try:
+            backup_account = read_game_account(backup_dir)
+            read_game(backup_dir)
+            backup_apps = normalize_app_group_entries(read_app_group(backup_dir))
+            read_team_list(backup_dir)
+            backup_info = read_dict_file(
+                backup_dir / MAS_USER_INFO_FILE, allow_empty=True
+            )
+        except ConfigCorruptedError as exc:
+            raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
         # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
         # 守卫读不了原生占用，未 force 抛给上层转 409；force 视为空闲放行
@@ -2032,11 +2052,27 @@ class AppConfig(GlobalConfig):
                 f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
                 "为避免覆盖他人配置已中止恢复，请先处理占用后再试"
             )
+        slot_dir = instance_dir(root, slot)
+        # 先读当前槽内会被读-改-写/整表覆盖的 YAML（game_account、game、
+        # _group——materialize 的 write_app_group 会整表覆盖 _group.yml）。
+        # 普通恢复遇到现场坏档要在任何物化/归档前保留 409；force 已获确认
+        # 时跳过物化，随后由 restore_mas_backup 原样归档坏现场，再换入已
+        # 预校验的好备份。
+        materialize_current = True
+        try:
+            read_game_account(slot_dir)
+            read_game(slot_dir)
+            read_app_group(slot_dir)
+        except ConfigCorruptedError:
+            if not force:
+                raise
+            materialize_current = False
         # 恢复前先物化本页账号+编排进槽，再走 restore_mas_backup 内部「强制
         # 归档当前」——这份「恢复前存底」才能回到本页配置状态（否则缺账号，
-        # 误恢复想找回时会把本页账号清空）
-        slot_dir = instance_dir(root, slot)
-        materialize_user_fields(slot_dir, user_cfg)
+        # 误恢复想找回时会把本页账号清空）。force 跳过坏现场物化以保留原始
+        # 字节，归档仍由 restore_mas_backup 完成。
+        if materialize_current:
+            materialize_user_fields(slot_dir, user_cfg)
         restore_mas_backup(
             script_id,
             slot,
@@ -2046,9 +2082,9 @@ class AppConfig(GlobalConfig):
         )
 
         # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
-        account = read_game_account(slot_dir)
+        account = backup_account
         # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
-        all_apps = normalize_app_group_entries(read_app_group(slot_dir))
+        all_apps = backup_apps
         await user_cfg.set(
             "Game", "GameRegion", str(account.get("game_region") or "cn")
         )
@@ -2068,21 +2104,18 @@ class AppConfig(GlobalConfig):
         )
         # 信息字段回填（用户名/启用/模式/启动器/剩余天数/备注/节点详情推送）：
         # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
-        backup_dir = get_mas_backup_dir(script_id, slot, ts)
-        if backup_dir is not None:
-            info = read_file(backup_dir / MAS_USER_INFO_FILE) or {}
-            for field in (
-                "Name",
-                "Status",
-                "Mode",
-                "LauncherMode",
-                "RemainedDay",
-                "Notes",
-            ):
-                if field in info:
-                    await user_cfg.set("Info", field, info[field])
-            if "PushLogMode" in info:
-                await user_cfg.set("Notify", "PushLogMode", info["PushLogMode"])
+        for field in (
+            "Name",
+            "Status",
+            "Mode",
+            "LauncherMode",
+            "RemainedDay",
+            "Notes",
+        ):
+            if field in backup_info:
+                await user_cfg.set("Info", field, backup_info[field])
+        if "PushLogMode" in backup_info:
+            await user_cfg.set("Notify", "PushLogMode", backup_info["PushLogMode"])
         await self.ScriptConfig.save()
         logger.info(
             f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
@@ -2439,11 +2472,14 @@ class AppConfig(GlobalConfig):
             MAS_USER_INFO_FILE,
             get_mas_backup_dir,
             get_onedragon_backup_dir,
+            inspect_onedragon_backup,
             list_app_catalog,
             read_app_group,
+            read_game,
             read_game_account,
+            read_team_list,
         )
-        from app.utils.io import read_file
+        from app.utils.io import read_dict_file
 
         # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
         root = self._zzzod_root(self._zzzod_script_config(script_id))
@@ -2452,23 +2488,43 @@ class AppConfig(GlobalConfig):
             backup = get_onedragon_backup_dir(root, ts)
             if backup is None:
                 raise ValueError(f"备份不存在: {ts}")
-            data = read_file(backup / "one_dragon.yml") or {}
+            data, warnings = inspect_onedragon_backup(backup)
+            warnings = list(warnings)
             name_book = {
                 str(item.get("app_id")): str(item.get("app_name") or "")
                 for item in list_app_catalog(root)
             }
             instances = []
-            for item in data.get("instance_list") or []:
+            entries = data.get("instance_list")
+            if not isinstance(entries, list):
+                entries = []
+            for item in entries:
                 if not isinstance(item, dict):
                     continue
-                idx = int(item.get("idx", 0))
+                raw_idx = item.get("idx")
+                if not isinstance(raw_idx, int) or isinstance(raw_idx, bool):
+                    continue
+                idx = int(raw_idx)
                 # 实例明细来自备份目录内的 {idx}/（备份按原生注册表逐 idx 归档，
                 # 目录名不带零填充，与一条龙原生实例目录同构）
                 backup_idx_dir = backup / str(idx)
-                account = read_game_account(backup_idx_dir)
+                try:
+                    account = read_game_account(backup_idx_dir)
+                except ConfigCorruptedError as exc:
+                    warnings.append(
+                        f"原生备份实例 {idx:02d} 账号配置损坏，无法预览：{exc}"
+                    )
+                    account = {}
                 account_fields = self._preview_account_fields(account)
                 task_fields = []
-                for task in read_app_group(backup_idx_dir):
+                try:
+                    app_group = read_app_group(backup_idx_dir)
+                except ConfigCorruptedError as exc:
+                    warnings.append(
+                        f"原生备份实例 {idx:02d} 任务编排损坏，无法预览：{exc}"
+                    )
+                    app_group = []
+                for task in app_group:
                     app_id = str(task.get("app_id") or "").strip()
                     if not app_id:
                         continue
@@ -2496,6 +2552,8 @@ class AppConfig(GlobalConfig):
                 "account": [],
                 "tasks": [],
                 "instances": instances,
+                "warnings": warnings,
+                "restoreAllowed": not warnings,
             }
 
         _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
@@ -2506,7 +2564,28 @@ class AppConfig(GlobalConfig):
         if backup is None:
             raise ValueError(f"备份不存在: {ts}")
 
-        info = read_file(backup / MAS_USER_INFO_FILE) or {}
+        # 预览把损坏文件降级为警示（与 onedragon 分支一致）：摘要照常返回，
+        # restoreAllowed=False 锁住恢复；坏备份仍由恢复前预读统一拦截。
+        warnings: list[str] = []
+        info: dict = {}
+        try:
+            info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
+        account: dict = {}
+        try:
+            account = read_game_account(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份账号配置损坏，无法恢复：{exc}")
+        try:
+            read_game(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份启动参数损坏，无法恢复：{exc}")
+        try:
+            read_team_list(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份编队配置损坏，无法恢复：{exc}")
+
         info_fields = []
         for key, field in (
             ("name", "Name"),
@@ -2521,15 +2600,19 @@ class AppConfig(GlobalConfig):
                 continue
             info_fields.append({"key": key, "value": str(info[field])})
 
-        account = read_game_account(backup)
         account_fields = self._preview_account_fields(account)
 
         name_book = {
             str(item.get("app_id")): str(item.get("app_name") or "")
             for item in list_app_catalog(root)
         }
+        app_group: list = []
+        try:
+            app_group = read_app_group(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份任务编排损坏，无法恢复：{exc}")
         tasks = []
-        for item in read_app_group(backup):
+        for item in app_group:
             app_id = str(item.get("app_id") or "").strip()
             if not app_id:
                 continue
@@ -2547,6 +2630,8 @@ class AppConfig(GlobalConfig):
             "account": account_fields,
             "tasks": tasks,
             "instances": [],
+            "warnings": warnings,
+            "restoreAllowed": not warnings,
         }
 
     def _zzzod_native_instance(
@@ -3028,8 +3113,10 @@ class AppConfig(GlobalConfig):
         )
 
     async def add_plan(
-        self, script: Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+    ) -> tuple[
+        uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+    ]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -3076,7 +3163,9 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
         consumer_config = PLAN_BOOK[plan_type]
-        user_list: list[MaaUserConfig | MaaEndUserConfig | MSSUserConfig] = []
+        user_list: list[
+            MaaUserConfig | MaaEndUserConfig | BAAHUserConfig | MSSUserConfig
+        ] = []
 
         for script in self.ScriptConfig.values():
             if not isinstance(script, consumer_config["script_class"]):
@@ -4463,13 +4552,14 @@ class AppConfig(GlobalConfig):
                     if not user_folder.is_dir():
                         continue  # 只处理用户文件夹
 
-                    if user_folder.stem not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.stem] = list(
-                            user_folder.with_suffix("").glob("*.json")
+                    # 键必须用完整目录名: 用户名本身可含点, stem/with_suffix 会把最后一个点当扩展名截断
+                    if user_folder.name not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.name] = list(
+                            user_folder.glob("*.json")
                         )
                     else:
-                        history_dict[date_name][user_folder.stem] += list(
-                            user_folder.with_suffix("").glob("*.json")
+                        history_dict[date_name][user_folder.name] += list(
+                            user_folder.glob("*.json")
                         )
 
             except ValueError:

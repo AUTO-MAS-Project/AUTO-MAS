@@ -126,6 +126,16 @@ def minimize_window(hwnd: int) -> bool:
     return True
 
 
+def close_window(hwnd: int) -> bool:
+    """发送 WM_CLOSE 请求窗口关闭，由应用自行走退出保存流程"""
+
+    try:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+    except Exception:
+        return False
+    return True
+
+
 def activate_window(hwnd: int) -> bool:
     attached = False
     current_tid = 0

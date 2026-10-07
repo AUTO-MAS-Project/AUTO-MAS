@@ -22,7 +22,6 @@
 
 
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,9 +41,9 @@ from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
+from app.task.MSS.api_service import defense_status as mss_defense_status
 from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
-from app.utils.constants import UTC8
 from app.utils.io import ConfigCorruptedError
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -1191,6 +1190,25 @@ async def list_maafw_shell_instances(
 
 
 @router.post(
+    "/maafw/mss/defense-status",
+    tags=["MaaFW"],
+    summary="个人版「灾变防线」这一期的状态",
+    response_model=MssDefenseStatusOut,
+    status_code=200,
+)
+async def get_mss_defense_status(
+    payload: MssDefenseStatusIn = Body(...),
+) -> MssDefenseStatusOut:
+    """MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
+
+    「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
+    """
+
+    data = await mss_defense_status(payload.scriptId, payload.userId)
+    return MssDefenseStatusOut(data=MssDefenseStatusData(**data))
+
+
+@router.post(
     "/maafw/shell-instances/import",
     tags=["MaaFW"],
     summary="把选中的外壳配置实例导入成用户",
@@ -1209,6 +1227,28 @@ async def import_maafw_shell_instances(
         payload.scriptId, payload.instanceIds
     )
     return MaaFWShellInstanceImportOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-instances/apply",
+    tags=["MaaFW"],
+    summary="把一份外壳配置的任务队列覆盖到已有用户",
+    response_model=MaaFWShellInstanceApplyOut,
+    status_code=200,
+)
+async def apply_maafw_shell_instance(
+    payload: MaaFWShellInstanceApplyIn = Body(...),
+) -> MaaFWShellInstanceApplyOut:
+    """脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+
+    与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+    覆盖的是任务队列与任务选项，用户名不动。
+    """
+
+    reply = await maafw_shell_instances_api.apply_shell_instance_to_user(
+        payload.scriptId, payload.userId, payload.instanceId, payload.path
+    )
+    return MaaFWShellInstanceApplyOut(**reply.out_fields())
 
 
 @router.post(
@@ -1447,53 +1487,6 @@ async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
         )
-
-
-def _format_beijing_time(timestamp: float) -> str:
-    """Unix 秒 → 「YYYY-MM-DD HH:MM」（东八区）。"""
-
-    return datetime.fromtimestamp(timestamp, tz=UTC8).strftime("%Y-%m-%d %H:%M")
-
-
-@router.get(
-    "/baah/activity-status",
-    tags=["BAAH"],
-    summary="获取碧蓝档案活动状态",
-    response_model=BlueArchiveActivityStatusOut,
-    status_code=200,
-)
-async def get_baah_activity_status_api(
-    lineType: Literal["JP", "Globle", "CN"] = "CN",
-) -> BlueArchiveActivityStatusOut:
-    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。"""
-
-    from app.tools.bluearchive_activity import resolve_activity_state
-
-    state = await resolve_activity_state(lineType)
-    if state is None:
-        ## 取不到排期不算错误，如实说明即可
-        return BlueArchiveActivityStatusOut(
-            message="未取到碧蓝档案活动排期，请稍后重试",
-        )
-
-    running, upcoming = state
-    if running is not None:
-        return BlueArchiveActivityStatusOut(
-            Running=True,
-            Name=running.name,
-            StartTime=_format_beijing_time(running.start_time),
-            EndTime=_format_beijing_time(running.end_time),
-            message=f"进行中: {running.name}",
-        )
-
-    if upcoming is not None:
-        return BlueArchiveActivityStatusOut(
-            NextName=upcoming.name,
-            NextStartTime=_format_beijing_time(upcoming.start_time),
-            message=f"下一个活动: {upcoming.name}",
-        )
-
-    return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
 
 
 @router.get(

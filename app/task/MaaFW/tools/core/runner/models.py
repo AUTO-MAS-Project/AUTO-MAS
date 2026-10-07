@@ -42,6 +42,9 @@ class MaaFWTaskRunPlan(BaseModel):
     # 与 interface 里 default_case 不同的选项，键值都已换成给人看的标签并脱敏；
     # 建计划时算好，runner 只负责拼成一行。
     nonDefaultOptions: dict[str, Any] = Field(default_factory=dict)
+    # 特调声明的关键任务（如 M9A 的切换账号）：失败或超时就结束本轮、报这句，由宿主照常
+    # 重试；None 是普通任务，失败后继续后面的任务。
+    abortRoundMessage: str | None = None
 
 
 class MaaFWSkippedTaskPlan(BaseModel):
@@ -143,3 +146,12 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
     # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
     runDeadlineAt: float | None = None
+    # 单个任务的时限（秒）。到点只停这一个任务、截一张超时图，记一条任务失败再继续后面的
+    # 任务（计划里第一个任务超时则结束本轮）；None / 0 表示不限。宿主按 Run.TaskTimeLimit
+    # 换算后随 job 文件下发。
+    taskTimeLimitSeconds: int | None = None
+    # 按任务名覆盖的单任务时限（秒），键是 MaaFWTaskRunPlan.name；值 0 表示该任务不限。
+    taskTimeLimitOverrides: dict[str, int] | None = None
+    # 原地打转检测（实验性）：任务在短周期里反复执行同一串节点、识别结果又不变时停掉它，
+    # 收尾与单任务超时同一口径。宿主按 Run.LoopGuard 下发，默认关。
+    loopGuard: bool = False

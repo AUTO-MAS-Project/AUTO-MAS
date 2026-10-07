@@ -21,7 +21,7 @@
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
-              {{ statusLabel(script.status) }}
+              {{ scriptStatusLabel(script) }}
             </a-tag>
           </div>
         </div>
@@ -30,7 +30,7 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
+              <span class="no-users-text">{{ emptyScriptLabel(script) }}</span>
             </div>
           </div>
           <div
@@ -58,6 +58,7 @@ import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
 import { useStatusLabel } from '@/i18n/status'
+import { isWaitingWithoutUsers } from './taskTreePresentation'
 
 const { t } = useI18n()
 
@@ -95,6 +96,12 @@ const toggleScript = (scriptId: string) => {
     expandedScripts.value.add(scriptId)
   }
 }
+
+const scriptStatusLabel = (script: Script) =>
+  isWaitingWithoutUsers(script) ? t('scheduler.overview.waitingToRun') : statusLabel(script.status)
+
+const emptyScriptLabel = (script: Script) =>
+  isWaitingWithoutUsers(script) ? t('scheduler.overview.waitingToRun') : t('comp.noUsersYet')
 
 // 获取状态颜色 - 使用更全面的映射和后备逻辑
 const getStatusColor = (status: string) => {

@@ -89,6 +89,24 @@ KIND_RANK = {
 ## 按关键词认而不是整名：猎影合围以后去掉了 Beta 也照样算
 PERMANENT_KIND = "常驻活动"
 PERMANENT_KEYWORDS = ("灾变防线", "创业激励基金", "猎影合围")
+
+
+def classify_activity_name(name: str) -> str:
+    """按公告标题给活动定分类。
+
+    官网公告没有分类字段，分类只能从标题看：命中常驻关键词的是「常驻活动」，
+    带「一览」的是「版本活动」，带「招募」的是「招募」，其余归到「活动」。
+    SRA 兜底那份数据也没有分类，同样用它补上，免得前端的横幅与分组筛选落空。
+    """
+
+    if any(keyword in name for keyword in PERMANENT_KEYWORDS):
+        return PERMANENT_KIND
+    for keyword, kind in KIND_BY_SUFFIX:
+        if keyword in name:
+            return kind
+    return "活动"
+
+
 ## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
 SKIP_TITLE = re.compile(
     r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"
@@ -342,3 +360,32 @@ async def has_running_official_activity() -> bool | None:
             return True
 
     return False
+
+
+async def permanent_activity_window(keyword: str) -> str | None:
+    """某个常驻活动（如「灾变防线」）当前那一期的开始时刻。
+
+    常驻活动长期开放、随版本轮换：它们每期都会重发一篇同名公告，而
+    :func:`parse_activities` 对同名公告只留结束最晚的那条，所以这里拿到的是
+    「当前这一期」——正好可以当作「这期」的标识。
+
+    一期一个开始时刻，跨月也认得出是同一期；自然月做不了这件事，因为上游更新
+    并不严格按月来。
+
+    Args:
+        keyword: 活动名里的关键词，如 ``灾变防线``。
+
+    Returns:
+        str | None: 期的开始时刻（ISO 8601，形如 ``2026-09-29T12:00+08:00``）；
+        没有这个活动或取不到数据时为 None——调用方要当成「说不准」跳过编排。
+    """
+
+    data = await fetch_official_activities()
+    if data is None:
+        return None
+
+    for item in data["activities"]:
+        if item["kind"] == PERMANENT_KIND and keyword in item["name"]:
+            return str(item["startTime"])
+
+    return None

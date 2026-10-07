@@ -11,11 +11,14 @@ import { configureSentry, recordRendererStartup } from '@/utils/sentry'
 import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
 import { i18n } from '@/i18n'
 import { useLocale } from '@/composables/useLocale'
+import { useTheme } from '@/composables/useTheme'
 
 import Antd, { message } from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import '@/styles/scrollbar.css'
 import '@/styles/formSection.css'
+import '@/styles/appearanceCursor.css'
+import '@/styles/appearanceSurfaces.css'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8
@@ -93,6 +96,9 @@ app.config.errorHandler = (err, instance, info) => {
 
 const bootstrap = async () => {
   const frontendConfig = await getConfig()
+
+  // 外观必须在首次挂载前恢复，避免独立窗口和主窗口先显示默认主题后再跳变。
+  await useTheme().initTheme(frontendConfig)
 
   // 语言必须在挂载前定好，否则首帧会闪一次默认语言；复用上面已读的配置，避免重复 IPC
   await useLocale().initLocale(frontendConfig)

@@ -46,6 +46,27 @@ async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
 
 
 @router.get(
+    "/task/{task_id}",
+    tags=["Get"],
+    summary="按 taskId 查询单个任务状态",
+    response_model=TaskStatusOut,
+    status_code=200,
+)
+async def get_task_status(task_id: str) -> TaskStatusOut:
+    """返回运行中或最近完成任务的终态；不包含日志。"""
+
+    result = TaskManager.get_task_status(task_id)
+    if result is None:
+        return TaskStatusOut(
+            code=404,
+            status="error",
+            message=f"任务 {task_id} 既不在运行中, 也不在最近完成的记录里",
+            taskId=task_id,
+        )
+    return result
+
+
+@router.get(
     "/power/countdown-snapshot",
     tags=["Get"],
     summary="获取电源倒计时初始快照",
@@ -73,6 +94,8 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
             user_id=task.userId,
+            user_ids=task.userIds,
+            queue_user_ids=task.queueUserIds,
             view_only=task.viewOnly,
             instance_idx=task.instanceIdx,
         )

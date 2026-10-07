@@ -1,7 +1,7 @@
 <h1 align="center">AUTO-MAS</h1>
 <p align="center">
-  多脚本多配置统一管理与自动化软件<br><br>
-  <img alt="软件图标" src="https://auto-mas.top/favicon.ico">
+  A Multi-Script, Multi-Config Management and Automation Software<br><br>
+  <img alt="Software icon" src="https://auto-mas.top/favicon.ico">
 </p>
 
 ---
@@ -18,82 +18,83 @@
 </p>
 
 <p align="center">
-  简体中文 |
-  <a href="docs/en/README.md">English</a>
+  <a href="docs/zh/README.md">简体中文</a>
+  | English
 </p>
 
-## 软件介绍
+## Introduction
 
-### 性质
+### Nature
 
-本软件是自动化脚本类软件的管理工具，能够管理大量脚本并存储多个用户配置、设计自动化任务流、监看脚本日志，提高自动化代理效率与稳定性。
+This software is a management tool for automation scripts. It enables centralized management of numerous scripts, stores multiple user configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
 
-- **集中管理**：一站式管理多个脚本与多个用户配置，和凌乱的散装脚本窗口说再见！
-- **无人值守**：监看脚本日志并自动处理报错，再也不用为代理任务卡死时自己不在电脑旁烦恼啦！
-- **配置灵活**：通过调度队列与脚本的组合设计调度队列，自由实现您能想到的所有调度需求！
-- **代理记录**：记录所有代理记录与日志片段，定位问题更快更准更方便！
+- **Centralized Management**: Manage multiple scripts and user configurations in one place—say goodbye to messy, scattered script windows!
+- **Unattended Operation**: Monitor script logs and automatically handle errors—no more worries about tasks freezing while you're away from your computer!
+- **Flexible Configuration**: Combine scheduling queues with scripts to freely implement any scheduling logic you can imagine!
+- **Proxy Logging**: Record all proxy sessions and log snippets for faster, more accurate, and convenient troubleshooting!
 
-### 原理
+### Working Principle
 
-本软件可以存储多个脚本的多个配置，并通过以下流程实现代理功能：
+The software stores multiple configurations for multiple scripts and implements proxy functionality through the following workflow:
 
-1. **配置：** 根据对应用户的配置信息，生成配置文件并将其导入对应脚本。
-2. **监测：** 在脚本开始代理后，持续读取脚本日志以判断其运行状态。当软件认定脚本出现异常时，通过重启脚本使之仍能继续完成任务。
-3. **循环：** 重复上述步骤，使脚本依次完成各个用户的自动代理任务。
+1. **Configuration**: Generate configuration files based on user settings and inject them into the corresponding scripts.
+2. **Monitoring**: After the script starts proxying, continuously read its logs to assess runtime status. If an anomaly is detected, the software restarts the script to ensure task continuity.
+3. **Looping**: Repeat the above steps to allow scripts to sequentially fulfill automated proxy tasks for all users.
 
-## 重要声明
+## Important Notice
 
-本开发团队承诺，不会主动修改游戏本体与相关配置文件。本项目使用AGPL开源，相关细则如下：
+The development team commits to never actively modifying the game client or its configuration files. This project is open-sourced under the AGPL license, with the following clarifications:
 
-- **作者：** AUTO-MAS 项目作者为 AUTO-MAS Team，AUTO-MAS Team 的所有权利均授权给 [DLmaster (@DLmaster361)](https://github.com/DLmaster361)，仅该被授权人能代表 AUTO-MAS Team 行使全部权利。
-- **使用：** AUTO-MAS 使用者可以按自己的意愿自由使用本软件。依据AGPL，对于由此可能产生的损失，AUTO-MAS Team 不负任何责任。
-- **分发：** AUTO-MAS 允许任何人自由分发本软件，包括进行商业活动牟利。若为直接分发本软件，必须遵循 AGPL 向接收者提供本软件项目地址、完整的软件源码与 AGPL 协议原文（件）；若为修改软件后进行分发，必须遵循 AGPL 向接收者提供本软件项目地址、修改前的完整软件源码副本与 AGPL 协议原文（件），违反者可能会被追究法律责任。使用本项目进行商业活动的，必须自行建立客户社群，自行向客户提供售后服务，不得将客户引导到由 AUTO-MAS 项目组维护运营的官方社群。利用开源社群资源牟利的，将被列入黑名单并进行公示。
-- **传播：** AUTO-MAS 原则上允许传播者自由传播本软件，但无论在何种传播过程中，不得删除原有版权声明，不得隐瞒 AUTO-MAS Team 的存在。由于软件性质，AUTO-MAS Team 不希望发现任何人在游戏官方媒体（包括官方媒体账号与官方社区等）或游戏相关内容（包括同好群、线下活动与游戏内容讨论等）下提及 AUTO-MAS 或相关自动化软件，希望各位理解。
-- **衍生：** AUTO-MAS 允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据AGPL，相关成果再次分发时也必须使用AGPL或兼容的协议开源。
-- **图像与美术资源：** 本软件图像、图标、插画及其他美术资源**不适用**代码开源许可。完整权属清单、再分发义务、第三方合规模板与商业授权联系方式，见 [图像与美术资源许可协议](https://doc.auto-mas.top/disclosure/assets-license)。该协议构成发行物的不可分割组成部分，再分发或单独使用相关资源时不得剥离。
+- **Authorship**: The author of the AUTO-MAS project is the AUTO-MAS Team. All rights of the AUTO-MAS Team are exclusively granted to [DLmaster (@DLmaster361)](https://github.com/DLmaster361), who alone may represent the team in exercising all rights.
+- **Usage**: Users may freely use this software at their own discretion. Per the AGPL, the AUTO-MAS Team bears no liability for any potential damages arising from its use.
+- **Distribution**: Anyone may freely redistribute this software, including for commercial profit. Direct redistribution requires providing recipients with the project URL, full source code, and a copy of the AGPL license text as mandated by the AGPL. Modified redistributions must additionally include the original unmodified source code. Violators may face legal action. Commercial users must establish their own customer communities and provide their own after-sales support—they may not redirect customers to the official AUTO-MAS community. Those exploiting the open-source community for profit will be blacklisted and publicly disclosed.
+- **Promotion**: Redistribution is generally permitted, provided that original copyright notices remain intact and the existence of the AUTO-MAS Team is not concealed. Due to the nature of this software, the AUTO-MAS Team requests that no one mention AUTO-MAS or related automation tools in official game media (including official accounts and communities) or game-related content (such as fan groups, offline events, or gameplay discussions). Your understanding is appreciated.
+- **Derivative Works**: Anyone may create derivative works based on the software or parts of its code. However, per the AGPL, any redistributed derivatives must also be open-sourced under the AGPL or a compatible license.
+- **Artwork and Visual Assets:** Images, icons, illustrations, and other visual assets of this software are **not** covered by the code open-source license. For the full ownership inventory, redistribution duties, third-party compliance templates, and commercial authorization contacts, see the [Visual Assets License Agreement](https://doc.auto-mas.top/disclosure/assets-license). That Agreement is an inseparable part of any distribution and must not be stripped when redistributing or using the assets alone.
 
-以上细则是本项目对AGPL的相关补充与强调。未提及的以 AGPL 为准；就图像与美术资源而言，以在线协议为准；其余条款发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
+These terms supplement and emphasize specific aspects of the AGPL. Where unspecified, the AGPL governs; for visual assets, the online Agreement governs; for other conflicts, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
 
-## 使用方法
+## How to Use
 
-访问 AUTO-MAS 官方文档站以获取使用指南和更多项目相关信息
+Visit the official AUTO-MAS documentation site for user guides and additional project information
 
-- [AUTO-MAS 官方文档站](https://doc.auto-mas.top)
+- [Official Documentation](https://doc.auto-mas.top)
 
-## 参与贡献
+## Contributing
 
-如需参与项目开发或提交贡献，请先阅读开发与贡献指南：
+To participate in development or contribute to the project, please read the development and contribution guide first:
 
-- [开发与贡献指南](https://doc.auto-mas.top/developer/)
+- [Development and Contribution Guide](https://doc.auto-mas.top/developer/)
 
-## 代码签名策略
+## Code Signing Policy
 
-免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
-- 审批人: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+- Approvers: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
-## 隐私政策
+## Privacy Policy
 
-为更好地提供服务，AUTO-MAS 将自动收集以下信息：
+To better serve you, AUTO-MAS will automatically collect the following information:
 
-- 软件版本号
-- 运行时错误信息
-- 性能追踪信息
+- Software version number
+- Runtime error information
+- Performance tracing information
+- Usage statistics: run counts and results per script type, which public MaaFramework project is run (only projects listed in the MaaFramework README; any other project is reported as "other"), and one daily-active count per day (no device identifier)
 
-AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。匿名遥测默认开启，可在「设置 -> 功能设置」中关闭；关闭后前后端均不再发送遥测数据。
+AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under 「Settings -> Function Settings」; once disabled, neither the frontend nor backend sends telemetry data.
 
 ---
 
-# 关于
+# About
 
-## 特别鸣谢
+## Special Thanks
 
-- [AoXuan (@ClozyA)](https://github.com/ClozyA)：捐赠 AUTO-MAS 下载站服务器数月。
-- <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>：赞助开发者 AI API 额度。PackyCode 是一家稳定、高效的 API 中转服务商，提供 Claude Code、Codex、Gemini 等多种中转服务，具备自动故障转移、智能路由和无限并发等功能。[免费注册 PackyCode](https://www.packyapi.ai/register?aff=zKkA)
+- [AoXuan (@ClozyA)](https://github.com/ClozyA): donated the AUTO-MAS download server for several months.
+- <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>: Sponsored the developer with AI API credits. PackyCode is a stable, high-performance API relay provider offering relay services for Claude Code, Codex, Gemini, and more, with automatic failover, smart routing, and unlimited concurrency. [Register for free on PackyCode](https://www.packyapi.ai/register?aff=zKkA).
 
-## 贡献者
+## Contributors
 
-感谢以下贡献者对本项目做出的贡献
+We thank the following contributors for their work on this project
 
 <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS/graphs/contributors">
 
@@ -115,10 +116,10 @@ AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏�
 
 </a>
 
-## 官方社区
+## Official Community
 
-欢迎加入 AUTO-MAS 项目组官方社群！
+Join the official AUTO-MAS community!
 
-- QQ 交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
-- QQ 开发者交流群：[1094208135](https://qm.qq.com/q/MJYbfjwScM)
-- Telegram：[@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
+- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)
+- QQ Developer Community: [1094208135](https://qm.qq.com/q/MJYbfjwScM)
+- Telegram: [@AUTO_MAS_top](https://t.me/AUTO_MAS_top)

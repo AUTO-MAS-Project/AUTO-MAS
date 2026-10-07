@@ -53,7 +53,12 @@
 
     <!-- 同时可能有好几场活动在跑，按结束时间先后的卡片横排，与其它游戏的活动卡一致 -->
     <div v-else-if="overview.Available && !currentLoading" class="activity-list">
-      <div v-for="activity in displayActivities" :key="activity.name" class="activity-card">
+      <div
+        v-for="activity in displayActivities"
+        :key="activity.name"
+        class="activity-card"
+        :class="{ 'is-upcoming': isUpcoming(activity) }"
+      >
         <div class="activity-item">
           <img
             v-if="getActivityImage(activity)"
@@ -75,12 +80,20 @@
             </div>
             <div class="activity-meta">
               <a-statistic-countdown
-                :value="getCountdownValue(activity.endTime)"
+                :value="getCountdownValue(countdownTarget(activity))"
                 :format="t('home.countdown.dh')"
                 :value-style="activityCountdownStyle"
               />
               <div class="activity-end-time">
-                {{ t('home.bluearchive.endsAt', { time: formatTime(activity.endTime) }) }}
+                {{
+                  isUpcoming(activity)
+                    ? t('home.bluearchive.startsAt', {
+                        time: formatActivityTime(activity.startTime, locale),
+                      })
+                    : t('home.bluearchive.endsAt', {
+                        time: formatActivityTime(activity.endTime, locale),
+                      })
+                }}
               </div>
             </div>
           </div>
@@ -102,10 +115,11 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeBlueArchiveOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   servers: BlueArchiveServerOverview[]
@@ -150,16 +164,25 @@ watch([() => props.selected, () => overview.value.activities], () => {
   failedImageNames.value = new Set()
 })
 
+const isUpcoming = (activity: BlueArchiveActivityOverview['activities'][number]) =>
+  getCountdownValue(activity.startTime) > now.value
+
+const countdownTarget = (activity: BlueArchiveActivityOverview['activities'][number]) =>
+  isUpcoming(activity) ? activity.startTime : activity.endTime
+
 const displayActivities = computed(() => {
-  return overview.value.activities
-    .filter(activity => {
-      return (
+  const running = overview.value.activities
+    .filter(
+      activity =>
         getCountdownValue(activity.startTime) <= now.value &&
         getCountdownValue(activity.endTime) > now.value
-      )
-    })
+    )
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
-    .slice(0, MAX_VISIBLE_ACTIVITIES)
+  // 只列进行中的话，长草期整片卡片是空的；即将开始的按开始时间跟在后头，卡片上另有标记
+  const upcoming = overview.value.activities
+    .filter(activity => getCountdownValue(activity.startTime) > now.value)
+    .sort((left, right) => getCountdownValue(left.startTime) - getCountdownValue(right.startTime))
+  return [...running, ...upcoming].slice(0, MAX_VISIBLE_ACTIVITIES)
 })
 
 const getActivityImage = (activity: BlueArchiveActivityOverview['activities'][number]) => {
@@ -178,16 +201,9 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 }))
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
+
+<style scoped src="./activityCard.css"></style>
 
 <style scoped>
 .bluearchive-card {
@@ -198,16 +214,6 @@ const formatTime = (value: string) =>
 .bluearchive-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
 }
 
 .server-switch {
@@ -267,24 +273,6 @@ const formatTime = (value: string) =>
   outline-offset: -2px;
 }
 
-.status-alert {
-  margin-bottom: 16px;
-}
-
-.empty-state {
-  padding: 24px 0;
-}
-
-/* ---------- 活动卡片（带封面，横排） ---------- */
-.activity-list {
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-
 .activity-item {
   min-width: 0;
   width: 266px;
@@ -306,51 +294,6 @@ const formatTime = (value: string) =>
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-}
-
-.activity-card:hover .activity-item {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-image {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  transition: transform 0.35s ease;
-}
-
-.activity-card:hover .activity-image {
-  transform: scale(1.05);
-}
-
-.activity-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 18, 32, 0.05) 0%,
-    rgba(11, 18, 32, 0.3) 40%,
-    rgba(11, 18, 32, 0.88) 100%
-  );
-}
-
-.activity-content {
-  width: 100%;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-  padding: 14px 16px;
-}
-
-.activity-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-bottom: 8px;
 }
 
 /* 分类标签：活动 / 总力大决 / 爬塔 / 多倍活动 … */
@@ -383,19 +326,6 @@ const formatTime = (value: string) =>
   gap: 8px;
 }
 
-.activity-meta :deep(.ant-statistic-content) {
-  line-height: 1.4;
-}
-
-.activity-end-time {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .activity-desc {
   max-height: 0;
   overflow: auto;
@@ -420,9 +350,12 @@ const formatTime = (value: string) =>
   margin-bottom: 8px;
 }
 
-@media (max-width: 560px) {
-  .activity-card {
-    width: 180px;
-  }
+/* 还没开场的那几张压暗一点，一眼能看出哪个正在跑 */
+.activity-card.is-upcoming {
+  opacity: 0.72;
+}
+
+.activity-card.is-upcoming:hover {
+  opacity: 1;
 }
 </style>

@@ -35,13 +35,20 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import psutil
+
+from app.services import System
+from app.utils import get_logger
+
+logger = get_logger("专项进程清理")
 
 __all__ = [
     "append_push_log",
     "find_pids_by_name",
+    "kill_pids",
+    "kill_pids_by_name",
     "push_dispatch_log",
     "quick_config_takeover",
     "read_config_source",
@@ -83,6 +90,26 @@ def find_pids_by_name(process_name: str) -> list[int]:
         except psutil.Error:
             continue
     return pids
+
+
+async def kill_pids(pids: Iterable[int]) -> int:
+    """逐个结束已确认归属的进程，返回失败数；单个失败不阻断后续清理。"""
+
+    failed = 0
+    for pid in pids:
+        try:
+            if not await System.kill_process_by_pid(pid):
+                failed += 1
+        except Exception as exc:
+            failed += 1
+            logger.opt(exception=True).warning(f"结束进程失败 PID: {pid}, {exc}")
+    return failed
+
+
+async def kill_pids_by_name(process_name: str) -> int:
+    """在线程中按名收集 PID，再结束进程并返回失败数。"""
+
+    return await kill_pids(await asyncio.to_thread(find_pids_by_name, process_name))
 
 
 async def push_dispatch_log(script_info: object, line: str) -> None:

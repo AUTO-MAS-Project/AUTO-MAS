@@ -19,7 +19,6 @@ import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSav
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
-import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
@@ -81,10 +80,14 @@ import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn'
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
+import type { MaaFWShellInstanceApplyOut } from '../models/MaaFWShellInstanceApplyOut';
 import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImportIn';
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
+import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
+import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
@@ -142,6 +145,7 @@ import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
+import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
@@ -389,6 +393,9 @@ export class Service {
      *
      * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
      * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
+     *
+     * GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
+     * 的字段形状再交给前端，省得让前端认识第二套数据源。
      * @param requestBody
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -470,6 +477,9 @@ export class Service {
      * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
      * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
      * 不然前端会把「没有活动」当成接口出错反复重试。
+     *
+     * PRTS 在部分网络下会连不上、也挡浏览器直连，真取不到时改用 SRA 托管的那份活动列表
+     * 顶上：数据没有活动分类，卡片上会少一列标签，但至少不是空的。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -484,11 +494,14 @@ export class Service {
      * 取回星塔旅人的活动一览。
      *
      * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
-     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
-     * 信封，由卡片显示自己的失败态，不影响其它卡片。
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
+     *
+     * 官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
+     * 对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
+     * 分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
      *
      * Returns:
-     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+     * InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -1192,6 +1205,28 @@ export class Service {
         });
     }
     /**
+     * 个人版「灾变防线」这一期的状态
+     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
+     *
+     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
+     * @param requestBody
+     * @returns MssDefenseStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
+        requestBody: MssDefenseStatusIn,
+    ): CancelablePromise<MssDefenseStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mss/defense-status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 把选中的外壳配置实例导入成用户
      * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
      *
@@ -1206,6 +1241,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/shell-instances/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把一份外壳配置的任务队列覆盖到已有用户
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+     *
+     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+     * 覆盖的是任务队列与任务选项，用户名不动。
+     * @param requestBody
+     * @returns MaaFWShellInstanceApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
+        requestBody: MaaFWShellInstanceApplyIn,
+    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/apply',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1410,27 +1468,6 @@ export class Service {
             url: '/api/scripts/baah/config-names',
             query: {
                 'scriptId': scriptId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取碧蓝档案活动状态
-     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-     * @param lineType
-     * @returns BlueArchiveActivityStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
-        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
-    ): CancelablePromise<BlueArchiveActivityStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/baah/activity-status',
-            query: {
-                'lineType': lineType,
             },
             errors: {
                 422: `Validation Error`,
@@ -3281,6 +3318,27 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
+     * 按 taskId 查询单个任务状态
+     * 返回运行中或最近完成任务的终态；不包含日志。
+     * @param taskId
+     * @returns TaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskStatusApiDispatchTaskTaskIdGet(
+        taskId: string,
+    ): CancelablePromise<TaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/task/{task_id}',
+            path: {
+                'task_id': taskId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
