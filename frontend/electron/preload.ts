@@ -186,6 +186,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('appearance:online-install', token, replace),
   discardOnlineAppearance: (token: string) =>
     ipcRenderer.invoke('appearance:online-discard', token),
+  getOnlineAppearanceCover: (fileKey: string, versionNo?: number) =>
+    ipcRenderer.invoke('appearance:online-cover', fileKey, versionNo),
+  inspectLocalAppearance: (zipPath: string) =>
+    ipcRenderer.invoke('appearance:inspect-local', zipPath),
+  inspectAppearanceCover: (imagePath: string) =>
+    ipcRenderer.invoke('appearance:inspect-cover', imagePath),
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)

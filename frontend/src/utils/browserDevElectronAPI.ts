@@ -82,6 +82,16 @@ const browserDevElectronAPI = {
   prepareOnlineAppearance: async () => ONLINE_APPEARANCE_UNSUPPORTED,
   installOnlineAppearance: async () => ONLINE_APPEARANCE_UNSUPPORTED,
   discardOnlineAppearance: async () => ({ success: true }),
+  getOnlineAppearanceCover: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  inspectLocalAppearance: async () => ({
+    success: false,
+    code: 'UNSUPPORTED' as const,
+    error: '浏览器预览不支持读取外观包',
+  }),
+  inspectAppearanceCover: async () => ({
+    success: false,
+    error: '浏览器预览不支持读取封面图片',
+  }),
   onAppearanceChanged: () => () => undefined,
   onThemeConfigChanged: () => () => undefined,
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),

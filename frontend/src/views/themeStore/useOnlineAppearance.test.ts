@@ -11,6 +11,13 @@ const getOnlineAppearance = vi.fn<(fileKey: string) => Promise<OnlineAppearanceD
 const prepareOnlineAppearance =
   vi.fn<(fileKey: string, versionNo: number) => Promise<OnlineAppearancePrepareResult>>()
 const discardOnlineAppearance = vi.fn(async (_token: string) => ({ success: true }))
+const getOnlineAppearanceCover =
+  vi.fn<
+    (
+      fileKey: string,
+      versionNo?: number
+    ) => Promise<{ success: boolean; dataUrl?: string; code?: string }>
+  >()
 
 vi.stubGlobal('window', {
   electronAPI: {
@@ -19,6 +26,7 @@ vi.stubGlobal('window', {
     getOnlineAppearance,
     prepareOnlineAppearance,
     discardOnlineAppearance,
+    getOnlineAppearanceCover,
   },
 })
 
@@ -40,12 +48,27 @@ const item = (overrides: Partial<OnlineAppearanceItem> = {}): OnlineAppearanceIt
   publishedAt: '2026-10-06T10:00:00Z',
   updatedAt: '2026-10-06T10:00:00Z',
   installed: null,
+  hasCover: false,
   ...overrides,
 })
 
 const versions = [
-  { versionNo: 2, fileSize: 2048, sha256: 'b'.repeat(64), changeNote: '', createdAt: '' },
-  { versionNo: 1, fileSize: 1024, sha256: 'a'.repeat(64), changeNote: '', createdAt: '' },
+  {
+    versionNo: 2,
+    fileSize: 2048,
+    sha256: 'b'.repeat(64),
+    changeNote: '',
+    createdAt: '',
+    hasCover: true,
+  },
+  {
+    versionNo: 1,
+    fileSize: 1024,
+    sha256: 'a'.repeat(64),
+    changeNote: '',
+    createdAt: '',
+    hasCover: false,
+  },
 ]
 
 const preparedFor = (versionNo: number): OnlineAppearancePrepareResult => ({
@@ -76,21 +99,26 @@ beforeEach(() => {
   })
   getOnlineAppearance.mockResolvedValue({ success: true, item: item(), versions })
   prepareOnlineAppearance.mockImplementation(async (_key, versionNo) => preparedFor(versionNo))
+  getOnlineAppearanceCover.mockReset()
+  getOnlineAppearanceCover.mockImplementation(async (fileKey, versionNo) => ({
+    success: true,
+    dataUrl: `data:image/png;base64,${fileKey}-${versionNo}`,
+  }))
 })
 
 describe('online appearance helpers', () => {
   it('maps transport codes to local copy but keeps package validation reasons', () => {
     expect(describeOnlineAppearanceError({ code: 'CHECKSUM_MISMATCH' }, 'x')).toBe(
-      translate('setting.onlineAppearance.error.checksum')
+      translate('themeStore.error.checksum')
     )
     expect(describeOnlineAppearanceError({ code: 'TOO_LARGE', error: 'raw' }, 'x')).toBe(
-      translate('setting.onlineAppearance.error.tooLarge')
+      translate('themeStore.error.tooLarge')
     )
     expect(
       describeOnlineAppearanceError({ code: 'INVALID_PACKAGE', error: '缺少 theme.json' }, 'x')
     ).toBe('缺少 theme.json')
-    expect(describeOnlineAppearanceError(undefined, 'setting.onlineAppearance.installFailed')).toBe(
-      translate('setting.onlineAppearance.installFailed')
+    expect(describeOnlineAppearanceError(undefined, 'themeStore.installFailed')).toBe(
+      translate('themeStore.installFailed')
     )
   })
 
@@ -128,7 +156,7 @@ describe('useOnlineAppearance', () => {
     listOnlineAppearances.mockResolvedValueOnce({ success: false, code: 'NETWORK', error: 'x' })
     await store.loadList(1)
     expect(store.items.value).toEqual([])
-    expect(store.listError.value).toBe(translate('setting.onlineAppearance.error.network'))
+    expect(store.listError.value).toBe(translate('themeStore.error.network'))
   })
 
   it('previews the published version and pins later downloads to the chosen version', async () => {
@@ -187,7 +215,7 @@ describe('useOnlineAppearance', () => {
     const install = vi.fn()
     const store = useOnlineAppearance({ install })
     await store.openDetail(item())
-    expect(store.prepareError.value).toBe(translate('setting.onlineAppearance.error.checksum'))
+    expect(store.prepareError.value).toBe(translate('themeStore.error.checksum'))
 
     prepareOnlineAppearance.mockResolvedValueOnce({ success: false, code: 'TOO_LARGE' })
     await expect(store.install()).resolves.toBe('failed')
@@ -201,5 +229,48 @@ describe('useOnlineAppearance', () => {
     expect(store.view.value).toBe('list')
     expect(store.prepared.value).toBeNull()
     expect(discardOnlineAppearance).toHaveBeenCalledWith('token-v2')
+  })
+
+  it('goes back to a refreshed list after a successful install', async () => {
+    const store = useOnlineAppearance({ install: vi.fn(async () => 'installed' as const) })
+    await store.openDetail(item())
+    listOnlineAppearances.mockClear()
+    await store.install()
+    expect(store.view.value).toBe('list')
+    expect(store.detailItem.value).toBeNull()
+    expect(listOnlineAppearances).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads covers only for items that have one, once per version', async () => {
+    listOnlineAppearances.mockResolvedValue({
+      success: true,
+      items: [
+        item({ fileKey: 'with-cover', hasCover: true, publishedVersionNo: 3 }),
+        item({ fileKey: 'no-cover', hasCover: false }),
+      ],
+      pagination: { page: 1, pageSize: 12, total: 2, hasNext: false },
+    })
+    const store = useOnlineAppearance({ install: vi.fn() })
+    await store.loadList(1)
+    await flush()
+    expect(getOnlineAppearanceCover).toHaveBeenCalledTimes(1)
+    expect(getOnlineAppearanceCover).toHaveBeenCalledWith('with-cover', 3)
+    expect(store.coverFor('with-cover', 3)).toBe('data:image/png;base64,with-cover-3')
+    expect(store.coverFor('no-cover', 2)).toBeUndefined()
+
+    await store.loadList(1)
+    await flush()
+    expect(getOnlineAppearanceCover).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the cover of the selected version while the package downloads', async () => {
+    const store = useOnlineAppearance({ install: vi.fn() })
+    await store.openDetail(item())
+    expect(getOnlineAppearanceCover).toHaveBeenCalledWith('sakura', 2)
+    expect(store.detailCover.value).toBe('data:image/png;base64,sakura-2')
+
+    store.selectVersion(1)
+    await flush()
+    expect(store.detailCover.value).toBeUndefined()
   })
 })

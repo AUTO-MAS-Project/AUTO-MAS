@@ -25,6 +25,10 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    ShareAppearanceUploadIn,
+    ShareAppearanceUploadItem,
+    ShareAppearanceUploadOut,
+    ShareAppearanceUploadsOut,
     ShareAuthStatusOut,
     ShareTemplateItem,
     ShareTemplateListIn,
@@ -156,3 +160,52 @@ async def cancel_share_auth() -> ShareAuthStatusOut:
 
     await ConfigCenter.cancel_authorization()
     return _build_auth_status(ConfigCenter.get_status())
+
+
+@router.post(
+    "/appearance/upload",
+    tags=["Action"],
+    summary="上传外观包到分享站",
+    response_model=ShareAppearanceUploadOut,
+    status_code=200,
+)
+async def upload_share_appearance(
+    upload: ShareAppearanceUploadIn = Body(...),
+) -> ShareAppearanceUploadOut:
+
+    try:
+        result = await ConfigCenter.upload_appearance(
+            zip_path=upload.zipPath,
+            display_name=upload.displayName,
+            description=upload.description,
+            change_note=upload.changeNote,
+            file_id=upload.fileId,
+            cover_path=upload.coverPath,
+        )
+    except ConfigCenterError as e:
+        return ShareAppearanceUploadOut(
+            code=e.status_code, status="error", message=str(e)
+        )
+    except Exception as e:
+        return ShareAppearanceUploadOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+    return ShareAppearanceUploadOut(**result)
+
+
+@router.post(
+    "/appearance/uploads",
+    tags=["Get"],
+    summary="获取当前账号的外观上传记录",
+    response_model=ShareAppearanceUploadsOut,
+    status_code=200,
+)
+async def list_share_appearance_uploads() -> ShareAppearanceUploadsOut:
+
+    return ShareAppearanceUploadsOut(
+        data=[
+            ShareAppearanceUploadItem(**_)
+            for _ in ConfigCenter.list_appearance_uploads()
+        ]
+    )

@@ -22,6 +22,7 @@ const {
   detailError,
   selectedVersionNo,
   selectedVersion,
+  detailCover,
   prepared,
   preparing,
   prepareError,
@@ -40,13 +41,16 @@ const versionOptions = computed(() =>
       `v${version.versionNo}`,
       formatAppearanceFileSize(version.fileSize),
       formatOnlineAppearanceTime(version.createdAt),
-      detailItem.value?.installed?.versionNo === version.versionNo
-        ? t('setting.onlineAppearance.installed')
-        : '',
+      detailItem.value?.installed?.versionNo === version.versionNo ? t('themeStore.installed') : '',
     ]
       .filter(Boolean)
       .join(' · '),
   }))
+)
+
+// 包里的预览图最准；没有就用上传时附的封面；都没有再画配色示意。
+const previewImage = computed(
+  () => prepared.value?.appearance.previewUrl ?? detailCover.value ?? undefined
 )
 
 // 包里没有预览图时，用包内 tokens 画一个最小的界面示意；颜色已由主进程校验为 #rrggbb。
@@ -73,22 +77,18 @@ const handleVersionChange = (value: SelectValue): void => {
   <div class="online-detail-bar">
     <a-button type="text" :disabled="installing" @click="backToList">
       <template #icon><ArrowLeftOutlined /></template>
-      {{ t('setting.onlineAppearance.back') }}
+      {{ t('themeStore.back') }}
     </a-button>
   </div>
   <div class="online-scroll">
     <div v-if="detailLoading" class="online-state">
-      <a-spin size="large" :tip="t('setting.onlineAppearance.loading')" />
+      <a-spin size="large" :tip="t('themeStore.loading')" />
     </div>
     <div v-else-if="detailError" class="online-state">
-      <a-result
-        status="warning"
-        :title="t('setting.onlineAppearance.detailFailed')"
-        :sub-title="detailError"
-      >
+      <a-result status="warning" :title="t('themeStore.detailFailed')" :sub-title="detailError">
         <template #extra>
           <a-button type="primary" @click="retryDetail">
-            {{ t('setting.onlineAppearance.retry') }}
+            {{ t('themeStore.retry') }}
           </a-button>
         </template>
       </a-result>
@@ -96,21 +96,27 @@ const handleVersionChange = (value: SelectValue): void => {
     <div v-else-if="detailItem" class="online-detail">
       <section class="online-preview">
         <div v-if="preparing" class="online-preview-state">
-          <a-spin :tip="t('setting.onlineAppearance.preparing')" />
+          <img
+            v-if="detailCover"
+            :src="detailCover"
+            :alt="detailItem.displayName"
+            class="online-preview-image online-preview-dim"
+          />
+          <a-spin :tip="t('themeStore.preparing')" class="online-preview-spin" />
         </div>
         <div v-else-if="prepareError" class="online-preview-state">
           <a-result status="warning" :sub-title="prepareError">
             <template #extra>
               <a-button @click="prepareSelected">
-                {{ t('setting.onlineAppearance.retry') }}
+                {{ t('themeStore.retry') }}
               </a-button>
             </template>
           </a-result>
         </div>
         <template v-else-if="prepared">
           <img
-            v-if="prepared.appearance.previewUrl"
-            :src="prepared.appearance.previewUrl"
+            v-if="previewImage"
+            :src="previewImage"
             :alt="prepared.appearance.name"
             class="online-preview-image"
           />
@@ -124,11 +130,11 @@ const handleVersionChange = (value: SelectValue): void => {
           </div>
         </template>
         <div v-else-if="versions.length === 0" class="online-preview-state">
-          <a-empty :description="t('setting.onlineAppearance.noVersions')" />
+          <a-empty :description="t('themeStore.noVersions')" />
         </div>
         <div v-else class="online-preview-state">
           <a-button @click="prepareSelected">
-            {{ t('setting.onlineAppearance.downloadPreview') }}
+            {{ t('themeStore.downloadPreview') }}
           </a-button>
         </div>
       </section>
@@ -138,7 +144,7 @@ const handleVersionChange = (value: SelectValue): void => {
         <div class="online-meta">
           <span>
             <UserOutlined />
-            {{ detailItem.ownerUsername || t('setting.onlineAppearance.unknownAuthor') }}
+            {{ detailItem.ownerUsername || t('themeStore.unknownAuthor') }}
           </span>
           <span>
             <ClockCircleOutlined />
@@ -146,11 +152,11 @@ const handleVersionChange = (value: SelectValue): void => {
           </span>
         </div>
         <p class="online-description">
-          {{ detailItem.description || t('setting.onlineAppearance.noDescription') }}
+          {{ detailItem.description || t('themeStore.noDescription') }}
         </p>
 
         <div class="online-field">
-          <span class="online-field-label">{{ t('setting.onlineAppearance.version') }}</span>
+          <span class="online-field-label">{{ t('themeStore.version') }}</span>
           <a-select
             :value="selectedVersionNo ?? undefined"
             :options="versionOptions"
@@ -164,11 +170,11 @@ const handleVersionChange = (value: SelectValue): void => {
         </p>
 
         <dl v-if="prepared" class="online-facts">
-          <dt>{{ t('setting.onlineAppearance.packageName') }}</dt>
+          <dt>{{ t('themeStore.packageName') }}</dt>
           <dd>{{ prepared.appearance.name }}</dd>
           <dt>ID</dt>
           <dd class="online-mono">{{ prepared.appearance.id }}</dd>
-          <dt>{{ t('setting.onlineAppearance.mode') }}</dt>
+          <dt>{{ t('themeStore.mode') }}</dt>
           <dd>
             {{
               prepared.appearance.mode === 'dark'
@@ -177,7 +183,7 @@ const handleVersionChange = (value: SelectValue): void => {
             }}
           </dd>
           <template v-if="prepared.existing">
-            <dt>{{ t('setting.onlineAppearance.localCopy') }}</dt>
+            <dt>{{ t('themeStore.localCopy') }}</dt>
             <dd>{{ prepared.existing.name }}</dd>
           </template>
         </dl>
@@ -189,7 +195,7 @@ const handleVersionChange = (value: SelectValue): void => {
             :disabled="preparing || !prepared"
             @click="install"
           >
-            {{ t('setting.onlineAppearance.install') }}
+            {{ t('themeStore.install') }}
           </a-button>
         </div>
       </section>
@@ -236,12 +242,23 @@ const handleVersionChange = (value: SelectValue): void => {
 }
 
 .online-preview-state {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
   align-items: center;
   justify-content: center;
   padding: 16px;
+}
+
+.online-preview-dim {
+  position: absolute;
+  inset: 0;
+  opacity: 0.45;
+}
+
+.online-preview-spin {
+  position: relative;
 }
 
 .online-preview-state :deep(.ant-result) {

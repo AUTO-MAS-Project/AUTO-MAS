@@ -37,6 +37,8 @@ export interface OnlineAppearanceItem {
   publishedAt: string
   updatedAt: string
   installed: OnlineAppearanceInstalled | null
+  /** 发布版本有没有封面；分享站没给这个字段时为 false。 */
+  hasCover: boolean
 }
 
 export interface OnlineAppearanceVersion {
@@ -45,6 +47,7 @@ export interface OnlineAppearanceVersion {
   sha256: string
   changeNote: string
   createdAt: string
+  hasCover: boolean
 }
 
 export interface OnlineAppearanceQuery {
@@ -93,6 +96,14 @@ export interface OnlineAppearancePrepareResult {
 
 export interface OnlineAppearanceInstallResult extends Omit<AppearanceImportResult, 'code'> {
   code?: AppearanceImportResult['code'] | OnlineAppearanceErrorCode
+}
+
+export interface OnlineAppearanceCoverResult {
+  success: boolean
+  /** 封面图片的 data URL（PNG / JPEG / WebP）。 */
+  dataUrl?: string
+  code?: OnlineAppearanceErrorCode
+  error?: string
 }
 
 /** 外观来源记录：与 theme.json 分开存放，装好的外观目录不允许出现未声明文件。 */
@@ -147,18 +158,22 @@ export interface OnlineAppearanceServiceOptions {
   downloadIdleTimeoutMs?: number
   cacheEntries?: number
   cacheTtlMs?: number
+  coverBytes?: number
+  coverCacheEntries?: number
   now?: () => number
 }
 
 export const ONLINE_APPEARANCE_DEFAULTS = {
   baseUrl: 'https://data.auto-mas.top/api/v1',
   projectKey: 'auto-mas',
-  categoryKey: 'Appearance',
+  categoryKey: 'theme',
   metadataBytes: 1024 * 1024,
   metadataTimeoutMs: 15_000,
   downloadIdleTimeoutMs: 30_000,
   cacheEntries: 4,
   cacheTtlMs: 30 * 60 * 1000,
+  coverBytes: 2 * 1024 * 1024,
+  coverCacheEntries: 64,
 } as const
 
 export const APPEARANCE_SOURCES_FILE = 'appearance-sources.json'
@@ -214,6 +229,24 @@ export function isValidOnlineFileKey(value: unknown): value is string {
     !/[/\\?#%]/.test(value) &&
     !hasControlChar(value)
   )
+}
+
+/** 按文件头魔数认图片格式，不信任响应头的 Content-Type 或文件扩展名。 */
+export function imageMimeFromMagic(data: Buffer): string | null {
+  if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    return 'image/png'
+  }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (
+    data.length >= 12 &&
+    data.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    data.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+  return null
 }
 
 function removeQuietly(filePath: string): void {
@@ -357,6 +390,8 @@ export interface OnlineAppearanceService {
   prepare(fileKey: unknown, versionNo: unknown): Promise<OnlineAppearancePrepareResult>
   install(token: unknown, replace: boolean): OnlineAppearanceInstallResult
   discard(token: unknown): { success: boolean }
+  /** 取封面；versionNo 省略时取发布版本的封面。成功结果按 fileKey + 版本号缓存在内存里。 */
+  cover(fileKey: unknown, versionNo?: unknown): Promise<OnlineAppearanceCoverResult>
   /** 清空专用缓存目录里本功能留下的 `<uuid>.zip` / `<uuid>.part`。 */
   clearCacheDirectory(): void
 }
@@ -562,6 +597,10 @@ export function createOnlineAppearanceService(
       publishedAt: clipText(raw.published_at, 64),
       updatedAt: clipText(raw.updated_at, 64),
       installed: installedFor(fileKey, sources),
+      // 列表项直接带 has_cover；详情接口放在 published_version 里
+      hasCover:
+        raw.has_cover === true ||
+        (isPlainObject(raw.published_version) && raw.published_version.has_cover === true),
     }
   }
 
@@ -599,6 +638,7 @@ export function createOnlineAppearanceService(
         sha256: sha256.toLowerCase(),
         changeNote: clipText(raw.change_note, 2000),
         createdAt: clipText(raw.created_at, 64),
+        hasCover: raw.has_cover === true,
       })
     }
     if (dropped > 0) logger.warn(`在线外观 ${fileKey} 有 ${dropped} 个版本信息不完整，已忽略`)
@@ -952,6 +992,122 @@ export function createOnlineAppearanceService(
     return { success: true }
   }
 
+  // ==================== 封面 ====================
+  // 列表翻页会反复显示同一批封面，成功取到的按 fileKey + 版本号留在内存里（LRU）；
+  // 同一封面的并发请求合并成一次下载。
+
+  const coverCache = new Map<string, string>()
+  const coverInflight = new Map<string, Promise<OnlineAppearanceCoverResult>>()
+
+  const rememberCover = (key: string, dataUrl: string): void => {
+    coverCache.delete(key)
+    coverCache.set(key, dataUrl)
+    for (const oldest of coverCache.keys()) {
+      if (coverCache.size <= settings.coverCacheEntries) break
+      coverCache.delete(oldest)
+    }
+  }
+
+  const downloadCover = async (fileKey: string, versionNo: number | null): Promise<string> => {
+    const limit = settings.coverBytes
+    const limitText = `${Math.round(limit / 1024 / 1024)} MiB`
+    const controller = new AbortController()
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, settings.metadataTimeoutMs)
+    let response: OnlineResponseLike | undefined
+    let reader: BodyReader | undefined
+    try {
+      const query = versionNo === null ? '' : `?version_no=${encodeURIComponent(String(versionNo))}`
+      response = await fetchFollowingRedirects(
+        `${fileUrl(fileKey)}/cover${query}`,
+        { signal: controller.signal, headers: { Accept: 'image/png, image/jpeg, image/webp' } },
+        () => timedOut
+      )
+      if (response.status !== 200) throw statusError(response.status, '这个外观没有封面')
+      const declared = response.headers.get('content-length')
+      if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared) > limit) {
+        throw new OnlineAppearanceError('TOO_LARGE', `封面超过 ${limitText} 上限`)
+      }
+      if (!response.body) throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回了空响应')
+      reader = response.body.getReader()
+      const chunks: Buffer[] = []
+      let total = 0
+      for (;;) {
+        let chunk: { done: boolean; value?: Uint8Array }
+        try {
+          chunk = await reader.read()
+        } catch {
+          throw networkError(timedOut, true)
+        }
+        if (chunk.done) break
+        if (!chunk.value) continue
+        total += chunk.value.byteLength
+        if (total > limit) {
+          throw new OnlineAppearanceError('TOO_LARGE', `封面超过 ${limitText} 上限`)
+        }
+        chunks.push(Buffer.from(chunk.value))
+      }
+      const data = Buffer.concat(chunks)
+      const mime = imageMimeFromMagic(data)
+      if (!mime) {
+        throw new OnlineAppearanceError(
+          'BAD_RESPONSE',
+          '分享站返回的封面不是 PNG、JPEG 或 WebP 图片'
+        )
+      }
+      return `data:${mime};base64,${data.toString('base64')}`
+    } catch (error) {
+      controller.abort()
+      if (reader) void reader.cancel().catch(() => undefined)
+      else cancelBody(response)
+      throw error
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  const cover = async (
+    fileKey: unknown,
+    versionNo?: unknown
+  ): Promise<OnlineAppearanceCoverResult> => {
+    if (!isValidOnlineFileKey(fileKey)) return invalidArgument('外观包标识无效')
+    const pinnedVersion =
+      versionNo === undefined || versionNo === null ? null : positiveInteger(versionNo)
+    if (versionNo !== undefined && versionNo !== null && pinnedVersion === null) {
+      return invalidArgument('版本号无效')
+    }
+    const key = `${fileKey}\n${pinnedVersion ?? 'published'}`
+    const cached = coverCache.get(key)
+    if (cached !== undefined) {
+      rememberCover(key, cached)
+      return { success: true, dataUrl: cached }
+    }
+    const pending = coverInflight.get(key)
+    if (pending) return pending
+
+    const task = (async (): Promise<OnlineAppearanceCoverResult> => {
+      try {
+        const dataUrl = await downloadCover(fileKey, pinnedVersion)
+        rememberCover(key, dataUrl)
+        return { success: true, dataUrl }
+      } catch (error) {
+        if (!(error instanceof OnlineAppearanceError && error.code === 'NOT_FOUND')) {
+          logger.warn(
+            `获取在线外观封面失败: ${fileKey} 版本 ${pinnedVersion ?? '发布版'}，${errorMessage(error)}`
+          )
+        }
+        return failure<OnlineAppearanceCoverResult>(error, logger)
+      } finally {
+        coverInflight.delete(key)
+      }
+    })()
+    coverInflight.set(key, task)
+    return task
+  }
+
   const clearCacheDirectory = (): void => {
     let cacheDir: string
     let names: string[]
@@ -973,7 +1129,7 @@ export function createOnlineAppearanceService(
     }
   }
 
-  return { list, detail, prepare, install, discard, clearCacheDirectory }
+  return { list, detail, prepare, install, discard, cover, clearCacheDirectory }
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {

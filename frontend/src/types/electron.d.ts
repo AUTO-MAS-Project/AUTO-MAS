@@ -3,6 +3,8 @@ import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
   InstalledAppearance,
+  LocalAppearanceInspectResult,
+  OnlineAppearanceCoverResult,
   OnlineAppearanceDetailResult,
   OnlineAppearanceInstallResult,
   OnlineAppearanceListResult,
@@ -404,6 +406,14 @@ export interface ElectronAPI {
     replace?: boolean
   ) => Promise<OnlineAppearanceInstallResult>
   discardOnlineAppearance?: (token: string) => Promise<{ success: boolean }>
+  getOnlineAppearanceCover?: (
+    fileKey: string,
+    versionNo?: number
+  ) => Promise<OnlineAppearanceCoverResult>
+  inspectLocalAppearance?: (zipPath: string) => Promise<LocalAppearanceInspectResult>
+  inspectAppearanceCover?: (
+    imagePath: string
+  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 

@@ -13,7 +13,7 @@ import type {
 import {
   describeOnlineAppearanceError,
   type OnlineAppearanceInstallOutcome,
-} from './useOnlineAppearance'
+} from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
 
 export function useAppearanceSettings() {
@@ -36,7 +36,6 @@ export function useAppearanceSettings() {
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
-  const onlineAppearanceOpen = ref(false)
 
   const themeModeOptions = computed(() => [
     { label: t('setting.themeMode.system'), value: 'system' },
@@ -127,8 +126,7 @@ export function useAppearanceSettings() {
   // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用。
   const runAppearanceInstall = async (
     install: (replace: boolean) => Promise<AppearanceImportResult | OnlineAppearanceInstallResult>,
-    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string,
-    beforePreview?: () => void
+    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string
   ): Promise<OnlineAppearanceInstallOutcome> => {
     let result = await install(false)
     if (!result.success && result.code === 'DUPLICATE_ID') {
@@ -142,7 +140,6 @@ export function useAppearanceSettings() {
       message.error(describeFailure(result))
       return 'failed'
     }
-    beforePreview?.()
     if (result.appearance) showAppearancePreview(result.appearance)
     return 'installed'
   }
@@ -160,11 +157,6 @@ export function useAppearanceSettings() {
     }
   }
 
-  const handleOnlineAppearanceOpen = (): void => {
-    if (appearanceBusy.value) return
-    onlineAppearanceOpen.value = true
-  }
-
   const installPreparedOnlineAppearance = async (
     token: string
   ): Promise<OnlineAppearanceInstallOutcome> => {
@@ -173,14 +165,11 @@ export function useAppearanceSettings() {
     try {
       return await runAppearanceInstall(
         replace => installOnlineAppearance(token, replace),
-        result => describeOnlineAppearanceError(result, 'setting.onlineAppearance.installFailed'),
-        () => {
-          onlineAppearanceOpen.value = false
-        }
+        result => describeOnlineAppearanceError(result, 'themeStore.installFailed')
       )
     } catch (error) {
       logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('setting.onlineAppearance.installFailed'))
+      message.error(t('themeStore.installFailed'))
       return 'failed'
     } finally {
       appearanceBusy.value = false
@@ -249,7 +238,6 @@ export function useAppearanceSettings() {
     activeAppearance,
     modalContextHolder,
     appearanceBusy,
-    onlineAppearanceOpen,
     themeModeOptions,
     appearanceValue,
     appearanceOptions,
@@ -259,7 +247,6 @@ export function useAppearanceSettings() {
     handleAppearanceChange,
     handleAppearanceImport,
     handleAppearanceRemove,
-    handleOnlineAppearanceOpen,
     installPreparedOnlineAppearance,
   }
 }

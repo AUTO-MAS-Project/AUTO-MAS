@@ -10,6 +10,7 @@ export const APPEARANCE_MENU_ICON_KEYS = [
   'gameSign',
   'history',
   'tools',
+  'themeStore',
   'settings',
   'testRouter',
   'ocrDev',
@@ -112,6 +113,8 @@ export interface OnlineAppearanceItem {
   publishedAt: string
   updatedAt: string
   installed: OnlineAppearanceInstalled | null
+  /** 发布版本有没有封面；有才去取 getOnlineAppearanceCover。 */
+  hasCover: boolean
 }
 
 export interface OnlineAppearanceVersion {
@@ -120,6 +123,7 @@ export interface OnlineAppearanceVersion {
   sha256: string
   changeNote: string
   createdAt: string
+  hasCover: boolean
 }
 
 export interface OnlineAppearanceQuery {
@@ -181,4 +185,21 @@ export interface OnlineAppearancePrepareResult {
 
 export interface OnlineAppearanceInstallResult extends Omit<AppearanceImportResult, 'code'> {
   code?: AppearanceImportResult['code'] | OnlineAppearanceErrorCode
+}
+
+export interface OnlineAppearanceCoverResult {
+  success: boolean
+  /** 封面图片的 data URL（PNG / JPEG / WebP），主进程内存里按 fileKey + 版本号缓存。 */
+  dataUrl?: string
+  code?: OnlineAppearanceErrorCode
+  error?: string
+}
+
+/** 上传前读取本地外观 ZIP 的结果；与导入同一套校验，不写任何目录。 */
+export interface LocalAppearanceInspectResult {
+  success: boolean
+  appearance?: OnlineAppearancePreview
+  fileSize?: number
+  code?: 'INVALID_PACKAGE' | 'UNSUPPORTED'
+  error?: string
 }

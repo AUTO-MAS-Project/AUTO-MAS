@@ -134,6 +134,9 @@ import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
+import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -3924,6 +3927,36 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/cancel',
+        });
+    }
+    /**
+     * 上传外观包到分享站
+     * @param requestBody
+     * @returns ShareAppearanceUploadOut Successful Response
+     * @throws ApiError
+     */
+    public static uploadShareAppearanceApiShareAppearanceUploadPost(
+        requestBody: ShareAppearanceUploadIn,
+    ): CancelablePromise<ShareAppearanceUploadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
         });
     }
     /**

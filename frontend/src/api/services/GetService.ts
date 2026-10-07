@@ -56,6 +56,7 @@ import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -1051,6 +1052,17 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
         });
     }
     /**

@@ -1,8 +1,9 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import AdmZip = require('adm-zip')
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppearanceCleanupResult } from '@/types/appearance'
+import type { AppearanceCleanupResult, LocalAppearanceInspectResult } from '@/types/appearance'
 
 const state = vi.hoisted(() => ({
   root: '',
@@ -26,14 +27,20 @@ vi.mock('../services/environmentService', () => ({ getAppRoot: () => state.root 
 vi.mock('../services/logger', () => ({
   getLogger: () => ({ info: vi.fn(), warn: vi.fn() }),
 }))
-vi.mock('../services/appearanceService', () => ({
-  getAppearance: (_root: string, id: string) => (state.installed.has(id) ? { id } : null),
-  isAppearanceGone: (_root: string, id: string) => !state.installed.has(id),
-  listAppearances: () => [],
-  importAppearancePackage: vi.fn(),
-  removeAppearance: (_root: string, id: string) =>
-    state.installed.delete(id) ? { success: true } : { success: false, error: '外观不存在' },
-}))
+vi.mock('../services/appearanceService', async importOriginal => {
+  const actual = await importOriginal<typeof import('../services/appearanceService')>()
+  return {
+    // 本地包预览走真实的只读校验，其余写目录的操作用内存替身。
+    inspectAppearancePackage: actual.inspectAppearancePackage,
+    AppearanceError: actual.AppearanceError,
+    getAppearance: (_root: string, id: string) => (state.installed.has(id) ? { id } : null),
+    isAppearanceGone: (_root: string, id: string) => !state.installed.has(id),
+    listAppearances: () => [],
+    importAppearancePackage: vi.fn(),
+    removeAppearance: (_root: string, id: string) =>
+      state.installed.delete(id) ? { success: true } : { success: false, error: '外观不存在' },
+  }
+})
 
 const { registerAppearanceHandlers } = await import('./appearanceHandlers')
 const { patchConfigFile } = await import('../utils/configFile')
@@ -134,7 +141,7 @@ describe('appearance config cleanup IPC', () => {
     const source = (fileKey: string) => ({
       origin: 'https://data.auto-mas.top',
       projectKey: 'auto-mas',
-      categoryKey: 'Appearance',
+      categoryKey: 'theme',
       fileKey,
       versionNo: 3,
       sha256: 'b'.repeat(64),
@@ -192,5 +199,133 @@ describe('appearance config cleanup IPC', () => {
     expect(invoke('appearance:clear-invalid', id).success).toBe(false)
     expect(readConfig().appearanceId).toBe('x')
     expect(state.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('local appearance inspect IPC', () => {
+  const PNG_1X1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64'
+  )
+  const inspect = (zipPath: unknown) =>
+    state.handlers.get('appearance:inspect-local')!({}, zipPath) as LocalAppearanceInspectResult
+
+  function writeZip(name: string, manifest: unknown, files: Record<string, Buffer> = {}): string {
+    const zip = new AdmZip()
+    zip.addFile('theme.json', Buffer.from(JSON.stringify(manifest)))
+    for (const [entry, data] of Object.entries(files)) zip.addFile(entry, data)
+    const zipPath = path.join(state.root, name)
+    zip.writeZip(zipPath)
+    return zipPath
+  }
+
+  it('returns the preview of a valid package without writing any directory', () => {
+    const zipPath = writeZip(
+      'pack.zip',
+      {
+        formatVersion: 1,
+        id: 'sakura',
+        name: '樱花',
+        description: '粉色',
+        mode: 'light',
+        tokens: { colorPrimary: '#ff88aa' },
+        preview: 'preview.png',
+      },
+      { 'preview.png': PNG_1X1 }
+    )
+    const before = fs.readdirSync(state.root).sort()
+
+    const result = inspect(zipPath)
+
+    expect(result).toEqual({
+      success: true,
+      fileSize: fs.statSync(zipPath).size,
+      appearance: {
+        id: 'sakura',
+        name: '樱花',
+        description: '粉色',
+        mode: 'light',
+        tokens: { colorPrimary: '#ff88aa' },
+        previewUrl: `data:image/png;base64,${PNG_1X1.toString('base64')}`,
+      },
+    })
+    expect(fs.readdirSync(state.root).sort()).toEqual(before)
+    expect(state.send).not.toHaveBeenCalled()
+  })
+
+  it('reports an invalid package as INVALID_PACKAGE', () => {
+    const undeclared = writeZip(
+      'bad.zip',
+      {
+        formatVersion: 1,
+        id: 'bad',
+        name: 'Bad',
+        mode: 'light',
+        tokens: { colorPrimary: '#000000' },
+      },
+      { 'extra.png': PNG_1X1 }
+    )
+    expect(inspect(undeclared)).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+
+    const notZip = path.join(state.root, 'broken.zip')
+    fs.writeFileSync(notZip, 'not a zip')
+    expect(inspect(notZip)).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+
+    expect(inspect(path.join(state.root, 'missing.zip'))).toMatchObject({
+      success: false,
+      code: 'INVALID_PACKAGE',
+    })
+
+    const huge = path.join(state.root, 'huge.zip')
+    fs.writeFileSync(huge, Buffer.alloc(16 * 1024 * 1024 + 1))
+    expect(inspect(huge)).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+  })
+
+  it.each([undefined, null, 42, { path: 'a.zip' }, 'theme.json', 'pack.rar'])(
+    'rejects argument %j',
+    zipPath => {
+      expect(inspect(zipPath)).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+    }
+  )
+})
+
+describe('upload cover inspect IPC', () => {
+  const PNG_1X1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64'
+  )
+  const inspectCover = (imagePath: unknown) =>
+    state.handlers.get('appearance:inspect-cover')!({}, imagePath) as {
+      success: boolean
+      dataUrl?: string
+      error?: string
+    }
+  const writeFile = (name: string, data: Buffer): string => {
+    const filePath = path.join(state.root, name)
+    fs.writeFileSync(filePath, data)
+    return filePath
+  }
+
+  it('returns a data URL typed by the file header, not the extension', () => {
+    const result = inspectCover(writeFile('cover.bin', PNG_1X1))
+    expect(result.success).toBe(true)
+    expect(result.dataUrl).toBe(`data:image/png;base64,${PNG_1X1.toString('base64')}`)
+
+    const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])
+    expect(inspectCover(writeFile('cover.png', webp)).dataUrl).toMatch(/^data:image\/webp;base64,/)
+  })
+
+  it('rejects images over 2 MB, unknown formats, folders and missing files', () => {
+    const huge = Buffer.concat([PNG_1X1, Buffer.alloc(2 * 1024 * 1024)])
+    expect(inspectCover(writeFile('huge.png', huge))).toMatchObject({ success: false })
+    expect(inspectCover(writeFile('fake.png', Buffer.from('GIF89a')))).toMatchObject({
+      success: false,
+    })
+    expect(inspectCover(state.root)).toMatchObject({ success: false })
+    expect(inspectCover(path.join(state.root, 'missing.png'))).toMatchObject({ success: false })
+  })
+
+  it.each([undefined, null, 42, '', { path: 'a.png' }])('rejects argument %j', imagePath => {
+    expect(inspectCover(imagePath)).toMatchObject({ success: false })
   })
 })

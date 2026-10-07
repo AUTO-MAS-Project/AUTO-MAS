@@ -62,6 +62,7 @@ interface FakeVersion {
   sha256?: string
   fileSize?: number
   mode?: DownloadMode
+  hasCover?: boolean
 }
 
 interface FakeFile {
@@ -69,6 +70,8 @@ interface FakeFile {
   displayName: string
   description?: string | null
   versions: FakeVersion[]
+  /** 有值时列表项带 has_cover: true，并在 /cover 返回这些字节；'overflow' 持续发送超限数据。 */
+  cover?: Buffer | 'overflow'
 }
 
 const site = {
@@ -96,10 +99,12 @@ function notFound(res: http.ServerResponse, message: string): void {
   sendJson(res, 404, { code: 404, message, data: null })
 }
 
-function itemJson(file: FakeFile) {
+function itemJson(file: FakeFile, listing = false) {
   return {
+    // 公开列表直接带 has_cover；详情只在 published_version 里带
+    ...(listing && file.cover !== undefined ? { has_cover: true } : {}),
     project_key: 'auto-mas',
-    category_key: 'Appearance',
+    category_key: 'theme',
     file_key: file.fileKey,
     display_name: file.displayName,
     description: file.description === undefined ? null : file.description,
@@ -108,7 +113,7 @@ function itemJson(file: FakeFile) {
     published_version_no: Math.max(...file.versions.map(version => version.versionNo)),
     published_at: '2026-10-06T00:00:00Z',
     updated_at: '2026-10-06T01:00:00Z',
-    detail_path: `/files/auto-mas/Appearance/${file.fileKey}`,
+    detail_path: `/files/auto-mas/theme/${file.fileKey}`,
   }
 }
 
@@ -120,6 +125,7 @@ function versionJson(version: FakeVersion) {
     sha256: version.sha256 ?? sha256(version.data),
     change_note: null,
     created_at: `2026-10-0${version.versionNo}T00:00:00Z`,
+    ...(version.hasCover === undefined ? {} : { has_cover: version.hasCover }),
   }
 }
 
@@ -199,7 +205,7 @@ const server = http.createServer((req, res) => {
     const keyword = url.searchParams.get('keyword') ?? ''
     const items = [...site.files.values()]
       .filter(file => !keyword || file.displayName.includes(keyword))
-      .map(itemJson)
+      .map(file => itemJson(file, true))
     sendJson(res, 200, {
       code: 0,
       message: 'ok',
@@ -221,7 +227,7 @@ const server = http.createServer((req, res) => {
     .map(decodeURIComponent)
   const [project, category, fileKey, action] = segments
   const file = site.files.get(fileKey ?? '')
-  if (project !== 'auto-mas' || category !== 'Appearance' || !file) {
+  if (project !== 'auto-mas' || category !== 'theme' || !file) {
     notFound(res, 'Published file not found.')
     return
   }
@@ -247,6 +253,19 @@ const server = http.createServer((req, res) => {
       return
     }
     serveDownload(req, res, version)
+    return
+  }
+  if (action === 'cover') {
+    if (file.cover === undefined) {
+      notFound(res, 'Cover not found.')
+      return
+    }
+    if (file.cover === 'overflow') {
+      serveDownload(req, res, { versionNo: 0, data: Buffer.alloc(0), mode: 'stream-overflow' })
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': file.cover.length })
+    res.end(file.cover)
     return
   }
   notFound(res, 'Not found.')
@@ -345,7 +364,7 @@ function snapshotDirectory(directory: string): Record<string, string> {
 const record = (fileKey: string, versionNo: number, installedAt: string) => ({
   origin: 'http://127.0.0.1',
   projectKey: 'auto-mas',
-  categoryKey: 'Appearance',
+  categoryKey: 'theme',
   fileKey,
   versionNo,
   sha256: 'a'.repeat(64),
@@ -412,6 +431,7 @@ describe('online appearance list', () => {
         publishedAt: '2026-10-06T00:00:00Z',
         updatedAt: '2026-10-06T01:00:00Z',
         installed: { appearanceId: 'alpha-new', versionNo: 3 },
+        hasCover: false,
       },
       expect.objectContaining({ fileKey: 'beta', publishedVersionNo: 4, installed: null }),
       expect.objectContaining({ fileKey: 'gamma', installed: null }),
@@ -425,7 +445,7 @@ describe('online appearance list', () => {
     const requested = new URL(site.requests[0]!, 'http://x')
     expect(Object.fromEntries(requested.searchParams)).toEqual({
       project_key: 'auto-mas',
-      category_key: 'Appearance',
+      category_key: 'theme',
       page: '2',
       page_size: '5',
       keyword: '不存在',
@@ -488,6 +508,7 @@ describe('online appearance detail', () => {
       sha256: sha256('three'),
       changeNote: '',
       createdAt: '2026-10-03T00:00:00Z',
+      hasCover: false,
     })
   })
 
@@ -536,7 +557,7 @@ describe('online appearance prepare and install', () => {
     })
     expect(result.appearance?.previewUrl).toMatch(/^data:image\/png;base64,/)
     const downloads = site.requests.filter(url => url.includes('/download'))
-    expect(downloads).toEqual(['/api/v1/files/auto-mas/Appearance/alpha/download?version_no=1'])
+    expect(downloads).toEqual(['/api/v1/files/auto-mas/theme/alpha/download?version_no=1'])
     expect(cacheFiles()).toEqual([`${result.token}.zip`])
     // 只读解析不写用户目录。
     expect(fs.existsSync(path.join(userData(), 'appearances'))).toBe(false)
@@ -570,7 +591,7 @@ describe('online appearance prepare and install', () => {
     expect(raw.sources['theme-a']).toMatchObject({
       origin: new URL(BASE_URL).origin,
       projectKey: 'auto-mas',
-      categoryKey: 'Appearance',
+      categoryKey: 'theme',
       fileKey: 'alpha',
       versionNo: 1,
       sha256: sha256(v1),
@@ -916,5 +937,136 @@ describe('online appearance prepare and install', () => {
     const prepared = await service.prepare('alpha', 1)
     expect(service.install(prepared.token, false).success).toBe(true)
     expect(readAppearanceSources(userData())['theme-a']?.versionNo).toBe(1)
+  })
+})
+
+describe('online appearance cover', () => {
+  it('maps has_cover on list items, detail and versions (missing means false)', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a'), hasCover: true }])
+    site.files.get('alpha')!.cover = PNG_1X1
+    addFile('beta', [{ versionNo: 1, data: Buffer.from('b') }])
+    const service = makeService()
+
+    const listed = await service.list({})
+    expect(listed.items?.map(item => [item.fileKey, item.hasCover])).toEqual([
+      ['alpha', true],
+      ['beta', false],
+    ])
+    const detail = await service.detail('alpha')
+    expect(detail.item?.hasCover).toBe(true)
+    expect(detail.versions?.[0]?.hasCover).toBe(true)
+    expect((await service.detail('beta')).item?.hasCover).toBe(false)
+  })
+
+  it('returns the cover as a data URL and pins the version when given', async () => {
+    addFile('alpha', [{ versionNo: 2, data: Buffer.from('a') }])
+    site.files.get('alpha')!.cover = PNG_1X1
+    const service = makeService()
+
+    expect(await service.cover('alpha')).toEqual({
+      success: true,
+      dataUrl: `data:image/png;base64,${PNG_1X1.toString('base64')}`,
+    })
+    expect(await service.cover('alpha', 2)).toMatchObject({ success: true })
+    expect(site.requests).toEqual([
+      '/api/v1/files/auto-mas/theme/alpha/cover',
+      '/api/v1/files/auto-mas/theme/alpha/cover?version_no=2',
+    ])
+  })
+
+  it('maps a missing cover to NOT_FOUND', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a') }])
+    expect(await makeService().cover('alpha')).toMatchObject({
+      success: false,
+      code: 'NOT_FOUND',
+    })
+  })
+
+  it('aborts a cover larger than 2 MiB', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a') }])
+    site.files.get('alpha')!.cover = 'overflow'
+    expect(await makeService().cover('alpha')).toMatchObject({
+      success: false,
+      code: 'TOO_LARGE',
+    })
+    await site.downloadClosed
+    expect(site.sentBytes).toBeLessThan(40 * MIB)
+  })
+
+  it('rejects a cover whose magic bytes are not PNG, JPEG or WebP', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a') }])
+    site.files.get('alpha')!.cover = Buffer.from('GIF89a not allowed here')
+    expect(await makeService().cover('alpha')).toMatchObject({
+      success: false,
+      code: 'BAD_RESPONSE',
+    })
+  })
+
+  it('refuses a cover redirect from https to http without requesting it', async () => {
+    const requested: string[] = []
+    const fetchImpl: OnlineFetch = async url => {
+      requested.push(url)
+      return {
+        status: 302,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'location' ? 'http://evil.example/c.png' : null,
+        },
+        body: null,
+      }
+    }
+    const result = await makeService({
+      baseUrl: 'https://share.example/api/v1',
+      fetch: fetchImpl,
+    }).cover('alpha')
+    expect(result).toMatchObject({ success: false, code: 'BAD_RESPONSE' })
+    expect(requested).toEqual(['https://share.example/api/v1/files/auto-mas/theme/alpha/cover'])
+  })
+
+  it('serves a repeated cover from memory and merges concurrent requests', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a') }])
+    site.files.get('alpha')!.cover = PNG_1X1
+    const service = makeService()
+
+    const [first, second] = await Promise.all([
+      service.cover('alpha', 1),
+      service.cover('alpha', 1),
+    ])
+    expect(first).toEqual(second)
+    expect(site.requests).toHaveLength(1)
+    expect(await service.cover('alpha', 1)).toEqual(first)
+    expect(site.requests).toHaveLength(1)
+  })
+
+  it('keeps at most the configured number of covers', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('a') }])
+    site.files.get('alpha')!.cover = PNG_1X1
+    const service = makeService({ coverCacheEntries: 2 })
+
+    await service.cover('alpha', 1)
+    await service.cover('alpha', 2)
+    await service.cover('alpha', 1) // 命中缓存并刷新为最近使用
+    await service.cover('alpha', 3) // 挤掉最久未用的版本 2
+    expect(site.requests).toHaveLength(3)
+    await service.cover('alpha', 1)
+    expect(site.requests).toHaveLength(3)
+    await service.cover('alpha', 2)
+    expect(site.requests).toHaveLength(4)
+  })
+
+  it.each([
+    ['', undefined],
+    ['alpha', 0],
+    ['alpha', '1'],
+  ])('rejects invalid arguments %j %j without requesting', async (fileKey, versionNo) => {
+    expect((await makeService().cover(fileKey, versionNo)).success).toBe(false)
+    expect(site.requests).toEqual([])
+  })
+
+  it('exposes the cover through IPC', async () => {
+    expect(await invoke('appearance:online-cover', 1)).toMatchObject({ success: false })
+    expect(await invoke('appearance:online-cover', 'alpha', 'x')).toMatchObject({
+      success: false,
+    })
   })
 })

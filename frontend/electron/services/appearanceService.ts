@@ -13,6 +13,7 @@ const APPEARANCE_MENU_ICON_KEYS = [
   'gameSign',
   'history',
   'tools',
+  'themeStore',
   'settings',
   'testRouter',
   'ocrDev',

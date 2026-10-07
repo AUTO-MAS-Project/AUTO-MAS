@@ -3,8 +3,10 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import {
+  AppearanceError,
   getAppearance,
   importAppearancePackage,
+  inspectAppearancePackage,
   isAppearanceGone,
   listAppearances,
   removeAppearance,
@@ -14,6 +16,8 @@ import { getAppRoot } from '../services/environmentService'
 import { createNetRequestFetch } from '../services/onlineAppearanceFetch'
 import {
   createOnlineAppearanceService,
+  imageMimeFromMagic,
+  ONLINE_APPEARANCE_DEFAULTS,
   removeAppearanceSource,
   type OnlineAppearanceServiceOptions,
 } from '../services/onlineAppearanceService'
@@ -198,5 +202,75 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
   ipcMain.handle('appearance:online-discard', (_event, token: unknown) => {
     if (typeof token !== 'string') return { success: false }
     return online.discard(token)
+  })
+
+  ipcMain.handle('appearance:online-cover', (_event, fileKey: unknown, versionNo: unknown) => {
+    if (typeof fileKey !== 'string') return INVALID_ARGUMENT
+    if (versionNo !== undefined && versionNo !== null && typeof versionNo !== 'number') {
+      return INVALID_ARGUMENT
+    }
+    return online.cover(fileKey, versionNo ?? undefined)
+  })
+
+  // ==================== 上传前预览 ====================
+  // 与导入同一套只读校验，不写任何目录；上传对话框据此显示外观摘要。
+
+  ipcMain.handle('appearance:inspect-local', (_event, zipPath: unknown) => {
+    if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
+      return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 外观包' }
+    }
+    const resolved = path.resolve(zipPath)
+    try {
+      const { manifest, previewUrl } = inspectAppearancePackage(resolved)
+      const tokens = Object.fromEntries(
+        Object.entries(manifest.tokens).filter(([, value]) => value !== undefined)
+      )
+      return {
+        success: true,
+        fileSize: fs.statSync(resolved).size,
+        appearance: {
+          id: manifest.id,
+          name: manifest.name,
+          ...(manifest.description === undefined ? {} : { description: manifest.description }),
+          mode: manifest.mode,
+          tokens,
+          ...(previewUrl ? { previewUrl } : {}),
+        },
+      }
+    } catch (error) {
+      if (error instanceof AppearanceError) {
+        return { success: false, code: 'INVALID_PACKAGE', error: error.message }
+      }
+      const code = (error as NodeJS.ErrnoException | undefined)?.code
+      if (code === 'ENOENT') {
+        return { success: false, code: 'INVALID_PACKAGE', error: '外观 ZIP 不存在' }
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`读取本地外观包失败: ${message}`)
+      return { success: false, code: 'INVALID_PACKAGE', error: `无法读取外观包：${message}` }
+    }
+  })
+
+  // 上传对话框里预览另选的封面：只读、限 2 MiB、按文件头认 PNG / JPEG / WebP，与后端上传时的检查一致。
+  ipcMain.handle('appearance:inspect-cover', (_event, imagePath: unknown) => {
+    if (typeof imagePath !== 'string' || imagePath.length === 0) {
+      return { success: false, error: '请选择封面图片' }
+    }
+    try {
+      const resolved = path.resolve(imagePath)
+      const stat = fs.statSync(resolved)
+      if (!stat.isFile()) return { success: false, error: '选择的路径不是文件' }
+      if (stat.size > ONLINE_APPEARANCE_DEFAULTS.coverBytes) {
+        return { success: false, error: '封面图片不能超过 2 MB' }
+      }
+      const data = fs.readFileSync(resolved)
+      const mime = imageMimeFromMagic(data)
+      if (!mime) return { success: false, error: '封面只支持 PNG、JPEG 或 WebP 图片' }
+      return { success: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`读取封面图片失败: ${message}`)
+      return { success: false, error: `无法读取封面图片：${message}` }
+    }
   })
 }

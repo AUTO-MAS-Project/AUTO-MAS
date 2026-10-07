@@ -23,7 +23,10 @@
 import asyncio
 import json
 import os
+import re
+import zipfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -52,6 +55,12 @@ PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
 # 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
 # 不会报错，只会静默返回 0 条，模板列表就永远是空的。通用脚本模板都发布在这个分类下。
 CATEGORY_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_CATEGORY", "GeneralConfig")
+# 外观包所在的分类键，同样大小写敏感。必须与 Electron 主进程
+# frontend/electron/services/onlineAppearanceService.ts 里的 categoryKey 一致，
+# 否则这里传上去的外观在主题商店里看不到。
+APPEARANCE_CATEGORY_KEY = os.environ.get(
+    "AUTO_MAS_CONFIG_CENTER_APPEARANCE_CATEGORY", "theme"
+)
 
 # 通用脚本配置实际只有几 KiB，2 MiB 足够留出余量，同时挡住异常的超大响应
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
@@ -59,9 +68,27 @@ REQUEST_TIMEOUT = 15.0
 # 桌面令牌到期前留出的余量，避免上传到一半才失效
 TOKEN_EXPIRE_MARGIN = timedelta(seconds=30)
 
+# 外观包上传前的轻量校验，上限与 Electron 主进程 appearanceService.ts 的 APPEARANCE_LIMITS 一致；
+# 完整校验（资源声明、图片格式、光标尺寸等）由 Electron 在上传对话框里先做过一遍。
+APPEARANCE_MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
+APPEARANCE_MAX_MANIFEST_BYTES = 256 * 1024
+APPEARANCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# 外观封面（主题商店列表里的预览图）上限，与 Electron 主进程取封面时的上限一致
+COVER_MAX_BYTES = 2 * 1024 * 1024
+# 外观包体积远大于通用脚本配置，上传给更长的超时
+UPLOAD_TIMEOUT = 120.0
+
 
 class ConfigCenterError(RuntimeError):
-    """配置中心交互失败，message 可直接展示给用户。"""
+    """配置中心交互失败，message 可直接展示给用户。
+
+    status_code 沿用配置中心的 HTTP 状态；本地校验失败为 400，网络失败为 503，
+    其余未细分的失败为 500。
+    """
+
+    def __init__(self, message: str, *, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class ConfigCenterClient:
@@ -307,25 +334,403 @@ class ConfigCenterClient:
             ConfigCenterError: 未登录、登录已过期或上传被拒绝。
         """
 
-        token = self._require_token()
         content = json.dumps(config, ensure_ascii=False).encode("utf-8")
 
-        data = await self._request(
-            "POST",
-            "/user/files",
-            token=token,
-            files={"file": (f"{display_name}.json", content, "application/json")},
-            data={
-                "project_key": PROJECT_KEY,
-                "category_key": CATEGORY_KEY,
-                "display_name": display_name,
-                "description": description,
-                "change_note": "来自 AUTO-MAS 桌面端分享",
-            },
+        data = await self.upload_file(
+            category_key=CATEGORY_KEY,
+            display_name=display_name,
+            description=description,
+            change_note="来自 AUTO-MAS 桌面端分享",
+            filename=f"{display_name}.json",
+            content=content,
+            content_type="application/json",
+            conflict_message="该配置名称已被占用, 请换一个名称",
         )
 
         logger.success(f"配置已提交配置中心待审核: {display_name}")
         return data
+
+    async def upload_file(
+        self,
+        *,
+        category_key: str,
+        display_name: str,
+        description: str,
+        change_note: str,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        conflict_message: Optional[str] = None,
+        cover: Optional[Tuple[str, bytes, str]] = None,
+    ) -> Dict[str, Any]:
+        """以当前登录用户的身份在指定分类下新建一个文件, 首个版本进入待审核流程。
+
+        Args:
+            category_key: 配置中心分类键。
+            display_name: 文件名称, 配置中心据此生成 file_key。
+            description: 文件描述。
+            change_note: 首个版本的变更说明。
+            filename: 上传的源文件名。
+            content: 文件内容。
+            content_type: 文件 MIME 类型。
+            conflict_message: 名称被占用 (409) 时展示的提示, 为空则用通用提示。
+            cover: 封面图片 (文件名, 内容, MIME), 作为 multipart 的 cover 部分一并上传。
+
+        Returns:
+            配置中心返回的文件信息, 含 id / file_key / version 等字段。
+
+        Raises:
+            ConfigCenterError: 未登录、登录已过期或上传被拒绝。
+        """
+
+        token = self._require_token()
+        files: Dict[str, Any] = {"file": (filename, content, content_type)}
+        if cover is not None:
+            files["cover"] = cover
+
+        return await self._request(
+            "POST",
+            "/user/files",
+            token=token,
+            files=files,
+            data={
+                "project_key": PROJECT_KEY,
+                "category_key": category_key,
+                "display_name": display_name,
+                "description": description,
+                "change_note": change_note,
+            },
+            conflict_message=conflict_message,
+            timeout=UPLOAD_TIMEOUT,
+        )
+
+    async def upload_file_version(
+        self,
+        *,
+        file_id: int,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        change_note: str,
+        conflict_message: Optional[str] = None,
+        cover: Optional[Tuple[str, bytes, str]] = None,
+    ) -> Dict[str, Any]:
+        """以当前登录用户的身份给自己已上传的文件提交新版本, 进入待审核流程。
+
+        Args:
+            file_id: 配置中心的文件 id。
+            filename: 上传的源文件名。
+            content: 文件内容。
+            content_type: 文件 MIME 类型。
+            change_note: 本版本的变更说明。
+            conflict_message: 内容与已有版本相同 (409) 时展示的提示, 为空则用通用提示。
+            cover: 封面图片 (文件名, 内容, MIME), 作为 multipart 的 cover 部分一并上传。
+
+        Returns:
+            配置中心返回的文件信息, 含 id / file_key / version 等字段。
+
+        Raises:
+            ConfigCenterError: 未登录、登录已过期或上传被拒绝。
+        """
+
+        token = self._require_token()
+        files: Dict[str, Any] = {"file": (filename, content, content_type)}
+        if cover is not None:
+            files["cover"] = cover
+
+        return await self._request(
+            "POST",
+            f"/user/files/{file_id}/versions",
+            token=token,
+            files=files,
+            data={"change_note": change_note},
+            conflict_message=conflict_message,
+            timeout=UPLOAD_TIMEOUT,
+        )
+
+    # ==================== 外观包上传 ====================
+
+    async def upload_appearance(
+        self,
+        *,
+        zip_path: str,
+        display_name: str,
+        description: str,
+        change_note: str,
+        file_id: Optional[int],
+        cover_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """把本地外观包上传到分享站; file_id 非空时给已上传的那个文件发新版本。
+
+        Args:
+            zip_path: 本地外观 ZIP 路径。
+            display_name: 外观名称。
+            description: 外观描述, 只在首次上传时生效。
+            change_note: 本次上传的变更说明。
+            file_id: 已上传文件的 id, 为空表示新建。
+            cover_path: 封面图片路径, 为空时用包里 theme.json 的 preview。
+
+        Returns:
+            fileId / fileKey / versionNo / reviewStatus / isNewFile / appearanceId 组成的字典。
+
+        Raises:
+            ConfigCenterError: 外观包不合法 (400)、未登录或上传被拒绝。
+        """
+
+        # 第一步：本地轻量校验，不合法就不发任何请求
+        appearance_id, content, cover = await asyncio.to_thread(
+            self._read_appearance_package, zip_path, cover_path
+        )
+        username = self._username
+        filename = f"{appearance_id}.zip"
+
+        # 第二步：新建文件或追加版本
+        if file_id is None:
+            data = await self.upload_file(
+                category_key=APPEARANCE_CATEGORY_KEY,
+                display_name=display_name,
+                description=description,
+                change_note=change_note,
+                filename=filename,
+                content=content,
+                content_type="application/zip",
+                conflict_message="这个外观名称已被占用, 请换一个名称",
+                cover=cover,
+            )
+        else:
+            data = await self.upload_file_version(
+                file_id=file_id,
+                filename=filename,
+                content=content,
+                content_type="application/zip",
+                change_note=change_note,
+                conflict_message="这一版与分享站上已有的版本内容相同, 无需重复上传",
+                cover=cover,
+            )
+
+        version = data.get("version")
+        version = version if isinstance(version, dict) else {}
+        result = {
+            "fileId": int(data.get("id") or file_id or 0),
+            "fileKey": str(data.get("file_key") or ""),
+            "versionNo": int(version.get("version_no") or 0),
+            # 管理员上传直接通过；其余一律视为待审核
+            "reviewStatus": (
+                "approved" if version.get("review_status") == "approved" else "pending"
+            ),
+            "isNewFile": file_id is None,
+            "appearanceId": appearance_id,
+        }
+        logger.success(
+            f"外观包已上传分享站: {appearance_id} -> 文件 {result['fileId']} 版本 {result['versionNo']} ({result['reviewStatus']})"
+        )
+
+        # 第三步：记下这个账号把哪个外观传成了哪个文件，下次直接发新版本
+        await self._save_appearance_upload(
+            username,
+            appearance_id,
+            {
+                "fileId": result["fileId"],
+                "fileKey": result["fileKey"],
+                "displayName": str(data.get("display_name") or display_name),
+                "updatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+            },
+        )
+
+        return result
+
+    def list_appearance_uploads(self) -> List[Dict[str, Any]]:
+        """当前登录账号在本机留下的外观上传记录, 未登录时为空, 按更新时间从新到旧。"""
+
+        status = self._build_status()
+        if status.get("status") != "authorized":
+            return []
+
+        records = self._load_appearance_uploads().get(self._username, {})
+        items: List[Dict[str, Any]] = []
+        for appearance_id, record in records.items():
+            if not isinstance(record, dict):
+                logger.warning(f"外观上传记录格式错误, 已忽略: {appearance_id}")
+                continue
+            try:
+                items.append(
+                    {
+                        "appearanceId": str(appearance_id),
+                        "fileId": int(record["fileId"]),
+                        "fileKey": str(record.get("fileKey") or ""),
+                        "displayName": str(record.get("displayName") or ""),
+                        "updatedAt": str(record.get("updatedAt") or ""),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                logger.warning(f"外观上传记录格式错误, 已忽略: {appearance_id}")
+
+        items.sort(key=lambda item: item["updatedAt"], reverse=True)
+        return items
+
+    @staticmethod
+    def _detect_cover(data: bytes, source: str) -> Tuple[str, bytes, str]:
+        """按文件头魔数确定封面格式, 返回 multipart 用的 (文件名, 内容, MIME)。
+
+        Raises:
+            ConfigCenterError: 体积超限或不是 PNG / JPEG / WebP, status_code 为 400。
+        """
+
+        if len(data) > COVER_MAX_BYTES:
+            raise ConfigCenterError(
+                f"{source}超过 {COVER_MAX_BYTES // 1024 // 1024} MB", status_code=400
+            )
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "cover.png", data, "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "cover.jpg", data, "image/jpeg"
+        if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "cover.webp", data, "image/webp"
+        raise ConfigCenterError(
+            f"{source}只支持 PNG、JPEG 或 WebP 图片", status_code=400
+        )
+
+    @classmethod
+    def _read_appearance_package(
+        cls, zip_path: str, cover_path: Optional[str]
+    ) -> Tuple[str, bytes, Tuple[str, bytes, str]]:
+        """轻量校验外观 ZIP 并读出全部内容和封面。
+
+        Args:
+            zip_path: 本地外观 ZIP 路径。
+            cover_path: 指定的封面图片路径, 为空时取 theme.json 的 preview。
+
+        Returns:
+            (外观 id, ZIP 文件内容, 封面 (文件名, 内容, MIME))。
+
+        Raises:
+            ConfigCenterError: 校验不通过, status_code 为 400。
+        """
+
+        def invalid(message: str) -> ConfigCenterError:
+            return ConfigCenterError(message, status_code=400)
+
+        path = Path(zip_path)
+        if not path.exists():
+            raise invalid("外观包不存在")
+        if not path.is_file():
+            raise invalid("选择的路径不是文件")
+        if path.suffix.lower() != ".zip":
+            raise invalid("请选择 ZIP 外观包")
+        if path.stat().st_size > APPEARANCE_MAX_ARCHIVE_BYTES:
+            raise invalid(
+                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES // 1024 // 1024} MB, 无法上传"
+            )
+
+        try:
+            with zipfile.ZipFile(path) as archive:
+                try:
+                    info = archive.getinfo("theme.json")
+                except KeyError:
+                    raise invalid("外观包根目录缺少 theme.json") from None
+                if info.file_size > APPEARANCE_MAX_MANIFEST_BYTES:
+                    raise invalid("theme.json 过大")
+                raw_manifest = archive.read(info)
+
+                try:
+                    manifest = json.loads(raw_manifest.decode("utf-8-sig"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                    raise invalid("theme.json 不是有效的 JSON") from e
+                if not isinstance(manifest, dict):
+                    raise invalid("theme.json 不是有效的外观描述")
+                if manifest.get("formatVersion") != 1:
+                    raise invalid("不支持的外观包格式版本")
+                appearance_id = manifest.get("id")
+                if not isinstance(
+                    appearance_id, str
+                ) or not APPEARANCE_ID_PATTERN.match(appearance_id):
+                    raise invalid("theme.json 里的外观 ID 无效")
+
+                # 没指定封面时用包里 preview 指向的图；Electron 导入时路径不区分大小写，这里一致
+                preview_data: Optional[bytes] = None
+                preview = manifest.get("preview")
+                if not cover_path and isinstance(preview, str) and preview:
+                    preview_info = next(
+                        (
+                            item
+                            for item in archive.infolist()
+                            if item.filename.lower() == preview.lower()
+                            and not item.is_dir()
+                        ),
+                        None,
+                    )
+                    if preview_info is None:
+                        raise invalid(f"外观包里缺少预览图: {preview}")
+                    if preview_info.file_size > COVER_MAX_BYTES:
+                        raise invalid(
+                            f"外观包的预览图超过 {COVER_MAX_BYTES // 1024 // 1024} MB"
+                        )
+                    preview_data = archive.read(preview_info)
+        except ConfigCenterError:
+            raise
+        except Exception as e:
+            # 损坏、加密或用了不支持压缩方式的 ZIP 会抛出各式各样的异常，统一按包无效处理
+            raise invalid(f"无法读取外观包: {e}") from e
+
+        # 封面：指定图片优先，其次是包里的 preview
+        if cover_path:
+            cover_file = Path(cover_path)
+            if not cover_file.is_file():
+                raise invalid("预览图不存在或不是文件")
+            if cover_file.stat().st_size > COVER_MAX_BYTES:
+                raise invalid(f"预览图超过 {COVER_MAX_BYTES // 1024 // 1024} MB")
+            cover = cls._detect_cover(cover_file.read_bytes(), "预览图")
+        elif preview_data is not None:
+            cover = cls._detect_cover(preview_data, "外观包的预览图")
+        else:
+            raise invalid("请提供预览图（外观包里没有 preview）")
+
+        content = path.read_bytes()
+        # 校验和读取之间文件被换掉时，以实际读到的大小为准再挡一次
+        if len(content) > APPEARANCE_MAX_ARCHIVE_BYTES:
+            raise invalid(
+                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES // 1024 // 1024} MB, 无法上传"
+            )
+
+        return appearance_id, content, cover
+
+    def _load_appearance_uploads(self) -> Dict[str, Dict[str, Any]]:
+        """读取本机外观上传记录, 损坏时按空处理。"""
+
+        try:
+            data = json.loads(Config.get("Data", "ShareAppearanceUploads"))
+        except Exception as e:
+            logger.warning(f"读取外观上传记录失败, 按空记录处理: {e}")
+            return {}
+
+        if not isinstance(data, dict):
+            logger.warning("外观上传记录格式错误, 按空记录处理")
+            return {}
+        return {
+            str(username): records
+            for username, records in data.items()
+            if isinstance(records, dict)
+        }
+
+    async def _save_appearance_upload(
+        self, username: str, appearance_id: str, record: Dict[str, Any]
+    ) -> None:
+        """写入一条外观上传记录; 失败只记日志, 不影响已经成功的上传。"""
+
+        if not username:
+            logger.warning(f"未取得分享站用户名, 不记录外观上传: {appearance_id}")
+            return
+
+        data = self._load_appearance_uploads()
+        data.setdefault(username, {})[appearance_id] = record
+        try:
+            await Config.set(
+                "Data",
+                "ShareAppearanceUploads",
+                json.dumps(data, ensure_ascii=False),
+            )
+        except Exception as e:
+            logger.warning(f"保存外观上传记录失败: {appearance_id}, {e}")
 
     # ==================== 内部实现 ====================
 
@@ -333,10 +738,14 @@ class ConfigCenterClient:
         """取出仍然有效的桌面令牌。"""
 
         if not self._token or self._token_expires_at is None:
-            raise ConfigCenterError("尚未登录配置中心, 请先完成浏览器授权")
+            raise ConfigCenterError(
+                "尚未登录配置中心, 请先完成浏览器授权", status_code=401
+            )
         if datetime.now() + TOKEN_EXPIRE_MARGIN >= self._token_expires_at:
             self._clear_token()
-            raise ConfigCenterError("配置中心登录状态已过期, 请重新授权")
+            raise ConfigCenterError(
+                "配置中心登录状态已过期, 请重新授权", status_code=401
+            )
         return self._token
 
     def _clear_token(self) -> None:
@@ -408,6 +817,8 @@ class ConfigCenterClient:
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
         token: Optional[str] = None,
+        conflict_message: Optional[str] = None,
+        timeout: float = REQUEST_TIMEOUT,
     ) -> Dict[str, Any]:
         """调用配置中心接口并拆掉 {code, message, data} 信封。
 
@@ -418,7 +829,7 @@ class ConfigCenterClient:
         headers = {"Authorization": f"Bearer {token}"} if token else None
 
         async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
+            proxy=Config.proxy, follow_redirects=True, timeout=timeout
         ) as client:
             try:
                 response = await client.request(
@@ -432,14 +843,19 @@ class ConfigCenterClient:
                 )
             except httpx.HTTPError as e:
                 logger.warning(f"请求配置中心失败: {method} {path} - {e}")
-                raise ConfigCenterError(f"无法连接配置中心: {e}") from e
+                raise ConfigCenterError(
+                    f"无法连接配置中心: {e}", status_code=503
+                ) from e
 
         if response.status_code >= 400:
             # 服务端说令牌不认了就别再留着，否则界面会一直显示已登录
             if response.status_code == 401 and token:
                 self._clear_token()
             raise ConfigCenterError(
-                self._describe_failure(response, "配置中心请求失败")
+                self._describe_failure(
+                    response, "配置中心请求失败", conflict_message=conflict_message
+                ),
+                status_code=response.status_code,
             )
 
         try:
@@ -454,22 +870,38 @@ class ConfigCenterClient:
         return result if isinstance(result, dict) else {}
 
     @staticmethod
-    def _describe_failure(response: httpx.Response, fallback: str) -> str:
-        """把配置中心的错误响应整理成一句可展示的中文提示。"""
+    def _describe_failure(
+        response: httpx.Response,
+        fallback: str,
+        *,
+        conflict_message: Optional[str] = None,
+    ) -> str:
+        """把配置中心的错误响应整理成一句可展示的中文提示。
+
+        Args:
+            response: 配置中心的错误响应。
+            fallback: 没有更具体提示时的前缀。
+            conflict_message: 409 且不是待审核超限时展示的提示, 由调用方按端点语义给出。
+        """
 
         message = ""
+        detail: Any = None
         try:
             payload = response.json()
             if isinstance(payload, dict):
                 message = str(payload.get("message") or "")
+                detail = payload.get("data")
         except ValueError:
             message = ""
 
         if response.status_code == 401:
             return "配置中心登录状态已失效, 请重新授权"
         if response.status_code == 409:
-            # 这个端点上的 409 只可能是同名配置已存在，服务端消息是英文的，直接给中文提示
-            return "该配置名称已被占用, 请换一个名称"
+            # 上传端点的 409 有两种：待审核数超限（data 带 limit/current），以及端点自己的冲突
+            # （新建时同名、追加版本时内容未变）。服务端消息是英文的，一律给中文提示
+            if isinstance(detail, dict) and detail.get("limit") is not None:
+                return f"待审核的上传已达上限（{detail.get('current', '?')}/{detail['limit']}）"
+            return conflict_message or f"{fallback}: {message or response.status_code}"
         if response.status_code == 413:
             return message or "配置文件超过配置中心的体积上限"
         if response.status_code == 429:

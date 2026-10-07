@@ -5317,6 +5317,10 @@ class GlobalConfig(ConfigBase):
         )
         ## 公告内容
         self.Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
+        ## 分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}
+        self.Data_ShareAppearanceUploads = ConfigItem(
+            "Data", "ShareAppearanceUploads", "{}", JSONValidator()
+        )
         super().__init__()
 
         ## 模拟器配置列表

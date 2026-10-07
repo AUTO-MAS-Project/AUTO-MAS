@@ -26,13 +26,13 @@ export interface PreparedOnlineAppearance {
 }
 
 const ERROR_KEYS: Record<OnlineAppearanceErrorCode, string> = {
-  NETWORK: 'setting.onlineAppearance.error.network',
-  NOT_FOUND: 'setting.onlineAppearance.error.notFound',
-  BAD_RESPONSE: 'setting.onlineAppearance.error.badResponse',
-  TOO_LARGE: 'setting.onlineAppearance.error.tooLarge',
-  CHECKSUM_MISMATCH: 'setting.onlineAppearance.error.checksum',
-  EXPIRED: 'setting.onlineAppearance.error.expired',
-  UNSUPPORTED: 'setting.onlineAppearance.error.unsupported',
+  NETWORK: 'themeStore.error.network',
+  NOT_FOUND: 'themeStore.error.notFound',
+  BAD_RESPONSE: 'themeStore.error.badResponse',
+  TOO_LARGE: 'themeStore.error.tooLarge',
+  CHECKSUM_MISMATCH: 'themeStore.error.checksum',
+  EXPIRED: 'themeStore.error.expired',
+  UNSUPPORTED: 'themeStore.error.unsupported',
 }
 
 const UNSUPPORTED = { code: 'UNSUPPORTED' } as const
@@ -66,7 +66,7 @@ export function formatAppearanceFileSize(bytes: number): string {
 
 // 时间来自分享站，按本机时区展示
 export function formatOnlineAppearanceTime(value: string): string {
-  return value ? formatBackendDateTime(value) : t('setting.onlineAppearance.unknownTime')
+  return value ? formatBackendDateTime(value) : t('themeStore.unknownTime')
 }
 
 export function pickDefaultVersion(
@@ -113,6 +113,53 @@ export function useOnlineAppearance(options: {
     () => versions.value.find(item => item.versionNo === selectedVersionNo.value) ?? null
   )
 
+  // 封面按「file_key@版本」缓存在本页会话里；主进程另有一层缓存，翻页回来不会重复下载。
+  const covers = shallowRef<Record<string, string>>({})
+  const coverLoading = new Set<string>()
+  const coverKey = (fileKey: string, versionNo: number): string => `${fileKey}@${versionNo}`
+
+  const coverFor = (fileKey: string, versionNo: number | null): string | undefined =>
+    versionNo === null ? undefined : covers.value[coverKey(fileKey, versionNo)]
+
+  const ensureCover = async (fileKey: string, versionNo: number | null): Promise<void> => {
+    if (versionNo === null) return
+    const key = coverKey(fileKey, versionNo)
+    if (covers.value[key] || coverLoading.has(key)) return
+    coverLoading.add(key)
+    try {
+      const result = await api().getOnlineAppearanceCover?.(fileKey, versionNo)
+      if (result?.success && result.dataUrl) {
+        covers.value = { ...covers.value, [key]: result.dataUrl }
+      } else if (result && result.code !== 'NOT_FOUND') {
+        logger.warn(`加载外观封面失败: ${key}，${result.error ?? result.code ?? '未知错误'}`)
+      }
+    } catch (error) {
+      logger.warn(
+        `加载外观封面失败: ${key}，${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      coverLoading.delete(key)
+    }
+  }
+
+  // 一次最多并发 3 张，列表很长时也不会把分享站一下打满。
+  const loadCovers = async (list: OnlineAppearanceItem[]): Promise<void> => {
+    const queue = list.filter(item => item.hasCover && item.publishedVersionNo !== null)
+    const worker = async (): Promise<void> => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        await ensureCover(item.fileKey, item.publishedVersionNo)
+      }
+    }
+    await Promise.all([worker(), worker(), worker()])
+  }
+
+  const detailCover = computed(() => {
+    const item = detailItem.value
+    const version = selectedVersion.value
+    if (!item || !version?.hasCover) return undefined
+    return coverFor(item.fileKey, version.versionNo)
+  })
+
   const discardToken = (token: string): void => {
     void Promise.resolve(api().discardOnlineAppearance?.(token)).catch(() => undefined)
   }
@@ -148,7 +195,7 @@ export function useOnlineAppearance(options: {
         total.value = 0
         listError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'setting.onlineAppearance.listFailed'
+          'themeStore.listFailed'
         )
         logger.warn(`加载在线外观列表失败: ${result?.error ?? result?.code ?? '不支持'}`)
         return
@@ -156,11 +203,12 @@ export function useOnlineAppearance(options: {
       items.value = result.items ?? []
       page.value = result.pagination?.page ?? targetPage
       total.value = result.pagination?.total ?? items.value.length
+      void loadCovers(items.value)
     } catch (error) {
       if (revision !== listRevision) return
       items.value = []
       total.value = 0
-      listError.value = t('setting.onlineAppearance.listFailed')
+      listError.value = t('themeStore.listFailed')
       logger.error(
         `加载在线外观列表失败: ${error instanceof Error ? error.message : String(error)}`
       )
@@ -202,7 +250,7 @@ export function useOnlineAppearance(options: {
         if (result?.token) discardToken(result.token)
         prepareError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'setting.onlineAppearance.prepareFailed'
+          'themeStore.prepareFailed'
         )
         logger.warn(
           `下载在线外观失败: ${item.fileKey} v${versionNo}，${result?.error ?? result?.code ?? '不支持'}`
@@ -219,7 +267,7 @@ export function useOnlineAppearance(options: {
       return prepared.value
     } catch (error) {
       if (revision !== prepareRevision) return null
-      prepareError.value = t('setting.onlineAppearance.prepareFailed')
+      prepareError.value = t('themeStore.prepareFailed')
       logger.error(
         `下载在线外观失败: ${item.fileKey} v${versionNo}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -255,7 +303,7 @@ export function useOnlineAppearance(options: {
       if (!result?.success) {
         detailError.value = describeOnlineAppearanceError(
           result ?? UNSUPPORTED,
-          'setting.onlineAppearance.detailFailed'
+          'themeStore.detailFailed'
         )
         logger.warn(
           `加载在线外观详情失败: ${item.fileKey}，${result?.error ?? result?.code ?? '不支持'}`
@@ -270,7 +318,7 @@ export function useOnlineAppearance(options: {
       )
     } catch (error) {
       if (revision !== detailRevision) return
-      detailError.value = t('setting.onlineAppearance.detailFailed')
+      detailError.value = t('themeStore.detailFailed')
       logger.error(
         `加载在线外观详情失败: ${item.fileKey}，${error instanceof Error ? error.message : String(error)}`
       )
@@ -278,7 +326,11 @@ export function useOnlineAppearance(options: {
     } finally {
       if (revision === detailRevision) detailLoading.value = false
     }
-    if (revision === detailRevision && selectedVersionNo.value !== null) await prepareSelected()
+    if (revision !== detailRevision || selectedVersionNo.value === null) return
+    if (selectedVersion.value?.hasCover && detailItem.value) {
+      void ensureCover(detailItem.value.fileKey, selectedVersionNo.value)
+    }
+    await prepareSelected()
   }
 
   const retryDetail = (): void => {
@@ -288,23 +340,31 @@ export function useOnlineAppearance(options: {
 
   const selectVersion = (versionNo: number): void => {
     if (installing.value || versionNo === selectedVersionNo.value) return
-    if (!versions.value.some(item => item.versionNo === versionNo)) return
+    const version = versions.value.find(item => item.versionNo === versionNo)
+    if (!version) return
     selectedVersionNo.value = versionNo
+    if (version.hasCover && detailItem.value) void ensureCover(detailItem.value.fileKey, versionNo)
     void prepareSelected()
   }
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
     if (installing.value || preparing.value) return 'cancelled'
     installing.value = true
+    let outcome: OnlineAppearanceInstallOutcome = 'failed'
     try {
       const ready = await prepareSelected()
-      if (!ready) return 'failed'
-      const outcome = await options.install(ready.token)
+      if (!ready) return outcome
+      outcome = await options.install(ready.token)
       // 用户拒绝覆盖时主进程保留临时包，换别的结局都已经用掉或删掉了。
       if (outcome !== 'cancelled' && prepared.value?.token === ready.token) discardPrepared()
       return outcome
     } finally {
       installing.value = false
+      // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
+      if (outcome === 'installed') {
+        backToList()
+        void loadList(page.value)
+      }
     }
   }
 
@@ -348,6 +408,8 @@ export function useOnlineAppearance(options: {
     detailError,
     selectedVersionNo,
     selectedVersion,
+    coverFor,
+    detailCover,
     prepared,
     preparing,
     prepareError,

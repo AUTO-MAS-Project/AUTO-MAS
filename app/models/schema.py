@@ -5284,6 +5284,50 @@ class ShareAuthStatusOut(OutBase):
     interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
+class ShareAppearanceUploadIn(BaseModel):
+    zipPath: str = Field(..., description="本地外观 ZIP 路径")
+    displayName: str = Field(..., min_length=1, max_length=60, description="外观名称")
+    description: str = Field(default="", max_length=2000, description="外观描述")
+    changeNote: str = Field(default="", max_length=500, description="变更说明")
+    fileId: Optional[int] = Field(
+        default=None, description="已上传文件的 ID, 非空表示给该文件发新版本"
+    )
+    coverPath: Optional[str] = Field(
+        default=None,
+        description="封面图片路径, 为空时使用外观包 theme.json 的 preview",
+    )
+
+    @field_validator("displayName", mode="before")
+    @classmethod
+    def strip_display_name(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ShareAppearanceUploadOut(OutBase):
+    fileId: int = Field(default=0, description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    versionNo: int = Field(default=0, description="本次上传的版本号")
+    reviewStatus: Literal["pending", "approved"] = Field(
+        default="pending", description="审核状态, 管理员上传自动通过"
+    )
+    isNewFile: bool = Field(default=False, description="是否新建了文件")
+    appearanceId: str = Field(default="", description="外观 ID")
+
+
+class ShareAppearanceUploadItem(BaseModel):
+    appearanceId: str = Field(..., description="外观 ID")
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    updatedAt: str = Field(default="", description="最近一次上传时间")
+
+
+class ShareAppearanceUploadsOut(OutBase):
+    data: List[ShareAppearanceUploadItem] = Field(
+        default_factory=list, description="当前登录账号的外观上传记录"
+    )
+
+
 class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
