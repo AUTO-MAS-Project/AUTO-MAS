@@ -155,8 +155,10 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import {
   WS_TASK_COMPLETED,
+  WS_TASK_CONFIG_DISCARDED,
   WS_TASK_NOTICE,
   type WSTaskCompletedData,
+  type WSTaskConfigDiscardedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import {
@@ -169,6 +171,7 @@ import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
+import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 
@@ -290,14 +293,22 @@ const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
+// 丢弃帧由任务收尾过程发出，与停止响应分属两条链路：停止后等一个回合再判定改动是否生效
+const DISCARD_FRAME_GRACE_MS = 300
 
-// WebSocket连接管理：scriptId/userId -> { subscriptionIds, taskId, timeoutId }
-const activeConnections = ref<
-  Map<
-    string,
-    { subscriptionIds: string[]; taskId: string; timeoutId?: ReturnType<typeof setTimeout> }
-  >
->(new Map())
+// 配置会话的连接记录（键为 scriptId/userId）
+type ConfigSessionConnection = {
+  subscriptionIds: string[]
+  taskId: string
+  timeoutId?: ReturnType<typeof setTimeout>
+  /** 后端下发的丢弃原因（structure/unreadable/not_written），改动未被丢弃为 null */
+  discardedReason: string | null
+  /** 丢弃提示是否已弹过：完成帧与停止响应都会走到会话结束，只提示一次 */
+  discardWarned: boolean
+}
+
+// WebSocket连接管理：scriptId/userId -> ConfigSessionConnection
+const activeConnections = ref<Map<string, ConfigSessionConnection>>(new Map())
 
 // 定时队列等别处发起的任务结束后，用户的代理状态已在后端更新，防抖后重新拉一次列表；
 // removed 是断线期间结束、没收到完成通知的任务
@@ -615,6 +626,21 @@ const clearConfigSession = (
   clearState()
 }
 
+// 结束一次配置会话：释放订阅与遮罩，必要时补一次「改动被丢弃」提示。
+// 返回改动是否生效（false 表示后端已丢弃，调用方不该再提示「已保存」）。
+const finishConfigSession = (
+  targetId: string,
+  connection: ConfigSessionConnection,
+  clearState: () => void
+) => {
+  clearConfigSession(targetId, connection.subscriptionIds, clearState)
+  if (connection.discardedReason && !connection.discardWarned) {
+    connection.discardWarned = true
+    showConfigDiscardWarning(t, connection.discardedReason)
+  }
+  return connection.discardedReason === null
+}
+
 // 会话超时定时器挂在连接记录上，会话结束或页面卸载时一并清掉
 const scheduleConfigSessionTimeout = (
   targetId: string,
@@ -636,7 +662,7 @@ const startConfigSession = async (
   label: string,
   setActiveState: () => void,
   clearState: () => void,
-  onCompleted?: (data: WSTaskCompletedData) => void
+  onCompleted?: (data: WSTaskCompletedData, discardedReason: string | null) => void
 ) => {
   if (activeConnections.value.has(targetId)) {
     message.warning(t('scripts.toast.targetConfiguring'))
@@ -653,30 +679,38 @@ const startConfigSession = async (
 
   setActiveState()
   let sessionEnded = false
-  const subscriptionIds: string[] = []
-  subscriptionIds.push(
+  // 连接记录先建好：丢弃帧与完成帧都可能早于停止响应到达，两个回调都要读到同一份记录
+  const connection: ConfigSessionConnection = {
+    subscriptionIds: [],
+    taskId: response.taskId,
+    discardedReason: null,
+    discardWarned: false,
+  }
+  connection.subscriptionIds.push(
     subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
       const data = wsMessage.data as unknown as WSTaskNoticeData
       if (data.level === 'error') {
         message.error(t('scripts.toast.configFailed', { label, error: data.message }))
       }
     }),
+    subscribe({ id: response.taskId, type: WS_TASK_CONFIG_DISCARDED }, wsMessage => {
+      const data = wsMessage.data as unknown as WSTaskConfigDiscardedData
+      connection.discardedReason = data.reason
+      logger.info(`收到配置会话丢弃通知: reason=${data.reason}`)
+    }),
     subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
       sessionEnded = true
-      clearConfigSession(targetId, subscriptionIds, clearState)
-      onCompleted?.(wsMessage.data as unknown as WSTaskCompletedData)
+      finishConfigSession(targetId, connection, clearState)
+      onCompleted?.(wsMessage.data as unknown as WSTaskCompletedData, connection.discardedReason)
     })
   )
   if (sessionEnded) {
-    for (const subscriptionId of subscriptionIds) {
+    for (const subscriptionId of connection.subscriptionIds) {
       unsubscribe(subscriptionId)
     }
     return false
   }
-  activeConnections.value.set(targetId, {
-    subscriptionIds,
-    taskId: response.taskId,
-  })
+  activeConnections.value.set(targetId, connection)
   return true
 }
 
@@ -692,8 +726,9 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
   if (response.code !== 200) {
     throw new Error(response.message || t('scripts.toast.saveFailedRaw', { label }))
   }
-  clearConfigSession(targetId, connection.subscriptionIds, clearState)
-  return true
+  // 丢弃帧先于停止响应写出，但到达顺序不保证，等一个回合再判定改动是否生效
+  await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+  return finishConfigSession(targetId, connection, clearState)
 }
 
 // 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
@@ -706,8 +741,10 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Wh
         configMask.value = { kind, script, user: null }
       },
       clearConfigMask,
-      data => {
+      (data, discardedReason) => {
         logger.info(`脚本 ${script.name} 配置任务已结束`)
+        // 改动被丢弃时弹窗已说明去向，再提示「已完成」互相矛盾
+        if (discardedReason) return
         if (data.outcome === 'success') {
           message.success(t('scripts.toast.configDone', { name: script.name }))
         }
