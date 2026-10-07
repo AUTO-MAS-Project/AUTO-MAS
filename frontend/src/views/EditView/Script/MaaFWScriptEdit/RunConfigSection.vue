@@ -105,6 +105,34 @@
         </a-form-item>
       </a-col>
     </a-row>
+
+    <a-row :gutter="24" class="task-time-limit-row">
+      <a-col :span="12">
+        <a-form-item :label="t('edit.singleTaskTimeLimit')">
+          <a-input-number
+            v-model:value="maafwConfig.Run.TaskTimeLimit"
+            :min="0"
+            :max="9999"
+            size="large"
+            class="modern-number-input"
+            style="width: 100%"
+            @blur="emit('change', 'Run', 'TaskTimeLimit', maafwConfig.Run.TaskTimeLimit)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串；
+             原地打转检测（Run.LoopGuard）的开关也在这个弹窗里 -->
+        <MaaFWTaskTimeLimitField
+          :value="maafwConfig.Run.TaskTimeLimitOverrides"
+          :loop-guard="Boolean(maafwConfig.Run.LoopGuard)"
+          :tasks="periodTaskOptions"
+          :default-minutes="maafwConfig.Run.TaskTimeLimit ?? 0"
+          :disabled="interfaceDependentDisabled || periodTaskOptions.length === 0"
+          @save="handleTaskTimeLimitOverridesSave"
+        />
+      </a-col>
+    </a-row>
   </div>
 </template>
 
@@ -114,13 +142,23 @@ import type {
   MaaFWScriptRunSectionEmits,
   MaaFWScriptRunSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'
 
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-defineProps<MaaFWScriptRunSectionProps>()
+const props = defineProps<MaaFWScriptRunSectionProps>()
 
 const emit = defineEmits<MaaFWScriptRunSectionEmits>()
+
+const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => {
+  props.maafwConfig.Run.TaskTimeLimitOverrides = value
+  emit('change', 'Run', 'TaskTimeLimitOverrides', value)
+  if (loopGuard !== Boolean(props.maafwConfig.Run.LoopGuard)) {
+    props.maafwConfig.Run.LoopGuard = loopGuard
+    emit('change', 'Run', 'LoopGuard', loopGuard)
+  }
+}
 </script>
 
 <style scoped>
@@ -170,6 +208,10 @@ const emit = defineEmits<MaaFWScriptRunSectionEmits>()
 }
 
 .period-task-row {
+  margin-top: 8px;
+}
+
+.task-time-limit-row {
   margin-top: 8px;
 }
 </style>

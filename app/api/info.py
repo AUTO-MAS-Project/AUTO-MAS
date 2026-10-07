@@ -38,7 +38,8 @@ from fastapi.responses import FileResponse, Response
 
 from app.core import Config
 from app.models.schema import *
-from app.tools.stella_official import fetch_official_activities
+from app.tools.sra_activity import fetch_sra_activities
+from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -58,8 +59,14 @@ GAMEKEE_HEADERS = {
 ## 对外仍沿用 Kivo 时代的服务器标识，内部换成 GameKee 的 serverId
 GAMEKEE_SERVER_IDS = {"JP": 15, "Globle": 17, "CN": 16}
 
-## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理
-GAMEKEE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com",)
+## 兜底数据来自 SRA 时用它自己的游戏标识，与 GameKee 的服务器标识一一对应
+SRA_BLUEARCHIVE_IDS = {"JP": "ba-jp", "Globle": "ba-global", "CN": "ba-cn"}
+
+## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。
+## 最后一个域是 SRA 的图床（兜底数据的封面），它公开可访问、不校验 Referer
+BLUEARCHIVE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com", "resource.starrailassistant.top")
+## 中转是原样转发（不缩放），给个上限免得被当成流量代理
+BLUEARCHIVE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 
 ## 明日方舟的活动一览取自 PRTS wiki。那个站对「声称自己是 Chrome」的请求一律 403，
 ## 换个朴素 UA 反而畅通；页面是服务端渲染的表格，每行带
@@ -364,6 +371,42 @@ async def get_overview() -> InfoOut:
     )
 
 
+def _epoch_seconds(value: str) -> int:
+    """ISO 时间串 → Unix 秒；解析不出来返回 0。"""
+
+    try:
+        return int(datetime.fromisoformat(value).timestamp())
+    except ValueError:
+        return 0
+
+
+def _to_gamekee_rows(activities: list[dict[str, object]]) -> list[dict[str, object]]:
+    """把 SRA 的活动条目换成 GameKee 表的字段形状。
+
+    前端只认 GameKee 那一套（title / activity_kind_name / begin_at…），照着拼一份
+    省得让前端认识第二套数据源；SRA 已经滤掉非活动条目，分类固定写「活动」。
+    """
+
+    rows: list[dict[str, object]] = []
+    for item in activities:
+        name = str(item.get("name") or "").strip()
+        begin = _epoch_seconds(str(item.get("startTime") or ""))
+        end = _epoch_seconds(str(item.get("endTime") or ""))
+        if not name or not begin or not end:
+            continue
+        rows.append(
+            {
+                "title": name,
+                "picture": str(item.get("cover") or ""),
+                "description": str(item.get("description") or ""),
+                "activity_kind_name": "活动",
+                "begin_at": begin,
+                "end_at": end,
+            }
+        )
+    return rows
+
+
 @router.post(
     "/bluearchive/activity",
     tags=["Get"],
@@ -378,6 +421,9 @@ async def get_bluearchive_activity(
 
     这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
     之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
+
+    GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
+    的字段形状再交给前端，省得让前端认识第二套数据源。
     """
 
     cache_key = f"{payload.line_type}:{payload.page}:{payload.page_size}"
@@ -408,12 +454,19 @@ async def get_bluearchive_activity(
         logger.opt(exception=True).warning(
             f"获取碧蓝档案活动数据失败({payload.line_type}): {type(e).__name__}: {e}"
         )
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={},
-        )
+        ## SRA 一次给全，翻页请求不再重复给同一批活动
+        if payload.page > 1:
+            return InfoOut(data={"code": 0, "data": []})
+        fallback = await fetch_sra_activities(SRA_BLUEARCHIVE_IDS[payload.line_type])
+        if fallback is None:
+            return InfoOut(
+                code=500,
+                status="error",
+                message=f"{type(e).__name__}: {str(e)}",
+                data={},
+            )
+        logger.info(f"碧蓝档案活动数据改用 SRA 兜底({payload.line_type})")
+        data = {"code": 0, "data": _to_gamekee_rows(fallback["activities"])}
 
     _prune_bluearchive_cache(time.time())
     _bluearchive_cache[cache_key] = (time.time(), data)
@@ -435,13 +488,20 @@ async def get_bluearchive_image(
     """
 
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in GAMEKEE_IMAGE_HOSTS:
+    if parsed.scheme != "https" or parsed.hostname not in BLUEARCHIVE_IMAGE_HOSTS:
         raise HTTPException(status_code=400, detail="只允许中转碧蓝档案活动图片")
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(url, headers=GAMEKEE_HEADERS)
         response.raise_for_status()
+        ## 这个接口带着自定义头去白名单域名取东西再原样吐给前端，所以要确认拿回来的确实是图片：
+        ## 上游报错时可能返回一坨 200 的 HTML，直接转发会让前端拿着垃圾当图；大小也设个上限
+        media_type = response.headers.get("content-type", "").split(";")[0].strip()
+        if not media_type.startswith("image/"):
+            raise ValueError(f"来源不是图片: {media_type or '未给类型'}")
+        if len(response.content) > BLUEARCHIVE_IMAGE_MAX_BYTES:
+            raise ValueError(f"图片过大: {len(response.content)} 字节")
     except Exception as e:
         logger.opt(exception=True).warning(
             f"获取碧蓝档案活动图片失败: {type(e).__name__}: {e}"
@@ -450,7 +510,7 @@ async def get_bluearchive_image(
 
     return Response(
         content=response.content,
-        media_type=response.headers.get("content-type", "image/webp"),
+        media_type=media_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
@@ -463,6 +523,8 @@ ENDFIELD_IMAGE_WIDTH = 1300
 ENDFIELD_IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / "auto-mas-image-cache"
 ## 活动图按地址换，版本大图却是固定地址换内容，所以缓存还得有有效期
 ENDFIELD_IMAGE_CACHE_TTL = 6 * 3600
+## 缓存只按地址新增、从不回收的话会一直涨：超过这个数量就按修改时间删掉最旧的一批
+ENDFIELD_IMAGE_CACHE_MAX_FILES = 200
 
 ## 终末地的版本大图就是 AKEData 首页顶部那张（打开网站第一眼看到的就是它），
 ## 比活动自带的背景图更稳定：每个版本都会换，且不依赖某个活动是否在跑
@@ -521,6 +583,24 @@ def _cache_is_fresh(path: Path) -> bool:
         return time.time() - path.stat().st_mtime < ENDFIELD_IMAGE_CACHE_TTL
     except OSError:
         return False
+
+
+def _prune_image_cache() -> None:
+    """图缓存超过上限时，按修改时间删掉最旧的一批。
+
+    缩图后的 jpeg 单张几百 KB，活动一换就是新地址、旧文件再没人看，长期运行会一直涨。
+    这里只保留最近用到的那些；万一删掉的正被请求，下次会重新生成。
+    """
+
+    try:
+        files = sorted(
+            ENDFIELD_IMAGE_CACHE_DIR.glob("*.jpg"),
+            key=lambda path: path.stat().st_mtime,
+        )
+    except OSError:
+        return
+    for path in files[: max(0, len(files) - ENDFIELD_IMAGE_CACHE_MAX_FILES)]:
+        path.unlink(missing_ok=True)
 
 
 def _write_thumbnail(payload: bytes, target: Path) -> None:
@@ -587,6 +667,8 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
             response.raise_for_status()
             ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
             await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+            ## 只在新增文件时回收一次，别让每次请求都去扫一遍目录
+            await asyncio.to_thread(_prune_image_cache)
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"获取终末地活动图片失败: {type(e).__name__}: {e}"
@@ -696,6 +778,9 @@ async def get_arknights_activity() -> InfoOut:
     PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
     最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
     不然前端会把「没有活动」当成接口出错反复重试。
+
+    PRTS 在部分网络下会连不上、也挡浏览器直连，真取不到时改用 SRA 托管的那份活动列表
+    顶上：数据没有活动分类，卡片上会少一列标签，但至少不是空的。
     """
 
     global _arknights_cache
@@ -716,12 +801,16 @@ async def get_arknights_activity() -> InfoOut:
         logger.opt(exception=True).warning(
             f"获取明日方舟活动数据失败: {type(e).__name__}: {e}"
         )
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={},
-        )
+        fallback = await fetch_sra_activities("ak")
+        if fallback is None:
+            return InfoOut(
+                code=500,
+                status="error",
+                message=f"{type(e).__name__}: {str(e)}",
+                data={},
+            )
+        logger.info("明日方舟活动数据改用 SRA 兜底")
+        data = fallback
 
     _arknights_cache = (time.time(), data)
     return InfoOut(data=data)
@@ -738,31 +827,36 @@ async def get_stella_activity() -> InfoOut:
     """取回星塔旅人的活动一览。
 
     数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
-    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
-    信封，由卡片显示自己的失败态，不影响其它卡片。
+    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
+
+    官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
+    对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
+    分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
 
     Returns:
-        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+        InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
     """
 
     try:
         data = await fetch_official_activities()
-        if data is None:
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_stella_activity失败: {type(e).__name__}: {e}"
+        )
+        data = None
+
+    if data is None:
+        fallback = await fetch_sra_activities("xtlr")
+        if fallback is None:
             return InfoOut(
                 code=500,
                 status="error",
                 message="星塔旅人活动数据暂不可用",
                 data={},
             )
+        for item in fallback["activities"]:
+            item["kind"] = classify_activity_name(str(item["name"]))
+        logger.info("星塔旅人活动数据改用 SRA 兜底")
+        data = fallback
 
-        return InfoOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_stella_activity失败: {type(e).__name__}: {e}"
-        )
-        return InfoOut(
-            code=500,
-            status="error",
-            message="星塔旅人活动数据暂不可用",
-            data={},
-        )
+    return InfoOut(data=data)

@@ -1,20 +1,17 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { GetService } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
-
-const logger = window.electronAPI.getLogger('活动数据')
+import { useHomeActivitySource } from './useHomeActivitySource'
 
 /**
  * 数据取自 PRTS wiki 的「活动一览」，由本软件后端解析成 JSON 后转发。
  * 页面每行都带活动名、分类、起止时间与配图，筛选与格式转换在数据源里完成。
  */
 
-/** 与其它活动源一致的请求超时与失败重试节奏 */
+/** 与其它活动源一致的请求超时 */
 const FETCH_TIMEOUT_MS = 20_000
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
 
 /** 往前多带几天已经结束的活动，让卡片在活动间隙里也有内容可显示 */
 const RECENT_WINDOW_DAYS = 14
@@ -133,59 +130,35 @@ const writeSnapshot = (overview: SraActivityOverview) => {
 }
 
 /**
- * 明日方舟活动数据的直连数据源（PRTS 活动一览）。
+ * 明日方舟活动数据的数据源（PRTS 活动一览）。
  *
- * 与其它活动源职责一致：带超时、失败退避重试、本地快照（stale-while-revalidate）
- * 与独立失败态。区别只在数据本身：这里多了一个 kind（PRTS 的分类），
+ * 取数带超时、失败退避重试、本地快照与独立失败态，这些节奏交给公共骨架；
+ * 这里只负责取数与收口。区别只在数据本身：多了一个 kind（PRTS 的分类），
  * 卡片按它打标签，横幅按它挑活动。
  */
 export const useArknightsActivitySource = () => {
   const { t } = useI18n()
 
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
-  const loading = ref(false)
-  const retryPending = ref(false)
-  const retryCount = ref(0)
 
-  let retryTimer: number | null = null
-  let requesting = false
-  let hasData = false
-  let started = false
-  let disposed = false
-
-  const clearRetry = () => {
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-    }
-    retryPending.value = false
-  }
-
-  const scheduleRetry = () => {
-    if (disposed || !started || retryCount.value >= MAX_RETRIES) return
-    retryCount.value += 1
-    retryPending.value = true
-    retryTimer = window.setTimeout(() => {
-      retryTimer = null
-      retryPending.value = false
-      void fetchOverview(false)
-    }, RETRY_DELAY_MS)
-  }
-
-  const fetchOverview = async (showLoading: boolean) => {
-    if (requesting || disposed) return
-    requesting = true
-    clearRetry()
-    if (showLoading) loading.value = true
-
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
-    try {
+  const source = useHomeActivitySource<SraActivityOverview>({
+    label: () => '明日方舟',
+    timeoutMs: FETCH_TIMEOUT_MS,
+    loadingOnStart: true,
+    restoreSnapshot: () => {
+      const snapshot = readSnapshot()
+      if (!snapshot || snapshot.activities.length === 0) return false
+      // 先用上一次的成功结果顶上，网络回来再覆盖
+      overview.value = snapshot
+      return true
+    },
+    saveSnapshot: next => {
+      writeSnapshot(next)
+    },
+    fetchData: async signal => {
       const request = GetService.getArknightsActivityApiInfoArknightsActivityGet()
       const cancelOnAbort = () => request.cancel()
-      controller.signal.addEventListener('abort', cancelOnAbort, { once: true })
-
+      signal.addEventListener('abort', cancelOnAbort, { once: true })
       let payload: PrtsActivityResponse
       try {
         const result = await request
@@ -194,71 +167,31 @@ export const useArknightsActivitySource = () => {
         }
         payload = result.data as unknown as PrtsActivityResponse
       } finally {
-        controller.signal.removeEventListener('abort', cancelOnAbort)
+        signal.removeEventListener('abort', cancelOnAbort)
       }
-
-      const next = buildOverview(payload.activities ?? [])
+      return buildOverview(payload.activities ?? [])
+    },
+    applyData: next => {
       overview.value = next
-      hasData = true
-      retryCount.value = 0
-      writeSnapshot(next)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.warn(`获取明日方舟活动失败: ${message}`)
-
-      if (hasData) {
-        // 已经有内容时不要把卡片打回失败态，保留上一份数据并提示
-        overview.value = { ...overview.value, Stale: true, Message: '' }
-      } else {
-        overview.value = {
-          ...createEmptySraActivityOverview(),
-          Available: false,
-          Message: t('home.arknights.unavailable'),
-        }
+    },
+    markStale: () => {
+      // 已经有内容时不要把卡片打回失败态，保留上一份数据并提示
+      overview.value = { ...overview.value, Stale: true, Message: '' }
+    },
+    markUnavailable: () => {
+      overview.value = {
+        ...createEmptySraActivityOverview(),
+        Available: false,
+        Message: t('home.arknights.unavailable'),
       }
-      scheduleRetry()
-    } finally {
-      window.clearTimeout(timeout)
-      requesting = false
-      loading.value = false
-    }
-  }
-
-  const start = () => {
-    if (disposed || started) return
-    started = true
-
-    const snapshot = readSnapshot()
-    if (snapshot && snapshot.activities.length) {
-      // 先用上一次的成功结果顶上，网络回来再覆盖
-      overview.value = snapshot
-      hasData = true
-    }
-
-    void fetchOverview(!hasData)
-  }
-
-  const stop = () => {
-    started = false
-    clearRetry()
-  }
-
-  const refresh = () => {
-    retryCount.value = 0
-    void fetchOverview(true)
-  }
-
-  onScopeDispose(() => {
-    disposed = true
-    stop()
+    },
   })
 
   return {
-    overview: computed(() => overview.value),
-    loading: computed(() => loading.value),
-    retryPending: computed(() => retryPending.value),
-    start,
-    stop,
-    refresh,
+    overview,
+    loading: source.loading,
+    start: source.start,
+    stop: source.stop,
+    refresh: source.refresh,
   }
 }

@@ -54,6 +54,7 @@ from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
     BAAHConfig,
+    BAAHPlanConfig,
     BAAHUserConfig,
     BetterGIConfig,
     BetterGIUserConfig,
@@ -188,7 +189,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.6.1"
+    VERSION = "v5.6.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -3112,8 +3113,10 @@ class AppConfig(GlobalConfig):
         )
 
     async def add_plan(
-        self, script: Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+    ) -> tuple[
+        uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+    ]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -3160,7 +3163,9 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
         consumer_config = PLAN_BOOK[plan_type]
-        user_list: list[MaaUserConfig | MaaEndUserConfig | MSSUserConfig] = []
+        user_list: list[
+            MaaUserConfig | MaaEndUserConfig | BAAHUserConfig | MSSUserConfig
+        ] = []
 
         for script in self.ScriptConfig.values():
             if not isinstance(script, consumer_config["script_class"]):
@@ -4547,13 +4552,14 @@ class AppConfig(GlobalConfig):
                     if not user_folder.is_dir():
                         continue  # 只处理用户文件夹
 
-                    if user_folder.stem not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.stem] = list(
-                            user_folder.with_suffix("").glob("*.json")
+                    # 键必须用完整目录名: 用户名本身可含点, stem/with_suffix 会把最后一个点当扩展名截断
+                    if user_folder.name not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.name] = list(
+                            user_folder.glob("*.json")
                         )
                     else:
-                        history_dict[date_name][user_folder.stem] += list(
-                            user_folder.with_suffix("").glob("*.json")
+                        history_dict[date_name][user_folder.name] += list(
+                            user_folder.glob("*.json")
                         )
 
             except ValueError:

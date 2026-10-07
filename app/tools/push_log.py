@@ -136,6 +136,17 @@ def build_task_result_text(scripts: Iterable) -> str:
         return "任务未加载"
     blocks: list[str] = []
     for script in script_list:
+        if not script.user_list:
+            # 尚未轮到、按周几/锁定跳过或运行前检查失败的脚本没有真实用户；
+            # 这里不能再输出旧的「暂未加载」用户行，也不能把空表计成一位未完成用户。
+            status_text = {
+                "等待": "等待运行",
+                "跳过": "已跳过",
+                "异常": "检查失败",
+            }.get(script.status, "未运行")
+            blocks.append(f"{script.name}：\n\n    {status_text}")
+            continue
+
         user_text = (
             build_user_result_text(
                 script.user_list,

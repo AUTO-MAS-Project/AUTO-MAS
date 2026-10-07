@@ -59,6 +59,7 @@
           <a-select
             v-model:value="formData.Info.Status"
             size="large"
+            :disabled="loading"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
             <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>

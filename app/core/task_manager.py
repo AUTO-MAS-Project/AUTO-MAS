@@ -24,6 +24,9 @@ import asyncio
 import os
 import time
 import uuid
+from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +38,7 @@ from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
+    TaskStatusOut,
     WSPowerSignData,
     WSTaskCompletedData,
     WSTaskCreatedData,
@@ -52,6 +56,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
@@ -73,6 +78,7 @@ from .config import (
     ZzzOdConfig,
 )
 from .queue_cycle import (
+    SUCCESS_USER_STATUSES,
     CycleEntry,
     collect_cycle_entries,
     due_entries,
@@ -95,6 +101,11 @@ System = LazyProxy("app.services", "System")
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+
+# 最近完成任务的状态留存：任务一结束就会从运行快照摘掉，凭 taskId 单点查询
+# 只能靠这里回读终态，所以留一个有限窗口（条数上限 + 留存时长）。
+_RECENT_RESULTS_MAX = 200
+_RECENT_RESULTS_TTL_SECONDS = 1800
 
 
 @dataclass(frozen=True)
@@ -361,16 +372,21 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
+    wait_for_finalizer_on_cancel = True
+
     def __init__(
         self,
         task_info: TaskInfo,
         script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
         script_run_days: list[list[str]] | None = None,
+        on_finished: Callable[[TaskStatusOut], None] | None = None,
     ):
         super().__init__()
         self.task_info = task_info
         self.script_identities = script_identities
+        # 结束时的终态回调（调度器用来留存结果，供 taskId 单点查询）
+        self._on_finished = on_finished
         # 队列项限定的运行周几，与 script_identities 一一对应；非队列任务为 None。
         # 以任务创建那一刻的星期为准，队列跨过午夜后后面的项不会按第二天算。
         self.script_run_days = script_run_days
@@ -379,6 +395,10 @@ class Task(TaskExecuteBase):
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+        self._queue_run_started = False
+        self._queue_before_script_ran = False
+        self._queue_after_script_ran = False
+        self._queue_script_task: asyncio.Task | None = None
 
     def _record_error(self, error: str) -> None:
         """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
@@ -388,6 +408,14 @@ class Task(TaskExecuteBase):
 
     def cancel(self) -> bool:
         """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        self.stopped_manually = True
+        # 运行前脚本随主任务取消；运行后脚本在独立的收尾协程里，需要主动取消。
+        if (
+            self._queue_after_script_ran
+            and self._queue_script_task is not None
+            and not self._queue_script_task.done()
+        ):
+            self._queue_script_task.cancel()
         cancelled = super().cancel()
         if cancelled and self._exit_result == "success":
             self._exit_result = "cancelled"
@@ -404,9 +432,17 @@ class Task(TaskExecuteBase):
                 script_id=script_id,
                 status="等待",
                 name=Config.ScriptConfig[uuid.UUID(script_id)].get("Info", "Name"),
-                user_list=[
-                    UserItem(user_id=str(uuid.uuid4()), name="暂未加载", status="等待")
-                ],
+                # AutoProxy 的真实用户由对应 manager 在轮到该脚本时加载；提前
+                # 播种占位项会把未轮到的脚本伪装成已有一个用户。
+                user_list=(
+                    []
+                    if self.task_info.mode == "AutoProxy"
+                    else [
+                        UserItem(
+                            user_id=str(uuid.uuid4()), name="暂未加载", status="等待"
+                        )
+                    ]
+                ),
             )
             for script_id in script_ids
         ]
@@ -452,6 +488,46 @@ class Task(TaskExecuteBase):
                 (time.perf_counter() - started_at) * 1000,
                 unit="millisecond",
                 attributes=metric_attributes,
+            )
+
+    @contextmanager
+    def _observe_script_run(
+        self, script_item: ScriptItem, script_config
+    ) -> Iterator[None]:
+        """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+        结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+        拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+        """
+
+        from app.services.telemetry import record_count
+
+        outcome = "error"
+        try:
+            yield
+            user_statuses = [user.status for user in script_item.user_list]
+            if not user_statuses:
+                # 运行前检查没过时还没加载用户，脚本状态是「异常」
+                outcome = "failed" if script_item.status == "异常" else "no_user"
+            elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
+                outcome = "success"
+            elif "异常" in user_statuses:
+                outcome = "failed"
+            else:
+                outcome = "incomplete"
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            record_count(
+                "auto_mas.script.runs",
+                attributes={
+                    "script_type": _SCRIPT_TYPE_BY_CLASS.get(
+                        type(script_config).__name__, "unknown"
+                    ),
+                    "mode": self.task_info.mode,
+                    "outcome": outcome,
+                },
             )
 
     def _build_task_item(
@@ -500,6 +576,14 @@ class Task(TaskExecuteBase):
         # prepare 也放进 try，它一失败标记就得跟着清。
         try:
             await self.prepare()
+            await self._notice_scope_skipped_scripts()
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                queue_uid,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -512,7 +596,7 @@ class Task(TaskExecuteBase):
 
         queue = Config.QueueConfig[queue_uid]
         now = datetime.now()
-        entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
+        entries = self._collect_entries(queue_uid)
 
         # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
         # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
@@ -570,11 +654,44 @@ class Task(TaskExecuteBase):
         if results and not any(result == "success" for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
-    @staticmethod
-    def _collect_entries(queue_uid: uuid.UUID) -> list[CycleEntry]:
-        return collect_cycle_entries(
+    def _scope_skipped_script_ids(self) -> set[str]:
+        """本次运行范围内被整项排除的托管（勾选后一个用户都没选）。"""
+
+        scope = self.task_info.user_ids_by_script
+        if not scope:
+            return set()
+        return {script_id for script_id, user_ids in scope.items() if not user_ids}
+
+    async def _notice_scope_skipped_scripts(self) -> None:
+        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return
+        for script_item in self.task_info.script_list:
+            if script_item.script_id not in skipped:
+                continue
+            script_item.status = "跳过"
+            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何用户")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                ),
+            )
+
+    def _collect_entries(self, queue_uid: uuid.UUID) -> list[CycleEntry]:
+        """收集队列的待运行条目，并剔除本次一个用户都没选的托管。"""
+
+        entries = collect_cycle_entries(
             Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
         )
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return entries
+        return [entry for entry in entries if entry.script_id not in skipped]
 
     async def _run_cycle_entry(
         self,
@@ -662,7 +779,8 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                await self._spawn_with_preview(task_item, entry, queue_uid)
+                with self._observe_script_run(script_item, script_config):
+                    await self._spawn_with_preview(task_item, entry, queue_uid)
 
                 success = is_script_success(
                     script_item.status,
@@ -771,6 +889,15 @@ class Task(TaskExecuteBase):
 
         await self.prepare()
 
+        if self.task_info.queue_id is not None:
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
+
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
@@ -799,6 +926,62 @@ class Task(TaskExecuteBase):
         await ensure_desktop_available()
         await self._run_script_list(start_index)
 
+    async def _run_queue_extra_script(
+        self, queue_id: str | uuid.UUID, if_key: str, path_key: str, label: str
+    ) -> bool:
+        """执行队列级额外脚本；每个阶段只允许由队列生命周期调用一次。"""
+
+        if self.stopped_manually or self.is_closing:
+            return False
+
+        queue_uid = uuid.UUID(str(queue_id))
+        queue_config = Config.QueueConfig.get(queue_uid)
+        if queue_config is None or not queue_config.get("Info", if_key):
+            return False
+
+        script_path = str(queue_config.get("Info", path_key) or "").strip()
+        if not script_path:
+            return False
+
+        if if_key == "IfScriptBeforeTask":
+            if self._queue_before_script_ran:
+                return False
+            self._queue_before_script_ran = True
+        elif if_key == "IfScriptAfterTask":
+            if self._queue_after_script_ran:
+                return False
+            self._queue_after_script_ran = True
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="info", message=f"开始执行{label}"),
+        )
+        # 发布通知会让出执行权，停止请求可能恰好落在创建脚本进程之前。
+        if self.stopped_manually or self.is_closing:
+            return False
+        script_task = asyncio.create_task(execute_script_task(Path(script_path), label))
+        self._queue_script_task = script_task
+        try:
+            succeeded = await script_task
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="info" if succeeded else "warning",
+                    message=f"{label}执行{'成功' if succeeded else '失败'}",
+                ),
+            )
+            return succeeded
+        except asyncio.CancelledError:
+            # 停止收尾脚本后仍发布任务终态，且不再安排完成后操作。
+            if self.stopped_manually and if_key == "IfScriptAfterTask":
+                return False
+            raise
+        finally:
+            if self._queue_script_task is script_task:
+                self._queue_script_task = None
+
     def _is_script_scheduled_today(self, index: int) -> bool:
         """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
 
@@ -824,6 +1007,21 @@ class Task(TaskExecuteBase):
                     data=WSTaskNoticeData(
                         level="error",
                         message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
+                )
+                continue
+
+            # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            script_scope = self.task_info.script_user_scope(script_item.script_id)
+            if script_scope is not None and not script_scope:
+                script_item.status = "跳过"
+                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
                     ),
                 )
                 continue
@@ -899,31 +1097,59 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                await self.spawn(task_item)
+                with self._observe_script_run(script_item, script_config):
+                    await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
 
+        # 收尾脚本完成后才发布终态，期间队列仍可被停止。
+        if self._queue_run_started and self.task_info.queue_id is not None:
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptAfterTask",
+                "ScriptAfterTask",
+                "队列运行后脚本",
+            )
+
         logger.info(f"任务结束: {self.task_info.task_id}")
 
+        # 完成面板文本带采集节点详情（与推送报告同源渲染），
+        # 未配置推送的用户在调度台也能看到
+        result_text = build_task_result_text(self.task_info.script_list)
         await Publisher.send(
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
-                # 完成面板文本带采集节点详情（与推送报告同源渲染），
-                # 未配置推送的用户在调度台也能看到
-                result=build_task_result_text(self.task_info.script_list),
+                result=result_text,
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
             ),
         )
+        # 同一步里先留存终态：任务从运行快照摘掉后仍要能凭 taskId 查到
+        if self._on_finished is not None:
+            self._on_finished(
+                TaskStatusOut(
+                    taskId=str(self.task_info.task_id),
+                    status=self._exit_result,
+                    detail=result_text,
+                    error=self._exit_error,
+                    mode=self.task_info.mode,
+                    isCycle=self.task_info.is_cycle,
+                    queueId=self.task_info.queue_id,
+                    scriptId=self.task_info.script_id,
+                    userId=self.task_info.user_id,
+                    finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
 
         # 循环任务只会被用户主动停止，此时不该再执行队列的「完成后操作」——
         # 那会把关机之类的动作接在一次手动停止后面。
         if (
             not self.is_closing
+            and not self.stopped_manually
             and not self.task_info.is_cycle
             and self.task_info.mode == "AutoProxy"
             and self.task_info.queue_id is not None
@@ -966,6 +1192,10 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        # taskId → (结束时刻的单调读数, 终态)，供单点查询在任务摘掉后回读
+        self._recent_results: OrderedDict[str, tuple[float, TaskStatusOut]] = (
+            OrderedDict()
+        )
         self._script_reservations = _ScriptTaskReservations()
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._stop_all_lock = asyncio.Lock()
@@ -1029,6 +1259,50 @@ class _TaskManager:
                 identities.setdefault(script_id, self._script_identity(script_id))
 
         return list(identities.values())
+
+    def _remember_result(self, status: TaskStatusOut) -> None:
+        """留存刚结束任务的终态，供已摘掉的任务按 taskId 回查。"""
+
+        self._recent_results.pop(status.taskId, None)
+        self._recent_results[status.taskId] = (time.monotonic(), status)
+        while len(self._recent_results) > _RECENT_RESULTS_MAX:
+            self._recent_results.popitem(last=False)
+
+    def _prune_recent_results(self) -> None:
+        """丢弃超出留存时长的终态，避免陈旧结果被当成刚结束的任务。"""
+
+        deadline = time.monotonic() - _RECENT_RESULTS_TTL_SECONDS
+        while self._recent_results:
+            finished_at, _ = next(iter(self._recent_results.values()))
+            if finished_at > deadline:
+                break
+            self._recent_results.popitem(last=False)
+
+    def get_task_status(self, task_id: str) -> TaskStatusOut | None:
+        """按 taskId 单点返回运行中或最近完成任务的终态；找不到返回 None。"""
+
+        try:
+            task_uid = uuid.UUID(task_id)
+        except ValueError:
+            return None
+
+        task_info = self.task_info.get(task_uid)
+        if task_info is not None:
+            handler = self.task_handler.get(task_uid)
+            return TaskStatusOut(
+                taskId=task_id,
+                status="running",
+                mode=task_info.mode,
+                isCycle=task_info.is_cycle,
+                queueId=task_info.queue_id,
+                scriptId=task_info.script_id,
+                userId=task_info.user_id,
+                stopping=bool(handler and handler.is_closing),
+            )
+
+        self._prune_recent_results()
+        remembered = self._recent_results.get(task_id)
+        return remembered[1] if remembered is not None else None
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
         """返回任务运行状态与定时队列的 HTTP 初始快照。"""
@@ -1121,6 +1395,45 @@ class _TaskManager:
             )
         return user_uid
 
+    def _resolve_target_users(
+        self, script_uid: uuid.UUID, user_ids: list[str] | None
+    ) -> frozenset[str] | None:
+        # 校验多选运行所指定的用户集合。
+        if user_ids is None:
+            return None
+        if not user_ids:
+            raise ValueError("至少选择一个用户")
+
+        selected: set[str] = set()
+        for user_id in user_ids:
+            user_uid = self._resolve_target_user(script_uid, user_id)
+            if user_uid is not None:
+                selected.add(str(user_uid))
+
+        return frozenset(selected)
+
+    def _resolve_queue_user_scope(
+        self, queue_id: uuid.UUID, queue_user_ids: dict[str, list[str]]
+    ) -> dict[str, frozenset[str]]:
+        # 校验队列任务按脚本指定的本次运行用户，口径与脚本任务的多选一致。
+        queue_script_ids = {
+            str(script_id) for script_id in self._queue_script_ids(queue_id)
+        }
+        scope: dict[str, frozenset[str]] = {}
+        for script_id, user_ids in queue_user_ids.items():
+            if script_id not in queue_script_ids:
+                queue_name = Config.QueueConfig[queue_id].get("Info", "Name")
+                raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
+            if not user_ids:
+                # 空集合是有意义的取值：该托管本次一个用户都不跑。
+                scope[script_id] = frozenset()
+                continue
+            scope[script_id] = (
+                self._resolve_target_users(uuid.UUID(script_id), list(user_ids))
+                or frozenset()
+            )
+        return scope
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1128,6 +1441,8 @@ class _TaskManager:
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
+        user_ids: list[str] | None = None,
+        queue_user_ids: dict[str, list[str]] | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1140,6 +1455,9 @@ class _TaskManager:
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
+            user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
+            queue_user_ids (dict[str, list[str]]): 按脚本ID指定本次运行的用户 ID;
+                仅队列任务可用, 未列出的脚本不限, 空列表表示该脚本本次整项跳过。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1157,12 +1475,21 @@ class _TaskManager:
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
 
-        # 指定单个用户只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
+        # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
-        if user_id is not None and (
+        if user_id is not None and user_ids is not None:
+            raise ValueError("多选用户不能与单独运行用户同时使用")
+
+        if (user_id is not None or user_ids is not None) and (
             mode != "AutoProxy" or uid not in Config.ScriptConfig
         ):
-            raise ValueError("指定单个用户仅支持脚本的自动代理任务")
+            raise ValueError("指定运行用户仅支持脚本的自动代理任务")
+
+        # 队列的用户范围是按托管分别收窄，与脚本任务的整任务用户范围是两套入参。
+        if queue_user_ids is not None and (
+            mode not in ("AutoProxy", "CycleRun") or uid not in Config.QueueConfig
+        ):
+            raise ValueError("按脚本指定运行用户仅支持队列任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -1184,6 +1511,9 @@ class _TaskManager:
                 )
             # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
             Config.running_cycle_queue_ids.add(uid)
+
+        selected_user_ids: frozenset[str] | None = None
+        selected_user_scope: dict[str, frozenset[str]] | None = None
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1211,6 +1541,7 @@ class _TaskManager:
             queue_id = None
             script_uid = uid
             user_uid = self._resolve_target_user(uid, user_id)
+            selected_user_ids = self._resolve_target_users(uid, user_ids)
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
@@ -1225,6 +1556,10 @@ class _TaskManager:
             ]
             target_script_ids = [script_id for script_id, _ in queue_entries]
             script_run_days = [days for _, days in queue_entries]
+            if queue_user_ids is not None:
+                selected_user_scope = self._resolve_queue_user_scope(
+                    queue_id, queue_user_ids
+                )
         elif script_uid is not None and script_uid in Config.ScriptConfig:
             target_script_ids = [script_uid]
         else:
@@ -1259,6 +1594,8 @@ class _TaskManager:
                 queue_id=str(queue_id) if queue_id else None,
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
+                user_ids=selected_user_ids,
+                user_ids_by_script=selected_user_scope,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
@@ -1270,6 +1607,7 @@ class _TaskManager:
                 script_identities,
                 self._script_reservations,
                 script_run_days=script_run_days,
+                on_finished=self._remember_result,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

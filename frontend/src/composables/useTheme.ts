@@ -1,5 +1,14 @@
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { theme } from 'ant-design-vue'
+import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
+import { createAppearanceCursorValue } from '@/components/appearanceCursor'
+import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
+import type { InstalledAppearance } from '@/types/appearance'
+
+type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
+let resolvedAntTokens: AntTokens | undefined
+// null 表示还没写过，首次必须落一次 'none'。
+let appliedBackgroundUrl: string | undefined | null = null
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -19,7 +28,35 @@ export type ThemeColor =
 
 const themeMode = ref<ThemeMode>('system')
 const themeColor = ref<ThemeColor>('blue')
+const appearanceId = ref<string | null>(null)
+const activeAppearance = ref<InstalledAppearance | null>(null)
+const appearances = ref<InstalledAppearance[]>([])
 const isDark = ref(false)
+const logger = window.electronAPI.getLogger('主题')
+let appearanceListenerInitialized = false
+let themeConfigListenerInitialized = false
+let themeRevision = 0
+let configRevision = 0
+let appearanceLoadRevision = 0
+let themeChangeQueue: Promise<void> = Promise.resolve()
+
+// 连续操作按顺序完成状态变更和持久化，失败回退后再处理下一项设置。
+const queueThemeChange = (change: () => Promise<void>): Promise<void> => {
+  const pending = themeChangeQueue.then(change)
+  themeChangeQueue = pending.catch(() => undefined)
+  return pending
+}
+type ThemeSnapshot = {
+  themeMode: ThemeMode
+  themeColor: ThemeColor
+  appearanceId: string | null
+}
+
+let persistedThemeSnapshot: ThemeSnapshot = {
+  themeMode: 'system',
+  themeColor: 'blue',
+  appearanceId: null,
+}
 
 // 预设主题色
 const themeColors: Record<ThemeColor, string> = {
@@ -47,7 +84,9 @@ const getSystemTheme = () => {
 const updateTheme = () => {
   let shouldBeDark: boolean
 
-  if (themeMode.value === 'system') {
+  if (activeAppearance.value) {
+    shouldBeDark = activeAppearance.value.mode === 'dark'
+  } else if (themeMode.value === 'system') {
     shouldBeDark = getSystemTheme()
   } else {
     shouldBeDark = themeMode.value === 'dark'
@@ -66,12 +105,96 @@ const updateTheme = () => {
   updateCSSVariables()
 }
 
+const commitPersistedThemeSnapshot = () => {
+  persistedThemeSnapshot = {
+    themeMode: themeMode.value,
+    themeColor: themeColor.value,
+    appearanceId: appearanceId.value,
+  }
+}
+
+const setPersistedThemeSnapshot = (snapshot: ThemeSnapshot) => {
+  persistedThemeSnapshot = { ...snapshot }
+}
+
+const restorePersistedThemeSnapshot = () => {
+  themeMode.value = persistedThemeSnapshot.themeMode
+  themeColor.value = persistedThemeSnapshot.themeColor
+  appearanceId.value = persistedThemeSnapshot.appearanceId
+  activeAppearance.value = persistedThemeSnapshot.appearanceId
+    ? (appearances.value.find(item => item.id === persistedThemeSnapshot.appearanceId) ?? null)
+    : null
+  updateTheme()
+}
+
 // 更新CSS变量
 const updateCSSVariables = () => {
   const root = document.documentElement
-  const primaryColor = themeColors[themeColor.value]
-  const algorithm = isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm
-  const antTokens = algorithm({ ...theme.defaultSeed, colorPrimary: primaryColor })
+  const cursorUrls = activeAppearance.value?.cursorUrls
+  const cursors = activeAppearance.value?.cursors
+  if (cursors && Object.keys(cursors).length > 0) {
+    root.classList.add('appearance-cursor-custom')
+  } else {
+    root.classList.remove('appearance-cursor-custom')
+  }
+  // 光标变量独立于 AntD token bridge，确保首屏、清除和回退立即恢复浏览器默认语义。
+  root.style.setProperty(
+    '--app-appearance-cursor-default',
+    createAppearanceCursorValue('default', cursorUrls, cursors)
+  )
+  root.style.setProperty(
+    '--app-appearance-cursor-pointer',
+    createAppearanceCursorValue('pointer', cursorUrls, cursors)
+  )
+  root.style.setProperty(
+    '--app-appearance-cursor-text',
+    createAppearanceCursorValue('text', cursorUrls, cursors)
+  )
+  const surfaceOpacity = getAppearanceSurfaceOpacity(activeAppearance.value)
+  if (surfaceOpacity !== undefined) {
+    root.classList.add('appearance-background-custom')
+  } else {
+    root.classList.remove('appearance-background-custom')
+  }
+  // 素材和开关独立于 token bridge，清除外观时立即恢复，不依赖下一次组件渲染。
+  // 背景是数 MB 的 data URL，只在图片真的变了时才写，避免每次换主题色都重解析整串。
+  const backgroundUrl = activeAppearance.value?.backgroundUrl
+  if (backgroundUrl !== appliedBackgroundUrl) {
+    root.style.setProperty(
+      '--app-appearance-background-image',
+      backgroundUrl ? `url("${backgroundUrl}")` : 'none'
+    )
+    appliedBackgroundUrl = backgroundUrl
+  }
+  root.style.setProperty(
+    '--app-appearance-background-opacity',
+    String(activeAppearance.value?.background?.opacity ?? 1)
+  )
+  root.style.setProperty(
+    '--app-appearance-background-position',
+    activeAppearance.value?.background?.position ?? 'right bottom'
+  )
+  root.style.setProperty(
+    '--app-appearance-background-size',
+    activeAppearance.value?.background?.size ?? 'cover'
+  )
+  root.style.setProperty(
+    '--app-appearance-mascot-width',
+    `${activeAppearance.value?.mascot?.width ?? 144}px`
+  )
+  root.style.setProperty(
+    '--app-appearance-mascot-opacity',
+    String(activeAppearance.value?.mascot?.opacity ?? 1)
+  )
+  root.style.setProperty(
+    '--app-appearance-mascot-position',
+    activeAppearance.value?.mascot?.position ?? 'bottom-right'
+  )
+  if (!resolvedAntTokens) return
+  const customTokens = activeAppearance.value?.tokens
+  const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]
+  // 由 ConfigProvider 内的 ThemeTokenBridge 传入最终 token，包含包内的 alias overrides。
+  const antTokens = resolvedAntTokens
 
   // 基础背景（用于估算混合）
   const baseLightBg = '#ffffff'
@@ -103,16 +226,31 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-text-secondary', antTokens.colorTextSecondary)
   root.style.setProperty('--ant-color-text-tertiary', antTokens.colorTextTertiary)
   root.style.setProperty('--ant-color-text-quaternary', antTokens.colorTextQuaternary)
-  root.style.setProperty('--ant-color-text-heading', antTokens.colorText)
-  root.style.setProperty('--ant-color-text-description', antTokens.colorTextTertiary)
-  root.style.setProperty('--ant-color-text-placeholder', antTokens.colorTextQuaternary)
-  root.style.setProperty('--ant-color-text-disabled', antTokens.colorTextQuaternary)
+  root.style.setProperty('--ant-color-text-heading', antTokens.colorTextHeading)
+  root.style.setProperty('--ant-color-text-description', antTokens.colorTextDescription)
+  root.style.setProperty('--ant-color-text-placeholder', antTokens.colorTextPlaceholder)
+  root.style.setProperty('--ant-color-text-disabled', antTokens.colorTextDisabled)
 
   root.style.setProperty('--ant-color-bg-container', antTokens.colorBgContainer)
   root.style.setProperty('--ant-color-bg-layout', antTokens.colorBgLayout)
   root.style.setProperty('--ant-color-bg-elevated', antTokens.colorBgElevated)
   root.style.setProperty('--ant-color-border', antTokens.colorBorder)
   root.style.setProperty('--ant-color-border-secondary', antTokens.colorBorderSecondary)
+  root.style.setProperty('--ant-color-bg-container-disabled', antTokens.colorBgContainerDisabled)
+  root.style.setProperty('--ant-color-bg-mask', antTokens.colorBgMask)
+  root.style.setProperty('--ant-color-split', antTokens.colorSplit)
+  root.style.setProperty('--ant-border-color-split', antTokens.colorSplit)
+  const surfaceBg = createAppearanceSurfaceColor(antTokens.colorBgContainer, surfaceOpacity)
+  const elevatedSurfaceBg = createAppearanceSurfaceColor(antTokens.colorBgElevated, surfaceOpacity)
+  root.style.setProperty('--app-appearance-surface-bg', surfaceBg)
+  root.style.setProperty('--app-appearance-elevated-surface-bg', elevatedSurfaceBg)
+  root.style.setProperty('--app-background-card-bg', surfaceBg)
+  root.style.setProperty('--app-background-card-elevated-bg', elevatedSurfaceBg)
+  root.style.setProperty(
+    '--ant-font-family-code',
+    'ui-monospace, SFMono-Regular, Consolas, monospace'
+  )
+  root.style.setProperty('--font-monospace', 'ui-monospace, SFMono-Regular, Consolas, monospace')
 
   root.style.setProperty('--ant-color-fill', antTokens.colorFill)
   root.style.setProperty('--ant-color-fill-secondary', antTokens.colorFillSecondary)
@@ -120,6 +258,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-fill-quaternary', antTokens.colorFillQuaternary)
 
   root.style.setProperty('--ant-color-error', antTokens.colorError)
+  root.style.setProperty('--ant-error-color', antTokens.colorError)
   root.style.setProperty('--ant-color-error-bg', antTokens.colorErrorBg)
   root.style.setProperty('--ant-color-error-bg-hover', antTokens.colorErrorBgHover)
   root.style.setProperty('--ant-color-error-border', antTokens.colorErrorBorder)
@@ -128,6 +267,7 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-success-bg-hover', antTokens.colorSuccessBgHover)
   root.style.setProperty('--ant-color-success-border', antTokens.colorSuccessBorder)
   root.style.setProperty('--ant-color-warning', antTokens.colorWarning)
+  root.style.setProperty('--ant-color-warning-text', antTokens.colorWarningText)
   root.style.setProperty('--ant-color-warning-bg', antTokens.colorWarningBg)
   root.style.setProperty('--ant-color-warning-bg-hover', antTokens.colorWarningBgHover)
   root.style.setProperty('--ant-color-warning-border', antTokens.colorWarningBorder)
@@ -341,54 +481,305 @@ const deriveSiderBorder = (siderBg: string, primary: string, dark: boolean) => {
 
 // 监听系统主题变化
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-mediaQuery.addEventListener('change', () => {
-  if (themeMode.value === 'system') {
-    updateTheme()
-  }
-})
+const handleSystemThemeChange = () => {
+  if (themeMode.value === 'system' && !activeAppearance.value) updateTheme()
+}
+mediaQuery.addEventListener('change', handleSystemThemeChange)
 
 // 监听主题模式和颜色变化
 watch(themeMode, updateTheme, { immediate: true })
 watch(themeColor, updateTheme)
 
 // Ant Design 主题配置
-const antdTheme = computed(() => ({
-  algorithm: isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm,
-  token: {
-    colorPrimary: themeColors[themeColor.value],
-  },
-  components: {
-    InputNumber: {
-      // 步进按钮（▲▼）常驻显示：antd 默认悬停才出现，快速连续调整不直观
-      handleVisible: true as const,
+function getThemeConfig() {
+  return {
+    algorithm: isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    token: {
+      colorPrimary: activeAppearance.value?.tokens.colorPrimary ?? themeColors[themeColor.value],
+      ...(activeAppearance.value?.tokens.colorBgLayout
+        ? { colorBgLayout: activeAppearance.value.tokens.colorBgLayout }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorBgContainer
+        ? { colorBgContainer: activeAppearance.value.tokens.colorBgContainer }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorBgElevated
+        ? { colorBgElevated: activeAppearance.value.tokens.colorBgElevated }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorText
+        ? { colorText: activeAppearance.value.tokens.colorText }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorTextSecondary
+        ? { colorTextSecondary: activeAppearance.value.tokens.colorTextSecondary }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorBorder
+        ? { colorBorder: activeAppearance.value.tokens.colorBorder }
+        : {}),
+      ...(activeAppearance.value?.tokens.colorBorderSecondary
+        ? { colorBorderSecondary: activeAppearance.value.tokens.colorBorderSecondary }
+        : {}),
+      ...(activeAppearance.value?.tokens.borderRadius !== undefined
+        ? { borderRadius: activeAppearance.value.tokens.borderRadius }
+        : {}),
     },
-  },
-}))
+    components: {
+      InputNumber: {
+        // 步进按钮（▲▼）常驻显示：antd 默认悬停才出现，快速连续调整不直观
+        handleVisible: true as const,
+      },
+    },
+  }
+}
+
+const antdTheme = computed(getThemeConfig)
 
 export function useTheme() {
-  const setThemeMode = (mode: ThemeMode) => {
-    themeMode.value = mode
-    localStorage.setItem('theme-mode', mode)
-  }
+  const setThemeMode = (mode: ThemeMode): Promise<void> =>
+    queueThemeChange(async () => {
+      const revision = ++themeRevision
+      const savedConfigRevision = configRevision
+      themeMode.value = mode
+      activeAppearance.value = null
+      appearanceId.value = null
+      updateTheme()
+      try {
+        await saveConfig({ themeMode: mode, appearanceId: null })
+        if (configRevision === savedConfigRevision) {
+          setPersistedThemeSnapshot({
+            ...persistedThemeSnapshot,
+            themeMode: mode,
+            appearanceId: null,
+          })
+        }
+      } catch (error) {
+        if (revision === themeRevision) restorePersistedThemeSnapshot()
+        logger.error(`保存主题模式失败: ${error instanceof Error ? error.message : String(error)}`)
+        throw error
+      }
+    })
 
-  const setThemeColor = (color: ThemeColor) => {
-    themeColor.value = color
-    localStorage.setItem('theme-color', color)
-  }
+  const setThemeColor = (color: ThemeColor): Promise<void> =>
+    queueThemeChange(async () => {
+      const revision = ++themeRevision
+      const savedConfigRevision = configRevision
+      themeColor.value = color
+      updateTheme()
+      try {
+        await saveConfig({ themeColor: color })
+        if (configRevision === savedConfigRevision) {
+          setPersistedThemeSnapshot({ ...persistedThemeSnapshot, themeColor: color })
+        }
+      } catch (error) {
+        if (revision === themeRevision) restorePersistedThemeSnapshot()
+        logger.error(`保存主题色失败: ${error instanceof Error ? error.message : String(error)}`)
+        throw error
+      }
+    })
 
-  // 初始化时从localStorage读取设置
-  const initTheme = () => {
-    const savedMode = localStorage.getItem('theme-mode') as ThemeMode
-    const savedColor = localStorage.getItem('theme-color') as ThemeColor
-
-    if (savedMode) {
-      themeMode.value = savedMode
+  const loadAppearances = async (): Promise<void> => {
+    const loadRevision = ++appearanceLoadRevision
+    let list: InstalledAppearance[] = []
+    let listFailed = false
+    try {
+      list = (await window.electronAPI.listAppearances?.()) ?? []
+    } catch (error) {
+      listFailed = true
+      logger.warn(
+        `读取外观包失败，回落默认外观: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
-    if (savedColor) {
-      themeColor.value = savedColor
+    if (loadRevision !== appearanceLoadRevision) return
+    appearances.value = list
+    if (listFailed) {
+      activeAppearance.value = null
+      updateTheme()
+      return
     }
-
+    if (appearanceId.value) {
+      const loaded = appearances.value.find(item => item.id === appearanceId.value)
+      if (!loaded) {
+        const expectedId = appearanceId.value
+        const savedThemeRevision = themeRevision
+        activeAppearance.value = null
+        updateTheme()
+        const savedConfigRevision = configRevision
+        try {
+          const result = await window.electronAPI.clearInvalidAppearance?.(expectedId)
+          if (result?.success && result.appearanceId !== undefined) {
+            const currentAppearance = result.appearanceId
+              ? (appearances.value.find(item => item.id === result.appearanceId) ??
+                (await window.electronAPI.getAppearance?.(result.appearanceId)))
+              : null
+            if (
+              loadRevision !== appearanceLoadRevision ||
+              themeRevision !== savedThemeRevision ||
+              appearanceId.value !== expectedId
+            ) {
+              return
+            }
+            appearanceId.value = result.appearanceId
+            activeAppearance.value = currentAppearance ?? null
+            if (configRevision === savedConfigRevision) {
+              setPersistedThemeSnapshot({
+                ...persistedThemeSnapshot,
+                appearanceId: result.appearanceId,
+              })
+            }
+          }
+        } catch (error) {
+          logger.warn(
+            `清理失效外观配置失败: ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+      } else {
+        activeAppearance.value = loaded
+      }
+    } else {
+      // 跨窗口切回内置模式时必须清掉此前缓存的外观，否则 isDark 和 CSS 仍沿用旧包。
+      activeAppearance.value = null
+    }
     updateTheme()
+  }
+
+  const setAppearance = (id: string | null): Promise<void> =>
+    queueThemeChange(async () => {
+      const revision = ++themeRevision
+      const savedConfigRevision = configRevision
+      if (!id) {
+        activeAppearance.value = null
+        appearanceId.value = null
+        updateTheme()
+        try {
+          await saveConfig({ appearanceId: null })
+          if (configRevision === savedConfigRevision) {
+            setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: null })
+          }
+        } catch (error) {
+          if (revision === themeRevision) restorePersistedThemeSnapshot()
+          logger.error(
+            `保存默认外观失败: ${error instanceof Error ? error.message : String(error)}`
+          )
+          throw error
+        }
+        return
+      }
+      const appearance =
+        appearances.value.find(item => item.id === id) ??
+        (await window.electronAPI.getAppearance?.(id))
+      if (!appearance) throw new Error('外观不存在或已损坏')
+      if (revision !== themeRevision) return
+      activeAppearance.value = appearance
+      appearanceId.value = appearance.id
+      updateTheme()
+      try {
+        await saveConfig({ appearanceId: appearance.id })
+        if (configRevision === savedConfigRevision) {
+          setPersistedThemeSnapshot({ ...persistedThemeSnapshot, appearanceId: appearance.id })
+        }
+      } catch (error) {
+        if (revision === themeRevision) restorePersistedThemeSnapshot()
+        logger.error(
+          `保存自定义外观失败: ${error instanceof Error ? error.message : String(error)}`
+        )
+        throw error
+      }
+    })
+
+  const importAppearance = async (
+    zipPath: string,
+    replace = false
+  ): Promise<import('@/types/appearance').AppearanceImportResult> => {
+    const result = await window.electronAPI.importAppearance?.(zipPath, replace)
+    if (!result) {
+      return {
+        success: false,
+        code: 'UNSUPPORTED',
+        error: '当前环境不支持导入外观包',
+      }
+    }
+    if (result.success && result.appearance) {
+      const existingIndex = appearances.value.findIndex(item => item.id === result.appearance?.id)
+      if (existingIndex === -1) appearances.value.push(result.appearance)
+      else appearances.value[existingIndex] = result.appearance
+    }
+    return result
+  }
+
+  const removeAppearance = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await window.electronAPI.removeAppearance?.(id)
+    if (!result) return { success: false, error: '当前环境不支持移除外观包' }
+    if (result.success) {
+      appearances.value = appearances.value.filter(item => item.id !== id)
+      // 主进程删除时同步清理当前选择；这里只刷新，不排入会覆盖新选择的 null 写入。
+      await loadAppearances()
+    }
+    return result
+  }
+
+  const initAppearanceChangedListener = () => {
+    if (appearanceListenerInitialized) return
+    appearanceListenerInitialized = true
+    const dispose = window.electronAPI.onAppearanceChanged?.(() => {
+      void loadAppearances()
+    })
+    return dispose
+  }
+
+  const initThemeConfigListener = () => {
+    if (themeConfigListenerInitialized) return
+    themeConfigListenerInitialized = true
+    window.electronAPI.onThemeConfigChanged?.(rawConfig => {
+      if (rawConfig === null || typeof rawConfig !== 'object') return
+      themeRevision += 1
+      configRevision += 1
+      const config = rawConfig as Partial<FrontendConfig>
+      if (
+        config.themeMode === 'system' ||
+        config.themeMode === 'light' ||
+        config.themeMode === 'dark'
+      ) {
+        themeMode.value = config.themeMode
+      }
+      if (
+        config.themeColor &&
+        Object.prototype.hasOwnProperty.call(themeColors, config.themeColor)
+      ) {
+        themeColor.value = config.themeColor
+      }
+      appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
+      commitPersistedThemeSnapshot()
+      // 回声只换选择：缓存里有就直接用，全量重读留给 appearance-changed，
+      // 否则每切一次主题色，每个窗口都要把所有包的素材经 IPC 重传一遍。
+      const cached = appearanceId.value
+        ? appearances.value.find(item => item.id === appearanceId.value)
+        : null
+      if (cached === undefined) {
+        activeAppearance.value = null
+        void loadAppearances()
+        return
+      }
+      activeAppearance.value = cached
+      updateTheme()
+    })
+  }
+
+  // 旧浏览器偏好由 getConfig 迁移；主题只从持久化配置恢复。
+  const initTheme = async (preloadedConfig?: Partial<FrontendConfig>) => {
+    initAppearanceChangedListener()
+    initThemeConfigListener()
+    const config = preloadedConfig ?? (await getConfig())
+    if (
+      config.themeMode === 'system' ||
+      config.themeMode === 'light' ||
+      config.themeMode === 'dark'
+    ) {
+      themeMode.value = config.themeMode
+    }
+    if (config.themeColor && Object.prototype.hasOwnProperty.call(themeColors, config.themeColor)) {
+      themeColor.value = config.themeColor
+    }
+    appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
+    commitPersistedThemeSnapshot()
+    await loadAppearances()
   }
 
   return {
@@ -397,8 +788,20 @@ export function useTheme() {
     isDark: computed(() => isDark.value),
     antdTheme,
     themeColors,
+    appearances: computed(() => appearances.value),
+    appearanceId: computed(() => appearanceId.value),
+    activeAppearance: computed(() => activeAppearance.value),
+    syncAntTokens: (tokens: AntTokens) => {
+      resolvedAntTokens = tokens
+      updateCSSVariables()
+    },
     setThemeMode,
     setThemeColor,
+    setAppearance,
+    loadAppearances,
+    importAppearance,
+    removeAppearance,
+    initAppearanceChangedListener,
     initTheme,
   }
 }
