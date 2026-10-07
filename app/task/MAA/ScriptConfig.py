@@ -383,9 +383,7 @@ class ScriptConfigTask(TaskExecuteBase):
         存档。原因用机器可读值下发，提示正文由前端本地化。
         """
 
-        await publish_config_session_result(
-            self.task_info.task_id, "discarded", reason
-        )
+        await publish_config_session_result(self.task_info.task_id, "discarded", reason)
 
     async def final_task(self):
 
