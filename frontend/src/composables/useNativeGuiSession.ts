@@ -1,10 +1,11 @@
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
-import { h, ref } from 'vue'
-import { message, Modal } from 'ant-design-vue'
+import { ref } from 'vue'
+import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_CONFIG_DISCARDED,
@@ -52,13 +53,6 @@ export function useNativeGuiSession(options: {
   let keepFailedSession = false
   // 本次会话的改动是否已被后端丢弃（原因见后端 WSTaskConfigDiscardedData）
   let discardedReason: string | null = null
-
-  // 丢弃原因的正文词条：每条都给出恢复路径，不把用户留在「改完却没了」的死胡同
-  const discardReasonKeys: Record<string, string | undefined> = {
-    structure: 'edit.configSessionDiscardedStructure',
-    unreadable: 'edit.configSessionDiscardedUnreadable',
-    not_written: 'edit.configSessionDiscardedNotWritten',
-  }
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -148,15 +142,7 @@ export function useNativeGuiSession(options: {
         }),
         subscribe({ id: response.taskId, type: WS_TASK_CONFIG_DISCARDED }, wsMessage => {
           discardedReason = wsMessage.data.reason
-          Modal.warning({
-            title: t('edit.configSessionDiscardedTitle'),
-            content: h(
-              'div',
-              { role: 'alert', style: { whiteSpace: 'pre-wrap' } },
-              t(discardReasonKeys[wsMessage.data.reason] ?? 'edit.configSessionDiscardedUnknown')
-            ),
-            okText: t('misc.gotIt'),
-          })
+          showConfigDiscardWarning(t, wsMessage.data.reason)
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
