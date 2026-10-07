@@ -1458,6 +1458,8 @@ export default {
     autoUpdateNeedsLauncher:
       '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',
+    clientPathOptionalHint:
+      '任意：空欄の場合はプロセス名でクライアントを自動照合します。指定すると実行中判定とタスク終了時の後処理がより正確になります',
     clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
     selectFile: 'ファイルを選択',
     resetAutoLocate: '自動に戻す',

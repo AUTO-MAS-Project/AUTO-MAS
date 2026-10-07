@@ -1573,6 +1573,8 @@ export default {
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
+    clientPathOptionalHint:
+      'Optional: leave empty to match the client by process name; setting it makes running-process detection and cleanup at task end more precise',
     clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
     selectFile: 'Select file',
     resetAutoLocate: 'Use auto',
