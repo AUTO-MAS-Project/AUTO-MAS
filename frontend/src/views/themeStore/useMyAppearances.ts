@@ -45,10 +45,6 @@ export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) 
   const coverFor = (item: MyAppearanceItem): string | undefined =>
     item.latestHasCover ? coverLoader.get(coverKey(item)) : undefined
 
-  const ensureCover = (item: MyAppearanceItem): void => {
-    if (item.latestHasCover) coverLoader.request(coverTask(item))
-  }
-
   const run = async (): Promise<void> => {
     const current = ++revision
     loading.value = true
@@ -122,7 +118,6 @@ export function useMyAppearances(options: { onUnauthorized?: () => void } = {}) 
     loaded,
     error,
     coverFor,
-    ensureCover,
     load,
     ensureLoaded,
     findById,

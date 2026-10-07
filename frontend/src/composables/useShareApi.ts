@@ -328,6 +328,30 @@ export function useShareApi() {
     }
   }
 
+  /**
+   * 不带封面发新版本时分享站会沿用的那张封面（最近一个未被驳回且带封面的版本）；
+   * 没有可沿用的封面时 code 为 404。
+   */
+  const getInheritableAppearanceCover = async (
+    fileId: number
+  ): Promise<ShareCallResult<{ dataUrl: string; versionNo: number | null }>> => {
+    try {
+      const response = await Service.getMyShareAppearanceCoverApiShareAppearanceCoverPost({
+        fileId,
+        inheritable: true,
+      })
+      if (response.code !== 200 || !response.dataUrl) {
+        return { ok: false, code: response.code ?? 500, message: response.message ?? '' }
+      }
+      return {
+        ok: true,
+        data: { dataUrl: response.dataUrl, versionNo: response.versionNo ?? null },
+      }
+    } catch (err) {
+      return { ok: false, ...apiErrorMessage(err, '') }
+    }
+  }
+
   const updateMyAppearanceDescription = async (
     fileId: number,
     description: string
@@ -364,6 +388,7 @@ export function useShareApi() {
     listAppearanceUploads,
     listMyAppearances,
     getMyAppearanceCover,
+    getInheritableAppearanceCover,
     updateMyAppearanceDescription,
   }
 }

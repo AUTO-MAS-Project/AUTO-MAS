@@ -5378,12 +5378,21 @@ class ShareAppearanceMineOut(OutBase):
 class ShareAppearanceCoverIn(BaseModel):
     fileId: int = Field(..., description="分享站文件 ID")
     versionNo: Optional[int] = Field(
-        default=None, ge=1, description="版本号, 为空表示最新版本"
+        default=None,
+        ge=1,
+        description="版本号, 为空表示最新版本; inheritable 为真时忽略",
+    )
+    inheritable: bool = Field(
+        default=False,
+        description="为真时取发新版本不带封面时分享站会沿用的那张: 最近一个未被驳回且带封面的版本",
     )
 
 
 class ShareAppearanceCoverOut(OutBase):
     dataUrl: str = Field(default="", description="封面图片的 data URL")
+    versionNo: Optional[int] = Field(
+        default=None, description="封面所在的版本号, 取最新版本时为空"
+    )
 
 
 class ShareAppearanceDescriptionIn(BaseModel):

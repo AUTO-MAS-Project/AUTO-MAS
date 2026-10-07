@@ -121,39 +121,46 @@ describe('pickUploadTarget', () => {
 })
 
 describe('cover modes', () => {
-  it('defaults to keeping the current cover when updating a theme that has one', () => {
+  it('defaults to keeping the inheritable cover when updating', () => {
     expect(
-      getCoverModes({ updating: true, targetHasCover: true, packageHasPreview: true })
+      getCoverModes({ updating: true, inheritCover: 'ready', packageHasPreview: true })
+    ).toEqual(['inherit', 'package', 'custom'])
+    // 还在查分享站会沿用哪张时先占住默认位置，查完再定
+    expect(
+      getCoverModes({ updating: true, inheritCover: 'loading', packageHasPreview: true })
     ).toEqual(['inherit', 'package', 'custom'])
   })
 
-  it('offers only what exists', () => {
+  it('drops inheriting when the share site has nothing to inherit', () => {
     expect(
-      getCoverModes({ updating: true, targetHasCover: false, packageHasPreview: true })
+      getCoverModes({ updating: true, inheritCover: 'none', packageHasPreview: true })
     ).toEqual(['package', 'custom'])
     expect(
-      getCoverModes({ updating: true, targetHasCover: false, packageHasPreview: false })
+      getCoverModes({ updating: true, inheritCover: 'none', packageHasPreview: false })
     ).toEqual(['custom'])
   })
 
   it('never inherits when creating a new theme', () => {
     expect(
-      getCoverModes({ updating: false, targetHasCover: true, packageHasPreview: true })
+      getCoverModes({ updating: false, inheritCover: 'ready', packageHasPreview: true })
     ).toEqual(['package', 'custom'])
     expect(
-      getCoverModes({ updating: false, targetHasCover: true, packageHasPreview: false })
+      getCoverModes({ updating: false, inheritCover: 'ready', packageHasPreview: false })
     ).toEqual(['custom'])
   })
 
-  it('needs a picked image for a custom cover and an available mode', () => {
-    expect(isCoverReady('custom', ['custom'], false)).toBe(false)
-    expect(isCoverReady('custom', ['custom'], true)).toBe(true)
-    expect(isCoverReady('inherit', ['inherit', 'custom'], false)).toBe(true)
-    expect(isCoverReady('inherit', ['package', 'custom'], false)).toBe(false)
-    expect(isCoverReady('package', ['package', 'custom'], false)).toBe(true)
+  it('needs a picked image for a custom cover and a resolved cover to inherit', () => {
+    const ready = { customPicked: false, inheritCover: 'ready' as const }
+    expect(isCoverReady('custom', ['custom'], ready)).toBe(false)
+    expect(isCoverReady('custom', ['custom'], { ...ready, customPicked: true })).toBe(true)
+    expect(isCoverReady('inherit', ['inherit', 'custom'], ready)).toBe(true)
+    expect(
+      isCoverReady('inherit', ['inherit', 'custom'], { ...ready, inheritCover: 'loading' })
+    ).toBe(false)
+    expect(isCoverReady('inherit', ['package', 'custom'], ready)).toBe(false)
+    expect(isCoverReady('package', ['package', 'custom'], ready)).toBe(true)
   })
 })
-
 describe('toStoreItem', () => {
   it('seeds the store detail from my own item', () => {
     expect(toStoreItem(mine({ description: '粉' }), 'alice')).toEqual({

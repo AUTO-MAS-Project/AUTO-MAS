@@ -655,19 +655,58 @@ class ConfigCenterClient:
         return items
 
     async def get_my_appearance_cover(
-        self, file_id: int, version_no: Optional[int]
-    ) -> str:
-        """取自己某个外观任一版本的封面 (含待审核和被驳回的版本), 返回 data URL。
+        self, file_id: int, version_no: Optional[int], *, inheritable: bool = False
+    ) -> Dict[str, Any]:
+        """取自己某个外观任一版本的封面 (含待审核和被驳回的版本)。
 
         Args:
             file_id: 分享站文件 id。
-            version_no: 版本号, 为空表示最新版本。
+            version_no: 版本号, 为空表示最新版本; inheritable 为真时忽略。
+            inheritable: 为真时取「不带封面发新版本时分享站会沿用的那张」:
+                最近一个未被驳回 (已通过或待审核) 且带封面的版本。
+
+        Returns:
+            dataUrl (封面的 data URL) 与 versionNo (封面所在版本, 取最新版本时为空) 组成的字典。
 
         Raises:
-            ConfigCenterError: 未登录、没有封面 (404)、体积超限或不是图片。
+            ConfigCenterError: 未登录、没有 (可沿用的) 封面 (404)、体积超限或不是图片。
         """
 
         token = self._require_token()
+        if inheritable:
+            version_no = await self._find_inheritable_cover_version(file_id, token)
+            if version_no is None:
+                raise ConfigCenterError("没有可以沿用的封面", status_code=404)
+        data_url = await self._download_my_cover(file_id, version_no, token)
+        return {"dataUrl": data_url, "versionNo": version_no}
+
+    async def _find_inheritable_cover_version(
+        self, file_id: int, token: str
+    ) -> Optional[int]:
+        """按分享站给普通用户上传沿用封面的规则, 找出会被沿用的封面所在版本。
+
+        规则与分享站一致: 新版本不带封面时, 取最近一个未被驳回 (已通过或待审核) 且带封面的版本。
+        作者给自己的文件发新版本走的就是这条规则。
+        """
+
+        versions = await self._request_data(
+            "GET", f"/user/files/{file_id}/versions", token=token
+        )
+        candidates = [
+            int(version["version_no"])
+            for version in (versions if isinstance(versions, list) else [])
+            if isinstance(version, dict)
+            and version.get("review_status") in ("approved", "pending")
+            and version.get("has_cover")
+            and version.get("version_no") is not None
+        ]
+        return max(candidates, default=None)
+
+    async def _download_my_cover(
+        self, file_id: int, version_no: Optional[int], token: str
+    ) -> str:
+        """用拥有者封面端点下载封面并转成 data URL。"""
+
         params = {"version_no": version_no} if version_no else None
         path = f"/user/files/{file_id}/cover"
 
@@ -1083,7 +1122,41 @@ class ConfigCenterClient:
         too_large_message: Optional[str] = None,
         timeout: float = REQUEST_TIMEOUT,
     ) -> Dict[str, Any]:
-        """调用配置中心接口并拆掉 {code, message, data} 信封。
+        """调用配置中心接口并拆掉 {code, message, data} 信封, data 不是对象时按空对象处理。
+
+        Raises:
+            ConfigCenterError: 网络失败或配置中心返回错误。
+        """
+
+        result = await self._request_data(
+            method,
+            path,
+            params=params,
+            json_body=json_body,
+            data=data,
+            files=files,
+            token=token,
+            conflict_message=conflict_message,
+            too_large_message=too_large_message,
+            timeout=timeout,
+        )
+        return result if isinstance(result, dict) else {}
+
+    async def _request_data(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        json_body: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, Any]] = None,
+        token: Optional[str] = None,
+        conflict_message: Optional[str] = None,
+        too_large_message: Optional[str] = None,
+        timeout: float = REQUEST_TIMEOUT,
+    ) -> Any:
+        """调用配置中心接口, 原样返回信封里的 data (可能是对象、列表或空)。
 
         Raises:
             ConfigCenterError: 网络失败或配置中心返回错误。
@@ -1127,8 +1200,7 @@ class ConfigCenterClient:
         if not isinstance(payload, dict):
             raise ConfigCenterError("配置中心返回了无法解析的内容")
 
-        result = payload.get("data")
-        return result if isinstance(result, dict) else {}
+        return payload.get("data")
 
     def _failure_error(
         self,

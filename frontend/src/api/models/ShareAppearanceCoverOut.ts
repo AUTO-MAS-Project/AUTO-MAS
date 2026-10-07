@@ -19,5 +19,9 @@ export type ShareAppearanceCoverOut = {
      * 封面图片的 data URL
      */
     dataUrl?: string;
+    /**
+     * 封面所在的版本号, 取最新版本时为空
+     */
+    versionNo?: (number | null);
 };
 

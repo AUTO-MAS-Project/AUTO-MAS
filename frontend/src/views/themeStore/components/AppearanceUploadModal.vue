@@ -11,7 +11,12 @@ import {
   type AppearanceUploadRecord,
 } from '@/composables/useShareApi'
 import type { OnlineAppearancePreview } from '@/types/appearance'
-import { getCoverModes, isCoverReady, pickUploadTarget } from '../myAppearance'
+import {
+  getCoverModes,
+  isCoverReady,
+  pickUploadTarget,
+  type InheritCoverState,
+} from '../myAppearance'
 import type { MyAppearanceStore } from '../useMyAppearances'
 import { formatAppearanceFileSize } from '../useOnlineAppearance'
 import type { ShareAccount } from '../useShareAccount'
@@ -41,7 +46,7 @@ const COVER_MODE_LABELS: Record<AppearanceCoverMode, string> = {
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('主题商店')
-const { uploadAppearance, listAppearanceUploads } = useShareApi()
+const { uploadAppearance, listAppearanceUploads, getInheritableAppearanceCover } = useShareApi()
 const { authorized, refresh: refreshAccount } = props.account
 const { items: mineItems, loading: mineLoading } = props.mine
 
@@ -68,31 +73,57 @@ const lockedFileId = computed(() =>
   props.targetFileId != null && !lockLost.value ? props.targetFileId : null
 )
 const updating = computed(() => target.value === 'update')
-const targetItem = computed(() =>
-  updating.value ? props.mine.findById(selectedFileId.value) : null
-)
 const targetOptions = computed(() =>
   mineItems.value.map(item => ({ value: item.fileId, label: item.displayName || item.fileKey }))
 )
+
+// 分享站不带封面发新版本时沿用的那张（最近一个未被驳回且带封面的版本），按目标文件单独查
+const inheritCover = ref<{
+  fileId: number
+  state: InheritCoverState
+  dataUrl: string | null
+} | null>(null)
+let inheritRevision = 0
+const inheritState = computed<InheritCoverState>(() => {
+  if (!updating.value || selectedFileId.value === null) return 'none'
+  if (inheritCover.value?.fileId !== selectedFileId.value) return 'loading'
+  return inheritCover.value.state
+})
 
 const packagePreview = computed(() => packageInfo.value?.appearance.previewUrl)
 const coverModes = computed(() =>
   getCoverModes({
     updating: updating.value,
-    targetHasCover: targetItem.value?.latestHasCover ?? false,
+    inheritCover: inheritState.value,
     packageHasPreview: Boolean(packagePreview.value),
   })
 )
 const coverImage = computed(() => {
   if (coverMode.value === 'inherit') {
-    return targetItem.value ? (props.mine.coverFor(targetItem.value) ?? null) : null
+    return inheritState.value === 'ready' ? (inheritCover.value?.dataUrl ?? null) : null
   }
   if (coverMode.value === 'package') return packagePreview.value ?? null
   return coverPreviewUrl.value
 })
 const coverReady = computed(() =>
-  isCoverReady(coverMode.value, coverModes.value, Boolean(coverPath.value))
+  isCoverReady(coverMode.value, coverModes.value, {
+    customPicked: Boolean(coverPath.value),
+    inheritCover: inheritState.value,
+  })
 )
+
+const loadInheritCover = async (fileId: number): Promise<void> => {
+  const revision = ++inheritRevision
+  inheritCover.value = { fileId, state: 'loading', dataUrl: null }
+  const result = await getInheritableAppearanceCover(fileId)
+  if (revision !== inheritRevision) return
+  if (!result.ok && result.code !== 404) {
+    logger.warn(`查询可沿用的外观封面失败: ${fileId}，${result.code} ${result.message}`)
+  }
+  inheritCover.value = result.ok
+    ? { fileId, state: 'ready', dataUrl: result.data.dataUrl }
+    : { fileId, state: 'none', dataUrl: null }
+}
 const canSubmit = computed(
   () =>
     authorized.value &&
@@ -114,6 +145,8 @@ const reset = (): void => {
   selectedFileId.value = null
   targetTouched.value = false
   lockLost.value = false
+  inheritRevision += 1
+  inheritCover.value = null
   form.displayName = ''
   form.description = ''
   form.changeNote = ''
@@ -270,14 +303,26 @@ const submit = async (): Promise<void> => {
   }
 }
 
-// 目标、包或目标的封面情况变了，封面来源回到默认（沿用 > 包内预览 > 自选）
-watch([target, selectedFileId, packageInfo, () => targetItem.value?.latestHasCover], () => {
+// 目标或包变了，封面来源回到默认（沿用 > 包内预览 > 自选）
+watch([target, selectedFileId, packageInfo], () => {
   coverMode.value = coverModes.value[0] ?? 'custom'
 })
 
-watch(targetItem, item => {
-  if (item) props.mine.ensureCover(item)
+// 可选来源变了（比如查完发现没有可沿用的封面），当前选的不在里面了才改回默认
+watch(coverModes, modes => {
+  if (!modes.includes(coverMode.value)) coverMode.value = modes[0] ?? 'custom'
 })
+
+// 目标一定下来就查分享站会沿用哪张封面
+watch(
+  [() => props.open, updating, selectedFileId],
+  ([isOpen, isUpdating, fileId]) => {
+    if (isOpen && isUpdating && fileId !== null && inheritCover.value?.fileId !== fileId) {
+      void loadInheritCover(fileId)
+    }
+  },
+  { immediate: true }
+)
 
 watch(
   () => props.open,

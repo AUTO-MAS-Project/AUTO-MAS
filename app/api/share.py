@@ -253,8 +253,8 @@ async def get_my_share_appearance_cover(
 ) -> ShareAppearanceCoverOut:
 
     try:
-        data_url = await ConfigCenter.get_my_appearance_cover(
-            query.fileId, query.versionNo
+        cover = await ConfigCenter.get_my_appearance_cover(
+            query.fileId, query.versionNo, inheritable=query.inheritable
         )
     except ConfigCenterError as e:
         return ShareAppearanceCoverOut(
@@ -265,7 +265,7 @@ async def get_my_share_appearance_cover(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
 
-    return ShareAppearanceCoverOut(dataUrl=data_url)
+    return ShareAppearanceCoverOut(**cover)
 
 
 @router.post(
