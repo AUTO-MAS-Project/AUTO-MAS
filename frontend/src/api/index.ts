@@ -247,6 +247,7 @@ export type { MaaFWConfig_Game } from './models/MaaFWConfig_Game';
 export type { MaaFWConfig_Info } from './models/MaaFWConfig_Info';
 export type { MaaFWConfig_Run } from './models/MaaFWConfig_Run';
 export type { MaaFWConfig_Selection } from './models/MaaFWConfig_Selection';
+export type { MaaFWConfig_Task } from './models/MaaFWConfig_Task';
 export type { MaaFWConfig_Update } from './models/MaaFWConfig_Update';
 export type { MaaFWControlCapabilitiesInfo } from './models/MaaFWControlCapabilitiesInfo';
 export type { MaaFWControllerInfo } from './models/MaaFWControllerInfo';

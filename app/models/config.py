@@ -3002,9 +3002,10 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
-        ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
-        ## 几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
+        ## 单次运行时间限制（分钟），套在单个用户的整次运行上。截止时刻随 job 文件交给
+        ## worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在
+        ## worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常
+        ## 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
@@ -3025,6 +3026,11 @@ class MaaFWConfig(ConfigBase):
             self.DEFAULT_TASK_TIME_LIMIT_OVERRIDES,
             JSONValidator(dict),
         )
+        ## 原地打转检测（实验性，默认关）。任务在短周期里反复执行同一串节点（周期 ≤ 8
+        ## 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续
+        ## ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务
+        ## 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。
+        self.Run_LoopGuard = ConfigItem("Run", "LoopGuard", False, BoolValidator())
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(
             "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)
@@ -3062,6 +3068,15 @@ class MaaFWConfig(ConfigBase):
         ## 选中的 task 列表
         self.Selection_Tasks = ConfigItem(
             "Selection", "Tasks", "[ ]", JSONValidator(list)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## 用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项
+        ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions}}``，
+        ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务与密码字段；
+        ## 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。
+        self.Task_Templates = ConfigItem(
+            "Task", "Templates", "[ ]", JSONValidator(list)
         )
 
         self.UserData = MultipleConfig([self.USER_CONFIG_CLASS])
@@ -4389,6 +4404,15 @@ class OkNteConfig(ConfigBase):
         )
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
+        )
+        # 直接启动（Autoplay，默认）= 启动器带 /autoplay 静默拉起，无需点击；
+        # 使用启动器启动（LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」。
+        # 默认值排首位：存量配置缺键即维持静默启动现状，无需迁移
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Autoplay",
+            OptionsValidator(["Autoplay", "LauncherUi"]),
         )
         # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
         # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器

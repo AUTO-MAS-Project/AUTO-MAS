@@ -335,14 +335,11 @@ def main():
                 await mount_mcp_server(app)
 
             async def init_arknight_win32() -> None:
-                import importlib
+                # 只接管开关、启用时在后台发起加载，不在这里导入：导入会整套载入
+                # MaaFramework 原生库，新装环境首次能拖过监督器的 60 秒健康预算
+                from app.MaaFW import arknights_pc
 
-                for adapter in ("app.MaaFW.ArknightWin32",):
-                    await asyncio.to_thread(importlib.import_module, adapter)
-
-                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
-
-                await ArknightWin32Toolkit.init()
+                await arknights_pc.start()
 
             async def start_desktop_guard() -> None:
                 from app.core.desktop_guard import DesktopGuard

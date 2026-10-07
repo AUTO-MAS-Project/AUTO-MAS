@@ -2564,6 +2564,10 @@ class OkNteConfig_Game(BaseModel):
     Type: Optional[Literal["Client", "URL"]] = Field(
         default=None, description="类型: PC端, URL协议"
     )
+    LaunchMode: Optional[Literal["Autoplay", "LauncherUi"]] = Field(
+        default=None,
+        description="启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）",
+    )
     Path: Optional[str] = Field(
         default=None,
         description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）",
@@ -4025,6 +4029,9 @@ class MaaFWConfig_Run(BaseModel):
     TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
     )
+    LoopGuard: Optional[bool] = Field(
+        default=None, description="原地打转检测（实验性，默认关）"
+    )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
     )
@@ -4069,6 +4076,13 @@ class MaaFWConfig_Selection(BaseModel):
     )
 
 
+class MaaFWConfig_Task(BaseModel):
+    Templates: Optional[str] = Field(
+        default=None,
+        description='用户页任务队列的自定义模板，JSON 字符串 [{"name": 模板名, "snapshot": 任务快照}]，同一脚本的用户共用',
+    )
+
+
 class MaaFWConfig(BaseModel):
     Info: Optional[MaaFWConfig_Info] = Field(default=None, description="脚本基础信息")
     Emulator: Optional[MaaFWConfig_Emulator] = Field(
@@ -4088,6 +4102,7 @@ class MaaFWConfig(BaseModel):
     Selection: Optional[MaaFWConfig_Selection] = Field(
         default=None, description="controller、resource 与 task 选择"
     )
+    Task: Optional[MaaFWConfig_Task] = Field(default=None, description="任务队列模板")
 
 
 class M9AUserConfig(MaaFWUserConfig):
