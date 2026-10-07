@@ -22,6 +22,8 @@ import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
+import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
+import type { ShareAppearanceDescriptionOut } from '../models/ShareAppearanceDescriptionOut';
 import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
 import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
@@ -400,6 +402,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改自己外观的描述
+     * @param requestBody
+     * @returns ShareAppearanceDescriptionOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost(
+        requestBody: ShareAppearanceDescriptionIn,
+    ): CancelablePromise<ShareAppearanceDescriptionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/description',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

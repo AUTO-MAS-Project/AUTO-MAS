@@ -42,6 +42,7 @@ from pydantic import (
     SecretStr,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 TPlanInfo = TypeVar("TPlanInfo")
@@ -5286,7 +5287,9 @@ class ShareAuthStatusOut(OutBase):
 
 class ShareAppearanceUploadIn(BaseModel):
     zipPath: str = Field(..., description="本地外观 ZIP 路径")
-    displayName: str = Field(..., min_length=1, max_length=60, description="外观名称")
+    displayName: str = Field(
+        default="", max_length=60, description="外观名称, 只在新建时使用"
+    )
     description: str = Field(default="", max_length=2000, description="外观描述")
     changeNote: str = Field(default="", max_length=500, description="变更说明")
     fileId: Optional[int] = Field(
@@ -5294,13 +5297,27 @@ class ShareAppearanceUploadIn(BaseModel):
     )
     coverPath: Optional[str] = Field(
         default=None,
-        description="封面图片路径, 为空时使用外观包 theme.json 的 preview",
+        description="封面图片路径, coverMode 为 custom 时使用",
+    )
+    coverMode: Optional[Literal["package", "custom", "inherit"]] = Field(
+        default=None,
+        description="封面来源: package 用外观包的 preview, custom 用 coverPath, inherit 沿用分享站上的封面 (只能用于新版本); 为空时有 coverPath 按 custom, 否则按 package",
     )
 
     @field_validator("displayName", mode="before")
     @classmethod
     def strip_display_name(cls, value: Any) -> Any:
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def check_target(self) -> "ShareAppearanceUploadIn":
+        if self.fileId is None and not self.displayName:
+            raise ValueError("新建外观时名称不能为空")
+        if self.coverMode == "inherit" and self.fileId is None:
+            raise ValueError("只有发新版本时才能沿用分享站上的封面")
+        if self.coverMode == "custom" and not self.coverPath:
+            raise ValueError("请选择封面图片")
+        return self
 
 
 class ShareAppearanceUploadOut(OutBase):
@@ -5312,6 +5329,10 @@ class ShareAppearanceUploadOut(OutBase):
     )
     isNewFile: bool = Field(default=False, description="是否新建了文件")
     appearanceId: str = Field(default="", description="外观 ID")
+    reason: Optional[Literal["pendingLimit", "conflict", "tooLarge"]] = Field(
+        default=None,
+        description="分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限",
+    )
 
 
 class ShareAppearanceUploadItem(BaseModel):
@@ -5325,6 +5346,54 @@ class ShareAppearanceUploadItem(BaseModel):
 class ShareAppearanceUploadsOut(OutBase):
     data: List[ShareAppearanceUploadItem] = Field(
         default_factory=list, description="当前登录账号的外观上传记录"
+    )
+
+
+class ShareAppearanceMineItem(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    description: str = Field(default="", description="外观描述")
+    status: str = Field(default="", description="文件状态")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号, 没有已发布版本时为空"
+    )
+    latestVersionNo: int = Field(default=0, description="最新版本号")
+    latestReviewStatus: Optional[Literal["pending", "approved", "rejected"]] = Field(
+        default=None, description="最新版本的审核状态"
+    )
+    latestReviewComment: str = Field(
+        default="", description="最新版本的审核意见, 没有则为空"
+    )
+    latestHasCover: bool = Field(default=False, description="最新版本是否带封面")
+    updatedAt: str = Field(default="", description="最近更新时间")
+
+
+class ShareAppearanceMineOut(OutBase):
+    data: List[ShareAppearanceMineItem] = Field(
+        default_factory=list, description="当前账号在分享站上的全部外观"
+    )
+
+
+class ShareAppearanceCoverIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    versionNo: Optional[int] = Field(
+        default=None, ge=1, description="版本号, 为空表示最新版本"
+    )
+
+
+class ShareAppearanceCoverOut(OutBase):
+    dataUrl: str = Field(default="", description="封面图片的 data URL")
+
+
+class ShareAppearanceDescriptionIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    description: str = Field(..., max_length=2000, description="新的外观描述")
+
+
+class ShareAppearanceDescriptionOut(OutBase):
+    data: Optional[ShareAppearanceMineItem] = Field(
+        default=None, description="更新后的外观"
     )
 
 
