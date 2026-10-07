@@ -37,7 +37,8 @@ NTEGame.exe / NTEGlobalGame.exe / NTETWGame.exe）启动。两种启动方式都
 流程（使用启动器启动）::
 
     退出屏保 → 拉起启动器 → 等启动器窗口 → OCR 找「开始游戏」/「更新」按钮
-    并点击（点「更新」后只点一次，等更新完成按钮变回「开始游戏」再点）
+    并点击（点「更新」后等更新完成按钮变回「开始游戏」再点；点击被吞时按
+    间隔补点，至多 3 次）
     → 等 HTGame.exe 进程 + 可见窗口出现（游戏就绪，停在标题界面）
 """
 
@@ -113,6 +114,10 @@ _ELAPSED_TIME_PATTERN = re.compile(r"\d{1,}:\d{2}(?::\d{2})*")
 _UPDATE_ACTIVE_GRACE_SECONDS = 600.0
 # 下载进度签名持续无变化的时长上限：百分比/体积/速度长时间不动视为下载卡死
 _DOWNLOAD_STALL_SECONDS = 300.0
+# 下载态等待的绝对上限：单次下载最多等这么久，防止进度文本被 OCR 抖动得
+# 持续变化时既判不出卡死也无法退出（正常下载远超此时长才会触发，属防意外
+# 兜底；对齐 ok-ww 启动器方案）
+_BUSY_WAIT_HARD_LIMIT_SECONDS = 7200.0
 # 「更新」点击重试：单次点击防重复下载是有意设计，但点击被吞时需按间隔补点，
 # 以按钮长时间停留原状（未被下载 UI 取代）为被吞判据
 _UPDATE_CLICK_RETRY_SECONDS = 15.0
@@ -504,12 +509,15 @@ def start_game_via_launcher(
         # 点「更新」后是否确实进入过下载态：作为「按钮被取代」的强证据，
         # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
         update_went_busy = False
-        # 点「更新」后按钮是否已离开更新态（被下载 UI 或「开始游戏」取代过）：
-        # 用于区分「更新刚点完、按钮文本尚未切换」与「更新流程已结束」
+        # 「开始游戏」已取代「更新」的帧级证据：更新流程已结束（下载 UI 取代
+        # 按钮的帧不计入，单帧漏识别由 update_went_busy 粘性覆盖）
         start_button_gone = False
         launcher_upgrade_clicked = False
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
+        # 连续下载态的累计时长基准：跨帧累计，用于绝对上限兜底；离开下载态
+        # 即清掉，避免下次进入时用到过期时刻（偶发漏识别帧不清停滞计时）
+        busy_since: float | None = None
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
             if _find_game_hwnd() is not None:
@@ -541,6 +549,8 @@ def start_game_via_launcher(
                 _click_box(hwnd, upgrade_box, after_sleep=3)
                 launcher_upgrade_clicked = True
                 deadline = max(deadline, now + _UPDATE_TIMEOUT)
+                # 弹窗路径不经过下方「离开下载态」出口：忙碌基准就地清掉
+                busy_since = None
                 time.sleep(2)
                 continue
 
@@ -569,6 +579,9 @@ def start_game_via_launcher(
                     update_went_busy = False
                     last_download_sig = None
                     last_download_progress = time.monotonic()
+                    # 重启路径不经过「离开下载态」出口：忙碌基准一并清掉，
+                    # 防止二次下载带着重启前的累计时长提前触发绝对上限
+                    busy_since = None
                 time.sleep(2)
                 continue
 
@@ -587,6 +600,8 @@ def start_game_via_launcher(
                     start_clicks = 0
                     last_start_click = None
                     start_click_exhausted_logged = False
+                    # 弹窗路径不经过下方「离开下载态」出口：忙碌基准就地清掉
+                    busy_since = None
                     time.sleep(1)
                     continue
 
@@ -594,6 +609,14 @@ def start_game_via_launcher(
             if _find_text(items, _DOWNLOAD_STATE_TEXTS) is not None:
                 if update_clicked:
                     update_went_busy = True
+                if busy_since is None:
+                    busy_since = now
+                elif now - busy_since >= _BUSY_WAIT_HARD_LIMIT_SECONDS:
+                    raise RuntimeError(
+                        "启动器下载超出"
+                        f" {_BUSY_WAIT_HARD_LIMIT_SECONDS / 60:g} 分钟仍未完成，"
+                        "请人工确认下载状态"
+                    )
                 deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
                 progress_texts = _download_progress_texts(items)
                 # 仅剩余时间倒计时不是下载进度；剔除后得到的空签名也必须参与
@@ -609,6 +632,10 @@ def start_game_via_launcher(
                     )
                 time.sleep(2)
                 continue
+
+            # 离开下载态：清掉忙碌基准，避免下次进入时用到过期时刻（漏识别帧
+            # 不重置停滞计时与 went_busy，见上）
+            busy_since = None
 
             start_box = _find_text(items, ("开始游戏",))
             update_box = None if start_box else _find_text(items, ("更新",))
