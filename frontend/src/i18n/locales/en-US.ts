@@ -4330,6 +4330,7 @@ export default {
       failed: 'Upload failed',
       unchanged: 'Neither the package nor the cover has changed',
       tooLarge: 'The package exceeds the share site size limit',
+      pendingLimit: 'Too many uploads are waiting for review. Upload again after they are reviewed',
       versionTargetGone:
         'The appearance you uploaded before is no longer on the share site. Switched to uploading a new appearance; check the name and submit again',
     },

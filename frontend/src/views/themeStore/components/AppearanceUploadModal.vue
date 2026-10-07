@@ -259,6 +259,7 @@ const close = (): void => {
 const failureMessage = (result: { message: string; reason?: string }): string => {
   if (result.reason === 'conflict' && updating.value) return t('themeStore.upload.unchanged')
   if (result.reason === 'tooLarge') return t('themeStore.upload.tooLarge')
+  if (result.reason === 'pendingLimit') return t('themeStore.upload.pendingLimit')
   return result.message || t('themeStore.upload.failed')
 }
 

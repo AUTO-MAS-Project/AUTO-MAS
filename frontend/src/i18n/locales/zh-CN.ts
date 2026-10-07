@@ -4190,6 +4190,7 @@ export default {
       failed: '上传失败',
       unchanged: '外观包和封面都没有变化',
       tooLarge: '外观包超过分享站的体积上限',
+      pendingLimit: '待审核的上传已达上限，等审核完再传',
       versionTargetGone:
         '分享站上找不到之前上传的那个外观，已改为按新外观上传，请确认名称后重新提交',
     },
