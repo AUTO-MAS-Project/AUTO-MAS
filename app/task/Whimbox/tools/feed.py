@@ -78,8 +78,6 @@ class LoguruFileFeed:
         self._on_event = on_event
         self._path_resolver = path_resolver
         self._lines: list[str] = []
-        # 已归一的元素个数：不能拿 len(self._lines) 当游标（它就是监控器那个 list 本身）
-        self._normalized = 0
         self._emitted = 0
         self.latest_time_value: datetime = datetime.now()
         self._monitor = LogMonitor(
@@ -96,9 +94,20 @@ class LoguruFileFeed:
 
     @property
     def log_text(self) -> str:
-        """累计日志文本（marker 判定输入）。"""
+        """累计日志文本（仅在终态提取结果或兼容旧判定器时物化）。"""
 
         return "".join(self._lines)
+
+    def get_log_delta(self, offset: int) -> tuple[str, ...]:
+        """取已采集行的增量快照，供事件重发与终态前补消费。"""
+
+        return tuple(self._lines[offset:])
+
+    @property
+    def revision(self) -> int:
+        """累计行片段数，与增量消费游标使用同一单位。"""
+
+        return len(self._lines)
 
     async def start(self, log_start_time: datetime) -> None:
         """开始监控（从 log_start_time 之后的行起）。"""
@@ -120,16 +129,20 @@ class LoguruFileFeed:
 
         上游日志是 CRLF，这里**就地**把新增行归一为 LF：下游（历史日志按平台换行
         写盘、通知正文）会再走一次换行翻译，CRLF 会变成 ``\\r\\r\\n``，读起来每行
-        之间多一个空行。就地改写而不是新建列表——监控器持有同一个 list 并持续
-        追加，换引用会让后续新行读不到。
+        之间多一个空行。自行累积归一后的新行：监控器每次增长会复制历史列表，
+        不依赖它保留上次回调的归一结果。首个事件携带整批增量，保留原有整批日志
+        在首个事件回调前已经可见的语义。
         """
 
-        for i in range(self._normalized, len(log_content)):
+        # 累积与派发游标分开：回调抛错会重发事件，但不能重复累积同一批日志。
+        for i in range(len(self._lines), len(log_content)):
             log_content[i] = log_content[i].replace("\r\n", "\n").replace("\r", "\n")
-        self._normalized = len(log_content)
-        self._lines = log_content
+        new_lines = tuple(log_content[len(self._lines) :])
+        self._lines.extend(new_lines)
         self.latest_time_value = latest_time
-        for line in log_content[self._emitted :]:
+        # 未成功派发的整批仍须携带增量；消费方按起始游标跳过已经处理的部分。
+        pending_lines = self.get_log_delta(self._emitted)
+        for i, line in enumerate(pending_lines):
             timestamp = None
             with suppress(ValueError):
                 timestamp = strptime(
@@ -137,5 +150,12 @@ class LoguruFileFeed:
                     WHIMBOX_LOG_TIME_FORMAT,
                     latest_time,
                 )
-            await self._emit(WhimboxRunEvent(text=line, timestamp=timestamp))
+            await self._emit(
+                WhimboxRunEvent(
+                    text=line,
+                    timestamp=timestamp,
+                    log_delta=pending_lines if i == 0 else (),
+                    log_offset=self._emitted,
+                )
+            )
         self._emitted = len(log_content)
