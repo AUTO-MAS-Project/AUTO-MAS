@@ -158,7 +158,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.launcher = launcher or EmbeddedPythonLauncher(
             self.root_path, bool(self.script_config.get("Run", "UseAdmin"))
         )
-        self.parser = parser or WhimboxMarkerParser()
+        # 只有默认实现启用增量扩展；注入判定器保持原 evaluate 全文契约。
+        self._incremental_parser: WhimboxMarkerParser | None = None
+        if parser is None:
+            self._incremental_parser = WhimboxMarkerParser()
+            self.parser: IRunResultParser = self._incremental_parser
+        else:
+            self.parser = parser
         self._feed_factory = feed_factory or (
             lambda on_event: LoguruFileFeed(
                 on_event, build_log_path_resolver(self.root_path)
@@ -172,6 +178,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.result_block: str | None = None
         # 上游 ❌/🛑 提示行原文（结果块只有状态、没有原因），进报告「未完成原因」段
         self.failure_notes: list[str] = []
+        self._failure_notes_seen: set[str] = set()
         # 本轮判定器的状态（_should_retry 输入）；每轮尝试开头清空
         self.last_verdict_status: str | None = None
         # 上一轮失败的判定文案（含上游原因），用于「同一原因不重复重试」
@@ -182,6 +189,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._config_took_over = False
         # 实时进展已推送的行数（避免重复转述）
         self._dispatch_pushed_lines = 0
+        self._log_tail: str = ""
+        self._log_first_line: int = 1
+        self._log_consumed_lines: int = 0
+        self._use_incremental_log: bool = False
         # 进程静默退出看门狗（无日志行时事件流不会回调，靠轮询兜底）
         self._exit_watchdog_task: asyncio.Task | None = None
 
@@ -274,6 +285,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_log = self.cur_user_item.log_record[log_start_time]
             self.script_info.log = ""
             self._dispatch_pushed_lines = 0
+            self._log_tail = ""
+            self._log_first_line = 1
+            self._log_consumed_lines = 0
+            self._use_incremental_log = False
+            if self._incremental_parser is not None:
+                self._incremental_parser.reset()
 
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
                 await execute_script_task(
@@ -366,9 +383,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if not await self.launcher.is_running():
                     # enqueue 落盘为毫秒级，此处等收尾行进回调后再收口
                     await asyncio.sleep(5)
-                    await self._evaluate_and_release()
+                    await self._evaluate_and_release(
+                        process_running=await self.launcher.is_running(),
+                        refresh_pending=True,
+                    )
                     return
-                await self._evaluate_and_release()
+                if self._run_event_context_ready():
+                    assert self.feed is not None
+                    time_limit = self.script_config.get("Run", "RunTimeLimit")
+                    if self.is_log_stalled(self.feed.latest_time, minutes=time_limit):
+                        await self._evaluate_and_release(refresh_pending=True)
 
     def _run_event_context_ready(self) -> bool:
         """本轮判定上下文是否就绪（feed/日志记录/等待事件均存在）。"""
@@ -388,10 +412,29 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         assert self.feed is not None and self.cur_user_log is not None
 
-        log = self.feed.log_text
-        self.cur_user_log.content = log.splitlines(keepends=True)
-        self.script_info.log_first_line = log[:-4000].count("\n") + 1
-        self.script_info.log = log[-4000:]
+        self._use_incremental_log = event.log_delta is not None
+        delta: tuple[str, ...] = ()
+        if event.log_delta is None:
+            # 旧 feed 在首个事件前已暴露整批历史，保留其预读和全文判定契约。
+            log = self.feed.log_text
+            self.cur_user_log.content = log.splitlines(keepends=True)
+            self._log_first_line = log[:-4000].count("\n") + 1
+            self._log_tail = log[-4000:]
+            if isinstance(self.feed, LoguruFileFeed):
+                self._log_consumed_lines = self.feed.revision
+            if self._incremental_parser is not None:
+                # 快照与增量切换时，短尾缓存也须对应完整快照。
+                self._incremental_parser.reset()
+                self._incremental_parser.feed(log)
+        else:
+            delta = event.log_delta[
+                max(0, self._log_consumed_lines - event.log_offset) :
+            ]
+        if delta:
+            # 先确认历史消费，再推实时进展；推送抛错不会重复历史和 marker。
+            self._append_log_delta(delta, log_offset=event.log_offset)
+        self.script_info.log_first_line = self._log_first_line
+        self.script_info.log = self._log_tail
 
         # 实时进展：步骤进入/异常/账号切换行的消息段转述到调度台（只推一次）。
         # loguru 行 = 「时间 | 级别 | 模块 - 消息」，emoji 前缀在消息段而非行首；
@@ -420,17 +463,55 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if (
                 note.startswith(_FAILURE_LINE_PREFIXES)
                 and not is_benign_marker(note)
-                and note not in self.failure_notes
+                and note not in self._failure_notes_seen
             ):
                 self.failure_notes.append(note)
+                self._failure_notes_seen.add(note)
 
         await self._evaluate_and_release()
 
-    async def _evaluate_and_release(self) -> None:
+    def _append_log_delta(self, delta: tuple[str, ...], *, log_offset: int) -> None:
+        """追加尚未消费的行，同时维护历史、展示尾部和 marker 缓存。"""
+
+        assert self.cur_user_log is not None
+
+        self._use_incremental_log = True
+        text = "".join(delta)
+        if self._incremental_parser is not None:
+            self._incremental_parser.feed(text)
+        tail = self._log_tail + text
+        self._log_first_line += tail[:-4000].count("\n")
+        self._log_tail = tail[-4000:]
+
+        # readlines 可能返回尚未换行的末段；只合并该段，保留全文 splitlines 语义。
+        content = self.cur_user_log.content
+        if content and not content[-1].endswith(
+            (
+                "\n",
+                "\r",
+                "\v",
+                "\f",
+                "\x1c",
+                "\x1d",
+                "\x1e",
+                "\x85",
+                "\u2028",
+                "\u2029",
+            )
+        ):
+            text = content.pop() + text
+        content.extend(text.splitlines(keepends=True))
+        self._log_consumed_lines = max(self._log_consumed_lines, log_offset) + len(
+            delta
+        )
+
+    async def _evaluate_and_release(
+        self, *, process_running: bool = True, refresh_pending: bool = False
+    ) -> None:
         """按判定器收口本轮：致命/完成/中止/早退/停滞任一命中即释放等待。
 
-        收尾判定由 ``WhimboxMarkerParser`` 纯函数给出（成败取自上游结果面）；
-        停滞用单调时钟（``is_log_stalled``）判定后作为输入传入。
+        默认判定器只在收尾时物化全文（成败仍取自上游结果面）；停滞用单调时钟
+        判定。提前退出仅由看门狗在落盘等待后传入，事件回调不抢先判早退。
         """
 
         if not self._run_event_context_ready():
@@ -438,14 +519,29 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         assert self.feed is not None and self.cur_user_log is not None
 
+        feed = self.feed
+        # 回调失败时，静默重发可能晚于看门狗；终态前只补消费已采集的未处理行。
+        if refresh_pending and isinstance(feed, LoguruFileFeed):
+            delta = feed.get_log_delta(self._log_consumed_lines)
+            if delta:
+                self._append_log_delta(delta, log_offset=self._log_consumed_lines)
         time_limit = self.script_config.get("Run", "RunTimeLimit")
-        stalled = self.is_log_stalled(self.feed.latest_time, minutes=time_limit)
-        verdict = self.parser.evaluate(
-            self.feed.log_text,
-            process_running=await self.launcher.is_running(),
-            stalled_minutes=time_limit,
-            stalled=stalled,
-        )
+        stalled = self.is_log_stalled(feed.latest_time, minutes=time_limit)
+        if self._incremental_parser is not None and self._use_incremental_log:
+            verdict = self._incremental_parser.evaluate_incremental(
+                lambda: feed.log_text,
+                process_running=process_running,
+                stalled_minutes=time_limit,
+                stalled=stalled,
+            )
+        else:
+            # 保留构造注入的旧判定器契约。
+            verdict = self.parser.evaluate(
+                feed.log_text,
+                process_running=process_running,
+                stalled_minutes=time_limit,
+                stalled=stalled,
+            )
 
         if verdict.status == "running":
             self.cur_user_log.status = "奇想盒正常运行中"
