@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.services import Matomo
+from app.services.telemetry import record_daily_active
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.platform import IS_WINDOWS
@@ -137,9 +138,15 @@ class _MainTimer:
             if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
                 # 懒导入：启动期导入失败（如更新后端撞上 app/ 重拷窗口）时这里会再抛，
                 # 不能让它把整个每秒循环带走，否则定时队列跟着停摆（#738）
-                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+                from app.MaaFW import arknights_pc
 
-                await ArknightWin32Toolkit.scheduled_task()
+                toolkit = arknights_pc.loaded_toolkit()
+                if toolkit is None:
+                    # 还没加载（或上次加载失败）：后台发起加载，本秒跳过，
+                    # 不在这里等导入，免得卡住定时启动检查
+                    arknights_pc.ensure_loading()
+                    return
+                await toolkit.scheduled_task()
 
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
@@ -170,8 +177,17 @@ class _MainTimer:
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
 
+        async def record_telemetry_active() -> None:
+            # 按 UTC 日期去重：Sentry 按 UTC 自然日聚合，跨日最多晚一小时记上
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if Config.get("Data", "LastTelemetryActive") == today:
+                return
+            if record_daily_active():
+                await Config.set("Data", "LastTelemetryActive", today)
+
         while True:
             await self._run_loop_step("统计上报", upload_statistics)
+            await self._run_loop_step("遥测日活", record_telemetry_active)
             await asyncio.sleep(3600)
 
     async def _run_loop_step(

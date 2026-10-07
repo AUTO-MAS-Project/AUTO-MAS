@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from app.utils import ProcessRunner, get_logger
+from app.utils.platform import IS_WINDOWS
 from app.utils.platform.process import platform_process
 
 logger = get_logger("自定义脚本执行工具")
@@ -47,6 +48,19 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             cmd = ["cmd.exe", "/c", str(script_path), "admin"]
         elif script_path.suffix.lower() == ".exe":
             cmd = [str(script_path)]
+        elif script_path.suffix.lower() == ".ps1":
+            cmd = [
+                "powershell.exe" if IS_WINDOWS else "pwsh",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+            ]
+        elif script_path.suffix.lower() == ".js":
+            cmd = ["node", str(script_path)]
+        elif script_path.suffix.lower() == ".sh":
+            cmd = ["bash", str(script_path)]
         elif script_path.suffix.lower() == "":
             logger.warning(f"{task_name}脚本没有指定后缀名, 无法执行")
             return False
@@ -57,7 +71,10 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
 
         # 创建异步子进程
         result = await ProcessRunner.run_process(
-            *cmd, cwd=script_path.parent, timeout=600
+            *cmd,
+            cwd=script_path.parent,
+            timeout=600,
+            kill_tree_on_cancel=True,
         )
 
         if result.returncode == 0:

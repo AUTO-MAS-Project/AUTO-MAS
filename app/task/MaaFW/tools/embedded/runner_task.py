@@ -528,12 +528,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.get("Emulator", "Id")
                 emulator_index = self.script_config.get("Emulator", "Index")
-                configured_address, _ = self._configured_adb_address()
-                if not configured_address and (
-                    emulator_id == "-" or emulator_index in ("", "-")
-                ):
+                if emulator_id == "-" or emulator_index in ("", "-"):
                     self.cur_user_item.status = "异常"
-                    return "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例，或填写 ADB 地址"
+                    return (
+                        "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例"
+                    )
             elif game_path_error is not None:
                 self.cur_user_item.status = "异常"
                 return game_path_error
@@ -1112,69 +1111,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
         return ""
 
-    def _configured_adb_address(self) -> tuple[str, str]:
-        """脚本里手填的 ADB 地址，返回 ``(地址, 来源)``；都没填就是 ``("", "")``。
-
-        用户级 ``Device.AdbAddress`` 覆盖脚本级，两个字段默认都是空串。填了地址就直接连它，
-        不去启动模拟器，自然也没接管：没接管的设备 MAS 不管开关（#205）。
-        """
-        user_address = str(
-            self.cur_user_config.get("Device", "AdbAddress") or ""
-        ).strip()
-        if user_address:
-            return user_address, "用户配置"
-        script_address = str(
-            self.script_config.get("Device", "AdbAddress") or ""
-        ).strip()
-        return script_address, "脚本配置" if script_address else ""
-
-    async def _emulator_serves_address(self, emulator_index: str, address: str) -> bool:
-        """手填的 ADB 地址是不是所选模拟器这个实例的。
-
-        模拟器增强（雷电截图与 ldconsole 文本输入、MuMu 截图与输入）按实例号直接取画面、
-        发输入，不经过 ADB 地址。地址指向别的设备时还按所选模拟器建增强，画面和点击都会落到那台模拟器上，
-        雷电没开时还会因为拿不到进程号连不上；所以只有地址正是这个实例时才用增强。
-        """
-        if self.emulator_manager is None:
-            return False
-        try:
-            info = (await self.emulator_manager.getInfo(emulator_index)).get(
-                str(emulator_index)
-            )
-        except Exception as exc:
-            self._append_log(
-                f"读取所选模拟器的 ADB 地址失败，{address} 按普通 ADB 设备连接: {exc}"
-            )
-            return False
-        if info is not None and _same_adb_device(info.adb_address, address):
-            return True
-        instance_address = info.adb_address if info is not None else "未找到该实例"
-        self._append_log(
-            f"ADB 地址 {address} 不是所选模拟器实例的地址（{instance_address}），"
-            "按普通 ADB 设备连接，不使用模拟器增强"
-        )
-        return False
-
     async def _resolve_adb_address(self) -> tuple[str, DeviceInfo | None]:
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
-
-        configured_address, source = self._configured_adb_address()
-        if configured_address:
-            self._cached_adb_address = configured_address
-            self._append_log(f"使用{source}的 ADB 地址: {configured_address}")
-            return configured_address, None
-
         if self.emulator_manager is None:
-            raise RuntimeError(
-                "当前 controller 需要 ADB，请在脚本管理页选择模拟器，或填写 ADB 地址"
-            )
+            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
 
         emulator_index = self.script_config.get("Emulator", "Index")
         if emulator_index in ("", "-"):
-            raise RuntimeError(
-                "当前 controller 需要 ADB，请在脚本管理页选择模拟器实例，或填写 ADB 地址"
-            )
+            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
 
         package_name = await self._resolve_game_package()
         self._launched_package_name = package_name
@@ -1323,19 +1268,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
                 emulator_type = str(emulator_config.get("Info", "Type") or "")
                 emulator_path = Path(emulator_config.get("Info", "Path"))
-            # 雷电 / MuMu 下面要按实例号建增强；填了 ADB 地址时先确认地址就是这个实例
-            configured_address, _ = self._configured_adb_address()
-            if (
-                emulator_type in {"ldplayer", "mumu"}
-                and configured_address
-                and not await self._emulator_serves_address(
-                    emulator_index, configured_address
-                )
-            ):
-                self._cached_adb_profile = MaaFWAdbControlProfile(
-                    None, False, False, {}
-                )
-                return self._cached_adb_profile
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -1560,6 +1492,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
             self.script_config
         )
+        loop_guard = loop_guard_from_config(self.script_config)
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
@@ -1570,6 +1503,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     run_deadline_at=run_deadline_at,
                     task_time_limit_seconds=task_limit_seconds,
                     task_time_limit_overrides=task_limit_overrides,
+                    loop_guard=loop_guard,
                 ),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
@@ -1589,6 +1523,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
@@ -1698,6 +1633,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 run_deadline_at=run_deadline_at,
                 task_time_limit_seconds=task_time_limit_seconds,
                 task_time_limit_overrides=task_time_limit_overrides,
+                loop_guard=loop_guard,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
@@ -3241,25 +3177,6 @@ def _has_input_text_command(config: dict[str, Any]) -> bool:
     return isinstance(command, dict) and bool(command.get("InputText"))
 
 
-def _same_adb_device(left: str, right: str) -> bool:
-    """两个 ADB 地址是否指向同一台设备。
-
-    只抹平最常见的写法差异：``localhost`` 与 ``127.0.0.1``，以及本机模拟器的
-    ``emulator-<控制台端口>`` 与 ``127.0.0.1:<控制台端口 + 1>``（雷电没开时报的就是前一种）。
-    """
-
-    def normalize(address: str) -> str:
-        address = address.strip().lower()
-        console_port = address.removeprefix("emulator-")
-        if console_port != address and console_port.isdigit():
-            return f"127.0.0.1:{int(console_port) + 1}"
-        if address.startswith("localhost:"):
-            return "127.0.0.1:" + address.removeprefix("localhost:")
-        return address
-
-    return normalize(left) == normalize(right)
-
-
 def _load_json_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -3317,6 +3234,15 @@ def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
         ).items()
     }
     return default_seconds, overrides
+
+
+def loop_guard_from_config(config: Any) -> bool:
+    """读 Run.LoopGuard（原地打转检测，实验性，默认关）；读不到或写坏都按关。"""
+
+    try:
+        return config.get("Run", "LoopGuard") is True
+    except Exception:
+        return False
 
 
 def _load_json_list(value: Any) -> list[str]:

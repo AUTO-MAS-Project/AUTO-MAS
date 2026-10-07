@@ -1230,6 +1230,28 @@ async def import_maafw_shell_instances(
 
 
 @router.post(
+    "/maafw/shell-instances/apply",
+    tags=["MaaFW"],
+    summary="把一份外壳配置的任务队列覆盖到已有用户",
+    response_model=MaaFWShellInstanceApplyOut,
+    status_code=200,
+)
+async def apply_maafw_shell_instance(
+    payload: MaaFWShellInstanceApplyIn = Body(...),
+) -> MaaFWShellInstanceApplyOut:
+    """脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+
+    与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+    覆盖的是任务队列与任务选项，用户名不动。
+    """
+
+    reply = await maafw_shell_instances_api.apply_shell_instance_to_user(
+        payload.scriptId, payload.userId, payload.instanceId, payload.path
+    )
+    return MaaFWShellInstanceApplyOut(**reply.out_fields())
+
+
+@router.post(
     "/maafw/game-package",
     tags=["MaaFW"],
     summary="按所选 resource 推断 MFW 项目的安卓游戏包名",

@@ -71,7 +71,7 @@ from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
-    find_pids_by_name,
+    kill_pids_by_name,
     push_dispatch_log,
     read_config_source,
     split_args,
@@ -2097,12 +2097,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         try:
             # 全进程扫描放到线程里，不阻塞事件循环
-            for pid in await asyncio.to_thread(find_pids_by_name, _ZZZ_GAME_PROCESS):
-                try:
-                    await System.kill_process_by_pid(pid)
-                except Exception as e:
-                    logger.opt(exception=True).warning(
-                        f"结束游戏进程失败 PID: {pid}, {e}"
-                    )
+            failed = await kill_pids_by_name(_ZZZ_GAME_PROCESS)
+            if failed:
+                message = f"有 {failed} 个绝区零游戏进程未能结束，请人工确认关闭"
+                logger.warning(message)
+                await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")

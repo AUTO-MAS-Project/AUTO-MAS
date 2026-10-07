@@ -54,8 +54,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.utils.io import read_file, write_file
+from app.utils.io import read_dict_file, write_file
 from app.utils.logger import get_logger
+
+from .zzz_od_config import _YAML_LOCK
 
 logger = get_logger("ZZZ-OD 任务配置")
 
@@ -898,6 +900,7 @@ def restore_plan_run_times(
     的进度回写，不中断同槽其余产物恢复，也不冒泡阻断调用方。读取按
     ``.sanitized.yaml``（与快照侧同口径），写回直接用已持有的整份数据——不再
     经 ``write_app_config`` 二次严格读盘，否则坏档时那一次读会白丢本 app 进度。
+    读-改-写与 :func:`write_app_config` 同持 ``_YAML_LOCK``，避免与并发保存丢字段。
     """
 
     if not snapshot:
@@ -909,23 +912,24 @@ def restore_plan_run_times(
         # 整个 app 包 try：读或写失败都只丢这一个 app 的进度回写，不阻断同槽
         # 其余产物恢复（尤其不能挡住运行记录回写，那会让周期进度被还原回滚）
         try:
-            data = read_app_config(root, slot_idx, app_id, format=".sanitized.yaml")
-            items = data.get(field)
-            if not isinstance(items, list):
-                continue
-            changed = False
-            for item in items:
-                if not isinstance(item, dict):
+            with _YAML_LOCK:
+                data = read_app_config(root, slot_idx, app_id, format=".sanitized.yaml")
+                items = data.get(field)
+                if not isinstance(items, list):
                     continue
-                plan_id = str(item.get("plan_id") or "").strip()
-                if (
-                    plan_id in runs
-                    and _as_run_times(item.get("run_times")) != runs[plan_id]
-                ):
-                    item["run_times"] = runs[plan_id]
-                    changed = True
-            if changed:
-                write_file(app_config_path(root, slot_idx, app_id), data)
+                changed = False
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    plan_id = str(item.get("plan_id") or "").strip()
+                    if (
+                        plan_id in runs
+                        and _as_run_times(item.get("run_times")) != runs[plan_id]
+                    ):
+                        item["run_times"] = runs[plan_id]
+                        changed = True
+                if changed:
+                    write_file(app_config_path(root, slot_idx, app_id), data)
         except Exception as exc:  # noqa: BLE001 - 坏档只丢该 app 进度，不阻断恢复
             logger.warning(f"计划进度回写失败，跳过该任务：{app_id}: {exc}")
 
@@ -945,7 +949,9 @@ def read_app_config(
     ``.sanitized.yaml`` 才能容错读回（见 ``app.utils.io``），否则严格解析会抛异常。
     """
 
-    return dict(read_file(app_config_path(root, slot_idx, app_id), format=format) or {})
+    return read_dict_file(
+        app_config_path(root, slot_idx, app_id), format=format, allow_empty=True
+    )
 
 
 def write_app_config(
@@ -954,7 +960,8 @@ def write_app_config(
     """按 patch 更新应用配置（读-改-写，保留未知字段），返回完整配置。"""
 
     path = app_config_path(root, slot_idx, app_id)
-    data = read_file(path) or {}
-    data.update(values)
-    write_file(path, data)
-    return data
+    with _YAML_LOCK:
+        data = read_dict_file(path, allow_empty=True)
+        data.update(values)
+        write_file(path, data)
+        return data

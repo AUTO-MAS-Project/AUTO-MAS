@@ -168,6 +168,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getAppPath: (name: string) => ipcRenderer.invoke('get-app-path', name),
 
+  // 自定义外观包：主进程完成 ZIP 校验后只返回已声明素材的 data URL。
+  listAppearances: () => ipcRenderer.invoke('appearance:list'),
+  getAppearance: (id: string) => ipcRenderer.invoke('appearance:get', id),
+  importAppearance: (zipPath: string, replace = false) =>
+    ipcRenderer.invoke('appearance:import', zipPath, replace),
+  removeAppearance: (id: string) => ipcRenderer.invoke('appearance:remove', id),
+  clearInvalidAppearance: (expectedId: string) =>
+    ipcRenderer.invoke('appearance:clear-invalid', expectedId),
+  onAppearanceChanged: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('appearance-changed', listener)
+    return () => ipcRenderer.removeListener('appearance-changed', listener)
+  },
+  onThemeConfigChanged: (callback: (config: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, config: unknown) => callback(config)
+    ipcRenderer.on('theme-config-changed', listener)
+    return () => ipcRenderer.removeListener('theme-config-changed', listener)
+  },
+
   // ==================== 初始化 API ====================
 
   // 单步初始化API

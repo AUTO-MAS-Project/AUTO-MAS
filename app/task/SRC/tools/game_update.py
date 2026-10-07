@@ -95,9 +95,9 @@ async def _resolve_download_link(url: str) -> tuple[str, str] | None:
     """
 
     final_url = ""
+    current_url = url
     try:
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            current_url = url
             for _ in range(_MAX_REDIRECT_HOPS):
                 async with client.stream("GET", current_url, timeout=15.0) as response:
                     if not response.is_redirect:
@@ -115,7 +115,8 @@ async def _resolve_download_link(url: str) -> tuple[str, str] | None:
                 )
                 return None
     except Exception as e:
-        logger.warning(f"解析下载地址失败: {e}")
+        # httpx 的超时异常消息是空串，只打 {e} 会留下一行看不出原因的「解析下载地址失败: 」
+        logger.warning(f"解析下载地址失败（{current_url}）: {type(e).__name__}: {e}")
         return None
 
     match = _VERSION_IN_NAME_RE.search(final_url.rsplit("/", 1)[-1])

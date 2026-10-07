@@ -17,6 +17,7 @@
     v-model:open="modalOpen"
     :tasks="tasks"
     :values="storedOverrides"
+    :loop-guard="loopGuard"
     :default-minutes="defaultMinutes"
     @save="handleSave"
   />
@@ -37,6 +38,8 @@ import {
 const props = defineProps<{
   /** 脚本配置 Run.TaskTimeLimitOverrides（JSON 字符串） */
   value: string | Record<string, number> | undefined
+  /** 脚本配置 Run.LoopGuard（原地打转检测，开关在弹窗里） */
+  loopGuard: boolean
   /** interface 的全部任务（与周期跳过下拉同一份选项） */
   tasks: Array<{ label: string; value: string }>
   /** 全局默认的单任务时限（分钟） */
@@ -46,8 +49,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 保存后的 Run.TaskTimeLimitOverrides（JSON 字符串） */
-  save: [value: string]
+  /** 保存后的 Run.TaskTimeLimitOverrides（JSON 字符串）与 Run.LoopGuard */
+  save: [value: string, loopGuard: boolean]
 }>()
 
 const { t } = useI18n()
@@ -63,8 +66,8 @@ const summary = computed(() => {
     : t('edit.taskTimeLimitAllDefault')
 })
 
-const handleSave = (values: TaskTimeLimitOverrides) => {
-  emit('save', stringifyTaskLimitOverrides(values))
+const handleSave = (values: TaskTimeLimitOverrides, loopGuard: boolean) => {
+  emit('save', stringifyTaskLimitOverrides(values), loopGuard)
 }
 </script>
 

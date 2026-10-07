@@ -135,7 +135,7 @@ def save_native_account_fields(root, slot_idx: int, values: dict[str, str]) -> N
     # 读快照→算补丁→写盘全程持锁：前端逐字段保存是并发请求，
     # 快照在锁外读取会让后完成的整组提交覆盖先落盘的字段变更
     with _YAML_LOCK:
-        from app.utils.io import read_file
+        from app.utils.io import read_dict_file
 
         allowed = {meta["key"] for meta in _NATIVE_ACCOUNT_FIELDS}
         unknown = {str(k) for k in values} - allowed
@@ -143,7 +143,7 @@ def save_native_account_fields(root, slot_idx: int, values: dict[str, str]) -> N
             raise ValueError(f"不支持的账号配置字段: {', '.join(sorted(unknown))}")
 
         slot_path = instance_dir(root, int(slot_idx)) / "game_account.yml"
-        existing = read_file(slot_path) or {}
+        existing = read_dict_file(slot_path, allow_empty=True)
         patch: dict[str, str] = {}
         for raw_k, raw_v in values.items():
             key = str(raw_k)

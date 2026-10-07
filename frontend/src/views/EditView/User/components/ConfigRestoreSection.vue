@@ -47,7 +47,11 @@
               <a-button type="link" size="small" @click="handlePreview(item)">
                 {{ t('edit.configRestorePreview') }}
               </a-button>
-              <a-button size="small" :disabled="disabled" @click="confirmRestore(item)">
+              <a-button
+                size="small"
+                :disabled="disabled || isRestoreBlocked(item)"
+                @click="confirmRestore(item)"
+              >
                 {{ t('edit.configRestoreAction') }}
               </a-button>
             </a-space>
@@ -72,11 +76,23 @@
     </template>
     <a-spin :spinning="previewLoading">
       <p v-if="previewError" class="restore-desc">{{ previewError }}</p>
+      <a-alert
+        v-if="previewWarnings.length"
+        class="preview-warning"
+        type="warning"
+        show-icon
+        :message="t('edit.configRestoreUnrestorableTitle')"
+      >
+        <template #description>
+          <div>{{ t('edit.configRestoreUnrestorableDesc') }}</div>
+          <div v-for="warning in previewWarnings" :key="warning">{{ warning }}</div>
+        </template>
+      </a-alert>
       <!-- 自定义预览：专项通过 #preview 插槽完全接管预览区（字段型适配器等）；
            raw 为后端预览响应原文（内置 info/account/tasks/instances 之外的
            自定义结构从这里取） -->
       <slot
-        v-else
+        v-if="!previewError"
         name="preview"
         :data="previewData"
         :raw="previewRaw"
@@ -183,7 +199,7 @@
           v-if="onDetail"
           :title="t('edit.configRestoreDetailHint', { script: scriptName })"
         >
-          <a-button :disabled="disabled" @click="handlePreviewDetail">
+          <a-button :disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail">
             {{ t('edit.configRestoreDetailView') }}
           </a-button>
         </a-tooltip>
@@ -350,6 +366,7 @@ const backups = ref<BackupItem[]>([])
 const backupsLoading = ref(false)
 /** 当前配置来源（仅三态专项非空）：与备份标签比对决定是否提示跨来源 */
 const currentSource = ref<string | null>(null)
+const blockedRestoreTimes = ref(new Set<string>())
 
 const formatBackupTime = (ts: string) =>
   `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
@@ -360,8 +377,11 @@ const modeTag = (mode: string): { label: string; color: string } => ({
   color: sourceTagColor(mode),
 })
 
+const isRestoreBlocked = (item: BackupItem): boolean => blockedRestoreTimes.value.has(item.time)
+
 const loadBackups = async () => {
   backupsLoading.value = true
+  blockedRestoreTimes.value.clear()
   try {
     const resp = await props.api.list(restoreTarget.value)
     if (resp.code !== 200) {
@@ -397,6 +417,8 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const previewTime = ref('')
 const previewItem = ref<BackupItem | null>(null)
+const previewWarnings = ref<string[]>([])
+const previewRestoreAllowed = ref(true)
 // 预览响应原文：内置 info/account/tasks/instances 之外的自定义预览
 // 结构通过 #preview 插槽的 raw 取用
 const previewRaw = ref<unknown>(null)
@@ -471,17 +493,31 @@ const handlePreview = async (item: BackupItem) => {
   previewError.value = ''
   previewTime.value = formatBackupTime(item.time)
   previewItem.value = item
+  previewWarnings.value = []
+  previewRestoreAllowed.value = true
   try {
     const resp = await props.api.preview(restoreTarget.value, item.time)
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.configRestorePreviewFailed'))
     }
     // 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构（向后兼容）
-    const payload = (resp.data ?? resp) as typeof resp
+    const payload = (resp.data ?? resp) as typeof resp & {
+      warnings?: unknown
+      restoreAllowed?: unknown
+    }
     previewData.info = payload.info ?? []
     previewData.account = payload.account ?? []
     previewData.tasks = payload.tasks ?? []
     previewData.instances = payload.instances ?? []
+    previewWarnings.value = Array.isArray(payload.warnings)
+      ? payload.warnings.filter(
+          (warning: unknown): warning is string => typeof warning === 'string'
+        )
+      : []
+    previewRestoreAllowed.value =
+      payload.restoreAllowed !== false && previewWarnings.value.length === 0
+    if (previewRestoreAllowed.value) blockedRestoreTimes.value.delete(item.time)
+    else blockedRestoreTimes.value.add(item.time)
     previewRaw.value = payload
   } catch (e) {
     previewError.value = e instanceof Error ? e.message : t('edit.configRestorePreviewFailed')
@@ -489,6 +525,11 @@ const handlePreview = async (item: BackupItem) => {
     previewData.account = []
     previewData.tasks = []
     previewData.instances = []
+    // 预览请求失败≠备份损坏：只锁恢复并展示错误文本，不弹
+    // 「备份内容不完整」警示（该警示仅用于后端返回的 warnings）
+    previewWarnings.value = []
+    previewRestoreAllowed.value = false
+    blockedRestoreTimes.value.add(item.time)
     previewRaw.value = null
   } finally {
     previewLoading.value = false
@@ -499,6 +540,7 @@ const handlePreview = async (item: BackupItem) => {
 // 确认/恢复成功后才关预览——取消或失败时保持预览打开，避免重看要重新点开
 const handlePreviewDetail = async () => {
   if (props.disabled || !previewItem.value) return
+  if (!previewRestoreAllowed.value) return
   const restored = await props.onDetail?.(
     restoreTarget.value,
     previewItem.value,
@@ -572,6 +614,9 @@ const runRestore = async (item: BackupItem, force = false) => {
   if (props.disabled) {
     throw new Error(t('edit.configLocked'))
   }
+  if (isRestoreBlocked(item)) {
+    throw new Error(t('edit.configRestoreUnrestorableDesc'))
+  }
   const resp = await props.api.restore(restoreTarget.value, item.time, force)
   if (resp.code === 200) {
     return resp
@@ -616,6 +661,7 @@ const finishRestore = async (item: BackupItem) => {
 /** 恢复确认（单弹窗）：跨来源时换标题并追加来源切换说明，确认后由基座切来源再恢复 */
 const confirmRestore = (item: BackupItem) => {
   if (props.disabled) return
+  if (isRestoreBlocked(item)) return
   const { title, paragraphs } = buildRestoreConfirm(
     t,
     { title: t('edit.configRestoreConfirmTitle'), desc: t('edit.configRestoreConfirmDesc') },
@@ -667,6 +713,10 @@ const confirmRestore = (item: BackupItem) => {
   margin: 0 0 12px;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
+}
+
+.preview-warning {
+  margin-bottom: 12px;
 }
 
 /* 当前配置来源：与描述同段换行展示，供用户比对各备份的来源标签 */
