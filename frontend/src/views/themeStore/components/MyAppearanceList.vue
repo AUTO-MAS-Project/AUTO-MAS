@@ -4,7 +4,7 @@ import { SkinOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
-import { getMyAppearanceState, type MyAppearanceState } from '../myAppearance'
+import { getMyAppearanceState, isInStore, type MyAppearanceState } from '../myAppearance'
 import { formatOnlineAppearanceTime } from '../useOnlineAppearance'
 import type { MyAppearanceStore } from '../useMyAppearances'
 import AppearanceDescriptionModal from './AppearanceDescriptionModal.vue'
@@ -43,8 +43,20 @@ const stateLabel = (state: MyAppearanceState): string => {
     case 'pending':
       return t('themeStore.mine.pending', { version: state.latest })
     case 'rejected':
-      return t('themeStore.mine.rejected', { version: state.latest })
+      return state.published === null
+        ? t('themeStore.mine.rejected', { version: state.latest })
+        : t('themeStore.mine.publishedRejected', {
+            published: state.published,
+            latest: state.latest,
+          })
   }
+}
+
+// 正常状态不标；归档、停用的文件不在商店里，要让作者知道
+const fileStatusLabel = (status: string): string | null => {
+  if (status === 'archived') return t('themeStore.mine.archived')
+  if (status === 'disabled') return t('themeStore.mine.disabled')
+  return null
 }
 
 const editDescription = (item: MyAppearanceItem): void => {
@@ -87,7 +99,12 @@ const editDescription = (item: MyAppearanceItem): void => {
         </a-tag>
       </span>
       <div class="mine-card-body">
-        <span class="mine-name">{{ item.displayName || item.fileKey }}</span>
+        <span class="mine-name">
+          {{ item.displayName || item.fileKey }}
+          <a-tag v-if="fileStatusLabel(item.status)" class="mine-status-tag">
+            {{ fileStatusLabel(item.status) }}
+          </a-tag>
+        </span>
         <span class="mine-meta">{{ formatOnlineAppearanceTime(item.updatedAt) }}</span>
         <span class="mine-description">
           {{ item.description || t('themeStore.noDescription') }}
@@ -106,7 +123,7 @@ const editDescription = (item: MyAppearanceItem): void => {
             {{ t('themeStore.mine.editDescription') }}
           </a-button>
           <a-button
-            v-if="item.publishedVersionNo !== null"
+            v-if="isInStore(item)"
             size="small"
             type="link"
             @click="emit('view-in-store', item)"
@@ -195,6 +212,11 @@ const editDescription = (item: MyAppearanceItem): void => {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mine-status-tag {
+  margin-inline: 6px 0;
+  font-weight: 400;
 }
 
 .mine-meta {

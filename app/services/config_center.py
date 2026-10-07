@@ -618,6 +618,8 @@ class ConfigCenterClient:
     async def list_my_appearances(self) -> List[Dict[str, Any]]:
         """当前登录账号在分享站外观分类下的全部文件, 含待审核和被驳回的。
 
+        作者自己删掉 (回收站里) 的不列出。
+
         Raises:
             ConfigCenterError: 未登录、登录已过期或分享站拒绝。
         """
@@ -640,7 +642,7 @@ class ConfigCenterClient:
             items.extend(
                 self._build_my_appearance(item)
                 for item in page_items
-                if isinstance(item, dict)
+                if isinstance(item, dict) and item.get("status") != "recycled"
             )
             pagination = data.get("pagination", {}) or {}
             if not pagination.get("has_next") or not page_items:

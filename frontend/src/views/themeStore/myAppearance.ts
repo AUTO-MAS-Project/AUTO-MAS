@@ -10,13 +10,13 @@ export type MyAppearanceState =
   | { kind: 'published'; published: number }
   | { kind: 'publishedPending'; published: number; latest: number }
   | { kind: 'pending'; latest: number }
-  | { kind: 'rejected'; latest: number; comment: string }
+  | { kind: 'rejected'; published: number | null; latest: number; comment: string }
 
 export function getMyAppearanceState(item: MyAppearanceItem): MyAppearanceState {
   const published = item.publishedVersionNo
   const latest = item.latestVersionNo
   if (item.latestReviewStatus === 'rejected') {
-    return { kind: 'rejected', latest, comment: item.latestReviewComment.trim() }
+    return { kind: 'rejected', published, latest, comment: item.latestReviewComment.trim() }
   }
   if (published !== null) {
     if (item.latestReviewStatus === 'pending' && latest !== published) {
@@ -25,6 +25,11 @@ export function getMyAppearanceState(item: MyAppearanceItem): MyAppearanceState 
     return { kind: 'published', published }
   }
   return { kind: 'pending', latest }
+}
+
+/** 归档、停用的文件不在公开列表里，只有正常且发布过的才能去商店看。 */
+export function isInStore(item: MyAppearanceItem): boolean {
+  return item.status === 'active' && item.publishedVersionNo !== null
 }
 
 /**

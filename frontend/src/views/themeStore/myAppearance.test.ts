@@ -5,6 +5,7 @@ import {
   getCoverModes,
   getMyAppearanceState,
   isCoverReady,
+  isInStore,
   pickUploadTarget,
   toStoreItem,
 } from './myAppearance'
@@ -60,10 +61,19 @@ describe('getMyAppearanceState', () => {
           latestReviewComment: '  封面糊了 ',
         })
       )
-    ).toEqual({ kind: 'rejected', latest: 3, comment: '封面糊了' })
+    ).toEqual({ kind: 'rejected', published: 2, latest: 3, comment: '封面糊了' })
     expect(
       getMyAppearanceState(mine({ publishedVersionNo: null, latestReviewStatus: 'rejected' }))
-    ).toEqual({ kind: 'rejected', latest: 2, comment: '' })
+    ).toEqual({ kind: 'rejected', published: null, latest: 2, comment: '' })
+  })
+})
+
+describe('isInStore', () => {
+  it('needs an active file with a published version', () => {
+    expect(isInStore(mine())).toBe(true)
+    expect(isInStore(mine({ publishedVersionNo: null }))).toBe(false)
+    expect(isInStore(mine({ status: 'archived' }))).toBe(false)
+    expect(isInStore(mine({ status: 'disabled' }))).toBe(false)
   })
 })
 
