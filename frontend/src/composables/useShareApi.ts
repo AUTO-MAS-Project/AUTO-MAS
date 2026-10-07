@@ -2,11 +2,13 @@ import { ref } from 'vue'
 import {
   ApiError,
   Service,
+  type ShareAppearanceMineItem,
   type ShareAppearanceUploadItem,
   ShareAppearanceUploadOut,
   type ShareAuthStatusOut,
   type ShareRiskItem,
 } from '@/api'
+import { translate as t } from '@/i18n'
 
 export type { ShareRiskItem }
 
@@ -26,9 +28,38 @@ export interface AppearanceUploadPayload {
   changeNote: string
   /** 已上传文件的 ID；传了就给那个文件发新版本。 */
   fileId?: number | null
-  /** 封面图片路径；不传时后端用外观包 theme.json 的 preview。 */
+  /** 封面来源：package 包里的 preview，custom 用 coverPath，inherit 沿用分享站上的封面（只能发新版本）。 */
+  coverMode: AppearanceCoverMode
+  /** 封面图片路径，coverMode 为 custom 时使用。 */
   coverPath?: string | null
 }
+
+export type AppearanceCoverMode = 'package' | 'custom' | 'inherit'
+
+/** 分享站拒绝上传的类别：待审核数超限、名称被占用或内容未变、超过体积上限。 */
+export type AppearanceUploadRejection = 'pendingLimit' | 'conflict' | 'tooLarge'
+
+export type MyAppearanceReviewStatus = 'pending' | 'approved' | 'rejected'
+
+/** 当前账号在分享站上的一个外观（含待审核、被驳回的）。 */
+export interface MyAppearanceItem {
+  fileId: number
+  fileKey: string
+  displayName: string
+  description: string
+  status: string
+  publishedVersionNo: number | null
+  latestVersionNo: number
+  latestReviewStatus: MyAppearanceReviewStatus | null
+  latestReviewComment: string
+  latestHasCover: boolean
+  updatedAt: string
+}
+
+/** code 沿用后端：401 未登录或已过期，其余为分享站状态码或本地错误。 */
+export type ShareCallResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: number; message: string }
 
 export interface AppearanceUploadData {
   fileId: number
@@ -42,7 +73,7 @@ export interface AppearanceUploadData {
 /** code 沿用后端：400 外观包不合法、401 未登录或已过期、409/413/429 分享站拒绝、503 网络失败。 */
 export type AppearanceUploadResult =
   | { ok: true; data: AppearanceUploadData }
-  | { ok: false; code: number; message: string }
+  | { ok: false; code: number; message: string; reason?: AppearanceUploadRejection }
 
 // 生成客户端在非 2xx 时抛 ApiError，后端的说明在 body.message 里（如 422 的参数校验）
 const apiErrorMessage = (err: unknown, fallback: string): { code: number; message: string } => {
@@ -59,6 +90,20 @@ const apiErrorMessage = (err: unknown, fallback: string): { code: number; messag
   }
   return { code: 0, message: err instanceof Error ? err.message : fallback }
 }
+
+const toMyAppearance = (item: ShareAppearanceMineItem): MyAppearanceItem => ({
+  fileId: item.fileId,
+  fileKey: item.fileKey ?? '',
+  displayName: item.displayName ?? '',
+  description: item.description ?? '',
+  status: item.status ?? '',
+  publishedVersionNo: item.publishedVersionNo ?? null,
+  latestVersionNo: item.latestVersionNo ?? 0,
+  latestReviewStatus: item.latestReviewStatus ?? null,
+  latestReviewComment: item.latestReviewComment ?? '',
+  latestHasCover: item.latestHasCover ?? false,
+  updatedAt: item.updatedAt ?? '',
+})
 
 export type ShareAuthStatus = ShareAuthStatusOut['authStatus']
 
@@ -195,12 +240,18 @@ export function useShareApi() {
         description: payload.description,
         changeNote: payload.changeNote,
         fileId: payload.fileId ?? null,
-        coverPath: payload.coverPath ?? null,
+        coverMode: payload.coverMode,
+        coverPath: payload.coverMode === 'custom' ? (payload.coverPath ?? null) : null,
       })
       if (response.code !== 200) {
-        const message = response.message || '上传失败'
+        const message = response.message || t('themeStore.upload.failed')
         error.value = message
-        return { ok: false, code: response.code ?? 500, message }
+        return {
+          ok: false,
+          code: response.code ?? 500,
+          message,
+          ...(response.reason ? { reason: response.reason } : {}),
+        }
       }
       return {
         ok: true,
@@ -217,7 +268,7 @@ export function useShareApi() {
         },
       }
     } catch (err) {
-      const failure = apiErrorMessage(err, '上传失败')
+      const failure = apiErrorMessage(err, t('themeStore.upload.failed'))
       error.value = failure.message
       return { ok: false, ...failure }
     } finally {
@@ -241,6 +292,65 @@ export function useShareApi() {
     }
   }
 
+  /** 当前账号在分享站上的全部外观；失败时把状态码交给调用方（401 要刷新登录状态）。 */
+  const listMyAppearances = async (): Promise<ShareCallResult<MyAppearanceItem[]>> => {
+    try {
+      const response = await Service.listMyShareAppearancesApiShareAppearanceMinePost()
+      if (response.code !== 200) {
+        return {
+          ok: false,
+          code: response.code ?? 500,
+          message: response.message || t('themeStore.mine.loadFailed'),
+        }
+      }
+      return { ok: true, data: (response.data ?? []).map(toMyAppearance) }
+    } catch (err) {
+      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.loadFailed')) }
+    }
+  }
+
+  /** 自己外观某个版本的封面（data URL），不传版本取最新版本。 */
+  const getMyAppearanceCover = async (
+    fileId: number,
+    versionNo?: number
+  ): Promise<ShareCallResult<string>> => {
+    try {
+      const response = await Service.getMyShareAppearanceCoverApiShareAppearanceCoverPost({
+        fileId,
+        versionNo: versionNo ?? null,
+      })
+      if (response.code !== 200 || !response.dataUrl) {
+        return { ok: false, code: response.code ?? 500, message: response.message ?? '' }
+      }
+      return { ok: true, data: response.dataUrl }
+    } catch (err) {
+      return { ok: false, ...apiErrorMessage(err, '') }
+    }
+  }
+
+  const updateMyAppearanceDescription = async (
+    fileId: number,
+    description: string
+  ): Promise<ShareCallResult<MyAppearanceItem>> => {
+    try {
+      const response =
+        await Service.updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost({
+          fileId,
+          description,
+        })
+      if (response.code !== 200 || !response.data) {
+        return {
+          ok: false,
+          code: response.code ?? 500,
+          message: response.message || t('themeStore.mine.descriptionFailed'),
+        }
+      }
+      return { ok: true, data: toMyAppearance(response.data) }
+    } catch (err) {
+      return { ok: false, ...apiErrorMessage(err, t('themeStore.mine.descriptionFailed')) }
+    }
+  }
+
   return {
     loading,
     error,
@@ -252,5 +362,8 @@ export function useShareApi() {
     uploadShare,
     uploadAppearance,
     listAppearanceUploads,
+    listMyAppearances,
+    getMyAppearanceCover,
+    updateMyAppearanceDescription,
   }
 }

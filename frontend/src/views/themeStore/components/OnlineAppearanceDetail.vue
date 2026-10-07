@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ArrowLeftOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { computed, ref } from 'vue'
+import { message } from 'ant-design-vue'
+import {
+  ArrowLeftOutlined,
+  ClockCircleOutlined,
+  UploadOutlined,
+  UserOutlined,
+} from '@ant-design/icons-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
 
@@ -9,9 +15,17 @@ import {
   formatOnlineAppearanceTime,
   type OnlineAppearanceStore,
 } from '../useOnlineAppearance'
+import type { MyAppearanceStore } from '../useMyAppearances'
+import type { ShareAccount } from '../useShareAccount'
 
 const props = defineProps<{
   store: OnlineAppearanceStore
+  account: ShareAccount
+  mine: MyAppearanceStore
+}>()
+
+const emit = defineEmits<{
+  (event: 'upload-version', fileId: number): void
 }>()
 
 const { t } = useI18n()
@@ -33,6 +47,37 @@ const {
   install,
   backToList,
 } = props.store
+
+const { authorized, state: accountState } = props.account
+const locatingOwnFile = ref(false)
+
+const isOwner = computed(
+  () =>
+    authorized.value &&
+    Boolean(detailItem.value?.ownerUsername) &&
+    detailItem.value?.ownerUsername === accountState.value.username
+)
+
+// 公开详情只有 fileKey，按「我的主题」找到文件 id 再打开锁定目标的上传对话框
+const uploadVersion = async (): Promise<void> => {
+  const fileKey = detailItem.value?.fileKey
+  if (!fileKey || locatingOwnFile.value) return
+  locatingOwnFile.value = true
+  try {
+    let own = props.mine.findByFileKey(fileKey)
+    if (!own) {
+      await props.mine.load()
+      own = props.mine.findByFileKey(fileKey)
+    }
+    if (!own) {
+      message.warning(props.mine.error.value || t('themeStore.mine.notFound'))
+      return
+    }
+    emit('upload-version', own.fileId)
+  } finally {
+    locatingOwnFile.value = false
+  }
+}
 
 const versionOptions = computed(() =>
   versions.value.map(version => ({
@@ -189,6 +234,10 @@ const handleVersionChange = (value: SelectValue): void => {
         </dl>
 
         <div class="online-actions">
+          <a-button v-if="isOwner" :loading="locatingOwnFile" @click="uploadVersion">
+            <template #icon><UploadOutlined /></template>
+            {{ t('themeStore.mine.uploadVersion') }}
+          </a-button>
           <a-button
             type="primary"
             :loading="installing"
@@ -387,6 +436,8 @@ const handleVersionChange = (value: SelectValue): void => {
 
 .online-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 24px;
 }

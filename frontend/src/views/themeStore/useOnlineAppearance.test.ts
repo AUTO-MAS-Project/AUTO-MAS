@@ -263,6 +263,24 @@ describe('useOnlineAppearance', () => {
     expect(getOnlineAppearanceCover).toHaveBeenCalledTimes(1)
   })
 
+  it('drops cached covers on reset', async () => {
+    listOnlineAppearances.mockResolvedValue({
+      success: true,
+      items: [item({ hasCover: true })],
+      pagination: { page: 1, pageSize: 12, total: 1, hasNext: false },
+    })
+    const store = useOnlineAppearance({ install: vi.fn() })
+    await store.loadList(1)
+    await flush()
+    expect(store.coverFor('sakura', 2)).toBe('data:image/png;base64,sakura-2')
+
+    store.reset()
+    expect(store.coverFor('sakura', 2)).toBeUndefined()
+    await store.loadList(1)
+    await flush()
+    expect(getOnlineAppearanceCover).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the cover of the selected version while the package downloads', async () => {
     const store = useOnlineAppearance({ install: vi.fn() })
     await store.openDetail(item())

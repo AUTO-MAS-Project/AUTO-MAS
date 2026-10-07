@@ -8,9 +8,12 @@ import type {
   OnlineAppearancePreview,
   OnlineAppearanceVersion,
 } from '@/types/appearance'
+import { createCoverLoader, type CoverTask } from './coverLoader'
 
 export const ONLINE_APPEARANCE_PAGE_SIZE = 12
 export const ONLINE_APPEARANCE_SEARCH_DEBOUNCE = 400
+export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
+export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
 export type OnlineAppearanceInstallOutcome = 'installed' | 'cancelled' | 'failed'
@@ -113,44 +116,50 @@ export function useOnlineAppearance(options: {
     () => versions.value.find(item => item.versionNo === selectedVersionNo.value) ?? null
   )
 
-  // 封面按「file_key@版本」缓存在本页会话里；主进程另有一层缓存，翻页回来不会重复下载。
-  const covers = shallowRef<Record<string, string>>({})
-  const coverLoading = new Set<string>()
+  // 封面按「file_key@版本」缓存在本页会话里，条数有上限；主进程另有一层缓存，翻页回来不会重复下载。
+  // 一次最多并发 3 张，列表很长时也不会把分享站一下打满；重新加载列表时旧列表没开始的封面作废。
+  const coverLoader = createCoverLoader({
+    limit: ONLINE_APPEARANCE_COVER_CACHE_LIMIT,
+    concurrency: ONLINE_APPEARANCE_COVER_CONCURRENCY,
+  })
   const coverKey = (fileKey: string, versionNo: number): string => `${fileKey}@${versionNo}`
 
   const coverFor = (fileKey: string, versionNo: number | null): string | undefined =>
-    versionNo === null ? undefined : covers.value[coverKey(fileKey, versionNo)]
+    versionNo === null ? undefined : coverLoader.get(coverKey(fileKey, versionNo))
 
-  const ensureCover = async (fileKey: string, versionNo: number | null): Promise<void> => {
-    if (versionNo === null) return
+  const coverTask = (fileKey: string, versionNo: number): CoverTask => {
     const key = coverKey(fileKey, versionNo)
-    if (covers.value[key] || coverLoading.has(key)) return
-    coverLoading.add(key)
-    try {
-      const result = await api().getOnlineAppearanceCover?.(fileKey, versionNo)
-      if (result?.success && result.dataUrl) {
-        covers.value = { ...covers.value, [key]: result.dataUrl }
-      } else if (result && result.code !== 'NOT_FOUND') {
-        logger.warn(`加载外观封面失败: ${key}，${result.error ?? result.code ?? '未知错误'}`)
-      }
-    } catch (error) {
-      logger.warn(
-        `加载外观封面失败: ${key}，${error instanceof Error ? error.message : String(error)}`
-      )
-    } finally {
-      coverLoading.delete(key)
+    return {
+      key,
+      run: async () => {
+        try {
+          const result = await api().getOnlineAppearanceCover?.(fileKey, versionNo)
+          if (result?.success && result.dataUrl) return result.dataUrl
+          if (result && result.code !== 'NOT_FOUND') {
+            logger.warn(`加载外观封面失败: ${key}，${result.error ?? result.code ?? '未知错误'}`)
+          }
+        } catch (error) {
+          logger.warn(
+            `加载外观封面失败: ${key}，${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+        return null
+      },
     }
   }
 
-  // 一次最多并发 3 张，列表很长时也不会把分享站一下打满。
-  const loadCovers = async (list: OnlineAppearanceItem[]): Promise<void> => {
-    const queue = list.filter(item => item.hasCover && item.publishedVersionNo !== null)
-    const worker = async (): Promise<void> => {
-      for (let item = queue.shift(); item; item = queue.shift()) {
-        await ensureCover(item.fileKey, item.publishedVersionNo)
-      }
-    }
-    await Promise.all([worker(), worker(), worker()])
+  const ensureCover = (fileKey: string, versionNo: number | null): void => {
+    if (versionNo !== null) coverLoader.request(coverTask(fileKey, versionNo))
+  }
+
+  const loadCovers = (list: OnlineAppearanceItem[]): void => {
+    coverLoader.load(
+      list.flatMap(item =>
+        item.hasCover && item.publishedVersionNo !== null
+          ? [coverTask(item.fileKey, item.publishedVersionNo)]
+          : []
+      )
+    )
   }
 
   const detailCover = computed(() => {
@@ -203,7 +212,7 @@ export function useOnlineAppearance(options: {
       items.value = result.items ?? []
       page.value = result.pagination?.page ?? targetPage
       total.value = result.pagination?.total ?? items.value.length
-      void loadCovers(items.value)
+      loadCovers(items.value)
     } catch (error) {
       if (revision !== listRevision) return
       items.value = []
@@ -328,7 +337,7 @@ export function useOnlineAppearance(options: {
     }
     if (revision !== detailRevision || selectedVersionNo.value === null) return
     if (selectedVersion.value?.hasCover && detailItem.value) {
-      void ensureCover(detailItem.value.fileKey, selectedVersionNo.value)
+      ensureCover(detailItem.value.fileKey, selectedVersionNo.value)
     }
     await prepareSelected()
   }
@@ -343,7 +352,7 @@ export function useOnlineAppearance(options: {
     const version = versions.value.find(item => item.versionNo === versionNo)
     if (!version) return
     selectedVersionNo.value = versionNo
-    if (version.hasCover && detailItem.value) void ensureCover(detailItem.value.fileKey, versionNo)
+    if (version.hasCover && detailItem.value) ensureCover(detailItem.value.fileKey, versionNo)
     void prepareSelected()
   }
 
@@ -391,6 +400,7 @@ export function useOnlineAppearance(options: {
     total.value = 0
     keyword.value = ''
     installing.value = false
+    coverLoader.reset()
   }
 
   return {
