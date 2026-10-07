@@ -2387,6 +2387,9 @@ export default {
     configRestoreCorruptedDesc:
       'Force restore skips the safety checks related to this file (pre-restore backup and occupancy guard) and may overwrite existing configs. Continue?',
     configRestoreForceAction: 'Force restore',
+    configRestoreUnrestorableTitle: 'This backup cannot be restored',
+    configRestoreUnrestorableDesc:
+      'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',

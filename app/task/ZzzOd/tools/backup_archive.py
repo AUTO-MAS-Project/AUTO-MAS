@@ -64,6 +64,10 @@ from .zzz_od_config import (
     instance_dir,
     launch_args_patch,
     normalize_app_group_entries,
+    read_app_group,
+    read_game,
+    read_game_account,
+    read_team_list,
     restore_instance_view,
     user_field_patch,
     write_app_group,
@@ -215,6 +219,94 @@ def read_native_registry(root: Path) -> dict:
     return data
 
 
+def inspect_onedragon_backup(backup_dir: Path) -> tuple[dict, list[str]]:
+    """检查一条龙备份内的注册表并返回（内容，警示）。
+
+    缺少 ``instance_list`` 或列表为空是上游允许的空注册表状态；备份目录
+    本身缺少注册表、注册表无法解析、结构不可信，或含 MAS 合成槽时都不能
+    恢复。预览需要在这些情况下仍返回可读的警示，因此这里不直接抛异常。
+    """
+
+    registry = backup_dir / "one_dragon.yml"
+    if not registry.is_file():
+        return {}, [f"原生备份缺少注册表：{registry}"]
+    try:
+        data = read_dict_file(registry, format=".sanitized.yaml")
+    except ConfigCorruptedError as exc:
+        return {}, [f"原生备份注册表损坏，无法恢复：{exc}"]
+
+    if "instance_list" not in data:
+        # 缺键是合法空注册表，仍需继续校验备份内的实例目录。
+        entries: object = []
+    else:
+        entries = data["instance_list"]
+    warnings: list[str] = []
+    if entries is None:
+        warnings.append(
+            f"原生备份注册表结构错误：instance_list 不能为 null（{registry}）"
+        )
+    elif not isinstance(entries, list):
+        warnings.append(f"原生备份注册表结构错误：instance_list 不是列表（{registry}）")
+
+    if not isinstance(entries, list):
+        entries = []
+    for position, item in enumerate(entries):
+        if not isinstance(item, dict):
+            warnings.append(
+                f"原生备份注册表结构错误：instance_list[{position}] 不是对象（{registry}）"
+            )
+            continue
+        idx = item.get("idx")
+        if not isinstance(idx, int) or isinstance(idx, bool):
+            warnings.append(
+                f"原生备份注册表结构错误：instance_list[{position}].idx 无效（{registry}）"
+            )
+        if str(item.get("name") or "").startswith(MAS_SLOT_PREFIX):
+            warnings.append(
+                f"原生备份包含 MAS- 槽「{item.get('name')}」，不能恢复（{registry}）"
+            )
+    for rel_path in dir_files(backup_dir):
+        if "/" not in rel_path:
+            continue
+        idx_name = rel_path.split("/", 1)[0]
+        if not idx_name.isascii() or not idx_name.isdigit():
+            warnings.append(
+                f"原生备份目录结构错误：实例目录名无效「{idx_name}」（{backup_dir}）"
+            )
+    return data, warnings
+
+
+def validate_onedragon_backup(backup_dir: Path) -> dict:
+    """校验一条龙原生备份，失败时抛 ``ValueError``。
+
+    注册表结构、实例目录名与实例内已知 YAML 的内容全部通过才放行；调用方
+    必须在清理现场视图或归档当前配置之前执行；``force`` 不能跳过它，因为
+    强制恢复坏备份仍会破坏原生注册表与现场。
+    """
+
+    data, warnings = inspect_onedragon_backup(backup_dir)
+    # 注册表只定结构；实例目录内容在这里逐文件严格读取——恢复是整目录
+    # 换入，坏实例文件一旦落回现场，一条龙读到的就是损坏配置。已知四类
+    # 之外的文件属上游私有内容，只透传不校验。
+    idx_names = sorted(
+        {rel.split("/", 1)[0] for rel in dir_files(backup_dir) if "/" in rel}
+    )
+    for idx_name in idx_names:
+        if not idx_name.isascii() or not idx_name.isdigit():
+            continue  # 目录名无效已由 inspect 上报
+        idx_dir = backup_dir / idx_name
+        for reader in (read_game_account, read_game, read_app_group, read_team_list):
+            try:
+                reader(idx_dir)
+            except ConfigCorruptedError as exc:
+                warnings.append(
+                    f"原生备份实例 {int(idx_name):02d} 配置损坏，无法恢复：{exc}"
+                )
+    if warnings:
+        raise ValueError("；".join(warnings))
+    return data
+
+
 def collect_onedragon_files(root: Path) -> dict[str, Path]:
     """当前一条龙原生配置的文件集：one_dragon.yml（原生注册表）+ 注册表内原生实例目录。
 
@@ -304,6 +396,11 @@ def restore_onedragon_backup(
     backup_files = dir_files(backup_dir)
     if not backup_files:
         raise ValueError(f"备份内容为空: {ts}")
+
+    # 备份内容必须先通过原生校验（注册表结构 + 实例文件内容）；无论
+    # force 与否都不能把损坏内容写回现场。该步骤只读，故发生错误时现场、
+    # sidecar 与历史池均不变。
+    validate_onedragon_backup(backup_dir)
 
     if snapshot_current:
         read_native_registry(root)

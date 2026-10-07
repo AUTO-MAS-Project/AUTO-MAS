@@ -536,8 +536,7 @@ def restore_instance_view(root: Path) -> None:
 def read_game_account(config_dir: Path) -> dict:
     """读取账号配置（区服/游戏路径/账密/语言）。"""
 
-    data = read_file(config_dir / "game_account.yml") or {}
-    return dict(data)
+    return read_dict_file(config_dir / "game_account.yml", allow_empty=True)
 
 
 def write_game_account(config_dir: Path, patch: dict) -> dict:
@@ -545,7 +544,7 @@ def write_game_account(config_dir: Path, patch: dict) -> dict:
 
     path = config_dir / "game_account.yml"
     with _YAML_LOCK:
-        data = read_file(path) or {}
+        data = read_dict_file(path, allow_empty=True)
         data.update(patch)
         write_file(path, data)
         return data
@@ -630,8 +629,7 @@ def merge_dx12_argument(advance: str, dx12: bool) -> str:
 def read_game(config_dir: Path) -> dict:
     """读取游戏配置（启动参数等）。"""
 
-    data = read_file(config_dir / "game.yml") or {}
-    return dict(data)
+    return read_dict_file(config_dir / "game.yml", allow_empty=True)
 
 
 def write_game(config_dir: Path, patch: dict) -> dict:
@@ -639,7 +637,7 @@ def write_game(config_dir: Path, patch: dict) -> dict:
 
     path = config_dir / "game.yml"
     with _YAML_LOCK:
-        data = read_file(path) or {}
+        data = read_dict_file(path, allow_empty=True)
         data.update(patch)
         write_file(path, data)
         return data
@@ -683,7 +681,7 @@ def normalize_app_group_entries(items: list) -> list[dict]:
 def read_app_group(config_dir: Path) -> list[dict]:
     """读取一条龙任务编排（app_list，顺序即执行顺序，元素含 app_id/enabled）。"""
 
-    data = read_file(config_dir / "one_dragon" / "_group.yml") or {}
+    data = read_dict_file(config_dir / "one_dragon" / "_group.yml", allow_empty=True)
     return [
         dict(item) for item in (data.get("app_list") or []) if isinstance(item, dict)
     ]
@@ -701,7 +699,7 @@ def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
 def read_team_list(config_dir: Path) -> list[dict]:
     """读取预备编队原始持久化条目（team.yml 的 team_list）。"""
 
-    data = read_file(config_dir / "team.yml") or {}
+    data = read_dict_file(config_dir / "team.yml", allow_empty=True)
     return [
         dict(item) for item in (data.get("team_list") or []) if isinstance(item, dict)
     ]

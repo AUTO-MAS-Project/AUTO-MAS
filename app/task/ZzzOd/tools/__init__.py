@@ -36,6 +36,7 @@ from .backup_archive import (
     collect_onedragon_files,
     get_mas_backup_dir,
     get_onedragon_backup_dir,
+    inspect_onedragon_backup,
     list_mas_backups,
     list_onedragon_backups,
     list_recycle_entries,
@@ -52,6 +53,7 @@ from .backup_archive import (
     restore_mas_backup,
     restore_onedragon_backup,
     restore_recycle_slot,
+    validate_onedragon_backup,
 )
 from .catalog import list_app_catalog
 from .compendium import (
@@ -163,6 +165,7 @@ __all__ = [
     "find_free_instance_idx",
     "get_mas_backup_dir",
     "get_onedragon_backup_dir",
+    "inspect_onedragon_backup",
     "get_task_app_fields",
     "get_task_app_jump",
     "hollow_zero_challenge_options",
@@ -228,6 +231,7 @@ __all__ = [
     "user_field_patch",
     "validate_install",
     "validate_root",
+    "validate_onedragon_backup",
     "world_patrol_route_lists",
     "write_after_done",
     "write_app_config",
