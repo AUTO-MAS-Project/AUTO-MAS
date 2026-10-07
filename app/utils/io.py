@@ -623,8 +623,10 @@ def read_dict_file(
         raise ConfigCorruptedError(path) from exc
     if isinstance(data, dict):
         return data
-    if data is None and allow_empty and _is_empty_yaml_document(
-        path, format=format, raw=raw
+    if (
+        data is None
+        and allow_empty
+        and _is_empty_yaml_document(path, format=format, raw=raw)
     ):
         return {}
     raise ConfigCorruptedError(path)
