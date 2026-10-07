@@ -22,6 +22,12 @@ export default {
     doc: '文档',
     close: '关闭',
     unknown: '未知',
+    retry: '重试',
+    retryAction: '重试',
+    copyDiagnostics: '复制诊断信息',
+    copied: '已复制',
+    copyFailed: '复制失败，请手动选中文本',
+    diagnostics: '诊断信息',
   },
   comp: {
     changelog: {
@@ -282,6 +288,9 @@ export default {
     hardTimeoutHint:
       '包含启动、等待和全部重试，日志持续更新也不会延长时限；超时后终止本次运行，收尾完成后继续后续账号。',
     configLocked: '任务运行中，配置已锁定；任务结束后可编辑',
+    // ══ 保存/离开守卫（useEditorLeaveGuard）══
+    leaveBlockedByPendingSave: '仍有配置未确认落盘，已阻止离开；请等待保存完成或重试',
+    leaveBlockedByRejected: '保存未被后端接受，已阻止离开；请按提示处理后重试',
     close: '关闭',
     notifyServerChan: 'Server酱',
     notifyStatistics: '统计信息',
@@ -2688,6 +2697,7 @@ export default {
     bettergiProjectZoom: '缩放',
   },
   emulator: {
+    staleStatus: '设备状态可能不是最新的',
     title: '模拟器管理',
     type: {
       general: '通用模拟器',
@@ -2787,6 +2797,8 @@ export default {
     },
   },
   emulator2: {
+    staleDevices: '设备列表可能不是最新的',
+    previewFailed: '无法读取影响范围',
     pathsTitle: '模拟器',
     pathsHint: '可以添加多个，实例合并成一张表管理。支持雷电 14 与 MuMu 6',
     noPath: '还没有添加模拟器',
@@ -2936,6 +2948,7 @@ export default {
     },
   },
   gamesign: {
+    loadFailed: '加载游戏社区配置失败',
     title: '游戏社区',
     nav: {
       sign: '签到',
@@ -3102,6 +3115,8 @@ export default {
   },
   history: {
     title: '历史记录',
+    listLoadFailed: '历史记录加载失败',
+    staleList: '历史记录刷新失败，当前显示的是上一次的结果',
     dateList: '日期列表',
     noData: '无数据',
     empty: '暂无数据',
@@ -3512,6 +3527,12 @@ export default {
   },
   plan: {
     title: '计划管理',
+    listLoadFailed: '计划列表加载失败',
+    detailLoadFailed: '计划详情加载失败',
+    staleList: '计划列表刷新失败，当前显示的是上一次的结果',
+    staleDetail: '计划详情刷新失败，当前显示的是上一次的结果',
+    switchFailed: '切换计划失败，已退回原计划',
+    actionFailed: '操作失败，计划未保存',
     create: '新建计划',
     createTyped: '新建 {name}',
     deleteConfirm: '确定要删除这个计划吗？',
@@ -3664,6 +3685,13 @@ export default {
   },
   queue: {
     title: '调度队列',
+    listLoadFailed: '队列列表加载失败',
+    detailLoadFailed: '队列详情加载失败',
+    staleList: '队列列表刷新失败，当前显示的是上一次的结果',
+    staleDetail: '队列详情刷新失败，当前显示的是上一次的结果',
+    switchFailed: '切换队列失败，已退回原队列',
+    timeSetsStale: '定时项刷新失败，当前显示的是上一次的结果',
+    queueItemsStale: '队列项刷新失败，当前显示的是上一次的结果',
     loading: '加载中，请稍候...',
     create: '新建队列',
     deleteConfirm: '确定要删除这个队列吗？',
@@ -4149,6 +4177,35 @@ export default {
     saveFailed: '保存解锁状态失败，请重试',
   },
   setting: {
+    configLoad: {
+      title: '配置加载状态',
+      description: '只读：各配置文件本次加载的结果、损坏副本位置与自动纠正记录',
+      loading: '正在读取配置加载状态…',
+      loaded: '已读取配置加载状态',
+      loadFailed: '读取配置加载状态失败',
+      empty: '暂无配置加载记录',
+      path: '文件路径',
+      readAt: '读取时间：{time}',
+      fileTime: '文件写入时间（恢复备份会覆写该文件）',
+      backupPath: '损坏副本',
+      events: '自动纠正明细',
+      event: {
+        summary: '{field}：{old} → {new}',
+      },
+      status: {
+        ok: '正常',
+        empty: '空文件（按默认值加载）',
+        corruptRecovered: '损坏已恢复（已留副本）',
+        unreadable: '不可读',
+        defaulted: '已自动纠正',
+        unknown: '未知状态',
+      },
+    },
+    sync: {
+      syncing: '正在同步到 Electron…',
+      synced: '已同步到 Electron',
+      failed: '同步到 Electron 失败',
+    },
     title: '设置',
     versionFailed: '获取版本失败！',
     tab: {
@@ -4314,6 +4371,7 @@ export default {
       },
     },
     notify: {
+      webhookUnavailable: '未读取',
       contentSection: '通知内容',
       sendTest: '发送测试通知',
       resultTime: '推送任务结果时机',
@@ -4552,6 +4610,54 @@ export default {
       trayMenuSaveFailed: '托盘菜单保存失败',
       trayMenuReset: '已恢复默认托盘菜单',
     },
+  },
+  taskOutcome: {
+    saved: '已保存',
+    completed: '已完成',
+    completedWithoutWrite: '已完成，未写入改动',
+    discarded: '已放弃改动',
+    failed: '操作失败',
+    cancelled: '已取消',
+    unknown: '结果未知',
+  },
+  saveState: {
+    idle: '无改动',
+    dirty: '有未保存的改动',
+    saving: '保存中',
+    saved: '已保存',
+    failedDraftKept: '保存失败，草稿已保留',
+    failedReverted: '保存失败，已恢复原内容',
+    rejected: '保存被拒绝',
+    discarded: '已放弃',
+    unknown: '保存状态未知',
+  },
+  error: {
+    kind: {
+      networkUnavailable: '网络不可用',
+      backendUnavailable: '后端未就绪',
+      invalidInput: '输入不合法',
+      conflict: '存在冲突',
+      protectedDiscard: '内容受保护，无法丢弃',
+      externalProgram: '外部程序出错',
+      permissionDenied: '没有权限',
+      unknown: '未知错误',
+    },
+    recovery: {
+      networkUnavailable: '检查网络连接后重试',
+      backendUnavailable: '等待后端启动完成后重试',
+      invalidInput: '按提示修正输入后重试',
+      conflict: '先查看冲突内容，再重试',
+      protectedDiscard: '先备份或另存，再重试',
+      externalProgram: '检查外部程序状态后重试',
+      permissionDenied: '以管理员身份运行或调整文件权限后重试',
+      unknown: '重试一次；若仍失败，请复制诊断信息反馈',
+    },
+  },
+  resultUnknown: {
+    title: '无法确认操作结果',
+    description: '后端没有确认这次操作是否已生效。请先查询当前状态再继续，避免重复写入。',
+    query: '查询当前状态',
+    taskId: '任务 ID',
   },
   status: {
     waiting: '等待',

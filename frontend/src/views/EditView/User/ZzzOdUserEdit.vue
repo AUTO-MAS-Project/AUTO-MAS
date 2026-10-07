@@ -97,6 +97,8 @@
       </template>
     </GuiSessionMask>
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -1267,6 +1269,9 @@ import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } f
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import {
   ArrowLeftOutlined,
   DeleteOutlined,
@@ -1569,8 +1574,8 @@ const createUserImmediately = async (): Promise<boolean> => {
   return true
 }
 
-// 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
-let saveChain: Promise<boolean> = Promise.resolve(true)
+// 保存串行化队列（平台统一实现）：连续保存按序写回不丢，并向页面暴露落盘状态
+const { enqueue, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
@@ -1588,22 +1593,15 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
     formData.userName = String(value || '')
   }
 
-  const persist = async (): Promise<boolean> => {
-    try {
-      const ok = await updateUser(scriptId, userId.value, patch)
-      if (!ok) {
-        logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
-      }
-      return ok
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-      return false
-    }
-  }
-
-  const run = saveChain.then(persist, persist)
-  saveChain = run
-  return run
+  // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+  return enqueue(async () => {
+    await updateUser(scriptId, userId.value, patch, { strict: true })
+    return true
+  }, key).catch(e => {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`保存字段「${key}」失败: ${errorMsg}`)
+    return false
+  })
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -2880,21 +2878,45 @@ const refreshAfterSession = () => {
   }
 }
 
-onUnmounted(() => {
-  // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
+// 退出编辑页：先把防抖中的变更落盘、等在途保存，再停会话、归档终态。
+// 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
+// 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
+// ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
+// 先停会话再归档——并行会与回写撞车，归档到半程状态
+const stopZzzodSessionAndArchive = async () => {
+  // 退出前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
   flushAllTaskConfigSaves()
-  // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
-  // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
-  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
-  // 先停会话再归档——并行会与回写撞车，归档到半程状态
-  void (async () => {
-    await stopSession()
-    if (formData.Info.Mode === '直控') {
-      await ensureDirectBackup()
-    } else {
-      await ensureUserExitBackups()
-    }
-  })()
+  await waitForIdle()
+  if (!(await stopSession())) return false
+  if (formData.Info.Mode === '直控') {
+    await ensureDirectBackup()
+  } else {
+    await ensureUserExitBackups()
+  }
+  return true
+}
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: stopZzzodSessionAndArchive,
+})
+
+onUnmounted(() => {
+  void stopZzzodSessionAndArchive()
 })
 </script>
 

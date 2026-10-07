@@ -1,6 +1,8 @@
 // WebSocket 统一消息协议类型
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
+import type { TaskOutcome } from '@/api/models/TaskOutcome'
+
 // ==================== 信封 ====================
 
 type WSJsonValue = string | number | boolean | null | WSJsonValue[] | WSJsonObject
@@ -142,9 +144,12 @@ export interface WSTaskLogUpdatedData {
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
   result: string
+  /** 旧字段：任务是否正常退出，不能当业务结果用（丢弃会话也会是 success） */
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
   task_info: WSTaskScriptInfoData[]
+  /** 统一任务终态契约；旧后端可能不下发，读不到按 unknown 处理 */
+  taskOutcome?: TaskOutcome | null
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */

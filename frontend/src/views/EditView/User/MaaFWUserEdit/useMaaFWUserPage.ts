@@ -1,17 +1,9 @@
-import {
-  computed,
-  markRaw,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  onUnmounted,
-  ref,
-  shallowRef,
-} from 'vue'
+import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -66,8 +58,16 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const pageLoading = ref(true)
   const loading = computed(() => pageLoading.value)
   const isInitializing = ref(true)
-  const { isSaving, hasUnsavedChanges, saveStatus, saveErrorMessage, enqueueSave, pendingCount } =
-    useMaaFWUserSaveStatus()
+  const {
+    isSaving,
+    hasUnsavedChanges,
+    state: saveState,
+    fieldStates,
+    canLeave,
+    waitForIdle,
+    enqueueSave,
+    pendingCount,
+  } = useMaaFWUserSaveStatus()
 
   const userIdHolder: MaaFWUserIdHolder = { value: userId }
   const isEdit = ref(!!userIdHolder.value)
@@ -311,7 +311,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   }
 
   const handleCancel = () => {
-    if (isSaving.value || hasUnsavedChanges.value) {
+    // 失败草稿 / 结果未知同样不能离开，交给统一守卫在路由离开时再拦一次
+    if (isSaving.value || hasUnsavedChanges.value || !canLeave.value) {
       Modal.confirm({
         title: t('edit.youHaveUnsavedChanges'),
         content: t('edit.leaveWithoutSavingUnsaved'),
@@ -324,12 +325,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     router.push('/scripts')
   }
 
-  const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!isSaving.value && !hasUnsavedChanges.value) return
-    event.preventDefault()
-    event.returnValue = ''
-  }
-
   const restore = useMaaFWUserConfigRestore({
     scriptId,
     userIdHolder,
@@ -338,8 +333,29 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   })
   const { ensureMaaFWBackup } = restore
 
+  // 路由离开 / 应用关闭 / 原生窗口关闭共用同一段：先等在途保存落盘，再归档退出侧车；
+  // 仍有失败草稿或结果未知时一律不放行。
+  useEditorLeaveGuard({
+    hasPending: () => !canLeave.value,
+    flush: async () => {
+      await waitForIdle()
+      return canLeave.value
+    },
+    onLeave: async () => {
+      await ensureMaaFWBackup('mas')
+    },
+    onBlocked: reason => {
+      message.error(
+        t(
+          reason === 'save_incomplete'
+            ? 'edit.leaveBlockedByPendingSave'
+            : 'edit.leaveBlockedByRejected'
+        )
+      )
+    },
+  })
+
   onMounted(() => {
-    window.addEventListener('beforeunload', handleBeforeUnload)
     if (!scriptId) {
       message.error(t('edit.missingScriptIdParameter'))
       handleCancel()
@@ -354,10 +370,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     })()
   })
 
-  onBeforeUnmount(() => {
-    window.removeEventListener('beforeunload', handleBeforeUnload)
-  })
-
   onUnmounted(() => {
     // 退出编辑页：归档 MAS 用户字段侧车终态（编辑会话包络；MaaFW 无遮罩会话）
     void ensureMaaFWBackup('mas')
@@ -365,8 +377,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   return {
     loading,
-    saveStatus,
-    saveErrorMessage,
+    saveState,
+    fieldStates,
     userIdHolder,
     isEdit,
     configLocked,

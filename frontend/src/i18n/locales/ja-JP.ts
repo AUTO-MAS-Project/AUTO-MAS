@@ -21,6 +21,12 @@ export default {
     cancel: 'キャンセル',
     doc: 'ドキュメント',
     unknown: '不明',
+    retry: '再試行',
+    retryAction: '再試行',
+    copyDiagnostics: '診断情報をコピー',
+    copied: 'コピーしました',
+    copyFailed: 'コピーできませんでした。テキストを手動で選択してください',
+    diagnostics: '診断情報',
   },
   comp: {
     changelog: {
@@ -289,6 +295,11 @@ export default {
     configRestoreUnrestorableTitle: 'このバックアップは復元できません',
     configRestoreUnrestorableDesc:
       'バックアップの内容が不完全であるか、MAS の一時インスタンスが含まれているため、復元は無効化されています。',
+    // ══ 保存・離脱ガード（useEditorLeaveGuard）══
+    leaveBlockedByPendingSave:
+      '未確定の保存が残っているため離脱をブロックしました。保存の完了を待つか再試行してください。',
+    leaveBlockedByRejected:
+      '保存がサーバーに受け付けられなかったため離脱をブロックしました。案内に従って再試行してください。',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
@@ -427,6 +438,16 @@ export default {
     preset: 'プリセット',
     claimRewards: '報酬を受け取る',
     configurationUserP0Done: 'アカウント {p0} の設定が完了しました',
+    // 共有ネイティブ設定セッション: バックエンドがこのセッションの変更を破棄したときのダイアログ
+    configSessionDiscardedTitle: '設定は保存されていません',
+    configSessionDiscardedStructure:
+      'このセッションでタスクキューの構成（タスクの追加・削除・並べ替え、または別の設定プロファイル）が変更されたため、設定を開いた時点の状態と一致しなくなり、これらの変更はアーカイブに書き込まれませんでした。\n次: 設定を開き直し、タスクの有効／無効と詳細オプションだけを調整してから保存してください。',
+    configSessionDiscardedUnreadable:
+      'ネイティブプログラムが書き込んだ設定の読み取りに失敗したため、これらの変更はアーカイブに書き込まれませんでした。\n次: プログラムのディレクトリにアクセスできることを確認し、設定を開き直して編集してください。',
+    configSessionDiscardedNotWritten:
+      'ネイティブプログラムが完全な設定を書き出しませんでした（強制終了された可能性があります）。これらの変更はアーカイブに書き込まれませんでした。\n次: 設定を開き直して編集し、プログラムを自身で終了させてください。',
+    configSessionDiscardedUnknown:
+      'これらの変更はアーカイブに書き込まれませんでした。\n次: 設定を開き直して編集してください。',
     maaendConfigurationErrorP0: 'MaaEnd の設定でエラーが発生しました: {p0}',
     stageP0AlreadyExists: 'ステージ「{p0}」はすでに存在します',
     configurationSessionUserP0: 'アカウント {p0} の設定セッションがタイムアウトしました',
@@ -1458,8 +1479,6 @@ export default {
     autoUpdateNeedsLauncher:
       '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',
-    clientPathOptionalHint:
-      '任意：空欄の場合はプロセス名でクライアントを自動照合します。指定すると実行中判定とタスク終了時の後処理がより正確になります',
     clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
     selectFile: 'ファイルを選択',
     resetAutoLocate: '自動に戻す',
@@ -2221,6 +2240,7 @@ export default {
     bettergiProjectZoom: 'ズーム',
   },
   emulator: {
+    staleStatus: 'デバイス状態が最新でない可能性があります',
     title: 'エミュレーター管理',
     type: {
       general: '汎用エミュレーター',
@@ -2322,6 +2342,8 @@ export default {
     },
   },
   emulator2: {
+    staleDevices: 'デバイス一覧が最新でない可能性があります',
+    previewFailed: '影響範囲を取得できませんでした',
     pathsTitle: 'エミュレーター',
     pathsHint:
       '複数追加でき、インスタンスは 1 つの表にまとめて管理します。LDPlayer 14 と MuMu 6 に対応しています。',
@@ -2476,6 +2498,7 @@ export default {
     },
   },
   gamesign: {
+    loadFailed: 'ゲームコミュニティ設定の読み込みに失敗しました',
     title: 'ゲームコミュニティ',
     nav: {
       sign: 'チェックイン',
@@ -2635,6 +2658,8 @@ export default {
   },
   history: {
     title: '履歴',
+    listLoadFailed: '履歴の読み込みに失敗しました',
+    staleList: '履歴の更新に失敗しました。前回の結果を表示しています',
     dateList: '日付一覧',
     noData: 'データなし',
     empty: 'データがありません',
@@ -3032,6 +3057,12 @@ export default {
   },
   plan: {
     title: 'プラン管理',
+    listLoadFailed: 'プラン一覧の読み込みに失敗しました',
+    detailLoadFailed: 'プラン詳細の読み込みに失敗しました',
+    staleList: 'プラン一覧の更新に失敗しました。前回の結果を表示しています',
+    staleDetail: 'プラン詳細の更新に失敗しました。前回の結果を表示しています',
+    switchFailed: 'プランの切り替えに失敗しました。前のプランに戻しました',
+    actionFailed: '操作に失敗しました。プランは保存されていません',
     create: '新規プラン',
     createTyped: '新規 {name}',
     deleteConfirm: 'このプランを削除しますか？',
@@ -3185,6 +3216,13 @@ export default {
   },
   queue: {
     title: 'キュー管理',
+    listLoadFailed: 'キュー一覧の読み込みに失敗しました',
+    detailLoadFailed: 'キュー詳細の読み込みに失敗しました',
+    staleList: 'キュー一覧の更新に失敗しました。前回の結果を表示しています',
+    staleDetail: 'キュー詳細の更新に失敗しました。前回の結果を表示しています',
+    switchFailed: 'キューの切り替えに失敗しました。前のキューに戻しました',
+    timeSetsStale: 'スケジュールの更新に失敗しました。前回の結果を表示しています',
+    queueItemsStale: 'キュー項目の更新に失敗しました。前回の結果を表示しています',
     loading: '読み込み中です...',
     create: '新規キュー',
     deleteConfirm: 'このキューを削除しますか？',
@@ -3659,6 +3697,35 @@ export default {
     },
   },
   setting: {
+    configLoad: {
+      title: '設定の読み込み状態',
+      description: '読み取り専用：各設定ファイルの読み込み結果、破損コピーの場所、自動修正の記録',
+      loading: '設定の読み込み状態を取得しています…',
+      loaded: '設定の読み込み状態を取得しました',
+      loadFailed: '設定の読み込み状態の取得に失敗しました',
+      empty: '設定の読み込み記録がありません',
+      path: 'ファイルパス',
+      readAt: '取得時刻：{time}',
+      fileTime: 'ファイル書き込み時刻（バックアップ復元で上書きされます）',
+      backupPath: '破損ファイルのコピー',
+      events: '自動修正の詳細',
+      event: {
+        summary: '{field}：{old} → {new}',
+      },
+      status: {
+        ok: '正常',
+        empty: '空ファイル（既定値で読み込み）',
+        corruptRecovered: '破損から復旧（コピーを保持）',
+        unreadable: '読み取り不可',
+        defaulted: '自動修正あり',
+        unknown: '不明な状態',
+      },
+    },
+    sync: {
+      syncing: 'Electron に同期中…',
+      synced: 'Electron に同期しました',
+      failed: 'Electron への同期に失敗しました',
+    },
     title: '設定',
     versionFailed: 'バージョンを取得できませんでした',
     tab: {
@@ -3833,6 +3900,8 @@ export default {
       },
     },
     notify: {
+      webhookUnavailable: '未取得',
+      retryLoad: '再試行',
       contentSection: '通知の内容',
       sendTest: 'テスト通知を送信',
       resultTime: 'タスク結果の通知タイミング',
@@ -3974,8 +4043,6 @@ export default {
       cdkSite: 'MirrorChyan 公式サイト',
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
-      cdkHint:
-        'MAS の更新に使用します。MirrorChyan を選び CDK を設定すると MAA リソースも自動更新され、1 日のダウンロード枠を消費します。この MAS ではローカル日付ごとにリソースパッケージの取得を最大 1 回試行し、失敗やキャンセルも回数に含めます。MaaFW プロジェクトの CDK はスクリプト編集ページで個別に設定してください。',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',
@@ -4042,6 +4109,55 @@ export default {
       trayMenuSaveFailed: 'トレイメニューを保存できませんでした',
       trayMenuReset: 'トレイメニューを既定に戻しました',
     },
+  },
+  taskOutcome: {
+    saved: '保存しました',
+    completed: '完了しました',
+    completedWithoutWrite: '完了しました（変更は書き込まれていません）',
+    discarded: '変更を破棄しました',
+    failed: '操作に失敗しました',
+    cancelled: 'キャンセルしました',
+    unknown: '結果を確認できません',
+  },
+  saveState: {
+    idle: '変更なし',
+    dirty: '未保存の変更があります',
+    saving: '保存中',
+    saved: '保存しました',
+    failedDraftKept: '保存に失敗しました（下書きを保持）',
+    failedReverted: '保存に失敗しました（元の内容に戻しました）',
+    rejected: '保存が拒否されました',
+    discarded: '破棄しました',
+    unknown: '保存状態が不明です',
+  },
+  error: {
+    kind: {
+      networkUnavailable: 'ネットワークに接続できません',
+      backendUnavailable: 'バックエンドが起動していません',
+      invalidInput: '入力が正しくありません',
+      conflict: '競合が発生しました',
+      protectedDiscard: '保護された内容は破棄できません',
+      externalProgram: '外部プログラムのエラー',
+      permissionDenied: '権限がありません',
+      unknown: '不明なエラー',
+    },
+    recovery: {
+      networkUnavailable: 'ネットワーク接続を確認して再試行してください。',
+      backendUnavailable: 'バックエンドの起動完了を待って再試行してください。',
+      invalidInput: '入力を修正して再試行してください。',
+      conflict: '競合内容を確認してから再試行してください。',
+      protectedDiscard: 'バックアップまたは別名保存をしてから再試行してください。',
+      externalProgram: '外部プログラムの状態を確認して再試行してください。',
+      permissionDenied: '管理者として実行するか、ファイル権限を調整して再試行してください。',
+      unknown: 'もう一度再試行し、それでも失敗する場合は診断情報をコピーして報告してください。',
+    },
+  },
+  resultUnknown: {
+    title: '操作結果を確認できません',
+    description:
+      'この操作が反映されたかバックエンドが確認できませんでした。二重書き込みを避けるため、現在の状態を確認してから続行してください。',
+    query: '現在の状態を確認',
+    taskId: 'タスク ID',
   },
   status: {
     waiting: '待機',

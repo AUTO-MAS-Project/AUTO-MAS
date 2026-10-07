@@ -26,6 +26,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -196,10 +197,16 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.task_info.view_only:
             logger.success("通用脚本查看结束（只读，不回写配置）")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "view_only"
+            )
             return
 
         if not self.use_mas_config:
             logger.info("脚本直控配置：跳过回写用户独立配置")
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
             return
 
         # 源是用户自己填的脚本配置位置，可能压根不存在（路径填错、脚本还没生成过
@@ -208,6 +215,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.script_config_path.exists():
             logger.warning(
                 f"跳过配置回写: 脚本配置路径不存在 {self.script_config_path}"
+            )
+            await publish_config_session_result(
+                self.task_info.task_id, "discarded", "not_written"
             )
             return
 
@@ -240,6 +250,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success(
                 f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile' / self.script_config_path.name}"
             )
+        await publish_config_session_result(self.task_info.task_id, "saved")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

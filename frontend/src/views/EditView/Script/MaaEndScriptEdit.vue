@@ -516,14 +516,18 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_NOTICE,
+  type WSTaskCompletedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { notifyTaskOutcome, taskOutcomeNoticeKind } from '@/utils/taskOutcomeNotice'
+import { queryTaskOutcome } from '@/utils/taskOutcome'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 
 const { t } = useI18n()
+const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -941,6 +945,47 @@ const cleanupConfigSession = () => {
   }
 }
 
+const settleMaaEndConfigOutcome = (
+  taskOutcome: WSTaskCompletedData['taskOutcome'],
+  savedMessageKey = 'edit.maaendConfigurationSaved',
+  announceSaved = true
+) => {
+  const kind = taskOutcomeNoticeKind(taskOutcome)
+  if (kind === 'saved' && !announceSaved) {
+    cleanupConfigSession()
+    return kind
+  }
+  notifyTaskOutcome(t, taskOutcome, {
+    savedMessageKey,
+  })
+  if (kind === 'unknown') return false
+  cleanupConfigSession()
+  return kind
+}
+
+const stopMaaEndConfigSession = async (
+  savedMessageKey = 'edit.maaendConfigurationSaved',
+  announceSaved = true
+): Promise<boolean> => {
+  const taskId = maaEndTaskId.value
+  if (!taskId) {
+    cleanupConfigSession()
+    return true
+  }
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) {
+      message.error(response.message || '停止 MaaEnd 配置失败')
+      return false
+    }
+    const result = settleMaaEndConfigOutcome(response, savedMessageKey, announceSaved)
+    return result !== false
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止 MaaEnd 配置失败')
+    return false
+  }
+}
+
 const handleMaaEndConfig = async () => {
   try {
     maaEndConfigLoading.value = true
@@ -962,20 +1007,26 @@ const handleMaaEndConfig = async () => {
           message.error(t('edit.maaendConfigurationErrorP0', { p0: data.message }))
         }
       }),
-      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-        cleanupConfigSession()
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+        if (maaEndTaskId.value !== response.taskId) return
+        const data = wsMessage.data as unknown as WSTaskCompletedData
+        settleMaaEndConfigOutcome(data.taskOutcome)
       }),
     ]
 
     maaEndSubscriptionIds.value = subscriptionIds
     maaEndTaskId.value = response.taskId
     showMaaEndConfigMask.value = true
+    void queryTaskOutcome(response.taskId).then(taskOutcome => {
+      if (maaEndTaskId.value === response.taskId && taskOutcome) {
+        settleMaaEndConfigOutcome(taskOutcome)
+      }
+    })
     message.success(t('edit.scriptLevelMaaendConfiguration'))
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
-        cleanupConfigSession()
-        message.info(t('edit.maaendConfigurationSessionTimed'))
+        void stopMaaEndConfigSession('edit.maaendConfigurationSessionTimed')
       },
       30 * 60 * 1000
     )
@@ -992,21 +1043,15 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
-    if (response.code !== 200) {
-      throw new Error(response.message || '保存配置失败')
-    }
-
-    cleanupConfigSession()
-    message.success(t('edit.maaendConfigurationSaved'))
+    await stopMaaEndConfigSession()
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }
 }
 
-const handleCancel = () => {
-  cleanupConfigSession()
-  router.push('/scripts')
+const handleCancel = async () => {
+  if (!(await stopMaaEndConfigSession('edit.maaendConfigurationSaved', false))) return
+  await router.push('/scripts')
 }
 
 onMounted(async () => {
@@ -1017,7 +1062,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  cleanupConfigSession()
+  void stopMaaEndConfigSession('edit.maaendConfigurationSaved', false)
 })
 </script>
 

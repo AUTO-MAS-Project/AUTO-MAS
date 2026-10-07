@@ -46,6 +46,7 @@
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :inert="editorBusy">
@@ -213,6 +214,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -699,7 +701,8 @@ const fieldSave = useMAAFieldSave({
   formData,
   defaults: getDefaultMAAUserData,
   canSave: () => !isInitializing.value && !!userId,
-  save: patch => updateUser(scriptId, userId, patch),
+  // strict：失败按后端拒绝原因抛出，交给队列归类保存终态（草稿保留 / 已回读旧值 / 拒绝 / 未知）
+  save: patch => updateUser(scriptId, userId, patch, { strict: true }),
   readSaved: async () => {
     const response = await getUsers(scriptId, userId)
     return response?.code === 200 ? (response.data[userId] ?? null) : null
@@ -736,7 +739,7 @@ const fieldSave = useMAAFieldSave({
     logger.info(`用户配置已保存: ${key}`)
   },
 })
-const { isSaving, saveField: handleFieldSave } = fieldSave
+const { isSaving, state: saveState, fieldStates, saveField: handleFieldSave } = fieldSave
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {

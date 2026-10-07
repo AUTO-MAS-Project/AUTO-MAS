@@ -31,6 +31,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -320,11 +321,20 @@ class ScriptConfigTask(TaskExecuteBase):
                     message="zzz-od 会话改动回读失败，MAS 用户字段未更新，请重新打开配置检查",
                 ),
             )
+            # 原生 GUI 的保存结果仍在，只是没能同步到 MAS 字段：登记成「未回写」，
+            # 避免界面沿用「已保存」的说法。
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "readback_failed"
+            )
             return
         if self.view_only:
             logger.success("zzz-od 原生查看结束（只读，不回读字段）")
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "view_only"
+            )
         else:
             logger.success("zzz-od 原生配置已由 GUI 保存")
+            await publish_config_session_result(self.task_info.task_id, "saved")
         self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception) -> None:

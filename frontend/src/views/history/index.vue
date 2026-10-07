@@ -24,37 +24,57 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <a-spin :spinning="searchLoading">
-        <!-- 空状态 -->
-        <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
+        <!-- 搜索失败且没有上一次结果：给恢复动作，不伪装成「无记录」 -->
+        <div v-if="searchState === 'error_without_data'" class="state-block">
+          <RetryableErrorState
+            :error="searchError"
+            message-key="history.listLoadFailed"
+            @retry="handleSearch"
+          />
+        </div>
+
+        <!-- 空状态：确实搜到过空结果才显示 -->
+        <div v-else-if="searchState === 'empty'" class="empty-state">
           <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
           <span class="empty-text">{{ t('history.emptyHistory') }}</span>
           <span class="empty-hint">{{ t('history.emptyHint') }}</span>
         </div>
 
-        <!-- 数据展示 -->
-        <div v-else class="content-layout">
-          <!-- 左侧日期列表 -->
-          <HistoryDateSidebar
-            :history-data="historyData"
-            :active-keys="activeKeys"
-            :selected-user="selectedUser"
-            @update:active-keys="activeKeys = $event"
-            @select-user="handleSelectUser"
+        <template v-else>
+          <OperationStatusBanner
+            v-if="searchState === 'error_with_previous_data'"
+            state="warning"
+            message-key="history.staleList"
+            retryable
+            :detail="searchError?.detail"
+            @retry="handleSearch"
           />
 
-          <!-- 右侧详情区域 -->
-          <HistoryDetailPanel
-            :has-user-selected="!!selectedUserData"
-            :records="selectedUserData?.index || []"
-            :selected-record-index="selectedRecordIndex"
-            :error-info="selectedUserData?.error_info || null"
-            :recruit-statistics="selectedUserData?.recruit_statistics || null"
-            :drop-statistics="selectedUserData?.drop_statistics || null"
-            :matrix-statistics="getMatrixStatistics(selectedUserData)"
-            :pull-count-statistics="getPullCountStatistics(selectedUserData)"
-            @select-record="handleSelectRecord"
-          />
-        </div>
+          <!-- 数据展示 -->
+          <div class="content-layout">
+            <!-- 左侧日期列表 -->
+            <HistoryDateSidebar
+              :history-data="historyData"
+              :active-keys="activeKeys"
+              :selected-user="selectedUser"
+              @update:active-keys="activeKeys = $event"
+              @select-user="handleSelectUser"
+            />
+
+            <!-- 右侧详情区域 -->
+            <HistoryDetailPanel
+              :has-user-selected="!!selectedUserData"
+              :records="selectedUserData?.index || []"
+              :selected-record-index="selectedRecordIndex"
+              :error-info="selectedUserData?.error_info || null"
+              :recruit-statistics="selectedUserData?.recruit_statistics || null"
+              :drop-statistics="selectedUserData?.drop_statistics || null"
+              :matrix-statistics="getMatrixStatistics(selectedUserData)"
+              :pull-count-statistics="getPullCountStatistics(selectedUserData)"
+              @select-record="handleSelectRecord"
+            />
+          </div>
+        </template>
       </a-spin>
     </div>
 
@@ -95,6 +115,8 @@ import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { PullCountStatistics } from '@/types/history'
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
 
 const { t } = useI18n()
 
@@ -115,6 +137,8 @@ const {
   currentJsonFile,
   searchForm,
   historyData,
+  searchState,
+  searchError,
 
   // 配置
   fontSizeOptions,
@@ -207,6 +231,10 @@ const handleSelectRecord = async (index: number, record: any) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.state-block {
+  padding: 24px;
 }
 
 .empty-state {

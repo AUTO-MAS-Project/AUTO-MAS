@@ -21,6 +21,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -117,6 +118,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.crashed:
             logger.success("BetterGI 直控配置已打开（任务配置请以 MAS 前端为准）")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
         self._cleanup_leftover_slot()
 
     async def on_crash(self, e: Exception) -> None:

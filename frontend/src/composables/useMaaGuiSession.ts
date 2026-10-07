@@ -12,10 +12,10 @@ export function useMaaGuiSession() {
       viewOpened: 'edit.maaViewOpened',
       timeoutWarn: 'edit.maaSessionTimeoutWarn',
       saved: 'edit.configurationThisUserWas',
-      saveFailed: 'edit.couldNotSaveMaa',
     },
   })
   return {
+    state: session.state,
     maaConfigLoading: session.configLoading,
     maaTaskId: session.taskId,
     showMaaConfigMask: session.showConfigMask,
@@ -24,5 +24,6 @@ export function useMaaGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: session.stopSession,
+    querySession: session.querySession,
   }
 }

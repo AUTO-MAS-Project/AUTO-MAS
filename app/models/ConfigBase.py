@@ -33,6 +33,7 @@ import uuid
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
@@ -58,21 +59,111 @@ from app.utils.io import write_file
 logger = get_logger("配置基类")
 
 
-def _load_json_file(path: Path) -> dict[str, Any]:
+@dataclass
+class NormalizationEvent:
+    """配置加载时对某个配置项做的一次自动规范化 / 纠正。"""
+
+    field: str
+    old_value: str
+    new_value: str
+    reason: str
+    time: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "field": self.field,
+            "oldValue": self.old_value,
+            "newValue": self.new_value,
+            "reason": self.reason,
+            "time": self.time,
+        }
+
+
+@dataclass
+class ConfigLoadReport:
+    """单个配置文件的加载结果, 用于向用户解释配置为什么被调整或降级。"""
+
+    file: str
+    path: str
+    status: str
+    time: str
+    file_time: str | None = None
+    backup_path: str | None = None
+    events: list[NormalizationEvent] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "file": self.file,
+            "path": self.path,
+            "status": self.status,
+            "time": self.time,
+            "fileTime": _file_mtime_text(Path(self.path)) or self.file_time,
+            "backupPath": self.backup_path,
+            "normalizationEvents": [event.to_dict() for event in self.events],
+        }
+
+
+_load_reports: dict[str, ConfigLoadReport] = {}
+
+
+def get_load_reports() -> list[ConfigLoadReport]:
+    """返回所有已连接配置文件的最近一次加载结果。"""
+    return list(_load_reports.values())
+
+
+def _file_mtime_text(path: Path) -> str | None:
+    """配置文件最后修改时间; 恢复备份会覆盖文件, 该时间即恢复时间。"""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).isoformat(
+            timespec="seconds"
+        )
+    except OSError:
+        return None
+
+
+def _value_text(value: Any) -> str:
+    """把配置值转成可展示的短文本, 超长时截断。"""
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else repr(value)
+    return text if len(text) <= 120 else f"{text[:117]}..."
+
+
+def _normalization_event(
+    group: str, name: str, *, old_value: str, new_value: str, reason: str
+) -> NormalizationEvent:
+    """构造一条配置项纠错记录。"""
+    return NormalizationEvent(
+        field=f"{group}.{name}",
+        old_value=old_value,
+        new_value=new_value,
+        reason=reason,
+        time=datetime.now().isoformat(timespec="seconds"),
+    )
+
+
+def _load_json_file(path: Path) -> tuple[dict[str, Any], str, Path | None]:
     """
-    读取配置文件, 解析失败时保留 ``.corrupt-<时间戳>`` 副本后按空配置继续
+    读取配置文件, 解析失败时保留 `.corrupt-<时间戳>` 副本后按空配置继续
 
     Args:
         path: 配置文件路径, 空文件视为空配置
 
     Returns:
-        dict[str, Any]: 解析结果; 空文件或损坏文件返回 ``{}``
+        tuple[dict[str, Any], str, Path | None]: 解析结果、加载状态
+        (`ok` / `empty` / `corrupt_recovered` / `unreadable`) 与损坏副本路径
     """
-    text = path.read_text(encoding="utf-8")
-    if not text.strip():
-        return {}
     try:
-        return json.loads(text)
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        logger.error(f"配置文件 {path} 读取失败, 按不可读处理: {e}")
+        return {}, "unreadable", None
+
+    if not text.strip():
+        return {}, "empty", None
+
+    try:
+        data = json.loads(text)
     except json.JSONDecodeError as e:
         corrupt_path = path.with_name(
             f"{path.name}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
@@ -81,7 +172,37 @@ def _load_json_file(path: Path) -> dict[str, Any]:
         logger.error(
             f"配置文件 {path} 解析失败, 已保留副本 {corrupt_path.name}, 按默认值加载: {e}"
         )
-        return {}
+        return {}, "corrupt_recovered", corrupt_path
+
+    if not isinstance(data, dict):
+        corrupt_path = path.with_name(
+            f"{path.name}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
+        )
+        shutil.copyfile(path, corrupt_path)
+        logger.error(
+            f"配置文件 {path} 内容不是 JSON 对象, 已保留副本 {corrupt_path.name}, 按默认值加载"
+        )
+        return {}, "corrupt_recovered", corrupt_path
+
+    return data, "ok", None
+
+
+def _read_config_for_load(path: Path) -> tuple[dict[str, Any], ConfigLoadReport]:
+    """读取配置文件并登记可查询的加载报告。"""
+    report = ConfigLoadReport(
+        file=path.name,
+        path=str(path),
+        status="ok",
+        time=datetime.now().isoformat(timespec="seconds"),
+        file_time=_file_mtime_text(path),
+    )
+    _load_reports[str(path)] = report
+
+    data, report.status, backup_path = _load_json_file(path)
+    if backup_path is not None:
+        report.backup_path = str(backup_path)
+
+    return data, report
 
 
 class ValidatorBase(ABC):
@@ -709,6 +830,33 @@ class AdvancedArgumentValidator(ValidatorBase):
         return value if self.validate(value) else ""
 
 
+_CORRECTION_REASONS: dict[str, str] = {
+    "EncryptValidator": "配置项密文无法解密, 已替换为占位值, 请重新设置",
+    "OptionsValidator": "取值不在允许的枚举范围内, 已自动纠正为第一个合法值",
+    "MultipleOptionsValidator": "取值的选项组合不合法, 已清空为默认选项",
+    "MultipleUIDValidator": "关联对象不存在, 已回退为默认值",
+    "DateTimeValidator": "日期时间格式不合法, 已回退为默认时间",
+    "JSONValidator": "JSON 文本不合法, 已回退为空结构",
+    "BoolValidator": "布尔值不合法, 已回退为 false",
+    "RangeValidator": "数值超出允许范围, 已收敛到边界值",
+    "URLValidator": "链接不合法, 已回退为默认值",
+    "UserNameValidator": "用户名不合法, 已回退为默认值",
+    "StringListValidator": "列表取值不合法, 已清理为合法值",
+    "UUIDValidator": "标识不合法, 已重新生成",
+    "KeyValidator": "按键不合法, 已回退为默认值",
+    "StringValidator": "取值不合法, 已回退为空字符串",
+}
+
+
+def _correction_reason(validator: ValidatorBase) -> str:
+    """给一次自动纠正行为一句可解释的原因。"""
+    for validator_type in type(validator).__mro__:
+        reason = _CORRECTION_REASONS.get(validator_type.__name__)
+        if reason is not None:
+            return reason
+    return "取值不合法, 已按字段规则自动纠正"
+
+
 class ConfigItem:
     """配置项"""
 
@@ -747,6 +895,7 @@ class ConfigItem:
         )
         self.is_locked = False
         self._slots: list[Callable[[Any], Any]] = []
+        self.last_correction: NormalizationEvent | None = None
 
         if not self.validator.validate(self.value):
             raise ValueError(
@@ -767,6 +916,8 @@ class ConfigItem:
         bool
             值是否真正发生了变化
         """
+
+        self.last_correction = None
 
         if isinstance(self.validator, EncryptValidator):
             try:
@@ -800,12 +951,30 @@ class ConfigItem:
             # 永远恢复不了的乱码，并随 load() 的脏标记写回配置文件。
             if not looks_like_dpapi_blob(self.value):
                 self.value = dpapi_encrypt(self.value)
+            elif not self.validator.validate(self.value):
+                # 密文结构正确但本机解不开：磁盘上的原密文原样保留, 不写回占位值,
+                # 只记录一条事件供前端提示用户重新设置。
+                self.last_correction = _normalization_event(
+                    self.group,
+                    self.name,
+                    old_value="<无法解密的密文>",
+                    new_value="<保留原密文, 未写回占位值>",
+                    reason="配置项密文无法解密, 已保留原始密文并标记为不可读, 请重新设置",
+                )
         elif not self.validator.validate(self.value):
             try:
-                self.value = self.validator.correct(self.value)
+                corrected = self.validator.correct(self.value)
             except Exception:
                 self.value = old_value
                 raise
+            self.last_correction = _normalization_event(
+                self.group,
+                self.name,
+                old_value=_value_text(self.value),
+                new_value=_value_text(corrected),
+                reason=_correction_reason(self.validator),
+            )
+            self.value = corrected
 
         changed = self.value != old_value
         if changed and len(self._slots) > 0:
@@ -913,6 +1082,11 @@ class ConfigBase(ABC):
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
         self._save_lock = asyncio.Lock()
 
+        # 加载状态与自动纠正记录, 供 get_load_reports() 查询
+        self._allow_auto_commit = True
+        self._pending_corrections: list[NormalizationEvent] = []
+        self._load_report: ConfigLoadReport | None = None
+
         # 配置项索引
         self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
         self._multiple_config_index: dict[str, MultipleConfig] = {}
@@ -949,7 +1123,12 @@ class ConfigBase(ABC):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        data = _load_json_file(self.file)
+        data, self._load_report = _read_config_for_load(self.file)
+        # 文件损坏或不可读时不随加载自动写回, 避免用默认值覆盖原文件
+        self._allow_auto_commit = self._load_report.status not in (
+            "corrupt_recovered",
+            "unreadable",
+        )
 
         await self.load(data)
 
@@ -1010,6 +1189,7 @@ class ConfigBase(ABC):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
+        self._pending_corrections = []
         source_data = deepcopy(data) if isinstance(data, dict) else {}
         working_data = deepcopy(source_data)
 
@@ -1034,14 +1214,38 @@ class ConfigBase(ABC):
                                     item.legacy_group_name[1]
                                 ]
                             )
+                if item.last_correction is not None:
+                    self._pending_corrections.append(item.last_correction)
+                    item.last_correction = None
 
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
-        if is_dirty:
+        self._finalize_load_report()
+
+        if is_dirty and self._allow_auto_commit:
             await self._commit_changes()
+        elif is_dirty:
+            logger.warning(
+                f"配置文件 {self.file} 加载状态异常, 已跳过自动写回以保留原文件, 请先查看损坏副本"
+            )
 
         return is_dirty
+
+    def _finalize_load_report(self) -> None:
+        """把本次加载产生的自动纠正记录写入加载报告。"""
+        report = self._load_report
+        if report is None:
+            # 子配置不单独上报, 事件留给父级 MultipleConfig 汇总
+            return
+
+        events, self._pending_corrections = self._pending_corrections, []
+        if not events:
+            return
+
+        report.events.extend(events)
+        if report.status in ("ok", "empty"):
+            report.status = "defaulted"
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
@@ -1244,6 +1448,11 @@ class MultipleConfig(Generic[T]):
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
         self._save_lock = asyncio.Lock()
 
+        # 加载状态与自动纠正记录, 供 get_load_reports() 查询
+        self._allow_auto_commit = True
+        self._pending_corrections: list[NormalizationEvent] = []
+        self._load_report: ConfigLoadReport | None = None
+
     def __getitem__(self, key: uuid.UUID) -> T:
         """允许通过 config[uuid] 访问配置项"""
         if key not in self.data:
@@ -1288,7 +1497,12 @@ class MultipleConfig(Generic[T]):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        data = _load_json_file(self.file)
+        data, self._load_report = _read_config_for_load(self.file)
+        # 文件损坏或不可读时不随加载自动写回, 避免用默认值覆盖原文件
+        self._allow_auto_commit = self._load_report.status not in (
+            "corrupt_recovered",
+            "unreadable",
+        )
 
         await self.load(data)
 
@@ -1350,6 +1564,7 @@ class MultipleConfig(Generic[T]):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
+        self._pending_corrections = []
         source_data = deepcopy(data) if isinstance(data, dict) else {}
 
         self.order = []
@@ -1358,8 +1573,13 @@ class MultipleConfig(Generic[T]):
         if not source_data.get("instances"):
             # 修复边界情况：当旧数据存在但新数据为空时，仍需标记 dirty 以触发保存写回
             is_dirty = bool(source_data)
-            if is_dirty:
+            if is_dirty and self._allow_auto_commit:
                 await self._commit_changes()
+            elif is_dirty:
+                status = self._load_report.status if self._load_report else "unknown"
+                logger.warning(
+                    f"配置文件 {self.file} 加载状态为 {status}, 已跳过自动写回以保留原文件"
+                )
             return is_dirty
 
         for instance in source_data["instances"]:
@@ -1374,6 +1594,7 @@ class MultipleConfig(Generic[T]):
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
+                self._absorb_child_corrections(self.data[self.order[-1]], type_name)
 
                 # 重建出来的子配置要挂上父级保存回调（#174），否则复制脚本、任务
                 # 收尾整表写回之后，对这些子配置的修改只改内存、不落盘。放在子配置
@@ -1386,10 +1607,38 @@ class MultipleConfig(Generic[T]):
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
-        if is_dirty:
+        self._finalize_load_report()
+
+        if is_dirty and self._allow_auto_commit:
             await self._commit_changes()
+        elif is_dirty:
+            logger.warning(
+                f"配置文件 {self.file} 加载状态异常, 已跳过自动写回以保留原文件, 请先查看损坏副本"
+            )
 
         return is_dirty
+
+    def _finalize_load_report(self) -> None:
+        """把本次加载产生的自动纠正记录写入加载报告。"""
+
+        report = self._load_report
+        if report is None:
+            return
+
+        events, self._pending_corrections = self._pending_corrections, []
+        if not events:
+            return
+
+        report.events.extend(events)
+        if report.status in ("ok", "empty"):
+            report.status = "defaulted"
+
+    def _absorb_child_corrections(self, child: ConfigBase, prefix: str) -> None:
+        """把子配置的自动纠正记录并入本文件的加载报告。"""
+        for event in child._pending_corrections:
+            event.field = f"{prefix}.{event.field}"
+            self._pending_corrections.append(event)
+        child._pending_corrections = []
 
     async def retype(
         self,

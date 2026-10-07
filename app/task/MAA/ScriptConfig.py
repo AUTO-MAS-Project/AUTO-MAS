@@ -27,11 +27,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Literal
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -376,16 +377,14 @@ class ScriptConfigTask(TaskExecuteBase):
     async def _notify_config_discarded(
         self, reason: Literal["structure", "unreadable", "not_written"]
     ) -> None:
-        """本次会话的改动被丢弃时显式通知前端弹窗。
+        """本次会话的改动被丢弃：登记终态并显式通知前端弹窗。
 
         回写失败过去只留在日志里，用户界面上却提示「已保存」，改动其实没进
         存档。原因用机器可读值下发，提示正文由前端本地化。
         """
 
-        await Publisher.send(
-            id=self.task_info.task_id,
-            type=protocol.TASK_CONFIG_DISCARDED,
-            data=WSTaskConfigDiscardedData(reason=reason),
+        await publish_config_session_result(
+            self.task_info.task_id, "discarded", reason
         )
 
     async def final_task(self):
@@ -400,12 +399,18 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.view_only:
             logger.success("MAA 查看结束（只读，不回写配置）")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "view_only"
+            )
             return
 
         # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
             logger.success("MAA 直控配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
@@ -450,6 +455,7 @@ class ScriptConfigTask(TaskExecuteBase):
                         configurations["TaskQueue"] = _repair_maa_task_queue(queue)
         for name, current in current_docs.items():
             write_file(mas_dir / name, current)
+        await publish_config_session_result(self.task_info.task_id, "saved")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -14,25 +14,6 @@
           <span class="breadcrumb-current">{{ isEdit ? '编辑用户' : '添加用户' }}</span>
         </a-breadcrumb-item>
       </a-breadcrumb>
-      <Transition name="save-chip-fade">
-        <span
-          v-if="saveStatus !== 'idle'"
-          :class="['save-status-chip', `save-status-chip-${saveStatus}`]"
-        >
-          <LoadingOutlined v-if="saveStatus === 'saving'" spin />
-          <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
-            <CloseCircleOutlined />
-          </a-tooltip>
-          <span>{{
-            saveStatus === 'saving'
-              ? t('edit.savingNow')
-              : saveStatus === 'saved'
-                ? t('edit.autoSaved')
-                : t('edit.saveFailedShort')
-          }}</span>
-        </span>
-      </Transition>
     </div>
 
     <a-space>
@@ -54,13 +35,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  FolderOpenOutlined,
-  LoadingOutlined,
-} from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
 import type {
   MaaFWUserHeaderSectionEmits,
@@ -122,41 +97,6 @@ const handleOpenFolder = async () => {
   color: var(--ant-color-text);
   font-weight: 600;
   white-space: nowrap;
-}
-
-.save-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.save-status-chip-saving {
-  color: var(--ant-color-text-secondary);
-  background: var(--ant-color-fill-tertiary);
-}
-
-.save-status-chip-saved {
-  color: var(--ant-color-success);
-  background: var(--ant-color-success-bg);
-}
-
-.save-status-chip-error {
-  color: var(--ant-color-error);
-  background: var(--ant-color-error-bg);
-}
-
-.save-chip-fade-enter-active,
-.save-chip-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.save-chip-fade-enter-from,
-.save-chip-fade-leave-to {
-  opacity: 0;
 }
 
 @media (max-width: 768px) {

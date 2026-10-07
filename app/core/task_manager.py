@@ -38,6 +38,7 @@ from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
+    TaskOutcome,
     TaskStatusOut,
     WSPowerSignData,
     WSTaskCompletedData,
@@ -95,6 +96,7 @@ from .queue_cycle import (
 # 延迟加载 System，避免 app.services 初始化期间触发循环导入；
 # 绑定为模块级 LazyProxy（真实对象引用），函数体裸名 System 才能经
 # LOAD_GLOBAL 正常解析（模块级 __getattr__ 只管属性访问、管不到裸名）。
+from .config_session import take_config_session_result
 from .ws import MainConnection, Publisher, protocol
 
 System = LazyProxy("app.services", "System")
@@ -1102,6 +1104,98 @@ class Task(TaskExecuteBase):
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
+    def _build_task_outcome(self, finished_at: str) -> TaskOutcome:
+        """把内部收尾状态翻译成统一任务终态结果契约。
+
+        配置会话「到底写没写盘」只有会话本身知道，由 app/core/config_session.py 登记；
+        这里读取一次合成。读不到登记时返回 unknown，绝不默认成保存成功。
+        """
+
+        task_id = str(self.task_info.task_id)
+        scope = "native_config" if self.task_info.mode == "ScriptConfig" else None
+        # 无论下面走哪条分支都先把登记读走，避免异常收尾的会话在登记表里越积越多
+        session = take_config_session_result(task_id) if scope else None
+
+        if self._exit_result == "cancelled":
+            return TaskOutcome(
+                taskId=task_id,
+                outcome="cancelled",
+                scope=scope,
+                messageKey="taskOutcome.cancelled",
+                finishedAt=finished_at,
+            )
+        if self._exit_result == "error":
+            return TaskOutcome(
+                taskId=task_id,
+                outcome="failed",
+                reason="task_error",
+                scope=scope,
+                dataPreserved=False,
+                messageKey="taskOutcome.failed",
+                finishedAt=finished_at,
+            )
+
+        if session is not None:
+            kind, reason = session
+            if kind == "saved":
+                return TaskOutcome(
+                    taskId=task_id,
+                    outcome="saved",
+                    scope=scope,
+                    messageKey="taskOutcome.saved",
+                    finishedAt=finished_at,
+                )
+            if kind == "discarded":
+                return TaskOutcome(
+                    taskId=task_id,
+                    outcome="discarded",
+                    reason=reason,
+                    scope=scope,
+                    dataPreserved=False,
+                    messageKey={
+                        "structure": "edit.configSessionDiscardedStructure",
+                        "unreadable": "edit.configSessionDiscardedUnreadable",
+                        "not_written": "edit.configSessionDiscardedNotWritten",
+                    }.get(reason, "taskOutcome.discarded"),
+                    finishedAt=finished_at,
+                )
+            return TaskOutcome(
+                taskId=task_id,
+                outcome="completed_without_write",
+                reason=reason,
+                scope=scope,
+                messageKey="taskOutcome.completedWithoutWrite",
+                finishedAt=finished_at,
+            )
+
+        if scope is not None:
+            if self.task_info.view_only:
+                return TaskOutcome(
+                    taskId=task_id,
+                    outcome="completed_without_write",
+                    reason="view_only",
+                    scope=scope,
+                    messageKey="taskOutcome.completedWithoutWrite",
+                    finishedAt=finished_at,
+                )
+            # 配置会话正常结束却没有登记结果：说「无法确认」也比谎报保存成功安全
+            return TaskOutcome(
+                taskId=task_id,
+                outcome="unknown",
+                reason="config_session_result_missing",
+                scope=scope,
+                dataPreserved=False,
+                messageKey="taskOutcome.unknown",
+                finishedAt=finished_at,
+            )
+
+        return TaskOutcome(
+            taskId=task_id,
+            outcome="completed",
+            messageKey="taskOutcome.completed",
+            finishedAt=finished_at,
+        )
+
     async def final_task(self) -> None:
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。
@@ -1118,6 +1212,8 @@ class Task(TaskExecuteBase):
         # 完成面板文本带采集节点详情（与推送报告同源渲染），
         # 未配置推送的用户在调度台也能看到
         result_text = build_task_result_text(self.task_info.script_list)
+        finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        task_outcome = self._build_task_outcome(finished_at)
         await Publisher.send(
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
@@ -1126,6 +1222,7 @@ class Task(TaskExecuteBase):
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
+                taskOutcome=task_outcome,
             ),
         )
         # 同一步里先留存终态：任务从运行快照摘掉后仍要能凭 taskId 查到
@@ -1141,7 +1238,8 @@ class Task(TaskExecuteBase):
                     queueId=self.task_info.queue_id,
                     scriptId=self.task_info.script_id,
                     userId=self.task_info.user_id,
-                    finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    finishedAt=finished_at,
+                    taskOutcome=task_outcome,
                 )
             )
 

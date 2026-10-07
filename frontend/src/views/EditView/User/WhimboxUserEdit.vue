@@ -7,6 +7,8 @@
     @back="handleCancel"
   />
 
+  <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -92,6 +94,8 @@ import TaskConfigSection from '@/views/WhimboxUserEdit/TaskConfigSection.vue'
 import WhimboxUserEditHeader from '@/views/WhimboxUserEdit/WhimboxUserEditHeader.vue'
 import { WHIMBOX_CONFIG_MODES } from '@/views/WhimboxUserEdit/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 
 const { t } = useI18n()
 
@@ -113,7 +117,7 @@ const isInitializing = ref(true) // 标记是否正在初始化
 // 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动（对齐 MaaEndUserEdit）
 const loading = computed(() => isInitializing.value)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -287,15 +291,14 @@ const handleFieldSave = async (key: string, value: any) => {
     userData = { Info: { Name: value } }
   }
 
+  // strict：只有后端 code===200 才算 saved，其余抛出并按异常分类落终态
+  // （此前这里吞掉异常，队列一律记 saved，与后端真实值不一致）
   await enqueue(async () => {
-    try {
-      await updateUser(scriptId, userId, userData)
-      logger.info(`用户配置已保存: ${key}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, key)
+    await updateUser(scriptId, userId, userData, { strict: true })
+    logger.info(`用户配置已保存: ${key}`)
+  }, key).catch((error: unknown) => {
+    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+  })
 }
 
 // ══ 配置恢复（通用组件 props 供给：MAS 用户字段 + 奇想盒原生配置双池）══
@@ -513,6 +516,27 @@ const loadUserData = async () => {
 const handleCancel = () => {
   router.push('/scripts')
 }
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: async () => {
+    await ensureBackup('mas')
+  },
+})
 
 onMounted(() => {
   if (!scriptId) {

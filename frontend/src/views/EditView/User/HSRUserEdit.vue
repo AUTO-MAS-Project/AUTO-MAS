@@ -11,6 +11,8 @@
       @cancel="handleCancel"
     />
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
@@ -361,6 +363,8 @@ import { message } from 'ant-design-vue'
 import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import hsrLogo from '@/assets/hsr.png'
 import UserEditHeader from '@/components/UserEditHeader.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
@@ -440,7 +444,7 @@ const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
+const { isSaving, enqueue, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 // 一份计划的初始值（加载前的占位）。用户自己的计划与脚本共享计划形状相同。
 const createDefaultPlan = (): HSRPlanData => ({
@@ -1106,44 +1110,64 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
 
   if (isInitializing.value || !userId) return false
   return enqueue(async () => {
-    try {
-      const patch: MutableRecord = {}
-      let current = patch
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]] as MutableRecord
-      }
-      // 脚本级与用户级的这几项同样是 JSONValidator，两条保存路径都要先转成 JSON 字符串
-      const isManagedJsonField =
-        parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
-      const isStageJsonField =
-        parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
-      const persistedValue = isManagedJsonField
-        ? stringifyJsonRecord(value)
-        : isStageJsonField && typeof value !== 'string'
-          ? JSON.stringify(value ?? {})
-          : value
-      current[parts[parts.length - 1]] = persistedValue
-      const saved = toScript
-        ? await updateScript(scriptId, patch)
-        : await updateUser(scriptId, userId, patch)
-      const target = toScript ? '脚本共享计划' : '用户配置'
-      if (saved) {
-        logger.info(`${target}已保存: ${key}`)
-        return true
-      } else {
-        logger.error(`${target}保存失败: ${key}`)
-        return false
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-      return false
+    const patch: MutableRecord = {}
+    let current = patch
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]] as MutableRecord
     }
-  }, key)
+    // 脚本级与用户级的这几项同样是 JSONValidator，两条保存路径都要先转成 JSON 字符串
+    const isManagedJsonField =
+      parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
+    const isStageJsonField =
+      parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
+    const persistedValue = isManagedJsonField
+      ? stringifyJsonRecord(value)
+      : isStageJsonField && typeof value !== 'string'
+        ? JSON.stringify(value ?? {})
+        : value
+    current[parts[parts.length - 1]] = persistedValue
+    const target = toScript ? '脚本共享计划' : '用户配置'
+    if (toScript) {
+      // updateScript 无 strict 形态，仍按 boolean 契约判定；失败抛出交给队列归类
+      if (!(await updateScript(scriptId, patch))) {
+        throw new Error(`${target}保存失败: ${key}`)
+      }
+    } else {
+      // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+      await updateUser(scriptId, userId, patch, { strict: true })
+    }
+    logger.info(`${target}已保存: ${key}`)
+    return true
+  }, key).catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
+    return false
+  })
 }
 
 const handleCancel = () => router.push('/scripts')
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: async () => {
+    await ensureHSRBackup('mas')
+  },
+})
 
 const loadCapabilities = async () => {
   try {

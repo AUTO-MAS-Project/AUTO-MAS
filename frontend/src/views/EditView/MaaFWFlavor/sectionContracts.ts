@@ -177,10 +177,8 @@ export interface MaaFWScriptSectionContracts {
 
 // ════════════════════════════ 用户页 ════════════════════════════
 
-/** 用户页 `header`：面包屑、保存状态、打开配置目录、返回 */
+/** 用户页 `header`：面包屑、打开配置目录、返回（保存状态由页面统一的 EditorSaveStatus 展示） */
 export interface MaaFWUserHeaderSectionProps {
-  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
-  saveErrorMessage: string
   scriptId: string
   scriptName: string
   /** 面包屑回脚本页的路由目标（maafwRouteLocation(脚本类型, 'script', { id })） */

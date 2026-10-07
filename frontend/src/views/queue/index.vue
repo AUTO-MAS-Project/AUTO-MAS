@@ -38,8 +38,27 @@
       </div>
     </div>
 
-    <!-- 空状态 -->
-    <div v-if="!queueList.length || !currentQueueData" class="empty-state">
+    <!-- 切换队列失败：已退回原队列，这里给一次重试 -->
+    <OperationStatusBanner
+      v-if="switchError"
+      state="error"
+      message-key="queue.switchFailed"
+      retryable
+      :detail="switchError.detail"
+      @retry="retryQueueSwitch"
+    />
+
+    <!-- 列表请求失败：不能伪装成「没有队列」 -->
+    <div v-if="!queueList.length && queueListError" class="state-block">
+      <RetryableErrorState
+        :error="queueListError"
+        message-key="queue.listLoadFailed"
+        @retry="fetchQueues"
+      />
+    </div>
+
+    <!-- 空状态：确实拉到过空列表才显示 -->
+    <div v-else-if="!queueList.length" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
           <img src="../../assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
@@ -51,8 +70,35 @@
       </div>
     </div>
 
+    <!-- 当前队列详情没拉到：给恢复动作，不显示一份默认值表单 -->
+    <div v-else-if="!currentQueueData" class="state-block">
+      <RetryableErrorState
+        v-if="queueDetailError"
+        :error="queueDetailError"
+        message-key="queue.detailLoadFailed"
+        @retry="reloadActiveQueue"
+      />
+      <a-spin v-else size="large" :tip="t('queue.loading')" />
+    </div>
+
     <!-- 队列内容 -->
     <div v-else class="queue-content">
+      <OperationStatusBanner
+        v-if="queueListState === 'error_with_previous_data'"
+        state="warning"
+        message-key="queue.staleList"
+        retryable
+        :detail="queueListError?.detail"
+        @retry="fetchQueues"
+      />
+      <OperationStatusBanner
+        v-if="queueDetailError"
+        state="warning"
+        message-key="queue.staleDetail"
+        retryable
+        :detail="queueDetailError.detail"
+        @retry="reloadActiveQueue"
+      />
       <!-- 队列选择卡片 -->
       <a-card class="queue-selector-card" :bordered="false">
         <template #title>
@@ -234,6 +280,14 @@
 
         <!-- 定时项管理 -->
         <a-col :span="24" class="manager-col">
+          <OperationStatusBanner
+            v-if="timeSetsError"
+            state="warning"
+            message-key="queue.timeSetsStale"
+            retryable
+            :detail="timeSetsError.detail"
+            @retry="refreshTimeSets"
+          />
           <TimeSetManager
             v-if="activeQueueId && currentQueueData && !currentCycleEnabled"
             :queue-id="activeQueueId"
@@ -245,6 +299,14 @@
 
         <!-- 队列项管理 -->
         <a-col :span="24" class="manager-col">
+          <OperationStatusBanner
+            v-if="queueItemsError"
+            state="warning"
+            message-key="queue.queueItemsStale"
+            retryable
+            :detail="queueItemsError.detail"
+            @retry="refreshQueueItems"
+          />
           <QueueItemManager
             v-if="activeQueueId && currentQueueData"
             :queue-id="activeQueueId"
@@ -266,6 +328,8 @@ import { Service, type QueueConfig_Info } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -275,6 +339,8 @@ import {
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
+import { AppRequestError, toAppError } from '@/utils/appError'
+import type { PageDataState } from '@/utils/pageDataState'
 
 const { t } = useI18n()
 
@@ -341,50 +407,63 @@ const currentQueueItems = ref<any[]>([])
 
 const loading = ref(true)
 
+// 队列列表请求状态：空数组不能同时代表「真的没有队列」和「请求失败」
+const queueListState = ref<PageDataState>('not_loaded')
+const queueListError = ref<AppRequestError | null>(null)
+// 详情和子列表失败时保留上一次数据，只挂一条可重试的提示
+const queueDetailError = ref<AppRequestError | null>(null)
+const timeSetsError = ref<AppRequestError | null>(null)
+const queueItemsError = ref<AppRequestError | null>(null)
+// 切换队列失败：退回原队列，把失败挂在这里等用户重试
+const switchError = ref<AppRequestError | null>(null)
+const switchTargetId = ref('')
+
 // 获取队列列表
 const fetchQueues = async () => {
   loading.value = true
+  queueListState.value = 'loading'
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
     if (!isMounted) return
-    if (response.code === 200) {
-      // 处理队列数据
-      logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
+    if (response.code !== 200) {
+      // 后端明确回了失败：这不是「没有队列」
+      throw new AppRequestError('unknown', { detail: response.message })
+    }
 
-      if (response.index && response.index.length > 0) {
-        // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
-        queueList.value = response.index.map((item: any) => ({
-          id: item.uid,
-          name: response.data[item.uid]?.Info?.Name || t('queue.newQueueName'),
-        }))
+    if (response.index && response.index.length > 0) {
+      // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
+      queueList.value = response.index.map((item: any) => ({
+        id: item.uid,
+        name: response.data[item.uid]?.Info?.Name || t('queue.newQueueName'),
+      }))
+      queueListError.value = null
+      queueListState.value = 'loaded_fresh'
 
-        // 如果有队列且没有选中的队列，默认选中第一个
-        if (queueList.value.length > 0 && !activeQueueId.value) {
-          activeQueueId.value = queueList.value[0].id
-          logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
-          // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
-          nextTick(() => {
-            loadQueueData(activeQueueId.value, response.data).catch(error => {
-              const errorMsg = error instanceof Error ? error.message : String(error)
-              logger.error(`加载队列数据失败: ${errorMsg}`)
-            })
-          })
-        }
-      } else {
-        logger.debug('队列列表为空') // 调试日志
-        queueList.value = []
-        currentQueueData.value = null
+      // 如果有队列且没有选中的队列，默认选中第一个
+      if (!activeQueueId.value) {
+        activeQueueId.value = queueList.value[0].id
+        logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
+        // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
+        nextTick(() => {
+          void loadQueueData(activeQueueId.value!, response.data)
+        })
       }
     } else {
-      logger.error(`API响应错误: ${response.message}`)
+      logger.debug('队列列表为空') // 调试日志
       queueList.value = []
       currentQueueData.value = null
+      queueListError.value = null
+      queueListState.value = 'empty'
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取队列列表失败: ${errorMsg}`)
-    queueList.value = []
-    currentQueueData.value = null
+    const appError = toAppError(error)
+    logger.error(`获取队列列表失败: ${appError.detail ?? appError.message}`)
+    if (!isMounted) return
+    // 失败时保留上一次的列表，别把「请求失败」画成「没有队列」
+    queueListError.value = appError
+    queueListState.value = queueList.value.length
+      ? 'error_with_previous_data'
+      : 'error_without_data'
   } finally {
     loading.value = false
   }
@@ -399,6 +478,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
     const data = queuesData ?? (await Service.getQueuesApiQueueGetPost({})).data
     if (!isMounted || queueId !== activeQueueId.value) return
     currentQueueData.value = data
+    queueDetailError.value = null
 
     // 根据API响应数据更新队列信息
     if (data && data[queueId]) {
@@ -436,12 +516,19 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
       ])
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载队列数据失败: ${errorMsg}`)
-    if (isMounted) message.error(t('queue.toast.loadQueueFailed'))
+    const appError = toAppError(error)
+    logger.error(`加载队列数据失败: ${appError.detail ?? appError.message}`)
+    // 保留上一次的详情数据，只把失败挂出来；页面不退回假空
+    if (isMounted && queueId === activeQueueId.value) queueDetailError.value = appError
   } finally {
     if (queueId === activeQueueId.value) queueConfigLoading.value = false
   }
+}
+
+// 局部重试：只重拉当前队列的详情，不动列表
+const reloadActiveQueue = () => {
+  if (!activeQueueId.value) return
+  return loadQueueData(activeQueueId.value)
 }
 
 // 刷新定时项数据
@@ -459,7 +546,8 @@ const refreshTimeSets = async () => {
 
     if (response.code !== 200) {
       logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
+      // 保留上一次的定时项，只把失败挂出来给用户重试
+      timeSetsError.value = new AppRequestError('unknown', { detail: response.message })
       return
     }
 
@@ -502,11 +590,13 @@ const refreshTimeSets = async () => {
     if (!isMounted) return
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
+    timeSetsError.value = null
     logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新定时项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
+    const appError = toAppError(error)
+    logger.error(`刷新定时项列表失败: ${appError.detail ?? appError.message}`)
+    // 保留上一次的定时项，只把失败挂出来给用户重试
+    timeSetsError.value = appError
   }
 }
 
@@ -525,7 +615,8 @@ const refreshQueueItems = async () => {
 
     if (response.code !== 200) {
       logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
+      // 保留上一次的队列项，只把失败挂出来给用户重试
+      queueItemsError.value = new AppRequestError('unknown', { detail: response.message })
       return
     }
 
@@ -558,11 +649,13 @@ const refreshQueueItems = async () => {
     if (!isMounted) return
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
+    queueItemsError.value = null
     logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新队列项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
+    const appError = toAppError(error)
+    logger.error(`刷新队列项列表失败: ${appError.detail ?? appError.message}`)
+    // 保留上一次的队列项，只把失败挂出来给用户重试
+    queueItemsError.value = appError
   }
 }
 
@@ -710,20 +803,42 @@ const handleRemoveQueue = async (queueId: string) => {
 
 // 队列切换
 const onQueueChange = async (queueId: string) => {
-  if (!queueId) return
+  if (!queueId || queueId === activeQueueId.value) return
 
-  try {
-    // 立即更新activeQueueId以确保按钮高亮切换
-    activeQueueId.value = queueId
-    // 清空当前数据，避免渲染问题
-    currentTimeSets.value = []
-    currentQueueItems.value = []
+  const previousQueueId = activeQueueId.value
+  const previousQueueData = currentQueueData.value
+  const previousTimeSets = currentTimeSets.value
+  const previousQueueItems = currentQueueItems.value
 
-    await loadQueueData(queueId)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`队列切换失败: ${errorMsg}`)
+  // 立即更新activeQueueId以确保按钮高亮切换
+  activeQueueId.value = queueId
+  switchError.value = null
+  switchTargetId.value = ''
+  queueDetailError.value = null
+  timeSetsError.value = null
+  queueItemsError.value = null
+  // 清空当前数据，避免渲染问题
+  currentTimeSets.value = []
+  currentQueueItems.value = []
+
+  await loadQueueData(queueId)
+
+  // 只有这次切换仍是当前目标、且确实失败了，才退回原队列：
+  // 失败时把用户留在原队列上，而不是一个空壳
+  if (activeQueueId.value === queueId && queueDetailError.value) {
+    switchError.value = queueDetailError.value
+    switchTargetId.value = queueId
+    queueDetailError.value = null
+    activeQueueId.value = previousQueueId
+    currentQueueData.value = previousQueueData
+    currentTimeSets.value = previousTimeSets
+    currentQueueItems.value = previousQueueItems
   }
+}
+
+// 切换失败后的重试：重新切到刚才没切过去的那个队列
+const retryQueueSwitch = () => {
+  if (switchTargetId.value) void onQueueChange(switchTargetId.value)
 }
 
 // 刷新当前队列配置 - 保存成功后调用
@@ -879,6 +994,10 @@ onUnmounted(() => {
 }
 
 /* 空状态 */
+.state-block {
+  padding: 24px;
+}
+
 .empty-state {
   display: flex;
   justify-content: center;

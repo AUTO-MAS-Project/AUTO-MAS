@@ -3622,6 +3622,13 @@ class AppConfig(GlobalConfig):
 
         return await self.toDict()
 
+    def get_load_reports(self) -> list[Dict[str, Any]]:
+        """获取各配置文件的加载状态与自动规范化明细"""
+
+        from app.models.ConfigBase import get_load_reports as get_config_load_reports
+
+        return [report.to_dict() for report in get_config_load_reports()]
+
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 

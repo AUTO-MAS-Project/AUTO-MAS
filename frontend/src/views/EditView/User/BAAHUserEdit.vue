@@ -32,6 +32,8 @@
     </a-space>
   </div>
 
+  <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -393,6 +395,9 @@ import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
@@ -416,7 +421,8 @@ const { getScript } = useScriptApi()
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行化队列：按字段入队顺序逐条落盘，取代「isSaving 为真就丢弃本次修改」的互斥
+const { enqueue, isSaving, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -594,34 +600,32 @@ const handleGoToPlans = () => {
 
 // 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
 const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || !userId) return
 
-  isSaving.value = true
-  try {
-    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+  const parts = key.split('.')
+  let userData: Record<string, any> = {}
+  let current = userData
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
+  for (let i = 0; i < parts.length - 1; i++) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
+  }
+  current[parts[parts.length - 1]] = value
 
-    // 特殊处理：userName 需要同步到 Info.Name
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
-    }
+  // 特殊处理：userName 需要同步到 Info.Name
+  if (key === 'userName') {
+    userData = { Info: { Name: value } }
+  }
 
-    await updateUser(scriptId, userId, userData)
+  // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+  await enqueue(async () => {
+    await updateUser(scriptId, userId, userData, { strict: true })
     logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
+  }, key).catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 // 加载脚本信息
@@ -724,6 +728,27 @@ const loadUserData = async () => {
 const handleCancel = () => {
   router.push('/scripts')
 }
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: async () => {
+    await ensureBAAHBackup('mas')
+  },
+})
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
 // 专项统一名（文案参数化用）：BAAH 统一叫「baah」

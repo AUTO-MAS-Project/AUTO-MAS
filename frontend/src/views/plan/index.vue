@@ -15,8 +15,35 @@
         @remove-plan="handleRemovePlan"
       />
 
-      <!-- 空状态 -->
-      <div v-if="!planList.length || !currentPlanData" class="empty-state">
+      <!-- 增删改/排序失败：给可见反馈，而不是只写日志 -->
+      <OperationStatusBanner
+        v-if="actionError"
+        state="error"
+        message-key="plan.actionFailed"
+        :detail="actionError.detail"
+      />
+
+      <!-- 切换计划失败：已退回原计划，这里给一次重试 -->
+      <OperationStatusBanner
+        v-if="switchError"
+        state="error"
+        message-key="plan.switchFailed"
+        retryable
+        :detail="switchError.detail"
+        @retry="retryPlanSwitch"
+      />
+
+      <!-- 列表请求失败：不能伪装成「没有计划」 -->
+      <div v-if="!planList.length && planListError" class="state-block">
+        <RetryableErrorState
+          :error="planListError"
+          message-key="plan.listLoadFailed"
+          @retry="initPlans"
+        />
+      </div>
+
+      <!-- 空状态：确实拉到过空列表才显示 -->
+      <div v-else-if="!planList.length" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
             <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
@@ -28,8 +55,36 @@
         </div>
       </div>
 
+      <!-- 当前计划详情没拉到：给恢复动作，不显示一份空表 -->
+      <div v-else-if="!currentPlanData" class="state-block">
+        <RetryableErrorState
+          v-if="planDetailError"
+          :error="planDetailError"
+          message-key="plan.detailLoadFailed"
+          @retry="reloadActivePlan"
+        />
+        <a-spin v-else size="large" :tip="t('plan.loading')" />
+      </div>
+
       <!-- 计划内容 -->
       <div v-else class="plans-content">
+        <OperationStatusBanner
+          v-if="planListState === 'error_with_previous_data'"
+          state="warning"
+          message-key="plan.staleList"
+          retryable
+          :detail="planListError?.detail"
+          @retry="initPlans"
+        />
+        <OperationStatusBanner
+          v-if="planDetailError"
+          state="warning"
+          message-key="plan.staleDetail"
+          retryable
+          :detail="planDetailError.detail"
+          @retry="reloadActivePlan"
+        />
+
         <!-- 计划选择器 -->
         <PlanSelector
           :plan-list="planList"
@@ -93,6 +148,10 @@ import {
   type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { AppRequestError, toAppError } from '@/utils/appError'
+import type { PageDataState } from '@/utils/pageDataState'
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
@@ -129,6 +188,16 @@ const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
+
+// 计划列表/详情的加载状态：空数组只代表「确实没有计划」，失败单独记录
+const planListState = ref<PageDataState>('not_loaded')
+const planListError = ref<AppRequestError | null>(null)
+const planDetailError = ref<AppRequestError | null>(null)
+// 切换计划失败：已退回原计划，保留目标 id 供重试
+const switchError = ref<AppRequestError | null>(null)
+const switchTargetId = ref<string>('')
+// 增删改/排序等一次性动作的失败：给用户可见反馈，而不是只写日志
+const actionError = ref<AppRequestError | null>(null)
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -195,6 +264,7 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 }
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+  actionError.value = null
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -229,12 +299,14 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
       )
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`添加计划失败: ${errorMsg}`)
+    const appError = toAppError(error)
+    logger.error(`添加计划失败: ${appError.detail ?? appError.message}`)
+    actionError.value = appError
   }
 }
 
 const handleRemovePlan = async (planId: string) => {
+  actionError.value = null
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -255,8 +327,9 @@ const handleRemovePlan = async (planId: string) => {
       }
     }
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`删除计划失败: ${errorMsg}`)
+    const appError = toAppError(error)
+    logger.error(`删除计划失败: ${appError.detail ?? appError.message}`)
+    actionError.value = appError
   }
 }
 
@@ -269,10 +342,12 @@ const savePlanField = async (planId: string, changes: Record<string, any>): Prom
   try {
     logger.debug(`保存字段 (${planId}): ${JSON.stringify(changes)}`)
     await updatePlan(planId, changes)
+    actionError.value = null
     return true
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存计划字段失败: ${errorMsg}`)
+    const appError = toAppError(error)
+    logger.error(`保存计划字段失败: ${appError.detail ?? appError.message}`)
+    actionError.value = appError
     return false
   }
 }
@@ -353,15 +428,33 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
 
-  try {
-    // 立即切换到新计划
-    logger.info(`切换到新计划: ${planId}`)
-    activePlanId.value = planId
-    await loadPlanData(planId)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`切换计划失败: ${errorMsg}`)
+  const previousPlanId = activePlanId.value
+  switchError.value = null
+  switchTargetId.value = ''
+  planDetailError.value = null
+
+  // 立即切换到新计划
+  logger.info(`切换到新计划: ${planId}`)
+  activePlanId.value = planId
+
+  const ok = await loadPlanData(planId)
+  // 切换失败：退回原计划，别把用户留在一张空表上
+  if (!ok && activePlanId.value === planId) {
+    switchError.value = planDetailError.value ?? new AppRequestError('unknown', {})
+    switchTargetId.value = planId
+    planDetailError.value = null
+    activePlanId.value = previousPlanId
+    if (previousPlanId) {
+      syncCurrentPlan(previousPlanId)
+    } else {
+      tableData.value = {}
+    }
   }
+}
+
+// 切换失败后的重试：重新切到刚才没切过去的那个计划
+const retryPlanSwitch = () => {
+  if (switchTargetId.value) void onPlanChange(switchTargetId.value)
 }
 
 /** 排序请求串行化：并发请求会按完成顺序落盘，与界面上的拖拽顺序不一致 */
@@ -387,9 +480,11 @@ const handlePlanReorder = async (planIds: string[]) => {
 
   try {
     await reorderTask
-  } catch {
-    // 接口层已提示失败原因，这里只把界面顺序退回去
+    actionError.value = null
+  } catch (error) {
+    // 界面顺序退回去，同时把失败挂到页面上（接口层不再弹 Toast）
     planList.value = previousPlanList
+    actionError.value = toAppError(error)
   }
 }
 
@@ -460,35 +555,55 @@ const onModeChange = async () => {
   await handlePlanChange('Info.Mode', currentMode.value)
 }
 
-const loadPlanData = async (planId: string, force = false, forceCustomStages = false) => {
+const loadPlanData = async (
+  planId: string,
+  force = false,
+  forceCustomStages = false
+): Promise<boolean> => {
   try {
     if (!force && isActivePlan(planId) && syncCurrentPlan(planId)) {
       logger.info(`从缓存切换计划 (${planId})`)
-      return
+      planDetailError.value = null
+      return true
     }
 
     const planData = await fetchPlanData(planId)
     if (!planData) {
       if (isActivePlan(planId)) {
         tableData.value = {}
+        planDetailError.value = new AppRequestError('unknown', {
+          detail: `plan data missing: ${planId}`,
+        })
       }
-      return
+      return false
     }
 
     if (!isActivePlan(planId)) {
       logger.info(`计划已切换，跳过界面同步 (${planId})`)
-      return
+      return true
     }
 
     syncCurrentPlan(planId, forceCustomStages)
+    planDetailError.value = null
     logger.info(`从后端加载数据 (${planId})`)
+    return true
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载计划数据失败: ${errorMsg}`)
+    const appError = toAppError(error)
+    logger.error(`加载计划数据失败: ${appError.detail ?? appError.message}`)
+    // 保留当前表格数据，只把失败挂出来给用户重试
+    if (isActivePlan(planId)) planDetailError.value = appError
+    return false
   }
 }
 
+// 局部重试：只重拉当前计划的详情
+const reloadActivePlan = () => {
+  if (!activePlanId.value) return
+  return loadPlanData(activePlanId.value, true)
+}
+
 const initPlans = async () => {
+  loading.value = true
   try {
     const response = await getPlans()
     if (response.code !== 200) {
@@ -526,12 +641,16 @@ const initPlans = async () => {
 
     planDataMap.value = nextPlanDataMap
     planList.value = nextPlanList
+    planListError.value = null
+    actionError.value = null
 
     if (!nextPlanList.length) {
       activePlanId.value = ''
       tableData.value = {}
+      planListState.value = 'empty'
       return
     }
+    planListState.value = 'loaded_fresh'
 
     const queryPlanId = (route.query.planId as string) || ''
     const target = queryPlanId ? nextPlanList.find(plan => plan.id === queryPlanId) : null
@@ -541,12 +660,11 @@ const initPlans = async () => {
     activePlanId.value = selectedPlanId
     logger.info(`初始加载数据 (${selectedPlanId})`)
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`初始化计划失败: ${errorMsg}`)
-    planDataMap.value = {}
-    planList.value = []
-    activePlanId.value = ''
-    tableData.value = {}
+    const appError = toAppError(error)
+    logger.error(`初始化计划失败: ${appError.detail ?? appError.message}`)
+    // 失败时保留上一次的计划列表，不能把「请求失败」画成「没有计划」
+    planListError.value = appError
+    planListState.value = planList.value.length ? 'error_with_previous_data' : 'error_without_data'
   } finally {
     loading.value = false
   }
@@ -566,8 +684,7 @@ watch(
     if (!newPlanId) return
     const target = planList.value.find(p => p.id === newPlanId)
     if (target && target.id !== activePlanId.value) {
-      activePlanId.value = target.id
-      await loadPlanData(activePlanId.value)
+      await onPlanChange(target.id)
     }
   }
 )
@@ -583,6 +700,10 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 400px;
+}
+
+.state-block {
+  padding: 24px;
 }
 
 .plans-main {

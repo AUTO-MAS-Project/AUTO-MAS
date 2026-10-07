@@ -33,6 +33,7 @@ import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
 import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
 import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
 import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
+import type { ConfigLoadReportsOut } from '../models/ConfigLoadReportsOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { DispatchIn } from '../models/DispatchIn';
@@ -144,6 +145,7 @@ import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
 import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskOutcome } from '../models/TaskOutcome';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
@@ -3374,13 +3376,14 @@ export class Service {
     }
     /**
      * 中止任务
+     * 中止任务并返回统一终态；stop_task 返回时收尾已完成，终态可直接回读。
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns TaskOutcome Successful Response
      * @throws ApiError
      */
     public static stopTaskApiDispatchStopPost(
         requestBody: DispatchIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<TaskOutcome> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',
@@ -3660,6 +3663,18 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/get',
+        });
+    }
+    /**
+     * 查询配置文件加载状态
+     * 查询各配置文件的加载状态、损坏备份位置与自动纠正明细。
+     * @returns ConfigLoadReportsOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigLoadReportsApiSettingConfigLoadGet(): CancelablePromise<ConfigLoadReportsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/config-load',
         });
     }
     /**

@@ -12,10 +12,10 @@ export function useOkwwGuiSession() {
       viewOpened: 'edit.okwwViewOpened',
       timeoutWarn: 'edit.okwwSessionTimeoutWarn',
       saved: 'edit.okWwSettingsSaved',
-      saveFailed: 'edit.couldNotSaveOk2',
     },
   })
   return {
+    state: session.state,
     okwwConfigLoading: session.configLoading,
     okwwTaskId: session.taskId,
     showOkwwConfigMask: session.showConfigMask,
@@ -24,5 +24,6 @@ export function useOkwwGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: session.stopSession,
+    querySession: session.querySession,
   }
 }

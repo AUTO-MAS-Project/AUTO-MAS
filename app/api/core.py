@@ -125,6 +125,8 @@ async def get_ws_meta() -> WebSocketMetaOut:
 MainConnection.on_connect(TaskManager.start_startup_queue)
 # 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
 MainConnection.on_connect(Config.flush_startup_notices)
+# 断线期间没送达的任务终态在重连后补发，避免「结果只靠一次性推送」永久丢失。
+MainConnection.on_connect(Publisher.replay_pending)
 
 
 @router.websocket("/ws")

@@ -2,8 +2,6 @@
   <div class="user-edit-container">
     <component
       :is="sections.header"
-      :save-status="saveStatus"
-      :save-error-message="saveErrorMessage"
       :script-id="scriptId"
       :script-name="scriptName"
       :script-route="scriptRoute"
@@ -11,6 +9,8 @@
       :user-id="userIdHolder.value"
       @cancel="handleCancel"
     />
+
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="loading">
@@ -172,6 +172,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -195,8 +196,8 @@ const formRef = ref<FormInstance>()
 
 const {
   loading,
-  saveStatus,
-  saveErrorMessage,
+  saveState,
+  fieldStates,
   userIdHolder,
   isEdit,
   configLocked,

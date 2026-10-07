@@ -51,6 +51,8 @@
       @handle-cancel="handleCancel"
     />
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-form
@@ -176,6 +178,8 @@ import {
 } from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
+import { notifyTaskOutcome, taskOutcomeNoticeKind } from '@/utils/taskOutcomeNotice'
+import { queryTaskOutcome } from '@/utils/taskOutcome'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
@@ -184,6 +188,8 @@ const logger = window.electronAPI.getLogger('SRC用户编辑')
 
 // 导入拆分的组件
 import SRCUserEditHeader from '@/views/SRCUserEdit/SRCUserEditHeader.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -201,7 +207,7 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue, isSaving } = useSaveQueue()
+const { enqueue, isSaving, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 // SRC 会话相关状态
 const srcConfigLoading = ref(false)
@@ -317,29 +323,27 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 
   return await enqueue(async () => {
-    try {
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
+    const parts = key.split('.')
+    let userData: Record<string, any> = {}
+    let current = userData
 
-      // 构建嵌套结构
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
-
-      logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
-      const success = await updateUser(scriptId, userId, userData)
-      if (success) {
-        logger.info(`字段已保存: ${key}`)
-      }
-      return success
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存字段失败: ${errorMsg}`)
+    // 构建嵌套结构
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]]
     }
-  }, key)
+    current[parts[parts.length - 1]] = value
+
+    logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
+    // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+    await updateUser(scriptId, userId, userData, { strict: true })
+    logger.info(`字段已保存: ${key}`)
+    return true
+  }, key).catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存字段失败: ${errorMsg}`)
+    return false
+  })
 }
 
 // 快速配置开关：与配置来源独立，真实保存
@@ -583,6 +587,44 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的回写
+// 撞车，归档到半程状态；会话未开时跳过停止，不影响归档时机
+const stopSrcSessionAndArchive = async () => {
+  const taskId = srcTaskId.value
+  if (taskId) {
+    try {
+      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      if (response.code !== 200) return false
+      const result = settleSrcOutcome(response)
+      if (result === false || result === 'unknown') return false
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
+      return false
+    }
+  }
+  await ensureSrcBackup('mas')
+  return true
+}
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: stopSrcSessionAndArchive,
+})
+
 // ══ 会话 UI 清理（订阅 / 任务号 / 遮罩 / 超时定时器）══
 const closeSessionUi = () => {
   for (const subscriptionId of srcSubscriptionIds.value) {
@@ -596,6 +638,21 @@ const closeSessionUi = () => {
     window.clearTimeout(srcConfigTimeout)
     srcConfigTimeout = null
   }
+}
+
+const settleSrcOutcome = (
+  taskOutcome: WSTaskCompletedData['taskOutcome'],
+  savedMessageKey = 'edit.configurationUserP0Was',
+  savedMessageParams?: Record<string, unknown>
+) => {
+  const kind = notifyTaskOutcome(t, taskOutcome, {
+    viewOnly: currentSessionViewOnly.value,
+    savedMessageKey,
+    savedMessageParams,
+  })
+  if (taskOutcomeNoticeKind(taskOutcome) === 'unknown') return false
+  closeSessionUi()
+  return kind
 }
 
 // 处理SRC配置/查看会话（viewOnly=true 为只读查看会话：界面显示所选备份
@@ -635,19 +692,25 @@ const startConfigSession = async (viewOnly: boolean) => {
         }),
         // 处理任务结束消息
         subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          if (srcTaskId.value !== wsId) return
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.Info?.Name || formData.userName} SRC会话任务已结束`)
-          if (data.outcome === 'success' && !viewOnly) {
-            message.success(
-              t('edit.configurationUserP0Done', { p0: formData.Info?.Name || formData.userName })
-            )
-          }
-          closeSessionUi()
+          // 只认后端终态：丢弃/失败/未确认时绝不提示成功（查看会话未写入是预期行为）
+          settleSrcOutcome(data.taskOutcome, 'edit.configurationUserP0Done', {
+            p0: formData.Info?.Name || formData.userName,
+          })
         }),
       ]
 
       srcSubscriptionIds.value = subscriptionIds
       srcTaskId.value = wsId
+      void queryTaskOutcome(wsId).then(taskOutcome => {
+        if (srcTaskId.value === wsId && taskOutcome) {
+          settleSrcOutcome(taskOutcome, 'edit.configurationUserP0Done', {
+            p0: formData.Info?.Name || formData.userName,
+          })
+        }
+      })
       if (viewOnly) {
         showSrcViewMask.value = true
         message.success(t('edit.srcViewOpened'))
@@ -666,11 +729,13 @@ const startConfigSession = async (viewOnly: boolean) => {
           if (taskId) {
             void (async () => {
               try {
-                await Service.stopTaskApiDispatchStopPost({ taskId })
+                const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+                const result = settleSrcOutcome(response, 'edit.configurationSessionUserP0')
+                if (result === false || result === 'unknown') return
               } catch (e) {
                 logger.error(e instanceof Error ? e.message : String(e))
+                return
               }
-              closeSessionUi()
               if (!viewOnly) {
                 message.info(
                   t('edit.configurationSessionUserP0', {
@@ -711,11 +776,12 @@ const handleSaveSRCConfig = async () => {
     stoppingSrcConfig.value = true
     const response = await Service.stopTaskApiDispatchStopPost({ taskId })
     if (response && response.code === 200) {
-      closeSessionUi()
-      if (!viewOnly) {
-        message.success(
-          t('edit.configurationUserP0Was', { p0: formData.Info?.Name || formData.userName })
-        )
+      const result = settleSrcOutcome(response, 'edit.configurationUserP0Was', {
+        p0: formData.Info?.Name || formData.userName,
+      })
+      if (result === false || result === 'unknown') return
+      if (viewOnly) {
+        logger.info('SRC查看会话已关闭，配置保持原状')
       }
     } else {
       message.error(response?.message || t('edit.couldNotSaveSrc'))
@@ -757,20 +823,7 @@ if (!userId) {
 }
 
 onUnmounted(() => {
-  // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的回写
-  // 撞车，归档到半程状态；会话未开时跳过停止，不影响归档时机
-  void (async () => {
-    const taskId = srcTaskId.value
-    if (taskId) {
-      try {
-        await Service.stopTaskApiDispatchStopPost({ taskId })
-      } catch (e) {
-        logger.error(e instanceof Error ? e.message : String(e))
-      }
-      closeSessionUi()
-    }
-    await ensureSrcBackup('mas')
-  })()
+  void stopSrcSessionAndArchive()
 })
 </script>
 

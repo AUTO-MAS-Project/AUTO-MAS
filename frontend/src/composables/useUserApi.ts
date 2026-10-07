@@ -14,11 +14,17 @@ import type {
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import { AppRequestError, toAppError } from '@/utils/appError'
 
 const logger = window.electronAPI.getLogger('用户API')
 
 interface AddUserOptions {
   showError?: boolean
+}
+
+interface UpdateUserOptions {
+  /** true 时不自行 message.error、失败时抛出（AppRequestError），由调用方按 SaveState 决定提示与下一步 */
+  strict?: boolean
 }
 
 export function useUserApi() {
@@ -78,12 +84,16 @@ export function useUserApi() {
   const updateUser = async (
     scriptId: string,
     userId: string,
-    userData: UserUpdateIn['data']
+    userData: UserUpdateIn['data'],
+    options: UpdateUserOptions = {}
   ): Promise<boolean> => {
+    const strict = options.strict === true
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
-      message.warning(errorMsg)
+      if (!strict) message.warning(errorMsg)
+      if (strict)
+        throw new AppRequestError('protected_discard', { detail: errorMsg, retryable: false })
       return false
     }
 
@@ -104,14 +114,16 @@ export function useUserApi() {
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
         logger.error(`更新用户失败: ${errorMsg}`)
-        message.error(errorMsg)
-        throw new Error(errorMsg)
+        if (!strict) message.error(errorMsg)
+        // 业务信封（HTTP 200 但 code !== 200）按平台分类收敛，否则会被当成网络错误
+        throw toAppError({ response: { status: response.code ?? 500, data: response } })
       }
 
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新用户失败'
       error.value = errorMsg
+      if (strict) throw err
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }

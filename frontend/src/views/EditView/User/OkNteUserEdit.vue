@@ -14,6 +14,8 @@
       @cancel="handleCancel"
     />
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐一条龙） -->
     <GuiSessionMask
       :open="showOknteConfigMask"
@@ -372,6 +374,8 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useOknteGuiSession } from '@/composables/useOknteGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
@@ -406,7 +410,7 @@ const scriptName = ref('OK-NTE脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue, isSaving } = useSaveQueue()
+const { enqueue, isSaving, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 const configEditor = ref<InstanceType<typeof OkNteConfigEditor> | null>(null)
 const configEditorSaving = ref(false)
 const oknteConfigRefreshToken = ref(0)
@@ -537,6 +541,29 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: async () => {
+    if (!(await stopSession())) return false
+    await ensureOkNteBackup('mas')
+    return true
+  },
+})
+
 const refreshOkNteConfigEditor = () => {
   oknteConfigRefreshToken.value += 1
 }
@@ -590,23 +617,35 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  return await enqueue(async () => {
-    try {
-      return await updateUser(scriptId, userId, patch)
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-    }
-  }, key)
+  // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+  return await enqueue(
+    async () => await updateUser(scriptId, userId, patch, { strict: true }),
+    key
+  ).catch((e: unknown) => {
+    logger.error(e instanceof Error ? e.message : String(e))
+    return false
+  })
 }
 
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId) return
   formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      ExitOnFinish: true,
-    },
+  await enqueue(
+    () =>
+      updateUser(
+        scriptId,
+        userId,
+        {
+          Task: {
+            TaskIndex: formData.Task.TaskIndex,
+            ExitOnFinish: true,
+          },
+        },
+        { strict: true }
+      ),
+    'Task'
+  ).catch((e: unknown) => {
+    logger.error(e instanceof Error ? e.message : String(e))
   })
 }
 

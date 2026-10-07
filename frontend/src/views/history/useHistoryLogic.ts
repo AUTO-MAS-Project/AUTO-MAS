@@ -5,6 +5,8 @@ import { useLogHighlight } from '@/composables/useLogHighlight'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { AppRequestError, toAppError } from '@/utils/appError'
+import type { PageDataState } from '@/utils/pageDataState'
 
 const logger = window.electronAPI.getLogger('历史记录')
 
@@ -102,6 +104,10 @@ export function useHistoryLogic() {
   // 历史记录数据
   const historyData = ref<HistoryDateGroup[]>([])
 
+  // 搜索状态：空数组只代表「确实没有记录」，失败单独记录
+  const searchState = ref<PageDataState>('not_loaded')
+  const searchError = ref<AppRequestError | null>(null)
+
   // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
@@ -119,26 +125,32 @@ export function useHistoryLogic() {
 
       if (!isMounted) return
 
-      if (response.code === 200) {
-        historyData.value = Object.entries(response.data)
-          .map(([date, users]) => ({ date, users }))
-          .sort((a, b) => b.date.localeCompare(a.date))
-
-        const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
-        const { playSound } = useAudioPlayer()
-        // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
-        void playSound('history_query')
-
-        if (!isMounted) return
-        message.success(t('history.toast.searchDone'))
-      } else {
-        message.error(response.message || t('history.toast.searchFailed'))
+      if (response.code !== 200) {
+        throw new AppRequestError('unknown', { detail: response.message })
       }
+
+      historyData.value = Object.entries(response.data)
+        .map(([date, users]) => ({ date, users }))
+        .sort((a, b) => b.date.localeCompare(a.date))
+      searchError.value = null
+      searchState.value = historyData.value.length ? 'loaded_fresh' : 'empty'
+
+      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
+      const { playSound } = useAudioPlayer()
+      // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
+      void playSound('history_query')
+
+      if (!isMounted) return
+      message.success(t('history.toast.searchDone'))
     } catch (error) {
       if (!isMounted) return
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`搜索历史记录失败: ${errorMsg}`)
-      message.error(t('history.toast.searchHistoryFailed'))
+      const appError = toAppError(error)
+      logger.error(`搜索历史记录失败: ${appError.detail ?? appError.message}`)
+      // 保留上一次的搜索结果，只把失败挂出来给用户重试
+      searchError.value = appError
+      searchState.value = historyData.value.length
+        ? 'error_with_previous_data'
+        : 'error_without_data'
     } finally {
       if (isMounted) searchLoading.value = false
     }
@@ -157,6 +169,8 @@ export function useHistoryLogic() {
     currentDetail.value = null
     currentJsonFile.value = ''
     currentPreset.value = 'week'
+    searchError.value = null
+    searchState.value = 'empty'
   }
 
   // 快捷时间选择处理
@@ -308,6 +322,8 @@ export function useHistoryLogic() {
     currentJsonFile,
     searchForm,
     historyData,
+    searchState,
+    searchError,
 
     // 配置
     fontSizeOptions,

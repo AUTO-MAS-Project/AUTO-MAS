@@ -796,6 +796,46 @@ class ConfigBackupFileOut(OutBase):
     )
 
 
+class ConfigLoadEventOut(BaseModel):
+    """配置加载过程中的一次自动规范化记录"""
+
+    field: str = Field(..., description="配置项位置（形如 分组.字段名）")
+    oldValue: str = Field(..., description="规范化前的原值")
+    newValue: str = Field(..., description="规范化后的新值")
+    reason: str = Field(..., description="自动纠正原因（如非法枚举被回退、密文不可解）")
+    time: str = Field(..., description="该次规范化发生的时间")
+
+
+class ConfigLoadReportOut(BaseModel):
+    """单个配置文件的加载状态与规范化明细"""
+
+    file: str = Field(..., description="配置文件名")
+    path: str = Field(..., description="配置文件完整路径")
+    status: Literal["ok", "empty", "corrupt_recovered", "unreadable", "defaulted"] = (
+        Field(
+            ...,
+            description="加载结果：ok=正常；empty=空文件按默认值；corrupt_recovered=损坏已留副本并按默认值；unreadable=文件不可读；defaulted=加载时自动纠正过配置项",
+        )
+    )
+    time: str = Field(..., description="读取到该状态的时间")
+    fileTime: Optional[str] = Field(
+        default=None,
+        description="配置文件最后写入时间；恢复备份会覆写该文件，因此该时间即恢复时间（文件不存在时为 null）",
+    )
+    backupPath: Optional[str] = Field(
+        default=None, description="损坏时保留的原文件副本路径（未损坏时为 null）"
+    )
+    normalizationEvents: List[ConfigLoadEventOut] = Field(
+        default_factory=list, description="本次加载中被自动纠正的配置项明细"
+    )
+
+
+class ConfigLoadReportsOut(OutBase):
+    """全部配置文件的加载状态（只读）"""
+
+    data: List[ConfigLoadReportOut] = Field(..., description="按配置文件汇总的加载状态")
+
+
 class ZzzOdNativeAccountField(BaseModel):
     """直控编辑的账号字段（强绑定 zzz-od 原生 game_account.yml）。"""
 
@@ -6115,6 +6155,34 @@ class TaskRuntimeSnapshot(BaseModel):
     )
 
 
+class TaskOutcome(OutBase):
+    """统一任务终态结果契约: 所有任务类型复用同一形状, 供停止响应与结果查询接口返回。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    outcome: Literal[
+        "saved",
+        "discarded",
+        "failed",
+        "cancelled",
+        "completed",
+        "completed_without_write",
+        "unknown",
+    ] = Field(..., description="机器可读的最终业务结果")
+    reason: Optional[str] = Field(
+        default=None, description="机器可读的结果原因, 无原因为空"
+    )
+    scope: Optional[str] = Field(
+        default=None, description="结果作用范围, 例如 native_config"
+    )
+    dataPreserved: bool = Field(default=True, description="用户数据是否仍然保留")
+    retryable: bool = Field(default=True, description="该操作是否可安全重试")
+    messageKey: Optional[str] = Field(default=None, description="前端文案 key")
+    finishedAt: Optional[str] = Field(
+        default=None,
+        description="任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 任务未结束为空",
+    )
+
+
 class TaskStatusOut(OutBase):
     """按 taskId 单点查询一个任务的状态, 不携带日志。"""
 
@@ -6136,6 +6204,9 @@ class TaskStatusOut(OutBase):
         default=None,
         description="任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 运行中为空",
     )
+    taskOutcome: Optional[TaskOutcome] = Field(
+        default=None, description="统一任务终态结果契约; 任务未结束或结果未知时为空"
+    )
 
 
 class WSTaskCompletedData(BaseModel):
@@ -6147,6 +6218,9 @@ class WSTaskCompletedData(BaseModel):
     )
     error: Optional[str] = Field(default=None, description="任务错误信息")
     task_info: List[WSTaskScriptInfoData] = Field(..., description="任务信息全量快照")
+    taskOutcome: Optional[TaskOutcome] = Field(
+        default=None, description="统一任务终态结果契约, 旧前端可忽略"
+    )
 
 
 class WSTaskCreatedData(BaseModel):

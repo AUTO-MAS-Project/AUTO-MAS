@@ -113,6 +113,8 @@
       </template>
     </GuiSessionMask>
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -1326,6 +1328,8 @@ import {
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
@@ -1502,7 +1506,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 // 保存串行化队列：以 promise 链取代布尔 isSaving 互斥。布尔守卫会在「上一次保存尚未返回」时
 // 丢弃紧随其后的保存（自定义配置组连续勾选/删除即可触发），造成前后端状态失步；队列则逐条按序
 // 写回，不再丢保存。
-const { enqueue, isSaving } = useSaveQueue()
+const { enqueue, isSaving, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
@@ -1520,23 +1524,16 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
     formData.userName = String(value || '')
   }
 
-  const persist = async (): Promise<boolean> => {
-    try {
-      const ok = await updateUser(scriptId, userId.value, patch)
-      if (!ok) {
-        // updateUser 内部已对多数失败分支弹过 message.error，此处兜底记录并向上返回失败，
-        // 不再静默吞掉；调用方（如自定义配置组 persist）可据此决定是否回滚。
-        logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
-      }
-      return ok
-    } catch (e) {
-      // 仅 updateUser 自身未捕获的意外异常会走到这里
-      logger.error(e instanceof Error ? e.message : String(e))
-      return false
-    }
-  }
-
-  return enqueue(persist)
+  // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态。
+  // 调用方（如自定义配置组 persist）依据返回的 false 决定是否回滚。
+  return enqueue(async () => {
+    await updateUser(scriptId, userId.value, patch, { strict: true })
+    return true
+  }, key).catch(e => {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`保存字段「${key}」失败: ${errorMsg}`)
+    return false
+  })
 }
 
 // ══ 游戏客户端（用户级覆盖）：透传 BetterGI 配置 + config.ini 渠道识别 ══
@@ -4705,6 +4702,33 @@ const handleCancel = async () => {
   await router.push('/scripts')
 }
 
+// 退出编辑页：先停会话再归档 MAS 用户配置终态——并行会与 final_task 的
+// 收尾撞车、归档到半程状态；会话未开时 dispose 立即返回，不影响归档时机
+const stopBettergiSessionAndArchive = async () => {
+  if (!(await disposeGuiSession())) return false
+  await ensureBettergiBackup('mas')
+  return true
+}
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: stopBettergiSessionAndArchive,
+})
+
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
 // 专项统一名（文案参数化用）：BetterGI 统一叫「bettergi」
 const BETTERGI_DISPLAY_NAME = 'bettergi'
@@ -4927,12 +4951,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // 退出编辑页：先停会话再归档 MAS 用户配置终态——并行会与 final_task 的
-  // 收尾撞车、归档到半程状态；会话未开时 dispose 立即返回，不影响归档时机
-  void (async () => {
-    await disposeGuiSession()
-    await ensureBettergiBackup('mas')
-  })()
+  void stopBettergiSessionAndArchive()
 })
 </script>
 

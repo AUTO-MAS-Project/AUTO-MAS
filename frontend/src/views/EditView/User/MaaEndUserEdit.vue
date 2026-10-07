@@ -40,6 +40,14 @@
       @handle-cancel="handleCancel"
     />
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
+    <RetryableErrorState
+      v-if="sanityPlanError"
+      :error="sanityPlanError"
+      @retry="retryLoadSanityPlan"
+    />
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <div class="page-layout">
         <a-form
@@ -279,6 +287,11 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
+import { toAppError, type AppRequestError } from '@/utils/appError'
 
 const { t } = useI18n()
 
@@ -302,7 +315,7 @@ const {
 
 const formRef = ref<FormInstance>()
 const isInitializing = ref(true)
-const isSaving = ref(false)
+const { enqueue, isSaving, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 // 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动。
 const loading = computed(() => isInitializing.value)
 const maaEndOptionsLoading = ref(false)
@@ -328,6 +341,8 @@ const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: t('edit.fixed'), value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
+// 计划表加载失败：给用户可见反馈 + 可重试动作（此前只有 logger，无任何可见提示）
+const sanityPlanError = ref<AppRequestError | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
 let sanityPlanLoadVersion = 0
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
@@ -499,44 +514,39 @@ const saveUserFields = async (changes: FieldChange[]) => {
   }
   if (fieldSavePromise) return fieldSavePromise
 
-  const savePromise = (async (): Promise<boolean> => {
-    isSaving.value = true
-    let currentChanges: Array<[string, any]> = []
-    try {
-      while (pendingFieldSaves.size > 0) {
-        const userData: Record<string, any> = {}
-        currentChanges = Array.from(pendingFieldSaves.entries())
-        pendingFieldSaves.clear()
+  let currentChanges: Array<[string, any]> = []
+  const savePromise = enqueue(async () => {
+    while (pendingFieldSaves.size > 0) {
+      const userData: Record<string, any> = {}
+      currentChanges = Array.from(pendingFieldSaves.entries())
+      pendingFieldSaves.clear()
 
-        currentChanges.forEach(([key, value]) => {
-          if (key === 'userName') {
-            syncUserName()
-            setNestedValue(userData, 'Info.Name', formData.Info.Name)
-            return
-          }
-
-          setNestedValue(userData, key, value)
-        })
-
-        if (!(await updateUser(scriptId, userId, userData))) {
-          restoreFailedFieldSaves(currentChanges)
-          reportFieldSaveFailure()
-          return false
+      currentChanges.forEach(([key, value]) => {
+        if (key === 'userName') {
+          syncUserName()
+          setNestedValue(userData, 'Info.Name', formData.Info.Name)
+          return
         }
-        currentChanges = []
-      }
-      return true
-    } catch (error) {
+
+        setNestedValue(userData, key, value)
+      })
+
+      // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+      await updateUser(scriptId, userId, userData, { strict: true })
+      currentChanges = []
+    }
+    return true
+  }, 'fields')
+    .catch(error => {
       restoreFailedFieldSaves(currentChanges)
       reportFieldSaveFailure()
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`保存用户字段异常: ${errorMessage}`)
       return false
-    } finally {
-      isSaving.value = false
+    })
+    .finally(() => {
       fieldSavePromise = null
-    }
-  })()
+    })
   fieldSavePromise = savePromise
   return savePromise
 }
@@ -624,6 +634,7 @@ const loadSanityModeOptions = async () => {
 
 const loadSanityPlan = async (planId: string) => {
   const version = ++sanityPlanLoadVersion
+  sanityPlanError.value = null
 
   if (!planId || planId === 'Fixed') {
     planModeConfig.value = null
@@ -651,8 +662,15 @@ const loadSanityPlan = async (planId: string) => {
       return
     }
     planModeConfig.value = null
+    sanityPlanError.value = toAppError(error)
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+// 计划表加载失败后的下一步动作：重试当前计划表
+const retryLoadSanityPlan = () => {
+  const planId = formData.Info.SanityMode
+  if (planId) void loadSanityPlan(planId)
 }
 
 const normalizeQuickConfig = async () => {
@@ -936,14 +954,36 @@ watch(
   }
 )
 
+// 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
+// rmtree/copytree 回写撞车，归档到半程状态；会话未开时 stopSession
+// 立即返回，不影响归档时机
+const stopMaaEndSessionAndArchive = async () => {
+  if (!(await stopSession())) return false
+  await ensureMaaEndBackup('mas')
+  return true
+}
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: stopMaaEndSessionAndArchive,
+})
+
 onUnmounted(() => {
-  // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
-  // rmtree/copytree 回写撞车，归档到半程状态；会话未开时 stopSession
-  // 立即返回，不影响归档时机
-  void (async () => {
-    await stopSession()
-    await ensureMaaEndBackup('mas')
-  })()
+  void stopMaaEndSessionAndArchive()
 })
 </script>
 

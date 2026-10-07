@@ -32,6 +32,7 @@ from app.core import Config, notify_channels
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
+    ConfigLoadReportsOut,
     GlobalConfig,
     NotifyChannelFieldOut,
     NotifyChannelOptionOut,
@@ -124,6 +125,28 @@ async def get_scripts() -> SettingGetOut:
             data=GlobalConfig(**{}),
         )
     return SettingGetOut(data=GlobalConfig(**data))
+
+
+@router.get(
+    "/config-load",
+    tags=["Get"],
+    summary="查询配置文件加载状态",
+    response_model=ConfigLoadReportsOut,
+    status_code=200,
+)
+async def get_config_load_reports() -> ConfigLoadReportsOut:
+    """查询各配置文件的加载状态、损坏备份位置与自动纠正明细。"""
+
+    try:
+        data = Config.get_load_reports()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_config_load_reports失败: {type(e).__name__}: {e}"
+        )
+        return ConfigLoadReportsOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return ConfigLoadReportsOut(data=data)
 
 
 @router.post(

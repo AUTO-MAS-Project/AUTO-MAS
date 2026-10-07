@@ -18,7 +18,10 @@ import {
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
+import { AppRequestError, toAppError } from '@/utils/appError'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 const { t } = useI18n()
@@ -98,6 +101,16 @@ const showingDevices = ref<Set<string>>(new Set())
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const POLLING_INTERVAL = 10000 // 10 秒轮询一次
 
+// 失败不再吞掉：轮询失败说明表里的状态在变旧，列表加载失败也不能渲染成「没有模拟器」
+const devicesStaleError = ref<AppRequestError | null>(null)
+const listError = ref<AppRequestError | null>(null)
+const deviceErrors = ref<Record<string, AppRequestError | null>>({})
+
+// 后端业务信封（HTTP 200 + code≠200）没有 HTTP 状态可分类，按 unknown 处理，
+// 但把 code 与后端原文留在 detail 里，主文案仍走 i18n。
+const envelopeError = (code: number | undefined, responseMessage?: string) =>
+  new AppRequestError('unknown', { detail: `code ${code ?? 'unknown'} | ${responseMessage ?? ''}` })
+
 // 路由监听
 const route = useRoute()
 
@@ -114,11 +127,17 @@ const pollDevicesStatus = async () => {
     if (response.code === 200) {
       const allDevicesData = response.data || {}
       devicesData.value[uid] = allDevicesData[uid] || {}
+      devicesStaleError.value = null
+    } else {
+      // 轮询失败不弹 Toast（10 秒一次会刷屏），改成页面内的过期提示 + 重试
+      const error = envelopeError(response.code, response.message)
+      devicesStaleError.value = error
+      logger.warn(`轮询设备状态返回非 200: ${error.detail}`)
     }
   } catch (e) {
-    // 轮询时的错误静默处理，避免频繁弹错误提示
-    const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.warn(`轮询设备状态时出错: ${errorMsg}`)
+    const error = toAppError(e)
+    devicesStaleError.value = error
+    logger.warn(`轮询设备状态时出错: ${error.detail}`)
   }
 }
 
@@ -317,13 +336,14 @@ const loadEmulators = async () => {
           bossKeyInputMap.value[item.uid] = editData.boss_keys[0]
         }
       })
+      listError.value = null
     } else {
-      message.error(response.message || t('emulator.toast.loadFailed'))
+      listError.value = envelopeError(response.code, response.message)
     }
   } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`加载模拟器配置失败: ${errorMsg}`)
-    message.error(t('emulator.toast.loadFailed'))
+    const error = toAppError(e)
+    listError.value = error
+    logger.error(`加载模拟器配置失败: ${error.detail}`)
   } finally {
     loading.value = false
   }
@@ -568,13 +588,17 @@ const loadDevices = async (uuid: string) => {
       const allDevicesData = response.data || {}
       const currentDevices = allDevicesData[uuid] || {}
       devicesData.value[uuid] = currentDevices
+      deviceErrors.value[uuid] = null
     } else {
-      message.error(response.message || t('emulator.toast.deviceInfoFailed'))
+      // 失败不能当成「这台模拟器没有设备」，否则会误给启动按钮
+      const error = envelopeError(response.code, response.message)
+      deviceErrors.value[uuid] = error
+      logger.warn(`获取设备信息返回非 200: ${error.detail}`)
     }
   } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`获取设备信息失败: ${errorMsg}`)
-    message.error(t('emulator.toast.deviceInfoFailed'))
+    const error = toAppError(e)
+    deviceErrors.value[uuid] = error
+    logger.error(`获取设备信息失败: ${error.detail}`)
   } finally {
     loadingDevices.value.delete(uuid)
     loadingDevices.value = new Set(loadingDevices.value)
@@ -915,9 +939,26 @@ const handleBossKeyInputChange = (uuid: string) => {
     </div>
 
     <div class="page-content">
+      <!-- 轮询失败：状态可能过期，给页面内提示与重试，不弹 Toast -->
+      <OperationStatusBanner
+        v-if="devicesStaleError"
+        state="warning"
+        message-key="emulator.staleStatus"
+        retryable
+        @retry="pollDevicesStatus"
+      />
+
       <a-spin :spinning="loading">
+        <!-- 加载失败给恢复动作，不能把失败渲染成「没有模拟器」 -->
+        <RetryableErrorState
+          v-if="listError"
+          :error="listError"
+          message-key="emulator.toast.loadFailed"
+          @retry="loadEmulators"
+        />
+
         <!-- 空状态：无模拟器时居中显示大按钮 -->
-        <div v-if="emulatorIndex.length === 0" class="empty-state-large">
+        <div v-else-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
             <a-button
@@ -1192,8 +1233,16 @@ const handleBossKeyInputChange = (uuid: string) => {
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
+                  <!-- 读取失败时显示错误与重试，不能冒充「无设备」 -->
+                  <RetryableErrorState
+                    v-if="deviceErrors[element.uid]"
+                    :error="deviceErrors[element.uid]"
+                    message-key="emulator.toast.deviceInfoFailed"
+                    @retry="loadDevices(element.uid)"
+                  />
+
                   <div
-                    v-if="
+                    v-else-if="
                       !devicesData[element.uid] ||
                       Object.keys(devicesData[element.uid]).length === 0
                     "

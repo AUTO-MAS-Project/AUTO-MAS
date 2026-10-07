@@ -4,10 +4,13 @@ import { message } from 'ant-design-vue'
 import { Service, TaskCreateIn } from '@/api'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
+import { taskOutcomeNoticeKind } from '@/utils/taskOutcomeNotice'
+import { queryTaskOutcome } from '@/utils/taskOutcome'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
   WS_TASK_NOTICE,
+  type WSTaskCompletedData,
   type WSTaskLogUpdatedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
@@ -60,6 +63,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
   let logResyncing = false
   // 报错后任务随即也会走完成事件，用它抑制紧随其后的「任务已结束」成功提示
   let errored = false
+  let settledTaskId = ''
 
   const clearSession = () => {
     for (const subscriptionId of updateSession.subscriptionIds) {
@@ -141,6 +145,23 @@ export function useBetterGIUpdate(getUserId: () => string) {
     }
   }
 
+  const finishUpdate = (taskOutcome: WSTaskCompletedData['taskOutcome']) => {
+    const taskId = updateSession.taskId
+    if (!taskId || settledTaskId === taskId) return
+    settledTaskId = taskId
+    const kind = taskOutcomeNoticeKind(taskOutcome)
+    if (kind === 'completed') {
+      message.success(t('edit.bettergiUpdateTask'))
+    } else if (kind === 'failed') {
+      if (!errored) message.error(t('edit.bettergiUpdateFailed'))
+    } else if (kind === 'unknown') {
+      message.warning(t('resultUnknown.title'))
+    }
+    updateModal.running = false
+    updateModal.done = true
+    void stopSession()
+  }
+
   const handleCheckUpdate = () => {
     if (updateModal.running || !getUserId()) return
     updateModal.log = ''
@@ -165,6 +186,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       updateModal.done = false
       updateSession.taskId = response.taskId
       errored = false
+      settledTaskId = ''
       updateSession.subscriptionIds = [
         subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
           applyLog(
@@ -174,6 +196,8 @@ export function useBetterGIUpdate(getUserId: () => string) {
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
+            if (settledTaskId === response.taskId) return
+            settledTaskId = response.taskId
             errored = true
             message.error(t('edit.bettergiUpdateFailed', { p0: data.message }))
             updateModal.running = false
@@ -182,17 +206,19 @@ export function useBetterGIUpdate(getUserId: () => string) {
             void stopSession()
           }
         }),
-        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-          if (!errored) {
-            message.success(t('edit.bettergiUpdateTask'))
-          }
-          updateModal.running = false
-          updateModal.done = true
+        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+          if (updateSession.taskId !== response.taskId) return
+          const data = wsMessage.data as unknown as WSTaskCompletedData
+          finishUpdate(data.taskOutcome)
           // 不关弹窗：后端为这次检查专门推的结论（「当前为最新版本（x）」/
           // 「更新完成 x -> y」）就在日志里，一关掉用户只剩一句「已结束」
-          void stopSession()
         }),
       ]
+      void queryTaskOutcome(response.taskId).then(taskOutcome => {
+        if (updateSession.taskId === response.taskId && taskOutcome) {
+          finishUpdate(taskOutcome)
+        }
+      })
       armIdleTimer()
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))

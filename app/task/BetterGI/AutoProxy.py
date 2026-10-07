@@ -1032,6 +1032,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         self._write_one_dragon_config()
 
+        # 任务前脚本：账号级一次性序言，语义是「本账号的整个任务之前执行一次」，
+        # 故置于阶段1（执行层）与阶段2（原生一条龙）之前，不随后续重试重复执行。
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
+            )
+
         # 路径 B：执行层（战斗段 + 自定义项）在**一次** BGI 进程里按左栏队列顺序跑完，
         # 组名由 _write_one_dragon_config 切段时确定。失败不再中止任务：日常 4 项（领奖类）
         # 与执行层无依赖，仍由随后的一条龙承接，避免执行层异常连坐吞掉日常收益
@@ -1057,6 +1065,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(
                 f"用户 {self.cur_user_item.name} 原生一条龙无启用任务，跳过 BetterGI 启动"
             )
+            # 脚本前任务已执行，本路径直接收尾，脚本后任务在此成对执行
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
             return
 
         # 启动原生一条龙前先确认没有杀不掉的旧实例：BGI 单实例下带参启动会被已有实例吞掉，
@@ -1083,12 +1097,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
-
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
 
             # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
             # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
@@ -1145,11 +1153,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = (
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -1168,14 +1171,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
+
+        # 任务后脚本：整个任务结束（成功或重试耗尽）后执行一次，不再随每次重试重复执行
+        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                "脚本后任务",
+            )
 
     async def _run_execution_layer(self) -> bool:
         """路径 B：用**一次** ``--startGroups <段名...>`` 按队列顺序跑完执行层，返回是否成功。

@@ -58,6 +58,8 @@
     </a-space>
   </div>
 
+  <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
   <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
   <teleport to="body">
     <div v-if="showGeneralConfigMask" class="maa-config-mask">
@@ -259,6 +261,8 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import {
   WS_TASK_COMPLETED,
@@ -268,6 +272,8 @@ import {
 } from '@/services/websocket/types'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
+import { notifyTaskOutcome, taskOutcomeNoticeKind } from '@/utils/taskOutcomeNotice'
+import { queryTaskOutcome } from '@/utils/taskOutcome'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
@@ -294,7 +300,7 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -319,6 +325,38 @@ const showGeneralConfigMask = ref(false)
 const generalSessionViewOnly = ref(false) // 当前会话是否为查看（只读）会话
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
+
+const closeGeneralSessionUi = () => {
+  for (const subscriptionId of generalSubscriptionIds.value) {
+    unsubscribe(subscriptionId)
+  }
+  generalSubscriptionIds.value = []
+  generalTaskId.value = null
+  showGeneralConfigMask.value = false
+  configTimedOut.value = false
+  if (generalConfigTimeout) {
+    window.clearTimeout(generalConfigTimeout)
+    generalConfigTimeout = null
+  }
+}
+
+const settleGeneralOutcome = (
+  taskOutcome: WSTaskCompletedData['taskOutcome'],
+  savedMessageKey = 'edit.generalConfigurationThisUser2',
+  savedMessageParams?: Record<string, unknown>
+) => {
+  const kind = notifyTaskOutcome(t, taskOutcome, {
+    viewOnly: generalSessionViewOnly.value,
+    savedMessageKey,
+    savedMessageParams,
+  })
+  if (taskOutcomeNoticeKind(taskOutcome) === 'unknown') {
+    configTimedOut.value = true
+    return false
+  }
+  closeGeneralSessionUi()
+  return kind
+}
 
 // 通用脚本默认用户数据
 const getDefaultGeneralUserData = () => ({
@@ -395,34 +433,33 @@ const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || !userId) return
 
   await enqueue(async () => {
-    try {
-      // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-      const parts = key.split('.')
-      let userData: Record<string, any> = {}
-      let current = userData
+    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+    const parts = key.split('.')
+    let userData: Record<string, any> = {}
+    let current = userData
 
-      for (let i = 0; i < parts.length - 1; i++) {
-        current[parts[i]] = {}
-        current = current[parts[i]]
-      }
-      current[parts[parts.length - 1]] = value
-
-      // 特殊处理：userName 需要同步到 Info.Name
-      if (key === 'userName') {
-        userData = { Info: { Name: value } }
-      }
-
-      await updateUser(scriptId, userId, userData)
-      logger.info(`用户配置已保存: ${key}`)
-      // 任务前后脚本路径会被后端规范化（相对转绝对、解析 .lnk 等），保存后回读该字段
-      if (key === 'Info.ScriptBeforeTask' || key === 'Info.ScriptAfterTask') {
-        await refreshNormalizedUserField(key)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]]
     }
-  }, key)
+    current[parts[parts.length - 1]] = value
+
+    // 特殊处理：userName 需要同步到 Info.Name
+    if (key === 'userName') {
+      userData = { Info: { Name: value } }
+    }
+
+    // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+    await updateUser(scriptId, userId, userData, { strict: true })
+    logger.info(`用户配置已保存: ${key}`)
+    // 任务前后脚本路径会被后端规范化（相对转绝对、解析 .lnk 等），保存后回读该字段
+    if (key === 'Info.ScriptBeforeTask' || key === 'Info.ScriptAfterTask') {
+      await refreshNormalizedUserField(key)
+    }
+  }, key).catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
+  })
 }
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
@@ -656,24 +693,13 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
         }),
         // 处理任务结束消息
         subscribe({ id: wsId, type: WS_TASK_COMPLETED }, wsMessage => {
+          if (generalTaskId.value !== wsId) return
           const data = wsMessage.data as unknown as WSTaskCompletedData
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
-          // 根据结果显示不同消息（查看会话只读不保存，不打扰用户）
-          if (data.outcome === 'success' && !generalSessionViewOnly.value) {
-            message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
-          }
-          // 清理连接
-          for (const subscriptionId of generalSubscriptionIds.value) {
-            unsubscribe(subscriptionId)
-          }
-          generalSubscriptionIds.value = []
-          generalTaskId.value = null
-          showGeneralConfigMask.value = false
-          configTimedOut.value = false
-          if (generalConfigTimeout) {
-            window.clearTimeout(generalConfigTimeout)
-            generalConfigTimeout = null
-          }
+          // 只认后端终态：丢弃/失败/未确认时绝不提示成功（查看会话未写入是预期行为）
+          settleGeneralOutcome(data.taskOutcome, 'edit.configurationUserP0Done', {
+            p0: formData.userName,
+          })
         }),
       ]
 
@@ -681,27 +707,27 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
       generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
+      void queryTaskOutcome(wsId).then(taskOutcome => {
+        if (generalTaskId.value === wsId && taskOutcome) {
+          settleGeneralOutcome(taskOutcome, 'edit.configurationUserP0Done', {
+            p0: formData.userName,
+          })
+        }
+      })
       message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
 
       // 设置 30 分钟超时自动断开（查看会话静默关闭；配置会话提醒 + 自动保存）
       generalConfigTimeout = window.setTimeout(
         async () => {
-          if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
+          if (generalTaskId.value) {
             const taskId = generalTaskId.value
             const response = await Service.stopTaskApiDispatchStopPost({ taskId })
 
             if (response && response.code === 200) {
-              for (const subscriptionId of generalSubscriptionIds.value) {
-                unsubscribe(subscriptionId)
-              }
-              generalSubscriptionIds.value = []
-              generalTaskId.value = null
-              showGeneralConfigMask.value = false
-              configTimedOut.value = false
+              const result = settleGeneralOutcome(response, 'edit.configurationSessionTimedOut')
+              if (result === false || result === 'unknown') return
               if (generalSessionViewOnly.value) {
                 logger.info('通用脚本查看会话已超时，静默关闭')
-              } else {
-                message.success(t('edit.configurationSessionTimedOut'))
               }
             } else if (generalSessionViewOnly.value) {
               logger.error(response?.message || '查看会话超时关闭失败')
@@ -738,23 +764,12 @@ const handleSaveGeneralConfig = async () => {
     }
 
     const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const wasViewOnly = generalSessionViewOnly.value
     if (response && response.code === 200) {
-      for (const subscriptionId of generalSubscriptionIds.value) {
-        unsubscribe(subscriptionId)
-      }
-      generalSubscriptionIds.value = []
-      generalTaskId.value = null
-      const wasViewOnly = generalSessionViewOnly.value
-      showGeneralConfigMask.value = false
-      configTimedOut.value = false
-      if (generalConfigTimeout) {
-        window.clearTimeout(generalConfigTimeout)
-        generalConfigTimeout = null
-      }
+      const result = settleGeneralOutcome(response)
+      if (result === false || result === 'unknown') return
       if (wasViewOnly) {
         logger.info('通用脚本查看会话已关闭，配置保持原状')
-      } else {
-        message.success(t('edit.generalConfigurationThisUser2'))
       }
     } else {
       message.error(response.message || '保存配置失败')
@@ -895,22 +910,15 @@ const ensureGeneralBackup = async (target: 'mas' | 'native') => {
 // 停止当前配置/查看会话（清理订阅与任务），供离开页面时兜底
 const stopGeneralSession = async () => {
   const taskId = generalTaskId.value
-  if (!taskId || generalSubscriptionIds.value.length === 0) return
+  if (!taskId) return true
   try {
-    await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    if (response.code !== 200) return false
+    const result = settleGeneralOutcome(response)
+    return result !== false && result !== 'unknown'
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-  }
-  for (const subscriptionId of generalSubscriptionIds.value) {
-    unsubscribe(subscriptionId)
-  }
-  generalSubscriptionIds.value = []
-  generalTaskId.value = null
-  showGeneralConfigMask.value = false
-  configTimedOut.value = false
-  if (generalConfigTimeout) {
-    window.clearTimeout(generalConfigTimeout)
-    generalConfigTimeout = null
+    return false
   }
 }
 
@@ -928,13 +936,35 @@ onMounted(async () => {
   void ensureGeneralBackup('native')
 })
 
+// 退出编辑页：先停会话（避免会话仍在下发/回写时归档到半程状态）再归档
+// 该用户 ConfigFile 副本终态——顺序化与后端任务收尾闭环
+const stopGeneralSessionAndArchive = async () => {
+  if (!(await stopGeneralSession())) return false
+  await ensureGeneralBackup('mas')
+  return true
+}
+
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: stopGeneralSessionAndArchive,
+})
+
 onUnmounted(() => {
-  // 退出编辑页：先停会话（避免会话仍在下发/回写时归档到半程状态）再归档
-  // 该用户 ConfigFile 副本终态——顺序化与后端任务收尾闭环
-  void (async () => {
-    await stopGeneralSession()
-    await ensureGeneralBackup('mas')
-  })()
+  void stopGeneralSessionAndArchive()
 })
 </script>
 

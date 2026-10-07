@@ -29,6 +29,7 @@ import asyncio
 from contextlib import suppress
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig
 from app.models.schema import WSTaskNoticeData
@@ -92,6 +93,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if not self.crashed:
             logger.success("奇想盒直控配置会话已结束")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True

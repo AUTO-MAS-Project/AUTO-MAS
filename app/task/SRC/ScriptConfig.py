@@ -24,6 +24,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -274,6 +275,9 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self):
 
         if not self.prepared:
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "not_prepared"
+            )
             return
 
         cleanup_success = await kill_src_processes(
@@ -287,9 +291,17 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         self.process_cleanup_success = cleanup_success
         if not cleanup_success:
+            # 进程没停干净就必须中止：此时安装 config/ 处于未知状态，不能回写，
+            # 先把会话登记成「未写入」，避免界面把它当成普通成功。
+            await publish_config_session_result(
+                self.task_info.task_id, "discarded", "not_written"
+            )
             raise RuntimeError("未能完全中止 SRC 进程，请关闭 SRC 后重试脚本设置")
 
         if not self.config_session_started:
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "session_not_started"
+            )
             return
 
         validate_src_installation(
@@ -302,6 +314,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.view_only:
             logger.success("SRC 查看结束（只读，不回写配置）")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "view_only"
+            )
             return
 
         # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
@@ -309,6 +324,9 @@ class ScriptConfigTask(TaskExecuteBase):
         if owner is None:
             logger.success("SRC 直控会话: 配置由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
             return
 
         config_path = mas_config_dir(self.script_info.script_id, owner)
@@ -329,6 +347,7 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         recover_src_user_config(config_path)
         self.process_cleanup_success = True
+        await publish_config_session_result(self.task_info.task_id, "saved")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

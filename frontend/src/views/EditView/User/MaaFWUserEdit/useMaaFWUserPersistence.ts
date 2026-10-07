@@ -63,10 +63,11 @@ export function useMaaFWUserPersistence({
         userData = { Info: { Name: value } }
       }
 
-      const success = await updateUser(scriptId, userIdHolder.value, userData)
+      // strict：失败按后端的拒绝原因（参数 / 冲突 / 断线）抛出，交给队列归类保存终态
+      const success = await updateUser(scriptId, userIdHolder.value, userData, { strict: true })
       if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
       logger.info(`用户配置已保存: ${key}`)
-    })
+    }, key)
       .then(() => true)
       .catch(error => {
         const errorMsg = error instanceof Error ? error.message : String(error)
@@ -86,16 +87,21 @@ export function useMaaFWUserPersistence({
     const hasManagedTasks = taskSnapshot.value.taskOrder.some(isManagedTaskId)
     formData.Task.TaskSnapshot = taskSnapshotValue
     return await enqueueSave(async () => {
-      const success = await updateUser(scriptId, userIdHolder.value, {
-        Task: {
-          SelectedPreset: selectedPreset,
-          TaskSnapshot: taskSnapshotValue,
+      const success = await updateUser(
+        scriptId,
+        userIdHolder.value,
+        {
+          Task: {
+            SelectedPreset: selectedPreset,
+            TaskSnapshot: taskSnapshotValue,
+          },
         },
-      })
+        { strict: true }
+      )
       if (!success) throw new Error('任务预设保存失败')
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
-    })
+    }, 'Task.TaskSnapshot')
       .then(() => true)
       .catch(error => {
         const errorMsg = error instanceof Error ? error.message : String(error)

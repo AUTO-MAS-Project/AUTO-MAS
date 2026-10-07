@@ -11,6 +11,8 @@ import {
   WS_ID_GAME_SIGN,
   type WSGameSignResultData,
 } from '@/services/websocket/types'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
+import { AppRequestError, toAppError } from '@/utils/appError'
 import CommunityActivityView from './CommunityActivityView.vue'
 import TabGameSign from './TabGameSign.vue'
 
@@ -54,6 +56,8 @@ const editingConfig = reactive<ToolsConfig>({
 })
 
 const toolsLoaded = ref(false)
+// 配置没读到就不能让表单显示默认值：那会让用户以为签到是关着的
+const loadError = ref<AppRequestError | null>(null)
 
 let gameSignSubscriptionId: string | null = null
 
@@ -122,10 +126,12 @@ const loadTools = async () => {
     Object.assign(toolsConfig, data)
     Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
     toolsLoaded.value = true
+    loadError.value = null
     logger.info('游戏社区配置加载完成')
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载游戏社区配置失败: ${errorMsg}`)
+    const failure = toAppError(error)
+    loadError.value = failure
+    logger.error(`加载游戏社区配置失败: ${failure.detail}`)
   }
 }
 
@@ -201,7 +207,20 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
-      <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
+      <!-- 配置没加载出来时不给表单：默认值会被误当成真实配置，先给重试 -->
+      <RetryableErrorState
+        v-if="loadError"
+        :error="loadError"
+        message-key="gamesign.loadFailed"
+        @retry="loadTools"
+      />
+      <a-tabs
+        v-else
+        :active-key="activeTab"
+        type="card"
+        class="community-tabs"
+        @change="handleTabChange"
+      >
         <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
           <TabGameSign
             v-if="editingConfig.GameSign"

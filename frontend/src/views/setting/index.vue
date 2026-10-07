@@ -16,6 +16,9 @@ import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
+import ConfigLoadStatusPanel from '@/components/ConfigLoadStatusPanel.vue'
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import { AppRequestError, toAppError } from '@/utils/appError'
 import { useAppearanceSettings } from './useAppearanceSettings'
 
 defineOptions({ name: 'SettingsPage' })
@@ -120,24 +123,41 @@ const NORMALIZED_SETTING_KEYS = new Set([
   'Update.MirrorChyanCDK',
 ])
 
-const syncConfigToElectron = async (data: GlobalConfig) => {
+// 同步结果要看得见：IPC 失败原先只写日志，用户不知道托盘 / 自启 / 更新源有没有生效
+const syncState = ref<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+const syncError = ref<AppRequestError | null>(null)
+
+/** notify=true 表示这次是用户保存触发的，给出「同步中 / 已同步」的可见反馈 */
+const syncConfigToElectron = async (data: GlobalConfig, notify = false) => {
+  // 非 Electron 环境没有这条通道，不显示同步状态
+  if (!window.electronAPI?.syncBackendConfig) {
+    syncState.value = 'idle'
+    syncError.value = null
+    return
+  }
+  if (notify) syncState.value = 'syncing'
   try {
-    if (window.electronAPI?.syncBackendConfig) {
-      // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
-      // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
-      await window.electronAPI.syncBackendConfig({
-        UI: toRaw(data.UI),
-        Start: toRaw(data.Start),
-        Update: toRaw(data.Update),
-        Function: toRaw(data.Function),
-      })
-      logger.info('配置已同步到 Electron')
-    }
+    // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
+    // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
+    await window.electronAPI.syncBackendConfig({
+      UI: toRaw(data.UI),
+      Start: toRaw(data.Start),
+      Update: toRaw(data.Update),
+      Function: toRaw(data.Function),
+    })
+    syncError.value = null
+    // 后台同步成功不挂横幅；用户触发的同步给一次成功反馈
+    syncState.value = notify ? 'synced' : 'idle'
+    logger.info('配置已同步到 Electron')
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
+    const failure = toAppError(error)
+    syncError.value = failure
+    syncState.value = 'error'
+    logger.error(`同步配置到 Electron 失败: ${failure.detail}`)
   }
 }
+
+const retrySyncConfig = () => syncConfigToElectron(settings, true)
 
 // 加载和保存
 const loadSettings = async () => {
@@ -186,7 +206,7 @@ const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string
   }
   section[key] = value
   if (category === 'UI') syncUiPreferences(settings.UI)
-  if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
+  if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings, true)
 }
 
 const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
@@ -363,6 +383,28 @@ onMounted(() => {
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
     <div class="settings-content">
+      <!-- 保存后是否同步到 Electron：失败可重试，技术原文只在诊断信息里 -->
+      <OperationStatusBanner
+        v-if="syncState === 'syncing'"
+        class="sync-status-banner"
+        state="loading"
+        message-key="setting.sync.syncing"
+      />
+      <OperationStatusBanner
+        v-else-if="syncState === 'synced'"
+        class="sync-status-banner"
+        state="success"
+        message-key="setting.sync.synced"
+      />
+      <OperationStatusBanner
+        v-else-if="syncState === 'error'"
+        class="sync-status-banner"
+        state="error"
+        message-key="setting.sync.failed"
+        retryable
+        :detail="syncError?.detail"
+        @retry="retrySyncConfig"
+      />
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" :tab="t('setting.tab.basic')">
           <TabBasic
@@ -407,6 +449,8 @@ onMounted(() => {
         </a-tab-pane>
         <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
           <TabAdvanced :open-dev-tools="openDevTools" />
+          <!-- 配置加载/规范化结果：只读展示，失败可重试 -->
+          <ConfigLoadStatusPanel />
         </a-tab-pane>
         <a-tab-pane key="others" :tab="t('setting.tab.others')">
           <TabOthers

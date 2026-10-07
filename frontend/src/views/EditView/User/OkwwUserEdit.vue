@@ -14,6 +14,8 @@
       @cancel="handleCancel"
     />
 
+    <EditorSaveStatus :state="saveState" :field-states="fieldStates" />
+
     <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-nte） -->
     <GuiSessionMask
       :open="showOkwwConfigMask"
@@ -381,6 +383,8 @@ import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import EditorSaveStatus from '@/components/EditorSaveStatus.vue'
+import { useEditorLeaveGuard } from '@/composables/useEditorLeaveGuard'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
@@ -411,7 +415,7 @@ const scriptName = ref('ok-ww脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
+const { isSaving, enqueue, state: saveState, fieldStates, canLeave, waitForIdle } = useSaveQueue()
 
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
@@ -547,6 +551,29 @@ const handleCancel = async () => {
   await router.push('/scripts')
 }
 
+// 统一离开守卫：路由离开、应用关闭、原生窗口关闭都先等在途保存落盘
+useEditorLeaveGuard({
+  hasPending: () => !canLeave.value,
+  flush: async () => {
+    await waitForIdle()
+    return canLeave.value
+  },
+  onBlocked: reason => {
+    message.error(
+      t(
+        reason === 'save_incomplete'
+          ? 'edit.leaveBlockedByPendingSave'
+          : 'edit.leaveBlockedByRejected'
+      )
+    )
+  },
+  onLeave: async () => {
+    if (!(await stopSession())) return false
+    await ensureOkwwBackup('mas')
+    return true
+  },
+})
+
 const createUserImmediately = async (): Promise<boolean> => {
   if (configLocked.value) return false
 
@@ -591,13 +618,14 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  return await enqueue(async () => {
-    try {
-      return await updateUser(scriptId, userId.value, patch)
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-    }
-  }, key)
+  // strict：只有后端 code===200 才算 saved；失败抛出交给队列归类落终态
+  return await enqueue(
+    async () => await updateUser(scriptId, userId.value, patch, { strict: true }),
+    key
+  ).catch((e: unknown) => {
+    logger.error(e instanceof Error ? e.message : String(e))
+    return false
+  })
 }
 
 const handleQuickConfigChange = async (value: boolean) => {
@@ -610,18 +638,27 @@ const handleQuickConfigChange = async (value: boolean) => {
 
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await enqueue(() =>
-    updateUser(scriptId, userId.value, {
-      Task: {
-        WhichToFarm: formData.Task.WhichToFarm,
-        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-        MaterialSelection: formData.Task.MaterialSelection,
-        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-        AdditionalTasks: formData.Task.AdditionalTasks,
-      },
-    })
-  )
+  await enqueue(
+    () =>
+      updateUser(
+        scriptId,
+        userId.value,
+        {
+          Task: {
+            WhichToFarm: formData.Task.WhichToFarm,
+            WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
+            WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
+            MaterialSelection: formData.Task.MaterialSelection,
+            FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
+            AdditionalTasks: formData.Task.AdditionalTasks,
+          },
+        },
+        { strict: true }
+      ),
+    'Task'
+  ).catch((e: unknown) => {
+    logger.error(e instanceof Error ? e.message : String(e))
+  })
 }
 
 const handleOkwwConfig = async () => {

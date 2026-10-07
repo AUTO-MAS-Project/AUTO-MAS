@@ -540,10 +540,13 @@ import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
+import { notifyTaskOutcome } from '@/utils/taskOutcomeNotice'
+import { queryTaskOutcome } from '@/utils/taskOutcome'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
   WS_TASK_NOTICE,
+  type WSTaskCompletedData,
   type WSTaskLogUpdatedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
@@ -683,7 +686,10 @@ const updateSession = reactive({
   subscriptionIds: [] as string[],
   taskId: '',
   timeout: null as number | null,
+  /** task.notice 已经报过失败，终态提示不再重复 */
+  failed: false,
 })
+let settledTaskId = ''
 
 const clearUpdateSession = () => {
   for (const subscriptionId of updateSession.subscriptionIds) {
@@ -691,6 +697,7 @@ const clearUpdateSession = () => {
   }
   updateSession.subscriptionIds = []
   updateSession.taskId = ''
+  updateSession.failed = false
   if (updateSession.timeout) {
     window.clearTimeout(updateSession.timeout)
     updateSession.timeout = null
@@ -715,6 +722,19 @@ const stopUpdateSession = async (): Promise<boolean> => {
   } finally {
     clearUpdateSession()
   }
+}
+
+const settleUpdateOutcome = (taskOutcome: WSTaskCompletedData['taskOutcome']) => {
+  const taskId = updateSession.taskId
+  if (!taskId || settledTaskId === taskId) return
+  settledTaskId = taskId
+  notifyTaskOutcome(t, taskOutcome, {
+    completedMessageKey: 'edit.wutheringWavesUpdateTask',
+    failureAlreadyReported: updateSession.failed,
+  })
+  updateModal.running = false
+  updateModal.open = false
+  void stopUpdateSession()
 }
 
 const handleCheckUpdate = async () => {
@@ -795,6 +815,7 @@ const startUpdate = async () => {
     }
     updateModal.running = true
     updateSession.taskId = response.taskId
+    settledTaskId = ''
     updateSession.subscriptionIds = [
       subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
         applyUpdateLog(
@@ -804,19 +825,27 @@ const startUpdate = async () => {
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
         if (data.level === 'error') {
+          if (settledTaskId === response.taskId) return
+          settledTaskId = response.taskId
+          updateSession.failed = true
           message.error(t('edit.wutheringWavesUpdateFailed', { p0: data.message }))
           updateModal.running = false
           updateModal.open = false
           void stopUpdateSession()
         }
       }),
-      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-        message.success(t('edit.wutheringWavesUpdateTask'))
-        updateModal.running = false
-        updateModal.open = false
-        void stopUpdateSession()
+      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+        if (updateSession.taskId !== response.taskId) return
+        const data = wsMessage.data as unknown as WSTaskCompletedData
+        // UPDATE 任务的成败由终态决定：请求受理成功不代表更新完成，未知结果不提示成功
+        settleUpdateOutcome(data.taskOutcome)
       }),
     ]
+    void queryTaskOutcome(response.taskId).then(taskOutcome => {
+      if (updateSession.taskId === response.taskId && taskOutcome) {
+        settleUpdateOutcome(taskOutcome)
+      }
+    })
     updateSession.timeout = window.setTimeout(
       () => {
         message.error(t('edit.wutheringWavesUpdateTimed'))

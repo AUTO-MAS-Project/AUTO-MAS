@@ -7,8 +7,10 @@ import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import DocLink from '@/components/DocLink.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { getConfig, saveConfig } from '@/utils/config'
+import { AppRequestError, toAppError } from '@/utils/appError'
 import { useGameSignApi } from './useGameSignApi'
 import {
   buildUserTagsMap,
@@ -42,6 +44,8 @@ const {
 
 const logger = window.electronAPI.getLogger('游戏社区')
 const signLoading = ref(false)
+// 签到失败要留在页面上：Toast 一过就没了，用户不知道该不该重试
+const signError = ref<AppRequestError | null>(null)
 const notifySaving = ref(false)
 const credentialToolDescription = computed(() => t('gamesign.section.toolDesc'))
 const credentialPrivacyNotice = computed(() => t('gamesign.section.privacyNotice'))
@@ -333,6 +337,7 @@ const handleHomeActivityNotesChange = async (value: boolean) => {
 
 const handleManualSign = async () => {
   signLoading.value = true
+  signError.value = null
   try {
     const response = await manualSign()
     if (response.code === 409) {
@@ -342,7 +347,10 @@ const handleManualSign = async () => {
       return
     }
     if (response.code !== 200 && response.code !== 0) {
-      throw new Error(response.message || t('gamesign.toast.signFailed'))
+      // 后端原文只进诊断信息与日志，主文案走 i18n
+      throw new AppRequestError('unknown', {
+        detail: `code ${response.code ?? 'unknown'} | ${response.message || ''}`,
+      })
     }
     logger.info('游戏社区签到完成')
     if (response.status === 'warning') {
@@ -354,9 +362,9 @@ const handleManualSign = async () => {
     if (onRefreshConfig) await onRefreshConfig()
     await loadAccounts()
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`签到失败: ${errorMsg}`)
-    message.error(t('gamesign.toast.signError', { error: errorMsg }))
+    const failure = toAppError(error)
+    signError.value = failure
+    logger.error(`签到失败: ${failure.detail}`)
   } finally {
     signLoading.value = false
   }
@@ -391,6 +399,12 @@ onMounted(() => {
           </a-button>
         </div>
       </div>
+      <RetryableErrorState
+        v-if="signError"
+        :error="signError"
+        message-key="gamesign.toast.signFailed"
+        @retry="handleManualSign"
+      />
       <a-alert class="game-sign-notice" type="info" show-icon>
         <template #message>{{ t('gamesign.section.noticeTitle') }}</template>
         <template #description>

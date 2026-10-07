@@ -15,6 +15,7 @@ import {
 } from './notifyChannelView'
 import NotifyFieldRenderer from './components/NotifyFieldRenderer.vue'
 import { handleExternalLink } from '@/utils/openExternal'
+import { AppRequestError, toAppError } from '@/utils/appError'
 
 const props = defineProps<{
   settings: GlobalConfig
@@ -76,6 +77,13 @@ const clawConnected = computed<Record<string, boolean>>(() => ({
 // Webhook 条目名由 WebhookManager 列表重载后的 listed 事件刷新；
 // WebhookManager 只在配置弹窗里挂载，页面加载时先预取一次，避免卡片首屏假「0 条」。
 const webhookNames = ref<string[]>([])
+// 预取失败不能显示成「0 条」：那会让用户以为一条 Webhook 都没配
+const webhookNamesError = ref<AppRequestError | null>(null)
+
+// 后端业务信封（HTTP 200 + code≠200）没有 HTTP 状态可分类，按 unknown 处理，
+// 但把 code 与后端原文留在 detail 里，主文案仍走 i18n。
+const envelopeError = (code: number | undefined, responseMessage?: string) =>
+  new AppRequestError('unknown', { detail: `code ${code ?? 'unknown'} | ${responseMessage ?? ''}` })
 
 const loadWebhookNames = async () => {
   try {
@@ -84,10 +92,18 @@ const loadWebhookNames = async () => {
       userId: null,
       webhookId: null,
     })
-    if (response.code !== 200) return
+    if (response.code !== 200) {
+      const failure = envelopeError(response.code, response.message)
+      webhookNamesError.value = failure
+      window.electronAPI.getLogger('通知设置').error(`加载 Webhook 列表失败: ${failure.detail}`)
+      return
+    }
     webhookNames.value = response.index.map(item => response.data[item.uid]?.Info?.Name || item.uid)
-  } catch {
-    // 摘要失败不影响页面，打开弹窗后由列表重载补上
+    webhookNamesError.value = null
+  } catch (error) {
+    const failure = toAppError(error)
+    webhookNamesError.value = failure
+    window.electronAPI.getLogger('通知设置').error(`加载 Webhook 列表失败: ${failure.detail}`)
   }
 }
 
@@ -151,6 +167,7 @@ const saveField = (group: string, name: string, value: unknown) =>
 
 const onWebhookListed = (names: string[]) => {
   webhookNames.value = names
+  webhookNamesError.value = null
 }
 
 // 嵌套浮层挂到弹窗 wrap 节点：wrap-class-name 落在带 z-index 900 的层叠上下文上，
@@ -265,8 +282,11 @@ const modalPopupContainer = () =>
 
       <section class="panel">
         <div class="panel-head">
-          <i class="dot" :class="{ off: !webhookNames.length }" />
+          <i class="dot" :class="{ off: !webhookNames.length && !webhookNamesError }" />
           <h3>{{ t('setting.notify.customSection') }}</h3>
+          <a-button v-if="webhookNamesError" type="link" size="small" @click="loadWebhookNames">
+            {{ t('common.retry') }}
+          </a-button>
         </div>
         <div v-if="groups.custom.length" class="cards">
           <NotifyChannelCard
@@ -274,8 +294,12 @@ const modalPopupContainer = () =>
             :key="channel.key"
             :channel="channel"
             variant="card"
-            :state-text="t('setting.notify.webhookCount', { n: webhookNames.length })"
-            :state-active="webhookNames.length > 0"
+            :state-text="
+              webhookNamesError
+                ? t('setting.notify.webhookUnavailable')
+                : t('setting.notify.webhookCount', { n: webhookNames.length })
+            "
+            :state-active="!webhookNamesError && webhookNames.length > 0"
             :summary="summaryOf(channel)"
             @open="openChannel"
           />

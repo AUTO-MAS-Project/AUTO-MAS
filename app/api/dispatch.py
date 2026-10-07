@@ -111,19 +111,44 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     "/stop",
     tags=["Action"],
     summary="中止任务",
-    response_model=OutBase,
+    response_model=TaskOutcome,
     status_code=200,
 )
-async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
+async def stop_task(task: DispatchIn = Body(...)) -> TaskOutcome:
+    """中止任务并返回统一终态；stop_task 返回时收尾已完成，终态可直接回读。"""
 
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
         logger.opt(exception=True).warning(f"stop_task失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return TaskOutcome(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            taskId=task.taskId,
+            outcome="unknown",
+            messageKey="taskOutcome.unknown",
         )
-    return OutBase()
+
+    status = TaskManager.get_task_status(task.taskId)
+    if status is not None and status.taskOutcome is not None:
+        return status.taskOutcome
+    if task.taskId == "ALL":
+        return TaskOutcome(
+            taskId="ALL",
+            outcome="cancelled",
+            message="已中止全部任务",
+            messageKey="taskOutcome.cancelled",
+        )
+    return TaskOutcome(
+        code=404,
+        status="error",
+        message=f"任务 {task.taskId} 已不在运行中, 也没有可回读的终态",
+        taskId=task.taskId,
+        outcome="unknown",
+        dataPreserved=False,
+        messageKey="taskOutcome.unknown",
+    )
 
 
 @router.post(

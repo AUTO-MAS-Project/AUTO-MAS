@@ -12,10 +12,10 @@ export function useMaaEndGuiSession() {
       viewOpened: 'edit.maaendViewOpened',
       timeoutWarn: 'edit.maaendSessionTimeoutWarn',
       saved: 'edit.maaendConfigurationSaved',
-      saveFailed: 'edit.maaendSessionSaveFailed',
     },
   })
   return {
+    state: session.state,
     maaEndConfigLoading: session.configLoading,
     maaEndTaskId: session.taskId,
     showMaaEndConfigMask: session.showConfigMask,
@@ -24,5 +24,6 @@ export function useMaaEndGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: session.stopSession,
+    querySession: session.querySession,
   }
 }

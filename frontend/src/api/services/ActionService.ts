@@ -25,6 +25,7 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskOutcome } from '../models/TaskOutcome';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -235,13 +236,14 @@ export class ActionService {
     }
     /**
      * 中止任务
+     * 中止任务并返回统一终态；stop_task 返回时收尾已完成，终态可直接回读。
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns TaskOutcome Successful Response
      * @throws ApiError
      */
     public static stopTaskApiDispatchStopPost(
         requestBody: DispatchIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<TaskOutcome> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',

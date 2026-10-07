@@ -15,7 +15,14 @@
         <a-button type="primary" size="large" @click="handleSaveConfigMask">
           {{ configMaskView.button }}
         </a-button>
+        <a-button v-if="configMaskUnknown" size="large" @click="handleQueryConfigMask">
+          {{ t('resultUnknown.query') }}
+        </a-button>
       </div>
+      <!-- 终态未知：会话现场保留，明确告知这次写入是否生效还没确认 -->
+      <p v-if="configMaskUnknown" class="mask-unknown-tip" role="alert">
+        {{ t('resultUnknown.description') }}
+      </p>
     </div>
   </div>
 
@@ -157,7 +164,6 @@ import {
   WS_TASK_COMPLETED,
   WS_TASK_CONFIG_DISCARDED,
   WS_TASK_NOTICE,
-  type WSTaskCompletedData,
   type WSTaskConfigDiscardedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
@@ -170,8 +176,10 @@ import { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskOutcome } from '@/api/models/TaskOutcome'
 import DocLink from '@/components/DocLink.vue'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
+import { taskOutcomeNoticeKind } from '@/utils/taskOutcomeNotice'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
 
@@ -295,16 +303,31 @@ const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
 // 丢弃帧由任务收尾过程发出，与停止响应分属两条链路：停止后等一个回合再判定改动是否生效
 const DISCARD_FRAME_GRACE_MS = 300
+// 终态落库晚于完成帧：查不到就按间隔重试几次，仍查不到才算未知
+const OUTCOME_QUERY_ATTEMPTS = 5
+const OUTCOME_QUERY_RETRY_MS = 300
 
 // 配置会话的连接记录（键为 scriptId/userId）
 type ConfigSessionConnection = {
   subscriptionIds: string[]
   taskId: string
+  /** 会话标签（MAA/SRC/MaaEnd/ok-ww/Whimbox）：只用于日志 */
+  label: string
+  /** 终态为 saved 时给用户看的成功文案：停止、完成帧、超时、查询四条路径共用一个口径 */
+  savedMessage: string
   timeoutId?: ReturnType<typeof setTimeout>
   /** 后端下发的丢弃原因（structure/unreadable/not_written），改动未被丢弃为 null */
   discardedReason: string | null
   /** 丢弃提示是否已弹过：完成帧与停止响应都会走到会话结束，只提示一次 */
   discardWarned: boolean
+  /** 终态判定中或已判定：阻止停止响应与完成帧对同一会话各判一次、各弹一次 */
+  settling: boolean
+  /** 已应用过的终态（taskId|finishedAt）：断线补发的重复终态帧只应用一次 */
+  appliedStamp?: string
+  /** 终态未知：会话现场保留，等用户点「查询状态」 */
+  unknown: boolean
+  /** 停止请求：重复点击复用同一个 promise，保证只发一个请求 */
+  stopPromise?: Promise<void>
 }
 
 // WebSocket连接管理：scriptId/userId -> ConfigSessionConnection
@@ -626,22 +649,65 @@ const clearConfigSession = (
   clearState()
 }
 
-// 结束一次配置会话：释放订阅与遮罩，必要时补一次「改动被丢弃」提示。
-// 返回改动是否生效（false 表示后端已丢弃，调用方不该再提示「已保存」）。
-const finishConfigSession = (
-  targetId: string,
-  connection: ConfigSessionConnection,
-  clearState: () => void
-) => {
-  clearConfigSession(targetId, connection.subscriptionIds, clearState)
-  if (connection.discardedReason && !connection.discardWarned) {
-    connection.discardWarned = true
-    showConfigDiscardWarning(t, connection.discardedReason)
+// 终态查询：完成帧先于终态落库发出，刚结束时可能还查不到，留几次重试窗口
+const fetchTaskOutcome = async (taskId: string): Promise<TaskOutcome | null> => {
+  for (let attempt = 0; attempt < OUTCOME_QUERY_ATTEMPTS; attempt += 1) {
+    const status = await Service.getTaskStatusApiDispatchTaskTaskIdGet(taskId)
+    if (status?.taskOutcome) return status.taskOutcome
+    if (attempt < OUTCOME_QUERY_ATTEMPTS - 1) {
+      await new Promise(resolve => setTimeout(resolve, OUTCOME_QUERY_RETRY_MS))
+    }
   }
-  return connection.discardedReason === null
+  return null
 }
 
-// 会话超时定时器挂在连接记录上，会话结束或页面卸载时一并清掉
+// 终态查不到：既不清理会话也不谎报成功，保留现场等用户自己查一次
+const enterUnknownState = (targetId: string) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection) return
+  connection.unknown = true
+  // 判定未落定：完成帧、丢弃帧或用户点「查询状态」都还能把结果改过来
+  connection.settling = false
+  connection.stopPromise = undefined
+  void logger.warn(`配置会话终态未知，保留现场等待查询: taskId=${connection.taskId}`)
+}
+
+// 按终态收尾：HTTP 200 只说明停止请求被受理，写入是否生效要看 outcome
+const applyTaskOutcome = (
+  targetId: string,
+  connection: ConfigSessionConnection,
+  result: TaskOutcome,
+  clearState: () => void
+) => {
+  // 断线补发会对同一终态重放，同一 taskId + finishedAt 只应用一次
+  const stamp = `${result.taskId}|${result.finishedAt}`
+  if (connection.appliedStamp === stamp) return
+  connection.appliedStamp = stamp
+
+  // 分类统一走 utils/taskOutcomeNotice，页面不再各写一套结果判断
+  const kind = taskOutcomeNoticeKind(result)
+  if (kind === 'unknown') {
+    enterUnknownState(targetId)
+    return
+  }
+  clearConfigSession(targetId, connection.subscriptionIds, clearState)
+  if (kind === 'saved') {
+    message.success(connection.savedMessage)
+  } else if (kind === 'discarded') {
+    if (!connection.discardWarned) {
+      connection.discardWarned = true
+      showConfigDiscardWarning(t, result.reason ?? connection.discardedReason ?? 'unknown')
+    }
+  } else if (kind === 'failed') {
+    message.error(t('taskOutcome.failed'))
+  } else if (kind === 'without_write') {
+    message.info(t('taskOutcome.completedWithoutWrite'))
+  }
+  // cancelled / completed：这次会话没有写入语义，静默收尾，绝不提示「保存成功」
+}
+
+// 会话超时定时器挂在连接记录上，会话结束或页面卸载时一并清掉。
+// 超时不直接清会话：先按编辑会话的语义自动结束一次，再以终态判定结果，判不出来就进未知。
 const scheduleConfigSessionTimeout = (
   targetId: string,
   clearState: () => void,
@@ -652,8 +718,9 @@ const scheduleConfigSessionTimeout = (
   connection.timeoutId = setTimeout(() => {
     const current = activeConnections.value.get(targetId)
     if (!current) return
-    clearConfigSession(targetId, current.subscriptionIds, clearState)
+    current.timeoutId = undefined
     onTimeout()
+    void stopConfigSession(targetId, clearState)
   }, CONFIG_SESSION_TIMEOUT_MS)
 }
 
@@ -662,7 +729,7 @@ const startConfigSession = async (
   label: string,
   setActiveState: () => void,
   clearState: () => void,
-  onCompleted?: (data: WSTaskCompletedData, discardedReason: string | null) => void
+  savedMessage: string
 ) => {
   if (activeConnections.value.has(targetId)) {
     message.warning(t('scripts.toast.targetConfiguring'))
@@ -683,8 +750,12 @@ const startConfigSession = async (
   const connection: ConfigSessionConnection = {
     subscriptionIds: [],
     taskId: response.taskId,
+    label,
+    savedMessage,
     discardedReason: null,
     discardWarned: false,
+    settling: false,
+    unknown: false,
   }
   connection.subscriptionIds.push(
     subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
@@ -697,11 +768,24 @@ const startConfigSession = async (
       const data = wsMessage.data as unknown as WSTaskConfigDiscardedData
       connection.discardedReason = data.reason
       logger.info(`收到配置会话丢弃通知: reason=${data.reason}`)
+      // 已经落到未知的会话：这个丢弃帧就是迟到的终态，直接改判，不用再让用户查一次
+      if (connection.unknown) {
+        applyTaskOutcome(
+          targetId,
+          connection,
+          {
+            taskId: connection.taskId,
+            outcome: TaskOutcome.outcome.DISCARDED,
+            reason: data.reason,
+          },
+          clearState
+        )
+      }
     }),
-    subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, wsMessage => {
+    subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
       sessionEnded = true
-      finishConfigSession(targetId, connection, clearState)
-      onCompleted?.(wsMessage.data as unknown as WSTaskCompletedData, connection.discardedReason)
+      // 完成帧只说明任务结束了：写入是否生效仍要以终态为准
+      void settleConfigSession(targetId, clearState)
     })
   )
   if (sessionEnded) {
@@ -714,21 +798,92 @@ const startConfigSession = async (
   return true
 }
 
-const stopConfigSession = async (targetId: string, label: string, clearState: () => void) => {
+// 任务自己结束了（原生窗口被关掉等）：查终态收尾，查不到就进未知
+const settleConfigSession = async (targetId: string, clearState: () => void) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection || connection.settling) return
+  connection.settling = true
+  await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+  try {
+    const result = await fetchTaskOutcome(connection.taskId)
+    if (result) applyTaskOutcome(targetId, connection, result, clearState)
+    else enterUnknownState(targetId)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`查询配置会话终态失败: ${errorMsg}`)
+    enterUnknownState(targetId)
+  }
+}
+
+// 结束会话并落定结果：重复点击复用同一个请求，只有第一次真的发出去
+const stopConfigSession = (targetId: string, clearState: () => void): Promise<void> => {
   const connection = activeConnections.value.get(targetId)
   if (!connection) {
     message.error(t('scripts.toast.noSession'))
-    return false
+    return Promise.resolve()
   }
-  const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.taskId,
-  })
-  if (response.code !== 200) {
-    throw new Error(response.message || t('scripts.toast.saveFailedRaw', { label }))
+  if (connection.stopPromise) return connection.stopPromise
+  connection.stopPromise = (async () => {
+    if (connection.settling) return
+    // 停止请求在途时完成帧也可能到达：由这里统一落定，避免同一会话弹两次结果
+    connection.settling = true
+    try {
+      const response = await Service.stopTaskApiDispatchStopPost({
+        taskId: connection.taskId,
+      })
+      if (response.code !== 200) {
+        logger.error(
+          `结束${connection.label}配置会话失败: code=${response.code} ${response.message}`
+        )
+        enterUnknownState(targetId)
+        return
+      }
+      // 丢弃帧先于停止响应写出，但到达顺序不保证，等一个回合再按响应里的终态判定
+      await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+      applyTaskOutcome(targetId, connection, response, clearState)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`结束${connection.label}配置会话失败: ${errorMsg}`)
+      enterUnknownState(targetId)
+    }
+  })()
+  return connection.stopPromise
+}
+
+// 遮罩对应的会话目标：MaaEnd 用户级会话用 userId，其余用 scriptId
+const configMaskTargetId = computed(() => {
+  const mask = configMask.value
+  if (!mask) return null
+  return mask.user?.id ?? mask.script.id
+})
+
+// 当前会话结果未知：遮罩保留现场，并给出一次「查询状态」动作
+const configMaskUnknown = computed(() => {
+  const targetId = configMaskTargetId.value
+  if (!targetId) return false
+  return activeConnections.value.get(targetId)?.unknown === true
+})
+
+// 会话进入未知后的唯一出路：查一次终态，查到就按终态收尾
+const queryConfigSession = async (targetId: string, clearState: () => void) => {
+  const connection = activeConnections.value.get(targetId)
+  if (!connection || connection.settling) return
+  connection.settling = true
+  try {
+    const result = await fetchTaskOutcome(connection.taskId)
+    if (result) applyTaskOutcome(targetId, connection, result, clearState)
+    else enterUnknownState(targetId)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`查询配置会话终态失败: ${errorMsg}`)
+    enterUnknownState(targetId)
   }
-  // 丢弃帧先于停止响应写出，但到达顺序不保证，等一个回合再判定改动是否生效
-  await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
-  return finishConfigSession(targetId, connection, clearState)
+}
+
+const handleQueryConfigMask = () => {
+  const targetId = configMaskTargetId.value
+  if (!targetId) return
+  void queryConfigSession(targetId, clearConfigMask)
 }
 
 // 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
@@ -741,14 +896,8 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Wh
         configMask.value = { kind, script, user: null }
       },
       clearConfigMask,
-      (data, discardedReason) => {
-        logger.info(`脚本 ${script.name} 配置任务已结束`)
-        // 改动被丢弃时弹窗已说明去向，再提示「已完成」互相矛盾
-        if (discardedReason) return
-        if (data.outcome === 'success') {
-          message.success(t('scripts.toast.configDone', { name: script.name }))
-        }
-      }
+      // 终态为 saved 时统一由会话收尾弹这一条，避免停止、完成帧、超时各弹一次
+      t('scripts.toast.configSaved', { name: script.name })
     )
     if (!started) return
 
@@ -763,24 +912,14 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Wh
   }
 }
 
-const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
-  try {
-    const saved = await stopConfigSession(script.id, kind, clearConfigMask)
-    if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存${kind}配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.saveConfigError', { label: kind, error: errorMsg }))
-  }
-}
-
+// 保存即结束会话：结果提示由终态决定（saved/discarded/failed/unknown 各不相同）
 const handleStartMAAConfig = (script: Script) => handleStartScriptConfig(script, 'MAA')
-const handleSaveMAAConfig = (script: Script) => handleSaveScriptConfig(script, 'MAA')
+const handleSaveMAAConfig = (script: Script) => stopConfigSession(script.id, clearConfigMask)
 const handleStartSRCConfig = (script: Script) => handleStartScriptConfig(script, 'SRC')
-const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, 'SRC')
+const handleSaveSRCConfig = (script: Script) => stopConfigSession(script.id, clearConfigMask)
 // 奇想盒：无参数拉起原生 app（下载跑图路线、配置模型/键位等都在那边做，MAS 零写入）
 const handleStartWhimboxConfig = (script: Script) => handleStartScriptConfig(script, 'Whimbox')
-const handleSaveWhimboxConfig = (script: Script) => handleSaveScriptConfig(script, 'Whimbox')
+const handleSaveWhimboxConfig = (script: Script) => stopConfigSession(script.id, clearConfigMask)
 
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {
@@ -797,7 +936,10 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
       () => {
         configMask.value = { kind: 'MaaEnd', script, user }
       },
-      clearConfigMask
+      clearConfigMask,
+      user
+        ? t('scripts.toast.maaEndUserSaved', { script: script.name, user: user.Info.Name })
+        : t('scripts.toast.configSaved', { name: script.name })
     )
     if (!started) return
 
@@ -824,23 +966,10 @@ const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
   await handleStartMaaEndConfig(script, user)
 }
 
-const handleSaveMaaEndConfig = async (script: Script) => {
-  try {
-    const currentUser = configMask.value?.kind === 'MaaEnd' ? configMask.value.user : null
-    const targetId = currentUser?.id ?? script.id
-    const saved = await stopConfigSession(targetId, 'MaaEnd', clearConfigMask)
-    if (saved) {
-      message.success(
-        currentUser
-          ? t('scripts.toast.maaEndUserSaved', { script: script.name, user: currentUser.Info.Name })
-          : t('scripts.toast.configSaved', { name: script.name })
-      )
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.saveConfigError', { label: 'MaaEnd', error: errorMsg }))
-  }
+const handleSaveMaaEndConfig = (script: Script) => {
+  const currentUser = configMask.value?.kind === 'MaaEnd' ? configMask.value.user : null
+  const targetId = currentUser?.id ?? script.id
+  return stopConfigSession(targetId, clearConfigMask)
 }
 
 const handleStartOkwwConfig = async (script: Script) => {
@@ -851,7 +980,8 @@ const handleStartOkwwConfig = async (script: Script) => {
       () => {
         configMask.value = { kind: 'Okww', script, user: null }
       },
-      clearConfigMask
+      clearConfigMask,
+      t('scripts.toast.okwwSaved', { name: script.name })
     )
     if (started) message.success(t('scripts.toast.okwwStarted', { name: script.name }))
   } catch (error) {
@@ -861,16 +991,7 @@ const handleStartOkwwConfig = async (script: Script) => {
   }
 }
 
-const handleSaveOkwwConfig = async (script: Script) => {
-  try {
-    const saved = await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
-    if (saved) message.success(t('scripts.toast.okwwSaved', { name: script.name }))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)
-    message.error(t('scripts.toast.okwwSaveFailed', { error: errorMsg }))
-  }
-}
+const handleSaveOkwwConfig = (script: Script) => stopConfigSession(script.id, clearConfigMask)
 
 const handleToggleUserStatus = async (user: User) => {
   try {
@@ -949,6 +1070,14 @@ const handleToggleUserStatus = async (user: User) => {
 .mask-actions {
   display: flex;
   justify-content: center;
+  gap: 12px;
+}
+
+.mask-unknown-tip {
+  font-size: 13px;
+  color: var(--ant-color-warning-text, var(--ant-color-warning));
+  margin: 16px 0 0;
+  line-height: 1.5;
 }
 
 .link {

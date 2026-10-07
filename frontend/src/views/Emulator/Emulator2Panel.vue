@@ -22,6 +22,9 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
+import OperationStatusBanner from '@/components/OperationStatusBanner.vue'
+import RetryableErrorState from '@/components/RetryableErrorState.vue'
+import { AppRequestError, toAppError } from '@/utils/appError'
 import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
@@ -79,6 +82,16 @@ const settingsLoaded = ref(false)
  */
 let statusRequestedAt = 0
 
+// 失败不能只写日志：无数据时给整块错误+重试，有旧数据时只提示状态可能过期
+const loadError = ref<AppRequestError | null>(null)
+const removePreviewError = ref<AppRequestError | null>(null)
+const deletePreviewError = ref<AppRequestError | null>(null)
+
+// 后端业务信封（HTTP 200 + code≠200）没有 HTTP 状态可分类，按 unknown 处理，
+// 但把 code 与后端原文留在 detail 里，主文案仍走 i18n。
+const envelopeError = (code: number | undefined, responseMessage?: string) =>
+  new AppRequestError('unknown', { detail: `code ${code ?? 'unknown'} | ${responseMessage ?? ''}` })
+
 /** 路径管理弹窗。入口在上层配置栏的「路径」那一行，与旧样式保持一致。 */
 const pathsOpen = ref(false)
 const openPaths = () => {
@@ -131,8 +144,8 @@ const reasonColor = (reason: string) => {
  * - ``withSettings=true`` 连设置一起读，进页面、改完设置、模拟器状态变了才跑。
  *
  * 只带状态的结果**并进**现有行而不是整表替换，这样已经拉到的设置不会闪成破折号。
- * ``silent`` 供后台轮询用：失败也不弹提示——网络抖一下就在用户脸上弹一个红条毫无意义，
- * 下一轮自然会补上。
+ * ``silent`` 供后台轮询用：失败不弹 Toast，只在页面内标记状态可能过期（网络抖一下不该
+ * 在用户脸上弹红条），下一轮成功就清掉。
  */
 const loadDevices = async ({
   silent = false,
@@ -152,7 +165,10 @@ const loadDevices = async ({
       withSettings,
     })
     if (response.code !== 200) {
-      if (!silent) message.error(response.message)
+      // 不弹 Toast：表格位置给整块错误与重试，后台轮询失败只在页面内提示
+      const failure = envelopeError(response.code, response.message)
+      loadError.value = failure
+      logger.error(`加载设备列表失败: ${failure.detail}`)
       return false
     }
     paths.value = response.paths || []
@@ -170,11 +186,12 @@ const loadDevices = async ({
     }
     if (!stale) statusRequestedAt = requestedAt
     settlePending()
+    loadError.value = null
     return true
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`加载设备列表失败: ${detail}`)
-    if (!silent) message.error(t('emulator2.toast.loadFailed'))
+    const failure = toAppError(error)
+    loadError.value = failure
+    logger.error(`加载设备列表失败: ${failure.detail}`)
     return false
   } finally {
     if (showLoading) loading.value = false
@@ -257,6 +274,7 @@ const openRemove = async (path: Emulator2PathItem) => {
   removeTarget.value = path
   removeSlots.value = path.slots || []
   removeAffected.value = []
+  removePreviewError.value = null
   removeOpen.value = true
   try {
     const response = await Emulator20Service.previewRemovePathApiEmulator2PathsRemovePreviewPost({
@@ -266,10 +284,13 @@ const openRemove = async (path: Emulator2PathItem) => {
     if (response.code === 200) {
       removeSlots.value = response.slots || []
       removeAffected.value = response.affectedScripts || []
+    } else {
+      removePreviewError.value = envelopeError(response.code, response.message)
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`预览移除影响失败: ${detail}`)
+    const failure = toAppError(error)
+    removePreviewError.value = failure
+    logger.error(`预览移除影响失败: ${failure.detail}`)
   }
 }
 
@@ -377,6 +398,7 @@ const deleteAffected = ref<Emulator2AffectedScript[]>([])
 const openDelete = async (device: Emulator2DeviceItem) => {
   deleteTarget.value = device
   deleteAffected.value = []
+  deletePreviewError.value = null
   deleteOpen.value = true
   try {
     const response =
@@ -384,10 +406,15 @@ const openDelete = async (device: Emulator2DeviceItem) => {
         emulatorId: props.emulatorId,
         slot: device.slot,
       })
-    if (response.code === 200) deleteAffected.value = response.affectedScripts || []
+    if (response.code === 200) {
+      deleteAffected.value = response.affectedScripts || []
+    } else {
+      deletePreviewError.value = envelopeError(response.code, response.message)
+    }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    logger.error('预览删除影响失败: ' + detail)
+    const failure = toAppError(error)
+    deletePreviewError.value = failure
+    logger.error(`预览删除影响失败: ${failure.detail}`)
   }
 }
 
@@ -1054,9 +1081,24 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     </div>
 
     <div ref="tableArea" class="table-area">
+      <!-- 加载失败：没有数据时整块给恢复动作，有旧数据时只提示可能过期 -->
+      <RetryableErrorState
+        v-if="loadError && !tableRows.length"
+        :error="loadError"
+        message-key="emulator2.toast.loadFailed"
+        @retry="loadAll"
+      />
+      <OperationStatusBanner
+        v-else-if="loadError"
+        state="warning"
+        message-key="emulator2.staleDevices"
+        retryable
+        @retry="loadAll"
+      />
+
       <a-spin :spinning="loading" wrapper-class-name="table-spin">
         <a-empty
-          v-if="!tableRows.length"
+          v-if="!tableRows.length && !loadError"
           :description="loading ? '' : t('emulator.noDevice')"
           class="table-empty"
         />
@@ -1438,7 +1480,22 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         — {{ deleteTarget.alias }} ·
         {{ t('emulator2.nativeIndex', { index: deleteTarget.nativeIndex }) }}
       </p>
+      <!-- 影响范围没读到就不要显示「0 个脚本」，改成错误 + 重试 -->
       <a-alert
+        v-if="deletePreviewError"
+        type="error"
+        show-icon
+        :message="t('emulator2.previewFailed')"
+        style="margin-bottom: 12px"
+      >
+        <template #action>
+          <a-button type="link" size="small" @click="deleteTarget && openDelete(deleteTarget)">
+            {{ t('common.retry') }}
+          </a-button>
+        </template>
+      </a-alert>
+      <a-alert
+        v-else
         type="warning"
         show-icon
         :message="
@@ -1518,7 +1575,22 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         <a-tag color="purple">{{ typeLabel(removeTarget.type) }}</a-tag>
         {{ removeTarget.alias }} — {{ removeTarget.installPath }}
       </p>
+      <!-- 影响范围没读到就不要显示「影响 0 个脚本」，改成错误 + 重试 -->
       <a-alert
+        v-if="removePreviewError"
+        type="error"
+        show-icon
+        :message="t('emulator2.previewFailed')"
+        style="margin-bottom: 12px"
+      >
+        <template #action>
+          <a-button type="link" size="small" @click="removeTarget && openRemove(removeTarget)">
+            {{ t('common.retry') }}
+          </a-button>
+        </template>
+      </a-alert>
+      <a-alert
+        v-else
         type="warning"
         show-icon
         :message="

@@ -1,6 +1,5 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
-import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -20,7 +19,6 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotLoadPlan'))
       throw error
     } finally {
       loading.value = false
@@ -47,7 +45,6 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotCreatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -64,7 +61,6 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotUpdatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -86,7 +82,6 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`删除计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotDeletePlan'))
       throw error
     } finally {
       loading.value = false
@@ -104,7 +99,6 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重新排序失败: ${errorMsg}`)
-      message.error(t('misc.couldNotReorder'))
       throw error
     } finally {
       loading.value = false

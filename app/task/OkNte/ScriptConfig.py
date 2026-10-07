@@ -22,6 +22,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.core.config_session import publish_config_session_result
 from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -173,16 +174,25 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.view_only:
             logger.success("OK-NTE 查看结束（只读，不回写配置）")
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "view_only"
+            )
             return
 
         if self.mas_config_dir is None:
             # 直控 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
             self.cur_user_item.status = "完成"
+            await publish_config_session_result(
+                self.task_info.task_id, "completed_without_write", "direct_control"
+            )
             return
 
         self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             if not self.script_config_path.exists():
+                await publish_config_session_result(
+                    self.task_info.task_id, "discarded", "not_written"
+                )
                 raise FileNotFoundError(
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
                 )
@@ -191,6 +201,9 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             if not self.script_config_path.exists():
+                await publish_config_session_result(
+                    self.task_info.task_id, "discarded", "not_written"
+                )
                 raise FileNotFoundError(
                     "未找到 OK-NTE 配置文件，请在 GUI 中保存后再点击保存配置"
                 )
@@ -204,6 +217,7 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         self.cur_user_item.status = "完成"
+        await publish_config_session_result(self.task_info.task_id, "saved")
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"

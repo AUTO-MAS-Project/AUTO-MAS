@@ -19,6 +19,12 @@ export default {
     cancel: 'Cancel',
     doc: 'Docs',
     unknown: 'Unknown',
+    retry: 'Retry',
+    retryAction: 'Retry',
+    copyDiagnostics: 'Copy diagnostics',
+    copied: 'Copied',
+    copyFailed: 'Copy failed, select the text manually',
+    diagnostics: 'Diagnostics',
   },
   comp: {
     changelog: {
@@ -282,6 +288,11 @@ export default {
   },
   edit: {
     configLocked: 'A task is running, so this configuration is locked until it finishes',
+    // ══ save / leave guard (useEditorLeaveGuard) ══
+    leaveBlockedByPendingSave:
+      'Some changes are still not confirmed saved, so leaving was blocked. Wait for the save to finish or retry.',
+    leaveBlockedByRejected:
+      'The backend did not accept the save, so leaving was blocked. Follow the message and retry.',
     close: 'Close',
     notifyServerChan: 'ServerChan',
     notifyStatistics: 'Statistics',
@@ -2834,6 +2845,7 @@ export default {
     bettergiProjectZoom: 'Zoom',
   },
   emulator: {
+    staleStatus: 'Device status may be out of date',
     title: 'Emulators',
     type: {
       general: 'Generic emulator',
@@ -2935,6 +2947,8 @@ export default {
     },
   },
   emulator2: {
+    staleDevices: 'The device list may be out of date',
+    previewFailed: 'Could not load affected items',
     pathsTitle: 'Emulators',
     pathsHint:
       'Add several installs; their instances are merged into one table. LDPlayer 14 and MuMu 6 are supported.',
@@ -3090,6 +3104,7 @@ export default {
     },
   },
   gamesign: {
+    loadFailed: 'Failed to load Game Community settings',
     title: 'Game Community',
     nav: {
       sign: 'Check-ins',
@@ -3253,6 +3268,8 @@ export default {
   },
   history: {
     title: 'History',
+    listLoadFailed: 'Failed to load the history',
+    staleList: 'Refreshing the history failed. Showing the previous result.',
     dateList: 'Dates',
     noData: 'No data',
     empty: 'No data',
@@ -3670,6 +3687,12 @@ export default {
   },
   plan: {
     title: 'Plans',
+    listLoadFailed: 'Failed to load the plan list',
+    detailLoadFailed: 'Failed to load the plan details',
+    staleList: 'Refreshing the plan list failed. Showing the previous result.',
+    staleDetail: 'Refreshing the plan details failed. Showing the previous result.',
+    switchFailed: 'Could not switch plans. Returned to the previous plan.',
+    actionFailed: 'Action failed. The plan was not saved.',
     create: 'New plan',
     createTyped: 'New {name}',
     deleteConfirm: 'Delete this plan?',
@@ -3824,6 +3847,13 @@ export default {
   },
   queue: {
     title: 'Queues',
+    listLoadFailed: 'Failed to load the queue list',
+    detailLoadFailed: 'Failed to load the queue details',
+    staleList: 'Refreshing the queue list failed. Showing the previous result.',
+    staleDetail: 'Refreshing the queue details failed. Showing the previous result.',
+    switchFailed: 'Could not switch queues. Returned to the previous queue.',
+    timeSetsStale: 'Refreshing the schedules failed. Showing the previous result.',
+    queueItemsStale: 'Refreshing the queue items failed. Showing the previous result.',
     loading: 'Loading...',
     create: 'New queue',
     deleteConfirm: 'Delete this queue?',
@@ -4290,6 +4320,36 @@ export default {
     },
   },
   setting: {
+    configLoad: {
+      title: 'Config load status',
+      description:
+        'Read-only: load result, corrupted copy location and auto-correction records for each config file',
+      loading: 'Loading config load status…',
+      loaded: 'Config load status loaded',
+      loadFailed: 'Failed to load config load status',
+      empty: 'No config load records',
+      path: 'File path',
+      readAt: 'Read at {time}',
+      fileTime: 'File write time (restoring a backup overwrites the file)',
+      backupPath: 'Corrupted copy',
+      events: 'Auto-corrections',
+      event: {
+        summary: '{field}: {old} → {new}',
+      },
+      status: {
+        ok: 'OK',
+        empty: 'Empty file (defaults applied)',
+        corruptRecovered: 'Recovered from corruption (copy kept)',
+        unreadable: 'Unreadable',
+        defaulted: 'Auto-corrected',
+        unknown: 'Unknown status',
+      },
+    },
+    sync: {
+      syncing: 'Syncing to Electron…',
+      synced: 'Synced to Electron',
+      failed: 'Failed to sync to Electron',
+    },
     title: 'Settings',
     versionFailed: 'Could not read the version!',
     tab: {
@@ -4460,6 +4520,8 @@ export default {
       },
     },
     notify: {
+      webhookUnavailable: 'Not loaded',
+      retryLoad: 'Retry',
       contentSection: 'Notification content',
       sendTest: 'Send a test notification',
       resultTime: 'Send task results',
@@ -4671,6 +4733,55 @@ export default {
       trayMenuSaveFailed: 'Could not save the tray menu',
       trayMenuReset: 'Default tray menu restored',
     },
+  },
+  taskOutcome: {
+    saved: 'Saved',
+    completed: 'Completed',
+    completedWithoutWrite: 'Completed without writing changes',
+    discarded: 'Changes discarded',
+    failed: 'Action failed',
+    cancelled: 'Cancelled',
+    unknown: 'Result unknown',
+  },
+  saveState: {
+    idle: 'No changes',
+    dirty: 'Unsaved changes',
+    saving: 'Saving',
+    saved: 'Saved',
+    failedDraftKept: 'Save failed, draft kept',
+    failedReverted: 'Save failed, original content restored',
+    rejected: 'Save rejected',
+    discarded: 'Discarded',
+    unknown: 'Save state unknown',
+  },
+  error: {
+    kind: {
+      networkUnavailable: 'Network unavailable',
+      backendUnavailable: 'Backend not ready',
+      invalidInput: 'Invalid input',
+      conflict: 'Conflict',
+      protectedDiscard: 'Protected content cannot be discarded',
+      externalProgram: 'External program error',
+      permissionDenied: 'Permission denied',
+      unknown: 'Unknown error',
+    },
+    recovery: {
+      networkUnavailable: 'Check your network connection and retry.',
+      backendUnavailable: 'Wait for the backend to finish starting, then retry.',
+      invalidInput: 'Fix the input as prompted and retry.',
+      conflict: 'Review the conflict, then retry.',
+      protectedDiscard: 'Back up or save a copy elsewhere, then retry.',
+      externalProgram: 'Check the external program state, then retry.',
+      permissionDenied: 'Run as administrator or adjust file permissions, then retry.',
+      unknown: 'Retry once; if it still fails, copy the diagnostics and report them.',
+    },
+  },
+  resultUnknown: {
+    title: 'Could not confirm the result',
+    description:
+      'The backend did not confirm whether this action took effect. Query the current state before continuing so nothing is written twice.',
+    query: 'Query current state',
+    taskId: 'Task ID',
   },
   status: {
     waiting: 'Waiting',

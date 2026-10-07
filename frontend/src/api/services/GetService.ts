@@ -13,6 +13,7 @@ import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { ConfigLoadReportsOut } from '../models/ConfigLoadReportsOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
@@ -948,6 +949,18 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/get',
+        });
+    }
+    /**
+     * 查询配置文件加载状态
+     * 查询各配置文件的加载状态、损坏备份位置与自动纠正明细。
+     * @returns ConfigLoadReportsOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigLoadReportsApiSettingConfigLoadGet(): CancelablePromise<ConfigLoadReportsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/config-load',
         });
     }
     /**

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { TaskOutcome } from './TaskOutcome';
 /**
  * 按 taskId 单点查询一个任务的状态, 不携带日志。
  */
@@ -58,6 +59,10 @@ export type TaskStatusOut = {
      * 任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 运行中为空
      */
     finishedAt?: (string | null);
+    /**
+     * 统一任务终态结果契约; 任务未结束或结果未知时为空
+     */
+    taskOutcome?: (TaskOutcome | null);
 };
 export namespace TaskStatusOut {
     /**
