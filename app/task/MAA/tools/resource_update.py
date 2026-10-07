@@ -29,6 +29,8 @@ CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空�
 不触发）按需更新全部 MAA 实例的资源。
 仅当 MAS 的更新源为 Mirror酱且已填写 CDK 时启用；检查、下载与缓存分发
 均受此条件约束，不使用 GitHub 资源源。
+每个 MAS 按本地日期每天最多尝试申请一次资源包，失败和取消也保留当天记账；
+免费版本查询与有效缓存分发不受每日限额影响。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
 mas-script-specialized-adapter/references/blackbox-boundary.md）：
@@ -262,10 +264,10 @@ def _running_maa_exe_paths() -> set[str]:
 
 
 def _snapshot_installs(configs: list[tuple[str, bool]]) -> list[tuple[Path, datetime]]:
-    """全部可判定的 MAA 安装及其时钟，按归一化路径去重、逐条容错。
+    """枚举 MAA 安装及其时钟；内容损坏上抛，瞬态不可读逐项跳过。
 
-    跳过：被占用（is_locked / MAA 进程运行中）、缺 resource/version.json、
-    version.json 损坏（记警告——单个坏文件只跳过该安装，不瘫痪整轮扫描）。
+    跳过被占用的安装、缺少版本文件的安装及瞬态读取错误；版本文件损坏时
+    抛 ConfigCorruptedError，由编排入口明确报告并停止本轮资源更新。
     先收集安装路径再做进程/锁定扫描，零 MAA 安装时不做全进程扫描。
     """
     installs: dict[str, Path] = {}
@@ -291,8 +293,8 @@ def _snapshot_installs(configs: list[tuple[str, bool]]) -> list[tuple[Path, date
             continue
         try:
             clock = _read_clock_file(version_file)
-        except (OSError, ValueError):
-            logger.warning(f"MAA 资源更新: {version_file} 损坏，本轮跳过该安装")
+        except OSError:
+            logger.warning(f"MAA 资源更新: {version_file} 暂不可读，本轮跳过该安装")
             continue
         result.append((install, clock))
     return result
@@ -678,73 +680,100 @@ async def _report(progress: _Progress | None, line: str) -> None:
         logger.debug("MAA 资源更新: 进度回调失败（不影响更新流程）")
 
 
-async def _sweep(progress: _Progress | None = None) -> None:
-    if _resolve_source() is None:
-        return
-    configs = _snapshot_maa_configs()
-    pairs = await asyncio.to_thread(_snapshot_installs, configs)
-    if not pairs:
-        return
-    clocks = dict(pairs)
-    await _report(progress, "检查 MAA 资源更新…")
-
-    state: dict[str, object] = _load_state()
+async def _query_resource_version(
+    *,
+    clocks: dict[Path, datetime],
+    stage: dict[str, object] | None,
+    state: dict[str, object],
+) -> datetime | None:
+    """免费查询版本并更新查询状态；地板或退避命中时不查询。"""
     now = datetime.now(timezone.utc)
-    stage = await _run_write_thread(_load_valid_manifest)
-
-    # 1. 查询（地板 + 固定退避只作用于刷新检查；判定/分发照做）
-    target: datetime | None = None
     last_query = _parse_iso(state.get("last_query_at"))
-    query_blocked = _backoff_active(state, "query_fail_until", now) or (
+    if _backoff_active(state, "query_fail_until", now) or (
         last_query is not None and now - last_query < timedelta(seconds=_QUERY_FLOOR)
+    ):
+        return None
+    stage_target = _parse_iso(stage.get("target")) if stage else None
+    # 无缓存时报告最旧实例的真实时钟，不使用未实测的极旧版本哨兵。
+    current = _format_clock(stage_target or min(clocks.values()))
+    try:
+        target = await _fetch_latest_version(current)
+        state["last_query_at"] = datetime.now(timezone.utc).isoformat()
+        write_file(_STATE_FILE, state)
+        return target
+    except _QueryError as e:
+        state["query_fail_until"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
+        ).isoformat()
+        write_file(_STATE_FILE, state)
+        logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
+        return None
+
+
+def _download_attempted_today(state: dict[str, object], now: datetime) -> bool:
+    last_attempt = _parse_iso(state.get("last_download_attempt_at"))
+    return (
+        last_attempt is not None
+        and last_attempt.astimezone().date() >= now.astimezone().date()
     )
-    if not query_blocked:
-        stage_target = _parse_iso(stage.get("target")) if stage else None
-        if stage_target is not None:
-            current = _format_clock(stage_target)
-        else:
-            # 无暂存时送最旧实例的真实时钟（与上游「报本地版本」同口径），
-            # 不用 epoch 哨兵——镜像酱对极旧 current_version 的行为未实测
-            current = _format_clock(min(clocks.values()))
-        try:
-            target = await _fetch_latest_version(current)
-            state["last_query_at"] = datetime.now(timezone.utc).isoformat()
-            write_file(_STATE_FILE, state)
-        except _QueryError as e:
-            state["query_fail_until"] = (
-                datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
-            ).isoformat()
-            write_file(_STATE_FILE, state)
-            logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
 
-    # 2. 刷新检查（下载退避命中则跳过刷新；判定/分发不受影响）
-    if target is not None:
-        behind = any(clock < target for clock in clocks.values())
-        if (
-            behind
-            and not _stage_reusable(stage, target)
-            and not _backoff_active(state, "download_fail_until", now)
-        ):
-            await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
-            try:
-                refreshed = await _refresh_stage(target, progress)
-                if not refreshed:
-                    await _report(
-                        progress, "更新源未使用 Mirror酱 或未填 Key，跳过资源更新"
-                    )
-                stage = _load_manifest()
-            except _DownloadError as e:
-                state["download_fail_until"] = (
-                    datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
-                ).isoformat()
-                write_file(_STATE_FILE, state)
-                logger.warning(f"MAA 资源更新: 取包失败（1 小时后重试）: {e}")
-                await _report(progress, "资源包下载失败（1 小时后重试）")
-                # 换位失败可能已把盘上 manifest 作废，按盘上现状决定本轮
-                # 是否仍分发旧暂存，不沿用内存里的旧值
-                stage = _load_manifest()
 
-    # 3. 以暂存为镜判定并分发（判定比暂存不比远端，地板期/失败期照常）
+async def _refresh_resource_stage(
+    *,
+    clocks: dict[Path, datetime],
+    stage: dict[str, object] | None,
+    target: datetime | None,
+    state: dict[str, object],
+    progress: _Progress | None,
+) -> dict[str, object] | None:
+    """按每日限额与失败退避刷新缓存；state 由编排器持有并在此记账。"""
+    if (
+        target is None
+        or not any(clock < target for clock in clocks.values())
+        or _stage_reusable(stage, target)
+        or _resolve_source() is None
+    ):
+        return stage
+    now = datetime.now(timezone.utc)
+    if _backoff_active(state, "download_fail_until", now):
+        return stage
+    if _download_attempted_today(state, now):
+        await _report(progress, "今日已尝试获取资源包，明日再试；已有缓存照常分发")
+        return stage
+    await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
+    previous_attempt = state.get("last_download_attempt_at")
+    # 请求前持久记账：失败、取消或进程退出都不能再次消耗当天预算。
+    state["last_download_attempt_at"] = datetime.now(timezone.utc).isoformat()
+    write_file(_STATE_FILE, state)
+    try:
+        refreshed = await _refresh_stage(target, progress)
+        if not refreshed:
+            # 启用条件改变且尚未请求资源包，不占用当天预算。
+            if previous_attempt is None:
+                state.pop("last_download_attempt_at", None)
+            else:
+                state["last_download_attempt_at"] = previous_attempt
+            write_file(_STATE_FILE, state)
+            await _report(progress, "更新源未使用 Mirror酱 或未填 Key，跳过资源更新")
+        return _load_manifest()
+    except _DownloadError as e:
+        state["download_fail_until"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
+        ).isoformat()
+        write_file(_STATE_FILE, state)
+        logger.warning(f"MAA 资源更新: 取包失败（退避 1 小时，仍受每日限额约束）: {e}")
+        await _report(progress, "资源包下载失败；至少 1 小时后且有当日额度时重试")
+        # 换位失败可能已经作废清单，按盘上现状决定是否继续分发旧缓存。
+        return _load_manifest()
+
+
+async def _distribute_resource_stage(
+    *,
+    clocks: dict[Path, datetime],
+    stage: dict[str, object] | None,
+    progress: _Progress | None,
+) -> None:
+    """以有效缓存的实际时钟分发，查询地板、退避与日限额不阻止分发。"""
     if _resolve_source() is None:
         return
     if stage is None:
@@ -815,6 +844,23 @@ async def _sweep(progress: _Progress | None = None) -> None:
         await _report(progress, "本轮未完成分发，剩余实例下轮自愈")
 
 
+async def _sweep(progress: _Progress | None = None) -> None:
+    if _resolve_source() is None:
+        return
+    pairs = await asyncio.to_thread(_snapshot_installs, _snapshot_maa_configs())
+    if not pairs:
+        return
+    clocks = dict(pairs)
+    await _report(progress, "检查 MAA 资源更新…")
+    state = _load_state()
+    stage = await _run_write_thread(_load_valid_manifest)
+    target = await _query_resource_version(clocks=clocks, stage=stage, state=state)
+    stage = await _refresh_resource_stage(
+        clocks=clocks, stage=stage, target=target, state=state, progress=progress
+    )
+    await _distribute_resource_stage(clocks=clocks, stage=stage, progress=progress)
+
+
 async def _run_update() -> None:
     try:
         if _resolve_source() is None:
@@ -825,6 +871,11 @@ async def _run_update() -> None:
                 # 不允许在另一个 MAS 正在写本安装时启动 MAA。
                 return
             await _sweep(_broadcast_progress)
+    except ConfigCorruptedError as e:
+        logger.opt(exception=True).error(
+            f"MAA 资源更新已停止：资源版本文件损坏：{e.path}"
+        )
+        await _broadcast_progress(f"MAA 资源更新已停止：请检查损坏的版本文件 {e.path}")
     except Exception:
         logger.exception("MAA 资源自动更新异常（已忽略，不影响本轮任务）")
 

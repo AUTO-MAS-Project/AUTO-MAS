@@ -88,7 +88,7 @@ class MaaManager(TaskExecuteBase):
         # prepared 要等 prepare() 整体返回, 中途被取消或失败时 final_task
         # 靠这个标志解锁（对齐 SRC 的 config_lock_acquired）
         self.config_lock_acquired = False
-        self._resource_access = ExitStack()
+        self._resource_access: ExitStack = ExitStack()
         self._device_provider = device_provider
 
     async def check(self) -> str:
