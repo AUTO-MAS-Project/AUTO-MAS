@@ -16,14 +16,25 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-NTE（异环）通过启动器拉起游戏。
+"""OK-NTE（异环）经启动器拉起游戏，按 Game.LaunchMode 分两条路径。
 
 异环客户端直接运行 HTGame.exe 会卡界面，必须经启动器（NTELauncher 下的
-NTEGame.exe / NTEGlobalGame.exe / NTETWGame.exe）启动。本模块对齐 ok-nte
-上游 LauncherTask 的启动流程，交互与截图采用与账号切换一致的前台
-pyautogui + DPI 适配模式，OCR 复用通用工具集 `app.tools.ocr`。
+NTEGame.exe / NTEGlobalGame.exe / NTETWGame.exe）启动。两种启动方式都经由
+启动器，区别只在是否操作启动器界面：
 
-流程::
+- 直接启动（Autoplay，默认）：启动器带 /autoplay 参数自行拉起游戏并完成
+  登录，无需任何 OCR 交互（不操作启动器界面）
+  → wait_autoplay_game / async_wait_autoplay_game；
+- 使用启动器启动（LauncherUi）：只打开启动器界面，再由本模块 OCR 找到并点击
+  「开始游戏」（交互与截图沿用与账号切换一致的前台 pyautogui + DPI 适配模式，
+  OCR 复用通用工具集 app.tools.ocr）
+  → start_game_via_launcher / async_start_game_via_launcher。
+
+流程（直接启动）::
+
+    带 /autoplay 拉起启动器 → 轮询 HTGame.exe 可见窗口出现（游戏就绪，停在标题界面）
+
+流程（使用启动器启动）::
 
     退出屏保 → 拉起启动器 → 等启动器窗口 → OCR 找「开始游戏」/「更新」按钮
     并点击（点「更新」后只点一次，等更新完成按钮变回「开始游戏」再点）
@@ -62,6 +73,14 @@ logger = get_logger("OK-NTE 启动器启动")
 # 游戏客户端与启动器进程名（对齐 ok-nte 上游 src/__init__.py）
 _GAME_PROCESS = "HTGame.exe"
 LAUNCHER_EXES = ("NTEGame.exe", "NTEGlobalGame.exe", "NTETWGame.exe")
+
+# 直接启动（Game.LaunchMode == "Autoplay"）用的启动器参数：带 /autoplay 时启动器
+# 自行拉起游戏并完成登录，无需点击「开始游戏」，也就无需 OCR 交互
+AUTOPLAY_ARG = "/autoplay"
+# 静默启动后等游戏窗口出现的上限（本机实测 36-40s 出窗，留足余量）
+_AUTOPLAY_START_TIMEOUT = 180.0
+# 静默启动等待期间的进度日志间隔：长时间无输出会让用户以为卡死
+_AUTOPLAY_PROGRESS_SECONDS = 15.0
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
 _FRAME_WIDTH = 1920
@@ -342,6 +361,70 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
 
 
 # ── 对外入口 ─────────────────────────────────────────────────────────────
+
+
+def wait_autoplay_game(
+    launcher_path: Path,
+    *,
+    timeout: float | None = None,
+    on_log: Callable[[str], None] | None = None,
+) -> bool:
+    """轮询等待带 /autoplay 静默拉起的异环游戏窗口出现。
+
+    启动器带 /autoplay 参数时无需点击与 OCR 交互，「游戏已就绪」等价于
+    HTGame.exe 出现可见窗口，轮询该窗口即可判定；超时返回 False（调用方按
+    启动失败处理），仅非 Windows 平台抛 RuntimeError。
+
+    Args:
+        launcher_path: 启动器 exe 路径（用于日志标明是哪个启动器静默拉起）。
+        timeout: 等待上限（秒），默认 _AUTOPLAY_START_TIMEOUT。
+        on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
+
+    Returns:
+        游戏窗口出现返回 True；超时返回 False。
+
+    Raises:
+        RuntimeError: 非 Windows 平台（窗口轮询依赖 win32gui，退屏保依赖 pyautogui）。
+    """
+
+    if not IS_WINDOWS:
+        raise RuntimeError("OK-NTE 启动器启动仅支持 Windows 平台")
+    # 开工前退出屏保：屏保全屏覆盖会让后续窗口截图变成黑屏（沿用旧点击启动路径与
+    # ok-nte 上游 LauncherTask 的行为）
+    dismiss_screensaver()
+    on_log = on_log or (lambda msg: logger.info(msg))
+    limit = _AUTOPLAY_START_TIMEOUT if timeout is None else timeout
+    started = time.monotonic()
+    deadline = started + limit
+    next_progress = started + _AUTOPLAY_PROGRESS_SECONDS
+    on_log(
+        f"启动器 {launcher_path.name} 已带 {AUTOPLAY_ARG} 静默拉起，"
+        f"正在等待游戏窗口出现（最迟 {limit:g}s）..."
+    )
+    while True:
+        if _find_game_hwnd() is not None:
+            on_log("已检测到异环游戏窗口")
+            return True
+        now = time.monotonic()
+        if now >= deadline:
+            on_log(f"{AUTOPLAY_ARG} 静默启动等待游戏窗口超时（{limit:g}s）")
+            return False
+        if now >= next_progress:
+            on_log(f"正在等待 {AUTOPLAY_ARG} 拉起游戏窗口（{int(now - started)}s）...")
+            next_progress = now + _AUTOPLAY_PROGRESS_SECONDS
+        time.sleep(2)
+
+
+async def async_wait_autoplay_game(
+    launcher_path: Path,
+    *,
+    timeout: float | None = None,
+    on_log: Callable[[str], None] | None = None,
+) -> bool:
+    """async 版本：在后台线程轮询游戏窗口，避免阻塞事件循环。"""
+    return await asyncio.to_thread(
+        wait_autoplay_game, launcher_path, timeout=timeout, on_log=on_log
+    )
 
 
 def start_game_via_launcher(

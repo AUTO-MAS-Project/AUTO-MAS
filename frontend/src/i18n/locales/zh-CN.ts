@@ -1493,6 +1493,14 @@ export default {
       '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
     launchViaLauncher: '启动器启动',
     launchDirectly: '直接启动',
+    oknteLaunchViaLauncher: '使用启动器启动',
+    oknteLaunchModeNeedsLaunchBeforeTask: '仅在「任务前启动游戏」开启时可用',
+    oknteLaunchTypeSummary:
+      '直接启动：游戏在后台静默拉起，不弹启动器界面；使用启动器启动：打开启动器界面，由 MAS 替你点「开始游戏」',
+    oknteLaunchTypeHint:
+      '直接启动：MAS 带 /autoplay 参数静默拉起游戏，启动器界面不会出现（推荐，默认）。使用启动器启动：MAS 打开启动器界面，再替你点「开始游戏」——这一步是模拟鼠标点击，你只需要让启动器窗口保持可见、别被挡住',
+    oknteLauncherClickNotice:
+      '「使用启动器启动」：MAS 会打开启动器界面，并替你点「开始游戏」。任务运行期间别让其他窗口挡住启动器，挡住了点击可能落空；游戏要更新的话，停留时间会更长',
     autoUpdateNeedsLauncher:
       '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
