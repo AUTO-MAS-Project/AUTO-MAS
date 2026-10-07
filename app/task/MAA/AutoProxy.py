@@ -914,8 +914,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
-        # 每用户只在首次需要库存时恢复；重试保留 MAA 本轮更新的工作缓存。
-        self._depot_context_prepared: bool = False
+        # 每用户只在首次需要库存时准备；缓存结果，重试既不回退库存也不放行失败上下文。
+        self._depot_context_ready: bool | None = None
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
 
@@ -1185,18 +1185,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
 
-    def _restore_user_depot_cache(self) -> None:
-        """首次进入库存运行上下文时恢复当前用户缓存；不可用时清理上一用户残留。"""
+    def _restore_user_depot_cache(self) -> bool:
+        """首次进入库存运行上下文时恢复当前用户缓存；不可用时清理上一用户残留。
 
-        if self._depot_context_prepared:
-            return
-        self._depot_context_prepared = True
+        Returns:
+            是否已恢复或清空工作缓存；失败时本轮不得执行库存任务。
+        """
+
+        if self._depot_context_ready is not None:
+            return self._depot_context_ready
+        self._depot_context_ready = False
         source = self._cultivate_archive_dir() / _MAA_DEPOT_ARCHIVE_NAME
         target = self.maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
         try:
             if source.exists():
                 write_file(target, read_dict_file(source))
-                return
+                self._depot_context_ready = True
+                return True
         except (OSError, ValueError):
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 恢复库存缓存失败, 清理旧库存缓存"
@@ -1207,6 +1212,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 清理旧库存缓存失败"
             )
+            return False
+        self._depot_context_ready = True
+        return True
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
@@ -1555,7 +1563,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
             for task in depot_tasks:
                 task["UpdateDepot"] = True
             if depot_tasks or has_cultivate_targets:
-                self._restore_user_depot_cache()
+                if not self._restore_user_depot_cache():
+                    for task in depot_tasks:
+                        task["IsEnable"] = False
+                    if "DepotMaintain" in self.task_dict:
+                        self.task_dict["DepotMaintain"] = False
+                    logger.warning(
+                        f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
+                        "请检查 MAA 数据目录的写入权限"
+                    )
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
