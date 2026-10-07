@@ -158,7 +158,8 @@ describe('ConfigRestoreSection preview state', () => {
     await runtime.handlePreview(item)
 
     expect(runtime.previewError.value).toBe('preview unavailable')
-    expect(runtime.previewWarnings.value).toEqual(['preview unavailable'])
+    // 请求失败≠备份损坏：不进「内容不完整」警示，只锁恢复并展示错误
+    expect(runtime.previewWarnings.value).toEqual([])
     expect(runtime.previewRestoreAllowed.value).toBe(false)
     expect(runtime.blockedRestoreTimes.value.has(item.time)).toBe(true)
     expect(runtime.previewRaw.value).toBeNull()

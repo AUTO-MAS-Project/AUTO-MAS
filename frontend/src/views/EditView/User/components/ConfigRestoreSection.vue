@@ -525,7 +525,9 @@ const handlePreview = async (item: BackupItem) => {
     previewData.account = []
     previewData.tasks = []
     previewData.instances = []
-    previewWarnings.value = [previewError.value]
+    // 预览请求失败≠备份损坏：只锁恢复并展示错误文本，不弹
+    // 「备份内容不完整」警示（该警示仅用于后端返回的 warnings）
+    previewWarnings.value = []
     previewRestoreAllowed.value = false
     blockedRestoreTimes.value.add(item.time)
     previewRaw.value = null

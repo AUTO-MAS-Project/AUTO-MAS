@@ -1972,6 +1972,7 @@ class AppConfig(GlobalConfig):
             read_app_group,
             read_game,
             read_game_account,
+            read_team_list,
             restore_mas_backup,
             restore_onedragon_backup,
         )
@@ -2027,7 +2028,9 @@ class AppConfig(GlobalConfig):
         # 缺文件沿用读取器默认值，兼容旧备份。
         try:
             backup_account = read_game_account(backup_dir)
+            read_game(backup_dir)
             backup_apps = normalize_app_group_entries(read_app_group(backup_dir))
+            read_team_list(backup_dir)
             backup_info = read_dict_file(
                 backup_dir / MAS_USER_INFO_FILE, allow_empty=True
             )
@@ -2049,13 +2052,16 @@ class AppConfig(GlobalConfig):
                 "为避免覆盖他人配置已中止恢复，请先处理占用后再试"
             )
         slot_dir = instance_dir(root, slot)
-        # 先读当前槽内会被读-改-写的两个 YAML。普通恢复遇到现场坏档要在
-        # 任何物化/归档前保留 409；force 已获确认时跳过物化，随后由
-        # restore_mas_backup 原样归档坏现场，再换入已预校验的好备份。
+        # 先读当前槽内会被读-改-写/整表覆盖的 YAML（game_account、game、
+        # _group——materialize 的 write_app_group 会整表覆盖 _group.yml）。
+        # 普通恢复遇到现场坏档要在任何物化/归档前保留 409；force 已获确认
+        # 时跳过物化，随后由 restore_mas_backup 原样归档坏现场，再换入已
+        # 预校验的好备份。
         materialize_current = True
         try:
             read_game_account(slot_dir)
             read_game(slot_dir)
+            read_app_group(slot_dir)
         except ConfigCorruptedError:
             if not force:
                 raise
@@ -2468,7 +2474,9 @@ class AppConfig(GlobalConfig):
             inspect_onedragon_backup,
             list_app_catalog,
             read_app_group,
+            read_game,
             read_game_account,
+            read_team_list,
         )
         from app.utils.io import read_dict_file
 
@@ -2555,7 +2563,28 @@ class AppConfig(GlobalConfig):
         if backup is None:
             raise ValueError(f"备份不存在: {ts}")
 
-        info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+        # 预览把损坏文件降级为警示（与 onedragon 分支一致）：摘要照常返回，
+        # restoreAllowed=False 锁住恢复；坏备份仍由恢复前预读统一拦截。
+        warnings: list[str] = []
+        info: dict = {}
+        try:
+            info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
+        account: dict = {}
+        try:
+            account = read_game_account(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份账号配置损坏，无法恢复：{exc}")
+        try:
+            read_game(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份启动参数损坏，无法恢复：{exc}")
+        try:
+            read_team_list(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份编队配置损坏，无法恢复：{exc}")
+
         info_fields = []
         for key, field in (
             ("name", "Name"),
@@ -2570,15 +2599,19 @@ class AppConfig(GlobalConfig):
                 continue
             info_fields.append({"key": key, "value": str(info[field])})
 
-        account = read_game_account(backup)
         account_fields = self._preview_account_fields(account)
 
         name_book = {
             str(item.get("app_id")): str(item.get("app_name") or "")
             for item in list_app_catalog(root)
         }
+        app_group: list = []
+        try:
+            app_group = read_app_group(backup)
+        except ConfigCorruptedError as exc:
+            warnings.append(f"备份任务编排损坏，无法恢复：{exc}")
         tasks = []
-        for item in read_app_group(backup):
+        for item in app_group:
             app_id = str(item.get("app_id") or "").strip()
             if not app_id:
                 continue
@@ -2596,8 +2629,8 @@ class AppConfig(GlobalConfig):
             "account": account_fields,
             "tasks": tasks,
             "instances": [],
-            "warnings": [],
-            "restoreAllowed": True,
+            "warnings": warnings,
+            "restoreAllowed": not warnings,
         }
 
     def _zzzod_native_instance(

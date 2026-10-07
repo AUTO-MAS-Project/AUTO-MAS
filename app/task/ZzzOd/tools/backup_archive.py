@@ -64,6 +64,10 @@ from .zzz_od_config import (
     instance_dir,
     launch_args_patch,
     normalize_app_group_entries,
+    read_app_group,
+    read_game,
+    read_game_account,
+    read_team_list,
     restore_instance_view,
     user_field_patch,
     write_app_group,
@@ -275,11 +279,29 @@ def inspect_onedragon_backup(backup_dir: Path) -> tuple[dict, list[str]]:
 def validate_onedragon_backup(backup_dir: Path) -> dict:
     """校验一条龙原生备份，失败时抛 ``ValueError``。
 
-    该校验只针对备份内容本身，调用方必须在清理现场视图或归档当前配置
-    之前执行；``force`` 不能跳过它，因为强制恢复坏备份仍会破坏原生注册表。
+    注册表结构、实例目录名与实例内已知 YAML 的内容全部通过才放行；调用方
+    必须在清理现场视图或归档当前配置之前执行；``force`` 不能跳过它，因为
+    强制恢复坏备份仍会破坏原生注册表与现场。
     """
 
     data, warnings = inspect_onedragon_backup(backup_dir)
+    # 注册表只定结构；实例目录内容在这里逐文件严格读取——恢复是整目录
+    # 换入，坏实例文件一旦落回现场，一条龙读到的就是损坏配置。已知四类
+    # 之外的文件属上游私有内容，只透传不校验。
+    idx_names = sorted(
+        {rel.split("/", 1)[0] for rel in dir_files(backup_dir) if "/" in rel}
+    )
+    for idx_name in idx_names:
+        if not idx_name.isascii() or not idx_name.isdigit():
+            continue  # 目录名无效已由 inspect 上报
+        idx_dir = backup_dir / idx_name
+        for reader in (read_game_account, read_game, read_app_group, read_team_list):
+            try:
+                reader(idx_dir)
+            except ConfigCorruptedError as exc:
+                warnings.append(
+                    f"原生备份实例 {int(idx_name):02d} 配置损坏，无法恢复：{exc}"
+                )
     if warnings:
         raise ValueError("；".join(warnings))
     return data
@@ -375,8 +397,9 @@ def restore_onedragon_backup(
     if not backup_files:
         raise ValueError(f"备份内容为空: {ts}")
 
-    # 备份内容必须先通过原生注册表校验；无论 force 与否都不能把损坏的
-    # 注册表写回现场。该步骤只读，故发生错误时现场、sidecar 与历史池均不变。
+    # 备份内容必须先通过原生校验（注册表结构 + 实例文件内容）；无论
+    # force 与否都不能把损坏内容写回现场。该步骤只读，故发生错误时现场、
+    # sidecar 与历史池均不变。
     validate_onedragon_backup(backup_dir)
 
     if snapshot_current:

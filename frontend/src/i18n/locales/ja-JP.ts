@@ -283,6 +283,10 @@ export default {
   },
   edit: {
     configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
+    // バックアップ内容が壊れているため復元できない（プレビュー時の警告）
+    configRestoreUnrestorableTitle: 'このバックアップは復元できません',
+    configRestoreUnrestorableDesc:
+      'バックアップの内容が不完全であるか、MAS の一時インスタンスが含まれているため、復元は無効化されています。',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',

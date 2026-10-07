@@ -520,13 +520,17 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
-def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
+def read_file(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> dict[str, Any] | str:
     """
     按后缀读取配置文件, 传 ``format`` 可强制改用指定后缀的解析器
 
     Args:
         path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
         format: 强制使用的解析器后缀 (含点), 忽略 ``path`` 实际后缀; 默认 ``None`` 按后缀推断
+        raw: 预读的文件字节内容; 传入时不再重复读盘, 供 :func:`read_dict_file`
+            复用首次读取结果, 避免同一文件读两次
 
     Returns:
         dict[str, Any] | str: 已知格式解析后的结构; 未知格式返回原始字符串; 不存在返回空 ``{}``
@@ -535,12 +539,15 @@ def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
         return {}
     _suffix = (format or path.suffix).lower()
     codec = _CODECS.get(_ALIASES.get(_suffix, _suffix))
+    content = path.read_bytes() if raw is None else raw
     if codec is None:
-        return decode_bytes(path.read_bytes())
-    return codec[1](path.read_bytes())
+        return decode_bytes(content)
+    return codec[1](content)
 
 
-def _is_empty_yaml_document(path: Path, *, format: str | None = None) -> bool:
+def _is_empty_yaml_document(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> bool:
     """区分真正的空 YAML 文档与显式 ``null``。
 
     ``yaml.safe_load`` 对这两种内容都返回 ``None``，但配置文件只应把空白、
@@ -551,7 +558,7 @@ def _is_empty_yaml_document(path: Path, *, format: str | None = None) -> bool:
     normalized = _ALIASES.get(suffix, suffix)
     if normalized not in (".yaml", ".sanitized.yaml"):
         return False
-    content = decode_bytes(path.read_bytes())
+    content = decode_bytes(path.read_bytes() if raw is None else raw)
     if normalized == ".sanitized.yaml":
         content = content.translate(_INVALID_YAML_CHARS)
     try:
@@ -608,14 +615,17 @@ def read_dict_file(
     if not path.exists():
         return {}
     try:
-        data = read_file(path, format=format)
+        raw = path.read_bytes()
+        data = read_file(path, format=format, raw=raw)
     except OSError:
         raise
     except Exception as exc:  # noqa: BLE001 - 解析层任何失败都按损坏上报
         raise ConfigCorruptedError(path) from exc
     if isinstance(data, dict):
         return data
-    if data is None and allow_empty and _is_empty_yaml_document(path, format=format):
+    if data is None and allow_empty and _is_empty_yaml_document(
+        path, format=format, raw=raw
+    ):
         return {}
     raise ConfigCorruptedError(path)
 
