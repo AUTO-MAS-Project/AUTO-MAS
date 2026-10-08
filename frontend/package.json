@@ -26,7 +26,16 @@
     "format:check": "oxfmt . --check",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
     "openapi": "openapi --input http://127.0.0.1:36164/openapi.json --output ./src/api --client axios && node scripts/postprocess-openapi.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "node e2e/run.mjs",
+    "e2e:init": "node e2e/run.mjs --grep @init",
+    "e2e:smoke": "node e2e/run.mjs --grep @smoke",
+    "e2e:queue": "node e2e/run.mjs --grep @queue",
+    "e2e:scheduler": "node e2e/run.mjs --grep @scheduler",
+    "e2e:real": "pwsh -NoProfile -File ./e2e/run-real.ps1",
+    "e2e:real:local": "pwsh -NoProfile -File ./e2e/run-real.ps1",
+    "e2e:report": "playwright show-report playwright-report/browser",
+    "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json"
   },
   "build": {
     "asar": true,
@@ -82,6 +91,7 @@
   "devDependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "@guolao/vue-monaco-editor": "^1.6.0",
+    "@playwright/test": "1.64.0",
     "@sentry/vite-plugin": "^5.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/adm-zip": "^0.5.8",

@@ -13,6 +13,8 @@ dist-ssr
 *.local
 package-lock.json
 yarn.lock
+playwright-report/
+test-results/
 
 # Editor directories and files
 .vscode

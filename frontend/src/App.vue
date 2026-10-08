@@ -23,9 +23,11 @@ import { useLocale } from './composables/useLocale.ts'
 const logger = window.electronAPI.getLogger('App组件')
 
 // 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
-const DebugPanel = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
-  : null
+const DebugPanel =
+  import.meta.env.DEV &&
+  (window as Window & { __AUTO_MAS_E2E__?: boolean }).__AUTO_MAS_E2E__ !== true
+    ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
+    : null
 
 const route = useRoute()
 const { antdTheme } = useTheme()
