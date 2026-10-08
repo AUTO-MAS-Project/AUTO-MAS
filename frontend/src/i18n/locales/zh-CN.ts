@@ -867,6 +867,26 @@ export default {
     shellQueueImportDone: '已导入 {count} 个任务',
     shellQueueImportSkippedTitle: '有 {count} 项没导进来',
     shellQueueImportFailed: '导入外壳配置失败',
+    queueImportFromUsers: '本脚本其他用户',
+    queueImportFromShell: '外壳',
+    queueImportNoUsers: '没有可导入的用户',
+    queueImportPasswordCount: '{count} 项密码需重填',
+    queueTaskCount: '{count} 个任务',
+    queueInvalidCount: '{count} 个已失效',
+    queueTemplate: '模板',
+    queueTemplateMine: '我的模板',
+    queueTemplatePresets: '项目预设',
+    queueTemplateSaveCurrent: '把当前队列存为模板',
+    queueTemplateApply: '应用',
+    queueTemplateRename: '重命名',
+    queueTemplateDelete: '删除',
+    queueTemplateEmpty: '暂无模板',
+    queueTemplateDeleteConfirm: '删除模板「{name}」？',
+    queueTemplateSaveTitle: '存为模板',
+    queueTemplateName: '模板名称',
+    queueTemplateNameExists: '已有同名模板',
+    queueTemplateCurrentCount: '当前队列 {count} 个任务',
+    queueTemplateSave: '保存',
     shellImportTitle: '导入已有配置为账号',
     shellImportHint:
       '在项目目录里找到 {count} 份 {source} 配置。勾选的每一份会创建一个账号，账号名就是配置名，任务队列和任务选项一起导入；不勾选就只建一个空的新账号。',
@@ -1051,7 +1071,6 @@ export default {
     clickSaveConfigurationWhen: '配置完成后，点击「保存并关闭」结束本次会话。',
     configurationManagement: '配置管理方式',
     k0MeansNoLimit: '阈值为 0 时表示不限制',
-    presetTemplate: '预设模板',
     k123456DigitCountLog: '毫秒/微秒的位数会按日志内容自动识别',
     echoDomainNumberF2: 'F2 列表中的凝素领域序号',
     sonanceCasketNumberF2: 'F2 列表中的无音区序号',
@@ -1169,6 +1188,7 @@ export default {
     lineMatchingThisPattern: '匹配到此正则的行作为窗口结束（含该行）；留空则不限定结束',
     singleRunTimeLimit: '单次运行时间限制（分钟）',
     singleTaskTimeLimit: '单任务时限（分钟，0 表示不限）',
+    loopGuard: '原地打转检测（实验性）',
     echoOfWarStartDay: '历战余响开始日',
     trailingKeyword: '去尾关键字',
     reportIssueGo: '反馈，或前往',
@@ -1415,7 +1435,6 @@ export default {
     pushLogModeOff: '关闭',
     pushLogModeList: '逐条',
     pushLogModeSummary: '汇总',
-    noPresetTemplates: '暂无预设模板',
     replace: '替换为',
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '有未保存的更改',
@@ -1474,9 +1493,19 @@ export default {
       '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
     launchViaLauncher: '启动器启动',
     launchDirectly: '直接启动',
+    oknteLaunchViaLauncher: '使用启动器启动',
+    oknteLaunchModeNeedsLaunchBeforeTask: '仅在「任务前启动游戏」开启时可用',
+    oknteLaunchTypeSummary:
+      '直接启动：游戏在后台静默拉起，不弹启动器界面；使用启动器启动：打开启动器界面，由 MAS 替你点「开始游戏」',
+    oknteLaunchTypeHint:
+      '直接启动：MAS 带 /autoplay 参数静默拉起游戏，启动器界面不会出现（推荐，默认）。使用启动器启动：MAS 打开启动器界面，再替你点「开始游戏」——这一步是模拟鼠标点击，你只需要让启动器窗口保持可见、别被挡住',
+    oknteLauncherClickNotice:
+      '「使用启动器启动」：MAS 会打开启动器界面，并替你点「开始游戏」。任务运行期间别让其他窗口挡住启动器，挡住了点击可能落空；游戏要更新的话，停留时间会更长',
     autoUpdateNeedsLauncher:
       '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
+    clientPathOptionalHint:
+      '可选：留空时按进程名自动匹配客户端；手动指定后，已运行检测与任务结束时的收尾更精确',
     clientPathPending: '由启动器路径自动定位，或点击「选择文件」手动指定',
     selectFile: '选择文件',
     resetAutoLocate: '恢复自动',
@@ -2239,6 +2268,8 @@ export default {
     configRestoreCorruptedDesc:
       '强制恢复会跳过与该文件相关的保护检查（恢复前备份、占用校验），可能覆盖现有配置；是否继续？',
     configRestoreForceAction: '强制恢复',
+    configRestoreUnrestorableTitle: '该备份无法恢复',
+    configRestoreUnrestorableDesc: '备份内容不完整或包含 MAS 临时实例，已禁用恢复。',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: '共享',
     configRestoreModeUser: '独立',
@@ -2251,6 +2282,15 @@ export default {
       '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
     configRestoreCrossSourceShared:
       '共享配置由本托管的全部账号共享，恢复会覆盖其他账号当前使用的配置。',
+    // 原生设置会话通用：会话改动被后端丢弃时的弹窗（每条原因都给恢复路径）
+    configSessionDiscardedTitle: '设置未保存',
+    configSessionDiscardedStructure:
+      '本次会话改动了任务队列的结构（增删任务、调整顺序或切换配置方案），与打开设置时不一致，因此这次的全部修改都没有写入存档。\n下一步：重新打开设置，只调整任务开关与高级设置后保存。',
+    configSessionDiscardedUnreadable:
+      '读取原生程序落盘的配置失败，本次的全部修改都没有写入存档。\n下一步：确认程序目录可访问后，重新打开设置再改一次。',
+    configSessionDiscardedNotWritten:
+      '原生程序没有写出完整配置（可能被强制结束），本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次，退出时让程序自行关闭。',
+    configSessionDiscardedUnknown: '本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
@@ -3712,9 +3752,16 @@ export default {
     afterDoneDelayTip:
       '队列完成后先等待这段时间再执行完成后操作，0 表示不等待；执行前仍有 60 秒倒计时可取消',
     afterDoneDelayUnit: '分钟',
+    runScriptBefore: '队列运行前执行脚本',
+    runScriptAfter: '队列运行后执行脚本',
+    runCustomScriptBefore: '整个队列开始运行前执行一次，不会随账号或重试重复执行',
+    runCustomScriptAfter:
+      '整个队列结束后执行一次，成功或失败均执行，先于完成后操作；手动停止时不执行',
+    preTaskScriptPath: '队列运行前脚本路径选择成功',
+    postTaskScriptPath: '队列运行后脚本路径选择成功',
     actionPlaceholder: '请选择操作',
     action: {
-      NoAction: '不执行任何操作',
+      NoAction: '无动作',
       Shutdown: '关机',
       ShutdownForce: '强制关机',
       Reboot: '重启',
@@ -3824,7 +3871,7 @@ export default {
       due: '已到点',
     },
     power: {
-      noAction: '不执行任何操作',
+      noAction: '无动作',
       shutdown: '关机',
       shutdownForce: '强制关机',
       reboot: '重启',
@@ -4199,6 +4246,18 @@ export default {
       themeModeTip: '界面外观主题',
       themeColor: '主题色',
       themeColorTip: '界面主色调',
+      importAppearance: '导入外观',
+      removeAppearance: '移除外观',
+      applyAppearance: '应用外观',
+      appearanceApplied: '外观已应用',
+      appearanceApplyFailed: '应用外观失败',
+      appearanceImportFailed: '导入外观失败',
+      appearanceRemoveFailed: '移除外观失败',
+      appearanceReplaceTitle: '外观已存在',
+      appearanceReplaceContent: '外观“{name}”已经存在，要替换它吗？',
+      replaceAppearance: '替换',
+      removeAppearanceTitle: '移除自定义外观',
+      removeAppearanceContent: '确定移除外观“{name}”吗？',
       cursorSection: '光标效果',
       cursorAnim: '光标动画',
       cursorTip: '选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认',
@@ -4232,7 +4291,7 @@ export default {
       preventSleep: '运行时阻止系统休眠',
       preventSleepTip: '程序运行时阻止系统进入休眠状态，不影响电脑进入熄屏',
       telemetry: '匿名遥测',
-      telemetryTip: '发送经脱敏的错误与性能数据，帮助定位问题；关闭后不再发送任何数据',
+      telemetryTip: '发送经脱敏的错误、性能数据与使用统计，帮助定位问题；关闭后不再发送任何数据',
       biliPolicy: '托管Bilibili游戏隐私政策',
       biliIntro:
         '开启本项即代表你已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替你处理相关弹窗：',
@@ -4477,7 +4536,8 @@ export default {
       cdkSite: 'Mirror 酱官网',
       cdkGet: '获取',
       cdkPlaceholder: '使用Mirror源时请输入Mirror 酱CDK',
-      cdkHint: '仅用于 MAS 自身的更新；MaaFW 项目的更新请在托管编辑页单独填写 CDK',
+      cdkHint:
+        '用于 MAS 更新；选择 Mirror 酱源并填写 CDK 后，也会自动更新 MAA 资源并消耗每日下载额度。本 MAS 按本地日期每天最多尝试获取一次资源包，失败或取消也计入。MaaFW 项目请在托管编辑页单独填写 CDK。',
       cdkGetLink: '获取 Mirror 酱 CDK',
       linkSection: '项目链接',
       site: '软件官网',

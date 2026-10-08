@@ -893,6 +893,26 @@ export default {
     shellQueueImportDone: 'Imported {count} tasks',
     shellQueueImportSkippedTitle: '{count} items were skipped',
     shellQueueImportFailed: 'Failed to import the shell config',
+    queueImportFromUsers: 'Other users of this script',
+    queueImportFromShell: 'Shell',
+    queueImportNoUsers: 'No users to import from',
+    queueImportPasswordCount: '{count} passwords to re-enter',
+    queueTaskCount: '{count} tasks',
+    queueInvalidCount: '{count} unavailable',
+    queueTemplate: 'Templates',
+    queueTemplateMine: 'My templates',
+    queueTemplatePresets: 'Project presets',
+    queueTemplateSaveCurrent: 'Save current queue as template',
+    queueTemplateApply: 'Apply',
+    queueTemplateRename: 'Rename',
+    queueTemplateDelete: 'Delete',
+    queueTemplateEmpty: 'No templates yet',
+    queueTemplateDeleteConfirm: 'Delete template "{name}"?',
+    queueTemplateSaveTitle: 'Save as template',
+    queueTemplateName: 'Template name',
+    queueTemplateNameExists: 'A template with this name already exists',
+    queueTemplateCurrentCount: 'Current queue: {count} tasks',
+    queueTemplateSave: 'Save',
     shellImportTitle: 'Import existing configurations as accounts',
     shellImportHint:
       'Found {count} {source} configuration(s) in the project folder. Each one you check becomes an account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',
@@ -1078,7 +1098,6 @@ export default {
     clickSaveConfigurationWhen: 'When you are done, click "Save and close" to end this session.',
     configurationManagement: 'Configuration management',
     k0MeansNoLimit: '0 means no limit',
-    presetTemplate: 'Preset template',
     k123456DigitCountLog: 'The digit count is detected automatically from the log',
     echoDomainNumberF2: 'Echo Domain number in the F2 list',
     sonanceCasketNumberF2: 'Sonance Casket number in the F2 list',
@@ -1208,6 +1227,7 @@ export default {
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
     singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
+    loopGuard: 'Loop detection (experimental)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
@@ -1481,7 +1501,6 @@ export default {
     pushLogModeOff: 'Off',
     pushLogModeList: 'List',
     pushLogModeSummary: 'Summary',
-    noPresetTemplates: 'No preset templates',
     replace: 'Replace with',
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
@@ -1542,9 +1561,20 @@ export default {
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
+    oknteLaunchViaLauncher: 'Launch via launcher UI',
+    oknteLaunchModeNeedsLaunchBeforeTask:
+      'Only available when "Launch the game before the task" is on',
+    oknteLaunchTypeSummary:
+      'Direct launch: the game starts quietly in the background and no launcher window shows up. Launcher UI: the launcher opens and MAS clicks "Start Game" for you',
+    oknteLaunchTypeHint:
+      'Direct launch: MAS starts the game silently with the /autoplay argument, and the launcher window never appears (recommended, default). Launcher UI: MAS opens the launcher and clicks "Start Game" for you — that click is simulated mouse input, so just keep the launcher window visible and unobstructed',
+    oknteLauncherClickNotice:
+      '"Launcher UI": MAS opens the launcher and clicks "Start Game" for you. Keep other windows from covering the launcher while a task runs, or the click can miss; if the game needs an update, it stays there longer',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
+    clientPathOptionalHint:
+      'Optional: leave empty to match the client by process name; setting it makes running-process detection and cleanup at task end more precise',
     clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
     selectFile: 'Select file',
     resetAutoLocate: 'Use auto',
@@ -2360,6 +2390,9 @@ export default {
     configRestoreCorruptedDesc:
       'Force restore skips the safety checks related to this file (pre-restore backup and occupancy guard) and may overwrite existing configs. Continue?',
     configRestoreForceAction: 'Force restore',
+    configRestoreUnrestorableTitle: 'This backup cannot be restored',
+    configRestoreUnrestorableDesc:
+      'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
@@ -2372,6 +2405,16 @@ export default {
       'This backup was created in {backup} config, while the current config source is {current}. Continuing switches the config source to {backup} and then writes the config there.',
     configRestoreCrossSourceShared:
       'Shared config is shared by every account of this managed script; restoring overwrites the config other accounts are currently using.',
+    // Shared native settings session: dialog shown when the backend discards this session's changes
+    configSessionDiscardedTitle: 'Settings not saved',
+    configSessionDiscardedStructure:
+      'This session changed the task queue structure (tasks added, removed, reordered or a different configuration profile), so it no longer matched the state when the settings were opened and none of these changes were written to the archive.\nNext: reopen the settings and adjust only task switches and advanced options before saving.',
+    configSessionDiscardedUnreadable:
+      'Reading the configuration written by the native program failed, so none of these changes were written to the archive.\nNext: make sure the program directory is accessible, then reopen the settings and edit again.',
+    configSessionDiscardedNotWritten:
+      'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
+    configSessionDiscardedUnknown:
+      'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
@@ -3820,6 +3863,14 @@ export default {
     afterDoneDelayTip:
       'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
     afterDoneDelayUnit: 'min',
+    runScriptBefore: 'Run a script before the queue',
+    runScriptAfter: 'Run a script after the queue',
+    runCustomScriptBefore:
+      'Run once before the entire queue starts, without repeating for accounts or retries',
+    runCustomScriptAfter:
+      'Run once when the entire queue finishes, on success or failure, before the completion action; skipped on manual stop',
+    preTaskScriptPath: 'Pre-queue script path selected',
+    postTaskScriptPath: 'Post-queue script path selected',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',
@@ -4286,6 +4337,18 @@ export default {
       themeModeTip: 'Overall look of the interface',
       themeColor: 'Accent color',
       themeColorTip: 'Primary color of the interface',
+      importAppearance: 'Import appearance',
+      removeAppearance: 'Remove appearance',
+      applyAppearance: 'Apply appearance',
+      appearanceApplied: 'Appearance applied',
+      appearanceApplyFailed: 'Could not apply appearance',
+      appearanceImportFailed: 'Could not import appearance',
+      appearanceRemoveFailed: 'Could not remove appearance',
+      appearanceReplaceTitle: 'Appearance already exists',
+      appearanceReplaceContent: '“{name}” already exists. Replace it?',
+      replaceAppearance: 'Replace',
+      removeAppearanceTitle: 'Remove custom appearance',
+      removeAppearanceContent: 'Remove “{name}”?',
       cursorSection: 'Cursor effect',
       cursorAnim: 'Cursor animation',
       cursorTip:
@@ -4322,7 +4385,7 @@ export default {
         'Stops the system from sleeping while the app is running. The screen can still turn off.',
       telemetry: 'Anonymous telemetry',
       telemetryTip:
-        'Sends anonymized error and performance data to help diagnose problems; when off, no data is sent at all',
+        'Sends anonymized error, performance and usage data to help diagnose problems; when off, no data is sent at all',
       biliPolicy: 'Handle Bilibili game privacy prompts',
       biliIntro:
         'Turning this on means you have read and accepted the agreements below, and authorize the app to handle the related prompts for you in whatever way it deems appropriate:',
@@ -4539,7 +4602,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used only for updating MAS itself; MaaFW script project updates take their own CDK on the script edit page',
+        'Used for MAS updates. Selecting MirrorChyan and setting a CDK also enables automatic MAA resource updates, which use the daily download quota. This MAS instance makes at most one resource-package request attempt per local calendar day, including failed or canceled attempts. Set a separate CDK for MaaFW projects on the script edit page.',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',

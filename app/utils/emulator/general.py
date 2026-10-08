@@ -86,8 +86,11 @@ class GeneralDeviceManager(DeviceBase):
         # 等待进程启动
         await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
 
-        pids = await asyncio.to_thread(self._resolve_audio_pids, idx)
-        await apply_launch_audio_mute(self._audio_mute_states, idx, pids)
+        await apply_launch_audio_mute(
+            states_store=self._audio_mute_states,
+            idx=idx,
+            resolve_pids=lambda: asyncio.to_thread(self._resolve_audio_pids, idx),
+        )
 
         return (await self.getInfo(idx))[idx]
 

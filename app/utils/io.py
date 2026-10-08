@@ -520,13 +520,17 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
-def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
+def read_file(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> dict[str, Any] | str:
     """
     按后缀读取配置文件, 传 ``format`` 可强制改用指定后缀的解析器
 
     Args:
         path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
         format: 强制使用的解析器后缀 (含点), 忽略 ``path`` 实际后缀; 默认 ``None`` 按后缀推断
+        raw: 预读的文件字节内容; 传入时不再重复读盘, 供 :func:`read_dict_file`
+            复用首次读取结果, 避免同一文件读两次
 
     Returns:
         dict[str, Any] | str: 已知格式解析后的结构; 未知格式返回原始字符串; 不存在返回空 ``{}``
@@ -535,14 +539,57 @@ def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
         return {}
     _suffix = (format or path.suffix).lower()
     codec = _CODECS.get(_ALIASES.get(_suffix, _suffix))
+    content = path.read_bytes() if raw is None else raw
     if codec is None:
-        return decode_bytes(path.read_bytes())
-    return codec[1](path.read_bytes())
+        return decode_bytes(content)
+    return codec[1](content)
 
 
-def read_dict_file(path: Path, *, format: str | None = None) -> dict[str, Any]:
+def _is_empty_yaml_document(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> bool:
+    """区分真正的空 YAML 文档与显式 ``null``。
+
+    ``yaml.safe_load`` 对这两种内容都返回 ``None``，但配置文件只应把空白、
+    注释和文档标记视为空文档；显式 ``null`` 仍然是错误的根节点。
+    """
+
+    suffix = (format or path.suffix).lower()
+    normalized = _ALIASES.get(suffix, suffix)
+    if normalized not in (".yaml", ".sanitized.yaml"):
+        return False
+    content = decode_bytes(path.read_bytes() if raw is None else raw)
+    if normalized == ".sanitized.yaml":
+        content = content.translate(_INVALID_YAML_CHARS)
+    try:
+        events = list(yaml.parse(content))
+    except Exception:  # noqa: BLE001 - safe_load 已经给出统一损坏错误
+        return False
+
+    scalar_events = [
+        event for event in events if isinstance(event, yaml.events.ScalarEvent)
+    ]
+    if not scalar_events:
+        # 空白和注释没有文档节点；safe_load 已确认内容为空。
+        return True
+    if len(scalar_events) != 1:
+        return False
+
+    # PyYAML 把「---」表示为隐式空标量；显式 null、标签及锚点也可能
+    # 使用同一节点值，需按解析事件区分，避免把坏配置当空文件覆盖。
+    event = scalar_events[0]
+    return event.value == "" and event.tag is None and event.anchor is None
+
+
+def read_dict_file(
+    path: Path, *, format: str | None = None, allow_empty: bool = False
+) -> dict[str, Any]:
     """
     严格读取映射型配置文件: 解析失败或根节点非映射时抛 ``ConfigCorruptedError``
+
+    ``allow_empty=True`` 时，空白、注释和文档标记组成的空 YAML 文档返回
+    ``{}``；显式 ``null``、列表和标量仍按损坏处理。默认值保持严格语义，
+    供需要区分「没有配置」与「配置损坏」的调用方使用。
 
     与 :func:`read_file` 的区别: 坏档显式失败而非静默返回原始值, 供备份
     拦截、恢复二次确认等需要区分「读不到」与「没有」的调用方使用, 杜绝
@@ -553,6 +600,8 @@ def read_dict_file(path: Path, *, format: str | None = None) -> dict[str, Any]:
         path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
         format: 强制使用的解析器后缀 (含点); 读上游非原子写落盘的 YAML
             (进程被杀/断电可能残留 NUL 填充) 建议传 ``.sanitized.yaml``
+        allow_empty: 是否把真正的空 YAML 文档视为 ``{}``；显式 ``null``
+            不受此选项放宽
 
     Returns:
         dict[str, Any]: 解析后的映射; 文件不存在返回空 ``{}``
@@ -566,13 +615,20 @@ def read_dict_file(path: Path, *, format: str | None = None) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = read_file(path, format=format)
+        raw = path.read_bytes()
+        data = read_file(path, format=format, raw=raw)
     except OSError:
         raise
     except Exception as exc:  # noqa: BLE001 - 解析层任何失败都按损坏上报
         raise ConfigCorruptedError(path) from exc
     if isinstance(data, dict):
         return data
+    if (
+        data is None
+        and allow_empty
+        and _is_empty_yaml_document(path, format=format, raw=raw)
+    ):
+        return {}
     raise ConfigCorruptedError(path)
 
 

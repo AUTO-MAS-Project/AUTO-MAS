@@ -1,4 +1,9 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type {
+  AppearanceCleanupResult,
+  AppearanceImportResult,
+  InstalledAppearance,
+} from '@/types/appearance'
 
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
@@ -376,6 +381,15 @@ export interface ElectronAPI {
   readFile: (filePath: string) => Promise<string>
 
   getAppPath: (name: string) => Promise<string>
+
+  // 自定义外观包
+  listAppearances?: () => Promise<InstalledAppearance[]>
+  getAppearance?: (id: string) => Promise<InstalledAppearance | null>
+  importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
+  removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
+  clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
+  onAppearanceChanged?: (callback: () => void) => () => void
+  onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
   // ==================== 初始化 API ====================
 

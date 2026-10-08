@@ -25,6 +25,8 @@ import os
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -54,6 +56,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
@@ -75,6 +78,7 @@ from .config import (
     ZzzOdConfig,
 )
 from .queue_cycle import (
+    SUCCESS_USER_STATUSES,
     CycleEntry,
     collect_cycle_entries,
     due_entries,
@@ -368,6 +372,8 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
+    wait_for_finalizer_on_cancel = True
+
     def __init__(
         self,
         task_info: TaskInfo,
@@ -389,6 +395,10 @@ class Task(TaskExecuteBase):
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+        self._queue_run_started = False
+        self._queue_before_script_ran = False
+        self._queue_after_script_ran = False
+        self._queue_script_task: asyncio.Task | None = None
 
     def _record_error(self, error: str) -> None:
         """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
@@ -398,6 +408,14 @@ class Task(TaskExecuteBase):
 
     def cancel(self) -> bool:
         """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        self.stopped_manually = True
+        # 运行前脚本随主任务取消；运行后脚本在独立的收尾协程里，需要主动取消。
+        if (
+            self._queue_after_script_ran
+            and self._queue_script_task is not None
+            and not self._queue_script_task.done()
+        ):
+            self._queue_script_task.cancel()
         cancelled = super().cancel()
         if cancelled and self._exit_result == "success":
             self._exit_result = "cancelled"
@@ -472,6 +490,46 @@ class Task(TaskExecuteBase):
                 attributes=metric_attributes,
             )
 
+    @contextmanager
+    def _observe_script_run(
+        self, script_item: ScriptItem, script_config
+    ) -> Iterator[None]:
+        """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+        结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+        拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+        """
+
+        from app.services.telemetry import record_count
+
+        outcome = "error"
+        try:
+            yield
+            user_statuses = [user.status for user in script_item.user_list]
+            if not user_statuses:
+                # 运行前检查没过时还没加载用户，脚本状态是「异常」
+                outcome = "failed" if script_item.status == "异常" else "no_user"
+            elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
+                outcome = "success"
+            elif "异常" in user_statuses:
+                outcome = "failed"
+            else:
+                outcome = "incomplete"
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            record_count(
+                "auto_mas.script.runs",
+                attributes={
+                    "script_type": _SCRIPT_TYPE_BY_CLASS.get(
+                        type(script_config).__name__, "unknown"
+                    ),
+                    "mode": self.task_info.mode,
+                    "outcome": outcome,
+                },
+            )
+
     def _build_task_item(
         self,
         script_item: ScriptItem,
@@ -519,6 +577,13 @@ class Task(TaskExecuteBase):
         try:
             await self.prepare()
             await self._notice_scope_skipped_scripts()
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                queue_uid,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -714,7 +779,8 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                await self._spawn_with_preview(task_item, entry, queue_uid)
+                with self._observe_script_run(script_item, script_config):
+                    await self._spawn_with_preview(task_item, entry, queue_uid)
 
                 success = is_script_success(
                     script_item.status,
@@ -823,6 +889,15 @@ class Task(TaskExecuteBase):
 
         await self.prepare()
 
+        if self.task_info.queue_id is not None:
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
+
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
@@ -850,6 +925,62 @@ class Task(TaskExecuteBase):
         # 而任务一旦在幻影屏上起来，游戏就会把坏掉的窗口尺寸记进自己的配置。
         await ensure_desktop_available()
         await self._run_script_list(start_index)
+
+    async def _run_queue_extra_script(
+        self, queue_id: str | uuid.UUID, if_key: str, path_key: str, label: str
+    ) -> bool:
+        """执行队列级额外脚本；每个阶段只允许由队列生命周期调用一次。"""
+
+        if self.stopped_manually or self.is_closing:
+            return False
+
+        queue_uid = uuid.UUID(str(queue_id))
+        queue_config = Config.QueueConfig.get(queue_uid)
+        if queue_config is None or not queue_config.get("Info", if_key):
+            return False
+
+        script_path = str(queue_config.get("Info", path_key) or "").strip()
+        if not script_path:
+            return False
+
+        if if_key == "IfScriptBeforeTask":
+            if self._queue_before_script_ran:
+                return False
+            self._queue_before_script_ran = True
+        elif if_key == "IfScriptAfterTask":
+            if self._queue_after_script_ran:
+                return False
+            self._queue_after_script_ran = True
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="info", message=f"开始执行{label}"),
+        )
+        # 发布通知会让出执行权，停止请求可能恰好落在创建脚本进程之前。
+        if self.stopped_manually or self.is_closing:
+            return False
+        script_task = asyncio.create_task(execute_script_task(Path(script_path), label))
+        self._queue_script_task = script_task
+        try:
+            succeeded = await script_task
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="info" if succeeded else "warning",
+                    message=f"{label}执行{'成功' if succeeded else '失败'}",
+                ),
+            )
+            return succeeded
+        except asyncio.CancelledError:
+            # 停止收尾脚本后仍发布任务终态，且不再安排完成后操作。
+            if self.stopped_manually and if_key == "IfScriptAfterTask":
+                return False
+            raise
+        finally:
+            if self._queue_script_task is script_task:
+                self._queue_script_task = None
 
     def _is_script_scheduled_today(self, index: int) -> bool:
         """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
@@ -966,11 +1097,21 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                await self.spawn(task_item)
+                with self._observe_script_run(script_item, script_config):
+                    await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
     async def final_task(self) -> None:
+
+        # 收尾脚本完成后才发布终态，期间队列仍可被停止。
+        if self._queue_run_started and self.task_info.queue_id is not None:
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptAfterTask",
+                "ScriptAfterTask",
+                "队列运行后脚本",
+            )
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
@@ -1008,6 +1149,7 @@ class Task(TaskExecuteBase):
         # 那会把关机之类的动作接在一次手动停止后面。
         if (
             not self.is_closing
+            and not self.stopped_manually
             and not self.task_info.is_cycle
             and self.task_info.mode == "AutoProxy"
             and self.task_info.queue_id is not None

@@ -11,8 +11,9 @@
           <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
-            style="width: 140px"
+            class="power-select"
             size="large"
+            :dropdown-match-select-width="false"
             @change="onPowerActionChange"
           >
             <a-select-option
@@ -338,6 +339,13 @@ onDeactivated(() => {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
   margin-right: 8px;
+}
+
+/* 电源操作下拉：宽度随选项文案自适应（最小 140px 保持原有视觉宽度）。
+   固定 140px 会截断 ja/en 的「強制シャットダウン」「Force shut down」等长文案。 */
+.power-select {
+  width: max-content;
+  min-width: 140px;
 }
 
 /* 标签页样式 */

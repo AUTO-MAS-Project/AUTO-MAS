@@ -203,6 +203,7 @@ class MaaFWRunnerService:
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -230,6 +231,7 @@ class MaaFWRunnerService:
             runDeadlineAt=run_deadline_at,
             taskTimeLimitSeconds=task_time_limit_seconds,
             taskTimeLimitOverrides=task_time_limit_overrides,
+            loopGuard=bool(loop_guard),
         )
 
     def prepare_environment(

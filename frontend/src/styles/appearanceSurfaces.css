@@ -1,0 +1,127 @@
+:root {
+  --app-appearance-surface-bg: var(--ant-color-bg-container);
+  --app-appearance-elevated-surface-bg: var(--ant-color-bg-elevated);
+}
+
+/* 仅有背景图片时透出主界面表面。弹窗、抽屉、下拉菜单仍使用不透明 Ant token。 */
+html.appearance-background-custom
+  :is(.content-area, .initialization-content, .standalone-container)
+  :is(
+    .ant-card,
+    .ant-collapse,
+    .ant-table,
+    .ant-tree,
+    .ant-descriptions-view,
+    .settings-content,
+    .gamesign-content,
+    .logs-content,
+    .script-card,
+    .home-activity-notes,
+    .banner-switcher,
+    .statistics-card,
+    .search-panel,
+    .date-sidebar,
+    .record-list-panel,
+    .history-page .empty-state
+  ):not(
+    :where(
+      .ant-modal *,
+      .ant-drawer *,
+      .ant-select-dropdown *,
+      .ant-picker-dropdown *,
+      .ant-dropdown *,
+      .ant-popover *,
+      .ant-tooltip *
+    )
+  ) {
+  background-color: var(--app-appearance-surface-bg);
+}
+
+/* 外层已提供表面时，内层只保留边框，避免同一块背景反复叠加透明度。 */
+html.appearance-background-custom
+  :is(.content-area, .initialization-content, .standalone-container)
+  :is(
+    .ant-card,
+    .ant-collapse,
+    .settings-content,
+    .gamesign-content,
+    .logs-content,
+    .script-card,
+    .home-activity-notes,
+    .overview-panel,
+    .task-control,
+    .record-list-panel
+  )
+  :is(
+    .ant-card,
+    .ant-collapse,
+    .ant-table,
+    .ant-tree,
+    .ant-descriptions-view,
+    .script-card,
+    .link-card,
+    .tool-intro,
+    .chan-card,
+    .note-strip
+  ):not(
+    :where(
+      .ant-modal *,
+      .ant-drawer *,
+      .ant-select-dropdown *,
+      .ant-picker-dropdown *,
+      .ant-dropdown *,
+      .ant-popover *,
+      .ant-tooltip *
+    )
+  ) {
+  background-color: transparent;
+}
+
+html.appearance-background-custom
+  :is(.content-area, .initialization-content, .standalone-container)
+  :is(
+    .ant-layout,
+    .ant-card-head,
+    .ant-card-body,
+    .ant-collapse-content,
+    .ant-collapse-content-box,
+    .ant-table-container,
+    .ant-table-content,
+    .ant-table-placeholder,
+    .ant-table-footer,
+    .launch-page,
+    .queue-container
+  ):not(
+    :where(
+      .ant-modal *,
+      .ant-drawer *,
+      .ant-select-dropdown *,
+      .ant-picker-dropdown *,
+      .ant-dropdown *,
+      .ant-popover *,
+      .ant-tooltip *
+    )
+  ) {
+  background-color: transparent;
+}
+
+html.appearance-background-custom
+  .content-area
+  .ant-table-placeholder:hover
+  > td:not(:where(.ant-modal *, .ant-drawer *)) {
+  background-color: transparent;
+}
+
+/* 表头与激活页签保留轻微填充，输入框、按钮、选中/悬停行不受影响。 */
+html.appearance-background-custom
+  .content-area
+  .ant-table-thead
+  > tr
+  > th:not(:where(.ant-modal *, .ant-drawer *)),
+html.appearance-background-custom
+  .content-area
+  :is(.settings-tabs, .community-tabs)
+  .ant-tabs-nav
+  .ant-tabs-tab-active {
+  background-color: var(--ant-color-fill-secondary);
+}

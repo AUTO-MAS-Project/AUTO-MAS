@@ -25,12 +25,13 @@ import shutil
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from typing import Literal
 
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -372,6 +373,21 @@ class ScriptConfigTask(TaskExecuteBase):
         }
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
+    async def _notify_config_discarded(
+        self, reason: Literal["structure", "unreadable", "not_written"]
+    ) -> None:
+        """本次会话的改动被丢弃时显式通知前端弹窗。
+
+        回写失败过去只留在日志里，用户界面上却提示「已保存」，改动其实没进
+        存档。原因用机器可读值下发，提示正文由前端本地化。
+        """
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_CONFIG_DISCARDED,
+            data=WSTaskConfigDiscardedData(reason=reason),
+        )
+
     async def final_task(self):
 
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
@@ -404,10 +420,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
                 )
+                await self._notify_config_discarded("unreadable")
                 return
             if not isinstance(current, dict) or not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 logger.info("MAA 配置回写: 无完整落盘内容, 存档保持不变")
+                await self._notify_config_discarded("not_written")
                 return
             current_docs[name] = current
 
@@ -417,6 +435,7 @@ class ScriptConfigTask(TaskExecuteBase):
             current_docs["gui.new.json"].get("Configurations"),
         ):
             logger.warning("MAA 队列结构或配置方案发生变化, 本次 GUI 配置修改全部丢弃")
+            await self._notify_config_discarded("structure")
             return
 
         for name, current in current_docs.items():

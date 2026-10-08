@@ -285,6 +285,10 @@ export default {
   },
   edit: {
     configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
+    // バックアップ内容が壊れているため復元できない（プレビュー時の警告）
+    configRestoreUnrestorableTitle: 'このバックアップは復元できません',
+    configRestoreUnrestorableDesc:
+      'バックアップの内容が不完全であるか、MAS の一時インスタンスが含まれているため、復元は無効化されています。',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',
     notifyRecruit: '公開求人の高レア通知',
@@ -823,6 +827,26 @@ export default {
     shellQueueImportDone: '{count} 件のタスクをインポートしました',
     shellQueueImportSkippedTitle: '{count} 件を取り込めませんでした',
     shellQueueImportFailed: 'シェル設定のインポートに失敗しました',
+    queueImportFromUsers: 'このスクリプトの他のユーザー',
+    queueImportFromShell: 'シェル',
+    queueImportNoUsers: 'インポートできるユーザーがいません',
+    queueImportPasswordCount: 'パスワード {count} 件の再入力が必要',
+    queueTaskCount: '{count} 件のタスク',
+    queueInvalidCount: '{count} 件が無効',
+    queueTemplate: 'テンプレート',
+    queueTemplateMine: 'マイテンプレート',
+    queueTemplatePresets: 'プロジェクトのプリセット',
+    queueTemplateSaveCurrent: '現在のキューをテンプレートとして保存',
+    queueTemplateApply: '適用',
+    queueTemplateRename: '名前の変更',
+    queueTemplateDelete: '削除',
+    queueTemplateEmpty: 'テンプレートがありません',
+    queueTemplateDeleteConfirm: 'テンプレート「{name}」を削除しますか？',
+    queueTemplateSaveTitle: 'テンプレートとして保存',
+    queueTemplateName: 'テンプレート名',
+    queueTemplateNameExists: '同じ名前のテンプレートがあります',
+    queueTemplateCurrentCount: '現在のキュー：{count} 件のタスク',
+    queueTemplateSave: '保存',
     shellImportTitle: '既存の設定をアカウントとして取り込む',
     shellImportHint:
       'プロジェクトフォルダーに {source} の設定が {count} 件見つかりました。チェックした設定ごとにアカウントを作成し、アカウント名は設定名、タスクキューとタスクオプションも取り込みます。チェックしなければ空のアカウントを 1 人だけ作成します。',
@@ -1008,7 +1032,6 @@ export default {
       '設定が終わったら「保存して閉じる」を押してこのセッションを終了してください。',
     configurationManagement: '設定の管理方式',
     k0MeansNoLimit: '0 は制限なしを意味します',
-    presetTemplate: 'プリセットテンプレート',
     k123456DigitCountLog: '桁数はログの内容から自動的に判別されます',
     echoDomainNumberF2: 'ゲーム内 F2 一覧での凝素領域の番号',
     sonanceCasketNumberF2: 'ゲーム内 F2 一覧での無音区の番号',
@@ -1137,6 +1160,7 @@ export default {
       'この正規表現に一致した行を範囲の終わりとします（その行を含む）。空の場合は終わりを限定しません',
     singleRunTimeLimit: '1 回の実行時間の上限（分）',
     singleTaskTimeLimit: '単一タスクの制限時間（分、0 で無制限）',
+    loopGuard: 'ループ検出（実験的）',
     echoOfWarStartDay: '歴戦余韻の開始日',
     trailingKeyword: '末尾を切るキーワード',
     reportIssueGo: 'でフィードバックするか、こちらへ：',
@@ -1369,7 +1393,6 @@ export default {
     pushLogModeOff: 'オフ',
     pushLogModeList: 'リスト',
     pushLogModeSummary: '要約',
-    noPresetTemplates: 'プリセットテンプレートがありません',
     replace: '置換後の文字列',
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '保存していない変更があります',
@@ -1424,9 +1447,19 @@ export default {
       'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
     launchViaLauncher: 'ランチャー起動',
     launchDirectly: '直接起動',
+    oknteLaunchViaLauncher: 'ランチャー画面から起動',
+    oknteLaunchModeNeedsLaunchBeforeTask: '「タスク前にゲームを起動」がオンのときのみ利用できます',
+    oknteLaunchTypeSummary:
+      '直接起動：ゲームはバックグラウンドで静かに起動し、ランチャー画面は出ません。ランチャー起動：ランチャー画面が開き、MAS が「ゲームを開始」を代わりにクリックします',
+    oknteLaunchTypeHint:
+      '直接起動：MAS が /autoplay 引数を付けてゲームを静かに起動し、ランチャー画面は出ません（推奨・既定）。ランチャー起動：MAS がランチャー画面を開き、「ゲームを開始」を代わりにクリックします。このクリックはマウス入力のシミュレーションなので、ランチャー画面が見える状態（他のウィンドウで隠さない）を保ってください',
+    oknteLauncherClickNotice:
+      '「ランチャー起動」：MAS がランチャー画面を開き、「ゲームを開始」を代わりにクリックします。タスク実行中は他のウィンドウでランチャーを隠さないでください（隠れているとクリックが届かないことがあります）。更新が必要な場合はその分長くかかります',
     autoUpdateNeedsLauncher:
       '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',
+    clientPathOptionalHint:
+      '任意：空欄の場合はプロセス名でクライアントを自動照合します。指定すると実行中判定とタスク終了時の後処理がより正確になります',
     clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
     selectFile: 'ファイルを選択',
     resetAutoLocate: '自動に戻す',
@@ -3192,6 +3225,14 @@ export default {
     afterDoneDelayTip:
       'キュー完了後、この時間だけ待ってから動作を実行します。0 は待機なし。実行前の 60 秒カウントダウンでキャンセルできます。',
     afterDoneDelayUnit: '分',
+    runScriptBefore: 'キューの実行前にスクリプトを実行',
+    runScriptAfter: 'キューの実行後にスクリプトを実行',
+    runCustomScriptBefore:
+      'キュー全体の開始前に一度だけ実行します。アカウントや再試行ごとには繰り返しません',
+    runCustomScriptAfter:
+      'キュー全体の終了後、成功・失敗にかかわらず完了後の操作より先に一度だけ実行します。手動停止時は実行しません',
+    preTaskScriptPath: 'キュー実行前のスクリプトパスを選択しました',
+    postTaskScriptPath: 'キュー実行後のスクリプトパスを選択しました',
     actionPlaceholder: '動作を選択してください',
     action: {
       NoAction: '何もしない',
@@ -3687,6 +3728,18 @@ export default {
       themeModeTip: '画面全体の外観',
       themeColor: 'アクセントカラー',
       themeColorTip: '画面の基調となる色',
+      importAppearance: '外観をインポート',
+      removeAppearance: '外観を削除',
+      applyAppearance: '外観を適用',
+      appearanceApplied: '外観を適用しました',
+      appearanceApplyFailed: '外観を適用できませんでした',
+      appearanceImportFailed: '外観をインポートできませんでした',
+      appearanceRemoveFailed: '外観を削除できませんでした',
+      appearanceReplaceTitle: '外観がすでに存在します',
+      appearanceReplaceContent: '「{name}」はすでに存在します。置き換えますか？',
+      replaceAppearance: '置き換え',
+      removeAppearanceTitle: 'カスタム外観を削除',
+      removeAppearanceContent: '「{name}」を削除しますか？',
       cursorSection: 'カーソル効果',
       cursorAnim: 'カーソルのアニメーション',
       cursorTip:
@@ -3722,7 +3775,7 @@ export default {
       preventSleepTip: 'アプリの実行中は OS のスリープを抑止します。画面が消灯するのは妨げません。',
       telemetry: '匿名テレメトリ',
       telemetryTip:
-        '個人情報を除いたエラーと性能データを送信し、問題の特定に役立てます。オフにすると一切送信しません',
+        '個人情報を除いたエラー・性能データと利用統計を送信し、問題の特定に役立てます。オフにすると一切送信しません',
       biliPolicy: 'Bilibili ゲームのプライバシー確認を代行',
       biliIntro:
         'オンにすると、以下の規約をすべて読んで同意したものとみなし、関連ダイアログの処理を本アプリに許可します：',
@@ -3922,6 +3975,8 @@ export default {
       cdkSite: 'MirrorChyan 公式サイト',
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
+      cdkHint:
+        'MAS の更新に使用します。MirrorChyan を選び CDK を設定すると MAA リソースも自動更新され、1 日のダウンロード枠を消費します。この MAS ではローカル日付ごとにリソースパッケージの取得を最大 1 回試行し、失敗やキャンセルも回数に含めます。MaaFW プロジェクトの CDK はスクリプト編集ページで個別に設定してください。',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

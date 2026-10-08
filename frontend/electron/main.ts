@@ -27,6 +27,7 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -630,12 +631,18 @@ type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
@@ -1935,6 +1942,22 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
+    if (
+      patch &&
+      typeof patch === 'object' &&
+      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
+    ) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('theme-config-changed', {
+            themeMode: config.themeMode,
+            themeColor: config.themeColor,
+            appearanceId: config.appearanceId ?? null,
+          })
+        }
+      }
+    }
+
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
@@ -2178,6 +2201,9 @@ app.whenReady().then(async () => {
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
+
+  registerAppearanceHandlers()
+  logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()

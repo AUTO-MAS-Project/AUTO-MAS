@@ -63,6 +63,17 @@ const browserDevElectronAPI = {
   fileExists: async () => false,
   readFile: async () => '',
   getAppPath: async () => '',
+  listAppearances: async () => [],
+  getAppearance: async () => null,
+  importAppearance: async () => ({
+    success: false,
+    code: 'UNSUPPORTED' as const,
+    error: '浏览器预览不支持导入外观包，请在桌面应用中操作',
+  }),
+  removeAppearance: async () => ({ success: false, error: '浏览器预览不支持移除外观包' }),
+  clearInvalidAppearance: async () => ({ success: false, error: '浏览器预览不支持清理外观包' }),
+  onAppearanceChanged: () => () => undefined,
+  onThemeConfigChanged: () => () => undefined,
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
