@@ -37,7 +37,9 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
         return False
 
     try:
-        logger.info(f"开始执行{task_name}: {script_path}")
+        logger.info(
+            f"开始执行{task_name}: {script_path}, 工作目录: {script_path.parent}"
+        )
 
         # 根据文件类型选择执行方式
         if script_path.suffix.lower() == ".py":
@@ -61,7 +63,12 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
         )
 
         if result.returncode == 0:
-            logger.success(f"{task_name}执行成功, 输出:\n{result.stdout}")
+            logger.success(
+                f"{task_name}进程正常退出(返回码: {result.returncode}), "
+                f"输出:\n{result.stdout}"
+            )
+            if result.stderr:
+                logger.warning(f"{task_name}错误输出:\n{result.stderr}")
             return True
         else:
             logger.warning(f"{task_name}执行失败({result.returncode}):")
