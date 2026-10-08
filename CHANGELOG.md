@@ -30,7 +30,7 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.7.0-beta.1] - 2026-10-08
 
 ### 新增
 
@@ -59,6 +59,7 @@
 - 【MAA】修复 MAA 原生界面删掉任务后，该任务的设置重新打开变成占位符的问题 (#1208) by @1w1w11w1
 - 【MAA】修复 MAA 配置偶发保存失败、重新打开后高级设置恢复原样的问题。 (#1217) by @1w1w11w1
 - 【MAA】修复 MAA 设置里只改任务开关也被整份丢弃、且丢弃后仍提示已保存的问题 (#1251) by @1w1w11w1
+- 【bgi】修复任务前后脚本执行过晚、遗漏或在重试时重复执行的问题 (#1264) by @ClozyA
 - 【绝区零一条龙】修复绝区零配置损坏时恢复误覆盖与并发保存丢字段问题 (#1192) by @qiyinxi
 - 【绝区零一条龙】修复用户模式下部分任务进度（体力计划、周常、兑换码）不累计、每次任务都从头刷的问题 (#1204) by @AthenaHibou
 - 【MFW】重新导入选到系统目录或 AUTO-MAS 自己的目录时直接提示不能用，不再报网络错误 (#1258) by @qiyinxi
@@ -427,7 +428,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...dev
+[v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
 [v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
 [v5.6.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0
