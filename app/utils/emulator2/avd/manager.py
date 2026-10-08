@@ -1084,7 +1084,7 @@ class _AvdCore(DeviceBase):
             logger.info(f"魔改 AVD 实例 {idx} 初始化完成（桌面: {launcher}）")
 
     async def _install_launcher(self, idx: str) -> str:
-        """装轻量桌面并设为默认、禁用原生桌面。内测包里没带轻量桌面就保留原生桌面。"""
+        """装轻量桌面、预置、设为默认，再按用户卸载原生桌面。内测包里没带轻量桌面就保留原生桌面。"""
         apk = launcher_apk(self.root)
         if not apk.is_file():
             return "pixel"
@@ -1100,9 +1100,13 @@ class _AvdCore(DeviceBase):
             logger.warning(f"实例 {idx} 安装轻量桌面失败: {output}")
             return "pixel"
         await self._preset_light_launcher(idx)
+        # 原生桌面按用户卸载（系统分区的安装包还在，``cmd package install-existing`` 可恢复），不用
+        # ``pm disable-user``：禁用会发 PACKAGE_CHANGED，SystemUI 的 OverviewProxyService 收到后去找原生桌面的
+        # 最近任务服务，找不到就空指针崩溃。崩溃打断切换桌面的过渡，轻量桌面的任务图层被留在屏幕外，
+        # 第一次开机只看得到壁纸。按用户卸载发的是 PACKAGE_REMOVED，它不收（10-08 实测）。
         commands = [
             f"cmd package set-home-activity {LIGHT_LAUNCHER.home_activity}",
-            f"pm disable-user --user 0 {PIXEL_LAUNCHER_PACKAGE}",
+            f"pm uninstall --user 0 {PIXEL_LAUNCHER_PACKAGE}",
             "input keyevent KEYCODE_HOME",
         ]
         code, output = await self._shell(idx, " ; ".join(commands))
