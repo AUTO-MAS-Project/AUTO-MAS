@@ -178,6 +178,9 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
         root / "ok" / "gui" / "i18n" / "zh_CN.ts",
         root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
         root / "data" / "apps" / "ok-nte" / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "data" / "apps" / "ok-nte" / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
+        root / "data" / "apps" / "ok-nte" / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "data" / "apps" / "ok-nte" / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
     ]
     for ts_file in ts_candidates:
         if ts_file.is_file():
