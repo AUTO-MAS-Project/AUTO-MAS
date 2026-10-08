@@ -159,6 +159,9 @@ function startFlight(): void {
       element.style.opacity = pose.visible ? '1' : '0'
       const ship = element.querySelector<HTMLElement>('.race-ship')
       if (ship) ship.style.transform = `translate(-50%, -50%) rotate(${pose.angle}deg)`
+      // 机身跟着方向转，头像和名字首字反着转回来，始终摆正
+      const pilot = element.querySelector<HTMLElement>('.race-pilot')
+      if (pilot) pilot.style.transform = `translateX(-50%) rotate(${-pose.angle}deg)`
 
       // 尾巴后面一路冒烟
       if (
@@ -247,31 +250,34 @@ defineExpose({ launch })
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 }
 
+/* 倒数放在左下角，像发射台的读数：左对齐，从左下角往外放大再收回 */
 .race-countdown span {
   position: absolute;
-  left: calc((100% - 290px) / 2);
-  top: 50%;
-  font-size: 72px;
+  left: 28px;
+  bottom: 20px;
+  font-size: 64px;
   font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
   color: #ffd36b;
   text-shadow: 0 0 26px rgba(255, 180, 60, 0.8);
   opacity: 0;
-  transform: translate(-50%, -50%);
+  transform-origin: left bottom;
   animation: race-countdown 450ms var(--delay) ease-out both;
 }
 
 @keyframes race-countdown {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.8);
+    transform: scale(1.6);
   }
   30% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.8);
+    transform: scale(0.85);
   }
 }
 

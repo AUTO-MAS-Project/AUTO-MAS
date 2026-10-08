@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { createRainbowIcon, type RainbowIcon } from '../satellite/centerRainbow'
+import { loadImageToCanvas } from '../satellite/sceneParts'
 import {
   CENTER_PRESS_SCALE_X,
   CENTER_PRESS_SCALE_Y,
@@ -27,6 +28,8 @@ import {
 type CardMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
 
 interface Satellite {
+  /** 卫星键，运行状态按它取：一般就是脚本类型，通用 MFW 每个项目一颗 */
+  key: string
   type: ScriptType
   card: CardMesh
   baseAngle: number
@@ -37,8 +40,11 @@ interface Satellite {
 }
 
 export interface SatelliteSceneModule {
+  key: string
   scriptType: ScriptType
   iconUrl: string
+  /** iconUrl 加载不出来时换用的图标（通用 MFW 项目图标取不到时用 MFW 图标） */
+  fallbackIconUrl?: string
 }
 
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
@@ -47,42 +53,6 @@ export type SatellitePick = 'center' | number | null
 const IDLE_STATUS: SatelliteModuleStatus = { queued: false, running: false, lastFailed: false }
 
 // ==================== 资源 ====================
-
-async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement> {
-  return new Promise(resolve => {
-    const img = new Image()
-    let settled = false
-    const finish = (canvas: HTMLCanvasElement) => {
-      if (settled) return
-      settled = true
-      resolve(canvas)
-    }
-    const fallback = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 64
-      canvas.height = 64
-      const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = '#888888'
-      ctx.fillRect(0, 0, 64, 64)
-      finish(canvas)
-    }
-    const timer = window.setTimeout(fallback, 5000)
-    img.onload = () => {
-      window.clearTimeout(timer)
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      finish(canvas)
-    }
-    img.onerror = () => {
-      window.clearTimeout(timer)
-      fallback()
-    }
-    img.src = url
-  })
-}
 
 function createCanvasTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas)
@@ -108,8 +78,13 @@ function createGlowTexture(): THREE.CanvasTexture {
 }
 
 /** 一张正对镜头的图标卡片；入场前是透明、缩到几乎看不见的 */
-async function createCard(size: number, faceOffset: number, imageUrl: string): Promise<CardMesh> {
-  const canvas = await loadImageToCanvas(imageUrl)
+async function createCard(
+  size: number,
+  faceOffset: number,
+  imageUrl: string,
+  fallbackUrl?: string
+): Promise<CardMesh> {
+  const canvas = await loadImageToCanvas(imageUrl, fallbackUrl)
   const geometry = new THREE.PlaneGeometry(size, size)
   geometry.translate(0, 0, faceOffset)
   const card = new THREE.Mesh(
@@ -266,7 +241,12 @@ export class SatelliteScene {
     const [centerCard, ...satelliteCards] = await Promise.all([
       createCard(C.centerCardSize, C.centerCardFaceOffset, centerIconUrl),
       ...modules.map(module =>
-        createCard(C.satelliteCardSize, C.satelliteCardFaceOffset, module.iconUrl)
+        createCard(
+          C.satelliteCardSize,
+          C.satelliteCardFaceOffset,
+          module.iconUrl,
+          module.fallbackIconUrl
+        )
       ),
     ])
     if (isCancelled()) {
@@ -284,6 +264,7 @@ export class SatelliteScene {
     this.satellites = satelliteCards.map((card, index) => {
       this.cardScene.add(card)
       return {
+        key: modules[index].key,
         type: modules[index].scriptType,
         card,
         baseAngle: getSatelliteBaseAngle(index, modules.length),
@@ -318,7 +299,7 @@ export class SatelliteScene {
 
   setStatuses(statuses: ReadonlyMap<string, SatelliteModuleStatus>): void {
     for (const satellite of this.satellites) {
-      satellite.status = statuses.get(satellite.type) ?? IDLE_STATUS
+      satellite.status = statuses.get(satellite.key) ?? IDLE_STATUS
     }
   }
 

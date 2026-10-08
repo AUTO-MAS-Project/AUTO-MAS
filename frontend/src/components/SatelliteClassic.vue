@@ -19,12 +19,15 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
+import {
+  buildOrbitModules,
+  centerIconUrl,
+  orbitKeysByScriptId,
+} from '@/composables/satellite-config'
 import { useSatelliteStatus } from '@/composables/useSatelliteStatus'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
-import type { ScriptType } from '@/types/script'
 import { createCenterPokeCounter } from './satellite/centerPoke'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
@@ -192,11 +195,9 @@ async function initScene(): Promise<void> {
   }
   if (!container.value || isUnmounted) return
 
-  // 只有用户建过的脚本类型才上轨道
-  // 经典样式一种脚本类型一颗卫星，状态也按类型汇总
-  setSatelliteScriptKeys(new Map(userScripts.map(s => [s.uid, s.type])))
-  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
-  const modules = satelliteModules.filter(m => m.enabled && userScriptTypes.has(m.scriptType))
+  // 只有用户建过的脚本才上轨道：每种脚本类型一颗，通用 MFW 每个项目一颗、用项目自己的图标
+  const modules = buildOrbitModules(userScripts)
+  setSatelliteScriptKeys(orbitKeysByScriptId(modules))
   if (modules.length === 0) {
     logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
   }
