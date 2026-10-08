@@ -30,6 +30,21 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【主页】主页卫星新增可拖动的 3D 星系样式（设置里切换，默认仍是经典），带状态光效与彩蛋 (#1257) by @qiyinxi
+- 【模拟器】支持魔改 AVD 模拟器（内测，暂只支持 M9A，需另行获取模拟器内测包） (#1238) by @qiyinxi
+
+### 修复
+
+- 【ok-nte】修复异环更新卡住不报错及点击更新无响应 (#1173) by @qiyinxi
+- 【通用脚本】修复各专项任务前后脚本在重试时重复执行或遗漏的问题 (#1273) by @1w1w11w1
+- 【调度】修复运行中删除队列后任务结束时报错的问题 by @ClozyA
+- 【调度】修复队列启动即报错、任务总览无法正常结束的问题（仅公测） by @ClozyA
+- 【设置】修复切换到背景图较大的外观包后，背景仍显示上一个包的问题（仅公测） (#1277) by @qiyinxi
+
 ## [v5.7.0-beta.1] - 2026-10-08
 
 ### 新增
@@ -428,6 +443,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...dev
 [v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
 [v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
