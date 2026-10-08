@@ -75,7 +75,13 @@
           <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
 
           <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
-            <SatelliteAnimation v-show="!performanceStore.isBackgrounded" />
+            <template v-if="homeSatelliteStore.initialized">
+              <SatelliteClassic
+                v-if="homeSatelliteStore.style === 'classic'"
+                v-show="!performanceStore.isBackgrounded"
+              />
+              <SatelliteAnimation v-else v-show="!performanceStore.isBackgrounded" />
+            </template>
           </section>
 
           <HomeProxyCard
@@ -207,6 +213,7 @@ import { computed, onMounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
+import SatelliteClassic from '@/components/SatelliteClassic.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
 import HomeArknightsActivityOverview from '@/views/home/components/HomeArknightsActivityOverview.vue'
@@ -240,6 +247,7 @@ import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySourc
 import { useStellaActivitySource } from '@/views/home/useStellaActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
 
@@ -249,6 +257,9 @@ defineOptions({
 
 const { isBootstrapping } = useAppInitialization()
 const performanceStore = usePerformanceStore()
+// 卫星样式读到之前先不出卫星，免得经典用户白建一遍 3D 场景
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
 const {
   layoutReady,
   layoutDrawerOpen,

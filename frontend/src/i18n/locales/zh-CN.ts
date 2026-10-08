@@ -4222,6 +4222,10 @@ export default {
       cursorAnim: '光标动画',
       cursorTip: '选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认',
       perfSection: '性能配置',
+      homeSatellite: '主页卫星样式',
+      homeSatelliteTip: '3D 星系可拖动旋转、带状态光效和彩蛋；经典是原来的平面卫星，占用更少',
+      homeSatelliteGalaxy: '3D 星系',
+      homeSatelliteClassic: '经典',
       lowPerf: '低性能模式',
       lowPerfTip:
         '降低装饰性动画和后台渲染占用，不影响脚本执行和任务调度；窗口最小化时会自动暂停装饰性动画',
@@ -4546,6 +4550,7 @@ export default {
       fluidOk: '确认开启',
       cursorSaveFailed: '光标效果保存失败',
       lowPerfSaveFailed: '低性能模式保存失败',
+      homeSatelliteSaveFailed: '主页卫星样式保存失败',
       testUnknown: '测试通知发送结果未知',
       testSent: '测试通知已发送',
       testFailed: '测试通知发送失败',

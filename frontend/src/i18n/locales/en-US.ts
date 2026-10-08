@@ -4362,6 +4362,11 @@ export default {
       cursorTip:
         'Trail effect that follows the cursor. Off by default; turning on the fluid effect asks for confirmation.',
       perfSection: 'Performance',
+      homeSatellite: 'Home satellite style',
+      homeSatelliteTip:
+        'The 3D galaxy can be dragged around and has status effects and easter eggs; Classic is the original flat satellites and uses less.',
+      homeSatelliteGalaxy: '3D galaxy',
+      homeSatelliteClassic: 'Classic',
       lowPerf: 'Low performance mode',
       lowPerfTip:
         'Reduces decorative animations and background rendering. Script execution and task scheduling are unaffected; decorative animations pause automatically while the window is minimized.',
@@ -4662,6 +4667,7 @@ export default {
       fluidOk: 'Turn it on',
       cursorSaveFailed: 'Could not save the cursor effect',
       lowPerfSaveFailed: 'Could not save low performance mode',
+      homeSatelliteSaveFailed: 'Could not save the home satellite style',
       testUnknown: 'The test notification returned an unknown result',
       testSent: 'Test notification sent',
       testFailed: 'Could not send the test notification',

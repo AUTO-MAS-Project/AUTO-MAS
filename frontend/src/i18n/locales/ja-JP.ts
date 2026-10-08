@@ -3753,6 +3753,11 @@ export default {
       cursorTip:
         'カーソルに追従する軌跡の効果です。既定はオフで、フルイドを有効にする際は確認が入ります。',
       perfSection: 'パフォーマンス',
+      homeSatellite: 'ホームの衛星スタイル',
+      homeSatelliteTip:
+        '3D 銀河はドラッグで回転でき、状態エフェクトとイースターエッグがあります。クラシックは従来の平面の衛星で、負荷が軽めです。',
+      homeSatelliteGalaxy: '3D 銀河',
+      homeSatelliteClassic: 'クラシック',
       lowPerf: '低負荷モード',
       lowPerfTip:
         '装飾的なアニメーションとバックグラウンド描画を抑えます。スクリプトの実行やタスクのスケジュールには影響しません。ウィンドウを最小化すると装飾アニメーションは自動的に停止します。',
@@ -4033,6 +4038,7 @@ export default {
       fluidOk: '有効にする',
       cursorSaveFailed: 'カーソル効果を保存できませんでした',
       lowPerfSaveFailed: '低負荷モードを保存できませんでした',
+      homeSatelliteSaveFailed: 'ホームの衛星スタイルを保存できませんでした',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',
       testFailed: 'テスト通知を送信できませんでした',
