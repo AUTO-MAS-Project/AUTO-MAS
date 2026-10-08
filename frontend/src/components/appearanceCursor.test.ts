@@ -24,4 +24,11 @@ describe('createAppearanceCursorValue', () => {
       )
     ).toBe('text')
   })
+
+  it('falls back instead of writing a value Chromium would silently drop', () => {
+    const huge = `data:image/png;base64,${'A'.repeat(2_100_000)}`
+    expect(
+      createAppearanceCursorValue('pointer', { pointer: huge }, { pointer: { path: 'p.png' } })
+    ).toBe('pointer')
+  })
 })
