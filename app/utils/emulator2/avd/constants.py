@@ -144,17 +144,40 @@ class LauncherComponent:
     home_activity: str
 
 
-FOSSIFY_LAUNCHER = LauncherComponent(
+#: µLauncher（F-Droid 开发者签名版，MIT）。它默认按显示器的自然方向（我们是横屏）显示，不要求竖屏。
+LIGHT_LAUNCHER = LauncherComponent(
     id="launcher",
-    name="轻量桌面 Fossify Launcher",
-    version="1.10.0",
-    file_name="org.fossify.home_16.apk",
-    size=5_222_266,
-    package="org.fossify.home",
-    home_activity="org.fossify.home/.activities.MainActivity",
+    name="轻量桌面 µLauncher",
+    version="0.2.12",
+    file_name="de.jrpie.android.launcher_57.apk",
+    size=4_099_556,
+    package="de.jrpie.android.launcher",
+    home_activity="de.jrpie.android.launcher/.ui.HomeActivity",
 )
 
-#: 被 Fossify 替掉的原生桌面。
+# 第一次打开 µLauncher 之前预置的东西，见 ``manager._preset_light_launcher``。
+# 固定 µLauncher 0.2.12，换版本要对着它的源码重新核对下面这些键、文件和版本号。
+#: 它的偏好文件（``PreferenceManager.getDefaultSharedPreferences``）。
+LIGHT_LAUNCHER_PREFS_FILE = (
+    "/data/data/de.jrpie.android.launcher/shared_prefs/"
+    "de.jrpie.android.launcher_preferences.xml"
+)
+#: 它第一次启动时自己写出默认偏好（桌面时钟、上滑打开应用列表等），同时写进去的偏好版本号
+#: （源码 ``Preferences.kt`` 的 ``PREFERENCE_VERSION``，不是 versionCode 57）。
+LIGHT_LAUNCHER_PREFS_VERSION = 101
+#: 预置的布尔偏好。键名取 ``res/values/donottranslate.xml`` 里的字符串值，不是 ``LauncherPreferences$Config``
+#: 里的字段名：``internal.started_before`` 是「引导已走完」，``functionality.search_auto_keyboard`` 是
+#: 「打开应用列表时自动弹键盘」（横屏下输入法全屏，把列表整个挡住）。
+LIGHT_LAUNCHER_PRESET_PREFS: tuple[tuple[str, bool], ...] = (
+    ("internal.started_before", True),
+    ("functionality.search_auto_keyboard", False),
+)
+#: 只为在后台拉起它的进程、让它写出默认偏好：给这个接收器发一个空广播（接收器不认这个广播，什么也不做）。
+LIGHT_LAUNCHER_WAKE_RECEIVER = (
+    "de.jrpie.android.launcher/.actions.lock.LauncherDeviceAdmin"
+)
+
+#: 被轻量桌面替掉的原生桌面。
 PIXEL_LAUNCHER_PACKAGE = "com.google.android.apps.nexuslauncher"
 
 
@@ -237,7 +260,7 @@ DEBLOAT_PACKAGES: tuple[str, ...] = (
 )
 
 #: 后台游戏清理时永远不动的第三方包（桌面本身）。输入法按当前默认输入法另外排除。
-KEEP_PACKAGES = frozenset({FOSSIFY_LAUNCHER.package})
+KEEP_PACKAGES = frozenset({LIGHT_LAUNCHER.package})
 
 #: 冻结看门狗：探活间隔、单次 adb 探活超时、连续几次「adb 不通且 qemu CPU 不动」判冻结。
 WATCHDOG_INTERVAL_SECONDS = 30.0

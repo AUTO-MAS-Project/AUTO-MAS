@@ -43,7 +43,7 @@ from .constants import (
     COMPONENTS_DIR,
     EMULATOR_COMPONENT_ID,
     EMULATOR_COMPONENT_NAME,
-    FOSSIFY_LAUNCHER,
+    LIGHT_LAUNCHER,
     MAX_NATIVE_INDEX,
     METADATA_FILE,
     MIN_MOD_AVD_BUILD,
@@ -174,7 +174,7 @@ def avd_home(root: str | Path) -> Path:
 
 
 def launcher_apk(root: str | Path) -> Path:
-    return Path(root) / COMPONENTS_DIR / FOSSIFY_LAUNCHER.file_name
+    return Path(root) / COMPONENTS_DIR / LIGHT_LAUNCHER.file_name
 
 
 def root_from_manager_exe(manager_exe: str | Path) -> Path:
@@ -262,7 +262,7 @@ def launcher_present(root: str | Path) -> bool:
     """内测包里带的轻量桌面安装包在不在（大小对得上才算）。"""
     path = launcher_apk(root)
     try:
-        return path.stat().st_size == FOSSIFY_LAUNCHER.size
+        return path.stat().st_size == LIGHT_LAUNCHER.size
     except OSError:
         return False
 
@@ -411,9 +411,9 @@ def install_status(root: str | Path) -> dict[str, Any]:
     items.insert(1, _emulator_item(root, local))
     items.append(
         {
-            "id": FOSSIFY_LAUNCHER.id,
-            "name": FOSSIFY_LAUNCHER.name,
-            "version": FOSSIFY_LAUNCHER.version,
+            "id": LIGHT_LAUNCHER.id,
+            "name": LIGHT_LAUNCHER.name,
+            "version": LIGHT_LAUNCHER.version,
             "build": None,
             "outdatedTestPackage": False,
             "installed": launcher_present(root),

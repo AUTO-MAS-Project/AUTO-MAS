@@ -75,11 +75,15 @@ from .constants import (
     CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
     FORCE_KILL_WAIT_SECONDS,
-    FOSSIFY_LAUNCHER,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
     GUEST_TMP_DIR,
     KEEP_PACKAGES,
+    LIGHT_LAUNCHER,
+    LIGHT_LAUNCHER_PREFS_FILE,
+    LIGHT_LAUNCHER_PREFS_VERSION,
+    LIGHT_LAUNCHER_PRESET_PREFS,
+    LIGHT_LAUNCHER_WAKE_RECEIVER,
     LOGCAT_BUFFER_SIZE,
     LOGS_DIR,
     MAX_NATIVE_INDEX,
@@ -899,6 +903,51 @@ class _AvdCore(DeviceBase):
         if not meta.get("initialized"):
             await self._first_boot_init(idx)
 
+        # 10) 方向：显示器固定横屏（持久，每次开机设一次给老实例补上）
+        await self._setup_orientation(idx)
+
+    async def _setup_orientation(self, idx: str) -> None:
+        """显示器固定在 0°（横屏），不跟传感器、也不跟应用的方向请求转，横屏游戏也不会翻成 180°。
+
+        应用要求竖屏时系统会把显示器转到 90° / 270°，模拟器窗口不跟着转，画面就是侧着画的。
+        固定方向之后，竖屏页面改放进横屏中间、两边留黑（信箱模式）。
+
+        先关信箱模式的引导弹窗（「See and do more」）：它不持久，每次开机都关；游戏里冒出竖屏页面被放进
+        信箱时就不弹，不挡脚本。再固定方向：``wm fixed-to-user-rotation`` 存在 ``display_settings.xml``，
+        重启后还在。最后读回当前方向记日志。
+        """
+        failures: list[str] = []
+        code, output = await self._shell(
+            idx, "wm set-letterbox-style --isEducationEnabled false"
+        )
+        if code != 0:
+            failures.append(f"关信箱引导: {output[-200:]}")
+
+        code, output = await self._shell(
+            idx,
+            "settings put system user_rotation 0 ; wm fixed-to-user-rotation enabled",
+        )
+        if code != 0:
+            failures.append(f"固定方向: {output[-200:]}")
+
+        _, rotation = await self._shell(
+            idx,
+            "dumpsys window displays | grep -m1 -oE mDisplayRotation=ROTATION_[0-9]+",
+        )
+        # grep -m1 提前退出时 dumpsys 会往输出里补一行「Broken pipe」，只取那一行
+        current = next(
+            (
+                line.strip().partition("=")[2]
+                for line in rotation.splitlines()
+                if line.strip().startswith("mDisplayRotation=")
+            ),
+            "读不到",
+        )
+        if failures:
+            logger.warning(f"实例 {idx} 方向没设好: {failures}")
+        else:
+            logger.info(f"实例 {idx} 方向: 固定 0°，当前 {current}")
+
     async def _setup_guest_writeback(self, idx: str) -> tuple[int | None, int | None]:
         """把客体 ``dirty_expire_centisecs`` / ``dirty_writeback_centisecs`` 设成 200 / 100 并读回记日志。"""
         expire, writeback = (
@@ -1050,8 +1099,9 @@ class _AvdCore(DeviceBase):
         if code != 0 or "Success" not in output:
             logger.warning(f"实例 {idx} 安装轻量桌面失败: {output}")
             return "pixel"
+        await self._preset_light_launcher(idx)
         commands = [
-            f"cmd package set-home-activity {FOSSIFY_LAUNCHER.home_activity}",
+            f"cmd package set-home-activity {LIGHT_LAUNCHER.home_activity}",
             f"pm disable-user --user 0 {PIXEL_LAUNCHER_PACKAGE}",
             "input keyevent KEYCODE_HOME",
         ]
@@ -1059,7 +1109,76 @@ class _AvdCore(DeviceBase):
         if code != 0:
             logger.warning(f"实例 {idx} 设置轻量桌面失败: {output}")
             return "pixel"
-        return FOSSIFY_LAUNCHER.package
+        return LIGHT_LAUNCHER.package
+
+    async def _preset_light_launcher(self, idx: str) -> None:
+        """在第一次打开 µLauncher 之前，把它首次打开时的引导页和通知权限弹窗都预置掉。
+
+        1) 通知权限设成拒绝并锁定（它在引导最后一页申请）。
+        2) 用 root 给它发一个空广播，只为在后台拉起进程：进程启动时发现还没走过引导，会自己写出默认偏好
+           （桌面时钟、上滑打开应用列表等）。``am broadcast`` 等接收器跑完才返回，这时它 ``apply`` 的偏好
+           已经落盘。不能直接替它写一份只有预置项的偏好：它看到「引导已走完」就不再写默认偏好，
+           桌面没有时钟、上滑也打不开应用列表。
+        3) 杀掉进程，往偏好里加上「引导已走完」「打开应用列表不弹键盘」，属主、权限、SELinux 标签
+           恢复成应用自己的。
+
+        失败只记告警：最坏是第一次打开时还会走一遍引导。
+        """
+        package = LIGHT_LAUNCHER.package
+        notification = "android.permission.POST_NOTIFICATIONS"
+        code, output = await self._shell(
+            idx,
+            f"pm revoke {package} {notification} ; "
+            f"pm set-permission-flags {package} {notification} user-set user-fixed",
+        )
+        if code != 0:
+            logger.warning(f"实例 {idx} 轻量桌面通知权限没预设上: {output[-200:]}")
+
+        prefs = LIGHT_LAUNCHER_PREFS_FILE
+        # 0x20 = FLAG_INCLUDE_STOPPED_PACKAGES：刚装好的应用处于停止状态，不带它广播送不到
+        code, output = await self._su(
+            idx,
+            f"am broadcast -f 0x20 -n {LIGHT_LAUNCHER_WAKE_RECEIVER} >/dev/null ; "
+            f"am force-stop {package} ; cat {prefs}",
+        )
+        version = f'name="internal.version_code" value="{LIGHT_LAUNCHER_PREFS_VERSION}"'
+        if version not in output:
+            logger.warning(
+                f"实例 {idx} 轻量桌面没写出默认偏好（或偏好版本不是 "
+                f"{LIGHT_LAUNCHER_PREFS_VERSION}），跳过预置: {output[-200:]}"
+            )
+            return
+
+        def entry(key: str, value: bool) -> str:
+            return f'<boolean name="{key}" value="{str(value).lower()}" />'
+
+        # 客体脚本整段包在单引号里，里面的双引号要转义
+        deletes = " ".join(
+            f'-e "/name=\\"{key}\\"/d"' for key, _ in LIGHT_LAUNCHER_PRESET_PREFS
+        )
+        inserts = "".join(
+            entry(key, value) for key, value in LIGHT_LAUNCHER_PRESET_PREFS
+        ).replace('"', '\\"')
+        prefs_dir = prefs.rpartition("/")[0]
+        code, output = await self._su(
+            idx,
+            f'sed -i {deletes} -e "s#</map>#{inserts}</map>#" {prefs} && '
+            f"chown $(stat -c %u:%g {prefs_dir}) {prefs} && chmod 660 {prefs} && "
+            f"restorecon {prefs} && cat {prefs}",
+        )
+        missing = [
+            key
+            for key, value in LIGHT_LAUNCHER_PRESET_PREFS
+            if entry(key, value) not in output
+        ]
+        if code != 0 or missing:
+            logger.warning(
+                f"实例 {idx} 轻量桌面偏好没预置上（{missing or code}）: {output[-200:]}"
+            )
+        else:
+            logger.info(
+                f"实例 {idx} 轻量桌面已预置: 跳过引导、应用列表不弹键盘、不申请通知权限"
+            )
 
     # ---- 关机 -----------------------------------------------------------
 
