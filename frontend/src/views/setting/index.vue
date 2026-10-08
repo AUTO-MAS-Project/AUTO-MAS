@@ -15,6 +15,8 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
 import { useAppearanceSettings } from './useAppearanceSettings'
 
@@ -52,6 +54,8 @@ const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -285,6 +289,16 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
   }
 }
 
+const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
+  try {
+    await homeSatelliteStore.setStyle(style)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存主页卫星样式失败: ${errorMsg}`)
+    message.error(t('setting.toast.homeSatelliteSaveFailed'))
+  }
+}
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
@@ -379,6 +393,9 @@ onMounted(() => {
             :cursor-effect-options="cursorEffectOptions"
             :low-performance-mode="performanceStore.lowPerformanceMode"
             :low-performance-mode-saving="performanceStore.saving"
+            :home-satellite-style="homeSatelliteStore.style"
+            :home-satellite-style-saving="homeSatelliteStore.saving"
+            :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
             :handle-theme-mode-change="handleThemeModeChange"
             :handle-appearance-change="handleAppearanceChange"
             :handle-appearance-import="handleAppearanceImport"

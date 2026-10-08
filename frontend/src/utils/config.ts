@@ -2,6 +2,7 @@ import type { AppLocale } from '@/i18n'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeLayoutConfig } from '@/types/home'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 
 const logger = window.electronAPI.getLogger('配置管理')
 
@@ -27,6 +28,9 @@ export interface FrontendConfig {
 
   // 首页布局
   homeLayout?: HomeLayoutConfig
+
+  // 主页卫星样式；未设置时是经典
+  homeSatelliteStyle?: HomeSatelliteStyle
 
   // 首页快速启动最近选择
   homeQuickStartSelectedTaskIds?: string[]

@@ -12,6 +12,7 @@ import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
@@ -31,6 +32,9 @@ interface TabBasicProps {
   cursorEffectOptions: { label: string; value: CursorEffect }[]
   lowPerformanceMode: boolean
   lowPerformanceModeSaving: boolean
+  homeSatelliteStyle: HomeSatelliteStyle
+  homeSatelliteStyleSaving: boolean
+  handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
   handleThemeModeChange(value: SelectValue): Promise<void>
   handleAppearanceChange(value: SelectValue): Promise<void>
   handleAppearanceImport(): Promise<void>
@@ -55,6 +59,9 @@ const {
   cursorEffectOptions,
   lowPerformanceMode,
   lowPerformanceModeSaving,
+  homeSatelliteStyle,
+  homeSatelliteStyleSaving,
+  handleHomeSatelliteStyleChange,
   handleThemeModeChange,
   handleAppearanceChange,
   handleAppearanceImport,
@@ -233,6 +240,31 @@ const handleLocaleChange = (value: unknown): void => {
             >
               <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
               <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.homeSatellite') }}</span>
+              <a-tooltip :title="t('setting.basic.homeSatelliteTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="homeSatelliteStyle"
+              :disabled="homeSatelliteStyleSaving"
+              :loading="homeSatelliteStyleSaving"
+              size="large"
+              style="width: 100%"
+              @change="(style: any) => handleHomeSatelliteStyleChange(style)"
+            >
+              <a-select-option value="classic">
+                {{ t('setting.basic.homeSatelliteClassic') }}
+              </a-select-option>
+              <a-select-option value="galaxy">
+                {{ t('setting.basic.homeSatelliteGalaxy') }}
+              </a-select-option>
             </a-select>
           </div>
         </a-col>
