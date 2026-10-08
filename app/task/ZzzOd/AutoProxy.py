@@ -69,7 +69,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     kill_pids_by_name,
     push_dispatch_log,
@@ -1294,6 +1293,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 跨日重置：check 入口已对全部用户完成日期+ProxyTimes 同步，main_task
         # 无需再就地重置触发用户
         self.cur_user_item.status = "运行"
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         try:
@@ -1396,12 +1397,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
                 self.script_info.log = ""
 
-                if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                        "脚本前任务",
-                    )
-
                 # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
                 # （对齐 ok-ww/ok-nte；游戏已在运行时跳过，避免重复启动）
                 if self.game_process_manager is not None:
@@ -1502,11 +1497,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     self.script_info.log = (
                         self.script_info.log or "检测到 ZZZ-OD 已完成任务"
                     )
-                    if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                        await execute_script_task(
-                            Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                            "脚本后任务",
-                        )
                     break
 
                 # 自动模式：启动器未能启动（无应用层日志且运行记录无变化）时，
@@ -1535,11 +1525,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                 except Exception:
                     pass
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 if i + 1 < run_limit:
                     self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                     await asyncio.sleep(10)
