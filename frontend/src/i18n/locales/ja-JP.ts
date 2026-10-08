@@ -3755,7 +3755,7 @@ export default {
       perfSection: 'パフォーマンス',
       homeSatellite: 'ホームの衛星スタイル',
       homeSatelliteTip:
-        '3D 銀河はドラッグで回転でき、状態エフェクトとイースターエッグがあります。クラシックは従来の平面の衛星で、負荷が軽めです。',
+        'クラシックは従来の平面の衛星で、負荷が軽めです。3D 銀河はドラッグで回転でき、状態エフェクトとイースターエッグがあります。',
       homeSatelliteGalaxy: '3D 銀河',
       homeSatelliteClassic: 'クラシック',
       lowPerf: '低負荷モード',

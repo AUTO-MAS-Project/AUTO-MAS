@@ -4223,7 +4223,7 @@ export default {
       cursorTip: '选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认',
       perfSection: '性能配置',
       homeSatellite: '主页卫星样式',
-      homeSatelliteTip: '3D 星系可拖动旋转、带状态光效和彩蛋；经典是原来的平面卫星，占用更少',
+      homeSatelliteTip: '经典是原来的平面卫星，占用更少；3D 星系可拖动旋转、带状态光效和彩蛋',
       homeSatelliteGalaxy: '3D 星系',
       homeSatelliteClassic: '经典',
       lowPerf: '低性能模式',

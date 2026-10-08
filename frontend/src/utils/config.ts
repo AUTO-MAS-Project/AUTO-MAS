@@ -29,7 +29,7 @@ export interface FrontendConfig {
   // 首页布局
   homeLayout?: HomeLayoutConfig
 
-  // 主页卫星样式；未设置时是 3D 星系
+  // 主页卫星样式；未设置时是经典
   homeSatelliteStyle?: HomeSatelliteStyle
 
   // 首页快速启动最近选择

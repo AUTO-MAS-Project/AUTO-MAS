@@ -4364,7 +4364,7 @@ export default {
       perfSection: 'Performance',
       homeSatellite: 'Home satellite style',
       homeSatelliteTip:
-        'The 3D galaxy can be dragged around and has status effects and easter eggs; Classic is the original flat satellites and uses less.',
+        'Classic is the original flat satellites and uses less; the 3D galaxy can be dragged around and has status effects and easter eggs.',
       homeSatelliteGalaxy: '3D galaxy',
       homeSatelliteClassic: 'Classic',
       lowPerf: 'Low performance mode',

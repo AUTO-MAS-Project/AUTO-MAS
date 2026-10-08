@@ -249,11 +249,11 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(style: any) => handleHomeSatelliteStyleChange(style)"
             >
-              <a-select-option value="galaxy">
-                {{ t('setting.basic.homeSatelliteGalaxy') }}
-              </a-select-option>
               <a-select-option value="classic">
                 {{ t('setting.basic.homeSatelliteClassic') }}
+              </a-select-option>
+              <a-select-option value="galaxy">
+                {{ t('setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
             </a-select>
           </div>

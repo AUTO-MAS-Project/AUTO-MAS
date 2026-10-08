@@ -257,7 +257,7 @@ defineOptions({
 
 const { isBootstrapping } = useAppInitialization()
 const performanceStore = usePerformanceStore()
-// 卫星样式读到之前先不出卫星，免得经典用户白建一遍 3D 场景
+// 卫星样式读到之前先不出卫星，免得先按默认建一遍再换成用户选的那种
 const homeSatelliteStore = useHomeSatelliteStore()
 void homeSatelliteStore.load()
 const {
