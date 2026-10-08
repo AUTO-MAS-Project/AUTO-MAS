@@ -40,6 +40,7 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     append_push_log,
     kill_pids,
@@ -749,8 +750,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.cur_user_item.status = "运行"
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
-        await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         attempt = 0
@@ -766,6 +765,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
+
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
 
             # 启用游戏配置时始终由 MAS 拉起游戏
             if (
@@ -874,6 +879,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
                 await self._wait_okww_exit(timeout=30)
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
                 await asyncio.sleep(3)
                 break
 
@@ -891,6 +901,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
             if attempt < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
                 await asyncio.sleep(10)

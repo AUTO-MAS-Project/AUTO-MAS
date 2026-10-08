@@ -384,15 +384,10 @@ class TaskExecuteBase(ABC):
                 )
                 self.accomplish.set()
 
-    async def _finalize_task(self) -> None:
-        """收尾主体；由 _run_final_task 放进屏蔽取消的独立任务里执行。"""
-
-        await self.final_task()
-
     async def _run_final_task(self) -> None:
         """推迟外层取消，直到收尾协程真正结束。"""
 
-        finalizer = asyncio.create_task(self._finalize_task())
+        finalizer = asyncio.create_task(self.final_task())
         current_task = asyncio.current_task()
         if current_task is None:
             raise RuntimeError("无法获取当前任务")

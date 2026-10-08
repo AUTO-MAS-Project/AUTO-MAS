@@ -59,7 +59,7 @@ from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
-from .tools import push_notification
+from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")
 
@@ -317,8 +317,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return
 
         await self.prepare()
-        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
-        await self.run_user_scripts_before()
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
@@ -343,6 +341,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 _reset = getattr(_matcher, "reset", None)
                 if _reset is not None:
                     _reset()
+
+            # 执行任务前脚本
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
 
             self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
@@ -534,6 +539,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 ):
                     await self.update_config()
 
+            # 执行任务后脚本
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
             await asyncio.sleep(3)
 
     async def handle_pre_script_error(

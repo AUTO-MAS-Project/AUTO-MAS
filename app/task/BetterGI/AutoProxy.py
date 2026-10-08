@@ -33,6 +33,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
     find_pids_by_name,
@@ -400,6 +401,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_exe_path: Path | None = None
         self.script_target_process_info: ProcessInfo | None = None
         self.log_monitor: LogMonitor | None = None
+        self._extra_scripts_started: bool = False
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
         # 运行时提示（找不到自动战斗脚本、切队回不到主界面）同样只推一次
@@ -998,8 +1000,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def main_task(self):
         await self.prepare()
 
-        # 任务前脚本每用户一次，先于游戏更新、切号、执行层与全部重试
-        await self.run_user_scripts_before()
+        # 前置脚本覆盖整轮任务，必须先于游戏更新、切号和执行层，重试不重复执行。
+        self._extra_scripts_started = True
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
+            )
 
         # 切号与一条龙都会拉起游戏，客户端停在旧版本时只会让整轮任务白跑，
         # 所以游戏更新仍先于它们执行。
@@ -1767,14 +1774,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.wait_event.set()
 
     async def final_task(self):
-        # 结束时先清理进程与监控
-        if self.log_monitor is not None:
-            with suppress(Exception):
-                await self.log_monitor.stop()
-        await self.kill_managed_process()
+        try:
+            # 结束时先清理进程与监控
+            if self.log_monitor is not None:
+                with suppress(Exception):
+                    await self.log_monitor.stop()
+            await self.kill_managed_process()
 
-        # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
-        await self._close_game()
+            # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
+            await self._close_game()
+        finally:
+            # 整轮只收尾一次；前置被中止或进程清理异常时也尝试执行后置脚本。
+            if self._extra_scripts_started:
+                self._extra_scripts_started = False
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
