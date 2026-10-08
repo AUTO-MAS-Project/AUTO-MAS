@@ -41,6 +41,7 @@ from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     append_push_log,
+    find_pids_by_name,
     kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
