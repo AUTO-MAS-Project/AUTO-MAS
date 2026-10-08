@@ -38,7 +38,6 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import append_push_log
 from app.utils import (
     LogMonitor,
@@ -896,6 +895,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info(f"开始代理用户 {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
@@ -931,13 +932,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 phase=self.mode if if_quick_config else "Source"
             )
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
-
-            # 执行任务前脚本
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
 
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
@@ -1098,12 +1092,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if not self.retryable:
                     logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
-
-        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-            await execute_script_task(
-                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                "脚本后任务",
-            )
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None

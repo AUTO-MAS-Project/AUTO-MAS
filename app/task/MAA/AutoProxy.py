@@ -48,7 +48,6 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.general.tools import execute_script_task
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
@@ -986,12 +985,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        # 执行任务前脚本（每用户仅一次）
-        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-            await execute_script_task(
-                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                "脚本前任务",
-            )
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         # 执行绿票商店 + 剿灭 + 日常
         # 绿票商店的任务链只认主界面、跑完也停在商店页，放在最前面由后续模式的开始唤醒收拾界面
@@ -1163,13 +1158,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
-
-        # 执行任务后脚本（每用户仅一次）
-        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-            await execute_script_task(
-                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                "脚本后任务",
-            )
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
