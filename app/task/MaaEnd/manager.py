@@ -33,6 +33,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
+from app.task.proxy_helpers import push_dispatch_log
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -48,7 +49,9 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
 from .tools.backup_archive import archive_native_backup
+from .tools.game_update import ensure_game_updated
 from .tools.notify import collect_recent_error_images, push_notification
+from .Update import EndfieldUpdateTask
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -86,7 +89,8 @@ class MaaEndManager(ScriptManagerBase):
         self._device_provider = device_provider
 
     async def check(self) -> str:
-        if self.task_info.mode not in METHOD_BOOK:
+        # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
+        if self.task_info.mode not in (*METHOD_BOOK, "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -95,6 +99,12 @@ class MaaEndManager(ScriptManagerBase):
             return "脚本配置类型错误, 不是 MaaEnd 脚本类型"
 
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
+            if self.task_info.mode == "Update":
+                # 判「这是不是 PC 控制器」要读 MaaEnd 本体的资源
+                return (
+                    "确认控制器类型需要读取 MaaEnd 本体，请先在脚本里配好 MaaEnd 路径"
+                    "（未找到 MaaEnd.exe），再来检查终末地客户端更新！"
+                )
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
         controller_name = str(script_config.get("Game", "ControllerType") or "").strip()
@@ -108,6 +118,16 @@ class MaaEndManager(ScriptManagerBase):
             )
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
+
+        if self.task_info.mode == "Update":
+            # 只更新 PC 客户端：不读 mxu-MaaEnd.json，也不起模拟器。
+            if self.controller_protocol != "Win32":
+                return (
+                    "终末地客户端更新仅支持 PC 控制器, 请检查脚本配置中的控制器设置！"
+                )
+            if not Path(str(script_config.get("Game", "Path") or "").strip()).is_file():
+                return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+            return "Pass"
 
         if self.controller_protocol == "Adb" and (
             script_config.get("Game", "EmulatorId") == "-"
@@ -139,6 +159,16 @@ class MaaEndManager(ScriptManagerBase):
         # 锁定脚本配置并加载用户配置
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+
+        if self.task_info.mode == "Update":
+            # 只写 Game.Path 指向的游戏目录，不碰 MaaEnd 原生配置：不建快照、不归档、
+            # 不解析 UserData。锁在这里取得、由 final_task() 释放。
+            self.script_info.user_list = [
+                UserItem(user_id="Default", name="终末地客户端更新", status="等待")
+            ]
+            logger.success(f"{self.script_info.script_id}已锁定, 进入手动更新会话")
+            return
+
         self.user_config = MultipleConfig([MaaEndUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id}已锁定, MAAEnd配置提取完成")
@@ -242,6 +272,60 @@ class MaaEndManager(ScriptManagerBase):
             and self.script_info.user_list[0].status == "完成"
         )
 
+    async def _ensure_game_client_updated(self) -> str | None:
+        """任务启动前接管终末地 PC 客户端更新。
+
+        更新对象是脚本级的 `Game.Path`，多用户与重试轮次都只该检查一次，所以要赶在本轮
+        游戏被拉起来之前做完——那时才不存在覆盖正被占用文件的竞争。
+
+        跨脚本互斥不在这里做：`add_task` 按脚本粒度挡重复派发，多账号是同一脚本内的
+        `UserData`，同一目录不会被两个脚本并发更新。
+
+        `ScriptConfig` 会话只是打开 MaaEnd 的配置界面，不该被关掉正在运行的游戏、
+        再多等几 GB 的下载。
+
+        Returns:
+            str | None: 需要阻断本轮任务时返回给用户看的说明；``None`` 表示可以继续。
+        """
+
+        if self.task_info.mode == "ScriptConfig":
+            return None
+        script_config = self.script_config
+        if not isinstance(script_config, MaaEndConfig):
+            return None
+        if not script_config.get("Game", "IfAutoUpdate"):
+            return None
+        if self.controller_protocol != "Win32":
+            # 改成模拟器后这个勾选会留着；静默跳过会被当成已生效，留一行可查的说明
+            logger.info("终末地客户端更新仅支持 PC 控制器，当前控制器已跳过")
+            return None
+        game_exe = Path(str(script_config.get("Game", "Path") or "").strip())
+        if not game_exe.is_file():
+            return None
+
+        async def report(line: str) -> None:
+            await push_dispatch_log(self.script_info, line)
+
+        try:
+            result = await ensure_game_updated(
+                game_exe,
+                time_limit_minutes=int(script_config.get("Game", "UpdateTimeLimit")),
+                progress=report,
+            )
+        except Exception as error:
+            # 能走到这里的只剩「已经开始写游戏目录之后」出的岔子：放行等于让脚本
+            # 跑在半写入的客户端上，一律阻断。
+            logger.opt(exception=True).error(
+                f"终末地客户端更新接管异常，中止本轮任务: {error}"
+            )
+            return f"终末地客户端更新异常（{error}），已中止本轮任务"
+
+        logger.info(f"终末地客户端更新结果: {result.status} - {result.message}")
+        if result.status != "NeedManualUpdate":
+            return None
+        await push_dispatch_log(self.script_info, result.message)
+        return result.message
+
     async def main_task(self):
 
         self.check_result = await self.check()
@@ -259,6 +343,27 @@ class MaaEndManager(ScriptManagerBase):
 
         if not isinstance(self.script_config, MaaEndConfig):
             raise RuntimeError("脚本配置类型错误, 不是 MaaEnd 脚本类型")
+
+        if self.task_info.mode == "Update":
+            # current_index 必须归零：子任务从 user_list[current_index] 取结论落点，
+            # 而它的初值是 -1（未开始）。
+            self.script_info.current_index = 0
+            await self.spawn(EndfieldUpdateTask(self.script_info, self.script_config))
+            return
+
+        failure = await self._ensure_game_client_updated()
+        if failure is not None:
+            # 绝不能改 self.check_result：final_task 在它不是 Pass 时早退并跳过
+            # unlock()，而此刻脚本配置已被 prepare() 锁上，写它就是永久泄锁。
+            for user in self.script_info.user_list:
+                if user.status == "等待":
+                    user.status = "异常"
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=failure),
+            )
+            return
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]

@@ -1713,6 +1713,14 @@ class MaaEndConfig(ConfigBase):
         self.Game_RestoreResolutionHeight = ConfigItem(
             "Game", "RestoreResolutionHeight", 1080, RangeValidator(1, 16384)
         )
+        ## 是否在任务启动前检查并自动更新终末地 PC 客户端
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", False, BoolValidator()
+        )
+        ## 游戏客户端更新时长限制（分钟）
+        self.Game_UpdateTimeLimit = ConfigItem(
+            "Game", "UpdateTimeLimit", 240, RangeValidator(1, 9999)
+        )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
