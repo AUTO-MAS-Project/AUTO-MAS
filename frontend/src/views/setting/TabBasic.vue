@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { DeleteOutlined, QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons-vue'
+import {
+  DeleteOutlined,
+  QuestionCircleOutlined,
+  SkinOutlined,
+  UploadOutlined,
+} from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
+import { navigateTo } from '@/router'
 import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
@@ -105,6 +111,10 @@ const handleLocaleChange = (value: unknown): void => {
               >
                 <template #icon><UploadOutlined /></template>
                 {{ t('setting.basic.importAppearance') }}
+              </a-button>
+              <a-button :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
+                <template #icon><SkinOutlined /></template>
+                {{ t('setting.basic.themeStore') }}
               </a-button>
               <a-button
                 v-if="appearanceValue.startsWith('appearance:')"
@@ -313,6 +323,7 @@ const handleLocaleChange = (value: unknown): void => {
 <style scoped>
 .appearance-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -323,10 +334,10 @@ const handleLocaleChange = (value: unknown): void => {
   min-width: 144px;
 }
 
-@media (max-width: 1200px) {
+/* 选择框加三个按钮在半栏里放不下时，选择框独占一行，按钮排到下一行。 */
+@media (max-width: 1440px) {
   .appearance-controls {
     align-items: stretch;
-    flex-wrap: wrap;
   }
 
   .appearance-controls :deep(.ant-select) {

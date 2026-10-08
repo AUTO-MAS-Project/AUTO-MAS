@@ -5,7 +5,15 @@ import { useI18n } from 'vue-i18n'
 
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
-import type { InstalledAppearance } from '@/types/appearance'
+import type {
+  AppearanceImportResult,
+  InstalledAppearance,
+  OnlineAppearanceInstallResult,
+} from '@/types/appearance'
+import {
+  describeOnlineAppearanceError,
+  type OnlineAppearanceInstallOutcome,
+} from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
 
 export function useAppearanceSettings() {
@@ -24,6 +32,7 @@ export function useAppearanceSettings() {
     setThemeColor,
     setAppearance,
     importAppearance,
+    installOnlineAppearance,
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
@@ -101,29 +110,67 @@ export function useAppearanceSettings() {
     })
   }
 
-  const importAppearanceFromPath = async (zipPath: string, replace = false): Promise<void> => {
+  const confirmReplace = (name: string): Promise<boolean> =>
+    new Promise(resolve => {
+      modal.confirm({
+        ...modalOptions,
+        title: t('setting.basic.appearanceReplaceTitle'),
+        content: t('setting.basic.appearanceReplaceContent', { name }),
+        okText: t('setting.basic.replaceAppearance'),
+        cancelText: t('common.cancel'),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      })
+    })
+
+  // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用。
+  const runAppearanceInstall = async (
+    install: (replace: boolean) => Promise<AppearanceImportResult | OnlineAppearanceInstallResult>,
+    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string
+  ): Promise<OnlineAppearanceInstallOutcome> => {
+    let result = await install(false)
+    if (!result.success && result.code === 'DUPLICATE_ID') {
+      const replace = await confirmReplace(
+        result.existing?.name ?? result.existing?.id ?? t('setting.basic.appearance')
+      )
+      if (!replace) return 'cancelled'
+      result = await install(true)
+    }
+    if (!result.success) {
+      message.error(describeFailure(result))
+      return 'failed'
+    }
+    if (result.appearance) showAppearancePreview(result.appearance)
+    return 'installed'
+  }
+
+  const importAppearanceFromPath = async (zipPath: string): Promise<void> => {
     if (appearanceBusy.value) return
     appearanceBusy.value = true
     try {
-      const result = await importAppearance(zipPath, replace)
-      if (!result.success) {
-        if (result.code === 'DUPLICATE_ID' && !replace) {
-          modal.confirm({
-            ...modalOptions,
-            title: t('setting.basic.appearanceReplaceTitle'),
-            content: t('setting.basic.appearanceReplaceContent', {
-              name: result.existing?.name ?? result.existing?.id ?? t('setting.basic.appearance'),
-            }),
-            okText: t('setting.basic.replaceAppearance'),
-            cancelText: t('common.cancel'),
-            onOk: () => importAppearanceFromPath(zipPath, true),
-          })
-          return
-        }
-        message.error(result.error || t('setting.basic.appearanceImportFailed'))
-        return
-      }
-      if (result.appearance) showAppearancePreview(result.appearance)
+      await runAppearanceInstall(
+        replace => importAppearance(zipPath, replace),
+        result => result.error || t('setting.basic.appearanceImportFailed')
+      )
+    } finally {
+      appearanceBusy.value = false
+    }
+  }
+
+  const installPreparedOnlineAppearance = async (
+    token: string
+  ): Promise<OnlineAppearanceInstallOutcome> => {
+    if (appearanceBusy.value) return 'cancelled'
+    appearanceBusy.value = true
+    try {
+      return await runAppearanceInstall(
+        replace => installOnlineAppearance(token, replace),
+        result => describeOnlineAppearanceError(result, 'themeStore.installFailed')
+      )
+    } catch (error) {
+      logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
+      message.error(t('themeStore.installFailed'))
+      return 'failed'
     } finally {
       appearanceBusy.value = false
     }
@@ -200,5 +247,6 @@ export function useAppearanceSettings() {
     handleAppearanceChange,
     handleAppearanceImport,
     handleAppearanceRemove,
+    installPreparedOnlineAppearance,
   }
 }
