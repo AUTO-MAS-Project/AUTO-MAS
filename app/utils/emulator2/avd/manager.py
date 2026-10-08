@@ -136,6 +136,26 @@ _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
 
 
+def _shared_prefs_entry(key: str, value: bool | str) -> str:
+    """一条 SharedPreferences 的 XML（和 Android 自己写的格式一样，字符串里的 ``"`` 写成 ``&quot;``）。
+
+    这一条要原样放进客体 sed 命令的双引号里，所以不收会被 shell / sed 另作解释的字符。
+    """
+    if isinstance(value, bool):
+        text = f'<boolean name="{key}" value="{str(value).lower()}" />'
+    else:
+        escaped = (
+            value.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+        text = f'<string name="{key}">{escaped}</string>'
+    if any(char in text for char in "'#\\$`\n"):
+        raise ValueError(f"偏好 {key} 里有客体命令放不下的字符")
+    return text
+
+
 def shm_exists(port: int) -> bool:
     """截图共享内存 ``SHM_videmulator<控制台端口>`` 在不在（MaaFW AVDExtras 读它）。"""
     try:
@@ -1123,8 +1143,8 @@ class _AvdCore(DeviceBase):
            （桌面时钟、上滑打开应用列表等）。``am broadcast`` 等接收器跑完才返回，这时它 ``apply`` 的偏好
            已经落盘。不能直接替它写一份只有预置项的偏好：它看到「引导已走完」就不再写默认偏好，
            桌面没有时钟、上滑也打不开应用列表。
-        3) 杀掉进程，往偏好里加上「引导已走完」「打开应用列表不弹键盘」，属主、权限、SELinux 标签
-           恢复成应用自己的。
+        3) 杀掉进程，往偏好里加上「引导已走完」「打开应用列表不弹键盘」「双击桌面不做任何事」，属主、权限、
+           SELinux 标签恢复成应用自己的。
 
         失败只记告警：最坏是第一次打开时还会走一遍引导。
         """
@@ -1153,16 +1173,19 @@ class _AvdCore(DeviceBase):
             )
             return
 
-        def entry(key: str, value: bool) -> str:
-            return f'<boolean name="{key}" value="{str(value).lower()}" />'
-
-        # 客体脚本整段包在单引号里，里面的双引号要转义
+        # 客体脚本整段包在单引号里、sed 参数包在双引号里：双引号要转义，``&`` 在 sed 替换串里是「匹配到的
+        # 内容」也要转义
         deletes = " ".join(
             f'-e "/name=\\"{key}\\"/d"' for key, _ in LIGHT_LAUNCHER_PRESET_PREFS
         )
-        inserts = "".join(
-            entry(key, value) for key, value in LIGHT_LAUNCHER_PRESET_PREFS
-        ).replace('"', '\\"')
+        inserts = (
+            "".join(
+                _shared_prefs_entry(key, value)
+                for key, value in LIGHT_LAUNCHER_PRESET_PREFS
+            )
+            .replace('"', '\\"')
+            .replace("&", "\\&")
+        )
         prefs_dir = prefs.rpartition("/")[0]
         code, output = await self._su(
             idx,
@@ -1173,7 +1196,7 @@ class _AvdCore(DeviceBase):
         missing = [
             key
             for key, value in LIGHT_LAUNCHER_PRESET_PREFS
-            if entry(key, value) not in output
+            if _shared_prefs_entry(key, value) not in output
         ]
         if code != 0 or missing:
             logger.warning(
@@ -1181,7 +1204,8 @@ class _AvdCore(DeviceBase):
             )
         else:
             logger.info(
-                f"实例 {idx} 轻量桌面已预置: 跳过引导、应用列表不弹键盘、不申请通知权限"
+                f"实例 {idx} 轻量桌面已预置: 跳过引导、应用列表不弹键盘、双击桌面不锁屏、"
+                "不申请通知权限"
             )
 
     # ---- 关机 -----------------------------------------------------------

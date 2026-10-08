@@ -165,12 +165,15 @@ LIGHT_LAUNCHER_PREFS_FILE = (
 #: 它第一次启动时自己写出默认偏好（桌面时钟、上滑打开应用列表等），同时写进去的偏好版本号
 #: （源码 ``Preferences.kt`` 的 ``PREFERENCE_VERSION``，不是 versionCode 57）。
 LIGHT_LAUNCHER_PREFS_VERSION = 101
-#: 预置的布尔偏好。键名取 ``res/values/donottranslate.xml`` 里的字符串值，不是 ``LauncherPreferences$Config``
-#: 里的字段名：``internal.started_before`` 是「引导已走完」，``functionality.search_auto_keyboard`` 是
-#: 「打开应用列表时自动弹键盘」（横屏下输入法全屏，把列表整个挡住）。
-LIGHT_LAUNCHER_PRESET_PREFS: tuple[tuple[str, bool], ...] = (
+#: 预置的偏好（布尔值写成 ``<boolean>``，字符串写成 ``<string>``）。键名取 ``res/values/donottranslate.xml``
+#: 里的字符串值，不是 ``LauncherPreferences$Config`` 里的字段名：``internal.started_before`` 是「引导已走完」，
+#: ``functionality.search_auto_keyboard`` 是「打开应用列表时自动弹键盘」（横屏下输入法全屏，把列表整个挡住）。
+#: 手势存成 ``action.<手势>`` → 动作的 JSON：双击桌面默认是锁屏，要设备管理员权限，没有就弹「添加设备管理员」
+#: 页面，改成它自带的「不做任何事」（``LauncherAction.NOP``）。不能直接删掉这个键：删了它会弹「无法打开」的提示条。
+LIGHT_LAUNCHER_PRESET_PREFS: tuple[tuple[str, bool | str], ...] = (
     ("internal.started_before", True),
     ("functionality.search_auto_keyboard", False),
+    ("action.double_click", '{"type":"action:launcher","value":"nop"}'),
 )
 #: 只为在后台拉起它的进程、让它写出默认偏好：给这个接收器发一个空广播（接收器不认这个广播，什么也不做）。
 LIGHT_LAUNCHER_WAKE_RECEIVER = (
