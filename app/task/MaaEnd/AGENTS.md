@@ -17,3 +17,5 @@
   改名提交。改了这个顺序，就没有「更新到底生效了没有」的判据了。
 - `Update.py` 更新的是**游戏客户端**；`update_takeover.py` 接管的是 MaaEnd 程序自身的更新，
   两件事，别合并。
+- 第三方许可与来源声明见 `tools/LICENSE.HypergryphPlugin.md`：本模块按 Hi3Helper.Plugin.Hypergryph
+  （MIT）公开源码描述的流程与协议重写，打包与再分发时必须随代码一起带上那份声明。
