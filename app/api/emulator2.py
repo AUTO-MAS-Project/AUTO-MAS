@@ -27,6 +27,13 @@
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    Emulator2AvdApkInstallIn,
+    Emulator2AvdApkInstallOut,
+    Emulator2AvdInstanceIn,
+    Emulator2AvdInstanceOptionsOut,
+    Emulator2AvdInstanceOptionsSetIn,
+    Emulator2AvdStatusIn,
+    Emulator2AvdStatusOut,
     Emulator2DevicesIn,
     Emulator2DevicesOut,
     Emulator2GuardCaptureOut,
@@ -52,6 +59,7 @@ from app.models.schema import (
 )
 from app.utils import get_logger
 from app.utils.emulator2 import service
+from app.utils.emulator2.avd import service as avd_service
 
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
 logger = get_logger("Emulator 2.0 API")
@@ -190,7 +198,15 @@ async def create_instance(
     """
     try:
         result = await service.create_instance(
-            payload.emulatorId, payload.pathId, payload.name
+            payload.emulatorId,
+            payload.pathId,
+            payload.name,
+            {
+                "memory_mb": payload.memoryMb,
+                "cpu": payload.cpu,
+                "data_partition_gb": payload.dataPartitionGb,
+                "balloon": payload.balloon,
+            },
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -371,3 +387,97 @@ async def capture_baselines(
         )
         return Emulator2GuardCaptureOut(**_error(e))
     return Emulator2GuardCaptureOut(**result)
+
+
+# ---- 魔改 AVD（Android Emulator）------------------------------------------
+
+
+@router.post(
+    "/avd/status",
+    tags=["Get"],
+    summary="查询魔改 AVD 根目录的组件状态",
+    response_model=Emulator2AvdStatusOut,
+    status_code=200,
+)
+async def avd_status(
+    payload: Emulator2AvdStatusIn = Body(...),
+) -> Emulator2AvdStatusOut:
+    """组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
+    组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
+    """
+    try:
+        result = await avd_service.status(payload.root, refresh=payload.refresh)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"avd_status失败: {type(e).__name__}: {e}")
+        return Emulator2AvdStatusOut(**_error(e))
+    return Emulator2AvdStatusOut(**result)
+
+
+@router.post(
+    "/avd/instance/options",
+    tags=["Get"],
+    summary="查询魔改 AVD 实例选项",
+    response_model=Emulator2AvdInstanceOptionsOut,
+    status_code=200,
+)
+async def avd_instance_options(
+    payload: Emulator2AvdInstanceIn = Body(...),
+) -> Emulator2AvdInstanceOptionsOut:
+    """显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。"""
+    try:
+        result = await avd_service.instance_options(payload.emulatorId, payload.slot)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_instance_options失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstanceOptionsOut(**_error(e))
+    return Emulator2AvdInstanceOptionsOut(**result)
+
+
+@router.post(
+    "/avd/instance/options/set",
+    tags=["Action"],
+    summary="修改魔改 AVD 实例选项",
+    response_model=Emulator2AvdInstanceOptionsOut,
+    status_code=200,
+)
+async def avd_set_instance_options(
+    payload: Emulator2AvdInstanceOptionsSetIn = Body(...),
+) -> Emulator2AvdInstanceOptionsOut:
+    """内存、气球，只改传了的项，下次启动生效。"""
+    try:
+        result = await avd_service.set_instance_options(
+            payload.emulatorId,
+            payload.slot,
+            memory_mb=payload.memoryMb,
+            balloon=payload.balloon,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_set_instance_options失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstanceOptionsOut(**_error(e))
+    return Emulator2AvdInstanceOptionsOut(**result)
+
+
+@router.post(
+    "/avd/instance/apk/install",
+    tags=["Action"],
+    summary="在魔改 AVD 实例里安装 APK",
+    response_model=Emulator2AvdApkInstallOut,
+    status_code=200,
+)
+async def avd_install_apk(
+    payload: Emulator2AvdApkInstallIn = Body(...),
+) -> Emulator2AvdApkInstallOut:
+    """``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。"""
+    try:
+        result = await avd_service.install_apk(
+            payload.emulatorId, payload.slot, payload.apkPath
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_apk失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdApkInstallOut(**_error(e))
+    return Emulator2AvdApkInstallOut(**result)

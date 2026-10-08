@@ -5625,7 +5625,10 @@ class Emulator2SearchItem(BaseModel):
         description=(
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
-            "not_found 找不到模拟器程序 / probe_failed 版本认不出"
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
+            "components_missing 魔改 AVD 根目录里组件不全 (要用完整的模拟器内测包) / "
+            "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版 / "
+            "test_package_outdated 魔改 AVD 内测包编号太旧或读不到, 要换新包"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -5706,6 +5709,21 @@ class Emulator2InstanceCreateIn(BaseModel):
     pathId: str = Field(..., description="在哪条模拟器安装下新建")
     name: Optional[str] = Field(
         default=None, description="新实例名称, 留空由模拟器自己命名"
+    )
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
+    )
+    cpu: Optional[int] = Field(
+        default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
+    )
+    dataPartitionGb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+    )
+    balloon: Optional[bool] = Field(
+        default=None,
+        description="仅魔改 AVD: 空闲页上报 (气球), 留空为 true",
     )
 
 
@@ -5858,6 +5876,150 @@ class Emulator2DevicesOut(OutBase):
     devices: List[Emulator2DeviceItem] = Field(
         default_factory=list, description="合并后的设备列表"
     )
+
+
+# ---- Emulator 2.0 · 魔改 AVD（Android Emulator / AVD）---------------------
+# 没有厂商管理器: 用户选一个根目录 (解压好的模拟器内测包, 组件全部自带, MAS 不下载),
+# 组件齐了按普通路径 ``/paths/add`` 纳管 (installPath = 根目录)。
+
+
+class Emulator2AvdRootIn(BaseModel):
+    root: str = Field(..., description="魔改 AVD 根目录 (解压好的模拟器内测包)")
+
+
+class Emulator2AvdStatusIn(Emulator2AvdRootIn):
+    refresh: bool = Field(
+        default=False,
+        description="跳过硬件加速与 Vulkan 检查的缓存重新查; 用户点「检查」时传 true",
+    )
+
+
+class Emulator2AvdComponentItem(BaseModel):
+    id: str = Field(
+        ...,
+        description="组件标识: platform-tools / emulator / system-image / launcher",
+    )
+    name: str = Field(..., description="组件名称")
+    version: str = Field(default="", description="装着的版本; 没装为空")
+    installed: bool = Field(default=False, description="是否已就绪")
+    optional: bool = Field(
+        default=False, description="是否可选组件 (轻量桌面), 可选组件缺失不影响添加"
+    )
+    localSdk: bool = Field(
+        default=False,
+        description="是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK",
+    )
+    testPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪",
+    )
+    needsTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里没有模拟器、不是自编版或内测包太旧",
+    )
+    build: Optional[str] = Field(
+        default=None,
+        description="仅 Android 模拟器: 内测包编号 (source.properties 的 Pkg.BuildId, 如 mas-19); 不是自编版或读不到为 null",
+    )
+    outdatedTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 是自编版, 但内测包编号低于最低要求或读不到, 要换新包",
+    )
+
+
+class Emulator2AvdPrecheckItem(BaseModel):
+    """魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
+
+    id: str = Field(
+        ...,
+        description="检查项: path / components / emulator / acceleration / vulkan / disk / memory",
+    )
+    title: str = Field(..., description="检查项名称")
+    ok: Optional[bool] = Field(
+        default=None, description="是否满足; null 表示现在查不了 (如模拟器组件还没装)"
+    )
+    blocking: bool = Field(
+        default=True, description="不满足时是否拒绝开机; 显卡 Vulkan 只提示不拦截"
+    )
+    reason: str = Field(default="", description="检查结果或不满足的原因")
+    advice: str = Field(default="", description="不满足时给用户的处理建议")
+
+
+class Emulator2AvdStatusOut(OutBase):
+    root: str = Field(default="", description="根目录")
+    ready: bool = Field(default=False, description="必需组件是否齐全, 齐了才能添加")
+    components: List[Emulator2AvdComponentItem] = Field(
+        default_factory=list, description="组件清单"
+    )
+    missing: List[str] = Field(
+        default_factory=list,
+        description="缺着的必需组件名称 (含不合格的模拟器); 要用完整的模拟器内测包",
+    )
+    accelerationOk: Optional[bool] = Field(
+        default=None, description="硬件加速 (WHPX) 是否可用; null 表示还查不了"
+    )
+    accelerationDetail: str = Field(
+        default="", description="硬件加速检查结果或不可用的原因与建议"
+    )
+    prechecks: List[Emulator2AvdPrecheckItem] = Field(
+        default_factory=list,
+        description=(
+            "开机前电脑检查: 目录路径、组件、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), "
+            "每项给 ok、原因、建议"
+        ),
+    )
+
+
+class Emulator2AvdInstanceIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2AvdInstanceOptionsSetIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="内存 MB (3072/4096/5120/6144); 不传不改",
+    )
+    balloon: Optional[bool] = Field(
+        default=None, description="空闲页上报 (气球) 开关; 不传不改"
+    )
+
+
+class Emulator2AvdInstanceOptionsOut(OutBase):
+    balloon: bool = Field(default=True, description="空闲页上报 (气球) 是否开启")
+    memoryMb: Optional[int] = Field(
+        default=None, description="内存 MB, 每次开机用 -memory 传"
+    )
+    cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
+    initialized: bool = Field(
+        default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
+    )
+    launcher: str = Field(default="", description="当前桌面包名, pixel 为原生桌面")
+    renderer: str = Field(default="", description="首次开机记录的渲染器 (GLES 行)")
+    softwareRenderer: bool = Field(
+        default=False,
+        description="是否在用软件渲染 (SwiftShader); 为 true 时应提示用户更新显卡驱动",
+    )
+    consolePort: int = Field(default=0, description="控制台端口")
+    adbPort: int = Field(default=0, description="adb 端口")
+    grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
+
+
+class Emulator2AvdApkInstallIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号, 实例必须已开机")
+    apkPath: str = Field(
+        ..., description="本机 .apk 文件的完整路径; .xapk / 拆分安装包不支持"
+    )
+
+
+class Emulator2AvdApkInstallOut(OutBase):
+    ok: bool = Field(default=False, description="是否安装成功")
+    reason: str = Field(default="", description="ok 安装成功")
+    result: str = Field(default="", description="adb install 的结果行 (Success)")
 
 
 class WebhookInBase(BaseModel):

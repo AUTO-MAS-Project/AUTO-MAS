@@ -1737,6 +1737,7 @@ export default {
     missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',
     adbStrategyEmulatorExtras: "Prefer the emulator's own ADB (EmulatorExtras)",
+    adbStrategyAvdExtras: 'Emulator screenshot acceleration (shared memory, EmulatorExtras)',
     adbStrategyDefault: 'Default',
     prepareRuntimeEnv: 'Prepare runtime environment',
     envPanelPlaceholder:

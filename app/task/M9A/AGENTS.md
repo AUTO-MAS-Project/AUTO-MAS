@@ -34,6 +34,8 @@
      `managed.py` 整理快照并返回要一并写的 `Info.Account` / `Info.Notes`；拆分提示不在这里写。
   4. `ensure_game_updated(...)`：引擎的**可选**游戏更新钩子（契约写在 MaaFW `flavor.py` 的模块
      说明里，不在协议里），转给 `game_update.py`。
+  5. `supports_mod_avd = True`：引擎的**可选**声明（契约同样在 MaaFW `flavor.py` 的模块说明里）。
+     魔改 AVD 目前只对声明了它的特调放行，其它脚本选魔改 AVD 设备在保存与运行时都被拒绝。
 - `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
   直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），

@@ -1,7 +1,8 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type ComboBoxItem } from '@/api'
+import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
+import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 /**
  * 实例下拉的缓存放在模块级、跨页面共用。
@@ -11,9 +12,19 @@ import { Service, type ComboBoxItem } from '@/api'
  * 再跳成名字。实例名几乎不变，缓存一分钟足够；模拟器页增删实例时显式作废。
  */
 const DEVICE_OPTIONS_TTL_MS = 60_000
-const sharedDeviceOptions = new Map<string, { options: ComboBoxItem[]; expiresAt: number }>()
 
-const readShared = (emulatorId: string): ComboBoxItem[] | undefined => {
+/** 下拉的一项；魔改 AVD 实例在非 M9A 脚本里 ``disabled`` */
+export type EmulatorDeviceOption = ComboBoxItem & { disabled?: boolean }
+
+const sharedDeviceOptions = new Map<
+  string,
+  { options: EmulatorDeviceOption[]; expiresAt: number }
+>()
+
+/** 模拟器配置 ID → 配置类型（``Info.Type``）。类型建好就不变，只在作废缓存时一起清。 */
+const sharedEmulatorTypes = new Map<string, string>()
+
+const readShared = (emulatorId: string): EmulatorDeviceOption[] | undefined => {
   const entry = sharedDeviceOptions.get(emulatorId)
   if (!entry) return undefined
   if (Date.now() >= entry.expiresAt) {
@@ -25,13 +36,55 @@ const readShared = (emulatorId: string): ComboBoxItem[] | undefined => {
 
 /** 模拟器页增删了实例 / 路径之后调用，让脚本页下次重新拉列表。 */
 export const invalidateEmulatorDeviceOptions = (emulatorId?: string): void => {
-  if (emulatorId) sharedDeviceOptions.delete(emulatorId)
-  else sharedDeviceOptions.clear()
+  if (emulatorId) {
+    sharedDeviceOptions.delete(emulatorId)
+    sharedEmulatorTypes.delete(emulatorId)
+  } else {
+    sharedDeviceOptions.clear()
+    sharedEmulatorTypes.clear()
+  }
 }
 
+const loadEmulatorType = async (emulatorId: string): Promise<string> => {
+  const cached = sharedEmulatorTypes.get(emulatorId)
+  if (cached !== undefined) return cached
+  const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId })
+  if (response?.code !== 200) return ''
+  const emulatorType = response.data?.[emulatorId]?.Info?.Type ?? ''
+  sharedEmulatorTypes.set(emulatorId, emulatorType)
+  return emulatorType
+}
+
+/**
+ * Emulator 2.0 配置里哪些设备号是魔改 AVD。下拉只有名字，类型要另问一次设备表；只有 Emulator 2.0
+ * 配置才问（设备表会枚举模拟器，别的配置不白跑一趟）。不是 Emulator 2.0 配置、或者问失败，都当
+ * 没有魔改 AVD（保存与运行时后端还会再拦一次）。
+ */
+const loadModAvdSlots = async (emulatorId: string): Promise<Set<string>> => {
+  try {
+    if ((await loadEmulatorType(emulatorId)) !== 'emulator2') return new Set()
+    const response = await Emulator20Service.listDevicesApiEmulator2DevicesPost({
+      emulatorId,
+      withSettings: false,
+    })
+    if (response?.code !== 200) return new Set()
+    return new Set(
+      (response.devices ?? [])
+        .filter(device => device.realType === 'avd' && device.slot)
+        .map(device => device.slot)
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+/**
+ * 用这个下拉的都是 MAA / SRC / MaaEnd / BAAH / 通用脚本页，不是 M9A：魔改 AVD 目前只支持 M9A，
+ * 它的实例在这里置灰并写明原因。
+ */
 export const useEmulatorDeviceOptions = () => {
   const emulatorDeviceLoading = ref(false)
-  const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
+  const emulatorDeviceOptions = ref<EmulatorDeviceOption[]>([])
   let requestSequence = 0
 
   /** 模拟器选择被清空：丢掉本页的选项、作废在飞的请求。共享缓存不动，那是别的页面的。 */
@@ -66,7 +119,14 @@ export const useEmulatorDeviceOptions = () => {
       if (requestId !== requestSequence) return
 
       if (response.code === 200) {
-        const options = response.data || []
+        const modAvdSlots = await loadModAvdSlots(emulatorId)
+        if (requestId !== requestSequence) return
+        const options = markModAvdOptions(
+          response.data || [],
+          value => value !== null && modAvdSlots.has(value),
+          false,
+          t('emulator2.avd.m9aOnly')
+        )
         sharedDeviceOptions.set(emulatorId, {
           options,
           expiresAt: Date.now() + DEVICE_OPTIONS_TTL_MS,

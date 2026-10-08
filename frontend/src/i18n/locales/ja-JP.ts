@@ -1601,6 +1601,7 @@ export default {
     missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
     adbStrategyEmulatorExtras: 'エミュレーター内蔵の ADB（EmulatorExtras）を優先',
+    adbStrategyAvdExtras: 'エミュレーターのスクリーンショット高速化（共有メモリ、EmulatorExtras）',
     adbStrategyDefault: '既定',
     prepareRuntimeEnv: '実行環境を準備',
     envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',

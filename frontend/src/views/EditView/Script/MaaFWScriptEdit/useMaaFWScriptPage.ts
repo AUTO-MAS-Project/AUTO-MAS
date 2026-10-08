@@ -73,7 +73,14 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     }
   }
 
-  const control = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
+  // 魔改 AVD 目前只支持 M9A（后端看特调的 supports_mod_avd，这里按脚本类型）
+  const control = useMaaFWControlConfig(
+    maafwConfig,
+    previewData,
+    previewLoading,
+    handleChange,
+    () => scriptType.value === 'M9A'
+  )
   const { syncControllerResourceSelection, loadEmulatorOptions, loadEmulatorDeviceOptions } =
     control
 
