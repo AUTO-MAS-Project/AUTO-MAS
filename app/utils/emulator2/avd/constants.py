@@ -122,7 +122,7 @@ REQUIRED_COMPONENTS: tuple[Component, ...] = (PLATFORM_TOOLS, SYSTEM_IMAGE)
 #: 认自编版的办法见 ``components.emulator_self_built``；还要内测包编号够新，见 :data:`MIN_MOD_AVD_BUILD`。
 #: 内测包的编号：自编模拟器在 ``sdk\emulator\source.properties`` 里写 ``Pkg.BuildId=mas-<编号>``，
 #: 每出一个新包加一。编号低于这个值（或读不到编号）的内测包开机前检查拒绝开机，要用户换新包。
-MIN_MOD_AVD_BUILD = 19
+MIN_MOD_AVD_BUILD = 25
 MOD_AVD_BUILD_PREFIX = "mas-"
 EMULATOR_COMPONENT_ID = "emulator"
 EMULATOR_COMPONENT_NAME = "Android 模拟器（emulator）"

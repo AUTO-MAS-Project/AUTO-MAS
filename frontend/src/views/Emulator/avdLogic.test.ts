@@ -117,14 +117,14 @@ describe('test package', () => {
       installed: true,
       version: '37.2.10',
       testPackage: true,
-      build: 'mas-19',
+      build: 'mas-25',
     })
     expect(componentState(item)).toBe('ready')
     expect(componentDetail(item)).toEqual({
       version: '37.2.10',
       localSdk: false,
       testPackage: true,
-      build: 'mas-19',
+      build: 'mas-25',
       outdated: false,
     })
   })
@@ -134,10 +134,10 @@ describe('test package', () => {
       version: '37.2.10',
       needsTestPackage: true,
       outdatedTestPackage: true,
-      build: 'mas-18',
+      build: 'mas-24',
     })
     expect(componentState(old)).toBe('needsPackage')
-    expect(componentDetail(old)).toMatchObject({ build: 'mas-18', outdated: true })
+    expect(componentDetail(old)).toMatchObject({ build: 'mas-24', outdated: true })
   })
 })
 
