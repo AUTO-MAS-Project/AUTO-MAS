@@ -128,9 +128,43 @@ def _parse_ts_file(ts_path: Path) -> dict[str, str]:
     return labels
 
 
-# 标签解析缓存: 安装目录 -> (实际解析过的文件及其 mtime_ns, 标签); 每次请求重解析 .mo/.ts 太慢
+def _translation_candidates(root: Path) -> tuple[list[Path], list[Path]]:
+    """按优先级返回 gettext 与 ok-script 框架 .ts 翻译文件候选路径。"""
+    app_root = root / "data" / "apps" / "ok-nte"
+    gettext_candidates: list[Path] = []
+    for i18n_dir in (
+        root / "i18n",
+        root / "_internal" / "i18n",
+        app_root / "repo" / "i18n",
+        app_root / "working" / "i18n",
+    ):
+        lc_messages = i18n_dir / "zh_CN" / "LC_MESSAGES"
+        gettext_candidates.append(lc_messages / "ok.mo")
+        gettext_candidates.append(lc_messages / "ok.po")
+
+    ts_candidates = [
+        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
+        app_root / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
+    ]
+    return gettext_candidates, ts_candidates
+
+
+def _file_state(path: Path) -> tuple[Path, int | None]:
+    """候选文件的缓存状态：存在记 mtime_ns，不存在记 None。"""
+    try:
+        return (path, path.stat().st_mtime_ns)
+    except OSError:
+        return (path, None)
+
+
+# 标签解析缓存: 安装目录 -> (全部候选文件的存在性/mtime 快照, 标签); 每次请求重解析 .mo/.ts 太慢
+# 快照必须覆盖所有候选而非仅命中的文件——ok-nte 自更新带来新翻译文件时才能触发重扫
 _OPTION_LABELS_CACHE: dict[
-    Path, tuple[tuple[tuple[Path, int], ...], dict[str, str]]
+    Path, tuple[tuple[tuple[Path, int | None], ...], dict[str, str]]
 ] = {}
 
 
@@ -138,61 +172,42 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
     """从 OK-NTE 安装目录自动加载选项的英文→中文翻译映射。
 
     搜索优先级：ok.mo > ok.po，同时补充 ok-script 框架的 zh_CN.ts。
-    解析结果按实际读取过的文件 mtime 缓存。
+    解析结果按全部候选文件的存在性与 mtime 快照缓存，候选出现、更新或删除都会重扫。
     """
     root = Path(root_path)
+    gettext_candidates, ts_candidates = _translation_candidates(root)
+    snapshot = tuple(
+        _file_state(path) for path in (*gettext_candidates, *ts_candidates)
+    )
+
     cached = _OPTION_LABELS_CACHE.get(root)
-    if cached is not None and all(
-        f.is_file() and f.stat().st_mtime_ns == mtime for f, mtime in cached[0]
-    ):
+    if cached is not None and cached[0] == snapshot:
         return cached[1]
 
     labels: dict[str, str] = {}
-    used_files: list[tuple[Path, int]] = []
+    found = False
 
-    i18n_candidates = [
-        root / "i18n",
-        root / "_internal" / "i18n",
-        root / "data" / "apps" / "ok-nte" / "repo" / "i18n",
-        root / "data" / "apps" / "ok-nte" / "working" / "i18n",
-    ]
+    for path in gettext_candidates:
+        if not path.is_file():
+            continue
+        loaded = _parse_mo_file(path) if path.suffix == ".mo" else _parse_po_file(path)
+        if loaded:
+            labels.update(loaded)
+            found = True
+            break
 
-    for i18n_dir in i18n_candidates:
-        mo_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.mo"
-        if mo_file.is_file():
-            loaded = _parse_mo_file(mo_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((mo_file, mo_file.stat().st_mtime_ns))
-                break
-
-        po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
-        if po_file.is_file():
-            loaded = _parse_po_file(po_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((po_file, po_file.stat().st_mtime_ns))
-                break
-
-    ts_candidates = [
-        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "data" / "apps" / "ok-nte" / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "data" / "apps" / "ok-nte" / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-        root / "data" / "apps" / "ok-nte" / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "data" / "apps" / "ok-nte" / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-    ]
-    for ts_file in ts_candidates:
-        if ts_file.is_file():
-            loaded = _parse_ts_file(ts_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((ts_file, ts_file.stat().st_mtime_ns))
-                break
+    for path in ts_candidates:
+        if not path.is_file():
+            continue
+        loaded = _parse_ts_file(path)
+        if loaded:
+            labels.update(loaded)
+            found = True
+            break
 
     # 没读到任何文件时不缓存, 否则安装完成后也不会再去找
-    if used_files:
-        _OPTION_LABELS_CACHE[root] = (tuple(used_files), labels)
+    if found:
+        _OPTION_LABELS_CACHE[root] = (snapshot, labels)
     return labels
 
 
