@@ -935,8 +935,10 @@ class Task(TaskExecuteBase):
             return False
 
         queue_uid = uuid.UUID(str(queue_id))
-        queue_config = Config.QueueConfig.get(queue_uid)
-        if queue_config is None or not queue_config.get("Info", if_key):
+        if queue_uid not in Config.QueueConfig:
+            return False
+        queue_config = Config.QueueConfig[queue_uid]
+        if not queue_config.get("Info", if_key):
             return False
 
         script_path = str(queue_config.get("Info", path_key) or "").strip()
