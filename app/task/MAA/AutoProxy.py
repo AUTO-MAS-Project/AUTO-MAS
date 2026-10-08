@@ -138,7 +138,9 @@ _MAA_SANITY_COMPLETION_MARKERS = (
 # 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
 _MAA_CULTIVATE_TASK_NAME = "养成计划"
 _MAA_DATA_UPDATE_TASK_NAME = "更新数据"
-# 识别数据档案文件名（MAA 原生格式透传，Depot 按用户恢复工作缓存）
+# 识别数据档案文件名（MAA 原生格式透传）。方案决策 31 说的是归属：档案按写入
+# 时的 cur_user_uid 归属，安装目录那份 DepotData 是 MAS 管理的工作缓存，启动前
+# 按当前用户档案恢复（_restore_user_depot_cache），其余查询链只读档案。
 _MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
 _MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
 # 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
@@ -622,7 +624,7 @@ def _build_depot_maintain_task(
 ) -> dict:
     """生成 MAA 库存保持任务配置。
 
-    覆盖 MAS 面板管理的 Stage/DropId/DropCount，并强制刷新库存；其余字段（含用户在 MAA 里设的
+    只覆盖 MAS 面板管理的 Stage/DropId/DropCount；其余字段（含用户在 MAA 里设的
     UseMedicine/UseStone 等）从来源任务整条透传——上游私有格式只做值经手，
     不按 MAS 口径改写其语义。
     """
@@ -672,7 +674,6 @@ def _build_depot_maintain_task(
             "Name": "库存保持",
             "IsEnable": True,
             "TaskType": "DepotMaintain",
-            "UpdateDepot": True,
             "PlanList": plans,
         }
     )
@@ -914,7 +915,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
-        # 每用户只在首次需要库存时准备；缓存结果，重试既不回退库存也不放行失败上下文。
+        # 每用户只在首次需要库存时准备。真实作用是跨重试幂等：_running 每轮重试都
+        # 重新合成队列并重入 set_maa（见 run 的重试循环），缓存结论才能保证重试既不
+        # 回退成别人的库存、也不重新放行已判失败的上下文。别当冗余缓存删掉。
         self._depot_context_ready: bool | None = None
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
@@ -1181,15 +1184,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
-        cur_user_uid 为准，查询与注入判定只读档案）。"""
+        cur_user_uid 为准，查询与注入判定只读档案；安装目录那份 DepotData 是
+        按其恢复的工作缓存，见 _restore_user_depot_cache）。"""
 
         return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
 
     def _restore_user_depot_cache(self) -> bool:
-        """首次进入库存运行上下文时恢复当前用户缓存；不可用时清理上一用户残留。
+        """首次进入库存运行上下文时恢复当前用户缓存；不可用时清掉上一用户残留。
 
-        Returns:
-            是否已恢复或清空工作缓存；失败时本轮不得执行库存任务。
+        重试轮复用首次结论（_depot_context_ready）；恢复与清理都失败时本轮
+        不得执行库存任务。
         """
 
         if self._depot_context_ready is not None:
@@ -1200,21 +1204,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             if source.exists():
                 write_file(target, read_dict_file(source))
-                self._depot_context_ready = True
-                return True
+            else:
+                target.unlink(missing_ok=True)
+            self._depot_context_ready = True
         except (OSError, ValueError):
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 恢复库存缓存失败, 清理旧库存缓存"
             )
-        try:
-            target.unlink(missing_ok=True)
-        except OSError:
-            logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 清理旧库存缓存失败"
-            )
-            return False
-        self._depot_context_ready = True
-        return True
+            try:
+                target.unlink(missing_ok=True)
+                self._depot_context_ready = True
+            except OSError:
+                logger.opt(exception=True).warning(
+                    f"用户 {self.cur_user_item.name} 清理旧库存缓存失败, 本轮跳过库存保持"
+                )
+        return bool(self._depot_context_ready)
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
@@ -1542,15 +1546,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
-        has_cultivate_targets = False
         if not self.direct_control and self.cur_user_config.get(
             "Info", "IfQuickConfig"
         ):
-            has_cultivate_targets = await self._apply_maa_quick_config(gui_new_set)
+            await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
         if self.mode == "Routine":
-            # 来源三态均以最终队列为准，不从关闭快速配置时的隐藏面板推导。
+            # 来源三态均以最终队列为准，不从关闭快速配置时的隐藏面板推导；
+            # 注入的养成任务同属 DepotMaintain，天然落在这个集合里，不必另算开关。
             depot_tasks = [
                 task
                 for task in (
@@ -1560,18 +1564,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and task.get("TaskType") == "DepotMaintain"
                 and task.get("IsEnable")
             ]
-            for task in depot_tasks:
-                task["UpdateDepot"] = True
-            if depot_tasks or has_cultivate_targets:
-                if not self._restore_user_depot_cache():
-                    for task in depot_tasks:
-                        task["IsEnable"] = False
-                    if "DepotMaintain" in self.task_dict:
-                        self.task_dict["DepotMaintain"] = False
-                    logger.warning(
-                        f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
-                        "请检查 MAA 数据目录的写入权限"
-                    )
+            if depot_tasks and not self._restore_user_depot_cache():
+                for task in depot_tasks:
+                    task["IsEnable"] = False
+                if "DepotMaintain" in self.task_dict:
+                    self.task_dict["DepotMaintain"] = False
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
+                    "请检查 MAA 数据目录的写入权限"
+                )
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -1596,8 +1597,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return
         shutil.copytree(source, self.maa_set_path, dirs_exist_ok=True)
 
-    async def _apply_maa_quick_config(self, gui_new_set: dict) -> bool:
-        """构造面板任务并返回养成准备是否参与，来源导入与启动设置留在外层。"""
+    async def _apply_maa_quick_config(self, gui_new_set: dict) -> None:
+        """仅开启快速配置时构造面板任务，来源导入与启动设置留在外层。"""
 
         task_set = {}
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
@@ -1629,7 +1630,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # （方案决策 20/28，不得只从队列剔除）
         cultivate_task = None
         update_task = None
-        has_targets = False
         if self.mode == "Routine":
             self._restore_depot_maintain()
             (
@@ -1702,7 +1702,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await self._warn_missing_task_source("理智作战", "、".join(affected))
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
-        # MAS 管理的三项（Stage/DropId/DropCount）并强制刷新库存，其余原生字段（含用户在 MAA 里
+        # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
         # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
         # 任务（Name 不同，MAA 按名称区分）。
@@ -1880,8 +1880,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 非直控模式队列严格等于 MAS 合成结果：来源队列里的未知任务(自动肉鸽、
         # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在直控
         # 模式存在(MAS 零写入, 安装目录原生配置即现场)。
-
-        return has_targets
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
