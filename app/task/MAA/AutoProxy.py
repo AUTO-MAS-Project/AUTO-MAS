@@ -69,12 +69,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
-from app.utils.io import (
-    mark_native_config_injected,
-    read_dict_file,
-    read_file,
-    write_file,
-)
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api
 from .base_preset import (
@@ -90,7 +85,11 @@ from .tools import (
     push_notification,
     update_maa,
 )
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import (
+    _task_type_of,
+    archive_mas_runtime_backup,
+    read_overlay_values,
+)
 from .tools.cultivate import (
     CultivatePlan,
     ProviderContext,
@@ -138,9 +137,10 @@ _MAA_SANITY_COMPLETION_MARKERS = (
 # 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
 _MAA_CULTIVATE_TASK_NAME = "养成计划"
 _MAA_DATA_UPDATE_TASK_NAME = "更新数据"
-# 识别数据档案文件名（MAA 原生格式透传）。方案决策 31 说的是归属：档案按写入
-# 时的 cur_user_uid 归属，安装目录那份 DepotData 是 MAS 管理的工作缓存，启动前
-# 按当前用户档案恢复（_restore_user_depot_cache），其余查询链只读档案。
+# 识别数据档案文件名（MAA 原生格式透传）。方案决策 31 管的是归属：档案按写入时的
+# cur_user_uid 归属，安装目录那份 DepotData 是 MAA 自己的工作缓存，不属于查询链——
+# 查询、缺口判定与养成注入只读档案。只有 overlay 层（开启覆写常规配置）才在启动前
+# 把档案覆写进安装目录，且覆写前键级存底、任务结束还原（见 depot_cache_snapshot_dir）。
 _MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
 _MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
 # 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
@@ -820,6 +820,62 @@ def _build_activity_priority_fight(
     return activity_fight
 
 
+def depot_cache_snapshot_dir(script_id: str) -> Path:
+    """库存缓存存底目录（键级存底，覆盖 overlay 对该文件的覆写）。
+
+    安装目录的 data/DepotData.json 不在原生配置整目录快照（config）范围内，
+    overlay 覆写它是不可还原写入；不在整目录快照范围内的目标必须自带键级快照。
+    目录存在即为「已存底」；目录里没有 DepotData.json 表示覆写前安装目录本来
+    就没有该文件。
+    """
+
+    return Path.cwd() / f"data/{script_id}/TempDepot"
+
+
+def snapshot_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
+    """覆写安装目录库存缓存前存底；已存底时保持第一次的现场。"""
+
+    if snapshot_dir.is_dir():
+        return True
+    live = maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
+    try:
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        if live.is_file():
+            shutil.copy2(live, snapshot_dir / _MAA_DEPOT_ARCHIVE_NAME)
+    except OSError:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        logger.opt(exception=True).warning(
+            "MAA 库存缓存存底失败, 本轮不覆写安装目录缓存"
+        )
+        return False
+    return True
+
+
+def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
+    """按存底还原安装目录库存缓存（结束还原与崩溃恢复共用）。
+
+    存底目录存在才算覆写过；还原失败保留存底，交给下一次 prepare 重试。
+    """
+
+    if not snapshot_dir.is_dir():
+        return True
+    live = maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
+    saved = snapshot_dir / _MAA_DEPOT_ARCHIVE_NAME
+    try:
+        if saved.is_file():
+            live.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(saved, live)
+        else:
+            live.unlink(missing_ok=True)
+    except OSError:
+        logger.opt(exception=True).warning(
+            f"MAA 库存缓存还原失败, 保留存底: {snapshot_dir}"
+        )
+        return False
+    shutil.rmtree(snapshot_dir, ignore_errors=True)
+    return True
+
+
 class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
@@ -915,10 +971,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
-        # 每用户只在首次需要库存时准备。真实作用是跨重试幂等：_running 每轮重试都
-        # 重新合成队列并重入 set_maa（见 run 的重试循环），缓存结论才能保证重试既不
-        # 回退成别人的库存、也不重新放行已判失败的上下文。别当冗余缓存删掉。
-        self._depot_context_ready: bool | None = None
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
 
@@ -1184,41 +1236,82 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
-        cur_user_uid 为准，查询与注入判定只读档案；安装目录那份 DepotData 是
-        按其恢复的工作缓存，见 _restore_user_depot_cache）。"""
+        cur_user_uid 为准；查询、缺口判定与养成注入只读档案。安装目录那份
+        DepotData 是 MAA 的工作缓存，只有 overlay 层才按账号覆写它，见
+        _apply_depot_context）。"""
 
         return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
 
-    def _restore_user_depot_cache(self) -> bool:
-        """首次进入库存运行上下文时恢复当前用户缓存；不可用时清掉上一用户残留。
+    def _apply_depot_context(self, gui_new_set: dict) -> None:
+        """overlay 层：把当前用户档案的库存缓存覆写进 MAA 安装目录。
 
-        重试轮复用首次结论（_depot_context_ready）；恢复与清理都失败时本轮
-        不得执行库存任务。
+        安装目录那份 DepotData 是 MAA 的工作缓存，物理上跨账号共用；开启覆写
+        常规配置时按本账号档案覆写，覆写前键级存底，任务结束在 _run_final_task
+        里还原。覆写失败宁可关掉本轮库存保持任务，也不让 MAA 读到别的账号
+        留下的库存。
         """
 
-        if self._depot_context_ready is not None:
-            return self._depot_context_ready
-        self._depot_context_ready = False
-        source = self._cultivate_archive_dir() / _MAA_DEPOT_ARCHIVE_NAME
+        queue = gui_new_set["Configurations"]["Default"].get("TaskQueue") or []
+        depot_tasks = [
+            task
+            for task in queue
+            if isinstance(task, dict)
+            and task.get("IsEnable")
+            and _task_type_of(task) == "DepotMaintain"
+        ]
+        if not depot_tasks:
+            return
+
+        snapshot_dir = depot_cache_snapshot_dir(self.script_info.script_id)
+        archive = self._cultivate_archive_dir() / _MAA_DEPOT_ARCHIVE_NAME
         target = self.maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
-        try:
-            if source.exists():
-                write_file(target, read_dict_file(source))
-            else:
-                target.unlink(missing_ok=True)
-            self._depot_context_ready = True
-        except (OSError, ValueError):
-            logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 恢复库存缓存失败, 清理旧库存缓存"
-            )
+        if snapshot_depot_cache(self.maa_root_path, snapshot_dir):
             try:
-                target.unlink(missing_ok=True)
-                self._depot_context_ready = True
+                if archive.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(archive, target)
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 的库存缓存已覆写进 MAA 安装目录"
+                    )
+                else:
+                    # 本账号还没有档案：清掉安装目录里的旧缓存让 MAA 重新识别，
+                    # 不拿上一个账号的库存充当本账号的
+                    target.unlink(missing_ok=True)
+                return
             except OSError:
                 logger.opt(exception=True).warning(
-                    f"用户 {self.cur_user_item.name} 清理旧库存缓存失败, 本轮跳过库存保持"
+                    f"用户 {self.cur_user_item.name} 覆写 MAA 库存缓存失败"
                 )
-        return bool(self._depot_context_ready)
+
+        for task in depot_tasks:
+            task["IsEnable"] = False
+        if "DepotMaintain" in self.task_dict:
+            self.task_dict["DepotMaintain"] = False
+        logger.warning(
+            f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
+            "请检查 MAA 数据目录的写入权限"
+        )
+
+    def _restore_depot_context(self) -> None:
+        """overlay 层：把安装目录库存缓存还原成覆写前的样子（结束还原）。"""
+
+        restore_depot_cache(
+            self.maa_root_path,
+            depot_cache_snapshot_dir(self.script_info.script_id),
+        )
+
+    async def _run_final_task(self) -> None:
+        """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。
+
+        挂在 _run_final_task（收尾主体，被放进屏蔽取消的独立任务里执行）
+        上，而不是 final_task：收尾被取消或异常中断时它仍会执行
+        （wait_for_finalizer_on_cancel）。
+        """
+
+        try:
+            await super()._run_final_task()
+        finally:
+            self._restore_depot_context()
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
@@ -1550,29 +1643,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
             "Info", "IfQuickConfig"
         ):
             await self._apply_maa_quick_config(gui_new_set)
-        self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
-        if self.mode == "Routine":
-            # 来源三态均以最终队列为准，不从关闭快速配置时的隐藏面板推导；
-            # 注入的养成任务同属 DepotMaintain，天然落在这个集合里，不必另算开关。
-            depot_tasks = [
-                task
-                for task in (
-                    gui_new_set["Configurations"]["Default"].get("TaskQueue") or []
-                )
-                if isinstance(task, dict)
-                and task.get("TaskType") == "DepotMaintain"
-                and task.get("IsEnable")
-            ]
-            if depot_tasks and not self._restore_user_depot_cache():
-                for task in depot_tasks:
-                    task["IsEnable"] = False
-                if "DepotMaintain" in self.task_dict:
-                    self.task_dict["DepotMaintain"] = False
-                logger.warning(
-                    f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
-                    "请检查 MAA 数据目录的写入权限"
-                )
+        # 库存缓存按账号隔离属 overlay 层行为，与上方面板覆写同一个开关：
+        # 关闭覆写常规配置时不读不写安装目录那份缓存，原样留给 MAA。
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            self._apply_depot_context(gui_new_set)
+
+        self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
