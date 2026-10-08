@@ -45,28 +45,42 @@ export function createAppearanceBackgroundApplier(options: BackgroundApplierOpti
     if (applied?.objectUrl) revokeObjectURL(applied.objectUrl)
   }
 
+  // 失败一律清成 none、不记账：宁可暂时没有背景，也不留着上一个包的图
+  const clear = (style: StyleTarget, message: string) => {
+    style.setProperty(BACKGROUND_IMAGE_PROPERTY, 'none')
+    release()
+    applied = null
+    options.logger?.error(message)
+  }
+
   return (style: StyleTarget, source: string | undefined): void => {
     if (applied && applied.source === source) return
 
     let objectUrl: string | undefined
     let value = 'none'
     if (source) {
-      const blob = dataUrlToBlob(source)
-      if (blob) {
-        objectUrl = createObjectURL(blob)
-        value = `url("${objectUrl}")`
-      } else {
-        value = `url("${source}")`
+      try {
+        const blob = dataUrlToBlob(source)
+        if (blob) {
+          objectUrl = createObjectURL(blob)
+          value = `url("${objectUrl}")`
+        } else {
+          value = `url("${source}")`
+        }
+      } catch (error) {
+        // 解码或分配内存失败（图太大时可能抛 RangeError）
+        clear(
+          style,
+          `外观背景转成 blob: URL 失败，已清除背景：${error instanceof Error ? error.message : String(error)}`
+        )
+        return
       }
     }
 
     style.setProperty(BACKGROUND_IMAGE_PROPERTY, value)
     if (style.getPropertyValue(BACKGROUND_IMAGE_PROPERTY) !== value) {
       if (objectUrl) revokeObjectURL(objectUrl)
-      style.setProperty(BACKGROUND_IMAGE_PROPERTY, 'none')
-      release()
-      applied = null
-      options.logger?.error(`外观背景写入 CSS 变量没有生效，已清除背景（${value.length} 个字符）`)
+      clear(style, `外观背景写入 CSS 变量没有生效，已清除背景（${value.length} 个字符）`)
       return
     }
 

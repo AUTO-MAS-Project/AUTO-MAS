@@ -23,7 +23,7 @@ function chromiumStyle() {
 
 function setup(style = chromiumStyle()) {
   let next = 0
-  const createObjectURL = vi.fn((_blob: Blob) => `blob:test/${++next}`)
+  const createObjectURL = vi.fn((_blob: Blob): string => `blob:test/${++next}`)
   const revokeObjectURL = vi.fn((_url: string) => undefined)
   const logger = { error: vi.fn((_message: string) => undefined) }
   const apply = createAppearanceBackgroundApplier({ createObjectURL, revokeObjectURL, logger })
@@ -47,12 +47,19 @@ describe('dataUrlToBlob', () => {
 
 describe('createAppearanceBackgroundApplier', () => {
   it('switches from a small to an oversized background instead of keeping the old one', () => {
-    const { style, apply, current } = setup()
+    const { style, apply, createObjectURL, current } = setup()
     apply(style, SMALL)
     expect(current()).toBe('url("blob:test/1")')
 
     apply(style, LARGE)
     expect(current()).toBe('url("blob:test/2")')
+
+    // 交给 createObjectURL 的是解码后的图片本身：MIME 对、字节数对
+    const [smallBlob, largeBlob] = createObjectURL.mock.calls.map(([blob]) => blob)
+    expect(smallBlob.type).toBe('image/webp')
+    expect(smallBlob.size).toBe(3)
+    expect(largeBlob.type).toBe('image/png')
+    expect(largeBlob.size).toBe(2_250_000)
   })
 
   it('does not rewrite the same background and releases the replaced object URL', () => {
@@ -60,6 +67,8 @@ describe('createAppearanceBackgroundApplier', () => {
     apply(style, SMALL)
     apply(style, SMALL)
     expect(style.setProperty).toHaveBeenCalledTimes(1)
+    // 重复应用不能释放还在用的那个 URL
+    expect(revokeObjectURL).not.toHaveBeenCalled()
 
     apply(style, LARGE)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:test/1')
@@ -88,6 +97,22 @@ describe('createAppearanceBackgroundApplier', () => {
     style.setProperty.mockClear()
     apply(style, SMALL)
     expect(style.setProperty).toHaveBeenCalledWith(BACKGROUND_IMAGE_PROPERTY, 'url("blob:test/2")')
+  })
+
+  it('clears the old background when converting the new one throws, then retries', () => {
+    const { style, apply, createObjectURL, revokeObjectURL, logger, current } = setup()
+    apply(style, SMALL)
+    createObjectURL.mockImplementationOnce(() => {
+      throw new RangeError('Array buffer allocation failed')
+    })
+
+    expect(() => apply(style, LARGE)).not.toThrow()
+    expect(current()).toBe('none')
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:test/1')
+    expect(logger.error).toHaveBeenCalledTimes(1)
+
+    apply(style, LARGE)
+    expect(current()).toBe('url("blob:test/2")')
   })
 
   it('writes none first when there is no background', () => {
