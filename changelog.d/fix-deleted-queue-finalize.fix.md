@@ -1,0 +1,2 @@
+project: scheduler
+修复运行中删除队列后任务结束时报错的问题
