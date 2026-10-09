@@ -27,7 +27,11 @@ input 选项；关闭放队尾。用户排的顺序不影响这三项。队列�
 
 另实现了引擎的两个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）与
 ``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
-下载安装，``game_update.py``）。除此之外 M9A 与通用 MaaFW 没有任何运行期差别。
+下载安装，``game_update.py``）；并给了引擎的五项可选声明：``supports_mod_avd``（魔改 AVD）、
+``abort_round_entries``（切号失败结束本轮）、``nonfatal_entries``（关闭游戏失败不算失败）、
+``skip_on_retry_entries``（完成过的重试不补跑）、``unselectable_entries``（五个小游戏不可选、
+运行时跳过），契约都在 MaaFW ``tools/embedded/flavor.py`` 的模块说明里。除这些之外 M9A 与
+通用 MaaFW 没有运行期差别。
 """
 
 from __future__ import annotations
@@ -153,6 +157,18 @@ class M9AFlavor:
             "SSReopen",
             "CharUpgrade",
         }
+    )
+    # 五个小游戏：M9A 资源里没有导航，要用户先手动停在对应页面才能跑，MAS 无人值守放进队列只会
+    # 出错。用户页不让选，运行时剔掉（优先于上面的声明，skip_on_retry_entries 里留着无妨）。
+    unselectable_entries = dict.fromkeys(
+        (
+            "8bit",
+            "CritterCrash",
+            "MusesBoxStartParty",
+            "PreStormProtocolStart",
+            "CompleteInduction",
+        ),
+        "需手动进入对应页面（M9A 没有自动导航）",
     )
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
