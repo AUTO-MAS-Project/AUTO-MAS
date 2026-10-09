@@ -115,9 +115,14 @@ def adb_runner_scope(runner: Callable[..., Awaitable[tuple[int, str]]] | None):
 _apk_update_locks: dict[str, asyncio.Lock] = {}
 
 
-def get_apk_update_lock(apk_path: Path) -> asyncio.Lock:
-    """按安装包路径取进程内更新锁，串行化并行任务对同一安装包的下载与安装。"""
-    return _apk_update_locks.setdefault(str(apk_path), asyncio.Lock())
+def get_apk_update_lock(package_name: str) -> asyncio.Lock:
+    """按游戏包名取进程内更新锁，串行化并行任务对同一游戏客户端的下载与安装。
+
+    按包名而不是按安装包路径加锁：路径含版本号，两个任务前后脚取到不同版本时
+    会拿到不同的锁，指向同一模拟器的两次安装就可能并发。按包名加锁同时保住
+    跨设备的下载互斥（同一个 ``.downloading`` 只有一个写者）与同设备的安装互斥。
+    """
+    return _apk_update_locks.setdefault(package_name, asyncio.Lock())
 
 
 async def _run_adb(
