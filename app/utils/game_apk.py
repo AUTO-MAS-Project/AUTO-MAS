@@ -125,6 +125,17 @@ def get_apk_update_lock(package_name: str) -> asyncio.Lock:
     return _apk_update_locks.setdefault(package_name, asyncio.Lock())
 
 
+def cleanup_apk_leftovers(apk_dir: Path, stem: str) -> None:
+    """清理某游戏残留的安装包与下载临时文件，句柄被占删不掉的留给下次。
+
+    在更新锁内调用：更新被取消或清理失败时，多 GB 的残留包不能无限期占盘，
+    趁下次持锁把本游戏所有版本的残留一并清掉。
+    """
+    with suppress(OSError):
+        for leftover in apk_dir.glob(f"{stem}*.apk*"):
+            leftover.unlink(missing_ok=True)
+
+
 async def _run_adb(
     adb_path: Path | None,
     adb_address: str,

@@ -46,6 +46,7 @@ from app.utils import get_logger
 from app.utils.constants import STARRAIL_UPDATE_LINK_SERVER
 from app.utils.game_apk import (
     GameUpdateResult,
+    cleanup_apk_leftovers,
     download_apk,
     get_apk_update_lock,
     get_installed_client_version,
@@ -226,6 +227,7 @@ async def ensure_game_updated(
 
     apk_path = apk_dir / f"hkrpg-{remote}.apk"
     async with get_apk_update_lock(package_name):
+        cleanup_apk_leftovers(apk_dir, "hkrpg-")
         # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
         installed_now = await get_installed_client_version(
             adb_path, adb_address, package_name
