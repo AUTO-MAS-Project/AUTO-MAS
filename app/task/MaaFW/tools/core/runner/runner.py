@@ -2834,7 +2834,14 @@ class MaaFWRunner:
                         f"{display_name}: {message}"
                     ) from exc
                 if task.nonFatalMessage:
-                    # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败
+                    # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
+                    # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
+                    if self._external_stop_active(tasker):
+                        self.send_log(
+                            f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+                            f"{display_name}；{task.nonFatalMessage}"
+                        )
+                        break
                     self.send_log(
                         f"任务失败: {display_name}: {message}；{task.nonFatalMessage}"
                     )
@@ -2880,6 +2887,14 @@ class MaaFWRunner:
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
             # `job.failed` 会把一件没做的事记成「任务完成」，整轮还可能被报成
             # 全部成功。这里必须独立判一次。
+            if task.nonFatalMessage and self._external_stop_active(tasker):
+                # 特调声明的收尾任务：截图、跳过本轮剩余任务，但不算本轮失败
+                self._capture_failure_screenshot(task.name)
+                self.send_log(
+                    f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+                    f"{display_name}；{task.nonFatalMessage}"
+                )
+                break
             if self._external_stop_active(tasker):
                 message = "任务被脚本侧强制停止（MaaTaskerPostStop）"
                 self._failed_task_errors.append((task.name, message))

@@ -196,6 +196,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   只在其后加一段宽限（`_RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
   和进度。`Run.TaskTimeLimit` / `TaskTimeLimitOverrides` 是单任务时限：只停卡住的那个任务，计划里
   第一个任务或特调声明的关键任务（`abortRoundMessage`）结束本轮，其余记一条失败后继续。
+  例外是特调声明的收尾任务（`nonfatal_entries` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
+  超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败，且优先于上面两条；契约见 `tools/embedded/flavor.py`。
 - **原地打转检测**（`Run.LoopGuard`，脚本级开关，**实验性、默认关**；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
