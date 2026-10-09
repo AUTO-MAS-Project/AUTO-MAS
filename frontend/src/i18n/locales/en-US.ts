@@ -1885,7 +1885,11 @@ export default {
     maafwImportingCopy: 'Importing project...',
     maafwFollowSource: 'Follow source directory (developer mode)',
     maafwFollowSourceHint:
-      'When on, files you change in the source directory take effect on the next run (changes are re-imported before running). No project updates, and no version sharing with other scripts of the same project. Turning it off returns to the version of the selected update channel',
+      'When on, files you change in the source directory take effect on the next run (changes are re-imported before running, or click "Sync now"). No project updates, and no version sharing with other scripts of the same project. Turning it off returns to the version of the selected update channel',
+    maafwFollowSourceSyncNow: 'Sync now',
+    maafwSourceFormTag: 'Source form',
+    maafwSourceFormHint:
+      'Imported in source form (interface in assets/, Agent in the source tree, no bundled Python or MaaFramework): always follows the source directory and changes take effect on the next run (or click "Sync now"). The Agent gets an isolated environment from requirements.txt; no project updates and no version sharing with other scripts of the same project',
     maafwFollowSourceStatus: 'Following {path} · last synced {time}',
     maafwFollowSourceNotSynced:
       'Following {path} · not synced yet, will import before the next run',

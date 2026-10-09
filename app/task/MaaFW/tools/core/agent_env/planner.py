@@ -9,6 +9,7 @@ from typing import Any
 from app.task.MaaFW.tools.core.interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     describe_cfa_agent_entry_fallback,
+    flattened_entry_path,
     is_python_entry_arg,
     is_relative_entry_path,
 )
@@ -244,12 +245,20 @@ def _apply_cfa_agent_entry_fallback(
             return child_args, None
         except MaaFWAgentEnvError:
             pass
-        fallback = (base_dir / CFA_FALLBACK_AGENT_ENTRY).resolve()
-        if not (_is_within_base_dir(fallback, base_dir) and fallback.is_file()):
-            return child_args, None
-        replaced = list(child_args)
-        replaced[position] = str(fallback)
-        return replaced, describe_cfa_agent_entry_fallback(arg, str(fallback))
+        # 源码形态平铺后入口在项目根上的同一路径（``./../agent/main.py`` → ``agent/main.py``），
+        # CFA 的固定兜底 ``agent/main.py`` 是它的特例。
+        for candidate in (
+            flattened_entry_path(raw_args[position]),
+            CFA_FALLBACK_AGENT_ENTRY,
+        ):
+            if candidate is None:
+                continue
+            fallback = (base_dir / candidate).resolve()
+            if _is_within_base_dir(fallback, base_dir) and fallback.is_file():
+                replaced = list(child_args)
+                replaced[position] = str(fallback)
+                return replaced, describe_cfa_agent_entry_fallback(arg, str(fallback))
+        return child_args, None
     return child_args, None
 
 

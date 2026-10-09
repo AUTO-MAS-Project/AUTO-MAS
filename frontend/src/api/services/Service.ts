@@ -1146,6 +1146,29 @@ export class Service {
         });
     }
     /**
+     * 立即从来源目录同步（跟随来源目录 / 源码形态）
+     * 脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     *
+     * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
+     * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sync',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 列出可作为克隆来源的其它 MFW 脚本
      * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
      *

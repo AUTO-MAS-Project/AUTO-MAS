@@ -33,7 +33,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
   ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它（开发者模式下运行前检查会扫一遍它决定要不要重导，跑的仍是视图）；
-  导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
+  导入完成后用户删掉来源也无妨。源码形态的视图同样以 interface 所在目录为根（`assets/` 平铺到视图根，
+  见「源码形态」），所以项目根永远等于视图根、永远有 `interface.json`。manager 三处、`runner_task`、
   `api_service/update.py`（`/maafw/update`）都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
   新增任何"读项目目录"的代码不要再各自读 `Info.Path`。唯一的例外是 `runner_task` 的运行前架构自检
@@ -75,14 +76,41 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     预览、准备环境等入口不扫来源（每次 1~2 s，mfasign 1187 个文件 1.5 s）。来源目录不在：照常用当前
     视图并告警；来源投影失败（interface 改坏了）照常报错、本次不运行。开发者导入切视图不按「同版本
     合并」留档（`_realize_view(archive_same_version=False)`）。
+  - **立即同步**（脚本页状态行旁的按钮，`/maafw/embedded/sync` → `api_service.embedded.sync_embedded`）：
+    按当前 `Info.Path` 强制重导进私有渠道，**不看签名**（补上修改时间没变而漏检的改动）；内容与视图相同
+    时不重建视图、只刷新同步时间。返回的 `message` 就是结果（N 个文件变化 / 内容未变化）。脚本运行中
+    （`is_locked`）、项目正在更新、视图预约被占用、来源目录不在都直接拒绝，不排队、不打断。
   - **不更新**：运行前 / 运行后自动更新跳过（`_run_project_update` 开头一行日志）、投影补齐不查，
-    `/maafw/update` 的检查与应用都拒绝（`UPDATE_FOLLOW_SOURCE`）。
+    `/maafw/update` 的检查与应用都拒绝（`UPDATE_FOLLOW_SOURCE`，源码形态是 `UPDATE_SOURCE_FORM`）。
+  - **源码形态**（见下面「源码形态」）一律处在这种模式：`follow_source_enabled` 对导入报告
+    `sourceForm` 为真的脚本恒真，开关在界面上锁在开着；源码形态的导入不管调用方传什么都进私有渠道。
   - **关掉**（标记还带 `followSource` 时，`_leave_follow_source`）：回到 `Update.Channel` 组的 latest
     （私有文件照常带，同样不按同版本合并留档）；视图已在 latest 上就只摘掉 `followSource`；组里还
     没有载荷就按来源正常导入一次；来源也不在就留在当前版本。
   - **回收**：私有渠道的 latest 只在脚本还在、开着开关、视图还在这个谱系上时算引用；其余由启动期
     `collect_payload_garbage(follow_source_views=…)` 从 `lineage.json` 摘掉（本进程起来之后登记的不碰），
     被新导入顶掉的、关掉开关或删脚本留下的开发者载荷随后按普通规则回收，视图挂着的照样留。
+- **源码形态**（`ProjectionRules.source_layout`，导入报告 `sourceForm`）：interface 在 `assets/`
+  这类子目录里、声明的路径越出它落在来源根上（M9A 式源码仓：`assets/interface.json` +
+  `"child_exec": "python", "child_args": ["-u", "./../agent/main.py"]`，根上 `agent/`、
+  `requirements.txt`，没有 `python/` 与 `maafw/`）。只在导入（`strict`）时认；以前整包拒绝。
+  - **视图 = 发行包的平铺布局**：`assets/` 里的提升到副本根，`assets/` 之外的（`agent/`、`runner/`、
+    `config/`、`requirements.txt`、≤ 64 MB 的小顶层条目）原样放到副本根（`output_path`），与项目自己
+    打包时得到的布局相同；平铺后与 `assets/` 里同名的根上条目丢掉并告警。项目根 = interface 所在目录
+    = 视图根，`{PROJECT_DIR}`、`{RESOURCE_DIR}/../..` 这类相对资源的写法在视图里与发行包一致。
+  - **interface 不改写**：越出项目根的 agent 入口由 `interface.agent_entry.flattened_entry_path`
+    兜底（去掉开头的 `../` → `agent/main.py`），投影（`cfa_agent_entry`）与 planner 共用；CFA 的固定
+    兜底 `agent/main.py` 是它的特例。不改写是因为 runner / planner / 预览 / 导入检查都按 base_dir
+    解析路径，平铺之后一处兜底就全对，而改写 interface 要在每份载荷里维持一份与来源不同的文件。
+  - **运行时**：裸 `python` → 项目专属隔离 venv（按视图根的 `requirements.txt`）；没自带原生库 →
+    runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
+    `environment.maafw_version`，worker 传实际加载的 binding 版本，见
+    `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
+    自己挑会落到协议不同的版本上。自带原生库（确切版本）的项目不受影响。
+  - **始终跟随来源目录**（见上一条），不做项目更新；界面上显示「源码形态」标签。导入报告里的
+    `bundledMaaFWVersion` 只认被投影带走的原生库（源码仓里躺着的 `dist/maafw` 不算）。
+  - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
+    MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
@@ -176,12 +204,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
   `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
   清单里没有导入目录）。
-- **只支持发行包形态**：源码仓里 agent 写成 `"child_exec": "uv"`（`uv run agent/main.py`）
-  这类开发者形态不支持、也不打算适配——发行包的打包流程会把它改写成
-  `./python/python.exe`，导入发行包即可。例外是被 CFA（MFW-PyQt6）源码热更新过的目录：它的
-  interface 留着源码写法的 agent（识宝的 `../agent/main.py`），入口按 CFA 自己的规则兜底——
-  解析不到就退回 `<interface 目录>/agent/main.py`（`interface/agent_entry.py`，投影与 planner
-  共用），长期保留，不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
+- **发行包形态与源码形态**：发行包（interface 在包根，自带 `python/` / `maafw/` 或不带）照常导入、
+  照常更新。M9A 式源码仓（`assets/interface.json`、agent 在 `assets/` 外）按上面「源码形态」平铺导入，
+  始终跟随来源目录、不做项目更新。agent 写成 `"child_exec": "uv"`（`uv run agent/main.py`）的开发者
+  写法仍不支持，导入时报错，让项目把它改成 `python`（或导入发行包）。被 CFA（MFW-PyQt6）源码热更新过
+  的目录是另一种平铺：它把 `assets/` 平铺到包根、`agent/` 放包根，interface 留着源码写法的 agent（识宝的
+  `../agent/main.py`）；入口按 `interface/agent_entry.py` 的兜底解析（投影与 planner 共用），长期保留，
+  不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希

@@ -304,13 +304,37 @@ FOLLOW_SOURCE_FIELD = "followSource"
 _FOLLOW_SOURCE_PREVIEW = 5
 
 
-def follow_source_enabled(script_config: Any) -> bool:
-    """脚本开着「跟随来源目录（开发者模式）」没有。"""
+def _embedded_report(script_config: Any) -> dict[str, Any]:
+    """``Embedded.Report``（JSON 文本或 dict）；读不出为空。"""
 
     try:
-        return bool(script_config.get("Embedded", "FollowSource"))
+        raw = script_config.get("Embedded", "Report")
+    except Exception:  # noqa: BLE001 - 配置桩 / 老配置
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def is_source_form(script_config: Any) -> bool:
+    """脚本当前的项目是按**源码形态**导入的（导入报告的 ``sourceForm``）：interface 在
+    ``assets/``、agent 在它外面的源码仓，没有发行包可更新（``projection.ProjectionRules.source_layout``）。"""
+
+    return bool(_embedded_report(script_config).get("sourceForm"))
+
+
+def follow_source_enabled(script_config: Any) -> bool:
+    """脚本是否跟随来源目录：开着开发者模式，或项目是源码形态（源码形态始终跟随、不能关）。"""
+
+    try:
+        if script_config.get("Embedded", "FollowSource"):
+            return True
     except Exception:  # noqa: BLE001 - 配置桩 / 老配置没有这一项就是没开
-        return False
+        pass
+    return is_source_form(script_config)
 
 
 def follow_source_channel(script_id: str) -> str:
@@ -1266,33 +1290,40 @@ def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
     不是日志（``.log`` 与轮转出的 ``*.log.*``）、不是截图 / 临时文件、单个不超过 1 MB 的。
     """
 
-    debug_dir = plan.rules.interface_base / "debug"
-    if not debug_dir.is_dir():
-        return {}
+    # 源码形态的 agent 以来源根为项目根（``agent/main.py`` 的上一级），它的 ``debug/`` 在那里；
+    # 平铺后两处都对应视图的 ``debug/``，interface 所在目录的优先。
+    anchors = [plan.rules.interface_base]
+    if plan.rules.source_layout:
+        anchors.append(plan.rules.source_root)
     seed: dict[str, Path] = {}
 
     def _error(exc: OSError) -> None:
         logger.debug(f"[MFW 内嵌] 读取来源 debug/ 失败，跳过: {exc.filename}: {exc}")
 
-    for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
-        dir_names[:] = [
-            name for name in dir_names if name.casefold() not in _SEED_SKIP_DIR_NAMES
-        ]
-        base = Path(current)
-        for name in file_names:
-            folded = name.casefold()
-            if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
-                continue
-            path = base / name
-            try:
-                if not path.is_file() or path.is_symlink():
+    for anchor in anchors:
+        debug_dir = anchor / "debug"
+        if not debug_dir.is_dir():
+            continue
+        for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
+            dir_names[:] = [
+                name
+                for name in dir_names
+                if name.casefold() not in _SEED_SKIP_DIR_NAMES
+            ]
+            base = Path(current)
+            for name in file_names:
+                folded = name.casefold()
+                if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
                     continue
-                if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                path = base / name
+                try:
+                    if not path.is_file() or path.is_symlink():
+                        continue
+                    if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
-            rel = path.relative_to(plan.rules.interface_base).as_posix()
-            seed[rel] = path
+                seed.setdefault(path.relative_to(anchor).as_posix(), path)
     return seed
 
 
@@ -1331,8 +1362,6 @@ def import_embedded_project(
     root = embedded_projects_root(base)
     if _is_relative_to(source, root):
         raise EmbeddedProjectError("来源目录不能是内嵌副本自己")
-    if follow_source:
-        channel = follow_source_channel(script_id)
 
     try:
         if plan is None:
@@ -1348,6 +1377,11 @@ def import_embedded_project(
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+    if plan.rules.source_layout:
+        # 源码形态没有发行包可更新，一律跟随来源目录：进本脚本的私有渠道，不推普通渠道的组。
+        follow_source = True
+    if follow_source:
+        channel = follow_source_channel(script_id)
     for resource_name in plan.rules.unavailable_resources:
         logger.warning(
             f"[MFW 内嵌] {source} 声明的资源 {resource_name} 在发行包里没有目录，"
@@ -1551,8 +1585,10 @@ def _changed_payload_files(
     return sorted(changed, key=str.casefold)
 
 
-def describe_follow_source_sync(result: Mapping[str, Any]) -> str:
-    """开发者模式重新导入后给运行日志的那一行。"""
+def describe_follow_source_sync(
+    result: Mapping[str, Any], *, manual: bool = False
+) -> str:
+    """开发者模式重新导入后给运行日志（``manual``：脚本页「立即同步」）的那一行。"""
 
     changed = result.get("changed")
     files = int(result.get("files") or 0)
@@ -1560,6 +1596,8 @@ def describe_follow_source_sync(result: Mapping[str, Any]) -> str:
         return f"开发者模式：已从来源目录导入（{files} 个文件）"
     if not changed and result.get("first"):
         return f"开发者模式：开始跟随来源目录，内容与当前视图相同（{files} 个文件）"
+    if not changed and manual:
+        return f"开发者模式：来源目录内容未变化（{files} 个文件），已更新同步时间"
     if not changed:
         return (
             "开发者模式：来源目录里的文件只改了修改时间、内容与当前视图相同，"
@@ -2002,6 +2040,8 @@ def embedded_status(
         "followSourceSyncedAt": str(
             (follow_source_record(marker) or {}).get("syncedAt") or ""
         ),
+        # 源码形态（导入报告的 sourceForm）：始终跟随来源目录、不做项目更新。
+        "sourceForm": bool(report.get("sourceForm")),
     }
 
 
@@ -2846,6 +2886,7 @@ __all__ = [
     "imported_source_path",
     "inherit_embedded_record",
     "is_embedded_copy_dir_name",
+    "is_source_form",
     "materialize_view",
     "payloads_root",
     "propagate_payload",

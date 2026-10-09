@@ -73,6 +73,8 @@ export interface MaaFWScriptBasicInfoSectionEmits {
   change: MaaFWScriptChangeEmit
   'select-path': []
   'preview-interface': []
+  /** 跟随来源目录时点了「立即同步」：页面按当前来源目录强制重导 */
+  'sync-source': []
 }
 
 /**

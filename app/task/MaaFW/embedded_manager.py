@@ -62,6 +62,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     ensure_embedded_copy,
     env_confirm_pending,
     follow_source_enabled,
+    is_source_form,
     read_view_marker,
     resolve_maafw_project_root,
     shell_hint_from_report,
@@ -1110,10 +1111,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
         if follow_source_enabled(self.script_config):
             # 开发者模式：以来源目录为准，运行前检查已按来源同步过；更新会把开发者的
-            # 改动换成发行版，私有渠道也不该有更新登记进来。
+            # 改动换成发行版，私有渠道也不该有更新登记进来。源码形态压根没有发行包可更新。
+            mode = (
+                "源码形态（始终跟随来源目录）"
+                if is_source_form(self.script_config)
+                else "开发者模式（跟随来源目录）"
+            )
             self._append_update_log(
-                f"开发者模式（跟随来源目录）：跳过{phase_zh}自动更新，以来源目录为准；"
-                "要更新请直接更新来源目录"
+                f"{mode}：跳过{phase_zh}自动更新，以来源目录为准；要更新请直接更新来源目录"
             )
             return
         project_path = resolve_maafw_project_root(

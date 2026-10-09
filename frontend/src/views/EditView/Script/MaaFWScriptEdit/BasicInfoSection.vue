@@ -70,23 +70,38 @@
     </a-row>
 
     <!-- 跟随来源目录（开发者模式）：项目导入之后才有意义，与目录字段放在一起。开着时状态行
-         写清跟随哪个目录、上次什么时候从它同步过（同步发生在运行前，页面不触发） -->
+         写清跟随哪个目录、上次什么时候从它同步过（运行前自动同步，「立即同步」手动强制重导）。
+         源码形态的项目始终跟随来源目录，开关锁在开着 -->
     <div v-if="directoryLocked" class="follow-source">
       <div class="follow-source-head">
         <a-switch
           :checked="followSource"
           size="small"
-          :disabled="interfaceLoading || updateApplying || embeddedBusy"
+          :disabled="sourceForm || interfaceLoading || updateApplying || embeddedBusy"
           @change="handleFollowSourceChange"
         />
         <span class="follow-source-title">{{ t('edit.maafwFollowSource') }}</span>
+        <a-tag v-if="sourceForm" color="processing" class="follow-source-tag">
+          {{ t('edit.maafwSourceFormTag') }}
+        </a-tag>
       </div>
-      <div class="follow-source-hint">{{ t('edit.maafwFollowSourceHint') }}</div>
+      <div class="follow-source-hint">
+        {{ sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint') }}
+      </div>
       <div v-if="followSource" class="follow-source-status">
-        {{ followSourceStatus }}
+        <span>{{ followSourceStatus }}</span>
         <span v-if="!embeddedStatus.sourceExists" class="follow-source-missing">
           {{ t('edit.maafwFollowSourceMissing') }}
         </span>
+        <a-button
+          size="small"
+          class="follow-source-sync"
+          :loading="embeddedBusy"
+          :disabled="interfaceLoading || updateApplying || embeddedBusy"
+          @click="emit('sync-source')"
+        >
+          {{ t('edit.maafwFollowSourceSyncNow') }}
+        </a-button>
       </div>
     </div>
 
@@ -229,8 +244,12 @@ const directoryHint = computed(() =>
     : props.sourceHint || t('edit.pickMfwProjectDirectory')
 )
 
-// 跟随来源目录（开发者模式）：开关只落盘配置，同步在下一次运行前由后端做
-const followSource = computed(() => Boolean(props.maafwConfig.Embedded?.FollowSource))
+// 跟随来源目录（开发者模式）：开关只落盘配置，同步在下一次运行前由后端做（或点「立即同步」）。
+// 源码形态的项目始终跟随（后端按导入报告认），开关显示为开着且不可改。
+const sourceForm = computed(() => Boolean(props.embeddedStatus.sourceForm))
+const followSource = computed(
+  () => sourceForm.value || Boolean(props.maafwConfig.Embedded?.FollowSource)
+)
 const followSourceStatus = computed(() => {
   const path = props.embeddedStatus.sourcePath || props.maafwConfig.Info.Path
   const syncedAt = props.embeddedStatus.followSourceSyncedAt
@@ -351,14 +370,25 @@ watch(
 }
 
 .follow-source-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ant-color-primary);
   overflow-wrap: anywhere;
 }
 
+.follow-source-tag {
+  margin-inline-end: 0;
+}
+
+.follow-source-sync {
+  font-size: 12px;
+}
+
 .follow-source-missing {
-  margin-left: 8px;
   color: var(--ant-color-warning);
 }
 

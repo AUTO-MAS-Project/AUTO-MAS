@@ -1793,10 +1793,14 @@ export default {
     maafwImportingCopy: '正在导入项目...',
     maafwFollowSource: '跟随来源目录（开发者模式）',
     maafwFollowSourceHint:
-      '开着时在来源目录里改的文件下次运行生效（运行前发现有变化就重新导入）；不做项目更新，也不与同项目的其它脚本共用版本。关掉后回到所选更新渠道的版本',
+      '开着时在来源目录里改的文件下次运行生效（运行前发现有变化就重新导入，也可以点「立即同步」）；不做项目更新，也不与同项目的其它脚本共用版本。关掉后回到所选更新渠道的版本',
     maafwFollowSourceStatus: '跟随 {path} · 上次同步 {time}',
     maafwFollowSourceNotSynced: '跟随 {path} · 尚未同步，下次运行前从来源目录导入',
     maafwFollowSourceMissing: '来源目录不在，运行时照常用当前副本',
+    maafwFollowSourceSyncNow: '立即同步',
+    maafwSourceFormTag: '源码形态',
+    maafwSourceFormHint:
+      '按源码形态导入（interface 在 assets/、Agent 在源码目录，没有自带 Python 与 MaaFramework）：始终跟随来源目录，改的文件下次运行生效（也可以点「立即同步」）；Agent 按 requirements.txt 建隔离环境，不做项目更新，也不与同项目的其它脚本共用版本',
     maafwAccountRecordTooltip:
       '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
     m9aFlavorScriptTitle: '编辑 M9A 托管',

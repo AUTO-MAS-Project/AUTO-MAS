@@ -368,6 +368,8 @@ class MaaFWRunnerService:
                 bootstrap_python=bootstrap_python,
                 install_dependencies=install_agent_dependencies,
                 progress=report_agent_progress,
+                # 项目没自带原生库时，agent 的 maafw 钉成 runner 刚解析出的确切版本。
+                runner_maafw_version=environment.maafw_version,
             )
             output_fingerprint = project_environment_fingerprint(project_path)
             if (

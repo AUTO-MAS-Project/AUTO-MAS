@@ -36,5 +36,9 @@ export type MaaFWEmbeddedStatusData = {
      * 跟随来源目录（开发者模式）下视图上次从来源目录同步的时间；没同步过为空
      */
     followSourceSyncedAt?: string;
+    /**
+     * 项目按源码形态导入（interface 在 assets/、Agent 在源码目录）：始终跟随来源目录，不做项目更新
+     */
+    sourceForm?: boolean;
 };
 

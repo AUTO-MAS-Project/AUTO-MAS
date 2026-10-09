@@ -53,6 +53,7 @@ from app.task.MaaFW.tools.core.project_update.updater import (
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     follow_source_enabled,
+    is_source_form,
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -80,6 +81,10 @@ UPDATE_PROJECT_OCCUPIED = "项目正被占用（在准备运行环境或切换�
 UPDATE_FOLLOW_SOURCE = (
     "已开启「跟随来源目录（开发者模式）」，以来源目录为准、不做项目更新："
     "要换版本请直接更新来源目录（下次运行前自动重新导入），或先关掉开发者模式"
+)
+UPDATE_SOURCE_FORM = (
+    "这是按源码形态导入的项目（interface 在 assets/、Agent 在源码目录），始终跟随来源目录、"
+    "不做项目更新：直接改来源目录即可（下次运行前或点「立即同步」重新导入）；要用发行版请导入发行包"
 )
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
@@ -265,8 +270,14 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if follow_source_enabled(script_config):
-        # 开发者模式以来源目录为准：检查与应用都不做，别把开发者的改动换成发行版。
-        return MaaFWApiReply.error(400, UPDATE_FOLLOW_SOURCE)
+        # 开发者模式以来源目录为准：检查与应用都不做，别把开发者的改动换成发行版；源码形态
+        # 本来就没有发行包可更新。
+        return MaaFWApiReply.error(
+            400,
+            UPDATE_SOURCE_FORM
+            if is_source_form(script_config)
+            else UPDATE_FOLLOW_SOURCE,
+        )
 
     root_path, error = await maafw_effective_root(script_id, "")
     if root_path is None:
