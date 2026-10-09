@@ -282,7 +282,7 @@ export interface MaaFWScriptConfig {
     IfAutoUpdate?: boolean
   }
   /**
-   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上，没有开关。
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
    * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
    */
   Embedded: {
@@ -292,6 +292,11 @@ export interface MaaFWScriptConfig {
     ImportedAt: string
     /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
     Report: string
+    /**
+     * 跟随来源目录（开发者模式）：开着时每次运行前来源目录有变化就重新导入，不做项目更新，
+     * 不与同项目其它脚本共用版本。唯一的开关。
+     */
+    FollowSource: boolean
   }
   Run: {
     ProxyTimesLimit: number

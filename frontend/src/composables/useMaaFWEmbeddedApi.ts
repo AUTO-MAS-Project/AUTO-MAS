@@ -16,7 +16,13 @@ import type {
 export type MaaFWEmbeddedStatus = Required<
   Pick<
     MaaFWEmbeddedStatusData,
-    'copyPath' | 'copyHealthy' | 'sourcePath' | 'sourceExists' | 'sourceVersion' | 'importedAt'
+    | 'copyPath'
+    | 'copyHealthy'
+    | 'sourcePath'
+    | 'sourceExists'
+    | 'sourceVersion'
+    | 'importedAt'
+    | 'followSourceSyncedAt'
   >
 > & { report: MaaFWEmbeddedStatusData['report'] }
 
@@ -27,6 +33,7 @@ export const EMPTY_EMBEDDED_STATUS: MaaFWEmbeddedStatus = {
   sourceExists: false,
   sourceVersion: '',
   importedAt: '',
+  followSourceSyncedAt: '',
   report: null,
 }
 

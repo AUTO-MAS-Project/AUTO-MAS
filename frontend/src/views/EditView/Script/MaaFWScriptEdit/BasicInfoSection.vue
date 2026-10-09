@@ -69,6 +69,27 @@
       </a-col>
     </a-row>
 
+    <!-- 跟随来源目录（开发者模式）：项目导入之后才有意义，与目录字段放在一起。开着时状态行
+         写清跟随哪个目录、上次什么时候从它同步过（同步发生在运行前，页面不触发） -->
+    <div v-if="directoryLocked" class="follow-source">
+      <div class="follow-source-head">
+        <a-switch
+          :checked="followSource"
+          size="small"
+          :disabled="interfaceLoading || updateApplying || embeddedBusy"
+          @change="handleFollowSourceChange"
+        />
+        <span class="follow-source-title">{{ t('edit.maafwFollowSource') }}</span>
+      </div>
+      <div class="follow-source-hint">{{ t('edit.maafwFollowSourceHint') }}</div>
+      <div v-if="followSource" class="follow-source-status">
+        {{ followSourceStatus }}
+        <span v-if="!embeddedStatus.sourceExists" class="follow-source-missing">
+          {{ t('edit.maafwFollowSourceMissing') }}
+        </span>
+      </div>
+    </div>
+
     <!-- 左边 interface 概览表（表头是项目名与简介），右边运行环境准备面板：
          结论直接作为日志的最后一行用强调色写出来，不另起状态行 -->
     <div v-if="previewData" class="interface-body">
@@ -208,6 +229,23 @@ const directoryHint = computed(() =>
     : props.sourceHint || t('edit.pickMfwProjectDirectory')
 )
 
+// 跟随来源目录（开发者模式）：开关只落盘配置，同步在下一次运行前由后端做
+const followSource = computed(() => Boolean(props.maafwConfig.Embedded?.FollowSource))
+const followSourceStatus = computed(() => {
+  const path = props.embeddedStatus.sourcePath || props.maafwConfig.Info.Path
+  const syncedAt = props.embeddedStatus.followSourceSyncedAt
+  if (!syncedAt) return t('edit.maafwFollowSourceNotSynced', { path })
+  return t('edit.maafwFollowSourceStatus', {
+    path,
+    time: syncedAt.slice(0, 16).replace('T', ' '),
+  })
+})
+const handleFollowSourceChange = (checked: boolean | string | number) => {
+  const value = Boolean(checked)
+  props.maafwConfig.Embedded.FollowSource = value
+  emit('change', 'Embedded', 'FollowSource', value)
+}
+
 const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
   if (props.envPreparing) return 'running'
   if (props.envFailed) return 'failed'
@@ -286,6 +324,42 @@ watch(
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
+}
+
+.follow-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -8px 0 16px;
+}
+
+.follow-source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.follow-source-title {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.follow-source-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
+}
+
+.follow-source-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-primary);
+  overflow-wrap: anywhere;
+}
+
+.follow-source-missing {
+  margin-left: 8px;
+  color: var(--ant-color-warning);
 }
 
 .section-header {

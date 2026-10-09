@@ -57,9 +57,11 @@ from app.task.MaaFW.tools.backup_archive import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    effective_channel,
     embedded_project_dir,
     ensure_embedded_copy,
     env_confirm_pending,
+    follow_source_enabled,
     read_view_marker,
     resolve_maafw_project_root,
     shell_hint_from_report,
@@ -452,6 +454,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                         for uid, config in Config.ScriptConfig.items()
                         if isinstance(config, MaaFWConfig)
                     ],
+                    # 开发者模式：比一次来源目录，变了就重新导入（日志一行说清）；
+                    # 刚关掉时回到 Update.Channel 的组。
+                    follow_source_check=True,
                 )
                 # 组同步（§3.1 第 9 步）：组里已是别的版本（兄弟更新了、改了渠道）就在
                 # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
@@ -459,20 +464,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 await self._sync_view_to_group("运行前", reservation_held=True)
                 # 旧投影规则建的载荷按当前规则补齐（同组只查一次，从不抛）：补齐后本视图
                 # 与同组空闲脚本切过去，下面的 envConfirmedFor 据此补一次运行环境确认。
-                # 同项目正在更新时不等锁，这次不查。
-                proxy_url, proxy = self._resolve_update_proxy()
-                await heal_projection(
-                    script_id,
-                    channel=resolve_update_credentials(script_config).channel,
-                    members=self._group_members,
-                    reservation_held=True,
-                    send_log=self._threadsafe_update_log(),
-                    proxy=proxy,
-                    proxy_url=proxy_url,
-                    shell_hint=shell_hint_from_report(script_config),
-                    script_name=str(self.script_info.name or ""),
-                    lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
-                )
+                # 同项目正在更新时不等锁，这次不查。开发者模式下视图按当前规则从来源导入，
+                # 也不做项目更新，不查。
+                if not follow_source_enabled(script_config):
+                    proxy_url, proxy = self._resolve_update_proxy()
+                    await heal_projection(
+                        script_id,
+                        channel=resolve_update_credentials(script_config).channel,
+                        members=self._group_members,
+                        reservation_held=True,
+                        send_log=self._threadsafe_update_log(),
+                        proxy=proxy,
+                        proxy_url=proxy_url,
+                        shell_hint=shell_hint_from_report(script_config),
+                        script_name=str(self.script_info.name or ""),
+                        lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
+                    )
                 self._env_confirm_needed = await asyncio.to_thread(
                     lambda: env_confirm_pending(
                         read_view_marker(embedded_project_dir(script_id))
@@ -906,9 +913,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             clear_switched_by,
             read_view_marker,
         )
-        from app.task.MaaFW.tools.embedded.update_credentials import (
-            DEFAULT_UPDATE_CHANNEL,
-        )
         from app.task.MaaFW.tools.embedded.view_update import (
             latest_entry,
             sync_view_to_group,
@@ -937,9 +941,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                         f"本视图已于 {at} 由脚本「{name}」的更新切到 {version}"
                     )
                 await asyncio.to_thread(clear_switched_by, view)
-            channel = str(
-                self.script_config.get("Update", "Channel") or DEFAULT_UPDATE_CHANNEL
-            )
+            # 开发者模式下组是本脚本的私有渠道（latest 就是上次从来源导入的那份）。
+            channel = effective_channel(script_id, self.script_config)
             entry_now = (
                 await asyncio.to_thread(
                     latest_entry, str((marker or {}).get("lineage") or ""), channel
@@ -1036,12 +1039,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
     def _group_members(self) -> list[Any]:
         """同组候选：其它 MFW 脚本（在事件循环线程上抄出来，守护线程里遍历脚本表会撞
-        「dict changed size」）。运行中的（脚本配置锁着）标 ``busy``，不被中途切换。"""
+        「dict changed size」）。运行中的（脚本配置锁着）标 ``busy``，不被中途切换。
+        渠道按各自所在的组（开发者模式的脚本是它的私有渠道，谁的更新都切不到它）。"""
 
         from app.task.MaaFW.tools.embedded.embedded_project import GroupMember
-        from app.task.MaaFW.tools.embedded.update_credentials import (
-            DEFAULT_UPDATE_CHANNEL,
-        )
 
         members: list[Any] = []
         own = str(self.script_info.script_id)
@@ -1051,9 +1052,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             members.append(
                 GroupMember(
                     script_id=str(uid),
-                    channel=str(
-                        config.get("Update", "Channel") or DEFAULT_UPDATE_CHANNEL
-                    ),
+                    channel=effective_channel(str(uid), config),
                     busy=bool(getattr(config, "is_locked", False)),
                     name=str(config.get("Info", "Name") or ""),
                     proxy_url=resolve_update_proxy_url(config) or None,
@@ -1109,6 +1108,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
+        if follow_source_enabled(self.script_config):
+            # 开发者模式：以来源目录为准，运行前检查已按来源同步过；更新会把开发者的
+            # 改动换成发行版，私有渠道也不该有更新登记进来。
+            self._append_update_log(
+                f"开发者模式（跟随来源目录）：跳过{phase_zh}自动更新，以来源目录为准；"
+                "要更新请直接更新来源目录"
+            )
+            return
         project_path = resolve_maafw_project_root(
             str(self.script_info.script_id), self.script_config
         ).resolve()

@@ -58,8 +58,10 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     clone_embedded_copy,
     copy_is_healthy,
+    effective_channel,
     embedded_project_dir,
     embedded_status,
+    follow_source_enabled,
     import_embedded_project,
     inherit_embedded_record,
     read_interface_version,
@@ -94,6 +96,7 @@ async def embedded_status_data(
         report=MaaFWEmbeddedProjection(**_pick_projection_fields(report))
         if report
         else None,
+        followSourceSyncedAt=str(status.get("followSourceSyncedAt") or ""),
     )
 
 
@@ -116,10 +119,12 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
     """
 
     try:
-        channel = str(
-            maafw_script_config(script_id).get("Update", "Channel") or "stable"
-        )
+        script_config = maafw_script_config(script_id)
+        # 开发者模式：导入到本脚本的私有渠道（不比版本、这份就是它的 latest）
+        follow = follow_source_enabled(script_config)
+        channel = effective_channel(script_id, script_config)
     except (KeyError, ValueError, TypeError):
+        follow = False
         channel = "stable"
     try:
         script_name = str(
@@ -153,6 +158,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
             source_path,
             progress=_embedded_import_progress(publish),
             channel=channel,
+            follow_source=follow,
         )
         publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:

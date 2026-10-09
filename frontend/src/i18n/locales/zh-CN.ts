@@ -1791,6 +1791,12 @@ export default {
     maafwDirectoryLockedHint:
       '项目已导入到 AUTO-MAS 自己的目录，运行与更新都在这里，来源目录可以删掉；要换项目请新建托管',
     maafwImportingCopy: '正在导入项目...',
+    maafwFollowSource: '跟随来源目录（开发者模式）',
+    maafwFollowSourceHint:
+      '开着时在来源目录里改的文件下次运行生效（运行前发现有变化就重新导入）；不做项目更新，也不与同项目的其它脚本共用版本。关掉后回到所选更新渠道的版本',
+    maafwFollowSourceStatus: '跟随 {path} · 上次同步 {time}',
+    maafwFollowSourceNotSynced: '跟随 {path} · 尚未同步，下次运行前从来源目录导入',
+    maafwFollowSourceMissing: '来源目录不在，运行时照常用当前副本',
     maafwAccountRecordTooltip:
       '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
     m9aFlavorScriptTitle: '编辑 M9A 托管',

@@ -32,7 +32,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
   ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
-  导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
+  导入的来源，运行时不读它（开发者模式下运行前检查会扫一遍它决定要不要重导，跑的仍是视图）；
+  导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
   `api_service/update.py`（`/maafw/update`）都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
   新增任何"读项目目录"的代码不要再各自读 `Info.Path`。唯一的例外是 `runner_task` 的运行前架构自检
@@ -46,14 +47,42 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
   全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 / venv /
   备份桶都不用改键），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
-  视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
-  来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
+  视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`、`envConfirmedFor`、
+  开发者模式的 `followSource`）是物化事实的唯一来源，不进指纹、不进任何清单，只随目录原子换入、
+  不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
+  改写 / 摘掉 `followSource`（见下面「跟随来源目录」）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
   载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
   自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
   新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
-  能加载的」，见 `payloads._replaces_older_projection_latest`）。
-  配置项零新增：谱系 / 载荷 / 版本都不进 `ScriptConfig.json`。
+  能加载的」，见 `payloads._replaces_older_projection_latest`）。开发者模式的脚本例外：它的组是
+  谱系 + 私有渠道 `dev:<视图名>`，见下一条。
+  谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
+  `Embedded.FollowSource`。
+- **跟随来源目录（开发者模式，`Embedded.FollowSource`，默认关）**：给在本地发行包里改东西修 bug
+  的开发者用（视图 + 组 latest 让「改来源不生效、改视图被换版本冲掉」）。仍然在视图上跑，只是：
+  - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
+    （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
+    碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
+    每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
+    `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest。
+  - **察觉变化**：运行前检查（`ensure_embedded_copy(follow_source_check=True)`，只有 manager 的
+    `_check` 传）与手动重新导入。按投影白名单给来源算签名（投影会带走的文件的源相对路径 + 大小 +
+    mtime_ns + 投影规则版本，只 stat，`follow_source_signature`），与视图标记 `followSource.signature`
+    比，路径或签名不同就重新导入；签名在复制之前算。内容没变（只改了修改时间）登记出的就是视图正挂
+    的那份，不重建视图、只原地改 `followSource`。日志一行（`describe_follow_source_sync`）：「来源目录
+    有 N 个文件变化（前 5 个路径），已重新导入」/「来源目录未变化」，N 按新旧载荷清单的 sha256 比。
+    预览、准备环境等入口不扫来源（每次 1~2 s，mfasign 1187 个文件 1.5 s）。来源目录不在：照常用当前
+    视图并告警；来源投影失败（interface 改坏了）照常报错、本次不运行。开发者导入切视图不按「同版本
+    合并」留档（`_realize_view(archive_same_version=False)`）。
+  - **不更新**：运行前 / 运行后自动更新跳过（`_run_project_update` 开头一行日志）、投影补齐不查，
+    `/maafw/update` 的检查与应用都拒绝（`UPDATE_FOLLOW_SOURCE`）。
+  - **关掉**（标记还带 `followSource` 时，`_leave_follow_source`）：回到 `Update.Channel` 组的 latest
+    （私有文件照常带，同样不按同版本合并留档）；视图已在 latest 上就只摘掉 `followSource`；组里还
+    没有载荷就按来源正常导入一次；来源也不在就留在当前版本。
+  - **回收**：私有渠道的 latest 只在脚本还在、开着开关、视图还在这个谱系上时算引用；其余由启动期
+    `collect_payload_garbage(follow_source_views=…)` 从 `lineage.json` 摘掉（本进程起来之后登记的不碰），
+    被新导入顶掉的、关掉开关或删脚本留下的开发者载荷随后按普通规则回收，视图挂着的照样留。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
@@ -77,8 +106,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
   latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）就推进
   整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时版本」那行日志仍是所选目录的
-  版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
-  来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
+  版本）。开发者模式下登记进私有渠道、就是它的 latest。没有 enable / disable 这种开关路由——唯一的
+  开关是 `Embedded.FollowSource`（上面「跟随来源目录」，仍在视图上跑），`Embedded.*` 里其余只有
+  报告、来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
 - **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
   链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
   留档到 `data/maafw_project_state/<视图哈希>/local-modified/<from>→<to>-<时间>/`、标记先写进
@@ -120,7 +150,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
   隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`clean_maafw_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
-  谱系还有视图时再加它的 latest；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
+  谱系还有视图时再加它的 latest（私有渠道的 latest 只在开着开发者模式时算，见「跟随来源目录」）；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
   本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
   状态再判一次，否则判定之后刚登记的载荷会被一起删掉；整谱系收走时放锁后还会删锁文件和空目录，
   所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
@@ -296,6 +326,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 更新
 
+- 开着开发者模式（`Embedded.FollowSource`）的脚本**不更新**：自动更新跳过、手动检查与应用都拒绝，
+  以来源目录为准（见「跟随来源目录」）。下面说的都是普通模式。
 - 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。

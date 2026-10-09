@@ -1883,6 +1883,13 @@ export default {
     maafwDirectoryLockedHint:
       'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new managed script to use another project',
     maafwImportingCopy: 'Importing project...',
+    maafwFollowSource: 'Follow source directory (developer mode)',
+    maafwFollowSourceHint:
+      'When on, files you change in the source directory take effect on the next run (changes are re-imported before running). No project updates, and no version sharing with other scripts of the same project. Turning it off returns to the version of the selected update channel',
+    maafwFollowSourceStatus: 'Following {path} · last synced {time}',
+    maafwFollowSourceNotSynced:
+      'Following {path} · not synced yet, will import before the next run',
+    maafwFollowSourceMissing: 'Source directory is missing; runs keep using the current copy',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     m9aFlavorScriptTitle: 'Edit M9A managed script',

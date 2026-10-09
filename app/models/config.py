@@ -2989,6 +2989,13 @@ class MaaFWConfig(ConfigBase):
         self.Embedded_ImportedAt = ConfigItem("Embedded", "ImportedAt", "")
         ## 投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串
         self.Embedded_Report = ConfigItem("Embedded", "Report", "{ }", JSONValidator())
+        ## 跟随来源目录（开发者模式），默认关。开着时每次运行前比一下来源目录（投影会带走的
+        ## 文件的路径 + 大小 + 修改时间），变了就重新导入到这个脚本自己的私有渠道（不比版本、
+        ## 不与同项目其它脚本共用版本），不做项目更新；关掉后回到 Update.Channel 的组。
+        ## 见 tools/embedded/embedded_project.py「跟随来源目录」一节。
+        self.Embedded_FollowSource = ConfigItem(
+            "Embedded", "FollowSource", False, BoolValidator()
+        )
 
         ## Run -------------------------------------------------------------
         ## 运行引擎，决定「谁来跑」：

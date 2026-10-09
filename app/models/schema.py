@@ -4057,6 +4057,10 @@ class MaaFWConfig_Embedded(BaseModel):
         default=None,
         description="投影报告 JSON 文本：省下多少、外壳家族、排除条数与原因",
     )
+    FollowSource: Optional[bool] = Field(
+        default=None,
+        description="跟随来源目录（开发者模式）：运行前来源目录有变化就重新导入，不做项目更新，不与同项目其它脚本共用版本",
+    )
 
 
 class MaaFWConfig_Selection(BaseModel):
@@ -4451,6 +4455,10 @@ class MaaFWEmbeddedStatusData(BaseModel):
     importedAt: str = Field(default="", description="导入时间")
     report: Optional[MaaFWEmbeddedProjection] = Field(
         default=None, description="投影报告"
+    )
+    followSourceSyncedAt: str = Field(
+        default="",
+        description="跟随来源目录（开发者模式）下视图上次从来源目录同步的时间；没同步过为空",
     )
 
 

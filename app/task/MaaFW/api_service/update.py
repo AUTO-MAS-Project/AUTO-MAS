@@ -52,6 +52,7 @@ from app.task.MaaFW.tools.core.project_update.updater import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    follow_source_enabled,
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -76,6 +77,10 @@ UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"
 # 预约被占、又不是在更新：编辑页准备运行环境、兄弟脚本的更新切过来后确认环境、导入 / 克隆、
 # 启动期迁移都会短暂持有。分不清是哪一个，只说被占用，不说「正在运行」误导用户。
 UPDATE_PROJECT_OCCUPIED = "项目正被占用（在准备运行环境或切换版本），请稍后再试"
+UPDATE_FOLLOW_SOURCE = (
+    "已开启「跟随来源目录（开发者模式）」，以来源目录为准、不做项目更新："
+    "要换版本请直接更新来源目录（下次运行前自动重新导入），或先关掉开发者模式"
+)
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
@@ -259,6 +264,9 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+    if follow_source_enabled(script_config):
+        # 开发者模式以来源目录为准：检查与应用都不做，别把开发者的改动换成发行版。
+        return MaaFWApiReply.error(400, UPDATE_FOLLOW_SOURCE)
 
     root_path, error = await maafw_effective_root(script_id, "")
     if root_path is None:

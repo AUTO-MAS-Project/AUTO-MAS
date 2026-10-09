@@ -4872,6 +4872,7 @@ class AppConfig(GlobalConfig):
         # 回收据此保住对应的谱系。
         from app.task.MaaFW.tools.embedded.embedded_project import (
             embedded_project_dir,
+            follow_source_enabled,
             imported_source_path,
             read_view_marker,
         )
@@ -4882,16 +4883,28 @@ class AppConfig(GlobalConfig):
             if isinstance(config, MaaFWConfig)
             and read_view_marker(embedded_project_dir(str(uid))) is None
         ]
-        await asyncio.to_thread(self._collect_unreferenced_payloads, live_sources)
+        # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
+        # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
+        follow_views = [
+            embedded_copy_dir_name(str(uid))
+            for uid, config in self.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig) and follow_source_enabled(config)
+        ]
+        await asyncio.to_thread(
+            self._collect_unreferenced_payloads, live_sources, follow_views
+        )
 
     @staticmethod
-    def _collect_unreferenced_payloads(live_sources: list[str]) -> None:
+    def _collect_unreferenced_payloads(
+        live_sources: list[str], follow_views: list[str]
+    ) -> None:
         """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
         （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
 
         引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
-        谱系还有视图时算引用。本进程起来之后才建的不收。载荷删掉之后，它独有的 blob 只剩
-        库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
+        谱系还有视图时算引用（开发者模式的私有渠道只在脚本还开着开关时算）。本进程起来
+        之后才建的不收。载荷删掉之后，它独有的 blob 只剩库里一个链接，紧接着的
+        ``clean_maafw_runtime_blobs`` 收走。
         """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -4900,7 +4913,9 @@ class AppConfig(GlobalConfig):
 
         try:
             report = collect_payload_garbage(
-                started_at=_PROCESS_STARTED_AT, live_sources=live_sources
+                started_at=_PROCESS_STARTED_AT,
+                live_sources=live_sources,
+                follow_source_views=follow_views,
             )
         except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
             logger.warning(f"MFW 载荷回收失败: {exc}")
@@ -4949,6 +4964,7 @@ class AppConfig(GlobalConfig):
             GroupMember,
             adopt_view,
             copy_is_healthy,
+            effective_channel,
             embedded_project_dir,
             imported_source_path,
             read_view_marker,
@@ -4974,7 +4990,8 @@ class AppConfig(GlobalConfig):
             entries.append(
                 (
                     str(uid),
-                    str(config.get("Update", "Channel") or "stable"),
+                    # 所在的组：开发者模式下是它的私有渠道，统一到组版本时不被切到正式版
+                    effective_channel(str(uid), config),
                     imported_source_path(config)
                     or str(config.get("Info", "Path") or ""),
                     str(config.get("Info", "Name") or str(uid)[:8]),
