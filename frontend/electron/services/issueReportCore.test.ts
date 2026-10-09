@@ -58,13 +58,9 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
     const entries = collect('logs/auto-mas', 'oknte')
 
     expect(pathsOf(entries)).toContain('logs/auto-mas/app.log')
-    expect(pathsOf(entries)).toContain(
-      'logs/auto-mas/oknte-launcher-start/launcher-error.jpg'
-    )
+    expect(pathsOf(entries)).toContain('logs/auto-mas/oknte-launcher-start/launcher-error.jpg')
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/maaend-login/login-error.jpg')
-    expect(pathsOf(entries)).not.toContain(
-      'logs/auto-mas/okww-account-switch/switch-error.jpg'
-    )
+    expect(pathsOf(entries)).not.toContain('logs/auto-mas/okww-account-switch/switch-error.jpg')
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/new-adapter-diag/detail.log')
   })
 
