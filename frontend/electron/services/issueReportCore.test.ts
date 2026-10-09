@@ -25,10 +25,10 @@ function write(relative: string, text: string): void {
   fs.writeFileSync(target, text, 'utf-8')
 }
 
-function collect(archiveDir: string, ownAdapter?: 'oknte'): string[] {
+function collect(archiveDir: string, ownAdapter?: 'oknte'): CollectorState['entries'] {
   const state: CollectorState = { zip: new AdmZip(), entries: [], archiveBytes: 0 }
   addDebugDirectory(state, path.join(root, 'debug'), archiveDir, ownAdapter)
-  return state.entries.map(entry => ({ ...entry }))
+  return state.entries
 }
 
 function pathsOf(entries: ReturnType<typeof collect>): string[] {
