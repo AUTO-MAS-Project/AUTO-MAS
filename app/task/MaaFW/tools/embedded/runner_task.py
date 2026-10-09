@@ -668,7 +668,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
                 if index > 0 and previous_failure:
                     self._append_log(
-                        f"上一次（第 {index} 次）失败：{previous_failure}"
+                        f"上一次（第 {index} 次）：{previous_failure}"
                         + ("，已重启游戏/模拟器" if previous_restarted else "")
                     )
 
