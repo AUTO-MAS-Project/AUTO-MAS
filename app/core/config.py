@@ -232,6 +232,8 @@ class AppConfig(GlobalConfig):
         # 正在循环运行的队列，供配置改动前的安全检查使用
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
+        # 上次活动关卡刷新失败的时间: 冷却期内不再重复请求远端
+        self._stage_refresh_failed_at: Optional[datetime] = None
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
@@ -3871,18 +3873,38 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self, refresh: bool = False) -> Dict[str, Any]:
-        """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
+    async def get_stage(
+        self, *, refresh: bool = False, wait_stale: bool = True
+    ) -> Dict[str, Any]:
+        """更新活动关卡信息。
+
+        refresh=True 强制远端检查；wait_stale=True 时缓存过期也等本次刷新完成，
+        调用方拿到的是本次请求触发的那次刷新的结果（刷新失败则仍是旧缓存）。
+        wait_stale=False 只把刷新丢到后台并立即返回缓存，供启动预热使用。
+        """
 
         raw_stage_data = json.loads(self.get("Data", "StageData"))
         has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
             "sideStoryStage" in raw_stage_data["Official"]
         )
-        refresh = refresh or not has_server_data
-        if not refresh and datetime.now() - timedelta(hours=1) < datetime.strptime(
-            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+        # 缺官方缓存也必须抓一次, 但这不等于调用方要求等待本次刷新
+        if (
+            not refresh
+            and has_server_data
+            and datetime.now() - timedelta(hours=1)
+            < datetime.strptime(
+                self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+            )
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
+            return json.loads(self.get("Data", "Stage"))
+
+        if (
+            self._stage_refresh_failed_at is not None
+            and datetime.now() - self._stage_refresh_failed_at < timedelta(seconds=60)
+        ):
+            # 刚失败过就先不再抓: 断网时总览与注入流程会串行重复等超时
+            logger.info("活动关卡信息刷新刚失败过, 直接使用缓存")
             return json.loads(self.get("Data", "Stage"))
 
         if self._stage_refresh_task is None:
@@ -3901,7 +3923,7 @@ class AppConfig(GlobalConfig):
             logger.info("活动关卡信息更新任务已在进行中")
 
         refresh_task = self._stage_refresh_task
-        if refresh and refresh_task is not None:
+        if refresh_task is not None and (refresh or wait_stale):
             await asyncio.shield(refresh_task)
 
         return json.loads(self.get("Data", "Stage"))
@@ -3937,10 +3959,12 @@ class AppConfig(GlobalConfig):
                     )
                 elif response.status_code == 200:
                     logger.success("成功获取远端活动关卡信息")
+                    # 时间戳最后写: 并发调用按它判断缓存新鲜度, 先写会在
+                    # 两次写入之间把旧关卡当成刚更新过的缓存返回
                     await self.set(
                         "Data",
-                        "LastStageUpdated",
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "StageData",
+                        json.dumps(response.json(), ensure_ascii=False),
                     )
                     await self.set(
                         "Data",
@@ -3951,13 +3975,15 @@ class AppConfig(GlobalConfig):
                     )
                     await self.set(
                         "Data",
-                        "StageData",
-                        json.dumps(response.json(), ensure_ascii=False),
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+                    self._stage_refresh_failed_at = datetime.now()
         except Exception as e:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
+            self._stage_refresh_failed_at = datetime.now()
+            logger.warning(f"无法从MAA服务器获取活动关卡信息: {type(e).__name__}: {e}")
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
