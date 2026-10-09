@@ -636,6 +636,12 @@ def _landing_need(
 
 
 def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
+    """问一次磁盘余量：放行时把那一刻的数留在日志里，拦住时只给调用方那一句。
+
+    放行也要留痕——收尾会把暂存卷整个清掉，日志报的 free 与用户事后去看的 free 天生差
+    一卷；记下核对当时的需要量与可用量，事后才对得上账。
+    """
+
     probe = directory
     while not probe.exists() and probe.parent != probe:
         # 目录还没建出来时向上找到挂载点，否则 disk_usage 直接抛错
@@ -645,6 +651,10 @@ def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
     except OSError as error:
         return f"无法确认{label}所在磁盘的余量：{error}"
     if free >= need:
+        logger.info(
+            f"{label}所在磁盘余量核对：需要约 {need / 1024**3:.1f} GB，"
+            f"当前可用 {free / 1024**3:.1f} GB，足够"
+        )
         return None
     return (
         f"{label}所在磁盘余量不足：需要约 {need / 1024**3:.1f} GB，"
@@ -1054,22 +1064,31 @@ def _describe_os_error(error: OSError, name: str) -> str:
     return f"写入 {name} 失败: {error}"
 
 
-def _run_hpatchz(exe: Path, base: Path, diff: Path, out: Path) -> None:
+def _run_hpatchz(exe: Path, base: Path, diff: Path, out: Path, new_size: int) -> None:
     """单文件模式打差量：`hpatchz <基线> <差量> <输出>`，非 0 退出即失败。
 
-    三个位置参数依次是基线、差量、输出，不用目录模式的 `-f`；基线只读，写全落在 `out`。
+    `new_size` 是这一条声明的新文件体积，用来把「盘写不下」从其它失败里分出来。
     """
 
     process = subprocess.run(
         [str(exe), str(base), str(diff), str(out)], capture_output=True
     )
-    if process.returncode != 0:
-        detail = (process.stdout or b"") + (process.stderr or b"")
-        lines = detail.decode("utf-8", "replace").strip().splitlines()
+    if process.returncode == 0:
+        return
+    free = shutil.disk_usage(out.parent).free
+    if free < new_size:
         raise EndfieldUpdateError(
-            f"差量应用失败（{base.name} → {out.name}）："
-            f"{lines[-1] if lines else f'退出码 {process.returncode}'}"
+            f"磁盘余量不足：写 {out.name} 还差约 "
+            f"{(new_size - free) / 1024**3:.1f} GB，当前只剩 "
+            f"{free / 1024**3:.1f} GB，请清理磁盘后重试"
         )
+    detail = (process.stdout or b"") + (process.stderr or b"")
+    lines = detail.decode("utf-8", "replace").strip().splitlines()
+    raise EndfieldUpdateError(
+        f"差量应用失败（{base.name} → {out.name}）："
+        f"hpatchz 退出码 {process.returncode}，"
+        f"{lines[-1] if lines else '没有输出'}"
+    )
 
 
 async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
@@ -1159,6 +1178,12 @@ async def _apply_delta(
     for index, job in enumerate(plan.patches, start=1):
         target = _resolve_within(install_dir, job.path)
         temp = target.with_name(target.name + _TEMP_SUFFIX)
+        try:
+            temp.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise EndfieldUpdateError(
+                f"无法创建游戏目录 {temp.parent}：{error}"
+            ) from error
         diff_file = staging / f"diff-{index:04d}{_TEMP_SUFFIX}"
         await _unpack(archive.getinfo(job.member), diff_file)
         try:
@@ -1168,6 +1193,7 @@ async def _apply_delta(
                 _resolve_within(install_dir, job.base_path),
                 diff_file,
                 temp,
+                job.size,
             )
         finally:
             diff_file.unlink(missing_ok=True)
