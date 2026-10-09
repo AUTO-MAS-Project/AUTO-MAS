@@ -25,7 +25,7 @@
     "format": "oxfmt . --write",
     "format:check": "oxfmt . --check",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
-    "openapi": "openapi --input http://127.0.0.1:36164/openapi.json --output ./src/api --client axios",
+    "openapi": "openapi --input http://127.0.0.1:36164/openapi.json --output ./src/api --client axios && node scripts/postprocess-openapi.mjs",
     "test": "vitest run"
   },
   "build": {
