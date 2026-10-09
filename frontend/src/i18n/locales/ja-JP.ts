@@ -3060,6 +3060,10 @@ export default {
     couldNotCheckUpdates: '更新の確認に失敗しました',
     couldNotLoadPlan: 'プランを取得できませんでした',
     sendIssueBundleMas: '問題報告パッケージを MAS グループに送ってください',
+    issueReportSuccess: '{label} の問題報告パッケージを書き出しました',
+    issueReportFailed: '{label} の問題報告パッケージを書き出せませんでした',
+    issueReportGuide:
+      '問題報告パッケージ「{fileName}」を作成しました。元の ZIP ファイルを AUTO-MAS 公式 QQ グループ（957750551）に直接送ってください。解凍や編集をしたり、ログの本文だけをコピーして送ったりしないでください。',
     pickExeFile: 'exe ファイルを選択してください',
     accountGroupDeleted: 'アカウントを削除しました',
     input: '入力',
@@ -4078,6 +4082,7 @@ export default {
       logSection: 'MAS 本体のログ書き出し',
       exportLog: 'ログのアーカイブを書き出す',
       exportMaaEnd: 'MaaEnd の問題報告パッケージを書き出す',
+      exportMaa: 'MAA の問題報告パッケージを書き出す',
       issueSection: '専用の問題報告パッケージ',
       exportOkww: 'ok-ww の問題報告パッケージを書き出す',
       exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',

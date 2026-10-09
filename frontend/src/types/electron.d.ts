@@ -282,6 +282,13 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportMaaIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+    incompleteCount?: number
+  }>
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string

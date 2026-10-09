@@ -3698,6 +3698,10 @@ export default {
     couldNotCheckUpdates: 'Could not check for updates!',
     couldNotLoadPlan: 'Could not load the plan',
     sendIssueBundleMas: 'Send the issue bundle to the MAS group',
+    issueReportSuccess: '{label} issue bundle exported',
+    issueReportFailed: 'Could not export the {label} issue bundle',
+    issueReportGuide:
+      'The issue bundle "{fileName}" is ready. Send the original ZIP directly to the official AUTO-MAS QQ group (957750551). Do not extract or modify it, or send only the copied log text.',
     pickExeFile: 'Pick an exe file',
     accountGroupDeleted: 'Account deleted',
     input: 'Input',
@@ -4702,6 +4706,7 @@ export default {
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
       exportMaaEnd: 'Export a MaaEnd issue bundle',
+      exportMaa: 'Export an MAA issue bundle',
       issueSection: 'Specialized issue bundles',
       exportOkww: 'Export an ok-ww issue bundle',
       exportOkNte: 'Export an OK-NTE issue bundle',

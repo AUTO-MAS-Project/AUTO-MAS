@@ -3591,6 +3591,10 @@ export default {
     couldNotCheckUpdates: '获取更新失败！',
     couldNotLoadPlan: '获取计划失败',
     sendIssueBundleMas: '请将问题包发送到 MAS 群',
+    issueReportSuccess: '{label} 问题包导出成功',
+    issueReportFailed: '{label} 问题包导出失败',
+    issueReportGuide:
+      '问题包「{fileName}」已生成。请将 ZIP 原文件直接发送到 AUTO-MAS 官方 QQ 群（群号：957750551），不要解压、修改或只复制其中的日志内容。',
     pickExeFile: '请选择 exe 文件',
     accountGroupDeleted: '账号已删除',
     input: '输入',
@@ -4638,6 +4642,7 @@ export default {
       logSection: 'MAS 本体日志导出',
       exportLog: '导出日志压缩包',
       exportMaaEnd: '导出 MaaEnd 问题包',
+      exportMaa: '导出 MAA 问题包',
       issueSection: '专项问题包导出',
       exportOkww: '导出 OK-WW 问题包',
       exportOkNte: '导出 OK-NTE 问题包',

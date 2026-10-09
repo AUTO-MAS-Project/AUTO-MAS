@@ -42,6 +42,7 @@ import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
   createMSSIssueReport,
@@ -1481,6 +1482,12 @@ function registerIssueReportExporter(
   })
 }
 
+registerIssueReportExporter(
+  'maa:exportIssueReport',
+  '导出 MAA 问题包',
+  'MAA-logs',
+  createMaaIssueReport
+)
 registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
