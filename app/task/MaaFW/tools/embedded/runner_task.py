@@ -2297,11 +2297,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
         await self.cur_user_config.set("Data", "LastProxyStatus", "运行中")
 
-    async def _close_emulator(self) -> None:
+    async def _close_emulator(self) -> bool:
+        """关闭由 MAS 启动的模拟器，返回是否关成（本来就没开过算关成）。"""
+
         if not self.opened_emulator:
-            return
+            return True
         try:
-            await close_emulator(self, log_failure=False)
+            return await close_emulator(self, log_failure=False)
         finally:
             self.opened_emulator = False
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
@@ -2610,7 +2612,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         再接回同一个窗口——超时那种卡在某一屏的情况（弹窗关不掉、按钮点不动），
         第二、三轮 3 秒内就撞回同一屏，白等两倍时限。
         游戏/模拟器不是 MAS 起的（AttachOnly、发现已在运行）时照旧不碰；
-        这是最后一轮时也不在这里关，收尾统一关。返回这次是否关过。
+        这是最后一轮时也不在这里关，收尾统一关。返回这次是否全部关成：
+        该关的有一个没关成就是 False，下一轮日志开头不写「已重启」。
         """
 
         if attempt >= self.script_config.get("Run", "RunTimesLimit"):
@@ -2618,9 +2621,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not self.opened_game and not self.opened_emulator:
             return False
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
-        await self._close_emulator()
-        await self._close_game()
-        return True
+        emulator_closed = await self._close_emulator()
+        game_closed = await self._close_game()
+        return emulator_closed and game_closed
 
     def _start_attempt_log(self) -> None:
         """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。
@@ -2733,8 +2736,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             f"{len(result.completedTasks)}/{total}{stopped_at}）"
         )
 
-    async def _close_game(self) -> None:
-        """关闭由 MAS 启动的游戏。
+    async def _close_game(self) -> bool:
+        """关闭由 MAS 启动的游戏，返回是否关成（本来就没开过算关成）。
 
         只看 opened_game：由 MAS 启动的一律关，其他方式启动（AttachOnly、或
         DirectExe 下发现游戏已在运行而没重复启动）的一律不碰，没有开关。
@@ -2742,12 +2745,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if not self.opened_game:
             await self._restore_game_resolution_override()
-            return
+            return True
 
         try:
             await self.game_process_manager.kill()
+            return True
         except Exception as exc:
             logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
+            return False
         finally:
             self.opened_game = False
             self.game_window_ready_at = None
