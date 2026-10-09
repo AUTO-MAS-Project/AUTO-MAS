@@ -3871,8 +3871,15 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self, refresh: bool = False) -> Dict[str, Any]:
-        """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
+    async def get_stage(
+        self, refresh: bool = False, wait_stale: bool = True
+    ) -> Dict[str, Any]:
+        """更新活动关卡信息。
+
+        refresh=True 强制远端检查；wait_stale=True 时缓存过期也等本次刷新完成，
+        调用方拿到的是本次请求触发的那次刷新的结果（刷新失败则仍是旧缓存）。
+        两者都为假时只把刷新丢到后台并立即返回旧缓存，供启动预热使用。
+        """
 
         raw_stage_data = json.loads(self.get("Data", "StageData"))
         has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
@@ -3901,7 +3908,7 @@ class AppConfig(GlobalConfig):
             logger.info("活动关卡信息更新任务已在进行中")
 
         refresh_task = self._stage_refresh_task
-        if refresh and refresh_task is not None:
+        if refresh_task is not None and (refresh or wait_stale):
             await asyncio.shield(refresh_task)
 
         return json.loads(self.get("Data", "Stage"))
@@ -3957,7 +3964,7 @@ class AppConfig(GlobalConfig):
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
         except Exception as e:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
+            logger.warning(f"无法从MAA服务器获取活动关卡信息: {type(e).__name__}: {e}")
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
