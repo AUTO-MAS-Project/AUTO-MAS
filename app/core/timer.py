@@ -22,6 +22,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
+from functools import partial
 from typing import Any
 
 from app.services import Matomo
@@ -83,6 +84,8 @@ class _MainTimer:
         self.community_sign_task: asyncio.Task | None = None
         # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
         self._last_timed_check: datetime | None = None
+        # 保留期清理上次执行到的本地日期（YYYY-MM-DD），None 表示本次运行尚未执行
+        self._last_cleanup_date: str | None = None
         # 已触发过的 (队列, 时间槽, 计划时刻)，防止秋季回拨重复的钟点再触发一次
         self._timed_fired: set[tuple[str, str, datetime]] = set()
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
@@ -185,9 +188,26 @@ class _MainTimer:
             if record_daily_active():
                 await Config.set("Data", "LastTelemetryActive", today)
 
+        async def clean_expired_data() -> None:
+            # 每天一轮：把过期的历史记录、诊断文件与 MFW 原生日志备份清掉。
+            # 清理本身幂等（只删超期的），守卫用内存日期即可，不必像统计上报那样
+            # 为跨重启去重而落持久化配置；重启后首轮重跑一次无害。
+            today = datetime.now().strftime("%Y-%m-%d")
+            if self._last_cleanup_date == today:
+                return
+            self._last_cleanup_date = today
+            for name, clean in (
+                ("历史记录清理", Config.clean_old_history),
+                ("诊断文件清理", Config.clean_debug_diagnostics),
+                ("MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs),
+            ):
+                # 三个清理函数是纯同步文件 IO，丢工作线程执行，别占用事件循环
+                await self._run_loop_step(name, partial(asyncio.to_thread, clean))
+
         while True:
             await self._run_loop_step("统计上报", upload_statistics)
             await self._run_loop_step("遥测日活", record_telemetry_active)
+            await self._run_loop_step("日志清理", clean_expired_data)
             await asyncio.sleep(3600)
 
     async def _run_loop_step(

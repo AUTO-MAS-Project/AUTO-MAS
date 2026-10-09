@@ -367,7 +367,6 @@ def main():
             try:
                 await run_optional_step("MCP 服务挂载", mount_mcp)
                 await run_optional_step("活动关卡信息获取", Config.get_stage)
-                await run_optional_step("历史记录清理", Config.clean_old_history)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -388,10 +387,6 @@ def main():
 
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
-                )
-                await run_optional_step("诊断文件清理", Config.clean_debug_diagnostics)
-                await run_optional_step(
-                    "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
                 )
 
                 if IS_WINDOWS:

@@ -124,6 +124,9 @@ DIAGNOSTIC_SCREENSHOT_SUFFIXES = frozenset({".png", ".jpg"})
 # 单个诊断目录的失败截图总量上限，超出后按时间从旧到新回收；
 # 每目录独立结算，一个专项的截图风暴不会挤掉其他专项的证据
 DIAGNOSTIC_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
+# 诊断文件的统一保留天数：诊断文件不是用户数据，用固定保留期兜住无界
+# 累积，不跟随历史记录保留时间设置
+DIAGNOSTIC_RETENTION_DAYS = 15
 
 #: 本进程启动时刻；启动清理只碰比它更早的半成品。
 _PROCESS_STARTED_AT = time.time()
@@ -5258,22 +5261,19 @@ class AppConfig(GlobalConfig):
         except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
             logger.warning(f"MFW 运行池回收失败: {exc}")
 
-    async def clean_debug_diagnostics(self) -> None:
+    def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
 
         自动扫描 ``debug/`` 下全部子目录（各专项的登录/切号/启动器失败诊断，
-        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图按历史记录的
-        保留天数清理；截图另受每目录独立的大小上限约束，超限从旧到新
-        回收，不受历史记录永久保留设置影响——一个专项的截图风暴不会
-        挤掉其他专项的证据。
+        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图统一按固定保留
+        天数清理，不跟随历史记录保留时间——诊断文件不是用户数据，解绑后任何
+        配置下都不会无界累积。失败截图另受每目录独立的大小上限约束，超限
+        从旧到新回收——一个专项的截图风暴不会挤掉其他专项的证据。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
-        retention_days = self.get("Function", "HistoryRetentionTime")
-        if retention_days == 0:
-            logger.info("诊断文件永久保留, 跳过按保留期限清理")
-            cutoff = None
-        else:
-            cutoff = time.time() - retention_days * 86400
+        cutoff = time.time() - DIAGNOSTIC_RETENTION_DAYS * 86400
 
         debug_root = Path.cwd() / "debug"
         if not debug_root.is_dir():
@@ -5298,7 +5298,7 @@ class AppConfig(GlobalConfig):
                 except OSError as exc:
                     logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     continue
-                if cutoff is not None and file_stat.st_mtime < cutoff:
+                if file_stat.st_mtime < cutoff:
                     try:
                         file.unlink()
                     except OSError as exc:
@@ -5330,7 +5330,7 @@ class AppConfig(GlobalConfig):
         if screenshot_deleted_count:
             logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
 
-    async def clean_maafw_native_debug_logs(self) -> None:
+    def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
 
         MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
@@ -5338,9 +5338,17 @@ class AppConfig(GlobalConfig):
         的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
         ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
         保留时长沿用历史记录的保留天数设置。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
+        # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
+        # 和增删脚本。items() 是 zip(order 列表, data 逐项查找) 的惰性结构，
+        # list() 消费它并非原子拷贝、并发增删仍可 KeyError 中止本轮；直接对
+        # data 的 dict 视图做 list() 才是单条 C 级拷贝的真原子快照
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
             return
 
@@ -5349,9 +5357,9 @@ class AppConfig(GlobalConfig):
             resolve_maafw_project_root,
         )
 
-        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        cutoff = time.time() - retention_days * 86400
         deleted_count = 0
-        for uid, script_config in self.ScriptConfig.items():
+        for uid, script_config in list(self.ScriptConfig.data.items()):
             if not isinstance(script_config, MaaFWConfig):
                 continue
             # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
@@ -5377,10 +5385,16 @@ class AppConfig(GlobalConfig):
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
 
-    async def clean_old_history(self):
-        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+    def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）。
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
+        """
+
+        # 只读一次：定时器在工作线程跑本函数，循环内逐目录重读会看到扫描
+        # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("历史记录永久保留, 跳过历史记录清理")
             return
 
@@ -5396,7 +5410,7 @@ class AppConfig(GlobalConfig):
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
                 folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
                 if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=self.get("Function", "HistoryRetentionTime")
+                    days=retention_days
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1
