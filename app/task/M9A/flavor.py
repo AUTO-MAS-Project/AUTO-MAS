@@ -119,6 +119,10 @@ class M9AFlavor:
     supports_mod_avd = True
     # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上
     abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
+    # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义
+    nonfatal_entries = {
+        CLOSE_ENTRY: "关闭游戏失败，MAS 收尾时会关闭模拟器，不影响本轮结果"
+    }
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
         return is_m9a_project(interface_model)

@@ -980,7 +980,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options=task_options,
                 script_hotkeys=script_hotkeys,
             )
-            plan = _mark_abort_round_tasks(plan, flavor)
+            plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
             message = str(exc)
@@ -3637,6 +3637,25 @@ def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
         return plan
     tasks = [
         task.model_copy(update={"abortRoundMessage": entries[task.entry]})
+        if task.entry in entries
+        else task
+        for task in plan.tasks
+    ]
+    return plan.model_copy(update={"tasks": tasks})
+
+
+def _mark_nonfatal_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
+    """把特调声明的收尾任务（``nonfatal_entries``：entry → 失败时接在日志后的说明）标到计划上。
+
+    runner 据此在这些任务失败、超时或原地打转时只截图记日志、不计入本轮失败，见
+    ``MaaFWTaskRunPlan.nonFatalMessage``。
+    """
+
+    entries: dict[str, str] = getattr(flavor, "nonfatal_entries", None) or {}
+    if not entries:
+        return plan
+    tasks = [
+        task.model_copy(update={"nonFatalMessage": entries[task.entry]})
         if task.entry in entries
         else task
         for task in plan.tasks

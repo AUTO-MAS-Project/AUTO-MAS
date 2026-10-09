@@ -1243,7 +1243,8 @@ class MaaFWRunner:
         计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
 
         特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
-        报它声明的那句话。
+        报它声明的那句话。特调声明的收尾任务（``nonFatalMessage``，如 M9A 的关闭游戏）
+        超时只截图、记一行，不计入本轮失败。
 
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
@@ -1254,6 +1255,16 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
+        if task.nonFatalMessage:
+            # 特调声明的收尾任务：截图、记一行，不算本轮失败
+            stopped = (
+                "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
+            )
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），{stopped}: "
+                f"{display_name}；{task.nonFatalMessage}"
+            )
+            return True
         if index == 0 or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             if task.abortRoundMessage:
@@ -1293,6 +1304,15 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
         reason = _format_loop_guard_reason(verdict)
         display_name = _task_display_name(task)
+        if task.nonFatalMessage:
+            # 特调声明的收尾任务：截图、记一行，不算本轮失败
+            stopped = (
+                "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
+            )
+            self.send_log(
+                f"{reason}，{stopped}: {display_name}；{task.nonFatalMessage}"
+            )
+            return True
         if index == 0 or task.abortRoundMessage:
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
@@ -2801,7 +2821,8 @@ class MaaFWRunner:
                     time.sleep(0.1)
                     continue
                 message = str(exc)
-                self._failed_task_errors.append((task.name, message))
+                if not task.nonFatalMessage:
+                    self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
                 fatal = sorted(
                     self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
@@ -2812,6 +2833,13 @@ class MaaFWRunner:
                         f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
                         f"{display_name}: {message}"
                     ) from exc
+                if task.nonFatalMessage:
+                    # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败
+                    self.send_log(
+                        f"任务失败: {display_name}: {message}；{task.nonFatalMessage}"
+                    )
+                    time.sleep(0.1)
+                    continue
                 if task.abortRoundMessage:
                     # 特调声明的关键任务（如切换账号）没做成，后面的任务会跑在错的状态上
                     raise RuntimeError(
