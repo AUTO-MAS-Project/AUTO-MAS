@@ -35,6 +35,7 @@ from app.task.MaaFW.tools.core.controller_win32.service import (
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
     MaaFWInterface,
+    resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
@@ -79,7 +80,7 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .embedded_project import resolve_maafw_project_root
-from .flavor import resolve_flavor, resolve_game_update_hook
+from .flavor import resolve_flavor, resolve_game_update_hook, unselectable_entries
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
@@ -968,6 +969,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 interface_model,
                 selected_preset=effective_preset,
                 task_snapshot=task_snapshot or None,
+            )
+            # 特调声明不可选的任务先剔：装饰钩子看到的就是剔完的队列（剔空了它不补首尾）
+            task_ids, task_options = _drop_unselectable_tasks(
+                interface_model,
+                task_ids,
+                task_options,
+                unselectable_entries(flavor),
+                send_log=send_log if send_log is not None else logger.info,
             )
             task_ids, task_options = flavor.decorate_selection(
                 interface_model,
@@ -3686,6 +3695,48 @@ MISSING_TASK_NOTICE_PREFIX = (
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
 #: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
 _RETRY_SKIP_REASON = "本次运行已完成"
+
+
+def _drop_unselectable_tasks(
+    interface_model: MaaFWInterface,
+    task_ids: list[str],
+    task_options: dict[str, Any],
+    entries: dict[str, str],
+    *,
+    send_log: Callable[[str], None],
+) -> tuple[list[str], dict[str, Any]]:
+    """剔掉特调声明不可选的任务（``unselectable_entries``：entry → 原因），连同它们的选项。
+
+    每剔一个写一行日志（任务显示名 + 原因）；没声明时原样返回。
+    """
+
+    if not entries:
+        return task_ids, task_options
+    task_by_name = {task.name: task for task in interface_model.task}
+
+    def task_of(task_id: str) -> Any:
+        return task_by_name.get(resolve_task_instance_name(str(task_id), task_by_name))
+
+    def entry_of(task_id: str) -> str:
+        task = task_of(task_id)
+        return str(task.entry or "") if task is not None else ""
+
+    kept: list[str] = []
+    for task_id in task_ids:
+        entry = entry_of(task_id)
+        if entry not in entries:
+            kept.append(task_id)
+            continue
+        name = _task_display_name(task_of(task_id))
+        send_log(f"已跳过「{name}」：{entries[entry]}")
+    if len(kept) == len(task_ids):
+        return task_ids, task_options
+    options = {
+        key: value
+        for key, value in task_options.items()
+        if entry_of(key) not in entries
+    }
+    return kept, options
 
 
 def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:

@@ -97,6 +97,20 @@
 - **该列什么**：只列重跑纯属浪费、且不依赖本轮前面步骤状态的任务（领取、收菜这类做完就没了
   的）。启动 / 关闭游戏、切换账号这类每次尝试都要重做的受管任务不要列。
 
+可选属性 ``unselectable_entries``（不可选任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 为什么不能选（如 M9A 小游戏的「需手动进入对应页面
+  （M9A 没有自动导航）」）。同样按 ``getattr`` 探测，不进协议；没声明等于空表，行为完全不变。
+- **用途**：项目里有、但 MAS 无人值守跑不了的任务（要用户先手动停在某个页面之类）。
+- **界面**：``/maafw/preview`` 按脚本的特调（没有脚本时按项目认领的特调）给这些任务填
+  ``unselectableReason``（就是这里的原因），其余任务为 ``None``；用户页据此把它们挡在「添加任务」
+  与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写用户配置。
+- **运行**：``runner_task`` 归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
+  每剔一个写一行用户日志（任务显示名 + 原因）。剔完为空就是普通的空队列：特调不补首尾，
+  引擎照常报「没有可执行任务」。
+- **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
+  ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
+
 可选属性 ``supports_mod_avd``（能不能用魔改 AVD）的契约：
 
 - **形状**：``bool``，按 ``getattr`` 探测，不进协议；没声明当 ``False``。
@@ -170,6 +184,32 @@ def resolve_flavor(script_config: Any) -> MaaFWFlavor | None:
     if not spec:
         return None
     return _load_flavor(str(spec))
+
+
+_UNSELECTABLE_DEFAULT_REASON = "MAS 无人值守运行不了这个任务"
+
+
+def unselectable_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的不可选任务：entry → 原因，契约见模块说明。没声明（或不是特调）返回空表。"""
+
+    declared = (
+        getattr(flavor, "unselectable_entries", None) if flavor is not None else None
+    )
+    if not isinstance(declared, dict):
+        return {}
+    return {
+        str(entry): str(reason or "").strip() or _UNSELECTABLE_DEFAULT_REASON
+        for entry, reason in declared.items()
+        if str(entry or "").strip()
+    }
+
+
+def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
+    """认领这个项目的特调对象（与 ``decide_project_config_class`` 同一口径）；没有返回 None。"""
+
+    config_class = decide_project_config_class(interface_model)
+    spec = getattr(config_class, "FLAVOR", None)
+    return _load_flavor(str(spec)) if spec else None
 
 
 GameUpdateHook = Callable[..., Awaitable[GameUpdateResult]]
@@ -370,10 +410,12 @@ __all__ = [
     "MaaFWFlavor",
     "SnapshotSanitizer",
     "decide_project_config_class",
+    "flavor_for_project",
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_snapshot_sanitizer",
     "sanitize_user_task_update",
+    "unselectable_entries",
     "user_config_type_transform",
 ]
