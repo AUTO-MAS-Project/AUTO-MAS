@@ -82,6 +82,8 @@ from app.utils.game_apk import GameUpdateResult, is_client_outdated
 from app.utils.hpatchz import ensure_hpatchz
 from app.utils.io import force_rmtree
 
+from . import package_index
+
 logger = get_logger("终末地客户端更新")
 
 ProgressFn = Callable[[str], Awaitable[None]]
@@ -237,6 +239,15 @@ class MoveJob:
     md5: str
     size: int
     member: str
+
+
+@dataclass(frozen=True)
+class MoveEntry:
+    """包内落地核对表 `move` 段的一条：新文件在安装目录里的相对路径与它的 MD5、体积。"""
+
+    path: str
+    md5: str
+    size: int
 
 
 @dataclass(frozen=True)
@@ -598,20 +609,30 @@ async def _busy_processes(root: Path) -> list[str]:
     return await asyncio.to_thread(_processes_under, root)
 
 
-def _landing_peak(plan: DeltaPlan, install_dir: Path) -> int:
-    """改名换掉原文件之前，临时新文件与原文件同时在盘上的最大瞬时占用。
+def _landing_need(
+    patches: Sequence[PatchJob | _PatchSpec],
+    moves: Sequence[MoveJob | MoveEntry],
+    install_dir: Path,
+) -> int:
+    """落地期间最多要腾出多少字节：整轮累计净增，再加单条改名时的瞬时量。
 
-    只按新文件体积估，盘快满时会判「余量充足」然后在写到最大的那个包体时才失败，
-    而那时客户端已经被写了一半。补丁条目本来就带着基线体积，直接用。
+    改名之前旧文件不释放，所以最大那一条按新旧两份同时在盘算；其余是一条接一条累上去的
+    净增，只增不减——整搬的目标本来不存在时整条体积都是新增。只按单条峰值估会放过一个根本
+    装不下的盘，等到客户端被写了一半才失败。
+
+    下载前的预估与下载后的判定共用这一套算法，两道门不会各算各的账。
     """
 
-    peak = max((job.size + job.base_size for job in plan.patches), default=0)
-    for job in plan.moves:
-        # 整文件条目的原体积清单里没给，只能就地问一次
-        peak = max(
-            peak, job.size + max(_size_of(_resolve_within(install_dir, job.path)), 0)
-        )
-    return peak
+    net_growth = 0
+    widest = 0
+    for job in patches:
+        net_growth += job.size - job.base_size
+        widest = max(widest, job.size + job.base_size)
+    for job in moves:
+        old = max(_size_of(_resolve_within(install_dir, job.path)), 0)
+        net_growth += job.size - old
+        widest = max(widest, job.size + old)
+    return max(net_growth, 0) + widest
 
 
 def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
@@ -882,6 +903,23 @@ async def _check_baselines(
     return bad
 
 
+def _move_entries(doc: dict[str, Any]) -> tuple[MoveEntry, ...]:
+    """把包内落地核对表的 `move` 段读成整文件清单。"""
+
+    entries: list[MoveEntry] = []
+    for item in doc.get("move") or []:
+        if not isinstance(item, dict):
+            raise EndfieldUpdateError(f"落地核对表条目不是对象: {item!r}")
+        entries.append(
+            MoveEntry(
+                path=_canonical_relative(str(item.get("path") or "")),
+                md5=str(item.get("md5") or "").strip().lower(),
+                size=_parse_int(item.get("size")),
+            )
+        )
+    return tuple(entries)
+
+
 def _read_package_manifests(
     archive: pyzipper.AESZipFile, members: set[str]
 ) -> tuple[tuple[MoveJob, ...], tuple[str, ...]]:
@@ -906,18 +944,17 @@ def _read_package_manifests(
     if not isinstance(doc, dict):
         raise EndfieldUpdateError("包内落地核对表顶层不是 JSON 对象")
     moves: list[MoveJob] = []
-    for item in doc.get("move") or []:
-        if not isinstance(item, dict):
-            raise EndfieldUpdateError(f"落地核对表条目不是对象: {item!r}")
-        path = _canonical_relative(str(item.get("path") or ""))
-        member = path if path in members else _WHOLE_MEMBER_PREFIX + path
+    for entry in _move_entries(doc):
+        member = (
+            entry.path if entry.path in members else _WHOLE_MEMBER_PREFIX + entry.path
+        )
         if member not in members:
-            raise EndfieldUpdateError(f"清单要的整文件在包里找不到: {path}")
+            raise EndfieldUpdateError(f"清单要的整文件在包里找不到: {entry.path}")
         moves.append(
             MoveJob(
-                path=path,
-                md5=str(item.get("md5") or "").strip().lower(),
-                size=_parse_int(item.get("size")),
+                path=entry.path,
+                md5=entry.md5,
+                size=entry.size,
                 member=member,
             )
         )
@@ -1401,6 +1438,37 @@ async def _refresh_plan(identity: InstallIdentity, current: Release) -> Release:
     return fresh
 
 
+async def _prefetch_moves(
+    client: httpx.AsyncClient,
+    release: Release,
+    report: ProgressFn,
+) -> tuple[MoveEntry, ...] | None:
+    """在下载之前从远端读出包内的整文件清单，好把下载与落地的体积合成一次判定。
+
+    只发几次小请求，不落下任何正文；读不到就返回 `None`，落地前那道门仍是权威判据。
+    分卷地址带签名、有效窗口两分钟上下，这一步要在读盘核对基线之前做完。
+    """
+
+    await report("正在预取包内清单，先核对磁盘余量")
+    doc = await package_index.fetch_member_json(
+        client=client,
+        volumes=[
+            package_index.RemoteVolume(part.url, part.size) for part in release.parts
+        ],
+        cd_key=release.cd_key,
+        member=_VERIFY_MANIFEST_MEMBER,
+        max_plain_bytes=_MANIFEST_MAX_BYTES,
+    )
+    if doc is None:
+        await report("未能预取到包内清单，本轮改为下载后再核对磁盘余量")
+        return None
+    entries = _move_entries(doc)
+    await report(
+        f"预取到包内整文件清单 {len(entries)} 条，按下载与落地的总量核对磁盘余量"
+    )
+    return entries
+
+
 async def ensure_game_updated(
     game_exe: Path,
     *,
@@ -1546,6 +1614,24 @@ async def _ensure_game_updated(
                 specs = await _fetch_patch_manifest(
                     client, release.patch_info_url, release.patch_info_md5
                 )
+                prefetched = await _prefetch_moves(client, release, report)
+            if prefetched is not None:
+                # 下载与落地共用一个盘，两笔体积必须在这一刻一起算：卷要读到最后一刻
+                # 才清，落地那一刻暂存卷还压在同一个目录里
+                landing_need = _landing_need(specs, prefetched, install_dir)
+                short = _disk_shortfall(
+                    install_dir,
+                    release.download_size + landing_need + _RESERVE_BYTES,
+                    "游戏目录（下载与落地）",
+                )
+                if short:
+                    return GameUpdateResult(
+                        "NeedManualUpdate",
+                        f"{outdated}，本轮尚未开始下载，暂存卷还没占盘："
+                        f"下载差量包约 {release.download_size / 1024**3:.1f} GB，"
+                        f"落地还要在游戏目录净腾出约 {landing_need / 1024**3:.1f} GB，"
+                        f"再加一份固定余量。{short}",
+                    )
             bad = await _check_baselines(specs, install_dir, report, abort)
             if bad:
                 shown = "、".join(Path(path).name for path in bad[:5])
@@ -1582,7 +1668,8 @@ async def _ensure_game_updated(
                 plan = _build_delta_plan(specs, members, moves, deletes)
                 landing = _disk_shortfall(
                     install_dir,
-                    _landing_peak(plan, install_dir) + _RESERVE_BYTES,
+                    _landing_need(plan.patches, plan.moves, install_dir)
+                    + _RESERVE_BYTES,
                     "游戏目录（差量落地）",
                 )
                 if landing:
