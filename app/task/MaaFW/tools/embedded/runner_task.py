@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -481,6 +482,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.maintenance_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
+        # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
+        # skip_on_retry_entries；剔了什么在下一次尝试开头写一行
+        self._completed_this_run: list[str] = []
+        self._retry_skip_notice: str | None = None
 
     async def check(self) -> str:
         proxy_times = (
@@ -664,6 +669,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
                 try:
+                    self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
                     await self._ensure_desktop_game_started()
@@ -764,7 +770,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             warning=True,
                         )
                         break
-                    await self._refresh_run_plan_after_period_update()
+                    await self._refresh_run_plan_after_period_update(
+                        result.completedTasks
+                    )
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
                         self._append_log("MaaFW 剩余周期任务已完成，停止本轮重试")
@@ -2218,12 +2226,64 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             },
         )
 
-    async def _refresh_run_plan_after_period_update(self) -> None:
+    async def _refresh_run_plan_after_period_update(
+        self, completed_tasks: list[str]
+    ) -> None:
+        """重试前重建计划：从 ``base_run_plan`` 重新按周期过滤，再剔掉本次运行已完成的。
+
+        ``completed_tasks`` 是刚结束这次尝试的 ``completedTasks``（任务名，不是 entry）。
+        剔除必须跟在重建之后：重建会把上一次剔掉的任务放回来，所以按累计结果每次都重剔。
+        """
+
+        self._completed_this_run.extend(completed_tasks)
         if self.base_run_plan is not None:
-            self.run_plan = await asyncio.to_thread(
+            plan = await asyncio.to_thread(
                 self._filter_period_once_tasks,
                 self.base_run_plan,
             )
+            self.run_plan = self._skip_tasks_completed_this_run(plan)
+
+    def _skip_tasks_completed_this_run(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
+        """剔掉特调声明的 ``skip_on_retry_entries`` 里、本次运行已完成过的任务。
+
+        按 entry 认任务、按任务名计份数：同一任务重复入队只完成了一份时只剔一份。
+        没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，并留一行给
+        下一次尝试开头（``_log_retry_skipped_tasks``）。
+        """
+
+        flavor = resolve_flavor(self.script_config)
+        entries = set(getattr(flavor, "skip_on_retry_entries", None) or ())
+        if not entries:
+            return plan
+        remaining = Counter(self._completed_this_run)
+        tasks = []
+        skipped: list[MaaFWSkippedTaskPlan] = []
+        for task in plan.tasks:
+            if task.entry in entries and remaining[task.name] > 0:
+                remaining[task.name] -= 1
+                skipped.append(
+                    MaaFWSkippedTaskPlan(
+                        name=task.name,
+                        label=task.label,
+                        entry=task.entry,
+                        reason=_RETRY_SKIP_REASON,
+                    )
+                )
+                continue
+            tasks.append(task)
+        if not skipped:
+            return plan
+        self._retry_skip_notice = f"{_RETRY_SKIP_REASON}，不再补跑: " + "、".join(
+            _task_display_name(task) for task in skipped
+        )
+        return plan.model_copy(
+            update={"tasks": tasks, "skippedTasks": [*plan.skippedTasks, *skipped]}
+        )
+
+    def _log_retry_skipped_tasks(self) -> None:
+        if self._retry_skip_notice:
+            self._append_log(self._retry_skip_notice)
+            self._retry_skip_notice = None
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
         raw_records = _load_json_dict(
@@ -3624,6 +3684,8 @@ MISSING_TASK_NOTICE_PREFIX = (
 )
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
+#: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
+_RETRY_SKIP_REASON = "本次运行已完成"
 
 
 def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:

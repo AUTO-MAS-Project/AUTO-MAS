@@ -121,6 +121,39 @@ class M9AFlavor:
     abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
     # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义
     nonfatal_entries = {CLOSE_ENTRY: "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}
+    # 本次运行里完成过的任务重试时不再补跑（v4.11.3 全部非受管任务）：重跑已领完、已刷完的
+    # 只是白等几分钟。逐个写出而不是「除受管三项外全部」，M9A 以后新增的任务默认照旧补跑，
+    # 确认重跑无意义再加进来。受管三项每次尝试都要重做，不列。
+    skip_on_retry_entries = frozenset(
+        {
+            "Wilderness",
+            "Awards",
+            "Bank",
+            "redeem_code",
+            "Character",
+            "Psychube",
+            "switch_menu",
+            "WarehouseInventory",
+            "Limbo",
+            "Lucidscape",
+            "TheAlarm",
+            "Colosseum",
+            "UTTU",
+            "SeriesOfDusks",
+            "TheSyndromeOfSilence",
+            "8bit",
+            "CritterCrash",
+            "MusesBoxStartParty",
+            "PreStormProtocolStart",
+            "CompleteInduction",
+            "BalancedFarming",
+            "Combat",
+            "CombatActivity",
+            "AutoPromotion",
+            "SSReopen",
+            "CharUpgrade",
+        }
+    )
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
         return is_m9a_project(interface_model)
