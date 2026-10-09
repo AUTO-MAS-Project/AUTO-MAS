@@ -789,7 +789,14 @@ class AppConfig(GlobalConfig):
 
             # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
             if isinstance(new_config, MaaFWConfig):
-                await self._clone_embedded_copy_for_script(str(script_id), str(new_uid))
+                # 开发者模式（跟随来源目录）不随复制带过去：复制出来的是普通脚本，挂源脚本原
+                # 渠道组的版本（见 _clone_embedded_copy_for_script）。
+                await new_config.set("Embedded", "FollowSource", False)
+                await self._clone_embedded_copy_for_script(
+                    str(script_id),
+                    str(new_uid),
+                    source_config=self.ScriptConfig[script_uid],
+                )
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -810,19 +817,29 @@ class AppConfig(GlobalConfig):
             return new_uid, new_config
 
     async def _clone_embedded_copy_for_script(
-        self, source_script_id: str, target_script_id: str
+        self, source_script_id: str, target_script_id: str, *, source_config: Any
     ) -> None:
         """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
-        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。"""
+        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。
+
+        源开着开发者模式时取它原渠道（源的 ``Update.Channel``）组的 latest；组里还没有载荷
+        （或源是源码形态）就先不建视图，复制出来的脚本第一次运行前按来源目录导入（来源也不在时
+        按同来源兄弟 / 已登记的版本重建，与视图丢了是同一条路）。
+        """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
+            FollowSourceCloneUnavailable,
             clone_embedded_copy,
             embedded_project_dir,
+            is_source_form,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
             try_reserve_project_path,
         )
+
+        group_channel = str(source_config.get("Update", "Channel") or "stable")
+        source_form = is_source_form(source_config)
 
         target_key = await try_reserve_project_path(
             embedded_project_dir(target_script_id)
@@ -831,8 +848,15 @@ class AppConfig(GlobalConfig):
             return
         try:
             await asyncio.to_thread(
-                clone_embedded_copy, source_script_id, target_script_id
+                lambda: clone_embedded_copy(
+                    source_script_id,
+                    target_script_id,
+                    group_channel=group_channel,
+                    source_form=source_form,
+                )
             )
+        except FollowSourceCloneUnavailable as exc:
+            logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
         except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
             logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
         finally:

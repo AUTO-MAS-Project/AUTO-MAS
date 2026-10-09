@@ -66,16 +66,29 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
     碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
     每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
-    `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest。
+    `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest；版本另带 PEP 440 本地段
+    `+dev`（`follow_source_payload_version`：`1.5.0` → `1.5.0+dev`，已有本地段的追加 `.dev`），
+    所以没有这条过滤的老代码按「版本字符串相等」挑同版本候选时也挑不中它，载荷 id 也与同内容的
+    正式载荷不同（`1.5.0+dev-<hash8>`，`+` 本来就在 id 允许的字符里）。视图标记的 `version` 是这个
+    带 `+dev` 的载荷版本（界面与「沿用上次同步」的告警里看得出是本地改过的），`Embedded.SourceVersion`
+    仍记 interface 里的原版本。
   - **察觉变化**：运行前检查（`ensure_embedded_copy(follow_source_check=True)`，只有 manager 的
-    `_check` 传）与手动重新导入。按投影白名单给来源算签名（投影会带走的文件的源相对路径 + 大小 +
-    mtime_ns + 投影规则版本，只 stat，`follow_source_signature`），与视图标记 `followSource.signature`
-    比，路径或签名不同就重新导入；签名在复制之前算。内容没变（只改了修改时间）登记出的就是视图正挂
-    的那份，不重建视图、只原地改 `followSource`。日志一行（`describe_follow_source_sync`）：「来源目录
-    有 N 个文件变化（前 5 个路径），已重新导入」/「来源目录未变化」，N 按新旧载荷清单的 sha256 比。
-    预览、准备环境等入口不扫来源（每次 1~2 s，mfasign 1187 个文件 1.5 s）。来源目录不在：照常用当前
-    视图并告警；来源投影失败（interface 改坏了）照常报错、本次不运行。开发者导入切视图不按「同版本
-    合并」留档（`_realize_view(archive_same_version=False)`）。
+    `_check` 传）与手动重新导入。按投影白名单给来源算签名（`follow_source_signature`：投影会带走的
+    文件的源相对路径 + 大小 + mtime_ns，≤ 1 MB 的再加内容 blake2b，大文件只看大小与修改时间；外加
+    签名格式与投影规则版本），与视图标记 `followSource.signature` 比，路径或签名不同就重新导入；签名在
+    复制之前算。老格式签名的标记一定对不上，升级后第一次运行前重导一次，不报错。内容没变（只改了修改
+    时间）登记出的就是视图正挂的那份，不重建视图、只原地改 `followSource`。日志一行
+    （`describe_follow_source_sync`）：「来源目录有 N 个文件变化（前 5 个路径），已重新导入」/「来源
+    目录未变化」，N 按新旧载荷清单的 sha256 比。预览、准备环境等入口不扫来源。
+  - **读不了来源时沿用上次同步的版本**（`_sync_follow_source` → `_keep_last_follow_source_sync`）：
+    来源目录不在、读文件被拒（`PermissionError`）、`interface.json` 暂时不在或解析失败、投影规则拒绝
+    （junction / 符号链接，规则不变）等任何读取 / 投影失败，都**照常在当前视图上跑**，运行日志写一行
+    醒目的「【警告】开发者模式读取来源目录失败：原因；本轮沿用上次同步的版本 X（同步于 …）运行」。
+    只有视图本身不在（没有可跑的副本）才按导入失败处理。「立即同步」不走这条退路，照常报失败原因。
+  - **离开开发者载荷不留「本地改过」档**：`_realize_view` 按新旧载荷清单的 `channel` 是不是 `dev:`
+    判断（`is_follow_source_manifest`），不看是哪条代码路径进来的——开发者导入、关掉开关、克隆后第一次
+    组同步、关掉后被兄弟导入 / 同组传播换走，只要切换的一端是开发者载荷，就既不按同版本「只补缺」也不
+    把视图与旧载荷的差异当本地修改留档（那些差异就是从来源同步来的）。
   - **立即同步**（脚本页状态行旁的按钮，`/maafw/embedded/sync` → `api_service.embedded.sync_embedded`）：
     按当前 `Info.Path` 强制重导进私有渠道，**不看签名**（补上修改时间没变而漏检的改动）；内容与视图相同
     时不重建视图、只刷新同步时间。返回的 `message` 就是结果（N 个文件变化 / 内容未变化）。脚本运行中
@@ -85,8 +98,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **源码形态**（见下面「源码形态」）一律处在这种模式：`follow_source_enabled` 对导入报告
     `sourceForm` 为真的脚本恒真，开关在界面上锁在开着；源码形态的导入不管调用方传什么都进私有渠道。
   - **关掉**（标记还带 `followSource` 时，`_leave_follow_source`）：回到 `Update.Channel` 组的 latest
-    （私有文件照常带，同样不按同版本合并留档）；视图已在 latest 上就只摘掉 `followSource`；组里还
+    （私有文件照常带，不留本地改过档，见上一条）；视图已在 latest 上就只摘掉 `followSource`；组里还
     没有载荷就按来源正常导入一次；来源也不在就留在当前版本。
+  - **复制 / 克隆不继承**：「复制脚本」把新脚本的 `Embedded.FollowSource` 写成关；`/maafw/embedded/clone`
+    本来就不抄这个开关。源脚本挂的是开发者载荷时，目标挂源原渠道（`Update.Channel`）组的 latest，
+    不复用本地改过的那份（`clone_embedded_copy(group_channel=…)`）；组里还没有正式版本就抛
+    `FollowSourceCloneUnavailable`：克隆接口改按源的来源目录正常导入（目标自己的组，消息里说明），
+    来源也不在就拒绝并让用户直接选目录；「复制脚本」先不建视图，第一次运行前按继承的 `Info.Path` 导入。
+    源码形态没有正式渠道，克隆一律走按来源导入，目标继承 `sourceForm` 报告，照样处在开发者模式。
   - **回收**：私有渠道的 latest 只在脚本还在、开着开关、视图还在这个谱系上时算引用；其余由启动期
     `collect_payload_garbage(follow_source_views=…)` 从 `lineage.json` 摘掉（本进程起来之后登记的不碰），
     被新导入顶掉的、关掉开关或删脚本留下的开发者载荷随后按普通规则回收，视图挂着的照样留。
@@ -187,8 +206,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
-  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`
+  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`（开发者模式开关除外）
   沿用源（两者必须成对继承），类型随项目。「复制脚本」（`Config.add_script`）复用同一个函数。
+  源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期 `Config.clean_maafw_update_cache`

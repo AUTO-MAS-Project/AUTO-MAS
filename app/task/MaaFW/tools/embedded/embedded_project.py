@@ -292,11 +292,12 @@ def _script_channel(script_config: Any) -> str:
 # --------------------------------------------------------------------------
 #
 # 开着时脚本的组是它自己的私有渠道 ``dev:<视图名>``（谱系 + 私有渠道，组里只有它）：运行前
-# 按投影白名单给来源目录算一个便宜的签名（投影会带走的文件的相对路径 + 大小 + mtime_ns，
-# 不读内容），与视图标记里 ``followSource.signature``（视图挂的这份载荷是从哪个来源状态导入的）
-# 比，不同就重新导入、登记进私有渠道（``register(always_advance=True)``，不比版本），视图切过去。
+# 按投影白名单给来源目录算签名（投影会带走的文件的相对路径 + 大小 + mtime_ns，≤ 1 MB 的再加
+# 内容哈希），与视图标记里 ``followSource.signature``（视图挂的这份载荷是从哪个来源状态导入的）
+# 比，不同就重新导入、登记进私有渠道（``register(always_advance=True)``，不比版本，版本号带
+# ``+dev``），视图切过去。读不了来源就沿用上次同步的视图并告警（:func:`_sync_follow_source`）。
 # 同项目的其它脚本、官方更新都在普通渠道，碰不到它，它也碰不到它们。关掉后回到
-# ``Update.Channel`` 的组（:func:`_leave_follow_source`）。
+# ``Update.Channel`` 的组（:func:`_leave_follow_source`）；复制 / 克隆都不继承开发者载荷。
 
 # 视图标记里记「这份载荷是从哪个来源状态导入的」的字段：{path, signature, files, syncedAt}。
 FOLLOW_SOURCE_FIELD = "followSource"
@@ -355,21 +356,64 @@ def effective_channel(script_id: str, script_config: Any) -> str:
     return _script_channel(script_config)
 
 
+# 签名里按内容算哈希的文件大小上限：json / py / interface 这类小文件改了数值、长度和修改时间都
+# 没变（同长度改写后还原 mtime、按时间戳解压）也查得出来；更大的（模型、图片、库）只比大小与
+# 修改时间，免得每次运行前把几百 MB 读一遍。
+FOLLOW_SOURCE_HASH_LIMIT = 1024 * 1024
+# 签名格式的版本：格式改了，旧标记记的签名必然对不上，第一次检查按「有变化」重导一次。
+_FOLLOW_SOURCE_SIGNATURE_FORMAT = 2
+
+
 def follow_source_signature(plan: ProjectionPlan) -> tuple[str, int]:
-    """来源目录的便宜签名：投影会带走的文件的（源相对路径, 大小, mtime_ns），再加投影规则
-    版本（规则改了也要重导）。返回（sha256 十六进制, 文件数）。只 stat，不读内容。"""
+    """来源目录的签名：投影会带走的文件的（源相对路径, 大小, mtime_ns），≤ 1 MB 的再加内容
+    的 blake2b，外加投影规则版本（规则改了也要重导）。返回（sha256 十六进制, 文件数）。
+
+    读不了的文件（被独占锁住、扫描后被删掉）不吞掉，原样抛给调用方：那一轮按「读来源失败」
+    沿用上次同步的视图（:func:`_sync_follow_source`）。
+    """
 
     root = plan.rules.source_root
-    digest = hashlib.sha256(f"projection:{PROJECTION_REVISION}\n".encode())
+    digest = hashlib.sha256(
+        f"signature:{_FOLLOW_SOURCE_SIGNATURE_FORMAT}\0"
+        f"projection:{PROJECTION_REVISION}\n".encode()
+    )
     files = sorted(plan.copied_files, key=lambda path: path.as_posix())
     for relative in files:
-        try:
-            info = (root / relative).stat()
-            size, mtime = info.st_size, info.st_mtime_ns
-        except OSError:
-            size, mtime = -1, -1
-        digest.update(f"{relative.as_posix()}\0{size}\0{mtime}\n".encode())
+        path = root / relative
+        info = path.stat()
+        content = ""
+        if info.st_size <= FOLLOW_SOURCE_HASH_LIMIT:
+            content = hashlib.blake2b(path.read_bytes(), digest_size=16).hexdigest()
+        digest.update(
+            f"{relative.as_posix()}\0{info.st_size}\0{info.st_mtime_ns}\0{content}\n".encode()
+        )
     return digest.hexdigest(), len(files)
+
+
+# 开发者导入登记的版本号带上本地后缀（PEP 440 local version / semver build metadata），载荷清单、
+# latest 与视图标记里都是它：同版本挑 latest、同版本合并留档这些按版本号相等判断的地方（包括
+# 降级回去的旧代码）都不会把开发者载荷当成正式版的同版本副本，界面上也看得出是本地版本。
+FOLLOW_SOURCE_VERSION_LOCAL = "dev"
+
+
+def follow_source_payload_version(version: str) -> str:
+    """开发者载荷登记用的版本号：``1.5.0`` → ``1.5.0+dev``（已有本地段的接成 ``+x.dev``）。"""
+
+    text = str(version or "").strip() or "0"
+    if "+" in text:
+        local = text.split("+", 1)[1]
+        if local == FOLLOW_SOURCE_VERSION_LOCAL or local.endswith(
+            f".{FOLLOW_SOURCE_VERSION_LOCAL}"
+        ):
+            return text
+        return f"{text}.{FOLLOW_SOURCE_VERSION_LOCAL}"
+    return f"{text}+{FOLLOW_SOURCE_VERSION_LOCAL}"
+
+
+def is_follow_source_manifest(manifest: Mapping[str, Any] | None) -> bool:
+    """载荷是不是开发者模式导入建出来的（清单记的登记渠道是私有渠道）。"""
+
+    return payloads.is_private_channel(str((manifest or {}).get("channel") or ""))
 
 
 # --------------------------------------------------------------------------
@@ -871,7 +915,6 @@ def _realize_view(
     assume_marker: Mapping[str, Any] | None = None,
     seed_private: Mapping[str, Path] | None = None,
     follow_source: Mapping[str, Any] | None = None,
-    archive_same_version: bool = True,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
     否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
@@ -879,9 +922,11 @@ def _realize_view(
     项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。
 
     ``follow_source``（开发者模式的导入用）：写进新标记的 ``followSource``。
-    ``archive_same_version=False``（开发者模式的导入、关掉开关回到组）：这种切换是「来源改了」
-    或「不要开发者的改动了」，同版本号的两份载荷之间不按「合并两份副本」留档被替换 / 去掉的
-    文件（那是开发者自己的改动，来源目录里就有）；视图里被本地改过的受管文件照常留档。"""
+
+    新旧载荷有一份是开发者载荷（:func:`is_follow_source_manifest`）时，不管是哪条路径切的（开发者
+    导入、关掉开关回到组、克隆后的组同步、被兄弟的导入 / 同组传播切走），都不按「同版本合并两份
+    副本」留档被替换 / 去掉的文件，也不按「补齐」保留视图里的旧内容：差别就是开发者自己的改动，
+    来源目录里都有。视图里被本地改过的受管文件照常留档。"""
 
     started = time.monotonic()
     root = payloads_root(base)
@@ -917,10 +962,14 @@ def _realize_view(
             old_payload_path = candidate
             old_manifest_version = str(old_manifest.get("version") or "")
         else:
+            old_manifest = None
             logger.warning(
                 f"[MFW 内嵌] 视图 {view.name} 记的载荷 {from_id} 已不在，"
                 "按全部受管文件都可能被改过处理"
             )
+    involves_follow_source = is_follow_source_manifest(
+        new_manifest
+    ) or is_follow_source_manifest(old_manifest if old_marker is not None else None)
 
     result = ViewResult(
         view=view,
@@ -938,6 +987,7 @@ def _realize_view(
     fills_only = (
         not same_payload
         and old_payload_path is not None
+        and not involves_follow_source
         and _same_version(str(old_manifest_version or ""), str(version or ""))
         and _is_content_superset(old_files, new_files)
     )
@@ -979,7 +1029,7 @@ def _realize_view(
                 old_payload_path is not None
                 and from_id != payload_id
                 and not fills_only
-                and archive_same_version
+                and not involves_follow_source
                 and _same_version(str(old_manifest_version or ""), str(version or ""))
             ),
         )
@@ -1426,7 +1476,11 @@ def import_embedded_project(
             channel=channel or DEFAULT_CHANNEL,
             source={"kind": "import", "ref": str(source)},
             by=str(script_id),
-            version=source_version,
+            version=(
+                follow_source_payload_version(source_version)
+                if follow_source
+                else source_version
+            ),
             lineage_info=info,
             known_hashes=finalized.hashes,
             bundled={
@@ -1480,7 +1534,6 @@ def import_embedded_project(
             carry=True,
             seed_private=_runtime_state_seed(plan),
             follow_source=follow_record,
-            archive_same_version=follow_record is None,
         )
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
@@ -1625,19 +1678,51 @@ def _payload_available(lineage: str, payload_id: str, base: Path | None) -> bool
         return False
 
 
+class FollowSourceCloneUnavailable(EmbeddedProjectError):
+    """源脚本挂的是开发者载荷，而它原渠道的组在本机还没有载荷可复用。"""
+
+
 def clone_embedded_copy(
-    source_script_id: str, target_script_id: str, base: Path | None = None
+    source_script_id: str,
+    target_script_id: str,
+    base: Path | None = None,
+    *,
+    group_channel: str | None = None,
+    source_form: bool = False,
 ) -> bool:
     """同一项目再建一个脚本：从源脚本挂着的载荷物化目标视图；返回是否克隆了。
 
     源有标记（或正在切换）→ 直接从载荷物化，不读源视图，源运行期的私有状态不带过去。
     源是还没采纳的老副本 → 退回按目录克隆（已共用的再挂链接、共用候选经共用库放、其余复制，
     ``debug/`` 与字节码不带）。目标原有的视图只在新树建好后才被换掉，失败时原样不动。
+
+    源挂的是开发者载荷（开着开发者模式 / 源码形态）时不复用它（那是开发者本地改过的内容），改用
+    源脚本原渠道（``group_channel``，源的 ``Update.Channel``）组的 latest；组里没有载荷就抛
+    :class:`FollowSourceCloneUnavailable`，由调用方决定退路。``source_form``（源脚本是源码形态）：
+    没有「原渠道」可言（同谱系普通渠道里的是发行包形态的版本），一律抛，由调用方按来源目录导入。
     """
 
     resolved = resolve_view_payload(source_script_id, base)
     if resolved is not None and _payload_available(*resolved, base):
         lineage, payload_id = resolved
+        try:
+            source_manifest = payloads.read_manifest(
+                payloads_root(base), lineage, payload_id
+            )
+        except payloads.PayloadError:
+            source_manifest = None
+        if is_follow_source_manifest(source_manifest):
+            if source_form:
+                raise FollowSourceCloneUnavailable(
+                    "源脚本是源码形态（始终跟随来源目录），没有可复用的正式版本"
+                )
+            channel = group_channel or DEFAULT_CHANNEL
+            payload_id = _group_target(lineage, channel, "", base)
+            if not payload_id:
+                raise FollowSourceCloneUnavailable(
+                    "源脚本开着开发者模式，挂的是从来源目录同步的本地版本，不复用；"
+                    f"同项目「{channel}」渠道在本机还没有可复用的版本"
+                )
         _realize_view(
             embedded_project_dir(target_script_id, base),
             lineage,
@@ -2279,31 +2364,65 @@ def _sync_follow_source(
 ) -> dict[str, Any] | None:
     """开发者模式的运行前检查：来源目录的签名与视图标记记的不同就重新导入；返回新记录。
 
-    签名只看投影会带走的文件（:func:`follow_source_signature`）；来源换了目录（标记记的
-    ``path`` 不是它）也算变了。投影失败（开发者把 interface 改坏了）照常报错、本次不运行：
-    拿旧内容跑只会让人以为改动没生效。
+    签名看投影会带走的文件（:func:`follow_source_signature`）；来源换了目录（标记记的
+    ``path`` 不是它）也算变了。**读或投影来源的任何失败**（文件被独占锁住、构建脚本先删后拷时
+    interface 暂时不在、interface 解析失败、junction / 符号链接被投影拒绝……）都不挡这一轮：
+    沿用上次同步好的视图运行，运行日志里一条醒目的警告写明原因和用的是哪次同步的版本
+    （:func:`_keep_last_follow_source_sync`）。视图本身健康是调用方的前提；整个来源目录不在也
+    走同一条。
     """
 
     view = embedded_project_dir(script_id, base)
     try:
         plan = build_projection_plan(Path(source).resolve())
-    except ProjectionError as exc:
-        raise EmbeddedProjectError(f"开发者模式：来源目录导入失败：{exc}") from exc
-    signature, files = follow_source_signature(plan)
-    record = follow_source_record(read_view_marker(view))
-    if (
-        record is not None
-        and _same_directory(str(record.get("path") or ""), source)
-        and str(record.get("signature") or "") == signature
-    ):
-        _say(send_log, f"开发者模式：来源目录未变化（{files} 个文件），沿用当前视图")
+        signature, files = follow_source_signature(plan)
+        record = follow_source_record(read_view_marker(view))
+        if (
+            record is not None
+            and _same_directory(str(record.get("path") or ""), source)
+            and str(record.get("signature") or "") == signature
+        ):
+            _say(
+                send_log, f"开发者模式：来源目录未变化（{files} 个文件），沿用当前视图"
+            )
+            return None
+        imported = import_embedded_project(
+            script_id, source, base=base, follow_source=True, plan=plan
+        )
+    except Exception as exc:  # noqa: BLE001 - 读来源失败一律沿用上次同步的视图，原因写进日志
+        _keep_last_follow_source_sync(view, _describe_source_failure(exc), send_log)
         return None
-    imported = import_embedded_project(
-        script_id, source, base=base, follow_source=True, plan=plan
-    )
     if send_log is not None:
         send_log(describe_follow_source_sync(imported["followSource"]))
     return imported
+
+
+def _describe_source_failure(exc: BaseException) -> str:
+    text = str(exc).strip()
+    for prefix in ("导入失败：", "开发者模式：来源目录导入失败："):
+        text = text.removeprefix(prefix)
+    if isinstance(exc, (ProjectionError, EmbeddedProjectError, payloads.PayloadError)):
+        return text or type(exc).__name__
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _keep_last_follow_source_sync(
+    view: Path, reason: str, send_log: Callable[[str], None] | None
+) -> None:
+    """开发者模式读来源失败（或来源目录不在）：这一轮照常用视图（上次同步好的版本）运行，
+    运行日志里打一条醒目的警告，写明原因与版本。"""
+
+    marker = read_view_marker(view) or {}
+    record = follow_source_record(marker) or {}
+    version = str(marker.get("version") or "") or "未知版本"
+    synced = str(record.get("syncedAt") or marker.get("materializedAt") or "")
+    when = f"（同步于 {synced[:19].replace('T', ' ')}）" if synced else ""
+    _say(
+        send_log,
+        f"【警告】开发者模式读取来源目录失败：{reason}；本轮沿用上次同步的版本 "
+        f"{version}{when}运行，来源目录里的改动这次没有生效",
+        warning=True,
+    )
 
 
 def _leave_follow_source(
@@ -2330,10 +2449,9 @@ def _leave_follow_source(
     lineage = str(marker["lineage"])
     target = _group_target(lineage, channel, "", base)
     if target and target != str(marker["payload"]):
-        # 同版本的开发者载荷与组版本不同的那些文件就是开发者的改动，来源目录里都有，不留档
-        result = _realize_view(
-            view, lineage, target, base=base, carry=True, archive_same_version=False
-        )
+        # 开发者载荷与组版本不同的那些文件就是开发者的改动，来源目录里都有，不留档（_realize_view
+        # 按载荷是不是开发者载荷判断）
+        result = _realize_view(view, lineage, target, base=base, carry=True)
         _say(
             send_log,
             f"开发者模式已关闭：已回到「{channel}」渠道的版本 {result.version or target}",
@@ -2377,7 +2495,8 @@ def ensure_embedded_copy(
     重新选目录。
 
     ``follow_source_check``（运行前检查传）：开着开发者模式时比一次来源目录、变了就重新导入
-    到私有渠道（:func:`_sync_follow_source`），来源不在就照常用当前视图并告警；刚关掉时回到
+    到私有渠道（:func:`_sync_follow_source`），来源不在或读不了就沿用上次同步的视图并醒目告警
+    （视图也不在时才按导入失败处理，走下面的普通路径）；刚关掉时回到
     ``Update.Channel`` 的组（:func:`_leave_follow_source`）。其它入口（预览、准备环境、更新）
     不扫来源目录；它们碰上视图不在而要导入时，开发者模式下同样导入到私有渠道。
     """
@@ -2391,10 +2510,8 @@ def ensure_embedded_copy(
             if read_view_marker(copy_dir) is None:
                 _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
             if not source or not Path(source).is_dir():
-                _say(
-                    send_log,
-                    f"开发者模式：来源目录 {source or '（未设置）'} 不在，照常用当前视图运行",
-                    warning=True,
+                _keep_last_follow_source_sync(
+                    copy_dir, f"来源目录 {source or '（未设置）'} 不在", send_log
                 )
                 return None
             return _sync_follow_source(script_id, source, base=base, send_log=send_log)
@@ -2858,6 +2975,7 @@ __all__ = [
     "STAGING_DIR_NAME",
     "VIEW_MARKER_NAME",
     "EmbeddedProjectError",
+    "FollowSourceCloneUnavailable",
     "GroupMember",
     "PayloadGarbageReport",
     "PropagationResult",

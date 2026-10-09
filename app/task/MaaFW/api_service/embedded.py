@@ -56,6 +56,7 @@ from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    FollowSourceCloneUnavailable,
     clone_embedded_copy,
     copy_is_healthy,
     describe_follow_source_sync,
@@ -65,6 +66,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     follow_source_enabled,
     import_embedded_project,
     inherit_embedded_record,
+    is_source_form,
     read_interface_version,
     read_view_marker,
 )
@@ -696,11 +698,39 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     target_reservation = await try_reserve_project_path(target_dir)
     if target_reservation is None:
         return MaaFWApiReply.error(400, EMBEDDED_COPY_BUSY)
+    source_path = str(source_config.get("Info", "Path") or "").strip()
+    imported: dict[str, Any] | None = None
     try:
-        # 目标已有视图（老脚本换项目）在新视图建好后原子换掉，失败时原样不动。
-        cloned = await asyncio.to_thread(
-            clone_embedded_copy, source_script_id, script_id
-        )
+        # 目标已有视图（老脚本换项目）在新视图建好后原子换掉，失败时原样不动。源开着开发者
+        # 模式时复用它原渠道组的 latest（不复用本地改过的开发者载荷）。
+        try:
+            cloned = await asyncio.to_thread(
+                lambda: clone_embedded_copy(
+                    source_script_id,
+                    script_id,
+                    group_channel=str(
+                        source_config.get("Update", "Channel") or "stable"
+                    ),
+                    source_form=is_source_form(source_config),
+                )
+            )
+        except FollowSourceCloneUnavailable as exc:
+            # 组里还没有正式版本：与关掉开发者模式时同一条退路，按源脚本的来源目录正常导入
+            # （进目标自己的组）；来源目录也不在就拒绝，不拿开发者载荷顶替。
+            if not source_path or not await asyncio.to_thread(
+                lambda: Path(source_path).is_dir()
+            ):
+                raise EmbeddedProjectError(
+                    f"{exc}，源脚本的来源目录也不在；请给这个脚本直接选择项目目录"
+                ) from exc
+            imported = await asyncio.to_thread(
+                import_embedded_project,
+                script_id,
+                source_path,
+                channel=effective_channel(script_id, script_config),
+                follow_source=follow_source_enabled(script_config),
+            )
+            cloned = True
     except EmbeddedProjectError as exc:
         logger.warning(
             mask_home_path(
@@ -725,7 +755,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     if not cloned:
         return MaaFWApiReply.error(400, "源脚本没有可用的副本，先在它那边导入项目")
 
-    inherited = inherit_embedded_record(source_config, script_id)
+    inherited = imported or inherit_embedded_record(source_config, script_id)
     await Config.update_script(
         script_id,
         {
@@ -742,6 +772,18 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
     source_name = str(source_config.get("Info", "Name") or source_script_id[:8])
+    if imported is not None:
+        if (imported.get("report") or {}).get("sourceForm"):
+            message = (
+                f"「{source_name}」是源码形态，没有正式版本可复用，已按它的来源目录导入"
+                "（同样始终跟随来源目录）"
+            )
+        else:
+            message = (
+                f"「{source_name}」开着开发者模式、本机还没有正式版本可复用，"
+                "已按它的来源目录正常导入"
+            )
+        return MaaFWApiReply(message=message, data=data)
     return MaaFWApiReply(
         message=f"已复用「{source_name}」的项目，运行时与模型文件共用，不另占空间",
         data=data,

@@ -1747,6 +1747,18 @@ export default {
     maafwDirectoryLockedHint:
       'プロジェクトは AUTO-MAS 自身のフォルダーへ取り込み済みで、実行も更新もそこで行います。元フォルダーは削除しても構いません。別のプロジェクトを使うには新しいマネージドスクリプトを作成してください',
     maafwImportingCopy: 'プロジェクトを取り込み中...',
+    maafwFollowSource: 'ソースディレクトリに追従（開発者モード）',
+    maafwFollowSourceHint:
+      'オンにすると、ソースディレクトリで変更したファイルが次回の実行から反映されます（実行前に変更を検出して取り込み直します。「今すぐ同期」でも可）。プロジェクトの更新は行わず、同じプロジェクトの他のスクリプトとバージョンを共有しません。オフにすると、選択中の更新チャネルのバージョンに戻ります',
+    maafwFollowSourceStatus: '追従先 {path} · 最終同期 {time}',
+    maafwFollowSourceNotSynced:
+      '追従先 {path} · 未同期、次回の実行前にソースディレクトリから取り込みます',
+    maafwFollowSourceMissing:
+      'ソースディレクトリが見つかりません。実行時は現在のコピーをそのまま使います',
+    maafwFollowSourceSyncNow: '今すぐ同期',
+    maafwSourceFormTag: 'ソース形式',
+    maafwSourceFormHint:
+      'ソース形式で取り込みました（interface は assets/、Agent はソースツリー内、Python と MaaFramework は同梱なし）：常にソースディレクトリに追従し、変更は次回の実行から反映されます（「今すぐ同期」でも可）。Agent は requirements.txt から隔離環境を作ります。プロジェクトの更新は行わず、同じプロジェクトの他のスクリプトとバージョンを共有しません',
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
     m9aFlavorScriptTitle: 'M9A マネージドスクリプトを編集',
