@@ -873,7 +873,7 @@ export default {
     queueImportNoUsers: '没有可导入的用户',
     queueImportPasswordCount: '{count} 项密码需重填',
     queueTaskCount: '{count} 个任务',
-    queueInvalidCount: '{count} 个已失效',
+    queueInvalidCount: '{count} 个不可用',
     queueTemplate: '模板',
     queueTemplateMine: '我的模板',
     queueTemplatePresets: '项目预设',

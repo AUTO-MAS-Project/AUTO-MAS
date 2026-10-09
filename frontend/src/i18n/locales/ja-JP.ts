@@ -833,7 +833,7 @@ export default {
     queueImportNoUsers: 'インポートできるユーザーがいません',
     queueImportPasswordCount: 'パスワード {count} 件の再入力が必要',
     queueTaskCount: '{count} 件のタスク',
-    queueInvalidCount: '{count} 件が無効',
+    queueInvalidCount: '{count} 件が利用不可',
     queueTemplate: 'テンプレート',
     queueTemplateMine: 'マイテンプレート',
     queueTemplatePresets: 'プロジェクトのプリセット',
