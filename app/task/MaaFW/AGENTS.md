@@ -500,9 +500,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
   （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
-- 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
-  `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
-  按三态写逻辑。
+- 用户配置上的 `Info.Mode`（脚本/用户/直控）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
+  用户页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
+  配置备份恢复里原样带着。不要在 MaaFW 上按三态写逻辑。
 - 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、
   登录/切号、按游戏语义组织的专属界面、对上游资源文件的动态读取等）可以立专项，MaaEnd 就是
   这种情况。立专项时在专项目录写明它比通用 MaaFW 多控制了什么。
