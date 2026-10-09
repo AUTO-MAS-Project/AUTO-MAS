@@ -1272,17 +1272,17 @@ class MaaFWRunner:
                 display_name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             )
             # 放过之前同样等停止生效：收尾任务排在中间时下一个任务紧接着投递，
-            # tasker 没空闲会被拒（task_id=0）
-            if not self._wait_task_deadline_stop():
+            # tasker 没空闲会被拒（task_id=0）。排在队尾时后面没有要投的，不等，
+            # 免得停不下来反把本轮判成失败
+            has_next = index + 1 < len(self.plan.tasks)
+            if has_next and not self._wait_task_deadline_stop():
                 raise RuntimeError(
                     f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
                     f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
                     f"{display_name}"
                 )
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
-            stopped = (
-                "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
-            )
+            stopped = "已停止并继续后续任务" if has_next else "已停止"
             self.send_log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），{stopped}: "
                 f"{display_name}；{task.nonFatalMessage}"
