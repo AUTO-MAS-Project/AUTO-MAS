@@ -9,6 +9,7 @@ import {
   addDiagnosticFile,
   addDirectory,
   addRecentAdapterHistoryLogs,
+  addSkippedEntry,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -33,26 +34,30 @@ export interface MaaIssueReportResult {
 /** 逐个收录大文件时让主进程处理窗口事件。 */
 const yieldToEventLoop = () => new Promise<void>(resolve => setImmediate(resolve))
 
-/** 只收 interface 的图片，新现场优先，逐张读取时让主进程处理窗口事件。 */
+/** 收各安装 interface 的图片：跨安装统一按新现场优先排序后收录，旧图不占新图的额度。 */
 async function addInterfaceImages(
   state: CollectorState,
-  sourceDir: string,
-  archiveDir: string
+  installations: Array<{ sourceDir: string; archiveDir: string }>
 ): Promise<void> {
   const files: Array<{ sourcePath: string; archivePath: string; mtimeMs: number }> = []
-  addDirectory(state, sourceDir, archiveDir, {
-    includeFile: isImage,
-    addFile: (_, sourcePath, archivePath) => {
-      try {
-        files.push({ sourcePath, archivePath, mtimeMs: fs.statSync(sourcePath).mtimeMs })
-      } catch {
-        logger.debug(`截图已消失或无法读取: ${sourcePath}`)
-      }
-    },
-  })
+  for (const { sourceDir, archiveDir } of installations) {
+    addDirectory(state, sourceDir, archiveDir, {
+      includeFile: isImage,
+      addFile: (_, sourcePath, archivePath) => {
+        try {
+          files.push({ sourcePath, archivePath, mtimeMs: fs.statSync(sourcePath).mtimeMs })
+        } catch {
+          addSkippedEntry(state, archivePath, 0, '截图已消失或无法读取')
+        }
+      },
+    })
+  }
   files.sort((a, b) => b.mtimeMs - a.mtimeMs || a.archivePath.localeCompare(b.archivePath))
   for (const file of files) {
+    const before = state.entries.length
     addDiagnosticFile(state, file.sourcePath, file.archivePath)
+    if (state.entries.length === before)
+      addSkippedEntry(state, file.archivePath, 0, '截图已消失或无法读取')
     await yieldToEventLoop()
   }
 }
@@ -72,14 +77,18 @@ export async function createMaaIssueReport(
     if (!installations.length)
       return { success: false, error: '未找到已配置安装路径的 MAA 脚本，请检查脚本设置' }
 
-    // 每个安装的核心日志优先，各安装依次收同类文件。
+    // 每个安装的核心日志优先，各安装依次收同类文件。.bak 未轮转属常态，缺失
+    // 保持静默；存在却收不进来（被占用、权限等）要记成 skipped，让清单与
+    // incompleteCount 知道少了什么。
     for (const name of PRIMARY_LOGS) {
       for (const installation of installations) {
-        addDiagnosticFile(
-          state,
-          path.join(installation.rootPath, 'debug', name),
-          `maa/${installation.label}/debug/${name}`
-        )
+        const sourcePath = path.join(installation.rootPath, 'debug', name)
+        if (!fs.existsSync(sourcePath)) continue
+        const archivePath = `maa/${installation.label}/debug/${name}`
+        const before = state.entries.length
+        addDiagnosticFile(state, sourcePath, archivePath)
+        if (state.entries.length === before)
+          addSkippedEntry(state, archivePath, 0, '核心日志无法读取')
         await yieldToEventLoop()
       }
     }
@@ -102,13 +111,13 @@ export async function createMaaIssueReport(
     if (!dataRoots.some(root => path.resolve(root, 'debug') === path.resolve(runtimeDebugDir)))
       addDebugDirectory(state, runtimeDebugDir, 'logs/frontend-runtime', 'maa', isLogOrImage)
 
-    for (const installation of installations) {
-      await addInterfaceImages(
-        state,
-        path.join(installation.rootPath, 'debug', 'interface'),
-        `maa/${installation.label}/debug/interface`
-      )
-    }
+    await addInterfaceImages(
+      state,
+      installations.map(installation => ({
+        sourceDir: path.join(installation.rootPath, 'debug', 'interface'),
+        archiveDir: `maa/${installation.label}/debug/interface`,
+      }))
+    )
     const collectedCount = state.entries.filter(entry => entry.status !== 'skipped').length
     const incompleteCount = state.entries.filter(entry => entry.status !== 'included').length
     if (!collectedCount) return { success: false, error: '没有可导出的 MAA 日志或截图' }

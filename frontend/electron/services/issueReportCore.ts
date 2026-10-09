@@ -30,7 +30,7 @@ const SENSITIVE_BEARER_PATTERN =
 const SENSITIVE_ASSIGNMENT_PATTERN =
   /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
 const ACCOUNT_ASSIGNMENT_PATTERN =
-  /((?:["']?(?:[\w.-]+\.)?(?:account(?:[_-]?name)?|user[_-]?name)["']?\s*[:=]\s*["']?))[^"'\s,;&}\]]+/gi
+  /((?:["']?(?:[\w.-]+\.)?(?:account(?:[_-]?name)?|user[_-]?name)["']?\s*[:=]\s*))(?:"[^"]*"|'[^']*'|"[^"]*|'[^']*|[^"'\s,;&}\]]+)/gi
 // 上面两条正则在大文件上每 MB 各要十几毫秒；第一条命中的必要条件是出现「: Bearer 」这种形状，
 // 先用便宜得多的这条筛一遍
 const BEARER_OR_BASIC_PATTERN = /[:=]\s*["']?(?:Bearer|Basic)\s/i
@@ -276,7 +276,7 @@ function addEntry(
   })
 }
 
-function addSkippedEntry(
+export function addSkippedEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
