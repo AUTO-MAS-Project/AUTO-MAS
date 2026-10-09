@@ -34,8 +34,9 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
     CONFIG_SOURCE_SCRIPT,
@@ -78,7 +79,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class SrcManager(TaskExecuteBase):
+class SrcManager(ScriptManagerBase):
     """SRC控制器"""
 
     wait_for_finalizer_on_cancel = True
@@ -177,9 +178,7 @@ class SrcManager(TaskExecuteBase):
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-            and self.task_info.is_target_user(str(uid))
+            if self.is_user_selected(uid, config)
         )
 
     async def prepare(self):
@@ -204,15 +203,9 @@ class SrcManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
@@ -812,6 +805,14 @@ class SrcManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             task_kwargs: dict = {"src_installation_id": self.src_installation_id}
             # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
             if self.task_info.mode == "ScriptConfig":
@@ -824,7 +825,7 @@ class SrcManager(TaskExecuteBase):
                 **task_kwargs,
             )
             try:
-                await self.spawn(task)
+                await self.run_user_task(current_user, task)
             finally:
                 if isinstance(task, (AutoProxyTask, ScriptConfigTask)):
                     self.process_cleanup_success = task.process_cleanup_success
@@ -910,20 +911,8 @@ class SrcManager(TaskExecuteBase):
     async def _send_final_notification(self) -> None:
         """解锁配置后限时发送任务完成通知。"""
 
-        error_count = sum(1 for u in self.script_info.user_list if u.status == "异常")
-        over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
-        wait_count = sum(1 for u in self.script_info.user_list if u.status == "等待")
-
         title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-        result = {
-            "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-            "script_name": self.script_info.name or "空白",
-            "start_time": self.begin_time,
-            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": over_count,
-            "uncompleted_count": error_count + wait_count,
-            "result": self.script_info.result,
-        }
+        result = self.build_proxy_report()
 
         completion_title = (
             title.replace("报告", "已完成！")

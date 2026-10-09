@@ -63,6 +63,8 @@ class UserItem:
     push_log_mode: str = field(
         default="汇总"
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
+    # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
+    maintenance_skipped: bool = field(default=False, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):

@@ -26,7 +26,8 @@ from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -38,8 +39,11 @@ from .Update import BetterGIUpdateTask
 logger = get_logger("BetterGI 调度器")
 
 
-class BetterGIManager(TaskExecuteBase):
+class BetterGIManager(ScriptManagerBase):
     """BetterGI 控制器（better-genshin-impact 线）"""
+
+    # 执行层已判为「部分失败」但允许继续的用户，保持原有已完成报告口径。
+    completed_user_statuses = frozenset({"完成", "部分失败"})
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -51,7 +55,6 @@ class BetterGIManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.user_config: MultipleConfig[BetterGIUserConfig] | None = None
-        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
@@ -87,15 +90,9 @@ class BetterGIManager(TaskExecuteBase):
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
-                self.script_info.user_list = [
-                    UserItem(
-                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                    )
-                    for uid, config in Config.ScriptConfig[script_uid].UserData.items()
-                    if config.get("Info", "Status")
-                    and config.get("Info", "RemainedDay") != 0
-                    and self.task_info.is_target_user(str(uid))
-                ]
+                self.script_info.user_list = self.build_proxy_user_list(
+                    Config.ScriptConfig[script_uid].UserData.items()
+                )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
 
@@ -146,17 +143,9 @@ class BetterGIManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid),
-                    name=config.get("Info", "Name"),
-                    status="等待",
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -208,6 +197,13 @@ class BetterGIManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
 
             method = AutoProxyTask(
                 script_info=self.script_info,
@@ -221,16 +217,10 @@ class BetterGIManager(TaskExecuteBase):
                 current_user = self.script_info.user_list[
                     self.script_info.current_index
                 ]
-                if current_user.status == "等待":
-                    current_user.status = "异常"
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=sub_check),
-                )
+                await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
-            await self.spawn(method)
+            await self.run_user_task(current_user, method)
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
@@ -260,33 +250,12 @@ class BetterGIManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "异常"
-                )
-                # 「部分失败」（执行层有步骤失败但已跳过继续、不判负）必须计入已完成：
-                # 它既不算异常也不算等待，否则 completed/uncompleted 两侧都漏掉它，数字对不上
-                over_count = sum(
-                    1
-                    for user in self.script_info.user_list
-                    if user.status in ("完成", "部分失败")
-                )
-                wait_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "等待"
-                )
                 task_mode = TASK_MODE_ZH[self.task_info.mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                result = {
-                    "title": f"{task_mode}任务报告",
-                    "script_name": self.script_info.name or "空白",
-                    "start_time": self.begin_time,
-                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": over_count,
-                    "uncompleted_count": error_count + wait_count,
-                    "result": self.script_info.result,
-                }
+                result = self.build_proxy_report()
 
                 try:
                     await push_notification(

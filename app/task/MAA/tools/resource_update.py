@@ -25,7 +25,7 @@
 CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空时
 下载），GitHub 源只保留 GUI 手动入口（设置页按钮 / 主窗口拖拽导入），且没有
 任何程序化触发方式（Bootstrapper.ParseArgs 无相关 flag）。本模块在 MAS 侧
-补位：MAA 自动代理任务运行前（MaaManager.prepare 锁定配置之前；配置会话
+补位：MAA 自动代理任务运行前（MaaManager._run_main_task 锁定配置之前；配置会话
 不触发）按需更新全部 MAA 实例的资源。
 仅当 MAS 的更新源为 Mirror酱且已填写 CDK 时启用；检查、下载与缓存分发
 均受此条件约束，不使用 GitHub 资源源。
@@ -883,7 +883,7 @@ async def _run_update() -> None:
 async def prepare_queue_resources(progress: _Progress | None = None) -> None:
     """MAA 任务运行前按需更新全部 MAA 实例资源。
 
-    必须在 MaaManager.prepare 锁定脚本配置之前调用：lock() 之后本安装会被
+    由 MaaManager._run_main_task 在维护判断与锁定配置之前调用：lock() 之后本安装会被
     占用过滤跳过，更新不到它自己。
 
     Args:

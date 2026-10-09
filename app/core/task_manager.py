@@ -505,8 +505,16 @@ class Task(TaskExecuteBase):
         outcome = "error"
         try:
             yield
-            user_statuses = [user.status for user in script_item.user_list]
-            if not user_statuses:
+            user_statuses = [
+                user.status
+                for user in script_item.user_list
+                if not user.maintenance_skipped
+            ]
+            if script_item.status == "异常":
+                outcome = "failed"
+            elif script_item.user_list and not user_statuses:
+                outcome = "skipped"
+            elif not user_statuses:
                 # 运行前检查没过时还没加载用户，脚本状态是「异常」
                 outcome = "failed" if script_item.status == "异常" else "no_user"
             elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
@@ -651,7 +659,7 @@ class Task(TaskExecuteBase):
                 continue
             results.append(await self._run_cycle_entry(queue_uid, entry, entries))
 
-        if results and not any(result == "success" for result in results):
+        if results and not any(result in ("success", "skipped") for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
     def _scope_skipped_script_ids(self) -> set[str]:
@@ -698,11 +706,12 @@ class Task(TaskExecuteBase):
         queue_uid: uuid.UUID,
         entry: CycleEntry,
         entries: list[CycleEntry],
-    ) -> Literal["success", "failed", "blocked"]:
+    ) -> Literal["success", "failed", "blocked", "skipped"]:
         """跑一个队列项。
 
         Returns:
             ``blocked`` 表示脚本被别的任务占用、本轮没跑；``failed`` 表示跑了但没成功。
+            ``skipped`` 表示维护跳过，按原周期排下一轮，不立即重试。
         """
 
         # 脚本列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
@@ -731,6 +740,7 @@ class Task(TaskExecuteBase):
             return "failed"
 
         script_config = Config.ScriptConfig[script_uid]
+        self.task_info.current_index = entry.index
         root_paths, emulator_key = _exclusive_resources(script_config)
         reservation_owner = self.task_info.task_id
 
@@ -746,6 +756,7 @@ class Task(TaskExecuteBase):
             return "blocked"
 
         started_at = datetime.now()
+        previous_started_at = queue_item.get("Data", "LastCycleStartedAt")
         success = False
         # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
         # 用户主动停止走的是 CancelledError，不在这里拦。
@@ -792,6 +803,16 @@ class Task(TaskExecuteBase):
         finally:
             self.script_reservations.release(script_uid, reservation_owner)
 
+        # 维护可能在 manager 准备期间开始；全员尚未开跑时不留实际运行记录。
+        if (
+            script_item.status == "跳过"
+            and script_item.user_list
+            and all(user.maintenance_skipped for user in script_item.user_list)
+        ):
+            await queue_item.set("Data", "LastCycleStartedAt", previous_started_at)
+            await self._advance_cycle_after_maintenance(queue_item)
+            return "skipped"
+
         # 成败都要把下次运行时间推到未来，否则失败的条目会立刻再被挑中。
         finished_at = datetime.now()
         await queue_item.set(
@@ -807,6 +828,15 @@ class Task(TaskExecuteBase):
         if not success:
             logger.warning(f"循环任务未成功: {entry.script_name}")
         return "success" if success else "failed"
+
+    async def _advance_cycle_after_maintenance(self, queue_item) -> None:
+        """仅消费本次排期，不记录代理执行，也不安排维护结束补跑。"""
+        skipped_at = datetime.now()
+        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+            next_run_at = next_after_start(queue_item, skipped_at)
+        else:
+            next_run_at = next_after_finish(queue_item, skipped_at)
+        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
 
     async def _spawn_with_preview(
         self,
