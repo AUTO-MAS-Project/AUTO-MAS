@@ -200,7 +200,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败，且优先于上面两条；契约见 `tools/embedded/flavor.py`。
   特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
   `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），用户页不让选；
-  运行时在 `decorate_selection` 之前剔掉、每个记一行，不进计划，所以上面几项声明对它不起作用。
+  运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，所以上面几项声明对它不起作用。
 - **原地打转检测**（`Run.LoopGuard`，脚本级开关，**实验性、默认关**；纯逻辑在
   `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
   找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型

@@ -3723,7 +3723,7 @@ def _drop_unselectable_tasks(
 ) -> tuple[list[str], dict[str, Any]]:
     """剔掉特调声明不可选的任务（``unselectable_entries``：entry → 原因），连同它们的选项。
 
-    每剔一个写一行日志（任务显示名 + 原因）；没声明时原样返回。
+    日志按原因合并成一行（同名任务只列一次，名字顺序按队列），没声明时原样返回。
     """
 
     if not entries:
@@ -3738,13 +3738,17 @@ def _drop_unselectable_tasks(
         return str(task.entry or "") if task is not None else ""
 
     kept: list[str] = []
+    # 原因 → 被剔任务显示名（dict 保序：原因按首次出现，名字按队列，同名只列一次）
+    by_reason: dict[str, dict[str, None]] = {}
     for task_id in task_ids:
         entry = entry_of(task_id)
         if entry not in entries:
             kept.append(task_id)
             continue
         name = _task_display_name(task_of(task_id))
-        send_log(f"已跳过「{name}」：{entries[entry]}")
+        by_reason.setdefault(entries[entry], {})[name] = None
+    for reason, names in by_reason.items():
+        send_log("已跳过" + "".join(f"「{name}」" for name in names) + f"：{reason}")
     if len(kept) == len(task_ids):
         return task_ids, task_options
     options = {
