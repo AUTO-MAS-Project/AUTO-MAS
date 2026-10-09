@@ -320,10 +320,13 @@ class MaaEndManager(ScriptManagerBase):
             )
             return f"终末地客户端更新异常（{error}），已中止本轮任务"
 
-        if result.status != "NeedManualUpdate":
-            return None
-        await push_dispatch_log(self.script_info, result.message)
-        return result.message
+        # 结论也要在调度台留一句：拦住本轮的那句之外，「已更新至 x」与「判不了所以放行」
+        # 同样得看得见；UpToDate 每轮任务都会出，重复播没人看
+        if result.status != "UpToDate":
+            await push_dispatch_log(self.script_info, result.message)
+        if result.status == "NeedManualUpdate":
+            return result.message
+        return None
 
     async def main_task(self):
 

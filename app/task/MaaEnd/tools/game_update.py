@@ -309,9 +309,10 @@ def _parse_release(payload: object, request_version: str) -> Release:
         body = item.get("get_latest_game_rsp")
         if isinstance(body, dict):
             return _parse_latest_game(body, request_version)
-    raise EndfieldUpdateError(
-        f"启动器响应里找不到 get_latest_game: {str(payload)[:200]}"
+    logger.warning(
+        f"启动器响应里没有 get_latest_game 条目，响应片段: {str(payload)[:200]}"
     )
+    raise EndfieldUpdateError("启动器响应里缺终末地的版本信息条目")
 
 
 def _parse_latest_game(body: dict, request_version: str) -> Release:
@@ -338,12 +339,13 @@ def _parse_latest_game(body: dict, request_version: str) -> Release:
             continue
         size = _parse_int(pack.get("package_size"))
         if size <= 0:
-            raise EndfieldUpdateError(f"服务端未给出差量卷体积: {pack!r}")
+            raise EndfieldUpdateError(f"服务端未给出第 {index + 1} 卷的差量卷体积")
         url = str(pack["url"])
         if not _SCHEME_RE.match(url):
             # 差量卷地址是带 auth_key 签名的绝对地址；给成相对地址说明服务端改了口径，
-            # 宁可报错也不拿别的基准去拼一个错地址。
-            raise EndfieldUpdateError(f"差量卷地址不是绝对地址: {url!r}")
+            # 宁可报错也不拿别的基准去拼一个错地址。签名地址只进日志，不进给用户看的那句
+            logger.warning(f"第 {index + 1} 卷的差量卷地址不是绝对地址: {url!r}")
+            raise EndfieldUpdateError(f"服务端给的第 {index + 1} 卷下载地址不完整")
         match = _VOLUME_SUFFIX_RE.search(url.split("?", 1)[0])
         parts.append(
             PackagePart(
@@ -943,6 +945,10 @@ def _read_package_manifests(
 
     # 整块读进内存之前先卡一次体积，与 CDN 上那份差量清单同一条上限
     for name in (_VERIFY_MANIFEST_MEMBER, _DELETE_LIST_MEMBER):
+        if name not in members:
+            raise EndfieldUpdateError(
+                f"差量包里没有 {name}，MAS 无法确认落地文件，已停止自动更新，请手动更新一次"
+            )
         info = archive.getinfo(name)
         if info.file_size > _MANIFEST_MAX_BYTES:
             raise EndfieldUpdateError(
@@ -1100,13 +1106,15 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
 
     actual = _size_of(temp)
     if actual != size:
-        temp.unlink(missing_ok=True)
+        with suppress(OSError):
+            temp.unlink(missing_ok=True)
         raise EndfieldUpdateError(
             f"{target.name} 落地体积不符：期望 {size} 实际 {actual}"
         )
     digest = await asyncio.to_thread(_md5_of, temp)
     if digest != md5:
-        temp.unlink(missing_ok=True)
+        with suppress(OSError):
+            temp.unlink(missing_ok=True)
         raise EndfieldUpdateError(
             f"{target.name} 落地校验未通过：期望 {md5} 实际 {digest}"
         )
@@ -1196,7 +1204,10 @@ async def _apply_delta(
                 job.size,
             )
         finally:
-            diff_file.unlink(missing_ok=True)
+            # 清残骸不能顶掉真正的失败原因（或取消）：限时到点与用户手停时，hpatchz
+            # 还攥着这个差量文件，Windows 上删不动，删失败必须咽在这里
+            with suppress(OSError):
+                diff_file.unlink(missing_ok=True)
         await _commit(temp, target, job.md5, job.size)
         done += 1
         await _report(f"正在打补丁并覆盖游戏文件 {done}/{total}")
