@@ -5339,7 +5339,11 @@ class AppConfig(GlobalConfig):
         保留时长沿用历史记录的保留天数设置。
         """
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
+        # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
+        # 和增删脚本（遍历活集合会 RuntimeError 中止本轮）
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
             return
 
@@ -5348,9 +5352,9 @@ class AppConfig(GlobalConfig):
             resolve_maafw_project_root,
         )
 
-        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        cutoff = time.time() - retention_days * 86400
         deleted_count = 0
-        for uid, script_config in self.ScriptConfig.items():
+        for uid, script_config in list(self.ScriptConfig.items()):
             if not isinstance(script_config, MaaFWConfig):
                 continue
             # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
@@ -5379,7 +5383,10 @@ class AppConfig(GlobalConfig):
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        # 只读一次：每日任务在工作线程跑本函数，循环内逐目录重读会看到扫描
+        # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("历史记录永久保留, 跳过历史记录清理")
             return
 
@@ -5395,7 +5402,7 @@ class AppConfig(GlobalConfig):
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
                 folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
                 if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=self.get("Function", "HistoryRetentionTime")
+                    days=retention_days
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1
