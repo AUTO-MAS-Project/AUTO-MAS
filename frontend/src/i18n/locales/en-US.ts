@@ -1885,7 +1885,8 @@ export default {
     maafwImportingCopy: 'Importing project...',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
-    maafwUnselectableTaskNotice: '"{tasks}": {reason}. MAS skips them at run time',
+    maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
+    maafwUnselectableTaskSeparator: ', ',
     m9aFlavorScriptTitle: 'Edit M9A managed script',
     m9aFlavorSourceDirectory: 'M9A program directory',
     m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',

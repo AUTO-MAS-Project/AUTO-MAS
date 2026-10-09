@@ -1750,6 +1750,7 @@ export default {
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
     maafwUnselectableTaskNotice: '「{tasks}」{reason}。MAS は実行時にスキップします',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: 'M9A マネージドスクリプトを編集',
     m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
     m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',

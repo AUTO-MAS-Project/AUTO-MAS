@@ -33,8 +33,11 @@ vi.mock('vue', async original => ({
 }))
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}|${JSON.stringify(params)}` : key,
+    t: (key: string, params?: Record<string, unknown>) => {
+      // 分隔符随语言取：这里模拟英文，核对拼名单用的是它而不是写死的「、」
+      if (key === 'edit.maafwUnselectableTaskSeparator') return ', '
+      return params ? `${key}|${JSON.stringify(params)}` : key
+    },
   }),
 }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
@@ -163,7 +166,7 @@ describe('useMaaFWUserPage：不可选任务', () => {
     const { scope, page } = await mountPage(['Daily', 'Arcade', 'Critter'])
     expect(page.orderedTasks.value.map(item => item.id)).toEqual(['Daily', 'Arcade', 'Critter'])
     expect(page.queueHintLines.value).toEqual([
-      `edit.maafwUnselectableTaskNotice|${JSON.stringify({ tasks: 'Arcade、Critter', reason: REASON })}`,
+      `edit.maafwUnselectableTaskNotice|${JSON.stringify({ tasks: 'Arcade, Critter', reason: REASON })}`,
     ])
     // 删掉之后提示随之消失
     await page.deleteTask('Arcade')

@@ -175,9 +175,11 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   // 接在特调的队列提示后面，一句一个框
   const queueHintLines = computed(() => [
     ...flavorQueueHintLines.value,
-    ...unselectableMaaFWQueueNotices(presentQueuedTasks.value, task => getDisplayName(task)).map(
-      notice => t('edit.maafwUnselectableTaskNotice', notice)
-    ),
+    ...unselectableMaaFWQueueNotices(
+      presentQueuedTasks.value,
+      task => getDisplayName(task),
+      t('edit.maafwUnselectableTaskSeparator')
+    ).map(notice => t('edit.maafwUnselectableTaskNotice', notice)),
   ])
 
   // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave

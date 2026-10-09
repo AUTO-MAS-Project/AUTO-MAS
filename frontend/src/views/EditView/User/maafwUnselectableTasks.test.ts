@@ -22,21 +22,28 @@ describe('isUnselectableMaaFWTask', () => {
 describe('unselectableMaaFWQueueNotices', () => {
   it('同一原因并成一条、任务名去重（同一任务加了两份只列一次）', () => {
     const queued = [DAILY, ARCADE, CRITTER, ARCADE].map(task => ({ task }))
-    expect(unselectableMaaFWQueueNotices(queued, name)).toEqual([
+    expect(unselectableMaaFWQueueNotices(queued, name, '、')).toEqual([
       { tasks: '8-bit 街机秀、翻斗棋速刷', reason: REASON },
+    ])
+  })
+
+  it('任务名之间的分隔符由调用方按语言给', () => {
+    const queued = [ARCADE, CRITTER].map(task => ({ task }))
+    expect(unselectableMaaFWQueueNotices(queued, name, ', ')).toEqual([
+      { tasks: '8-bit 街机秀, 翻斗棋速刷', reason: REASON },
     ])
   })
 
   it('不同原因各一条，按首次出现的顺序', () => {
     const queued = [OTHER, ARCADE].map(task => ({ task }))
-    expect(unselectableMaaFWQueueNotices(queued, name)).toEqual([
+    expect(unselectableMaaFWQueueNotices(queued, name, '、')).toEqual([
       { tasks: '别的', reason: '另一个原因' },
       { tasks: '8-bit 街机秀', reason: REASON },
     ])
   })
 
   it('队列里没有不可选任务时没有提示', () => {
-    expect(unselectableMaaFWQueueNotices([{ task: DAILY }], name)).toEqual([])
-    expect(unselectableMaaFWQueueNotices<typeof DAILY>([], name)).toEqual([])
+    expect(unselectableMaaFWQueueNotices([{ task: DAILY }], name, '、')).toEqual([])
+    expect(unselectableMaaFWQueueNotices<typeof DAILY>([], name, '、')).toEqual([])
   })
 })

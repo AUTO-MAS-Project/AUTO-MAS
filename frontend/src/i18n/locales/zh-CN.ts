@@ -1794,6 +1794,7 @@ export default {
     maafwAccountRecordTooltip:
       '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
     maafwUnselectableTaskNotice: '「{tasks}」{reason}，MAS 运行时会跳过',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: '编辑 M9A 托管',
     m9aFlavorSourceDirectory: 'M9A 程序目录',
     m9aFlavorSourceHint: '选择包含 interface.json 的 M9A 目录',

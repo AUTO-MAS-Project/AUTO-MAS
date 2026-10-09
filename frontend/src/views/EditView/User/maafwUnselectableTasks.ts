@@ -9,10 +9,14 @@ type TaskWithReason = { unselectableReason?: string | null }
 export const isUnselectableMaaFWTask = (task: TaskWithReason | null | undefined): boolean =>
   Boolean(task?.unselectableReason)
 
-/** 队列里不可选任务的提示：同一原因的任务并成一条，一个原因一条（M9A 只有一条） */
+/**
+ * 队列里不可选任务的提示：同一原因的任务并成一条，一个原因一条（M9A 只有一条）。
+ * `separator` 是任务名之间的分隔符，随界面语言取（中日用「、」，英文用 ", "）。
+ */
 export const unselectableMaaFWQueueNotices = <T extends TaskWithReason>(
   queued: readonly { task: T }[],
-  displayName: (task: T) => string
+  displayName: (task: T) => string,
+  separator: string
 ): { tasks: string; reason: string }[] => {
   const byReason = new Map<string, Set<string>>()
   for (const { task } of queued) {
@@ -22,5 +26,5 @@ export const unselectableMaaFWQueueNotices = <T extends TaskWithReason>(
     names.add(displayName(task))
     byReason.set(reason, names)
   }
-  return [...byReason].map(([reason, names]) => ({ tasks: [...names].join('、'), reason }))
+  return [...byReason].map(([reason, names]) => ({ tasks: [...names].join(separator), reason }))
 }
