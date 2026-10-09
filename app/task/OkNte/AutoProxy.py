@@ -96,8 +96,8 @@ _NTE_LAUNCHER_EXES_CASEFOLD = {exe.casefold() for exe in _NTE_LAUNCHER_EXES}
 
 # 启动方式（Game.LaunchMode）在调度台摘要里的展示文案；未知值按默认的 Autoplay 显示
 _LAUNCH_MODE_LABELS = {
-    "Autoplay": "直接启动（启动器静默）",
-    "LauncherUi": "使用启动器启动（启动器界面）",
+    "Autoplay": "静默启动",
+    "LauncherUi": "启动器界面启动",
 }
 
 # 多用户切换时等待旧游戏完全退出的上限（秒）：

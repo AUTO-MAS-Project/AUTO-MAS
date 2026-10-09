@@ -1556,21 +1556,19 @@ export default {
       "When enabled, MAS switches to the login account matching the last four digits of the user's phone number after the game launches successfully and before running ok-ww; users without an account ID filled in are not switched",
     oknteAccountSwitchHint:
       'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running OK-NTE; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
-    gameLauncher: 'Game launcher',
     launchType: 'Game launch method',
     launchTypeHint:
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
-    oknteLaunchViaLauncher: 'Launch via launcher UI',
+    oknteLaunchDirectly: 'Silent launch',
+    oknteLaunchViaLauncher: 'Launcher UI launch',
     oknteLaunchModeNeedsLaunchBeforeTask:
       'Only available when "Launch the game before the task" is on',
-    oknteLaunchTypeSummary:
-      'Direct launch: the game starts quietly in the background and no launcher window shows up. Launcher UI: the launcher opens and MAS clicks "Start Game" for you',
-    oknteLaunchTypeHint:
-      'Direct launch: MAS starts the game silently with the /autoplay argument, and the launcher window never appears (recommended, default). Launcher UI: MAS opens the launcher and clicks "Start Game" for you — that click is simulated mouse input, so just keep the launcher window visible and unobstructed',
-    oknteLauncherClickNotice:
-      '"Launcher UI": MAS opens the launcher and clicks "Start Game" for you. Keep other windows from covering the launcher while a task runs, or the click can miss; if the game needs an update, it stays there longer',
+    oknteLaunchBubbleAutoplay:
+      'Silent launch: the launcher runs in the background and wakes the game by itself, which is more resistant to foreground interference. But pop-ups (e.g. MSI Afterburner) cannot be handled, and a pending game update may also fail to launch — use "Launcher UI launch" in those cases.',
+    oknteLaunchBubbleLauncherUi:
+      'Launcher UI launch: MAS opens the launcher and clicks "Start Game" the way a user would, so its pop-ups and game updates are handled along the way. Avoid other windows covering the launcher while a task runs, or it may fail.',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
