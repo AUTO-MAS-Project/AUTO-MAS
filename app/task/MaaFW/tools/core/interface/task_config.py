@@ -17,6 +17,8 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+import copy
+import json
 from collections.abc import Collection
 from typing import Any
 
@@ -185,35 +187,49 @@ def _migrate_global_option_values(
     raw_snapshot: dict[str, Any],
     interface_model: MaaFWInterface,
 ) -> dict[str, MaaFWTaskOptionValue]:
-    """旧配置兼容：全局选项表里缺的项，从各任务实例的选项里取一份。
+    """旧配置兼容：全局选项表里缺的（或是坏值的）项，从各任务实例的选项里取一份。
 
-    以前全局选项按任务分别存（``taskOptions[实例][选项]``）。表里没有某个全局选项时，按队列
-    顺序取第一个带了合法值的任务实例的值：勾选（会运行）的实例优先，其次未勾选的；前置任务
-    （pretask）与 interface 里已没有的任务不看。都没有就留给归一取默认值。前端
-    ``maafwGlobalOptions.ts`` 按同一口径迁移，改一处要同步另一处。
+    以前全局选项按任务分别存（``taskOptions[实例][选项]``）。全局表里某项没有合法值时（缺、
+    ``null``、数字、不存在的 case……先丢掉），按队列顺序取第一个**勾选的**、带合法值的任务
+    实例的值；没有再取第一个未勾选的；都没有就留给归一取默认值。只看这一项对该实例来说
+    「只属于全局」的实例：任务 / 资源 / 控制器自己也引用了它的（``build_task_option_maps``
+    里有它），任务上的值是任务自己的、按 PI 顺序盖在全局之上，不迁、也不剥。前置任务
+    （pretask）与 interface 里已没有的任务不看。前端 ``maafwGlobalOptions.ts`` 按同一口径
+    迁移，改一处要同步另一处。
     """
 
-    values = dict(raw_snapshot["globalOptions"])
     option_map = build_global_option_map(interface_model)
+    values = {
+        name: value
+        for name, value in raw_snapshot["globalOptions"].items()
+        if name not in option_map or _is_valid_option_value(option_map[name], value)
+    }
     missing = [name for name in option_map if name not in values]
     if not missing:
         return values
 
+    task_option_maps = _build_task_option_maps(interface_model)
     valid_task_names = {task.name for task in interface_model.task}
     candidates = [
-        task_id
+        (task_id, resolve_task_instance_name(task_id, valid_task_names))
         for task_id in raw_snapshot["taskOrder"]
         if not is_pretask_task_name(task_id)
-        and resolve_task_instance_name(task_id, valid_task_names) in valid_task_names
+    ]
+    candidates = [
+        (task_id, task_name)
+        for task_id, task_name in candidates
+        if task_name in valid_task_names
     ]
     checked = raw_snapshot["taskChecked"]
-    ordered = [task_id for task_id in candidates if checked.get(task_id, False)] + [
-        task_id for task_id in candidates if not checked.get(task_id, False)
+    ordered = [item for item in candidates if checked.get(item[0], False)] + [
+        item for item in candidates if not checked.get(item[0], False)
     ]
     task_options = raw_snapshot["taskOptions"]
     for option_name in missing:
         option = option_map[option_name]
-        for task_id in ordered:
+        for task_id, task_name in ordered:
+            if option_name in task_option_maps.get(task_name, {}):
+                continue
             options = task_options.get(task_id)
             if not isinstance(options, dict) or option_name not in options:
                 continue
@@ -317,6 +333,134 @@ def normalize_task_execution_payload(
     return normalized_task_list, normalized_task_options
 
 
+def mirror_global_options_to_tasks(
+    snapshot: Any, interface_model: MaaFWInterface
+) -> Any:
+    """保存前的降级兼容双写：只属于全局的选项把全局表的值抄一份到每个任务实例上。
+
+    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版用户页保存一次
+    会把 ``globalOptions`` 丢掉，再升级回来时 ``_migrate_global_option_values`` 从副本把值
+    找回。新版运行期与用户页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
+
+    只在快照带 ``globalOptions`` 时做（没有全局表的是旧形状，任务上的值本来就是迁移的来源，
+    原样不动）。对 ``taskOrder`` 里每个 interface 认得的非前置任务实例：对它只属于全局的
+    选项，全局表里有合法值就写成那个值，没有就去掉副本——副本永远与全局表一致（从别的用户
+    导入的队列带来的副本，保存一次就换成本用户的值）。任务 / 资源 / 控制器自己也引用的选项
+    是任务自己的值，不碰。密码字段原样抄（之后的加密一并处理任务上的副本）。
+
+    接受 JSON 字符串或 dict，返回同一种；没有改动时原样返回入参。
+    """
+
+    parsed = snapshot
+    if isinstance(snapshot, str):
+        try:
+            parsed = json.loads(snapshot)
+        except (TypeError, ValueError):
+            return snapshot
+    if not isinstance(parsed, dict) or not isinstance(
+        parsed.get("globalOptions"), dict
+    ):
+        return snapshot
+    global_option_map = build_global_option_map(interface_model)
+    if not global_option_map:
+        return snapshot
+
+    raw_global = parsed["globalOptions"]
+    values = {
+        name: raw_global[name]
+        for name, option in global_option_map.items()
+        if name in raw_global and _is_valid_option_value(option, raw_global[name])
+    }
+    task_option_maps = _build_task_option_maps(interface_model)
+    valid_task_names = {task.name for task in interface_model.task}
+    raw_task_options = parsed.get("taskOptions")
+    task_options = dict(raw_task_options) if isinstance(raw_task_options, dict) else {}
+    changed = False
+    raw_order = parsed.get("taskOrder")
+    for task_id in dict.fromkeys(raw_order if isinstance(raw_order, list) else []):
+        if not isinstance(task_id, str) or is_pretask_task_name(task_id):
+            continue
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
+        if task_name not in valid_task_names:
+            continue
+        own_option_map = task_option_maps.get(task_name, {})
+        current = task_options.get(task_id)
+        before = current if isinstance(current, dict) else {}
+        options = dict(before)
+        for name in global_option_map:
+            if name in own_option_map:
+                continue
+            if name in values:
+                options[name] = copy.deepcopy(values[name])
+            else:
+                options.pop(name, None)
+        if options != before:
+            task_options[task_id] = options
+            changed = True
+    if not changed:
+        return snapshot
+
+    mirrored = {**parsed, "taskOptions": task_options}
+    if isinstance(snapshot, str):
+        return json.dumps(mirrored, ensure_ascii=False)
+    return mirrored
+
+
+def extract_task_global_overrides(
+    raw_task_options: Any,
+    task_ids: list[str],
+    interface_model: MaaFWInterface,
+    *,
+    controller_name: str | None = None,
+    resource_name: str | None = None,
+) -> MaaFWTaskOptionsByTask:
+    """各任务实例的选项里写着的、对它来说「只属于全局」的选项值（合法的、已归一）。
+
+    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。用户快照归一后的
+    任务选项里不会有这种值（``normalize_task_options_by_task`` 把它们丢掉了），出现了就是
+    特调在 ``decorate_selection`` 里写进去的：建计划时这一实例用它盖过用户的全局表，不让
+    特调的改写被全局表静默顶掉。
+    """
+
+    if not isinstance(raw_task_options, dict):
+        return {}
+    global_option_map = build_global_option_map(interface_model)
+    if not global_option_map:
+        return {}
+    task_option_maps = _build_task_option_maps(
+        interface_model,
+        controller_name=controller_name,
+        resource_name=resource_name,
+    )
+    valid_task_names = _build_valid_task_names(interface_model)
+    overrides: MaaFWTaskOptionsByTask = {}
+    for task_id in task_ids:
+        raw_options = raw_task_options.get(task_id)
+        if is_pretask_task_name(task_id) or not isinstance(raw_options, dict):
+            continue
+        own_option_map = task_option_maps.get(
+            resolve_task_instance_name(task_id, valid_task_names), {}
+        )
+        option_map = {
+            name: global_option_map[name]
+            for name, value in raw_options.items()
+            if name in global_option_map
+            and name not in own_option_map
+            and _is_valid_option_value(global_option_map[name], value)
+        }
+        if not option_map:
+            continue
+        defaults, value_types = _build_option_defaults(option_map)
+        overrides[task_id] = _normalize_options_for_task(
+            raw_options,
+            option_map,
+            defaults,
+            value_types,
+            _build_option_case_name_sets(option_map),
+        )
+    return overrides
+
+
 def find_missing_task_names(
     snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     interface_model: MaaFWInterface,
@@ -354,7 +498,8 @@ def build_interface_preset_snapshot(
     task_option_maps = task_option_maps or _build_task_option_maps(interface_model)
     task_options_by_task: MaaFWTaskOptionsByTask = {}
     interface_task_names = {task.name for task in interface_model.task}
-    # 预设任务里写的全局选项值进全局表（按预设顺序先写的为准），不再落到那个任务上
+    # 预设任务里写的「只属于全局」的选项值进全局表（按预设顺序先写的为准），不再落到那个
+    # 任务上；任务 / 资源 / 控制器自己也引用的选项照常是那个任务的值
     global_option_map = build_global_option_map(interface_model)
     global_options: dict[str, MaaFWTaskOptionValue] = {}
 
@@ -392,12 +537,6 @@ def build_interface_preset_snapshot(
                 suffix += "x"
                 task_id = build_duplicate_task_id(preset_task.name, suffix)
 
-        for option_name, option_value in (preset_task.option or {}).items():
-            if option_name in global_option_map and option_name not in global_options:
-                _apply_preset_option_value(
-                    option_name, option_value, global_option_map, global_options
-                )
-
         # 任务声明了 repeatable / repeat_count（MFAA 私有扩展）：这一次出现展开成
         # repeat_count 份，每份都带预设给的这一套选项，之后在队列里各自独立。
         instance_ids = build_repeat_instance_ids(
@@ -407,6 +546,15 @@ def build_interface_preset_snapshot(
             taken={*interface_task_names, *ordered_preset_tasks},
         )
         option_map = task_option_maps.get(preset_task.name, {})
+        for option_name, option_value in (preset_task.option or {}).items():
+            if (
+                option_name in global_option_map
+                and option_name not in option_map
+                and option_name not in global_options
+            ):
+                _apply_preset_option_value(
+                    option_name, option_value, global_option_map, global_options
+                )
         for instance_id in instance_ids:
             if include_default_options and instance_id not in task_options_by_task:
                 defaults, _ = _build_option_defaults(option_map)
@@ -618,9 +766,10 @@ def build_task_option_maps(
     """每个任务可配的选项表 ``{任务名: {选项名: 定义}}``。
 
     与快照归一、预设展开用的是同一张表：任务自身的选项加 resource / controller 选项，
-    case 下挂的嵌套选项逐层展开；全局选项（``build_global_option_map``）不在其中，哪怕
-    任务也引用了它——它的值只存在用户的全局表里。pretask 伪任务按伪任务名给出，只含它
-    自己声明的选项（全局选项也照收，与 pretask 一直以来的口径一致）。
+    case 下挂的嵌套选项逐层展开。``global_option`` 不并进来：只出现在全局里的选项（对这个
+    任务而言）值只存在用户的全局表里；任务 / 资源 / 控制器自己也引用的选项照常在表里，
+    按 PI 的覆盖顺序在全局之上再叠一层任务自己的值。pretask 伪任务按伪任务名给出，只含它
+    自己声明的选项。
     """
 
     return _build_task_option_maps(interface_model)
@@ -669,17 +818,14 @@ def _build_task_option_maps(
         controller_name=controller_name,
         resource_name=resource_name,
     )
-    global_option_names = set(build_global_option_map(interface_model))
 
+    # global_option 不在这里（见 build_global_option_map）：它的值在用户的全局表里。同一个
+    # 选项也被任务 / 资源 / 控制器自己引用时照常收进来，任务上存一份自己的值
     for task in interface_model.task:
         collected: dict[str, MaaFWOption] = {}
         _collect_task_options(common_option_names, option_map, collected)
         _collect_task_options(task.option or [], option_map, collected)
-        task_option_maps[task.name] = {
-            option_name: option
-            for option_name, option in collected.items()
-            if option_name not in global_option_names
-        }
+        task_option_maps[task.name] = collected
 
     for pretask in iter_pretasks(interface_model):
         if (

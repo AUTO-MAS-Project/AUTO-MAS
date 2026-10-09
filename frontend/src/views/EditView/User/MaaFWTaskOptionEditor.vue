@@ -31,7 +31,6 @@
           :resource-name="resourceName"
           :base-path="basePath"
           :lineage="lineage"
-          :hidden-option-names="hiddenOptionNames"
           :disabled="props.disabled"
           :hide-toolbar="true"
           @update="emit('update', $event)"
@@ -225,7 +224,6 @@
             :resource-name="resourceName"
             :base-path="basePath"
             :lineage="[...lineage, option.name]"
-            :hidden-option-names="hiddenOptionNames"
             :disabled="props.disabled"
             :hide-toolbar="true"
             @update="emit('update', $event)"
@@ -271,8 +269,6 @@ const props = withDefaults(
     resourceName?: string
     basePath?: string
     lineage?: string[]
-    /** 不在这里显示的选项（任务面板里的全局选项：它们只在「全局选项」里设一次），嵌套的同样跳过 */
-    hiddenOptionNames?: string[]
     disabled?: boolean
     hideToolbar?: boolean
   }>(),
@@ -281,7 +277,6 @@ const props = withDefaults(
     resourceName: '',
     basePath: '',
     lineage: () => [],
-    hiddenOptionNames: () => [],
     disabled: false,
     hideToolbar: false,
   }
@@ -331,13 +326,7 @@ const visibleOptions = computed(() => {
   const seen = new Set<string>()
   const result: MaaFWOptionInfo[] = []
   for (const optionName of props.optionNames) {
-    if (
-      seen.has(optionName) ||
-      props.lineage.includes(optionName) ||
-      props.hiddenOptionNames.includes(optionName)
-    ) {
-      continue
-    }
+    if (seen.has(optionName) || props.lineage.includes(optionName)) continue
     seen.add(optionName)
 
     const option = optionMap.value.get(optionName)

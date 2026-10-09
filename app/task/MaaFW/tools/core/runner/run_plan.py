@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import logging
 import os
@@ -38,6 +39,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     _build_option_defaults,
     build_default_task_instances,
     build_interface_preset_snapshot,
+    extract_task_global_overrides,
     normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
@@ -147,15 +149,22 @@ def build_maafw_run_plan(
     静默忽略；映射不了的值告警后丢弃，回落到快照 / 默认值。
 
     全局选项（``global_option`` 及其子选项）的值每个用户一份：走快照 / 预设时取其中的
-    ``globalOptions``，给了 ``task_ids`` 时取 ``global_options``（不给按默认值）。每个任务
-    建覆盖用的选项表是「全局表 + 这个任务自己的选项」，任务选项里同名的全局选项不参与。
+    ``globalOptions``，给了 ``task_ids`` 时取 ``global_options``（不给按默认值）。建覆盖时
+    全局组按全局表、资源 / 控制器 / 任务组按任务自己的值（PI 顺序，任务的盖住全局的）。
+    ``task_ids`` 路径上任务选项里出现的「只属于全局」的选项是特调写的，这一实例以它为准
+    （``extract_task_global_overrides``）。
     """
 
     interface = _coerce_interface(interface_model)
     resolved_base_dir = Path(base_dir).resolve()
     controller = _select_controller(interface, controller_name)
     resource = _select_resource(interface, resource_name, controller)
-    selected_task_ids, selected_task_options, selected_global_options = _select_tasks(
+    (
+        selected_task_ids,
+        selected_task_options,
+        selected_global_options,
+        flavor_global_overrides,
+    ) = _select_tasks(
         interface,
         controller_name=controller.name,
         resource_name=resource.name,
@@ -209,6 +218,19 @@ def build_maafw_run_plan(
         and controller.type == "Win32"
     )
     script_hotkey_cache: dict[str, dict[str, str]] = {}
+    # 全局表叠上脚本级键位只做一次（全局组的取值与任务无关）
+    global_values = selected_global_options
+    if apply_script_hotkeys and script_hotkeys:
+        global_values = _overlay_script_hotkeys(
+            pipeline_builder,
+            interface,
+            pipeline_builder.active_global_option_names(global_values),
+            global_values,
+            script_hotkeys=script_hotkeys,
+            cache=script_hotkey_cache,
+            warnings=hotkey_warnings,
+            i18n_mapping=i18n_mapping,
+        )
     # 队列元素是任务实例 id：同一个任务可以出现多次，每份各带自己的一套选项。
     for task_id in selected_common_task_ids:
         task_name = resolve_task_instance_name(task_id, task_map)
@@ -235,24 +257,38 @@ def build_maafw_run_plan(
             )
             continue
 
-        options = _with_global_options(
-            selected_global_options, selected_task_options.get(task_id, {})
-        )
+        # 全局组按用户的全局表（特调给这个实例写了只属于全局的选项时，这一实例以它为准），
+        # 资源 / 控制器 / 任务组按任务自己的值；同一选项两边都有时按 PI 顺序任务的盖住全局的
+        task_global_options = {
+            **global_values,
+            **flavor_global_overrides.get(task_id, {}),
+        }
+        task_options = selected_task_options.get(task_id, {})
         if apply_script_hotkeys and script_hotkeys:
-            options = _overlay_script_hotkeys(
+            overlay = functools.partial(
+                _overlay_script_hotkeys,
                 pipeline_builder,
                 interface,
-                task.name,
-                options,
-                script_hotkeys,
-                script_hotkey_cache,
-                hotkey_warnings,
-                i18n_mapping,
+                script_hotkeys=script_hotkeys,
+                cache=script_hotkey_cache,
+                warnings=hotkey_warnings,
+                i18n_mapping=i18n_mapping,
             )
+            if task_id in flavor_global_overrides:
+                task_global_options = overlay(
+                    pipeline_builder.active_global_option_names(task_global_options),
+                    task_global_options,
+                )
+            task_options = overlay(
+                pipeline_builder.active_task_own_option_names(task.name, task_options),
+                task_options,
+            )
+        options = _effective_options(task_global_options, task_options)
         try:
             pipeline_override = pipeline_builder.build_task_pipeline_override(
                 task.name,
-                options,
+                task_options,
+                global_options=task_global_options,
             )
         except MaaFWCheckboxCountError as exc:
             raise MaaFWRunPlanError(
@@ -337,6 +373,7 @@ def build_maafw_run_plan(
         piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
         skippedTasks=skipped_tasks,
+        globalOptions=copy.deepcopy(global_values),
         warnings=plan_warnings,
         i18n=i18n_mapping,
     )
@@ -482,22 +519,25 @@ def _describe_hotkey_value_error(
 def _overlay_script_hotkeys(
     pipeline_builder: MaaFWPipelineOverrideBuilder,
     interface_model: MaaFWInterface,
-    task_name: str,
+    active_option_names: list[str],
     options: dict[str, Any],
+    *,
     script_hotkeys: dict[str, dict[str, str]],
     cache: dict[str, dict[str, str]],
     warnings: list[str],
     i18n_mapping: dict[str, Any],
 ) -> dict[str, Any]:
-    """把脚本级键位叠到这个任务实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
+    """把脚本级键位叠到实际生效的 hotkey 选项上，返回新的选项字典（不改入参）。
 
-    只看 ``active_option_names`` 给出的选项；字段名必须是该 option 的 ``hotkeys[]``
+    ``options`` 是一组取值（用户的全局表，或一个任务自己的值），``active_option_names``
+    是按这组取值实际生效的选项（``active_global_option_names`` /
+    ``active_task_own_option_names``）。字段名必须是该 option 的 ``hotkeys[]``
     里声明的（没声明的是项目更新后的残留，静默忽略）；值按建覆盖的同一套检查过一遍，
     不过的丢弃并告警，该字段回落到快照 / 默认值。
     """
 
     result = options
-    for option_name in pipeline_builder.active_option_names(task_name, options):
+    for option_name in active_option_names:
         raw_fields = script_hotkeys.get(option_name)
         if not isinstance(raw_fields, dict) or not raw_fields:
             continue
@@ -748,7 +788,14 @@ def _select_tasks(
     task_ids: list[str] | None,
     task_options: dict[str, Any] | None,
     global_options: dict[str, Any] | None,
-) -> tuple[list[str], MaaFWTaskOptionsByTask, dict[str, MaaFWTaskOptionValue]]:
+) -> tuple[
+    list[str],
+    MaaFWTaskOptionsByTask,
+    dict[str, MaaFWTaskOptionValue],
+    MaaFWTaskOptionsByTask,
+]:
+    """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
+
     if task_ids is not None:
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
@@ -757,10 +804,19 @@ def _select_tasks(
             controller_name=controller_name,
             resource_name=resource_name,
         )
+        # task_options 来自 select_snapshot_tasks（归一过，没有只属于全局的选项）再经特调
+        # 装饰，这里出现的只属于全局的选项都是特调写的
         return (
             selected_ids,
             selected_options,
             normalize_global_options(global_options, interface_model),
+            extract_task_global_overrides(
+                task_options,
+                selected_ids,
+                interface_model,
+                controller_name=controller_name,
+                resource_name=resource_name,
+            ),
         )
 
     snapshot = _resolve_snapshot(
@@ -780,24 +836,17 @@ def _select_tasks(
         controller_name=controller_name,
         resource_name=resource_name,
     )
-    return selected_ids, selected_options, dict(snapshot.globalOptions)
+    return selected_ids, selected_options, dict(snapshot.globalOptions), {}
 
 
-def _with_global_options(
+def _effective_options(
     global_options: dict[str, MaaFWTaskOptionValue],
     task_options: dict[str, MaaFWTaskOptionValue],
 ) -> dict[str, MaaFWTaskOptionValue]:
-    """一个任务建覆盖用的选项表：全局表在前（与覆盖的合并顺序一致），再接任务自己的选项；
-    同名的以全局表为准——任务选项里残留的旧全局选项值不参与。"""
+    """计划里给人看的这个任务的选项（运行日志、非默认项、密码打码收集用）：全局表打底，
+    任务自己的值盖上去——与覆盖的叠放顺序一致，同名时显示最终生效的那层。"""
 
-    return {
-        **copy.deepcopy(global_options),
-        **{
-            option_name: value
-            for option_name, value in task_options.items()
-            if option_name not in global_options
-        },
-    }
+    return {**copy.deepcopy(global_options), **copy.deepcopy(task_options)}
 
 
 def _resolve_snapshot(

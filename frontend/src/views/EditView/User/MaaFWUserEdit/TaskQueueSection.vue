@@ -266,7 +266,6 @@
             :controller-name="effectiveControllerName"
             :resource-name="effectiveResourceName"
             :base-path="previewData.path"
-            :hidden-option-names="taskHiddenOptionNames"
             :disabled="interfaceDependentDisabled"
             @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
           />
@@ -378,7 +377,7 @@ import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
-import { collectMaaFWGlobalOptionNames, hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
+import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
 import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
@@ -489,20 +488,14 @@ const uniqueOptionNames = (optionGroups: string[][]) => {
   return optionNames
 }
 
-// 全局选项（含各 case 下挂的子选项）：在队列上方设一次，任务配置里不再列出
-const globalOptionNames = computed(() => [...collectMaaFWGlobalOptionNames(props.previewData)])
-
+// 全局选项在队列上方设一次；任务配置只列资源 / 控制器 / 任务自己的选项（同一选项也被它们
+// 引用时照常列出，按任务存值，运行时叠在全局之上——与 MXU 一致）
 const showGlobalOptions = computed(() =>
   hasEditableMaaFWGlobalOptions(
     props.previewData,
     props.effectiveControllerName,
     props.effectiveResourceName
   )
-)
-
-// 前置任务的选项一直只认它自己声明的，同名的全局选项也照常显示
-const taskHiddenOptionNames = computed(() =>
-  props.selectedTask?.entry === 'MXU_PRETASK' ? [] : globalOptionNames.value
 )
 
 const getTaskOptionNames = (task: MaaFWTaskInfo) => {

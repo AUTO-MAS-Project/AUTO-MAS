@@ -249,16 +249,24 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 选项 `type` 支持 `select / scan_select / switch / checkbox / input / hotkey`，后端下发与
   前端 `MaaFWTaskOptionEditor.vue` 两侧都有；未知 type 前端有兜底提示。
 - **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
-  （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`，所有任务共用；
-  任务的选项表（`build_task_option_maps`）里没有它们，任务也引用了同名选项时同样以全局表为准。
-  建计划时每个任务用「全局表 + 任务自己的选项」（`run_plan._with_global_options`），任务里残留的
-  同名值不参与。特调走 `task_ids` 那条路时必须把 `select_snapshot_tasks` 给的 `global_options` 一并
-  传给 `build_plan`：漏了不报错，全局选项静默回到默认值。pretask 不吃全局表（只认它自己声明的
-  选项与它实例上的值，与以前一致）。旧配置的值散在各任务实例上：表里缺的项由 `normalize_snapshot`
-  按队列顺序取第一个带合法值的实例（勾选的优先），前端 `maafwGlobalOptions.ts` 同一口径，用户页
-  加载即迁移、下次保存去掉任务里的同名值。预设写在任务上的全局选项值进全局表（预设顺序先写的为准）；
-  外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准，没有的再取队列里第一条
-  记着它的任务。
+  （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`。覆盖顺序
+  照 PI / MXU / MaaPiCli：全局组按全局表，资源 / 控制器 / 任务组按任务自己的值，后叠的盖前面
+  （`MaaFWPipelineOverrideBuilder.build_task_pipeline_override(..., global_options=)`）。所以同一
+  选项也被任务 / 资源 / 控制器自己引用时，它在任务的选项表（`build_task_option_maps`，不按当前
+  资源 / 控制器过滤）里、按任务存值、面板照常显示；只有对某任务「只属于全局」的选项，任务上的值
+  不生效、迁移与导入都折进全局表。别把两类合成一张表：v5.6 的「全局盖过同名任务选项」与 PI 示例
+  （战斗划火柴）的结果不同。特调走 `task_ids` 那条路时必须把 `select_snapshot_tasks` 给的
+  `global_options` 一并传给 `build_plan`（漏了不报错，全局选项静默回到默认值）；特调往
+  `task_options` 写的只属于全局的选项，这一实例以它为准（`extract_task_global_overrides`，依赖
+  归一后的任务选项里不会有这类键）。pretask 不吃全局表。计划的 `globalOptions` 是全局层的取值，
+  同一选项任务自己也有值时任务 `options` 里看不到它，打码收集两处都看。旧配置迁移
+  （`normalize_snapshot`，前端 `maafwGlobalOptions.ts` 同一口径）：全局表里缺或坏的项，取队列里
+  第一个勾选的、带合法值、且对它只属于全局的实例，再没有取未勾选的。预设写在任务上的只属于全局的
+  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准。
+  **降级兼容双写**：保存时（`option_secrets.prepare_user_task_snapshot` →
+  `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
+  读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
+  都不看副本（归一 / `withoutMaaFWGlobalOnlyOptions` 丢掉），去掉双写前要先确认没人会降级。
 - input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
   `globalOptions` 两处，`option_secrets._SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），

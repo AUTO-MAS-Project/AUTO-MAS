@@ -525,14 +525,25 @@ def plan_instance_import(
         tasks_by_name[task.name] = task
         names_by_entry.setdefault(task.entry, []).append(task.name)
 
-    # 全局 / 资源级选项换算一次。资源级的分给选项表里有它们的任务（见 build_task_option_maps）；
-    # 全局选项进用户的全局表：外壳自己的全局表（MXU 的 globalOptionValues、MFW-PyQt6 的
-    # global_options）为准，它没记的再取队列里第一条记着它的任务的值
-    shared_values = _shared_option_values(instance, interface, labels, skipped)
+    # 全局 / 资源级选项换算一次。外壳全局表（MXU 的 globalOptionValues、MFW-PyQt6 的
+    # global_options）里、项目也声明为全局选项的值进用户的全局表；其余（资源级，以及外壳记在
+    # 全局表里、项目却没声明为全局的）分给选项表里有它们的任务（见 build_task_option_maps）。
+    # 只属于全局的选项外壳全局表没记时，再取队列里第一条记着它的任务的值
+    global_shared, resource_shared = _global_and_resource_option_values(
+        instance, interface, labels, skipped
+    )
     global_values = {
         name: value
-        for name, value in shared_values.items()
+        for name, value in global_shared.items()
         if name in global_option_map
+    }
+    task_shared_values = {
+        **resource_shared,
+        **{
+            name: value
+            for name, value in global_shared.items()
+            if name not in global_option_map
+        },
     }
     global_values_from_tasks: dict[str, MaaFWTaskOptionValue] = {}
 
@@ -545,22 +556,29 @@ def plan_instance_import(
     ) -> dict[str, MaaFWTaskOptionValue]:
         """一条任务自己的选项，叠在资源级选项上（任务自己记的优先）。
 
-        ``route_global``：任务里记着的全局选项不留在任务上，交给全局表（前置任务不走这条，
-        它的选项一直只认自己声明的）。
+        ``route_global``：任务里记着的、对这条任务只属于全局的选项（选项表里没有）不留在
+        任务上，交给全局表；任务 / 资源 / 控制器自己也引用的照常是任务的值（PI 顺序叠在全局
+        之上）。前置任务不走这条，它的选项一直只认自己声明的。
         """
 
-        values = {k: v for k, v in shared_values.items() if k in option_map}
+        # 前置任务照旧也吃外壳全局表里的值（它没有全局层，选项只认自己的那份）
+        shared = (
+            task_shared_values
+            if route_global
+            else {**task_shared_values, **global_values}
+        )
+        values = {k: v for k, v in shared.items() if k in option_map}
         own_values = _task_own_option_values(
             instance,
             raw_options,
-            {**option_map, **global_option_map} if route_global else option_map,
+            {**global_option_map, **option_map} if route_global else option_map,
             interface.option,
             prefix,
             labels,
             skipped,
         )
         for name, value in own_values.items():
-            if route_global and name in global_option_map:
+            if route_global and name not in option_map:
                 global_values_from_tasks.setdefault(name, value)
             else:
                 values[name] = value
@@ -722,22 +740,38 @@ def _shared_option_values(
     labels: _Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
-    """全局 / 资源级选项：MXU 的 ``globalOptionValues``、MFAAvalonia 当前资源的
-    ``ResourceOptionItems``、MFW-PyQt6 的 ``global_options`` 与资源级 ``setting_options``。"""
+    """全局 / 资源级选项并成一张表（同名时外壳全局表里的为准）。"""
 
-    shared_values: dict[str, MaaFWTaskOptionValue] = {}
+    global_values, resource_values = _global_and_resource_option_values(
+        instance, interface, labels, skipped
+    )
+    return {**resource_values, **global_values}
+
+
+def _global_and_resource_option_values(
+    instance: ShellInstance,
+    interface: MaaFWInterface,
+    labels: _Labels,
+    skipped: list[str],
+) -> tuple[dict[str, MaaFWTaskOptionValue], dict[str, MaaFWTaskOptionValue]]:
+    """``(外壳全局表, 资源级)``：前者是 MXU 的 ``globalOptionValues``、MFW-PyQt6 的
+    ``global_options``；后者是 MFAAvalonia 当前资源的 ``ResourceOptionItems``、MFW-PyQt6 的
+    资源级 ``setting_options``。"""
+
+    global_values: dict[str, MaaFWTaskOptionValue] = {}
+    resource_values: dict[str, MaaFWTaskOptionValue] = {}
     if instance.source == SOURCE_MXU and instance.global_options:
-        shared_values = _mxu_option_values(
+        global_values = _mxu_option_values(
             instance.global_options, interface.option, "全局选项", labels, skipped
         )
     if instance.source == SOURCE_MFAA and instance.resource_options is not None:
-        shared_values = _mfaa_resource_option_values(
+        resource_values = _mfaa_resource_option_values(
             instance, interface.option, labels, skipped
         )
     if instance.source == SOURCE_MFW:
-        for raw_shared, prefix in (
-            (instance.global_options, "全局选项"),
-            (instance.resource_options, "资源选项"),
+        for raw_shared, prefix, target in (
+            (instance.global_options, "全局选项", global_values),
+            (instance.resource_options, "资源选项", resource_values),
         ):
             if raw_shared is None or raw_shared == {}:
                 continue
@@ -745,9 +779,9 @@ def _shared_option_values(
                 skipped.append(f"{prefix}（格式无法识别）")
                 continue
             _mfw_collect_options(
-                raw_shared, interface.option, prefix, labels, shared_values, skipped
+                raw_shared, interface.option, prefix, labels, target, skipped
             )
-    return shared_values
+    return global_values, resource_values
 
 
 def _task_own_option_values(
