@@ -5261,7 +5261,7 @@ class AppConfig(GlobalConfig):
         except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
             logger.warning(f"MFW 运行池回收失败: {exc}")
 
-    async def clean_debug_diagnostics(self) -> None:
+    def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
 
         自动扫描 ``debug/`` 下全部子目录（各专项的登录/切号/启动器失败诊断，
@@ -5270,6 +5270,8 @@ class AppConfig(GlobalConfig):
         轮转），不跟随历史记录保留时间——诊断文件不是用户数据，解绑后任何
         配置下都不会无界累积。失败截图另受每目录独立的大小上限约束，超限
         从旧到新回收——一个专项的截图风暴不会挤掉其他专项的证据。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
         cutoff = time.time() - DIAGNOSTIC_RETENTION_DAYS * 86400
@@ -5329,7 +5331,7 @@ class AppConfig(GlobalConfig):
         if screenshot_deleted_count:
             logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
 
-    async def clean_maafw_native_debug_logs(self) -> None:
+    def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
 
         MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
@@ -5337,6 +5339,8 @@ class AppConfig(GlobalConfig):
         的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
         ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
         保留时长沿用历史记录的保留天数设置。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
         # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
@@ -5382,10 +5386,13 @@ class AppConfig(GlobalConfig):
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
 
-    async def clean_old_history(self):
-        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+    def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）。
 
-        # 只读一次：每日任务在工作线程跑本函数，循环内逐目录重读会看到扫描
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
+        """
+
+        # 只读一次：定时器在工作线程跑本函数，循环内逐目录重读会看到扫描
         # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
         retention_days = self.get("Function", "HistoryRetentionTime")
         if retention_days == 0:

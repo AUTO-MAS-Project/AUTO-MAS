@@ -26,7 +26,6 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -368,7 +367,6 @@ def main():
             try:
                 await run_optional_step("MCP 服务挂载", mount_mcp)
                 await run_optional_step("活动关卡信息获取", Config.get_stage)
-                await run_optional_step("历史记录清理", Config.clean_old_history)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -389,44 +387,6 @@ def main():
 
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
-                )
-                await run_optional_step("诊断文件清理", Config.clean_debug_diagnostics)
-                await run_optional_step(
-                    "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
-                )
-
-                async def _daily_retention_maintenance() -> None:
-                    # 诊断文件 / 历史记录 / MFW 原生日志的保留期清理原本只在启动时
-                    # 跑一次：常驻调度一挂几周，期间清理全不发生。这里每小时醒来，
-                    # 跨日后的第一轮把三项清理各跑一遍——按日期判断而不是按睡眠
-                    # 时长，系统休眠跨天后照样补上；单步失败只记日志，次日再试。
-                    last_run_date = datetime.now().date()
-                    while True:
-                        await asyncio.sleep(3600)
-                        today = datetime.now().date()
-                        if today == last_run_date:
-                            continue
-                        last_run_date = today
-                        for name, step in (
-                            ("历史记录清理", Config.clean_old_history),
-                            ("诊断文件清理", Config.clean_debug_diagnostics),
-                            (
-                                "MaaFW 原生日志清理",
-                                Config.clean_maafw_native_debug_logs,
-                            ),
-                        ):
-                            try:
-                                # 三个清理函数是 async 壳包同步 IO：放进工作线程跑，
-                                # 避免在事件循环上阻塞按分钟匹配的队列定时；协程在
-                                # 工作线程内创建，取消发生在启动前也不留悬挂协程
-                                await asyncio.to_thread(lambda: asyncio.run(step()))
-                            except asyncio.CancelledError:
-                                raise
-                            except Exception:
-                                logger.exception(f"每日{name}失败，明天再试")
-
-                app.state.daily_retention_maintenance = asyncio.create_task(
-                    _daily_retention_maintenance()
                 )
 
                 if IS_WINDOWS:
@@ -506,12 +466,6 @@ def main():
                 maintenance.cancel()
                 with suppress(asyncio.CancelledError):
                     await maintenance
-            # 每日保留期清理任务：只是延迟重跑启动清理，停下不需要收尾
-            daily_maintenance = getattr(app.state, "daily_retention_maintenance", None)
-            if daily_maintenance is not None and not daily_maintenance.done():
-                daily_maintenance.cancel()
-                with suppress(asyncio.CancelledError):
-                    await daily_maintenance
 
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
