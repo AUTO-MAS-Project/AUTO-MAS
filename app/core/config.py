@@ -3008,7 +3008,8 @@ class AppConfig(GlobalConfig):
                 )
 
         # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。
+        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
+        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
         task_data = data.get("Task")
         if (
             isinstance(script_config, MaaFWConfig)
@@ -3017,7 +3018,7 @@ class AppConfig(GlobalConfig):
         ):
             from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
             from app.task.MaaFW.tools.embedded.option_secrets import (
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
             )
 
             # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
@@ -3026,7 +3027,7 @@ class AppConfig(GlobalConfig):
             )
 
             task_data["TaskSnapshot"] = await asyncio.to_thread(
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
                 script_id,
                 script_config,
                 task_data["TaskSnapshot"],

@@ -335,13 +335,18 @@ export interface MaaFWScriptConfig {
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
 
 /**
- * 三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
+ * 前三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
  * 首份的 id 就是裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
  */
 export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /**
+   * 全局选项（interface 的 global_option 及其子选项）的值：每个用户一份、所有任务共用，
+   * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。
+   */
+  globalOptions?: Record<string, MaaFWTaskOptionValue>
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */

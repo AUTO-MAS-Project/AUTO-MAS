@@ -2783,6 +2783,8 @@ export default {
     depotDeleteSelectedConfirm: 'Delete the {n} selected depot maintenance plans?',
     maafwNoMatchingSettings: 'No matching settings',
     maafwNoConfigurableOptions: 'This task has no configurable options',
+    maafwGlobalOptions: 'Global options',
+    maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
     unknownType: 'Unknown',

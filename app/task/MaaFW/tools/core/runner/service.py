@@ -176,6 +176,7 @@ class MaaFWRunnerService:
         task_snapshot: dict[str, Any] | None = None,
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
+        global_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
         script_hotkeys: dict[str, dict[str, str]] | None = None,
     ) -> MaaFWRunPlan:
@@ -188,6 +189,7 @@ class MaaFWRunnerService:
             task_snapshot=task_snapshot,
             task_ids=task_ids,
             task_options=task_options,
+            global_options=global_options,
             managed_env_root=managed_env_root,
             script_hotkeys=script_hotkeys,
         )

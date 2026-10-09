@@ -104,6 +104,7 @@
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
             @task-option-update="handleTaskOptionUpdate"
+            @global-option-update="handleGlobalOptionUpdate"
             @delete-selected-task="deleteSelectedTask"
             @delete-task="deleteTask"
           />
@@ -231,6 +232,7 @@ const {
   deleteSelectedTask,
   deleteTask,
   handleTaskOptionUpdate,
+  handleGlobalOptionUpdate,
   moveTask,
   handleTaskDragEnd,
   addTaskCascaderValue,

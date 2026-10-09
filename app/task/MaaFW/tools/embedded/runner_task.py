@@ -956,7 +956,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     script_hotkeys=script_hotkeys,
                 )
                 return _with_skipped_tasks(plan, missing_skips)
-            task_ids, task_options = select_snapshot_tasks(
+            task_ids, task_options, global_options = select_snapshot_tasks(
                 interface_model,
                 selected_preset=effective_preset,
                 task_snapshot=task_snapshot or None,
@@ -978,6 +978,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 resource_name=resource_name,
                 task_ids=task_ids,
                 task_options=task_options,
+                global_options=global_options,
                 script_hotkeys=script_hotkeys,
             )
             plan = _mark_abort_round_tasks(plan, flavor)

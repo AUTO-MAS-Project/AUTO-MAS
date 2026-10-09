@@ -136,7 +136,12 @@ export function useMaaFWTaskQueue({
           activeTaskByName,
           validTaskNames.value
         )
-        return { preset, entries, taskOptions: snapshot.taskOptions }
+        return {
+          preset,
+          entries,
+          taskOptions: snapshot.taskOptions,
+          globalOptions: snapshot.globalOptions || {},
+        }
       })
       .filter(template => template.entries.length > 0)
   })
@@ -221,6 +226,13 @@ export function useMaaFWTaskQueue({
     taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+    // 预设里写了的全局选项值并进用户的全局表；没写的保持用户自己的设置
+    if (Object.keys(template.globalOptions).length > 0) {
+      taskSnapshot.value.globalOptions = {
+        ...taskSnapshot.value.globalOptions,
+        ...JSON.parse(JSON.stringify(template.globalOptions)),
+      }
+    }
     selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
     formData.Task.SelectedPreset = presetName
     showPresetModal.value = false
@@ -287,6 +299,19 @@ export function useMaaFWTaskQueue({
     await savePresetAndSnapshot()
   }
 
+  /** 全局选项：每个用户一份，所有任务共用 */
+  const handleGlobalOptionUpdate = async (payload: {
+    optionName: string
+    value: MaaFWTaskOptionValue
+  }) => {
+    taskSnapshot.value.globalOptions = {
+      ...taskSnapshot.value.globalOptions,
+      [payload.optionName]: payload.value,
+    }
+    formData.Task.SelectedPreset = ''
+    await savePresetAndSnapshot()
+  }
+
   const moveTask = async (taskId: string, direction: -1 | 1) => {
     const visibleTaskIds = orderedTasks.value.map(item => item.id)
     const visibleIndex = visibleTaskIds.indexOf(taskId)
@@ -335,6 +360,7 @@ export function useMaaFWTaskQueue({
     deleteTask,
     ensureTaskOptionMap,
     handleTaskOptionUpdate,
+    handleGlobalOptionUpdate,
     moveTask,
     handleTaskDragEnd,
   }
