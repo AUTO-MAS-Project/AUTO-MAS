@@ -513,7 +513,6 @@ export function addPerInstallationFile(
 // 目录一律跳过并写跳过条目进清单，提醒落盘方登记。早期是黑名单制（只挡已登记的其他
 // 专项目录），MAA 的 maa-failure 因漏登记混进了所有专项的问题包，之后才改成默认跳过。
 const ADAPTER_DEBUG_SUBDIRS = {
-  maa: ['maa-failure'],
   maaend: ['maaend-login'],
   okww: ['okww-account-switch', 'okww-launcher-start'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],

@@ -51,7 +51,7 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
   it('收顶层文件与 ownAdapter 声明的目录，其他专项与未登记目录都跳过', () => {
     write('debug/app.log', 'app log')
     write('debug/oknte-launcher-start/launcher-error.jpg', 'oknte')
-    write('debug/maa-failure/failure.jpg', 'maa')
+    write('debug/maaend-login/login-error.jpg', 'maaend')
     write('debug/okww-account-switch/switch-error.jpg', 'okww')
     write('debug/new-adapter-diag/detail.log', '未登记的新目录')
 
@@ -61,7 +61,7 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
     expect(pathsOf(entries)).toContain(
       'logs/auto-mas/oknte-launcher-start/launcher-error.jpg'
     )
-    expect(pathsOf(entries)).not.toContain('logs/auto-mas/maa-failure/failure.jpg')
+    expect(pathsOf(entries)).not.toContain('logs/auto-mas/maaend-login/login-error.jpg')
     expect(pathsOf(entries)).not.toContain(
       'logs/auto-mas/okww-account-switch/switch-error.jpg'
     )
@@ -69,18 +69,18 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
   })
 
   it('其他专项的登记目录静默跳过，未登记目录留跳过条目进清单', () => {
-    write('debug/maa-failure/failure.jpg', 'maa')
+    write('debug/maaend-login/login-error.jpg', 'maaend')
     write('debug/new-adapter-diag/detail.log', '未登记的新目录')
 
     const entries = collect('logs/auto-mas', 'oknte')
 
     expect(skippedPaths(entries)).toEqual(['logs/auto-mas/new-adapter-diag'])
-    expect(skippedPaths(entries)).not.toContain('logs/auto-mas/maa-failure')
+    expect(skippedPaths(entries)).not.toContain('logs/auto-mas/maaend-login')
   })
 
   it('未声明 ownAdapter 时只收顶层文件', () => {
     write('debug/app.log', 'app log')
-    write('debug/maa-failure/failure.jpg', 'maa')
+    write('debug/maaend-login/login-error.jpg', 'maaend')
     write('debug/oknte-launcher-start/launcher-error.jpg', 'oknte')
 
     const entries = collect('logs/auto-mas')
