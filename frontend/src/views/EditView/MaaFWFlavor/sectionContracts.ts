@@ -255,7 +255,10 @@ export type PresetTemplate = {
 /** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
 export type MaaFWQueueTemplateView = { name: string } & MaaFWQueueSource
 
-/** 用户页 `taskQueue`：任务队列两栏（左：队列与添加；右：选中任务的选项） */
+/**
+ * 用户页 `taskQueue`：上方是全局选项（项目声明了才有，每个用户一份、所有任务共用，值在
+ * `taskSnapshot.globalOptions`），下面是任务队列两栏（左：队列与添加；右：选中任务的选项）
+ */
 export interface MaaFWUserTaskQueueSectionProps {
   interfaceLoading: boolean
   previewData: MaaFWInterfacePreviewData | null
@@ -297,6 +300,8 @@ export interface MaaFWUserTaskQueueSectionEmits {
   moveTask: [taskId: string, direction: -1 | 1]
   taskDragEnd: []
   taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
+  /** 改了一项全局选项：页面写进 `taskSnapshot.globalOptions` 并保存 */
+  globalOptionUpdate: [payload: { optionName: string; value: MaaFWTaskOptionValue }]
   deleteSelectedTask: []
   deleteTask: [taskId: string]
 }

@@ -38,6 +38,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     _build_option_defaults,
     build_default_task_instances,
     build_interface_preset_snapshot,
+    normalize_global_options,
     normalize_snapshot,
     normalize_task_execution_payload,
 )
@@ -135,6 +136,7 @@ def build_maafw_run_plan(
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None = None,
     task_ids: list[str] | None = None,
     task_options: dict[str, Any] | None = None,
+    global_options: dict[str, Any] | None = None,
     managed_env_root: str | Path | None = None,
     script_hotkeys: dict[str, dict[str, str]] | None = None,
 ) -> MaaFWRunPlan:
@@ -143,13 +145,17 @@ def build_maafw_run_plan(
     只在生效控制器是 Win32 时叠加到每个任务实际生效的 hotkey 选项上，盖过快照 / 预设里
     的值；叠加的是副本，``selected_task_options`` 不动。interface 未声明的 option / 字段
     静默忽略；映射不了的值告警后丢弃，回落到快照 / 默认值。
+
+    全局选项（``global_option`` 及其子选项）的值每个用户一份：走快照 / 预设时取其中的
+    ``globalOptions``，给了 ``task_ids`` 时取 ``global_options``（不给按默认值）。每个任务
+    建覆盖用的选项表是「全局表 + 这个任务自己的选项」，任务选项里同名的全局选项不参与。
     """
 
     interface = _coerce_interface(interface_model)
     resolved_base_dir = Path(base_dir).resolve()
     controller = _select_controller(interface, controller_name)
     resource = _select_resource(interface, resource_name, controller)
-    selected_task_ids, selected_task_options = _select_tasks(
+    selected_task_ids, selected_task_options, selected_global_options = _select_tasks(
         interface,
         controller_name=controller.name,
         resource_name=resource.name,
@@ -157,6 +163,7 @@ def build_maafw_run_plan(
         task_snapshot=task_snapshot,
         task_ids=task_ids,
         task_options=task_options,
+        global_options=global_options,
     )
     selected_pretask_ids = [
         task_id for task_id in selected_task_ids if is_pretask_task_name(task_id)
@@ -228,7 +235,9 @@ def build_maafw_run_plan(
             )
             continue
 
-        options = selected_task_options.get(task_id, {})
+        options = _with_global_options(
+            selected_global_options, selected_task_options.get(task_id, {})
+        )
         if apply_script_hotkeys and script_hotkeys:
             options = _overlay_script_hotkeys(
                 pipeline_builder,
@@ -709,11 +718,11 @@ def select_snapshot_tasks(
     *,
     selected_preset: str | None,
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
-) -> tuple[list[str], dict[str, Any]]:
-    """把用户快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项」。
+) -> tuple[list[str], dict[str, Any], dict[str, MaaFWTaskOptionValue]]:
+    """把用户快照（或预设）归一化成「勾选的任务实例 id 列表 + 各自选项 + 全局选项表」。
 
     与 ``build_maafw_run_plan`` 走快照时的第一步完全相同；特调钩子在这一步之后、
-    建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` 建计划。
+    建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` / ``global_options`` 建计划。
     """
 
     snapshot = _resolve_snapshot(
@@ -726,7 +735,7 @@ def select_snapshot_tasks(
         for task_id in snapshot.taskOrder
         if snapshot.taskChecked.get(task_id, False)
     ]
-    return selected_ids, dict(snapshot.taskOptions)
+    return selected_ids, dict(snapshot.taskOptions), dict(snapshot.globalOptions)
 
 
 def _select_tasks(
@@ -738,7 +747,8 @@ def _select_tasks(
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     task_ids: list[str] | None,
     task_options: dict[str, Any] | None,
-) -> tuple[list[str], MaaFWTaskOptionsByTask]:
+    global_options: dict[str, Any] | None,
+) -> tuple[list[str], MaaFWTaskOptionsByTask, dict[str, MaaFWTaskOptionValue]]:
     if task_ids is not None:
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
@@ -747,7 +757,11 @@ def _select_tasks(
             controller_name=controller_name,
             resource_name=resource_name,
         )
-        return selected_ids, selected_options
+        return (
+            selected_ids,
+            selected_options,
+            normalize_global_options(global_options, interface_model),
+        )
 
     snapshot = _resolve_snapshot(
         interface_model,
@@ -766,7 +780,24 @@ def _select_tasks(
         controller_name=controller_name,
         resource_name=resource_name,
     )
-    return selected_ids, selected_options
+    return selected_ids, selected_options, dict(snapshot.globalOptions)
+
+
+def _with_global_options(
+    global_options: dict[str, MaaFWTaskOptionValue],
+    task_options: dict[str, MaaFWTaskOptionValue],
+) -> dict[str, MaaFWTaskOptionValue]:
+    """一个任务建覆盖用的选项表：全局表在前（与覆盖的合并顺序一致），再接任务自己的选项；
+    同名的以全局表为准——任务选项里残留的旧全局选项值不参与。"""
+
+    return {
+        **copy.deepcopy(global_options),
+        **{
+            option_name: value
+            for option_name, value in task_options.items()
+            if option_name not in global_options
+        },
+    }
 
 
 def _resolve_snapshot(

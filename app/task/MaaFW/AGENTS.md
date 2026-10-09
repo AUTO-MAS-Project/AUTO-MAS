@@ -248,7 +248,19 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比较任务数时要减掉。
 - 选项 `type` 支持 `select / scan_select / switch / checkbox / input / hotkey`，后端下发与
   前端 `MaaFWTaskOptionEditor.vue` 两侧都有；未知 type 前端有兜底提示。
-- input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里是带 `mas-dpapi:` 前缀的
+- **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
+  （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`，所有任务共用；
+  任务的选项表（`build_task_option_maps`）里没有它们，任务也引用了同名选项时同样以全局表为准。
+  建计划时每个任务用「全局表 + 任务自己的选项」（`run_plan._with_global_options`），任务里残留的
+  同名值不参与。特调走 `task_ids` 那条路时必须把 `select_snapshot_tasks` 给的 `global_options` 一并
+  传给 `build_plan`：漏了不报错，全局选项静默回到默认值。pretask 不吃全局表（只认它自己声明的
+  选项与它实例上的值，与以前一致）。旧配置的值散在各任务实例上：表里缺的项由 `normalize_snapshot`
+  按队列顺序取第一个带合法值的实例（勾选的优先），前端 `maafwGlobalOptions.ts` 同一口径，用户页
+  加载即迁移、下次保存去掉任务里的同名值。预设写在任务上的全局选项值进全局表（预设顺序先写的为准）；
+  外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准，没有的再取队列里第一条
+  记着它的任务。
+- input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
+  `globalOptions` 两处，`option_secrets._SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，

@@ -71,8 +71,10 @@ from app.task.MaaFW.tools.core.interface.models import (
     iter_pretasks,
 )
 from app.task.MaaFW.tools.core.interface.task_config import (
+    build_global_option_map,
     build_interface_preset_snapshot,
     build_task_option_maps,
+    normalize_global_options,
     normalize_task_options_by_task,
 )
 from app.utils import get_logger
@@ -514,6 +516,7 @@ def plan_instance_import(
     skipped: list[str] = []
     labels = _Labels(interface, translate)
     option_maps = build_task_option_maps(interface)
+    global_option_map = build_global_option_map(interface)
     tasks_by_name: dict[str, MaaFWTask] = {}
     names_by_entry: dict[str, list[str]] = {}
     for task in interface.task:
@@ -522,27 +525,45 @@ def plan_instance_import(
         tasks_by_name[task.name] = task
         names_by_entry.setdefault(task.entry, []).append(task.name)
 
-    # 全局 / 资源级选项：MAS 把它们并进每个任务的选项表（见 build_task_option_maps），
-    # 所以换算一次，再分给选项表里有它们的任务
+    # 全局 / 资源级选项换算一次。资源级的分给选项表里有它们的任务（见 build_task_option_maps）；
+    # 全局选项进用户的全局表：外壳自己的全局表（MXU 的 globalOptionValues、MFW-PyQt6 的
+    # global_options）为准，它没记的再取队列里第一条记着它的任务的值
     shared_values = _shared_option_values(instance, interface, labels, skipped)
+    global_values = {
+        name: value
+        for name, value in shared_values.items()
+        if name in global_option_map
+    }
+    global_values_from_tasks: dict[str, MaaFWTaskOptionValue] = {}
 
     def collect_task_options(
-        raw_options: Any, option_map: Mapping[str, MaaFWOption], prefix: str
+        raw_options: Any,
+        option_map: Mapping[str, MaaFWOption],
+        prefix: str,
+        *,
+        route_global: bool = False,
     ) -> dict[str, MaaFWTaskOptionValue]:
-        """一条任务自己的选项，叠在全局 / 资源级选项上（任务自己记的优先）。"""
+        """一条任务自己的选项，叠在资源级选项上（任务自己记的优先）。
+
+        ``route_global``：任务里记着的全局选项不留在任务上，交给全局表（前置任务不走这条，
+        它的选项一直只认自己声明的）。
+        """
 
         values = {k: v for k, v in shared_values.items() if k in option_map}
-        values.update(
-            _task_own_option_values(
-                instance,
-                raw_options,
-                option_map,
-                interface.option,
-                prefix,
-                labels,
-                skipped,
-            )
+        own_values = _task_own_option_values(
+            instance,
+            raw_options,
+            {**option_map, **global_option_map} if route_global else option_map,
+            interface.option,
+            prefix,
+            labels,
+            skipped,
         )
+        for name, value in own_values.items():
+            if route_global and name in global_option_map:
+                global_values_from_tasks.setdefault(name, value)
+            else:
+                values[name] = value
         return values
 
     # MXU 把前置任务（pretask）当成队列里的一条 ``__MXU_PRETASK__<名>`` 存，MAS 的队列也认
@@ -606,6 +627,7 @@ def plan_instance_import(
             shell_task.raw_options,
             option_maps.get(task_name, {}),
             f"「{task_label}」的选项",
+            route_global=True,
         )
         preset_tasks.append(
             MaaFWPresetTask(name=task_name, enabled=True, option=values)
@@ -635,6 +657,10 @@ def plan_instance_import(
             "taskOrder": queued,
             "taskChecked": {task_id: True for task_id in queued},
             "taskOptions": {task_id: task_options[task_id] for task_id in queued},
+            # 外壳没记的全局选项按项目默认值补齐，与任务选项同一口径
+            "globalOptions": normalize_global_options(
+                {**global_values_from_tasks, **global_values}, interface
+            ),
         },
         task_count=len(queued),
         # 同一个选项在嵌套分支里可能出现多次（MFW-PyQt6 的 branches），同样的跳过只记一次

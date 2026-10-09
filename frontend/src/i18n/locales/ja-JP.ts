@@ -2159,6 +2159,8 @@ export default {
     depotDeleteSelectedConfirm: '選択した {n} 件の倉庫保持プランを削除しますか？',
     maafwNoMatchingSettings: '一致する設定項目がありません',
     maafwNoConfigurableOptions: 'このタスクに設定できる項目はありません',
+    maafwGlobalOptions: 'グローバル設定',
+    maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
     unknownType: '不明',
