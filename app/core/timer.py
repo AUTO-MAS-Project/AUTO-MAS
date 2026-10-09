@@ -200,7 +200,7 @@ class _MainTimer:
             await asyncio.sleep(3600)
 
     async def calendar_task(self) -> None:
-        """启动后获取活动并生成日程，之后每小时刷新日程。"""
+        """启动后登记活动日程，之后每小时补充新活动。"""
 
         while True:
             await self._run_loop_step("游戏日历日程刷新", GameCalendar.refresh_schedule)

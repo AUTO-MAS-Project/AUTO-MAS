@@ -10,7 +10,6 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from pathlib import Path
 
 from pydantic import AwareDatetime, TypeAdapter
 
@@ -41,7 +40,6 @@ class CalendarReminder:
     payload: NotifyPayload
     delivered: tuple[str, ...] = ()
     completed: bool = False
-    active: bool = True
     next_attempt_at: AwareDatetime | None = None
 
 
@@ -56,14 +54,7 @@ def visible_calendar_games(config: Mapping[str, object]) -> dict[str, tuple[str,
     if not isinstance(hidden, list):
         hidden = []
     hidden = [key for key in hidden if isinstance(key, str)]
-    # 兼容轮播上线前「所有游戏都隐藏」的旧布局迁移。
-    order = layout.get("moduleOrder", []) if isinstance(layout, dict) else []
-    old_games = set(CALENDAR_GAMES) - {"stellasora"}
-    if "activities" in hidden or (
-        isinstance(order, list)
-        and "activities" not in order
-        and old_games.issubset(hidden)
-    ):
+    if "activities" in hidden:
         return {}
     games = {key: value for key, value in CALENDAR_GAMES.items() if key not in hidden}
     if "bluearchive" in games:
@@ -114,7 +105,7 @@ def calendar_reminders(
             expires_at = min(due_at + timedelta(days=1), end)
             if now >= expires_at:
                 continue
-            # 开始提醒不随结束时间调整而重发；同场活动重复条目只分发一次。
+            # 同场活动的重复条目只登记一次。
             identity = [
                 source or game,
                 name,
@@ -150,7 +141,6 @@ class _GameCalendar:
         self._lock = asyncio.Lock()
         self._loaded = False
         self._reminders: dict[str, CalendarReminder] = {}
-        self._legacy_delivered: dict[str, list[str]] = {}
         self._dirty = False
         self._save_retry_at: datetime | None = None
 
@@ -164,11 +154,6 @@ class _GameCalendar:
             data = json.loads(path.read_text(encoding="utf-8"))
             reminders = _SCHEDULE_ADAPTER.validate_python(data["reminders"])
             self._reminders = {reminder.key: reminder for reminder in reminders}
-        # 兼容此前按当天记账的发送记录，迁移后仍按相同活动和渠道去重。
-        self._legacy_delivered = self._load_delivered(
-            Config.config_path / "GameCalendarNotify.json",
-            today=datetime.now(tz=UTC8).date().isoformat(),
-        )
         self._loaded = True
 
     @staticmethod
@@ -182,7 +167,7 @@ class _GameCalendar:
         return games
 
     async def refresh_schedule(self) -> None:
-        """刷新活动并更新未来日程；此入口只登记日程，不发送通知。"""
+        """定期获取活动并登记新日程，已登记日程保持不变。"""
 
         self._load_schedule()
         games = self._visible_games()
@@ -197,33 +182,20 @@ class _GameCalendar:
                     activities, game=game, source=source, label=label, now=now
                 )
                 async with self._lock:
-                    updated = {
+                    self._reminders = {
                         key: reminder
                         for key, reminder in self._reminders.items()
                         if reminder.expires_at > now
                     }
-                    # 撤下的活动取消日程，但当天的送达记录保留，重新出现也不重复推送。
-                    for previous in updated.values():
-                        if previous.game == game:
-                            previous.active = False
+                    # 活动排期固定：只补充新日程，保留已有日程与各渠道送达记录。
                     for reminder in reminders:
-                        previous = self._reminders.get(reminder.key)
-                        if previous is not None:
-                            reminder.delivered = previous.delivered
-                            reminder.completed = previous.completed
-                            reminder.next_attempt_at = previous.next_attempt_at
-                        else:
-                            reminder.delivered = tuple(
-                                self._legacy_delivered.get(reminder.key, ())
-                            )
-                        updated[reminder.key] = reminder
-                    self._reminders = updated
+                        self._reminders.setdefault(reminder.key, reminder)
                     self._save_schedule()
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 logger.opt(exception=error).warning(
-                    f"更新{label}活动日程失败，保留已有日程"
+                    f"登记{label}活动日程失败，保留已有日程"
                 )
 
     def has_due_reminders(self) -> bool:
@@ -234,8 +206,7 @@ class _GameCalendar:
         if self._dirty:
             return self._save_retry_at is None or now >= self._save_retry_at
         return any(
-            reminder.active
-            and not reminder.completed
+            not reminder.completed
             and (reminder.next_attempt_at or reminder.due_at)
             <= now
             < reminder.expires_at
@@ -254,14 +225,10 @@ class _GameCalendar:
             target_ids = {channel_target.id for _, channel_target in target.channels}
             for reminder in self._reminders.values():
                 now = datetime.now(tz=UTC8)
-                if (
-                    not reminder.active
-                    or reminder.completed
-                    or not (
-                        (reminder.next_attempt_at or reminder.due_at)
-                        <= now
-                        < reminder.expires_at
-                    )
+                if reminder.completed or not (
+                    (reminder.next_attempt_at or reminder.due_at)
+                    <= now
+                    < reminder.expires_at
                 ):
                     continue
                 current_game = games.get(reminder.game)
@@ -321,24 +288,6 @@ class _GameCalendar:
             raise
         self._dirty = False
         self._save_retry_at = None
-
-    @staticmethod
-    def _load_delivered(path: Path, *, today: str) -> dict[str, list[str]]:
-        if not path.exists():
-            return {}
-        # 记录损坏时保留原文件并停止本轮，避免把已发送的通知当成未发送反复推送。
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("游戏日历通知记录格式无效")
-        if data.get("date") != today:
-            return {}
-        delivered = data.get("delivered")
-        if not isinstance(delivered, dict) or any(
-            not isinstance(ids, list) or any(not isinstance(uid, str) for uid in ids)
-            for ids in delivered.values()
-        ):
-            raise ValueError("游戏日历通知记录格式无效")
-        return delivered
 
 
 GameCalendar = _GameCalendar()
