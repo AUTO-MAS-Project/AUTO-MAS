@@ -41,6 +41,7 @@ from app.utils.game_apk import (
     GameUpdateResult,
     download_apk,
     fetch_remote_apk_version,
+    get_apk_update_lock,
     get_installed_client_info,
     install_apk,
     is_client_outdated,
@@ -217,22 +218,33 @@ async def ensure_game_updated(
 
     time_limit = GAME_UPDATE_TIME_LIMIT_MINUTES * 60
     apk_path = apk_dir / f"reverse1999-{remote.version_name}.apk"
-    try:
-        await report(f"{outdated_text}，正在下载游戏安装包")
-        await download_apk(download_url, apk_path, progress, timeout=time_limit)
-        await report("正在安装游戏安装包（保留游戏数据）")
-        await install_apk(adb_path, adb_address, apk_path, timeout=time_limit)
-    except Exception as e:
-        logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
-        return GameUpdateResult(
-            "NeedManualUpdate",
-            f"{outdated_text}，MAS 自动更新失败（{e}），请手动更新游戏后重试",
+    async with get_apk_update_lock(apk_path):
+        # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
+        installed_now = await get_installed_client_info(
+            adb_path, adb_address, package_name
         )
-    finally:
-        # 安装包体积很大，无论成败都不长期占用磁盘。取消时 adb 可能还开着这个文件，
-        # 删不掉就留给下次覆盖，不能让删除失败盖掉取消本身。
-        with suppress(OSError):
-            apk_path.unlink(missing_ok=True)
+        if installed_now is not None and not is_client_outdated(
+            installed_now[0], remote.version_name
+        ):
+            return GameUpdateResult(
+                "UpToDate", f"游戏客户端已是最新版本 {installed_now[0]}"
+            )
+        try:
+            await report(f"{outdated_text}，正在下载游戏安装包")
+            await download_apk(download_url, apk_path, progress, timeout=time_limit)
+            await report("正在安装游戏安装包（保留游戏数据）")
+            await install_apk(adb_path, adb_address, apk_path, timeout=time_limit)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
+            return GameUpdateResult(
+                "NeedManualUpdate",
+                f"{outdated_text}，MAS 自动更新失败（{e}），请手动更新游戏后重试",
+            )
+        finally:
+            # 安装包体积很大，无论成败都不长期占用磁盘。取消时 adb 可能还开着这个文件，
+            # 删不掉就留给下次覆盖，不能让删除失败盖掉取消本身。
+            with suppress(OSError):
+                apk_path.unlink(missing_ok=True)
 
     current_info = await get_installed_client_info(adb_path, adb_address, package_name)
     current = current_info[0] if current_info is not None else None

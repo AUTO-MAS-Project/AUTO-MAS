@@ -34,7 +34,7 @@ import shutil
 import struct
 import zlib
 from collections.abc import Awaitable, Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +110,14 @@ def adb_runner_scope(runner: Callable[..., Awaitable[tuple[int, str]]] | None):
         yield
     finally:
         _ADB_RUNNER.reset(token)
+
+
+_apk_update_locks: dict[str, asyncio.Lock] = {}
+
+
+def get_apk_update_lock(apk_path: Path) -> asyncio.Lock:
+    """按安装包路径取进程内更新锁，串行化并行任务对同一安装包的下载与安装。"""
+    return _apk_update_locks.setdefault(str(apk_path), asyncio.Lock())
 
 
 async def _run_adb(
@@ -595,7 +603,11 @@ async def download_apk(
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = target_path.with_name(f"{target_path.name}.downloading")
-    temp_path.unlink(missing_ok=True)
+    try:
+        temp_path.unlink(missing_ok=True)
+    except OSError as e:
+        # 上次任务或杀软可能还占着残留文件：删不掉不碍事，open("wb") 会截断重写
+        logger.warning(f"清理残留下载临时文件失败，尝试直接覆盖: {e}")
 
     try:
         async with asyncio.timeout(timeout):
@@ -647,12 +659,16 @@ async def download_apk(
     except TimeoutError:
         # asyncio.timeout 在总时长耗尽时抛出内置 TimeoutError；
         # httpx 自身的单次操作超时是 httpx.TimeoutException，不会被这里误捕
-        temp_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            temp_path.unlink(missing_ok=True)
         raise RuntimeError(
             f"下载安装包超时（超过 {timeout / 60:.0f} 分钟），请检查网络后重试"
         ) from None
     except BaseException:
-        temp_path.unlink(missing_ok=True)
+        # 取消时残留文件可能还被别的进程占着：删不掉就留给下次覆盖，
+        # 不能让清理异常替换正在传播的 CancelledError
+        with suppress(OSError):
+            temp_path.unlink(missing_ok=True)
         raise
 
 
