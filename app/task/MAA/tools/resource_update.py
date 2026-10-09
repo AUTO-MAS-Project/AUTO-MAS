@@ -81,6 +81,7 @@ from .resource_package import (
     merge_package_tree,
     resource_tree_hashes,
 )
+from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
 logger = get_logger("MAA 资源更新")
 
@@ -152,28 +153,9 @@ def read_resource_clock(base: Path) -> datetime | None:
     return _read_clock_file(version_file)
 
 
-def _parse_iso(value: object) -> datetime | None:
-    """解析本模块自产的 isoformat 状态值，统一补齐 UTC 时区。"""
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
-
-
 # --------------------------------------------------------------------------
 # 状态（原子写；损坏一律按无状态处理，靠重查/重下自愈）
 # --------------------------------------------------------------------------
-
-
-def _load_state() -> dict[str, object]:
-    try:
-        return read_dict_file(_STATE_FILE)
-    except Exception:
-        logger.warning(f"MAA 资源更新: 状态文件损坏，按无状态处理: {_STATE_FILE}")
-        return {}
 
 
 def _load_manifest() -> dict[str, object] | None:
@@ -203,7 +185,7 @@ def _load_valid_manifest() -> dict[str, object] | None:
             clock = read_resource_clock(_STAGE_DIR)
         except (OSError, ValueError):
             clock = None
-        valid = clock is not None and _parse_iso(manifest.get("target")) == clock
+        valid = clock is not None and parse_iso(manifest.get("target")) == clock
     if not valid:
         _MANIFEST_FILE.unlink(missing_ok=True)
         logger.warning("MAA 资源更新: 暂存内容或版本与清单不一致，作废缓存等待重建")
@@ -598,16 +580,11 @@ async def acquire_resource_access_lock(install: Path) -> _MachineLock | None:
 # --------------------------------------------------------------------------
 
 
-def _backoff_active(state: dict[str, object], key: str, now: datetime) -> bool:
-    until = _parse_iso(state.get(key))
-    return until is not None and now < until
-
-
 def _stage_reusable(stage: dict[str, object] | None, target: datetime) -> bool:
     """全量暂存达到目标即可复用。"""
     if stage is None:
         return False
-    stage_target = _parse_iso(stage.get("target"))
+    stage_target = parse_iso(stage.get("target"))
     if stage_target is None:
         return False
     return stage_target >= target
@@ -688,12 +665,12 @@ async def _query_resource_version(
 ) -> datetime | None:
     """免费查询版本并更新查询状态；地板或退避命中时不查询。"""
     now = datetime.now(timezone.utc)
-    last_query = _parse_iso(state.get("last_query_at"))
-    if _backoff_active(state, "query_fail_until", now) or (
+    last_query = parse_iso(state.get("last_query_at"))
+    if backoff_active(state, "query_fail_until", now) or (
         last_query is not None and now - last_query < timedelta(seconds=_QUERY_FLOOR)
     ):
         return None
-    stage_target = _parse_iso(stage.get("target")) if stage else None
+    stage_target = parse_iso(stage.get("target")) if stage else None
     # 无缓存时报告最旧实例的真实时钟，不使用未实测的极旧版本哨兵。
     current = _format_clock(stage_target or min(clocks.values()))
     try:
@@ -708,14 +685,6 @@ async def _query_resource_version(
         write_file(_STATE_FILE, state)
         logger.warning(f"MAA 资源更新: 版本查询失败（1 小时内不再尝试）: {e}")
         return None
-
-
-def _download_attempted_today(state: dict[str, object], now: datetime) -> bool:
-    last_attempt = _parse_iso(state.get("last_download_attempt_at"))
-    return (
-        last_attempt is not None
-        and last_attempt.astimezone().date() >= now.astimezone().date()
-    )
 
 
 async def _refresh_resource_stage(
@@ -735,9 +704,9 @@ async def _refresh_resource_stage(
     ):
         return stage
     now = datetime.now(timezone.utc)
-    if _backoff_active(state, "download_fail_until", now):
+    if backoff_active(state, "download_fail_until", now):
         return stage
-    if _download_attempted_today(state, now):
+    if attempted_today(state, "last_download_attempt_at", now):
         await _report(progress, "今日已尝试获取资源包，明日再试；已有缓存照常分发")
         return stage
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
@@ -852,7 +821,7 @@ async def _sweep(progress: _Progress | None = None) -> None:
         return
     clocks = dict(pairs)
     await _report(progress, "检查 MAA 资源更新…")
-    state = _load_state()
+    state = load_state(_STATE_FILE)
     stage = await _run_write_thread(_load_valid_manifest)
     target = await _query_resource_version(clocks=clocks, stage=stage, state=state)
     stage = await _refresh_resource_stage(
