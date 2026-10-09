@@ -1398,8 +1398,8 @@ ipcMain.handle('log:export', async () => {
 
       if (stat.isFile()) {
         addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && file === 'maaend-login') {
-        addDirectory(state, filePath, 'maaend-login')
+      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
+        addDirectory(state, filePath, file)
       }
     }
 
