@@ -295,6 +295,12 @@ RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 # 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
 # 计划里第一个任务超时则结束本轮。
 TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
+# 单任务时限停掉当前任务后，最多等这么久让 tasker 真正停下再投下一个任务。
+# post_stop 一发出，当前任务的 job.wait() 就立即返回，任务本身却要跑完手上那个节点
+# （含 post_delay）才结束；这期间投递会被框架以「stopping, ignore new post」拒掉
+# （task_id=0）。生产上 M9A 均衡刷停下要 0.1~0.3 秒，按 0.1 秒投递三次超时两次被拒。
+TASK_STOP_SETTLE_SECONDS = 60.0
+TASK_STOP_SETTLE_POLL_SECONDS = 0.05
 # 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
 # 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
 LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
@@ -857,6 +863,8 @@ class MaaFWRunner:
         self._task_deadline_hit: threading.Event = threading.Event()
         self._task_deadline_timer: threading.Timer | None = None
         self._task_deadline_stop_posted: bool = False
+        # 单任务时限到点后发起停止的定时器线程（它在里面等停止 job）。
+        self._task_deadline_stop_thread: threading.Thread | None = None
         self._completed_tasks: list[str] = []
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
@@ -1020,6 +1028,7 @@ class MaaFWRunner:
         self._deadline_stop_posted = False
         self._task_deadline_hit.clear()
         self._task_deadline_stop_posted = False
+        self._task_deadline_stop_thread = None
         self._failure_screenshots = []
         self._completed_tasks = []
         with self._signal_lock:
@@ -1225,6 +1234,9 @@ class MaaFWRunner:
             stale = self._in_flight_task != self._task_deadline_task
             if not self._task_in_flight or stale:
                 return
+            # 先记线程再置位：主线程看到超时时一定也看得到这个线程，不会在停止
+            # 还没发出时就投下一个任务、再被它停掉。
+            self._task_deadline_stop_thread = threading.current_thread()
             self._task_deadline_hit.set()
         if self._stop_requested.is_set():
             return
@@ -1273,6 +1285,12 @@ class MaaFWRunner:
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        if not self._wait_task_deadline_stop():
+            raise RuntimeError(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
+                f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
+                f"{display_name}"
+            )
         self._failed_task_errors.append(
             (task.name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）")
         )
@@ -1287,6 +1305,33 @@ class MaaFWRunner:
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
             )
         return True
+
+    def _wait_task_deadline_stop(self) -> bool:
+        """等单任务时限发出的停止真正生效；最多等 ``TASK_STOP_SETTLE_SECONDS``。
+
+        post_stop 一发出，当前任务的 job.wait() 就立即返回，任务本身还在跑完手上那个
+        节点，tasker 没空闲前投递一律被拒（task_id=0）。定时器线程在 ``_post_self_stop``
+        里等停止 job，那个 job 排在当前任务之后，它返回就是停止生效；之后 tasker 还要
+        收个尾才空闲，所以再看一次 ``running``。返回 False 表示等满也没停下。
+        等的时候整轮时限到点就直接按整轮超时收尾，不再说「继续后续任务」。
+        """
+
+        give_up_at = time.monotonic() + TASK_STOP_SETTLE_SECONDS
+        while True:
+            self._raise_if_deadline_hit()
+            thread = self._task_deadline_stop_thread
+            busy = thread is not None and thread.is_alive()
+            if not busy and self.tasker is not None:
+                try:
+                    busy = bool(self.tasker.running)
+                except Exception:
+                    busy = False
+            if not busy:
+                return True
+            if time.monotonic() >= give_up_at:
+                return False
+            if self._stop_requested.wait(timeout=TASK_STOP_SETTLE_POLL_SECONDS):
+                raise RuntimeError("MaaFW 任务已停止")
 
     def _handle_loop_guard(self, task: MaaFWTaskRunPlan, index: int) -> bool:
         """本任务被原地打转检测停掉时收尾；返回 True 让调用方跳到下一个任务。

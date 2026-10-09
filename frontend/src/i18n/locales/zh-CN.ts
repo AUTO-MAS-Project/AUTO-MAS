@@ -3329,7 +3329,6 @@ export default {
       loading: '正在获取活动信息…',
       noActivity: '暂无进行中的活动',
       unavailable: '活动数据暂不可用',
-      endedNote: '后续活动即将开始',
       allHidden: '轮播里的游戏都关掉了，可在「编辑布局」里重新打开',
     },
     activityNotes: {

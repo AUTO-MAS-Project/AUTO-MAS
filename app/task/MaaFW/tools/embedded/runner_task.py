@@ -654,6 +654,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
             await self._run_pretasks()
+            # 上一次尝试的失败摘要与是否重启过客户端：新一次另起日志后界面从头显示，
+            # 不在开头写一句，用户只看到「尝试次数: 2/3」，不知道为什么重来。
+            previous_failure: str | None = None
+            previous_restarted = False
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -667,6 +671,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 尝试次数: "
                     f"{index + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
+                if index > 0 and previous_failure:
+                    self._append_log(
+                        f"上一次（第 {index} 次）：{previous_failure}"
+                        + ("，已重启游戏/模拟器" if previous_restarted else "")
+                    )
 
                 try:
                     if index > 0:
@@ -718,7 +727,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                     if unretryable:
                         break
-                    await self._restart_client_before_retry(index + 1)
+                    previous_failure = message
+                    previous_restarted = await self._restart_client_before_retry(
+                        index + 1
+                    )
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
@@ -783,7 +795,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             else "MaaFW 剩余周期任务已完成，停止本轮重试"
                         )
                     else:
-                        await self._restart_client_before_retry(index + 1)
+                        previous_failure = message
+                        previous_restarted = await self._restart_client_before_retry(
+                            index + 1
+                        )
         finally:
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
@@ -2678,23 +2693,24 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
 
-    async def _restart_client_before_retry(self, attempt: int) -> None:
+    async def _restart_client_before_retry(self, attempt: int) -> bool:
         """一轮失败后把 MAS 自己拉起的游戏/模拟器关掉，让下一轮从启动重新来。
 
         和 MAA 专项的重试一个口径：出了问题就整个重来。以前重试只是重启 MaaFW 框架
         再接回同一个窗口——超时那种卡在某一屏的情况（弹窗关不掉、按钮点不动），
         第二、三轮 3 秒内就撞回同一屏，白等两倍时限。
         游戏/模拟器不是 MAS 起的（AttachOnly、发现已在运行）时照旧不碰；
-        这是最后一轮时也不在这里关，收尾统一关。
+        这是最后一轮时也不在这里关，收尾统一关。返回这次是否关过。
         """
 
         if attempt >= self.script_config.get("Run", "RunTimesLimit"):
-            return
+            return False
         if not self.opened_game and not self.opened_emulator:
-            return
+            return False
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
         await self._close_emulator()
         await self._close_game()
+        return True
 
     def _start_attempt_log(self) -> None:
         """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。

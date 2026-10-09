@@ -3430,7 +3430,6 @@ export default {
       loading: 'Loading events…',
       noActivity: 'No events running',
       unavailable: 'Event data is unavailable',
-      endedNote: 'More events are coming soon',
       allHidden: 'Every game in the carousel is off. Turn one back on under Customize layout.',
     },
     activityNotes: {

@@ -2812,7 +2812,6 @@ export default {
       loading: 'イベント情報を取得しています…',
       noActivity: '開催中のイベントはありません',
       unavailable: 'イベント情報を取得できません',
-      endedNote: '次のイベントがまもなく始まります',
       allHidden: 'カルーセル内のゲームがすべてオフです。「ホーム画面のカスタマイズ」で戻せます',
     },
     empty: {
