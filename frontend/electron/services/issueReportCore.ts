@@ -509,8 +509,11 @@ export function addPerInstallationFile(
 }
 
 // 各专项在后端 debug/ 下自有的诊断子目录（对应 app/task/*/tools 里 Path.cwd()/debug 的落盘）。
-// 问题包只收声明方自己的目录，其他专项的目录跳过，避免互相混入
+// debug/ 下的子目录一律视为专项诊断：问题包只收 ownAdapter 声明的目录，登记表里没有的
+// 目录一律跳过并写跳过条目进清单，提醒落盘方登记。早期是黑名单制（只挡已登记的其他
+// 专项目录），MAA 的 maa-failure 因漏登记混进了所有专项的问题包，之后才改成默认跳过。
 const ADAPTER_DEBUG_SUBDIRS = {
+  maa: ['maa-failure'],
   maaend: ['maaend-login'],
   okww: ['okww-account-switch', 'okww-launcher-start'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],
@@ -520,8 +523,8 @@ const ADAPTER_DEBUG_SUBDIRS = {
 export type AdapterDebugDirKey = keyof typeof ADAPTER_DEBUG_SUBDIRS
 
 /**
- * 收集后端 debug/ 目录：通用文件与未登记目录全收，其他专项的诊断子目录跳过，
- * 只有 ownAdapter 声明的子目录会收进包里。
+ * 收集后端 debug/ 目录：顶层通用文件全收；子目录只收 ownAdapter 声明的登记目录，
+ * 其他专项的目录静默跳过，登记表里没有的目录写跳过条目进清单。
  */
 export function addDebugDirectory(
   state: CollectorState,
@@ -543,10 +546,8 @@ export function addDebugDirectory(
     return false
   }
 
-  const foreignDirs = new Set(Object.values(ADAPTER_DEBUG_SUBDIRS).flat())
-  for (const name of ownAdapter ? ADAPTER_DEBUG_SUBDIRS[ownAdapter] : []) {
-    foreignDirs.delete(name)
-  }
+  const registeredDirs = new Set(Object.values(ADAPTER_DEBUG_SUBDIRS).flat())
+  const ownDirs = new Set(ownAdapter ? ADAPTER_DEBUG_SUBDIRS[ownAdapter] : [])
 
   let foundFile = false
   for (const entry of entries) {
@@ -557,7 +558,14 @@ export function addDebugDirectory(
     const sourcePath = path.join(sourceDir, entry.name)
     const archivePath = path.posix.join(archiveDir, entry.name)
     if (entry.isDirectory()) {
-      if (foreignDirs.has(entry.name)) {
+      if (!registeredDirs.has(entry.name)) {
+        // 收进来会混进所有专项的问题包；清单里留条跳过记录，落盘方导出自己的
+        // 问题包时就能直接看到漏登记，而不是等别人的包混进自己的诊断才暴露
+        logger.debug(`debug/ 诊断子目录未登记，跳过: ${entry.name}`)
+        addSkippedEntry(state, archivePath, 0, 'debug/ 诊断子目录未登记，已跳过')
+        continue
+      }
+      if (!ownDirs.has(entry.name)) {
         continue
       }
       foundFile = addDirectory(state, sourcePath, archivePath) || foundFile
