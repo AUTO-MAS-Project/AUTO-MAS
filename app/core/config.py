@@ -5341,7 +5341,9 @@ class AppConfig(GlobalConfig):
 
         # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
         # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
-        # 和增删脚本（遍历活集合会 RuntimeError 中止本轮）
+        # 和增删脚本。items() 是 zip(order 列表, data 逐项查找) 的惰性结构，
+        # list() 消费它并非原子拷贝、并发增删仍可 KeyError 中止本轮；直接对
+        # data 的 dict 视图做 list() 才是单条 C 级拷贝的真原子快照
         retention_days = self.get("Function", "HistoryRetentionTime")
         if retention_days == 0:
             logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
@@ -5354,7 +5356,7 @@ class AppConfig(GlobalConfig):
 
         cutoff = time.time() - retention_days * 86400
         deleted_count = 0
-        for uid, script_config in list(self.ScriptConfig.items()):
+        for uid, script_config in list(self.ScriptConfig.data.items()):
             if not isinstance(script_config, MaaFWConfig):
                 continue
             # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
