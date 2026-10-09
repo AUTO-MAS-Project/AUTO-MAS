@@ -416,7 +416,10 @@ def main():
                             ),
                         ):
                             try:
-                                await step()
+                                # 三个清理函数是 async 壳包同步 IO：放进工作线程跑，
+                                # 避免在事件循环上阻塞按分钟匹配的队列定时；协程在
+                                # 工作线程内创建，取消发生在启动前也不留悬挂协程
+                                await asyncio.to_thread(lambda: asyncio.run(step()))
                             except asyncio.CancelledError:
                                 raise
                             except Exception:
