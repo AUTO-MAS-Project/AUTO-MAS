@@ -3694,7 +3694,7 @@ MISSING_TASK_NOTICE_PREFIX = (
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
 #: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
-_RETRY_SKIP_REASON = "本次运行已完成"
+_RETRY_SKIP_REASON = "前面的尝试已完成"
 
 
 def _drop_unselectable_tasks(
