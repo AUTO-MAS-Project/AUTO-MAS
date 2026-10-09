@@ -152,3 +152,6 @@ class MaaFWRunnerJobPayload(BaseModel):
     taskTimeLimitSeconds: int | None = None
     # 按任务名覆盖的单任务时限（秒），键是 MaaFWTaskRunPlan.name；值 0 表示该任务不限。
     taskTimeLimitOverrides: dict[str, int] | None = None
+    # 原地打转检测（实验性）：任务在短周期里反复执行同一串节点、识别结果又不变时停掉它，
+    # 收尾与单任务超时同一口径。宿主按 Run.LoopGuard 下发，默认关。
+    loopGuard: bool = False

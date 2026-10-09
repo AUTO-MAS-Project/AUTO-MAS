@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { centerIconUrl, satelliteModules } from './satellite-config'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import {
+  buildOrbitModules,
+  centerIconUrl,
+  orbitKeysByScriptId,
+  satelliteModules,
+} from './satellite-config'
+import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import type { ScriptType } from '@/types/script'
 
 /**
@@ -36,5 +41,69 @@ describe('satellite icon config', () => {
 
   it('MAA 排在第一位，未列入顺序表的类型排在后面', () => {
     expect(satelliteModules[0]?.scriptType).toBe('MAA')
+  })
+})
+
+describe('buildOrbitModules', () => {
+  const mfw = (uid: string, info: Record<string, string>) => ({
+    uid,
+    type: 'MaaFW',
+    config: { Info: info },
+  })
+
+  it('只有建过的脚本类型上轨道，同类型多个脚本只出一颗', () => {
+    const modules = buildOrbitModules([
+      { uid: 'h1', type: 'HSR' },
+      { uid: 'm1', type: 'MAA' },
+      { uid: 'm2', type: 'MAA' },
+      { uid: 'g1', type: 'General' },
+    ])
+    expect(modules.map(module => [module.key, module.scriptIds])).toEqual([
+      ['MAA', ['m1', 'm2']],
+      ['HSR', ['h1']],
+    ])
+    expect(modules[0].iconUrl).toBe(SCRIPT_LOGOS.MAA)
+    expect(modules[0].fallbackIconUrl).toBeUndefined()
+  })
+
+  it('通用 MFW 每个项目一颗，用项目图标、回退 MaaFW 图标；特调还是按类型', () => {
+    const modules = buildOrbitModules([
+      mfw('a1', { ProjectLabel: '识宝', Path: 'D:/a', Name: '识宝 1' }),
+      { uid: 'k1', type: 'M9A' },
+      mfw('b1', { ProjectLabel: 'CFA', Path: 'D:/b' }),
+      mfw('a2', { ProjectLabel: ' 识宝 ', Path: 'D:/a2', Name: '识宝 2' }),
+      mfw('p1', { Path: 'D:/p', Name: '没记项目名' }),
+      mfw('p2', { Path: 'D:/p' }),
+      mfw('x1', {}),
+    ])
+
+    const maafw = modules.filter(module => module.scriptType === 'MaaFW')
+    expect(maafw.map(module => [module.key, module.label, module.scriptIds])).toEqual([
+      ['MaaFW:project:识宝', '识宝', ['a1', 'a2']],
+      ['MaaFW:project:CFA', 'CFA', ['b1']],
+      ['MaaFW:path:D:/p', '没记项目名', ['p1', 'p2']],
+      ['MaaFW:id:x1', SCRIPT_LABELS.MaaFW, ['x1']],
+    ])
+    expect(maafw[0].iconUrl).toContain('/api/scripts/maafw/icon?scriptId=a1')
+    expect(maafw[0].fallbackIconUrl).toBe(SCRIPT_LOGOS.MaaFW)
+    expect(modules.find(module => module.scriptType === 'M9A')).toMatchObject({
+      key: 'M9A',
+      iconUrl: SCRIPT_LOGOS.M9A,
+    })
+  })
+
+  it('脚本 ID 对到各自的卫星键', () => {
+    const keys = orbitKeysByScriptId(
+      buildOrbitModules([
+        mfw('a1', { ProjectLabel: '识宝' }),
+        mfw('a2', { ProjectLabel: '识宝' }),
+        { uid: 'm1', type: 'MAA' },
+      ])
+    )
+    expect([...keys]).toEqual([
+      ['m1', 'MAA'],
+      ['a1', 'MaaFW:project:识宝'],
+      ['a2', 'MaaFW:project:识宝'],
+    ])
   })
 })

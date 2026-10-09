@@ -86,6 +86,12 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 # 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
 # 就这么丢过一次，见下方注释）。
 try:
+    from .loop_guard import (
+        WINDOW_ITERATIONS,
+        LoopGuardVerdict,
+        MaaFWLoopGuard,
+        parse_loop_guard_exempt,
+    )
     from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
     from .pipeline_override import deep_merge_pipeline_override
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
@@ -99,6 +105,12 @@ try:
         signal_enable_override,
     )
 except ImportError:
+    from loop_guard import (  # type: ignore[no-redef]
+        WINDOW_ITERATIONS,
+        LoopGuardVerdict,
+        MaaFWLoopGuard,
+        parse_loop_guard_exempt,
+    )
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
@@ -289,6 +301,10 @@ TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
 # （task_id=0）。生产上 M9A 均衡刷停下要 0.1~0.3 秒，按 0.1 秒投递三次超时两次被拒。
 TASK_STOP_SETTLE_SECONDS = 60.0
 TASK_STOP_SETTLE_POLL_SECONDS = 0.05
+# 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
+# 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
+LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
+LOOP_GUARD_SCREENSHOT_KIND = "loop"
 
 
 class MaaFWRunTimeoutError(RuntimeError):
@@ -791,6 +807,7 @@ class MaaFWRunner:
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard_enabled: bool = False,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -862,6 +879,23 @@ class MaaFWRunner:
         self._signal_hit: tuple[str, str] | None = None
         self._signal_task: str | None = None
         self._signal_stop_thread: threading.Thread | None = None
+        # 原地打转检测（Run.LoopGuard，实验性）。关闭时不建检测器、不喂事件、不扫豁免。
+        # 回调线程持 _loop_guard_lock 喂事件；主线程每个任务投递前持同一把锁 reset()。
+        # 判到卡死时记下（任务名, 判定）并在单独线程里 post_stop，主线程收尾。
+        self._loop_guard_lock: threading.Lock = threading.Lock()
+        self._loop_guard: MaaFWLoopGuard | None = (
+            MaaFWLoopGuard(exempt=self._loop_guard_exempt)
+            if loop_guard_enabled
+            else None
+        )
+        # 项目在节点上写 "attach": {"auto_mas_loop_guard": false} 声明豁免；资源加载后
+        # 与信号节点同一趟扫描收集，binding 列不出节点时退回命中时按名字查（带缓存）。
+        self._loop_guard_exempt_nodes: set[str] = set()
+        self._loop_guard_lookup_on_hit: bool = False
+        self._loop_guard_lookup_cache: dict[str, bool] = {}
+        self._loop_guard_hit: tuple[str, LoopGuardVerdict] | None = None
+        self._loop_guard_stop_thread: threading.Thread | None = None
+        self._loop_guard_error_logged: bool = False
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
@@ -1001,6 +1035,9 @@ class MaaFWRunner:
             self._signal_hit = None
             self._signal_task = None
             self._signal_stop_thread = None
+        with self._loop_guard_lock:
+            self._loop_guard_hit = None
+            self._loop_guard_stop_thread = None
         self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
@@ -1075,6 +1112,7 @@ class MaaFWRunner:
             self._cancel_task_deadline_timer()
             self._cancel_deadline_timer()
             self._join_signal_stop()
+            self._join_loop_guard_stop()
 
     def _start_deadline_timer(self) -> None:
         """到宿主给的截止时刻就停掉当前任务。
@@ -1281,6 +1319,124 @@ class MaaFWRunner:
             if self._stop_requested.wait(timeout=TASK_STOP_SETTLE_POLL_SECONDS):
                 raise RuntimeError("MaaFW 任务已停止")
 
+    def _handle_loop_guard(self, task: MaaFWTaskRunPlan, index: int) -> bool:
+        """本任务被原地打转检测停掉时收尾；返回 True 让调用方跳到下一个任务。
+
+        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        任务（``abortRoundMessage``）结束本轮，其余记一条任务失败再继续。必须早于
+        ``_external_stop_active``：停止是我们自己 post_stop 的，tasker 的 stopping 会置位，
+        晚了就被当成脚本侧强停、跳过本轮剩余任务。
+        """
+
+        with self._loop_guard_lock:
+            hit = self._loop_guard_hit
+            self._loop_guard_hit = None
+        if hit is None:
+            return False
+        self._join_loop_guard_stop()
+        _, verdict = hit
+        self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
+        reason = _format_loop_guard_reason(verdict)
+        display_name = _task_display_name(task)
+        if index == 0 or task.abortRoundMessage:
+            if task.abortRoundMessage:
+                reason = f"{task.abortRoundMessage}：{reason}"
+            raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        self._failed_task_errors.append((task.name, reason))
+        if index + 1 < len(self.plan.tasks):
+            self.send_log(f"{reason}，已停止并继续后续任务: {display_name}")
+        else:
+            self.send_log(f"{reason}，已停止: {display_name}")
+        return True
+
+    def _loop_guard_exempt(self, name: str) -> bool:
+        """节点是否声明了不做原地打转检测（检测器自己还会按节点名缓存）。"""
+
+        if name in self._loop_guard_exempt_nodes:
+            return True
+        if not self._loop_guard_lookup_on_hit:
+            return False
+        if name in self._loop_guard_lookup_cache:
+            return self._loop_guard_lookup_cache[name]
+        exempt = False
+        resource = self.resource
+        if resource is not None:
+            try:
+                exempt = parse_loop_guard_exempt(resource.get_node_data(name))
+            except Exception:
+                exempt = False
+        self._loop_guard_lookup_cache[name] = exempt
+        return exempt
+
+    def _on_loop_guard_notification(self, message: str, details: Any) -> None:
+        """把节点通知喂给原地打转检测；判到卡死时置位并在单独线程里停掉当前任务。
+
+        与 ``_on_signal_notification`` 同一个做法：这是框架的回调线程，不能在这里等
+        post_stop 的 job，截图与收尾留给主线程（``_handle_loop_guard``）。
+        """
+
+        guard = self._loop_guard
+        if guard is None or not message.startswith(
+            ("Node.Recognition.", "Node.PipelineNode.")
+        ):
+            return
+        thread: threading.Thread | None = None
+        task_name: str | None = None
+        with self._loop_guard_lock:
+            verdict = guard.feed(message, details)
+            if verdict is None:
+                return
+            if verdict.kind == "stuck":
+                with self._signal_lock:
+                    if self._task_in_flight and self._signal_hit is None:
+                        task_name = self._in_flight_task
+                if (
+                    task_name is not None
+                    and self._loop_guard_hit is None
+                    and not self._stop_requested.is_set()
+                    and not self._deadline_hit.is_set()
+                    and not self._task_deadline_hit.is_set()
+                ):
+                    self._loop_guard_hit = (task_name, verdict)
+                    thread = threading.Thread(
+                        target=self._post_loop_guard_stop,
+                        name="maafw-loop-guard-stop",
+                        daemon=True,
+                    )
+                    self._loop_guard_stop_thread = thread
+                    # 锁内启动：主线程拿到命中标记时线程一定已经在跑，join 才等得到它。
+                    thread.start()
+        if verdict.kind == "unsupported":
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}原地打转检测：MaaFramework 通知缺少所需字段"
+                f"（{verdict.detail}），本次运行不做检测"
+            )
+            return
+        summary = _format_loop_guard_detail(verdict)
+        if verdict.kind == "warn":
+            self.send_log(f"{DETAIL_LOG_PREFIX}疑似原地打转：{summary}")
+            return
+        if thread is None:
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}判定原地打转时没有可停止的任务，已忽略：{summary}"
+            )
+            return
+        self.send_log(f"{DETAIL_LOG_PREFIX}判定原地打转：{summary}")
+        self.send_log(f"{_format_loop_guard_reason(verdict)}，正在停止当前任务并截图")
+
+    def _post_loop_guard_stop(self) -> None:
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"停止 MaaFW tasker 失败: {exc}")
+
+    def _join_loop_guard_stop(self) -> None:
+        thread = self._loop_guard_stop_thread
+        if thread is None or thread is threading.current_thread():
+            return
+        with suppress(RuntimeError):
+            thread.join(timeout=SIGNAL_STOP_JOIN_SECONDS)
+
     def cleanup(self) -> None:
         self._stop_requested.set()
         if self.tasker is not None:
@@ -1364,6 +1520,11 @@ class MaaFWRunner:
         self._signal_specs = {}
         self._signal_lookup_on_hit = False
         self._signal_lookup_cache = {}
+        # 原地打转检测的豁免节点（attach.auto_mas_loop_guard: false）同一趟收集，仅开启时。
+        collect_exempt = self._loop_guard is not None
+        self._loop_guard_exempt_nodes = set()
+        self._loop_guard_lookup_on_hit = False
+        self._loop_guard_lookup_cache = {}
         resource = self.resource
         get_node_data = getattr(resource, "get_node_data", None)
         if not callable(get_node_data):
@@ -1377,12 +1538,14 @@ class MaaFWRunner:
             names = list(resource.node_list)
         except Exception as exc:
             self._signal_lookup_on_hit = True
+            self._loop_guard_lookup_on_hit = collect_exempt
             self.send_log(
                 f"{DETAIL_LOG_PREFIX}MaaFW binding 列不出节点（{exc}），不强开维护 / "
                 "更新信号节点，只在节点命中时按名字判定"
             )
             return
         specs: dict[str, MaaFWSignalSpec] = {}
+        exempt: set[str] = set()
         for name in names:
             try:
                 data = get_node_data(name)
@@ -1391,12 +1554,18 @@ class MaaFWRunner:
             spec = self._parse_signal_node(name, data)
             if spec is not None:
                 specs[name] = spec
+            if collect_exempt and parse_loop_guard_exempt(data):
+                exempt.add(name)
         self._signal_specs = specs
+        self._loop_guard_exempt_nodes = exempt
         elapsed_ms = (time.perf_counter() - started) * 1000
         found = "、".join(sorted(specs)) if specs else "无"
+        exempt_text = (
+            f"，原地打转检测豁免节点: {'、'.join(sorted(exempt))}" if exempt else ""
+        )
         self.send_log(
             f"{DETAIL_LOG_PREFIX}信号节点扫描：{len(names)} 个节点，用时 "
-            f"{elapsed_ms:.0f} ms，信号节点: {found}"
+            f"{elapsed_ms:.0f} ms，信号节点: {found}{exempt_text}"
         )
 
     def _parse_signal_node(self, name: str, data: Any) -> MaaFWSignalSpec | None:
@@ -2621,6 +2790,14 @@ class MaaFWRunner:
             # 上一个任务超时留下的标记要在投递前清掉：投递本身抛错时定时器还没起，
             # 不清的话这次投递失败会被当成「单任务超时」收尾。
             self._task_deadline_hit.clear()
+            if self._loop_guard is not None:
+                # 上一个任务若是被单任务时限抢先收尾，打转判定发起的停止可能还没落地；
+                # 先等它做完，否则它会停掉这次投递的任务，被当成脚本侧强停跳过本轮。
+                self._join_loop_guard_stop()
+                # 每个任务从零开始数循环；上一个任务的命中标记同理清掉。
+                with self._loop_guard_lock:
+                    self._loop_guard.reset()
+                    self._loop_guard_hit = None
             pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
@@ -2662,6 +2839,10 @@ class MaaFWRunner:
                 # 单任务时限到了同样是 post_stop 打断的返回，要早于普通失败判定，
                 # 否则用户看到的是「任务失败」而不是「超时」。
                 if self._handle_task_deadline(task, index):
+                    time.sleep(0.1)
+                    continue
+                # 原地打转检测的停止同样是我们自己 post_stop 的，同一个位置收尾。
+                if self._handle_loop_guard(task, index):
                     time.sleep(0.1)
                     continue
                 message = str(exc)
@@ -2707,6 +2888,9 @@ class MaaFWRunner:
             # 被单任务时限 post_stop 打断的入口也可能回报成功，同样要早于
             # _external_stop_active（我们自己的强停会把 stopping 置位）。
             if self._handle_task_deadline(task, index):
+                time.sleep(0.1)
+                continue
+            if self._handle_loop_guard(task, index):
                 time.sleep(0.1)
                 continue
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
@@ -2906,6 +3090,16 @@ class MaaFWRunner:
         except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
             with suppress(Exception):
                 self.send_log(f"处理 MaaFW 信号节点通知失败: {exc}")
+        if self._loop_guard is not None:
+            try:
+                self._on_loop_guard_notification(message, details)
+            except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
+                if not self._loop_guard_error_logged:
+                    self._loop_guard_error_logged = True
+                    with suppress(Exception):
+                        self.send_log(
+                            f"{DETAIL_LOG_PREFIX}处理原地打转检测通知失败: {exc}"
+                        )
         try:
             focus_texts = self._resolve_focus_texts(message, details)
             for text in focus_texts:
@@ -3287,6 +3481,26 @@ def _format_task_config_detail_log(task: MaaFWTaskRunPlan) -> str:
         f"{DETAIL_LOG_PREFIX}任务配置: "
         f"name={task.name}; entry={task.entry}; options={option_text}; "
         f"override_nodes={override_text}"
+    )
+
+
+def _format_loop_guard_reason(verdict: LoopGuardVerdict) -> str:
+    """原地打转的错误消息：``MaaFW 任务原地打转（A → B 已循环 257 轮 / 10.0 分钟）``。"""
+
+    return (
+        f"{LOOP_GUARD_MESSAGE}（{' → '.join(verdict.cycle)} 已循环 "
+        f"{verdict.iterations} 轮 / {verdict.elapsed_seconds / 60:.1f} 分钟）"
+    )
+
+
+def _format_loop_guard_detail(verdict: LoopGuardVerdict) -> str:
+    """worker 日志里的判定详情：节点循环、轮数、分钟、指纹种数、单轮中位秒数。"""
+
+    return (
+        f"{' → '.join(verdict.cycle)}，已循环 {verdict.iterations} 轮 / "
+        f"{verdict.elapsed_seconds / 60:.1f} 分钟，最近 {WINDOW_ITERATIONS} 轮识别结果 "
+        f"{verdict.distinct_fingerprints} 种，单轮中位 "
+        f"{verdict.median_iteration_seconds:.1f} 秒"
     )
 
 

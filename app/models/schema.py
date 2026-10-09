@@ -42,6 +42,7 @@ from pydantic import (
     SecretStr,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 TPlanInfo = TypeVar("TPlanInfo")
@@ -2564,6 +2565,10 @@ class OkNteConfig_Game(BaseModel):
     Type: Optional[Literal["Client", "URL"]] = Field(
         default=None, description="类型: PC端, URL协议"
     )
+    LaunchMode: Optional[Literal["Autoplay", "LauncherUi"]] = Field(
+        default=None,
+        description="启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）",
+    )
     Path: Optional[str] = Field(
         default=None,
         description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）",
@@ -4025,6 +4030,9 @@ class MaaFWConfig_Run(BaseModel):
     TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
     )
+    LoopGuard: Optional[bool] = Field(
+        default=None, description="原地打转检测（实验性，默认关）"
+    )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
     )
@@ -4069,6 +4077,13 @@ class MaaFWConfig_Selection(BaseModel):
     )
 
 
+class MaaFWConfig_Task(BaseModel):
+    Templates: Optional[str] = Field(
+        default=None,
+        description='用户页任务队列的自定义模板，JSON 字符串 [{"name": 模板名, "snapshot": 任务快照}]，同一脚本的用户共用',
+    )
+
+
 class MaaFWConfig(BaseModel):
     Info: Optional[MaaFWConfig_Info] = Field(default=None, description="脚本基础信息")
     Emulator: Optional[MaaFWConfig_Emulator] = Field(
@@ -4088,6 +4103,7 @@ class MaaFWConfig(BaseModel):
     Selection: Optional[MaaFWConfig_Selection] = Field(
         default=None, description="controller、resource 与 task 选择"
     )
+    Task: Optional[MaaFWConfig_Task] = Field(default=None, description="任务队列模板")
 
 
 class M9AUserConfig(MaaFWUserConfig):
@@ -5269,6 +5285,127 @@ class ShareAuthStatusOut(OutBase):
     interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
+class ShareAppearanceUploadIn(BaseModel):
+    zipPath: str = Field(..., description="本地外观 ZIP 路径")
+    displayName: str = Field(
+        default="", max_length=60, description="外观名称, 只在新建时使用"
+    )
+    description: str = Field(default="", max_length=2000, description="外观描述")
+    changeNote: str = Field(default="", max_length=500, description="变更说明")
+    fileId: Optional[int] = Field(
+        default=None, description="已上传文件的 ID, 非空表示给该文件发新版本"
+    )
+    coverPath: Optional[str] = Field(
+        default=None,
+        description="封面图片路径, coverMode 为 custom 时使用",
+    )
+    coverMode: Optional[Literal["package", "custom", "inherit"]] = Field(
+        default=None,
+        description="封面来源: package 用外观包的 preview, custom 用 coverPath, inherit 沿用分享站上的封面 (只能用于新版本); 为空时有 coverPath 按 custom, 否则按 package",
+    )
+
+    @field_validator("displayName", mode="before")
+    @classmethod
+    def strip_display_name(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def check_target(self) -> "ShareAppearanceUploadIn":
+        if self.fileId is None and not self.displayName:
+            raise ValueError("新建外观时名称不能为空")
+        if self.coverMode == "inherit" and self.fileId is None:
+            raise ValueError("只有发新版本时才能沿用分享站上的封面")
+        if self.coverMode == "custom" and not self.coverPath:
+            raise ValueError("请选择封面图片")
+        return self
+
+
+class ShareAppearanceUploadOut(OutBase):
+    fileId: int = Field(default=0, description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    versionNo: int = Field(default=0, description="本次上传的版本号")
+    reviewStatus: Literal["pending", "approved"] = Field(
+        default="pending", description="审核状态, 管理员上传自动通过"
+    )
+    isNewFile: bool = Field(default=False, description="是否新建了文件")
+    appearanceId: str = Field(default="", description="外观 ID")
+    reason: Optional[Literal["pendingLimit", "conflict", "tooLarge"]] = Field(
+        default=None,
+        description="分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限",
+    )
+
+
+class ShareAppearanceUploadItem(BaseModel):
+    appearanceId: str = Field(..., description="外观 ID")
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    updatedAt: str = Field(default="", description="最近一次上传时间")
+
+
+class ShareAppearanceUploadsOut(OutBase):
+    data: List[ShareAppearanceUploadItem] = Field(
+        default_factory=list, description="当前登录账号的外观上传记录"
+    )
+
+
+class ShareAppearanceMineItem(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    description: str = Field(default="", description="外观描述")
+    status: str = Field(default="", description="文件状态")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号, 没有已发布版本时为空"
+    )
+    latestVersionNo: int = Field(default=0, description="最新版本号")
+    latestReviewStatus: Optional[Literal["pending", "approved", "rejected"]] = Field(
+        default=None, description="最新版本的审核状态"
+    )
+    latestReviewComment: str = Field(
+        default="", description="最新版本的审核意见, 没有则为空"
+    )
+    latestHasCover: bool = Field(default=False, description="最新版本是否带封面")
+    updatedAt: str = Field(default="", description="最近更新时间")
+
+
+class ShareAppearanceMineOut(OutBase):
+    data: List[ShareAppearanceMineItem] = Field(
+        default_factory=list, description="当前账号在分享站上的全部外观"
+    )
+
+
+class ShareAppearanceCoverIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    versionNo: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="版本号, 为空表示最新版本; inheritable 为真时忽略",
+    )
+    inheritable: bool = Field(
+        default=False,
+        description="为真时取发新版本不带封面时分享站会沿用的那张: 最近一个未被驳回且带封面的版本",
+    )
+
+
+class ShareAppearanceCoverOut(OutBase):
+    dataUrl: str = Field(default="", description="封面图片的 data URL")
+    versionNo: Optional[int] = Field(
+        default=None, description="封面所在的版本号, 取最新版本时为空"
+    )
+
+
+class ShareAppearanceDescriptionIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    description: str = Field(..., max_length=2000, description="新的外观描述")
+
+
+class ShareAppearanceDescriptionOut(OutBase):
+    data: Optional[ShareAppearanceMineItem] = Field(
+        default=None, description="更新后的外观"
+    )
+
+
 class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
@@ -5488,7 +5625,10 @@ class Emulator2SearchItem(BaseModel):
         description=(
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
-            "not_found 找不到模拟器程序 / probe_failed 版本认不出"
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
+            "components_missing 魔改 AVD 根目录里组件不全 (要用完整的模拟器内测包) / "
+            "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版 / "
+            "test_package_outdated 魔改 AVD 内测包编号太旧或读不到, 要换新包"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -5569,6 +5709,21 @@ class Emulator2InstanceCreateIn(BaseModel):
     pathId: str = Field(..., description="在哪条模拟器安装下新建")
     name: Optional[str] = Field(
         default=None, description="新实例名称, 留空由模拟器自己命名"
+    )
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
+    )
+    cpu: Optional[int] = Field(
+        default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
+    )
+    dataPartitionGb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+    )
+    balloon: Optional[bool] = Field(
+        default=None,
+        description="仅魔改 AVD: 空闲页上报 (气球), 留空为 true",
     )
 
 
@@ -5721,6 +5876,150 @@ class Emulator2DevicesOut(OutBase):
     devices: List[Emulator2DeviceItem] = Field(
         default_factory=list, description="合并后的设备列表"
     )
+
+
+# ---- Emulator 2.0 · 魔改 AVD（Android Emulator / AVD）---------------------
+# 没有厂商管理器: 用户选一个根目录 (解压好的模拟器内测包, 组件全部自带, MAS 不下载),
+# 组件齐了按普通路径 ``/paths/add`` 纳管 (installPath = 根目录)。
+
+
+class Emulator2AvdRootIn(BaseModel):
+    root: str = Field(..., description="魔改 AVD 根目录 (解压好的模拟器内测包)")
+
+
+class Emulator2AvdStatusIn(Emulator2AvdRootIn):
+    refresh: bool = Field(
+        default=False,
+        description="跳过硬件加速与 Vulkan 检查的缓存重新查; 用户点「检查」时传 true",
+    )
+
+
+class Emulator2AvdComponentItem(BaseModel):
+    id: str = Field(
+        ...,
+        description="组件标识: platform-tools / emulator / system-image / launcher",
+    )
+    name: str = Field(..., description="组件名称")
+    version: str = Field(default="", description="装着的版本; 没装为空")
+    installed: bool = Field(default=False, description="是否已就绪")
+    optional: bool = Field(
+        default=False, description="是否可选组件 (轻量桌面), 可选组件缺失不影响添加"
+    )
+    localSdk: bool = Field(
+        default=False,
+        description="是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK",
+    )
+    testPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪",
+    )
+    needsTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里没有模拟器、不是自编版或内测包太旧",
+    )
+    build: Optional[str] = Field(
+        default=None,
+        description="仅 Android 模拟器: 内测包编号 (source.properties 的 Pkg.BuildId, 如 mas-19); 不是自编版或读不到为 null",
+    )
+    outdatedTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 是自编版, 但内测包编号低于最低要求或读不到, 要换新包",
+    )
+
+
+class Emulator2AvdPrecheckItem(BaseModel):
+    """魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
+
+    id: str = Field(
+        ...,
+        description="检查项: path / components / emulator / acceleration / vulkan / disk / memory",
+    )
+    title: str = Field(..., description="检查项名称")
+    ok: Optional[bool] = Field(
+        default=None, description="是否满足; null 表示现在查不了 (如模拟器组件还没装)"
+    )
+    blocking: bool = Field(
+        default=True, description="不满足时是否拒绝开机; 显卡 Vulkan 只提示不拦截"
+    )
+    reason: str = Field(default="", description="检查结果或不满足的原因")
+    advice: str = Field(default="", description="不满足时给用户的处理建议")
+
+
+class Emulator2AvdStatusOut(OutBase):
+    root: str = Field(default="", description="根目录")
+    ready: bool = Field(default=False, description="必需组件是否齐全, 齐了才能添加")
+    components: List[Emulator2AvdComponentItem] = Field(
+        default_factory=list, description="组件清单"
+    )
+    missing: List[str] = Field(
+        default_factory=list,
+        description="缺着的必需组件名称 (含不合格的模拟器); 要用完整的模拟器内测包",
+    )
+    accelerationOk: Optional[bool] = Field(
+        default=None, description="硬件加速 (WHPX) 是否可用; null 表示还查不了"
+    )
+    accelerationDetail: str = Field(
+        default="", description="硬件加速检查结果或不可用的原因与建议"
+    )
+    prechecks: List[Emulator2AvdPrecheckItem] = Field(
+        default_factory=list,
+        description=(
+            "开机前电脑检查: 目录路径、组件、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), "
+            "每项给 ok、原因、建议"
+        ),
+    )
+
+
+class Emulator2AvdInstanceIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2AvdInstanceOptionsSetIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="内存 MB (3072/4096/5120/6144); 不传不改",
+    )
+    balloon: Optional[bool] = Field(
+        default=None, description="空闲页上报 (气球) 开关; 不传不改"
+    )
+
+
+class Emulator2AvdInstanceOptionsOut(OutBase):
+    balloon: bool = Field(default=True, description="空闲页上报 (气球) 是否开启")
+    memoryMb: Optional[int] = Field(
+        default=None, description="内存 MB, 每次开机用 -memory 传"
+    )
+    cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
+    initialized: bool = Field(
+        default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
+    )
+    launcher: str = Field(default="", description="当前桌面包名, pixel 为原生桌面")
+    renderer: str = Field(default="", description="首次开机记录的渲染器 (GLES 行)")
+    softwareRenderer: bool = Field(
+        default=False,
+        description="是否在用软件渲染 (SwiftShader); 为 true 时应提示用户更新显卡驱动",
+    )
+    consolePort: int = Field(default=0, description="控制台端口")
+    adbPort: int = Field(default=0, description="adb 端口")
+    grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
+
+
+class Emulator2AvdApkInstallIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号, 实例必须已开机")
+    apkPath: str = Field(
+        ..., description="本机 .apk 文件的完整路径; .xapk / 拆分安装包不支持"
+    )
+
+
+class Emulator2AvdApkInstallOut(OutBase):
+    ok: bool = Field(default=False, description="是否安装成功")
+    reason: str = Field(default="", description="ok 安装成功")
+    result: str = Field(default="", description="adb install 的结果行 (Success)")
 
 
 class WebhookInBase(BaseModel):
@@ -5967,6 +6266,19 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+
+
+class WSTaskConfigDiscardedData(BaseModel):
+    """配置会话改动被丢弃的消息数据 (type=task.config.discarded)
+
+    reason 是机器可读原因，正文由前端按语言本地化：structure=队列结构或配置
+    方案与基线不一致, unreadable=读取落盘配置失败, not_written=原生程序没写出
+    完整配置。
+    """
+
+    reason: Literal["structure", "unreadable", "not_written"] = Field(
+        ..., description="丢弃原因"
+    )
 
 
 class WSSystemNoticeData(BaseModel):

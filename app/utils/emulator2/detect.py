@@ -28,6 +28,9 @@ Emulator 2.0 只接受特定大版本，添加路径时必须先探测。探测�
 - 雷电：裸跑 ``ldconsole.exe``，首行形如
   ``dnplayer v14.0.25.1 Command Line Management Interface``
 - MuMu：``MuMuManager.exe version`` 输出 ``{"version": "6.5.9.0"}``
+- 魔改 AVD（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
+  ``<根>/sdk/emulator/emulator.exe``；版本读 ``sdk/emulator/source.properties`` 的
+  ``Pkg.Revision``，不起进程
 
 解析与判定是纯函数，可以脱离模拟器测试；只有 :func:`probe_install_path` 会起子进程。
 """
@@ -43,7 +46,7 @@ from app.utils.constants import EMULATOR_PATH_BOOK
 logger = get_logger("Emulator2 版本探测")
 
 #: 接受的大版本。两家都已实现后端。
-SUPPORTED_MAJOR = {"ldplayer": 14, "mumu": 6}
+SUPPORTED_MAJOR = {"ldplayer": 14, "mumu": 6, "avd": 37}
 #: 还没接、但界面要如实说「后续接入」而不是「不支持」的。
 PLANNED_MAJOR: dict[str, int] = {}
 
@@ -76,6 +79,9 @@ class DetectResult:
     #: - ``unsupported``     暂不支持（MuMu 12、其他品牌）
     #: - ``not_found``       路径下没找到管理器程序
     #: - ``probe_failed``    管理器程序跑不起来或输出认不出
+    #: - ``components_missing`` 魔改 AVD 根目录里组件不全（要用完整的模拟器内测包）
+    #: - ``test_package_required`` 魔改 AVD 根目录里的模拟器不是内测包里的自编版
+    #: - ``test_package_outdated`` 魔改 AVD 内测包编号低于最低要求或读不到，要换新包
 
 
 def parse_ldplayer_version(output: str) -> str | None:
@@ -151,6 +157,13 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
     """
     if not install_path:
         return None
+    if emulator_type == "avd":
+        from .avd.components import emulator_exe, manager_key_exe
+
+        # 主管理器路径固定落在根目录下（实例锁的键、反推根目录都靠它）；能不能用看实际要
+        # 启动的程序——指定了本地 SDK 时两者不是同一个文件
+        root = avd_root_of(install_path)
+        return manager_key_exe(root) if emulator_exe(root).is_file() else None
     from app.utils.emulator.tools import find_emulator_manager_path
 
     resolved = Path(find_emulator_manager_path(install_path, emulator_type))
@@ -162,11 +175,44 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
     return resolved
 
 
+def avd_root_of(install_path: str) -> Path:
+    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
+
+    只有路径确实是这个布局时才往上退两层；别处的 ``emulator.exe``（层数不够、或不在
+    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是魔改 AVD 根目录」处理。"""
+    from .avd.constants import SDK_DIR
+
+    path = Path(install_path)
+    if (
+        path.name.lower() == "emulator.exe"
+        and len(path.parents) >= 3
+        and path.parent.name.lower() == "emulator"
+        and path.parent.parent.name.lower() == SDK_DIR.lower()
+    ):
+        return path.parents[2]
+    return path
+
+
+def is_avd_root(install_path: str) -> bool:
+    """根目录里有我们的元数据或 SDK 目录，就当魔改 AVD 根目录。"""
+    from .avd.constants import METADATA_FILE, SDK_DIR
+
+    root = avd_root_of(install_path)
+    try:
+        return (root / METADATA_FILE).is_file() or (
+            root / SDK_DIR / "emulator" / "emulator.exe"
+        ).is_file()
+    except OSError:
+        return False
+
+
 def guess_type(install_path: str) -> str | None:
     """在不知道类型时，按各家的主管理器程序名猜一把。
 
     手动指定路径时用户只给目录，得先猜出是哪一家才知道用哪种方式问版本。
     """
+    if is_avd_root(install_path):
+        return "avd"
     base = Path(install_path)
     candidates = [base] if base.is_dir() else [base.parent, base.parent.parent]
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
@@ -231,6 +277,9 @@ async def probe_install_path(
             supported=False, reason="not_found", install_path=install_path
         )
 
+    if resolved_type == "avd":
+        return _probe_avd(install_path)
+
     manager_exe = resolve_manager_exe(install_path, resolved_type)
     if manager_exe is None:
         return DetectResult(
@@ -258,4 +307,55 @@ async def probe_install_path(
         version=version,
         manager_exe=manager_exe.as_posix(),
         install_path=manager_exe.parent.as_posix(),
+    )
+
+
+def _probe_avd(install_path: str) -> DetectResult:
+    """魔改 AVD 根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
+    from .avd.components import (
+        emulator_build_ok,
+        emulator_present,
+        emulator_self_built,
+        install_status,
+        read_emulator_version,
+    )
+
+    root = avd_root_of(install_path)
+    status = install_status(root)
+    version = read_emulator_version(root) or ""
+    exe = resolve_manager_exe(str(root), "avd")
+    if emulator_present(root) and not emulator_self_built(root):
+        # 只支持魔改 AVD 内测包里的自编版，谷歌原版不让加
+        return DetectResult(
+            supported=False,
+            reason="test_package_required",
+            type="avd",
+            version=version,
+            install_path=root.as_posix(),
+        )
+    if emulator_present(root) and not emulator_build_ok(root):
+        # 是自编版，但内测包编号太旧或读不到：要换新包
+        return DetectResult(
+            supported=False,
+            reason="test_package_outdated",
+            type="avd",
+            version=version,
+            install_path=root.as_posix(),
+        )
+    if not status["ready"] or exe is None:
+        return DetectResult(
+            supported=False,
+            reason="components_missing",
+            type="avd",
+            version=version,
+            install_path=root.as_posix(),
+        )
+    supported, reason = judge("avd", version)
+    return DetectResult(
+        supported=supported,
+        reason=reason,
+        type="avd",
+        version=version,
+        manager_exe=exe.as_posix(),
+        install_path=root.as_posix(),
     )

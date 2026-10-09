@@ -121,9 +121,11 @@
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串 -->
+        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串；
+             原地打转检测（Run.LoopGuard）的开关也在这个弹窗里 -->
         <MaaFWTaskTimeLimitField
           :value="maafwConfig.Run.TaskTimeLimitOverrides"
+          :loop-guard="Boolean(maafwConfig.Run.LoopGuard)"
           :tasks="periodTaskOptions"
           :default-minutes="maafwConfig.Run.TaskTimeLimit ?? 0"
           :disabled="interfaceDependentDisabled || periodTaskOptions.length === 0"
@@ -149,9 +151,13 @@ const props = defineProps<MaaFWScriptRunSectionProps>()
 
 const emit = defineEmits<MaaFWScriptRunSectionEmits>()
 
-const handleTaskTimeLimitOverridesSave = (value: string) => {
+const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => {
   props.maafwConfig.Run.TaskTimeLimitOverrides = value
   emit('change', 'Run', 'TaskTimeLimitOverrides', value)
+  if (loopGuard !== Boolean(props.maafwConfig.Run.LoopGuard)) {
+    props.maafwConfig.Run.LoopGuard = loopGuard
+    emit('change', 'Run', 'LoopGuard', loopGuard)
+  }
 }
 </script>
 

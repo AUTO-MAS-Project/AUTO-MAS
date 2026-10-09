@@ -631,12 +631,18 @@ type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
@@ -1392,8 +1398,8 @@ ipcMain.handle('log:export', async () => {
 
       if (stat.isFile()) {
         addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && file === 'maaend-login') {
-        addDirectory(state, filePath, 'maaend-login')
+      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
+        addDirectory(state, filePath, file)
       }
     }
 

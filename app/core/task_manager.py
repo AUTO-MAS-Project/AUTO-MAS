@@ -935,8 +935,10 @@ class Task(TaskExecuteBase):
             return False
 
         queue_uid = uuid.UUID(str(queue_id))
-        queue_config = Config.QueueConfig.get(queue_uid)
-        if queue_config is None or not queue_config.get("Info", if_key):
+        if queue_uid not in Config.QueueConfig:
+            return False
+        queue_config = Config.QueueConfig[queue_uid]
+        if not queue_config.get("Info", if_key):
             return False
 
         script_path = str(queue_config.get("Info", path_key) or "").strip()
@@ -1155,7 +1157,11 @@ class Task(TaskExecuteBase):
             and self.task_info.queue_id is not None
         ):
             if Config.power_sign == "NoAction":
-                queue_config = Config.QueueConfig[uuid.UUID(self.task_info.queue_id)]
+                queue_uid = uuid.UUID(self.task_info.queue_id)
+                if queue_uid not in Config.QueueConfig:
+                    logger.info(f"队列 {queue_uid} 已删除，跳过完成后操作")
+                    return
+                queue_config = Config.QueueConfig[queue_uid]
                 Config.power_sign = queue_config.get("Info", "AfterAccomplish")
                 # 队列可为完成后操作单独设定延时, 延时期间不弹出倒计时窗口
                 Config.power_delay = (

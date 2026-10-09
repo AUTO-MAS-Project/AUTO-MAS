@@ -170,6 +170,7 @@ def main() -> int:
                 if isinstance(task_limit_overrides, dict)
                 else None
             ),
+            loop_guard_enabled=payload.get("loopGuard") is True,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})

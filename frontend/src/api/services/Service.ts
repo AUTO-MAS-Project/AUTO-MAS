@@ -134,6 +134,14 @@ import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
+import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
+import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
+import type { ShareAppearanceDescriptionOut } from '../models/ShareAppearanceDescriptionOut';
+import type { ShareAppearanceMineOut } from '../models/ShareAppearanceMineOut';
+import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
+import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -3924,6 +3932,85 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/cancel',
+        });
+    }
+    /**
+     * 上传外观包到分享站
+     * @param requestBody
+     * @returns ShareAppearanceUploadOut Successful Response
+     * @throws ApiError
+     */
+    public static uploadShareAppearanceApiShareAppearanceUploadPost(
+        requestBody: ShareAppearanceUploadIn,
+    ): CancelablePromise<ShareAppearanceUploadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
+        });
+    }
+    /**
+     * 获取当前账号在分享站上的全部外观
+     * @returns ShareAppearanceMineOut Successful Response
+     * @throws ApiError
+     */
+    public static listMyShareAppearancesApiShareAppearanceMinePost(): CancelablePromise<ShareAppearanceMineOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/mine',
+        });
+    }
+    /**
+     * 获取自己外观某个版本的封面
+     * @param requestBody
+     * @returns ShareAppearanceCoverOut Successful Response
+     * @throws ApiError
+     */
+    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
+        requestBody: ShareAppearanceCoverIn,
+    ): CancelablePromise<ShareAppearanceCoverOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/cover',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改自己外观的描述
+     * @param requestBody
+     * @returns ShareAppearanceDescriptionOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost(
+        requestBody: ShareAppearanceDescriptionIn,
+    ): CancelablePromise<ShareAppearanceDescriptionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/description',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

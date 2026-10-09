@@ -33,7 +33,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
     find_pids_by_name,
@@ -999,8 +998,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def main_task(self):
         await self.prepare()
 
-        # 先接管原神客户端更新：切号与一条龙都会拉起游戏，客户端停在旧版本时
-        # 只会让整轮任务白跑，所以这一步必须在最前面
+        # 任务前脚本每用户一次，先于游戏更新、切号、执行层与全部重试
+        await self.run_user_scripts_before()
+
+        # 切号与一条龙都会拉起游戏，客户端停在旧版本时只会让整轮任务白跑，
+        # 所以游戏更新仍先于它们执行。
         if not await ensure_game_updated(
             self.script_config,
             self.cur_user_config,
@@ -1084,12 +1086,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
             # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
             if not await self.kill_managed_process():
@@ -1145,11 +1141,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = (
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -1168,11 +1159,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
