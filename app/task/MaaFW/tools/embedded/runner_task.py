@@ -776,7 +776,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
-                        self._append_log("MaaFW 剩余周期任务已完成，停止本轮重试")
+                        # 计划被重试跳过剔空的，不能说成「周期任务」
+                        self._append_log(
+                            "MaaFW 剩余任务都已完成，停止本轮重试"
+                            if _retry_skipped_tasks(self.run_plan)
+                            else "MaaFW 剩余周期任务已完成，停止本轮重试"
+                        )
                     else:
                         await self._restart_client_before_retry(index + 1)
         finally:
