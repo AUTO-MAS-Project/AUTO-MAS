@@ -26,6 +26,7 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -394,6 +395,37 @@ def main():
                     "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
                 )
 
+                async def _daily_retention_maintenance() -> None:
+                    # 诊断文件 / 历史记录 / MFW 原生日志的保留期清理原本只在启动时
+                    # 跑一次：常驻调度一挂几周，期间清理全不发生。这里每小时醒来，
+                    # 跨日后的第一轮把三项清理各跑一遍——按日期判断而不是按睡眠
+                    # 时长，系统休眠跨天后照样补上；单步失败只记日志，次日再试。
+                    last_run_date = datetime.now().date()
+                    while True:
+                        await asyncio.sleep(3600)
+                        today = datetime.now().date()
+                        if today == last_run_date:
+                            continue
+                        last_run_date = today
+                        for name, step in (
+                            ("历史记录清理", Config.clean_old_history),
+                            ("诊断文件清理", Config.clean_debug_diagnostics),
+                            (
+                                "MaaFW 原生日志清理",
+                                Config.clean_maafw_native_debug_logs,
+                            ),
+                        ):
+                            try:
+                                await step()
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception:
+                                logger.exception(f"每日{name}失败，明天再试")
+
+                app.state.daily_retention_maintenance = asyncio.create_task(
+                    _daily_retention_maintenance()
+                )
+
                 if IS_WINDOWS:
                     await run_optional_step(
                         "明日方舟 PC 工具初始化", init_arknight_win32
@@ -471,6 +503,12 @@ def main():
                 maintenance.cancel()
                 with suppress(asyncio.CancelledError):
                     await maintenance
+            # 每日保留期清理任务：只是延迟重跑启动清理，停下不需要收尾
+            daily_maintenance = getattr(app.state, "daily_retention_maintenance", None)
+            if daily_maintenance is not None and not daily_maintenance.done():
+                daily_maintenance.cancel()
+                with suppress(asyncio.CancelledError):
+                    await daily_maintenance
 
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
