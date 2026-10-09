@@ -1271,6 +1271,14 @@ class MaaFWRunner:
             self._raise_if_game_launch_failed(
                 display_name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             )
+            # 放过之前同样等停止生效：收尾任务排在中间时下一个任务紧接着投递，
+            # tasker 没空闲会被拒（task_id=0）
+            if not self._wait_task_deadline_stop():
+                raise RuntimeError(
+                    f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
+                    f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
+                    f"{display_name}"
+                )
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
             stopped = (
                 "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
