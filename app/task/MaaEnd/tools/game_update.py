@@ -128,9 +128,9 @@ _READ_TIMEOUT = 60.0
 _PART_ATTEMPTS = 3
 """单卷尝试次数：CDN 抖动与签名地址失效都在这里消化。"""
 
-_MANIFEST_MAX_AGE = 120.0
-"""清单最长复用时长（秒）。差量卷地址同样带 `auth_key` 签名且有效窗口没有对外说明，
-跨分钟的下载要中途换新地址。"""
+_MANIFEST_MAX_AGE = 60.0
+"""清单最长复用时长（秒）。分卷地址带 `auth_key` 签名，按地址里的时间戳观测有效窗口约
+2 分钟；这里取一半留余量，跨分钟的下载一定在新地址上做，不去赌边界。"""
 
 _KILL_WAIT_SECONDS = 30.0
 
@@ -1321,6 +1321,15 @@ async def _download_release(
                     # 签名地址过期是常态，换新地址再来一轮，不占用一次判失败
                     logger.warning(
                         f"{target.name} 返回 {error.response.status_code}，换签名地址重试"
+                    )
+                    current = await _refresh_plan(identity, current)
+                    part = current.parts[index - 1]
+                    continue
+                except httpx.TransportError as error:
+                    # 中途断流、连接重置与读超时都到不了状态码，只会以传输层异常收场。
+                    # 已落盘的字节留着，换一把地址从断点接着下；试满才判废。
+                    logger.warning(
+                        f"{target.name} 传输中断（{type(error).__name__}），换签名地址续传"
                     )
                     current = await _refresh_plan(identity, current)
                     part = current.parts[index - 1]
