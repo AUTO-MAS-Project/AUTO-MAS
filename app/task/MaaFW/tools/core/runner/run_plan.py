@@ -37,8 +37,11 @@ from app.task.MaaFW.tools.core.interface.models import (
 from app.task.MaaFW.tools.core.interface.task_config import (
     MaaFWTaskPresetSnapshot,
     _build_option_defaults,
+    _normalize_raw_snapshot,
     build_default_task_instances,
+    build_global_option_map,
     build_interface_preset_snapshot,
+    build_task_option_maps,
     extract_task_global_overrides,
     normalize_global_options,
     normalize_snapshot,
@@ -776,6 +779,92 @@ def select_snapshot_tasks(
         if snapshot.taskChecked.get(task_id, False)
     ]
     return selected_ids, dict(snapshot.taskOptions), dict(snapshot.globalOptions)
+
+
+def describe_stale_option_values(
+    base_dir: str | Path,
+    interface_model: MaaFWInterface | dict[str, Any],
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> list[str]:
+    """用户快照里保存的 select / switch / checkbox 取值在当前 interface 里已没有对应 case 时，
+    给运行日志的提示（每条一句）。
+
+    项目改了 case 名（开发者模式下改 interface 尤其常见）后，归一化会把这样的值静默换回默认
+    值、checkbox 里对不上的项直接丢掉，运行行为悄悄变了。这里只描述、不改值：看全局表里存着
+    的项和勾选的任务实例自己的选项；全局表还没有的项（旧配置、按任务迁移）、取值形状本来就
+    不对的坏值、只属于全局而在任务上的副本（降级用）都不看。
+    """
+
+    interface = _coerce_interface(interface_model)
+    raw = _normalize_raw_snapshot(task_snapshot)
+    i18n_mapping: dict[str, Any] | None = None
+
+    def labels() -> dict[str, Any]:
+        nonlocal i18n_mapping
+        if i18n_mapping is None:
+            i18n_mapping = _load_i18n_mapping(Path(base_dir).resolve(), interface)
+        return i18n_mapping
+
+    def describe(prefix: str, option_name: str, option: MaaFWOption, value: Any):
+        if option.type not in {"select", "scan_select", "switch", "checkbox"}:
+            return None
+        cases = {case.name: case for case in option.cases or []}
+        option_label = _resolve_i18n_label(option.label, option_name, labels())
+
+        def case_label(name: str) -> str:
+            case = cases.get(name)
+            return _resolve_i18n_label(case.label, name, labels()) if case else name
+
+        if option.type == "checkbox":
+            if not isinstance(value, list):
+                return None
+            stale = [
+                item for item in value if isinstance(item, str) and item not in cases
+            ]
+            if not stale:
+                return None
+            return (
+                f"{prefix}选项「{option_label}」里保存的「{'、'.join(stale)}」在当前项目里"
+                "已没有（项目可能改了选项名），本轮忽略这几项"
+            )
+        if not isinstance(value, str) or value in cases:
+            return None
+        default = option.default_case
+        if not isinstance(default, str):
+            default = option.cases[0].name if option.cases else ""
+        return (
+            f"{prefix}选项「{option_label}」保存的「{value}」在当前项目里已没有"
+            f"（项目可能改了选项名），本轮按默认「{case_label(default)}」运行"
+        )
+
+    warnings: list[str] = []
+    for option_name, option in build_global_option_map(interface).items():
+        if option_name in raw["globalOptions"]:
+            warning = describe(
+                "全局", option_name, option, raw["globalOptions"][option_name]
+            )
+            if warning:
+                warnings.append(warning)
+
+    task_map = {task.name: task for task in interface.task}
+    task_option_maps = build_task_option_maps(interface)
+    for task_id in raw["taskOrder"]:
+        if is_pretask_task_name(task_id) or not raw["taskChecked"].get(task_id):
+            continue
+        task_name = resolve_task_instance_name(task_id, task_map)
+        task = task_map.get(task_name)
+        saved = raw["taskOptions"].get(task_id) or {}
+        if task is None or not saved:
+            continue
+        task_label = _resolve_i18n_label(task.label, task.name, labels())
+        for option_name, option in task_option_maps.get(task_name, {}).items():
+            if option_name in saved:
+                warning = describe(
+                    f"任务「{task_label}」的", option_name, option, saved[option_name]
+                )
+                if warning:
+                    warnings.append(warning)
+    return list(dict.fromkeys(warnings))
 
 
 def _select_tasks(

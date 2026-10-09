@@ -440,7 +440,11 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
         return MaaFWApiReply.error(400, f"同步失败：{type(exc).__name__}: {exc}")
     finally:
         await release_project_path(reservation)
-    message = describe_follow_source_sync(imported["followSource"], manual=True)
+    message = describe_follow_source_sync(
+        imported["followSource"],
+        manual=True,
+        source_form=bool(imported["report"].get("sourceForm")),
+    )
     logger.info(f"MFW 脚本 {script_id} 立即同步：{message}")
     try:
         await Config.update_script(

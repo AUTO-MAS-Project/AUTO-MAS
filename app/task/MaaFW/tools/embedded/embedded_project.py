@@ -1597,7 +1597,12 @@ def import_embedded_project(
     }
     if follow_result is not None:
         imported["followSource"] = follow_result
-        logger.info(f"[MFW 内嵌] {describe_follow_source_sync(follow_result)}")
+        logger.info(
+            "[MFW 内嵌] "
+            + describe_follow_source_sync(
+                follow_result, source_form=bool(report.get("sourceForm"))
+            )
+        )
     return imported
 
 
@@ -1638,28 +1643,35 @@ def _changed_payload_files(
     return sorted(changed, key=str.casefold)
 
 
+def _follow_source_label(source_form: bool) -> str:
+    """跟随来源目录那几行日志的开头：源码形态的脚本界面上叫「源码形态」，不叫开发者模式。"""
+
+    return "源码形态" if source_form else "开发者模式"
+
+
 def describe_follow_source_sync(
-    result: Mapping[str, Any], *, manual: bool = False
+    result: Mapping[str, Any], *, manual: bool = False, source_form: bool = False
 ) -> str:
     """开发者模式重新导入后给运行日志（``manual``：脚本页「立即同步」）的那一行。"""
 
+    label = _follow_source_label(source_form)
     changed = result.get("changed")
     files = int(result.get("files") or 0)
     if changed is None:
-        return f"开发者模式：已从来源目录导入（{files} 个文件）"
+        return f"{label}：已从来源目录导入（{files} 个文件）"
     if not changed and result.get("first"):
-        return f"开发者模式：开始跟随来源目录，内容与当前视图相同（{files} 个文件）"
+        return f"{label}：开始跟随来源目录，内容与当前视图相同（{files} 个文件）"
     if not changed and manual:
-        return f"开发者模式：来源目录内容未变化（{files} 个文件），已更新同步时间"
+        return f"{label}：来源目录内容未变化（{files} 个文件），已更新同步时间"
     if not changed:
         return (
-            "开发者模式：来源目录里的文件只改了修改时间、内容与当前视图相同，"
+            f"{label}：来源目录里的文件只改了修改时间、内容与当前视图相同，"
             "已记下新的来源状态"
         )
     preview = "、".join(changed[:_FOLLOW_SOURCE_PREVIEW])
     if len(changed) > _FOLLOW_SOURCE_PREVIEW:
         preview += " 等"
-    return f"开发者模式：来源目录有 {len(changed)} 个文件变化（{preview}），已重新导入"
+    return f"{label}：来源目录有 {len(changed)} 个文件变化（{preview}），已重新导入"
 
 
 # 克隆没有标记的老副本时不带的运行期产物：MaaFW 原生日志目录、Python 字节码缓存、导入半成品。
@@ -2361,6 +2373,7 @@ def _sync_follow_source(
     *,
     base: Path | None,
     send_log: Callable[[str], None] | None,
+    source_form: bool = False,
 ) -> dict[str, Any] | None:
     """开发者模式的运行前检查：来源目录的签名与视图标记记的不同就重新导入；返回新记录。
 
@@ -2383,17 +2396,26 @@ def _sync_follow_source(
             and str(record.get("signature") or "") == signature
         ):
             _say(
-                send_log, f"开发者模式：来源目录未变化（{files} 个文件），沿用当前视图"
+                send_log,
+                f"{_follow_source_label(source_form)}：来源目录未变化"
+                f"（{files} 个文件），沿用当前视图",
             )
             return None
         imported = import_embedded_project(
             script_id, source, base=base, follow_source=True, plan=plan
         )
     except Exception as exc:  # noqa: BLE001 - 读来源失败一律沿用上次同步的视图，原因写进日志
-        _keep_last_follow_source_sync(view, _describe_source_failure(exc), send_log)
+        _keep_last_follow_source_sync(
+            view, _describe_source_failure(exc), send_log, source_form=source_form
+        )
         return None
     if send_log is not None:
-        send_log(describe_follow_source_sync(imported["followSource"]))
+        send_log(
+            describe_follow_source_sync(
+                imported["followSource"],
+                source_form=bool(imported["report"].get("sourceForm")),
+            )
+        )
     return imported
 
 
@@ -2407,7 +2429,11 @@ def _describe_source_failure(exc: BaseException) -> str:
 
 
 def _keep_last_follow_source_sync(
-    view: Path, reason: str, send_log: Callable[[str], None] | None
+    view: Path,
+    reason: str,
+    send_log: Callable[[str], None] | None,
+    *,
+    source_form: bool = False,
 ) -> None:
     """开发者模式读来源失败（或来源目录不在）：这一轮照常用视图（上次同步好的版本）运行，
     运行日志里打一条醒目的警告，写明原因与版本。"""
@@ -2419,7 +2445,8 @@ def _keep_last_follow_source_sync(
     when = f"（同步于 {synced[:19].replace('T', ' ')}）" if synced else ""
     _say(
         send_log,
-        f"【警告】开发者模式读取来源目录失败：{reason}；本轮沿用上次同步的版本 "
+        f"【警告】{_follow_source_label(source_form)}读取来源目录失败：{reason}；"
+        "本轮沿用上次同步的版本 "
         f"{version}{when}运行，来源目录里的改动这次没有生效",
         warning=True,
     )
@@ -2509,12 +2536,22 @@ def ensure_embedded_copy(
         if follow:
             if read_view_marker(copy_dir) is None:
                 _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
+            source_form = is_source_form(script_config)
             if not source or not Path(source).is_dir():
                 _keep_last_follow_source_sync(
-                    copy_dir, f"来源目录 {source or '（未设置）'} 不在", send_log
+                    copy_dir,
+                    f"来源目录 {source or '（未设置）'} 不在",
+                    send_log,
+                    source_form=source_form,
                 )
                 return None
-            return _sync_follow_source(script_id, source, base=base, send_log=send_log)
+            return _sync_follow_source(
+                script_id,
+                source,
+                base=base,
+                send_log=send_log,
+                source_form=source_form,
+            )
         left = _leave_follow_source(
             script_id, script_config, source, base=base, send_log=send_log
         )

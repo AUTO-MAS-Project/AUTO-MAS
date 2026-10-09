@@ -84,6 +84,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     来源目录不在、读文件被拒（`PermissionError`）、`interface.json` 暂时不在或解析失败、投影规则拒绝
     （junction / 符号链接，规则不变）等任何读取 / 投影失败，都**照常在当前视图上跑**，运行日志写一行
     醒目的「【警告】开发者模式读取来源目录失败：原因；本轮沿用上次同步的版本 X（同步于 …）运行」。
+    源码形态的脚本，这一条和上面的同步日志开头都写「源码形态」（`_follow_source_label`），与界面上的标签一致。
     只有视图本身不在（没有可跑的副本）才按导入失败处理。「立即同步」不走这条退路，照常报失败原因。
   - **离开开发者载荷不留「本地改过」档**：`_realize_view` 按新旧载荷清单的 `channel` 是不是 `dev:`
     判断（`is_follow_source_manifest`），不看是哪条代码路径进来的——开发者导入、关掉开关、克隆后第一次
@@ -125,8 +126,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
     `environment.maafw_version`，worker 传实际加载的 binding 版本，见
     `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
-    自己挑会落到协议不同的版本上。自带原生库（确切版本）的项目不受影响。
-  - **始终跟随来源目录**（见上一条），不做项目更新；界面上显示「源码形态」标签。导入报告里的
+    自己挑会落到协议不同的版本上。这条对**所有没自带原生库的项目**都成立，不限源码形态（没自带
+    `maafw/` 的发行包以前照抄范围，升级后依赖哈希变了，会重建一次隔离 venv）；自带原生库（确切版本）
+    的项目不受影响。
+  - **始终跟随来源目录**（见上面「跟随来源目录」），不做项目更新；界面上显示「源码形态」标签。导入报告里的
     `bundledMaaFWVersion` 只认被投影带走的原生库（源码仓里躺着的 `dist/maafw` 不算）。
   - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
     MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
@@ -226,8 +229,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   清单里没有导入目录）。
 - **发行包形态与源码形态**：发行包（interface 在包根，自带 `python/` / `maafw/` 或不带）照常导入、
   照常更新。M9A 式源码仓（`assets/interface.json`、agent 在 `assets/` 外）按上面「源码形态」平铺导入，
-  始终跟随来源目录、不做项目更新。agent 写成 `"child_exec": "uv"`（`uv run agent/main.py`）的开发者
-  写法仍不支持，导入时报错，让项目把它改成 `python`（或导入发行包）。被 CFA（MFW-PyQt6）源码热更新过
+  始终跟随来源目录、不做项目更新（`child_exec: uv` 不支持，见「源码形态」）。被 CFA（MFW-PyQt6）源码热更新过
   的目录是另一种平铺：它把 `assets/` 平铺到包根、`agent/` 放包根，interface 留着源码写法的 agent（识宝的
   `../agent/main.py`）；入口按 `interface/agent_entry.py` 的兜底解析（投影与 planner 共用），长期保留，
   不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
@@ -346,6 +348,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
   读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
   都不看副本（归一 / `withoutMaaFWGlobalOnlyOptions` 丢掉），去掉双写前要先确认没人会降级。
+- **保存的值对不上当前 interface 不静默**：项目改了 case 名后，归一会把 select / switch 的旧值换回
+  默认、checkbox 里对不上的项丢掉（值本身不改）。`runner_task` 建计划前按原始快照
+  （`run_plan.describe_stale_option_values`：全局表里存着的项 + 勾选实例自己的选项，不看迁移前的
+  旧配置、坏值形状与降级副本）把这些列成计划提示，运行日志开头「MaaFW 运行计划提示」里各一句，
+  与「interface 内已无该任务」的跳过同一个思路。开发者模式下改 interface 最容易撞上。
 - input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
   `globalOptions` 两处，`option_secrets._SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
