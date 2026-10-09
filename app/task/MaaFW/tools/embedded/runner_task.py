@@ -947,6 +947,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
         script_hotkeys = _load_script_hotkeys(self.script_config.get("Game", "Hotkeys"))
         missing_skips: list[MaaFWSkippedTaskPlan] = []
+        unselectable_names: list[str] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
             # 用户配置本身不动，运行后的整表写回也就写不出明文。
@@ -982,6 +983,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options,
                 unselectable_entries(flavor),
                 send_log=send_log if send_log is not None else logger.info,
+                dropped_names=unselectable_names,
             )
             task_ids, task_options = flavor.decorate_selection(
                 interface_model,
@@ -1006,11 +1008,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
             message = str(exc)
-            if missing_skips and NO_RUNNABLE_TASKS_MESSAGE in message:
+            if NO_RUNNABLE_TASKS_MESSAGE in message:
                 # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
-                # 别的报错（拆用户、找不到 controller……）与虚影无关，不附加
-                names = "、".join(dict.fromkeys(item.name for item in missing_skips))
-                message = f"{message}（interface 内已无：{names}）"
+                # 只剩不可选任务时同理（前面的「已跳过」行在用户日志里，报错里看不到）。
+                # 别的报错（拆用户、找不到 controller……）与它们无关，不附加
+                if missing_skips:
+                    names = "、".join(
+                        dict.fromkeys(item.name for item in missing_skips)
+                    )
+                    message = f"{message}（interface 内已无：{names}）"
+                if unselectable_names:
+                    names = "、".join(unselectable_names)
+                    message = f"{message}（已跳过不可选任务：{names}）"
             raise MaaFWRunPlanError(message) from exc
 
     def _select_run_selection(
@@ -3720,10 +3729,12 @@ def _drop_unselectable_tasks(
     entries: dict[str, str],
     *,
     send_log: Callable[[str], None],
+    dropped_names: list[str] | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """剔掉特调声明不可选的任务（``unselectable_entries``：entry → 原因），连同它们的选项。
 
     日志按原因合并成一行（同名任务只列一次，名字顺序按队列），没声明时原样返回。
+    ``dropped_names`` 非空时把被剔任务的显示名（去重、按队列）追加进去，供空队列报错带上原因。
     """
 
     if not entries:
@@ -3740,6 +3751,7 @@ def _drop_unselectable_tasks(
     kept: list[str] = []
     # 原因 → 被剔任务显示名（dict 保序：原因按首次出现，名字按队列，同名只列一次）
     by_reason: dict[str, dict[str, None]] = {}
+    dropped: list[str] = []
     for task_id in task_ids:
         entry = entry_of(task_id)
         if entry not in entries:
@@ -3747,8 +3759,11 @@ def _drop_unselectable_tasks(
             continue
         name = _task_display_name(task_of(task_id))
         by_reason.setdefault(entries[entry], {})[name] = None
+        dropped.append(name)
     for reason, names in by_reason.items():
         send_log("已跳过" + "".join(f"「{name}」" for name in names) + f"：{reason}")
+    if dropped_names is not None:
+        dropped_names.extend(dict.fromkeys(dropped))
     if len(kept) == len(task_ids):
         return task_ids, task_options
     options = {
