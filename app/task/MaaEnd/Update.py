@@ -71,6 +71,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
             game_exe,
             time_limit_minutes=int(self.script_config.get("Game", "UpdateTimeLimit")),
             progress=self._push_dispatch_log,
+            entry="手动",
         )
         # 结论先落进日志再抛：toast 三秒就没了，弹窗里这一行才是留下的那份
         await self._push_dispatch_log(result.message)

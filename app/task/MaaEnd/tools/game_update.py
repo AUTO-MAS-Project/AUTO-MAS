@@ -1192,6 +1192,8 @@ class _Reporter:
         self._part = 0
         self._next_bytes = 0
         self._next_at = 0.0
+        self._sent_bytes = 0
+        self._sent_at = time.monotonic()
 
     def rewind(self, size: int) -> None:
         """把已计入但即将被覆盖重写的字节退回总量。
@@ -1203,6 +1205,9 @@ class _Reporter:
         self._downloaded = max(self._downloaded - size, 0)
         self._next_bytes = self._downloaded
         self._next_at = 0.0
+        # 速度窗口跟着重新起算：不退这一步，续传后第一行会把退回的字节当成没下的量
+        self._sent_bytes = self._downloaded
+        self._sent_at = time.monotonic()
 
     async def add(self, size: int, part: int) -> None:
         self._downloaded += size
@@ -1216,10 +1221,22 @@ class _Reporter:
             return
         self._next_bytes = self._downloaded + _PROGRESS_STEP
         self._next_at = now + _PROGRESS_INTERVAL
+        # 速度取相邻两行之间的平均，不是相邻两个分块之间的抖动；窗口不足一秒就不报，
+        # 那种样本只会给出一个几百 MB/s 的假数
+        elapsed = now - self._sent_at
+        speed = (
+            f"，{(self._downloaded - self._sent_bytes) / elapsed / 1024**2:.1f} MB/s"
+            if elapsed >= 1.0
+            else ""
+        )
+        self._sent_bytes, self._sent_at = self._downloaded, now
+        # 百分比按真实字节封顶显示：MD5 不符删掉重下那截确实流过网络，速度照全量算
+        shown = min(self._downloaded, self._total)
+        percent = shown / self._total * 100 if self._total else 0.0
         await self._progress(
-            f"正在下载游戏更新包 {self._downloaded / 1024**3:.2f}/"
+            f"正在下载游戏更新包 {shown / 1024**3:.2f}/"
             f"{self._total / 1024**3:.2f} GB"
-            f"（第 {self._part}/{self._count} 卷）"
+            f"（{percent:.1f}%，第 {self._part}/{self._count} 卷{speed}）"
         )
 
 
@@ -1389,6 +1406,38 @@ async def ensure_game_updated(
     *,
     time_limit_minutes: int,
     progress: ProgressFn | None = None,
+    entry: str = "自动",
+) -> GameUpdateResult:
+    """对外入口：跑一轮判定，并把开始、过程与结论都写进 `debug/app.log`。
+
+    时限包住「核对基线 + 下载差量 + 落地」三段；进度行只往调度台推，同一行由本函数写进
+    `debug/app.log`；`entry` 只进日志，用来区分自动门与脚本页手动按钮。
+    """
+
+    logger.info(
+        f"{entry}发起终末地客户端更新检查: 安装目录 {game_exe.parent}"
+        f"（限时 {time_limit_minutes} 分钟）"
+    )
+    outcome = ("已取消", "本轮更新被取消（用户点了停止，或看门狗下发了中止）")
+    try:
+        result = await _ensure_game_updated(
+            game_exe, time_limit_minutes=time_limit_minutes, progress=progress
+        )
+    except Exception as error:
+        outcome = ("异常", f"未得出结论文案：{type(error).__name__}: {error}")
+        raise
+    else:
+        outcome = (result.status, result.message)
+    finally:
+        logger.info(f"终末地客户端更新结论（{entry}）: {outcome[0]} - {outcome[1]}")
+    return result
+
+
+async def _ensure_game_updated(
+    game_exe: Path,
+    *,
+    time_limit_minutes: int,
+    progress: ProgressFn | None,
 ) -> GameUpdateResult:
     """检查并在需要时由 MAS 接管终末地 PC 客户端的差量更新。
 
@@ -1396,14 +1445,6 @@ async def ensure_game_updated(
     却做不到的走 `NeedManualUpdate`（这条基线没有差量、本地基线与清单不符、下载或落地
     失败），意外异常也归到后者——调用方据此决定放行还是阻断，不需要再猜目录有没有被动
     过。不做整包兜底：判不了就不动，动不了就停下提示手动更新。
-
-    Args:
-        game_exe: `Game.Path` 指向的客户端可执行文件。
-        time_limit_minutes: 核对基线 + 下载差量 + 落地的总时长上限（分钟）。
-        progress: 进度回调，调用方一般写 `script_info.log` 让调度台实时看到。
-
-    Returns:
-        GameUpdateResult: 复用 `app/utils/game_apk.py` 的四态契约。
     """
 
     if not game_exe.is_file():
@@ -1428,6 +1469,13 @@ async def ensure_game_updated(
         return GameUpdateResult(
             "Skipped", f"未能获取终末地客户端版本信息（{error}），跳过检查"
         )
+
+    logger.info(
+        f"本地版本 {identity.version}，客户端登记 "
+        f"appcode={identity.appcode} channel={identity.channel}"
+        f" sub_channel={identity.sub_channel}，匹配到 {preset['label']}，"
+        f"服务端给出 {release.version}"
+    )
 
     latest = f"终末地客户端已是最新版本 {identity.version}"
     if identity.version == release.version:
@@ -1472,18 +1520,25 @@ async def ensure_game_updated(
     staging = install_dir / _STAGING_DIR_NAME
     abort = threading.Event()
     landed = 0
+
+    async def report(line: str) -> None:
+        """每条播报同时进 `debug/app.log` 与调度台：前者才是用户反馈时会带来的那份。"""
+
+        logger.info(line)
+        if progress is not None:
+            await progress(line)
+
     try:
         # 清暂存与建目录都在 try 内：本函数对外承诺不抛，暂存名被占成文件、盘只读这类
         # 情况也要落成一条看得懂的结论，而不是让任务直接异常
         force_rmtree(staging)
         staging.mkdir(parents=True, exist_ok=True)
         async with asyncio.timeout(time_limit_minutes * 60):
-            if progress is not None:
-                await progress(
-                    f"{outdated}\n按 {preset['label']} 的服务器参数核对官方差量清单"
-                    f"（差量 {len(release.parts)} 卷 / "
-                    f"{release.download_size / 1024**3:.1f} GB）"
-                )
+            await report(
+                f"{outdated}\n按 {preset['label']} 的服务器参数核对官方差量清单"
+                f"（差量 {len(release.parts)} 卷 / "
+                f"{release.download_size / 1024**3:.1f} GB）"
+            )
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),
                 follow_redirects=True,
@@ -1491,7 +1546,7 @@ async def ensure_game_updated(
                 specs = await _fetch_patch_manifest(
                     client, release.patch_info_url, release.patch_info_md5
                 )
-            bad = await _check_baselines(specs, install_dir, progress, abort)
+            bad = await _check_baselines(specs, install_dir, report, abort)
             if bad:
                 shown = "、".join(Path(path).name for path in bad[:5])
                 return GameUpdateResult(
@@ -1501,8 +1556,8 @@ async def ensure_game_updated(
                     "请用启动器手动更新一次",
                 )
 
-            hpatchz = await ensure_hpatchz(on_progress=progress)
-            files = await _download_release(release, staging, progress, identity)
+            hpatchz = await ensure_hpatchz(on_progress=report)
+            files = await _download_release(release, staging, report, identity)
             # 下载要花几分钟，期间用户完全可能自己把游戏开回去；UE 客户端锁着
             # .ucas/.pak，这时候开写就是 PermissionError。只检测不强杀：那是用户在
             # MAS 不知情下自己开的窗口，没被授权关掉它
@@ -1532,14 +1587,13 @@ async def ensure_game_updated(
                 )
                 if landing:
                     raise EndfieldUpdateError(landing)
-                if progress is not None:
-                    await progress(
-                        f"差量包就位，开始覆盖安装目录：{len(plan.patches)} 个打补丁 + "
-                        f"{len(plan.moves)} 个整文件，共 "
-                        f"{plan.expanded_bytes / 1024**3:.1f} GB"
-                    )
+                await report(
+                    f"差量包就位，开始覆盖安装目录：{len(plan.patches)} 个打补丁 + "
+                    f"{len(plan.moves)} 个整文件，共 "
+                    f"{plan.expanded_bytes / 1024**3:.1f} GB"
+                )
                 landed = await _apply_delta(
-                    archive, plan, install_dir, staging, hpatchz, progress, abort
+                    archive, plan, install_dir, staging, hpatchz, report, abort
                 )
                 archive.close()
             finally:

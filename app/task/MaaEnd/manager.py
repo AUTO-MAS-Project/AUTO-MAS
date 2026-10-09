@@ -320,7 +320,6 @@ class MaaEndManager(ScriptManagerBase):
             )
             return f"终末地客户端更新异常（{error}），已中止本轮任务"
 
-        logger.info(f"终末地客户端更新结果: {result.status} - {result.message}")
         if result.status != "NeedManualUpdate":
             return None
         await push_dispatch_log(self.script_info, result.message)
