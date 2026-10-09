@@ -34,7 +34,7 @@ import shutil
 import struct
 import zlib
 from collections.abc import Awaitable, Callable
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,9 +131,12 @@ def cleanup_apk_leftovers(apk_dir: Path, stem: str) -> None:
     在更新锁内调用：更新被取消或清理失败时，多 GB 的残留包不能无限期占盘，
     趁下次持锁把本游戏所有版本的残留一并清掉。
     """
-    with suppress(OSError):
-        for leftover in apk_dir.glob(f"{stem}*.apk*"):
+    for leftover in apk_dir.glob(f"{stem}*.apk*"):
+        try:
             leftover.unlink(missing_ok=True)
+        except OSError as e:
+            # 一个被占的文件不能挡住其余残留的清理
+            logger.warning(f"清理残留安装包失败，留给下次覆盖: {leftover} ({e})")
 
 
 async def _run_adb(
@@ -675,16 +678,20 @@ async def download_apk(
     except TimeoutError:
         # asyncio.timeout 在总时长耗尽时抛出内置 TimeoutError；
         # httpx 自身的单次操作超时是 httpx.TimeoutException，不会被这里误捕
-        with suppress(OSError):
+        try:
             temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise RuntimeError(
             f"下载安装包超时（超过 {timeout / 60:.0f} 分钟），请检查网络后重试"
         ) from None
     except BaseException:
         # 取消时残留文件可能还被别的进程占着：删不掉就留给下次覆盖，
         # 不能让清理异常替换正在传播的 CancelledError
-        with suppress(OSError):
+        try:
             temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise
 
 
