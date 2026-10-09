@@ -62,8 +62,9 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
     """把合并分步表转成 ``(log_type, text, ts)`` 三元组列表，保持执行顺序。
 
     文本形态与 ``_PUSH_STATUS_RE`` 的状态行契约对齐（状态标记 + ": " + 节点名），
-    汇总式渲染按状态分组合并节点名，节点文本不带原因等长尾巴；步内异常只给
-    数量（完整原因在统计通知的分步表里）。节点级失败一律 ``LogType.NORMAL``
+    汇总式渲染按状态分组合并节点名。节点文本只保留判定、不带原因与异常计数：
+    步内可恢复报错（含树脂耗尽这类预期停止）的数量与完整原因都在统计通知的
+    分步表里。节点级失败一律 ``LogType.NORMAL``
     + 文本「❌ 失败:」体现（始终展示），推送时机由全局 ``SendTaskResultTime``
     控制——与 ok 系 / MaaEnd 的后置处理口径一致。
 
@@ -78,11 +79,8 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
     entries: list[tuple[str, str, float]] = []
     for step in steps:
         task = str(step.get("task") or "未知任务")
-        issue_count = int(step.get("issue_count") or 0)
         if step.get("ok"):
             text = f"✅ 成功: {task}"
-            if issue_count:
-                text = f"{text}（含 {issue_count} 处异常）"
         else:
             text = f"❌ 失败: {task}"
         entries.append((LogType.NORMAL, text, _step_ts(step)))
