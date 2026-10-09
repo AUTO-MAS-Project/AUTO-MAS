@@ -410,9 +410,6 @@ def extract_task_global_overrides(
     raw_task_options: Any,
     task_ids: list[str],
     interface_model: MaaFWInterface,
-    *,
-    controller_name: str | None = None,
-    resource_name: str | None = None,
 ) -> MaaFWTaskOptionsByTask:
     """各任务实例的选项里写着的、对它来说「只属于全局」的选项值（合法的、已归一）。
 
@@ -420,6 +417,11 @@ def extract_task_global_overrides(
     任务选项里不会有这种值（``normalize_task_options_by_task`` 把它们丢掉了），出现了就是
     特调在 ``decorate_selection`` 里写进去的：建计划时这一实例用它盖过用户的全局表，不让
     特调的改写被全局表静默顶掉。
+
+    「只属于全局」必须与快照归一用同一张表——不按当前 controller / resource 过滤的
+    ``build_task_option_maps``。按当前上下文过滤的话，一个全局选项只要还被**没选中的**资源 /
+    控制器引用，归一就会给任务补上它的默认值，这里又判它只属于全局，补出来的默认值就被当成
+    特调写入、盖掉用户的全局值。
     """
 
     if not isinstance(raw_task_options, dict):
@@ -427,11 +429,7 @@ def extract_task_global_overrides(
     global_option_map = build_global_option_map(interface_model)
     if not global_option_map:
         return {}
-    task_option_maps = _build_task_option_maps(
-        interface_model,
-        controller_name=controller_name,
-        resource_name=resource_name,
-    )
+    task_option_maps = _build_task_option_maps(interface_model)
     valid_task_names = _build_valid_task_names(interface_model)
     overrides: MaaFWTaskOptionsByTask = {}
     for task_id in task_ids:

@@ -2210,6 +2210,31 @@ def _group_target(lineage: str, channel: str, fallback: str, base: Path | None) 
     return fallback
 
 
+def _formal_group_target(
+    lineage: str, channel: str, fallback: str, base: Path | None
+) -> str:
+    """缺视图重建用的 :func:`_group_target`：普通渠道的脚本不落到开发者载荷上。
+
+    普通渠道组里还没有载荷时会退到 ``fallback``（兄弟视图挂的、或按导入来源反查到的那份），
+    它可能是别的脚本开发者模式导入的本地版本——复制 / 克隆不继承开发者模式，这条重建路径也
+    一样。返回空串表示没有可用的正式版本，调用方按重建失败处理。
+    """
+
+    target = _group_target(lineage, channel, fallback, base)
+    if not target or payloads.is_private_channel(channel):
+        return target
+    try:
+        manifest = payloads.read_manifest(payloads_root(base), lineage, target)
+    except payloads.PayloadError:
+        manifest = None
+    if is_follow_source_manifest(manifest):
+        logger.warning(
+            f"[MFW 内嵌] 「{channel}」渠道还没有正式版本，不用开发者载荷 {target} 重建视图"
+        )
+        return ""
+    return target
+
+
 def _rebuild_from_group(
     script_id: str,
     script_config: Any,
@@ -2239,7 +2264,9 @@ def _rebuild_from_group(
         resolved = resolve_view_payload(other_id, base)
         if resolved is not None and _payload_available(*resolved, base):
             lineage, fallback = resolved
-            target = _group_target(lineage, channel, fallback, base)
+            target = _formal_group_target(lineage, channel, fallback, base)
+            if not target:
+                continue
             _realize_view(
                 embedded_project_dir(script_id, base),
                 lineage,
@@ -2268,9 +2295,9 @@ def _rebuild_from_group(
         return inherit_embedded_record(other_config, script_id, base)
     # 没有同来源的兄弟：按载荷清单记的导入来源反查谱系（兄弟都删了、只剩载荷的情形）。
     found = _lineage_by_import_source(source, base)
-    if found is not None:
-        lineage, fallback = found
-        target = _group_target(lineage, channel, fallback, base)
+    target = _formal_group_target(found[0], channel, found[1], base) if found else ""
+    if found is not None and target:
+        lineage = found[0]
         _realize_view(
             embedded_project_dir(script_id, base),
             lineage,
@@ -2574,13 +2601,13 @@ def ensure_embedded_copy(
         if marker is not None:
             # 视图目录还在、interface 没了：按自己的谱系重建到组版本。
             lineage = str(marker["lineage"])
-            target = _group_target(
+            target = _formal_group_target(
                 lineage,
                 effective_channel(script_id, script_config),
                 str(marker["payload"]),
                 base,
             )
-            if _payload_available(lineage, target, base):
+            if target and _payload_available(lineage, target, base):
                 if send_log is not None:
                     send_log("[MFW 内嵌] 视图不完整，正在按已登记的项目版本重建")
                 _realize_view(copy_dir, lineage, target, base=base, carry=True)
@@ -2596,7 +2623,8 @@ def ensure_embedded_copy(
         if rebuilt is not None:
             return rebuilt
         raise EmbeddedProjectError(
-            "副本不在了，来源目录也已不存在；请重新选择一个解压好的 MFW 项目目录"
+            "副本不在了，来源目录也已不存在，本机也没有这个渠道可用来重建的正式版本；"
+            "请重新选择一个解压好的 MFW 项目目录"
         )
     if send_log is not None:
         send_log(
@@ -2921,6 +2949,18 @@ def propagate_payload(
 
     result = PropagationResult()
     excluded = {str(item) for item in exclude}
+    if not payloads.is_private_channel(channel):
+        # 开发者载荷只属于它自己的私有渠道：调用方拿错了渠道（例如导入前缓存的普通渠道，
+        # 导入时才认出是源码形态）也不能把它摆进普通渠道兄弟的视图
+        try:
+            manifest = payloads.read_manifest(payloads_root(base), lineage, payload_id)
+        except payloads.PayloadError:
+            manifest = None
+        if is_follow_source_manifest(manifest):
+            logger.warning(
+                f"[MFW 内嵌] 载荷 {payload_id} 是开发者载荷，不传播到「{channel}」渠道的兄弟脚本"
+            )
+            return result
     try:
         for raw in members:
             member = raw if isinstance(raw, GroupMember) else GroupMember(*raw)

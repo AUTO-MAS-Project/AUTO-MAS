@@ -107,6 +107,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     `FollowSourceCloneUnavailable`：克隆接口改按源的来源目录正常导入（目标自己的组，消息里说明），
     来源也不在就拒绝并让用户直接选目录；「复制脚本」先不建视图，第一次运行前按继承的 `Info.Path` 导入。
     源码形态没有正式渠道，克隆一律走按来源导入，目标继承 `sourceForm` 报告，照样处在开发者模式。
+    缺视图重建（复制后第一次运行、来源也不在）同样不继承：`_rebuild_from_group` 与视图不完整的重建
+    走 `_formal_group_target`，普通渠道组里没有正式版本时不退到兄弟挂的开发者载荷，按重建失败报错。
+  - **开发者载荷不进普通渠道**：`propagate_payload` 对非私有渠道遇到开发者载荷直接不传播（调用方拿错
+    渠道也兜得住）；导入接口按导入**之后**的实际渠道传播——首次选源码目录时导入前还是普通渠道，
+    导入中才认出源码形态、换成私有渠道。
   - **回收**：私有渠道的 latest 只在脚本还在、开着开关、视图还在这个谱系上时算引用；其余由启动期
     `collect_payload_garbage(follow_source_views=…)` 从 `lineage.json` 摘掉（本进程起来之后登记的不碰），
     被新导入顶掉的、关掉开关或删脚本留下的开发者载荷随后按普通规则回收，视图挂着的照样留。
@@ -131,6 +136,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     的项目不受影响。
   - **始终跟随来源目录**（见上面「跟随来源目录」），不做项目更新；界面上显示「源码形态」标签。导入报告里的
     `bundledMaaFWVersion` 只认被投影带走的原生库（源码仓里躺着的 `dist/maafw` 不算）。
+  - **只放行运行时映射得回来的越界**：越出 `assets/` 的声明目前只有 agent 的第一个 Python 入口有运行时
+    映射（`flattened_entry_path`）。`resource.path`、原生 agent 可执行文件、controller / languages 等其它
+    越界声明导入时就拒绝（`ProjectionError`，说明哪条声明、怎么改），不让用户看到导入成功却建计划时
+    「路径越界」。要支持新的越界写法，先补运行时映射再放行。
   - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
     MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
@@ -339,7 +348,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （战斗划火柴）的结果不同。特调走 `task_ids` 那条路时必须把 `select_snapshot_tasks` 给的
   `global_options` 一并传给 `build_plan`（漏了不报错，全局选项静默回到默认值）；特调往
   `task_options` 写的只属于全局的选项，这一实例以它为准（`extract_task_global_overrides`，依赖
-  归一后的任务选项里不会有这类键）。pretask 不吃全局表。计划的 `globalOptions` 是全局层的取值，
+  归一后的任务选项里不会有这类键；判「只属于全局」必须与快照归一同用**不按当前资源 / 控制器过滤**
+  的表，否则一个还被未选中资源引用的全局选项，归一补出的默认值会被误当成特调写入、盖掉用户的全局值）。pretask 不吃全局表。计划的 `globalOptions` 是全局层的取值，
   同一选项任务自己也有值时任务 `options` 里看不到它，打码收集两处都看。旧配置迁移
   （`normalize_snapshot`，前端 `maafwGlobalOptions.ts` 同一口径）：全局表里缺或坏的项，取队列里
   第一个勾选的、带合法值、且对它只属于全局的实例，再没有取未勾选的。预设写在任务上的只属于全局的

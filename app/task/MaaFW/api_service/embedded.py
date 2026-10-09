@@ -185,6 +185,12 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         },
     )
     await _apply_project_flavor(script_id)
+    # 导入时才认出源码形态的（报告刚写回 sourceForm），组已经换成私有渠道：按导入后的实际
+    # 渠道传播，别用导入前缓存的普通渠道
+    try:
+        channel = effective_channel(script_id, maafw_script_config(script_id))
+    except (KeyError, ValueError, TypeError):
+        pass
     await _propagate_view_to_group(script_id, channel)
     return None, ""
 

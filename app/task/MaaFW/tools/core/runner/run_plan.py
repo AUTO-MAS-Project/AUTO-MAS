@@ -899,13 +899,7 @@ def _select_tasks(
             selected_ids,
             selected_options,
             normalize_global_options(global_options, interface_model),
-            extract_task_global_overrides(
-                task_options,
-                selected_ids,
-                interface_model,
-                controller_name=controller_name,
-                resource_name=resource_name,
-            ),
+            extract_task_global_overrides(task_options, selected_ids, interface_model),
         )
 
     snapshot = _resolve_snapshot(

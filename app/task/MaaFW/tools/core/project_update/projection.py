@@ -1086,6 +1086,9 @@ def build_projection_rules(
     agents: list[dict[str, Any]] = []
     unavailable_resources: list[str] = []
     opaque_found = False
+    # 运行时能把越出 interface 目录的写法映射回视图的声明（agent 的第一个 Python 入口，
+    # ``interface.agent_entry.flattened_entry_path``）：源码形态只放行这些越界
+    mapped_entry_labels: set[str] = set()
 
     def add_target(
         relative: Path,
@@ -1434,6 +1437,7 @@ def build_projection_rules(
                     fallback_entry = None
                     if not python_entry_seen and is_python_entry_arg(raw_arg):
                         python_entry_seen = True
+                        mapped_entry_labels.add(label)
                         fallback_entry = cfa_agent_entry(raw_arg, label)
                     arg_relative = fallback_entry or declare(
                         raw_arg, label, must_exist=True
@@ -1546,6 +1550,23 @@ def build_projection_rules(
         )
     )
     if source_layout:
+        # 平铺之后 interface 不改写，越界的写法要靠运行时映射才指得回视图；目前只有 agent 的
+        # Python 入口有这层映射。resource 路径、原生 agent 可执行文件这类越界声明导入得进来，
+        # 建计划时却必然「路径越界」——导入时就拒绝，别让用户看到导入成功却永远跑不起来。
+        unsupported = [
+            item
+            for item in required
+            if not _is_relative_to(item.path, base_relative)
+            and item.label not in mapped_entry_labels
+        ]
+        if unsupported:
+            item = unsupported[0]
+            raise ProjectionError(
+                f"按源码形态导入时，{item.label} 声明的 {item.path.as_posix()} 在 "
+                f"{base_relative.as_posix()}/ 之外，运行时解析不到；源码形态目前只支持 agent 的 "
+                f"Python 入口脚本放在 {base_relative.as_posix()}/ 外面（如 ./../agent/main.py）。"
+                f"请把它移进 {base_relative.as_posix()}/，或导入打包好的发行包"
+            )
         warnings.append(
             f"interface 在 {base_relative.as_posix()}/ 下、agent 等声明的路径在它之外：按"
             f"源码形态导入，{base_relative.as_posix()}/ 里的内容与根目录上的 agent 等平铺进"
