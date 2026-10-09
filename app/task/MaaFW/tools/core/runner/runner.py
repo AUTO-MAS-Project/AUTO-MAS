@@ -1256,6 +1256,9 @@ class MaaFWRunner:
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
         if task.nonFatalMessage:
+            self._raise_if_game_launch_failed(
+                display_name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            )
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
             stopped = (
                 "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
@@ -1305,6 +1308,7 @@ class MaaFWRunner:
         reason = _format_loop_guard_reason(verdict)
         display_name = _task_display_name(task)
         if task.nonFatalMessage:
+            self._raise_if_game_launch_failed(display_name, reason)
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
             stopped = (
                 "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
@@ -1323,6 +1327,29 @@ class MaaFWRunner:
         else:
             self.send_log(f"{reason}，已停止: {display_name}")
         return True
+
+    def _raise_if_game_launch_failed(
+        self,
+        display_name: str,
+        message: str,
+        cause: BaseException | None = None,
+    ) -> None:
+        """这个任务里有致命控制器动作（``start_app``）失败时按「游戏未能启动」结束本轮。
+
+        特调声明的收尾任务（``nonFatalMessage``）的各条放过路径（失败、超时、打转、被脚本侧
+        强停）都要先过这一关：游戏都没起来，不能因为放过把本轮判成成功。
+        """
+
+        fatal = sorted(self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS)
+        if not fatal:
+            return
+        error = RuntimeError(
+            f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
+            f"{display_name}: {message}"
+        )
+        if cause is not None:
+            raise error from cause
+        raise error
 
     def _loop_guard_exempt(self, name: str) -> bool:
         """节点是否声明了不做原地打转检测（检测器自己还会按节点名缓存）。"""
@@ -2824,15 +2851,7 @@ class MaaFWRunner:
                 if not task.nonFatalMessage:
                     self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
-                fatal = sorted(
-                    self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
-                )
-                if fatal:
-                    actions = "、".join(fatal)
-                    raise RuntimeError(
-                        f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
-                        f"{display_name}: {message}"
-                    ) from exc
+                self._raise_if_game_launch_failed(display_name, message, cause=exc)
                 if task.nonFatalMessage:
                     # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
                     # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
@@ -2890,6 +2909,9 @@ class MaaFWRunner:
             if task.nonFatalMessage and self._external_stop_active(tasker):
                 # 特调声明的收尾任务：截图、跳过本轮剩余任务，但不算本轮失败
                 self._capture_failure_screenshot(task.name)
+                self._raise_if_game_launch_failed(
+                    display_name, "任务被脚本侧强制停止（MaaTaskerPostStop）"
+                )
                 self.send_log(
                     f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
                     f"{display_name}；{task.nonFatalMessage}"
