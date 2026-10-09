@@ -484,9 +484,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
         # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
-        # skip_on_retry_entries；剔了什么在下一次尝试开头写一行
+        # skip_on_retry_entries；剔了什么每次重试开头按当前计划的 skippedTasks 写一行
         self._completed_this_run: list[str] = []
-        self._retry_skip_notice: str | None = None
 
     async def check(self) -> str:
         proxy_times = (
@@ -670,7 +669,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
                 try:
-                    self._log_retry_skipped_tasks()
+                    if index > 0:
+                        self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
                     await self._ensure_desktop_game_started()
@@ -2256,8 +2256,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """剔掉特调声明的 ``skip_on_retry_entries`` 里、本次运行已完成过的任务。
 
         按 entry 认任务、按任务名计份数：同一任务重复入队只完成了一份时只剔一份。
-        没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，并留一行给
-        下一次尝试开头（``_log_retry_skipped_tasks``）。
+        没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，每次重试开头
+        据此写一行（``_log_retry_skipped_tasks``）。
         """
 
         flavor = resolve_flavor(self.script_config)
@@ -2282,17 +2282,24 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             tasks.append(task)
         if not skipped:
             return plan
-        self._retry_skip_notice = f"{_RETRY_SKIP_REASON}，不再补跑: " + "、".join(
-            _task_display_name(task) for task in skipped
-        )
         return plan.model_copy(
             update={"tasks": tasks, "skippedTasks": [*plan.skippedTasks, *skipped]}
         )
 
     def _log_retry_skipped_tasks(self) -> None:
-        if self._retry_skip_notice:
-            self._append_log(self._retry_skip_notice)
-            self._retry_skip_notice = None
+        """重试开头写一行被重试跳过的任务。
+
+        不一次性消费：上一次尝试 worker 崩溃时计划原样沿用，这一行要照样写。
+        """
+
+        if self.run_plan is None:
+            return
+        skipped = _retry_skipped_tasks(self.run_plan)
+        if skipped:
+            self._append_log(
+                f"{_RETRY_SKIP_REASON}，不再补跑: "
+                + "、".join(_task_display_name(task) for task in skipped)
+            )
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
         raw_records = _load_json_dict(
@@ -3695,6 +3702,10 @@ MISSING_TASK_NOTICE_PREFIX = (
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
 #: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
 _RETRY_SKIP_REASON = "前面的尝试已完成"
+
+
+def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
+    return [task for task in plan.skippedTasks if task.reason == _RETRY_SKIP_REASON]
 
 
 def _drop_unselectable_tasks(
