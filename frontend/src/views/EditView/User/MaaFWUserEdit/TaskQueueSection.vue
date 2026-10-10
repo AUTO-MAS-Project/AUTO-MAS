@@ -208,6 +208,8 @@
                       width="28"
                       height="28"
                       class="task-icon"
+                      @error="hideBrokenMaaFWIcon"
+                      @load="showLoadedMaaFWIcon"
                     />
                     <div class="task-main">
                       <span class="task-title">
@@ -279,6 +281,8 @@
               width="32"
               height="32"
               class="selected-task-icon"
+              @error="hideBrokenMaaFWIcon"
+              @load="showLoadedMaaFWIcon"
             />
             <div>
               <div class="selected-task-title">
@@ -427,6 +431,7 @@ import {
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
+import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'

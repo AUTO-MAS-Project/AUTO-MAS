@@ -28,6 +28,8 @@
             width="18"
             height="18"
             class="option-icon"
+            @error="hideBrokenMaaFWIcon"
+            @load="showLoadedMaaFWIcon"
           />
           <span>{{ getOptionLabel(option) }}</span>
           <a-tooltip v-if="option.description" :title="option.description">
@@ -102,6 +104,8 @@
                   width="18"
                   height="18"
                   class="input-icon"
+                  @error="hideBrokenMaaFWIcon"
+                  @load="showLoadedMaaFWIcon"
                 />
                 <span>{{ getInputLabel(inputItem) }}</span>
               </span>
@@ -249,6 +253,7 @@ import {
   resolveMaaFWChoiceValue,
   storedMaaFWInputFieldValue,
 } from './maafwOptionValues'
+import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from './maafwIconImage'
 import type {
   MaaFWOptionCaseInfo,
   MaaFWOptionInfo,
