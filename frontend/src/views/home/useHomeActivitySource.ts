@@ -153,6 +153,7 @@ export const useHomeActivitySource = <T>(
     active = true
     if (!started) {
       started = true
+      options.onFirstStart?.()
       if (options.loadingOnStart) {
         loading.value = !hasData.value
       }
