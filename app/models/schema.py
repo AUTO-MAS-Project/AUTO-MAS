@@ -123,6 +123,9 @@ class MaaCultivateOperatorOptionItem(BaseModel):
     maxElite: int = Field(
         default=0, description="精英化可达档位上限（1/2/3★ 与上游缺数据者恒 0）"
     )
+    maxSkillLevel: int = Field(
+        default=0, description="普通技能可达等级上限；0 表示无消耗数据"
+    )
     dataMissing: bool = Field(
         default=False,
         description="有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）",
@@ -173,6 +176,9 @@ class CultivateOperatorProgression(BaseModel):
     )
     elite: int = Field(..., description="当前精英化阶段 0-2")
     level: int = Field(..., description="当前干员等级")
+    skillLevel: Optional[int] = Field(
+        default=None, description="当前普通技能等级 1-7；未观测时为空"
+    )
     masteries: Dict[str, int] = Field(
         default_factory=dict, description="当前专精等级（skillId → 0-3）"
     )

@@ -68,6 +68,8 @@ def _goal_current_level(progression: Progression, goal: Goal) -> int:
 
     if goal.kind == "elite":
         return progression.elite
+    if goal.kind == "skill":
+        return progression.skill_level or 0
     if goal.kind == "mastery":
         return progression.masteries.get(goal.target_id, 0)
     return progression.modules.get(goal.target_id, 0)
@@ -82,8 +84,8 @@ def build_requirements(
 
     等级路径严格顺序不可跳级：区间=逐档求和，天然包含中间档材料
     （中间档是要真实消耗的，属正确行为）。已达成（achieved）与待确认
-    （pending_confirm，可能已养成但无法自证）的目标不参与计算；专精/模组
-    目标在快照未携带该维度观测（森空岛降级 local/default）时同样不参与
+    （pending_confirm，可能已养成但无法自证）的目标不参与计算；技能等级、
+    专精与模组目标在快照未携带该维度观测时同样不参与
     ——达成检测不受影响，目标保留，观测恢复后自动续刷。
     """
 
@@ -97,7 +99,14 @@ def build_requirements(
             if goal.state in ("achieved", "pending_confirm"):
                 continue
             # 专精/模组未观测时 current 恒为 0，展开会从第一档重算需求
-            if goal.kind != "elite" and not _mastery_module_observed(snapshot):
+            if goal.kind in ("mastery", "module") and not _mastery_module_observed(
+                snapshot
+            ):
+                continue
+            if goal.kind == "skill" and (
+                not _mastery_module_observed(snapshot)
+                or progression.skill_level is None
+            ):
                 continue
             current = _goal_current_level(progression, goal)
             for entry in demands.get(target.operator_id, ()):
@@ -774,6 +783,7 @@ def apply_achievements(
 
 _GOAL_LABELS: Mapping[str, str] = {
     "elite": "精",
+    "skill": "技能等级",
     "mastery": "专精",
     "module": "模组",
 }

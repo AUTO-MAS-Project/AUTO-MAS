@@ -152,7 +152,7 @@
                 >{{ eliteLineOf(row).current }}</span
               >
             </div>
-            <!-- 目标列表：选中干员即列出全部专精+全部模组（精英化在标题行），
+            <!-- 目标列表：技能等级、全部专精和全部模组（精英化在标题行），
                  每个目标一行：名称 → 当前 → 超限/状态标签 → 档位选择器（最右成列）；
                  未设目标=空选项（清空即移除），没有添加/删除流程。未绑定时只读：配置
                  里的目标不因绑定失效而在界面上消失，仍可见可清，避免留下
@@ -309,6 +309,7 @@ import {
   removeOperator,
   serializeCultivateTargets,
   setEliteLevel,
+  setMasteryLevel,
   upsertGoal,
   type CultivateGoalKind,
   type CultivateGoalOption as GoalOption,
@@ -474,17 +475,17 @@ const handleGoalChange = (
   event: unknown
 ) => {
   const level = Number(event)
-  mutateRow(row.operatorId, raw =>
-    kind === 'elite'
-      ? setEliteLevel(raw, level || null)
-      : level
-        ? upsertGoal(raw, { kind, targetId, toLevel: level })
-        : removeGoal(raw, kind, targetId)
-  )
+  mutateRow(row.operatorId, raw => {
+    if (kind === 'elite') return setEliteLevel(raw, level || null)
+    if (kind === 'mastery') return setMasteryLevel(raw, targetId, level || null)
+    return level
+      ? upsertGoal(raw, { kind, targetId, toLevel: level })
+      : removeGoal(raw, kind, targetId)
+  })
 }
 
 // 已添加的干员不再出现在选择器里（Set 查找，目录 427 条 × 目标行）；
-// 无任何可达目标的干员（1/2/3★ 与上游缺数据者）列出但不可选并说明原因——
+// 无任何可达目标的干员列出但不可选并说明原因——
 // 直接隐藏会让用户以为目录缺人（决策 40）
 const selectedOperatorIds = computed(() => new Set(rows.value.map(row => row.operatorId)))
 const noGoalReason = (entry: OperatorCatalogEntry): string =>
@@ -493,7 +494,10 @@ const availableOperatorOptions = computed(() =>
   props.operatorCatalog
     .filter(option => !selectedOperatorIds.value.has(option.value))
     .map(option =>
-      option.maxElite > 0 || option.skills.length || option.modules.length
+      option.maxElite > 0 ||
+      option.maxSkillLevel > 1 ||
+      option.skills.length ||
+      option.modules.length
         ? { label: option.label, value: option.value }
         : {
             label: `${option.label}（${noGoalReason(option)}）`,
@@ -571,7 +575,7 @@ const goalOverLimit = (row: CultivateTargetRow, kind: CultivateGoalKind, targetI
   return savedGoalLevel(row, kind, targetId) > max
 }
 
-// ── 平铺目标行：目录全量（精英化+专精+模组），无需"添加目标" ──
+// ── 平铺目标行：目录全量（精英化+技能等级+专精+模组），无需"添加目标" ──
 // 已存目标不在目录里（目录缺失/上游未收录）时合成孤儿行兜底，
 // 保证不留看不见又清不掉的配置
 const itemsOf = (row: CultivateTargetRow, kind: 'mastery' | 'module') => {
@@ -618,7 +622,9 @@ const currentUnknownOf = (prog: ProgressionInfo) => !prog || prog.source === 'de
 
 // 专精/模组维度的未知判定：与后端 build_requirements 的暂停口径一致
 const dimensionUnknownOf = (prog: ProgressionInfo, kind: CultivateGoalKind) =>
-  kind !== 'elite' && !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default')
+  kind === 'skill'
+    ? !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default') || prog?.skillLevel == null
+    : kind !== 'elite' && !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default')
 
 const currentTextOf = (
   prog: ProgressionInfo,
@@ -633,6 +639,7 @@ const currentTextOf = (
     const eliteLabel = ELITE_LABEL_KEYS[prog!.elite]
     return `${t('edit.maaCultivateCurrent')} ${eliteLabel ? t(eliteLabel) : prog!.elite}`
   }
+  if (kind === 'skill') return `${t('edit.maaCultivateCurrent')} ${prog!.skillLevel}`
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return `${t('edit.maaCultivateCurrent')} ${levels?.[targetId] ?? 0}`
 }
@@ -645,6 +652,7 @@ const currentLevelOf = (
 ): number | null => {
   if (kind === 'elite' ? currentUnknownOf(prog) : dimensionUnknownOf(prog, kind)) return null
   if (kind === 'elite') return prog!.elite
+  if (kind === 'skill') return prog!.skillLevel ?? null
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return levels?.[targetId] ?? 0
 }
@@ -725,26 +733,63 @@ const itemLinesOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): FlatG
   })
 }
 
-// 专精/模组各自成列表；空组（该干员无模组等）不渲染。
+// 技能等级、专精与模组各自成列表；空组不渲染。
 // 已达成行直接隐藏：后端会在下次注入时自动移除该目标，不必占界面；
 // 满级行（当前已达档位上限）同样隐藏——设任何目标都会被立即达成，没有可做的事
-const goalGridsOf = (row: CultivateTargetRow) =>
-  (['mastery', 'module'] as const)
-    .map(kind => ({
+const skillLineOf = (row: CultivateTargetRow): FlatGoalLine | null => {
+  const maxLevel = catalogEntryById.value.get(row.operatorId)?.maxSkillLevel ?? 0
+  const saved = savedGoalOf(row, 'skill', '')
+  if (maxLevel <= 1 && !saved) return null
+  const savedLevel = saved?.toLevel ?? 0
+  const prog = progressionOf(row.operatorId)
+  const unknown = dimensionUnknownOf(prog, 'skill')
+  const current = currentLevelOf(prog, 'skill', '')
+  const achieved = achievedOf(prog, 'skill', '', savedLevel, saved?.state ?? null)
+  return {
+    key: 'skill',
+    kind: 'skill',
+    targetId: '',
+    options: levelOptionsWithSaved(maxLevel, savedLevel)
+      .filter(level => level >= 2)
+      .map(level => ({ value: level, label: t('edit.maaCultivateSkillLevel', { level }) })),
+    savedLevel,
+    levelLabel: savedLevel ? t('edit.maaCultivateSkillLevel', { level: savedLevel }) : '',
+    overLimit: savedLevel > maxLevel,
+    label: t('edit.maaCultivateGoalSkill'),
+    current: currentTextOf(prog, 'skill', ''),
+    currentUnknown: unknown,
+    state: saved
+      ? (goalStateBadge(saved.state) ?? (achieved ? GOAL_STATE_BADGE.achieved : null))
+      : null,
+    disabled: props.loading || !sklandBound.value || achieved,
+    achieved,
+    maxed: !unknown && current !== null && maxLevel > 1 && current >= maxLevel,
+  }
+}
+
+const goalGridsOf = (row: CultivateTargetRow) => {
+  const skill = skillLineOf(row)
+  return [
+    { kind: 'skill' as const, lines: skill ? [skill] : [] },
+    ...(['mastery', 'module'] as const).map(kind => ({
       kind,
-      lines: itemLinesOf(row, kind).filter(line => !line.achieved && !line.maxed),
-    }))
+      lines: itemLinesOf(row, kind),
+    })),
+  ]
+    .map(grid => ({ ...grid, lines: grid.lines.filter(line => !line.achieved && !line.maxed) }))
     .filter(grid => grid.lines.length)
+}
 
 // 已绑定但本次快照未携带专精/模组观测（森空岛拉取失败降级本地档案）：
 // 目标保留、暂停刷取，须明确提示用户，而不是让「当前 ？」默默出现
 const sklandDegraded = computed(
   () =>
     sklandBound.value &&
-    rows.value.some(
-      row =>
-        (goalsOf(row, 'mastery').length > 0 || goalsOf(row, 'module').length > 0) &&
-        dimensionUnknownOf(progressionOf(row.operatorId), 'mastery')
+    rows.value.some(row =>
+      (['skill', 'mastery', 'module'] as const).some(
+        kind =>
+          goalsOf(row, kind).length > 0 && dimensionUnknownOf(progressionOf(row.operatorId), kind)
+      )
     )
 )
 
