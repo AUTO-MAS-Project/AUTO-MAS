@@ -155,19 +155,26 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
   ])
 
+  // 最近一次读 interface 失败的原因：读不到时基础信息区落到引导卡片，原因留在卡片上，
+  // 不只靠一闪而过的提示
+  const previewError = ref('')
+
   const runPreview = async (options: { forceEnv?: boolean } = {}) => {
     const path = maafwConfig.Info.Path.trim()
     if (!path) {
       previewData.value = null
+      previewError.value = ''
       return
     }
     previewLoading.value = true
+    previewError.value = ''
     try {
       // 带 scriptId：内嵌脚本读的是 AUTO-MAS 的副本，path 只在没有脚本时兜底。
       const response = await previewMaaFWInterface(path, scriptId)
       if (!response || response.code !== 200 || !response.data) {
         previewData.value = null
-        message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
+        previewError.value = response?.message || t('edit.maafwPreviewFailed')
+        message.error(previewError.value)
         return
       }
       previewData.value = response.data as MaaFWInterfacePreviewData
@@ -181,7 +188,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       if (!configLocked.value) void runAgentEnvPrepare(path, options.forceEnv === true)
     } catch (error) {
       previewData.value = null
-      message.error(error instanceof Error ? error.message : String(error))
+      previewError.value = error instanceof Error ? error.message : String(error)
+      message.error(previewError.value)
     } finally {
       previewLoading.value = false
     }
@@ -293,6 +301,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     pageLoading,
     previewLoading,
     previewData,
+    previewError,
     maafwConfig,
     formData,
     rules,

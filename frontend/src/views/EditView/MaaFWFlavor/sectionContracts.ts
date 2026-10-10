@@ -63,6 +63,10 @@ export interface MaaFWScriptBasicInfoSectionProps {
   /** 导入进度：后端按文件数推过来的百分比与阶段文案；没有推送时为 null，进度条显示 0 */
   importPercent: number | null
   importMessage: string
+  /** 最近一次导入 / 同步失败的原因；下次导入开始时清空 */
+  importError?: string
+  /** 最近一次读 interface 失败的原因（此时 previewData 为 null）；下次读取开始时清空 */
+  previewError?: string
   /** flavor 文案（特调类型传入）；缺省用通用 MaaFW 的「本地项目目录」那套 */
   sourceDirectoryLabel?: string
   sourceHint?: string

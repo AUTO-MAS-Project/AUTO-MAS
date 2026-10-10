@@ -1675,6 +1675,7 @@ export default {
     envFailedHint: '运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。',
     envReadyAgents: '已就绪的组件',
     envRetry: '重试',
+    maafwPreviewFailed: '读取项目失败',
     mfwUnityResolutionOff: '不修改',
     mfwWaitTimeTip:
       'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',

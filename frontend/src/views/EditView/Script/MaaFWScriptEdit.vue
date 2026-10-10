@@ -55,6 +55,8 @@
             :embedded-busy="embeddedBusy"
             :import-percent="importPercent"
             :import-message="importMessage"
+            :import-error="importError"
+            :preview-error="previewError"
             :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
             :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
             :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
@@ -252,6 +254,7 @@ const {
   pageLoading,
   previewLoading,
   previewData,
+  previewError,
   maafwConfig,
   formData,
   rules,
@@ -294,6 +297,7 @@ const {
   embeddedBusy,
   importPercent,
   importMessage,
+  importError,
   selectMaaFWPath,
   syncFromSource,
   isAutoUpdateDisabled,

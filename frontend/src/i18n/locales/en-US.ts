@@ -1763,6 +1763,7 @@ export default {
       'Nothing below will run until the environment is ready. Check the network and project path, then retry.',
     envReadyAgents: 'Ready components',
     envRetry: 'Retry',
+    maafwPreviewFailed: 'Could not read the project',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',

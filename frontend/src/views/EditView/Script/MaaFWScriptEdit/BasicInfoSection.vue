@@ -54,8 +54,9 @@
               </a-button>
             </a-tooltip>
           </a-input-group>
-          <!-- 导入几十到几百 MB 时进度条顶在字段下面，别让用户对着一个转圈干等 -->
-          <div v-if="embeddedBusy" class="import-progress">
+          <!-- 导入几十到几百 MB 时进度条顶在字段下面，别让用户对着一个转圈干等。
+               首次导入时下面的引导卡片把按钮换成同一条进度条，这里就不再重复一条 -->
+          <div v-if="embeddedBusy && !guideOwnsImport" class="import-progress">
             <a-progress
               :percent="importPercent ?? 0"
               :status="importPercent === 100 ? 'success' : 'active'"
@@ -64,6 +65,9 @@
             <span class="import-progress-text">{{
               importMessage || t('edit.maafwImportingCopy')
             }}</span>
+          </div>
+          <div v-else-if="importError && !guideOwnsImport" class="import-error">
+            {{ importError }}
           </div>
         </a-form-item>
       </a-col>
@@ -178,6 +182,27 @@
         />
       </a-spin>
     </div>
+    <!-- 已导入（目录锁定）却没读到 interface：项目还在，只是这次没读出来。给出原因和「重试」，
+         不给选目录——那会绕开目录锁把副本换成别的项目 -->
+    <div v-else-if="directoryLocked" class="interface-guide-card">
+      <WarningOutlined
+        class="interface-guide-icon interface-guide-icon--warning"
+        aria-hidden="true"
+      />
+      <h3>{{ t('edit.maafwPreviewFailed') }}</h3>
+      <p v-if="previewError" class="interface-guide-error">{{ previewError }}</p>
+      <a-button
+        type="primary"
+        size="large"
+        :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
+        @click="emit('preview-interface')"
+      >
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        {{ t('edit.envRetry') }}
+      </a-button>
+    </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
       <h3>{{ t('edit.pickMfwProject') }}</h3>
@@ -204,6 +229,9 @@
           importMessage || t('edit.maafwImportingCopy')
         }}</span>
       </div>
+      <p v-if="!embeddedBusy && (importError || previewError)" class="interface-guide-error">
+        {{ importError || previewError }}
+      </p>
     </div>
   </div>
 </template>
@@ -218,7 +246,9 @@ import {
   InboxOutlined,
   LoadingOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
   ToolOutlined,
+  WarningOutlined,
 } from '@ant-design/icons-vue'
 import type {
   MaaFWScriptBasicInfoSectionEmits,
@@ -237,6 +267,10 @@ const emit = defineEmits<MaaFWScriptBasicInfoSectionEmits>()
 const directoryLocked = computed(() => props.embeddedStatus.copyHealthy)
 const displayedPath = computed(() =>
   directoryLocked.value ? props.embeddedStatus.copyPath : props.formData.path
+)
+// 还没导入、引导卡片在显示：导入进度与失败原因都放在卡片里（按钮就在那），字段下面不再重复
+const guideOwnsImport = computed(
+  () => !props.previewData && !props.interfaceLoading && !directoryLocked.value
 )
 const directoryHint = computed(() =>
   directoryLocked.value
@@ -343,6 +377,14 @@ watch(
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
+}
+
+.import-error {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ant-color-error);
+  overflow-wrap: anywhere;
 }
 
 .follow-source {
@@ -643,6 +685,15 @@ watch(
 .interface-guide-icon {
   color: var(--ant-color-primary);
   font-size: 64px;
+}
+
+.interface-guide-icon--warning {
+  color: var(--ant-color-warning);
+}
+
+.interface-guide-card p.interface-guide-error {
+  color: var(--ant-color-error);
+  overflow-wrap: anywhere;
 }
 
 .interface-loading {
