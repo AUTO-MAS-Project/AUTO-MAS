@@ -87,11 +87,12 @@ import {
   allowsHighestStage,
   BAAH_KEY_FIELD_BY_NAME,
   BAAH_PLAN_KEY_FIELDS,
+  BAAH_PLAN_SELECTABLE_KINDS,
   BAAH_PLAN_TIME_KEYS,
   applyMixedPart,
   applySingleNumber,
   buildSingleDayKey,
-  fillDayFields,
+  buildStageKindChoices,
   isFieldEnabled,
   partIndexOf,
   partOptionMax,
@@ -225,13 +226,21 @@ const rowOptions = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
 const singleCellNumberDisabled = (timeKey: PlanTimeKey) =>
   isColumnDisabled(timeKey) || !singleCells.value[timeKey].kind
 
-const kindOptions = computed(() => [
-  { value: '', label: t('plan.baahLayout.emptyOption') },
-  ...BAAH_PLAN_KEY_FIELDS.map(field => ({
-    value: field.field as string,
-    label: t(field.labelKey),
-  })),
-])
+/**
+ * 「关卡选择」的选项：不打 + 活动关卡 / 困难关卡 / 普通关卡。
+ *
+ * 悬赏通缉、特殊任务、学园交流会不再可选；存量计划表停在这三类时按原值补一项并标成不可选，
+ * 让下拉显示它们的名字而不是生 key，也留下这一格原本在打什么的线索。
+ */
+const kindOptions = computed(() =>
+  buildStageKindChoices(BAAH_PLAN_TIME_KEYS.map(timeKey => singleCells.value[timeKey].kind)).map(
+    ({ kind, selectable }) => ({
+      value: kind as string,
+      label: kind ? t(BAAH_KEY_FIELD_BY_NAME[kind].labelKey) : t('plan.baahLayout.emptyOption'),
+      disabled: !selectable,
+    })
+  )
+)
 
 const configRows = computed(() => {
   // 每天一类：三行各管一件事，八列各一组控件
@@ -258,9 +267,11 @@ const configRows = computed(() => {
     ]
   }
 
-  // 多类混打：每类先一行「启用」开关，再按位各占一行（六类合起来 23 行），
-  // 行标题写成「类名 · 位名」
-  return BAAH_PLAN_KEY_FIELDS.flatMap(field => [
+  // 多类混打：只排「关卡选择」里还能配的类别（活动关卡、困难关卡、普通关卡），
+  // 每类先一行「启用」开关，再按位各占一行，行标题写成「类名 · 位名」
+  return BAAH_PLAN_KEY_FIELDS.filter(field =>
+    BAAH_PLAN_SELECTABLE_KINDS.includes(field.field)
+  ).flatMap(field => [
     {
       rowKey: `${field.field}.enabled`,
       rowKind: 'enabled',
@@ -288,7 +299,7 @@ const configRows = computed(() => {
           timeKey,
           // 这一类今天没启用时参数行留空，免得填了却不生效
           isFieldEnabled(localTableData.value[timeKey], field.field)
-            ? fillDayFields(localTableData.value[timeKey] ?? {})[field.field][index]
+            ? readFieldValues(localTableData.value[timeKey], field.field)[index]
             : undefined,
         ])
       ),
@@ -345,10 +356,10 @@ const handlePartEnabledChange = async (
   checked: unknown
 ) => {
   const previousFields = localTableData.value[timeKey]
-  const filled = fillDayFields(previousFields ?? {})
   const items = checked ? readFieldValues(previousFields, field) : []
 
-  await submitDayKey(timeKey, { ...filled, [field]: items }, previousFields)
+  // 只动这一类，别的类别原样带过去：界面没展示的类别不该被补成默认值
+  await submitDayKey(timeKey, { ...(previousFields ?? {}), [field]: items }, previousFields)
 }
 
 const handleSingleKindChange = async (timeKey: PlanTimeKey, value: unknown) => {
