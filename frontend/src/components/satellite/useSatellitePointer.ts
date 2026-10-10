@@ -29,6 +29,10 @@ interface SatellitePointerOptions {
   requestRender: () => void
   /** 在中心图标上短按了一下 */
   onCenterTap: () => void
+  /** 中心图标刚被按下（还没松手）：按压音效挂这里，经典与 3D 星系共用 */
+  onCenterPress: () => void
+  /** 在中心图标上松手：松开音效挂这里；挪远了当拖动时不触发 */
+  onCenterRelease: () => void
   /** 点了第 index 颗卫星 */
   onSatelliteTap: (index: number, now: number) => void
   /** 按在空白处：返回 true 表示这一下被用掉了（比如接住了流星），不再当拖动 */
@@ -90,9 +94,10 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
     }
     getContainer()?.setPointerCapture(event.pointerId)
 
-    // 按在中心图标上时给它一个压扁的形变，再冒一句 star!
+    // 按在中心图标上时给它一个压扁的形变，响一下按压音效，再冒一句 star!
     if (target === 'center') {
       scene.setCenterPressed(true)
+      options.onCenterPress()
       const local = toLocalPoint(event)
       if (local) {
         options.spawnText(
@@ -163,6 +168,7 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
     const now = Date.now()
     if (finished.target === 'center') {
       const held = performance.now() - finished.startedAt
+      options.onCenterRelease()
       if (held >= CORE_CHARGE.chargeFull) {
         scene.shockwave(now)
         logger.info('卫星彩蛋触发：冲击波')

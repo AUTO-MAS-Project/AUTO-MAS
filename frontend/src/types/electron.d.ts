@@ -395,6 +395,8 @@ export interface ElectronAPI {
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
+  /** 按 base64 读二进制文件（音频等）；渲染进程用它拼 data URL */
+  readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
 

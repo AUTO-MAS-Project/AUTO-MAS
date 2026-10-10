@@ -49,6 +49,7 @@ import { INTRO_IGNITE_MS, SatelliteScene, type ScreenPoint } from './satellite/s
 import { useSatelliteEggs } from './satellite/useSatelliteEggs'
 import { useSatellitePointer } from './satellite/useSatellitePointer'
 import { useSatelliteStill } from './satellite/useSatelliteStill'
+import { usePressSound } from './satellite/usePressSound'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
@@ -57,6 +58,8 @@ const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
+// 中心图标的按压音效：经典卫星与 3D 星系共用同一套设置与播放逻辑
+const { playPress: playCenterPressSound, playRelease: playCenterReleaseSound } = usePressSound()
 // 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
 const {
   statuses: satelliteStatuses,
@@ -130,6 +133,8 @@ const {
   spawnText,
   requestRender,
   onCenterTap: eggs.pokeCenter,
+  onCenterPress: playCenterPressSound,
+  onCenterRelease: playCenterReleaseSound,
   onSatelliteTap: handleSatelliteTap,
   onEmptyPress: eggs.tryCatchMeteor,
 })
