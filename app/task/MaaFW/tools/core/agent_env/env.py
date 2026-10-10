@@ -170,6 +170,20 @@ def prepare_agent_envs(
             report_plan_complete(index, plan)
             continue
 
+        if (
+            runtime_kind == "external"
+            and plan.executableExists is False
+            and not Path(plan.executable).is_file()
+        ):
+            # 带路径的 child_exec 解析到项目里却没有这个文件（发行包漏带、被杀软隔离）：
+            # 跳过的话这里报「已就绪」、更新预检也放行，之后每次运行都死在起 agent 那一步。
+            # 只看写了路径的（exists=False）；命令名形式（exists=None）交给 PATH，照旧跳过。
+            # 再 stat 一次：计划可能是之前建的，文件后来补上了就不拦。
+            raise MaaFWAgentEnvError(
+                "声明的 Agent 程序不存在："
+                f"{_project_relative_text(str(plan.executable), resolved_project_path)}"
+                f"（interface 写的是 {plan.childExec}）"
+            )
         skipped.append(plan.childExec)
         log(f"[Python环境] 跳过外部或非 Python 环境检测: {python_exe}")
 
