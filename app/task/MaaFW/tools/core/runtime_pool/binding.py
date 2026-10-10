@@ -129,6 +129,10 @@ class MaaFWBindingNetworkError(MaaFWBindingError):
     """所有索引候选都连不上：网络故障，不能当成「没有这个版本」去走源码兜底。"""
 
 
+class MaaFWBindingDownloadError(MaaFWBindingError):
+    """某个索引给的 wheel 下下来是坏的（空、sha256 不符、不是 zip、超大）：换下一个候选。"""
+
+
 @dataclass(frozen=True)
 class BindingInfo:
     """一份就绪的 binding：worker 环境与回收对账都从这里取事实。"""
@@ -1175,6 +1179,15 @@ def _record_digest(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: 下载进度多久报一次：官方 wheel 60 MB 上下，直连 PyPI 慢的环境要一到几分钟，期间界面
+#: 只有一句「正在准备 MaaFW Python binding」，看着像卡死。
+_DOWNLOAD_PROGRESS_STEP_BYTES = 16 * 1024 * 1024
+
+
+def _format_megabytes(value: int) -> str:
+    return f"{value / (1024 * 1024):.1f} MB"
+
+
 def _download_wheel(
     link: WheelLink,
     destination: Path,
@@ -1182,6 +1195,8 @@ def _download_wheel(
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
     timeout: float = WHEEL_DOWNLOAD_TIMEOUT_SECONDS,
+    log: Callable[[str], None] | None = None,
+    label: str = "wheel",
 ) -> None:
     request = urllib.request.Request(link.url, headers={"User-Agent": "AUTO-MAS"})
     digest = hashlib.sha256()
@@ -1190,6 +1205,12 @@ def _download_wheel(
         with _build_opener(proxy_url, link.url).open(
             request, timeout=timeout
         ) as response:
+            total: int | None = None
+            try:
+                total = int(response.headers.get("Content-Length") or 0) or None
+            except (AttributeError, TypeError, ValueError):
+                total = None
+            next_report = _DOWNLOAD_PROGRESS_STEP_BYTES
             with destination.open("wb") as stream:
                 while True:
                     if check_cancelled is not None:
@@ -1199,9 +1220,16 @@ def _download_wheel(
                         break
                     written += len(chunk)
                     if written > _MAX_WHEEL_BYTES:
-                        raise MaaFWBindingError("wheel 响应体超过大小上限")
+                        raise MaaFWBindingDownloadError("wheel 响应体超过大小上限")
                     digest.update(chunk)
                     stream.write(chunk)
+                    if log is not None and written >= next_report:
+                        next_report = written + _DOWNLOAD_PROGRESS_STEP_BYTES
+                        log(
+                            f"[MaaFW Runtime Pool] 正在下载 {label}: "
+                            f"{_format_megabytes(written)}"
+                            + (f" / {_format_megabytes(total)}" if total else "")
+                        )
     except urllib.error.HTTPError as exc:
         raise MaaFWBindingNetworkError(
             f"下载 wheel 失败: HTTP {exc.code} {link.url}"
@@ -1210,13 +1238,13 @@ def _download_wheel(
         # 索引已经说了有这个版本，下载不下来就是网络问题，不是「没有」
         raise MaaFWBindingNetworkError(f"下载 wheel 失败: {link.url}: {exc}") from exc
     if written == 0:
-        raise MaaFWBindingError("wheel 响应体为空")
+        raise MaaFWBindingDownloadError("wheel 响应体为空")
     if link.sha256 and digest.hexdigest() != link.sha256:
-        raise MaaFWBindingError(
+        raise MaaFWBindingDownloadError(
             f"wheel 校验失败: 索引声明 sha256={link.sha256[:12]}…，实际 {digest.hexdigest()[:12]}…"
         )
     if not zipfile.is_zipfile(destination):
-        raise MaaFWBindingError("wheel 响应不是 zip 文件")
+        raise MaaFWBindingDownloadError("wheel 响应不是 zip 文件")
 
 
 # ---------------------------------------------------------------------------
@@ -1372,7 +1400,8 @@ def ensure_binding(
     命中 → 刷新 ``lastUsedAt`` 返回（收割来的、还没自检过的 binding 在这里补一次
     自检，过了把清单标成已自检，不过就当没有重建）。未命中：离线直接报错；否则按
     索引候选找官方 wheel（任一候选给出「索引可达但没有这个版本」的确定结论就改走
-    tag 源码；全部不可达才报网络错误）。源码 binding 没有 DLL，``native_needed`` 时
+    tag 源码；全部不可达才报网络错误；列出了版本、文件却下载失败或校验不过的换下一个
+    候选，都失败报下载失败、不走源码）。源码 binding 没有 DLL，``native_needed`` 时
     拒绝。binding 已在、只缺 native 时只补 native，不动正被 worker 用着的 binding 目录。
 
     池锁只包住「命中判定」与「换入」两段；下载 / 铺目录 / 自检要几十秒到几分钟，
@@ -1480,6 +1509,9 @@ def _fetch_and_install(
     tag_platform = wheel_platform_tag()
     failures: list[str] = []
     definite_missing = False
+    # 索引列出了这个版本、文件却没下下来（镜像「索引先到、文件 404」、断流、sha 不符）：
+    # 换下一个候选，与 uv 装 base 时的候选轮换同一口径。自检、铺目录这类本地失败不换。
+    download_errors: list[MaaFWBindingError] = []
     for index in index_candidates or (DEFAULT_PACKAGE_INDEX,):
         if check_cancelled is not None:
             check_cancelled()
@@ -1495,17 +1527,38 @@ def _fetch_and_install(
             definite_missing = True
             continue
         log(f"[MaaFW Runtime Pool] 下载 maafw {version} binding: {link.url}")
-        return _install_from_wheel_link(
-            pool_root,
-            version,
-            link,
-            source=f"pypi:{index}",
-            native_needed=native_needed,
-            base_python=base_python,
-            proxy_url=proxy_url,
-            check_cancelled=check_cancelled,
-            existing=existing,
-        )
+        try:
+            return _install_from_wheel_link(
+                pool_root,
+                version,
+                link,
+                source=f"pypi:{index}",
+                native_needed=native_needed,
+                base_python=base_python,
+                proxy_url=proxy_url,
+                check_cancelled=check_cancelled,
+                existing=existing,
+                log=log,
+            )
+        except (MaaFWBindingNetworkError, MaaFWBindingDownloadError) as exc:
+            download_errors.append(exc)
+            log(
+                f"[MaaFW Runtime Pool] 从 {index} 下载 maafw {version} binding 失败，"
+                f"换下一个索引: {exc}"
+            )
+            continue
+    if download_errors:
+        # 有索引确实列出了这个版本：结论是「下载失败」，不是「没有这个版本」，别去走源码兜底。
+        if len(download_errors) == 1:
+            raise download_errors[0]
+        detail = "; ".join(str(item) for item in download_errors)
+        if all(isinstance(item, MaaFWBindingNetworkError) for item in download_errors):
+            raise MaaFWBindingNetworkError(
+                f"所有列出 maafw {version} 的索引都下载失败: {detail}"
+            ) from download_errors[-1]
+        raise MaaFWBindingDownloadError(
+            f"所有列出 maafw {version} 的索引都下载失败: {detail}"
+        ) from download_errors[-1]
     if not definite_missing:
         raise MaaFWBindingNetworkError(
             f"所有包索引都连不上，无法下载 maafw {version}: " + "; ".join(failures)
@@ -1546,6 +1599,7 @@ def _install_from_wheel_link(
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
     existing: BindingInfo | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> BindingInfo:
     staging = _staging_root(pool_root)
     staging.mkdir(parents=True, exist_ok=True)
@@ -1570,7 +1624,12 @@ def _install_from_wheel_link(
             _new_staging_dir(pool_root, "native", version) if native_needed else None
         )
         _download_wheel(
-            link, wheel_path, proxy_url=proxy_url, check_cancelled=check_cancelled
+            link,
+            wheel_path,
+            proxy_url=proxy_url,
+            check_cancelled=check_cancelled,
+            log=log,
+            label=f"maafw {version} binding",
         )
         metadata_version, requires, dll_sha256 = _lay_out_binding_from_wheel(
             wheel_path, binding_stage, native_stage
@@ -1911,6 +1970,7 @@ __all__ = [
     "PYCACHE_DIRECTORY_NAME",
     "BindingInfo",
     "IndexPage",
+    "MaaFWBindingDownloadError",
     "MaaFWBindingError",
     "MaaFWBindingNetworkError",
     "MaaFWBindingUnavailableError",
