@@ -63,6 +63,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     effective_channel,
     embedded_project_dir,
     embedded_status,
+    follow_source_channel,
     follow_source_enabled,
     follow_source_switch_on,
     import_channel,
@@ -71,6 +72,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     is_source_form,
     read_interface_version,
     read_view_marker,
+    resolve_view_payload,
 )
 from app.task.MaaFW.tools.embedded.flavor import (
     decide_project_config_class,
@@ -85,7 +87,7 @@ from app.task.MaaFW.tools.embedded.project_path import (
     try_reserve_project_path,
 )
 
-EMBEDDED_SCRIPT_BUSY = "脚本正在运行，运行结束后再操作内嵌"
+EMBEDDED_SCRIPT_BUSY = "脚本正在运行，请等运行结束后再导入项目"
 EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
 
 
@@ -374,17 +376,26 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     if busy := _embedded_busy_reason(script_config):
         return MaaFWApiReply.error(400, busy)
     source = str(source_path or "").strip()
+    # 同一个端点也承担第一次导入：没导入过就不说「重新」。前缀只加这一层，内层的
+    # 「导入失败：」去掉（见 _import_failure_reason）
+    failure_prefix = (
+        "重新导入失败："
+        if str(script_config.get("Embedded", "ImportedAt") or "").strip()
+        else "导入失败："
+    )
     # 来源最后要写进 Info.Path，先按它的校验器过一遍（系统目录、AUTO-MAS 自己的目录不收）：
     # 拖到复制之后才发现，副本已经换成新项目、来源却写不进去，端点还会直接 500。
     # 校验要碰磁盘（is_dir / resolve），来源在慢网络盘上时别卡住事件循环
     if path_error := await asyncio.to_thread(_source_path_error, script_config, source):
-        return MaaFWApiReply.error(400, f"重新导入失败: {path_error}")
+        return MaaFWApiReply.error(400, f"{failure_prefix}{path_error}")
     copy_dir = embedded_project_dir(script_id)
     # 换树前记下旧副本钉定的 maafw 版本：重导后版本换了，旧 binding 不必再等宽限
     previous_version = await _previous_maafw_version(copy_dir)
     _failed, error = await _embed_from_source(script_id, source)
     if error:
-        return MaaFWApiReply.error(400, f"重新导入失败: {error}")
+        return MaaFWApiReply.error(
+            400, f"{failure_prefix}{_import_failure_reason(error)}"
+        )
     # 导入成功才把来源写进 Info.Path：失败时旧副本与旧来源都原样不动。
     await Config.update_script(script_id, {"Info": {"Path": source}})
     _reconcile_pool_after_copy_change("reimport", copy_dir, previous_version)
@@ -445,7 +456,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
             )
         )
         publish("imported", "failed", str(exc), None)
-        return MaaFWApiReply.error(400, f"同步失败：{exc}")
+        return MaaFWApiReply.error(400, f"同步失败：{_import_failure_reason(str(exc))}")
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
         logger.opt(exception=True).warning(
             mask_home_path(
@@ -481,14 +492,46 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
 
 
 def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | None:
-    """这个来源能不能写进 Info.Path；不能就给出校验器的原话。"""
+    """这个来源能不能写进 Info.Path；不能就说清楚为什么、该怎么改。"""
 
     try:
         script_config.Info_Path.validator.correct(source)
     # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
     except (ValueError, RuntimeError) as exc:
-        return str(exc)
+        return _describe_source_path_error(source, str(exc))
     return None
+
+
+def _describe_source_path_error(source: str, raw: str) -> str:
+    """校验器的原话是给配置项写的（「项目根目录」指 AUTO-MAS 自己的目录），换成导入时的说法。"""
+
+    if "驱动器根目录" in raw:
+        return (
+            "不能直接选择驱动器根目录，请选择解压后直接包含 interface.json 的那一层目录"
+        )
+    try:
+        resolved = Path(source).resolve()
+        install = Path.cwd().resolve()
+        if (
+            resolved == install
+            or resolved.is_relative_to(install)
+            or install.is_relative_to(resolved)
+        ):
+            return (
+                "项目目录不能放在 AUTO-MAS 的安装目录里，也不能是它的上层目录；"
+                "请把项目移到别处后再选择"
+            )
+    except (OSError, ValueError, RuntimeError):
+        pass
+    if "系统" in raw:
+        return "不能选择系统目录，请把项目放到普通目录后再选择"
+    return raw
+
+
+def _import_failure_reason(error: str) -> str:
+    """导入失败的原因去掉内层已有的「导入失败：」，外层只留一层前缀。"""
+
+    return error.strip().removeprefix("导入失败：").strip() or error
 
 
 async def _previous_maafw_version(copy_dir: Path) -> str | None:
@@ -667,24 +710,35 @@ async def list_embedded_sources(excluded_script_id: str | None) -> MaaFWApiReply
     """``/maafw/embedded/sources``：有健康副本的 MFW / M9A 脚本，排除 ``excluded_script_id``。"""
 
     excluded = str(excluded_script_id or "").strip()
+    # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞上整表重载）：这里先抄出要的
+    # 字段，线程里只碰盘
+    candidates = [
+        (
+            str(uid),
+            str(config.get("Info", "Name") or ""),
+            type(config).__name__.removesuffix("Config"),
+            bool(getattr(config, "is_locked", False)),
+        )
+        for uid, config in Config.ScriptConfig.items()
+        if str(uid) != excluded and isinstance(config, RuntimeMaaFWConfig)
+    ]
 
     def _collect() -> list[MaaFWEmbeddedSourceItem]:
         items: list[MaaFWEmbeddedSourceItem] = []
-        for uid, config in Config.ScriptConfig.items():
-            script_id = str(uid)
-            if script_id == excluded or not isinstance(config, RuntimeMaaFWConfig):
-                continue
+        for script_id, name, type_name, locked in candidates:
             if not copy_is_healthy(embedded_project_dir(script_id)):
                 continue
             project_name, version = _embedded_source_project(script_id)
             items.append(
                 MaaFWEmbeddedSourceItem(
                     scriptId=script_id,
-                    name=str(config.get("Info", "Name") or ""),
-                    type=type(config).__name__.removesuffix("Config"),
+                    name=name,
+                    type=type_name,
                     projectName=project_name,
                     version=version,
-                    busy=bool(getattr(config, "is_locked", False)),
+                    # 从载荷复用不读源视图，源在运行也照样能建；只有还没采纳的老副本要按目录
+                    # 克隆、得拿到源的预约，那时源在运行才真的复用不了
+                    busy=locked and resolve_view_payload(script_id) is None,
                 )
             )
         return items
@@ -696,8 +750,11 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     """``/maafw/embedded/clone``：从源脚本挂着的载荷物化本脚本的视图。
 
     载荷 + 视图口径：新视图从源脚本挂着的载荷物化（大文件与载荷共用，源的运行期状态
-    不带），源脚本运行中也能建，只预约目标。``Info.Path`` 与 ``Embedded.*`` 沿用源脚本
-    的记录；类型随项目（M9A 项目 → M9A）。
+    不带），源脚本运行中也能建，只预约目标。``Info.Path``、``Embedded.*`` 与
+    ``Update.Channel`` 沿用源脚本的记录（复用就是用源那一版：渠道不跟着走的话，新脚本留在
+    默认渠道，第一次运行前的组同步会把它切到那个渠道的版本）；类型随项目（M9A 项目 → M9A）。
+
+    失败时的 ``message`` 只给原因：前端把它接在「复用项目失败：」后面、再告诉用户去引导页选目录。
     """
 
     try:
@@ -706,9 +763,10 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
     if script_id == source_script_id:
-        return MaaFWApiReply.error(400, "不能从脚本自己克隆")
+        return MaaFWApiReply.error(400, "不能复用脚本自己的项目")
     if busy := _embedded_busy_reason(script_config):
         return MaaFWApiReply.error(400, busy)
+    source_channel = str(source_config.get("Update", "Channel") or "stable")
 
     target_dir = embedded_project_dir(script_id)
     # 老脚本换项目：目标原有副本钉定的版本在克隆后可能就没人用了
@@ -728,26 +786,28 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 lambda: clone_embedded_copy(
                     source_script_id,
                     script_id,
-                    group_channel=str(
-                        source_config.get("Update", "Channel") or "stable"
-                    ),
+                    group_channel=source_channel,
                     source_form=is_source_form(source_config),
                 )
             )
         except FollowSourceCloneUnavailable as exc:
             # 组里还没有正式版本：与关掉开发者模式时同一条退路，按源脚本的来源目录正常导入
-            # （进目标自己的组）；来源目录也不在就拒绝，不拿开发者载荷顶替。
+            # （进源原渠道的组，目标随后也记成这个渠道）；来源目录也不在就拒绝，不拿开发者载荷顶替。
             if not source_path or not await asyncio.to_thread(
                 lambda: Path(source_path).is_dir()
             ):
                 raise EmbeddedProjectError(
-                    f"{exc}，源脚本的来源目录也不在；请给这个脚本直接选择项目目录"
+                    f"{exc}，所选脚本的来源目录也不在了"
                 ) from exc
             imported = await asyncio.to_thread(
                 import_embedded_project,
                 script_id,
                 source_path,
-                channel=import_channel(script_id, script_config),
+                channel=(
+                    follow_source_channel(script_id)
+                    if follow_source_switch_on(script_config)
+                    else source_channel
+                ),
                 follow_source=follow_source_switch_on(script_config),
             )
             cloned = True
@@ -759,7 +819,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 )
             )
         )
-        return MaaFWApiReply.error(400, f"克隆失败: {exc}")
+        return MaaFWApiReply.error(400, _import_failure_reason(str(exc)))
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
         logger.opt(exception=True).warning(
             mask_home_path(
@@ -769,11 +829,11 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 )
             )
         )
-        return MaaFWApiReply.error(400, f"克隆失败: {type(exc).__name__}: {exc}")
+        return MaaFWApiReply.error(400, f"{type(exc).__name__}: {exc}")
     finally:
         await release_project_path(target_reservation)
     if not cloned:
-        return MaaFWApiReply.error(400, "源脚本没有可用的副本，先在它那边导入项目")
+        return MaaFWApiReply.error(400, "所选脚本的项目文件已不可用")
 
     inherited = imported or inherit_embedded_record(source_config, script_id)
     await Config.update_script(
@@ -785,6 +845,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 "SourceVersion": inherited["sourceVersion"],
                 "ImportedAt": inherited["importedAt"],
             },
+            # 复用的是源那一版：渠道不跟着走，第一次运行前的组同步会把它切到默认渠道的版本
+            "Update": {"Channel": source_channel},
         },
     )
     await _apply_project_flavor(script_id)

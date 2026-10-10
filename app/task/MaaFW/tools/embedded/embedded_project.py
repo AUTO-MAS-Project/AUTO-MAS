@@ -81,6 +81,7 @@ from app.task.MaaFW.tools.core.project_update.projection import (
     ProjectionError,
     ProjectionPlan,
     build_projection_plan,
+    discover_project_interface,
     is_shared_path,
     read_json_object,
 )
@@ -1427,14 +1428,20 @@ def import_embedded_project(
 
     source = Path(str(source_path or "").strip())
     if not source.is_absolute() or not source.is_dir():
-        raise EmbeddedProjectError(
-            "来源目录不存在或不是绝对路径，请先在项目路径里选一个 MFW 项目目录"
-        )
+        raise EmbeddedProjectError("来源目录不存在或不是绝对路径，请重新选择项目目录")
     source = source.resolve()
     final_dir = embedded_project_dir(script_id, base)
     root = embedded_projects_root(base)
     if _is_relative_to(source, root):
-        raise EmbeddedProjectError("来源目录不能是内嵌副本自己")
+        raise EmbeddedProjectError(
+            "来源目录不能是 AUTO-MAS 里的项目副本，请选择原来的项目目录"
+        )
+    if not follow_source and _journal_path(final_dir.name, base).exists():
+        # 换视图那一步才会撞上它，而那时载荷已经登记、组的 latest 已经推进：用户看到导入
+        # 失败，同组兄弟却会在下次运行前切到这一版。在登记之前就拒绝。
+        raise EmbeddedProjectError(
+            "该脚本的项目上一次切换版本还没收尾，请重启 AUTO-MAS 后再试"
+        )
 
     try:
         if plan is None:
@@ -1447,7 +1454,9 @@ def import_embedded_project(
         )
         lineage = payloads.lineage_key(interface)
     except ProjectionError as exc:
-        raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+        raise EmbeddedProjectError(
+            f"导入失败：{_describe_projection_failure(source, exc)}"
+        ) from exc
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     if plan.rules.source_layout:
@@ -1549,15 +1558,26 @@ def import_embedded_project(
             from_payload=registered.target_id,
         )
     else:
-        view_result = _realize_view(
-            final_dir,
-            lineage,
-            registered.target_id,
-            base=base,
-            carry=True,
-            seed_private=_runtime_state_seed(plan),
-            follow_source=follow_record,
-        )
+        try:
+            view_result = _realize_view(
+                final_dir,
+                lineage,
+                registered.target_id,
+                base=base,
+                carry=True,
+                seed_private=_runtime_state_seed(plan),
+                follow_source=follow_record,
+            )
+        except Exception as exc:
+            if not registered.advanced or follow_source:
+                raise
+            # 登记就是提交点：组的 latest 已经推进，换不进本视图也收不回来。别让用户以为
+            # 「什么都没变」——同组空闲的兄弟下次运行前会切到这一版。
+            raise EmbeddedProjectError(
+                f"导入失败：{_describe_source_failure(exc)}。新版本 "
+                f"{registered.manifest.get('version') or registered.payload_id} 已经登记，"
+                "同项目同渠道的其他脚本下次运行时会切换到它"
+            ) from exc
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
         more = " ..." if len(view_result.seeded) > 10 else ""
@@ -1779,8 +1799,9 @@ def _clone_legacy_copy(
     # 读到的是半截状态。拿不到源的预约就不克隆（载荷路径不读源视图，不需要这一步）。
     source_key = try_reserve_project_path_sync(source_dir)
     if source_key is None:
+        # 复用入口只在新建对话框里，失败后这个脚本已经建好、没法再复用，别让用户「稍后再试」
         raise EmbeddedProjectError(
-            "源脚本的项目副本正被占用（运行 / 更新 / 准备环境），请稍后再试"
+            "所选脚本正在运行、更新或准备运行环境，这时复用不了它的项目"
         )
     try:
         return _clone_legacy_copy_locked(source_script_id, target_script_id, base)
@@ -2476,6 +2497,18 @@ def _describe_source_failure(exc: BaseException) -> str:
     if isinstance(exc, (ProjectionError, EmbeddedProjectError, payloads.PayloadError)):
         return text or type(exc).__name__
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _describe_projection_failure(source: Path, exc: ProjectionError) -> str:
+    """导入时投影失败给用户的原因：最常见的是选错了层级（选成了解压包的外层目录）。"""
+
+    try:
+        discover_project_interface(source)
+    except ProjectionError:
+        return "所选目录里没有 interface.json，请选择解压后直接包含 interface.json 的那一层目录"
+    except OSError:
+        pass
+    return str(exc)
 
 
 def _keep_last_follow_source_sync(
