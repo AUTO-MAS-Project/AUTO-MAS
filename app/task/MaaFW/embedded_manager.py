@@ -69,6 +69,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     switch_or_confirm_in_progress,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    is_project_updating,
     release_project_path,
     try_reserve_project_path,
 )
@@ -438,7 +439,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # runner_task 里各报一遍「同一路径正在运行或更新」。
                 return "正在切换版本，已跳过本次启动"
             if not resolve_maafw_project_root(script_id, script_config).is_dir():
-                return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
+                # 与 runner_task 逐用户那两句同一口径
+                if is_project_updating(embedded_project_dir(script_id)):
+                    return "项目正在更新，已跳过本次运行"
+                return (
+                    "项目正被编辑页的准备运行环境、导入或另一次运行占用，已跳过本次运行"
+                )
             rebuilt = None
         else:
             try:
