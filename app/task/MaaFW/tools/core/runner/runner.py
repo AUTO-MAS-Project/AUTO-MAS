@@ -32,7 +32,7 @@ import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, TextIO
+from typing import Any, BinaryIO, Callable, Literal, TextIO
 
 import maa as maa_package
 import numpy as np
@@ -301,6 +301,9 @@ TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
 # （task_id=0）。生产上 M9A 均衡刷停下要 0.1~0.3 秒，按 0.1 秒投递三次超时两次被拒。
 TASK_STOP_SETTLE_SECONDS = 60.0
 TASK_STOP_SETTLE_POLL_SECONDS = 0.05
+# 收尾任务（nonFatalMessage）被我们自己停下（单任务时限、原地打转）之后，最多等这么久
+# 看脚本侧是不是也强停了：MaaTaskerPostStop 的通知比 job.wait() 返回晚到（实测约 19ms）。
+NONFATAL_SCRIPT_STOP_NOTICE_SECONDS = 0.2
 # 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
 # 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
 LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
@@ -1247,8 +1250,13 @@ class MaaFWRunner:
         except Exception as exc:
             self.send_log(f"超时停止 MaaFW tasker 失败: {exc}")
 
-    def _handle_task_deadline(self, task: MaaFWTaskRunPlan, index: int) -> bool:
-        """本任务被单任务时限停掉时收尾；返回 True 让调用方跳到下一个任务。
+    def _handle_task_deadline(
+        self, task: MaaFWTaskRunPlan, index: int
+    ) -> Literal["next", "skip_rest"] | None:
+        """本任务被单任务时限停掉时收尾。
+
+        返回 None 表示没超时；``"next"`` 让调用方跳到下一个任务；``"skip_rest"`` 让调用方
+        结束本轮（不计入失败）。
 
         计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
         第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
@@ -1256,14 +1264,15 @@ class MaaFWRunner:
 
         特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
         报它声明的那句话。特调声明的收尾任务（``nonFatalMessage``，如 M9A 的关闭游戏）
-        超时只截图、记一行，不计入本轮失败。
+        超时只截图、记一行，不计入本轮失败；停下时恰好又被脚本侧强停，就跳过本轮剩余
+        任务（``_nonfatal_script_stopped``），同样不计入失败。
 
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
         """
 
         if not self._task_deadline_hit.is_set():
-            return False
+            return None
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
@@ -1281,13 +1290,17 @@ class MaaFWRunner:
                     f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
                     f"{display_name}"
                 )
+            if has_next and self._nonfatal_script_stopped(
+                task, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            ):
+                return "skip_rest"
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
             stopped = "已停止并继续后续任务" if has_next else "已停止"
             self.send_log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），{stopped}: "
                 f"{display_name}；{task.nonFatalMessage}"
             )
-            return True
+            return "next"
         if index == 0 or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             if task.abortRoundMessage:
@@ -1312,6 +1325,35 @@ class MaaFWRunner:
             self.send_log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
             )
+        return "next"
+
+    def _nonfatal_script_stopped(self, task: MaaFWTaskRunPlan, reason: str) -> bool:
+        """收尾任务被我们自己停下（单任务时限、原地打转）时，脚本侧是不是也强停了。
+
+        是的话记两行（我们停下的原因、脚本侧强停跳过剩余任务）并返回 True，调用方结束
+        本轮、不计入失败——与没超时时被脚本侧强停同一口径。
+
+        只看 ``_external_stop_seen``，不能用 ``_external_stop_active``：它会同步查
+        ``tasker.stopping``，而我们自己的 post_stop 同样让它为 true，自停会被当成外停。
+        事件标志靠 ``_post_self_stop`` 的记账区分两者：自己发的停止先计数，通知来了抵掉，
+        抵不掉的才是脚本侧的。调用前我们自己的那次 post_stop 必须已返回（已计数）。通知
+        比 job.wait() 晚到，所以最多等 ``NONFATAL_SCRIPT_STOP_NOTICE_SECONDS``。
+        """
+
+        if self._stop_requested.is_set():
+            return False
+        if not self._external_stop_seen.wait(
+            timeout=NONFATAL_SCRIPT_STOP_NOTICE_SECONDS
+        ):
+            return False
+        if self._stop_requested.is_set():
+            return False
+        display_name = _task_display_name(task)
+        self.send_log(f"{reason}，已停止: {display_name}")
+        self.send_log(
+            f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+            f"{display_name}；{task.nonFatalMessage}"
+        )
         return True
 
     def _wait_task_deadline_stop(self) -> bool:
@@ -1341,11 +1383,14 @@ class MaaFWRunner:
             if self._stop_requested.wait(timeout=TASK_STOP_SETTLE_POLL_SECONDS):
                 raise RuntimeError("MaaFW 任务已停止")
 
-    def _handle_loop_guard(self, task: MaaFWTaskRunPlan, index: int) -> bool:
-        """本任务被原地打转检测停掉时收尾；返回 True 让调用方跳到下一个任务。
+    def _handle_loop_guard(
+        self, task: MaaFWTaskRunPlan, index: int
+    ) -> Literal["next", "skip_rest"] | None:
+        """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
 
         口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
-        任务（``abortRoundMessage``）结束本轮，其余记一条任务失败再继续。必须早于
+        任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
+        又被脚本侧强停时跳过剩余任务），其余记一条任务失败再继续。必须早于
         ``_external_stop_active``：停止是我们自己 post_stop 的，tasker 的 stopping 会置位，
         晚了就被当成脚本侧强停、跳过本轮剩余任务。
         """
@@ -1354,7 +1399,7 @@ class MaaFWRunner:
             hit = self._loop_guard_hit
             self._loop_guard_hit = None
         if hit is None:
-            return False
+            return None
         self._join_loop_guard_stop()
         _, verdict = hit
         self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
@@ -1362,14 +1407,15 @@ class MaaFWRunner:
         display_name = _task_display_name(task)
         if task.nonFatalMessage:
             self._raise_if_game_launch_failed(display_name, reason)
+            has_next = index + 1 < len(self.plan.tasks)
+            if has_next and self._nonfatal_script_stopped(task, reason):
+                return "skip_rest"
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
-            stopped = (
-                "已停止并继续后续任务" if index + 1 < len(self.plan.tasks) else "已停止"
-            )
+            stopped = "已停止并继续后续任务" if has_next else "已停止"
             self.send_log(
                 f"{reason}，{stopped}: {display_name}；{task.nonFatalMessage}"
             )
-            return True
+            return "next"
         if index == 0 or task.abortRoundMessage:
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
@@ -1379,7 +1425,7 @@ class MaaFWRunner:
             self.send_log(f"{reason}，已停止并继续后续任务: {display_name}")
         else:
             self.send_log(f"{reason}，已停止: {display_name}")
-        return True
+        return "next"
 
     def _raise_if_game_launch_failed(
         self,
@@ -2893,11 +2939,15 @@ class MaaFWRunner:
                 self._raise_if_deadline_hit(task.name, only_if_stopped=True)
                 # 单任务时限到了同样是 post_stop 打断的返回，要早于普通失败判定，
                 # 否则用户看到的是「任务失败」而不是「超时」。
-                if self._handle_task_deadline(task, index):
+                if handled := self._handle_task_deadline(task, index):
+                    if handled == "skip_rest":
+                        break
                     time.sleep(0.1)
                     continue
                 # 原地打转检测的停止同样是我们自己 post_stop 的，同一个位置收尾。
-                if self._handle_loop_guard(task, index):
+                if handled := self._handle_loop_guard(task, index):
+                    if handled == "skip_rest":
+                        break
                     time.sleep(0.1)
                     continue
                 message = str(exc)
@@ -2949,10 +2999,14 @@ class MaaFWRunner:
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # 被单任务时限 post_stop 打断的入口也可能回报成功，同样要早于
             # _external_stop_active（我们自己的强停会把 stopping 置位）。
-            if self._handle_task_deadline(task, index):
+            if handled := self._handle_task_deadline(task, index):
+                if handled == "skip_rest":
+                    break
                 time.sleep(0.1)
                 continue
-            if self._handle_loop_guard(task, index):
+            if handled := self._handle_loop_guard(task, index):
+                if handled == "skip_rest":
+                    break
                 time.sleep(0.1)
                 continue
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
