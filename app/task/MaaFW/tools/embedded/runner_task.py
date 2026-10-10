@@ -3107,7 +3107,31 @@ def _maafw_runner_jobs_dir() -> Path:
 
     new_dir = Path.cwd() / "data" / "maafw_runner_jobs"
     migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
+    _sweep_stale_runner_jobs(new_dir)
     return new_dir
+
+
+# worker 读完 job 就删，正常情况下 job 文件只在盘上待几秒；超过这么久还在的，
+# 是宿主与 worker 一起被硬杀（断电、蓝屏、结束进程树）留下的。
+_STALE_RUNNER_JOB_SECONDS = 3600.0
+
+
+def _sweep_stale_runner_jobs(directory: Path) -> None:
+    """删掉上次异常退出残留的 job 文件：里面可能有解密后的密码选项。"""
+
+    try:
+        candidates = list(directory.glob("maafw-runner-job-*.json"))
+    except OSError:
+        return
+    now = time.time()
+    for path in candidates:
+        try:
+            if now - path.stat().st_mtime < _STALE_RUNNER_JOB_SECONDS:
+                continue
+            path.unlink()
+        except OSError:
+            continue
+        logger.info(f"已清理残留的 MaaFW job 文件: {path.name}")
 
 
 def _find_controller(
