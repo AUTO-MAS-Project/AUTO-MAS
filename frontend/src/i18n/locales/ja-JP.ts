@@ -2188,6 +2188,7 @@ export default {
     maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
+    maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',

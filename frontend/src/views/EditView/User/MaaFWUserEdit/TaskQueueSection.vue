@@ -291,7 +291,9 @@
               <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
             </div>
           </div>
+          <!-- 按选中的实例重建：搜索词与没提交的草稿不带到下一个任务 -->
           <MaaFWTaskOptionEditor
+            :key="selectedTaskId"
             :option-names="getTaskOptionNames(selectedTask)"
             :options="previewData.options"
             :task-options="taskSnapshot.taskOptions[selectedTaskId] || {}"
