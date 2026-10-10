@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { GetService, UpdateService } from '@/api'
 import { navigateTo } from '@/router'
 import { useMysteryStore } from '@/stores/mystery'
 
@@ -32,6 +33,48 @@ const back = () => {
 
 const openTokens = () => navigateTo('/settings/mystery/tokens')
 
+// 「并非神秘入口」：个人版 MaaStellaSora 的专属编排开关（Function.IfPersonalMss）。
+// 启用不另设密码——神秘入口自己的密钥门槛就是防手滑的那道门。
+const personalMssEnabled = ref(false)
+const personalMssSaving = ref(false)
+
+const loadPersonalMss = async () => {
+  try {
+    const response = await GetService.getScriptsApiSettingGetPost()
+    if (response.code !== 200) return
+    personalMssEnabled.value = response.data?.Function?.IfPersonalMss === true
+  } catch {
+    // 读不到就按关闭显示：这是展示位上的开关，后端一时拿不到不该拦住解锁流程
+    personalMssEnabled.value = false
+  }
+}
+
+const savePersonalMss = async (enabled: boolean) => {
+  personalMssSaving.value = true
+  try {
+    const response = await UpdateService.updateScriptApiSettingUpdatePost({
+      data: { Function: { IfPersonalMss: enabled } },
+    })
+    if (response.code !== 200) {
+      message.error(t('mystery.personalMss.failed'))
+      return
+    }
+    personalMssEnabled.value = enabled
+    message.success(t(enabled ? 'mystery.personalMss.on' : 'mystery.personalMss.off'))
+  } catch {
+    message.error(t('mystery.personalMss.failed'))
+  } finally {
+    personalMssSaving.value = false
+  }
+}
+
+const handlePersonalMssToggle = async (checked: boolean | string | number) => {
+  const next = checked === true
+  // 值没变就别写：开关的 onChange 不保证只在用户改过时才来
+  if (next === personalMssEnabled.value) return
+  await savePersonalMss(next)
+}
+
 const load = async () => {
   loadFailed.value = false
   try {
@@ -44,6 +87,7 @@ const load = async () => {
 
 onMounted(() => {
   void load()
+  void loadPersonalMss()
 })
 
 const unlock = async () => {
@@ -138,6 +182,19 @@ const lock = async () => {
             {{ t('mystery.tokens.entryDescription') }}
           </a-card>
         </a-col>
+        <a-col :xs="24" :sm="12" :lg="8">
+          <a-card :title="t('mystery.personalMss.title')" :aria-label="t('mystery.personalMss.title')">
+            {{ t('mystery.personalMss.hint') }}
+            <div class="personal-mss-switch">
+              <a-switch
+                :checked="personalMssEnabled"
+                :loading="personalMssSaving"
+                :aria-label="t('mystery.personalMss.title')"
+                @change="handlePersonalMssToggle"
+              />
+            </div>
+          </a-card>
+        </a-col>
       </a-row>
     </div>
   </div>
@@ -199,5 +256,9 @@ const lock = async () => {
   min-height: 224px;
   display: grid;
   place-items: center;
+}
+
+.personal-mss-switch {
+  margin-top: 16px;
 }
 </style>
