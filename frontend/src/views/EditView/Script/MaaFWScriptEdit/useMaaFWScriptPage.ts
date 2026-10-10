@@ -151,7 +151,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
     { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
     { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
-    { label: t('edit.import2'), value: previewData.value?.importCount ?? 0 },
+    { label: t('edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
     { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
   ])
 

@@ -50,7 +50,7 @@
                 <template #icon>
                   <FolderOpenOutlined />
                 </template>
-                {{ t('edit.pickLocalDirectory') }}
+                {{ t('edit.pickProjectDirectory') }}
               </a-button>
             </a-tooltip>
           </a-input-group>
@@ -84,13 +84,18 @@
           :disabled="sourceForm || interfaceLoading || updateApplying || embeddedBusy"
           @change="handleFollowSourceChange"
         />
-        <span class="follow-source-title">{{ t('edit.maafwFollowSource') }}</span>
+        <!-- 说明只在问号里（源码形态换成源码形态那句），开关下面不留说明行 -->
+        <a-tooltip
+          :title="sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint')"
+        >
+          <span class="form-label">
+            {{ t('edit.maafwFollowSource') }}
+            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+          </span>
+        </a-tooltip>
         <a-tag v-if="sourceForm" color="processing" class="follow-source-tag">
           {{ t('edit.maafwSourceFormTag') }}
         </a-tag>
-      </div>
-      <div class="follow-source-hint">
-        {{ sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint') }}
       </div>
       <div v-if="followSource" class="follow-source-status">
         <span>{{ followSourceStatus }}</span>
@@ -116,11 +121,9 @@
         <template #title>
           <div class="interface-table-head">
             <span class="interface-table-title">{{ previewProjectTitle }}</span>
-            <span v-if="previewData.project.version" class="interface-table-subtitle">
-              {{ previewData.project.version }}
-              <template v-if="previewData.project?.description">
-                · {{ previewData.project.description }}
-              </template>
+            <!-- 版本与简介各自有就显示：没写 version 的老项目照样显示简介 -->
+            <span v-if="projectSubtitle" class="interface-table-subtitle">
+              {{ projectSubtitle }}
             </span>
           </div>
         </template>
@@ -324,13 +327,38 @@ const envPhaseLabel = computed(() => {
   }
 })
 
+// 表头副标题：版本 · 简介，哪个没有就省掉哪个
+const projectSubtitle = computed(() => {
+  const project = props.previewData?.project
+  return [project?.version, project?.description]
+    .map(value => value?.trim())
+    .filter(Boolean)
+    .join(' · ')
+})
+
+// Agent 运行时类型（后端的内部枚举）→ 给人看的叫法；不认识的值原样显示
+const RUNTIME_KIND_LABEL_KEYS: Record<string, string> = {
+  isolated_venv: 'edit.envRuntimeIsolatedVenv',
+  project_python: 'edit.envRuntimeProjectPython',
+  project_binary: 'edit.envRuntimeProjectBinary',
+  shared_runtime: 'edit.envRuntimeSharedRuntime',
+  external: 'edit.envRuntimeExternal',
+}
+const runtimeKindLabel = (kind: string | null | undefined) => {
+  if (!kind) return t('common.unknown')
+  const key = RUNTIME_KIND_LABEL_KEYS[kind]
+  return key ? t(key) : kind
+}
+
 // 整行一个颜色：状态词 · MaaFramework 版本 · 已就绪的 Agent；失败时后端那句原因就是整行
 const envStatusText = computed(() => {
   if (envTone.value === 'failed') return props.envMessage || envPhaseLabel.value
   const parts: string[] = [envPhaseLabel.value]
   if (props.envMessage) parts.push(props.envMessage)
   if (envTone.value === 'success' && props.envAgents.length) {
-    const agents = props.envAgents.map(a => a.runtimeKind || t('common.unknown')).join('、')
+    const agents = [...new Set(props.envAgents.map(a => runtimeKindLabel(a.runtimeKind)))].join(
+      t('edit.maafwListSeparator')
+    )
     parts.push(`${t('edit.envReadyAgents')}: ${agents}`)
   }
   return parts.filter(Boolean).join('  ·  ')
@@ -398,17 +426,6 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.follow-source-title {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.follow-source-hint {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ant-color-text-tertiary);
 }
 
 .follow-source-status {
