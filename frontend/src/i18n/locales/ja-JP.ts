@@ -1474,6 +1474,14 @@ export default {
     whichPlatformGameRuns: 'ゲームを動かすプラットフォーム',
     gameUpdate: 'ゲームの更新',
     gameUpdateTimeoutMinutes: 'ゲーム更新のタイムアウト（分）',
+    updateTakeover: '更新の引き受け',
+    updateTakeoverTip:
+      '有効にすると、MAS が MAA 本体とリソース更新を引き受けます：タスク開始時にバージョンを確認して完全パッケージを共有キャッシュへ先行ダウンロードし、ラウンド終了時に保留更新を登録して MAA 公式インストーラーで適用します。無効なら MAA 自身が更新を処理します。',
+    updateTakeoverSwitch: '更新を引き受ける',
+    updateTakeoverCdk: 'MirrorChyan CDK',
+    updateTakeoverCdkTip:
+      'このスクリプトで使う MirrorChyan CDK。空欄なら MAS グローバル設定の Key にフォールバックします。スイッチがオンでも有効な Key がなければ更新は実行されません。',
+    updateTakeoverCdkPlaceholder: '空欄ならグローバル Key にフォールバック',
     maximumGameLaunchWait: 'ゲーム起動の最大待機時間',
     gameRootDirectory: 'ゲームのルートフォルダー',
     masterSwitchGameManagement:
@@ -4130,7 +4138,7 @@ export default {
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
       cdkHint:
-        'MAS の更新に使用します。MirrorChyan を選び CDK を設定すると MAA リソースも自動更新され、1 日のダウンロード枠を消費します。この MAS ではローカル日付ごとにリソースパッケージの取得を最大 1 回試行し、失敗やキャンセルも回数に含めます。MaaFW プロジェクトの CDK はスクリプト編集ページで個別に設定してください。',
+        'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

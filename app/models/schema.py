@@ -1852,12 +1852,23 @@ class MaaConfig_Run(BaseModel):
     )
 
 
+class MaaConfig_Update(BaseModel):
+    TakeoverEnabled: Optional[bool] = Field(
+        default=None,
+        description="是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）",
+    )
+    MirrorChyanCDK: Optional[str] = Field(
+        default=None, description="本脚本的 Mirror 酱 CDK（留空回退 MAS 全局配置）"
+    )
+
+
 class MaaConfig(BaseModel):
     Info: Optional[MaaConfig_Info] = Field(default=None, description="脚本基础信息")
     Emulator: Optional[MaaConfig_Emulator] = Field(
         default=None, description="模拟器配置"
     )
     Run: Optional[MaaConfig_Run] = Field(default=None, description="脚本运行配置")
+    Update: Optional[MaaConfig_Update] = Field(default=None, description="更新接管配置")
 
 
 class GeneralUserConfig_Info(BaseModel):

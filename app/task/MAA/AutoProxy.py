@@ -105,6 +105,11 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.software_update import (
+    prepare_maa_software_update,
+    start_maa_software_update_precheck,
+)
+from .tools.update_credentials import resolve_takeover_credentials
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -1033,6 +1038,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
                 )
 
+        # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
+        # 缓存，收尾在 update_maa() 前由 prepare_maa_software_update 消费；
+        # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
+        # 只写日志。通道偏好读任务前的原生配置快照——会话期间安装目录 config
+        # 是 MAS 托管副本，且预检查发生在快照提交之后、本轮下发之前
+        start_maa_software_update_precheck(
+            self.maa_root_path,
+            config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            config=self.script_config,
+        )
+
     def _resolve_log_file_path(self) -> Path:
         return self.maa_log_path
 
@@ -1235,6 +1251,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if self.cur_user_config.get("Info", "IfQuickConfig"):
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
+
+                # 本体更新登记：把 MAS 共享缓存中的完整包复制进安装目录并写入
+                # 上游待更新字段；安装仍由下方未改动的 update_maa() 拉起 MAA
+                # 官方更新链完成。准备内部吞掉一切失败只写日志（主动取消除外），
+                # 不改变 update_maa() 的既有行为（含消费 MAA 原生自有的待更新包）。
+                await prepare_maa_software_update(
+                    self.maa_root_path,
+                    config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    config=self.script_config,
+                )
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
@@ -2001,6 +2027,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "AutoInstallUpdatePackage": False,
             }
         )
+        # MAS 已接管本体更新时（脚本开启「更新接管」且有生效 CDK），压制 MAA
+        # 会话内自下载，避免两个更新器同时取包；只写托管会话配置，任务结束
+        # 换回原生快照，不影响用户单独运行 MAA 时的更新偏好
+        takeover, _ = resolve_takeover_credentials(self.script_config)
+        if takeover:
+            global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
+            gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         if Config.get("Function", "IfSilence"):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"

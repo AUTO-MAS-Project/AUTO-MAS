@@ -1590,6 +1590,14 @@ export default {
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
     gameUpdateTimeoutMinutes: 'Game update timeout (minutes)',
+    updateTakeover: 'Update takeover',
+    updateTakeoverTip:
+      'When enabled, MAS takes over MAA software and resource updates: it checks versions and pre-downloads full packages to the shared cache at task start, then registers the pending update at round end for the official MAA installer to apply; when off, MAA handles updates on its own.',
+    updateTakeoverSwitch: 'Take over updates',
+    updateTakeoverCdk: 'MirrorChyan CDK',
+    updateTakeoverCdkTip:
+      'The MirrorChyan CDK for this script; leave empty to fall back to the global key in MAS settings. With the switch on but no valid key, no update runs.',
+    updateTakeoverCdkPlaceholder: 'Empty falls back to global key',
     maximumGameLaunchWait: 'Maximum game launch wait',
     gameRootDirectory: 'Game root directory',
     masterSwitchGameManagement:
@@ -4756,7 +4764,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used for MAS updates. Selecting MirrorChyan and setting a CDK also enables automatic MAA resource updates, which use the daily download quota. This MAS instance makes at most one resource-package request attempt per local calendar day, including failed or canceled attempts. Set a separate CDK for MaaFW projects on the script edit page.',
+        'Used only for updating MAS itself; MAA and MaaFW script project updates take their own CDK on their script edit pages',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
