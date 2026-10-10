@@ -1658,7 +1658,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 await self.inner_task.on_crash(exc)
             finally:
                 await self._finalize_inner_task()
+                self._reclaim_unused_update_logs()
         self._users_completed = True
+
+    def _reclaim_unused_update_logs(self) -> None:
+        """运行前更新的日志交给第一位用户、在它开始运行时并入它的日志落盘；这位用户没进入
+        运行（检查没过、次数用完被跳过……）时那份日志没人写，拿回来交给下一位用户。"""
+
+        inner = self.inner_task
+        if inner is None:
+            return
+        logs = list(getattr(inner, "project_update_logs", None) or [])
+        user_item = getattr(inner, "cur_user_item", None)
+        if not logs or user_item is None or getattr(user_item, "log_record", None):
+            return
+        self.project_update_logs = logs + self.project_update_logs
 
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
