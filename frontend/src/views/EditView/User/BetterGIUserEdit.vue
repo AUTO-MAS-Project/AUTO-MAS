@@ -360,6 +360,29 @@
               </a-col>
             </a-row>
 
+            <a-row :gutter="24">
+              <a-col :xs="24" :sm="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.collectNodeDetails') }}
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Notify.PushLogMode"
+                    :options="pushLogModeOptions"
+                    size="large"
+                    class="modern-select"
+                    :disabled="pageLoading"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
             <a-form-item>
               <template #label>
                 <span class="form-label">
@@ -1426,6 +1449,13 @@ const ONE_DRAGON_GROUPS = [
   { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
 ]
 
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+]
+
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Info: {
     Name: '',
@@ -1468,6 +1498,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Enabled: false,
     IfSendStatistic: false,
     IfSendDropStatistics: true,
+    PushLogMode: '汇总',
     IfSendMail: false,
     ToAddress: '',
     IfServerChan: false,

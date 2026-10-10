@@ -34,5 +34,9 @@ export type BetterGIUserConfig_Notify = {
      * 是否统计掉落（BGI「奖励识别」汇总，默认开启）
      */
     IfSendDropStatistics?: (boolean | null);
+    /**
+     * 任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合
+     */
+    PushLogMode?: ('关闭' | '逐条' | '汇总' | null);
 };
 
