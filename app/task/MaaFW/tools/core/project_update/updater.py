@@ -622,8 +622,21 @@ async def update_maafw_project_if_needed(
             send_log=send_update_log,
             prefer_full_package=prefer_full,
             precheck_gate=precheck_gate,
+            cancel_event=cancel_event,
         )
     except Exception as exc:
+        if getattr(exc, "cancelled", False):
+            # 检查阶段被用户停下（没再联网）：与下载 / 构建阶段的停止同一口径。
+            message = "MaaFW project update cancelled"
+            send_update_log(message)
+            _report_progress(
+                progress,
+                "failed",
+                status="cancelled",
+                message=message,
+                final=True,
+            )
+            raise
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
         send_update_log(message)
         _report_progress(
@@ -882,6 +895,7 @@ async def _discover_project_update_detailed(
     prefer_full_package: bool = False,
     version_only: bool = False,
     precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -900,7 +914,16 @@ async def _discover_project_update_detailed(
     版本号）；返回非空字符串就以它为由按「有更新但不可安装」返回。放在这个
     位置是因为再往后 Mirror 酱那次带 CDK 的查询会扣额度、GitHub 会打 Release
     API——上次预检已经证明装不上的版本，不该再花这些。
+
+    ``cancel_event``：每次联网之前看一眼，置位就抛 ``cancelled=True`` 的
+    :class:`MaaFWProjectUpdateError`、不再发请求——尤其不去带 CDK 换下载地址（那一下
+    会扣 Mirror 酱当日额度）。运行前更新过了宽限期还停在检查阶段时，宿主置位令牌就能
+    让这一段完全不联网。
     """
+
+    def stop_if_cancelled() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
     config = dict(source_config or {})
     current = (
@@ -931,6 +954,7 @@ async def _discover_project_update_detailed(
     # 下载地址，而它能计数的就是这一下签发——带着 CDK 查一次版本就可能扣掉一次
     # 今日下载额度。运行前自动更新意味着每跑一次脚本查一次，编辑页那个「检查
     # 更新」按钮也随手就点，这些都不该烧额度。真要下载时再带 CDK 查第二次。
+    stop_if_cancelled()
     version_check = await _query_mirrorchyan_latest(
         interface_model,
         current_version=current,
@@ -961,6 +985,7 @@ async def _discover_project_update_detailed(
         )
 
     if precheck_gate is not None:
+        stop_if_cancelled()
         gate_reason = str(await precheck_gate(latest) or "").strip()
         if gate_reason:
             return unavailable(gate_reason)
@@ -1002,6 +1027,8 @@ async def _discover_project_update_detailed(
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         prefer_full = prefer_full_package
+        # 用户已经停了就别去换地址：那一下会扣今日下载额度，换来的地址也用不上。
+        stop_if_cancelled()
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
         authorized = await _query_mirrorchyan_latest(
             interface_model,
@@ -1034,6 +1061,7 @@ async def _discover_project_update_detailed(
         )
 
     send_update_log(f"install package source: GitHub Release; repo={repo}")
+    stop_if_cancelled()
     try:
         github_discovery = await _check_github_release_update(
             interface_model,
