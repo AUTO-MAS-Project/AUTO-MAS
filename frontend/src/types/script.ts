@@ -62,6 +62,10 @@ export interface MAAScriptConfig {
     Id: string
     Index: string
   }
+  Update: {
+    TakeoverEnabled: boolean
+    MirrorChyanCDK: string
+  }
   SubConfigsInfo: {
     UserData: {
       instances: unknown[]

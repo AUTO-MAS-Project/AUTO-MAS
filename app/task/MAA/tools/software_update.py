@@ -21,16 +21,16 @@
 
 """MAA 本体自动更新：Mirror 酱检查下载（MAS 领域）+ 驱动上游官方安装链。
 
-上游 MAA 自带完整的检查-下载-安装链，但下载要求用户在 MAA 内自配 Mirror 酱
-CDK（加密私有字段，MAS 不可读写），且无人值守的托管会话里由 MAA 自行下载
-会与任务窗口、资源更新互相争抢。本模块按黑箱边界的「驱动」模式接入（见
-mas-script-specialized-adapter/references/blackbox-boundary.md）：自动代理
-开始时预检查并按当前安装的通道下载完整包进 MAS 共享缓存（下载编排属 MAS
-领域，用 MAS 自己的全局 CDK，一个通道架构只留一份，多个安装目录复用），
-在原有 update_maa() 调用点前把包复制进安装目录并登记 Update.Name/
-Update.UpdatePackage——与上游自家 Mirror 酱下载器和拖拽导入写的是同一组
-字段——安装完全由 MAA 官方更新器执行（Bootstrapper 启动应用 → MaaUpdater
-换血，上游 PendingUpdateApplier.cs / main.cpp），执行与成败判定全程归上游。
+上游 MAA 自带完整的检查-下载-安装链，但无人值守的托管会话里由 MAA 自行
+下载会与任务窗口、资源更新互相争抢。本模块按黑箱边界的「驱动」模式接入
+（见 mas-script-specialized-adapter/references/blackbox-boundary.md）：
+脚本开启「更新接管」后，自动代理开始时预检查并按通道下载完整包进 MAS
+共享缓存（下载编排属 MAS 领域，CDK 脚本优先、空则回退 MAS 全局配置，一个
+通道架构只留一份，多个安装目录复用），在原有 update_maa() 调用点前把包
+复制进安装目录并登记 Update.Name/Update.UpdatePackage——与上游自家下载器
+和拖拽导入写的是同一组字段——安装完全由 MAA 官方更新器执行（Bootstrapper
+启动应用 → MaaUpdater 换血，上游 PendingUpdateApplier.cs / main.cpp），
+执行与成败判定全程归上游。
 
 这不是临时补位：上游没有缺失被 MAS 代劳的领域能力，安装机制本就是上游
 自己的入口，唯一的自建部分（检查与下载）属 MAS 领域，作为常驻编排存在
@@ -82,10 +82,10 @@ from app.services.update_transport import download_file, request_mirror_resource
 from app.utils import get_logger
 from app.utils.io import read_dict_file, write_file
 
-# 同包族内复用既有原语，避免第二套实现：启用条件、反滥用识别码、路径归一化
-# 与资源更新保持同一事实源，状态记账原语在 update_state。下划线名限定在
-# 同一 tools 包族内使用。
-from .resource_update import _path_key, _resolve_source, _sp_id
+# 同包族内复用既有原语，避免第二套实现：路径归一化与反滥用识别码与资源
+# 更新保持同一事实源，状态记账原语在 update_state。下划线名限定在同一
+# tools 包族内使用。
+from .resource_update import _path_key, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
@@ -332,9 +332,21 @@ def resolve_update_channel(
     return detect_channel(version_text)
 
 
-def software_update_enabled() -> bool:
-    """MAS 更新源为 Mirror 酱且已填 CDK 时启用本体更新接管。"""
-    return _resolve_source() is not None
+def resolve_takeover_credentials(config: object) -> tuple[bool, str | None]:
+    """解析脚本的更新接管启用状态与生效的 CDK，返回 (启用?, CDK)。
+
+    - 脚本开关「接管更新」关闭 → (False, None)；
+    - 开启后：脚本 CDK 非空用脚本的，否则回退 MAS 全局 CDK；
+    - 两者皆空 → (False, None)——配了接管但无 CDK 不执行任何更新。
+
+    config 为脚本配置（MaaConfig），按 ``get(段, 键)`` 读取。
+    """
+    if not config.get("Update", "TakeoverEnabled"):
+        return False, None
+    cdk = str(config.get("Update", "MirrorChyanCDK") or "").strip()
+    if not cdk:
+        cdk = str(Config.get("Update", "MirrorChyanCDK") or "").strip()
+    return bool(cdk), cdk or None
 
 
 # --------------------------------------------------------------------------
@@ -358,12 +370,9 @@ class _Latest(NamedTuple):
     url: str
 
 
-async def _fetch_latest(channel: str, arch: str) -> _Latest:
+async def _fetch_latest(channel: str, arch: str, cdk: str) -> _Latest:
     """按通道架构查询最新完整包。不带 current_version：无增量基线，服务端
     只回完整包（上游修复路径同款语义）。"""
-    cdk = _resolve_source()
-    if cdk is None:
-        raise _UpdateError("MAS 未配置 Mirror 酱 CDK")
     try:
         async with asyncio.timeout(_QUERY_TIMEOUT):
             payload = await request_mirror_resource(
@@ -419,7 +428,7 @@ def _store_verified_cache(
     logger.info(f"MAA 本体完整包已缓存: {latest.version}（win/{arch}/{channel}）")
 
 
-async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
+async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> None:
     """确保共享缓存里是目标版本：命中直接复用，否则下载并校验入缓存。
 
     下载预算按缓存键记账（不同通道架构互不挤占），记账读写持模块锁且锁内
@@ -434,9 +443,6 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str) -> None:
         and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
     ):
         logger.info(f"MAA 本体更新: 目标版本 {latest.version} 已在缓存，跳过下载")
-        return
-    cdk = _resolve_source()
-    if cdk is None:
         return
     key = _cache_key(arch, channel)
     async with _state_lock:
@@ -508,10 +514,10 @@ def _cache_key(arch: str, channel: str) -> str:
 _precheck_tasks: dict[str, asyncio.Task[None]] = {}
 
 
-async def _precheck_flow(maa_root: Path, channel: str, arch: str) -> None:
+async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
     """预检查主体：查询 → 版本判断 → 取包入缓存。失败语义见各调用。"""
     try:
-        await _precheck_inner(maa_root, channel, arch)
+        await _precheck_inner(maa_root, channel, arch, cdk)
     except asyncio.CancelledError:
         raise
     except _UpdateError as e:
@@ -526,7 +532,7 @@ async def _precheck_flow(maa_root: Path, channel: str, arch: str) -> None:
         logger.exception("MAA 本体更新: 预检查异常（已忽略，不影响本轮任务）")
 
 
-async def _precheck_inner(maa_root: Path, channel: str, arch: str) -> None:
+async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
     async with _state_lock:
         state = load_state(_STATE_FILE)
         now = datetime.now(timezone.utc)
@@ -539,7 +545,7 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str) -> None:
         ):
             logger.info("MAA 本体更新: 距上次查询不足 10 分钟，本轮跳过检查")
             return
-    latest = await _fetch_latest(channel, arch)
+    latest = await _fetch_latest(channel, arch, cdk)
     async with _state_lock:
         state = load_state(_STATE_FILE)
         state["last_query_at"] = datetime.now(timezone.utc).isoformat()
@@ -561,27 +567,31 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str) -> None:
     if compare_versions(target, current) <= 0:
         logger.info(f"MAA 本体更新: 已是最新（{release[0]}，{channel} 通道）")
         return
-    await _ensure_cache(latest, channel, arch)
+    await _ensure_cache(latest, channel, arch, cdk)
 
 
 def start_maa_software_update_precheck(
-    maa_root: Path, *, config_dir: Path | None = None
+    maa_root: Path, *, config_dir: Path | None = None, config: object | None = None
 ) -> None:
     """自动代理开始时启动本体更新预检查：检查版本并把完整包预下载进共享
     缓存，供收尾 prepare_maa_software_update 消费。
 
-    同一缓存键的任务进程内去重（多个用户轮次共享一轮检查）；MAS 未启用
-    Mirror 酱、安装信息无法识别时不创建任务。本函数不等待网络，任何失败
-    只写日志。
+    同一缓存键的任务进程内去重（多个用户轮次共享一轮检查）；脚本未开启
+    更新接管、无生效 CDK 或安装信息无法识别时不创建任务。本函数不等待
+    网络，任何失败只写日志。
 
     Args:
         maa_root: MAA 安装目录。
         config_dir: 优先读取更新通道偏好的配置目录。会话内应传任务前的
             原生配置快照——安装目录当时的 config 是 MAS 托管副本；缺省时
             读安装目录 config。
+        config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
     """
     try:
-        if not software_update_enabled():
+        if config is None:
+            return
+        enabled, cdk = resolve_takeover_credentials(config)
+        if not enabled or cdk is None:
             return
         release = read_installed_release(maa_root)
         if release is None:
@@ -600,7 +610,7 @@ def start_maa_software_update_precheck(
         if existing is not None and not existing.done():
             return
         _precheck_tasks[key] = asyncio.create_task(
-            _precheck_flow(maa_root, channel, arch),
+            _precheck_flow(maa_root, channel, arch, cdk),
             name=f"maa-software-update-{_path_key(maa_root)}-{key}",
         )
     except Exception as e:
@@ -608,7 +618,7 @@ def start_maa_software_update_precheck(
 
 
 async def prepare_maa_software_update(
-    maa_root: Path, *, config_dir: Path | None = None
+    maa_root: Path, *, config_dir: Path | None = None, config: object | None = None
 ) -> None:
     """用户轮次收尾、原有 update_maa() 之前调用。
 
@@ -621,9 +631,13 @@ async def prepare_maa_software_update(
         maa_root: MAA 安装目录。
         config_dir: 优先读取更新通道偏好的配置目录，同
             start_maa_software_update_precheck。
+        config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
     """
     try:
-        if not software_update_enabled():
+        if config is None:
+            return
+        enabled, cdk = resolve_takeover_credentials(config)
+        if not enabled or cdk is None:
             return
         release = read_installed_release(maa_root)
         if release is None:

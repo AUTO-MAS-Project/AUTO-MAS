@@ -1307,6 +1307,14 @@ class MaaConfig(ConfigBase):
             "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
         )
 
+        ## Update -----------------------------------------------------------
+        ## 是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）
+        self.Update_TakeoverEnabled = ConfigItem(
+            "Update", "TakeoverEnabled", False, BoolValidator()
+        )
+        ## 本脚本的 Mirror 酱 CDK（留空回退 MAS 全局配置）
+        self.Update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
+
         self.UserData = MultipleConfig([MaaUserConfig])
 
         super().__init__()

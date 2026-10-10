@@ -1520,6 +1520,14 @@ export default {
     whichPlatformGameRuns: '游戏在哪个平台上运行',
     gameUpdate: '游戏更新',
     gameUpdateTimeoutMinutes: '游戏更新超时限制（分钟）',
+    updateTakeover: '更新接管',
+    updateTakeoverTip:
+      '开启后，MAS 接管 MAA 本体与资源更新：任务开始时检查版本并预下载完整包到共享缓存，任务收尾登记待更新并由 MAA 官方更新器安装；关闭则完全由 MAA 自行处理。',
+    updateTakeoverSwitch: '接管更新',
+    updateTakeoverCdk: 'Mirror 酱 CDK',
+    updateTakeoverCdkTip:
+      '本脚本使用的 Mirror 酱 CDK；留空回退到 MAS 全局配置里的 Key。开启接管但无有效 Key 时不执行任何更新。',
+    updateTakeoverCdkPlaceholder: '留空回退全局 Key',
     maximumGameLaunchWait: '游戏最大启动等待时间',
     gameRootDirectory: '游戏根目录',
     masterSwitchGameManagement:

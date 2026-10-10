@@ -57,6 +57,7 @@ from .tools.resource_update import (
     get_resource_write_lock,
     prepare_queue_resources,
 )
+from .tools.software_update import resolve_takeover_credentials
 
 logger = get_logger("MAA 调度器")
 
@@ -171,15 +172,18 @@ class MaaManager(TaskExecuteBase):
 
         # MAA 资源按需更新：仅自动代理任务触发，配置会话（含只读预览）不该
         # 被下载阻塞；必须放在锁定配置之前——lock() 之后本安装会被资源更新
-        # 的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例扫描，自带
-        # 机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；阶段进度写进
-        # 本脚本项的日志字段，调度台运行期即可见（与 AutoProxy 的状态行同通路）。
+        # 的占用过滤跳过，就更新不到它自己了。内部只扫描开启「更新接管」的
+        # 安装，自带机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；
+        # 阶段进度写进本脚本项的日志字段，调度台运行期即可见（与 AutoProxy
+        # 的状态行同通路）。
         if self.task_info.mode == "AutoProxy":
 
             async def _report_progress(line: str) -> None:
                 self.script_info.log = line
 
-            await prepare_queue_resources(progress=_report_progress)
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            _, cdk = resolve_takeover_credentials(script_config)
+            await prepare_queue_resources(progress=_report_progress, cdk=cdk)
 
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
