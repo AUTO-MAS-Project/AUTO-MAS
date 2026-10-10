@@ -33,9 +33,9 @@
       <label
         v-for="choice in choices"
         :key="choice.scriptId"
-        :class="['choice-row', { selected: value === choice.scriptId }]"
+        :class="['choice-row', { selected: value === choice.scriptId, disabled: choice.busy }]"
       >
-        <a-radio :value="choice.scriptId" />
+        <a-radio :value="choice.scriptId" :disabled="choice.busy" />
         <span class="choice-icon"><CopyOutlined /></span>
         <span class="choice-copy">
           <span class="choice-title">{{ reuseTitle(choice) }}</span>
@@ -67,8 +67,7 @@ defineProps<MaaFWCreateSourceSectionProps>()
 const emit = defineEmits<MaaFWCreateSourceSectionEmits>()
 
 // 标题是项目名（interface 读不出就用脚本名）；副标题「来自脚本「x」 · 版本」，
-// 持有该项目的脚本都在跑时标一句「运行中」。照样能选：复用从源脚本挂着的载荷物化，不读源的
-// 视图，源在跑也不影响（极少数没采纳的老副本被占用时，后端会拒绝并给出原因）
+// 持有该项目的脚本都在跑时标一句「运行中」，那一行本身已禁用
 const reuseTitle = (choice: MfwReuseChoice) =>
   choice.projectName || choice.scriptName || choice.scriptId.slice(0, 8)
 const reuseMeta = (choice: MfwReuseChoice) => {
@@ -119,6 +118,11 @@ const reuseMeta = (choice: MfwReuseChoice) => {
 
 .choice-row.selected {
   background: var(--ant-color-primary-bg);
+}
+
+.choice-row.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .choice-group-heading {
