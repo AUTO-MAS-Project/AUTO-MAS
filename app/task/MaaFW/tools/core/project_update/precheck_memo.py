@@ -12,15 +12,17 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1 的原生库，binding 被�
     {
       "targetVersion": "v2.29.0",
       "requirement": "maafw==5.14.0b1",
-      "kind": "binding_unavailable" | "other",
+      "kind": "binding_unavailable" | "transient" | "other",
       "failedAt": "<ISO 8601>",
       "reason": "<≤500 字>",
       "attempts": n
     }
 
 ``kind`` 决定下次运行前怎么处理：``binding_unavailable`` 轻探一下索引和
-GitHub、可得了才重新更新；``other``（磁盘满、解释器坏了……）不探、不自动
-重试，等用户手动更新。本模块只用标准库：它在核心包里，不得 import ``app.*``。
+GitHub、可得了才重新更新；``transient``（连不上包索引、下载失败、各种超时——
+下次多半就好了）下次运行前直接重试；``other``（磁盘满、解释器坏了、依赖确实
+装不上……）不探、不自动重试，等用户手动更新。本模块只用标准库：它在核心包里，
+不得 import ``app.*``。
 """
 
 from __future__ import annotations
@@ -38,7 +40,9 @@ from .apply import _read_interface_version
 PRECHECK_MEMO_PREFIX = "precheck-"
 _VERSION_UNSAFE_RE = re.compile(r"[^0-9A-Za-z._+-]+")
 KIND_BINDING_UNAVAILABLE = "binding_unavailable"
+KIND_TRANSIENT = "transient"
 KIND_OTHER = "other"
+_KINDS = frozenset({KIND_BINDING_UNAVAILABLE, KIND_TRANSIENT, KIND_OTHER})
 REASON_MAX_CHARS = 500
 _MEMO_KEYS = ("targetVersion", "requirement", "kind", "failedAt", "reason", "attempts")
 
@@ -58,6 +62,35 @@ _BINDING_UNAVAILABLE_PATTERNS = (
     re.compile(r"映射不到 MaaFramework 的发布 tag"),
     re.compile(r"源码打包的 binding 没有 DLL"),
     re.compile(r"binding 来自源码打包"),
+)
+
+# 网络与超时：预检时建运行池 / 隔离 venv 要联网装包，碰上一次网络抖动或冷启动慢盘就
+# 失败，这类失败下次运行前多半就好了，不该与「磁盘满、依赖确实装不上」一样等手动更新。
+# 排在 binding 判断之后：pip 连不上索引时末尾常是「No matching distribution found for
+# maafw==…」，那条已归 binding_unavailable、走轻探自愈。前几条是 MAS 自己的文案
+# （runtime_pool/binding.py、agent_env/env.py、runtime_pool/installer.py），其余是
+# uv / pip / httpx / urllib3 / Windows 套接字的网络报错原文。离线模式（``was not found
+# in the cache``）不算：那是用户的设置，重试不会变。
+_TRANSIENT_PATTERNS = (
+    re.compile(r"所有包索引都连不上"),
+    re.compile(r"下载 wheel 失败"),
+    re.compile(r"超时"),
+    re.compile(r"Request failed after \d+ retr", re.IGNORECASE),
+    re.compile(r"Failed to fetch", re.IGNORECASE),
+    re.compile(r"error sending request", re.IGNORECASE),
+    re.compile(r"tcp connect error", re.IGNORECASE),
+    re.compile(r"dns error", re.IGNORECASE),
+    re.compile(r"Could not fetch URL", re.IGNORECASE),
+    re.compile(r"Max retries exceeded", re.IGNORECASE),
+    re.compile(r"(?:Connect|Read)TimeoutError", re.IGNORECASE),
+    re.compile(r"\btimed out\b", re.IGNORECASE),
+    re.compile(r"NewConnectionError|ConnectionResetError|RemoteDisconnected"),
+    re.compile(r"Connection (?:refused|reset|aborted)", re.IGNORECASE),
+    re.compile(r"Temporary failure in name resolution", re.IGNORECASE),
+    re.compile(r"getaddrinfo failed", re.IGNORECASE),
+    re.compile(r"Name or service not known", re.IGNORECASE),
+    re.compile(r"No connection could be made", re.IGNORECASE),
+    re.compile(r"ProxyError", re.IGNORECASE),
 )
 
 
@@ -95,11 +128,7 @@ def write_runtime_precheck(path: Path, payload: Mapping[str, Any]) -> Path:
     record: dict[str, Any] = {key: payload.get(key) for key in _MEMO_KEYS}
     record["targetVersion"] = str(record.get("targetVersion") or "").strip()
     record["requirement"] = str(record.get("requirement") or "maafw").strip()
-    record["kind"] = (
-        KIND_BINDING_UNAVAILABLE
-        if record.get("kind") == KIND_BINDING_UNAVAILABLE
-        else KIND_OTHER
-    )
+    record["kind"] = record.get("kind") if record.get("kind") in _KINDS else KIND_OTHER
     record["failedAt"] = str(record.get("failedAt") or _now_iso())
     record["reason"] = str(record.get("reason") or "")[:REASON_MAX_CHARS]
     try:
@@ -146,6 +175,8 @@ def classify_precheck_kind(reason: str) -> str:
     text = str(reason or "")
     if any(pattern.search(text) for pattern in _BINDING_UNAVAILABLE_PATTERNS):
         return KIND_BINDING_UNAVAILABLE
+    if any(pattern.search(text) for pattern in _TRANSIENT_PATTERNS):
+        return KIND_TRANSIENT
     return KIND_OTHER
 
 
@@ -187,6 +218,7 @@ def _now_iso() -> str:
 __all__ = [
     "KIND_BINDING_UNAVAILABLE",
     "KIND_OTHER",
+    "KIND_TRANSIENT",
     "PRECHECK_MEMO_PREFIX",
     "REASON_MAX_CHARS",
     "classify_precheck_failure",
