@@ -2571,7 +2571,7 @@ class OkNteConfig_Game(BaseModel):
     )
     LaunchMode: Optional[Literal["Autoplay", "LauncherUi"]] = Field(
         default=None,
-        description="启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）",
+        description="启动方式: 静默启动 / 启动器界面启动",
     )
     Path: Optional[str] = Field(
         default=None,

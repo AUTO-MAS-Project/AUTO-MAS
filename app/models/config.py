@@ -4345,6 +4345,31 @@ class OkwwConfig(ConfigBase):
         super().__init__()
 
 
+def _migrate_oknte_launch_mode_default(data: dict) -> tuple[dict, bool]:
+    """为存量 OK-NTE 脚本固化升级前的启动方式「启动器界面」。
+
+    ``Game.LaunchMode`` 是新增字段且类默认值定为 ``Autoplay``（静默启动）；
+    升级前的存量脚本配置里没有该键，若不补值会随新默认落到 ``Autoplay``，
+    而升级前「任务前启动游戏」走的只有「打开启动器界面 + 点开始游戏」这一条
+    路——静默启动不驱动启动器弹窗、也不驱动游戏更新，直接改默认会让这部分
+    用户从「能跑」变「启动失败」。故 load 前缺键注入升级前的 ``LauncherUi``；
+    Game 段缺失（手工编辑/截断文件）同样按存量处理；Game 段损坏（非 dict）
+    时跳过注入交给 load 的纠错路径重建，不在此崩掉启动。显式保存过该键的
+    配置原样保留；新建脚本由类默认落盘 ``Autoplay``，不走此路径。
+
+    Returns:
+        (迁移后的配置字典, 是否发生了注入)
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    if "Game" not in normalized_data:
+        normalized_data["Game"] = {}
+    game = normalized_data["Game"]
+    if isinstance(game, dict) and "LaunchMode" not in game:
+        game["LaunchMode"] = "LauncherUi"
+        return normalized_data, True
+    return normalized_data, False
+
+
 class OkNteConfig(ConfigBase):
     """OK-NTE 配置（ok-script 线）"""
 
@@ -4413,9 +4438,10 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
-        # 直接启动（Autoplay，默认）= 启动器带 /autoplay 静默拉起，无需点击；
-        # 使用启动器启动（LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」。
-        # 默认值排首位：存量配置缺键即维持静默启动现状，无需迁移
+        # 静默启动（Autoplay）= 启动器带 /autoplay 拉起，不点按钮；启动器界面启动
+        # （LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」及其弹窗/更新分支。
+        # 默认值双轨：新建脚本取类默认 Autoplay；存量脚本（配置无该键）由 load 迁移
+        # 固化升级前的 LauncherUi（见 _migrate_oknte_launch_mode_default），保持升级前行为。
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
@@ -4458,6 +4484,20 @@ class OkNteConfig(ConfigBase):
         self.UserData = MultipleConfig([OkNteUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前为存量脚本固化升级前的启动方式 LauncherUi。
+
+        注入后子级数据与完整存量文件（仅缺新键）比对不再 dirty，落盘靠两级：
+        挂在 MultipleConfig 下时由父级整表比对发现缺键提交写盘；独立连接
+        文件时由这里的显式提交完成（对齐 BetterGIConfig.load 的迁移范式）。
+        返回值含迁移标记，不谎报「无写入」。
+        """
+        migrated_data, migrated = _migrate_oknte_launch_mode_default(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
 
 def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:

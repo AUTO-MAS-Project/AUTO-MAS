@@ -1488,20 +1488,18 @@ export default {
       '开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换',
     oknteAccountSwitchHint:
       '开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用',
-    gameLauncher: '游戏启动器',
     launchType: '游戏启动方式',
     launchTypeHint:
       '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
     launchViaLauncher: '启动器启动',
     launchDirectly: '直接启动',
-    oknteLaunchViaLauncher: '使用启动器启动',
+    oknteLaunchDirectly: '静默启动',
+    oknteLaunchViaLauncher: '启动器界面启动',
     oknteLaunchModeNeedsLaunchBeforeTask: '仅在「任务前启动游戏」开启时可用',
-    oknteLaunchTypeSummary:
-      '直接启动：游戏在后台静默拉起，不弹启动器界面；使用启动器启动：打开启动器界面，由 MAS 替你点「开始游戏」',
-    oknteLaunchTypeHint:
-      '直接启动：MAS 带 /autoplay 参数静默拉起游戏，启动器界面不会出现（推荐，默认）。使用启动器启动：MAS 打开启动器界面，再替你点「开始游戏」——这一步是模拟鼠标点击，你只需要让启动器窗口保持可见、别被挡住',
-    oknteLauncherClickNotice:
-      '「使用启动器启动」：MAS 会打开启动器界面，并替你点「开始游戏」。任务运行期间别让其他窗口挡住启动器，挡住了点击可能落空；游戏要更新的话，停留时间会更长',
+    oknteLaunchBubbleAutoplay:
+      '静默启动：启动器后台运行并自动唤醒游戏，更抗前台干扰。但提示弹窗（如微星小飞机）无法处理，有更新时也可能启动失败；遇到这两种情况请改用「启动器界面启动」。',
+    oknteLaunchBubbleLauncherUi:
+      '启动器界面启动：模拟用户打开启动器界面，并点击「开始游戏」，弹窗及游戏更新都能顺带处理。运行时请避免其他窗口挡住启动器，否则可能会失败。',
     autoUpdateNeedsLauncher:
       '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
