@@ -51,14 +51,10 @@
 
     <a-row :gutter="24">
       <a-col :xs="24" :md="8">
+        <!-- 账号 / 密码的说明只在下面的提示框里写一次，标签上不再挂同一句的问号 -->
         <a-form-item>
           <template #label>
-            <a-tooltip :title="accountRecordTooltip">
-              <span class="form-label">
-                {{ t('edit.account') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.account') }}</span>
           </template>
           <a-input
             v-model:value="formData.Info.Account"
@@ -72,12 +68,7 @@
       <a-col :xs="24" :md="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="accountRecordTooltip">
-              <span class="form-label">
-                {{ t('edit.password') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.password') }}</span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
