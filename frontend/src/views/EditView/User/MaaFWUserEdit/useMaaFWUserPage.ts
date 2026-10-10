@@ -67,8 +67,15 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const pageLoading = ref(true)
   const loading = computed(() => pageLoading.value)
   const isInitializing = ref(true)
-  const { isSaving, hasUnsavedChanges, saveStatus, saveErrorMessage, enqueueSave, pendingCount } =
-    useMaaFWUserSaveStatus()
+  const {
+    isSaving,
+    hasUnsavedChanges,
+    saveStatus,
+    saveErrorMessage,
+    enqueueSave,
+    waitForSaves,
+    pendingCount,
+  } = useMaaFWUserSaveStatus()
 
   const userIdHolder: MaaFWUserIdHolder = { value: userId }
   const isEdit = ref(!!userIdHolder.value)
@@ -320,8 +327,11 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     }
   }
 
-  const handleCancel = () => {
-    if (isSaving.value || hasUnsavedChanges.value) {
+  // 还在保存（改完输入框直接点返回，失焦刚触发了保存）就先等它存完；只有存失败、改动确实
+  // 没进后端时才拦下来问
+  const handleCancel = async () => {
+    if (isSaving.value) await waitForSaves()
+    if (hasUnsavedChanges.value) {
       Modal.confirm({
         title: t('edit.youHaveUnsavedChanges'),
         content: t('edit.leaveWithoutSavingUnsaved'),

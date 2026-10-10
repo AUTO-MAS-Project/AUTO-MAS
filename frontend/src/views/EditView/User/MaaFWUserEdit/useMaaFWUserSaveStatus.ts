@@ -45,6 +45,13 @@ export function useMaaFWUserSaveStatus() {
     }
   }
 
+  /** 等排着的保存全部跑完（成功或失败都算完）；等待期间又排进来的也一起等 */
+  const waitForSaves = async () => {
+    while (pendingSaves > 0) {
+      await saveQueue
+    }
+  }
+
   onScopeDispose(() => {
     if (saveStatusTimer) clearTimeout(saveStatusTimer)
   })
@@ -55,6 +62,7 @@ export function useMaaFWUserSaveStatus() {
     saveStatus,
     saveErrorMessage,
     enqueueSave,
+    waitForSaves,
     pendingCount: () => pendingSaves,
   }
 }
