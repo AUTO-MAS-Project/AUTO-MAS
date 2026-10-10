@@ -3062,6 +3062,15 @@ export default {
     sendIssueBundleMas: '問題報告パッケージを MAS グループに送ってください',
     issueReportSuccess: '{label} の問題報告パッケージを書き出しました',
     issueReportFailed: '{label} の問題報告パッケージを書き出せませんでした',
+    zipArchive: 'ZIP アーカイブ',
+    maaIssueReportSuccess: 'MAA の問題報告パッケージを書き出しました（{count} ファイル）',
+    maaIssueReportIncomplete:
+      'MAA のログとスクリーンショットを書き出しました（{count} ファイル）。{incompleteCount} ファイルが見つからない、一部のみ収録、または収録できませんでした',
+    maaIssueReportNoInstallation:
+      'MAA のインストール先が設定されていません。スクリプト設定を確認してください。',
+    maaIssueReportNoFiles: '書き出せる MAA のログやスクリーンショットがありません',
+    maaIssueReportFailed:
+      'MAA のログとスクリーンショットを書き出せませんでした。スクリプトのパス、保存先、ログを確認してから再試行してください。',
     issueReportGuide:
       '問題報告パッケージ「{fileName}」を作成しました。元の ZIP ファイルを AUTO-MAS 公式 QQ グループ（957750551）に直接送ってください。解凍や編集をしたり、ログの本文だけをコピーして送ったりしないでください。',
     pickExeFile: 'exe ファイルを選択してください',

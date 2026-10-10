@@ -3593,6 +3593,13 @@ export default {
     sendIssueBundleMas: '请将问题包发送到 MAS 群',
     issueReportSuccess: '{label} 问题包导出成功',
     issueReportFailed: '{label} 问题包导出失败',
+    zipArchive: 'ZIP 压缩包',
+    maaIssueReportSuccess: 'MAA 问题包导出成功，已收集 {count} 个文件',
+    maaIssueReportIncomplete:
+      'MAA 日志与截图已导出，收集 {count} 个文件，{incompleteCount} 个文件缺失、被截断或未能收录',
+    maaIssueReportNoInstallation: '未找到已配置安装路径的 MAA 脚本，请检查脚本设置',
+    maaIssueReportNoFiles: '没有可导出的 MAA 日志或截图',
+    maaIssueReportFailed: 'MAA 日志与截图导出失败，请检查脚本路径、保存位置和日志后重试',
     issueReportGuide:
       '问题包「{fileName}」已生成。请将 ZIP 原文件直接发送到 AUTO-MAS 官方 QQ 群（群号：957750551），不要解压、修改或只复制其中的日志内容。',
     pickExeFile: '请选择 exe 文件',

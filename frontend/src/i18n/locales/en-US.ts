@@ -3700,6 +3700,15 @@ export default {
     sendIssueBundleMas: 'Send the issue bundle to the MAS group',
     issueReportSuccess: '{label} issue bundle exported',
     issueReportFailed: 'Could not export the {label} issue bundle',
+    zipArchive: 'ZIP archive',
+    maaIssueReportSuccess: 'MAA issue bundle exported with {count} files',
+    maaIssueReportIncomplete:
+      'MAA logs and screenshots exported with {count} files; {incompleteCount} files were missing, truncated, or could not be included',
+    maaIssueReportNoInstallation:
+      'No configured MAA installation path found. Check the script settings.',
+    maaIssueReportNoFiles: 'No MAA logs or screenshots available to export',
+    maaIssueReportFailed:
+      'Could not export MAA logs and screenshots. Check the script path, save location, and logs, then try again.',
     issueReportGuide:
       'The issue bundle "{fileName}" is ready. Send the original ZIP directly to the official AUTO-MAS QQ group (957750551). Do not extract or modify it, or send only the copied log text.',
     pickExeFile: 'Pick an exe file',

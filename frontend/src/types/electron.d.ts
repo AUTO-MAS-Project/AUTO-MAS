@@ -282,11 +282,13 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
-  exportMaaIssueReport: () => Promise<{
+  exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
     error?: string
+    errorCode?: 'no-installation' | 'no-files' | 'export-failed'
+    collectedCount?: number
     incompleteCount?: number
   }>
   exportMaaEndIssueReport: () => Promise<{

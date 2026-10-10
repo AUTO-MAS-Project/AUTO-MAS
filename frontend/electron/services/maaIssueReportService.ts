@@ -24,9 +24,9 @@ const isLogOrImage = (filePath: string): boolean =>
 
 export interface MaaIssueReportResult {
   success: boolean
-  message?: string
   zipPath?: string
-  error?: string
+  collectedCount?: number
+  errorCode?: 'no-installation' | 'no-files' | 'export-failed'
   /** 有文件缺失、被截断或未能收录时大于 0，界面按警告样式提示 */
   incompleteCount?: number
 }
@@ -34,32 +34,55 @@ export interface MaaIssueReportResult {
 /** 逐个收录大文件时让主进程处理窗口事件。 */
 const yieldToEventLoop = () => new Promise<void>(resolve => setImmediate(resolve))
 
-/** 收各安装 interface 的图片：跨安装统一按新现场优先排序后收录，旧图不占新图的额度。 */
-async function addInterfaceImages(
+/** 只收给定目录中的最新一张截图，保留原来的归档路径。 */
+async function addLatestImage(
   state: CollectorState,
-  installations: Array<{ sourceDir: string; archiveDir: string }>
+  directories: Array<{ sourceDir: string; archiveDir: string }>
 ): Promise<void> {
-  const files: Array<{ sourcePath: string; archivePath: string; mtimeMs: number }> = []
-  for (const { sourceDir, archiveDir } of installations) {
+  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
+  for (const { sourceDir, archiveDir } of directories) {
     addDirectory(state, sourceDir, archiveDir, {
       includeFile: isImage,
       addFile: (_, sourcePath, archivePath) => {
         try {
-          files.push({ sourcePath, archivePath, mtimeMs: fs.statSync(sourcePath).mtimeMs })
+          const mtimeMs = fs.statSync(sourcePath).mtimeMs
+          if (
+            !latest ||
+            mtimeMs > latest.mtimeMs ||
+            (mtimeMs === latest.mtimeMs && archivePath < latest.archivePath)
+          )
+            latest = { sourcePath, archivePath, mtimeMs }
         } catch {
           addSkippedEntry(state, archivePath, 0, '截图已消失或无法读取')
         }
       },
     })
   }
-  files.sort((a, b) => b.mtimeMs - a.mtimeMs || a.archivePath.localeCompare(b.archivePath))
-  for (const file of files) {
-    const before = state.entries.length
-    addDiagnosticFile(state, file.sourcePath, file.archivePath)
-    if (state.entries.length === before)
-      addSkippedEntry(state, file.archivePath, 0, '截图已消失或无法读取')
-    await yieldToEventLoop()
-  }
+  if (!latest) return
+  const before = state.entries.length
+  addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+  if (state.entries.length === before)
+    addSkippedEntry(state, latest.archivePath, 0, '截图已消失或无法读取')
+  await yieldToEventLoop()
+}
+
+/** 失败截图单独选最新一张，避免递归收集时把旧图一起带入。 */
+function addRuntimeDebugDirectory(
+  state: CollectorState,
+  sourceDir: string,
+  archiveDir: string
+): void {
+  addDebugDirectory(
+    state,
+    sourceDir,
+    archiveDir,
+    'maa',
+    filePath =>
+      isLogOrImage(filePath) &&
+      !(
+        isImage(filePath) && path.relative(sourceDir, filePath).split(path.sep)[0] === 'maa-failure'
+      )
+  )
 }
 
 export async function createMaaIssueReport(
@@ -74,8 +97,7 @@ export async function createMaaIssueReport(
       pathField: 'Path',
       labelPrefix: 'maa',
     })
-    if (!installations.length)
-      return { success: false, error: '未找到已配置安装路径的 MAA 脚本，请检查脚本设置' }
+    if (!installations.length) return { success: false, errorCode: 'no-installation' }
 
     // 每个安装的核心日志优先，各安装依次收同类文件。.bak 未轮转属常态，缺失
     // 保持静默；存在却收不进来（被占用、权限等）要记成 skipped，让清单与
@@ -97,30 +119,37 @@ export async function createMaaIssueReport(
       fallbackLatest: true,
       includeJson: false,
     })
-    for (const [index, dataRoot] of dataRoots.entries()) {
-      addDebugDirectory(
-        state,
-        path.join(dataRoot, 'debug'),
-        index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
-        'maa',
-        isLogOrImage
-      )
+    const debugDirectories = dataRoots.map((dataRoot, index) => ({
+      sourceDir: path.join(dataRoot, 'debug'),
+      archiveDir: index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
+    }))
+    for (const directory of debugDirectories) {
+      addRuntimeDebugDirectory(state, directory.sourceDir, directory.archiveDir)
       await yieldToEventLoop()
     }
     const runtimeDebugDir = path.join(path.dirname(process.execPath), 'debug')
-    if (!dataRoots.some(root => path.resolve(root, 'debug') === path.resolve(runtimeDebugDir)))
-      addDebugDirectory(state, runtimeDebugDir, 'logs/frontend-runtime', 'maa', isLogOrImage)
+    if (!dataRoots.some(root => path.resolve(root, 'debug') === path.resolve(runtimeDebugDir))) {
+      debugDirectories.push({ sourceDir: runtimeDebugDir, archiveDir: 'logs/frontend-runtime' })
+      addRuntimeDebugDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
+    }
 
-    await addInterfaceImages(
+    await addLatestImage(
       state,
-      installations.map(installation => ({
-        sourceDir: path.join(installation.rootPath, 'debug', 'interface'),
-        archiveDir: `maa/${installation.label}/debug/interface`,
+      debugDirectories.map(directory => ({
+        sourceDir: path.join(directory.sourceDir, 'maa-failure'),
+        archiveDir: `${directory.archiveDir}/maa-failure`,
       }))
     )
+    for (const installation of installations)
+      await addLatestImage(state, [
+        {
+          sourceDir: path.join(installation.rootPath, 'debug', 'interface'),
+          archiveDir: `maa/${installation.label}/debug/interface`,
+        },
+      ])
     const collectedCount = state.entries.filter(entry => entry.status !== 'skipped').length
     const incompleteCount = state.entries.filter(entry => entry.status !== 'included').length
-    if (!collectedCount) return { success: false, error: '没有可导出的 MAA 日志或截图' }
+    if (!collectedCount) return { success: false, errorCode: 'no-files' }
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })
     await state.zip.writeZipPromise(zipPath)
     logger.info(
@@ -128,14 +157,12 @@ export async function createMaaIssueReport(
     )
     return {
       success: true,
-      message: incompleteCount
-        ? `MAA 日志与截图已导出，收集 ${collectedCount} 个文件，${incompleteCount} 个文件缺失、被截断或未能收录`
-        : `MAA 问题包导出成功，已收集 ${collectedCount} 个文件`,
+      collectedCount,
       zipPath,
       incompleteCount,
     }
   } catch (error) {
     logger.error(`MAA 日志与截图导出失败: ${String(error)}`)
-    return { success: false, error: 'MAA 日志与截图导出失败，请检查脚本路径、保存位置和日志后重试' }
+    return { success: false, errorCode: 'export-failed' }
   }
 }
