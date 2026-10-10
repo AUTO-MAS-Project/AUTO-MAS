@@ -25,6 +25,7 @@ from ._shared import (
     pool_lock,
     remove_tree_best_effort,
     utc_now,
+    venv_base_python_missing,
     write_json_atomic,
 )
 from .cache import clean_uv_cache
@@ -1326,6 +1327,14 @@ class MaaFWRuntimePool:
             if not isinstance(identity, Mapping):  # pragma: no cover - manifest guard
                 raise MaaFWRuntimePoolError(
                     f"runtime manifest identity is invalid: {runtime_id}"
+                )
+            # base venv 的基解释器不在了（pyvenv.cfg 的 home 失效：整体搬了安装目录、
+            # 池托管解释器目录被删后装到了别处）：venv 启动器起不来，探针只会报 exit 103。
+            # 身份与 runtime_id 都不含路径，不当成可恢复的话这个 id 永远命中这份坏条目、
+            # 所有 MFW 脚本都不能运行。与上面「文件不在」同一档：隔离后照常重建。
+            if venv_base_python_missing(environment_path):
+                raise _MaaFWRuntimeEntryStaleError(
+                    f"runtime base interpreter is gone (pyvenv.cfg home): {runtime_id}"
                 )
             # A missing executable is recoverable above, but a present Python
             # whose probed ABI disagrees with its selector is an identity

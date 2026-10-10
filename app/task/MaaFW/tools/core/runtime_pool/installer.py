@@ -1556,7 +1556,8 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
                 "扩展模块来自不同构建——例如运行时被升级或替换过，而已有的运行池"
                 "仍指向它；或者这个环境是早期版本用便携包的 embeddable Python 建的，"
                 "从注册表混入了本机另一份 Python 的扩展模块。前者请修复或重装该 "
-                f"Python 运行时，后者删除该运行环境后重新准备即可。原始错误：{detail[-400:]}"
+                "Python 运行时，后者删除该运行环境后重新准备即可。"
+                f"出问题的解释器：{python_executable}。原始错误：{detail[-400:]}"
             )
         raise RuntimeError(
             f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {output_tail(detail, 400)}"

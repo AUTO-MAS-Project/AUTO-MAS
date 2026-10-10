@@ -113,6 +113,37 @@ def remove_tree_best_effort(path: Path) -> bool:
     return False
 
 
+def venv_base_python_missing(venv_path: str | os.PathLike[str]) -> bool:
+    """venv 自己的文件都在，但 ``pyvenv.cfg`` 里 ``home`` 指向的基解释器已经不存在。
+
+    Windows 上 venv 的 python.exe 只是启动器，启动时靠 ``home`` 找标准库与 DLL，不是
+    自包含的——``home`` 目录被删掉、或整个安装目录被挪走之后，venv 静默失效（启动器报
+    ``No Python at '...'``，exit 103），哪怕 venv 自己的文件一个没少。agent 隔离 venv 与运行池
+    的 base venv 都会碰上：引导解释器是另一个 venv（受管模式下的监督器 venv）后来被重建，
+    或者用户把 AUTO-MAS 整个搬了家（池托管解释器 ``<pool>/python`` 跟着走了，``home`` 还是旧路径）。
+
+    ``home`` 行缺失或读不出时不判定失效，交给调用方已有的结构完整性检查处理。
+    """
+
+    try:
+        text = (Path(venv_path) / "pyvenv.cfg").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+
+    home: str | None = None
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().casefold() == "home":
+            home = value.strip()
+    if not home:
+        return False
+
+    exe_name = "python.exe" if os.name == "nt" else "python"
+    return not (Path(home) / exe_name).is_file()
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
