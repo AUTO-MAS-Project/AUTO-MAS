@@ -88,7 +88,7 @@ from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .history_paths import maafw_history_log_path
 from .option_secrets import (
-    collect_plan_password_values,
+    collect_run_password_values,
     collect_script_password_values,
     log_redaction_notice,
     open_task_snapshot,
@@ -2045,14 +2045,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             message += ": MaaFW worker 未返回任务结果，完整原生日志已保存到本次运行的 .maafw.log"
         raise RuntimeError(message)
 
-    def _secret_log_variants(self) -> list[str]:
-        """本次运行计划里 password 字段的值在日志里可能出现的写法（见 option_secrets）。"""
+    def _run_password_values(self) -> list[str]:
+        """本次运行要打码的密码值：计划里 password 字段的值 + 该用户快照里全部密文解开的值
+        （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。"""
 
         if self.run_plan is None or self.interface_model is None:
             return []
-        return secret_log_variants(
-            collect_plan_password_values(self.run_plan, self.interface_model)
+        return collect_run_password_values(
+            self.run_plan,
+            self.interface_model,
+            getattr(self, "cur_user_config", None),
         )
+
+    def _secret_log_variants(self) -> list[str]:
+        """本次运行要打码的密码值在日志里可能出现的写法（见 option_secrets）。"""
+
+        return secret_log_variants(self._run_password_values())
 
     def _project_log_secret_variants(self, plan_variants: list[str]) -> list[str]:
         """项目日志不一定是本次运行的用户写的（上一个用户留下的片段也可能落在本次新增里），
@@ -2072,14 +2080,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
 
     def _log_redaction_notice(self) -> str | None:
-        """项目有 password 输入框时写进 ``.worker.log`` 开头的打码说明（见 option_secrets）。"""
+        """项目有 password 输入框或本次有要打码的值时写进 ``.worker.log`` 开头的打码说明。"""
 
         if self.run_plan is None or self.interface_model is None:
             return None
-        return log_redaction_notice(
-            self.interface_model,
-            collect_plan_password_values(self.run_plan, self.interface_model),
-        )
+        return log_redaction_notice(self.interface_model, self._run_password_values())
 
     async def _wait_worker_exit(
         self,
