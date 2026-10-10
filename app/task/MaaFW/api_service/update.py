@@ -319,7 +319,12 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     if root_path is None:
         return MaaFWApiReply.error(400, error)
     if not root_path.is_dir():
-        return MaaFWApiReply.error(400, "MFW 项目路径不是有效目录，请检查 Info.Path")
+        # 有效根是 MAS 管理的项目副本，不是 Info.Path，别让用户去查配置键。
+        return MaaFWApiReply.error(
+            400,
+            "找不到项目文件。请关闭本页后重新打开，MAS 会尝试自动修复；"
+            "仍不行就新建脚本重新导入",
+        )
 
     try:
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)

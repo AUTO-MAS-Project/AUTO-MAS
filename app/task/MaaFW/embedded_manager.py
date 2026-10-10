@@ -873,7 +873,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
         if stage in ("committed", "completed"):
             # 新版本已登记：不再响应取消，切换约 2 s，做完再返回。
-            return "新版本已登记，正在切换脚本，请稍候", _UPDATE_CANCEL_GRACE_SECONDS
+            return "新版本已就绪，正在切换，请稍候", _UPDATE_CANCEL_GRACE_SECONDS
         # 下载完成之后到登记之前（解压 extracting / 构建 / 预检 / 入库）都在 staging 上，
         # 取消 = 丢掉 staging，没有回滚。解压（条目检查每 500 条、写盘每个条目与每 1 MB 块）
         # 与并入共用库（每个文件）都查令牌，下一个检查点就停；之后删半截目录的耗时随已写出
@@ -1045,7 +1045,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 version = (marker or {}).get("version") or "新版本"
                 if str(switched_by.get("scriptId") or "") == "迁移":
                     self._append_update_log(
-                        f"本视图已于 {at} 在启动期迁移时统一到同组版本 {version}"
+                        f"已于 {at} 在升级迁移时与同项目其他脚本统一到 {version}"
                     )
                 else:
                     name = str(
@@ -1054,7 +1054,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                         str(switched_by.get("scriptId") or "")
                     )
                     self._append_update_log(
-                        f"本视图已于 {at} 由脚本「{name}」的更新切到 {version}"
+                        f"已于 {at} 随脚本「{name}」的更新切换到 {version}"
                     )
                 await asyncio.to_thread(clear_switched_by, view)
             # 开发者模式下组是本脚本的私有渠道（latest 就是上次从来源导入的那份）。
@@ -1104,10 +1104,17 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 logger.warning(f"MFW 组同步后的运行池对账未能启动：{exc}")
         entry = await asyncio.to_thread(latest_entry, result.lineage, channel)
         by = str((entry or {}).get("by") or "")
-        self._append_update_log(
-            f"{phase_zh}已切到 {result.version}（由脚本「{self._script_display_name(by)}」"
-            f"于 {self._format_at((entry or {}).get('at'))} 更新）"
-        )
+        if by == "迁移":
+            origin = "升级迁移时统一"
+        else:
+            # 这个版本是谁怎么来的：更新得来的说「更新」，选目录导入的说「导入」。
+            kind = str(((entry or {}).get("source") or {}).get("kind") or "")
+            verb = "导入" if kind == "import" else "更新"
+            origin = (
+                f"由脚本「{self._script_display_name(by)}」"
+                f"于 {self._format_at((entry or {}).get('at'))} {verb}"
+            )
+        self._append_update_log(f"{phase_zh}已切到 {result.version}（{origin}）")
         with suppress(Exception):
             await asyncio.to_thread(self._load_interface_model, view, force_reload=True)
         return True

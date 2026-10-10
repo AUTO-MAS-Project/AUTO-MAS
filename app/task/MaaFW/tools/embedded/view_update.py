@@ -311,10 +311,11 @@ def describe_propagation(
         sid for sid, reason in result.skipped.items() if reason != SKIP_UNADOPTED
     ]
     if pending:
-        parts.append(f"{len(pending)} 个正在运行或被占用，下次运行前切换")
+        # 正在跑的正常跑完就在收尾时切；被停止、崩溃或只是被占用的，下次运行前切。
+        parts.append(f"{len(pending)} 个正在运行或被占用，跑完后或下次运行前自动切换")
     if result.failed:
         parts.append(
-            f"{len(result.failed)} 个同步失败（下次运行前再切）："
+            f"{len(result.failed)} 个切换失败（下次运行前再切换）："
             + "、".join(f"「{names.get(sid, sid[:8])}」" for sid in result.failed)
         )
     return "；".join(parts) or None
@@ -497,7 +498,7 @@ async def run_view_update(
         )
         if synced is not None:
             outcome.group_synced = True
-            log(f"已切到本项目当前版本 {synced.version}（与同组脚本一致）")
+            log(f"已切换到 {synced.version}，与同项目、同更新通道的其他脚本一致")
             marker = await asyncio.to_thread(read_view_marker, view) or marker
         base_marker = marker
         entry = await asyncio.to_thread(latest_entry, lineage, channel, base)
@@ -515,9 +516,10 @@ async def run_view_update(
                 "payload": str(entry["id"]),
                 "version": str(entry.get("version") or ""),
             }
+            newer = entry.get("version") or entry["id"]
             log(
-                f"本脚本还挂在 {marker.get('version') or '旧版本'}，以组里已登记的 "
-                f"{entry.get('version') or entry['id']} 为基准检查更新"
+                f"本脚本当前是 {marker.get('version') or '旧版本'}，同项目其他脚本已更新到 "
+                f"{newer}，以 {newer} 为准检查更新"
             )
         target = await asyncio.to_thread(
             payload_target_for, script_id, base_marker, channel, base
@@ -540,8 +542,10 @@ async def run_view_update(
                     base=base,
                 )
                 if switched is None:
-                    outcome.s_skipped_reason = "项目正被占用，本次没切，下次运行前切换"
-                    log(f"{switch_label}已登记，{outcome.s_skipped_reason}")
+                    outcome.s_skipped_reason = (
+                        "项目正在被使用，本次没有切换，下次运行前自动切换"
+                    )
+                    log(f"{switch_label}已准备好；{outcome.s_skipped_reason}")
                 else:
                     log(
                         f"已切到{switch_label} {switched.version}，"
@@ -605,14 +609,17 @@ def _normalize_result(
             message=(
                 getattr(result, "message", "")
                 if getattr(result, "updated", False)
-                else f"MaaFW 项目已切到 {outcome.version_after}（组里已有的版本）"
+                else (
+                    f"已切换到 {outcome.version_after}"
+                    "（同项目其他脚本已下载过这一版本）"
+                )
             ),
         )
     if getattr(result, "updated", False):
         return dataclasses.replace(
             result,
             updated=False,
-            message=f"新版本已登记，{outcome.s_skipped_reason or '本脚本尚未切换'}",
+            message=f"新版本已准备好；{outcome.s_skipped_reason or '本脚本尚未切换'}",
         )
     return result
 
