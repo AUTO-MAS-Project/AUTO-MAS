@@ -52,7 +52,7 @@ export function useMaaFWScriptDraft(scriptId: string) {
         validator: () =>
           maafwConfig.Info.Path
             ? Promise.resolve()
-            : Promise.reject(new Error('请选择 MFW 项目实际目录并读取 interface')),
+            : Promise.reject(new Error(t('edit.pickActualMfwProject'))),
         trigger: 'blur',
       },
     ],

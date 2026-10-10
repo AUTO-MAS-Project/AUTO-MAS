@@ -1635,6 +1635,27 @@ export default {
     envRuntimeProjectBinary: 'プロジェクト同梱のプログラム',
     envRuntimeSharedRuntime: '共有 Python 環境',
     envRuntimeExternal: '外部プログラム',
+    previousStep: '前へ',
+    maafwPageTitleSetup: '{name} プロジェクトのセットアップ',
+    maafwPageTitleConfig: '{name} プロジェクト設定',
+    maafwUpdateChannelStable: '安定版',
+    maafwUpdateChannelBeta: 'ベータ版',
+    autoUpdateMode: '自動更新',
+    autoUpdateModeOff: '更新しない',
+    autoUpdateModeBeforeRun: '実行前',
+    autoUpdateModeAfterRun: '実行後',
+    autoUpdateModeTip:
+      '実行前：毎回の実行前にプロジェクトを確認して更新します。実行後：今回の実行が終わってから更新します。更新に失敗してもタスクの実行は止まりません',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkGetLink: 'MirrorChyan CDK を入手',
+    cdkMissingForMirror:
+      '更新の取得元に MirrorChyan を選んでいますが CDK が未入力のため、MirrorChyan から更新をダウンロードできません',
+    cdkStatusIssue:
+      'MirrorChyan CDK が使えません（{status}）。MirrorChyan から更新をダウンロードできないため、CDK を確認してから再試行してください',
+    cdkExpiresSoon: 'MirrorChyan CDK は {date} に期限切れになります',
+    updateResultVersion: '最新バージョン',
+    updateResultSource: 'ダウンロード元',
     mfwUnityResolutionOff: '変更しない',
     mfwWaitTimeTip:
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',

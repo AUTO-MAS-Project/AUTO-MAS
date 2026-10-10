@@ -265,7 +265,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
       if (!maafwConfig.Info.Name) {
-        maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
+        maafwConfig.Info.Name = scriptDetail.name ?? flavor.value.defaultScriptName
         formData.name = maafwConfig.Info.Name
       }
 

@@ -1771,6 +1771,11 @@ export default {
     envRuntimeProjectBinary: 'Bundled program',
     envRuntimeSharedRuntime: 'Shared Python environment',
     envRuntimeExternal: 'External program',
+    previousStep: 'Previous',
+    maafwPageTitleSetup: '{name} project setup',
+    maafwPageTitleConfig: '{name} project settings',
+    maafwUpdateChannelStable: 'Stable',
+    maafwUpdateChannelBeta: 'Beta',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',

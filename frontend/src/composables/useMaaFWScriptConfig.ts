@@ -37,22 +37,30 @@ export const isDirectControllerType = (
  * CDK 不可用时后端明确报错而不是悄悄换成 GitHub。两项须与后端
  * MaaFWConfig.Update.Source 的 OptionsValidator 一致。
  */
-export const updateSourceOptions = [
-  { label: 'Mirror 酱', value: 'MirrorChyan' },
-  { label: 'GitHub', value: 'GitHub' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
+const UPDATE_SOURCES = [
+  'MirrorChyan',
+  'GitHub',
+] as const satisfies readonly MaaFWProjectUpdateSource[]
 
 /** 项目更新通道只有稳定版 / 测试版，没有「跟随全局」，也故意不开放 alpha。 */
-export const updateChannelOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '测试版', value: 'beta' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateChannel }>
+const UPDATE_CHANNELS = ['stable', 'beta'] as const satisfies readonly MaaFWProjectUpdateChannel[]
+
+// 下拉选项的文案随界面语言变，所以是 computed
+export const updateSourceOptions = computed(() => [
+  { label: t('edit.sourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('edit.sourceGithub'), value: 'GitHub' },
+])
+
+export const updateChannelOptions = computed(() => [
+  { label: t('edit.maafwUpdateChannelStable'), value: 'stable' },
+  { label: t('edit.maafwUpdateChannelBeta'), value: 'beta' },
+])
 
 export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
-  updateSourceOptions.some(option => option.value === value)
+  (UPDATE_SOURCES as readonly unknown[]).includes(value)
 
 export const isMaaFWUpdateChannel = (value: unknown): value is MaaFWProjectUpdateChannel =>
-  updateChannelOptions.some(option => option.value === value)
+  (UPDATE_CHANNELS as readonly unknown[]).includes(value)
 
 /**
  * MaaFW 脚本配置的默认形态。后端未返回某段时用它兜底，保证编辑页所有

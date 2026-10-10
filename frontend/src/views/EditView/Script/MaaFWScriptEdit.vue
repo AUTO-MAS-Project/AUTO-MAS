@@ -203,7 +203,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          上一步
+          {{ t('edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"

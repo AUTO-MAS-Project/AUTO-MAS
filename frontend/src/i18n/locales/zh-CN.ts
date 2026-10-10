@@ -1684,6 +1684,11 @@ export default {
     envRuntimeProjectBinary: '项目自带程序',
     envRuntimeSharedRuntime: '共享 Python 环境',
     envRuntimeExternal: '外部程序',
+    previousStep: '上一步',
+    maafwPageTitleSetup: '{name} 项目引导',
+    maafwPageTitleConfig: '{name} 项目配置',
+    maafwUpdateChannelStable: '稳定版',
+    maafwUpdateChannelBeta: '测试版',
     mfwUnityResolutionOff: '不修改',
     mfwWaitTimeTip:
       'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',
