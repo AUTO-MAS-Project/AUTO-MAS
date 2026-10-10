@@ -299,6 +299,10 @@ export interface MaaFWUserTaskQueueSectionEmits {
   taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
   deleteSelectedTask: []
   deleteTask: [taskId: string]
+  /** 队列行右键「复制任务」：在它正下方插一份，勾选、选项与显示名一起复制 */
+  duplicateTask: [taskId: string]
+  /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
+  renameTask: [taskId: string, name: string]
 }
 
 /** 用户页分节键 → props 契约 */
