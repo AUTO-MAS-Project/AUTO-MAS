@@ -15,8 +15,9 @@ import {
 /** 单次更新日志的缓冲上限 */
 const UPDATE_LOG_MAX_CHARS = 200_000
 /**
- * 卡住的判定：这么久一行新日志都没有才收工，真正的时限由后端到点自终止。
- * 播报之间安静几分钟是正常推进，取宽值才不会把它误判成卡住。
+ * 一行新日志都没有，多久就向后端对一次账。整文件成员的拷贝与校验可以在一行都不出的
+ * 情况下跑十几分钟，所以到点不等于卡住：任务还在运行列表里就重新计时接着等，确实不在
+ * 才算结束。一轮更新的时限由后端到点自终止。
  */
 const MAAEND_UPDATE_IDLE_MS = 15 * 60 * 1000
 
@@ -97,24 +98,18 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     }
   }
 
-  /** 重新起「多久没进展就算卡住」的表；每来一条新日志都续一次 */
+  /** 重新起「这么久没新日志就去对一次账」的表；每来一条新日志都续一次 */
   const armIdleTimer = () => {
     if (updateSession.timeout) {
       window.clearTimeout(updateSession.timeout)
     }
-    updateSession.timeout = window.setTimeout(() => {
-      message.error(t('edit.endfieldUpdateTimed'))
-      // 状态一定要落回不运行，否则弹窗会一直停在「进行中」出不来
-      updateModal.running = false
-      updateModal.done = true
-      void stopSession()
-    }, MAAEND_UPDATE_IDLE_MS)
+    updateSession.timeout = window.setTimeout(() => void settleOnIdle(), MAAEND_UPDATE_IDLE_MS)
   }
 
   /**
    * 排一次 5 秒后的补对账。
    *
-   * 上限 3 次：快照接口一直失败时不能变成每 5 秒一次的无界轮询，兜不住就交给空闲看门狗。
+   * 上限 3 次：快照接口一直失败时不能变成每 5 秒一次的无界轮询，15 分钟那一表的对账仍在等它。
    */
   const scheduleResync = () => {
     if (resyncRetries >= 3) return
@@ -150,13 +145,23 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   /**
    * 订阅之后与日志失步时对一次账：任务可能已经不在运行列表里了。
    * WebSocket 不重放历史事件，派发与订阅之间就结束的那一轮只能靠补对账收口。
+   * 返回这个任务是否还需要继续等下去。
    */
-  const settleIfFinished = async () => {
-    if (await resyncLog()) return
+  const settleIfFinished = async (): Promise<boolean> => {
+    if (await resyncLog()) return true
     updateModal.running = false
     updateModal.done = true
     updateModal.log ||= t('edit.endfieldUpdateAlreadyFinished')
     clearSession()
+    return false
+  }
+
+  /**
+   * 空闲到点的对账：还在运行列表里就重新起表接着等。安静十几分钟是整文件拷贝与校验的
+   * 正常形状，拿一次没查到的状态去中止一轮推进中的更新，代价比多等一轮大。
+   */
+  const settleOnIdle = async () => {
+    if ((await settleIfFinished()) && updateModal.running) armIdleTimer()
   }
 
   const applyLog = (data: { log: string; seq?: number; append?: boolean }) => {
@@ -167,8 +172,8 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       updateModal.log += data.log
       logSeq = data.seq
     } else {
-      // 序号对不上（丢包或重连）就整段重扫，期间不追加半截行。表必须先续上：
-      // 重扫一旦失败，不续表就变成「日志冻结 + 到点误判卡死并真的中止」
+      // 序号对不上（丢包或重连）就整段重扫，期间不追加半截行。表必须先续上：重扫一旦
+      // 失败，这一段就没有下一次对账了
       logSeq = null
       armIdleTimer()
       void settleIfFinished()

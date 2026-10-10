@@ -24,7 +24,8 @@
 复用本模块。更新对象是游戏本体（`Game.Path` 所在目录）。
 
 流程：从客户端自己的 `config.ini` 读出版本号与服务器三元组 → 用这份原文向 `batch_proxy`
-接口换回差量包与差量清单 → 先按清单核对本地基线文件，核对不过就一个字都不写 → 逐卷下载
+接口换回差量包与差量清单 → 先按清单核对本地基线文件，核对不过就一个字都不写 → 需要时退出
+正在运行的客户端 → 逐卷下载
 差量分卷并按 MD5 校验 → 把分卷拼成连续流交给 `pyzipper`（差量包是 WinZip AES-256，口令
 来自服务端给的 `cd_key`）→ 逐条用 `hpatchz` 把差量打在基线文件上（整文件成员直接取包内
 字节）→ 每条落盘前比 MD5，全部就位后才提交 `config.ini`，最后按服务端的删除表清理。
@@ -113,7 +114,8 @@ _MANIFEST_MAX_BYTES = 8 * 1024**2
 真到了说明服务端或 CDN 给了异常正文，整块读进内存先撑爆的是 MAS 自己。"""
 
 _APPLY_STEP = 20
-"""逐条落地时的播报间隔（条）：太密会刷满调度台日志，太疏看不出还在推进。"""
+"""核对基线与落地覆盖这两段逐条播报的间隔（条）：清单能到上万条，逐条播会把最开始的
+几步挤出调度台的日志窗口，太疏又看不出还在推进。"""
 
 _RESERVE_BYTES = 256 * 1024**2
 """除下载与落地体积外额外要求的余量：盘刚好占满会把问题转移到下一次运行。"""
@@ -1108,16 +1110,14 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
     if actual != size:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
-        raise EndfieldUpdateError(
-            f"{target.name} 落地体积不符：期望 {size} 实际 {actual}"
-        )
+        logger.warning(f"{target} 落地体积不符：期望 {size} 实际 {actual}")
+        raise EndfieldUpdateError(f"{target.name} 落地后的体积不对，已停止覆盖")
     digest = await asyncio.to_thread(_md5_of, temp)
     if digest != md5:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
-        raise EndfieldUpdateError(
-            f"{target.name} 落地校验未通过：期望 {md5} 实际 {digest}"
-        )
+        logger.warning(f"{target} 落地校验未通过：期望 {md5} 实际 {digest}")
+        raise EndfieldUpdateError(f"{target.name} 落地校验未通过，已停止覆盖")
     # 改名是单次系统调用，不走线程池：进了线程池，被判定「已中止」之后仍可能在后台
     # 把游戏文件换掉，回报的状态就和磁盘上的实情不一致
     _replace(temp, target)
@@ -1157,7 +1157,7 @@ async def _apply_delta(
             logger.warning(f"未能清理残留的临时文件 {stray.name}: {error}")
 
     async def _report(line: str) -> None:
-        if progress is not None:
+        if progress is not None and (done % _APPLY_STEP == 0 or done == total):
             await progress(line)
 
     async def _unpack(info: zipfile.ZipInfo, temp: Path) -> None:
@@ -1420,7 +1420,8 @@ async def _download_release(
                     # 中途断流、连接重置与读超时都到不了状态码，只会以传输层异常收场。
                     # 已落盘的字节留着，换一把地址从断点接着下；试满才判废。
                     logger.warning(
-                        f"{target.name} 传输中断（{type(error).__name__}），换签名地址续传"
+                        f"{target.name} 传输中断（{type(error).__name__}: {error}），"
+                        "换签名地址续传"
                     )
                     current = await _refresh_plan(identity, current)
                     part = current.parts[index - 1]
@@ -1515,8 +1516,8 @@ async def ensure_game_updated(
 ) -> GameUpdateResult:
     """对外入口：跑一轮判定，并把开始、过程与结论都写进 `debug/app.log`。
 
-    时限包住「核对基线 + 下载差量 + 落地」三段；进度行只往调度台推，同一行由本函数写进
-    `debug/app.log`；`entry` 只进日志，用来区分自动门与脚本页手动按钮。
+    时限包住「核对基线 + 退出客户端 + 下载差量 + 落地」四段；进度行只往调度台推，同一行
+    由本函数写进 `debug/app.log`；`entry` 只进日志，用来区分自动门与脚本页手动按钮。
     """
 
     logger.info(
@@ -1610,12 +1611,6 @@ async def _ensure_game_updated(
     outdated = (
         f"终末地客户端版本落后（已安装 {identity.version}，最新 {release.version}）"
     )
-    blocked = await _release_install_dir(game_exe)
-    if blocked:
-        return GameUpdateResult("NeedManualUpdate", f"{outdated}，{blocked}")
-    unwritable = _write_probe(install_dir)
-    if unwritable:
-        return GameUpdateResult("NeedManualUpdate", f"{outdated}，{unwritable}")
     short = _disk_shortfall(
         install_dir, release.download_size + _RESERVE_BYTES, "游戏目录（下载差量包）"
     )
@@ -1678,6 +1673,14 @@ async def _ensure_game_updated(
                     f"{' 等' if len(bad) > 5 else ''}），MAS 不覆盖改动过的客户端，"
                     "请用启动器手动更新一次",
                 )
+
+            # 核对通过才动游戏目录：先探可写，再退出正在运行的客户端
+            unwritable = _write_probe(install_dir)
+            if unwritable:
+                return GameUpdateResult("NeedManualUpdate", f"{outdated}，{unwritable}")
+            blocked = await _release_install_dir(game_exe)
+            if blocked:
+                return GameUpdateResult("NeedManualUpdate", f"{outdated}，{blocked}")
 
             hpatchz = await ensure_hpatchz(on_progress=report)
             files = await _download_release(release, staging, report, identity)
@@ -1748,12 +1751,16 @@ async def _ensure_game_updated(
         )
     except Exception as error:
         # 兜底：本函数对外承诺不抛，调用方才能拿 status 决定放行还是阻断。走到这里
-        # 说明有没预料到的异常类型（包内解析、线程池等），一律按「需要手动更新」处理
-        logger.opt(exception=True).warning(f"终末地差量更新出现未预料的异常: {error}")
+        # 说明有没预料到的异常类型（包内解析、线程池等），一律按「需要手动更新」处理。
+        # 异常类型与原文只留在这一行日志里；落地途中抛出时客户端已经部分改动，所以给
+        # 用户的那句只说该做什么，不承诺目录还是原样
+        logger.opt(exception=True).warning(
+            f"终末地差量更新出现未预料的异常（{type(error).__name__}: {error}）"
+        )
         return GameUpdateResult(
             "NeedManualUpdate",
-            f"{outdated}，MAS 自动更新失败（{type(error).__name__}: {error}），"
-            "请手动更新游戏后重试",
+            f"{outdated}，MAS 自动更新中途停手，原因记在该脚本的运行日志里；"
+            "请用启动器手动更新一次，若反复出现请带上日志反馈",
         )
     finally:
         # 无论成败都不把差量卷留在用户盘上。中止那条路上可能仍有工作线程攥着卷句柄，
