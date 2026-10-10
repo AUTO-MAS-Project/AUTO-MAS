@@ -869,6 +869,9 @@ class MaaFWRunner:
         # 单任务时限到点后发起停止的定时器线程（它在里面等停止 job）。
         self._task_deadline_stop_thread: threading.Thread | None = None
         self._completed_tasks: list[str] = []
+        # 本轮正在处理的任务名（每个任务开始时设）：异常收尾时据此报 failedTask。
+        # 没进入任务循环（初始化、启动画面等待失败）时为 None，不把原因挂到某个任务上。
+        self._current_task_name: str | None = None
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
         self._signal_specs: dict[str, MaaFWSignalSpec] = {}
@@ -1034,6 +1037,7 @@ class MaaFWRunner:
         self._task_deadline_stop_thread = None
         self._failure_screenshots = []
         self._completed_tasks = []
+        self._current_task_name = None
         with self._signal_lock:
             self._signal_hit = None
             self._signal_task = None
@@ -1094,11 +1098,10 @@ class MaaFWRunner:
                 completedTasks=completed_tasks,
             )
         except Exception as exc:
-            failed_task = (
-                self.plan.tasks[len(self._completed_task_names())].name
-                if (len(self._completed_task_names()) < len(self.plan.tasks))
-                else None
-            )
+            # 用「正在处理的任务」而不是「已完成数」当下标：前面有任务失败后继续过、
+            # 或收尾任务被放过时，已完成数会比实际位置少，指到前面的任务上。
+            # 初始化阶段失败时还没有任务，为 None。
+            failed_task = self._current_task_name
             self.send_log(f"MaaFW 任务执行失败: {exc}")
             return MaaFWRunResult(
                 success=False,
@@ -1707,7 +1710,10 @@ class MaaFWRunner:
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
             raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
-        self._wait_job(self.resource.post_bundle(path_info.resolved))
+        self._wait_job(
+            self.resource.post_bundle(path_info.resolved),
+            failure=f"加载资源失败: {path_info.resolved}",
+        )
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:
@@ -1779,7 +1785,10 @@ class MaaFWRunner:
         self.controller = self._create_controller(device_config)
         self._apply_screenshot_target(self.controller)
         self._install_controller_sink(self.controller)
-        self._wait_job(self.controller.post_connection())
+        self._wait_job(
+            self.controller.post_connection(),
+            failure=f"连接控制器失败: {self.plan.controllerName}",
+        )
         if not self.tasker.bind(self.resource, self.controller):
             raise RuntimeError("无法绑定 MaaFW resource/controller/tasker")
         self._install_tasker_sink()
@@ -2882,6 +2891,7 @@ class MaaFWRunner:
         for index, task in enumerate(self.plan.tasks):
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
+            self._current_task_name = task.name
             tasker = self.tasker
             if tasker is None:
                 raise RuntimeError("MaaFW tasker 已释放，无法继续投递任务")
@@ -3197,19 +3207,43 @@ class MaaFWRunner:
         completed_tasks = getattr(self, "_completed_tasks", [])
         return list(completed_tasks)
 
-    def _wait_job(self, job: Job | JobWithResult) -> None:
+    def _wait_job(
+        self, job: Job | JobWithResult, *, failure: str | None = None
+    ) -> None:
+        """等 job 结束，失败时抛带原因的 RuntimeError。
+
+        ``failure``：资源加载、控制器连接这类不是任务的 job 用的说明（如「加载资源失败:
+        <路径>」）。它们是普通 Job，取不到节点与失败事件，不给说明就会抛出空串，
+        宿主那边只剩「任务执行失败」。
+        """
+
         # MaaFW returns a Job wrapper even when the native Tasker rejects a
         # task (for example, an invalid pipeline override); in that case the
         # native task id is 0 and ``job.failed`` is not reliable.  Treat it as
         # a submission failure instead of reporting an instant success.
         if getattr(job, "job_id", 1) == 0:
-            raise RuntimeError("MaaFW tasker 未接受任务（task_id=0）")
+            if failure is not None:
+                self.send_log(f"{DETAIL_LOG_PREFIX}{failure}: MaaFW job id=0")
+                raise RuntimeError(
+                    f"{failure}：MaaFramework 未接受这个请求，原因见本次运行的 .maafw.log"
+                )
+            self.send_log(f"{DETAIL_LOG_PREFIX}MaaFW tasker 未接受任务（task_id=0）")
+            raise RuntimeError(
+                "MaaFramework 拒绝了这个任务（多半是任务选项生成的覆盖无效），"
+                "原因见本次运行的 .maafw.log"
+            )
         job.wait()
         if job.failed:
             detail = None
             if isinstance(job, JobWithResult):
                 detail = job.get()
-            raise RuntimeError(self._build_job_failure_message(detail))
+            message = self._build_job_failure_message(detail)
+            if not message:
+                lead = failure or "MaaFramework 未给出失败原因"
+                message = f"{lead}，详见本次运行的 .maafw.log"
+            elif failure is not None:
+                message = f"{failure}：{message}"
+            raise RuntimeError(message)
 
     def _on_node_notification(self, message: str, details: dict[str, Any]) -> None:
         """框架每条原始通知都进这里：先打 focus 文案，再记失败摘要。

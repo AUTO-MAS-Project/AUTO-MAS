@@ -3671,6 +3671,10 @@ def _failure_reason_for_user(result: Any) -> str:
 def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
     failed_task = str(getattr(result, "failedTask", "") or "").strip()
     reason = _failure_reason_for_user(result)
+    if not failed_task:
+        # 还没投递任何任务就失败了（ADB 未就绪、Agent 连接超时、资源加载失败……）：
+        # 不把原因挂到第一个任务头上，用户会去查错任务
+        return f"MaaFW 运行失败{'：' + reason if reason else ''}"
     suffix = f"：任务执行失败{'：' + reason if reason else ''}"
     tasks = tuple(getattr(plan, "tasks", ()) or ()) if plan is not None else ()
     if tasks:
