@@ -348,10 +348,10 @@ export class SatelliteScene {
 
   setDark(isDark: boolean): void {
     this.isDark = isDark
-    // 星空、星云只在深色主题下有意义，浅色背景上就是一片灰点
-    this.stars.points.visible = isDark
+    // 主页卫星区域保持透明，不叠加星空或星云背景
+    this.stars.points.visible = false
     for (const cloud of this.nebula) {
-      cloud.visible = isDark
+      cloud.visible = false
     }
     const orbitColor = isDark ? SATELLITE_COLORS.orbitDark : SATELLITE_COLORS.orbitLight
     for (const line of this.orbitLines) {
