@@ -51,10 +51,12 @@
             >
               {{ t('edit.queueTemplate') }}
             </a-button>
+            <!-- 下拉宽度不跟输入框走（搜索时默认会跟）：每栏给够宽，任务名别被截断 -->
             <a-cascader
               v-model:value="addTaskCascaderValueModel"
               :options="addTaskCascaderOptions"
-              :show-search="{ filter: filterAddTaskOption }"
+              :show-search="{ filter: filterAddTaskOption, matchInputWidth: false }"
+              :dropdown-menu-column-style="ADD_TASK_MENU_COLUMN_STYLE"
               :placeholder="t('edit.addTask')"
               expand-trigger="hover"
               class="add-task-cascader"
@@ -460,6 +462,9 @@ import type {
 } from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
+
+/** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
+const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
 
 type DisplayItem = {
   name: string
