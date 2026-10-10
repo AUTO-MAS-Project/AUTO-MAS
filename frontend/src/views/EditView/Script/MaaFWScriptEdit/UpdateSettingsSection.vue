@@ -287,11 +287,13 @@ const isCdkMissingForMirror = computed(
     !props.maafwConfig.Update.MirrorChyanCDK.trim()
 )
 
+// absent 且后端没给原因时不再提示：没填 CDK 已由输入框下那行说过；填了 CDK 时 absent 只是
+// 查版本那次没带 CDK 留下的状态（version_only 查询固定不带），不代表用户没填
 const cdkWarningMessage = computed(() => {
   const warning = resolveCdkWarning(props.updateResult, props.maafwConfig.Update.Source)
   if (!warning) return ''
   if (warning.message) return warning.message
-  if (warning.status === 'absent') return t('edit.cdkMissingForMirror')
+  if (warning.status === 'absent') return ''
   return t('edit.cdkStatusIssue', { status: warning.status })
 })
 
@@ -526,8 +528,11 @@ watch(
   margin-bottom: 8px;
 }
 
+/* 与基础信息区「运行环境」面板标题同一字号字重 */
 .update-process-title {
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
   color: var(--ant-color-text);
 }
 
