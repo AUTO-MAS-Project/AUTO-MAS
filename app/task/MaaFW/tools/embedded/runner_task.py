@@ -2418,7 +2418,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not self.opened_emulator:
             return True
         try:
-            return await close_emulator(self, log_failure=False)
+            # 失败原因（含超时）进 app.log；用户日志里留一句，收尾后模拟器还开着时有线索。
+            # #708 设成静默的理由「插件清理属预期路径」已经不成立（没有插件这一层了）。
+            closed = await close_emulator(self)
+            if not closed:
+                self._append_log(
+                    "关闭由 MAS 启动的模拟器失败，请手动关闭", warning=True
+                )
+            return closed
         finally:
             self.opened_emulator = False
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
@@ -2465,11 +2472,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return
 
         if await asyncio.to_thread(_is_process_path_running, game_path):
-            message = (
+            # 走 _append_log（它同样写 app.log）：直接改 script_info.log 会整块替换日志
+            # 窗口，这一行也不进用户日志与 history，下一条日志一来就没了。
+            self._append_log(
                 f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_path.name}"
             )
-            logger.info(message)
-            self.script_info.log = message
             self._note_resolution_override_skipped()
             self._note_launch_arguments_skipped()
             if await self._wait_for_desktop_game_ready(game_path):
@@ -2493,15 +2500,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 cwd=game_path.parent,
                 breakaway=True,
             )
+            # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
+            # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
+            self.opened_game = True
             await self._wait_for_desktop_game_ready(game_path)
             self.game_window_ready_at = time.monotonic()
         except Exception:
+            self.opened_game = False
             with suppress(Exception):
                 await self.game_process_manager.kill()
             await self._restore_game_resolution_override()
             raise
 
-        self.opened_game = True
         await self._activate_desktop_game_window(game_path)
 
     def _unity_resolution_target(self) -> tuple[int, int] | None:
@@ -2541,13 +2551,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 "跳过临时固定分辨率（只有 Unity 引擎的游戏支持）"
             )
             return
+        # 先记下再写：写注册表在工作线程里，等它时被停止（取消）的话，收尾的
+        # _close_game 仍要能把它恢复回去
+        self.game_resolution_override = override
         try:
             await asyncio.to_thread(override.apply)
         except Exception as exc:
+            self.game_resolution_override = None
             logger.warning(f"MaaFW 临时固定游戏分辨率失败: {exc}")
             self._append_log(f"临时固定游戏分辨率失败，按当前分辨率启动: {exc}")
             return
-        self.game_resolution_override = override
         self._append_log(
             f"已尝试把 HKCU\\{override.registry_path} 的分辨率临时设为 "
             f"{override.label} 窗口模式，游戏关闭后恢复原值"
@@ -2579,6 +2592,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """
 
         wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
+        if wait_time <= 0:
+            # 「等待时间」填 0 只表示不等画面稳定；窗口还是要等出来，否则刚拉起的游戏
+            # 当场判「窗口未就绪」、被关掉重试，次次如此
+            wait_time = _WINDOW_READY_FALLBACK_SECONDS
         if self.run_plan is None or self.interface_model is None:
             raise RuntimeError("MaaFW 运行计划未完成初始化")
 
@@ -2591,15 +2608,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(
             f"正在等待游戏客户端窗口就绪，最大等待时间 {wait_time}s: {game_path.name}"
         )
-        if wait_time <= 0:
-            if not await asyncio.to_thread(_is_process_path_running, game_path):
-                raise RuntimeError(f"游戏进程未启动: {game_path.name}")
-            if explicit_hwnd:
-                self._append_log(f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}")
-                return False
-            if not await asyncio.to_thread(_match_controller_windows, controller):
-                raise RuntimeError(f"游戏窗口未就绪: {game_path.name}")
-            return False
 
         waited = 0.0
         process_detected = False
