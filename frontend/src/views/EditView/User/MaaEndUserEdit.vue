@@ -103,7 +103,11 @@
             <template #title>{{ t('edit.maaEndSanitySection') }}</template>
             <template #extra>
               <a-button
-                v-if="formData.Task.IfSanity && isSanityPlanMode"
+                v-if="
+                  formData.Task.IfSanity &&
+                  isSanityPlanMode &&
+                  formData.Info.SanityStrategy === 'MAS'
+                "
                 type="link"
                 class="plans-button"
                 @click="handleGoToPlans"
@@ -124,8 +128,11 @@
               :is-plan-mode="isSanityPlanMode"
               :sanity-mode-options="sanityModeOptions"
               :plan-mode-config="planModeConfig"
+              :config-loading="maaEndConfigLoading"
+              :show-config-mask="showMaaEndConfigMask"
               @save="handleFieldSave"
               @save-batch="handleFieldsSave"
+              @configure="handleMaaEndConfig"
             />
           </a-card>
 
@@ -361,6 +368,7 @@ const getDefaultMaaEndUserData = () => ({
     Password: '',
     Mode: '脚本',
     IfQuickConfig: true,
+    SanityStrategy: 'MAS',
     SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
@@ -452,18 +460,21 @@ const formData = reactive({
   ...getDefaultMaaEndUserData(),
 })
 
-// 遮罩文案按配置来源区分：脚本=脚本级共享配置、用户=当前用户独立配置。
-// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
+// 遮罩与运行下发使用同一配置来源，直控会话直接编辑本体配置。
 const maaEndConfigMaskTitle = computed(() =>
-  formData.Info.Mode === '用户'
-    ? t('scripts.mask.maaEndUserTitle')
-    : t('scripts.mask.maaEndScriptTitle')
+  formData.Info.Mode === '直控'
+    ? t('edit.maaEndNativeSanityStrategy')
+    : formData.Info.Mode === '用户'
+      ? t('scripts.mask.maaEndUserTitle')
+      : t('scripts.mask.maaEndScriptTitle')
 )
 
 const maaEndConfigMaskDesc = computed(() =>
-  formData.Info.Mode === '用户'
-    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
-    : t('scripts.mask.maaEndScriptDesc')
+  formData.Info.Mode === '直控'
+    ? t('edit.maaEndDirectInventoryConfigHint')
+    : formData.Info.Mode === '用户'
+      ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+      : t('scripts.mask.maaEndScriptDesc')
 )
 
 const rules = computed<Record<string, Rule[]>>(() => ({
@@ -712,6 +723,8 @@ const loadUserData = async () => {
 const handleMaaEndConfig = async () => {
   if (configLocked.value) return
   if (!userId) return
+  // 先完成自动保存，确保配置会话沿用界面当前选择的来源。
+  if (!(await handleFieldSave('Info.Mode', formData.Info.Mode))) return
   await startSession(userId)
 }
 

@@ -623,6 +623,17 @@ export default {
     addPreset: '添加预设',
     sanityTask: '理智任务',
     maaEndEnableSanity: '启用理智任务',
+    maaEndSanityStrategy: '执行策略',
+    maaEndMasSanityStrategy: 'MAS 指定任务',
+    maaEndNativeSanityStrategy: '使用 MaaEnd 原生策略',
+    maaEndConfigureInventory: '配置库存目标',
+    maaEndNativeSanityHint:
+      '保留 MaaEnd 中已启用的协议空间、基质刷取及全部选项，可使用目标库存。固定任务和周计划选择会保留，本轮不应用；理智开关关闭时整组不执行。',
+    maaEndInventorySourceHint:
+      '配置沿用当前来源：脚本共享、用户独立或直控。不同账号需要不同目标时，请选择用户独立配置。在 MaaEnd 中启用所需任务并设置库存目标。',
+    maaEndDirectInventoryConfigHint: '请在 MaaEnd 原生窗口中启用所需任务并设置库存目标。',
+    maaEndCollectInventoryHint:
+      'MAS 只安排今天的候选路线，MaaEnd 按原生库存条件决定是否采集。今天未安排的路线即使库存不足也不会执行；需要每轮补库时，请选集中采集并勾选全部所需路线。',
     maaEndSanitySection: '理智任务（基质刷取/协议空间）',
     sanityTaskConfigurationMode: '理智任务配置模式',
     usedSwitchAccountsCn: '用于切换账号，官服输入手机号，B服输入B站ID，无需切换则留空',

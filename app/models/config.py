@@ -1372,6 +1372,10 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
         )
+        ## 理智任务执行策略：MAS 指定任务或保留 MaaEnd 原生策略
+        self.Info_SanityStrategy = ConfigItem(
+            "Info", "SanityStrategy", "MAS", OptionsValidator(["MAS", "Native"])
+        )
         ## 理智任务配置模式
         self.Info_SanityMode = ConfigItem(
             "Info",
@@ -1536,7 +1540,12 @@ class MaaEndUserConfig(ConfigBase):
         tags.append(_tag_remained_days(self))
 
         # 理智任务标签
-        if self.get("Task", "IfSanity"):
+        if (
+            self.get("Task", "IfSanity")
+            and self.get("Info", "SanityStrategy") == "Native"
+        ):
+            tags.append({"text": "理智任务：MaaEnd 原生策略", "color": "blue"})
+        elif self.get("Task", "IfSanity"):
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
             tags.append(
