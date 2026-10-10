@@ -162,9 +162,12 @@
                     <HolderOutlined class="task-drag-handle-disabled" aria-hidden="true" />
                     <div class="task-main">
                       <span class="task-title task-title-missing">
-                        {{ queuedTask.name }}
-                        <span v-if="queuedTask.copyTotal > 1" class="task-copy-index">
-                          #{{ queuedTask.copyIndex }}
+                        {{ maafwQueueEntryTitle(queuedTask).name }}
+                        <span
+                          v-if="maafwQueueEntryTitle(queuedTask).index !== null"
+                          class="task-copy-index"
+                        >
+                          #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
                       <span class="task-missing-tag">{{ t('edit.missingTaskTag') }}</span>
@@ -208,9 +211,12 @@
                     />
                     <div class="task-main">
                       <span class="task-title">
-                        {{ getQueuedTaskName(queuedTask) }}
-                        <span v-if="queuedTask.copyTotal > 1" class="task-copy-index">
-                          #{{ queuedTask.copyIndex }}
+                        {{ maafwQueueEntryTitle(queuedTask).name }}
+                        <span
+                          v-if="maafwQueueEntryTitle(queuedTask).index !== null"
+                          class="task-copy-index"
+                        >
+                          #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
                     </div>
@@ -276,9 +282,9 @@
             />
             <div>
               <div class="selected-task-title">
-                {{ selectedTaskTitle }}
-                <span v-if="(selectedQueuedTask?.copyTotal || 1) > 1" class="task-copy-index">
-                  #{{ selectedQueuedTask?.copyIndex }}
+                {{ selectedTaskTitle.name }}
+                <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
+                  #{{ selectedTaskTitle.index }}
                 </span>
               </div>
               <!-- 入口 | 分组：原来是队列行里的两个标签，挪到这里当副标题 -->
@@ -328,9 +334,9 @@
           <div class="selected-task-header">
             <div>
               <div class="selected-task-title task-title-missing">
-                {{ selectedMissingTask.name }}
-                <span v-if="selectedMissingTask.copyTotal > 1" class="task-copy-index">
-                  #{{ selectedMissingTask.copyIndex }}
+                {{ selectedTaskTitle.name }}
+                <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
+                  #{{ selectedTaskTitle.index }}
                 </span>
               </div>
               <div class="selected-task-meta">{{ t('edit.missingTaskHint') }}</div>
@@ -424,14 +430,13 @@ import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
-import { MAAFW_TASK_LABEL_MAX_LENGTH } from './maafwTaskSnapshot'
+import {
+  MAAFW_TASK_LABEL_MAX_LENGTH,
+  maafwQueueEntryBaseName,
+  maafwQueueEntryTitle,
+} from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
-import type {
-  MaaFWMissingQueuedTask,
-  MaaFWQueueEntry,
-  MaaFWQueuedTaskItem,
-  MaaFWTaskInfo,
-} from '@/types/script'
+import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
@@ -496,15 +501,11 @@ const showPresetModalModel = computed({
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
 
-/** 队列里一份实例的基础名：改过显示名就用它，否则是任务的 label / name（副本序号另拼） */
-const getQueuedTaskName = (item: MaaFWQueuedTaskItem) =>
-  item.customLabel || getDisplayName(item.task)
-
-// 右栏标题与队列行一致
-const selectedTaskTitle = computed(() => {
+// 右栏标题与队列行一致（虚影也一样）：同一个 maafwQueueEntryTitle
+const selectedTaskTitle = computed<{ name: string; index: number | null }>(() => {
   const item = selectedQueuedTask.value
-  if (item && !item.missing) return getQueuedTaskName(item)
-  return props.selectedTask ? getDisplayName(props.selectedTask) : ''
+  if (item) return maafwQueueEntryTitle(item)
+  return { name: props.selectedTask ? getDisplayName(props.selectedTask) : '', index: null }
 })
 
 // ── 队列行右键菜单：复制任务 / 重命名 / 删除任务 ──
@@ -556,7 +557,7 @@ const handleContextMenuClick = ({ key }: { key: string | number }) => {
   }
   if (key === 'rename' && !item.missing) {
     renameTaskId.value = item.id
-    renameDraft.value = getQueuedTaskName(item)
+    renameDraft.value = maafwQueueEntryBaseName(item)
     renameOpen.value = true
     return
   }

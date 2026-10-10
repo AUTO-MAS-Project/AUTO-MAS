@@ -122,11 +122,17 @@ export const describeMaaFWQueueSource = (
     const task = context.taskByName.get(taskName)
     if (task && context.isManagedTask(task)) continue
     const available = context.availableTaskByName.get(taskName)
+    // 来源里给这一份改过显示名就显示它，与来源用户自己队列里看到的一致
+    const customLabel = snapshot.taskLabels?.[taskId]
     if (available) {
       entries.push({ id: taskId, task: available })
-      chips.push({ id: taskId, label: context.displayName(available), invalid: false })
+      chips.push({
+        id: taskId,
+        label: customLabel || context.displayName(available),
+        invalid: false,
+      })
     } else {
-      const label = task ? context.displayName(task) : maafwMissingTaskName(taskId)
+      const label = customLabel || (task ? context.displayName(task) : maafwMissingTaskName(taskId))
       chips.push({ id: taskId, label, invalid: true })
     }
   }

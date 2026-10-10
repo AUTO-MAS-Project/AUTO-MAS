@@ -68,6 +68,7 @@ vi.mock('@/composables/useScriptConfigLock', () => ({
 
 import { useMaaFWUserPage } from './useMaaFWUserPage'
 import type { MaaFWQueueEntry } from '@/types/script'
+import { maafwQueueEntryTitle } from './maafwTaskSnapshot'
 
 const task = (name: string, label: string, unselectableReason: string | null = null) => ({
   name,
@@ -110,12 +111,9 @@ const mountPage = async (snapshot: Record<string, unknown>) => {
   return { scope, page }
 }
 
-/** 队列行上看到的文字：基础名，同一基础名 ≥ 2 份时拼 #序号 */
-const rowTexts = (items: MaaFWQueueEntry[]) =>
-  items.map(item => {
-    const base = item.missing ? item.name : item.customLabel || item.task.label || item.task.name
-    return item.copyTotal > 1 ? `${base} #${item.copyIndex}` : base
-  })
+/** 队列行上看到的文字：与模板同一个 maafwQueueEntryTitle（基础名 + 序号，序号单独渲染成 #N） */
+const rowTitles = (items: MaaFWQueueEntry[]) => items.map(item => maafwQueueEntryTitle(item))
+const row = (name: string, index: number | null = null) => ({ name, index })
 
 const lastSavedSnapshot = () => {
   const calls = mocks.updateUser.mock.calls
@@ -151,11 +149,11 @@ describe('useMaaFWUserPage：队列右键菜单', () => {
     expect(order[3]).toBe('Daily')
     expect(page.selectedTaskId.value).toBe(order[1])
     expect(page.taskSnapshot.value.taskOptions[order[1]]).toEqual({ o: 'b' })
-    expect(rowTexts(page.orderedTasks.value)).toEqual([
-      '崩坏三 启动! #1',
-      '崩坏三 启动! #2',
-      '崩坏三 启动! #3',
-      '日常',
+    expect(rowTitles(page.orderedTasks.value)).toEqual([
+      row('崩坏三 启动!', 1),
+      row('崩坏三 启动!', 2),
+      row('崩坏三 启动!', 3),
+      row('日常'),
     ])
     const saved = lastSavedSnapshot()
     expect(saved.taskOrder).toEqual(order)
@@ -170,17 +168,17 @@ describe('useMaaFWUserPage：队列右键菜单', () => {
       taskOptions: {},
     })
     await page.renameTask('Start__MAS_DUP__b', '  账号A ')
-    expect(rowTexts(page.orderedTasks.value)).toEqual([
-      '崩坏三 启动! #1',
-      '账号A',
-      '崩坏三 启动! #2',
+    expect(rowTitles(page.orderedTasks.value)).toEqual([
+      row('崩坏三 启动!', 1),
+      row('账号A'),
+      row('崩坏三 启动!', 2),
     ])
     await page.duplicateTask('Start__MAS_DUP__b')
-    expect(rowTexts(page.orderedTasks.value)).toEqual([
-      '崩坏三 启动! #1',
-      '账号A #1',
-      '账号A #2',
-      '崩坏三 启动! #2',
+    expect(rowTitles(page.orderedTasks.value)).toEqual([
+      row('崩坏三 启动!', 1),
+      row('账号A', 1),
+      row('账号A', 2),
+      row('崩坏三 启动!', 2),
     ])
     const copyId = page.taskSnapshot.value.taskOrder[2]
     expect(lastSavedSnapshot().taskLabels).toEqual({
@@ -197,7 +195,7 @@ describe('useMaaFWUserPage：队列右键菜单', () => {
       taskOptions: {},
       taskLabels: { Start: '早班', Daily: '收菜' },
     })
-    expect(rowTexts(page.orderedTasks.value)).toEqual(['早班', '收菜'])
+    expect(rowTitles(page.orderedTasks.value)).toEqual([row('早班'), row('收菜')])
     await page.renameTask('Start', '崩坏三 启动!')
     expect(page.taskSnapshot.value.taskLabels).toEqual({ Daily: '收菜' })
     await page.deleteTask('Daily')
@@ -212,10 +210,29 @@ describe('useMaaFWUserPage：队列右键菜单', () => {
       taskChecked: {},
       taskOptions: {},
     })
-    expect(rowTexts(page.orderedTasks.value)).toEqual(['崩坏三 启动!', '日常'])
+    expect(rowTitles(page.orderedTasks.value)).toEqual([row('崩坏三 启动!'), row('日常')])
     await page.renameTask('Daily', '崩坏三 启动!')
-    expect(rowTexts(page.orderedTasks.value)).toEqual(['崩坏三 启动! #1', '崩坏三 启动! #2'])
+    expect(rowTitles(page.orderedTasks.value)).toEqual([
+      row('崩坏三 启动!', 1),
+      row('崩坏三 启动!', 2),
+    ])
     expect(lastSavedSnapshot().taskLabels).toEqual({ Daily: '崩坏三 启动!' })
+    scope.stop()
+  })
+
+  it('改过名的任务成了虚影：行上仍显示保存的显示名，编号按它分组', async () => {
+    const { scope, page } = await mountPage({
+      taskOrder: ['Gone', 'Gone__MAS_DUP__b', 'Daily'],
+      taskChecked: {},
+      taskOptions: {},
+      taskLabels: { Gone: '旧显示名', Gone__MAS_DUP__b: '旧显示名' },
+    })
+    expect(page.orderedTasks.value.map(item => Boolean(item.missing))).toEqual([true, true, false])
+    expect(rowTitles(page.orderedTasks.value)).toEqual([
+      row('旧显示名', 1),
+      row('旧显示名', 2),
+      row('日常'),
+    ])
     scope.stop()
   })
 

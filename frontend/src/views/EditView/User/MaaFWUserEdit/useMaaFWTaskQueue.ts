@@ -25,6 +25,7 @@ import type {
 } from '@/types/script'
 import {
   duplicateMaaFWQueuedTask,
+  maafwQueueEntryBaseName,
   normalizeTaskSnapshot,
   pickMaaFWTaskLabels,
   withMaaFWTaskLabel,
@@ -42,8 +43,8 @@ interface MaaFWTaskQueueOptions {
 }
 
 type QueueEntryDraft =
-  | { id: string; task: MaaFWTaskInfo; missing?: false }
-  | { id: string; missing: true; name: string }
+  | { id: string; task: MaaFWTaskInfo; missing?: false; customLabel?: string }
+  | { id: string; missing: true; name: string; customLabel?: string }
 
 /**
  * 用户页任务队列：显示顺序（含 interface 已没有的虚影）、选中项、预设模板、
@@ -71,35 +72,33 @@ export function useMaaFWTaskQueue({
   const selectedTaskId = ref('')
   const showPresetModal = ref(false)
 
-  // 副本序号按队列里显示出来的「基础名」文字分组编：改过显示名的用显示名，否则用 interface 的
-  // label（没有 label 用 name），虚影用它显示的名字。显示一样的几行就一起编号——不同任务改成同名、
-  // 或两个任务原 label 相同，也都编号，用户才分得清。
-  const queueEntryCopyKey = (item: QueueEntryDraft) => {
-    if (item.missing) return item.name
-    return taskSnapshot.value.taskLabels?.[item.id] || item.task.label || item.task.name
-  }
+  // 副本序号按队列里显示出来的「基础名」文字分组编（maafwQueueEntryBaseName）：改过显示名的用
+  // 显示名，否则用 interface 的 label（没有 label 用 name），虚影没改过名时用原任务名。显示一样的
+  // 几行就一起编号——不同任务改成同名、或两个任务原 label 相同，也都编号，用户才分得清。
   const orderedTasks = computed<MaaFWQueueEntry[]>(() => {
     const hasInterface = Boolean(previewData.value)
+    const labels = taskSnapshot.value.taskLabels
     const queuedItems = taskSnapshot.value.taskOrder.flatMap((taskId): QueueEntryDraft[] => {
+      const customLabel = labels?.[taskId]
+      const named = customLabel ? { customLabel } : {}
       const task = getTaskInfoById(taskId)
-      if (task) return isTaskActiveForCurrentContext(task) ? [{ id: taskId, task }] : []
-      // interface 已经没有这个任务（项目更新改了 name）：留成虚影，由用户自己删
-      return hasInterface ? [{ id: taskId, missing: true, name: maafwMissingTaskName(taskId) }] : []
+      if (task) return isTaskActiveForCurrentContext(task) ? [{ id: taskId, task, ...named }] : []
+      // interface 已经没有这个任务（项目更新改了 name）：留成虚影，由用户自己删；改过的显示名照样显示
+      return hasInterface
+        ? [{ id: taskId, missing: true, name: maafwMissingTaskName(taskId), ...named }]
+        : []
     })
     const copyTotals = new Map<string, number>()
     for (const item of queuedItems) {
-      const key = queueEntryCopyKey(item)
+      const key = maafwQueueEntryBaseName(item)
       copyTotals.set(key, (copyTotals.get(key) || 0) + 1)
     }
     const copyCounters = new Map<string, number>()
     return queuedItems.map((item): MaaFWQueueEntry => {
-      const key = queueEntryCopyKey(item)
+      const key = maafwQueueEntryBaseName(item)
       const copyIndex = (copyCounters.get(key) || 0) + 1
       copyCounters.set(key, copyIndex)
-      const copy = { copyIndex, copyTotal: copyTotals.get(key) || 1 }
-      if (item.missing) return { ...item, ...copy }
-      const customLabel = taskSnapshot.value.taskLabels?.[item.id]
-      return { ...item, ...(customLabel ? { customLabel } : {}), ...copy }
+      return { ...item, copyIndex, copyTotal: copyTotals.get(key) || 1 }
     })
   })
   const presentQueuedTasks = computed(() =>

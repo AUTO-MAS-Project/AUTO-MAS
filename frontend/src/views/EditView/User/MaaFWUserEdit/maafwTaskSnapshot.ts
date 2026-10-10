@@ -1,5 +1,5 @@
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
-import type { MaaFWInterfacePreviewData, MaaFWTaskSnapshot } from '@/types/script'
+import type { MaaFWInterfacePreviewData, MaaFWTaskInfo, MaaFWTaskSnapshot } from '@/types/script'
 import { migrateMaaFWGlobalOptions, withoutMaaFWGlobalOnlyOptions } from './maafwGlobalOptions'
 
 /** 实例显示名的最大长度（重命名输入框的上限） */
@@ -39,6 +39,28 @@ export const pickMaaFWTaskLabels = (
 /** 没有显示名时不写 `taskLabels` 这个键：没改过名的用户快照与以前逐字节相同 */
 export const taskLabelsField = (labels: Record<string, string>) =>
   Object.keys(labels).length > 0 ? { taskLabels: labels } : {}
+
+type QueueEntryNameSource =
+  | { missing: true; name: string; customLabel?: string }
+  | { missing?: false; task: Pick<MaaFWTaskInfo, 'name' | 'label'>; customLabel?: string }
+
+/**
+ * 队列里一份实例的基础名：改过显示名就用它，否则是任务的 label（没有 label 用 name），
+ * 虚影是它的原任务名。副本序号按这段文字分组编。
+ */
+export const maafwQueueEntryBaseName = (item: QueueEntryNameSource) =>
+  item.customLabel || (item.missing ? item.name : item.task.label || item.task.name)
+
+/**
+ * 队列行与右栏标题显示的文字：基础名 + 同一基础名 ≥ 2 份时的序号（`index`，否则为 null）。
+ * 序号分开给，模板里单独用 `.task-copy-index` 的样式渲染成「#N」。
+ */
+export const maafwQueueEntryTitle = (
+  item: QueueEntryNameSource & { copyIndex: number; copyTotal: number }
+): { name: string; index: number | null } => ({
+  name: maafwQueueEntryBaseName(item),
+  index: item.copyTotal > 1 ? item.copyIndex : null,
+})
 
 /**
  * 改一份实例的显示名，返回新的显示名表（不改入参）。去首尾空白后为空、或与任务原本的显示名
@@ -80,17 +102,18 @@ export const duplicateMaaFWQueuedTask = (
     taskOptions[newTaskId] = JSON.parse(JSON.stringify(snapshot.taskOptions[taskId]))
   }
   const label = snapshot.taskLabels?.[taskId]
-  const taskLabels = label ? { ...snapshot.taskLabels, [newTaskId]: label } : snapshot.taskLabels
   return {
     taskId: newTaskId,
     snapshot: {
+      // 其余键（用户的全局选项 globalOptions、其他实例的显示名）原样带着
+      ...snapshot,
       taskOrder,
       taskChecked: {
         ...snapshot.taskChecked,
         [newTaskId]: snapshot.taskChecked[taskId] !== false,
       },
       taskOptions,
-      ...taskLabelsField(taskLabels || {}),
+      ...(label ? { taskLabels: { ...snapshot.taskLabels, [newTaskId]: label } } : {}),
     },
   }
 }

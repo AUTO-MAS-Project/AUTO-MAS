@@ -3,6 +3,8 @@ import type { MaaFWInterfacePreviewData, MaaFWTaskInfo } from '@/types/script'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
   duplicateMaaFWQueuedTask,
+  maafwQueueEntryBaseName,
+  maafwQueueEntryTitle,
   normalizeTaskSnapshot,
   parseTaskSnapshot,
   pickMaaFWTaskLabels,
@@ -145,6 +147,48 @@ describe('MFW 队列实例显示名与复制', () => {
     expect('taskLabels' in next).toBe(false)
     expect(next.taskOptions).toEqual({})
     expect(duplicateMaaFWQueuedTask(snapshot, 'Gone', 'Gone')).toBeNull()
+  })
+
+  it('复制没勾选的实例：副本也不勾选；全局选项等其余键原样带着', () => {
+    const snapshot = {
+      taskOrder: ['A', 'B'],
+      taskChecked: { A: false, B: true },
+      taskOptions: {},
+      globalOptions: { g: 'x' },
+    }
+    const { snapshot: next, taskId } = duplicateMaaFWQueuedTask(snapshot, 'A', 'A')!
+    expect(next.taskChecked[taskId]).toBe(false)
+    expect(next.globalOptions).toEqual({ g: 'x' })
+  })
+})
+
+describe('MFW 队列行显示文字', () => {
+  const task = { name: 'Start', label: '崩坏三 启动!' }
+
+  it('基础名：显示名 > label > name；虚影没改过名时用原任务名', () => {
+    expect(maafwQueueEntryBaseName({ task })).toBe('崩坏三 启动!')
+    expect(maafwQueueEntryBaseName({ task: { name: 'Start', label: null } })).toBe('Start')
+    expect(maafwQueueEntryBaseName({ task, customLabel: '账号A' })).toBe('账号A')
+    expect(maafwQueueEntryBaseName({ missing: true, name: 'Gone' })).toBe('Gone')
+    expect(maafwQueueEntryBaseName({ missing: true, name: 'Gone', customLabel: '旧名' })).toBe(
+      '旧名'
+    )
+  })
+
+  it('序号只在同一基础名 ≥ 2 份时给出，单独一份为 null', () => {
+    expect(maafwQueueEntryTitle({ task, copyIndex: 1, copyTotal: 1 })).toEqual({
+      name: '崩坏三 启动!',
+      index: null,
+    })
+    expect(
+      maafwQueueEntryTitle({
+        missing: true,
+        name: 'Gone',
+        customLabel: '旧名',
+        copyIndex: 2,
+        copyTotal: 2,
+      })
+    ).toEqual({ name: '旧名', index: 2 })
   })
 })
 

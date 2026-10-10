@@ -376,6 +376,8 @@ export interface MaaFWMissingQueuedTask {
   missing: true
   /** 实例 id 去掉副本后缀后的原任务名 */
   name: string
+  /** 成为虚影前用户给这一份起的显示名；有就优先显示它 */
+  customLabel?: string
   copyIndex: number
   copyTotal: number
 }
