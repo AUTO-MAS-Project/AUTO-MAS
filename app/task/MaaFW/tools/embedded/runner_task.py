@@ -95,7 +95,11 @@ from .option_secrets import (
     secret_log_variants,
 )
 from .project_logs import copy_project_log_delta, snapshot_project_logs
-from .project_path import release_project_path, try_reserve_project_path
+from .project_path import (
+    is_project_updating,
+    release_project_path,
+    try_reserve_project_path,
+)
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -487,6 +491,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_signal: str | None = None
         # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
         self.maintenance_skipped = False
+        # 运行前检查时项目预约被占（手动更新、编辑页准备环境 / 导入），本用户没跑成。
+        self.project_busy_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
         # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
@@ -506,8 +512,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return "今日代理次数已达上限，跳过该用户"
 
         if not await self._try_enter_project_path():
-            self.cur_user_item.status = "跳过"
-            return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
+            # 项目被占着没跑成：记「异常」而不是「跳过」。「跳过」不进异常用户，
+            # 脚本会记「完成」、汇总是 0 完成 / 0 未完成，「仅失败时」也不推送。
+            # 与 manager 层「正在切换版本，已跳过」同一口径。
+            self.cur_user_item.status = "异常"
+            self.project_busy_skipped = True
+            if is_project_updating(self.project_path):
+                return "项目正在更新，本次未运行该用户"
+            return (
+                "项目正被编辑页的准备运行环境、导入或另一次运行占用，本次未运行该用户"
+            )
 
         keep_reservation = False
         try:
@@ -616,9 +630,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         ),
                     ),
                 )
-            if self.maintenance_skipped:
-                # 同一资源已确认在维护：记一份本用户的日志，让代理结果汇总、统计信息与
-                # history 都写明原因（其他跳过原因照旧不记）。
+            if self.maintenance_skipped or self.project_busy_skipped:
+                # 同一资源已确认在维护、或项目被占用没跑成：记一份本用户的日志，让代理
+                # 结果汇总、统计信息与 history 都写明原因（其他跳过原因照旧不记）。
+                # 前面拿到的运行前更新日志也随这份日志进 history，不丢。
                 # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
                 # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
@@ -829,6 +844,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await self.cur_user_config.set(
                     "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
                 )
+                statistic_paths = await self._save_user_logs()
+                await self._push_user_statistics(statistic_paths)
+            elif self.project_busy_skipped:
+                # 没跑成：history 与统计信息写明原因；代理次数与上次状态不动。
                 statistic_paths = await self._save_user_logs()
                 await self._push_user_statistics(statistic_paths)
             await self._release_project_path()
