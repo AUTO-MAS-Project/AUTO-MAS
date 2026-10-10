@@ -47,6 +47,7 @@ from app.task.MaaFW.tools.core.runtime_pool.binding import (
     binding_index_candidates,
     ensure_binding,
     exact_version_of,
+    mask_url_credentials,
     release_binding,
     resolve_binding_version,
     retain_binding,
@@ -429,7 +430,8 @@ def prepare_runner_environment(
 def _describe_binding_source(binding: BindingInfo) -> str:
     source = binding.source
     if source.startswith("pypi:"):
-        return f"PyPI/镜像 {source[len('pypi:') :]}"
+        # 已装好的 binding 清单里可能还记着带 user:pw@ 的索引地址（打码之前装的）
+        return f"PyPI/镜像 {mask_url_credentials(source[len('pypi:') :])}"
     if source.startswith("github-source:"):
         return f"GitHub 源码 {source[len('github-source:') :]}"
     if source.startswith("harvest"):

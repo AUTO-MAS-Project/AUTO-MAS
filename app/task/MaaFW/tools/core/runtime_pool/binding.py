@@ -894,7 +894,7 @@ def select_index_version(
     for index in index_candidates or (DEFAULT_PACKAGE_INDEX,):
         page = fetch_index_page(index, proxy_url=proxy_url)
         if page.status == "unreachable":
-            failures.append(f"{index}: {page.detail}")
+            failures.append(mask_url_credentials(f"{index}: {page.detail}"))
             continue
         if page.status == "missing":
             definite_missing.append(index)
@@ -906,7 +906,7 @@ def select_index_version(
     if definite_missing:
         raise MaaFWBindingUnavailableError(
             f"索引上没有满足 {requirement} 的 maafw（平台 {tag}）: "
-            + ", ".join(definite_missing)
+            + mask_url_credentials(", ".join(definite_missing))
         )
     raise MaaFWBindingNetworkError(
         "所有包索引都连不上，无法解析 maafw 版本: " + "; ".join(failures)
@@ -1219,7 +1219,7 @@ _DOWNLOAD_PROGRESS_STEP_BYTES = 16 * 1024 * 1024
 _URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
 
 
-def _mask_url_credentials(text: str) -> str:
+def mask_url_credentials(text: str) -> str:
     """把文本里 URL 的 ``user:pw@`` 换成 ``***@``（索引地址来自 ``AUTO_MAS_UV_INDEX_URL``
     等配置，可能带凭据；与 requirements 解析不记 ``-i`` 取值同一口径）。其余部分原样。"""
 
@@ -1274,11 +1274,13 @@ def _download_wheel(
                         )
     except urllib.error.HTTPError as exc:
         raise MaaFWBindingNetworkError(
-            f"下载 wheel 失败: HTTP {exc.code} {link.url}"
+            f"下载 wheel 失败: HTTP {exc.code} {mask_url_credentials(link.url)}"
         ) from exc
     except (urllib.error.URLError, OSError, ValueError) as exc:
         # 索引已经说了有这个版本，下载不下来就是网络问题，不是「没有」
-        raise MaaFWBindingNetworkError(f"下载 wheel 失败: {link.url}: {exc}") from exc
+        raise MaaFWBindingNetworkError(
+            mask_url_credentials(f"下载 wheel 失败: {link.url}: {exc}")
+        ) from exc
     if written == 0:
         raise MaaFWBindingDownloadError("wheel 响应体为空")
     if link.sha256 and digest.hexdigest() != link.sha256:
@@ -1563,7 +1565,7 @@ def _fetch_and_install(
             check_cancelled()
         page = fetch_index_page(index, proxy_url=proxy_url)
         if page.status == "unreachable":
-            failures.append(f"{index}: {page.detail}")
+            failures.append(mask_url_credentials(f"{index}: {page.detail}"))
             continue
         if page.status == "missing":
             definite_missing = True
@@ -1574,14 +1576,14 @@ def _fetch_and_install(
             continue
         log(
             f"[MaaFW Runtime Pool] 下载 maafw {version} binding: "
-            f"{_mask_url_credentials(link.url)}"
+            f"{mask_url_credentials(link.url)}"
         )
         try:
             return _install_from_wheel_link(
                 pool_root,
                 version,
                 link,
-                source=f"pypi:{index}",
+                source=f"pypi:{mask_url_credentials(index)}",
                 native_needed=native_needed,
                 base_python=base_python,
                 proxy_url=proxy_url,
@@ -1592,8 +1594,8 @@ def _fetch_and_install(
         except (MaaFWBindingNetworkError, MaaFWBindingDownloadError) as exc:
             download_errors.append(exc)
             log(
-                f"[MaaFW Runtime Pool] 从 {_mask_url_credentials(index)} 下载 maafw "
-                f"{version} binding 失败（{_mask_url_credentials(str(exc))}），"
+                f"[MaaFW Runtime Pool] 从 {mask_url_credentials(index)} 下载 maafw "
+                f"{version} binding 失败（{mask_url_credentials(str(exc))}），"
                 + (
                     "换下一个索引"
                     if position < len(candidates) - 1
@@ -1605,7 +1607,7 @@ def _fetch_and_install(
         # 有索引确实列出了这个版本：结论是「下载失败」，不是「没有这个版本」，别去走源码兜底。
         if len(download_errors) == 1:
             raise download_errors[0]
-        detail = _mask_url_credentials("; ".join(str(item) for item in download_errors))
+        detail = mask_url_credentials("; ".join(str(item) for item in download_errors))
         if all(isinstance(item, MaaFWBindingNetworkError) for item in download_errors):
             raise MaaFWBindingNetworkError(
                 f"所有列出 maafw {version} 的索引都下载失败: {detail}"
@@ -2044,6 +2046,7 @@ __all__ = [
     "harvest_binding",
     "list_local_bindings",
     "manifest_last_used",
+    "mask_url_credentials",
     "native_directory",
     "normalize_version",
     "parse_simple_page",
