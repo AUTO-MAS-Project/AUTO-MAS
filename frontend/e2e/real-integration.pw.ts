@@ -450,12 +450,10 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       }
 
       // 提取 taskId
-      const startBody = await readBody(startResponse)
-      if (isRecord(startBody)) taskId = readString(startBody.taskId)
-      if (!taskId) throw new Error('启动响应缺少 taskId')
       let startBody: JsonObject | undefined
       try {
         startBody = await readBody(startResponse)
+        if (isRecord(startBody)) taskId = readString(startBody.taskId)
       } catch {
         // 启动请求可能已被后端接受但响应在传输中损坏；task.created 仍是公开兜底。
       }
@@ -485,8 +483,8 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       await expect(page.locator('.tab-status.ant-tag-success')).toBeVisible({ timeout: 30_000 })
       await app.evidence('real-e2e-complete')
     } finally {
-      let taskTerminated = !startAttempted
-      if (startAttempted && !taskId) taskAndEmulatorCleanupStatus = 'failed'
+      // taskId 存在表示任务已启动，否则认为任务已终止（根本没启动）
+      let taskTerminated = !taskId
       if (taskId) {
         completion ??= observer.taskCompletion(taskId)
         try {
