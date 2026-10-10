@@ -641,8 +641,8 @@ def _select_controller(
             f"{item.name}({item.type})" for item in interface_model.controller
         )
         raise MaaFWRunPlanError(
-            "内置运行只支持 ADB 和 Win32 控制器，这个项目声明的控制器是 "
-            f"{declared_types}，请用项目自带的界面运行"
+            "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
+            f"controllers; use the project UI for: {declared_types}"
         )
     return controller
 
@@ -670,8 +670,8 @@ def _ensure_direct_controller(controller: MaaFWController) -> None:
     if controller.type in MAAFW_DIRECT_CONTROLLER_TYPES:
         return
     raise MaaFWRunPlanError(
-        "内置运行只支持 ADB 和 Win32 控制器，所选控制器是 "
-        f"{controller.name}({controller.type})，请换一个控制器或用项目自带的界面运行"
+        "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
+        f"controllers; use the project UI for {controller.name}({controller.type})"
     )
 
 

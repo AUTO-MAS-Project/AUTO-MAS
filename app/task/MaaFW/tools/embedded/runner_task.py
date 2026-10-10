@@ -2064,7 +2064,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if result_payload is not None:
             return MaaFWRunResult.model_validate(result_payload)
-        message = f"MaaFW worker 异常退出（退出码 {returncode}），未返回任务结果"
+        message = f"MaaFW runner worker exited without result: {returncode}"
         detail = "\n".join(stderr_lines[-5:]).strip()
         if detail and _should_forward_framework_log(detail):
             message += f": {_framework_ui_message(detail)}"
@@ -2072,7 +2072,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # Native stderr is already preserved in the per-run framework log.
             # Do not copy parser/backtrace blobs into the normal task log when
             # the worker exits without a protocol result.
-            message += "，worker 的完整输出已保存到本次运行的 .worker.log"
+            message += (
+                ": MaaFW worker 未返回任务结果，完整输出已保存到本次运行的 .worker.log"
+            )
         raise RuntimeError(message)
 
     def _secret_log_variants(self) -> list[str]:

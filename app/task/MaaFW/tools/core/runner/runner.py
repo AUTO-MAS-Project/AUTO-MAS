@@ -2023,8 +2023,8 @@ class MaaFWRunner:
             )
 
         raise RuntimeError(
-            f"内置运行只支持 ADB 和 Win32 控制器，当前控制器类型是 {device_config.type}，"
-            "请用项目自带的界面运行"
+            "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
+            f"controllers; use the project UI for {device_config.type}"
         )
 
     def _apply_screenshot_target(self, controller: Any) -> None:
