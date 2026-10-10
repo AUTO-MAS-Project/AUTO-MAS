@@ -2801,6 +2801,8 @@ export default {
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
     maafwInputVerifyFailed: 'The input does not meet the script requirements',
+    maafwQueueTaskCheckboxCountInvalid:
+      'A multi-select setting has too few or too many choices; this user will fail to run until it is fixed',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',

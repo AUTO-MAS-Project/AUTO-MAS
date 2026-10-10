@@ -2656,6 +2656,8 @@ export default {
     maafwGlobalOptionsHint: '对队列里的所有任务生效，只需设置一次',
     maafwUnsupportedOptionType: '不支持的配置项类型：{type}，请联系脚本作者或升级 AUTO-MAS',
     maafwInputVerifyFailed: '输入不符合脚本要求',
+    maafwQueueTaskCheckboxCountInvalid:
+      '有多选项的勾选数量不符合要求，不改的话这个用户运行时会失败',
     unknownType: '未知',
     savingNow: '保存中…',
     autoSaved: '已自动保存',

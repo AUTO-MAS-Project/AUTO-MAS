@@ -2189,6 +2189,8 @@ export default {
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
     maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
+    maafwQueueTaskCheckboxCountInvalid:
+      '選択数が要件を満たしていない複数選択項目があります。修正しないとこのユーザーは実行に失敗します',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',

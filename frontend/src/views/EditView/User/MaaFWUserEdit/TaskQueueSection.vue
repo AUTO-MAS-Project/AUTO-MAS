@@ -221,6 +221,13 @@
                           #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
+                      <!-- 多选项勾选数不满足 min_count / max_count：运行器会让整个用户的计划构建失败 -->
+                      <a-tooltip
+                        v-if="checkboxIssueTaskIds.has(queuedTask.id)"
+                        :title="t('edit.maafwQueueTaskCheckboxCountInvalid')"
+                      >
+                        <ExclamationCircleOutlined class="task-option-issue" />
+                      </a-tooltip>
                     </div>
                     <a-space @click.stop>
                       <a-button
@@ -425,6 +432,7 @@ import {
   ArrowUpOutlined,
   CloseOutlined,
   DeleteOutlined,
+  ExclamationCircleOutlined,
   HolderOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
@@ -432,6 +440,7 @@ import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
+import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
@@ -659,6 +668,28 @@ const getTaskOptionNames = (task: MaaFWTaskInfo) => {
     task.option || [],
   ])
 }
+
+// 勾选数不满足 min_count / max_count 的任务实例：与右栏编辑器列出的选项同一范围、同一取值口径
+const checkboxIssueTaskIds = computed(() => {
+  const ids = new Set<string>()
+  const optionMap = new Map((props.previewData?.options || []).map(item => [item.name, item]))
+  if (optionMap.size === 0) return ids
+  const context = {
+    controllerName: props.effectiveControllerName,
+    resourceName: props.effectiveResourceName,
+  }
+  for (const item of props.orderedTasks) {
+    if (item.missing) continue
+    const violations = findMaaFWCheckboxCountViolations(
+      getTaskOptionNames(item.task),
+      optionMap,
+      props.taskSnapshot.taskOptions[item.id],
+      context
+    )
+    if (violations.length > 0) ids.add(item.id)
+  }
+  return ids
+})
 
 const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
   const keyword = inputValue.trim().toLowerCase()
@@ -889,6 +920,11 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 .task-title {
   font-weight: 600;
+}
+
+.task-option-issue {
+  margin-left: 6px;
+  color: var(--ant-color-warning);
 }
 
 /* 同一个任务被加了多份时的副本序号 */

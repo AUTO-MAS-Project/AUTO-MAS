@@ -4,6 +4,7 @@
 // 同步另一边。编辑器（MaaFWTaskOptionEditor）与队列行上的勾选数检查共用这一份。
 
 import type { MaaFWOptionInfo, MaaFWOptionInputInfo, MaaFWTaskOptionValue } from '@/types/script'
+import { getCheckboxCountState } from './maafwOptionConstraints'
 
 const CHOICE_TYPES = new Set(['select', 'scan_select', 'switch'])
 
@@ -117,4 +118,33 @@ export const isMaaFWOptionActiveFor = (
   if (option.controller.length > 0 && !option.controller.includes(controllerName)) return false
   if (option.resource.length > 0 && !option.resource.includes(resourceName)) return false
   return true
+}
+
+/**
+ * 一组选项（连同当前取值下展开的子选项）里勾选数不满足 min_count / max_count 的多选项。
+ * 运行器遇到这种选项会让整个用户的运行计划构建失败，队列行上据此给出标记。
+ */
+export const findMaaFWCheckboxCountViolations = (
+  optionNames: readonly string[],
+  optionMap: ReadonlyMap<string, MaaFWOptionInfo>,
+  values: Record<string, MaaFWTaskOptionValue> | undefined,
+  context: { controllerName: string; resourceName: string }
+): MaaFWOptionInfo[] => {
+  const violations: MaaFWOptionInfo[] = []
+  const seen = new Set<string>()
+  const visit = (names: readonly string[]) => {
+    for (const name of names) {
+      if (seen.has(name)) continue
+      seen.add(name)
+      const option = optionMap.get(name)
+      if (!option || option.type === 'hotkey') continue
+      if (!isMaaFWOptionActiveFor(option, context.controllerName, context.resourceName)) continue
+      const stored = values?.[name]
+      const state = getCheckboxCountState(option, resolveMaaFWCheckboxValue(option, stored))
+      if (state?.violation) violations.push(option)
+      for (const group of activeMaaFWNestedOptionGroups(option, stored)) visit(group)
+    }
+  }
+  visit(optionNames)
+  return violations
 }
