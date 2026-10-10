@@ -61,6 +61,7 @@ from .models import (
     MaaFWTaskRunPlan,
 )
 from .pipeline_override import (
+    SECRET_INPUTS_SNAPSHOT_KEY,
     MaaFWCheckboxCountError,
     MaaFWHotkeyValueError,
     MaaFWInputValueError,
@@ -134,6 +135,21 @@ class MaaFWRunPlanError(ValueError):
 NO_RUNNABLE_TASKS_MESSAGE = "当前 controller/resource 下没有可执行任务"
 
 
+def _secret_input_pairs(raw: Any) -> list[tuple[str, str]]:
+    """``secret_inputs`` 的宽松解析：只收两个字符串的对，形状不对的项丢掉。"""
+
+    if not isinstance(raw, (list, tuple, set, frozenset)):
+        return []
+    return [
+        (item[0], item[1])
+        for item in raw
+        if isinstance(item, (list, tuple))
+        and len(item) == 2
+        and isinstance(item[0], str)
+        and isinstance(item[1], str)
+    ]
+
+
 def build_maafw_run_plan(
     base_dir: str | Path,
     interface_model: MaaFWInterface | dict[str, Any],
@@ -147,8 +163,13 @@ def build_maafw_run_plan(
     global_options: dict[str, Any] | None = None,
     managed_env_root: str | Path | None = None,
     script_hotkeys: dict[str, dict[str, str]] | None = None,
+    secret_inputs: Any = None,
 ) -> MaaFWRunPlan:
     """``script_hotkeys``：脚本级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+
+    ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
+    提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
+    ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
 
     只在生效控制器是 Win32 时叠加到每个任务实际生效的 hotkey 选项上，盖过快照 / 预设里
     的值；叠加的是副本，``selected_task_options`` 不动。interface 未声明的 option / 字段
@@ -188,10 +209,13 @@ def build_maafw_run_plan(
     ]
     task_map = {task.name: task for task in interface.task}
     controller_names = {controller.name}
+    if secret_inputs is None and isinstance(task_snapshot, dict):
+        secret_inputs = task_snapshot.get(SECRET_INPUTS_SNAPSHOT_KEY)
     pipeline_builder = MaaFWPipelineOverrideBuilder(
         interface,
         controller_names=controller_names,
         resource_name=resource.name,
+        secret_inputs=_secret_input_pairs(secret_inputs),
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
     option_defaults, _ = _build_option_defaults(interface.option)

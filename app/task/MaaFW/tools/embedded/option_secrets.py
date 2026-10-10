@@ -28,14 +28,14 @@ from typing import Any
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
-    build_pretask_task_name,
-    iter_pretasks,
     map_password_values,
     password_input_names,
-    resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.core.interface.task_config import (
     mirror_global_options_to_tasks,
+)
+from app.task.MaaFW.tools.core.runner.pipeline_override import (
+    SECRET_INPUTS_SNAPSHOT_KEY,
 )
 from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 
@@ -158,11 +158,12 @@ def open_task_snapshot(
 
     旧版本留下的明文原样使用（下次保存时加密）；带前缀却解不开的抛 ``MaaFWSecretError``。
     当前 interface 已不再声明为 password 的字段（项目更新撤掉了标记）里留着的密文同样解开：
-    不解的话 ``mas-dpapi:…`` 原样进 pipeline_override。只解会进计划的那些（勾选的、interface
-    里还有的任务，以及全局表），解不开的告警后丢掉这个值（按默认值跑），不让整轮失败——
-    这类字段界面上已经不按密码显示，用户未必找得到去重填。只在内存里解，保存时不动它：
-    interface 降级读丢了选项时也会「看不到」password 声明，那时写回明文就泄露了。解出的值
-    要进运行日志的打码集合（``collect_run_password_values``）。
+    不解的话 ``mas-dpapi:…`` 原样进 pipeline_override。所有实例与全局表都解——建计划时归一会
+    补回不在队列里的勾选实例、旧配置迁移会从未勾选实例上取全局值，只解一部分就会漏；解不开
+    的告警后丢掉这个值（按默认值跑），不让整轮失败，这类字段界面上已经不按密码显示，用户未必
+    找得到去重填。只在内存里解，保存时不动它：interface 降级读丢了选项时也会「看不到」password
+    声明，那时写回明文就泄露了。解出的值要进运行日志的打码集合（``collect_run_password_values``），
+    字段记进 ``SECRET_INPUTS_SNAPSHOT_KEY``，下发失败的计划提示同样不带原值。
     """
 
     if not isinstance(snapshot, dict):
@@ -176,43 +177,21 @@ def open_task_snapshot(
                 "下次保存任务配置时会自动加密"
             )
         opened = _map_snapshot_secrets(snapshot, fields, _open_value)
-    return _open_orphan_secrets(opened, interface)
+    return _open_orphan_secrets(opened)
 
 
 _DROPPED = object()
 
 
-def _planned_task_ids(snapshot: dict[str, Any], interface: MaaFWInterface) -> set[str]:
-    """快照里会进计划的任务实例：在队列里、勾选着、interface 里还有这个任务。"""
-
-    task_names = {task.name for task in interface.task}
-    task_names.update(
-        build_pretask_task_name(item) for item in iter_pretasks(interface)
-    )
-    order = snapshot.get("taskOrder")
-    checked = snapshot.get("taskChecked")
-    checked = checked if isinstance(checked, dict) else {}
-    return {
-        task_id
-        for task_id in (order if isinstance(order, list) else [])
-        if isinstance(task_id, str)
-        and bool(checked.get(task_id, True))
-        and resolve_task_instance_name(task_id, task_names) in task_names
-    }
-
-
-def _open_orphan_secrets(
-    snapshot: dict[str, Any], interface: MaaFWInterface
-) -> dict[str, Any]:
-    """会进计划的选项值里剩下的带 ``SECRET_PREFIX`` 的值解开（返回新快照，不改入参）。"""
+def _open_orphan_secrets(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """两处选项值里剩下的带 ``SECRET_PREFIX`` 的值全部解开（返回新快照，不改入参）。"""
 
     if not any(_sealed_leaves(snapshot.get(key)) for key in _SECRET_SECTIONS):
         return snapshot
     dropped: list[str] = []
-    opened_count = 0
+    secret_inputs: dict[tuple[str, str], None] = {}
 
     def open_tree(value: Any, option_name: str, field_name: str) -> Any:
-        nonlocal opened_count
         if isinstance(value, str):
             if not is_sealed_secret(value):
                 return value
@@ -223,7 +202,7 @@ def _open_orphan_secrets(
                     f"{option_name}.{field_name}" if field_name else option_name
                 )
                 return _DROPPED
-            opened_count += 1
+            secret_inputs.setdefault((option_name, field_name), None)
             return opened_value
         if isinstance(value, dict):
             opened_items = {
@@ -247,14 +226,15 @@ def _open_orphan_secrets(
         opened["globalOptions"] = open_tree(global_options, "", "")
     task_options = snapshot.get("taskOptions")
     if isinstance(task_options, dict) and _sealed_leaves(task_options):
-        planned = _planned_task_ids(snapshot, interface)
         opened["taskOptions"] = {
-            task_id: open_tree(options, "", "") if task_id in planned else options
+            task_id: open_tree(options, "", "")
             for task_id, options in task_options.items()
         }
-    if opened_count:
+    if secret_inputs:
+        opened[SECRET_INPUTS_SNAPSHOT_KEY] = [list(pair) for pair in secret_inputs]
         logger.info(
-            f"该用户的任务配置里有 {opened_count} 个项目已不再标为密码的字段仍是密文，"
+            "该用户的任务配置里有项目已不再标为密码的字段仍是密文"
+            f"（{'、'.join(f'{option}.{field}' for option, field in secret_inputs)}），"
             "本次运行按解密后的值使用"
         )
     if dropped:
@@ -271,7 +251,8 @@ REDACTED_SECRET_TEXT = "<已隐藏>"
 #: 短于这个长度的密码不做全文替换：一两个字符的值会把日志里所有同样的字符都换掉，
 #: 日志就没法看了；这么短的密码本身也谈不上保密。
 MIN_REDACTED_SECRET_LENGTH = 4
-#: 项目有 password 输入框时，每次运行的 ``.worker.log`` 第一行以它开头（``log_redaction_notice``）。
+#: 项目有 password 输入框、或本次有要打码的值（用户快照里留着项目已撤掉标记的密文）时，每次运行的
+#: ``.worker.log`` 第一行以它开头（``log_redaction_notice``）。
 #: 问题包导出（frontend/electron/services/maafwIssueReportService.ts）凭这一行认定这次的
 #: ``.worker.log`` / ``.maafw.log`` 是写的时候就打过码的，没有这一行的旧副本不往包里放。两边一起改。
 LOG_REDACTION_MARKER = "[MAS 日志打码]"

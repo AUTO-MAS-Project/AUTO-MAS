@@ -56,6 +56,9 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
 )
+from app.task.MaaFW.tools.core.runner.pipeline_override import (
+    SECRET_INPUTS_SNAPSHOT_KEY,
+)
 from app.task.MaaFW.tools.core.runner.run_plan import (
     NO_RUNNABLE_TASKS_MESSAGE,
     MaaFWRunPlanError,
@@ -1035,6 +1038,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options=task_options,
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
+                # 走 task_ids 时快照不进建计划：从密文解出来的字段要单独交过去
+                secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
             )
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(

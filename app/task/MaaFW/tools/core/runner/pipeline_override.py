@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -50,6 +51,10 @@ class MaaFWCheckboxCountError(ValueError):
 
 #: password 字段下发失败时代替原值写进提示的文字（核心包不引宿主的 option_secrets）。
 SECRET_VALUE_PLACEHOLDER = "（密码字段，已隐藏）"
+#: 宿主在内存里解开密文后，往交给建计划的快照里写的键：``[[option 名, 字段名], …]``，
+#: 这些 input 字段的值是从密文解出来的。项目更新撤掉了 password 标记的字段，值仍是用户
+#: 当密码填的，下发失败的提示同样不带原值（与当前声明为 password 的字段同一口径）。
+SECRET_INPUTS_SNAPSHOT_KEY = "secretInputs"
 
 
 class MaaFWInputValueError(ValueError):
@@ -153,10 +158,13 @@ class MaaFWPipelineOverrideBuilder:
         *,
         controller_names: set[str],
         resource_name: str | None,
+        secret_inputs: Iterable[tuple[str, str]] = (),
     ) -> None:
         self.interface_model = interface_model
         self.controller_names = controller_names
         self.resource_name = resource_name
+        # 值是从密文解出来的 input 字段 (option 名, 字段名)：下发失败的提示按密码字段处理
+        self.secret_inputs = frozenset(secret_inputs)
         # 建覆盖时跳过的项（给用户看的原因）；调用方把它带进运行计划的告警。
         self.warnings: list[str] = []
         # 因为值下发不了而整段跳过覆盖的 input 选项（没填又没默认值、该填数字却不是）。
@@ -587,7 +595,8 @@ class MaaFWPipelineOverrideBuilder:
                     input_item.default,
                     option_name=option_name,
                     field_name=input_item.name,
-                    secret=bool(input_item.password),
+                    secret=bool(input_item.password)
+                    or (option_name, input_item.name) in self.secret_inputs,
                 )
             except MaaFWInputValueError as exc:
                 # 与 hotkey 没有默认值时同一口径：这个选项的覆盖整段跳过（半替换会把

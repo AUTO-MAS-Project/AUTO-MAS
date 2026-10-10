@@ -391,8 +391,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
+  项目更新撤掉了 password 标记的字段，快照里留着的密文建计划前照样在内存里解开（解不开的告警、丢值，
+  不中断整轮），它们与当前仍是 password 的字段同一口径：值进打码集合
+  （`option_secrets.collect_run_password_values`），字段记进快照的 `secretInputs`，下发失败的告警同样不带原值。
   新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
-  项目有 password 输入框时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
+  项目有 password 输入框、或本次有要打码的值时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
