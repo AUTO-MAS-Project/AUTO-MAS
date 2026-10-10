@@ -80,6 +80,7 @@ class MaaEndManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.update_gate_failure: str | None = None
         self.controller_protocol = ""
         self.user_config: MultipleConfig[MaaEndUserConfig] | None = None
         self.maaend_config_dir: Path | None = None
@@ -357,9 +358,9 @@ class MaaEndManager(ScriptManagerBase):
         if failure is not None:
             # 绝不能改 self.check_result：final_task 在它不是 Pass 时早退并跳过
             # unlock()，而此刻脚本配置已被 prepare() 锁上，写它就是永久泄锁。
-            for user in self.script_info.user_list:
-                if user.status == "等待":
-                    user.status = "异常"
+            # 用户状态也不动：这些账号一个都没跑，逐个改状态会给每人排一次 OBS 回放，
+            # 还把维护窗口里的账号一并报成失败。
+            self.update_gate_failure = failure
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
@@ -472,8 +473,10 @@ class MaaEndManager(ScriptManagerBase):
                     ),
                 )
 
-        if self.stopped_manually or any(
-            user.status == "异常" for user in self.script_info.user_list
+        if (
+            self.stopped_manually
+            or self.update_gate_failure is not None
+            or any(user.status == "异常" for user in self.script_info.user_list)
         ):
             self.script_info.status = "异常"
         elif self.all_users_maintenance_skipped:

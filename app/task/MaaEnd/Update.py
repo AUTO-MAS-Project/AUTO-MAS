@@ -24,6 +24,7 @@
 这里说的是**游戏客户端**。`update_takeover.py` 接管的是 MaaEnd 程序自身的更新。
 """
 
+import asyncio
 from contextlib import suppress
 from pathlib import Path
 
@@ -67,12 +68,20 @@ class EndfieldUpdateTask(TaskExecuteBase):
         game_exe = Path(str(self.script_config.get("Game", "Path") or "").strip())
 
         # 不看 Game.IfAutoUpdate：那是自动门的开关，用户当面点下按钮即为授权。
-        result = await ensure_game_updated(
-            game_exe,
-            time_limit_minutes=int(self.script_config.get("Game", "UpdateTimeLimit")),
-            progress=self._push_dispatch_log,
-            entry="手动",
-        )
+        try:
+            result = await ensure_game_updated(
+                game_exe,
+                time_limit_minutes=int(
+                    self.script_config.get("Game", "UpdateTimeLimit")
+                ),
+                progress=self._push_dispatch_log,
+                entry="手动",
+            )
+        except asyncio.CancelledError:
+            # 取消不走 on_crash，也不落下面那三个状态：不收口这个账号就永远停在「运行」，
+            # 已结束的快照里还显示他在跑
+            self.cur_user_item.status = "异常"
+            raise
         # 结论先落进日志再抛：toast 三秒就没了，弹窗里这一行才是留下的那份
         await self._push_dispatch_log(result.message)
         if result.status == "Skipped":
