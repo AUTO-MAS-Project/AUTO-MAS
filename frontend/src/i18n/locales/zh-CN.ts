@@ -1558,7 +1558,7 @@ export default {
     autoUpdateModeAfterRun: '运行后',
     updateSource: '更新源',
     updateSourceTip:
-      'Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：无需配置，直接从项目的 GitHub Release 下载',
+      '版本号统一向 Mirror 酱查询，项目需要接入 Mirror 酱。Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK',
     updateChannel: '更新通道',
     cdkTip:
       '默认填入 MAS 更新设置里的 CDK，可单独改成本托管专用的；选择 Mirror 酱作为更新源时必须填写。点击问号前往 Mirror 酱获取：',
@@ -1689,6 +1689,8 @@ export default {
     maafwPageTitleConfig: '{name} 项目配置',
     maafwUpdateChannelStable: '稳定版',
     maafwUpdateChannelBeta: '测试版',
+    maafwNoMirrorchyanRid:
+      '该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），MAS 无法检查它的更新',
     mfwUnityResolutionOff: '不修改',
     mfwWaitTimeTip:
       'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',

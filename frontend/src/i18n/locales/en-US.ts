@@ -1632,7 +1632,7 @@ export default {
     autoUpdateModeAfterRun: 'After run',
     updateSource: 'Update source',
     updateSourceTip:
-      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
+      'Versions are always looked up on MirrorChyan, so the project must be listed on MirrorChyan. MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed',
     updateChannel: 'Update channel',
     cdkTip:
       'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
@@ -1776,6 +1776,8 @@ export default {
     maafwPageTitleConfig: '{name} project settings',
     maafwUpdateChannelStable: 'Stable',
     maafwUpdateChannelBeta: 'Beta',
+    maafwNoMirrorchyanRid:
+      'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',

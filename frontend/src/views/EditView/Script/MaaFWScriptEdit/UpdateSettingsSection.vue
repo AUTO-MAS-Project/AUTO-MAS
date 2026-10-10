@@ -9,7 +9,7 @@
       class="update-alert"
       type="warning"
       show-icon
-      :message="t('edit.thisScriptDeclaresNo')"
+      :message="autoUpdateDisabledMessage"
     />
     <a-row :gutter="24" class="update-config-row">
       <a-col :span="8">
@@ -259,6 +259,13 @@ const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUp
   { label: t('edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
   { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
 ])
+
+// 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱（版本号统一向 Mirror 酱查）
+const autoUpdateDisabledMessage = computed(() =>
+  props.previewData?.project.version
+    ? t('edit.maafwNoMirrorchyanRid')
+    : t('edit.thisScriptDeclaresNo')
+)
 
 const sourceLabel = (source: string | null | undefined) => {
   const normalized = (source ?? '').trim().toLowerCase()

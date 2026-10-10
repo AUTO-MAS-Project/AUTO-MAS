@@ -1640,6 +1640,10 @@ export default {
     maafwPageTitleConfig: '{name} プロジェクト設定',
     maafwUpdateChannelStable: '安定版',
     maafwUpdateChannelBeta: 'ベータ版',
+    maafwNoMirrorchyanRid:
+      'このプロジェクトは MirrorChyan に対応していないため（interface.json に mirrorchyan_rid がありません）、MAS は更新を確認できません',
+    updateSourceTip:
+      'バージョンは常に MirrorChyan で確認するため、プロジェクトが MirrorChyan に対応している必要があります。MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です',
     autoUpdateMode: '自動更新',
     autoUpdateModeOff: '更新しない',
     autoUpdateModeBeforeRun: '実行前',
