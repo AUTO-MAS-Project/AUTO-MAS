@@ -4137,8 +4137,7 @@ export default {
       cdkSite: 'MirrorChyan 公式サイト',
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
-      cdkHint:
-        'MAS の更新に使用します。MirrorChyan を選び CDK を設定すると MAA リソースも自動更新され、1 日のダウンロード枠を消費します。この MAS ではローカル日付ごとにリソースパッケージの取得を最大 1 回試行し、失敗やキャンセルも回数に含めます。MaaFW プロジェクトの CDK はスクリプト編集ページで個別に設定してください。',
+      cdkHint: 'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

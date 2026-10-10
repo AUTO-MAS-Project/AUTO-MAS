@@ -4763,8 +4763,7 @@ export default {
       cdkSite: 'the MirrorChyan site',
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
-      cdkHint:
-        'Used for MAS updates. Selecting MirrorChyan and setting a CDK also enables automatic MAA resource updates, which use the daily download quota. This MAS instance makes at most one resource-package request attempt per local calendar day, including failed or canceled attempts. Set a separate CDK for MaaFW projects on the script edit page.',
+      cdkHint: 'Used only for updating MAS itself; MAA and MaaFW script project updates take their own CDK on their script edit pages',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
