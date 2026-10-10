@@ -3,8 +3,6 @@ import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
-import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
@@ -17,7 +15,10 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
+import { useAppearanceSettings } from './useAppearanceSettings'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -31,11 +32,30 @@ import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
 const { t } = useI18n()
-const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
+const {
+  themeMode,
+  themeColor,
+  appearances,
+  appearanceId,
+  activeAppearance,
+  modalContextHolder,
+  appearanceBusy,
+  themeModeOptions,
+  appearanceValue,
+  appearanceOptions,
+  themeColorOptions,
+  handleThemeModeChange,
+  handleThemeColorChange,
+  handleAppearanceChange,
+  handleAppearanceImport,
+  handleAppearanceRemove,
+} = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -81,20 +101,6 @@ const voiceTypeOptions = computed(() => [
   { label: t('setting.voice.simple'), value: 'simple' },
   { label: t('setting.voice.noisy'), value: 'noisy' },
 ])
-
-const themeModeOptions = computed(() => [
-  { label: t('setting.themeMode.system'), value: 'system' },
-  { label: t('setting.themeMode.light'), value: 'light' },
-  { label: t('setting.themeMode.dark'), value: 'dark' },
-])
-
-const themeColorOptions = computed(() =>
-  Object.entries(themeColors).map(([key, color]) => ({
-    label: t(`setting.color.${key}`),
-    value: key,
-    color,
-  }))
-)
 
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
   { label: t('setting.cursor.none'), value: 'none' },
@@ -240,14 +246,6 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   }
 }
 
-// 主题
-const handleThemeModeChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeMode(value as ThemeMode)
-}
-const handleThemeColorChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeColor(value as ThemeColor)
-}
-
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
     Modal.confirm({
@@ -290,6 +288,16 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存低性能模式失败: ${errorMsg}`)
     message.error(t('setting.toast.lowPerfSaveFailed'))
+  }
+}
+
+const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
+  try {
+    await homeSatelliteStore.setStyle(style)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存主页卫星样式失败: ${errorMsg}`)
+    message.error(t('setting.toast.homeSatelliteSaveFailed'))
   }
 }
 
@@ -366,6 +374,7 @@ onMounted(() => {
 
 <template>
   <div class="settings-container">
+    <component :is="modalContextHolder" />
     <div class="settings-header">
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
@@ -375,14 +384,24 @@ onMounted(() => {
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
+            :appearance-value="appearanceValue"
+            :appearance-options="appearanceOptions"
             :theme-color="themeColor"
+            :theme-color-disabled="Boolean(activeAppearance)"
+            :appearance-busy="appearanceBusy"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"
             :cursor-effect-options="cursorEffectOptions"
             :low-performance-mode="performanceStore.lowPerformanceMode"
             :low-performance-mode-saving="performanceStore.saving"
+            :home-satellite-style="homeSatelliteStore.style"
+            :home-satellite-style-saving="homeSatelliteStore.saving"
+            :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
             :handle-theme-mode-change="handleThemeModeChange"
+            :handle-appearance-change="handleAppearanceChange"
+            :handle-appearance-import="handleAppearanceImport"
+            :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"

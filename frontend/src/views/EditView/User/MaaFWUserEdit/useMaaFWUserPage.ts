@@ -30,6 +30,7 @@ import type {
   ScriptType,
 } from '@/types/script'
 import { managedMaaFWQueueState } from '../maafwManagedTasks'
+import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
 import { useMaaFWUserForm } from './useMaaFWUserForm'
@@ -37,6 +38,8 @@ import { useMaaFWUserTaskContext } from './useMaaFWUserTaskContext'
 import { useMaaFWUserPersistence, type MaaFWUserIdHolder } from './useMaaFWUserPersistence'
 import { useMaaFWTaskQueue } from './useMaaFWTaskQueue'
 import { useMaaFWAddTaskMenu } from './useMaaFWAddTaskMenu'
+import { useMaaFWUserQueueImport } from './useMaaFWUserQueueImport'
+import { useMaaFWQueueTemplates } from './useMaaFWQueueTemplates'
 import { useMaaFWUserConfigRestore } from './useMaaFWUserConfigRestore'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
 import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
@@ -105,7 +108,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { formData, rules, applyUserData } = useMaaFWUserForm()
 
   /** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
-  const queueHintLines = computed(() =>
+  const flavorQueueHintLines = computed(() =>
     t(flavor.value.userPage.text.queueHintKey ?? '')
       .split('\n')
       .map(line => line.trim())
@@ -146,6 +149,9 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
 
+  const userImport = useMaaFWUserQueueImport({ scriptId, userIdHolder, queue })
+  const templates = useMaaFWQueueTemplates({ scriptId, scriptConfig, taskSnapshot, queue })
+
   // 队列里残留的受管任务：只有真要拆用户（后端会拒绝运行）才给警告，其余是运行照常的轻提示
   const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
     const state = managedMaaFWQueueState(presentQueuedTasks.value, {
@@ -164,6 +170,17 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     }
     return null
   })
+
+  // 队列里的不可选任务（特调声明，如 M9A 的小游戏）照常显示：同一原因并成一句「运行时会跳过」，
+  // 接在特调的队列提示后面，一句一个框
+  const queueHintLines = computed(() => [
+    ...flavorQueueHintLines.value,
+    ...unselectableMaaFWQueueNotices(
+      presentQueuedTasks.value,
+      task => getDisplayName(task),
+      t('edit.maafwUnselectableTaskSeparator')
+    ).map(notice => t('edit.maafwUnselectableTaskNotice', notice)),
+  ])
 
   // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
   const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
@@ -387,6 +404,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     handleFieldSave,
     ...queue,
     ...menu,
+    ...userImport,
+    ...templates,
     ...restore,
     loadUserData,
     reloadInterface,

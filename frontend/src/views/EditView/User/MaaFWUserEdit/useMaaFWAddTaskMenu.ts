@@ -46,7 +46,8 @@ export function useMaaFWAddTaskMenu({
   queue,
 }: MaaFWAddTaskMenuOptions) {
   const { t } = useI18n()
-  const { taskByName, partitionTaskOrder, isManagedTaskId, getDisplayName } = context
+  const { taskByName, partitionTaskOrder, isManagedTaskId, isUnselectableTaskId, getDisplayName } =
+    context
   const { availableTasks, selectedTaskId, ensureTaskOptionMap, persistQueuedSnapshot } = queue
 
   const addTaskCascaderValue = ref<string[]>([])
@@ -198,7 +199,11 @@ export function useMaaFWAddTaskMenu({
   })
 
   const addTaskToQueue = async (taskName: string) => {
-    if (!taskByName.value.has(taskName) || isManagedTaskId(taskName)) {
+    if (
+      !taskByName.value.has(taskName) ||
+      isManagedTaskId(taskName) ||
+      isUnselectableTaskId(taskName)
+    ) {
       addTaskCascaderValue.value = []
       return
     }

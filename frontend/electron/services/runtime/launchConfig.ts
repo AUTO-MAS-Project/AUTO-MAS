@@ -76,7 +76,7 @@ export interface RuntimeSupervisedLaunchConfig {
   runtimePath: string | null
   /**
    * 传给 `--app-root` 的 Runtime 根目录：Runtime 在它下面维护 `runtime/`、`runtime-state/`、
-   * `logs/runtime/`。`managed` 模式就是安装根（与 `dataRoot` 相同）；`development` 模式是仓外
+   * `debug/runtime/`。`managed` 模式就是安装根（与 `dataRoot` 相同）；`development` 模式是仓外
    * 的独立目录（见 `resolveDevelopmentRuntimeRoot`），**不是**用户数据根，读配置不能用它。
    */
   appRoot: string
@@ -257,7 +257,7 @@ export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
  *
  * Runtime 明确拒绝根目录位于开发源码目录内（`INVALID_ARGUMENT`，
  * `reason=runtime_root_inside_development_repo`），而 Electron 开发态的 `getAppRoot()` 恰好就是
- * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`logs/runtime/` 污染。
+ * 源码仓根；源码仓也不该被 Runtime 的 `runtime/`、`runtime-state/`、`debug/runtime/` 污染。
  * 所以 Runtime 根目录放到仓外：
  * - Electron 环境：`<userData>/auto-mas-runtime`。开发态的 userData 已由 `applyInstanceIdentity()`
  *   与正式版分开（`<appData>/<name>-dev`），两版各自一份 Runtime 布局，互不干扰；

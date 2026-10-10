@@ -1,0 +1,63 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+export type Emulator2AvdInstanceOptionsOut = {
+    /**
+     * 状态码
+     */
+    code?: number;
+    /**
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * 空闲页上报 (气球) 是否开启
+     */
+    balloon?: boolean;
+    /**
+     * 内存 MB, 每次开机用 -memory 传
+     */
+    memoryMb?: (number | null);
+    /**
+     * CPU 核数
+     */
+    cpu?: (number | null);
+    /**
+     * 数据盘上限 GB
+     */
+    dataPartitionGb?: (number | null);
+    /**
+     * 首次开机初始化是否已完成 (去预装 / 装轻量桌面等)
+     */
+    initialized?: boolean;
+    /**
+     * 当前桌面包名, pixel 为原生桌面
+     */
+    launcher?: string;
+    /**
+     * 首次开机记录的渲染器 (GLES 行)
+     */
+    renderer?: string;
+    /**
+     * 是否在用软件渲染 (SwiftShader); 为 true 时应提示用户更新显卡驱动
+     */
+    softwareRenderer?: boolean;
+    /**
+     * 控制台端口
+     */
+    consolePort?: number;
+    /**
+     * adb 端口
+     */
+    adbPort?: number;
+    /**
+     * gRPC 端口 (带 token 鉴权)
+     */
+    grpcPort?: number;
+};
+

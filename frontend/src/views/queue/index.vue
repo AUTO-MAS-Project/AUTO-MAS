@@ -112,7 +112,7 @@
         <!-- 队列开关配置 -->
         <div class="config-section">
           <a-row :gutter="[24, 24]">
-            <a-col :span="6">
+            <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.cycleType') }}</span>
@@ -134,7 +134,7 @@
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="6">
+            <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.runOnStart') }}</span>
@@ -156,7 +156,7 @@
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="6">
+            <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.scheduled') }}</span>
@@ -176,7 +176,7 @@
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="6">
+            <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.afterDone') }}</span>
@@ -194,7 +194,7 @@
                 />
               </div>
             </a-col>
-            <a-col :span="6">
+            <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.afterDoneDelay') }}</span>
@@ -217,6 +217,19 @@
             </a-col>
           </a-row>
         </div>
+        <a-divider />
+
+        <a-form layout="vertical">
+          <ExtraScriptSection
+            :key="activeQueueId"
+            v-model:form-data="extraScriptFormData"
+            :loading="
+              queueConfigLoading || extraScriptSaving || extraScriptConfigQueueId !== activeQueueId
+            "
+            scope="queue"
+            @save="handleExtraScriptSave"
+          />
+        </a-form>
         <a-divider />
 
         <!-- 定时项管理 -->
@@ -249,9 +262,10 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
+import { Service, type QueueConfig_Info } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -295,6 +309,17 @@ const cycleRunning = computed(() =>
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
 const currentAfterAccomplishDelay = ref<number>(0)
+const extraScriptFormData = ref({
+  Info: {
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
+  },
+})
+const queueConfigLoading = ref(false)
+const extraScriptSaving = ref(false)
+const extraScriptConfigQueueId = ref('')
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
 
@@ -369,9 +394,10 @@ const fetchQueues = async () => {
 const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) => {
   if (!queueId) return
 
+  queueConfigLoading.value = true
   try {
     const data = queuesData ?? (await Service.getQueuesApiQueueGetPost({})).data
-    if (!isMounted) return
+    if (!isMounted || queueId !== activeQueueId.value) return
     currentQueueData.value = data
 
     // 根据API响应数据更新队列信息
@@ -386,7 +412,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
 
       // 使用nextTick确保DOM更新后再加载数据
       await nextTick()
-      if (!isMounted) return
+      if (!isMounted || queueId !== activeQueueId.value) return
 
       // 更新开关状态 - 从API响应中获取
       currentStartUpMode.value = queueData.Info?.StartUpMode ?? 'Never'
@@ -395,6 +421,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       currentAfterAccomplishDelay.value = queueData.Info?.AfterAccomplishDelay ?? 0
+      loadExtraScriptConfig(queueData.Info)
 
       // 定时项和队列项互不依赖，并行拉取
       await Promise.all([
@@ -412,6 +439,8 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载队列数据失败: ${errorMsg}`)
     if (isMounted) message.error(t('queue.toast.loadQueueFailed'))
+  } finally {
+    if (queueId === activeQueueId.value) queueConfigLoading.value = false
   }
 }
 
@@ -576,6 +605,27 @@ const handleConfigChange = async (key: string, value: any) => {
   await handleSaveChange(key, value)
 }
 
+const loadExtraScriptConfig = (info?: QueueConfig_Info) => {
+  extraScriptConfigQueueId.value = activeQueueId.value
+  extraScriptFormData.value = {
+    Info: {
+      IfScriptBeforeTask: info?.IfScriptBeforeTask ?? false,
+      ScriptBeforeTask: info?.ScriptBeforeTask ?? '',
+      IfScriptAfterTask: info?.IfScriptAfterTask ?? false,
+      ScriptAfterTask: info?.ScriptAfterTask ?? '',
+    },
+  }
+}
+
+const handleExtraScriptSave = async (key: string, value: boolean | string) => {
+  extraScriptSaving.value = true
+  try {
+    await handleSaveChange(key.replace(/^Info\./, ''), value)
+  } finally {
+    extraScriptSaving.value = false
+  }
+}
+
 // 延时输入框失焦时保存，清空输入得到的 null 按 0 处理
 const handleAfterAccomplishDelayBlur = async () => {
   const delay = currentAfterAccomplishDelay.value ?? 0
@@ -677,12 +727,12 @@ const onQueueChange = async (queueId: string) => {
 }
 
 // 刷新当前队列配置 - 保存成功后调用
-const refreshQueueConfig = async () => {
-  if (!activeQueueId.value) return
+const refreshQueueConfig = async (queueId = activeQueueId.value) => {
+  if (!queueId) return
 
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
-    if (!isMounted) return
+    if (!isMounted || queueId !== activeQueueId.value) return
     if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
       currentQueueData.value = response.data
       const queueData = response.data[activeQueueId.value]
@@ -694,6 +744,7 @@ const refreshQueueConfig = async () => {
         currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
         currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
         currentAfterAccomplishDelay.value = queueData.Info.AfterAccomplishDelay ?? 0
+        loadExtraScriptConfig(queueData.Info)
 
         // 更新队列列表中的名称
         const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
@@ -709,8 +760,7 @@ const refreshQueueConfig = async () => {
 }
 
 // 保存成功后把这次变更写进本地快照；各控件已 v-model 到对应 ref，这里只补快照与列表名
-const applyLocalQueueChange = (key: string, value: any) => {
-  const queueId = activeQueueId.value
+const applyLocalQueueChange = (queueId: string, key: string, value: any) => {
   const queueData = currentQueueData.value?.[queueId]
   if (queueData) {
     queueData.Info = { ...(queueData.Info ?? {}), [key]: value }
@@ -723,7 +773,8 @@ const applyLocalQueueChange = (key: string, value: any) => {
 
 // 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
 const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
-  if (!activeQueueId.value) return false
+  const queueId = activeQueueId.value
+  if (!queueId) return false
 
   try {
     // 构建只包含变更字段的数据
@@ -732,26 +783,26 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     }
 
     const response = await Service.updateQueueApiQueueUpdatePost({
-      queueId: activeQueueId.value,
+      queueId,
       data: queueData,
     })
 
     if (response.code !== 200) {
       message.error(response.message || t('queue.toast.saveFailed'))
       // 保存失败时界面控件仍停在用户刚选的值，回读真实配置以纠正显示
-      await refreshQueueConfig()
+      await refreshQueueConfig(queueId)
       return false
     }
 
     // 保存成功：更新接口不带最新 Info，本地应用这次变更即可，不再整份回读
-    applyLocalQueueChange(key, value)
+    applyLocalQueueChange(queueId, key, value)
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存队列数据失败: ${errorMsg}`)
     message.error(t('queue.toast.saveQueueFailed', { error: errorMsg }))
     // 同上：网络异常等情况也要回读，避免界面与后端配置不一致
-    await refreshQueueConfig()
+    await refreshQueueConfig(queueId)
     return false
   }
 }

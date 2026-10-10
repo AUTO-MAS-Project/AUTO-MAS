@@ -3,6 +3,7 @@ import { isSupportedMaaFWControllerType } from '@/types/script'
 import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
+import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, MaaFWTaskInfo } from '@/types/script'
 
 type MaaFWDisplayItem = {
@@ -116,6 +117,8 @@ export function useMaaFWUserTaskContext({
   )
   const isManagedTaskId = (taskId: string) =>
     isManagedMaaFWTask(getTaskInfoById(taskId), managedTaskEntries.value)
+  // 特调声明不可选的任务（后端给了 unselectableReason）同样不进「添加任务」与预设模板
+  const isUnselectableTaskId = (taskId: string) => isUnselectableMaaFWTask(getTaskInfoById(taskId))
 
   const getDisplayName = (item: MaaFWDisplayItem) => {
     return item.label || item.name
@@ -135,6 +138,7 @@ export function useMaaFWUserTaskContext({
     isTaskActiveForCurrentContext,
     managedTaskEntries,
     isManagedTaskId,
+    isUnselectableTaskId,
     getDisplayName,
   }
 }

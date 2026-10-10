@@ -62,6 +62,10 @@ export interface MAAScriptConfig {
     Id: string
     Index: string
   }
+  Update: {
+    TakeoverEnabled: boolean
+    MirrorChyanCDK: string
+  }
   SubConfigsInfo: {
     UserData: {
       instances: unknown[]
@@ -304,6 +308,8 @@ export interface MaaFWScriptConfig {
     TaskTimeLimit: number
     /** 按任务名覆盖的单任务时限（分钟）的 JSON 文本，值 0 表示该任务不限。 */
     TaskTimeLimitOverrides: string | Record<string, number>
+    /** 原地打转检测（实验性，默认关）：同一串节点短周期反复执行、识别结果不变时停掉该任务。 */
+    LoopGuard: boolean
     /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
     GameUpdateMode: MaaFWGameUpdateMode
   }
@@ -315,6 +321,13 @@ export interface MaaFWScriptConfig {
     Controller?: string | string[] | null
     Resource?: string | string[] | null
     Tasks?: string | string[] | null
+  }
+  /**
+   * 用户页任务队列的自定义模板（同一脚本的用户共用），JSON 文本；
+   * 读写见 views/EditView/User/maafwQueueSource.ts。脚本页不读不写。
+   */
+  Task?: {
+    Templates?: string
   }
 }
 
@@ -462,6 +475,11 @@ export interface MaaFWTaskInfo {
   defaultCheck: boolean
   /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
   repeatCount?: number
+  /**
+   * 特调声明不可选时的原因（后端 `unselectable_entries`）：不进「添加任务」与预设模板，
+   * 已在队列里的照常显示，运行时跳过。可选任务为空
+   */
+  unselectableReason?: string | null
 }
 
 export interface MaaFWOptionCaseInfo {

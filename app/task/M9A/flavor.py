@@ -27,7 +27,11 @@ input 选项；关闭放队尾。用户排的顺序不影响这三项。队列�
 
 另实现了引擎的两个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）与
 ``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
-下载安装，``game_update.py``）。除此之外 M9A 与通用 MaaFW 没有任何运行期差别。
+下载安装，``game_update.py``）；并给了引擎的五项可选声明：``supports_mod_avd``（魔改 AVD）、
+``abort_round_entries``（切号失败结束本轮）、``nonfatal_entries``（关闭游戏失败不算失败）、
+``skip_on_retry_entries``（完成过的重试不补跑）、``unselectable_entries``（五个小游戏不可选、
+运行时跳过），契约都在 MaaFW ``tools/embedded/flavor.py`` 的模块说明里。除这些之外 M9A 与
+通用 MaaFW 没有运行期差别。
 """
 
 from __future__ import annotations
@@ -115,8 +119,57 @@ class M9AFlavor:
     """满足 ``MaaFWFlavor`` 协议的 M9A 特调对象。"""
 
     type_key = TYPE_KEY
+    #: 魔改 AVD 目前只对 M9A 放行（引擎的可选声明，契约见 MaaFW ``flavor.py`` 的模块说明）
+    supports_mod_avd = True
     # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上
     abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
+    # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义
+    nonfatal_entries = {CLOSE_ENTRY: "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}
+    # 本次运行里完成过的任务重试时不再补跑（v4.11.3 全部非受管任务）：重跑已领完、已刷完的
+    # 只是白等几分钟。逐个写出而不是「除受管三项外全部」，M9A 以后新增的任务默认照旧补跑，
+    # 确认重跑无意义再加进来。受管三项每次尝试都要重做，不列。
+    skip_on_retry_entries = frozenset(
+        {
+            "Wilderness",
+            "Awards",
+            "Bank",
+            "redeem_code",
+            "Character",
+            "Psychube",
+            "switch_menu",
+            "WarehouseInventory",
+            "Limbo",
+            "Lucidscape",
+            "TheAlarm",
+            "Colosseum",
+            "UTTU",
+            "SeriesOfDusks",
+            "TheSyndromeOfSilence",
+            "8bit",
+            "CritterCrash",
+            "MusesBoxStartParty",
+            "PreStormProtocolStart",
+            "CompleteInduction",
+            "BalancedFarming",
+            "Combat",
+            "CombatActivity",
+            "AutoPromotion",
+            "SSReopen",
+            "CharUpgrade",
+        }
+    )
+    # 五个小游戏：M9A 资源里没有导航，要用户先手动停在对应页面才能跑，MAS 无人值守放进队列只会
+    # 出错。用户页不让选，运行时剔掉（优先于上面的声明，skip_on_retry_entries 里留着无妨）。
+    unselectable_entries = dict.fromkeys(
+        (
+            "8bit",
+            "CritterCrash",
+            "MusesBoxStartParty",
+            "PreStormProtocolStart",
+            "CompleteInduction",
+        ),
+        "需手动进入对应页面（M9A 没有自动导航）",
+    )
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
         return is_m9a_project(interface_model)

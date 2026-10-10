@@ -43,6 +43,9 @@ from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
+from .avd.constants import MOD_AVD_M9A_ONLY_MESSAGE
+from .avd.manager import AvdManager
+from .avd.manager import build_manager as build_avd_manager
 from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
@@ -52,13 +55,15 @@ from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
 from .slots import PathRecord, SlotRecord, SlotTable
 
-#: 一条安装的后端管理器。两家各自继承旧实现, 对门面暴露同一组方法。
-Backend = LDPlayer14Manager | MuMu6Manager
+#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 魔改 AVD（avd）自己驱动
+#: emulator.exe, 三家对门面暴露同一组方法。
+Backend = LDPlayer14Manager | MuMu6Manager | AvdManager
 
 #: 类型 -> 构造函数。加一家模拟器只要在这里加一行。
 _BACKEND_BUILDERS = {
     "ldplayer": build_ldplayer_manager,
     "mumu": build_mumu_manager,
+    "avd": build_avd_manager,
 }
 
 logger = get_logger("Emulator2 设备管理")
@@ -225,8 +230,21 @@ class Emulator2Manager(DeviceBase):
         logger.info(f"设备 #{slot} {when}发现配置偏离基准，已还原: {changes}")
         return list(changes)
 
-    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+    async def open(
+        self,
+        idx: str,
+        package_name: str = "",
+        *,
+        manual: bool = False,
+        m9a_flavor: bool = False,
+    ) -> DeviceInfo:
         """启动设备；``package_name`` 非空时在设备就绪后把该应用也拉起来。
+
+        ``manual``：用户在模拟器页手动点的启动（任务路径不传）。只有魔改 AVD 用得上——它开机时就要
+        定有没有窗口，手动启动带窗口，任务拉起跟「静默模式」走；雷电 / MuMu 不收这个参数。
+
+        ``m9a_flavor``：调用方是 M9A 特调（声明了 ``supports_mod_avd`` 的特调）。魔改 AVD 目前只支持 M9A：
+        设备是魔改 AVD、又不是手动启动、调用方也不是 M9A 时直接拒绝，不开机。雷电 / MuMu 不看它。
 
         应用那一步由后端的 :class:`~.applaunch.AppLaunchMixin` 走纯 adb 完成，
         **模拟器本来就开着时同样生效**——两家原生的带包启动参数在那种情况下会被
@@ -234,6 +252,8 @@ class Emulator2Manager(DeviceBase):
         只有等不到安卓系统启动完成时抛 ``RuntimeError``，见 ``AppLaunchMixin.open``。
         """
         manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager) and not (manual or m9a_flavor):
+            raise RuntimeError(MOD_AVD_M9A_ONLY_MESSAGE)
 
         self._apply_host_mode()
 
@@ -251,6 +271,8 @@ class Emulator2Manager(DeviceBase):
             except Exception as e:  # noqa: BLE001 - 压不住不该拦住启动
                 logger.warning(f"设备 #{idx} 应用稳定模式失败，继续启动: {e}")
 
+        if isinstance(manager, AvdManager):
+            return await manager.open(native_index, package_name, manual=manual)
         return await manager.open(native_index, package_name)
 
     def _apply_host_mode(self) -> None:
@@ -282,6 +304,15 @@ class Emulator2Manager(DeviceBase):
         """
         manager, native_index = await self._dispatch(idx)
         return await manager.launch_app(native_index, package_name)
+
+    async def host_adb(self, idx: str):
+        """设备是魔改 AVD 实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
+        ``get_adb_path()`` 与设备地址。"""
+        manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager):
+            return manager.host_adb(native_index)
+        return None
 
     async def open_store(self, idx: str) -> AppLaunchResult:
         """打开设备所属模拟器自带的游戏中心，不重开模拟器。

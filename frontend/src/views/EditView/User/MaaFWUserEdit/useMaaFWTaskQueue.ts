@@ -1,7 +1,19 @@
 import { computed, ref, watch, type Ref } from 'vue'
-import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from '../maafwPresetQueue'
+import {
+  buildPresetAppliedSnapshot,
+  selectPresetQueueEntries,
+  type MaaFWPresetQueueEntry,
+} from '../maafwPresetQueue'
 import { maafwMissingTaskName } from '../maafwTaskChanges'
-import { withoutManagedMaaFWTasks } from '../maafwManagedTasks'
+import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
+import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
+import {
+  buildMaaFWQueueReplacement,
+  countMaaFWQueueReplacementImports,
+  describeMaaFWQueueSource,
+  maafwPasswordFields,
+  type MaaFWQueueSource,
+} from '../maafwQueueSource'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWQueueEntry,
@@ -19,7 +31,8 @@ interface MaaFWTaskQueueOptions {
   taskSnapshot: Ref<MaaFWTaskSnapshot>
   formData: MaaFWUserFormState
   context: MaaFWUserTaskContext
-  savePresetAndSnapshot: () => Promise<void>
+  /** 返回这次是否真的写进了后端 */
+  savePresetAndSnapshot: () => Promise<boolean>
 }
 
 type QueueEntryDraft =
@@ -39,6 +52,7 @@ export function useMaaFWTaskQueue({
 }: MaaFWTaskQueueOptions) {
   const {
     presetOptions,
+    taskByName,
     validTaskNames,
     resolveTaskName,
     getTaskInfoById,
@@ -87,12 +101,40 @@ export function useMaaFWTaskQueue({
     (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
   )
   // 已在队列里的任务仍然留在候选中：同一个任务可以再加一份，各自带独立的选项。
+  // 受管任务与特调声明不可选的任务不进候选（预设模板与配置导入也按这张表判可用）。
   const availableTasks = computed(() =>
-    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value)
+    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value).filter(
+      task => !isUnselectableMaaFWTask(task)
+    )
+  )
+  const availableTaskByName = computed(
+    () => new Map(availableTasks.value.map(task => [task.name, task] as const))
+  )
+  const passwordFields = computed(() => maafwPasswordFields(previewData.value?.options || []))
+  /** 别处的一份快照（同脚本其他用户的队列）在当前项目下的样子：哪些能导入、哪些失效、几项密码 */
+  const describeQueueSnapshot = (
+    raw: string | MaaFWTaskSnapshot | Record<string, unknown> | null | undefined
+  ): MaaFWQueueSource =>
+    describeMaaFWQueueSource(normalizeTaskSnapshot(raw, previewData.value, { keepMissing: true }), {
+      taskByName: taskByName.value,
+      availableTaskByName: availableTaskByName.value,
+      isManagedTask: task => isManagedMaaFWTask(task, managedTaskEntries.value),
+      passwordFields: passwordFields.value,
+      displayName: task => task.label || task.name,
+    })
+  /** 「存为模板」要存的项：当前队列里去掉虚影、受管任务与不可选任务 */
+  const templateDraftEntries = computed<MaaFWPresetQueueEntry[]>(() =>
+    presentQueuedTasks.value
+      .filter(
+        item =>
+          !isManagedMaaFWTask(item.task, managedTaskEntries.value) &&
+          !isUnselectableMaaFWTask(item.task)
+      )
+      .map(item => ({ id: item.id, task: item.task }))
   )
   const presetTemplates = computed(() => {
     // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
-    const activeTaskByName = new Map(availableTasks.value.map(task => [task.name, task] as const))
+    const activeTaskByName = availableTaskByName.value
     return presetOptions.value
       .map(preset => {
         const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
@@ -193,6 +235,30 @@ export function useMaaFWTaskQueue({
     await savePresetAndSnapshot()
   }
 
+  /**
+   * 用一份别处的快照（其他用户的队列）替换当前队列，语义同套用预设。
+   * 写进了后端就返回实际导入的实例数，没写进去返回 null（失败提示由保存路径给出）。
+   * `SelectedPreset` 必须写空：快照为空时运行器会按它的名字去找项目 preset。
+   */
+  const replaceQueueWith = async (
+    source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions'>
+  ): Promise<number | null> => {
+    const importedCount = countMaaFWQueueReplacementImports(source, taskSnapshot.value, isPretaskId)
+    const nextSnapshot = buildMaaFWQueueReplacement(
+      source,
+      taskSnapshot.value,
+      isPretaskId,
+      passwordFields.value
+    )
+    taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
+    taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
+    taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+    selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
+    formData.Task.SelectedPreset = ''
+    showPresetModal.value = false
+    return (await savePresetAndSnapshot()) ? importedCount : null
+  }
+
   const deleteSelectedTask = async () => {
     const taskId = selectedQueuedTask.value?.id
     if (!taskId) return
@@ -269,6 +335,10 @@ export function useMaaFWTaskQueue({
     persistQueuedSnapshot,
     syncControllerResourceSelection,
     applyPresetTemplate,
+    passwordFields,
+    templateDraftEntries,
+    describeQueueSnapshot,
+    replaceQueueWith,
     deleteSelectedTask,
     deleteTask,
     ensureTaskOptionMap,

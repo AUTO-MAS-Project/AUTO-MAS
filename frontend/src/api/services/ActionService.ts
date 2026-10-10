@@ -6,6 +6,10 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
+import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -23,6 +27,10 @@ import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
+import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
+import type { ShareAppearanceDescriptionOut } from '../models/ShareAppearanceDescriptionOut';
+import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
+import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
@@ -216,6 +224,46 @@ export class ActionService {
         });
     }
     /**
+     * 修改魔改 AVD 实例选项
+     * 内存、气球，只改传了的项，下次启动生效。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
+        requestBody: Emulator2AvdInstanceOptionsSetIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options/set',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 在魔改 AVD 实例里安装 APK
+     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
+     * @param requestBody
+     * @returns Emulator2AvdApkInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
+        requestBody: Emulator2AvdApkInstallIn,
+    ): CancelablePromise<Emulator2AvdApkInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加任务
      * @param requestBody
      * @returns TaskCreateOut Successful Response
@@ -396,6 +444,44 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/cancel',
+        });
+    }
+    /**
+     * 上传外观包到分享站
+     * @param requestBody
+     * @returns ShareAppearanceUploadOut Successful Response
+     * @throws ApiError
+     */
+    public static uploadShareAppearanceApiShareAppearanceUploadPost(
+        requestBody: ShareAppearanceUploadIn,
+    ): CancelablePromise<ShareAppearanceUploadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改自己外观的描述
+     * @param requestBody
+     * @returns ShareAppearanceDescriptionOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost(
+        requestBody: ShareAppearanceDescriptionIn,
+    ): CancelablePromise<ShareAppearanceDescriptionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/description',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

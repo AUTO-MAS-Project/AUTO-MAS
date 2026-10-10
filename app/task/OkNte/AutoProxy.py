@@ -37,11 +37,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     append_push_log,
     find_pids_by_name,
+    kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
     resolve_config_source,
@@ -78,7 +78,11 @@ from .tools.backup_archive import (
     mas_config_dir,
     quick_config_dir,
 )
-from .tools.launcher_start import async_start_game_via_launcher
+from .tools.launcher_start import (
+    AUTOPLAY_ARG,
+    async_start_game_via_launcher,
+    async_wait_autoplay_game,
+)
 
 logger = get_logger("OK-NTE 自动代理")
 
@@ -90,10 +94,31 @@ _NTE_LAUNCHER_DIR = Path("Neverness To Everness/NTELauncher")
 _NTE_LAUNCHER_EXES = ("NTEGame.exe", "NTEGlobalGame.exe", "NTETWGame.exe")
 _NTE_LAUNCHER_EXES_CASEFOLD = {exe.casefold() for exe in _NTE_LAUNCHER_EXES}
 
+# 启动方式（Game.LaunchMode）在调度台摘要里的展示文案；未知值按默认的 Autoplay 显示
+_LAUNCH_MODE_LABELS = {
+    "Autoplay": "静默启动",
+    "LauncherUi": "启动器界面启动",
+}
+
 # 多用户切换时等待旧游戏完全退出的上限（秒）：
 # 异环客户端「自退」不是瞬时的（ok-nte `-e` 退出约 70 秒），若不等待完全退出，
 # 下个用户会把「正在退出的残影窗口」误判为可用游戏而复用，导致窗口句柄失效。
 _GAME_EXIT_WAIT_SECONDS = 90
+# 结束常驻启动器后等它退出（单实例互斥释放）的上限
+_LAUNCHER_EXIT_WAIT_SECONDS = 15
+
+
+def _launcher_process_name(launcher_path: Path) -> str:
+    """进程名比较区分大小写（psutil），而 Game.Path 里的大小写不受约束。
+
+    检测与结束都走这个规范名：配置写成 ntegame.exe 时按原样比较会全都漏掉，
+    常驻启动器就会把 /autoplay 吃掉，白等 180s。
+    """
+
+    for exe in _NTE_LAUNCHER_EXES:
+        if exe.casefold() == launcher_path.name.casefold():
+            return exe
+    return launcher_path.name
 
 
 def _load_nte_launcher_path(config_path: Path) -> Path | None:
@@ -600,11 +625,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """游戏配置摘要行（调度台展示用）。"""
 
         game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
+        launch_mode = str(
+            self.script_config.get("Game", "LaunchMode") or "Autoplay"
+        ).strip()
         return [
             f"[游戏配置] 用户: {self.cur_user_item.name}",
             f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
             f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
+            f"  启动方式: {_LAUNCH_MODE_LABELS.get(launch_mode, _LAUNCH_MODE_LABELS['Autoplay'])}",
             f"  启动参数: {game_args or '（无）'}",
         ]
 
@@ -666,8 +695,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 raise RuntimeError(
                     "未找到异环启动器路径，请重新选择游戏目录以定位 NTELauncher 启动器"
                 )
-            await self.game_manager.open_process(launcher_path)
-            await self._push_dispatch_log("启动器已拉起，正在等待点击「开始游戏」...")
+            # 启动方式（Game.LaunchMode）：Autoplay = 静默启动（启动器带 /autoplay
+            # 后台拉起，无需点击「开始游戏」）；LauncherUi = 启动器界面启动（打开启动器
+            # 界面，由 launcher_start 的 OCR 交互点击「开始游戏」）。空值与非法值都按
+            # Autoplay 处理，即保持现状行为。
+            launch_mode = str(
+                self.script_config.get("Game", "LaunchMode") or "Autoplay"
+            ).strip()
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
             # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
             # 调度回事件循环（与账号切换的 _push_switch_log 同理）。
@@ -678,10 +712,76 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     self._push_dispatch_log(line), launch_loop
                 )
 
-            await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
+            window_ready = False
+
+            if launch_mode == "LauncherUi":
+                # 「启动器界面启动」保持旧现状：只打开启动器界面（常驻启动器已持有
+                # OneSDK/登录管道，这里只是再拉起或把已有窗口调出来），随后由 launcher_start
+                # 等启动器窗口、OCR 找并点击「开始游戏」（含更新/下载/弹窗分支）。
+                # 不结束启动器：旧流程本就依赖它常驻；两支也绝不互相回退。
+                message = (
+                    "启动方式为「启动器界面启动」：将打开启动器界面并点击「开始游戏」"
+                )
+                logger.info(message)
+                await self._push_dispatch_log(message)
+                await self.game_manager.open_process(launcher_path)
+                window_ready = bool(
+                    await async_start_game_via_launcher(
+                        launcher_path, on_log=_push_launch_log
+                    )
+                )
+            else:
+                # 启动器是严格单实例（Global\CoreClient_StartEvent）：它已在运行时，新进程
+                # 只会把旧实例窗口调出来后立即退出，/autoplay 既传不进去、也等不到游戏窗口。
+                # 故先结束常驻启动器（收尾流程本就会结束它），再按「全新启动」静默拉起。
+                launcher_exe = _launcher_process_name(launcher_path)
+                if await asyncio.to_thread(is_process_alive, launcher_exe):
+                    message = (
+                        f"检测到启动器 {launcher_exe} 已在运行，重新拉起以静默启动"
+                    )
+                    logger.info(message)
+                    await self._push_dispatch_log(message)
+                    await self.game_manager.kill()
+                    # 结束也按进程名（与结束异环客户端同款）：System.kill_process 按 exe
+                    # 路径精确匹配，读不到路径的同名进程既杀不掉、又会被单实例守卫
+                    # 留着吃掉 /autoplay，白等 180s。
+                    for pid in await asyncio.to_thread(find_pids_by_name, launcher_exe):
+                        try:
+                            await System.kill_process_by_pid(pid, kill_tree=False)
+                        except Exception as e:
+                            logger.opt(exception=True).warning(
+                                f"结束常驻启动器进程失败 PID: {pid}, {e}"
+                            )
+                    await self._wait_launcher_exit(launcher_path)
+                # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
+                # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
+                await self.game_manager.open_process(launcher_path, AUTOPLAY_ARG)
+                if await async_wait_autoplay_game(
+                    launcher_path, on_log=_push_launch_log
+                ):
+                    window_ready = True
+                    message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
+                    logger.info(message)
+                    await self._push_dispatch_log(message)
+                elif is_process_running(_NTE_CLIENT_PROCESS):
+                    # 窗口尚未被枚举到但客户端进程已存在：游戏其实已起，按成功处理；
+                    # 这条路径未确认窗口存在，故下面的收尾日志走「进程已在运行」表述
+                    logger.info(f"{AUTOPLAY_ARG} 未等到游戏窗口，但客户端进程已在运行")
+                    await self._push_dispatch_log("客户端进程已在运行，按已启动处理")
+                else:
+                    # 静默启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
+                    # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「启动器
+                    # 界面启动」的方式），直接抛错，交由调用方的失败处理（调度台日志 +
+                    # 桌面通知 + 进程结束与重试）
+                    raise RuntimeError(
+                        f"{AUTOPLAY_ARG} 静默启动未出现游戏窗口（超时），"
+                        "请人工确认启动器状态"
+                    )
             wait_time = int(self.script_config.get("Game", "WaitTime"))
             await self._push_dispatch_log(
                 f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）..."
+                if window_ready
+                else f"客户端进程已在运行，正在等待游戏完成启动（{wait_time}s）..."
             )
             await asyncio.sleep(wait_time)
             await self._push_dispatch_log("游戏启动完成")
@@ -709,6 +809,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await asyncio.sleep(2)
             await self._push_dispatch_log("游戏启动指令已发送")
             return
+
+    async def _wait_launcher_exit(self, launcher_path: Path) -> bool:
+        """等常驻启动器退出：单实例互斥释放后 /autoplay 才能重新静默拉起。"""
+
+        launcher_exe = _launcher_process_name(launcher_path)
+        deadline = time.monotonic() + _LAUNCHER_EXIT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            # 按进程存活判断（不依赖窗口）：静默启动的启动器本就没有可见窗口
+            if not await asyncio.to_thread(is_process_alive, launcher_exe):
+                return True
+            await asyncio.sleep(1)
+        logger.warning(
+            f"等待启动器退出超时（{_LAUNCHER_EXIT_WAIT_SECONDS}s），仍尝试静默拉起: "
+            f"{launcher_exe}"
+        )
+        return False
 
     async def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
@@ -762,6 +878,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self._reset_daily_proxy_count()
 
         self.cur_user_item.status = "运行"
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
@@ -774,12 +892,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
-
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
 
             await self._log_game_config_summary()
 
@@ -898,11 +1010,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     "Always",
                 ):
                     await self.update_config()
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -927,11 +1034,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "Always",
             ):
                 await self.update_config()
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
@@ -1203,22 +1305,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.get("Game", "Type")
-        try:
-            if isinstance(self.game_manager, ProcessManager):
+        if isinstance(self.game_manager, ProcessManager):
+            try:
                 await self.game_manager.kill()
+            except Exception as e:
+                logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
+        try:
             if game_type == "Client":
                 # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
                 # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
                 # 全进程扫描放到线程里，不阻塞事件循环
-                for pid in await asyncio.to_thread(
-                    find_pids_by_name, _NTE_CLIENT_PROCESS
-                ):
-                    try:
-                        await System.kill_process_by_pid(pid)
-                    except Exception as e:
-                        logger.opt(exception=True).warning(
-                            f"结束异环游戏进程失败 PID: {pid}, {e}"
-                        )
+                failed = await kill_pids_by_name(_NTE_CLIENT_PROCESS)
+                if failed:
+                    message = f"有 {failed} 个异环游戏进程未能结束，请人工确认关闭"
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 

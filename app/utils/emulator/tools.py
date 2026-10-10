@@ -529,27 +529,36 @@ async def _watch_and_mute(record: AudioMuteRecord) -> None:
 
 
 async def apply_launch_audio_mute(
-    states_store: Dict[str, AudioMuteRecord], idx: str, pids: List[int]
+    states_store: Dict[str, AudioMuteRecord],
+    idx: str,
+    resolve_pids: Callable[[], Awaitable[List[int]]],
 ) -> None:
     """静默模式下静音全新启动实例的声音，把记录存入 ``states_store``。
 
     只对实例由本次 ``open()`` 全新拉起的情况调用——已在线早退的实例可能是用户手动
-    开着的，不能动。会话建立由后台任务跟随（见 :class:`AudioMuteRecord`），本函数
-    立即返回，不拖慢启动流程；任何失败只记日志，不影响启动。
+    开着的，不能动。PID 查询完成后，音频会话由后台任务跟随（见
+    :class:`AudioMuteRecord`），启动流程不等待会话建立。PID 查询只在开启静默时
+    执行，查询与静音准备的任何失败只记日志，不影响启动。
     """
-    if not pids or not IS_WINDOWS:
+    if not IS_WINDOWS:
         return
-    from app.core import Config
+    try:
+        from app.core import Config
 
-    if not Config.get("Function", "IfSilence"):
-        return
-    old = states_store.get(idx)
-    if old is not None and old.task is not None and not old.task.done():
-        old.task.cancel()
-    record = AudioMuteRecord(pids=set(pids))
-    record.task = asyncio.create_task(_watch_and_mute(record))
-    states_store[idx] = record
-    logger.debug(f"开始跟随静音模拟器 {idx} 的音频进程: {sorted(record.pids)}")
+        if not Config.get("Function", "IfSilence"):
+            return
+        pids = await resolve_pids()
+        if not pids:
+            return
+        old = states_store.get(idx)
+        if old is not None and old.task is not None and not old.task.done():
+            old.task.cancel()
+        record = AudioMuteRecord(pids=set(pids))
+        record.task = asyncio.create_task(_watch_and_mute(record))
+        states_store[idx] = record
+        logger.debug(f"开始跟随静音模拟器 {idx} 的音频进程: {sorted(record.pids)}")
+    except Exception:  # noqa: BLE001 - 音频辅助步骤失败不应阻断模拟器启动
+        logger.opt(exception=True).warning(f"模拟器 {idx} 音频静音失败，将继续运行")
 
 
 async def restore_audio_before_close(

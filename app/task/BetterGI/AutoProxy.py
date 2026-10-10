@@ -33,9 +33,9 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
+    append_push_log,
     find_pids_by_name,
     push_dispatch_log,
     read_config_source,
@@ -75,6 +75,7 @@ from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
+from .tools.push_log import steps_to_push_log
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -635,6 +636,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     _step["settings"] = _settings
                 _settings["rewardRecognitionEnabled"] = True
 
+        # 节点详情推送模式（用户级三态）：关闭时 final_task 不注入节点详情，
+        # 报告聚合（build_user_result_text）自然只有结果行。写回 UserItem 供
+        # final_task 收尾读取——prepare 在此之前崩溃时读到 UserItem 默认「汇总」，
+        # 不会 AttributeError 掩盖原始错误。
+        self.cur_user_item.push_log_mode = str(
+            self.cur_user_config.get("Notify", "PushLogMode") or "汇总"
+        )
+
         # 第 1 层（最高优先级）：队伍配置表按「战斗场景」匹配选队，写入独立的
         # masTeamOverride / masStrategyOverride，由执行层 main.js 以最高优先级读取，
         # 从而压过每周行与步骤级字段（「按任务决定队伍」优先于「按日期决定」）。
@@ -999,8 +1008,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def main_task(self):
         await self.prepare()
 
-        # 先接管原神客户端更新：切号与一条龙都会拉起游戏，客户端停在旧版本时
-        # 只会让整轮任务白跑，所以这一步必须在最前面
+        # 任务前脚本每用户一次，先于游戏更新、切号、执行层与全部重试
+        await self.run_user_scripts_before()
+
+        # 切号与一条龙都会拉起游戏，客户端停在旧版本时只会让整轮任务白跑，
+        # 所以游戏更新仍先于它们执行。
         if not await ensure_game_updated(
             self.script_config,
             self.cur_user_config,
@@ -1084,12 +1096,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             # 重试前同样确认没有杀不掉的旧实例：BGI 单实例下带参启动会被它吞掉，重试毫无意义
             # （2026-09-15 实机：3 次重试全打在同一个无法终止的实例上）
             if not await self.kill_managed_process():
@@ -1145,11 +1151,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = (
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -1168,11 +1169,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
@@ -1863,6 +1859,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 f"用户 {self.cur_user_item.name} 分步表：执行层 {len(exec_steps or [])} 步 + "
                 f"一条龙 {len(native_steps or [])} 步 = {len(one_dragon_report)} 行"
             )
+
+        # ── 节点详情注入（推送报告用）──
+        # 分步表即节点：日志已由 LogMonitor 按相/按轮捕获进 log_record，这里只把
+        # 合并分步表转成 push_log 三元组，manager.final_task 经 build_user_result_text
+        # 聚合进报告正文。开关关闭时不注入，push_log 保持为空；on_crash 后 final_task
+        # 仍会执行，崩溃前能解析出的步骤同样进报告。
+        if self.cur_user_item.push_log_mode != "关闭" and one_dragon_report:
+            for entry in steps_to_push_log(one_dragon_report):
+                append_push_log(self.cur_user_item, *entry)
 
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，

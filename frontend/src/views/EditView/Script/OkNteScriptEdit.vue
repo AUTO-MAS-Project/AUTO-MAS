@@ -187,10 +187,23 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameLauncher') }}
-                    <span class="label-hint">{{ t('edit.okntePickDirHint') }}</span>
-                  </span>
+                  <div class="launch-type-label">
+                    <span class="form-label">{{ t('edit.launchType') }}</span>
+                    <a-radio-group
+                      v-model:value="oknteConfig.Game.LaunchMode"
+                      size="small"
+                      button-style="solid"
+                      :disabled="launchModeDisabled"
+                      @change="handleLaunchModeChange"
+                    >
+                      <a-radio-button value="Autoplay">
+                        {{ t('edit.oknteLaunchDirectly') }}
+                      </a-radio-button>
+                      <a-radio-button value="LauncherUi">
+                        {{ t('edit.oknteLaunchViaLauncher') }}
+                      </a-radio-button>
+                    </a-radio-group>
+                  </div>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -213,6 +226,10 @@
                     {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
+                <span class="control-hint">{{ t('edit.okntePickDirHint') }}</span>
+                <span v-if="showLaunchModeHint" class="control-hint">
+                  {{ t('edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
+                </span>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -257,6 +274,8 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-alert class="launch-mode-bubble" type="info" show-icon :message="launchModeBubble" />
         </div>
 
         <div class="form-section">
@@ -339,9 +358,10 @@
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -414,6 +434,7 @@ const oknteConfig = reactive<OkNteFormConfig>({
   Game: {
     Enabled: false,
     LaunchBeforeTask: false,
+    LaunchMode: 'Autoplay',
     Type: 'Client',
     Path: '.',
     URL: '',
@@ -463,6 +484,49 @@ const handleChange = async (category: string, key: string, value: unknown) => {
       logger.error(msg)
     }
   }, `${category}.${key}`)
+}
+
+// 启动方式取值取自生成的 schema 类型（后端 schema.py 的 Literal["Autoplay","LauncherUi"]）
+type OkNteLaunchMode = NonNullable<OkNteConfig_Game['LaunchMode']>
+
+const launchModeDisabled = computed(
+  () => !oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask || isSaving.value
+)
+const showLaunchModeHint = computed(
+  () => oknteConfig.Game.Enabled && !oknteConfig.Game.LaunchBeforeTask
+)
+
+// 启动方式气泡：随所选方式切换，只讲这一种的利弊（替代原灰字介绍 + 底部蓝条）
+const launchModeBubble = computed(() =>
+  oknteConfig.Game.LaunchMode === 'LauncherUi'
+    ? t('edit.oknteLaunchBubbleLauncherUi')
+    : t('edit.oknteLaunchBubbleAutoplay')
+)
+
+// 已保存成功的启动方式：保存失败时回滚到它。radio-group 的 change 只在用户操作时触发，
+// 回滚赋值不会再触发保存，因此不需要 Okww 那套 persisted/requested 哨兵。
+let persistedLaunchMode: OkNteLaunchMode = 'Autoplay'
+
+const handleLaunchModeChange = async (event: RadioChangeEvent) => {
+  const value = event.target.value as OkNteLaunchMode
+  const previous = persistedLaunchMode
+  const success = await enqueue(async () => {
+    try {
+      const ok = await updateScript(scriptId, { Game: { LaunchMode: value } })
+      if (!ok) oknteConfig.Game.LaunchMode = previous
+      return ok
+    } catch (err) {
+      oknteConfig.Game.LaunchMode = previous
+      logger.error(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }).catch(() => false)
+  if (!success) {
+    message.error(t('edit.launchTypeSaveFailed'))
+    return
+  }
+  persistedLaunchMode = value
+  logger.info(`配置已保存: Game.LaunchMode=${value}`)
 }
 
 const buildAutoPaths = (rootPath: string) => {
@@ -538,6 +602,9 @@ const loadScript = async () => {
     Object.assign(oknteConfig.Info, config.Info || {})
     Object.assign(oknteConfig.Script, config.Script || {})
     Object.assign(oknteConfig.Game, config.Game || {})
+    // schema 字段可选：后端旧配置没有 LaunchMode，回落到默认「直接启动（静默 /autoplay）」
+    oknteConfig.Game.LaunchMode = config.Game?.LaunchMode ?? 'Autoplay'
+    persistedLaunchMode = oknteConfig.Game.LaunchMode
     Object.assign(oknteConfig.Run, config.Run || {})
 
     // 旧配置 Game.Path 存的是 HTGame.exe：展示层自动升级为同安装根下的启动器
@@ -737,12 +804,6 @@ onMounted(loadScript)
   font-weight: 600;
 }
 
-.label-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .control-hint {
   display: block;
   margin-top: 4px;
@@ -751,9 +812,16 @@ onMounted(loadScript)
   color: var(--ant-color-text-tertiary);
 }
 
-.label-hint strong {
-  font-weight: 600;
-  color: var(--ant-color-text-secondary);
+.launch-type-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.launch-mode-bubble {
+  margin-bottom: 24px;
 }
 
 .help-icon {

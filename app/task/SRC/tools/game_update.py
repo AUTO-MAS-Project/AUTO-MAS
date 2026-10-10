@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin
@@ -45,7 +46,9 @@ from app.utils import get_logger
 from app.utils.constants import STARRAIL_UPDATE_LINK_SERVER
 from app.utils.game_apk import (
     GameUpdateResult,
+    cleanup_apk_leftovers,
     download_apk,
+    get_apk_update_lock,
     get_installed_client_version,
     install_apk,
     is_client_outdated,
@@ -95,9 +98,9 @@ async def _resolve_download_link(url: str) -> tuple[str, str] | None:
     """
 
     final_url = ""
+    current_url = url
     try:
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            current_url = url
             for _ in range(_MAX_REDIRECT_HOPS):
                 async with client.stream("GET", current_url, timeout=15.0) as response:
                     if not response.is_redirect:
@@ -115,7 +118,8 @@ async def _resolve_download_link(url: str) -> tuple[str, str] | None:
                 )
                 return None
     except Exception as e:
-        logger.warning(f"解析下载地址失败: {e}")
+        # httpx 的超时异常消息是空串，只打 {e} 会留下一行看不出原因的「解析下载地址失败: 」
+        logger.warning(f"解析下载地址失败（{current_url}）: {type(e).__name__}: {e}")
         return None
 
     match = _VERSION_IN_NAME_RE.search(final_url.rsplit("/", 1)[-1])
@@ -222,25 +226,37 @@ async def ensure_game_updated(
         )
 
     apk_path = apk_dir / f"hkrpg-{remote}.apk"
-    try:
-        if progress is not None:
-            await progress(f"{outdated_text}\n正在下载游戏安装包")
-        await download_apk(
-            source.download_url, apk_path, progress, timeout=time_limit * 60
+    async with get_apk_update_lock(package_name):
+        cleanup_apk_leftovers(apk_dir, "hkrpg-")
+        # 并行任务可能刚装完同一个安装包：锁内复读版本，已是最新就直接复用结果
+        installed_now = await get_installed_client_version(
+            adb_path, adb_address, package_name
         )
+        if installed_now is not None and not is_client_outdated(installed_now, remote):
+            return GameUpdateResult(
+                "UpToDate", f"游戏客户端已是最新版本 {installed_now}"
+            )
+        try:
+            if progress is not None:
+                await progress(f"{outdated_text}\n正在下载游戏安装包")
+            await download_apk(
+                source.download_url, apk_path, progress, timeout=time_limit * 60
+            )
 
-        if progress is not None:
-            await progress(f"{outdated_text}\n正在安装游戏安装包")
-        await install_apk(adb_path, adb_address, apk_path, timeout=time_limit * 60)
-    except Exception as e:
-        logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
-        return GameUpdateResult(
-            "NeedManualUpdate",
-            f"{outdated_text}，MAS 自动更新失败（{e}），请手动更新游戏后重试",
-        )
-    finally:
-        # 安装包体积很大，无论成败都不长期占用磁盘
-        apk_path.unlink(missing_ok=True)
+            if progress is not None:
+                await progress(f"{outdated_text}\n正在安装游戏安装包")
+            await install_apk(adb_path, adb_address, apk_path, timeout=time_limit * 60)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"接管游戏更新失败: {e}")
+            return GameUpdateResult(
+                "NeedManualUpdate",
+                f"{outdated_text}，MAS 自动更新失败（{e}），请手动更新游戏后重试",
+            )
+        finally:
+            # 安装包体积很大，无论成败都不长期占用磁盘。取消时 adb 可能还开着这个文件，
+            # 删不掉就留给下次覆盖，不能让删除失败盖掉取消本身
+            with suppress(OSError):
+                apk_path.unlink(missing_ok=True)
 
     current = await get_installed_client_version(adb_path, adb_address, package_name)
     if current is None or is_client_outdated(current, remote):

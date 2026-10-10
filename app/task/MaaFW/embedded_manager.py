@@ -1463,6 +1463,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             # isolated_venv 的重建会落进 worker、游戏已经起来。确认成功会写回标记。
             await self._ensure_project_environment("BeforeRun")
 
+        await self._record_project_run()
+
         # AutoProxy 的 main_task / final_task 都是**按用户**的（final_task 会
         # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
         for index in range(len(self.runnable_user_uids)):
@@ -1491,6 +1493,34 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             finally:
                 await self._finalize_inner_task()
         self._users_completed = True
+
+    async def _record_project_run(self) -> None:
+        """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
+
+        from app.services.telemetry import record_count
+        from app.task.MaaFW.tools.embedded.telemetry_project import (
+            OTHER_PROJECT,
+            telemetry_project_name,
+        )
+
+        assert self.script_config is not None
+        try:
+            project_path = resolve_maafw_project_root(
+                str(self.script_info.script_id), self.script_config
+            ).resolve()
+            interface = await asyncio.to_thread(
+                self._load_interface_model, project_path
+            )
+            project = telemetry_project_name(getattr(interface, "github", None))
+        except Exception:  # noqa: BLE001 - 遥测失败不影响任务
+            project = OTHER_PROJECT
+        record_count(
+            "auto_mas.maafw.project.runs",
+            attributes={
+                "project": project,
+                "script_type": type(self.script_config).__name__.removesuffix("Config"),
+            },
+        )
 
     async def _finalize_inner_task(self) -> None:
         """收尾当前用户的 AutoProxy 任务；对同一个任务只做一次。"""

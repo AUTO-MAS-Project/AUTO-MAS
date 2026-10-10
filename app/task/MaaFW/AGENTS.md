@@ -190,8 +190,33 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   日志——worker 转发、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）
   与手动更新（`api_service/update.py`）四处都按这个前缀拦在界面外，新增的日志出口也要拦。子进程输出进日志一律按结尾截（`runtime_pool/_shared.output_tail`），
   截开头会正好丢掉异常那一行——那次现场所有日志都断在 `File "D:\douy`。
-- `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
-  与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
+- `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**，与其他专项的"日志停滞超时"
+  不同义。截止时刻随 job 文件交给 worker（`runDeadlineAt`）：到点 worker 自己 post_stop 当前任务、
+  截一张 `timeout` 图、把已完成的任务连同 `timedOut=True` 正常回传；宿主的 `asyncio.wait_for`
+  只在其后加一段宽限（`_RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
+  和进度。`Run.TaskTimeLimit` / `TaskTimeLimitOverrides` 是单任务时限：只停卡住的那个任务，计划里
+  第一个任务或特调声明的关键任务（`abortRoundMessage`）结束本轮，其余记一条失败后继续；继续之前先等
+  停止真正生效（`_wait_task_deadline_stop`，上限 `TASK_STOP_SETTLE_SECONDS`），否则下一个任务会被
+  框架以 task_id=0 拒掉。例外是特调声明的收尾任务（`nonfatal_entries` → `nonFatalMessage`，如 M9A 的关闭游戏）：它失败、
+  超时、打转或被脚本侧强停都只截图记一行、不计入本轮失败（超时同样先等停下；停下时恰好又被脚本侧强停就跳过本轮剩余任务），且优先于上面两条；契约见 `tools/embedded/flavor.py`。
+  特调声明的不可选任务（`unselectable_entries`，如 M9A 的小游戏）更早一步：`/maafw/preview` 给它们填
+  `unselectableReason`（核心包的预览不认识特调，在 `api_service/interface.py` 补），用户页不让选；
+  运行时在 `decorate_selection` 之前剔掉、按原因合并记一行，不进计划，所以上面几项声明对它不起作用。
+- **原地打转检测**（`Run.LoopGuard`，脚本级开关，**实验性、默认关**；纯逻辑在
+  `tools/core/runner/loop_guard.py`）：只看 `Node.Recognition.*` 与 `Node.PipelineNode.*`，按节点名
+  找周期 ≤ 8 步的循环，连续各轮都有物理动作（Click / Swipe / 按键…，Custom 与 DoNothing 不算，等待型
+  轮询本来就该一直等；没有物理动作的一轮让轮数与时长从头数，否则空等很久后第一次点击会被当场判卡死）、≥ 200 轮、持续 ≥ 10 分钟、最近 30 轮识别结果指纹 ≤ 4 种、单轮中位 ≤ 20 秒
+  才判卡死（≥ 100 轮 / 5 分钟先记一行 `[MaaFW 详情]` 的「疑似」）。阈值用生产 `history` 里的 MaaFW 运行单元标定
+  （2026-10-04 回放 09-04～10-04 共 129 个）：正常 0 误报，M9A 均衡刷材料划到底那种卡死在循环开始约 10 分钟时检出，MaaEnd 抢委托
+  的刷新轮询不判。命中后收尾与单任务时限**同一口径**（`_handle_loop_guard` 紧跟
+  `_handle_task_deadline`，截图 kind `loop`），而且必须在 `_external_stop_active` 之前——停止是我们
+  自己 post_stop 的，晚了会被当成脚本侧强停、跳过本轮剩余任务。通知里缺 `reco_details` /
+  （Succeeded 的）`action_details` 的老 MaaFramework 整次运行不检测：缺失当成「指纹恒定」会必中。
+  `Node.PipelineNode.Failed` 在 5.12+ 上本来就只有 `name` / `node_id`，不算缺失。项目可在节点上写
+  `"attach": {"auto_mas_loop_guard": false}` 豁免（有意转圈的轮询节点）；**不放进
+  `attach.auto_mas`**：`run_signal.parse_signal_spec` 遇到未知键会忽略整个信号节点，而且写了
+  `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
+  节点时退回命中时按名字查。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
@@ -199,6 +224,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
+  这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），
+  游戏自有层由该游戏的特调或专项自己调。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**（MAS
   拉起，或接管时窗口是等出来的）才生效，从窗口出现起算，宿主把「最早可下发时刻」写进 job
   （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前

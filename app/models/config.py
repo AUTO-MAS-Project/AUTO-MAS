@@ -780,6 +780,22 @@ class QueueConfig(ConfigBase):
         self.Info_AfterAccomplishDelay = ConfigItem(
             "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
         )
+        ## 队列级运行前脚本: 一次运行只执行一次, 循环队列在整个运行期间不重复执行
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        ## 队列运行前脚本路径
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 队列级运行后脚本: 运行结束后执行一次, 先于「完成后操作」
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        ## 队列运行后脚本路径
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次定时启动时间
@@ -1289,6 +1305,16 @@ class MaaConfig(ConfigBase):
         ## 游戏更新时间限制（分钟）
         self.Run_GameUpdateTimeLimit = ConfigItem(
             "Run", "GameUpdateTimeLimit", 60, RangeValidator(1, 9999)
+        )
+
+        ## Update -----------------------------------------------------------
+        ## 是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）
+        self.Update_TakeoverEnabled = ConfigItem(
+            "Update", "TakeoverEnabled", False, BoolValidator()
+        )
+        ## 本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
+        self.Update_MirrorChyanCDK = ConfigItem(
+            "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
 
         self.UserData = MultipleConfig([MaaUserConfig])
@@ -2986,9 +3012,10 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 单次运行时间限制（分钟）。这是套在整次运行上的硬超时（asyncio.wait_for），
-        ## 到点直接杀 worker、丢掉本轮进度与失败截图；MaaFW 项目一轮日常动辄
-        ## 几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
+        ## 单次运行时间限制（分钟），套在单个用户的整次运行上。截止时刻随 job 文件交给
+        ## worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在
+        ## worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常
+        ## 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
@@ -3009,6 +3036,11 @@ class MaaFWConfig(ConfigBase):
             self.DEFAULT_TASK_TIME_LIMIT_OVERRIDES,
             JSONValidator(dict),
         )
+        ## 原地打转检测（实验性，默认关）。任务在短周期里反复执行同一串节点（周期 ≤ 8
+        ## 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续
+        ## ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务
+        ## 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。
+        self.Run_LoopGuard = ConfigItem("Run", "LoopGuard", False, BoolValidator())
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(
             "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)
@@ -3046,6 +3078,15 @@ class MaaFWConfig(ConfigBase):
         ## 选中的 task 列表
         self.Selection_Tasks = ConfigItem(
             "Selection", "Tasks", "[ ]", JSONValidator(list)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## 用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项
+        ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions}}``，
+        ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务与密码字段；
+        ## 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。
+        self.Task_Templates = ConfigItem(
+            "Task", "Templates", "[ ]", JSONValidator(list)
         )
 
         self.UserData = MultipleConfig([self.USER_CONFIG_CLASS])
@@ -4049,6 +4090,14 @@ class BetterGIUserConfig(ConfigBase):
         self.Notify_IfSendDropStatistics = ConfigItem(
             "Notify", "IfSendDropStatistics", True, BoolValidator()
         )
+        ## 任务报告节点详情的推送模式（一条龙/执行层分步表）：
+        ## 关闭 = 不注入；逐条 = 逐条带回时间戳；汇总 = 按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
         ## 用户自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -4306,6 +4355,31 @@ class OkwwConfig(ConfigBase):
         super().__init__()
 
 
+def _migrate_oknte_launch_mode_default(data: dict) -> tuple[dict, bool]:
+    """为存量 OK-NTE 脚本固化升级前的启动方式「启动器界面」。
+
+    ``Game.LaunchMode`` 是新增字段且类默认值定为 ``Autoplay``（静默启动）；
+    升级前的存量脚本配置里没有该键，若不补值会随新默认落到 ``Autoplay``，
+    而升级前「任务前启动游戏」走的只有「打开启动器界面 + 点开始游戏」这一条
+    路——静默启动不驱动启动器弹窗、也不驱动游戏更新，直接改默认会让这部分
+    用户从「能跑」变「启动失败」。故 load 前缺键注入升级前的 ``LauncherUi``；
+    Game 段缺失（手工编辑/截断文件）同样按存量处理；Game 段损坏（非 dict）
+    时跳过注入交给 load 的纠错路径重建，不在此崩掉启动。显式保存过该键的
+    配置原样保留；新建脚本由类默认落盘 ``Autoplay``，不走此路径。
+
+    Returns:
+        (迁移后的配置字典, 是否发生了注入)
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    if "Game" not in normalized_data:
+        normalized_data["Game"] = {}
+    game = normalized_data["Game"]
+    if isinstance(game, dict) and "LaunchMode" not in game:
+        game["LaunchMode"] = "LauncherUi"
+        return normalized_data, True
+    return normalized_data, False
+
+
 class OkNteConfig(ConfigBase):
     """OK-NTE 配置（ok-script 线）"""
 
@@ -4374,6 +4448,16 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 静默启动（Autoplay）= 启动器带 /autoplay 拉起，不点按钮；启动器界面启动
+        # （LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」及其弹窗/更新分支。
+        # 默认值双轨：新建脚本取类默认 Autoplay；存量脚本（配置无该键）由 load 迁移
+        # 固化升级前的 LauncherUi（见 _migrate_oknte_launch_mode_default），保持升级前行为。
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Autoplay",
+            OptionsValidator(["Autoplay", "LauncherUi"]),
+        )
         # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
         # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -4410,6 +4494,20 @@ class OkNteConfig(ConfigBase):
         self.UserData = MultipleConfig([OkNteUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前为存量脚本固化升级前的启动方式 LauncherUi。
+
+        注入后子级数据与完整存量文件（仅缺新键）比对不再 dirty，落盘靠两级：
+        挂在 MultipleConfig 下时由父级整表比对发现缺键提交写盘；独立连接
+        文件时由这里的显式提交完成（对齐 BetterGIConfig.load 的迁移范式）。
+        返回值含迁移标记，不谎报「无写入」。
+        """
+        migrated_data, migrated = _migrate_oknte_launch_mode_default(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
 
 def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:
@@ -5249,6 +5347,13 @@ class GlobalConfig(ConfigBase):
             "2000-01-01 00:00:00",
             DateTimeValidator("%Y-%m-%d %H:%M:%S"),
         )
+        ## 上次记录遥测日活的 UTC 日期
+        self.Data_LastTelemetryActive = ConfigItem(
+            "Data",
+            "LastTelemetryActive",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
         ## 上次关卡更新时间
         self.Data_LastStageUpdated = ConfigItem(
             "Data",
@@ -5281,6 +5386,10 @@ class GlobalConfig(ConfigBase):
         )
         ## 公告内容
         self.Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
+        ## 分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}
+        self.Data_ShareAppearanceUploads = ConfigItem(
+            "Data", "ShareAppearanceUploads", "{}", JSONValidator()
+        )
         super().__init__()
 
         ## 模拟器配置列表

@@ -152,8 +152,6 @@ const emit = defineEmits<{ refresh: [] }>()
 
 /** 后端给长期开放、随版本轮换的活动打的分类 */
 const PERMANENT_KIND = '常驻活动'
-/** 常驻活动栏里的固定顺序，没列到的排在后面；灾变防线常年开着，放最前 */
-const PERMANENT_ORDER = ['灾变防线', '创业激励基金', '猎影合围']
 
 const failedImageNames = ref(new Set<string>())
 
@@ -175,23 +173,15 @@ const activeActivities = computed(() =>
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
 )
 
-/** 常驻活动单独一栏：按固定顺序排，没列到的按结束时间先后的跟在后面 */
-const permanentActivities = computed(() => {
-  const rank = (name: string) => {
-    const index = PERMANENT_ORDER.findIndex(keyword => name.includes(keyword))
-    return index === -1 ? PERMANENT_ORDER.length : index
-  }
-  return props.overview.activities
+/** 常驻活动单独一栏，与限时活动一样按结束时间排序。 */
+const permanentActivities = computed(() =>
+  props.overview.activities
     .filter(
       activity =>
         activity.kind === PERMANENT_KIND && getCountdownValue(activity.endTime) > Date.now()
     )
-    .sort(
-      (left, right) =>
-        rank(left.name) - rank(right.name) ||
-        getCountdownValue(left.endTime) - getCountdownValue(right.endTime)
-    )
-})
+    .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
+)
 
 // 版本封面本身不再渲染，只用来给没有自带图的活动卡片兜底，并决定活动列表用哪套样式
 const versionCover = computed(

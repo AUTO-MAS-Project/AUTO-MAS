@@ -34,15 +34,15 @@ from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
+    discover_wuthering_waves_fallback,
     is_wuthering_waves_record_usable,
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     append_push_log,
-    find_pids_by_name,
+    kill_pids,
     push_dispatch_log,
     split_args,
 )
@@ -73,6 +73,7 @@ from .tools.backup_archive import (
 )
 from .tools.launcher_start import (
     async_start_game_via_launcher,
+    find_game_pids,
     find_launcher_pids,
     has_launcher_window,
 )
@@ -201,6 +202,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_log: LogRecord | None = None
         self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
+        # check() 阶段发现的寻址兜底提示：调度台日志会在 main_task 每轮开头被
+        # 整体重置，check() 里直接推会被清屏，改存到这里在启动流程内补推
+        self._fallback_notice: str | None = None
         self.okww_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
@@ -238,13 +242,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
             launcher_path = Path(
                 str(self.script_config.get("Game", "Path") or "").strip()
             )
-            self.launcher_path = launcher_path
             client_path = str(
                 self.script_config.get("Game", "ClientPath") or ""
             ).strip()
-            if self._game_launch_type() == "Client" and client_path:
-                # 直启且手动指定了客户端程序：以指定值为准；启动器路径仅服务
-                # MAS 前置更新（不可用时运行期降级跳过，不阻断启动）。
+            if client_path:
+                # 手动指定了客户端程序：以指定值为准，两种启动方式都认它（启动器
+                # 态只用它做已运行检测与收尾，更精确）；启动器路径仅服务 MAS 前置
+                # 更新（不可用时运行期降级跳过，不阻断启动）。
                 # 文件名必须与客户端进程名完全一致（含大小写）：已运行检测、
                 # 进程搜索与按名兜底全部是精确匹配，指向其它名字的 exe 会让
                 # 这几条链同时失效
@@ -257,8 +261,54 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         "请重新选择"
                     )
                 self.game_process_path = client_exe
-            else:
-                # 客户端 exe 由启动器路径解码（直启未手填客户端、启动器态都走这里）
+            # 启动器失效时按注册表登记找回（官方启动器自己写的安装根）。
+            # 直启态已手填客户端时启动器只服务更新，不必为它打扰用户；
+            # 但启动器态没有启动器就拉不起游戏，即使已填客户端也必须尝试找回
+            launcher_valid = (
+                launcher_path.is_file() and launcher_path.name.lower() == "launcher.exe"
+            )
+            if not launcher_valid and (
+                self.game_process_path is None or self._game_launch_type() == "Launcher"
+            ):
+                # 命中结果必须告诉用户：静默换到另一份安装会让人不知情
+                fallback = await asyncio.to_thread(
+                    discover_wuthering_waves_fallback,
+                    str(self.cur_user_config.get("Info", "Resource")),
+                )
+                if fallback.launcher_path is not None:
+                    launcher_path = fallback.launcher_path
+                    # 不能在这里直接推调度台：main_task 每轮开头会重置日志把它
+                    # 清掉，存下来在启动流程内（重置之后）补推一次
+                    self._fallback_notice = (
+                        f"已按注册表找回鸣潮启动器"
+                        f"（{launcher_path.as_posix()}），"
+                        "请更新脚本配置中的启动器路径"
+                    )
+                elif (
+                    fallback.process_path is not None
+                    and self._game_launch_type() == "Client"
+                ):
+                    # 只有直启态吃客户端兜底：启动器态没有启动器就拉不起游戏，
+                    # 报错文案会引导用户改用直启或重新导入启动器
+                    self.game_process_path = fallback.process_path
+                    self._fallback_notice = (
+                        f"已按注册表找回鸣潮客户端"
+                        f"（{self.game_process_path.as_posix()}），"
+                        "请在脚本配置的「游戏客户端」中填入该路径"
+                    )
+            self.launcher_path = launcher_path
+            if self._game_launch_type() == "Launcher" and (
+                not launcher_path.is_file()
+                or launcher_path.name.lower() != "launcher.exe"
+            ):
+                # 启动器态必须由启动器拉起游戏，没有它整条链无从谈起；
+                # 直启态可以只靠手动指定的客户端文件，不在这里拦
+                return (
+                    "未找到鸣潮官方启动器：请重新导入官方启动器，"
+                    "或改用「直接启动」并手动选择游戏客户端文件"
+                )
+            if self.game_process_path is None:
+                # 客户端 exe 由启动器路径解码（两种启动方式都走这里）
                 try:
                     self.game_process_path = resolve_wuthering_waves_process_path(
                         launcher_path
@@ -271,7 +321,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                             "未找到鸣潮客户端程序：请在直启模式下选择游戏客户端"
                             "文件，或重新导入官方启动器以自动定位"
                         )
-                    return str(e)
+                    # 启动器态不需要客户端 exe 也能拉起游戏：解不出来只影响已运行
+                    # 检测与收尾（改按「名称 + 启动器安装根目录树内」口径），不拦停
+                    logger.warning(
+                        f"未解析出鸣潮客户端程序，已运行检测与收尾改按进程名处理: {e}"
+                    )
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode == "直控":
@@ -584,8 +638,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """
 
         if isinstance(self.game_manager, ProcessManager):
+            # check() 阶段的兜底提示在这里补推：此时本轮日志已重置完，推送能
+            # 留在调度台上；整个任务只推一次（用户已知晓后不必每轮重复）。
+            # 必须排在更新之前：更新失败会直接抛错退出，放它后面提示就丢了
+            if self._fallback_notice is not None:
+                await self._push_dispatch_log(self._fallback_notice)
+                self._fallback_notice = None
             await self._ensure_wuthering_waves_updated()
-            if is_process_running(_WUWA_CLIENT_PROCESS):
+            if self.game_process_path is None:
+                # 路径未知（启动器记录解不出且目录搜索未命中）：只有「名称 + 启动器
+                # 根目录树内」这一层信息，扫到即视为已在运行。不把进程交给进程管理
+                # 器，否则收尾会按同名误杀同机其它虚幻游戏
+                if self.launcher_path is not None and await asyncio.to_thread(
+                    find_game_pids, self.launcher_path
+                ):
+                    logger.info("检测到鸣潮客户端进程正在运行，跳过重复启动")
+                    await self._note_launch_arguments_skipped()
+                    return
+            elif is_process_running(_WUWA_CLIENT_PROCESS):
                 try:
                     await self.game_manager.search_process(
                         self._game_process_info(),
@@ -648,6 +718,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self._push_dispatch_log("鸣潮启动指令已发送")
 
     def _game_process_info(self) -> ProcessInfo:
+        """已运行检测与收尾用的进程标识。
+
+        调用方须保证 ``game_process_path`` 已知：路径未知时按名匹配会把同机其它
+        同名进程算进来（收尾即误杀），那种情形改走 ``find_game_pids`` 的
+        「名称 + 启动器根目录树内」口径。
+        """
+
+        if self.game_process_path is None:
+            raise RuntimeError("鸣潮客户端路径未知，不能按精确路径匹配进程")
         return ProcessInfo(
             name=_WUWA_CLIENT_PROCESS,
             exe=str(self.game_process_path),
@@ -670,6 +749,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.cur_user_item.status = "运行"
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         attempt = 0
@@ -685,12 +766,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
-
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
 
             # 启用游戏配置时始终由 MAS 拉起游戏
             if (
@@ -799,11 +874,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
                 await self._wait_okww_exit(timeout=30)
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -821,11 +891,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             if attempt < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
                 await asyncio.sleep(10)
@@ -1077,21 +1142,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await System.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
-        if self._game_launch_type() == "Client":
-            # 直启可手动指定客户端：若它与实际运行的那份安装不一致，上面的按
-            # 路径匹配会漏杀。进程名固定且专属鸣潮，按名兜底避免游戏残留；
+        if (
+            self.launcher_path is not None
+            and self.launcher_path.name.lower() == "launcher.exe"
+            and self.launcher_path.is_file()
+        ):
+            # 实际运行的那份可能不在已知路径上（手动指定的客户端与实际启动的不是
+            # 同一份，或启动器态压根解不出路径），只按路径匹配会漏杀。兜底按
+            # 「名称 + 启动器安装根目录树内」扫——Client-Win64-Shipping.exe 是虚幻
+            # 通用进程名，单按名会误伤同机其它虚幻游戏，必须有目录树限定；启动器
+            # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
             # 有没杀掉的（多为提权进程）要提示用户，不能静默。
             # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            failed = 0
-            for pid in await asyncio.to_thread(find_pids_by_name, _WUWA_CLIENT_PROCESS):
-                try:
-                    if not await System.kill_process_by_pid(pid):
-                        failed += 1
-                except Exception as e:
-                    failed += 1
-                    logger.opt(exception=True).warning(
-                        f"按进程名结束鸣潮客户端失败 PID: {pid}, {e}"
-                    )
+            failed = await kill_pids(
+                await asyncio.to_thread(find_game_pids, self.launcher_path)
+            )
             if failed:
                 message = (
                     f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"

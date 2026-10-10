@@ -15,6 +15,10 @@ import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
+import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
+import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -58,6 +62,10 @@ import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
+import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
+import type { ShareAppearanceMineOut } from '../models/ShareAppearanceMineOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -766,6 +774,47 @@ export class GetService {
         });
     }
     /**
+     * 查询魔改 AVD 根目录的组件状态
+     * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
+     * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
+     * @param requestBody
+     * @returns Emulator2AvdStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdStatusApiEmulator2AvdStatusPost(
+        requestBody: Emulator2AvdStatusIn,
+    ): CancelablePromise<Emulator2AvdStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 实例选项
+     * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
+        requestBody: Emulator2AvdInstanceIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询调度队列配置信息
      * @param requestBody
      * @returns QueueGetOut Successful Response
@@ -1075,6 +1124,47 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
+        });
+    }
+    /**
+     * 获取当前账号在分享站上的全部外观
+     * @returns ShareAppearanceMineOut Successful Response
+     * @throws ApiError
+     */
+    public static listMyShareAppearancesApiShareAppearanceMinePost(): CancelablePromise<ShareAppearanceMineOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/mine',
+        });
+    }
+    /**
+     * 获取自己外观某个版本的封面
+     * @param requestBody
+     * @returns ShareAppearanceCoverOut Successful Response
+     * @throws ApiError
+     */
+    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
+        requestBody: ShareAppearanceCoverIn,
+    ): CancelablePromise<ShareAppearanceCoverOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/cover',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

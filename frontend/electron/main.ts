@@ -27,6 +27,7 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -41,6 +42,7 @@ import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
   createMSSIssueReport,
@@ -630,12 +632,18 @@ type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
@@ -1391,8 +1399,8 @@ ipcMain.handle('log:export', async () => {
 
       if (stat.isFile()) {
         addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && file === 'maaend-login') {
-        addDirectory(state, filePath, 'maaend-login')
+      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
+        addDirectory(state, filePath, file)
       }
     }
 
@@ -1445,18 +1453,30 @@ function registerIssueReportExporter(
     scriptId: string
   ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
-  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown) => {
+  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
     try {
       if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
       const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
       const appRoot = getAppRoot()
       const prefix =
         typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
       const result = await dialog.showSaveDialog(mainWindow, {
-        title,
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
         defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
       })
 
       if (result.canceled || !result.filePath) {
@@ -1474,6 +1494,12 @@ function registerIssueReportExporter(
   })
 }
 
+registerIssueReportExporter(
+  'maa:exportIssueReport',
+  '导出 MAA 问题包',
+  'MAA-logs',
+  createMaaIssueReport
+)
 registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
@@ -1935,6 +1961,22 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
+    if (
+      patch &&
+      typeof patch === 'object' &&
+      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
+    ) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('theme-config-changed', {
+            themeMode: config.themeMode,
+            themeColor: config.themeColor,
+            appearanceId: config.appearanceId ?? null,
+          })
+        }
+      }
+    }
+
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
@@ -2178,6 +2220,9 @@ app.whenReady().then(async () => {
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
+
+  registerAppearanceHandlers()
+  logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()

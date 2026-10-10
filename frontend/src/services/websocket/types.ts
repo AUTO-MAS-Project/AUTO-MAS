@@ -34,6 +34,8 @@ export const WS_TASK_INFO_UPDATED = 'task.info.updated'
 export const WS_TASK_LOG_UPDATED = 'task.log.updated'
 export const WS_TASK_NOTICE = 'task.notice'
 export const WS_TASK_COMPLETED = 'task.completed'
+/** 配置会话结束、本次改动被丢弃（id 为任务 UUID） */
+export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
@@ -79,6 +81,11 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
   message: string
+}
+
+/** 配置会话改动被丢弃的数据 (type=task.config.discarded)：正文由前端按语言本地化 */
+export interface WSTaskConfigDiscardedData {
+  reason: 'structure' | 'unreadable' | 'not_written'
 }
 
 export interface WSTaskUserInfoData {
@@ -273,6 +280,7 @@ interface WSMessageDataMap {
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
   [WS_TASK_COMPLETED]: WSTaskCompletedData
+  [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
