@@ -1070,7 +1070,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         )
         from app.task.MaaFW.tools.core.project_update.precheck_memo import (
             KIND_BINDING_UNAVAILABLE,
-            KIND_TRANSIENT,
         )
 
         name = str(failure.get("projectName") or "MFW 项目").strip()
@@ -1094,16 +1093,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         )
         if len(summary) > 120:
             summary = summary[:119] + "…"
-        # 之后会不会自动再试由备忘的 kind 决定（tools/embedded/precheck_gate.py），首次通知
-        # 就说清楚，免得「本次不升级」被读成下次还会自动试。
-        retry = (
-            "下次运行前自动重试"
-            if failure.get("kind") == KIND_TRANSIENT
-            else "之后不再自动尝试这个版本，手动更新可重试"
-        )
         return (
             f"MFW 项目{phase_zh}更新：运行环境预检失败（{summary}），"
-            f"本次不升级，继续 {previous}；{retry}"
+            f"本次不升级，继续 {previous}"
         )
 
     async def _run_project_update(self, phase: AutoUpdateMode) -> None:

@@ -23,7 +23,6 @@
 那一步时，核心包会 await 这里构造的闸门：
 
 - 没备忘、或备忘记的不是这个目标版本 → 放行（正常更新，预检再真建一次）。
-- ``kind == transient``（连不上包索引、下载失败、超时）→ 删备忘放行，直接重试。
 - ``kind == other``（磁盘满、解释器坏……）→ 不探，计数，跳过本次更新。
 - ``kind == binding_unavailable`` → 并发轻探 PyPI 各索引的 simple 页与 GitHub
   的 tag 源码包（5 s、只看有没有），任一可得就删备忘放行；都不可得就计数、
@@ -46,7 +45,6 @@ from packaging.version import InvalidVersion, Version
 
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     KIND_BINDING_UNAVAILABLE,
-    KIND_TRANSIENT,
     clear_runtime_precheck,
     memo_matches_version,
     read_runtime_precheck,
@@ -242,14 +240,6 @@ def build_precheck_gate(
 
         attempts = _next_attempts(memo)
         requirement = str(memo.get("requirement") or "maafw").strip() or "maafw"
-        if memo.get("kind") == KIND_TRANSIENT:
-            # 网络 / 超时类失败：下次多半就好了，直接重试（预检再失败会重写备忘）。
-            await asyncio.to_thread(clear_runtime_precheck, memo_path)
-            log(
-                f"上次对 {latest} 的运行环境预检因网络或超时失败"
-                f"（{_summarize_reason(memo.get('reason'))}），本次重新尝试更新"
-            )
-            return None
         if memo.get("kind") != KIND_BINDING_UNAVAILABLE:
             memo["attempts"] = attempts
             await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
