@@ -5396,6 +5396,22 @@ class GlobalConfig(ConfigBase):
         )
         ## 公告内容
         self.Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
+        ## 上次维护信息检查时间
+        self.Data_LastMaintenanceUpdated = ConfigItem(
+            "Data",
+            "LastMaintenanceUpdated",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 维护信息的版本标识符
+        self.Data_MaintenanceETag = ConfigItem("Data", "MaintenanceETag", "")
+        ## 维护信息内容
+        self.Data_Maintenance = ConfigItem(
+            "Data",
+            "Maintenance",
+            '{"schema_version": 1, "games": {}}',
+            JSONValidator(),
+        )
         ## 分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}
         self.Data_ShareAppearanceUploads = ConfigItem(
             "Data", "ShareAppearanceUploads", "{}", JSONValidator()
