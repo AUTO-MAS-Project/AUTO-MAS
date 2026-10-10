@@ -46,6 +46,33 @@ def pool_lock(root: Path) -> threading.RLock:
         return _POOL_LOCKS.setdefault(key, threading.RLock())
 
 
+_ACTIVE_STAGING_GUARD = threading.Lock()
+#: 正在池锁外铺着的 ``.staging`` 条目名（binding / native 暂存目录、下载中的 wheel）。
+#: 名字带 uuid，按名字就能唯一认出。回收的 ``_sweep_staging`` 持池锁扫 ``.staging``，
+#: binding 的下载 / 铺目录 / 自检却在池锁外跑（见 ``binding.ensure_binding``），不登记的话
+#: 正铺到一半的目录会被当成遗留物删掉。
+_ACTIVE_STAGING: set[str] = set()
+
+
+def register_active_staging(path: Path) -> None:
+    """登记一个即将创建的暂存条目。必须在创建之前登记：扫描看到它时它一定已在册。"""
+
+    with _ACTIVE_STAGING_GUARD:
+        _ACTIVE_STAGING.add(path.name)
+
+
+def release_active_staging(*paths: Path | None) -> None:
+    with _ACTIVE_STAGING_GUARD:
+        for path in paths:
+            if path is not None:
+                _ACTIVE_STAGING.discard(path.name)
+
+
+def is_active_staging(path: Path) -> bool:
+    with _ACTIVE_STAGING_GUARD:
+        return path.name in _ACTIVE_STAGING
+
+
 def assert_not_reparse(path: Path) -> None:
     try:
         metadata = path.lstat()

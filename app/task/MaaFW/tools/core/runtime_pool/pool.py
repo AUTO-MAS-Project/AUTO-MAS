@@ -21,6 +21,7 @@ from ._shared import (
     assert_existing_chain_has_no_reparse,
     assert_not_reparse,
     format_time,
+    is_active_staging,
     parse_time,
     pool_lock,
     remove_tree_best_effort,
@@ -1006,10 +1007,12 @@ class MaaFWRuntimePool:
         """清掉 ``.staging`` 里遗留的半成品 / 隔离目录。
 
         返回 ``(本轮清空的条目名, 仍有残留的条目名, (释放的独占字节, 与缓存共用的字节))``。
-        只在持有池锁时调用：``ensure`` 的安装与 binding 的换入全程也持有同一把锁，所以
-        这里看到的每个 ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目
-        都不再有人用（安装失败没删干净的、隔离后 rmtree 半途而废的、下载到一半的 wheel）。
-        仍删不掉的（DLL 还被映射着）留到下次。
+        只在持有池锁时调用。``ensure`` 的 runtime 安装与 binding 的换入持有同一把锁，但
+        binding 的下载 / 铺目录 / 自检在池锁外跑（``binding.ensure_binding``），那些暂存
+        条目在建之前登记成在用（``_shared.register_active_staging``），这里跳过。其余的
+        ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目都不再有人用（安装
+        失败没删干净的、隔离后 rmtree 半途而废的、上次进程下载到一半的 wheel）。仍删不掉的
+        （DLL 还被映射着）留到下次。
         """
 
         swept: list[str] = []
@@ -1022,6 +1025,8 @@ class MaaFWRuntimePool:
             if path.is_symlink():
                 continue
             if not path.name.startswith(_STAGING_PREFIXES):
+                continue
+            if is_active_staging(path):
                 continue
             if path.is_file():
                 # binding 下载到一半的 .whl

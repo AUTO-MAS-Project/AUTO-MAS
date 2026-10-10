@@ -54,6 +54,8 @@ from ._shared import (
     format_time,
     parse_time,
     pool_lock,
+    register_active_staging,
+    release_active_staging,
     remove_tree_best_effort,
     utc_now,
     write_json_atomic,
@@ -919,11 +921,21 @@ def _staging_root(pool_root: Path) -> Path:
 
 
 def _new_staging_dir(pool_root: Path, kind: str, version: str) -> Path:
+    """建一个暂存目录并登记为「在用」（见 ``_shared.register_active_staging``）。
+
+    调用方用完必须 ``release_active_staging``；换入后目录已不在原处，照样要放。
+    """
+
     root = _staging_root(pool_root)
     assert_existing_chain_has_no_reparse(root)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{kind}-{version}-{uuid.uuid4().hex}"
-    path.mkdir(parents=False, exist_ok=False)
+    register_active_staging(path)
+    try:
+        path.mkdir(parents=False, exist_ok=False)
+    except BaseException:
+        release_active_staging(path)
+        raise
     return path
 
 
@@ -1538,6 +1550,8 @@ def _install_from_wheel_link(
     staging = _staging_root(pool_root)
     staging.mkdir(parents=True, exist_ok=True)
     wheel_path = staging / f"binding-{version}-{uuid.uuid4().hex}.whl"
+    # 下载中的 wheel 与下面两个暂存目录都在池锁外铺，登记成在用，回收扫 .staging 时跳过
+    register_active_staging(wheel_path)
     # binding 已经在、来源也是官方 wheel、只缺 native：只铺 native，不动可能正被 worker
     # 用着的 binding 目录（换入会把它整个换掉）。
     native_only = (
@@ -1546,13 +1560,15 @@ def _install_from_wheel_link(
         and native_needed
         and existing.native_directory is None
     )
-    binding_stage = (
-        None if native_only else _new_staging_dir(pool_root, "binding", version)
-    )
-    native_stage = (
-        _new_staging_dir(pool_root, "native", version) if native_needed else None
-    )
+    binding_stage: Path | None = None
+    native_stage: Path | None = None
     try:
+        binding_stage = (
+            None if native_only else _new_staging_dir(pool_root, "binding", version)
+        )
+        native_stage = (
+            _new_staging_dir(pool_root, "native", version) if native_needed else None
+        )
         _download_wheel(
             link, wheel_path, proxy_url=proxy_url, check_cancelled=check_cancelled
         )
@@ -1602,6 +1618,7 @@ def _install_from_wheel_link(
         for stage in (binding_stage, native_stage):
             if stage is not None and stage.exists():
                 remove_tree_best_effort(stage)
+        release_active_staging(wheel_path, binding_stage, native_stage)
 
 
 def _finish_native_only(
@@ -1675,6 +1692,7 @@ def _install_from_source(
     finally:
         if binding_stage.exists():
             remove_tree_best_effort(binding_stage)
+        release_active_staging(binding_stage)
 
 
 def _finish_install(
@@ -1824,12 +1842,13 @@ def harvest_binding(
                 return None
 
         binding_stage = _new_staging_dir(pool_root, "binding", version)
-        native_stage = (
-            _new_staging_dir(pool_root, "native", version)
-            if native_needed and not source_built
-            else None
-        )
+        native_stage: Path | None = None
         try:
+            native_stage = (
+                _new_staging_dir(pool_root, "native", version)
+                if native_needed and not source_built
+                else None
+            )
             requires: tuple[str, ...] = ()
             native_dll_sha256: str | None = None
             for path, _digest, _size in wanted:
@@ -1871,6 +1890,7 @@ def harvest_binding(
             for stage in (binding_stage, native_stage):
                 if stage is not None and stage.exists():
                     remove_tree_best_effort(stage)
+            release_active_staging(binding_stage, native_stage)
 
 
 def _link_or_copy(origin: Path, target: Path, *, hardlink: bool) -> None:
