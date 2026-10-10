@@ -864,7 +864,7 @@ def snapshot_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
     return True
 
 
-def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
+def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> None:
     """按存底还原安装目录库存缓存（结束还原与崩溃恢复共用）。
 
     存底目录存在才算覆写过；还原失败保留存底，交给下一次 prepare 重试。
@@ -872,13 +872,10 @@ def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
     Args:
         maa_root_path: MAA 安装根目录，工作缓存在其 data/DepotData.json。
         snapshot_dir: 存底目录；不存在表示没覆写过，直接放行。
-
-    Returns:
-        还原成功或无需还原为 True；失败为 False（存底保留，可重试）。
     """
 
     if not snapshot_dir.is_dir():
-        return True
+        return
     live = maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
     saved = snapshot_dir / _MAA_DEPOT_ARCHIVE_NAME
     try:
@@ -891,9 +888,8 @@ def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
         logger.opt(exception=True).warning(
             f"MAA 库存缓存还原失败, 保留存底: {snapshot_dir}"
         )
-        return False
+        return
     shutil.rmtree(snapshot_dir, ignore_errors=True)
-    return True
 
 
 class AutoProxyTask(ScriptAutoProxyBase):
@@ -1294,19 +1290,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         for task in depot_tasks:
             task["IsEnable"] = False
-        if "DepotMaintain" in self.task_dict:
-            self.task_dict["DepotMaintain"] = False
+        self.task_dict["DepotMaintain"] = False
         logger.warning(
             f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
             "请检查 MAA 数据目录的写入权限"
-        )
-
-    def _restore_depot_context(self) -> None:
-        """overlay 层：把安装目录库存缓存还原成覆写前的样子（结束还原）。"""
-
-        restore_depot_cache(
-            self.maa_root_path,
-            depot_cache_snapshot_dir(self.script_info.script_id),
         )
 
     async def _finalize_task(self) -> None:
@@ -1320,7 +1307,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             await super()._finalize_task()
         finally:
-            self._restore_depot_context()
+            restore_depot_cache(
+                self.maa_root_path,
+                depot_cache_snapshot_dir(self.script_info.script_id),
+            )
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
