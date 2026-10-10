@@ -54,10 +54,11 @@ Config = LazyProxy("app.core", "Config")
 API_BASE_URL = os.environ.get(
     "AUTO_MAS_CONFIG_CENTER_API", "https://data.auto-mas.top/api/v1"
 ).rstrip("/")
-# 分享站会把 API 跳到别的子域（data.auto-mas.top 307 到 data2.auto-mas.top）。httpx 跟随跨域
-# 跳转时会删掉 Authorization，带令牌的请求跳过去就是 401，令牌随即被清，表现为登录后立刻掉线。
-# 跳转目标是这个域名或其子域、且仍是 https 时补回令牌，跳到别处照旧不带。
-TOKEN_REDIRECT_DOMAIN = "auto-mas.top"
+# data.auto-mas.top 前面是 EdgeOne，境外访问会被 307 到 data2.auto-mas.top（Cloudflare）。httpx
+# 跟随跨域跳转时会删掉 Authorization，带令牌的请求跳过去就是 401，令牌随即被清，表现为登录后
+# 立刻掉线。令牌只补给 data、data2 这类「data + 数字」主机，且整条跳转链都得是这类主机、都是
+# https；auto-mas.top 的其他子域（文档、下载站等）和跳转链中途经过的别家主机一律不带。
+TOKEN_REDIRECT_HOST = re.compile(r"data\d*\.auto-mas\.top")
 PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
 # 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
 # 不会报错，只会静默返回 0 条，模板列表就永远是空的。通用脚本模板都发布在这个分类下。
@@ -1146,21 +1147,27 @@ class ConfigCenterClient:
 
     @staticmethod
     def _client(timeout: float, token: Optional[str]) -> httpx.AsyncClient:
-        """建立请求配置中心的客户端; 带令牌时, 跟随跳转到 auto-mas.top 的 https 地址仍带上令牌。
+        """建立请求配置中心的客户端; 带令牌时, 跟随分享站自己的跨主机跳转仍带上令牌。
 
         首跳的令牌由调用方放进请求头; 这里只补 httpx 跨域跳转时删掉的那份。
         请求钩子每一跳都会调用, 307 / 308 的请求体 (含 multipart) 由 httpx 原样重发。
+        跳转链的状态记在钩子里, 所以一个客户端只发一个请求。
         """
 
         event_hooks = None
         if token:
+            left_trusted = False
 
             async def keep_token(request: httpx.Request) -> None:
+                nonlocal left_trusted
                 host = request.url.host
-                if request.url.scheme != "https" or (
-                    host != TOKEN_REDIRECT_DOMAIN
-                    and not host.endswith(f".{TOKEN_REDIRECT_DOMAIN}")
+                if (
+                    left_trusted
+                    or request.url.scheme != "https"
+                    or not TOKEN_REDIRECT_HOST.fullmatch(host)
                 ):
+                    # 中途到过别的主机, 后面去哪就由它说了算, 跳回分享站也不再补
+                    left_trusted = True
                     return
                 if "Authorization" not in request.headers:
                     logger.debug(f"配置中心请求跳转到 {host}, 补回令牌")
