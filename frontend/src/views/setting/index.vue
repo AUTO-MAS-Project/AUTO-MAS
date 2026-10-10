@@ -7,6 +7,9 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPreset } from '@/types/pressSound'
+import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
+import { playPressSound } from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -16,6 +19,7 @@ import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import { usePressSoundStore } from '@/stores/pressSound'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
 import { useAppearanceSettings } from './useAppearanceSettings'
@@ -56,6 +60,8 @@ const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 const homeSatelliteStore = useHomeSatelliteStore()
 void homeSatelliteStore.load()
+const pressSoundStore = usePressSoundStore()
+void pressSoundStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -106,6 +112,19 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
   { label: t('setting.cursor.none'), value: 'none' },
   { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
   { label: t('setting.cursor.fluid'), value: 'fluid' },
+])
+
+const pressSoundOptions = computed<{ label: string; value: PressSoundPreset }[]>(() => [
+  { label: t('setting.pressSound.soft'), value: 'soft' },
+  { label: t('setting.pressSound.crisp'), value: 'crisp' },
+  { label: t('setting.pressSound.pop'), value: 'pop' },
+  { label: t('setting.pressSound.tick'), value: 'tick' },
+  {
+    label: pressSoundStore.customName
+      ? t('setting.pressSound.customNamed', { name: pressSoundStore.customName })
+      : t('setting.pressSound.custom'),
+    value: 'custom',
+  },
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
@@ -301,6 +320,80 @@ const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
   }
 }
 
+const reportPressSoundError = (action: string, error: unknown): void => {
+  const errorMsg = error instanceof Error ? error.message : String(error)
+  logger.error(`${action}失败: ${errorMsg}`)
+  message.error(t('setting.toast.pressSoundSaveFailed'))
+}
+
+const handlePressSoundEnabledChange = async (enabled: boolean) => {
+  try {
+    await pressSoundStore.persist({ enabled })
+  } catch (error) {
+    reportPressSoundError('保存按压音效开关', error)
+  }
+}
+
+const handlePressSoundPresetChange = async (value: SelectValue) => {
+  if (typeof value !== 'string') {
+    return
+  }
+
+  // 还没导入过自定义音效时选它没有意义，不落盘
+  if (value === 'custom' && !pressSoundStore.customPath) {
+    message.warning(t('setting.toast.pressSoundCustomMissing'))
+    return
+  }
+
+  try {
+    await pressSoundStore.persist({ preset: value as PressSoundPreset })
+  } catch (error) {
+    reportPressSoundError('保存按压音效种类', error)
+  }
+}
+
+const handlePressSoundVolumeChange = async (volume: number) => {
+  try {
+    await pressSoundStore.persist({ volume })
+  } catch (error) {
+    reportPressSoundError('保存按压音效音量', error)
+  }
+}
+
+const handlePressSoundImport = async () => {
+  try {
+    const files = await window.electronAPI.selectFile([
+      { name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] },
+    ])
+    if (files.length === 0) {
+      return
+    }
+
+    const filePath = files[0]
+    // 先读一遍当校验：读不出来（不存在 / 没权限）或太大，都不写进配置
+    const base64 = await window.electronAPI.readFileBase64(filePath)
+    const bytes = Math.floor((base64.length * 3) / 4)
+    if (bytes > MAX_PRESS_SOUND_BYTES) {
+      message.error(t('setting.toast.pressSoundTooLarge'))
+      return
+    }
+
+    await pressSoundStore.persist({
+      preset: 'custom',
+      customPath: filePath,
+      customName: filePath.split(/[\\/]/).pop() ?? filePath,
+      enabled: true,
+    })
+    message.success(t('setting.toast.pressSoundImported'))
+  } catch (error) {
+    reportPressSoundError('导入按压音效', error)
+  }
+}
+
+const handlePressSoundPreview = () => {
+  void playPressSound(pressSoundStore.preset, pressSoundStore.volume, pressSoundStore.customPath)
+}
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
@@ -397,6 +490,16 @@ onMounted(() => {
             :low-performance-mode-saving="performanceStore.saving"
             :home-satellite-style="homeSatelliteStore.style"
             :home-satellite-style-saving="homeSatelliteStore.saving"
+            :press-sound-enabled="pressSoundStore.enabled"
+            :press-sound-preset="pressSoundStore.preset"
+            :press-sound-options="pressSoundOptions"
+            :press-sound-volume="pressSoundStore.volume"
+            :press-sound-saving="pressSoundStore.saving"
+            :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
+            :handle-press-sound-preset-change="handlePressSoundPresetChange"
+            :handle-press-sound-volume-change="handlePressSoundVolumeChange"
+            :handle-press-sound-import="handlePressSoundImport"
+            :handle-press-sound-preview="handlePressSoundPreview"
             :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
             :handle-theme-mode-change="handleThemeModeChange"
             :handle-appearance-change="handleAppearanceChange"

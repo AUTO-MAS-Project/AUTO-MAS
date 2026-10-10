@@ -49,6 +49,8 @@ import { INTRO_IGNITE_MS, SatelliteScene, type ScreenPoint } from './satellite/s
 import { useSatelliteEggs } from './satellite/useSatelliteEggs'
 import { useSatellitePointer } from './satellite/useSatellitePointer'
 import { useSatelliteStill } from './satellite/useSatelliteStill'
+import { playPressSound } from './satellite/pressSound'
+import { usePressSoundStore } from '@/stores/pressSound'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
@@ -57,6 +59,8 @@ const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
+const pressSoundStore = usePressSoundStore()
+void pressSoundStore.load()
 // 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
 const {
   statuses: satelliteStatuses,
@@ -114,6 +118,15 @@ const eggs = useSatelliteEggs({
   },
   requestRender,
 })
+/** 按中心图标时响一下；低性能模式（含窗口切到后台）下装饰性音效一并停掉 */
+function playCenterPressSound(): void {
+  if (!pressSoundStore.enabled || performanceStore.isLowPower) {
+    return
+  }
+
+  void playPressSound(pressSoundStore.preset, pressSoundStore.volume, pressSoundStore.customPath)
+}
+
 const {
   dragging,
   handlePointerDown,
@@ -130,6 +143,7 @@ const {
   spawnText,
   requestRender,
   onCenterTap: eggs.pokeCenter,
+  onCenterPress: playCenterPressSound,
   onSatelliteTap: handleSatelliteTap,
   onEmptyPress: eggs.tryCatchMeteor,
 })

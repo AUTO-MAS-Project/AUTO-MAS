@@ -64,4 +64,24 @@ export function registerFileHandlers() {
       return false
     }
   })
+
+  // ==================== 读取文件（base64） ====================
+  // read-file 按 utf-8 读，音频这类二进制会被读坏；这条是给需要当 data URL 用的场景。
+  ipcMain.handle('read-file-base64', async (event, filePath: string) => {
+    try {
+      const resolvedPath = path.resolve(filePath)
+
+      const stats = await fsPromises.stat(resolvedPath)
+      if (!stats.isFile()) {
+        throw new Error('指定路径不是文件')
+      }
+
+      const buffer = await fsPromises.readFile(resolvedPath)
+      return buffer.toString('base64')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`读取文件（base64）失败 ${filePath}: ${errorMsg}`)
+      throw error
+    }
+  })
 }

@@ -166,6 +166,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  readFileBase64: (filePath: string) => ipcRenderer.invoke('read-file-base64', filePath),
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
 
   getAppPath: (name: string) => ipcRenderer.invoke('get-app-path', name),

@@ -1,6 +1,7 @@
 import type { AppLocale } from '@/i18n'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
 import type { CursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPreset } from '@/types/pressSound'
 import type { HomeLayoutConfig } from '@/types/home'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 
@@ -14,6 +15,15 @@ export interface FrontendConfig {
   appearanceId?: string | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
+
+  // 主页中心图标（星核）按压音效
+  pressSoundEnabled?: boolean
+  pressSoundPreset?: PressSoundPreset
+  pressSoundVolume?: number
+  /** 用户导入音频的绝对路径；preset 为 custom 时使用 */
+  pressSoundCustomPath?: string
+  /** 用户导入音频的显示名，仅用于界面 */
+  pressSoundCustomName?: string
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -47,6 +57,11 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeColor: 'blue',
   cursorEffect: 'none',
   lowPerformanceMode: false,
+  pressSoundEnabled: false,
+  pressSoundPreset: 'soft',
+  pressSoundVolume: 0.6,
+  pressSoundCustomPath: '',
+  pressSoundCustomName: '',
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',
