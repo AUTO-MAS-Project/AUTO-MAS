@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -21,13 +22,16 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path
 from .apply import (
+    InvalidPackageArchive,
     UpdateApplyError,
     _check_disk_space,
     _find_package_root,
     _read_interface_version,
     _safe_extract_zip,
+    estimate_new_shared_bytes,
     zip_entry_stats,
 )
+from .blob_store import LINK_MIN_BYTES
 from .contracts import normalise_sha256
 from .payloads import (
     ORIGIN_PACKAGE,
@@ -68,6 +72,7 @@ from .timing import StageTimer, format_duration, format_megabytes
 from .transport import (
     CANCELLED_MESSAGE,
     UpdateDownloadCancelled,
+    discard_cached_package,
     download_resumable,
 )
 
@@ -1346,10 +1351,11 @@ async def apply_maafw_project_update(
             private=payload.private_paths,
             send_log=send_update_log,
             on_event=on_build_event,
+            # 只拦「要全量却拿到差量」：差量包少了旧文件的清理，套上去是错的版本。反过来
+            # 声明差量、包里却认出是全量（没有 changes.json）时照全量建，结果仍正确，不拦——
+            # Mirror 酱的 update_type 现在也映射进来了，别因为包形状与声明对不上就整次失败。
             expected_package_type=(
-                candidate.package_type
-                if candidate.package_type in {"full", "delta"}
-                else None
+                "full" if candidate.package_type == "full" else None
             ),
             target_version=target_version,
             cancelled=is_cancelled,
@@ -1374,12 +1380,19 @@ async def apply_maafw_project_update(
         timer.start("解压")
         staging_root.mkdir(parents=True, exist_ok=True)
         entry_files, expanded = zip_entry_stats(downloaded.path)
-        # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
+        # 解压一份；建新载荷时私有文件与小文件从解压目录挪过去（不占新空间），大文件按内容
+        # 复制进共用库——库里已有的（多半是没变的）不占。两份在同一个卷上，要求相加。
+        known_sizes = {
+            int(entry.get("size") or 0)
+            for entry in manifest_files(payload.manifest()).values()
+        }
         _check_disk_space(
             staging_root,
             staging_root,
             state_required=expanded,
-            project_required=expanded,
+            project_required=estimate_new_shared_bytes(
+                downloaded.path, known_sizes, min_bytes=LINK_MIN_BYTES
+            ),
         )
         extract_dir.mkdir(parents=True, exist_ok=True)
         send_update_log(
@@ -1492,6 +1505,19 @@ async def apply_maafw_project_update(
     except (PayloadError, UpdateApplyError) as exc:
         log_stopped(exc)
         await _remove_tree_in_thread(staging)
+        if (
+            isinstance(exc, InvalidPackageArchive)
+            and downloaded is not None
+            and normalise_sha256(candidate.sha256) is None
+        ):
+            # 没有 sha256 的资产缓存了一个解不开的包（截断却长度对得上）：作废它，下次
+            # 重新下载；不然每次都命中同一个坏包。有 sha256 的字节就是发布方那份，
+            # 重下也一样，不作废。
+            try:
+                if await asyncio.to_thread(discard_cached_package, downloaded.path):
+                    send_update_log("缓存的更新包解不开，已作废，下次重新下载")
+            except Exception:  # noqa: BLE001 - 作废失败只记日志，不盖住原错误
+                logger.warning("MaaFW 作废坏的缓存更新包失败", exc_info=True)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     except Exception as exc:
@@ -1504,9 +1530,11 @@ async def apply_maafw_project_update(
         await _remove_tree_in_thread(extract_dir)
         await _discard_range_dir(range_dir, send_update_log)
 
-    manifest_files = registered.manifest.get("files")
+    # 别叫 manifest_files：同名局部变量会让本函数里（含嵌套的 build）对模块函数
+    # ``manifest_files`` 的引用变成未赋值的闭包变量。
+    registered_files = registered.manifest.get("files")
     send_update_log(
-        f"文件清单已生成并登记：{len(manifest_files) if isinstance(manifest_files, Mapping) else 0}"
+        f"文件清单已生成并登记：{len(registered_files) if isinstance(registered_files, Mapping) else 0}"
         f" 个文件，用时 {format_duration(timer.finish())}"
     )
     send_update_log(f"新版本构建总用时 {timer.summary()}")
@@ -1868,8 +1896,7 @@ def _discovery_from_mirror_check(
         version=latest_version,
         download_url=version_check.download_url,
         sha256=version_check.sha256,
-        artifact_id=str(data.get("artifact_id") or data.get("artifactId") or "").strip()
-        or None,
+        artifact_id=_mirror_artifact_id(data, version_check.sha256),
         package_type=_package_type_from_metadata(data),
         from_version=_metadata_text(
             data, "base_version", "baseVersion", "from_version", "fromVersion"
@@ -1890,6 +1917,24 @@ def _discovery_from_mirror_check(
             f"{version_check.fallback_reason}，Mirror酱 未提供下载地址"
         ),
     )
+
+
+def _mirror_artifact_id(data: Mapping[str, Any], sha256: str | None) -> str | None:
+    """Mirror 酱更新包在下载缓存里的身份（``transport`` 的 artifact id）。
+
+    回包里没有 artifact_id 时，缓存身份原本取下载地址 path 的最后一段，而 Mirror 酱的
+    下载地址是一次性签名地址、令牌就在 path 里，每次运行都不同：断点续传与缓存命中都
+    对不上，旧断点成了孤儿。包的 sha256 对同一个包固定（全量包与增量包也自然不同），
+    拿它定身份；没有 sha256 时照旧（不能只按版本号定，缓存是各项目共用的）。
+    """
+
+    explicit = str(data.get("artifact_id") or data.get("artifactId") or "").strip()
+    if explicit:
+        return explicit
+    digest = normalise_sha256(sha256)
+    if digest is None:
+        return None
+    return hashlib.sha256(f"mirrorchyan\0{digest}".encode("utf-8")).hexdigest()[:24]
 
 
 async def _check_github_release_update(
@@ -2106,11 +2151,15 @@ def _package_type_from_metadata(data: Mapping[str, Any]) -> str | None:
             data.get("package_type")
             or data.get("packageType")
             or data.get("type")
+            # Mirror 酱成功回包的字段（线上实测）：``full`` / ``incremental``。
+            or data.get("update_type")
             or ""
         )
         .strip()
         .lower()
     )
+    if value == "incremental":
+        value = "delta"
     return value if value in {"full", "delta"} else None
 
 

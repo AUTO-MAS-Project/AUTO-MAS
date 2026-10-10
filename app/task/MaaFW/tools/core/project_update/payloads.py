@@ -676,7 +676,7 @@ def build_from_package(
         import_files = {
             rel for rel, entry in old_files.items() if entry["origin"] != ORIGIN_PACKAGE
         }
-        stale |= _import_origin_orphans(old_root, plan) & import_files
+        stale |= _import_origin_orphans(old_root, plan, send_log) & import_files
         # 换过外壳的导入目录里留着的旧布局原生库（maafw/ 与 runtimes/<rid>/native 并存）：
         # 新包在别处带着 MaaFramework 时清掉，否则 runner 与 agent 会各挑一份。
         abandoned = abandoned_native_runtime_files(import_files, plan.files)

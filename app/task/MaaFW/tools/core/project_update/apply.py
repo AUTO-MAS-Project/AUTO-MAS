@@ -13,12 +13,13 @@ import hashlib
 import json
 import logging
 import os
+import posixpath
 import shutil
 import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Collection, Mapping
 
 from .contracts import (
     ArtifactType,
@@ -70,6 +71,10 @@ class UpdateApplyError(RuntimeError):
     def __init__(self, message: str, *, unsafe_to_continue: bool = False) -> None:
         super().__init__(message)
         self.unsafe_to_continue = unsafe_to_continue
+
+
+class InvalidPackageArchive(UpdateApplyError):
+    """更新包不是有效的 zip（截断、错误页）：调用方据此把缓存里的这份作废。"""
 
 
 @dataclass(frozen=True)
@@ -292,19 +297,50 @@ def _validate_plan_base(
             raise UpdateApplyError(f"delta file hash mismatch: {relative}")
 
 
-def _package_resource_directories(plan: PackagePlan) -> set[str]:
-    """新版 interface.json 声明的资源包目录，项目相对 posix 路径。
+def _load_interface_document(path: Path) -> Any:
+    """读 interface：先按严格 JSON，失败退 json5（带 ``//`` 注释的 JSONC），与加载器同一口径。"""
+
+    text = path.read_text(encoding="utf-8-sig")
+    try:
+        return json.loads(text)
+    except ValueError:
+        import json5
+
+        return json5.loads(text)
+
+
+def _package_resource_directories(
+    plan: PackagePlan, send_log: Callable[[str], None] | None = None
+) -> set[str]:
+    """新版 interface 声明的资源包目录，项目相对 posix 路径。
 
     实测四个发行包写的都是 ``./resource`` / ``./resource_pack/base`` 这样的相对
     路径；``{PROJECT_DIR}`` 前缀在规格里存在但没见项目用过，这里一并去掉。
+    ``interface.json`` 与 ``interface.jsonc`` 都认、JSONC 也认（加载器就是这么读的）；
+    读不出来时说一声（``send_log``）——静默返回空集，新版本删掉 / 挪走的 pipeline 就会
+    原样留在新版本里，节点重名让 MaaFramework 拒收整个资源包（#659 的场景）。
     """
 
-    source = plan.files.get("interface.json")
+    source = next(
+        (
+            plan.files[name]
+            for name in ("interface.json", "interface.jsonc")
+            if name in plan.files
+        ),
+        None,
+    )
     if source is None or not source.is_file():
         return set()
     try:
-        data = json.loads(source.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
+        data = _load_interface_document(source)
+    except Exception as exc:  # noqa: BLE001 - json5 的异常类型不固定
+        if send_log is not None:
+            send_log(
+                f"读不了新版本的 {source.name}（{exc}），本次不清理资源目录里"
+                "导入时带来、新版本已没有的旧文件"
+            )
+        return set()
+    if not isinstance(data, Mapping):
         return set()
     entries = data.get("resource")
     if not isinstance(entries, list):
@@ -324,14 +360,23 @@ def _package_resource_directories(plan: PackagePlan) -> set[str]:
             text = text.strip("/")
             if not text:
                 continue
+            # 中间带 ``.`` / ``..`` 却没逃出项目的写法（``resource/../resource_pack/base``）
+            # 投影层归一后放行，这里也归一；逃出项目或绝对路径的跳过这一条声明。
+            text = posixpath.normpath(text)
             try:
                 directories.add(safe_relative_path(text))
-            except UpdateApplyError:
+            except (ValueError, UpdateApplyError):
+                # ``safe_relative_path`` 抛的是 ValueError：只跳过这一条声明，不让整次
+                # 更新失败。
                 continue
     return directories
 
 
-def _import_origin_orphans(project_path: Path, plan: PackagePlan) -> set[str]:
+def _import_origin_orphans(
+    project_path: Path,
+    plan: PackagePlan,
+    send_log: Callable[[str], None] | None = None,
+) -> set[str]:
     """全量包对「导入来的文件」应当清掉的旧版残留（调用方再与 ``origin=import`` 取交集）。
 
     载荷清单逐文件记来源：``origin=package`` 的是更新包铺的，下一版不在包里就删，
@@ -359,7 +404,7 @@ def _import_origin_orphans(project_path: Path, plan: PackagePlan) -> set[str]:
     """
 
     orphans: set[str] = set()
-    for relative_dir in sorted(_package_resource_directories(plan)):
+    for relative_dir in sorted(_package_resource_directories(plan, send_log)):
         prefix = f"{relative_dir}/"
         if not any(name.startswith(prefix) for name in plan.files):
             # 包里没往这个资源目录铺任何文件：声明与实际对不上，不能拿它当
@@ -423,7 +468,7 @@ def zip_entry_stats(package_path: Path) -> tuple[int, int]:
             files = sum(1 for item in members if not item.is_dir())
             expanded = sum(max(0, int(item.file_size)) for item in members)
     except zipfile.BadZipFile as exc:
-        raise UpdateApplyError("update package is not a valid zip file") from exc
+        raise InvalidPackageArchive("update package is not a valid zip file") from exc
     if expanded > ZIP_MAX_EXPANDED_BYTES:
         raise UpdateApplyError("update package expanded size exceeds limit")
     return files, expanded
@@ -436,24 +481,79 @@ def _check_disk_space(
     state_required: int,
     project_required: int,
 ) -> None:
+    """两处要的空间放得下吗。两处在同一个卷上时要求相加（以前各查各的、都只比一份，
+    剩余空间在一份与两份之间时预检通过，解压完才在中途报磁盘已满）。
+
+    失败文案先给人看的一句（约多少 MB、剩多少 MB），英文排障原文跟在括号里。
+    """
+
     reserve = 1024 * 1024
+    state_required = max(0, state_required)
+    project_required = max(0, project_required)
     try:
         state_free = shutil.disk_usage(state_dir).free
         project_free = shutil.disk_usage(project_path).free
     except OSError as exc:
         raise UpdateApplyError(
-            "INSUFFICIENT_DISK: cannot determine free space"
+            "读不到磁盘剩余空间，无法确认放得下更新"
+            "（INSUFFICIENT_DISK: cannot determine free space）"
         ) from exc
-    if state_free < max(0, state_required) + reserve:
+    if _same_volume(state_dir, project_path):
+        needed = state_required + project_required
+        if state_free < needed + reserve:
+            raise UpdateApplyError(
+                f"磁盘空间不足：更新需要约 {_mb(needed)} MB，所在磁盘只剩 "
+                f"{_mb(state_free)} MB（INSUFFICIENT_DISK: update staging needs "
+                f"{state_required} + {project_required} bytes on one volume, "
+                f"volume has {state_free} bytes free）"
+            )
+        return
+    if state_free < state_required + reserve:
         raise UpdateApplyError(
-            f"INSUFFICIENT_DISK: update staging needs {state_required} bytes, "
-            f"state volume has {state_free} bytes free"
+            f"磁盘空间不足：更新需要约 {_mb(state_required)} MB，所在磁盘只剩 "
+            f"{_mb(state_free)} MB（INSUFFICIENT_DISK: update staging needs "
+            f"{state_required} bytes, state volume has {state_free} bytes free）"
         )
-    if project_free < max(0, project_required) + reserve:
+    if project_free < project_required + reserve:
         raise UpdateApplyError(
-            f"INSUFFICIENT_DISK: project commit needs {project_required} bytes, "
-            f"project volume has {project_free} bytes free"
+            f"磁盘空间不足：更新需要约 {_mb(project_required)} MB，所在磁盘只剩 "
+            f"{_mb(project_free)} MB（INSUFFICIENT_DISK: project commit needs "
+            f"{project_required} bytes, project volume has {project_free} bytes free）"
         )
+
+
+def _same_volume(first: Path, second: Path) -> bool:
+    try:
+        return os.stat(first).st_dev == os.stat(second).st_dev
+    except OSError:
+        return Path(first).resolve(strict=False) == Path(second).resolve(strict=False)
+
+
+def _mb(value: int) -> str:
+    return f"{max(0, value) / (1024 * 1024):.0f}"
+
+
+def estimate_new_shared_bytes(
+    package_path: Path, known_sizes: Collection[int], *, min_bytes: int
+) -> int:
+    """全量包建新载荷时、共用库里要新增的字节的估计（解压量之外的那一份）。
+
+    ≥ ``min_bytes`` 的条目会按内容进共用库（``blob_store.place`` 复制一份进库）；库里
+    已有同内容的不占新空间。建载荷之前拿不到内容哈希，按大小估：与旧载荷里某个文件
+    一样大的当作没变（大文件改了内容而大小不变的很少），其余都算新增。
+    """
+
+    try:
+        with zipfile.ZipFile(package_path, "r") as archive:
+            return sum(
+                int(item.file_size)
+                for item in archive.infolist()
+                if not item.is_dir()
+                and int(item.file_size) >= min_bytes
+                and int(item.file_size) not in known_sizes
+            )
+    except zipfile.BadZipFile as exc:
+        raise InvalidPackageArchive("update package is not a valid zip file") from exc
 
 
 @dataclass(frozen=True)
@@ -674,7 +774,7 @@ def _safe_extract_zip(
             reporter.report()
             return ExtractStats(files=reporter.files, bytes=reporter.bytes)
     except zipfile.BadZipFile as exc:
-        raise UpdateApplyError("update package is not a valid zip file") from exc
+        raise InvalidPackageArchive("update package is not a valid zip file") from exc
 
 
 def _resolve_payload_root(
@@ -828,6 +928,7 @@ def _emit(
 
 
 __all__ = [
+    "InvalidPackageArchive",
     "PackagePlan",
     "UpdateApplyError",
     "build_package_plan",
