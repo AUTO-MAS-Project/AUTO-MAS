@@ -85,9 +85,9 @@ from .tools import (
     update_maa,
 )
 from .tools.backup_archive import (
-    _task_type_of,
     archive_mas_runtime_backup,
     read_overlay_values,
+    task_type_of,
 )
 from .tools.cultivate import (
     CultivatePlan,
@@ -826,13 +826,27 @@ def depot_cache_snapshot_dir(script_id: str) -> Path:
     overlay 覆写它是不可还原写入；不在整目录快照范围内的目标必须自带键级快照。
     目录存在即为「已存底」；目录里没有 DepotData.json 表示覆写前安装目录本来
     就没有该文件。
+
+    Args:
+        script_id: 脚本标识，决定 data/<script_id>/TempDepot 的归属。
+
+    Returns:
+        存底目录路径。
     """
 
     return Path.cwd() / f"data/{script_id}/TempDepot"
 
 
 def snapshot_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
-    """覆写安装目录库存缓存前存底；已存底时保持第一次的现场。"""
+    """覆写安装目录库存缓存前存底；已存底时保持第一次的现场。
+
+    Args:
+        maa_root_path: MAA 安装根目录，工作缓存在其 data/DepotData.json。
+        snapshot_dir: 存底目录；已存在即视为已存底并直接放行。
+
+    Returns:
+        可以覆写时为 True；存底失败为 False（调用方不得覆写）。
+    """
 
     if snapshot_dir.is_dir():
         return True
@@ -854,6 +868,13 @@ def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
     """按存底还原安装目录库存缓存（结束还原与崩溃恢复共用）。
 
     存底目录存在才算覆写过；还原失败保留存底，交给下一次 prepare 重试。
+
+    Args:
+        maa_root_path: MAA 安装根目录，工作缓存在其 data/DepotData.json。
+        snapshot_dir: 存底目录；不存在表示没覆写过，直接放行。
+
+    Returns:
+        还原成功或无需还原为 True；失败为 False（存底保留，可重试）。
     """
 
     if not snapshot_dir.is_dir():
@@ -1234,7 +1255,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """overlay 层：把当前用户档案的库存缓存覆写进 MAA 安装目录。
 
         安装目录那份 DepotData 是 MAA 的工作缓存，物理上跨账号共用；开启覆写
-        常规配置时按本账号档案覆写，覆写前键级存底，任务结束在 _run_final_task
+        常规配置时按本账号档案覆写，覆写前键级存底，任务结束在 _finalize_task
         里还原。覆写失败宁可关掉本轮库存保持任务，也不让 MAA 读到别的账号
         留下的库存。
         """
@@ -1245,7 +1266,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             for task in queue
             if isinstance(task, dict)
             and task.get("IsEnable")
-            and _task_type_of(task) == "DepotMaintain"
+            and task_type_of(task) == "DepotMaintain"
         ]
         if not depot_tasks:
             return
@@ -1288,16 +1309,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
             depot_cache_snapshot_dir(self.script_info.script_id),
         )
 
-    async def _run_final_task(self) -> None:
+    async def _finalize_task(self) -> None:
         """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。
 
-        挂在 _run_final_task（收尾主体，被放进屏蔽取消的独立任务里执行）
-        上，而不是 final_task：收尾被取消或异常中断时它仍会执行
-        （wait_for_finalizer_on_cancel）。
+        挂在 _finalize_task（收尾主体，由 _run_final_task 放进屏蔽取消的
+        独立任务里执行）上，而不是 final_task：收尾被取消或异常中断时它仍会
+        执行（wait_for_finalizer_on_cancel）；super() 已跑完后置脚本。
         """
 
         try:
-            await super()._run_final_task()
+            await super()._finalize_task()
         finally:
             self._restore_depot_context()
 
