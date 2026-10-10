@@ -3,6 +3,8 @@
 // 编辑器在页面上可能有好几个（全局选项、任务选项、各层子选项），由页面提供一个登记处统一调度。
 
 import type { InjectionKey } from 'vue'
+import type { MaaFWTaskOptionValue } from '@/types/script'
+import { storedMaaFWInputFieldValue } from './maafwOptionValues'
 
 export interface MaaFWOptionDraftHolder {
   /** 有没有和已存值不同、还没提交的草稿 */
@@ -49,3 +51,22 @@ export const parseMaaFWOptionDraftKey = (key: string) => {
   const index = key.indexOf('\u0000')
   return { optionName: key.slice(0, index), inputName: key.slice(index + 1) }
 }
+
+/**
+ * 选项值换了一份（保存后按后端结果重载、配置恢复、换了任务）时，只丢掉那些字段的已存值
+ * 确实变了的草稿；字段没变的草稿留着，用户正在输入的内容不被别处的重载冲掉。
+ */
+export const retainMaaFWDraftsForUnchangedFields = (
+  drafts: Record<string, string>,
+  previous: Record<string, MaaFWTaskOptionValue> | undefined,
+  next: Record<string, MaaFWTaskOptionValue> | undefined
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(drafts).filter(([key]) => {
+      const { optionName, inputName } = parseMaaFWOptionDraftKey(key)
+      return (
+        storedMaaFWInputFieldValue(previous?.[optionName], inputName) ===
+        storedMaaFWInputFieldValue(next?.[optionName], inputName)
+      )
+    })
+  )

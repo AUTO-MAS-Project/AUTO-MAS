@@ -258,6 +258,7 @@ import {
   MAAFW_OPTION_DRAFTS_KEY,
   maafwOptionDraftKey,
   parseMaaFWOptionDraftKey,
+  retainMaaFWDraftsForUnchangedFields,
 } from './maafwOptionDrafts'
 import type {
   MaaFWOptionCaseInfo,
@@ -305,9 +306,10 @@ type ChoiceChangeEvent = {
 }
 
 const optionSearchQuery = ref('')
-// 密码字段正在输入、还没提交的值，键为 `option\u0000字段`。换了任务（taskOptions 换了一份）就清空。
+// 密码字段正在输入、还没提交的值，键为 `option\u0000字段`。
 const passwordDrafts = ref<Record<string, string>>({})
-// 数字 / 文本字段正在输入、还没提交的值，键同上；失焦 / 回车时提交，换了任务同样清空。
+// 数字 / 文本字段正在输入、还没提交的值，键同上；失焦 / 回车时提交。
+// 两种草稿在选项值换了一份时，只丢掉已存值确实变了的字段（见下面的 watch）。
 const inputDrafts = ref<Record<string, string>>({})
 // 页面离开前由页面统一提交草稿（不在用户页里时没有登记处）
 const draftRegistry = inject(MAAFW_OPTION_DRAFTS_KEY, null)
@@ -352,11 +354,12 @@ const filteredOptions = computed(() => {
 
 const showOptionToolbar = computed(() => !props.hideToolbar && visibleOptions.value.length > 5)
 
+// 保存后按后端结果重载（受管任务）、配置恢复都会换一份 taskOptions：正在输入的字段没被改动就留着草稿
 watch(
   () => props.taskOptions,
-  () => {
-    passwordDrafts.value = {}
-    inputDrafts.value = {}
+  (next, previous) => {
+    passwordDrafts.value = retainMaaFWDraftsForUnchangedFields(passwordDrafts.value, previous, next)
+    inputDrafts.value = retainMaaFWDraftsForUnchangedFields(inputDrafts.value, previous, next)
   }
 )
 
