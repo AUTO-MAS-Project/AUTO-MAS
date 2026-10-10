@@ -575,6 +575,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         插件形态下这一步由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后
         注入；树内没有服务注册表，直接实例化服务再走同一个解析函数。
         `_run_maafw` 缺这两个值会直接拒绝运行。
+
+        **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
+        别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
+        循环上整个后端都跟着停住。
         """
 
         from app.task.MaaFW.tools.core.runtime_pool import (
@@ -586,7 +590,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return runtime_pool_route_from_service(MaaFWRuntimePoolService())
 
-    def _build_inner_task(self) -> "MaaFWPluginAutoProxyTask":
+    def _build_inner_task(self, route: Any) -> "MaaFWPluginAutoProxyTask":
+        """``route`` 是 :meth:`_resolve_runtime_pool_route` 的结果，调用方在工作线程里取。"""
+
         # 延迟导入：runner_task 经 runner 包 import maa，导入即打开 DLL。
         from app.task.MaaFW.tools.embedded.runner_task import (
             MaaFWPluginAutoProxyTask,
@@ -603,7 +609,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             project_update_logs=self._take_project_update_logs(),
             signal_tracker=self.signal_tracker,
         )
-        route = self._resolve_runtime_pool_route()
         task.maafw_runtime_pool_root = route.root
         task.maafw_runtime_pool_id = route.pool_id
         return task
@@ -822,7 +827,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 否则受限网络下「手动能更、自动不能」。脚本级优先，留空跟随全局；
         # 下载与预检都用触发脚本的这一份。
         proxy_url, proxy = self._resolve_update_proxy()
-        route = self._resolve_runtime_pool_route()
+        route = await asyncio.to_thread(self._resolve_runtime_pool_route)
         failure = precheck_failure if precheck_failure is not None else {}
         script_id = str(self.script_info.script_id)
 
@@ -1494,7 +1499,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
                 )
-            self.inner_task = self._build_inner_task()
+            route = await asyncio.to_thread(self._resolve_runtime_pool_route)
+            self.inner_task = self._build_inner_task(route)
             self._inner_finalized = False
             try:
                 await self.inner_task.main_task()
