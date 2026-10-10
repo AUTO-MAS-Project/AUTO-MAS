@@ -1,6 +1,8 @@
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 
+import { translate as t } from '@/i18n'
+
 import { showIssueReportGuide } from '@/utils/issueReportGuide'
 
 export interface ReportLogger {
@@ -13,6 +15,7 @@ interface IssueReportResult {
   message?: string
   zipPath?: string
   error?: string
+  incompleteCount?: number
 }
 
 interface IssueReportOptions<Args extends unknown[]> {
@@ -31,18 +34,22 @@ export function useIssueReport<Args extends unknown[] = []>(
   const exporting = ref(false)
 
   const exportIssueReport = async (...args: Args) => {
+    if (exporting.value) return
     exporting.value = true
     try {
       const result = await options.exportFn(...args)
 
       if (!result) {
-        message.error('导出功能未响应，请检查程序')
+        message.error(t('misc.exportDidNotRespond'))
         logger.error(`导出 ${options.label} 问题包失败: 未收到响应`)
         return
       }
 
       if (result.success) {
-        message.success(result.message || `${options.label} 问题包导出成功`)
+        const successMessage =
+          result.message || t('misc.issueReportSuccess', { label: options.label })
+        if (result.incompleteCount) message.warning(successMessage)
+        else message.success(successMessage)
         logger.info(`导出 ${options.label} 问题包成功: ${result.zipPath || '路径未知'}`)
         if (result.zipPath) {
           await window.electronAPI?.showItemInFolder?.(result.zipPath)
@@ -56,13 +63,13 @@ export function useIssueReport<Args extends unknown[] = []>(
         return
       }
 
-      const errorMsg = result.error || `${options.label} 问题包导出失败`
+      const errorMsg = result.error || t('misc.issueReportFailed', { label: options.label })
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
       message.error(errorMsg)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
-      message.error(`导出问题包异常: ${errorMsg}`)
+      message.error(t('misc.couldNotExportIssue', { p0: errorMsg }))
     } finally {
       exporting.value = false
     }
