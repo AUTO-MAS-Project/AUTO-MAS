@@ -1151,6 +1151,10 @@ class MaaFWRunner:
         # 定时器线程里只做两件事：置位、让正在跑的任务停下。截图与收尾都在主线程，
         # 那里 controller 的使用方式和普通任务失败完全一样。
         with self._post_lock:
+            # 单任务定时器被截到整轮截止时刻时，两个定时器同一时刻各转来一次；
+            # 只认第一次，否则超时日志打两遍、post_stop 也发两次。
+            if self._deadline_hit.is_set():
+                return
             self._deadline_hit.set()
             in_flight = self._task_in_flight
         if self._stop_requested.is_set():
@@ -1369,10 +1373,21 @@ class MaaFWRunner:
         等的时候整轮时限到点就直接按整轮超时收尾，不再说「继续后续任务」。
         """
 
+        return self._wait_self_stop_settled(lambda: self._task_deadline_stop_thread)
+
+    def _wait_self_stop_settled(
+        self, stop_thread: Callable[[], threading.Thread | None]
+    ) -> bool:
+        """等我们自己发起的停止（单任务时限、原地打转）真正生效，tasker 空闲下来。
+
+        先等发起停止的线程结束（它在里面等停止 job），再看 ``tasker.running``；最多等
+        ``TASK_STOP_SETTLE_SECONDS``，返回 False 表示等满也没停下。
+        """
+
         give_up_at = time.monotonic() + TASK_STOP_SETTLE_SECONDS
         while True:
             self._raise_if_deadline_hit()
-            thread = self._task_deadline_stop_thread
+            thread = stop_thread()
             busy = thread is not None and thread.is_alive()
             if not busy and self.tasker is not None:
                 try:
@@ -1408,9 +1423,20 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
         reason = _format_loop_guard_reason(verdict)
         display_name = _task_display_name(task)
+        has_next = index + 1 < len(self.plan.tasks)
+        # 与单任务时限同一口径：要接着投下一个任务时先等停止真正生效，tasker 没空闲
+        # 会以 task_id=0 拒掉下一个任务，再被当成脚本侧强停跳过本轮剩余任务。
+        # 结束本轮或排在队尾时不等。
+        not_settled = RuntimeError(
+            f"{reason}，停止后 {TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，"
+            f"本轮剩余任务已跳过: {display_name}"
+        )
         if task.nonFatalMessage:
             self._raise_if_game_launch_failed(display_name, reason)
-            has_next = index + 1 < len(self.plan.tasks)
+            if has_next and not self._wait_self_stop_settled(
+                lambda: self._loop_guard_stop_thread
+            ):
+                raise not_settled
             if has_next and self._nonfatal_script_stopped(task, reason):
                 return "skip_rest"
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
@@ -1423,8 +1449,12 @@ class MaaFWRunner:
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        if has_next and not self._wait_self_stop_settled(
+            lambda: self._loop_guard_stop_thread
+        ):
+            raise not_settled
         self._failed_task_errors.append((task.name, reason))
-        if index + 1 < len(self.plan.tasks):
+        if has_next:
             self.send_log(f"{reason}，已停止并继续后续任务: {display_name}")
         else:
             self.send_log(f"{reason}，已停止: {display_name}")
