@@ -1216,6 +1216,16 @@ def _record_digest(data: bytes) -> str:
 _DOWNLOAD_PROGRESS_STEP_BYTES = 16 * 1024 * 1024
 
 
+_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+
+
+def _mask_url_credentials(text: str) -> str:
+    """把文本里 URL 的 ``user:pw@`` 换成 ``***@``（索引地址来自 ``AUTO_MAS_UV_INDEX_URL``
+    等配置，可能带凭据；与 requirements 解析不记 ``-i`` 取值同一口径）。其余部分原样。"""
+
+    return _URL_CREDENTIALS_RE.sub(r"\1***@", str(text))
+
+
 def _format_megabytes(value: int) -> str:
     return f"{value / (1024 * 1024):.1f} MB"
 
@@ -1547,7 +1557,8 @@ def _fetch_and_install(
     # 索引列出了这个版本、文件却没下下来（镜像「索引先到、文件 404」、断流、sha 不符）：
     # 换下一个候选，与 uv 装 base 时的候选轮换同一口径。自检、铺目录这类本地失败不换。
     download_errors: list[MaaFWBindingError] = []
-    for index in index_candidates or (DEFAULT_PACKAGE_INDEX,):
+    candidates = list(index_candidates or (DEFAULT_PACKAGE_INDEX,))
+    for position, index in enumerate(candidates):
         if check_cancelled is not None:
             check_cancelled()
         page = fetch_index_page(index, proxy_url=proxy_url)
@@ -1561,7 +1572,10 @@ def _fetch_and_install(
         if link is None:
             definite_missing = True
             continue
-        log(f"[MaaFW Runtime Pool] 下载 maafw {version} binding: {link.url}")
+        log(
+            f"[MaaFW Runtime Pool] 下载 maafw {version} binding: "
+            f"{_mask_url_credentials(link.url)}"
+        )
         try:
             return _install_from_wheel_link(
                 pool_root,
@@ -1578,15 +1592,20 @@ def _fetch_and_install(
         except (MaaFWBindingNetworkError, MaaFWBindingDownloadError) as exc:
             download_errors.append(exc)
             log(
-                f"[MaaFW Runtime Pool] 从 {index} 下载 maafw {version} binding 失败，"
-                f"换下一个索引: {exc}"
+                f"[MaaFW Runtime Pool] 从 {_mask_url_credentials(index)} 下载 maafw "
+                f"{version} binding 失败（{_mask_url_credentials(str(exc))}），"
+                + (
+                    "换下一个索引"
+                    if position < len(candidates) - 1
+                    else "已是最后一个索引"
+                )
             )
             continue
     if download_errors:
         # 有索引确实列出了这个版本：结论是「下载失败」，不是「没有这个版本」，别去走源码兜底。
         if len(download_errors) == 1:
             raise download_errors[0]
-        detail = "; ".join(str(item) for item in download_errors)
+        detail = _mask_url_credentials("; ".join(str(item) for item in download_errors))
         if all(isinstance(item, MaaFWBindingNetworkError) for item in download_errors):
             raise MaaFWBindingNetworkError(
                 f"所有列出 maafw {version} 的索引都下载失败: {detail}"
@@ -1708,11 +1727,14 @@ def _install_from_wheel_link(
             base_python=base_python,
         )
     finally:
-        wheel_path.unlink(missing_ok=True)
-        for stage in (binding_stage, native_stage):
-            if stage is not None and stage.exists():
-                remove_tree_best_effort(stage)
-        release_active_staging(wheel_path, binding_stage, native_stage)
+        try:
+            wheel_path.unlink(missing_ok=True)
+            for stage in (binding_stage, native_stage):
+                if stage is not None and stage.exists():
+                    remove_tree_best_effort(stage)
+        finally:
+            # 删 wheel 抛错（被杀软占着）也要放掉登记，否则这些条目永远在册、回收永远跳过
+            release_active_staging(wheel_path, binding_stage, native_stage)
 
 
 def _finish_native_only(

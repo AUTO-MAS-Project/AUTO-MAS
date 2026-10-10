@@ -1088,7 +1088,12 @@ class MaaFWRuntimePool:
                 continue
             if not mirror_dir.is_dir():
                 continue
-            for child in sorted(mirror_dir.iterdir()):
+            try:
+                children = sorted(mirror_dir.iterdir())
+            except OSError:
+                # 前缀树只是缓存：读不了这一支就跳过，别让整轮回收报错
+                continue
+            for child in children:
                 if child.is_symlink():
                     continue
                 source = source_dir / child.name
