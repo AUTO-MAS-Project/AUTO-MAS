@@ -37,7 +37,13 @@ import httpx
 from .apply import _EntryBoundary, _zip_member_parts
 from .blob_store import place_fresh
 from .contracts import RESERVED_PROJECT_DIRS
-from .payloads import PayloadError, lineage_key, manifest_files, remove_tree
+from .payloads import (
+    PayloadError,
+    lineage_identity,
+    manifest_files,
+    remove_tree,
+    same_project,
+)
 from .projection import (
     ProjectionError,
     describe_dropped_code_files,
@@ -288,6 +294,15 @@ def _same_content(path: Path, info: zipfile.ZipInfo) -> bool:
     return crc == info.CRC
 
 
+def _describe_identity(data: Mapping[str, object]) -> str:
+    """发行包 interface 的项目身份，进「对不上」的日志：说清楚拿什么比的。"""
+
+    try:
+        return f"发行包 interface 的项目身份是 {lineage_identity(data)}"
+    except PayloadError:
+        return "发行包 interface 没有 mirrorchyan_rid / github / name"
+
+
 def _local_sizes(directory: Path) -> dict[str, int]:
     """当前载荷里每个文件的大小（叠加视图的底层，整包落地时就是 stat 它们）。"""
 
@@ -316,11 +331,14 @@ def open_range_delta(
     cancelled: Callable[[], bool] | None = None,
     send_log: Callable[[str], None] | None = None,
     speed_guard: RangeSpeedGuard | None = None,
+    lineage_record: Mapping[str, object] | None = None,
 ) -> RangeDelta:
     """读远端发行包的中央目录，算出白名单内的条目、哪些能从当前载荷搬、哪些要取回。
 
     只花读中央目录（和 interface 及其 import）的流量。用不了抛
     :class:`RangeDeltaUnavailable`，停止抛 :class:`RangeDeltaCancelled`。
+    ``lineage_record``：谱系 ``lineage.json`` 的内容，核对「是不是同一项目」时容忍
+    rid / github 后来才加或改了（:func:`payloads.same_project`）。
     """
 
     old_root = Path(old_payload_dir)
@@ -357,13 +375,15 @@ def open_range_delta(
         _check_layout(archive, interface_rel, infos)
         try:
             data = _parse_json(read_entry(archive, infos[interface_rel], interface_rel))
-            same = lineage_key(data) == lineage
+            same = same_project(data, lineage, lineage_record)
         except (ValueError, PayloadError) as exc:
             raise RangeDeltaUnavailable(
                 f"发行包里的 interface.json 读不了：{exc}"
             ) from exc
         if not same:
-            raise RangeDeltaUnavailable("发行包与本机的项目对不上")
+            raise RangeDeltaUnavailable(
+                f"发行包与本机的项目对不上（{_describe_identity(data)}）"
+            )
         if _norm_version(data.get("version")) != _norm_version(target_version):
             raise RangeDeltaUnavailable(
                 f"发行包的版本是 {data.get('version')}，不是 {target_version}"

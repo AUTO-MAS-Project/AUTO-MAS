@@ -69,7 +69,6 @@ from .payloads import (
     RegisterResult,
     clone_payload_into,
     finalize,
-    lineage_key,
     lineage_lock,
     manifest_files,
     manifest_path,
@@ -80,6 +79,7 @@ from .payloads import (
     read_manifest,
     register,
     remove_tree,
+    same_project,
     write_json_atomic,
     write_lineage,
 )
@@ -712,13 +712,17 @@ def _archive_gap(
     revision: int,
     have: Callable[[str], bool],
     workdir: Path,
+    lineage_record: Mapping[str, Any] | None = None,
 ) -> Gap:
-    """发行包（本地缓存或远端）：核对是同一项目同一版本，算缺的条目。"""
+    """发行包（本地缓存或远端）：核对是同一项目同一版本，算缺的条目。
+
+    ``lineage_record``：谱系 ``lineage.json`` 的内容，rid / github 后来才加或改了时仍认
+    同一项目（:func:`payloads.same_project`）。"""
 
     interface_rel, infos = package_entries(archive)
     try:
         data = _parse_json(read_entry(archive, infos[interface_rel], interface_rel))
-        same = lineage_key(data) == lineage
+        same = same_project(data, lineage, lineage_record)
     except (ValueError, PayloadError) as exc:
         raise HealSkip(
             f"发行包里的 interface.json 读不了：{exc}", permanent=True
@@ -803,6 +807,7 @@ async def find_gap(
     shell_hint: str = "",
     cache_root: Path | None = None,
     deadline: float | None = None,
+    lineage_record: Mapping[str, Any] | None = None,
 ) -> Gap:
     """按 导入目录 → 缓存的完整包 → GitHub 发行包 的顺序找比对依据，算出缺的文件。
 
@@ -817,6 +822,7 @@ async def find_gap(
         "revision": revision,
         "have": have,
         "workdir": workdir,
+        "lineage_record": lineage_record,
     }
     if source_ref:
         gap = await asyncio.to_thread(
@@ -1239,6 +1245,12 @@ async def heal_payload(
     source = manifest.get("source") or {}
 
     deadline = time.monotonic() + CHECK_DEADLINE_SECONDS
+    try:
+        lineage_record: dict[str, Any] = await asyncio.to_thread(
+            read_lineage, target.root, target.lineage
+        )
+    except (OSError, PayloadError):
+        lineage_record = {}
 
     async def locate() -> tuple[Gap, dict[str, bytes]]:
         found = await find_gap(
@@ -1257,6 +1269,7 @@ async def heal_payload(
             shell_hint=shell_hint,
             cache_root=cache_root,
             deadline=deadline,
+            lineage_record=lineage_record,
         )
         try:
             return found, await asyncio.to_thread(found.read)
