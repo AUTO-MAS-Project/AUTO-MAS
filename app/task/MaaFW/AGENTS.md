@@ -407,8 +407,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
   interface_version（按 2）、input 的 default 写成数字、数字输入没填 / 填错（跳过该选项的
-  覆盖）、任务 / case / 全局等处引用了没定义的选项（去掉那处引用）、任务或资源的
-  controller / resource 名写错（原样保留、只是匹配不上）都是告警，不整份拒绝。
+  覆盖）、任务或资源的 controller / resource 名写错（原样保留、只是匹配不上）都是告警，
+  不整份拒绝。没缺 import 文件时引用了没定义的选项照旧整份拒绝（与 MaaPiCli 一致）。
 - 任务表里同名任务出现多次、`repeatable` + `repeat_count`（MFAA 私有扩展）都展开成
   `__MAS_DUP__` 重复实例（`task_config.build_default_task_instances` / `build_repeat_instance_ids`，
   前端「添加任务」按 `repeatCount` 一次加 N 份），不做 runner 循环。select 的私有 `default`
