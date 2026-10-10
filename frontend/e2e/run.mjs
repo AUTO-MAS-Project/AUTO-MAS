@@ -50,7 +50,7 @@ const defaultRealRunLockPath =
         'AUTO-MAS',
         'auto-mas-e2e-real.lock'
       )
-    : path.join(tempParent, 'auto-mas-e2e-real.lock')
+    : path.join(tempBase, 'auto-mas-e2e-real.lock')
 
 export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
   await mkdir(path.dirname(lockPath), { recursive: true })

@@ -69,7 +69,10 @@ test.describe('@settings persistence', () => {
       timeout: 3000
     })
 
-    // 验证状态已回滚（UI 应该恢复到初始状态或显示错误）
+    // 验证状态已回滚到初始状态
+    const finalState = await notifySwitch.getAttribute('aria-checked')
+    expect(finalState).toBe(initialState)
+
     await app.evidence('settings-save-failed')
 
     // 移除拦截
