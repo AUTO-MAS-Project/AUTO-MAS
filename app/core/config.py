@@ -2152,10 +2152,27 @@ class AppConfig(GlobalConfig):
             normalize_app_group_entries,
             read_app_group,
             read_game_account,
+            read_native_registry,
         )
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        # 来源校验必须先于存底物化：自身槽不能既作母版又被页面字段覆盖。
+        if slot > 0 and int(instance_idx) == slot:
+            raise ValueError("不能从当前用户绑定的 MAS 槽导入配置")
+        instance = next(
+            (
+                item
+                for item in read_native_registry(root).get("instance_list", [])
+                if int(item["idx"]) == int(instance_idx)
+            ),
+            None,
+        )
+        if instance is None:
+            raise ValueError(
+                f"原生实例 {int(instance_idx):02d} 不存在，请重新选择导入来源"
+            )
+        source_dir = instance_dir(root, int(instance_idx))
         if slot > 0:
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
@@ -2172,8 +2189,6 @@ class AppConfig(GlobalConfig):
                     fail_on_snapshot_error=True,
                 )
 
-        native_root, instance = self._zzzod_native_instance(script_id, instance_idx)
-        source_dir = instance_dir(native_root, int(instance_idx))
         game_account = read_game_account(source_dir)
         # 任务编排整表导入（含未启用项原位保留顺序，运行侧只消费启用项）
         all_apps = normalize_app_group_entries(read_app_group(source_dir))
@@ -2231,40 +2246,49 @@ class AppConfig(GlobalConfig):
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        def _align_yml(rel_parts: list[str]) -> None:
-            source_yml = source_dir.joinpath(*rel_parts)
-            target_yml = target_dir.joinpath(*rel_parts)
-            target_yml.parent.mkdir(parents=True, exist_ok=True)
-            if source_yml.is_file():
-                shutil.copyfile(source_yml, target_yml)
-            else:
-                target_yml.unlink(missing_ok=True)
+        # 底层防御：路径别名也可能指向同一目录，整段同步均应跳过自复制。
+        same_dir = source_dir.resolve() == target_dir.resolve()
+        if not same_dir:
 
-        _align_yml(("notify.yml",))
-        _align_yml(("team.yml",))
-        _align_yml(("game.yml",))
-
-        source_one_dragon = source_dir / "one_dragon"
-        target_one_dragon = target_dir / "one_dragon"
-        if target_one_dragon.is_dir():
-            for target_yml in target_one_dragon.glob("*.yml"):
-                if (
-                    target_yml.name != "_group.yml"
-                    and not (source_one_dragon / target_yml.name).is_file()
-                ):
+            def _align_yml(rel_parts: list[str]) -> None:
+                source_yml = source_dir.joinpath(*rel_parts)
+                target_yml = target_dir.joinpath(*rel_parts)
+                target_yml.parent.mkdir(parents=True, exist_ok=True)
+                if source_yml.is_file():
+                    shutil.copyfile(source_yml, target_yml)
+                else:
                     target_yml.unlink(missing_ok=True)
-        if source_one_dragon.is_dir():
-            target_one_dragon.mkdir(parents=True, exist_ok=True)
-            for source_yml in source_one_dragon.glob("*.yml"):
-                if source_yml.name == "_group.yml":
-                    continue
-                shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
+
+            _align_yml(("notify.yml",))
+            _align_yml(("team.yml",))
+            _align_yml(("game.yml",))
+
+            source_one_dragon = source_dir / "one_dragon"
+            target_one_dragon = target_dir / "one_dragon"
+            if target_one_dragon.is_dir():
+                for target_yml in target_one_dragon.glob("*.yml"):
+                    if (
+                        target_yml.name != "_group.yml"
+                        and not (source_one_dragon / target_yml.name).is_file()
+                    ):
+                        target_yml.unlink(missing_ok=True)
+            if source_one_dragon.is_dir():
+                target_one_dragon.mkdir(parents=True, exist_ok=True)
+                for source_yml in source_one_dragon.glob("*.yml"):
+                    if source_yml.name == "_group.yml":
+                        continue
+                    shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
 
         await self.ScriptConfig.save()
+        align_note = (
+            f"来源与槽 {slot:02d} 为同一目录，已跳过实例级对齐"
+            if same_dir
+            else f"应用通知/按键配置/体力计划已对齐槽 {slot:02d}"
+        )
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"应用通知/按键配置/体力计划已对齐槽 {slot:02d})"
+            f"{align_note})"
         )
         return {
             "instanceIdx": int(instance_idx),
