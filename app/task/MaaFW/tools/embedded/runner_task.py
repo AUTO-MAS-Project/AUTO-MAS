@@ -2443,14 +2443,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not self.opened_emulator:
             return True
         try:
-            # 失败原因（含超时）进 app.log；用户日志里留一句，收尾后模拟器还开着时有线索。
-            # #708 设成静默的理由「插件清理属预期路径」已经不成立（没有插件这一层了）。
-            closed = await close_emulator(self)
-            if not closed:
-                self._append_log(
-                    "关闭由 MAS 启动的模拟器失败，请手动关闭", warning=True
-                )
-            return closed
+            # 失败原因（含超时）记 warning 进 app.log：#708 设成静默的理由「插件清理属
+            # 预期路径」已经不成立（没有插件这一层了）。用户日志不写：重试路径下一轮
+            # MAS 会自己重开模拟器，「请手动关闭」会误导。
+            return await close_emulator(self)
         finally:
             self.opened_emulator = False
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
