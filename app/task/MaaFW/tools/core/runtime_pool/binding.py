@@ -190,6 +190,13 @@ def pycache_directory(pool_root: Path) -> Path:
 _BASE_SITE_PACKAGES_SHAPE = os.path.join(
     "runtimes", "maafw-runtime-" + "0" * 24, "environment", "Lib", "site-packages"
 )
+#: site-packages 之下 pyc 相对部分（分隔符 + 包内路径 + ``.cpython-312.pyc``）的余量。base
+#: 的包集合是常量（``runner.environment.BASE_RUNTIME_PACKAGES``），按它实算：342 个源文件
+#: 里最深的一支在默认安装 ``C:\Program Files\AUTO-MAS`` 下整条 pyc 路径 256 字符，即相对
+#: 部分 69；取 72（默认安装估出 259，正好放得下，保持原来设前缀的行为；每用户安装目录
+#: ``%LOCALAPPDATA%\Programs\AUTO-MAS`` 仍估超、不设）。项目前缀那 90 是给发行包自带的
+#: 任意 site-packages 留的，这里包集合固定，不用那么宽。base 包集合换了要重算。
+_BASE_PYC_RELATIVE_BUDGET = 72
 
 
 def pool_pycache_prefix(pool_root: Path) -> Path | None:
@@ -201,7 +208,9 @@ def pool_pycache_prefix(pool_root: Path) -> Path | None:
 
     prefix = pycache_directory(pool_root)
     deepest = os.path.join(str(Path(pool_root)), _BASE_SITE_PACKAGES_SHAPE)
-    if not pycache_prefix_fits(prefix, deepest):
+    if not pycache_prefix_fits(
+        prefix, deepest, relative_budget=_BASE_PYC_RELATIVE_BUDGET
+    ):
         return None
     return prefix
 

@@ -118,20 +118,20 @@ def project_pycache_prefix(project_path: str | os.PathLike[str]) -> str | None:
 
 
 def pycache_prefix_fits(
-    prefix: str | os.PathLike[str], deepest_source_dir: str
+    prefix: str | os.PathLike[str],
+    deepest_source_dir: str,
+    *,
+    relative_budget: int = _PYCACHE_RELATIVE_BUDGET,
 ) -> bool:
     """前缀树里最深的 pyc 撞不撞 MAX_PATH（开了长路径支持时一律算放得下）。
 
-    pyc 路径 = 前缀 + 源码目录去掉盘符 + 源码相对路径；``deepest_source_dir`` 是会被
-    导入的最深那一支的目录（如 base venv 的 site-packages），相对路径留
-    ``_PYCACHE_RELATIVE_BUDGET``，与项目前缀同一个余量。
+    pyc 路径 = 前缀 + 源码目录去掉盘符 + 源码相对路径（含分隔符与 ``.cpython-3xx.pyc``）；
+    ``deepest_source_dir`` 是会被导入的最深那一支的目录（如 base venv 的 site-packages），
+    ``relative_budget`` 是给相对部分留的余量，缺省与项目前缀相同。
     """
 
     source = os.path.splitdrive(os.fspath(deepest_source_dir))[1]
-    if (
-        len(os.fspath(prefix)) + len(source) + _PYCACHE_RELATIVE_BUDGET
-        <= _WINDOWS_MAX_PATH
-    ):
+    if len(os.fspath(prefix)) + len(source) + relative_budget <= _WINDOWS_MAX_PATH:
         return True
     return _windows_long_paths_enabled()
 
