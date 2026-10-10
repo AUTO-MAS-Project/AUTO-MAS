@@ -61,6 +61,8 @@ const savePassword = async () => {
 
 const clearPassword = () => {
   Modal.confirm({
+    // 与 a-modal 的 :z-index="900" 同理：遮罩整体压在标题栏（1000）之下，窗口控制按钮不被挡住
+    zIndex: 900,
     title: t('setting.replay.clearPasswordTitle'),
     content: t('setting.replay.clearPasswordContent'),
     okText: t('setting.replay.clearPassword'),

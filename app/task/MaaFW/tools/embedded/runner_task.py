@@ -84,6 +84,7 @@ from .embedded_project import resolve_maafw_project_root
 from .flavor import resolve_flavor, resolve_game_update_hook, unselectable_entries
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
+from .history_paths import maafw_history_log_path
 from .option_secrets import (
     collect_plan_password_values,
     collect_script_password_values,
@@ -1793,14 +1794,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             raise
         started_at = self.cur_user_log_started_at or datetime.now()
-        local_started_at = started_at.astimezone(UTC4)
-        history_dir = (
-            Path.cwd()
-            / "history"
-            / local_started_at.strftime("%Y-%m-%d")
-            / self.cur_user_item.name
-        )
-        history_stamp = local_started_at.strftime("%H-%M-%S")
+        history_log = maafw_history_log_path(self.cur_user_item.name, started_at)
+        history_dir = history_log.parent
+        history_stamp = history_log.stem
         job_path: Path | None = None
         worker_id: str | None = None
         try:
@@ -2886,11 +2882,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
-            dt = timestamp.astimezone(UTC4)
-            log_path = (
-                Path.cwd()
-                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
-            )
+            log_path = maafw_history_log_path(self.cur_user_item.name, timestamp)
             if not log_item.content:
                 log_item.content = ["未捕获到任何运行日志"]
             if log_item.status == "未开始监看日志":

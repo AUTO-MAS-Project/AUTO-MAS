@@ -84,8 +84,6 @@
       @close="logModalOpen = false"
       @open-file="handleOpenLogFile"
       @open-directory="handleOpenLogDirectory"
-      @open-replay="handleOpenReplay"
-      @locate-replay="handleLocateReplay"
       @update:font-size="setEditorConfig({ fontSize: $event })"
     />
 
@@ -96,7 +94,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
-import { message } from 'ant-design-vue'
 import { PlayCircleOutlined } from '@ant-design/icons-vue'
 import type { HistoryData } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
@@ -186,44 +183,6 @@ const handleSelectRecord = async (index: number, record: any) => {
   currentErrorMessage.value = errorInfo?.[record.date] || ''
   logModalOpen.value = true
   await selectRecord(index, record)
-}
-
-const handleOpenReplay = async (replay: ReplayRecord) => {
-  if (!replay.filePath) {
-    message.error(t('history.replays.openFileFailed'))
-    return
-  }
-  if (!window.electronAPI?.openFile) {
-    message.error(t('history.replays.openFileUnsupported'))
-    return
-  }
-  try {
-    const result = await window.electronAPI.openFile(replay.filePath)
-    if (result.success) {
-      message.success(t('history.replays.played'))
-    } else {
-      message.error(result.error || t('history.replays.openFileFailed'))
-    }
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('history.replays.openFileFailed'))
-  }
-}
-
-const handleLocateReplay = async (replay: ReplayRecord) => {
-  if (!replay.filePath) {
-    message.error(t('history.replays.openDirectoryFailed'))
-    return
-  }
-  if (!window.electronAPI?.showItemInFolder) {
-    message.error(t('history.replays.openDirectoryUnsupported'))
-    return
-  }
-  try {
-    await window.electronAPI.showItemInFolder(replay.filePath)
-    message.success(t('history.replays.directoryOpened'))
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('history.replays.openDirectoryFailed'))
-  }
 }
 </script>
 
