@@ -1556,21 +1556,19 @@ export default {
       "When enabled, MAS switches to the login account matching the last four digits of the user's phone number after the game launches successfully and before running ok-ww; users without an account ID filled in are not switched",
     oknteAccountSwitchHint:
       'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running OK-NTE; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
-    gameLauncher: 'Game launcher',
     launchType: 'Game launch method',
     launchTypeHint:
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
-    oknteLaunchViaLauncher: 'Launch via launcher UI',
+    oknteLaunchDirectly: 'Silent launch',
+    oknteLaunchViaLauncher: 'Launcher UI launch',
     oknteLaunchModeNeedsLaunchBeforeTask:
       'Only available when "Launch the game before the task" is on',
-    oknteLaunchTypeSummary:
-      'Direct launch: the game starts quietly in the background and no launcher window shows up. Launcher UI: the launcher opens and MAS clicks "Start Game" for you',
-    oknteLaunchTypeHint:
-      'Direct launch: MAS starts the game silently with the /autoplay argument, and the launcher window never appears (recommended, default). Launcher UI: MAS opens the launcher and clicks "Start Game" for you — that click is simulated mouse input, so just keep the launcher window visible and unobstructed',
-    oknteLauncherClickNotice:
-      '"Launcher UI": MAS opens the launcher and clicks "Start Game" for you. Keep other windows from covering the launcher while a task runs, or the click can miss; if the game needs an update, it stays there longer',
+    oknteLaunchBubbleAutoplay:
+      'Silent launch: the launcher runs in the background and wakes the game by itself, which is more resistant to foreground interference. But pop-ups (e.g. MSI Afterburner) cannot be handled, and a pending game update may also fail to launch — use "Launcher UI launch" in those cases.',
+    oknteLaunchBubbleLauncherUi:
+      'Launcher UI launch: MAS opens the launcher and clicks "Start Game" the way a user would, so its pop-ups and game updates are handled along the way. Avoid other windows covering the launcher while a task runs, or it may fail.',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
@@ -1592,6 +1590,14 @@ export default {
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
     gameUpdateTimeoutMinutes: 'Game update timeout (minutes)',
+    updateTakeover: 'Update takeover',
+    updateTakeoverTip:
+      'When enabled, MAS takes over MAA software and resource updates: it checks versions and pre-downloads full packages to the shared cache at task start, then registers the pending update at round end for the official MAA installer to apply; when off, MAA handles updates on its own.',
+    updateTakeoverSwitch: 'Take over updates',
+    updateTakeoverCdk: 'MirrorChyan CDK',
+    updateTakeoverCdkTip:
+      'The MirrorChyan CDK for this script; leave empty to fall back to the global key in MAS settings. With the switch on but no valid key, no update runs.',
+    updateTakeoverCdkPlaceholder: 'Empty falls back to global key',
     maximumGameLaunchWait: 'Maximum game launch wait',
     gameRootDirectory: 'Game root directory',
     masterSwitchGameManagement:
@@ -1885,6 +1891,8 @@ export default {
     maafwImportingCopy: 'Importing project...',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
+    maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
+    maafwUnselectableTaskSeparator: ', ',
     m9aFlavorScriptTitle: 'Edit M9A managed script',
     m9aFlavorSourceDirectory: 'M9A program directory',
     m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',
@@ -3428,7 +3436,6 @@ export default {
       loading: 'Loading events…',
       noActivity: 'No events running',
       unavailable: 'Event data is unavailable',
-      endedNote: 'More events are coming soon',
       allHidden: 'Every game in the carousel is off. Turn one back on under Customize layout.',
     },
     activityNotes: {
@@ -4771,7 +4778,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used for MAS updates. Selecting MirrorChyan and setting a CDK also enables automatic MAA resource updates, which use the daily download quota. This MAS instance makes at most one resource-package request attempt per local calendar day, including failed or canceled attempts. Set a separate CDK for MaaFW projects on the script edit page.',
+        'Used only for updating MAS itself; MAA and MaaFW script project updates take their own CDK on their script edit pages',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',

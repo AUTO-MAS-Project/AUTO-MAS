@@ -189,11 +189,6 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
-  /**
-   * 主封面加载失败时依次尝试的备用图（星塔旅人的活动大图时有时无：
-   * StellaBase 的 `background` 常 404，官网横幅与站点小图依次补位）。
-   */
-  coverCandidates?: string[]
   /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
   version?: string
   /** 版本名或当期活动名 */
@@ -205,11 +200,4 @@ export interface ActivityBannerItem {
   loading: boolean
   available: boolean
   stale: boolean
-  /**
-   * 这张卡展示的是「刚结束的那场」而不是进行中的活动。
-   *
-   * 与碧蓝档案同口径：没有进行中的活动时退回最近结束的一场，倒计时自然显示
-   * 「[活动已结束]」，再补一句「后续活动即将开始」。
-   */
-  ended?: boolean
 }

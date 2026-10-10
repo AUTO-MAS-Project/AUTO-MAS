@@ -873,7 +873,7 @@ export default {
     queueImportNoUsers: '没有可导入的用户',
     queueImportPasswordCount: '{count} 项密码需重填',
     queueTaskCount: '{count} 个任务',
-    queueInvalidCount: '{count} 个已失效',
+    queueInvalidCount: '{count} 个不可用',
     queueTemplate: '模板',
     queueTemplateMine: '我的模板',
     queueTemplatePresets: '项目预设',
@@ -1488,20 +1488,18 @@ export default {
       '开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换',
     oknteAccountSwitchHint:
       '开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用',
-    gameLauncher: '游戏启动器',
     launchType: '游戏启动方式',
     launchTypeHint:
       '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
     launchViaLauncher: '启动器启动',
     launchDirectly: '直接启动',
-    oknteLaunchViaLauncher: '使用启动器启动',
+    oknteLaunchDirectly: '静默启动',
+    oknteLaunchViaLauncher: '启动器界面启动',
     oknteLaunchModeNeedsLaunchBeforeTask: '仅在「任务前启动游戏」开启时可用',
-    oknteLaunchTypeSummary:
-      '直接启动：游戏在后台静默拉起，不弹启动器界面；使用启动器启动：打开启动器界面，由 MAS 替你点「开始游戏」',
-    oknteLaunchTypeHint:
-      '直接启动：MAS 带 /autoplay 参数静默拉起游戏，启动器界面不会出现（推荐，默认）。使用启动器启动：MAS 打开启动器界面，再替你点「开始游戏」——这一步是模拟鼠标点击，你只需要让启动器窗口保持可见、别被挡住',
-    oknteLauncherClickNotice:
-      '「使用启动器启动」：MAS 会打开启动器界面，并替你点「开始游戏」。任务运行期间别让其他窗口挡住启动器，挡住了点击可能落空；游戏要更新的话，停留时间会更长',
+    oknteLaunchBubbleAutoplay:
+      '静默启动：启动器后台运行并自动唤醒游戏，更抗前台干扰。但提示弹窗（如微星小飞机）无法处理，有更新时也可能启动失败；遇到这两种情况请改用「启动器界面启动」。',
+    oknteLaunchBubbleLauncherUi:
+      '启动器界面启动：模拟用户打开启动器界面，并点击「开始游戏」，弹窗及游戏更新都能顺带处理。运行时请避免其他窗口挡住启动器，否则可能会失败。',
     autoUpdateNeedsLauncher:
       '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
@@ -1520,6 +1518,14 @@ export default {
     whichPlatformGameRuns: '游戏在哪个平台上运行',
     gameUpdate: '游戏更新',
     gameUpdateTimeoutMinutes: '游戏更新超时限制（分钟）',
+    updateTakeover: '更新接管',
+    updateTakeoverTip:
+      '开启后，MAS 接管 MAA 本体与资源更新：任务开始时检查版本并预下载完整包到共享缓存，任务收尾登记待更新并由 MAA 官方更新器安装；关闭则完全由 MAA 自行处理。',
+    updateTakeoverSwitch: '接管更新',
+    updateTakeoverCdk: 'Mirror 酱 CDK',
+    updateTakeoverCdkTip:
+      '本脚本使用的 Mirror 酱 CDK；留空回退到 MAS 全局配置里的 Key。开启接管但无有效 Key 时不执行任何更新。',
+    updateTakeoverCdkPlaceholder: '留空回退全局 Key',
     maximumGameLaunchWait: '游戏最大启动等待时间',
     gameRootDirectory: '游戏根目录',
     masterSwitchGameManagement:
@@ -1793,6 +1799,8 @@ export default {
     maafwImportingCopy: '正在导入项目...',
     maafwAccountRecordTooltip:
       '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
+    maafwUnselectableTaskNotice: '「{tasks}」{reason}，MAS 运行时会跳过',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: '编辑 M9A 托管',
     m9aFlavorSourceDirectory: 'M9A 程序目录',
     m9aFlavorSourceHint: '选择包含 interface.json 的 M9A 目录',
@@ -3164,6 +3172,8 @@ export default {
     selectUserDesc: '从左侧日期列表中选择一个账号查看详细信息',
     recordList: '记录条目',
     recordCount: '{count} 条记录',
+    successCount: '成功 {count} 次',
+    failureCount: '失败 {count} 次',
     timeRule: '游戏日从 04:00 开始计算（04:00 – 次日 04:00）',
     done: '完成',
     failed: '失败',
@@ -3327,7 +3337,6 @@ export default {
       loading: '正在获取活动信息…',
       noActivity: '暂无进行中的活动',
       unavailable: '活动数据暂不可用',
-      endedNote: '后续活动即将开始',
       allHidden: '轮播里的游戏都关掉了，可在「编辑布局」里重新打开',
     },
     activityNotes: {
@@ -4701,8 +4710,7 @@ export default {
       cdkSite: 'Mirror 酱官网',
       cdkGet: '获取',
       cdkPlaceholder: '使用Mirror源时请输入Mirror 酱CDK',
-      cdkHint:
-        '用于 MAS 更新；选择 Mirror 酱源并填写 CDK 后，也会自动更新 MAA 资源并消耗每日下载额度。本 MAS 按本地日期每天最多尝试获取一次资源包，失败或取消也计入。MaaFW 项目请在托管编辑页单独填写 CDK。',
+      cdkHint: '仅用于 MAS 自身的更新；MAA 与 MaaFW 项目的更新请在各自脚本编辑页单独填写 CDK',
       cdkGetLink: '获取 Mirror 酱 CDK',
       linkSection: '项目链接',
       site: '软件官网',

@@ -62,6 +62,10 @@ export interface MAAScriptConfig {
     Id: string
     Index: string
   }
+  Update: {
+    TakeoverEnabled: boolean
+    MirrorChyanCDK: string
+  }
   SubConfigsInfo: {
     UserData: {
       instances: unknown[]
@@ -471,6 +475,11 @@ export interface MaaFWTaskInfo {
   defaultCheck: boolean
   /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
   repeatCount?: number
+  /**
+   * 特调声明不可选时的原因（后端 `unselectable_entries`）：不进「添加任务」与预设模板，
+   * 已在队列里的照常显示，运行时跳过。可选任务为空
+   */
+  unselectableReason?: string | null
 }
 
 export interface MaaFWOptionCaseInfo {

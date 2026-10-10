@@ -48,7 +48,11 @@ from app.utils.io import (
     swap_in_dir,
 )
 
-from .AutoProxy import AutoProxyTask
+from .AutoProxy import (
+    AutoProxyTask,
+    depot_cache_snapshot_dir,
+    restore_depot_cache,
+)
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
@@ -57,6 +61,7 @@ from .tools.resource_update import (
     get_resource_write_lock,
     prepare_queue_resources,
 )
+from .tools.update_credentials import resolve_takeover_credentials
 
 logger = get_logger("MAA 调度器")
 
@@ -171,15 +176,18 @@ class MaaManager(TaskExecuteBase):
 
         # MAA 资源按需更新：仅自动代理任务触发，配置会话（含只读预览）不该
         # 被下载阻塞；必须放在锁定配置之前——lock() 之后本安装会被资源更新
-        # 的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例扫描，自带
-        # 机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；阶段进度写进
-        # 本脚本项的日志字段，调度台运行期即可见（与 AutoProxy 的状态行同通路）。
+        # 的占用过滤跳过，就更新不到它自己了。内部只扫描开启「更新接管」的
+        # 安装，自带机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；
+        # 阶段进度写进本脚本项的日志字段，调度台运行期即可见（与 AutoProxy
+        # 的状态行同通路）。
         if self.task_info.mode == "AutoProxy":
 
             async def _report_progress(line: str) -> None:
                 self.script_info.log = line
 
-            await prepare_queue_resources(progress=_report_progress)
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            _, cdk = resolve_takeover_credentials(script_config)
+            await prepare_queue_resources(progress=_report_progress, cdk=cdk)
 
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -218,6 +226,14 @@ class MaaManager(TaskExecuteBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
+
+        # overlay 层覆写的库存缓存同样先还原：存底还在说明上次运行（崩溃、强杀）
+        # 没走完结束还原，不还原就会把上一账号的库存固化成这一次的「原始现场」。
+        depot_snapshot = depot_cache_snapshot_dir(self.script_info.script_id)
+        if depot_snapshot.is_dir():
+            logger.info("检测到上次中断的 MAA 库存缓存存底, 先还原安装目录")
+            restore_depot_cache(self.maa_set_path.parent, depot_snapshot)
+
         if commit_native_config_snapshot(
             self.temp_path,
             self.maa_set_path,
