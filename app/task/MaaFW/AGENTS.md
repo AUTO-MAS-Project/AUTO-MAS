@@ -223,7 +223,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
-  克隆时才预约源，源被占用就拒绝；候选列表的 `busy` 也只在这种情况下为真）；`Info.Path` 与
+  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与
   `Embedded.*`（开发者模式开关除外）沿用源（两者必须成对继承），`Update.Channel` 也沿用源——
   复用的就是源那一版，渠道不跟着走的话第一次运行前的组同步会把它切到默认渠道的版本；类型随项目。
   「复制脚本」（`Config.add_script`）复用同一个函数。

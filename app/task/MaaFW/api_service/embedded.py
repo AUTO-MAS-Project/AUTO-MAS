@@ -72,7 +72,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     is_source_form,
     read_interface_version,
     read_view_marker,
-    resolve_view_payload,
 )
 from app.task.MaaFW.tools.embedded.flavor import (
     decide_project_config_class,
@@ -736,9 +735,7 @@ async def list_embedded_sources(excluded_script_id: str | None) -> MaaFWApiReply
                     type=type_name,
                     projectName=project_name,
                     version=version,
-                    # 从载荷复用不读源视图，源在运行也照样能建；只有还没采纳的老副本要按目录
-                    # 克隆、得拿到源的预约，那时源在运行才真的复用不了
-                    busy=locked and resolve_view_payload(script_id) is None,
+                    busy=locked,
                 )
             )
         return items
