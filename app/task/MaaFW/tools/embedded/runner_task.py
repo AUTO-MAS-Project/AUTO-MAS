@@ -16,7 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, AsyncIterator, Callable, Mapping
 
 import psutil
 
@@ -173,8 +173,12 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 # worker 输出转发每处理这么多行就让出一次事件循环。取 50 是因为原生诊断
 # 的洪峰约每秒几十行，这个粒度下让出频率约每秒一次，开销可忽略。
 _RELAY_YIELD_EVERY_LINES = 50
+# worker stdout / stderr 单行上限（字节）。更长的一行丢掉、记一句，读取继续。
+_WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+# Game.WaitTime 填 0 时等游戏窗口出现的上限（秒），与 WaitTime 的默认值相同
+_WINDOW_READY_FALLBACK_SECONDS = 60
 # 脚本页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
     "该项目的这个 Win32 控制器没有声明窗口匹配规则（interface 里的 class_regex / "
@@ -1840,6 +1844,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 env=worker_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
+                # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
+                limit=_WORKER_STREAM_LINE_LIMIT,
             )
             worker_id = service.register_worker(process)
         except BaseException:
@@ -1890,7 +1897,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if process.stdout is None:
                 return
             processed = 0
-            async for raw_line in process.stdout:
+            async for raw_line in _iter_stream_lines(
+                process.stdout,
+                lambda: write_framework_log("worker-stdout", _STREAM_OVERRUN_NOTE),
+            ):
                 # StreamReader 缓冲里有数据时 `async for` 不会挂起，会一路取到
                 # 缓冲耗尽为止。MaaFramework 的原生诊断动辄每秒几十行、单次运行
                 # 几千行，这个循环于是能连续独占事件循环数十秒——真机上表现为
@@ -1943,7 +1953,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if process.stderr is None:
                 return
             processed = 0
-            async for raw_line in process.stderr:
+            async for raw_line in _iter_stream_lines(
+                process.stderr,
+                lambda: write_framework_log("worker-stderr", _STREAM_OVERRUN_NOTE),
+            ):
                 processed += 1
                 if processed % _RELAY_YIELD_EVERY_LINES == 0:
                     await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
@@ -3338,12 +3351,37 @@ def _clean_framework_output(message: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", str(message or ""))
 
 
+_STREAM_OVERRUN_NOTE = f"（worker 输出有一行超过 {_WORKER_STREAM_LINE_LIMIT // (1024 * 1024)} MB，已丢弃该行）"
+
+
+async def _iter_stream_lines(
+    stream: asyncio.StreamReader, on_overrun: Callable[[], None]
+) -> AsyncIterator[bytes]:
+    """逐行读子进程输出；单行超过 StreamReader 上限时丢掉这一行、记一句，接着读。
+
+    ``async for line in stream`` 碰到超长行直接抛 ValueError，读取任务随之结束，之后没人
+    读管道，worker 写满管道就挂住。StreamReader 抛错前已经把那一行（或缓冲）丢掉，
+    接着读是安全的。
+    """
+
+    while True:
+        try:
+            line = await stream.readline()
+        except ValueError:
+            on_overrun()
+            continue
+        if not line:
+            return
+        yield line
+
+
 def _framework_ui_message(message: str) -> str:
     """Bound worker diagnostics copied to the user-facing task log.
 
-    Complete native output is already retained in ``*.maafw.log``. A malformed
-    task/encoding error can otherwise contain megabytes of JSON or a parser
-    trace and make the normal task page unusable.
+    Complete worker output (runner events, worker stdout/stderr) is already
+    retained in ``*.worker.log``. A malformed task/encoding error can otherwise
+    contain megabytes of JSON or a parser trace and make the normal task page
+    unusable.
     """
 
     cleaned = _clean_framework_output(message).strip()
