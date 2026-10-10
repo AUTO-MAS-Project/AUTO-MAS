@@ -1,8 +1,9 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWControlConfig } from '@/composables/useMaaFWScriptConfig'
 import {
   prepareMaaFWFlavorPage,
@@ -97,6 +98,15 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   const env = useMaaFWEnvPrepare(scriptId, maafwConfig, channel)
   const { envPreparedPath, runAgentEnvPrepare } = env
 
+  // 脚本在跑（配置锁定）：自动准备运行环境推迟到跑完。解锁时已经读到 interface、
+  // 环境还没准备过，就按读 interface 时那样补一次
+  const { configLocked } = useScriptConfigLock(scriptId)
+  watch(configLocked, locked => {
+    if (locked || !previewData.value) return
+    if (env.envReady.value || env.envPreparing.value || env.envFailed.value) return
+    void runAgentEnvPrepare()
+  })
+
   // 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转
   let pageUnmounted = false
   onBeforeUnmount(() => {
@@ -166,7 +176,9 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       await syncProjectName()
       // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
       // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
-      void runAgentEnvPrepare(path, options.forceEnv === true)
+      // 脚本正在跑时不准备：运行占着项目目录，后端一定回 409，面板会平白报一次失败；
+      // 跑完后由下面的 watch 补上。
+      if (!configLocked.value) void runAgentEnvPrepare(path, options.forceEnv === true)
     } catch (error) {
       previewData.value = null
       message.error(error instanceof Error ? error.message : String(error))
