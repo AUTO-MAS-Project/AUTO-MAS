@@ -305,7 +305,6 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
     const config = getRealConfig()
     const observer = createOperationObserver(page, config)
     let taskId: string | undefined
-    let startAttempted = false
     let openedByTest = false
     let finalStatus = 'not-started'
     let taskAndEmulatorCleanupStatus = 'ok'
@@ -422,29 +421,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       )
       expect(Array.isArray(beforeStart.tasks) && beforeStart.tasks.length === 0).toBe(true)
 
-      await page.route('**/api/dispatch/start', async route => {
-        let requestBody: unknown
-        try {
-          requestBody = route.request().postDataJSON()
-        } catch {
-          requestBody = undefined
-        }
-        const valid = !startAttempted && isAllowedStart(requestBody, config)
-        if (!valid) {
-          await route.fulfill({ status: 409, json: { code: 409, status: 'error' } })
-          return
-        }
-        startAttempted = true
-        try {
-          const response = await route.fetch({ timeout: 30_000, maxRedirects: 0 })
-          const body: unknown = await response.json()
-          // 先记下任务，后续 UI 或断言失败仍能中止本次真实运行。
-          if (isRecord(body)) taskId = readString(body.taskId)
-          await route.fulfill({ response })
-        } catch {
-          await route.fulfill({ status: 502, json: { code: 502, status: 'error' } })
-        }
-      })
+      // 监听启动请求以记录 taskId，但不拦截（让后端处理幂等性）
       const startResponsePromise = page
         .waitForResponse(
           response =>
@@ -453,10 +430,29 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
           { timeout: 45_000 }
         )
         .catch(() => undefined)
+
       await page.locator('.task-control .control-row .ant-btn-primary').click()
       stage = 'dispatch'
       const startResponse = await startResponsePromise
       if (!startResponse) throw new Error('真实调度启动请求未完成')
+
+      // 验证启动请求参数是否符合预期
+      let requestBody: unknown
+      try {
+        requestBody = startResponse.request().postDataJSON()
+      } catch {
+        throw new Error('无法解析启动请求体')
+      }
+      if (!isAllowedStart(requestBody, config)) {
+        throw new Error(
+          `启动请求参数不匹配预期配置: ${JSON.stringify(requestBody)}`
+        )
+      }
+
+      // 提取 taskId
+      const startBody = await readBody(startResponse)
+      if (isRecord(startBody)) taskId = readString(startBody.taskId)
+      if (!taskId) throw new Error('启动响应缺少 taskId')
       let startBody: JsonObject | undefined
       try {
         startBody = await readBody(startResponse)
@@ -587,7 +583,8 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         path: summaryPath,
         contentType: 'application/json',
       })
-      expect.soft(taskAndEmulatorCleanupStatus, '真实 E2E 清理任务或模拟器失败').toBe('ok')
+      // 清理失败应硬失败：遗留运行中的任务或模拟器会影响后续测试
+      expect(taskAndEmulatorCleanupStatus, '真实 E2E 清理任务或模拟器失败').toBe('ok')
     }
   })
 })

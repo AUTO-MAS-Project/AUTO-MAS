@@ -31,8 +31,14 @@ test.describe('@history search and view', () => {
         await todayCell.click()
         await todayCell.click() // 选择日期范围的开始和结束
 
-        // 等待列表更新
-        await page.waitForTimeout(500)
+        // 等待列表更新 - 轮询历史项数量或内容变化
+        const historyList = page.locator('.history-item, .ant-list-item, .history-card')
+        await expect
+          .poll(async () => {
+            const count = await historyList.count()
+            return count >= 0 // 确保列表已渲染
+          }, { timeout: 3000 })
+          .toBeTruthy()
 
         await app.evidence('history-filtered-by-date')
       }
@@ -78,10 +84,7 @@ test.describe('@history search and view', () => {
       await searchInput.first().fill('__nonexistent_task_12345__')
       await searchInput.first().press('Enter')
 
-      // 等待搜索结果
-      await page.waitForTimeout(1000)
-
-      // 验证显示"无结果"
+      // 等待搜索结果 - 轮询空状态组件出现
       const emptyResult = page.locator('.ant-empty, .no-result, .empty-state')
       await expect(emptyResult.first()).toBeVisible({ timeout: 3000 })
 

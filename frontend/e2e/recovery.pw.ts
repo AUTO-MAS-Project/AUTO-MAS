@@ -28,15 +28,19 @@ test.describe('@recovery websocket resilience', () => {
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
     // 验证 WebSocket 已连接
-    let wsConnected = false
+    const sockets: WebSocket[] = []
     page.on('websocket', ws => {
       if (ws.url().includes('/api/core/ws')) {
-        wsConnected = true
+        sockets.push(ws)
       }
     })
 
-    await page.waitForTimeout(1000)
-    expect(wsConnected).toBeTruthy()
+    // 轮询等待 WebSocket 连接
+    await expect
+      .poll(async () => sockets.length > 0 && !sockets[sockets.length - 1].isClosed(), {
+        timeout: 5000
+      })
+      .toBe(true)
 
     await app.evidence('recovery-before-reload')
 
@@ -44,19 +48,12 @@ test.describe('@recovery websocket resilience', () => {
     await page.reload()
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
-    // 验证 WebSocket 重新连接
-    let wsReconnected = false
-    const wsPromise = new Promise<void>(resolve => {
-      page.on('websocket', ws => {
-        if (ws.url().includes('/api/core/ws')) {
-          wsReconnected = true
-          resolve()
-        }
+    // 轮询等待 WebSocket 重新连接
+    await expect
+      .poll(async () => sockets.length > 1 && !sockets[sockets.length - 1].isClosed(), {
+        timeout: 5000
       })
-    })
-
-    await Promise.race([wsPromise, page.waitForTimeout(5000)])
-    expect(wsReconnected).toBeTruthy()
+      .toBe(true)
 
     await app.evidence('recovery-after-reload')
   })
@@ -71,12 +68,12 @@ test.describe('@recovery websocket resilience', () => {
       }
     })
 
-    // 等待初始连接
-    await page.waitForTimeout(2000)
-    expect(sockets.length).toBeGreaterThan(0)
-
-    const initialSocket = sockets[sockets.length - 1]
-    expect(initialSocket.isClosed()).toBe(false)
+    // 轮询等待初始连接
+    await expect
+      .poll(async () => sockets.length > 0 && !sockets[sockets.length - 1].isClosed(), {
+        timeout: 5000
+      })
+      .toBe(true)
 
     await app.evidence('recovery-ws-connected')
 
@@ -84,13 +81,12 @@ test.describe('@recovery websocket resilience', () => {
     await page.reload()
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
-    // 等待重连
-    await page.waitForTimeout(3000)
-
-    // 验证有新的 WebSocket 连接
-    expect(sockets.length).toBeGreaterThan(1)
-    const reconnectedSocket = sockets[sockets.length - 1]
-    expect(reconnectedSocket.isClosed()).toBe(false)
+    // 轮询等待重连
+    await expect
+      .poll(async () => sockets.length > 1 && !sockets[sockets.length - 1].isClosed(), {
+        timeout: 5000
+      })
+      .toBe(true)
 
     await app.evidence('recovery-ws-reconnected')
   })
@@ -118,12 +114,13 @@ test.describe('@recovery websocket resilience', () => {
     // 触发健康检查（通过刷新页面）
     await page.reload()
 
-    // 等待恢复
-    await page.waitForTimeout(5000)
-
-    // 验证页面最终恢复正常
-    const restored = await page.locator('#app').isVisible()
-    expect(restored).toBeTruthy()
+    // 轮询等待页面恢复 - 检查应用根节点可见
+    await expect
+      .poll(async () => {
+        const visible = await page.locator('#app').isVisible()
+        return visible && requestCount > 3
+      }, { timeout: 10000 })
+      .toBe(true)
 
     await app.evidence('recovery-backend-restart')
 
@@ -138,12 +135,25 @@ test.describe('@recovery websocket resilience', () => {
     const taskControls = page.locator('.task-control')
     const initialCount = await taskControls.count()
 
+    // 记录 WebSocket 连接
+    const sockets: WebSocket[] = []
+    page.on('websocket', ws => {
+      if (ws.url().includes('/api/core/ws')) {
+        sockets.push(ws)
+      }
+    })
+
     // 刷新页面触发重连
     await page.reload()
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
-    // 等待 WebSocket 重连
-    await page.waitForTimeout(3000)
+    // 轮询等待 WebSocket 重连
+    const initialSocketCount = sockets.length
+    await expect
+      .poll(async () => sockets.length > initialSocketCount && !sockets[sockets.length - 1].isClosed(), {
+        timeout: 5000
+      })
+      .toBe(true)
 
     // 验证任务控制台状态恢复
     const restoredCount = await taskControls.count()

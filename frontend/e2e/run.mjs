@@ -153,8 +153,15 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
     throw new Error('所选用户名称不匹配或用户未启用')
   }
   script.SubConfigsInfo.UserData = users
-  delete user.Notify
-  if (user.SubConfigsInfo) delete user.SubConfigsInfo.Notify_CustomWebhooks
+  // 移除所有通知配置，避免测试发送真实通知
+  for (const key of Object.keys(user)) {
+    if (key.includes('Notify')) delete user[key]
+  }
+  if (user.SubConfigsInfo) {
+    for (const key of Object.keys(user.SubConfigsInfo)) {
+      if (key.includes('Notify')) delete user.SubConfigsInfo[key]
+    }
+  }
 
   const targetConfig = path.join(dataRoot, 'config')
   await mkdir(targetConfig, { recursive: true })
@@ -165,8 +172,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
       emulatorId
     )
   }
+  // ponytail: 只序列化被选中的条目，避免重新序列化可能有几 MB 的完整配置文件
   for (const [name, value] of Object.entries(selectedConfig)) {
-    await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value))
+    await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value, null, 2))
   }
   const planSelection = planSelectionByScriptType[scriptType]
   const planId = planSelection ? user.Info?.[planSelection.field] : undefined
@@ -176,7 +184,7 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
       planId,
       planSelection.type
     )
-    await writeFile(path.join(targetConfig, 'PlanConfig.json'), JSON.stringify(plans))
+    await writeFile(path.join(targetConfig, 'PlanConfig.json'), JSON.stringify(plans, null, 2))
   }
 
   // 只复制 MAS 托管配置，不复制上次运行的 Temp 恢复事务、备份池或账号历史。
