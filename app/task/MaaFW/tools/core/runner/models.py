@@ -45,6 +45,9 @@ class MaaFWTaskRunPlan(BaseModel):
     # 特调声明的关键任务（如 M9A 的切换账号）：失败或超时就结束本轮、报这句，由宿主照常
     # 重试；None 是普通任务，失败后继续后面的任务。
     abortRoundMessage: str | None = None
+    # 特调声明的收尾任务（如 M9A 的关闭游戏）：失败、超时或原地打转都照常截图并写一行日志
+    # （接上这句说明），但不计入本轮失败、不触发重试；None 是普通任务。
+    nonFatalMessage: str | None = None
 
 
 class MaaFWSkippedTaskPlan(BaseModel):

@@ -187,45 +187,23 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchType') }}
-                    <a-tooltip :title="t('edit.oknteLaunchTypeHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-radio-group
-                  v-model:value="oknteConfig.Game.LaunchMode"
-                  size="small"
-                  button-style="solid"
-                  :disabled="launchModeDisabled"
-                  @change="handleLaunchModeChange"
-                >
-                  <a-radio-button value="Autoplay">
-                    {{ t('edit.launchDirectly') }}
-                  </a-radio-button>
-                  <a-radio-button value="LauncherUi">
-                    {{ t('edit.oknteLaunchViaLauncher') }}
-                  </a-radio-button>
-                </a-radio-group>
-                <span class="control-hint">
-                  {{ t('edit.oknteLaunchTypeSummary') }}
-                </span>
-                <span v-if="showLaunchModeHint" class="control-hint">
-                  {{ t('edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
-                </span>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameLauncher') }}
-                    <span class="label-hint">{{ t('edit.okntePickDirHint') }}</span>
-                  </span>
+                  <div class="launch-type-label">
+                    <span class="form-label">{{ t('edit.launchType') }}</span>
+                    <a-radio-group
+                      v-model:value="oknteConfig.Game.LaunchMode"
+                      size="small"
+                      button-style="solid"
+                      :disabled="launchModeDisabled"
+                      @change="handleLaunchModeChange"
+                    >
+                      <a-radio-button value="Autoplay">
+                        {{ t('edit.oknteLaunchDirectly') }}
+                      </a-radio-button>
+                      <a-radio-button value="LauncherUi">
+                        {{ t('edit.oknteLaunchViaLauncher') }}
+                      </a-radio-button>
+                    </a-radio-group>
+                  </div>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -248,6 +226,10 @@
                     {{ t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
+                <span class="control-hint">{{ t('edit.okntePickDirHint') }}</span>
+                <span v-if="showLaunchModeHint" class="control-hint">
+                  {{ t('edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
+                </span>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -293,13 +275,7 @@
             </a-col>
           </a-row>
 
-          <a-alert
-            v-if="oknteConfig.Game.LaunchMode === 'LauncherUi'"
-            class="launch-mode-alert"
-            type="info"
-            show-icon
-            :message="t('edit.oknteLauncherClickNotice')"
-          />
+          <a-alert class="launch-mode-bubble" type="info" show-icon :message="launchModeBubble" />
         </div>
 
         <div class="form-section">
@@ -518,6 +494,13 @@ const launchModeDisabled = computed(
 )
 const showLaunchModeHint = computed(
   () => oknteConfig.Game.Enabled && !oknteConfig.Game.LaunchBeforeTask
+)
+
+// 启动方式气泡：随所选方式切换，只讲这一种的利弊（替代原灰字介绍 + 底部蓝条）
+const launchModeBubble = computed(() =>
+  oknteConfig.Game.LaunchMode === 'LauncherUi'
+    ? t('edit.oknteLaunchBubbleLauncherUi')
+    : t('edit.oknteLaunchBubbleAutoplay')
 )
 
 // 已保存成功的启动方式：保存失败时回滚到它。radio-group 的 change 只在用户操作时触发，
@@ -821,12 +804,6 @@ onMounted(loadScript)
   font-weight: 600;
 }
 
-.label-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .control-hint {
   display: block;
   margin-top: 4px;
@@ -835,13 +812,16 @@ onMounted(loadScript)
   color: var(--ant-color-text-tertiary);
 }
 
-.launch-mode-alert {
-  margin-bottom: 24px;
+.launch-type-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
-.label-hint strong {
-  font-weight: 600;
-  color: var(--ant-color-text-secondary);
+.launch-mode-bubble {
+  margin-bottom: 24px;
 }
 
 .help-icon {

@@ -22,19 +22,27 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from app.models.schema import MaaFWGamePackageData, MaaFWInterfacePreviewData
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
     maafw_effective_root,
+    maafw_script_config,
 )
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
+)
+from app.task.MaaFW.tools.embedded.flavor import (
+    flavor_for_project,
+    resolve_flavor,
+    unselectable_entries,
 )
 from app.task.MaaFW.tools.embedded.game_package import (
     resolve_game_package,
@@ -88,7 +96,11 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
             root_path,
             interface,
         )
-        data = MaaFWInterfacePreviewData.model_validate(preview.model_dump(mode="json"))
+        payload = preview.model_dump(mode="json")
+        _mark_unselectable_tasks(
+            payload["tasks"], _preview_unselectable_entries(script_id, interface)
+        )
+        data = MaaFWInterfacePreviewData.model_validate(payload)
     except MaaFWInterfaceLoadError as exc:
         return MaaFWApiReply.error(400, str(exc))
     except Exception as exc:
@@ -101,6 +113,29 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
         message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
         data=data,
     )
+
+
+def _preview_unselectable_entries(
+    script_id: str | None, interface: MaaFWInterface
+) -> dict[str, str]:
+    """预览要标不可选的 entry → 原因：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
+
+    核心包的预览不认识特调，标记在这一层补上（契约见 ``tools/embedded/flavor.py``）。
+    """
+
+    if script_id:
+        try:
+            return unselectable_entries(resolve_flavor(maafw_script_config(script_id)))
+        except (KeyError, ValueError, TypeError):
+            return {}
+    return unselectable_entries(flavor_for_project(interface))
+
+
+def _mark_unselectable_tasks(
+    tasks: list[dict[str, Any]], entries: dict[str, str]
+) -> None:
+    for task in tasks:
+        task["unselectableReason"] = entries.get(str(task.get("entry") or ""))
 
 
 _MAAFW_IMAGE_SUFFIXES = {

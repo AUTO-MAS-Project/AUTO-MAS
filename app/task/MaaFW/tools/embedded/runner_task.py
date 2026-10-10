@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -34,6 +35,7 @@ from app.task.MaaFW.tools.core.controller_win32.service import (
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
     MaaFWInterface,
+    resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
@@ -79,7 +81,7 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .embedded_project import resolve_maafw_project_root
-from .flavor import resolve_flavor, resolve_game_update_hook
+from .flavor import resolve_flavor, resolve_game_update_hook, unselectable_entries
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
@@ -482,6 +484,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.maintenance_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
+        # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
+        # skip_on_retry_entries；剔了什么每次重试开头按当前计划的 skippedTasks 写一行
+        self._completed_this_run: list[str] = []
 
     async def check(self) -> str:
         proxy_times = (
@@ -650,6 +655,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
 
             await self._run_pretasks()
+            # 上一次尝试的失败摘要与是否重启过客户端：新一次另起日志后界面从头显示，
+            # 不在开头写一句，用户只看到「尝试次数: 2/3」，不知道为什么重来。
+            previous_failure: str | None = None
+            previous_restarted = False
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -663,8 +672,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 尝试次数: "
                     f"{index + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
+                if index > 0 and previous_failure:
+                    self._append_log(
+                        f"上一次（第 {index} 次）：{previous_failure}"
+                        + ("，已重启游戏/模拟器" if previous_restarted else "")
+                    )
 
                 try:
+                    if index > 0:
+                        self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
                     await self._ensure_desktop_game_started()
@@ -712,7 +728,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                     if unretryable:
                         break
-                    await self._restart_client_before_retry(index + 1)
+                    previous_failure = message
+                    previous_restarted = await self._restart_client_before_retry(
+                        index + 1
+                    )
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
@@ -765,12 +784,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             warning=True,
                         )
                         break
-                    await self._refresh_run_plan_after_period_update()
+                    await self._refresh_run_plan_after_period_update(
+                        result.completedTasks
+                    )
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
-                        self._append_log("MaaFW 剩余周期任务已完成，停止本轮重试")
+                        # 计划被重试跳过剔空的，不能说成「周期任务」
+                        self._append_log(
+                            "MaaFW 剩余任务都已完成，停止本轮重试"
+                            if _retry_skipped_tasks(self.run_plan)
+                            else "MaaFW 剩余周期任务已完成，停止本轮重试"
+                        )
                     else:
-                        await self._restart_client_before_retry(index + 1)
+                        previous_failure = message
+                        previous_restarted = await self._restart_client_before_retry(
+                            index + 1
+                        )
         finally:
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
@@ -934,6 +963,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
         script_hotkeys = _load_script_hotkeys(self.script_config.get("Game", "Hotkeys"))
         missing_skips: list[MaaFWSkippedTaskPlan] = []
+        unselectable_names: list[str] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
             # 用户配置本身不动，运行后的整表写回也就写不出明文。
@@ -974,6 +1004,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 selected_preset=effective_preset,
                 task_snapshot=task_snapshot or None,
             )
+            # 特调声明不可选的任务先剔：装饰钩子看到的就是剔完的队列（剔空了它不补首尾）
+            task_ids, task_options = _drop_unselectable_tasks(
+                interface_model,
+                task_ids,
+                task_options,
+                unselectable_entries(flavor),
+                send_log=send_log if send_log is not None else logger.info,
+                dropped_names=unselectable_names,
+            )
             task_ids, task_options = flavor.decorate_selection(
                 interface_model,
                 task_ids,
@@ -994,17 +1033,24 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
             )
-            plan = _mark_abort_round_tasks(plan, flavor)
+            plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(
                 _with_warnings(plan, stale_warnings), missing_skips
             )
         except Exception as exc:
             message = str(exc)
-            if missing_skips and NO_RUNNABLE_TASKS_MESSAGE in message:
+            if NO_RUNNABLE_TASKS_MESSAGE in message:
                 # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
-                # 别的报错（拆用户、找不到 controller……）与虚影无关，不附加
-                names = "、".join(dict.fromkeys(item.name for item in missing_skips))
-                message = f"{message}（interface 内已无：{names}）"
+                # 只剩不可选任务时同理（前面的「已跳过」行在用户日志里，报错里看不到）。
+                # 别的报错（拆用户、找不到 controller……）与它们无关，不附加
+                if missing_skips:
+                    names = "、".join(
+                        dict.fromkeys(item.name for item in missing_skips)
+                    )
+                    message = f"{message}（interface 内已无：{names}）"
+                if unselectable_names:
+                    names = "、".join(unselectable_names)
+                    message = f"{message}（已跳过不可选任务：{names}）"
             raise MaaFWRunPlanError(message) from exc
 
     def _select_run_selection(
@@ -2234,11 +2280,70 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             },
         )
 
-    async def _refresh_run_plan_after_period_update(self) -> None:
+    async def _refresh_run_plan_after_period_update(
+        self, completed_tasks: list[str]
+    ) -> None:
+        """重试前重建计划：从 ``base_run_plan`` 重新按周期过滤，再剔掉本次运行已完成的。
+
+        ``completed_tasks`` 是刚结束这次尝试的 ``completedTasks``（任务名，不是 entry）。
+        剔除必须跟在重建之后：重建会把上一次剔掉的任务放回来，所以按累计结果每次都重剔。
+        """
+
+        self._completed_this_run.extend(completed_tasks)
         if self.base_run_plan is not None:
-            self.run_plan = await asyncio.to_thread(
+            plan = await asyncio.to_thread(
                 self._filter_period_once_tasks,
                 self.base_run_plan,
+            )
+            self.run_plan = self._skip_tasks_completed_this_run(plan)
+
+    def _skip_tasks_completed_this_run(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
+        """剔掉特调声明的 ``skip_on_retry_entries`` 里、本次运行已完成过的任务。
+
+        按 entry 认任务、按任务名计份数：同一任务重复入队只完成了一份时只剔一份。
+        没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，每次重试开头
+        据此写一行（``_log_retry_skipped_tasks``）。
+        """
+
+        flavor = resolve_flavor(self.script_config)
+        entries = set(getattr(flavor, "skip_on_retry_entries", None) or ())
+        if not entries:
+            return plan
+        remaining = Counter(self._completed_this_run)
+        tasks = []
+        skipped: list[MaaFWSkippedTaskPlan] = []
+        for task in plan.tasks:
+            if task.entry in entries and remaining[task.name] > 0:
+                remaining[task.name] -= 1
+                skipped.append(
+                    MaaFWSkippedTaskPlan(
+                        name=task.name,
+                        label=task.label,
+                        entry=task.entry,
+                        reason=_RETRY_SKIP_REASON,
+                    )
+                )
+                continue
+            tasks.append(task)
+        if not skipped:
+            return plan
+        return plan.model_copy(
+            update={"tasks": tasks, "skippedTasks": [*plan.skippedTasks, *skipped]}
+        )
+
+    def _log_retry_skipped_tasks(self) -> None:
+        """重试开头写一行被重试跳过的任务。
+
+        不一次性消费：上一次尝试 worker 崩溃时计划原样沿用，这一行要照样写。
+        """
+
+        if self.run_plan is None:
+            return
+        skipped = _retry_skipped_tasks(self.run_plan)
+        if skipped:
+            self._append_log(
+                f"{_RETRY_SKIP_REASON}，不再补跑: "
+                + "、".join(_task_display_name(task) for task in skipped)
             )
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
@@ -2298,11 +2403,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
         await self.cur_user_config.set("Data", "LastProxyStatus", "运行中")
 
-    async def _close_emulator(self) -> None:
+    async def _close_emulator(self) -> bool:
+        """关闭由 MAS 启动的模拟器，返回是否关成（本来就没开过算关成）。"""
+
         if not self.opened_emulator:
-            return
+            return True
         try:
-            await close_emulator(self, log_failure=False)
+            return await close_emulator(self, log_failure=False)
         finally:
             self.opened_emulator = False
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
@@ -2604,23 +2711,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
 
-    async def _restart_client_before_retry(self, attempt: int) -> None:
+    async def _restart_client_before_retry(self, attempt: int) -> bool:
         """一轮失败后把 MAS 自己拉起的游戏/模拟器关掉，让下一轮从启动重新来。
 
         和 MAA 专项的重试一个口径：出了问题就整个重来。以前重试只是重启 MaaFW 框架
         再接回同一个窗口——超时那种卡在某一屏的情况（弹窗关不掉、按钮点不动），
         第二、三轮 3 秒内就撞回同一屏，白等两倍时限。
         游戏/模拟器不是 MAS 起的（AttachOnly、发现已在运行）时照旧不碰；
-        这是最后一轮时也不在这里关，收尾统一关。
+        这是最后一轮时也不在这里关，收尾统一关。返回这次是否全部关成：
+        该关的有一个没关成就是 False，下一轮日志开头不写「已重启」。
         """
 
         if attempt >= self.script_config.get("Run", "RunTimesLimit"):
-            return
+            return False
         if not self.opened_game and not self.opened_emulator:
-            return
+            return False
         self._append_log("本轮失败，关闭由 MAS 启动的游戏/模拟器，下一轮重新启动")
-        await self._close_emulator()
-        await self._close_game()
+        emulator_closed = await self._close_emulator()
+        game_closed = await self._close_game()
+        return emulator_closed and game_closed
 
     def _start_attempt_log(self) -> None:
         """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。
@@ -2733,8 +2842,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             f"{len(result.completedTasks)}/{total}{stopped_at}）"
         )
 
-    async def _close_game(self) -> None:
-        """关闭由 MAS 启动的游戏。
+    async def _close_game(self) -> bool:
+        """关闭由 MAS 启动的游戏，返回是否关成（本来就没开过算关成）。
 
         只看 opened_game：由 MAS 启动的一律关，其他方式启动（AttachOnly、或
         DirectExe 下发现游戏已在运行而没重复启动）的一律不碰，没有开关。
@@ -2742,12 +2851,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if not self.opened_game:
             await self._restore_game_resolution_override()
-            return
+            return True
 
         try:
             await self.game_process_manager.kill()
+            return True
         except Exception as exc:
             logger.warning(f"MaaFW 清理时关闭游戏失败: {exc}")
+            return False
         finally:
             self.opened_game = False
             self.game_window_ready_at = None
@@ -3640,6 +3751,64 @@ MISSING_TASK_NOTICE_PREFIX = (
 )
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
+#: 特调声明的 skip_on_retry_entries 在重试时被剔掉的原因（进 skippedTasks 与尝试日志）。
+_RETRY_SKIP_REASON = "前面的尝试已完成"
+
+
+def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
+    return [task for task in plan.skippedTasks if task.reason == _RETRY_SKIP_REASON]
+
+
+def _drop_unselectable_tasks(
+    interface_model: MaaFWInterface,
+    task_ids: list[str],
+    task_options: dict[str, Any],
+    entries: dict[str, str],
+    *,
+    send_log: Callable[[str], None],
+    dropped_names: list[str] | None = None,
+) -> tuple[list[str], dict[str, Any]]:
+    """剔掉特调声明不可选的任务（``unselectable_entries``：entry → 原因），连同它们的选项。
+
+    日志按原因合并成一行（同名任务只列一次，名字顺序按队列），没声明时原样返回。
+    ``dropped_names`` 非空时把被剔任务的显示名（去重、按队列）追加进去，供空队列报错带上原因。
+    """
+
+    if not entries:
+        return task_ids, task_options
+    task_by_name = {task.name: task for task in interface_model.task}
+
+    def task_of(task_id: str) -> Any:
+        return task_by_name.get(resolve_task_instance_name(str(task_id), task_by_name))
+
+    def entry_of(task_id: str) -> str:
+        task = task_of(task_id)
+        return str(task.entry or "") if task is not None else ""
+
+    kept: list[str] = []
+    # 原因 → 被剔任务显示名（dict 保序：原因按首次出现，名字按队列，同名只列一次）
+    by_reason: dict[str, dict[str, None]] = {}
+    dropped: list[str] = []
+    for task_id in task_ids:
+        entry = entry_of(task_id)
+        if entry not in entries:
+            kept.append(task_id)
+            continue
+        name = _task_display_name(task_of(task_id))
+        by_reason.setdefault(entries[entry], {})[name] = None
+        dropped.append(name)
+    for reason, names in by_reason.items():
+        send_log("已跳过" + "".join(f"「{name}」" for name in names) + f"：{reason}")
+    if dropped_names is not None:
+        dropped_names.extend(dict.fromkeys(dropped))
+    if len(kept) == len(task_ids):
+        return task_ids, task_options
+    options = {
+        key: value
+        for key, value in task_options.items()
+        if entry_of(key) not in entries
+    }
+    return kept, options
 
 
 def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
@@ -3653,6 +3822,25 @@ def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
         return plan
     tasks = [
         task.model_copy(update={"abortRoundMessage": entries[task.entry]})
+        if task.entry in entries
+        else task
+        for task in plan.tasks
+    ]
+    return plan.model_copy(update={"tasks": tasks})
+
+
+def _mark_nonfatal_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
+    """把特调声明的收尾任务（``nonfatal_entries``：entry → 失败时接在日志后的说明）标到计划上。
+
+    runner 据此在这些任务失败、超时或原地打转时只截图记日志、不计入本轮失败，见
+    ``MaaFWTaskRunPlan.nonFatalMessage``。
+    """
+
+    entries: dict[str, str] = getattr(flavor, "nonfatal_entries", None) or {}
+    if not entries:
+        return plan
+    tasks = [
+        task.model_copy(update={"nonFatalMessage": entries[task.entry]})
         if task.entry in entries
         else task
         for task in plan.tasks

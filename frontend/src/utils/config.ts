@@ -28,6 +28,7 @@ export interface FrontendConfig {
 
   // 首页布局
   homeLayout?: HomeLayoutConfig
+  homeBlueArchiveServer?: 'cn' | 'jp' | 'global'
 
   // 主页卫星样式；未设置时是经典
   homeSatelliteStyle?: HomeSatelliteStyle

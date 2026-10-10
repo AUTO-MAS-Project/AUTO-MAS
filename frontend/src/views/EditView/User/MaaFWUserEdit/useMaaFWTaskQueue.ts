@@ -6,6 +6,7 @@ import {
 } from '../maafwPresetQueue'
 import { maafwMissingTaskName } from '../maafwTaskChanges'
 import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
+import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
 import {
   buildMaaFWQueueReplacement,
   countMaaFWQueueReplacementImports,
@@ -100,8 +101,11 @@ export function useMaaFWTaskQueue({
     (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
   )
   // 已在队列里的任务仍然留在候选中：同一个任务可以再加一份，各自带独立的选项。
+  // 受管任务与特调声明不可选的任务不进候选（预设模板与配置导入也按这张表判可用）。
   const availableTasks = computed(() =>
-    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value)
+    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value).filter(
+      task => !isUnselectableMaaFWTask(task)
+    )
   )
   const availableTaskByName = computed(
     () => new Map(availableTasks.value.map(task => [task.name, task] as const))
@@ -118,10 +122,14 @@ export function useMaaFWTaskQueue({
       passwordFields: passwordFields.value,
       displayName: task => task.label || task.name,
     })
-  /** 「存为模板」要存的项：当前队列里去掉虚影与受管任务 */
+  /** 「存为模板」要存的项：当前队列里去掉虚影、受管任务与不可选任务 */
   const templateDraftEntries = computed<MaaFWPresetQueueEntry[]>(() =>
     presentQueuedTasks.value
-      .filter(item => !isManagedMaaFWTask(item.task, managedTaskEntries.value))
+      .filter(
+        item =>
+          !isManagedMaaFWTask(item.task, managedTaskEntries.value) &&
+          !isUnselectableMaaFWTask(item.task)
+      )
       .map(item => ({ id: item.id, task: item.task }))
   )
   const presetTemplates = computed(() => {

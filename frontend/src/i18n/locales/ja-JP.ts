@@ -833,7 +833,7 @@ export default {
     queueImportNoUsers: 'インポートできるユーザーがいません',
     queueImportPasswordCount: 'パスワード {count} 件の再入力が必要',
     queueTaskCount: '{count} 件のタスク',
-    queueInvalidCount: '{count} 件が無効',
+    queueInvalidCount: '{count} 件が利用不可',
     queueTemplate: 'テンプレート',
     queueTemplateMine: 'マイテンプレート',
     queueTemplatePresets: 'プロジェクトのプリセット',
@@ -1442,20 +1442,18 @@ export default {
     pathGameExecutable: 'ゲームの実行ファイルのパス',
     gameLaunchArgumentsNot: 'ゲームの起動引数（OK-NTE の引数ではありません）',
     gameLaunchArgumentsNot2: 'ゲームの起動引数（ok-ww の引数ではありません）',
-    gameLauncher: 'ゲームランチャー',
     launchType: 'ゲームの起動方法',
     launchTypeHint:
       'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
     launchViaLauncher: 'ランチャー起動',
     launchDirectly: '直接起動',
+    oknteLaunchDirectly: 'サイレント起動',
     oknteLaunchViaLauncher: 'ランチャー画面から起動',
     oknteLaunchModeNeedsLaunchBeforeTask: '「タスク前にゲームを起動」がオンのときのみ利用できます',
-    oknteLaunchTypeSummary:
-      '直接起動：ゲームはバックグラウンドで静かに起動し、ランチャー画面は出ません。ランチャー起動：ランチャー画面が開き、MAS が「ゲームを開始」を代わりにクリックします',
-    oknteLaunchTypeHint:
-      '直接起動：MAS が /autoplay 引数を付けてゲームを静かに起動し、ランチャー画面は出ません（推奨・既定）。ランチャー起動：MAS がランチャー画面を開き、「ゲームを開始」を代わりにクリックします。このクリックはマウス入力のシミュレーションなので、ランチャー画面が見える状態（他のウィンドウで隠さない）を保ってください',
-    oknteLauncherClickNotice:
-      '「ランチャー起動」：MAS がランチャー画面を開き、「ゲームを開始」を代わりにクリックします。タスク実行中は他のウィンドウでランチャーを隠さないでください（隠れているとクリックが届かないことがあります）。更新が必要な場合はその分長くかかります',
+    oknteLaunchBubbleAutoplay:
+      'サイレント起動：ランチャーがバックグラウンドで動作し、ゲームを自動で起動します。前面の干渉に強い一方、通知ダイアログ（MSI Afterburner など）は処理できず、更新があると起動に失敗することがあります。その場合は「ランチャー画面から起動」に切り替えてください。',
+    oknteLaunchBubbleLauncherUi:
+      'ランチャー画面から起動：ユーザーの操作を模してランチャー画面を開き、「ゲームを開始」をクリックします。ダイアログやゲームの更新もまとめて処理できます。実行中は他のウィンドウでランチャーを隠さないようにしてください（隠れていると失敗することがあります）。',
     autoUpdateNeedsLauncher:
       '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',
@@ -1761,6 +1759,8 @@ export default {
       'ソース形式で取り込みました（interface は assets/、Agent はソースツリー内、Python と MaaFramework は同梱なし）：常にソースディレクトリに追従し、変更は次回の実行から反映されます（「今すぐ同期」でも可）。Agent は requirements.txt から隔離環境を作ります。プロジェクトの更新は行わず、同じプロジェクトの他のスクリプトとバージョンを共有しません',
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
+    maafwUnselectableTaskNotice: '「{tasks}」{reason}。MAS は実行時にスキップします',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: 'M9A マネージドスクリプトを編集',
     m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
     m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',
@@ -2824,7 +2824,6 @@ export default {
       loading: 'イベント情報を取得しています…',
       noActivity: '開催中のイベントはありません',
       unavailable: 'イベント情報を取得できません',
-      endedNote: '次のイベントがまもなく始まります',
       allHidden: 'カルーセル内のゲームがすべてオフです。「ホーム画面のカスタマイズ」で戻せます',
     },
     empty: {

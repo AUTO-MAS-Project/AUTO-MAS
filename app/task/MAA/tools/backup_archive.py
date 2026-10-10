@@ -578,7 +578,7 @@ _TASK_ZH_TO_TYPE = {zh: en for en, zh in zip(MAA_TASKS, MAA_TASKS_ZH)}
 """MAA 任务中文名 → 任务类型（GUI 存的任务可能缺 TaskType，按名兜底）"""
 
 
-def _task_type_of(task: dict) -> str | None:
+def task_type_of(task: dict) -> str | None:
     """TaskQueue 任务条目的任务类型（TaskType → $type 后缀 → 中文名兜底）。"""
 
     task_type = task.get("TaskType")
@@ -640,7 +640,7 @@ def _task_queue_rows(queue) -> list[dict]:
     for task in queue:
         if not isinstance(task, dict):
             continue
-        task_type = _task_type_of(task)
+        task_type = task_type_of(task)
         if task_type is None:
             continue
         if task_type in seen:

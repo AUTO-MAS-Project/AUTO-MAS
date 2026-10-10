@@ -2166,6 +2166,10 @@ class BetterGIUserConfig_Notify(GeneralUserConfig_Notify):
     IfSendDropStatistics: Optional[bool] = Field(
         default=None, description="是否统计掉落（BGI「奖励识别」汇总，默认开启）"
     )
+    PushLogMode: Optional[Literal["关闭", "逐条", "汇总"]] = Field(
+        default=None,
+        description="任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合",
+    )
 
 
 class BetterGIUserConfig(BaseModel):
@@ -2567,7 +2571,7 @@ class OkNteConfig_Game(BaseModel):
     )
     LaunchMode: Optional[Literal["Autoplay", "LauncherUi"]] = Field(
         default=None,
-        description="启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）",
+        description="启动方式: 静默启动 / 启动器界面启动",
     )
     Path: Optional[str] = Field(
         default=None,
@@ -4247,6 +4251,10 @@ class MaaFWTaskInfo(BaseModel):
     repeatCount: int = Field(
         default=1,
         description="加入任务队列时展开成几份（interface 的 repeatable / repeat_count）",
+    )
+    unselectableReason: Optional[str] = Field(
+        default=None,
+        description="特调声明该任务不可选时的原因（不进「添加任务」与预设，运行时跳过）；可选任务为 null",
     )
 
 
