@@ -506,9 +506,11 @@ const canDuplicateContextTask = computed(() => {
   return copyCount < MAAFW_MAX_TASK_REPEAT_COUNT
 })
 
-// 行上右键时 contextTaskId 已在冒泡阶段记下；空白处右键没有行，不弹
+// 行上右键时 contextTaskId 已在冒泡阶段记下；空白处右键没有行，不弹。
+// 右键的那一行同时选中，右栏与菜单指的是同一个任务
 const handleContextMenuOpenChange = (open: boolean) => {
   contextMenuOpen.value = open && Boolean(contextTask.value)
+  if (contextMenuOpen.value && contextTask.value) emit('selectTask', contextTask.value.id)
 }
 // 菜单开着时又在空白处右键、或那一行已经不在了：收起
 watch(contextTask, item => {
