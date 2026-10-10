@@ -7,7 +7,13 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
+from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(monkeypatch):
+    monkeypatch.setattr(service, "Config", GlobalConfig())
 
 
 def payload(start, end):
@@ -77,8 +83,15 @@ async def test_cache_failure_clears_stale_window_and_throttles_retry(
     clock = [0.0]
     monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
     now = datetime.now(timezone.utc)
+
+    class ClockDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(seconds=clock[0])
+
+    monkeypatch.setattr(service, "datetime", ClockDatetime)
     good = payload(
-        (now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=1)).isoformat()
+        (now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=3)).isoformat()
     )
     requests = []
 
