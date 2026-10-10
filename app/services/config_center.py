@@ -58,6 +58,8 @@ API_BASE_URL = os.environ.get(
 # 跟随跨域跳转时会删掉 Authorization，带令牌的请求跳过去就是 401，令牌随即被清，表现为登录后
 # 立刻掉线。令牌只补给 data、data2 这类「data + 数字」主机，且整条跳转链都得是这类主机、都是
 # https；auto-mas.top 的其他子域（文档、下载站等）和跳转链中途经过的别家主机一律不带。
+# EdgeOne 回 307 时带 Connection: close，请求体还没传完就断开，外观包这类大上传跟着跳转走
+# 经常在第一跳就失败；所以跳过一次之后记下新地址，后面的请求直接发过去。
 TOKEN_REDIRECT_HOST = re.compile(r"data\d*\.auto-mas\.top")
 PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
 # 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
@@ -134,6 +136,9 @@ class ConfigCenterClient:
         self._username: str = ""
         self._display_name: str = ""
 
+        ## 实际请求的 API 地址: 分享站把 API 跳到别的 data 主机后改成跳转后的地址
+        self._api_base: str = API_BASE_URL
+
         self._lock = asyncio.Lock()
 
     # ==================== 模板浏览 ====================
@@ -189,13 +194,14 @@ class ConfigCenterClient:
         """
 
         params = {"version_no": version_no} if version_no else None
-        url = f"{API_BASE_URL}/files/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
+        path = f"/files/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
-        ) as client:
+        async with self._client(REQUEST_TIMEOUT, None) as client:
             try:
-                async with client.stream("GET", url, params=params) as response:
+                async with client.stream(
+                    "GET", f"{self._api_base}{path}", params=params
+                ) as response:
+                    self._remember_api_base(response, path)
                     if response.status_code != 200:
                         await response.aread()
                         raise ConfigCenterError(
@@ -212,8 +218,7 @@ class ConfigCenterClient:
                             )
                         chunks.append(chunk)
             except httpx.HTTPError as e:
-                logger.warning(f"下载配置失败: {e}")
-                raise ConfigCenterError(f"无法连接配置中心: {e}") from e
+                raise self._connection_error("GET", path, e) from e
 
         try:
             data = json.loads(b"".join(chunks).decode("utf-8"))
@@ -719,10 +724,11 @@ class ConfigCenterClient:
             try:
                 async with client.stream(
                     "GET",
-                    f"{API_BASE_URL}{path}",
+                    f"{self._api_base}{path}",
                     params=params,
                     headers={"Authorization": f"Bearer {token}"},
                 ) as response:
+                    self._remember_api_base(response, path)
                     if response.status_code >= 400:
                         await response.aread()
                         raise self._failure_error(response, token, "获取封面失败")
@@ -737,10 +743,7 @@ class ConfigCenterClient:
                             )
                         chunks.append(chunk)
             except httpx.HTTPError as e:
-                logger.warning(f"请求配置中心失败: GET {path} - {e}")
-                raise ConfigCenterError(
-                    f"无法连接配置中心: {e}", status_code=503
-                ) from e
+                raise self._connection_error("GET", path, e) from e
 
         data = b"".join(chunks)
         mime = self._sniff_image(data)
@@ -1182,6 +1185,49 @@ class ConfigCenterClient:
             event_hooks=event_hooks,
         )
 
+    def _remember_api_base(self, response: httpx.Response, path: str) -> None:
+        """分享站把 API 跳到别的 data 主机时记下跳转后的地址, 之后的请求直接发过去。
+
+        只认 https、路径不变、前后都是 data 主机的跳转; 自定义 API 地址不跟。
+        """
+
+        if not response.history:
+            return
+        final = response.url
+        if (
+            final.scheme != "https"
+            or not final.path.endswith(path)
+            or not TOKEN_REDIRECT_HOST.fullmatch(final.host)
+            or not TOKEN_REDIRECT_HOST.fullmatch(httpx.URL(self._api_base).host)
+        ):
+            return
+        api_base = f"https://{final.netloc.decode('ascii')}{final.path[: -len(path)]}"
+        if api_base != self._api_base:
+            logger.info(f"配置中心 API 已跳转到 {api_base}, 之后直接请求该地址")
+            self._api_base = api_base
+
+    def _connection_error(
+        self, method: str, path: str, error: httpx.HTTPError
+    ) -> ConfigCenterError:
+        """记下网络失败并转成 ConfigCenterError (503)。
+
+        httpx 不少异常 (对端中途关连接、超时) 的消息是空的, 日志和提示里补上异常类型。
+        连不上跳转后的地址时退回默认地址, 下次请求重新跟一次跳转。
+        """
+
+        logger.warning(
+            f"请求配置中心失败: {method} {self._api_base}{path} - {type(error).__name__}: {error}"
+        )
+        if (
+            isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout))
+            and self._api_base != API_BASE_URL
+        ):
+            logger.info(f"连不上 {self._api_base}, 退回 {API_BASE_URL}")
+            self._api_base = API_BASE_URL
+        return ConfigCenterError(
+            f"无法连接配置中心: {str(error) or type(error).__name__}", status_code=503
+        )
+
     async def _request_data(
         self,
         method: str,
@@ -1208,7 +1254,7 @@ class ConfigCenterClient:
             try:
                 response = await client.request(
                     method,
-                    f"{API_BASE_URL}{path}",
+                    f"{self._api_base}{path}",
                     params=params,
                     json=json_body,
                     data=data,
@@ -1216,11 +1262,9 @@ class ConfigCenterClient:
                     headers=headers,
                 )
             except httpx.HTTPError as e:
-                logger.warning(f"请求配置中心失败: {method} {path} - {e}")
-                raise ConfigCenterError(
-                    f"无法连接配置中心: {e}", status_code=503
-                ) from e
+                raise self._connection_error(method, path, e) from e
 
+        self._remember_api_base(response, path)
         if response.status_code >= 400:
             raise self._failure_error(
                 response,
