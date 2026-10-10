@@ -530,7 +530,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
             if not self.run_plan.tasks:
                 self.cur_user_item.status = "跳过"
-                return "MaaFW 周期任务已在本周或本月完成，跳过本次运行"
+                return _period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
             # 并进那条维护通知的用户列表。代理次数、上次状态都不动。
@@ -867,9 +867,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
-        logger.exception(f"MaaFW 插件自动代理任务出现异常: {e}")
+        logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"MaaFW 插件自动代理任务出现异常: {e}"
+            self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
         try:
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -2032,7 +2032,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if result_payload is not None:
             return MaaFWRunResult.model_validate(result_payload)
-        message = f"MaaFW runner worker exited without result: {returncode}"
+        message = f"MaaFW worker 异常退出（退出码 {returncode}），未返回任务结果"
         detail = "\n".join(stderr_lines[-5:]).strip()
         if detail and _should_forward_framework_log(detail):
             message += f": {_framework_ui_message(detail)}"
@@ -2040,7 +2040,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # Native stderr is already preserved in the per-run framework log.
             # Do not copy parser/backtrace blobs into the normal task log when
             # the worker exits without a protocol result.
-            message += ": MaaFW worker 未返回任务结果，完整原生日志已保存到本次运行的 .maafw.log"
+            message += "，worker 的完整输出已保存到本次运行的 .worker.log"
         raise RuntimeError(message)
 
     def _secret_log_variants(self) -> list[str]:
@@ -3330,7 +3330,7 @@ def _framework_ui_message(message: str) -> str:
     omitted = max(0, len(cleaned) - len(compact))
     summary = (
         f"{compact}\n… 上述内容已省略 {omitted} 个字符，"
-        "完整内容请查看本次运行的 .maafw.log"
+        "完整内容请查看本次运行的 .worker.log"
     )
     return summary[:_FRAMEWORK_UI_LOG_MAX_CHARS]
 
@@ -3753,6 +3753,27 @@ _RETRY_SKIP_REASON = "前面的尝试已完成"
 
 def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
     return [task for task in plan.skippedTasks if task.reason == _RETRY_SKIP_REASON]
+
+
+_PERIOD_DONE_LABELS = {
+    "今日已正常完成": "今日",
+    "本周已正常完成": "本周",
+    "本月已正常完成": "本月",
+}
+
+
+def _period_all_done_message(plan: MaaFWRunPlan) -> str:
+    """队列里的任务都因周期限制被跳过时的提示，按实际跳过原因说今日 / 本周 / 本月。"""
+
+    periods: list[str] = []
+    for task in plan.skippedTasks:
+        label = _PERIOD_DONE_LABELS.get(task.reason or "")
+        if label and label not in periods:
+            periods.append(label)
+    if not periods:
+        return "MaaFW 队列里的周期任务都已在本周期内完成，跳过本次运行"
+    ordered = [label for label in ("今日", "本周", "本月") if label in periods]
+    return f"MaaFW 队列里的周期任务都已在{' / '.join(ordered)}完成，跳过本次运行"
 
 
 def _drop_unselectable_tasks(

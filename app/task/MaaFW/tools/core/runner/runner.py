@@ -2023,8 +2023,8 @@ class MaaFWRunner:
             )
 
         raise RuntimeError(
-            "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
-            f"controllers; use the project UI for {device_config.type}"
+            f"内置运行只支持 ADB 和 Win32 控制器，当前控制器类型是 {device_config.type}，"
+            "请用项目自带的界面运行"
         )
 
     def _apply_screenshot_target(self, controller: Any) -> None:
@@ -2940,6 +2940,8 @@ class MaaFWRunner:
         stable_seconds = 0
         content_seconds = 0
         capture_error_logged = False
+        # 最后一帧的状态，等满上限时按它说明为什么没提前放行。
+        last_state: str | None = None
         while True:
             if self._stop_requested.wait(
                 timeout=STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS
@@ -2948,7 +2950,13 @@ class MaaFWRunner:
             self._raise_if_deadline_hit()
             left = gate_ends_at - time.monotonic()
             if left <= 0:
-                self.send_log(f"等满 {remaining:.0f}s，画面仍在变化，按上限下发任务")
+                state_text = {
+                    "no_frame": "截不到画面",
+                    "blank": "画面仍是黑屏或纯色",
+                    "changing": "画面仍在变化",
+                }.get(last_state or "")
+                state_part = f"{state_text}，" if state_text else ""
+                self.send_log(f"等满 {remaining:.0f}s，{state_part}按上限下发任务")
                 return
             try:
                 frame = _sample_startup_screen(self.controller)
@@ -2957,7 +2965,13 @@ class MaaFWRunner:
                     capture_error_logged = True
                     self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
                 frame = None
-            if frame is None or _startup_screen_is_blank(frame):
+            if frame is None:
+                last_state = "no_frame"
+            elif _startup_screen_is_blank(frame):
+                last_state = "blank"
+            else:
+                last_state = "changing"
+            if last_state != "changing":
                 # 截不到、黑屏、纯色：都还在加载，两个计数都重来
                 previous = None
                 stable_seconds = 0

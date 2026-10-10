@@ -233,7 +233,7 @@ def build_precheck_gate(
         if not memo_matches_version(memo, latest):
             await asyncio.to_thread(clear_runtime_precheck, memo_path)
             log(
-                f"上次运行环境预检失败记的是 {memo.get('targetVersion')}，"
+                f"上次运行环境检查失败的是 {memo.get('targetVersion')}，"
                 f"目标版本已变为 {latest}，重新尝试更新"
             )
             return None
@@ -244,7 +244,7 @@ def build_precheck_gate(
             memo["attempts"] = attempts
             await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
             return (
-                f"上次对 {latest} 的运行环境预检失败"
+                f"上次 {latest} 的运行环境检查失败"
                 f"（{_summarize_reason(memo.get('reason'))}），"
                 f"本次不再自动重试（第 {attempts} 次）；手动更新可强制重试"
             )
@@ -259,7 +259,7 @@ def build_precheck_gate(
                 available = False
         if available:
             await asyncio.to_thread(clear_runtime_precheck, memo_path)
-            log(f"maafw {version} 现已可得，重新尝试更新 {latest}")
+            log(f"maafw {version} 现在已能获取，重新尝试更新 {latest}")
             return None
 
         memo["attempts"] = attempts
@@ -267,7 +267,7 @@ def build_precheck_gate(
         needed = f"maafw {version}" if version else requirement
         return (
             f"{name} {latest} 需要 {needed}，"
-            f"PyPI/GitHub 仍不可得，本次不升级（第 {attempts} 次）"
+            f"仍无法从 PyPI / GitHub 获取，本次不升级（第 {attempts} 次）"
         )
 
     return gate
