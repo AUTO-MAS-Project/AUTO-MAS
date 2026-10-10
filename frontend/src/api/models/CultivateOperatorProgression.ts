@@ -23,6 +23,10 @@ export type CultivateOperatorProgression = {
      */
     level: number;
     /**
+     * 当前普通技能等级 1-7；未观测时为空
+     */
+    skillLevel?: (number | null);
+    /**
      * 当前专精等级（skillId → 0-3）
      */
     masteries?: Record<string, number>;

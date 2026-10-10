@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
-GoalKind = Literal["elite", "mastery", "module"]
+GoalKind = Literal["elite", "skill", "mastery", "module"]
 
 GoalState = Literal[
     "not_started",  # 攒材料等待（材料已齐或尚未开刷）
@@ -48,11 +48,11 @@ ProgressionSource = Literal["skland", "local", "manual", "default"]
 
 @dataclass(frozen=True)
 class Goal:
-    """实例级养成目标（精英化 1 条；技能按 skillId；模组按 uniEquipId）。"""
+    """干员养成目标（精英化与技能等级各 1 条；专精与模组按 ID）。"""
 
     kind: GoalKind
-    target_id: str  # mastery=skillId；module=uniEquipId；elite 固定 ""
-    to_level: int  # elite: 1|2；mastery/module: 1..3
+    target_id: str  # mastery=skillId；module=uniEquipId；elite/skill 固定 ""
+    to_level: int  # elite: 1|2；skill: 2..7；mastery/module: 1..3
     state: GoalState = "not_started"
 
 
@@ -81,6 +81,7 @@ class Progression:
     level: int
     masteries: Mapping[str, int]  # skillId -> 专精等级
     modules: Mapping[str, int]  # uniEquipId -> 模组等级
+    skill_level: int | None = None  # 普通技能等级 1..7；None 表示未观测
 
     @staticmethod
     def default() -> "Progression":

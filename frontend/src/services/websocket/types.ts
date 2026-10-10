@@ -81,6 +81,7 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
   message: string
+  messageKey?: string | null
 }
 
 /** 配置会话改动被丢弃的数据 (type=task.config.discarded)：正文由前端按语言本地化 */

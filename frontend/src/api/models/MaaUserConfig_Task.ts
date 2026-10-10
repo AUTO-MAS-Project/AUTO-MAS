@@ -64,6 +64,10 @@ export type MaaUserConfig_Task = {
      */
     CultivateTargets?: (string | null);
     /**
+     * 自动培养干员（注入 MAA 原生培养任务）
+     */
+    CultivateAutoRaise?: (boolean | null);
+    /**
      * 活动期间跳过养成计划
      */
     CultivateSkipDuringActivity?: (boolean | null);

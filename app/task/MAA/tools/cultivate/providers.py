@@ -101,7 +101,8 @@ def parse_player_info_payload(payload: Mapping[str, Any]) -> dict[str, Progressi
       （含字段缺失）——locked=true 是未解锁占位（level 恒 1），计入会误判
       达成 → 误移除（T4.4 实测 equip 字段名 id/level/locked）；
     - chars[].name 恒为 null，名字不在此取；坏条目跳过（宁缺勿滥）；
-    - 数值字段统一按 `_non_negative_int` 收敛，类型漂移不炸下游比较。
+    - 普通技能等级 ← mainSkillLvl；仅接受 1..7，缺失或非法时为未知，
+      不影响同一响应里的其他练度；其他数值按 `_non_negative_int` 收敛。
     API 编排路径与调用方共用本函数（规则 1.3-3）。
     """
 
@@ -126,11 +127,13 @@ def parse_player_info_payload(payload: Mapping[str, Any]) -> dict[str, Progressi
             level = _non_negative_int(equip.get("level"))
             if level > 0:
                 modules[str(equip["id"])] = level
+        skill_level = _non_negative_int(char.get("mainSkillLvl"))
         progressions[str(char_id)] = Progression(
             elite=_non_negative_int(char.get("evolvePhase")),
             level=_non_negative_int(char.get("level")),
             masteries=masteries,
             modules=modules,
+            skill_level=skill_level if 1 <= skill_level <= 7 else None,
         )
     return progressions
 
@@ -249,7 +252,7 @@ class LocalProgressionProvider:
 
 
 class SklandProgressionProvider:
-    """森空岛练度（player/info 整表快照），可自证精英化/专精/模组。
+    """森空岛练度（player/info 整表快照），可自证精英化/技能等级/专精/模组。
 
     快照由异步驱动层（cultivate/skland.py，带 TTL 缓存与凭据轮换回写）
     拉取后经 ProviderContext 注入，本适配器只做同步查表（决策 38）；

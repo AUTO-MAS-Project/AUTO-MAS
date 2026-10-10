@@ -147,6 +147,7 @@ _OVERLAY_TASK_KEYS = (
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
 )
@@ -192,6 +193,7 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "DepotMaintainPlans",
@@ -218,6 +220,7 @@ _OVERLAY_FIELD_LABELS = {
     "ActivityMedicineNumb": "活动理智药",
     "IfCultivate": "干员养成",
     "CultivateTargets": "养成目标",
+    "CultivateAutoRaise": "自动培养干员",
     "CultivateSkipDuringActivity": "活动期间跳过",
     "CultivateSkipDuringResourceCollection": "资源收集期间跳过",
     "MedicineNumb": "吃理智药",

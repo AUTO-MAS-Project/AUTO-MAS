@@ -588,6 +588,7 @@ const getDefaultMAAUserData = () => ({
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
+    CultivateAutoRaise: false,
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
     CultivateSklandAccount: '',
@@ -1047,6 +1048,7 @@ const loadCultivateOperatorOptions = async () => {
         rarity: option.rarity ?? 0,
         profession: option.profession ?? '',
         maxElite: option.maxElite ?? 2,
+        maxSkillLevel: option.maxSkillLevel ?? 0,
         dataMissing: option.dataMissing ?? false,
         skills: (option.skills ?? []).map(item => ({
           label: item.label,

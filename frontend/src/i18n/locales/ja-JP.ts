@@ -326,10 +326,17 @@ export default {
     maaCultivateElite2: '昇進 2',
     maaCultivateRemove: '削除',
     maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
+    maaCultivateAutoRaise: 'オペレーターを自動育成',
+    maaCultivateAutoRaiseUnsupported:
+      '自動育成をスキップしました。MAA v6.19.0-beta.1 以降を使用し、MAA に「オペレーター育成」タスクがあることを確認してください。素材周回は継続します。',
+    maaCultivateAutoRaiseDataUnavailable:
+      '育成データを取得できないため、自動育成をスキップしました。オペレーター一覧を更新して再試行してください。素材周回は継続します。',
+    maaCultivateAutoRaiseHint:
+      'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
-      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドすると特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
+      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
@@ -349,26 +356,29 @@ export default {
       '。以上は昇進 0 / 在庫 0 の控えめの見積もりです。MAAで認識を完了してから再度ご確認ください',
     maaCultivateSklandTitle: '森空島をバインド',
     maaCultivateSklandHint:
-      'バインド後、特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
+      'バインド後、スキルレベル/特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
     maaCultivateSklandRole: 'ゲームロールを選択',
     maaCultivateSklandBoundRole: 'バインド済みロール',
     maaCultivateSklandUnboundHint: '森空島未バインドでは昇進目標のみ設定できます',
-    maaCultivateSklandLockedHint: '森空島をバインドすると特化/モジュール目標を設定できます',
+    maaCultivateSklandLockedHint:
+      '森空島をバインドするとスキルレベル/特化/モジュール目標を設定できます',
     maaCultivateSklandDegradedHint:
-      '森空島の練度が一時的に取得できません。特化/モジュール目標は一時停止中で、回復後に自動的に再開します',
+      '森空島の練度を一部取得できません。該当するスキルレベル/特化/モジュール目標の周回は一時停止中で、回復後に自動的に再開します',
     maaCultivateGoalElite: '昇進',
+    maaCultivateGoalSkill: 'スキルレベル',
+    maaCultivateSkillLevel: 'レベル {level}',
     maaCultivateGoalNone: '目標を設定しない',
     maaCultivateCurrent: '現在',
     maaCultivateCurrentUnknown: '現在 ？',
     maaCultivateCurrentUnknownHint:
-      '練度データなし：昇進は昇進 0 として見積もり。森空島データのない特化/モジュールは一時停止',
+      '練度データなし：昇進は昇進 0 として見積もり。森空島データのないスキルレベル/特化/モジュールは一時停止',
     maaCultivateGoalLevel1: 'レベル 1',
     maaCultivateGoalLevel2: 'レベル 2',
     maaCultivateGoalLevel3: 'レベル 3',
     maaCultivateOverLimit: '到達可能な段階を超えており、自動周回されません',
     maaCultivateOverLimitShort: '上限超え',
     maaCultivateToggleGoals: '目標の展開/折りたたみ',
-    maaCultivateNoGoalTier: '昇進目標なし',
+    maaCultivateNoGoalTier: '設定可能な育成目標なし',
     maaCultivateNoGoalDataMissing: '育成データなし',
     maaCultivateStateInProgress: '周回中',
     maaCultivateStateAchieved: '達成済み',

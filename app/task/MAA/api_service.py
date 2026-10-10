@@ -416,8 +416,8 @@ async def get_cultivate_operators(
 ) -> list[dict[str, object]]:
     """获取干员养成选择器目录（一图流全量表兜底，方案决策 11/38）。
 
-    goal-aware 过滤：无森空岛快照时退化"剔已精 2"，绑定后按
-    "精2 ∧ 专精全满 ∧ 模组全满"剔除；skills/modules 为目标编辑行
+    goal-aware 过滤：技能等级未观测或未满时保留，绑定后按
+    "精英化、技能等级、专精与模组均已满"剔除；skills/modules 为目标编辑行
     展示用名称目录（仅 UI 消费，不进内核契约）。
     """
 
@@ -623,6 +623,7 @@ async def get_cultivate_preview(
             "source": snapshot.source,
             "elite": snapshot.data.elite,
             "level": snapshot.data.level,
+            "skillLevel": snapshot.data.skill_level,
             "masteries": dict(snapshot.data.masteries),
             "modules": dict(snapshot.data.modules),
         }

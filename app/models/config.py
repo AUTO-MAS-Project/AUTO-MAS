@@ -1098,6 +1098,10 @@ class MaaUserConfig(ConfigBase):
         self.Task_CultivateTargets = ConfigItem(
             "Task", "CultivateTargets", "[]", JSONValidator(list)
         )
+        ## 是否注入 MAA 原生干员培养任务
+        self.Task_CultivateAutoRaise = ConfigItem(
+            "Task", "CultivateAutoRaise", False, BoolValidator()
+        )
         ## 活动期间是否跳过养成计划
         self.Task_CultivateSkipDuringActivity = ConfigItem(
             "Task", "CultivateSkipDuringActivity", False, BoolValidator()
