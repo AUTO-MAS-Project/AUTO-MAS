@@ -27,16 +27,16 @@ export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) =
   if (!rawPath || !rootPath) return ''
   const trimmed = rawPath.trim()
   if (/^(https?:|data:image\/)/i.test(trimmed)) return trimmed
-  if (/^[a-zA-Z]:/.test(trimmed) || /^[\\/]{2}/.test(trimmed)) {
-    return ''
-  }
+  // UNC 只能在去开头斜杠之前认（去掉之后就像个相对路径）
+  if (/^[\\/]{2}/.test(trimmed)) return ''
 
   const normalized = trimmed
     .replace(/\\/g, '/')
     .replace(/^\$\{PROJECT_DIR\}|^\{PROJECT_DIR\}/, '')
     .replace(/^\/+/, '')
     .replace(/^\.\/+/, '')
-  if (!normalized) return ''
+  // 盘符放在归一之后查：`/C:/x`、`{PROJECT_DIR}/C:/x` 去掉前缀后才露出盘符
+  if (!normalized || /^[a-zA-Z]:/.test(normalized)) return ''
   if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) {
     return ''
   }
