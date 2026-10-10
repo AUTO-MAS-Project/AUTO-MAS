@@ -2175,7 +2175,12 @@ def _adopt_small_undeclared_entries(
             if view.size(entry) <= UNDECLARED_KEEP_LIMIT:
                 targets.setdefault(entry, TargetMode(False, False))
             continue
-        if frozen_shell and _looks_like_frozen_python_package_dir(view, entry):
+        if (
+            frozen_shell
+            and entry not in targets
+            and _looks_like_frozen_python_package_dir(view, entry)
+        ):
+            # 已是白名单目标的（agent/、依赖目录）照样整个带走，不算进「未带入」的告警。
             frozen_packages.append(entry.name)
             continue
         remainder = sum(
@@ -2195,9 +2200,11 @@ def _adopt_small_undeclared_entries(
             )
         elif remainder > UNDECLARED_KEEP_LIMIT:
             if entry in targets:
+                # 已是白名单目标（agent 入口所在目录、依赖目录）：keeps() 对整棵目录放行，
+                # 实际整个带走（只剔分类表命中的缓存），告警照实说。
                 warnings.append(
-                    f"目录 {entry.as_posix()}/ 里没被 interface 引用的部分有 "
-                    f"{remainder / 2**20:.0f} MB，只带入被引用的文件"
+                    f"目录 {entry.as_posix()}/ 里没被 interface 直接引用的部分有 "
+                    f"{remainder / 2**20:.0f} MB；它是 agent / 依赖所在目录，整个带入副本"
                 )
             else:
                 warnings.append(
