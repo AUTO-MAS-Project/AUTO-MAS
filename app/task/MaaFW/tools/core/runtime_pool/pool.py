@@ -103,11 +103,16 @@ class MaaFWRuntimePool:
         self.installer = installer
         self._lock = pool_lock(self.root)
         self._root_identity: dict[str, Any] = {}
-        with self._lock:
-            self._initialize()
+        # 池早就建好时只读地核一遍、不拿池锁：别的线程可能正持锁装 runtime（几分钟），
+        # 构造一个服务对象不该跟着排队。要写（首次建池、旧标记升级、补目录）才持锁。
+        if not self._initialize_without_writes():
+            with self._lock:
+                self._initialize()
 
     @property
     def root_identity(self) -> dict[str, Any]:
+        if self._initialize_without_writes():
+            return copy.deepcopy(self._root_identity)
         with self._lock:
             self._initialize()
             return copy.deepcopy(self._root_identity)
@@ -1106,6 +1111,44 @@ class MaaFWRuntimePool:
                     freed += max(0, exclusive - left_exclusive)
                     shared += max(0, linked - left_linked)
         return freed, shared
+
+    def _initialize_without_writes(self) -> bool:
+        """``_initialize`` 的只读快路径：池已建好（标记是当前格式、受管目录都在）时做同样
+        的校验、不写任何东西，因而不需要池锁。
+
+        需要写的情形（没有标记、旧格式标记要升级、受管目录缺了要补）或任何一项对不上都
+        返回 False，由调用方持锁走 ``_initialize``——报错与修补仍只在那条路上。标记只经
+        ``write_json_atomic`` 整体替换，读到半份的可能性没有；替换瞬间读失败也只是回落到锁。
+        """
+
+        try:
+            for managed_path in (
+                self.runtime_root,
+                self.staging_root,
+                self.root / "cache",
+                self.python_root,
+                self.root / "bindings",
+                self.root / "native",
+            ):
+                assert_existing_chain_has_no_reparse(managed_path)
+            marker_path = self.root / POOL_MARKER_NAME
+            assert_not_reparse(marker_path)
+            if not marker_path.is_file():
+                return False
+            identity = _validate_pool_marker(
+                json.loads(marker_path.read_text(encoding="utf-8"))
+            )
+            for managed_dir in (self.runtime_root, self.staging_root, self.python_root):
+                assert_not_reparse(managed_dir)
+                if not managed_dir.is_dir():
+                    return False
+        except (OSError, ValueError, MaaFWRuntimePoolError):
+            return False
+        if self._root_identity and self._root_identity != identity:
+            # 身份变了要报错，交给持锁的那条路
+            return False
+        self._root_identity = identity
+        return True
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so
