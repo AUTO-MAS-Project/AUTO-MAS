@@ -153,6 +153,7 @@ async def prepare_agent_env(
         store_prepared_environment,
     )
     from app.task.MaaFW.tools.embedded.project_path import (
+        is_project_updating,
         release_project_path,
         try_reserve_project_path,
     )
@@ -220,8 +221,10 @@ async def prepare_agent_env(
         # 的结果只读地看一眼还能不能用：运行期间项目文件不动，指纹稳定；运行期写的
         # debug / config 等不进指纹。命中就照常回「已就绪」，免得把好好的环境报成准备失败。
         # 用户点的强制重新准备照旧拒绝——那要真的重跑一遍，必须等预约放开。
+        # 项目正在更新时也照旧拒绝：此刻目录可能是更新的中间态，算出来的指纹不可信
+        # （下面拿到预约的那条路也是为此才在锁内算指纹）。
         busy_cached = None
-        if not force:
+        if not force and not is_project_updating(root_path):
             try:
                 busy_fingerprint = await asyncio.to_thread(
                     project_environment_fingerprint, root_path
@@ -234,7 +237,7 @@ async def prepare_agent_env(
             if busy_cached is not None:
                 prepared_at = str(busy_cached.get("preparedAt") or "")
                 append_log(
-                    "该 MFW 项目正在运行、更新或准备环境；项目文件自上次准备以来没有变化，"
+                    "该 MFW 项目正在运行或准备环境；项目文件自上次准备以来没有变化，"
                     "沿用已就绪的运行环境"
                     + (f"（上次准备于 {prepared_at}）" if prepared_at else "")
                 )
