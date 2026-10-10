@@ -27,6 +27,7 @@
 - `mas-code-standards`：用于应用 AUTO-MAS 的代码规范，规范内容主要从当前 `dev` 的代表性提交和现有模块中提炼，尤其适用于 Electron 初始化与服务层代码。
 - `mas-schema-naming`：用于统一后端 schema 的命名方式，减少字段语义漂移。
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
+- `mas-e2e`：用于选择、编写和运行隔离浏览器流程及作者本机真实脚本调度 E2E，并整理脱敏证据。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
 - `mas-game-sign`：用于新增、重构或审查游戏社区签到，涵盖平台注册表、凭据加密与登录路由、签到锁与触发路径、结果与通知契约。
 - `grill-me`：对方案做高强度问诊的入口，仅作指针指向 `grilling`；不属于 AUTO-MAS 工程规则 hub 的默认路由。

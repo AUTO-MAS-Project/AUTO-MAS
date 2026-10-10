@@ -197,6 +197,11 @@ class ScriptConfigTask(TaskExecuteBase):
                     maaend_set["settings"] = settings
                 settings["autoRunOnLaunch"] = False
                 write_file(maaend_set_path, maaend_set)
+                mark_native_config_injected(
+                    Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    self.maaend_set_path,
+                    script_id=self.script_info.script_id,
+                )
             logger.info("MaaEnd 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
@@ -260,6 +265,12 @@ class ScriptConfigTask(TaskExecuteBase):
             maaend_set["settings"] = settings
         settings["autoRunOnLaunch"] = False
         write_file(maaend_set_path, maaend_set)
+        if self.use_mas_config:
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.maaend_set_path,
+                script_id=self.script_info.script_id,
+            )
         logger.success(f"MaaEnd 运行参数配置完成: {self.config_mode}配置")
 
     async def final_task(self):

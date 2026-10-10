@@ -187,9 +187,9 @@ def replace_dir(src: Path, dst: Path) -> None:
 
 def dir_fingerprint(path: Path) -> str:
     """
-    对目录树做轻量指纹, 用于判断配置是否被改动过
+    对目录树做内容指纹, 用于判断配置是否被改动过
 
-    只取相对路径与文件大小, 不读内容: 只需区分「与某次已知状态是否一致」。
+    记录相对路径与文件内容, 避免同长度的用户改动被误判为原内容。
 
     Args:
         path: 目录路径, 不存在时返回空串指纹。
@@ -205,12 +205,14 @@ def dir_fingerprint(path: Path) -> str:
     for entry in sorted(path.rglob("*")):
         if not entry.is_file():
             continue
-        try:
-            stat_result = entry.stat()
-        except OSError:
-            continue
         digest.update(str(entry.relative_to(path)).encode("utf-8", "surrogatepass"))
-        digest.update(str(stat_result.st_size).encode("ascii"))
+        try:
+            with entry.open("rb") as file:
+                while chunk := file.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError:
+            # 读取失败时让恢复流程保留快照, 不把未知现场当成安全状态。
+            raise
     return digest.hexdigest()
 
 
@@ -466,28 +468,29 @@ def recover_native_config(
     state = read_native_config_snapshot(
         snapshot_path, expected_script_id=expected_script_id
     )
-    try:
-        if state is None:
-            return "cleared"
-
-        if not live_path.exists():
-            if state.original_exists:
-                swap_in_dir(snapshot_path, live_path)
-                return "restored"
-            return "cleared"
-
+    if state is None:
+        result = "cleared"
+    elif not live_path.exists():
+        if state.original_exists:
+            swap_in_dir(snapshot_path, live_path)
+            result = "restored"
+        else:
+            result = "cleared"
+    else:
         live = dir_fingerprint(live_path)
         if state.injected is not None and live == state.injected:
             if state.original_exists:
                 swap_in_dir(snapshot_path, live_path)
             else:
                 force_rmtree(live_path)
-            return "restored"
-        if live == state.baseline:
-            return "intact"
-        return "skipped"
-    finally:
-        clear_native_config_snapshot(snapshot_path)
+            result = "restored"
+        elif live == state.baseline:
+            result = "intact"
+        else:
+            result = "skipped"
+
+    clear_native_config_snapshot(snapshot_path)
+    return result
 
 
 def atomic_write(path: Path, data: bytes) -> None:

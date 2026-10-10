@@ -91,7 +91,7 @@ export default defineConfig(({ command }) => {
       // 不回源校验，曾导致渲染层加载陈旧模块（页面结构与最新代码拼接的诡异状态）
       headers: { 'Cache-Control': 'no-store' },
       watch: {
-        // 只排除构建产物，environment 不会被 Vite 监听（因为没有被 import）
+        // E2E 临时目录由 runner 放在 frontend 外；这里仅排除构建产物。
         ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
       },
     },

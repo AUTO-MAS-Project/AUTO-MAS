@@ -53,6 +53,29 @@ def test_restores_when_crashed_after_injection(tmp_path: Path) -> None:
     assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
 
 
+def test_keeps_snapshot_when_restore_swap_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """恢复换入失败时保留快照, 供下次任务重试。"""
+
+    snapshot = tmp_path / "Temp"
+    live = tmp_path / "config"
+    _write_config(snapshot, "original")
+    _write_config(live, "injected")
+    _commit_snapshot(snapshot, live, injected=dir_fingerprint(live))
+
+    def fail_swap(*_args: Path, **_kwargs: object) -> None:
+        raise PermissionError("配置目录仍被占用")
+
+    monkeypatch.setattr("app.utils.io.swap_in_dir", fail_swap)
+
+    with pytest.raises(PermissionError, match="配置目录仍被占用"):
+        recover_native_config(snapshot, live, expected_script_id="script-1")
+
+    assert snapshot.exists()
+    assert snapshot.with_name(snapshot.name + ".ready.json").exists()
+
+
 def test_skips_when_user_edited_after_crash(tmp_path: Path) -> None:
     """崩溃后用户手动改过配置: 只清理快照, 不覆盖用户改动(本次保护重点)。"""
 
@@ -63,12 +86,13 @@ def test_skips_when_user_edited_after_crash(tmp_path: Path) -> None:
     injected = dir_fingerprint(live)
 
     _commit_snapshot(snapshot, live, injected=injected)
-    (live / "mxu-MaaEnd.json").write_text("user-edited", encoding="utf-8")
+    # 与注入内容等长, 确认指纹确实比较内容而非仅比较大小。
+    (live / "mxu-MaaEnd.json").write_text("changed", encoding="utf-8")
 
     assert recover_native_config(snapshot, live, expected_script_id="script-1") == (
         "skipped"
     )
-    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "user-edited"
+    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "changed"
     assert not snapshot.exists()
 
 
