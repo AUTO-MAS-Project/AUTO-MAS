@@ -416,12 +416,12 @@ def open_range_delta(
         if send_log is not None:
             # 与整包落地（``apply._project_package_entries``）同样的三行。
             if dropped:
-                send_log(f"内嵌投影：包内 {len(dropped)} 个条目不在白名单内，未落盘")
+                send_log(f"更新包里有 {len(dropped)} 个文件不是运行所需，已跳过")
             code_hint = describe_dropped_code_files(rules, dropped)
             if code_hint:
-                send_log(f"内嵌投影：{code_hint}")
+                send_log(f"更新包筛选：{code_hint}")
             for warning in rules.warnings:
-                send_log(f"内嵌投影：{warning}")
+                send_log(f"更新包筛选：{warning}")
         entries = {rel: candidates[rel] for rel in sorted(kept)}
         if "interface.json" not in entries and "interface.jsonc" not in entries:
             raise RangeDeltaUnavailable("白名单里没有 interface.json")

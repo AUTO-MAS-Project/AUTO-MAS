@@ -227,12 +227,12 @@ def _project_package_entries(
     if send_log is not None:
         dropped_count = len(dropped_files)
         if dropped_count:
-            send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
+            send_log(f"更新包里有 {dropped_count} 个文件不是运行所需，已跳过")
         code_hint = describe_dropped_code_files(rules, dropped_files)
         if code_hint:
-            send_log(f"内嵌投影：{code_hint}")
+            send_log(f"更新包筛选：{code_hint}")
         for warning in rules.warnings:
-            send_log(f"内嵌投影：{warning}")
+            send_log(f"更新包筛选：{warning}")
     return (
         {
             relative: source

@@ -1592,7 +1592,7 @@ async def apply_maafw_project_update(
             await after_register(registered)
         except Exception:
             logger.warning("MaaFW 新版本登记后的切换失败", exc_info=True)
-            send_update_log("新版本已登记，但切换脚本时出错；下次运行前会再同步")
+            send_update_log("新版本已就绪，但切换脚本时出错；下次运行前会再同步")
     return {
         "operationId": operation.operation_id,
         "planId": effective_plan_id,
@@ -1645,7 +1645,7 @@ async def _range_delta_package(
     speed_guard = RangeSpeedGuard() if mirror_fallback else None
     if speed_guard is not None:
         route_note = (
-            "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包；直连按需下载预计"
+            "（区间只直连 github.com，不走加速镜像；不成功再按镜像下整包；直连按需下载预计"
             f"超过 {format_duration(speed_guard.budget)}"
             f"（或花在网络上的时间超过 {format_duration(speed_guard.hard_limit)}）就放弃区间）"
         )
@@ -1751,7 +1751,7 @@ async def _range_delta_package(
         reason = mask_home_path(
             redact_text(_sanitize_log_message(str(exc).strip() or type(exc).__name__))
         )
-        send_log(f"按区间差量没做成（{reason}；{where}），改为下载全量包")
+        send_log(f"按区间差量没有成功（{reason}；{where}），改为下载全量包")
         # 前面的区间进度带着 package_type=delta，transport 的下载事件不带类型、宿主会沿用
         # 上一次的：先报一条全量，面板才不会把整包下载标成「增量」。
         _report_progress(

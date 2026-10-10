@@ -393,7 +393,7 @@ class ProjectionRules:
                 # interface 所在目录的上级（更深的 assets 布局）本身不落成目录。
                 return ROOT if _is_relative_to(base, relative) else relative
             raise ProjectionError(
-                f"路径逃出 interface 所在目录，无法提升：{relative.as_posix()}"
+                f"路径在 interface 所在目录之外，无法放进副本：{relative.as_posix()}"
             ) from exc
         return promoted if promoted.parts else ROOT
 
@@ -1692,7 +1692,7 @@ def build_projection_rules(
             if target != ROOT and not _is_relative_to(target, base_relative):
                 raise ProjectionError(
                     f"interface 在 {base_relative.as_posix()}/ 下，但声明的路径 "
-                    f"{target.as_posix()} 在它之外；这种布局无法提升为内嵌副本"
+                    f"{target.as_posix()} 在它之外；这种目录布局不支持导入"
                 )
 
     rules = ProjectionRules(
@@ -1745,18 +1745,20 @@ def _scan_tree(root: Path) -> tuple[set[Path], set[Path], dict[Path, int]]:
     ):
         current = Path(current_raw)
         if current.is_symlink() or current.is_junction():
-            raise ProjectionError(f"目录里有符号链接，拒绝投影：{current}")
+            raise ProjectionError(f"目录里有符号链接或目录联接，无法导入：{current}")
         for directory_name in list(directory_names):
             directory = current / directory_name
             # Windows 的 junction 不算 symlink，os.walk(followlinks=False) 照样走进去，
             # 指回上级的 junction 会无限嵌套；一并拒绝。
             if directory.is_symlink() or directory.is_junction():
-                raise ProjectionError(f"目录里有符号链接，拒绝投影：{directory}")
+                raise ProjectionError(
+                    f"目录里有符号链接或目录联接，无法导入：{directory}"
+                )
             directories.add(directory.relative_to(root))
         for file_name in file_names:
             file_path = current / file_name
             if file_path.is_symlink():
-                raise ProjectionError(f"目录里有符号链接，拒绝投影：{file_path}")
+                raise ProjectionError(f"目录里有符号链接，无法导入：{file_path}")
             if not file_path.is_file():
                 continue
             relative = file_path.relative_to(root)
@@ -1877,7 +1879,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             requirement.path, is_directory=requirement.is_directory
         )
         raise ProjectionError(
-            f"{requirement.label} 是运行必需的，却被投影排除了："
+            f"{requirement.label} 是运行必需的，却被导入规则排除了："
             f"{requirement.path.as_posix()}（{reason or 'not-retained'}）"
         )
 
@@ -1916,7 +1918,8 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             )
             continue
         raise ProjectionError(
-            f"提升 assets/ 后路径撞车：{owner.as_posix()} 与 {source_relative.as_posix()}"
+            f"把 assets/ 里的文件放到副本根时路径重名：{owner.as_posix()} 与 "
+            f"{source_relative.as_posix()}"
         )
 
     return ProjectionPlan(

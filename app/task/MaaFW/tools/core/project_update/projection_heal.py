@@ -1301,7 +1301,7 @@ async def heal_payload(
                 "reason": reason[:500],
             },
         )
-        message = f"检查 {version} 是否漏装文件没做成（{reason}），本次照常运行"
+        message = f"检查 {version} 是否缺文件没有完成（{reason}），本次照常运行"
         logger.info(
             "MaaFW 载荷 %s：%s（第 %d 次）", target.payload_id, message, attempts
         )
@@ -1407,7 +1407,7 @@ async def heal_payload(
             await after_register(registered)
         except Exception:  # noqa: BLE001 - 载荷已在册，没切过去的下次组同步补上
             logger.warning("MaaFW 补齐后的切换失败", exc_info=True)
-            log("补齐后的版本已登记，但切换脚本时出错；下次运行前会再同步")
+            log("已补齐缺失的文件，但切换脚本时出错；下次运行前会再同步")
     return HealOutcome(
         "healed",
         version=version,
