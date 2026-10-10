@@ -54,6 +54,10 @@ Config = LazyProxy("app.core", "Config")
 API_BASE_URL = os.environ.get(
     "AUTO_MAS_CONFIG_CENTER_API", "https://data.auto-mas.top/api/v1"
 ).rstrip("/")
+# 分享站会把 API 跳到别的子域（data.auto-mas.top 307 到 data2.auto-mas.top）。httpx 跟随跨域
+# 跳转时会删掉 Authorization，带令牌的请求跳过去就是 401，令牌随即被清，表现为登录后立刻掉线。
+# 跳转目标是这个域名或其子域、且仍是 https 时补回令牌，跳到别处照旧不带。
+TOKEN_REDIRECT_DOMAIN = "auto-mas.top"
 PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
 # 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
 # 不会报错，只会静默返回 0 条，模板列表就永远是空的。通用脚本模板都发布在这个分类下。
@@ -710,9 +714,7 @@ class ConfigCenterClient:
         params = {"version_no": version_no} if version_no else None
         path = f"/user/files/{file_id}/cover"
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
-        ) as client:
+        async with self._client(REQUEST_TIMEOUT, token) as client:
             try:
                 async with client.stream(
                     "GET",
@@ -1142,6 +1144,37 @@ class ConfigCenterClient:
         )
         return result if isinstance(result, dict) else {}
 
+    @staticmethod
+    def _client(timeout: float, token: Optional[str]) -> httpx.AsyncClient:
+        """建立请求配置中心的客户端; 带令牌时, 跟随跳转到 auto-mas.top 的 https 地址仍带上令牌。
+
+        首跳的令牌由调用方放进请求头; 这里只补 httpx 跨域跳转时删掉的那份。
+        请求钩子每一跳都会调用, 307 / 308 的请求体 (含 multipart) 由 httpx 原样重发。
+        """
+
+        event_hooks = None
+        if token:
+
+            async def keep_token(request: httpx.Request) -> None:
+                host = request.url.host
+                if request.url.scheme != "https" or (
+                    host != TOKEN_REDIRECT_DOMAIN
+                    and not host.endswith(f".{TOKEN_REDIRECT_DOMAIN}")
+                ):
+                    return
+                if "Authorization" not in request.headers:
+                    logger.debug(f"配置中心请求跳转到 {host}, 补回令牌")
+                request.headers["Authorization"] = f"Bearer {token}"
+
+            event_hooks = {"request": [keep_token]}
+
+        return httpx.AsyncClient(
+            proxy=Config.proxy,
+            follow_redirects=True,
+            timeout=timeout,
+            event_hooks=event_hooks,
+        )
+
     async def _request_data(
         self,
         method: str,
@@ -1164,9 +1197,7 @@ class ConfigCenterClient:
 
         headers = {"Authorization": f"Bearer {token}"} if token else None
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=timeout
-        ) as client:
+        async with self._client(timeout, token) as client:
             try:
                 response = await client.request(
                     method,
