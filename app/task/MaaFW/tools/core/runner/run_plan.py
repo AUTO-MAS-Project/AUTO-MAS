@@ -47,6 +47,9 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_snapshot,
     normalize_task_execution_payload,
 )
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+    path_without_host_venv,
+)
 
 from .hotkey import MaaFWHotkeyError, resolve_hotkey
 from .models import (
@@ -1156,8 +1159,11 @@ def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
         # 项目目录里没有同名文件时按系统 PATH 找（PI 文档的示例就是 ``"exec": "python"``），
         # 解析成绝对路径再交给子进程：裸名原样交给 CreateProcess 的话，它先在父进程
         # （AUTO-MAS 宿主解释器）所在目录里找，``python`` 永远落到宿主自己的解释器上——
-        # 与 agent 规划不把裸 ``python`` 交给 PATH 是同一个原因。
-        found = shutil.which(raw_exec.strip())
+        # 与 agent 规划不把裸 ``python`` 交给 PATH 是同一个原因。查找时去掉宿主 venv 的脚本
+        # 目录：Runtime 经 ``uv run`` 起后端时它排在 PATH 最前，不去掉照样找到宿主解释器。
+        found = shutil.which(
+            raw_exec.strip(), path=path_without_host_venv(os.environ.get("PATH"))
+        )
         if found:
             return str(Path(found).resolve())
         raise MaaFWRunPlanError(

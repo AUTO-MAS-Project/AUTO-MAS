@@ -16,6 +16,7 @@ Runtime 边界按增补 2 C20 剔除，但旧启动链路（``AUTO_MAS_RUNTIME_M
 from __future__ import annotations
 
 import os
+import sys
 import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -158,6 +159,43 @@ def strip_host_python_environment(
     # 下载解释器都在裸连。所有 MFW 子进程环境都从这里派生，所以代理只在这一处注入，
     # 取当前线程登记的作用域值（见 subprocess_proxy_scope）。
     return apply_proxy_environment(env, current_subprocess_proxy())
+
+
+def _host_venv_script_dirs() -> set[str]:
+    """宿主所在 venv（以及 ``VIRTUAL_ENV`` 指的环境）的脚本目录，``normcase`` 后的绝对路径。"""
+
+    prefixes: list[str] = []
+    if sys.prefix != sys.base_prefix:
+        prefixes.append(sys.prefix)
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if virtual_env:
+        prefixes.append(virtual_env)
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    return {
+        os.path.normcase(os.path.abspath(os.path.join(prefix, scripts)))
+        for prefix in prefixes
+    }
+
+
+def path_without_host_venv(path_value: str | None) -> str | None:
+    """``PATH`` 去掉宿主 venv 的脚本目录。
+
+    Runtime 用 ``uv run`` 起后端，``.venv\\Scripts`` 排在 PATH 最前：交给项目子进程（pretask）
+    的 PATH、以及按 PATH 解析裸命令（``"exec": "python"``）时不去掉它，``python`` 就落到 MAS
+    自己的解释器上，项目要的第三方包一个都没有。
+    """
+
+    if not path_value:
+        return path_value
+    excluded = _host_venv_script_dirs()
+    if not excluded:
+        return path_value
+    kept = [
+        entry
+        for entry in path_value.split(os.pathsep)
+        if entry and os.path.normcase(os.path.abspath(entry.strip('"'))) not in excluded
+    ]
+    return os.pathsep.join(kept)
 
 
 #: 注入代理时写入的三个变量（同一值）。uv（reqwest）与 pip 都认这三个。

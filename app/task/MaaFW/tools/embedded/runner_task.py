@@ -65,6 +65,8 @@ from app.task.MaaFW.tools.core.runner.run_plan import (
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+    path_without_host_venv,
+    strip_host_python_environment,
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
@@ -2118,7 +2120,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
 
-        env = os.environ.copy()
+        # 宿主的 VIRTUAL_ENV、PYTHON* 等不往下传，PATH 去掉宿主 venv 的脚本目录（Runtime 经
+        # uv run 起后端时它排最前）：pretask 脚本里再起 python 不该落到 MAS 自己的环境上
+        env = strip_host_python_environment()
+        if "PATH" in env:
+            env["PATH"] = path_without_host_venv(env["PATH"]) or ""
         # 与 agent 同口径（runner._build_agent_env）：pretask 多是项目自带 Python 跑的
         # 脚本，输出与读文件都按 UTF-8；对非 Python 程序这两个变量无害。
         env["PYTHONIOENCODING"] = "utf-8"
