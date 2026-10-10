@@ -858,32 +858,40 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     controller_name,
                 )
 
+    # 任务上的同类笔误同一口径：告警、原样保留（删空了反而变成「适用于所有」），这个任务
+    # 只在写对了的那些 controller / resource 下可用，全写错就哪儿都不可用，其余任务照常
     for task in interface_model.task:
         task_ref = f"{task.name}({task.entry})"
         for controller_name in task.controller or []:
             if controller_name not in controller_names:
-                raise MaaFWInterfaceLoadError(
-                    f"任务 {task_ref} 引用了不存在的 controller: {controller_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface 任务 %s 引用了不存在的 controller"
+                    "（不会匹配任何控制器）：%s",
+                    task_ref,
+                    controller_name,
                 )
         for resource_name in task.resource or []:
             if resource_name not in resource_names:
-                raise MaaFWInterfaceLoadError(
-                    f"任务 {task_ref} 引用了不存在的 resource: {resource_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface 任务 %s 引用了不存在的 resource"
+                    "（不会匹配任何资源）：%s",
+                    task_ref,
+                    resource_name,
                 )
 
 
 def _prune_references_lost_with_imports(
     interface_model: MaaFWInterface, missing_imports: list[str]
 ) -> None:
-    """缺了 import 文件时，指向没定义的选项 / 任务的引用降级为告警并去掉。
+    """指向没定义的选项的引用降级为告警并去掉；缺了 import 文件时预设引用的任务不存在也告警。
 
-    缺的文件里声明了什么无从得知，只能从悬空的引用反推：哪个任务（或全局、资源、
-    控制器、设置、case）引用的选项没有定义，哪个预设引用的任务不存在。没缺文件时
-    悬空引用照旧是错误（由后面的校验报），这里不放宽。
+    发行包里一处笔误（任务、全局、资源、控制器、设置或某个 case 引用了没定义的选项）
+    只让那个选项不可用，不让整份 interface 读不出来——「能降级就降级」，与 pretask
+    的坏引用、``resource.controller`` 的笔误同一口径。缺了 import 文件时，缺的文件里声明了
+    什么无从得知，告警里写明多半在那里。去掉悬空的选项名不会放宽任何限制：选项列表只决定
+    显示哪些选项。
     """
 
-    if not missing_imports:
-        return
     missing_text = "、".join(missing_imports)
     option_names = set(interface_model.option)
 
@@ -892,13 +900,20 @@ def _prune_references_lost_with_imports(
             return names
         lost = [name for name in names if name not in option_names]
         for name in lost:
-            logger.warning(
-                "MaaFW ProjectInterface %s 引用的选项 %s 没有定义（多半在缺失的 import "
-                "文件 %s 里），该选项不可用",
-                location,
-                name,
-                missing_text,
-            )
+            if missing_imports:
+                logger.warning(
+                    "MaaFW ProjectInterface %s 引用的选项 %s 没有定义（多半在缺失的 import "
+                    "文件 %s 里），该选项不可用",
+                    location,
+                    name,
+                    missing_text,
+                )
+            else:
+                logger.warning(
+                    "MaaFW ProjectInterface %s 引用的选项 %s 没有定义，已忽略这处引用",
+                    location,
+                    name,
+                )
         return [name for name in names if name in option_names] if lost else names
 
     interface_model.global_option = keep_defined(
@@ -920,6 +935,8 @@ def _prune_references_lost_with_imports(
                 case.option, f"选项 {option_name} 的 case {case.name}"
             )
 
+    if not missing_imports:
+        return
     task_names = {task.name for task in interface_model.task}
     for preset in interface_model.preset:
         for preset_task in preset.task or []:
