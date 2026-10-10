@@ -272,6 +272,8 @@ class MSSFlavor:
 
         ## 「活动优先」开着时，队列里没加活动任务也补一个——但只有**确认在活动期**才补：
         ## 取不到活动数据时乱加会让这一轮多跑一个本来不该跑的任务。
+        ## 补的位置与已在队列里时同一口径：悬赏试炼之前（先消耗干劲），没有悬赏试炼就在爬塔前。
+        added = False
         if (
             activity is not None
             and not any(name_of(i) == activity for i in ids)
@@ -281,9 +283,20 @@ class MSSFlavor:
             ids = _insert_before_climb(ids, activity, interface_model, name_of)
             moved = _move_before(ids, activity, tribulation, name_of)
             ids = moved
-            log(f"[MSS] 活动进行中，已自动加入「{activity}」并排到最前")
+            added = True
+            if tribulation is not None and any(name_of(i) == tribulation for i in ids):
+                log(
+                    f"[MSS] 活动进行中，已自动加入「{activity}」，"
+                    f"排在「{tribulation}」之前"
+                )
+            else:
+                log(f"[MSS] 活动进行中，已自动加入「{activity}」")
 
-        if activity is not None and any(name_of(i) == activity for i in ids):
+        if (
+            not added
+            and activity is not None
+            and any(name_of(i) == activity for i in ids)
+        ):
             running = self._activity_probe()
             if running is False:
                 remaining = [i for i in ids if name_of(i) != activity]

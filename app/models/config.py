@@ -3147,7 +3147,7 @@ class MSSUserConfig(MaaFWUserConfig):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入并排到最前
+        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前
         self.Info_IfActivityFirst = ConfigItem(
             "Info", "IfActivityFirst", True, BoolValidator()
         )
