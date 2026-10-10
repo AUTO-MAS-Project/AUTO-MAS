@@ -1804,8 +1804,7 @@ export default {
       'タスクキューが空で、プランも「固定」のままです。この実行にはタスクがないので、少なくとも 1 つ追加するかプランを選んでください',
     mssFlavorDefense: '災変防衛線',
     mssFlavorDefenseHint:
-      'オンにすると、個人版 MaaStellaSora が毎期一度だけ「災変防衛線」を自動で行います（一期に一度しか挑めないため、実行済みの期はスキップします）。右側は今期の状態です',
-    mssFlavorDefenseOff: '無効',
+      '個人版 MaaStellaSora が毎期一度だけ「災変防衛線」を自動で行います（一期に一度しか挑めないため、実行済みの期はスキップします）。右側は今期の状態で、このスイッチを切ると丸ごとスキップします',
     mssFlavorDefenseDone: '今期は実行済み',
     mssFlavorDefensePending: '今期は未実行',
     mssFlavorDefenseArmed: '今回のキューに追加済み',

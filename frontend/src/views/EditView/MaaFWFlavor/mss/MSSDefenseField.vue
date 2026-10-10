@@ -1,7 +1,9 @@
 <template>
-  <!-- 「灾变防线」是个人版才有的一次性任务：开关是全局的，状态是这一期的。
-       开关关着就只说「未启用」，开着才把这一期打没打摊出来 -->
+  <!-- 「灾变防线」整块都是个人版专属：没在设置页输入密码启用个人版（Function.IfPersonalMss）
+       的普通用户不该看到它，连一个灰着的开关也不该有——`enabled` 初值是 false，读到开关为真
+       才渲染，所以没有「先闪一下再消失」的问题。启用之后这里留住开关，是为了能就地关掉它。 -->
   <a-form-item
+    v-if="enabled"
     class="flavor-mss-defense"
     :label="t('edit.mssFlavorDefense')"
     :extra="t('edit.mssFlavorDefenseHint')"
@@ -13,10 +15,7 @@
         :disabled="context.loading"
         @change="handleToggle"
       />
-      <a-tag v-if="!enabled" color="default">
-        {{ t('edit.mssFlavorDefenseOff') }}
-      </a-tag>
-      <a-tooltip v-else :title="periodHint">
+      <a-tooltip :title="periodHint">
         <a-tag :color="statusColor">{{ statusText }}</a-tag>
       </a-tooltip>
     </a-space>
@@ -28,15 +27,16 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { GetService, MaaFwService, UpdateService, type MssDefenseStatusData } from '@/api'
+import { MaaFwService, UpdateService, type MssDefenseStatusData } from '@/api'
 import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
 
 /**
- * 个人版「灾变防线」：一个全局开关 + 这一期的状态。
+ * 个人版「灾变防线」：一个全局开关 + 这一期的状态，**整块只在个人版启用后出现**。
  *
  * 状态由后端算（`/maafw/mss/defense-status`）——「这一期」是官网那一篇公告的开始时刻，
- * 那套口径只在编排里有一份，前端不复刻。开关是全局的 `Function.IfPersonalMss`，
- * 与设置页那个「并非神秘入口」是同一个字段，改哪边都一样。
+ * 那套口径只在编排里有一份，前端不复刻。个人版总开关（`Function.IfPersonalMss`，与设置页
+ * 那个「并非神秘入口」是同一个字段）也由它一起带回来：没开时这块 UI 不该存在，而为一个
+ * 布尔再去读一遍整份全局配置不值得。
  */
 
 const props = defineProps<{
@@ -46,9 +46,11 @@ const props = defineProps<{
 const { t } = useI18n()
 const route = useRoute()
 
-const enabled = ref(false)
 const saving = ref(false)
 const status = ref<MssDefenseStatusData | null>(null)
+
+/** 总开关来自状态响应：拿不到（还没查到 / 查失败）就按没开算，整块不渲染 */
+const enabled = computed(() => status.value?.enabled === true)
 
 const statusText = computed(() => {
   const state = status.value
@@ -87,28 +89,12 @@ const loadStatus = async () => {
     })
     status.value = response.data ?? null
   } catch {
-    // 查不到就显示「状态未知」：这是只读的展示信息，不该拦住整页
+    // 查不到就当没启用：整块不渲染。这是只读的展示信息，不该拦住整页
     status.value = null
   }
 }
 
-/**
- * 读开关：失败就按关闭显示，**不弹提示**——它挂在一个只读的展示位上，后端一时拿不到
- * 不该在用户的编辑页刷一条红字（真要提示留给下面保存那一步）。
- */
-const loadSettings = async () => {
-  try {
-    const response = await GetService.getScriptsApiSettingGetPost()
-    if (response.code !== 200) return
-    enabled.value = response.data?.Function?.IfPersonalMss === true
-  } catch {
-    enabled.value = false
-  }
-}
-
-onMounted(async () => {
-  await Promise.all([loadSettings(), loadStatus()])
-})
+onMounted(loadStatus)
 
 const handleToggle = async (checked: boolean | string | number) => {
   const next = checked === true
@@ -123,9 +109,8 @@ const handleToggle = async (checked: boolean | string | number) => {
       message.error(response.message || t('edit.mssFlavorDefenseSaveFailed'))
       return
     }
-    enabled.value = next
-    // 刚打开时状态可能还没查过（页面加载那次的开关是关的），补一次
-    if (next) await loadStatus()
+    // 本地先翻过去，省得为一个布尔再查一次；关掉时这一块会整个消失
+    status.value = { ...(status.value ?? {}), enabled: next }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('edit.mssFlavorDefenseSaveFailed'))
   } finally {

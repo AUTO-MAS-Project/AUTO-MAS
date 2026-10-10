@@ -1845,8 +1845,7 @@ export default {
       '任务队列是空的，计划表也还是「固定」：这一轮没有任何可执行任务，请至少加一个任务或选一张计划表',
     mssFlavorDefense: '灾变防线',
     mssFlavorDefenseHint:
-      '打开后，个人版 MaaStellaSora 每期会自动补打一次「灾变防线」（一期只打得到一次，打过就跳过）；右边显示这一期的状态',
-    mssFlavorDefenseOff: '未启用',
+      '个人版 MaaStellaSora 每期会自动补打一次「灾变防线」（一期只打得到一次，打过就跳过）；右边是这一期的状态，关掉这个开关就整个跳过它',
     mssFlavorDefenseDone: '本期已打',
     mssFlavorDefensePending: '本期未打',
     mssFlavorDefenseArmed: '已排入队列',
