@@ -32,7 +32,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
   ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
-  导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
+  导入的来源，运行时不读它（开发者模式下运行前检查会扫一遍它决定要不要重导，跑的仍是视图）；
+  导入完成后用户删掉来源也无妨。源码形态的视图同样以 interface 所在目录为根（`assets/` 平铺到视图根，
+  见「源码形态」），所以项目根永远等于视图根、永远有 `interface.json`。manager 三处、`runner_task`、
   `api_service/update.py`（`/maafw/update`）都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
   新增任何"读项目目录"的代码不要再各自读 `Info.Path`。唯一的例外是 `runner_task` 的运行前架构自检
@@ -46,14 +48,104 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
   全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 / venv /
   备份桶都不用改键），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
-  视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
-  来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
+  视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`、`envConfirmedFor`、
+  开发者模式的 `followSource`）是物化事实的唯一来源，不进指纹、不进任何清单，只随目录原子换入、
+  不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
+  改写 / 摘掉 `followSource`（见下面「跟随来源目录」）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
   载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
   自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
   新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
-  能加载的」，见 `payloads._replaces_older_projection_latest`）。
-  配置项零新增：谱系 / 载荷 / 版本都不进 `ScriptConfig.json`。
+  能加载的」，见 `payloads._replaces_older_projection_latest`）。开发者模式的脚本例外：它的组是
+  谱系 + 私有渠道 `dev:<视图名>`，见下一条。
+  谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
+  `Embedded.FollowSource`。
+- **跟随来源目录（开发者模式，`Embedded.FollowSource`，默认关）**：给在本地发行包里改东西修 bug
+  的开发者用（视图 + 组 latest 让「改来源不生效、改视图被换版本冲掉」）。仍然在视图上跑，只是：
+  - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
+    （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
+    碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
+    每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
+    `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest；版本另带 PEP 440 本地段
+    `+dev`（`follow_source_payload_version`：`1.5.0` → `1.5.0+dev`，已有本地段的追加 `.dev`），
+    所以没有这条过滤的老代码按「版本字符串相等」挑同版本候选时也挑不中它，载荷 id 也与同内容的
+    正式载荷不同（`1.5.0+dev-<hash8>`，`+` 本来就在 id 允许的字符里）。视图标记的 `version` 是这个
+    带 `+dev` 的载荷版本（界面与「沿用上次同步」的告警里看得出是本地改过的），`Embedded.SourceVersion`
+    仍记 interface 里的原版本。
+  - **察觉变化**：运行前检查（`ensure_embedded_copy(follow_source_check=True)`，只有 manager 的
+    `_check` 传）与手动重新导入。按投影白名单给来源算签名（`follow_source_signature`：投影会带走的
+    文件的源相对路径 + 大小 + mtime_ns，≤ 1 MB 的再加内容 blake2b，大文件只看大小与修改时间；外加
+    签名格式与投影规则版本），与视图标记 `followSource.signature` 比，路径或签名不同就重新导入；签名在
+    复制之前算。老格式签名的标记一定对不上，升级后第一次运行前重导一次，不报错。内容没变（只改了修改
+    时间）登记出的就是视图正挂的那份，不重建视图、只原地改 `followSource`。日志一行
+    （`describe_follow_source_sync`）：「来源目录有 N 个文件变化（前 5 个路径），已重新导入」/「来源
+    目录未变化」，N 按新旧载荷清单的 sha256 比。预览、准备环境等入口不扫来源。
+  - **读不了来源时沿用上次同步的版本**（`_sync_follow_source` → `_keep_last_follow_source_sync`）：
+    来源目录不在、读文件被拒（`PermissionError`）、`interface.json` 暂时不在或解析失败、投影规则拒绝
+    （junction / 符号链接，规则不变）等任何读取 / 投影失败，都**照常在当前视图上跑**，运行日志写一行
+    醒目的「【警告】开发者模式读取来源目录失败：原因；本轮沿用上次同步的版本 X（同步于 …）运行」。
+    源码形态的脚本，这一条和上面的同步日志开头都写「源码形态」（`_follow_source_label`），与界面上的标签一致。
+    只有视图本身不在（没有可跑的副本）才按导入失败处理。「立即同步」不走这条退路，照常报失败原因。
+  - **离开开发者载荷不留「本地改过」档**：`_realize_view` 按新旧载荷清单的 `channel` 是不是 `dev:`
+    判断（`is_follow_source_manifest`），不看是哪条代码路径进来的——开发者导入、关掉开关、克隆后第一次
+    组同步、关掉后被兄弟导入 / 同组传播换走，只要切换的一端是开发者载荷，就既不按同版本「只补缺」也不
+    把视图与旧载荷的差异当本地修改留档（那些差异就是从来源同步来的）。
+  - **立即同步**（脚本页状态行旁的按钮，`/maafw/embedded/sync` → `api_service.embedded.sync_embedded`）：
+    按当前 `Info.Path` 强制重导进私有渠道，**不看签名**（补上修改时间没变而漏检的改动）；内容与视图相同
+    时不重建视图、只刷新同步时间。返回的 `message` 就是结果（N 个文件变化 / 内容未变化）。脚本运行中
+    （`is_locked`）、项目正在更新、视图预约被占用、来源目录不在都直接拒绝，不排队、不打断。
+  - **不更新**：运行前 / 运行后自动更新跳过（`_run_project_update` 开头一行日志）、投影补齐不查，
+    `/maafw/update` 的检查与应用都拒绝（`UPDATE_FOLLOW_SOURCE`，源码形态是 `UPDATE_SOURCE_FORM`）。
+  - **源码形态**（见下面「源码形态」）一律处在这种模式：`follow_source_enabled` 对导入报告
+    `sourceForm` 为真的脚本恒真，开关在界面上锁在开着；源码形态的导入不管调用方传什么都进私有渠道。
+  - **关掉**（标记还带 `followSource` 时，`_leave_follow_source`）：回到 `Update.Channel` 组的 latest
+    （私有文件照常带，不留本地改过档，见上一条）；视图已在 latest 上就只摘掉 `followSource`；组里还
+    没有载荷就按来源正常导入一次；来源也不在就留在当前版本。
+  - **复制 / 克隆不继承**：「复制脚本」把新脚本的 `Embedded.FollowSource` 写成关；`/maafw/embedded/clone`
+    本来就不抄这个开关。源脚本挂的是开发者载荷时，目标挂源原渠道（`Update.Channel`）组的 latest，
+    不复用本地改过的那份（`clone_embedded_copy(group_channel=…)`）；组里还没有正式版本就抛
+    `FollowSourceCloneUnavailable`：克隆接口改按源的来源目录正常导入（目标自己的组，消息里说明），
+    来源也不在就拒绝并让用户直接选目录；「复制脚本」先不建视图，第一次运行前按继承的 `Info.Path` 导入。
+    源码形态没有正式渠道，克隆一律走按来源导入，目标继承 `sourceForm` 报告，照样处在开发者模式。
+    缺视图重建（复制后第一次运行、来源也不在）同样不继承：`_rebuild_from_group` 与视图不完整的重建
+    走 `_formal_group_target`，普通渠道组里没有正式版本时不退到兄弟挂的开发者载荷，按重建失败报错。
+  - **开发者载荷不进普通渠道**：`propagate_payload` 对非私有渠道遇到开发者载荷直接不传播（调用方拿错
+    渠道也兜得住）；导入接口按导入**之后**的实际渠道传播——首次选源码目录时导入前还是普通渠道，
+    导入中才认出源码形态、换成私有渠道。
+  - **回收**：私有渠道的 latest 只在脚本还在、开着开关、视图还在这个谱系上时算引用；其余由启动期
+    `collect_payload_garbage(follow_source_views=…)` 从 `lineage.json` 摘掉（本进程起来之后登记的不碰），
+    被新导入顶掉的、关掉开关或删脚本留下的开发者载荷随后按普通规则回收，视图挂着的照样留。
+- **源码形态**（`ProjectionRules.source_layout`，导入报告 `sourceForm`）：interface 在 `assets/`
+  这类子目录里、声明的路径越出它落在来源根上（M9A 式源码仓：`assets/interface.json` +
+  `"child_exec": "python", "child_args": ["-u", "./../agent/main.py"]`，根上 `agent/`、
+  `requirements.txt`，没有 `python/` 与 `maafw/`）。只在导入（`strict`）时认；以前整包拒绝。
+  - **视图 = 发行包的平铺布局**：`assets/` 里的提升到副本根，`assets/` 之外的（`agent/`、`runner/`、
+    `config/`、`requirements.txt`、≤ 64 MB 的小顶层条目）原样放到副本根（`output_path`），与项目自己
+    打包时得到的布局相同；平铺后与 `assets/` 里同名的根上条目丢掉并告警。项目根 = interface 所在目录
+    = 视图根，`{PROJECT_DIR}`、`{RESOURCE_DIR}/../..` 这类相对资源的写法在视图里与发行包一致。
+  - **interface 不改写**：越出项目根的 agent 入口由 `interface.agent_entry.flattened_entry_path`
+    兜底（去掉开头的 `../` → `agent/main.py`），投影（`cfa_agent_entry`）与 planner 共用；CFA 的固定
+    兜底 `agent/main.py` 是它的特例。不改写是因为 runner / planner / 预览 / 导入检查都按 base_dir
+    解析路径，平铺之后一处兜底就全对，而改写 interface 要在每份载荷里维持一份与来源不同的文件。
+  - **运行时**：裸 `python` → 项目专属隔离 venv（按视图根的 `requirements.txt`）；没自带原生库 →
+    runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
+    `environment.maafw_version`，worker 传实际加载的 binding 版本，见
+    `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
+    自己挑会落到协议不同的版本上。这条对**所有没自带原生库的项目**都成立，不限源码形态（没自带
+    `maafw/` 的发行包以前照抄范围，升级后依赖哈希变了，会重建一次隔离 venv）；自带原生库（确切版本）
+    的项目不受影响。
+  - **这次导入走不走私有渠道只看开关**（`follow_source_switch_on` / `import_channel`）：源码形态由导入
+    按这次的投影布局自己认、强制进私有渠道；导入前的报告是上一次的结果，源码形态的脚本改选成发行包
+    目录时它还写着 `sourceForm`，按它判会把发行包登记成开发者载荷。导入完成、报告写回之后，组同步与
+    传播照旧按 `effective_channel`。
+  - **始终跟随来源目录**（见上面「跟随来源目录」），不做项目更新；界面上显示「源码形态」标签。导入报告里的
+    `bundledMaaFWVersion` 只认被投影带走的原生库（源码仓里躺着的 `dist/maafw` 不算）。
+  - **只放行运行时映射得回来的越界**：越出 `assets/` 的声明目前只有 agent 的第一个 Python 入口有运行时
+    映射（`flattened_entry_path`）。`resource.path`、原生 agent 可执行文件、controller / languages 等其它
+    越界声明导入时就拒绝（`ProjectionError`，说明哪条声明、怎么改），不让用户看到导入成功却建计划时
+    「路径越界」。要支持新的越界写法，先补运行时映射再放行。
+  - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
+    MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
@@ -77,8 +169,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
   latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）就推进
   整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时版本」那行日志仍是所选目录的
-  版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
-  来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
+  版本）。开发者模式下登记进私有渠道、就是它的 latest。没有 enable / disable 这种开关路由——唯一的
+  开关是 `Embedded.FollowSource`（上面「跟随来源目录」，仍在视图上跑），`Embedded.*` 里其余只有
+  报告、来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
 - **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
   链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
   留档到 `data/maafw_project_state/<视图哈希>/local-modified/<from>→<to>-<时间>/`、标记先写进
@@ -120,7 +213,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
   隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`clean_maafw_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
-  谱系还有视图时再加它的 latest；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
+  谱系还有视图时再加它的 latest（私有渠道的 latest 只在开着开发者模式时算，见「跟随来源目录」）；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
   本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
   状态再判一次，否则判定之后刚登记的载荷会被一起删掉；整谱系收走时放锁后还会删锁文件和空目录，
   所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
@@ -129,8 +222,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
-  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`
+  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`（开发者模式开关除外）
   沿用源（两者必须成对继承），类型随项目。「复制脚本」（`Config.add_script`）复用同一个函数。
+  源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期 `Config.clean_maafw_update_cache`
@@ -146,12 +240,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
   `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
   清单里没有导入目录）。
-- **只支持发行包形态**：源码仓里 agent 写成 `"child_exec": "uv"`（`uv run agent/main.py`）
-  这类开发者形态不支持、也不打算适配——发行包的打包流程会把它改写成
-  `./python/python.exe`，导入发行包即可。例外是被 CFA（MFW-PyQt6）源码热更新过的目录：它的
-  interface 留着源码写法的 agent（识宝的 `../agent/main.py`），入口按 CFA 自己的规则兜底——
-  解析不到就退回 `<interface 目录>/agent/main.py`（`interface/agent_entry.py`，投影与 planner
-  共用），长期保留，不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
+- **发行包形态与源码形态**：发行包（interface 在包根，自带 `python/` / `maafw/` 或不带）照常导入、
+  照常更新。M9A 式源码仓（`assets/interface.json`、agent 在 `assets/` 外）按上面「源码形态」平铺导入，
+  始终跟随来源目录、不做项目更新（`child_exec: uv` 不支持，见「源码形态」）。被 CFA（MFW-PyQt6）源码热更新过
+  的目录是另一种平铺：它把 `assets/` 平铺到包根、`agent/` 放包根，interface 留着源码写法的 agent（识宝的
+  `../agent/main.py`）；入口按 `interface/agent_entry.py` 的兜底解析（投影与 planner 共用），长期保留，
+  不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -254,7 +348,33 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比较任务数时要减掉。
 - 选项 `type` 支持 `select / scan_select / switch / checkbox / input / hotkey`，后端下发与
   前端 `MaaFWTaskOptionEditor.vue` 两侧都有；未知 type 前端有兜底提示。
-- input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里是带 `mas-dpapi:` 前缀的
+- **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
+  （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`。覆盖顺序
+  照 PI / MXU / MaaPiCli：全局组按全局表，资源 / 控制器 / 任务组按任务自己的值，后叠的盖前面
+  （`MaaFWPipelineOverrideBuilder.build_task_pipeline_override(..., global_options=)`）。所以同一
+  选项也被任务 / 资源 / 控制器自己引用时，它在任务的选项表（`build_task_option_maps`，不按当前
+  资源 / 控制器过滤）里、按任务存值、面板照常显示；只有对某任务「只属于全局」的选项，任务上的值
+  不生效、迁移与导入都折进全局表。别把两类合成一张表：v5.6 的「全局盖过同名任务选项」与 PI 示例
+  （战斗划火柴）的结果不同。特调走 `task_ids` 那条路时必须把 `select_snapshot_tasks` 给的
+  `global_options` 一并传给 `build_plan`（漏了不报错，全局选项静默回到默认值）；特调往
+  `task_options` 写的只属于全局的选项，这一实例以它为准（`extract_task_global_overrides`，依赖
+  归一后的任务选项里不会有这类键；判「只属于全局」必须与快照归一同用**不按当前资源 / 控制器过滤**
+  的表，否则一个还被未选中资源引用的全局选项，归一补出的默认值会被误当成特调写入、盖掉用户的全局值）。pretask 不吃全局表。计划的 `globalOptions` 是全局层的取值，
+  同一选项任务自己也有值时任务 `options` 里看不到它，打码收集两处都看。旧配置迁移
+  （`normalize_snapshot`，前端 `maafwGlobalOptions.ts` 同一口径）：全局表里缺或坏的项，取队列里
+  第一个勾选的、带合法值、且对它只属于全局的实例，再没有取未勾选的。预设写在任务上的只属于全局的
+  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准。
+  **降级兼容双写**：保存时（`option_secrets.prepare_user_task_snapshot` →
+  `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
+  读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
+  都不看副本（归一 / `withoutMaaFWGlobalOnlyOptions` 丢掉），去掉双写前要先确认没人会降级。
+- **保存的值对不上当前 interface 不静默**：项目改了 case 名后，归一会把 select / switch 的旧值换回
+  默认、checkbox 里对不上的项丢掉（值本身不改）。`runner_task` 建计划前按原始快照
+  （`run_plan.describe_stale_option_values`：全局表里存着的项 + 勾选实例自己的选项，不看迁移前的
+  旧配置、坏值形状与降级副本）把这些列成计划提示，运行日志开头「MaaFW 运行计划提示」里各一句，
+  与「interface 内已无该任务」的跳过同一个思路。开发者模式下改 interface 最容易撞上。
+- input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里（`taskOptions` 与
+  `globalOptions` 两处，`option_secrets._SECRET_SECTIONS`）是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
@@ -302,6 +422,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 更新
 
+- 开着开发者模式（`Embedded.FollowSource`）的脚本**不更新**：自动更新跳过、手动检查与应用都拒绝，
+  以来源目录为准（见「跟随来源目录」）。下面说的都是普通模式。
 - 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
@@ -405,9 +527,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
   （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
-- 用户配置上的 `Info.Mode`（脚本/用户/直控）**没有任何 MaaFW 代码消费**；运行器只读
-  `Info.IfQuickConfig`（关闭时按项目原生默认值跑，不下发任务快照与预设）。不要在 MaaFW 上
-  按三态写逻辑。
+- 用户配置上的 `Info.Mode`（脚本/用户/直控）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
+  用户页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
+  配置备份恢复里原样带着。不要在 MaaFW 上按三态写逻辑。
 - 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、
   登录/切号、按游戏语义组织的专属界面、对上游资源文件的动态读取等）可以立专项，MaaEnd 就是
   这种情况。立专项时在专项目录写明它比通用 MaaFW 多控制了什么。

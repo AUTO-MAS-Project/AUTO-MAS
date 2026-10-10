@@ -69,6 +69,7 @@
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
+            @sync-source="syncFromSource"
           />
           <MaaFWFlavorSlot
             part="scriptPage"
@@ -294,6 +295,7 @@ const {
   importPercent,
   importMessage,
   selectMaaFWPath,
+  syncFromSource,
   isAutoUpdateDisabled,
   updateChecking,
   updateApplying,

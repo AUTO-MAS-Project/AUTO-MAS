@@ -2332,10 +2332,15 @@ class MaaFWRunner:
             prepare_agent_envs,
         )
 
+        # 项目没自带原生库时 agent 的 maafw 钉成本 worker 实际加载的 binding 版本（宿主备 runner
+        # 环境时解析出的同一个，也在 job 的 PI_CLIENT_MAAFW_VERSION 里）。
+        _loaded, binding_version = describe_loaded_maafw()
         prepare_agent_envs(
             Path(self.plan.path),
             process_agents,
             send_log=self.send_log,
+            runner_maafw_version=binding_version
+            or (self.plan.piEnv or {}).get("PI_CLIENT_MAAFW_VERSION"),
         )
         self.send_log("[Python环境] Agent 环境准备完成")
 

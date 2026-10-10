@@ -1889,6 +1889,17 @@ export default {
     maafwDirectoryLockedHint:
       'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new managed script to use another project',
     maafwImportingCopy: 'Importing project...',
+    maafwFollowSource: 'Follow source directory (developer mode)',
+    maafwFollowSourceHint:
+      'When on, files you change in the source directory take effect on the next run (changes are re-imported before running, or click "Sync now"). No project updates, and no version sharing with other scripts of the same project. Turning it off returns to the version of the selected update channel',
+    maafwFollowSourceSyncNow: 'Sync now',
+    maafwSourceFormTag: 'Source form',
+    maafwSourceFormHint:
+      'Imported in source form (interface in assets/, Agent in the source tree, no bundled Python or MaaFramework): always follows the source directory and changes take effect on the next run (or click "Sync now"). The Agent gets an isolated environment from requirements.txt; no project updates and no version sharing with other scripts of the same project',
+    maafwFollowSourceStatus: 'Following {path} · last synced {time}',
+    maafwFollowSourceNotSynced:
+      'Following {path} · not synced yet, will import before the next run',
+    maafwFollowSourceMissing: 'Source directory is missing; runs keep using the current copy',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
@@ -2780,6 +2791,8 @@ export default {
     depotDeleteSelectedConfirm: 'Delete the {n} selected depot maintenance plans?',
     maafwNoMatchingSettings: 'No matching settings',
     maafwNoConfigurableOptions: 'This task has no configurable options',
+    maafwGlobalOptions: 'Global options',
+    maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
     unknownType: 'Unknown',

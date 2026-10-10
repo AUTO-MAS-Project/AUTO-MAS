@@ -791,7 +791,14 @@ class AppConfig(GlobalConfig):
 
             # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
             if isinstance(new_config, MaaFWConfig):
-                await self._clone_embedded_copy_for_script(str(script_id), str(new_uid))
+                # 开发者模式（跟随来源目录）不随复制带过去：复制出来的是普通脚本，挂源脚本原
+                # 渠道组的版本（见 _clone_embedded_copy_for_script）。
+                await new_config.set("Embedded", "FollowSource", False)
+                await self._clone_embedded_copy_for_script(
+                    str(script_id),
+                    str(new_uid),
+                    source_config=self.ScriptConfig[script_uid],
+                )
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -812,19 +819,29 @@ class AppConfig(GlobalConfig):
             return new_uid, new_config
 
     async def _clone_embedded_copy_for_script(
-        self, source_script_id: str, target_script_id: str
+        self, source_script_id: str, target_script_id: str, *, source_config: Any
     ) -> None:
         """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
-        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。"""
+        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。
+
+        源开着开发者模式时取它原渠道（源的 ``Update.Channel``）组的 latest；组里还没有载荷
+        （或源是源码形态）就先不建视图，复制出来的脚本第一次运行前按来源目录导入（来源也不在时
+        按同来源兄弟 / 已登记的版本重建，与视图丢了是同一条路）。
+        """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
+            FollowSourceCloneUnavailable,
             clone_embedded_copy,
             embedded_project_dir,
+            is_source_form,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
             try_reserve_project_path,
         )
+
+        group_channel = str(source_config.get("Update", "Channel") or "stable")
+        source_form = is_source_form(source_config)
 
         target_key = await try_reserve_project_path(
             embedded_project_dir(target_script_id)
@@ -833,8 +850,15 @@ class AppConfig(GlobalConfig):
             return
         try:
             await asyncio.to_thread(
-                clone_embedded_copy, source_script_id, target_script_id
+                lambda: clone_embedded_copy(
+                    source_script_id,
+                    target_script_id,
+                    group_channel=group_channel,
+                    source_form=source_form,
+                )
             )
+        except FollowSourceCloneUnavailable as exc:
+            logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
         except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
             logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
         finally:
@@ -3010,7 +3034,8 @@ class AppConfig(GlobalConfig):
                 )
 
         # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。
+        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
+        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
         task_data = data.get("Task")
         if (
             isinstance(script_config, MaaFWConfig)
@@ -3019,7 +3044,7 @@ class AppConfig(GlobalConfig):
         ):
             from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
             from app.task.MaaFW.tools.embedded.option_secrets import (
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
             )
 
             # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
@@ -3028,7 +3053,7 @@ class AppConfig(GlobalConfig):
             )
 
             task_data["TaskSnapshot"] = await asyncio.to_thread(
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
                 script_id,
                 script_config,
                 task_data["TaskSnapshot"],
@@ -4943,6 +4968,7 @@ class AppConfig(GlobalConfig):
         # 回收据此保住对应的谱系。
         from app.task.MaaFW.tools.embedded.embedded_project import (
             embedded_project_dir,
+            follow_source_enabled,
             imported_source_path,
             read_view_marker,
         )
@@ -4953,16 +4979,28 @@ class AppConfig(GlobalConfig):
             if isinstance(config, MaaFWConfig)
             and read_view_marker(embedded_project_dir(str(uid))) is None
         ]
-        await asyncio.to_thread(self._collect_unreferenced_payloads, live_sources)
+        # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
+        # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
+        follow_views = [
+            embedded_copy_dir_name(str(uid))
+            for uid, config in self.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig) and follow_source_enabled(config)
+        ]
+        await asyncio.to_thread(
+            self._collect_unreferenced_payloads, live_sources, follow_views
+        )
 
     @staticmethod
-    def _collect_unreferenced_payloads(live_sources: list[str]) -> None:
+    def _collect_unreferenced_payloads(
+        live_sources: list[str], follow_views: list[str]
+    ) -> None:
         """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
         （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
 
         引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
-        谱系还有视图时算引用。本进程起来之后才建的不收。载荷删掉之后，它独有的 blob 只剩
-        库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
+        谱系还有视图时算引用（开发者模式的私有渠道只在脚本还开着开关时算）。本进程起来
+        之后才建的不收。载荷删掉之后，它独有的 blob 只剩库里一个链接，紧接着的
+        ``clean_maafw_runtime_blobs`` 收走。
         """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -4971,7 +5009,9 @@ class AppConfig(GlobalConfig):
 
         try:
             report = collect_payload_garbage(
-                started_at=_PROCESS_STARTED_AT, live_sources=live_sources
+                started_at=_PROCESS_STARTED_AT,
+                live_sources=live_sources,
+                follow_source_views=follow_views,
             )
         except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
             logger.warning(f"MFW 载荷回收失败: {exc}")
@@ -5020,6 +5060,7 @@ class AppConfig(GlobalConfig):
             GroupMember,
             adopt_view,
             copy_is_healthy,
+            effective_channel,
             embedded_project_dir,
             imported_source_path,
             read_view_marker,
@@ -5045,7 +5086,8 @@ class AppConfig(GlobalConfig):
             entries.append(
                 (
                     str(uid),
-                    str(config.get("Update", "Channel") or "stable"),
+                    # 所在的组：开发者模式下是它的私有渠道，统一到组版本时不被切到正式版
+                    effective_channel(str(uid), config),
                     imported_source_path(config)
                     or str(config.get("Info", "Path") or ""),
                     str(config.get("Info", "Name") or str(uid)[:8]),
