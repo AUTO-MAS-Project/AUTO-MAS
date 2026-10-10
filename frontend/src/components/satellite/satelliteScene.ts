@@ -9,6 +9,7 @@ import {
   ORBIT_RINGS,
   SATELLITE_COLORS,
   SATELLITE_CONFIG as C,
+  type OrbitRing,
 } from './config'
 import { isAprilFools } from './eggs'
 import { SatelliteExplosion } from './explosionEffect'
@@ -27,12 +28,12 @@ import {
   getRingPoint,
   getRingSpeed,
   getSatelliteFloat,
-  getSatelliteSlot,
   getStatusKind,
   getTrailStatusColor,
   type CenterGlowMode,
-  type SatelliteSlot,
+  type RingBasis,
 } from './motion'
+import { getPlanetaryOrbitRings, getPlanetarySlots, type PlanetarySlot } from './planetarySystem'
 import {
   applyGlow,
   createCanvasTexture,
@@ -48,6 +49,7 @@ import {
   loadImageToCanvas,
   RENDER_ORDER,
   type PointCloud,
+  type OrbitLine,
   type SatelliteTile,
 } from './sceneParts'
 import { createBadgeTextures, SatelliteDecor, type StatusTextures } from './statusDecor'
@@ -70,7 +72,10 @@ interface Satellite extends SatelliteTile {
   type: ScriptType
   label: string
   iconCanvas: HTMLCanvasElement
-  slot: SatelliteSlot
+  slot: PlanetarySlot
+  orbitBasis: RingBasis
+  /** 每圈卫星共用一条随父行星移动的轨道，由该圈第一颗更新 */
+  moonOrbit: OrbitLine | null
   activityGlow: THREE.Sprite
   errorGlow: THREE.Sprite
   /** 点一下冒的青色闪光 */
@@ -87,6 +92,7 @@ interface Satellite extends SatelliteTile {
   hover: number
   punchAt: number
   pingAt: number
+  press: number
 }
 
 export interface SatelliteSceneModule {
@@ -97,6 +103,7 @@ export interface SatelliteSceneModule {
   iconUrl: string
   /** iconUrl 加载不出来时换用的图标 */
   fallbackIconUrl?: string
+  parentKey?: string
 }
 
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
@@ -174,8 +181,9 @@ export class SatelliteScene {
   private readonly shell = createCoreShell()
   private readonly gyroRings = [createGyroRing(104, 0.9), createGyroRing(122, 0.6)]
   private readonly orbitLines = ORBIT_RINGS.map(createOrbitLine)
-  private readonly ringBases = ORBIT_RINGS.map(getRingBasis)
-  private readonly ringSpeeds = ORBIT_RINGS.map(getRingSpeed)
+  private planetRings: readonly OrbitRing[] = ORBIT_RINGS
+  private readonly moonOrbitLines: OrbitLine[] = []
+  private pressedPlanet: number | null = null
   private readonly coreGlow: THREE.Sprite
   private shockwaveRing: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
   private trails: PointCloud | null = null
@@ -308,16 +316,38 @@ export class SatelliteScene {
     this.centerIconCanvas = centerCanvas
     this.scene.add(center)
 
+    const slots = getPlanetarySlots(modules)
+    this.planetRings = getPlanetaryOrbitRings(modules)
+    this.orbitLines.forEach((line, index) => {
+      line.scale.setScalar(this.planetRings[index].radius / ORBIT_RINGS[index].radius)
+      line.rotation.x = this.planetRings[index].tiltX - ORBIT_RINGS[index].tiltX
+      line.material.uniforms.uRadius.value = this.planetRings[index].radius
+    })
+    const moonRings = new Set<string>()
     this.satellites = iconCanvases.map((iconCanvas, index) => {
       const tile = createSatelliteTile(iconCanvas)
       tile.body.material.color.setHex(this.tileColor)
+      const slot = slots[index]
+      const orbit = slot.moonRing ?? this.planetRings[slot.ring]
+      let moonOrbit: OrbitLine | null = null
+      if (slot.moonRing) {
+        const ringKey = `${slot.parentIndex}:${slot.ring}`
+        if (!moonRings.has(ringKey)) {
+          moonRings.add(ringKey)
+          moonOrbit = createOrbitLine(slot.moonRing)
+          this.moonOrbitLines.push(moonOrbit)
+          this.scene.add(moonOrbit)
+        }
+      }
       const satellite: Satellite = {
         ...tile,
         key: modules[index].key,
         type: modules[index].scriptType,
         label: modules[index].label,
         iconCanvas,
-        slot: getSatelliteSlot(index, modules.length),
+        slot,
+        orbitBasis: getRingBasis(orbit),
+        moonOrbit,
         activityGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.satelliteGlow),
         errorGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.satelliteGlow),
         pingGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.effect),
@@ -330,6 +360,7 @@ export class SatelliteScene {
         hover: 0,
         punchAt: -Infinity,
         pingAt: -Infinity,
+        press: 0,
       }
       satellite.pingGlow.material.color.setHex(SATELLITE_COLORS.explosionFlash)
       this.scene.add(tile.root, satellite.activityGlow, satellite.errorGlow, satellite.pingGlow)
@@ -340,6 +371,8 @@ export class SatelliteScene {
       this.trails = createPointCloud(this.satellites.length * C.trailLength, RENDER_ORDER.trail)
       this.scene.add(this.trails.points)
     }
+    this.setDark(this.isDark)
+    this.resize()
     this.syncPixelRatio()
     return true
   }
@@ -354,7 +387,7 @@ export class SatelliteScene {
       cloud.visible = false
     }
     const orbitColor = isDark ? SATELLITE_COLORS.orbitDark : SATELLITE_COLORS.orbitLight
-    for (const line of this.orbitLines) {
+    for (const line of [...this.orbitLines, ...this.moonOrbitLines]) {
       line.material.uniforms.uColor.value.setHex(orbitColor)
       line.material.uniforms.uOpacity.value = isDark ? 1 : 0.85
     }
@@ -380,12 +413,25 @@ export class SatelliteScene {
     this.centerPressed = pressed
   }
 
+  isFamilyPlanet(index: number): boolean {
+    return Boolean(this.satellites[index]?.slot.planetRing)
+  }
+
+  /** 家族中心与恒星一样只产生按压反馈，不参与卫星消除。 */
+  setPlanetPressed(index: number | null): void {
+    this.pressedPlanet = index !== null && this.isFamilyPlanet(index) ? index : null
+  }
+
   /** 松开并立即复原形变，不走平滑逼近 */
   resetCenterPress(): void {
     this.centerPressed = false
     this.centerScaleX = 1
     this.centerScaleY = 1
     this.charge = 0
+    this.pressedPlanet = null
+    this.satellites.forEach(satellite => {
+      satellite.press = 0
+    })
   }
 
   get isCenterRainbow(): boolean {
@@ -502,7 +548,7 @@ export class SatelliteScene {
   /** 炸开一颗卫星；正在炸的不重复炸，返回这次有没有炸 */
   explode(index: number, time: number): boolean {
     const satellite = this.satellites[index]
-    if (!satellite || satellite.explosion) {
+    if (!satellite || satellite.slot.planetRing || satellite.explosion) {
       return false
     }
 
@@ -739,10 +785,11 @@ export class SatelliteScene {
       cloud.material.rotation += dt * 0.000012
     }
 
-    for (const line of this.orbitLines) {
+    for (const line of [...this.orbitLines, ...this.moonOrbitLines]) {
       const { uniforms } = line.material
       uniforms.uTime.value = time
-      uniforms.uCenterDepth.value = -this.viewDistance
+      this.tmpVector.copy(line.position).applyMatrix4(this.camera.matrixWorldInverse)
+      uniforms.uCenterDepth.value = this.tmpVector.z
       uniforms.uFlow.value = 1 + 6 * overclock
     }
     this.stars.points.material.uniforms.uTime.value = time
@@ -860,15 +907,24 @@ export class SatelliteScene {
   ): void {
     const { root, slot } = satellite
     const appear = appearElapsed === null ? 1 : getAppearProgress(appearElapsed, index + 1)
-    // 入场时从星核里甩出来：半径带一点回弹
-    satellite.angle = slot.baseAngle + this.orbitPhase * this.ringSpeeds[slot.ring]
-    satellite.radius = ORBIT_RINGS[slot.ring].radius * easeOutBack(appear) * (1 + knock)
-    const point = getRingPoint(this.ringBases[slot.ring], satellite.radius, satellite.angle)
+    const parent = slot.parentIndex === null ? null : this.satellites[slot.parentIndex]
+    // 卫星绕父行星更快地公转，入场时从父行星旁展开。
+    const orbit = slot.moonRing ?? this.planetRings[slot.ring]
+    satellite.angle = slot.baseAngle + this.orbitPhase * getRingSpeed(orbit)
+    satellite.radius = orbit.radius * easeOutBack(appear) * (1 + knock)
+    const point = getRingPoint(satellite.orbitBasis, satellite.radius, satellite.angle)
     root.position.set(
-      point.x,
-      point.y + getSatelliteFloat(index, this.satellites.length, time),
-      point.z
+      point.x + (parent?.root.position.x ?? 0),
+      point.y +
+        (parent?.root.position.y ?? 0) +
+        getSatelliteFloat(index, this.satellites.length, time),
+      point.z + (parent?.root.position.z ?? 0)
     )
+    if (satellite.moonOrbit && parent) {
+      satellite.moonOrbit.position.copy(parent.root.position)
+      satellite.moonOrbit.scale.setScalar(Math.max(0.001, easeOutBack(appear) * (1 + knock)))
+      satellite.moonOrbit.visible = parent.root.visible
+    }
     if (dizzy > 0) {
       root.position.x += Math.sin(time * 0.013 + index * 2.1) * 16 * dizzy
       root.position.y += Math.cos(time * 0.017 + index * 1.3) * 12 * dizzy
@@ -894,11 +950,20 @@ export class SatelliteScene {
       .multiply(this.tmpQuaternion.setFromEuler(this.tmpEuler))
 
     satellite.hover +=
-      ((this.hovered === index ? 1 : 0) - satellite.hover) * (1 - Math.exp(-dt / 90))
+      ((this.hovered === index && !slot.planetRing ? 1 : 0) - satellite.hover) *
+      (1 - Math.exp(-dt / 90))
     const pulse = punch >= 0 && punch < 300 ? 1 + 0.22 * Math.sin((Math.PI * punch) / 300) : 1
-    const vanish = this.getVanishScale(time, index)
-    root.scale.setScalar(
-      Math.max(0.001, easeOutCubic(appear) * (1 + 0.18 * satellite.hover) * pulse * vanish)
+    const vanish = slot.planetRing ? 1 : this.getVanishScale(time, index)
+    satellite.press +=
+      ((this.pressedPlanet === index ? 1 : 0) - satellite.press) * (1 - Math.exp(-dt / 40))
+    const scale = Math.max(
+      0.001,
+      easeOutCubic(appear) * (1 + 0.18 * satellite.hover) * pulse * vanish
+    )
+    root.scale.set(
+      scale * (1 + (CENTER_PRESS_SCALE_X - 1) * satellite.press),
+      scale * (1 + (CENTER_PRESS_SCALE_Y - 1) * satellite.press),
+      scale
     )
 
     // 远处的暗一些：按到镜头的深度换算
@@ -1067,9 +1132,13 @@ export class SatelliteScene {
     const color = this.tmpColor
 
     this.satellites.forEach((satellite, index) => {
-      const basis = this.ringBases[satellite.slot.ring]
+      const basis = satellite.orbitBasis
       const head = getRingPoint(basis, satellite.radius, satellite.angle)
-      const floatOffset = satellite.root.position.y - head.y
+      const offset = {
+        x: satellite.root.position.x - head.x,
+        y: satellite.root.position.y - head.y,
+        z: satellite.root.position.z - head.z,
+      }
       const statusColor = getTrailStatusColor(satellite.status)
       const strength = satellite.fade * (satellite.root.visible ? 1 : 0.45)
 
@@ -1081,9 +1150,9 @@ export class SatelliteScene {
           satellite.radius,
           satellite.angle - direction * (k + 1) * spacing
         )
-        trails.positions[i * 3] = point.x
-        trails.positions[i * 3 + 1] = point.y + floatOffset
-        trails.positions[i * 3 + 2] = point.z
+        trails.positions[i * 3] = point.x + offset.x
+        trails.positions[i * 3 + 1] = point.y + offset.y
+        trails.positions[i * 3 + 2] = point.z + offset.z
 
         if (overclock > 0.15) {
           color.setHSL((time * 0.0006 + along) % 1, 0.9, 0.62)

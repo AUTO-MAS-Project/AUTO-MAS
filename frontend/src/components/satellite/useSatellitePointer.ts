@@ -61,6 +61,7 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
   function releaseCenter(): void {
     getScene()?.setCenterPressed(false)
     getScene()?.setCoreCharge(0)
+    getScene()?.setPlanetPressed(null)
   }
 
   function handlePointerDown(event: PointerEvent): void {
@@ -101,6 +102,8 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
           scene.isCenterRainbow ? 'rainbow' : 'star'
         )
       }
+    } else if (typeof target === 'number' && scene.isFamilyPlanet(target)) {
+      scene.setPlanetPressed(target)
     }
     requestRender()
   }
