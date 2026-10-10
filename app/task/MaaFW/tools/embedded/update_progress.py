@@ -52,8 +52,13 @@ STATUS_FAILED = "failed"
 PACKAGE_KIND_FULL = "full"
 PACKAGE_KIND_INCREMENTAL = "incremental"
 
-# 核心包里表示「本次更新已收尾」的 completed 子状态；除 updated 外都算成功结束。
 _FINAL_STAGES = frozenset({"completed", "failed"})
+# 核心包以 ``completed`` 收尾、但其实没装上也没法确认已是最新的子状态：点了「更新」却
+# 取不到可安装的包（CDK 过期 / 额度用尽、GitHub 查不到）、项目没接入 Mirror 酱没法检查、
+# interface 没写版本。结论行按失败显示，别给绿色对勾。其余（updated / no_update）是成功。
+_UNSUCCESSFUL_COMPLETED_STATUSES = frozenset(
+    {"no_installable_candidate", "skipped", "version_missing"}
+)
 _THROTTLED_STAGES = frozenset({"downloading", "extracting", "applying"})
 
 _STAGE_MESSAGES: dict[str, str] = {
@@ -336,9 +341,12 @@ class MaaFWUpdateProgressTracker:
         self, stage: str, event: Mapping[str, Any]
     ) -> WSMaaFWProjectUpdateProgressData:
         message = str(event.get("message") or "")
-        if stage == "failed":
+        if (
+            stage == "failed"
+            or str(event.get("status") or "") in _UNSUCCESSFUL_COMPLETED_STATUSES
+        ):
             return self._data(
-                stage, status=STATUS_FAILED, message=message or "更新失败"
+                "failed", status=STATUS_FAILED, message=message or "更新失败"
             )
         return self._data(
             "completed", status=STATUS_SUCCESS, message=message or "更新已完成"

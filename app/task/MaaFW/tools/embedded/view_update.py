@@ -80,6 +80,9 @@ _LINEAGE_LOCKS: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop, dict[str, asyncio.Lock]
 ] = weakref.WeakKeyDictionary()
 
+# 谱系锁现在是哪个脚本拿着（名字），只给「请稍后再试」的提示用。
+_LINEAGE_HOLDERS: dict[str, str] = {}
+
 # 等谱系锁时多久看一次停止令牌。
 _LOCK_CANCEL_POLL_SECONDS = 0.5
 _UPDATE_CANCELLED_MESSAGE = "MFW 项目更新已停止"
@@ -109,11 +112,24 @@ def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
         raise MaaFWProjectUpdateError(_UPDATE_CANCELLED_MESSAGE, cancelled=True)
 
 
+def describe_lineage_busy(lineage: str) -> str:
+    """谱系锁被占时给用户的一句话。占着的可能是同项目另一个脚本的手动 / 自动更新，
+    也可能是检查更新时的补齐，不限定是哪一种。"""
+
+    holder = _LINEAGE_HOLDERS.get(lineage)
+    if holder:
+        return f"同一项目的脚本「{holder}」正在更新，请等它完成后再试"
+    return "同一项目的另一个脚本正在更新，请等它完成后再试"
+
+
 async def _acquire_lineage_lock(
     lock: asyncio.Lock,
     *,
     timeout: float | None,
     cancel_event: threading.Event | None,
+    busy_message: Callable[[], str] = lambda: (
+        "同一项目的另一个脚本正在更新，请稍后再试"
+    ),
 ) -> None:
     """拿谱系锁。``timeout`` 内拿不到抛 ``project_lock_busy``；等的时候 ``cancel_event``
     置位（用户点了停止）就放弃、抛 ``cancelled``——别等到锁空出来再去联网。"""
@@ -126,9 +142,7 @@ async def _acquire_lineage_lock(
         if deadline is not None:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise MaaFWProjectUpdateError(
-                    "同一项目正在自动更新/预检中，请稍后再试", project_lock_busy=True
-                )
+                raise MaaFWProjectUpdateError(busy_message(), project_lock_busy=True)
             wait = remaining if wait is None else min(wait, remaining)
         if wait is None:
             await lock.acquire()
@@ -464,7 +478,13 @@ async def run_view_update(
     if lock.locked() and lock_timeout is None:
         # 自动更新不限时等锁：别让任务日志停在「开始检查」那一行、看着像卡死。
         log("同项目的另一个脚本正在更新，等它完成后再检查")
-    await _acquire_lineage_lock(lock, timeout=lock_timeout, cancel_event=cancel_event)
+    await _acquire_lineage_lock(
+        lock,
+        timeout=lock_timeout,
+        cancel_event=cancel_event,
+        busy_message=lambda: describe_lineage_busy(lineage),
+    )
+    _LINEAGE_HOLDERS[lineage] = script_name or script_id[:8]
     # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
     # 而不是「脚本正在运行」（运行前 / 运行后自动更新都走这里）。
     updating_key = begin_project_updating(view)
@@ -547,6 +567,7 @@ async def run_view_update(
         outcome.result = await core_call(view, target, after_register)
     finally:
         end_project_updating(updating_key)
+        _LINEAGE_HOLDERS.pop(lineage, None)
         lock.release()
 
     final = await asyncio.to_thread(read_view_marker, view)
