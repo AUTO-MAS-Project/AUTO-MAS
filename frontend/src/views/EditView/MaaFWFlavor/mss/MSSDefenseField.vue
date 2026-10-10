@@ -36,7 +36,7 @@ import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
  *
  * 状态由后端算（`/maafw/mss/defense-status`）——「这一期」是官网那一篇公告的开始时刻，
  * 那套口径只在编排里有一份，前端不复刻。开关是全局的 `Function.IfPersonalMss`，
- * 与设置页那个「并非神秘入口」是同一个字段，改哪边都一样。
+ * 与神秘入口里那个「并非神秘入口」是同一个字段，改哪边都一样。
  */
 
 const props = defineProps<{
