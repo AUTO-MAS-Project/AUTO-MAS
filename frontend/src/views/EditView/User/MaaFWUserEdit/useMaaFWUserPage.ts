@@ -145,7 +145,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     context,
     savePresetAndSnapshot,
   })
-  const { presentQueuedTasks, syncControllerResourceSelection } = queue
+  const { presentQueuedTasks } = queue
 
   const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
 
@@ -282,7 +282,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
               keepMissing: true,
             }
           )
-          await syncControllerResourceSelection()
           formData.Task.TaskSnapshot = JSON.stringify(taskSnapshot.value)
           await nextTick()
           formData.userName = formData.Info.Name || ''
@@ -316,7 +315,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     if (data) {
       previewData.value = markRaw(data)
       taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data, { keepMissing: true })
-      await syncControllerResourceSelection()
       await nextTick()
       if (showMessage) message.success(t('edit.interfaceLoaded'))
     }
