@@ -1675,7 +1675,6 @@ async def _range_delta_package(
                 cancelled=cancelled,
                 send_log=send_log,
                 speed_guard=speed_guard,
-                lineage_record=_lineage_record(payload),
             )
         )
         send_log(
@@ -1958,15 +1957,6 @@ def _discovery_from_mirror_check(
             f"{version_check.fallback_reason}，Mirror酱 未提供下载地址"
         ),
     )
-
-
-def _lineage_record(payload: PayloadTarget) -> dict[str, Any]:
-    """谱系 ``lineage.json``（读不出来就空表）：核对发行包是不是同一项目时用。"""
-
-    try:
-        return read_lineage(payload.root, payload.lineage)
-    except (OSError, PayloadError):
-        return {}
 
 
 def _payload_damaged(payload: PayloadTarget) -> bool:

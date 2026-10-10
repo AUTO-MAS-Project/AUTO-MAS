@@ -206,50 +206,6 @@ def lineage_key(interface: Any) -> str:
     return hashlib.sha256(lineage_identity(interface).encode("utf-8")).hexdigest()[:12]
 
 
-def _identity_key(identity: str) -> str:
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-
-
-def same_project(
-    interface: Any, lineage: str, recorded: Mapping[str, Any] | None = None
-) -> bool:
-    """发行包里的 interface 是不是本谱系的项目（拿发行包补齐 / 按区间更新前防拿错包）。
-
-    谱系键按 rid > github > name 取，项目后来才加 ``mirrorchyan_rid``（接入 Mirror 酱）、
-    或仓库改名转移时，新 interface 算出的键就与已登记的谱系不同，只比键会把同一个项目
-    判成「对不上」，GitHub 源从此每次都退回下整包。这里放宽成：新 interface 的 rid /
-    github / name 任一条单独算出的键等于谱系键，或与谱系 ``lineage.json`` 记的同名字段
-    相同（``recorded``），就认同一项目。谱系怎么分组不在这里改（导入仍按完整的键）。
-    """
-
-    try:
-        if lineage_key(interface) == lineage:
-            return True
-    except PayloadError:
-        pass
-    rid = _field(interface, "mirrorchyan_rid", "mirrorchyanRid").casefold()
-    github = _normalize_github(_field(interface, "github")).casefold()
-    name = _field(interface, "name").casefold()
-    record = recorded or {}
-    recorded_rid = str(record.get("mirrorchyanRid") or "").strip().casefold()
-    if rid and recorded_rid:
-        # 两边都有 rid 时只认 rid：同一仓库的不同外壳变体（M9A 与 M9A-MXU）github、name
-        # 都相同，只有 rid 分得开，别因为放宽把另一个变体的包当成自己的。
-        return rid == recorded_rid
-    keys = {
-        _identity_key(f"{prefix}:{value}")
-        for prefix, value in (("rid", rid), ("github", github), ("name", name))
-        if value
-    }
-    if lineage in keys:
-        return True
-    recorded_github = _normalize_github(str(record.get("github") or "")).casefold()
-    recorded_name = str(record.get("name") or "").strip().casefold()
-    return bool(
-        (github and github == recorded_github) or (name and name == recorded_name)
-    )
-
-
 def read_project_interface(project_dir: Path) -> dict[str, Any]:
     for name in ("interface.json", "interface.jsonc"):
         candidate = Path(project_dir) / name
@@ -1509,7 +1465,6 @@ __all__ = [
     "read_project_interface",
     "register",
     "remove_tree",
-    "same_project",
     "version_newer",
     "write_json_atomic",
     "write_lineage",
