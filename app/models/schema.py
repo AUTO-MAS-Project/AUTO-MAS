@@ -1258,6 +1258,22 @@ class GlobalConfig_Function(BaseModel):
     )
 
 
+class GlobalConfig_Replay(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="失败时保存 OBS 回放")
+    Port: Optional[int] = Field(
+        default=None, ge=1, le=65535, description="本机 OBS WebSocket 端口"
+    )
+    Password: Optional[str] = Field(
+        default=None, description="OBS 密码，仅用于写入；省略时保留"
+    )
+    PasswordConfigured: Optional[bool] = Field(
+        default=None, description="OBS 密码是否已配置，只读"
+    )
+    MaxReplayCount: Optional[int] = Field(
+        default=None, ge=1, le=20, description="最多保留的回放副本数"
+    )
+
+
 class GlobalConfig_Display(BaseModel):
     IfEnableVirtualDisplay: Optional[bool] = Field(
         default=None,
@@ -1469,6 +1485,9 @@ class GlobalConfig_Update(BaseModel):
 
 
 class GlobalConfig(BaseModel):
+    Replay: Optional[GlobalConfig_Replay] = Field(
+        default=None, description="OBS 失败回放配置"
+    )
     Function: Optional[GlobalConfig_Function] = Field(
         default=None, description="功能相关配置"
     )
@@ -5084,6 +5103,37 @@ PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
 PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
 
 
+class ReplayRecord(BaseModel):
+    replayId: str = Field(..., description="回放唯一标识")
+    taskId: str | None = Field(default=None, description="调度任务标识")
+    scriptId: str | None = Field(default=None, description="脚本标识")
+    userId: str | None = Field(default=None, description="账号标识")
+    scriptName: str = Field(default="", description="脚本名称")
+    userName: str = Field(default="", description="账号名称")
+    failedAt: str = Field(..., description="失败时间")
+    reason: str = Field(..., description="失败原因")
+    filePath: str = Field(default="", description="MAS 保存的回放副本")
+    historyPaths: list[str] = Field(
+        default_factory=list, description="本轮关联历史记录"
+    )
+
+
+class ObsReplayCheckOut(OutBase):
+    connected: bool = False
+    replayActive: bool = False
+    version: str = ""
+    directory: str = ""
+
+
+class ObsReplaySaveOut(OutBase):
+    replay: ReplayRecord | None = None
+
+
+class ReplayListOut(OutBase):
+    replays: list[ReplayRecord] = Field(default_factory=list)
+    directory: str = ""
+
+
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
     status: Literal["DONE", "ERROR"] = Field(..., description="状态")
@@ -5103,6 +5153,9 @@ class PullCountStatistics(BaseModel):
 
 
 class HistoryData(BaseModel):
+    replays: list[ReplayRecord] = Field(
+        default_factory=list, description="本轮失败回放"
+    )
     index: Optional[List[HistoryIndexItem]] = Field(
         default=None, description="历史记录索引列表"
     )

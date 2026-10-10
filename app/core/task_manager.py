@@ -27,7 +27,7 @@ import uuid
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Iterable, Literal
@@ -36,6 +36,7 @@ import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
+    ReplayRecord,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -59,6 +60,7 @@ from app.runtime_tasks import RuntimeTasks
 from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
+from app.utils.constants import UTC4
 
 from .config import (
     BAAHConfig,
@@ -314,7 +316,148 @@ def _emulator_key(script_config: object) -> str | None:
     return f"{emulator_id}:{index}"
 
 
+@dataclass
 class TaskInfo(TaskItem):
+    replay_cancelled: bool = field(default=False, init=False, repr=False)
+    _replay_runs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _replay_active: dict[str, int] = field(default_factory=dict, init=False, repr=False)
+    _replay_candidates: dict[str, dict[str, UserItem]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _replay_seen: set[tuple[str, str | None]] = field(
+        default_factory=set, init=False, repr=False
+    )
+
+    def begin_script_run(self, script: ScriptItem) -> None:
+        previous = self._replay_runs.get(script.script_id)
+        self._replay_seen = {key for key in self._replay_seen if key[0] != previous}
+        self._replay_runs[script.script_id] = str(uuid.uuid4())
+        self._replay_candidates.pop(script.script_id, None)
+        self._replay_active.pop(script.script_id, None)
+        # 循环队列复用 ScriptItem，上一轮账号不能参与本轮预检结果。
+        script.user_list = []
+        script.current_index = -1
+        script.status = "等待"
+
+    def on_status_changed(
+        self, item: UserItem | ScriptItem, previous: str | None, status: str
+    ) -> None:
+        if self.mode != "AutoProxy" or self.replay_cancelled:
+            return
+        script = (
+            item
+            if isinstance(item, ScriptItem)
+            else next(
+                (
+                    script
+                    for script in self.script_list
+                    if any(user is item for user in script.user_list)
+                ),
+                None,
+            )
+        )
+        if script is None:
+            return
+        if isinstance(item, UserItem):
+            candidates = self._replay_candidates.setdefault(script.script_id, {})
+            if status != "异常":
+                candidates.pop(item.user_id, None)
+            elif self._replay_active.get(script.script_id, 0):
+                candidates[item.user_id] = item
+            else:
+                # 账号预检、HSR 直控、MFW inner task 不经过 spawn，异常即其终态。
+                self._request_replay(script, item)
+        elif status == "异常" and not self._replay_active.get(script.script_id, 0):
+            self._request_replay(script)
+
+    def on_user_execution_started(self, script: ScriptItem) -> None:
+        self._replay_active[script.script_id] = (
+            self._replay_active.get(script.script_id, 0) + 1
+        )
+
+    def on_user_execution_finished(self, script: ScriptItem) -> None:
+        active = max(0, self._replay_active.get(script.script_id, 0) - 1)
+        self._replay_active[script.script_id] = active
+        if active:
+            return
+        candidates = self._replay_candidates.pop(script.script_id, {})
+        for user in candidates.values():
+            if user.status == "异常":
+                self._request_replay(script, user)
+        if script.status == "异常":
+            self._request_replay(script)
+
+    def _request_replay(
+        self,
+        script: ScriptItem | None,
+        user: UserItem | None = None,
+        *,
+        reason: str = "",
+    ) -> None:
+        if self.mode != "AutoProxy" or self.replay_cancelled:
+            return
+        try:
+            if not Config.get("Replay", "Enabled"):
+                return
+            script_id = script.script_id if script else "scheduler"
+            run_id = self._replay_runs.setdefault(script_id, str(uuid.uuid4()))
+            key = (run_id, user.user_id if user else None)
+            if key in self._replay_seen or (
+                user is None and any(seen[0] == run_id for seen in self._replay_seen)
+            ):
+                return
+            self._replay_seen.add(key)
+            options = Config.obs_replay_options()
+            record = ReplayRecord(
+                replayId=str(uuid.uuid4()),
+                taskId=self.task_id,
+                scriptId=script.script_id if script else None,
+                userId=user.user_id if user else None,
+                scriptName=script.name if script else "调度任务",
+                userName=user.name if user else "",
+                failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                reason=reason
+                or (
+                    user.result
+                    if user and user.log_record
+                    else "账号执行异常"
+                    if user
+                    else "脚本执行异常"
+                ),
+                historyPaths=[
+                    str(
+                        Config.build_history_log_path(
+                            script_name=script.name,
+                            user_name=user.name,
+                            log_time=start.astimezone(UTC4),
+                        ).with_suffix(".json")
+                    )
+                    for start in user.log_record
+                ]
+                if user and script
+                else [],
+            )
+            RuntimeTasks.spawn(
+                self._save_replay(options, record), name=f"obs-replay:{record.replayId}"
+            )
+        except Exception as error:
+            logger.warning(f"无法安排失败回放: {type(error).__name__}")
+
+    async def _save_replay(self, options, record: ReplayRecord) -> None:
+        from app.services.obs_replay import ObsReplay
+
+        try:
+            await ObsReplay.save(options, record)
+        except Exception as error:
+            logger.warning(f"失败回放未保存: {error}")
+            await Publisher.send(
+                id=self.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning", message=f"失败回放未保存：{error}"
+                ),
+            )
+
     async def on_change(self):
         await Publisher.send(
             id=self.task_id,
@@ -408,6 +551,7 @@ class Task(TaskExecuteBase):
 
     def cancel(self) -> bool:
         """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        self.task_info.replay_cancelled = True
         self.stopped_manually = True
         # 运行前脚本随主任务取消；运行后脚本在独立的收尾协程里，需要主动取消。
         if (
@@ -726,6 +870,7 @@ class Task(TaskExecuteBase):
 
         # collect 时已过滤掉被删的脚本，这里只防它在本轮中途被删。
         if script_uid not in Config.ScriptConfig:
+            self.task_info.begin_script_run(script_item)
             script_item.status = "异常"
             logger.warning(f"循环跳过: {script_uid} 对应脚本已被删除")
             return "failed"
@@ -745,6 +890,7 @@ class Task(TaskExecuteBase):
             logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
             return "blocked"
 
+        self.task_info.begin_script_run(script_item)
         started_at = datetime.now()
         success = False
         # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
@@ -996,6 +1142,7 @@ class Task(TaskExecuteBase):
             start_index, len(self.task_info.script_list)
         ):
             script_item = self.task_info.script_list[self.task_info.current_index]
+            self.task_info.begin_script_run(script_item)
             current_script_uid = uuid.UUID(script_item.script_id)
 
             # 检查任务对应脚本是否仍存在
@@ -1175,6 +1322,15 @@ class Task(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         """处理任务异常并记录退出状态。"""
+        current = self.task_info.current_index
+        script = (
+            self.task_info.script_list[current]
+            if 0 <= current < len(self.task_info.script_list)
+            else None
+        )
+        self.task_info._request_replay(
+            script, reason=f"任务执行异常：{type(e).__name__}: {e}"
+        )
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"
