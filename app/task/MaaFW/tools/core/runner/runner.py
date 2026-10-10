@@ -2684,14 +2684,17 @@ class MaaFWRunner:
         except Exception:
             with suppress(Exception):
                 exit_code = process.poll()
-        exit_text = "未知" if exit_code is None else str(exit_code)
+        if exit_code is None:
+            # 输出关了但进程还活着（agent 自己关了 stdout）：不能说成已退出
+            self.send_log(f"{DETAIL_LOG_PREFIX}Agent 输出已关闭，进程仍在运行: {label}")
+            return
         if self._stop_requested.is_set() or not self._initialized:
             # 收尾时是我们自己结束的 agent；连接阶段退出由连接循环报错。只进 .worker.log
             self.send_log(
-                f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_text}"
+                f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_code}"
             )
             return
-        self.send_log(f"Agent 进程已退出: {label}, exit={exit_text}")
+        self.send_log(f"Agent 进程已退出: {label}, exit={exit_code}")
 
     @staticmethod
     def _decode_agent_output_line(line: bytes | str) -> str:
@@ -3002,9 +3005,11 @@ class MaaFWRunner:
         self._failed_task_errors = []
         total_tasks = len(self.plan.tasks)
         for index, task in enumerate(self.plan.tasks):
+            # 先于停止检查设：两个任务之间点停止时，记的是接下来要跑的这个，
+            # 不是上一个已完成的
+            self._current_task_name = task.name
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
-            self._current_task_name = task.name
             tasker = self.tasker
             if tasker is None:
                 raise RuntimeError("MaaFW tasker 已释放，无法继续投递任务")
