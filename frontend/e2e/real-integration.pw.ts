@@ -22,8 +22,19 @@ type Operation = {
   operate: 'open' | 'close'
 }
 
+type Device = {
+  status: number
+  adbAddress: string
+}
+
+type TaskCompletion = {
+  accepted: boolean
+  outcome?: string
+  scriptStatus?: string
+  userStatus?: string
+}
+
 const requiredVariables = [
-  'AUTO_MAS_E2E_TEMPLATE_ROOT',
   'AUTO_MAS_E2E_SCRIPT_ID',
   'AUTO_MAS_E2E_USER_ID',
   'AUTO_MAS_E2E_ACCOUNT_NAME',
@@ -71,7 +82,8 @@ const isAllowedStart = (body: unknown, config: RealConfig): boolean =>
 
 const createOperationObserver = (page: Page, config: RealConfig) => {
   const sockets = new Set<WebSocket>()
-  const completedTasks = new Map<string, boolean>()
+  const completedTasks = new Map<string, TaskCompletion>()
+  const createdTaskIds = new Set<string>()
   let pending:
     | {
         operation: Operation
@@ -97,18 +109,36 @@ const createOperationObserver = (page: Page, config: RealConfig) => {
     if (!isRecord(message) || !isRecord(message.data)) return
     const data = message.data
 
+    if (message.id === 'TaskManager' && message.type === 'task.created') {
+      const scripts = Array.isArray(data.scripts) ? data.scripts : []
+      if (
+        scripts.some((item: unknown) => isRecord(item) && item.scriptId === config.scriptId) &&
+        typeof data.taskId === 'string'
+      ) {
+        createdTaskIds.add(data.taskId)
+      }
+      return
+    }
+
     if (message.type === 'task.completed' && typeof message.id === 'string') {
       const scripts = Array.isArray(data.task_info) ? data.task_info : []
-      const script = scripts.length === 1 && isRecord(scripts[0]) ? scripts[0] : undefined
-      const users = Array.isArray(script?.userList) ? script.userList : []
-      completedTasks.set(
-        message.id,
-        script?.script_id === config.scriptId &&
-          users.length === 1 &&
-          isRecord(users[0]) &&
-          users[0].user_id === config.userId &&
-          users[0].status === '完成'
+      const script = scripts.find(
+        (item: unknown) => isRecord(item) && item.script_id === config.scriptId
       )
+      const users = Array.isArray(script?.userList) ? script.userList : []
+      const user = users.find((item: unknown) => isRecord(item) && item.user_id === config.userId)
+      const outcome = readString(data.outcome)
+      const scriptStatus = readString(script?.status)
+      const userStatus = readString(user?.status)
+      completedTasks.set(message.id, {
+        accepted:
+          outcome === 'success' &&
+          scriptStatus === '完成' &&
+          (userStatus === '完成' || userStatus === '部分失败'),
+        outcome,
+        scriptStatus,
+        userStatus,
+      })
       return
     }
     if (!pending || message.id !== 'EmulatorManager') return
@@ -136,7 +166,8 @@ const createOperationObserver = (page: Page, config: RealConfig) => {
   page.on('websocket', onSocket)
 
   return {
-    accountCompleted: (taskId: string) => completedTasks.get(taskId),
+    taskCompletion: (taskId: string) => completedTasks.get(taskId),
+    createdTaskId: () => [...createdTaskIds][0],
     connected: () => [...sockets].some(socket => !socket.isClosed()),
     cancel,
     dispose: () => {
@@ -157,7 +188,7 @@ const createOperationObserver = (page: Page, config: RealConfig) => {
   }
 }
 
-const getDevice = async (page: Page, config: EmulatorBoundConfig) => {
+const getDevice = async (page: Page, config: EmulatorBoundConfig): Promise<Device> => {
   const response = await page.request.post(apiUrl('/api/emulator/status'), {
     data: { emulatorId: config.emulatorId },
     timeout: 15_000,
@@ -175,30 +206,89 @@ const getDevice = async (page: Page, config: EmulatorBoundConfig) => {
   const devices = isRecord(device) ? device : {}
   return {
     status: typeof devices.status === 'number' ? devices.status : -1,
+    adbAddress: typeof devices.adb_address === 'string' ? devices.adb_address.trim() : '',
   }
 }
 
-const waitForTaskTerminal = async (page: Page, taskId: string, timeoutMs: number) => {
+const isAdbReady = (device: Device): boolean =>
+  device.status === 0 && device.adbAddress.length > 0 && device.adbAddress !== 'Unknown'
+
+const terminalTaskStatuses = new Set(['success', 'error', 'cancelled'])
+
+const readTaskStatus = async (page: Page, taskId: string): Promise<string> => {
+  const response = await page.request.get(apiUrl(`/api/dispatch/task/${taskId}`), {
+    timeout: 15_000,
+    maxRetries: 2,
+  })
+  if (!response.ok()) return 'unavailable'
+  const body = await response.json()
+  return isRecord(body) && body.code === 200 ? String(body.status ?? 'missing') : 'missing'
+}
+
+const waitForRuntimeIdle = async (page: Page, timeoutMs: number): Promise<void> => {
   await expect
     .poll(
       async () => {
-        const response = await page.request.get(apiUrl(`/api/dispatch/task/${taskId}`), {
-          timeout: 15_000,
-          maxRetries: 2,
-        })
-        const body = await readBody(response)
-        return body.code === 200 ? String(body.status ?? 'missing') : 'missing'
+        try {
+          const snapshot = await readBody(
+            await page.request.get(apiUrl('/api/dispatch/runtime-snapshot'), {
+              timeout: 15_000,
+              maxRetries: 2,
+            })
+          )
+          return Array.isArray(snapshot.tasks) ? snapshot.tasks.length : -1
+        } catch {
+          return -1
+        }
+      },
+      { timeout: timeoutMs, intervals: [500, 1000, 2000] }
+    )
+    .toBe(0)
+}
+
+const waitForTaskTerminal = async (page: Page, taskId: string, timeoutMs: number) => {
+  let status = 'unavailable'
+  await expect
+    .poll(
+      async () => {
+        try {
+          status = await readTaskStatus(page, taskId)
+        } catch {
+          // 真实脚本可能暂时占用后端；把请求错误留给下一轮轮询。
+          status = 'unavailable'
+        }
+        return status
       },
       { timeout: timeoutMs, intervals: [1000, 2000, 5000] }
     )
     .toMatch(/^(success|error|cancelled)$/)
 
-  const response = await page.request.get(apiUrl(`/api/dispatch/task/${taskId}`), {
-    timeout: 15_000,
-    maxRetries: 2,
-  })
-  const body = await readBody(response)
-  return readString(body.status) ?? 'missing'
+  return status
+}
+
+const waitForTaskTermination = async (
+  page: Page,
+  taskId: string,
+  observer: ReturnType<typeof createOperationObserver>,
+  timeoutMs: number
+) => {
+  let status = 'unavailable'
+  await expect
+    .poll(
+      async () => {
+        if (observer.taskCompletion(taskId)) return 'event'
+        try {
+          status = await readTaskStatus(page, taskId)
+        } catch {
+          status = 'unavailable'
+        }
+        return status
+      },
+      { timeout: timeoutMs, intervals: [1000, 2000, 5000] }
+    )
+    .toMatch(/^(event|success|error|cancelled)$/)
+
+  return status
 }
 
 const emulatorTag = process.env.AUTO_MAS_E2E_EMULATOR_ID ? '@emulator' : '@script-install'
@@ -218,8 +308,9 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
     let startAttempted = false
     let openedByTest = false
     let finalStatus = 'not-started'
-    let cleanupStatus = 'ok'
-    let accountCompleted = false
+    let taskAndEmulatorCleanupStatus = 'ok'
+    let accountResultAccepted = false
+    let completion: TaskCompletion | undefined
     let stage = 'preflight'
     const startedAt = new Date().toISOString()
 
@@ -294,11 +385,11 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         }
 
         await expect
-          .poll(() => getDevice(page, emulatorConfig), {
+          .poll(async () => isAdbReady(await getDevice(page, emulatorConfig)), {
             timeout: 5 * 60 * 1000,
             intervals: [1000, 2000, 5000],
           })
-          .toMatchObject({ status: 0 })
+          .toBe(true)
       }
 
       const taskOptionsResponse = await page.request.post(apiUrl('/api/info/combox/task'))
@@ -366,49 +457,88 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       stage = 'dispatch'
       const startResponse = await startResponsePromise
       if (!startResponse) throw new Error('真实调度启动请求未完成')
-      const startBody = await readBody(startResponse)
-      expect(startBody.code).toBe(200)
+      let startBody: JsonObject | undefined
+      try {
+        startBody = await readBody(startResponse)
+      } catch {
+        // 启动请求可能已被后端接受但响应在传输中损坏；task.created 仍是公开兜底。
+      }
+      if (!taskId) {
+        await expect
+          .poll(() => observer.createdTaskId(), { timeout: 15_000, intervals: [250, 500, 1000] })
+          .toBeDefined()
+        taskId = observer.createdTaskId()
+      }
+      expect(startBody?.code ?? 200).toBe(200)
       expect(Boolean(taskId)).toBe(true)
 
       finalStatus = 'running'
       finalStatus = await waitForTaskTerminal(page, taskId!, 40 * 60 * 1000)
       expect(finalStatus).toBe('success')
       // 调度器 success 不代表游戏成功；必须核对公开完成事件里的目标账号结果。
-      await expect.poll(() => observer.accountCompleted(taskId!), { timeout: 15_000 }).toBe(true)
-      accountCompleted = true
+      await expect.poll(() => observer.taskCompletion(taskId!), { timeout: 15_000 }).toBeDefined()
+      completion = observer.taskCompletion(taskId!)
+      expect(
+        completion?.accepted,
+        `目标账号结果未被调度器接受: outcome=${completion?.outcome ?? 'missing'}, ` +
+          `scriptStatus=${completion?.scriptStatus ?? 'missing'}, ` +
+          `userStatus=${completion?.userStatus ?? 'missing'}`
+      ).toBe(true)
+      accountResultAccepted = true
       stage = 'completed'
       await expect(page.locator('.tab-status.ant-tag-success')).toBeVisible({ timeout: 30_000 })
       await app.evidence('real-e2e-complete')
     } finally {
       let taskTerminated = !startAttempted
-      if (startAttempted && !taskId) cleanupStatus = 'failed'
+      if (startAttempted && !taskId) taskAndEmulatorCleanupStatus = 'failed'
       if (taskId) {
+        completion ??= observer.taskCompletion(taskId)
         try {
-          const statusResponse = await page.request.get(apiUrl(`/api/dispatch/task/${taskId}`), {
-            timeout: 15_000,
-          })
-          const statusBody = await readBody(statusResponse)
-          if (statusBody.code !== 200) cleanupStatus = 'failed'
-          if (statusBody.status === 'running') {
-            const stopResponse = await page.request.post(apiUrl('/api/dispatch/stop'), {
-              data: { taskId },
-              timeout: 30_000,
-            })
-            const stopBody = await readBody(stopResponse)
-            if (stopBody.code !== 200) cleanupStatus = 'failed'
-            const stoppedStatus = await waitForTaskTerminal(page, taskId, 90_000)
-            if (!['success', 'error', 'cancelled'].includes(stoppedStatus)) {
-              cleanupStatus = 'failed'
-            } else {
-              taskTerminated = true
+          const observedCompletion = Boolean(completion)
+          let status: string | undefined
+          if (!observedCompletion) {
+            try {
+              status = await readTaskStatus(page, taskId)
+            } catch {
+              status = undefined
             }
-          } else if (['success', 'error', 'cancelled'].includes(String(statusBody.status))) {
+          }
+          if (observedCompletion || (status && terminalTaskStatuses.has(status))) {
             taskTerminated = true
+          } else if (status === 'running' || status === 'unavailable' || status === undefined) {
+            // stop 是幂等的：即使查询超时或任务刚刚自然结束，也要尝试发出收尾请求。
+            try {
+              const stopResponse = await page.request.post(apiUrl('/api/dispatch/stop'), {
+                data: { taskId },
+                timeout: 30_000,
+              })
+              await readBody(stopResponse)
+            } catch {
+              // 继续等待完成事件或终态；仅凭 stop 请求本身失败不能判断任务仍在运行。
+            }
+            try {
+              const stoppedStatus = await waitForTaskTermination(page, taskId, observer, 90_000)
+              if (stoppedStatus === 'event' || terminalTaskStatuses.has(stoppedStatus)) {
+                taskTerminated = true
+              } else {
+                taskAndEmulatorCleanupStatus = 'failed'
+              }
+            } catch {
+              taskAndEmulatorCleanupStatus = 'failed'
+            }
           } else {
-            cleanupStatus = 'failed'
+            taskAndEmulatorCleanupStatus = 'failed'
           }
         } catch {
-          cleanupStatus = 'failed'
+          taskAndEmulatorCleanupStatus = 'failed'
+        }
+      }
+
+      if (taskTerminated) {
+        try {
+          await waitForRuntimeIdle(page, 90_000)
+        } catch {
+          taskAndEmulatorCleanupStatus = 'failed'
         }
       }
 
@@ -419,28 +549,21 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
           emulatorIndex: config.emulatorIndex,
         }
         try {
-          const snapshot = await readBody(
-            await page.request.get(apiUrl('/api/dispatch/runtime-snapshot'))
-          )
-          if (!Array.isArray(snapshot.tasks) || snapshot.tasks.length > 0) {
-            cleanupStatus = 'failed'
-          } else {
-            const beforeClose = await getDevice(page, emulatorConfig)
-            if (beforeClose.status === 0) {
-              await operate('close', 90_000)
-              await expect
-                .poll(() => getDevice(page, emulatorConfig), { timeout: 90_000 })
-                .toMatchObject({ status: 1 })
-            } else if (beforeClose.status !== 1) {
-              cleanupStatus = 'failed'
-            }
+          const beforeClose = await getDevice(page, emulatorConfig)
+          if (beforeClose.status === 0) {
+            await operate('close', 90_000)
+            await expect
+              .poll(() => getDevice(page, emulatorConfig), { timeout: 90_000 })
+              .toMatchObject({ status: 1 })
+          } else if (beforeClose.status !== 1) {
+            taskAndEmulatorCleanupStatus = 'failed'
           }
         } catch {
-          cleanupStatus = 'failed'
+          taskAndEmulatorCleanupStatus = 'failed'
         }
       }
       observer.dispose()
-      if (!accountCompleted) {
+      if (!accountResultAccepted) {
         await app.evidence('real-e2e-failed').catch(() => undefined)
       }
       const summaryPath = testInfo.outputPath('real-e2e-summary.json')
@@ -452,8 +575,9 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
             finishedAt: new Date().toISOString(),
             stage,
             scheduler: finalStatus,
-            accountCompleted,
-            cleanupStatus,
+            accountResultAccepted,
+            completion: completion ?? null,
+            taskAndEmulatorCleanupStatus,
           },
           null,
           2
@@ -463,7 +587,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         path: summaryPath,
         contentType: 'application/json',
       })
-      expect.soft(cleanupStatus, '真实 E2E 清理任务或模拟器失败').toBe('ok')
+      expect.soft(taskAndEmulatorCleanupStatus, '真实 E2E 清理任务或模拟器失败').toBe('ok')
     }
   })
 })

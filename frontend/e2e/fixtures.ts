@@ -9,7 +9,11 @@ type App = {
 
 const attachBackendLog = async (testInfo: TestInfo): Promise<void> => {
   const dataRoot = process.env.AUTO_MAS_E2E_DATA_ROOT
-  if (!dataRoot || process.env.AUTO_MAS_E2E_REAL === '1') return
+  if (
+    !dataRoot ||
+    (process.env.AUTO_MAS_E2E_REAL === '1' && process.env.AUTO_MAS_E2E_ATTACH_BACKEND_LOG !== '1')
+  )
+    return
 
   const logPath = path.join(dataRoot, 'debug', 'app.log')
   try {
@@ -22,7 +26,9 @@ const attachBackendLog = async (testInfo: TestInfo): Promise<void> => {
 
 const createApp = (page: Page, testInfo: TestInfo): App => ({
   goto: async (route: string) => {
-    await page.goto(`/#${route.startsWith('/') ? route : `/${route}`}`)
+    const routePath = route.startsWith('/') ? route : `/${route}`
+    await page.goto(`/#${routePath}`)
+    await expect.poll(() => new URL(page.url()).hash, { timeout: 20_000 }).toBe(`#${routePath}`)
     await expect(page.locator('#app')).toBeVisible()
     const gotIt = page.getByRole('button', { name: 'Got it' })
     if (await gotIt.isVisible().catch(() => false)) await gotIt.click()

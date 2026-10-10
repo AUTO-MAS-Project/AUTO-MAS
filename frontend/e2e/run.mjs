@@ -7,7 +7,16 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repositoryRoot = path.resolve(frontendRoot, '..')
 const require = createRequire(import.meta.url)
+const isPathInside = (parent, candidate) => {
+  const relative = path.relative(parent, candidate)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+const configuredTempParent = path.resolve(tmpdir())
+const tempBase = isPathInside(frontendRoot, configuredTempParent)
+  ? path.dirname(repositoryRoot)
+  : configuredTempParent
 const supportedScriptTypes = new Set([
   'MaaConfig',
   'GeneralConfig',
@@ -16,14 +25,35 @@ const supportedScriptTypes = new Set([
   'SrcConfig',
   'MaaEndConfig',
   'MaaFWConfig',
+  'M9AConfig',
   'HSRConfig',
   'BetterGIConfig',
   'ZzzOdConfig',
   'BAAHConfig',
   'WhimboxConfig',
+  'MSSConfig',
 ])
+const embeddedScriptTypes = new Set(['MaaFWConfig', 'M9AConfig', 'MSSConfig'])
 
-export async function acquireRealRunLock(lockPath = path.join(tmpdir(), 'auto-mas-e2e-real.lock')) {
+const planSelectionByScriptType = {
+  MaaConfig: { field: 'StageMode', type: 'MaaPlanConfig' },
+  MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
+  BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
+  MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
+}
+
+const defaultRealRunLockPath =
+  process.platform === 'win32'
+    ? path.join(
+        process.env.SystemRoot ?? 'C:\\Windows',
+        'Temp',
+        'AUTO-MAS',
+        'auto-mas-e2e-real.lock'
+      )
+    : path.join(tempParent, 'auto-mas-e2e-real.lock')
+
+export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
+  await mkdir(path.dirname(lockPath), { recursive: true })
   try {
     await writeFile(lockPath, `${process.pid}\n`, { flag: 'wx' })
   } catch (error) {
@@ -67,9 +97,12 @@ const readConfig = async file => {
   }
 }
 
-const selectEntry = (collection, id) => {
+const selectEntry = (collection, id, expectedType) => {
   const entry = collection.instances?.find(item => item.uid === id)
   if (!entry || !collection[id]) throw new Error('所选 E2E 配置项不存在')
+  if (expectedType && entry.type !== expectedType) {
+    throw new Error(`所选 E2E 计划表类型不匹配，需要 ${expectedType}`)
+  }
   return { instances: [entry], [id]: collection[id] }
 }
 
@@ -135,16 +168,46 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   for (const [name, value] of Object.entries(selectedConfig)) {
     await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value))
   }
-  if (user.Info.StageMode && !['Fixed', '-'].includes(user.Info.StageMode)) {
+  const planSelection = planSelectionByScriptType[scriptType]
+  const planId = planSelection ? user.Info?.[planSelection.field] : undefined
+  if (planSelection && planId && !['Fixed', '-'].includes(planId)) {
     const plans = selectEntry(
       await readConfig(path.join(sourceConfig, 'PlanConfig.json')),
-      user.Info.StageMode
+      planId,
+      planSelection.type
     )
     await writeFile(path.join(targetConfig, 'PlanConfig.json'), JSON.stringify(plans))
   }
 
   // 只复制 MAS 托管配置，不复制上次运行的 Temp 恢复事务、备份池或账号历史。
   // BetterGI 的用户配置副本由这些公开目录组成；安装根目录仍由专项配置指向本机已有安装。
+  const copyDirectory = async relative => {
+    const source = path.join(sourceRoot, relative)
+    const inspect = async folder => {
+      let entries
+      try {
+        const details = await lstat(folder)
+        if (details.isSymbolicLink() || !details.isDirectory()) {
+          throw new Error(`E2E 配置目录无效: ${relative}`)
+        }
+        entries = await readdir(folder, { withFileTypes: true })
+      } catch (error) {
+        if (error.code === 'ENOENT') return false
+        throw error
+      }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) throw new Error(`E2E 配置目录禁止链接: ${relative}`)
+        if (entry.isDirectory()) await inspect(path.join(folder, entry.name))
+      }
+      return true
+    }
+    if (!(await inspect(source))) return false
+    const target = path.join(dataRoot, relative)
+    await mkdir(path.dirname(target), { recursive: true })
+    await cp(source, target, { recursive: true })
+    return true
+  }
+
   const dataOwners = scriptType === 'BetterGIConfig' ? [userId] : ['Default', userId]
   const dataDirectories =
     scriptType === 'BetterGIConfig'
@@ -159,31 +222,16 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
       : ['ConfigFile', 'Infrastructure']
   for (const owner of dataOwners) {
     for (const directory of dataDirectories) {
-      const relative = path.join('data', scriptId, owner, directory)
-      const source = path.join(sourceRoot, relative)
-      const inspect = async folder => {
-        let entries
-        try {
-          const details = await lstat(folder)
-          if (details.isSymbolicLink() || !details.isDirectory()) {
-            throw new Error(`E2E 配置目录无效: ${relative}`)
-          }
-          entries = await readdir(folder, { withFileTypes: true })
-        } catch (error) {
-          if (error.code === 'ENOENT') return false
-          throw error
-        }
-        for (const entry of entries) {
-          if (entry.isSymbolicLink()) throw new Error(`E2E 配置目录禁止链接: ${relative}`)
-          if (entry.isDirectory()) await inspect(path.join(folder, entry.name))
-        }
-        return true
-      }
-      if (await inspect(source)) {
-        await mkdir(path.dirname(path.join(dataRoot, relative)), { recursive: true })
-        await cp(source, path.join(dataRoot, relative), { recursive: true })
-      }
+      await copyDirectory(path.join('data', scriptId, owner, directory))
     }
+  }
+  if (embeddedScriptTypes.has(scriptType)) {
+    await copyDirectory(
+      path.join('data', 'mfw', scriptId.replaceAll('-', '').toLowerCase().slice(0, 12))
+    )
+  }
+  if (scriptType === 'HSRConfig' && script.Game?.Platform === 'Cloud') {
+    await copyDirectory(path.join('data', scriptId, userId, 'cloud-profile'))
   }
   return { emulatorId, emulatorIndex }
 }
@@ -192,8 +240,13 @@ async function main() {
   const real = process.env.AUTO_MAS_E2E_REAL === '1'
   const releaseRealRunLock = real ? await acquireRealRunLock() : undefined
   let dataRoot
+  let runRoot
   try {
-    dataRoot = await mkdtemp(path.join(tmpdir(), 'auto-mas-e2e-'))
+    await mkdir(tempBase, { recursive: true })
+    runRoot = await mkdtemp(path.join(tempBase, 'auto-mas-e2e-'))
+    dataRoot = path.join(runRoot, 'data')
+    const tempDirectory = path.join(runRoot, 'temp')
+    await mkdir(tempDirectory, { recursive: true })
     let selected = { emulatorId: '', emulatorIndex: '' }
     if (real) {
       selected = await seedRealProfile(
@@ -214,6 +267,9 @@ async function main() {
       windowsHide: true,
       env: {
         ...process.env,
+        TEMP: tempDirectory,
+        TMP: tempDirectory,
+        TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
         AUTO_MAS_E2E_EMULATOR_ID: selected.emulatorId,
         AUTO_MAS_E2E_EMULATOR_INDEX: selected.emulatorIndex,
@@ -233,13 +289,14 @@ async function main() {
     }
   } finally {
     try {
-      if (dataRoot) {
+      if (runRoot) {
         assert(
-          path.dirname(dataRoot) === path.resolve(tmpdir()) &&
-            path.basename(dataRoot).startsWith('auto-mas-e2e-'),
+          path.dirname(runRoot) === tempBase &&
+            path.basename(runRoot).startsWith('auto-mas-e2e-') &&
+            !isPathInside(frontendRoot, runRoot),
           '拒绝清理 E2E 临时目录之外的路径'
         )
-        await rm(dataRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })
+        await rm(runRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })
       }
     } finally {
       await releaseRealRunLock?.()

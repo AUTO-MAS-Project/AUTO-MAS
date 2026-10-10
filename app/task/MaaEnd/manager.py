@@ -38,7 +38,9 @@ from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
+    dir_fingerprint,
     force_rmtree,
+    read_native_config_snapshot,
     recover_native_config,
     swap_in_dir,
 )
@@ -79,6 +81,7 @@ class MaaEndManager(TaskExecuteBase):
         self.maaend_config_dir: Path | None = None
         self.temp_path: Path | None = None
         self.had_original_script_config = False
+        self.native_config_snapshot_ready = False
         self.script_config_mode = "脚本"
         self._device_provider = device_provider
 
@@ -163,6 +166,7 @@ class MaaEndManager(TaskExecuteBase):
             script_id=self.script_info.script_id,
         ):
             self.had_original_script_config = True
+        self.native_config_snapshot_ready = True
 
         # 任务级一次性归档 MaaEnd 原生配置（项目级池，指纹去重，失败不阻断
         # 任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」的安装
@@ -199,16 +203,36 @@ class MaaEndManager(TaskExecuteBase):
         """恢复任务开始前的 MaaEnd working 配置。"""
 
         if (
-            not self.temp_path
-            or not self.temp_path.exists()
+            not self.native_config_snapshot_ready
+            or not self.temp_path
             or not self.maaend_config_dir
         ):
             return
         if not self.had_original_script_config:
+            logger.info(f"清理任务期写入的 MaaEnd 脚本配置目录: {self.maaend_config_dir}")
             force_rmtree(self.maaend_config_dir)
+            if self.maaend_config_dir.exists():
+                raise PermissionError(
+                    f"MaaEnd 配置目录仍被占用，无法清理: {self.maaend_config_dir}"
+                )
+            self._cleanup_script_config_temp()
             return
+        if not self.temp_path.exists():
+            raise FileNotFoundError(f"MaaEnd 配置快照不存在: {self.temp_path}")
 
         logger.info(f"复原 MaaEnd 脚本配置文件: {self.temp_path}")
+        snapshot = read_native_config_snapshot(
+            self.temp_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if snapshot is None:
+            raise RuntimeError(f"MaaEnd 配置快照提交标记不存在: {self.temp_path}")
+        if (
+            self.maaend_config_dir.exists()
+            and dir_fingerprint(self.maaend_config_dir) == snapshot.baseline
+        ):
+            self._cleanup_script_config_temp()
+            return
         swap_in_dir(self.temp_path, self.maaend_config_dir)
 
     def _recover_previous_run(self) -> None:
@@ -227,8 +251,11 @@ class MaaEndManager(TaskExecuteBase):
             )
 
     def _cleanup_script_config_temp(self) -> None:
+        if not self.native_config_snapshot_ready:
+            return
         if self.temp_path:
             clear_native_config_snapshot(self.temp_path)
+        self.native_config_snapshot_ready = False
 
     def _keep_script_config_changes(self) -> bool:
         """直控配置会话成功时保留 MaaEnd GUI 的写回。"""
@@ -380,9 +407,15 @@ class MaaEndManager(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
-        with suppress(Exception):
-            await self._restore_script_config_from_temp()
-        self._cleanup_script_config_temp()
+        if self.native_config_snapshot_ready:
+            try:
+                await self._restore_script_config_from_temp()
+            except Exception as restore_error:
+                logger.opt(exception=True).warning(
+                    f"MaaEnd原生配置恢复失败, 保留快照待下次任务恢复: {restore_error}"
+                )
+            else:
+                self._cleanup_script_config_temp()
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if script_config.is_locked:

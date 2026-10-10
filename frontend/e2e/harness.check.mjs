@@ -86,6 +86,167 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
       seedRealProfile(source, target, { ...env, AUTO_MAS_E2E_EMULATOR_INDEX: '1' }),
       /模拟器/
     )
+
+    const makeId = serial => `00000000-0000-0000-0000-${String(serial).padStart(12, '0')}`
+    for (const { scriptType, userType, planField, planType, serial } of [
+      {
+        scriptType: 'MaaEndConfig',
+        userType: 'MaaEndUserConfig',
+        planField: 'SanityMode',
+        planType: 'MaaEndPlanConfig',
+        serial: 101,
+      },
+      {
+        scriptType: 'BAAHConfig',
+        userType: 'BAAHUserConfig',
+        planField: 'StageMode',
+        planType: 'BAAHPlanConfig',
+        serial: 104,
+      },
+      {
+        scriptType: 'MSSConfig',
+        userType: 'MSSUserConfig',
+        planField: 'PlanMode',
+        planType: 'MSSPlanConfig',
+        serial: 107,
+      },
+      {
+        scriptType: 'M9AConfig',
+        userType: 'M9AUserConfig',
+        planField: undefined,
+        planType: undefined,
+        serial: 110,
+      },
+      {
+        scriptType: 'MaaFWConfig',
+        userType: 'MaaFWUserConfig',
+        planField: undefined,
+        planType: undefined,
+        serial: 116,
+      },
+    ]) {
+      const variantScriptId = makeId(serial)
+      const variantUserId = makeId(serial + 1)
+      const variantPlanId = planType ? makeId(serial + 2) : undefined
+      const info = {
+        Name: `${scriptType} account`,
+        Status: true,
+        ...(planField && variantPlanId ? { [planField]: variantPlanId } : {}),
+      }
+      const variantScript = collection(variantScriptId, scriptType, {
+        Info: { Name: `${scriptType} script` },
+        SubConfigsInfo: {
+          UserData: collection(variantUserId, userType, { Info: info }),
+        },
+      })
+      await writeFile(path.join(config, 'ScriptConfig.json'), JSON.stringify(variantScript))
+      if (planType && variantPlanId) {
+        await writeFile(
+          path.join(config, 'PlanConfig.json'),
+          JSON.stringify(collection(variantPlanId, planType, { plan: 'selected' }))
+        )
+      }
+      if (['MaaFWConfig', 'M9AConfig', 'MSSConfig'].includes(scriptType)) {
+        const view = path.join(
+          source,
+          'data',
+          'mfw',
+          variantScriptId.replaceAll('-', '').slice(0, 12)
+        )
+        await mkdir(view, { recursive: true })
+        await writeFile(path.join(view, 'interface.json'), '{"name":"opaque project"}')
+        await writeFile(path.join(view, 'agent.txt'), 'selected MFW view')
+      }
+
+      const variantTarget = path.join(root, `${scriptType}-target`)
+      await seedRealProfile(source, variantTarget, {
+        AUTO_MAS_E2E_SCRIPT_ID: variantScriptId,
+        AUTO_MAS_E2E_USER_ID: variantUserId,
+        AUTO_MAS_E2E_ACCOUNT_NAME: `${scriptType} account`,
+      })
+      const variantSeed = JSON.parse(
+        await readFile(path.join(variantTarget, 'config', 'ScriptConfig.json'))
+      )
+      assert.deepEqual(variantSeed.instances, [{ uid: variantScriptId, type: scriptType }])
+      if (planType && variantPlanId) {
+        const selectedPlan = JSON.parse(
+          await readFile(path.join(variantTarget, 'config', 'PlanConfig.json'))
+        )
+        assert.deepEqual(selectedPlan.instances, [{ uid: variantPlanId, type: planType }])
+      } else {
+        await assert.rejects(readFile(path.join(variantTarget, 'config', 'PlanConfig.json')), {
+          code: 'ENOENT',
+        })
+      }
+      if (['MaaFWConfig', 'M9AConfig', 'MSSConfig'].includes(scriptType)) {
+        assert.equal(
+          await readFile(
+            path.join(
+              variantTarget,
+              'data',
+              'mfw',
+              variantScriptId.replaceAll('-', '').slice(0, 12),
+              'agent.txt'
+            ),
+            'utf8'
+          ),
+          'selected MFW view'
+        )
+      }
+    }
+
+    const hsrId = makeId(113)
+    const hsrUserId = makeId(114)
+    const hsrOtherUserId = makeId(115)
+    const hsrScript = collection(hsrId, 'HSRConfig', {
+      Info: { Name: 'HSR cloud script' },
+      Game: { Platform: 'Cloud' },
+      SubConfigsInfo: {
+        UserData: collection(hsrUserId, 'HSRUserConfig', {
+          Info: { Name: 'HSR cloud account', Status: true },
+        }),
+      },
+    })
+    hsrScript[hsrId].SubConfigsInfo.UserData.instances.push({
+      uid: hsrOtherUserId,
+      type: 'HSRUserConfig',
+    })
+    hsrScript[hsrId].SubConfigsInfo.UserData[hsrOtherUserId] = {
+      Info: { Name: 'unselected HSR account', Status: true },
+    }
+    await writeFile(path.join(config, 'ScriptConfig.json'), JSON.stringify(hsrScript))
+    await mkdir(path.join(source, 'data', hsrId, hsrUserId, 'cloud-profile'), {
+      recursive: true,
+    })
+    await writeFile(
+      path.join(source, 'data', hsrId, hsrUserId, 'cloud-profile', 'Cookies'),
+      'opaque cloud session'
+    )
+    await mkdir(path.join(source, 'data', hsrId, hsrOtherUserId, 'cloud-profile'), {
+      recursive: true,
+    })
+    await writeFile(
+      path.join(source, 'data', hsrId, hsrOtherUserId, 'cloud-profile', 'Cookies'),
+      'do-not-copy'
+    )
+    const hsrTarget = path.join(root, 'HSRConfig-target')
+    await seedRealProfile(source, hsrTarget, {
+      AUTO_MAS_E2E_SCRIPT_ID: hsrId,
+      AUTO_MAS_E2E_USER_ID: hsrUserId,
+      AUTO_MAS_E2E_ACCOUNT_NAME: 'HSR cloud account',
+    })
+    assert.equal(
+      await readFile(
+        path.join(hsrTarget, 'data', hsrId, hsrUserId, 'cloud-profile', 'Cookies'),
+        'utf8'
+      ),
+      'opaque cloud session'
+    )
+    await assert.rejects(
+      readFile(path.join(hsrTarget, 'data', hsrId, hsrOtherUserId, 'cloud-profile', 'Cookies')),
+      { code: 'ENOENT' }
+    )
+
     await writeFile(
       path.join(config, 'ScriptConfig.json'),
       JSON.stringify(collection('00000000-0000-0000-0000-000000000007', 'NewConfig', {}))

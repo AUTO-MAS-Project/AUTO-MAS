@@ -6,7 +6,7 @@
 
 ## 按 PR 选择
 
-`frontend/e2e/run.mjs` 是唯一启动入口：它创建临时工作目录、启动 Playwright 和两个开发服务，并在服务退出后删除临时目录。不要绕过它直接运行 `playwright test`。
+`frontend/e2e/run.mjs` 是唯一启动入口：它创建临时工作目录、启动 Playwright 和两个开发服务，并在服务退出后删除临时目录。若系统 `TEMP/TMP` 被配置到 `frontend` 内，入口会改用 `frontend` 外的专用临时目录，避免 Vite 监听运行数据。不要绕过它直接运行 `playwright test`。
 
 首次准备本机环境时，在仓库根目录安装 Python 开发依赖，再安装前端依赖和 Playwright Chromium：
 
@@ -101,19 +101,19 @@ test.describe('@my-feature', () => {
 | `AUTO_MAS_E2E_USER_ID` | 脚本下已启用用户 UUID |
 | `AUTO_MAS_E2E_ACCOUNT_NAME` | 配置中该用户的名称 |
 
-`AUTO_MAS_E2E_TEMPLATE_ROOT` 可选，默认当前仓库根目录；worktree 使用原工作区配置时显式指向原工作区。模板需有 `config/ScriptConfig.json`；绑定模拟器时还需对应 `config/EmulatorConfig.json`，用户 `Info.StageMode` 引用计划时还需 `config/PlanConfig.json`。模拟器 ID 和实例索引从所选脚本绑定读取并校验，也可通过 `AUTO_MAS_E2E_EMULATOR_ID`、`AUTO_MAS_E2E_EMULATOR_INDEX` 限定目标；未绑定模拟器的脚本可省略它们。密码和密文按不透明配置透传，须在能解密原配置的 Windows 身份下运行。
+`AUTO_MAS_E2E_TEMPLATE_ROOT` 可选，默认当前仓库根目录；worktree 使用原工作区配置时显式指向原工作区。模板需有 `config/ScriptConfig.json`；绑定模拟器时还需对应 `config/EmulatorConfig.json`，用户的计划字段（MAA/BAAH 为 `Info.StageMode`、MaaEnd 为 `Info.SanityMode`、MSS 为 `Info.PlanMode`）引用计划时还需 `config/PlanConfig.json`。模拟器 ID 和实例索引从所选脚本绑定读取并校验，也可通过 `AUTO_MAS_E2E_EMULATOR_ID`、`AUTO_MAS_E2E_EMULATOR_INDEX` 限定目标；未绑定模拟器的脚本可省略它们。密码和密文按不透明配置透传，须在能解密原配置的 Windows 身份下运行。
 
-`run.mjs` 校验目标后，只保留选中的脚本和一个启用用户；若脚本绑定模拟器，也只保留对应模拟器。入口登记了当前所有专项配置类型：MAA、General、Okww、OkNte、SRC、MaaEnd、MaaFW/M9A、HSR、BetterGI、ZzzOd、BAAH、Whimbox；未知类型会直接失败并要求专项作者补充适配。通知配置会从临时用户副本移除。普通专项按原样复制 `data/<scriptId>/{Default,<userId>}/{ConfigFile,Infrastructure}`；BetterGI 额外复制选中用户的 `OneDragon`、`ScriptGroup`、`GlobalDomain` 和 `GlobalStygian`，这些是 MAS 当前公开的 BetterGI 用户副本目录。临时环境不复制全局设置、队列、工具/社区配置、通知密钥、历史、`Temp`、备份池或上次运行的恢复事务。BetterGI 和其他把原生配置留在安装目录的专项，其安装根目录与脚本资产仍由专项配置指向本机已有安装，入口不复制或解析上游安装目录。
+`run.mjs` 校验目标后，只保留选中的脚本和一个启用用户；若脚本绑定模拟器，也只保留对应模拟器。入口登记了当前所有专项配置类型：MAA、General、Okww、OkNte、SRC、MaaEnd、MaaFW/M9A、HSR、BetterGI、ZzzOd、BAAH、Whimbox、MSS；未知类型会直接失败并要求专项作者补充适配。通知配置会从临时用户副本移除。普通专项按原样复制 `data/<scriptId>/{Default,<userId>}/{ConfigFile,Infrastructure}`；BetterGI 额外复制选中用户的 `OneDragon`、`ScriptGroup`、`GlobalDomain` 和 `GlobalStygian`，这些是 MAS 当前公开的 BetterGI 用户副本目录。临时环境不复制全局设置、队列、工具/社区配置、通知密钥、历史、`Temp`、备份池或上次运行的恢复事务。BetterGI 和其他把原生配置留在安装目录的专项，其安装根目录与脚本资产仍由专项配置指向本机已有安装，入口不复制或解析上游安装目录。
 
 MAS 配置和托管数据在临时副本中运行，原 `config/`、`data/` 不被覆盖；脚本安装路径仍指向本机真实安装，正常的配置注入/恢复可能改变游戏状态或消耗资源。临时目录不能隔离这些外部副作用，作者应选择合适的现有脚本与用户。
 
 流程顺序为：确认无运行任务和唯一目标用户 → 若脚本绑定模拟器，必要时启动并等待操作完成、在线及 ADB 就绪 → 在调度台选择脚本及用户 → 启动一次真实调度 → 等待任务终态并核对公开完成事件中的目标用户状态 → 保存证据。未绑定模拟器时跳过模拟器步骤。`finally` 停止仍运行的任务，只关闭本次由测试启动的模拟器；已在线实例不由测试额外关闭。统一入口等两个服务退出后再删除临时目录。
 
-真实入口在系统临时目录建立原子锁，同一台电脑同时只允许一个真实 E2E；强制结束进程后若留下锁文件，确认没有测试运行再手动删除该锁文件。新增专项时，专项作者必须先把类型加入入口白名单，再按实际 MAS 数据归属扩展 seed 自检和公开前置条件。
+真实入口在机器级临时目录建立原子锁（Windows 为 `%SystemRoot%\Temp\AUTO-MAS`），同一台电脑同时只允许一个真实 E2E；强制结束进程后若留下锁文件，确认没有测试运行再手动删除该锁文件。新增专项时，专项作者必须先把类型加入入口白名单，再按实际 MAS 数据归属扩展 seed 自检和公开前置条件。
 
 真实模式不会自动复制后端原始日志，也不把完整后端输出附加到报告。`real-e2e-summary.json` 记录起止时间、阶段、调度状态、账号完成情况和清理状态；Playwright 只附加用例明确生成的精选截图和摘要。完整 HTML 报告、断言错误和终端输出仍可能包含本机信息，分享前人工检查。
 
-该用例验证脚本公开上报的用户结果，不读取或反推上游内部状态，也不单独识别游戏前台、登录画面或切号结果。历史页面、社区账号/签到和 Electron 主进程不在当前真实用例中。
+该用例验证脚本公开上报的用户结果；`accountResultAccepted` 表示任务级结果为成功、脚本状态为「完成」，且目标用户状态为「完成」或调度器接受的「部分失败」，不等同于账号全部步骤成功。`taskAndEmulatorCleanupStatus` 只表示任务已终止及测试启动的模拟器已关闭，不验证脚本安装目录的原生配置是否恢复。流程不读取或反推上游内部状态，也不单独识别游戏前台、登录画面或切号结果。历史页面、社区账号/签到和 Electron 主进程不在当前真实用例中。
 
 ## 等待与证据约定
 

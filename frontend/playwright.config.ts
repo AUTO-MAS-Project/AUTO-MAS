@@ -49,6 +49,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: `http://127.0.0.1:${frontendPort}`,
+    locale: 'en-US',
     screenshot: realE2E ? 'off' : 'only-on-failure',
     trace: realE2E ? 'off' : 'retain-on-failure',
     video: realE2E ? 'off' : 'retain-on-failure',

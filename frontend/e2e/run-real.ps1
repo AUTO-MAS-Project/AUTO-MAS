@@ -1,5 +1,7 @@
 param(
-  [string]$Grep = ''
+  [string]$Grep = '',
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$RemainingArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,8 +26,15 @@ Write-Host '运行本机真实专项、游戏和账号 E2E；按所选脚本绑�
 if ([string]::IsNullOrWhiteSpace($Grep)) {
   $Grep = $env:AUTO_MAS_E2E_GREP
 }
+if ($Grep -eq '--grep') {
+  $grepArguments = @($RemainingArguments | Where-Object { $_ -ne '--grep' })
+  if ($grepArguments.Count -ne 1) {
+    throw '用法: yarn e2e:real --grep <regex>'
+  }
+  $Grep = $grepArguments[0]
+}
 if ([string]::IsNullOrWhiteSpace($Grep)) {
   $Grep = '@real'
 }
-yarn e2e --grep $Grep
+yarn e2e '--grep' $Grep
 exit $LASTEXITCODE
