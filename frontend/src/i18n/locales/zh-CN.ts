@@ -3162,6 +3162,8 @@ export default {
     selectUserDesc: '从左侧日期列表中选择一个账号查看详细信息',
     recordList: '记录条目',
     recordCount: '{count} 条记录',
+    successCount: '成功 {count} 次',
+    failureCount: '失败 {count} 次',
     timeRule: '游戏日从 04:00 开始计算（04:00 – 次日 04:00）',
     done: '完成',
     failed: '失败',
