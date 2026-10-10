@@ -6,11 +6,13 @@ agent 隔离 venv 是把清单逐条当成独立参数交给安装器的（中�
 ``Invalid requirement`` 或选项解析错，这份 venv 每次都装不上：
 
 - 带 BOM 的 UTF-8（记事本另存的）：首行变成 ``\\ufeffnumpy``，首行是注释时也躲不过 ``#`` 过滤；
+  不是 UTF-8 的（中文系统上另存成 ANSI）按系统编码再读一次，还读不出就报清楚是哪个文件；
 - 行内注释（pip-compile 的 ``numpy==1.24.3  # via ...``）；
 - 续行（``\\`` 结尾，pip-compile ``--generate-hashes`` 的 ``--hash`` 就是这样续的）与每条
   requirement 后面的选项（``--hash=...``）；
 - 整行选项（``-i`` / ``--index-url`` / ``--extra-index-url`` / ``-r`` / ``-c`` / ``-e`` ……）：
   这些交给安装器当 requirement 只会报错；索引由运行池的候选轮换决定，所以忽略并交给调用方记日志。
+  ``-r`` 引用的另一份清单目前不展开（日志里记得到选项名）。
 
 规则照抄 pip 的 ``req_file``：先接续行，再去注释（行首或空白之后的 ``#`` 到行尾），再按空格
 把 requirement 与它后面的选项分开（第一个以 ``-`` 开头的词起都算选项）。
@@ -18,11 +20,16 @@ agent 隔离 venv 是把清单逐条当成独立参数交给安装器的（中�
 
 from __future__ import annotations
 
+import locale
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 _COMMENT_RE = re.compile(r"(^|\s+)#.*$")
+
+
+class RequirementsFileError(RuntimeError):
+    """清单读不出来（编码认不出）。文案面向用户，带文件路径。"""
 
 
 @dataclass(frozen=True)
@@ -84,18 +91,37 @@ def parse_requirements_text(text: str) -> RequirementsFile:
     return result
 
 
+def _decode(data: bytes, path: Path) -> str:
+    """先按 UTF-8（带不带 BOM 都行）；不是 UTF-8 再按系统编码；都不行报带路径的错。"""
+
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    fallback = locale.getpreferredencoding(False) or "utf-8"
+    try:
+        return data.decode(fallback)
+    except (UnicodeDecodeError, LookupError) as exc:
+        raise RequirementsFileError(
+            f"项目 requirements.txt 的编码无法识别（不是 UTF-8，也不是系统编码 "
+            f"{fallback}），请转成 UTF-8: {path}"
+        ) from exc
+
+
 def read_requirements_file(path: str | Path) -> RequirementsFile | None:
     """文件不在返回 None（与「在但是空的」区分开：调用方对两者的处理不同）。"""
 
+    file = Path(path)
     try:
-        text = Path(path).read_text(encoding="utf-8-sig")
+        data = file.read_bytes()
     except FileNotFoundError:
         return None
-    return parse_requirements_text(text)
+    return parse_requirements_text(_decode(data, file))
 
 
 __all__ = [
     "RequirementsFile",
+    "RequirementsFileError",
     "parse_requirements_text",
     "read_requirements_file",
 ]
