@@ -599,11 +599,15 @@ const confirmRename = () => {
 const presetChips = (template: PresetTemplate) =>
   template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
 
-// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签
+// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签。分组显示 label，与「添加任务」里的叫法一致
 const selectedTaskMeta = computed(() => {
   const task = props.selectedTask
   if (!task) return ''
-  return [task.entry || task.name, ...(task.group || [])].filter(Boolean).join(' | ')
+  const groupLabels = new Map(
+    (props.previewData?.groups || []).map(group => [group.name, getDisplayName(group)] as const)
+  )
+  const groups = (task.group || []).map(groupName => groupLabels.get(groupName) || groupName)
+  return [task.entry || task.name, ...groups].filter(Boolean).join(' | ')
 })
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
