@@ -279,14 +279,17 @@ def _prepare_project_python_env(
     # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
     # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
     reason = _project_relative_text(reason, project_path)
+    # 排障说明只进详情日志：面板与 toast 整段显示报错（pre-wrap），用户照着做不了的
+    # 步骤与写给开发者的说明会把失败原因挤掉。
+    log(
+        f"{DETAIL_LOG_PREFIX}[Python环境] 项目自带 Python 健康检查失败；检查项是该解释器"
+        "能否导入 maa.agent.agent_server。项目 Python 属于 release 内容，AUTO-MAS 不要求"
+        "其提供 pip；只在自己的内嵌副本里修它的 maafw binding 版本。"
+    )
     raise MaaFWAgentEnvError(
         f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
         f"  Python 路径: {python_exe}\n"
-        "  处理建议:\n"
-        "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
-        "    方法2: 检查项目自带 Python 是否能导入 maa.agent.agent_server\n"
-        "  项目 Python 属于 release 内容，AUTO-MAS 不要求其提供 pip；"
-        "只在自己的内嵌副本里修它的 maafw binding 版本。"
+        "  处理建议: 重新下载并解压完整 MaaFW 项目包"
     )
 
 
