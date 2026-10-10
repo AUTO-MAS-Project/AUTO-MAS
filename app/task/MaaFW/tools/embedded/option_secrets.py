@@ -154,17 +154,60 @@ def open_task_snapshot(
     """返回一份密码字段已解密的快照副本（只在内存里用，不得写回配置）。
 
     旧版本留下的明文原样使用（下次保存时加密）；带前缀却解不开的抛 ``MaaFWSecretError``。
+    当前 interface 已不再声明为 password 的字段（项目更新撤掉了标记）里留着的密文同样解开：
+    不解的话 ``mas-dpapi:…`` 原样进 pipeline_override。只在内存里解，保存时不动它——
+    interface 降级读丢了选项时也会「看不到」password 声明，那时写回明文就泄露了。
     """
 
-    fields = password_input_names(interface)
-    if not fields or not isinstance(snapshot, dict):
+    if not isinstance(snapshot, dict):
         return snapshot
-    if _snapshot_has_plaintext_secret(snapshot, fields):
+    fields = password_input_names(interface)
+    opened = snapshot
+    if fields:
+        if _snapshot_has_plaintext_secret(snapshot, fields):
+            logger.info(
+                "该用户的任务配置里有旧版本存下的未加密密码字段，本次照常使用；"
+                "下次保存任务配置时会自动加密"
+            )
+        opened = _map_snapshot_secrets(snapshot, fields, _open_value)
+    return _open_orphan_secrets(opened)
+
+
+def _open_orphan_secrets(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """快照两处选项值里剩下的带 ``SECRET_PREFIX`` 的值一律解开（返回新快照，不改入参）。"""
+
+    if not any(_sealed_leaves(snapshot.get(key)) for key in _SECRET_SECTIONS):
+        return snapshot
+
+    def open_tree(value: Any, option_name: str, field_name: str) -> Any:
+        if isinstance(value, str):
+            return _open_value(value, option_name, field_name)
+        if isinstance(value, dict):
+            return {
+                key: open_tree(item, option_name or str(key), str(key))
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [open_tree(item, option_name, field_name) for item in value]
+        return value
+
+    opened = dict(snapshot)
+    for key in _SECRET_SECTIONS:
+        section = snapshot.get(key)
+        if not isinstance(section, dict) or not _sealed_leaves(section):
+            continue
+        if key == "globalOptions":
+            opened[key] = open_tree(section, "", "")
+        else:
+            opened[key] = {
+                task_id: open_tree(options, "", "")
+                for task_id, options in section.items()
+            }
+    if opened != snapshot:
         logger.info(
-            "该用户的任务配置里有旧版本存下的未加密密码字段，本次照常使用；"
-            "下次保存任务配置时会自动加密"
+            "该用户的任务配置里有项目已不再标为密码的字段仍是密文，本次运行按解密后的值使用"
         )
-    return _map_snapshot_secrets(snapshot, fields, _open_value)
+    return opened
 
 
 #: 日志里替换密码原文用的占位。
