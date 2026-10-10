@@ -115,10 +115,8 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 ])
 
 const pressSoundOptions = computed<{ label: string; value: PressSoundPreset }[]>(() => [
-  { label: t('setting.pressSound.soft'), value: 'soft' },
-  { label: t('setting.pressSound.crisp'), value: 'crisp' },
-  { label: t('setting.pressSound.pop'), value: 'pop' },
-  { label: t('setting.pressSound.tick'), value: 'tick' },
+  { label: t('setting.pressSound.duck'), value: 'duck' },
+  { label: t('setting.pressSound.fx1'), value: 'fx1' },
   {
     label: pressSoundStore.customName
       ? t('setting.pressSound.customNamed', { name: pressSoundStore.customName })

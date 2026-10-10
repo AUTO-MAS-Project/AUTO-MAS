@@ -58,7 +58,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   cursorEffect: 'none',
   lowPerformanceMode: false,
   pressSoundEnabled: false,
-  pressSoundPreset: 'soft',
+  pressSoundPreset: 'duck',
   pressSoundVolume: 0.6,
   pressSoundCustomPath: '',
   pressSoundCustomName: '',

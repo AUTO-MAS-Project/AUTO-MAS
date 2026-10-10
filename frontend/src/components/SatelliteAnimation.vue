@@ -51,6 +51,7 @@ import { useSatellitePointer } from './satellite/useSatellitePointer'
 import { useSatelliteStill } from './satellite/useSatelliteStill'
 import { playPressSound } from './satellite/pressSound'
 import { usePressSoundStore } from '@/stores/pressSound'
+import type { PressSoundPhase } from '@/types/pressSound'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
@@ -120,11 +121,25 @@ const eggs = useSatelliteEggs({
 })
 /** 按中心图标时响一下；低性能模式（含窗口切到后台）下装饰性音效一并停掉 */
 function playCenterPressSound(): void {
+  playSoundAtPhase('press')
+}
+
+/** 在中心图标上松手时响一下：内置音效组的按下与松开是两个文件 */
+function playCenterReleaseSound(): void {
+  playSoundAtPhase('release')
+}
+
+function playSoundAtPhase(phase: PressSoundPhase): void {
   if (!pressSoundStore.enabled || performanceStore.isLowPower) {
     return
   }
 
-  void playPressSound(pressSoundStore.preset, pressSoundStore.volume, pressSoundStore.customPath)
+  void playPressSound(
+    pressSoundStore.preset,
+    pressSoundStore.volume,
+    pressSoundStore.customPath,
+    phase
+  )
 }
 
 const {
@@ -144,6 +159,7 @@ const {
   requestRender,
   onCenterTap: eggs.pokeCenter,
   onCenterPress: playCenterPressSound,
+  onCenterRelease: playCenterReleaseSound,
   onSatelliteTap: handleSatelliteTap,
   onEmptyPress: eggs.tryCatchMeteor,
 })

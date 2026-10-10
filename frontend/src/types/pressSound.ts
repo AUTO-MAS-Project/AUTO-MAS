@@ -1,20 +1,22 @@
-/** 主页中心图标（星核）按压音效：四套内置合成音，或用户自己导入的音频文件 */
-export type PressSoundPreset = 'soft' | 'crisp' | 'pop' | 'tick' | 'custom'
+/** 主页中心图标（星核）按压音效：两套内置音效，或用户自己导入的音频文件 */
+export type PressSoundPreset = 'duck' | 'fx1' | 'custom'
 
-/** 内置音效与它们在 public/sounds/ 下的文件；顺序就是设置页下拉的顺序 */
+/** 一次按压的两个阶段：按下与松开 */
+export type PressSoundPhase = 'press' | 'release'
+
+/** 内置音效组与它们在 public/sounds/ 下的文件；顺序就是设置页下拉的顺序 */
 export const BUILTIN_PRESS_SOUNDS: ReadonlyArray<{
   value: Exclude<PressSoundPreset, 'custom'>
-  file: string
+  press: string
+  release: string
 }> = [
-  { value: 'soft', file: 'press-soft.wav' },
-  { value: 'crisp', file: 'press-crisp.wav' },
-  { value: 'pop', file: 'press-pop.wav' },
-  { value: 'tick', file: 'press-tick.wav' },
+  { value: 'duck', press: 'press-duck.mp3', release: 'press-duck-release.mp3' },
+  { value: 'fx1', press: 'press-fx1.mp3', release: 'press-fx1-release.mp3' },
 ]
 
 /** 新增的设置项不打扰旧用户，默认不响 */
 export const DEFAULT_PRESS_SOUND_ENABLED = false
-export const DEFAULT_PRESS_SOUND_PRESET: PressSoundPreset = 'soft'
+export const DEFAULT_PRESS_SOUND_PRESET: PressSoundPreset = 'duck'
 export const DEFAULT_PRESS_SOUND_VOLUME = 0.6
 
 /** 用户导入的音频上限：够放一段短音效，又不至于把配置撑爆 */

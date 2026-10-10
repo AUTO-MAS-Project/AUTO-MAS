@@ -8,10 +8,8 @@ import {
 
 describe('pressSound', () => {
   it('内置音效名原样保留', () => {
-    expect(normalizePressSoundPreset('soft')).toBe('soft')
-    expect(normalizePressSoundPreset('crisp')).toBe('crisp')
-    expect(normalizePressSoundPreset('pop')).toBe('pop')
-    expect(normalizePressSoundPreset('tick')).toBe('tick')
+    expect(normalizePressSoundPreset('duck')).toBe('duck')
+    expect(normalizePressSoundPreset('fx1')).toBe('fx1')
   })
 
   it('自定义音效保留，认识不了的值退回默认', () => {

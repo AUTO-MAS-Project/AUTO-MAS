@@ -1,6 +1,7 @@
 import {
   BUILTIN_PRESS_SOUNDS,
   isBuiltinPressSound,
+  type PressSoundPhase,
   type PressSoundPreset,
 } from '@/types/pressSound'
 
@@ -12,7 +13,7 @@ const customUrlCache = new Map<string, string>()
 const logger = window.electronAPI.getLogger('按压音效')
 
 function builtinUrl(file: string): string {
-  // base 是 './'：dev 下解析成 http://127.0.0.1:5173/sounds/x.wav，打包后解析成相对 index.html 的路径
+  // base 是 './'：dev 下解析成 http://127.0.0.1:5173/sounds/x.mp3，打包后解析成相对 index.html 的路径
   return `${import.meta.env.BASE_URL}sounds/${file}`
 }
 
@@ -73,7 +74,8 @@ function play(url: string, volume: number): void {
 export async function playPressSound(
   preset: PressSoundPreset,
   volume: number,
-  customPath: string
+  customPath: string,
+  phase: PressSoundPhase = 'press'
 ): Promise<void> {
   if (isBuiltinPressSound(preset)) {
     const builtin = BUILTIN_PRESS_SOUNDS.find(item => item.value === preset)
@@ -81,11 +83,12 @@ export async function playPressSound(
       return
     }
 
-    play(builtinUrl(builtin.file), volume)
+    play(builtinUrl(phase === 'press' ? builtin.press : builtin.release), volume)
     return
   }
 
-  if (!customPath) {
+  // 自定义音效只导入了一个文件，松开时不再重复响一次
+  if (phase === 'release' || !customPath) {
     return
   }
 
