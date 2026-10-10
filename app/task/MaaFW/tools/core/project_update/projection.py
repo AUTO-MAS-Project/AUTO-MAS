@@ -1307,8 +1307,16 @@ def build_projection_rules(
                         f"controller[{index}].{key} 必须是字符串或字符串数组"
                     )
                 relative_path = declare(
-                    raw_path, f"controller[{index}].{key}", must_exist=True
+                    raw_path, f"controller[{index}].{key}", must_exist=False
                 )
+                if strict and not view.exists(relative_path):
+                    # 发行包漏打包了附加资源目录：与缺 resource 同一口径降级，只是用到这个
+                    # 控制器的运行用不了（runner 加载资源时报目录不存在），不整份拒绝导入。
+                    warnings.append(
+                        f"controller[{index}].{key} 声明的路径不存在：{raw_path}；"
+                        "使用这个控制器运行时附加资源不可用，其余照常导入"
+                    )
+                    continue
                 if relative_path is not None:
                     add_target(
                         relative_path,
@@ -1355,8 +1363,16 @@ def build_projection_rules(
                 if not isinstance(raw_path, str):
                     raise ProjectionError(f"languages.{language} 必须是字符串路径")
                 relative_path = declare(
-                    raw_path, f"languages.{language}", must_exist=True
+                    raw_path, f"languages.{language}", must_exist=False
                 )
+                if strict and not view.exists(relative_path):
+                    # 发行包漏打包了翻译文件：预览与任务别名找不到语言文件本来就跳过，
+                    # 不该让整个项目导入不了。
+                    warnings.append(
+                        f"languages.{language} 声明的文件不存在：{raw_path}；"
+                        "这个语言的界面文字不可用，其余照常导入"
+                    )
+                    continue
                 if relative_path is not None:
                     add_target(
                         relative_path,
