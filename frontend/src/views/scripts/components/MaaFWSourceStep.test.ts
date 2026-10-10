@@ -110,14 +110,14 @@ afterEach(() => {
 })
 
 describe('MaaFWSourceStep 项目来源默认分节', () => {
-  it('第一行永远是新建；复用行按列表顺序，在跑的那行禁用并标「运行中」', async () => {
+  it('第一行永远是新建；复用行按列表顺序，在跑的那行照样能选，只标「运行中」', async () => {
     const html = await render({ choices, value: 'a1' })
-    expect(rows(html)).toEqual(['choice-row', 'choice-row selected', 'choice-row disabled'])
+    expect(rows(html)).toEqual(['choice-row', 'choice-row selected', 'choice-row'])
     expect(html).toContain('<div class="ARadioGroup choice-list" data-value="a1">')
     expect(html).toContain(zhCN.scripts.create.mfwNewProject)
     expect(html).toContain(zhCN.scripts.create.mfwReuse)
-    expect(html).toContain(JSON.stringify({ value: 'a1', disabled: false }).replace(/"/g, '&quot;'))
-    expect(html).toContain(JSON.stringify({ value: 'b1', disabled: true }).replace(/"/g, '&quot;'))
+    expect(html).toContain(JSON.stringify({ value: 'a1' }).replace(/"/g, '&quot;'))
+    expect(html).toContain(JSON.stringify({ value: 'b1' }).replace(/"/g, '&quot;'))
     // 标题是项目名，读不出就用脚本名；副标题带来源脚本、版本与「运行中」（文案取词表，措辞改了不用跟着改）
     const { t } = i18n.global
     const fromMany = t('scripts.create.mfwReuseFromMany', { name: '早上', count: 2 })
@@ -151,10 +151,10 @@ describe('MaaFWSourceStep 项目来源默认分节', () => {
     expect(html).not.toContain('choice-placeholder')
   })
 
-  it('列表为空：按入口类型提示没有可复用的项目', async () => {
+  it('列表为空：按入口类型的类型标签（MFW，不是内部名 MaaFW）提示没有可复用的项目', async () => {
     const html = await render({ type: 'MaaFW' })
     expect(html).toContain(
-      `<div class="choice-placeholder">${zhCN.scripts.create.mfwReuseEmpty.replace('{type}', 'MaaFW')}</div>`
+      `<div class="choice-placeholder">${zhCN.scripts.create.mfwReuseEmpty.replace('{type}', 'MFW')}</div>`
     )
   })
 

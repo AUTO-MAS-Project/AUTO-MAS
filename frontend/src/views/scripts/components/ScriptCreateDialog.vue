@@ -391,13 +391,11 @@ const createSlotContext = computed<MaaFWCreateSlotContext>(() => ({
 }))
 // 可复用的项目只列与入口同类型的，同一项目多个脚本并成一行
 const mfwReuseChoices = computed(() => buildMfwReuseChoices(props.mfwSources, selectedType.value))
-// 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已在运行（busy）或已被删，
-// 残留的 id 不能直接拿去提交——那会先建出脚本再被后端拒绝，留下一个没项目的空脚本。
+// 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已被删，残留的 id 不能直接拿去
+// 提交——那会先建出脚本再被后端拒绝，留下一个没项目的空脚本。源在运行（busy）不挡：
+// 复用从源脚本的载荷物化，不读源视图
 const selectedMfwReuse = computed(
-  () =>
-    mfwReuseChoices.value.find(
-      choice => choice.scriptId === selectedMfwChoice.value && !choice.busy
-    ) ?? null
+  () => mfwReuseChoices.value.find(choice => choice.scriptId === selectedMfwChoice.value) ?? null
 )
 watch(mfwReuseChoices, () => {
   if (selectedMfwChoice.value !== 'new' && !selectedMfwReuse.value) {

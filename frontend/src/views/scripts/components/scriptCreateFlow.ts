@@ -168,7 +168,7 @@ export interface MfwReuseChoice {
   scriptName: string
   projectName: string
   version: string
-  /** 所有持有该项目的脚本都在跑，此刻不能克隆 */
+  /** 所有持有该项目的脚本都在跑（只作提示：复用从载荷物化，源在跑也能建） */
   busy: boolean
   /** 持有该项目的脚本数 */
   scriptCount: number
