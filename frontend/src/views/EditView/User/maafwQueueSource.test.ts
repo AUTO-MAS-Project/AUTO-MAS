@@ -194,3 +194,24 @@ describe('buildMaaFWQueueReplacement：用来源替换当前队列', () => {
     expect(source.taskOptions.战斗).toEqual({ 备注: { 内容: '来源' } })
   })
 })
+
+describe('实例显示名随导入 / 模板按实例带过去', () => {
+  it('来源的显示名只留可导入项；替换后保留的当前前置任务只认自己的显示名', () => {
+    const source = {
+      ...snapshot(['日常', '战斗__MAS_DUP__ab12', '官服专属', '__MXU_PRETASK__启动']),
+      taskLabels: { 日常: '早班', 官服专属: '失效项', __MXU_PRETASK__启动: '来源前置' },
+    }
+    const described = describeMaaFWQueueSource(source, context)
+    expect(described.taskLabels).toEqual({ 日常: '早班', __MXU_PRETASK__启动: '来源前置' })
+
+    const current = { ...snapshot(['__MXU_PRETASK__启动', '战斗']), taskLabels: { 战斗: '旧名' } }
+    const next = buildMaaFWQueueReplacement(
+      described,
+      current,
+      id => id.startsWith('__MXU_PRETASK__'),
+      passwordFields
+    )
+    expect(next.taskOrder).toEqual(['__MXU_PRETASK__启动', '日常', '战斗__MAS_DUP__ab12'])
+    expect(next.taskLabels).toEqual({ 日常: '早班' })
+  })
+})

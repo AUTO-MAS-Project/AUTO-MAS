@@ -2694,8 +2694,9 @@ class MaaFWUserConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         ## 当前选中的 interface preset 名称，留空时使用 interface 默认逻辑
         self.Task_SelectedPreset = ConfigItem("Task", "SelectedPreset", "")
-        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions；
-        ## 三者的键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）
+        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions，可选 taskLabels
+        ## （用户给某一份实例起的显示名，只影响界面显示）；各键都是任务实例 id，
+        ## 同一个任务可以重复入队（见 MaaFWTaskSnapshot）
         self.Task_TaskSnapshot = ConfigItem(
             "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
         )
@@ -3082,7 +3083,7 @@ class MaaFWConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         ## 用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项
-        ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions}}``，
+        ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?}}``，
         ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务与密码字段；
         ## 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。
         self.Task_Templates = ConfigItem(

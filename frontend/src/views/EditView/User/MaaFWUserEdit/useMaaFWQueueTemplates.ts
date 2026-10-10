@@ -134,7 +134,8 @@ export function useMaaFWQueueTemplates({
     const snapshot = buildMaaFWQueueTemplateSnapshot(
       queue.templateDraftEntries.value,
       taskSnapshot.value.taskOptions,
-      queue.passwordFields.value
+      queue.passwordFields.value,
+      taskSnapshot.value.taskLabels
     )
     if (snapshot.taskOrder.length === 0) return false
     return await writeTemplates(latest =>

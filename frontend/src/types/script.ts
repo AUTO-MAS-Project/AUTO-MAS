@@ -341,6 +341,8 @@ export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
+  taskLabels?: Record<string, string>
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
@@ -348,7 +350,9 @@ export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
   missing?: false
-  /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  /** 用户给这一份起的显示名；没有时显示任务的 label / name */
+  customLabel?: string
+  /** 同一基础名（自定义名或任务本身）的副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
   copyIndex: number
   copyTotal: number
 }
