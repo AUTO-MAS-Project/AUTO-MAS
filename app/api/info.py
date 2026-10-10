@@ -525,6 +525,8 @@ ENDFIELD_IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / "auto-mas-image-cache"
 ENDFIELD_IMAGE_CACHE_TTL = 6 * 3600
 ## 缓存只按地址新增、从不回收的话会一直涨：超过这个数量就按修改时间删掉最旧的一批
 ENDFIELD_IMAGE_CACHE_MAX_FILES = 200
+## 单张图的下载超时：原生素材动辄十几兆，给太久会把请求一直挂着，前端反而整块空着
+ENDFIELD_IMAGE_FETCH_TIMEOUT = 30
 
 ## 终末地的版本大图就是 AKEData 首页顶部那张（打开网站第一眼看到的就是它），
 ## 比活动自带的背景图更稳定：每个版本都会换，且不依赖某个活动是否在跑
@@ -630,6 +632,41 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
             raise
 
 
+## 后台任务要留住引用，否则可能被 GC 掉（asyncio 的已知行为）
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    """把协程丢到后台跑，并把引用留住。"""
+
+    task = asyncio.get_running_loop().create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _warm_version_art_cache() -> None:
+    """把版本大图先拉进磁盘缓存。
+
+    那张图 5MB 级，等前端拿着地址来取、后端才现下载的话，横幅要空着等好几秒。
+    这里在给出地址的时候顺手热一下，前端请求图片时通常已经命中缓存。
+    """
+
+    digest = hashlib.sha256(ENDFIELD_VERSION_ART_URL.encode("utf-8")).hexdigest()[:20]
+    cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
+    if _cache_is_fresh(cache_file):
+        return
+    try:
+        async with httpx.AsyncClient(timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT) as client:
+            response = await client.get(ENDFIELD_VERSION_ART_URL)
+        response.raise_for_status()
+        ENDFIELD_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"预热终末地版本图失败: {type(e).__name__}: {e}"
+        )
+
+
 @router.get(
     "/endfield/version-art",
     tags=["Get"],
@@ -638,8 +675,13 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
     status_code=200,
 )
 async def get_endfield_version_art() -> InfoOut:
-    """终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。"""
+    """终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
 
+    给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+    横幅要空着等好几秒。
+    """
+
+    _spawn_background(_warm_version_art_cache())
     return InfoOut(
         data={"url": ENDFIELD_VERSION_ART_URL, "name": await _endfield_version_name()}
     )
@@ -662,7 +704,9 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
     cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
     if not _cache_is_fresh(cache_file):
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(
+                timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT
+            ) as client:
                 response = await client.get(url)
             response.raise_for_status()
             ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
