@@ -54,59 +54,75 @@ export const usePressSoundStore = defineStore('press-sound', () => {
     return pendingLoad
   }
 
-  /** 写盘；失败把内存值还原，避免界面显示的和保存的不一致 */
-  const persist = async (next: {
+  /** persist 排成一条链：并发调用时后一次等前一次落盘完再开始 */
+  let persistChain: Promise<void> = Promise.resolve()
+
+  /**
+   * 写盘；失败把内存值还原，避免界面显示的和保存的不一致。
+   *
+   * 之所以要串行：连着改两项时两次 persist 会并发跑，如果早的那次失败、晚的那次成功，
+   * 早的那次回滚就会把晚的那次已经写进配置的值在内存里盖掉，界面从此和配置对不上。
+   */
+  const persist = (next: {
     enabled?: boolean
     preset?: PressSoundPreset
     volume?: number
     customPath?: string
     customName?: string
   }): Promise<void> => {
-    await load()
+    const run = async (): Promise<void> => {
+      await load()
 
-    const previous = {
-      enabled: enabled.value,
-      preset: preset.value,
-      volume: volume.value,
-      customPath: customPath.value,
-      customName: customName.value,
+      const previous = {
+        enabled: enabled.value,
+        preset: preset.value,
+        volume: volume.value,
+        customPath: customPath.value,
+        customName: customName.value,
+      }
+
+      if (next.enabled !== undefined) {
+        enabled.value = next.enabled
+      }
+      if (next.preset !== undefined) {
+        preset.value = normalizePressSoundPreset(next.preset)
+      }
+      if (next.volume !== undefined) {
+        volume.value = normalizePressSoundVolume(next.volume)
+      }
+      if (next.customPath !== undefined) {
+        customPath.value = next.customPath
+      }
+      if (next.customName !== undefined) {
+        customName.value = next.customName
+      }
+
+      try {
+        saving.value = true
+        await saveConfig({
+          pressSoundEnabled: enabled.value,
+          pressSoundPreset: preset.value,
+          pressSoundVolume: volume.value,
+          pressSoundCustomPath: customPath.value,
+          pressSoundCustomName: customName.value,
+        })
+      } catch (error) {
+        enabled.value = previous.enabled
+        preset.value = previous.preset
+        volume.value = previous.volume
+        customPath.value = previous.customPath
+        customName.value = previous.customName
+        throw error
+      } finally {
+        saving.value = false
+      }
     }
 
-    if (next.enabled !== undefined) {
-      enabled.value = next.enabled
-    }
-    if (next.preset !== undefined) {
-      preset.value = normalizePressSoundPreset(next.preset)
-    }
-    if (next.volume !== undefined) {
-      volume.value = normalizePressSoundVolume(next.volume)
-    }
-    if (next.customPath !== undefined) {
-      customPath.value = next.customPath
-    }
-    if (next.customName !== undefined) {
-      customName.value = next.customName
-    }
-
-    try {
-      saving.value = true
-      await saveConfig({
-        pressSoundEnabled: enabled.value,
-        pressSoundPreset: preset.value,
-        pressSoundVolume: volume.value,
-        pressSoundCustomPath: customPath.value,
-        pressSoundCustomName: customName.value,
-      })
-    } catch (error) {
-      enabled.value = previous.enabled
-      preset.value = previous.preset
-      volume.value = previous.volume
-      customPath.value = previous.customPath
-      customName.value = previous.customName
-      throw error
-    } finally {
-      saving.value = false
-    }
+    // 前一次不管成功失败都要接着跑下一次，所以 then 的两条分支都是 run
+    const queued = persistChain.then(run, run)
+    // 链本身不能被某次失败打断，错误交给调用方从 queued 上取
+    persistChain = queued.catch(() => {})
+    return queued
   }
 
   return {

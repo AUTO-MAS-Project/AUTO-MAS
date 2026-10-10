@@ -9,7 +9,7 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import type { PressSoundPreset } from '@/types/pressSound'
 import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
-import { playPressSound } from '@/components/satellite/pressSound'
+import { clearCustomSoundCache, playPressSound } from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -368,13 +368,22 @@ const handlePressSoundImport = async () => {
     }
 
     const filePath = files[0]
-    // 先读一遍当校验：读不出来（不存在 / 没权限）或太大，都不写进配置
-    const base64 = await window.electronAPI.readFileBase64(filePath)
-    const bytes = Math.floor((base64.length * 3) / 4)
-    if (bytes > MAX_PRESS_SOUND_BYTES) {
+    // 上限交给主进程把关：超了它只回大小、不读内容，不会为了拒绝而先把整个文件读进内存。
+    // 大小用它 stat 出来的真实字节数，不拿 base64 长度反推——那样会把 padding 当成文件内容
+    const { base64, size } = await window.electronAPI.readFileBase64(
+      filePath,
+      MAX_PRESS_SOUND_BYTES
+    )
+    if (size > MAX_PRESS_SOUND_BYTES) {
       message.error(t('setting.toast.pressSoundTooLarge'))
       return
     }
+    if (!base64) {
+      message.error(t('setting.toast.pressSoundReadFailed'))
+      return
+    }
+    // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
+    clearCustomSoundCache(filePath)
 
     await pressSoundStore.persist({
       preset: 'custom',

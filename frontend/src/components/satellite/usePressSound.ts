@@ -24,7 +24,8 @@ export function usePressSound() {
       pressSoundStore.preset,
       pressSoundStore.volume,
       pressSoundStore.customPath,
-      phase
+      phase,
+      () => pressSoundStore.enabled && !performanceStore.isLowPower
     )
   }
 

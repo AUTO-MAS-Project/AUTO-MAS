@@ -4856,6 +4856,7 @@ export default {
       pressSoundSaveFailed: '按压音效设置保存失败',
       pressSoundCustomMissing: '还没有导入音频，先点「导入音频」选一个文件',
       pressSoundTooLarge: '音频文件太大，请选 1 MB 以内的',
+      pressSoundReadFailed: '读取音频文件失败，换一个文件试试',
       pressSoundImported: '音频已导入并启用',
       testUnknown: '测试通知发送结果未知',
       testSent: '测试通知已发送',

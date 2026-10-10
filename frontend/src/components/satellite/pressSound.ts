@@ -1,6 +1,7 @@
 import {
   BUILTIN_PRESS_SOUNDS,
   isBuiltinPressSound,
+  MAX_PRESS_SOUND_BYTES,
   type PressSoundPhase,
   type PressSoundPreset,
 } from '@/types/pressSound'
@@ -35,8 +36,10 @@ function mimeFor(filePath: string): string {
     case 'ogg':
       return 'audio/ogg'
     case 'm4a':
-    case 'aac':
       return 'audio/mp4'
+    // 原始 ADTS 的 .aac 不是 MP4 容器，标成 audio/mp4 解码器会直接拒绝
+    case 'aac':
+      return 'audio/aac'
     case 'flac':
       return 'audio/flac'
     default:
@@ -51,9 +54,13 @@ async function resolveCustomUrl(filePath: string): Promise<string | null> {
   }
 
   try {
-    // 渲染进程读不到磁盘音频，交给主进程读成 base64 再当 data URL 用
-    const base64 = await window.electronAPI.readFileBase64(filePath)
-    if (!base64) {
+    // 渲染进程读不到磁盘音频，交给主进程读成 base64 再当 data URL 用；
+    // 上限一并交给它挡在前面，读的时候就不会有超大文件进内存
+    const { base64, size } = await window.electronAPI.readFileBase64(
+      filePath,
+      MAX_PRESS_SOUND_BYTES
+    )
+    if (!base64 || size > MAX_PRESS_SOUND_BYTES) {
       return null
     }
 
@@ -65,6 +72,16 @@ async function resolveCustomUrl(filePath: string): Promise<string | null> {
     logger.warn(`读取自定义音效失败（${filePath}）：${message}`)
     return null
   }
+}
+
+/** 重新导入同一个路径时调用：文件内容可能已经换了，缓存里的 data URL 要作废 */
+export function clearCustomSoundCache(filePath?: string): void {
+  if (filePath === undefined) {
+    customUrlCache.clear()
+    return
+  }
+
+  customUrlCache.delete(filePath)
 }
 
 function elementFor(url: string): HTMLAudioElement {
@@ -107,7 +124,9 @@ export async function playPressSound(
   preset: PressSoundPreset,
   volume: number,
   customPath: string,
-  phase: PressSoundPhase = 'press'
+  phase: PressSoundPhase = 'press',
+  /** 自定义音效要等主进程把文件读回来，这中间状态可能已经变了（切后台 / 开低性能） */
+  shouldPlay: () => boolean = () => true
 ): Promise<void> {
   if (isBuiltinPressSound(preset)) {
     const builtin = BUILTIN_PRESS_SOUNDS.find(item => item.value === preset)
@@ -152,7 +171,7 @@ export async function playPressSound(
   }
 
   const url = await resolveCustomUrl(customPath)
-  if (!url) {
+  if (!url || !shouldPlay()) {
     return
   }
 
