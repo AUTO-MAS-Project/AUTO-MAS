@@ -80,6 +80,10 @@ _LINEAGE_LOCKS: weakref.WeakKeyDictionary[
     asyncio.AbstractEventLoop, dict[str, asyncio.Lock]
 ] = weakref.WeakKeyDictionary()
 
+# 等谱系锁时多久看一次停止令牌。
+_LOCK_CANCEL_POLL_SECONDS = 0.5
+_UPDATE_CANCELLED_MESSAGE = "MFW 项目更新已停止"
+
 CoreCall = Callable[
     [
         Path,
@@ -98,6 +102,42 @@ def lineage_update_lock(lineage: str) -> asyncio.Lock:
     if lock is None:
         lock = locks[lineage] = asyncio.Lock()
     return lock
+
+
+def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise MaaFWProjectUpdateError(_UPDATE_CANCELLED_MESSAGE, cancelled=True)
+
+
+async def _acquire_lineage_lock(
+    lock: asyncio.Lock,
+    *,
+    timeout: float | None,
+    cancel_event: threading.Event | None,
+) -> None:
+    """拿谱系锁。``timeout`` 内拿不到抛 ``project_lock_busy``；等的时候 ``cancel_event``
+    置位（用户点了停止）就放弃、抛 ``cancelled``——别等到锁空出来再去联网。"""
+
+    loop = asyncio.get_running_loop()
+    deadline = None if timeout is None else loop.time() + timeout
+    while True:
+        _raise_if_cancelled(cancel_event)
+        wait = _LOCK_CANCEL_POLL_SECONDS if cancel_event is not None else None
+        if deadline is not None:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise MaaFWProjectUpdateError(
+                    "同一项目正在自动更新/预检中，请稍后再试", project_lock_busy=True
+                )
+            wait = remaining if wait is None else min(wait, remaining)
+        if wait is None:
+            await lock.acquire()
+            return
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=wait)
+            return
+        except asyncio.TimeoutError:
+            continue
 
 
 def memo_path_factory(lineage: str, base: Path | None = None) -> Callable[[str], Path]:
@@ -381,6 +421,7 @@ async def run_view_update(
     lock_timeout: float | None = None,
     base: Path | None = None,
     switch_label: str = "新版本",
+    cancel_event: threading.Event | None = None,
 ) -> ViewUpdateOutcome:
     """§3.1 第 1–8 步。
 
@@ -395,6 +436,10 @@ async def run_view_update(
 
     ``members``：同组候选，或返回候选的函数。给函数时在登记之后（已持谱系锁、在事件
     循环线程上）才调，拿到的是切换那一刻的运行状态，而不是等锁之前的快照。
+
+    ``cancel_event``：用户停止时置位的令牌（运行前 / 运行后自动更新传）。等谱系锁时、
+    拿到锁之后组同步之前、调核心更新之前各看一次，置位就抛 ``cancelled=True`` 的
+    ``MaaFWProjectUpdateError``；核心更新里面怎么停由 ``core_call`` 自己把令牌交下去。
     """
 
     view = embedded_project_dir(script_id, base)
@@ -416,19 +461,16 @@ async def run_view_update(
         send_log(line)
 
     lock = lineage_update_lock(lineage)
-    try:
-        if lock_timeout is None:
-            await lock.acquire()
-        else:
-            await asyncio.wait_for(lock.acquire(), timeout=lock_timeout)
-    except asyncio.TimeoutError as exc:
-        raise MaaFWProjectUpdateError(
-            "同一项目正在自动更新/预检中，请稍后再试", project_lock_busy=True
-        ) from exc
+    if lock.locked() and lock_timeout is None:
+        # 自动更新不限时等锁：别让任务日志停在「开始检查」那一行、看着像卡死。
+        log("同项目的另一个脚本正在更新，等它完成后再检查")
+    await _acquire_lineage_lock(lock, timeout=lock_timeout, cancel_event=cancel_event)
     # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
     # 而不是「脚本正在运行」（运行前 / 运行后自动更新都走这里）。
     updating_key = begin_project_updating(view)
     try:
+        # 等锁期间被停止、锁恰好同时空出来：不再往下做。
+        _raise_if_cancelled(cancel_event)
         # 1. 先同步到组（不联网）：组里已有别的版本就先切过去，再照常发现。
         synced = await sync_view_to_group(
             script_id, channel, reservation_held=reservation_held, base=base
@@ -500,6 +542,8 @@ async def run_view_update(
             if summary:
                 log(summary)
 
+        # 组同步是本地操作；核心更新要联网检查、可能带 CDK 取一次性下载地址，停过就不去。
+        _raise_if_cancelled(cancel_event)
         outcome.result = await core_call(view, target, after_register)
     finally:
         end_project_updating(updating_key)

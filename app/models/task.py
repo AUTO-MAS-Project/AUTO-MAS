@@ -406,6 +406,13 @@ class TaskExecuteBase(ABC):
 
         await self.final_task()
 
+    def _on_finalize_cancel_requested(self) -> None:
+        """收尾进行中又收到取消（用户点了停止）时调一次；收尾本身不会被取消。
+
+        默认什么都不做。收尾里有耗时步骤、需要提前停下的子类覆写它（置令牌），
+        不要在这里 await 或抛异常。
+        """
+
     async def _run_final_task(self) -> None:
         """推迟外层取消，直到收尾协程真正结束。"""
 
@@ -430,6 +437,7 @@ class TaskExecuteBase(ABC):
                 cancellation = e
                 while current_task.cancelling():
                     current_task.uncancel()
+                self._on_finalize_cancel_requested()
             except Exception:
                 break
 
