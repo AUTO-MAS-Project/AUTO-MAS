@@ -321,6 +321,13 @@ export default {
     maaCultivateElite2: 'Elite 2',
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
+    maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivateAutoRaiseUnsupported:
+      'Automatic training was skipped. Use MAA v6.19.0-beta.1 or later and confirm that Operator Progression is available in MAA. Material farming continues.',
+    maaCultivateAutoRaiseDataUnavailable:
+      'Automatic training was skipped because training data is unavailable. Refresh the operator catalog and try again. Material farming continues.',
+    maaCultivateAutoRaiseHint:
+      'Requires MAA v6.19.0-beta.1 or later. Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:

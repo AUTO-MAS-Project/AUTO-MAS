@@ -91,6 +91,7 @@ from .tools.backup_archive import (
 )
 from .tools.cultivate import (
     CultivatePlan,
+    OperatorTarget,
     ProviderContext,
     apply_achievements,
     depot_cultivate_service,
@@ -106,7 +107,10 @@ from .tools.cultivate import (
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
 from .tools.software_update import (
+    compare_versions,
+    parse_version,
     prepare_maa_software_update,
+    read_installed_release,
     start_maa_software_update_precheck,
 )
 from .tools.update_credentials import resolve_takeover_credentials
@@ -683,6 +687,71 @@ def _build_depot_maintain_task(
     )
 
 
+def _build_auto_cultivate_task(
+    targets: list[OperatorTarget], catalog: list[dict], source_task: dict | None
+) -> dict | None:
+    """用现有养成目标驱动 MAA 原生培养任务，游戏操作与结果判定交给 MAA。
+
+    任务参数沿用 MAA v6.19.0-beta.1 的 OperProgressTask 配置入口；模组
+    尚无原生培养入口，保留在材料计划中，不下发给培养任务。
+    """
+
+    operators = {item["value"]: item for item in catalog}
+    plans = []
+    for target in targets:
+        goals = [
+            goal
+            for goal in target.goals
+            if goal.kind != "module"
+            and goal.state not in ("achieved", "pending_confirm")
+        ]
+        if not goals:
+            continue
+        operator = operators.get(target.operator_id)
+        if operator is None:
+            raise ValueError(f"干员 {target.operator_id} 的培养数据缺失")
+        mastery_levels = [0, 0, 0]
+        skill_indices = {
+            skill["value"]: skill["skillIndex"] for skill in operator["skills"]
+        }
+        elite_level = skill_level = 0
+        for goal in goals:
+            if goal.kind == "elite":
+                elite_level = goal.to_level
+            elif goal.kind == "skill":
+                skill_level = goal.to_level
+            elif goal.kind == "mastery":
+                index = skill_indices.get(goal.target_id)
+                if index not in (1, 2, 3):
+                    raise ValueError(f"干员 {operator['label']} 的专精技能序号缺失")
+                mastery_levels[index - 1] = goal.to_level
+        # 历史目标可能只有专精；培养时补齐普通技能等级前置，不改用户保存的目标。
+        if any(mastery_levels):
+            skill_level = 7
+        plans.append(
+            {
+                "Role": operator["profession"].title() or "Unknown",
+                "Name": operator["label"],
+                "Elite": elite_level,
+                "SkillLevel": skill_level,
+                "SkillMastery": mastery_levels,
+                "ShowRole": False,
+            }
+        )
+    if not plans:
+        return None
+    return _with_type_first(
+        {
+            **deepcopy(source_task or {}),
+            "$type": "OperProgressTask",
+            "Name": "干员培养",
+            "IsEnable": True,
+            "TaskType": "OperProgress",
+            "Plans": plans,
+        }
+    )
+
+
 def _build_cultivate_task(
     plan: "CultivatePlan",
     source_task: dict | None,
@@ -747,8 +816,10 @@ def _build_cultivate_task(
     }
 
 
-def _build_data_update_task(source_task: dict | None) -> dict:
-    """构建更新数据任务（干员识别 + 仓库识别，方案决策 7/30）。
+def _build_data_update_task(
+    source_task: dict | None, *, update_oper_box: bool = True
+) -> dict:
+    """构建更新数据任务，按需识别干员并始终识别仓库。
 
     识别结果供 check_log 采集落用户档案，缺口始终由 MAA 执行时现算。
     """
@@ -760,7 +831,7 @@ def _build_data_update_task(source_task: dict | None) -> dict:
         "Name": _MAA_DATA_UPDATE_TASK_NAME,
         "IsEnable": True,
         "TaskType": "UserDataUpdate",
-        "UpdateOperBox": True,
+        "UpdateOperBox": update_oper_box,
         "UpdateDepot": True,
         "TriggerInterval": "EveryTime",
     }
@@ -904,6 +975,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     # 实例（如单测直接构造）调用 check_log 时不炸
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
+    _cultivate_auto_raise_injected: bool = False
     _depot_maintain_suppressed: bool = False
 
     def __init__(
@@ -1001,6 +1073,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 达成文案供 final_task 的统计信息报告，按 (干员, 档位) 去重累积
         self._cultivate_collected_depot = False
         self._cultivate_collected_oper_box = False
+        self._cultivate_auto_raise_injected = False
         self._cultivate_achievement_summary: list[str] = []
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
@@ -1408,20 +1481,28 @@ class AutoProxyTask(ScriptAutoProxyBase):
         异常只记日志，档案留待下一轮注入前拦截兜底。
         """
 
-        if not (self._cultivate_collected_depot or self._cultivate_collected_oper_box):
+        auto_raise_injected = self._cultivate_auto_raise_injected
+        if not (
+            self._cultivate_collected_depot
+            or self._cultivate_collected_oper_box
+            or auto_raise_injected
+        ):
             return
         self._cultivate_collected_depot = False
         self._cultivate_collected_oper_box = False
+        self._cultivate_auto_raise_injected = False
         try:
             targets = parse_cultivate_targets(
                 json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
             )
             if not targets:
                 return
-            # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
-            # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
+            # 培养会改变练度，必须重新查询，不能复用培养前的快照。
+            # 仅刷材料时沿用 TTL 缓存，保持既有请求次数。
             skland = await maa_api.get_cultivate_skland_progression(
-                str(self.script_info.script_id), str(self.cur_user_uid)
+                str(self.script_info.script_id),
+                str(self.cur_user_uid),
+                force=auto_raise_injected,
             )
             context = ProviderContext(
                 maa_data_dir=self._cultivate_archive_dir(),
@@ -1552,6 +1633,76 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 ),
             )
         return cultivate_task, True, gap
+
+    async def _prepare_auto_cultivate_injection(
+        self, source_queue: list[dict]
+    ) -> dict | None:
+        """自动培养独立门控；关闭时不查询目录，也不影响材料刷取。"""
+
+        if not (
+            self.cur_user_config.get("Task", "IfCultivate")
+            and self.cur_user_config.get("Task", "CultivateAutoRaise")
+        ):
+            return None
+        targets = parse_cultivate_targets(
+            json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
+        )
+        if not any(
+            goal.kind != "module" and goal.state not in ("achieved", "pending_confirm")
+            for target in targets
+            for goal in target.goals
+        ):
+            return None
+
+        source = _find_task_source(source_queue, "干员培养", "OperProgress")
+        release = read_installed_release(self.maa_root_path)
+        installed_version = parse_version(release[0]) if release else None
+        minimum_version = parse_version("v6.19.0-beta.1")
+        assert minimum_version is not None
+        # 版本无法确认时仅复用已经存在的原生培养入口，旧版不注入未知任务类型。
+        if (
+            installed_version is not None
+            and compare_versions(installed_version, minimum_version) < 0
+        ) or (installed_version is None and source is None):
+            message = (
+                "自动培养未注入：请使用 MAA v6.19.0-beta.1 或更新版本，"
+                "并确认 MAA 中有「干员培养」任务；材料刷取照常执行"
+            )
+            if message not in self._missing_task_source_warned:
+                self._missing_task_source_warned.add(message)
+                logger.warning(message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=message,
+                        messageKey="edit.maaCultivateAutoRaiseUnsupported",
+                    ),
+                )
+            return None
+        try:
+            catalog = await depot_cultivate_service.operator_catalog(
+                config_path=Config.config_path, proxy=Config.proxy
+            )
+            return _build_auto_cultivate_task(targets, catalog, source)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 自动培养准备失败, 本轮不注入: {e}"
+            )
+            message = "自动培养未注入：培养数据暂时不可用，请刷新干员目录后重试；材料刷取照常执行"
+            if message not in self._missing_task_source_warned:
+                self._missing_task_source_warned.add(message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=message,
+                        messageKey="edit.maaCultivateAutoRaiseDataUnavailable",
+                    ),
+                )
+            return None
 
     def _restore_depot_maintain(self) -> None:
         """按开关事实恢复库存保持，仅限上一轮确实被养成接管抑制过时。
@@ -1738,6 +1889,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # task_dict["DepotMaintain"] = False 走既有"开关关→整条不写"路径
         # （方案决策 20/28，不得只从队列剔除）
         cultivate_task = None
+        auto_cultivate_task = None
         update_task = None
         if self.mode == "Routine":
             self._restore_depot_maintain()
@@ -1746,13 +1898,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 has_targets,
                 takes_over,
             ) = await self._prepare_cultivate_injection(source_queue)
+            auto_cultivate_task = await self._prepare_auto_cultivate_injection(
+                source_queue
+            )
             if has_targets:
                 # 更新数据紧跟养成/库存保持注入（方案决策 30），为下一轮
                 # 提供归属正确的识别数据
+                skland_bound = bool(
+                    self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
+                    and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+                )
                 update_task = _build_data_update_task(
                     _find_task_source(
                         source_queue, _MAA_DATA_UPDATE_TASK_NAME, "UserDataUpdate"
-                    )
+                    ),
+                    # 已绑定森空岛时直接使用其练度，省去游戏内干员识别。
+                    update_oper_box=not skland_bound,
                 )
             if takes_over:
                 self.task_dict["DepotMaintain"] = False
@@ -1971,9 +2132,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 continue
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
-            if task_type == "Fight" and update_task is not None:
-                # 更新数据位于库存保持之后、理智作战之前（方案 §9 队列 #5）
-                task_queue.append(update_task)
+            if task_type == "Fight":
+                # 养成刷取或库存保持结束后立即培养、更新数据，再执行日常任务。
+                if auto_cultivate_task is not None:
+                    task_queue.append(auto_cultivate_task)
+                    self._cultivate_auto_raise_injected = True
+                if update_task is not None:
+                    task_queue.append(update_task)
             task_queue.append(task_set[task_type])
 
             if task_type == "StartUp" and activity_fight:

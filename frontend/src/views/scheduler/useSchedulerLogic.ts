@@ -1168,6 +1168,7 @@ export function useSchedulerLogic() {
 
   const handleTaskNotice = async (tab: SchedulerTab, data: WSTaskNoticeData) => {
     const { playSound } = useAudioPlayer()
+    const noticeMessage = data.messageKey ? t(data.messageKey) : data.message
 
     if (data.level === 'error') {
       const errorMsg = String(data.message).toLowerCase()
@@ -1215,10 +1216,7 @@ export function useSchedulerLogic() {
             maskClosable: true,
             keyboard: true,
             title: t('scheduler.modal.maaEndFailTitle'),
-            content: h('div', [
-              h('p', String(data.message)),
-              h('p', t('scheduler.modal.maaEndFailHint')),
-            ]),
+            content: h('div', [h('p', noticeMessage), h('p', t('scheduler.modal.maaEndFailHint'))]),
             okCancel: true,
             okText: t('scheduler.modal.maaEndExport'),
             cancelText: t('scheduler.modal.maaEndSkip'),
@@ -1231,12 +1229,15 @@ export function useSchedulerLogic() {
           })
         }
       } else {
-        notification.error({ message: t('scheduler.toast.taskError'), description: data.message })
+        notification.error({ message: t('scheduler.toast.taskError'), description: noticeMessage })
       }
     } else if (data.level === 'warning') {
       // 播放异常音频
       await playSound('exception_occurred')
-      notification.warning({ message: t('scheduler.toast.taskWarning'), description: data.message })
+      notification.warning({
+        message: t('scheduler.toast.taskWarning'),
+        description: noticeMessage,
+      })
     } else {
       const infoMsg = String(data.message).toLowerCase()
 
@@ -1267,7 +1268,7 @@ export function useSchedulerLogic() {
         await playSound('adb_failed')
       }
 
-      notification.info({ message: t('scheduler.toast.taskInfo'), description: data.message })
+      notification.info({ message: t('scheduler.toast.taskInfo'), description: noticeMessage })
     }
   }
 

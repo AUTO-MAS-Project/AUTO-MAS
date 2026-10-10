@@ -1792,6 +1792,9 @@ class MaaUserConfig_Task(BaseModel):
     CultivateTargets: Optional[str] = Field(
         default=None, description="干员养成目标 JSON"
     )
+    CultivateAutoRaise: Optional[bool] = Field(
+        default=None, description="自动培养干员（注入 MAA 原生培养任务）"
+    )
     CultivateSkipDuringActivity: Optional[bool] = Field(
         default=None, description="活动期间跳过养成计划"
     )
@@ -6360,6 +6363,9 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+    messageKey: Optional[str] = Field(
+        default=None, description="可选的前端翻译键；旧客户端仍使用 message"
+    )
 
 
 class WSTaskConfigDiscardedData(BaseModel):

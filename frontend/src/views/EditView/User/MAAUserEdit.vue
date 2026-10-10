@@ -588,6 +588,7 @@ const getDefaultMAAUserData = () => ({
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
+    CultivateAutoRaise: false,
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
     CultivateSklandAccount: '',

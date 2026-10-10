@@ -326,6 +326,13 @@ export default {
     maaCultivateElite2: '昇進 2',
     maaCultivateRemove: '削除',
     maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
+    maaCultivateAutoRaise: 'オペレーターを自動育成',
+    maaCultivateAutoRaiseUnsupported:
+      '自動育成をスキップしました。MAA v6.19.0-beta.1 以降を使用し、MAA に「オペレーター育成」タスクがあることを確認してください。素材周回は継続します。',
+    maaCultivateAutoRaiseDataUnavailable:
+      '育成データを取得できないため、自動育成をスキップしました。オペレーター一覧を更新して再試行してください。素材周回は継続します。',
+    maaCultivateAutoRaiseHint:
+      'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:

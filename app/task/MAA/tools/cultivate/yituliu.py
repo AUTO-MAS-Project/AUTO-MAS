@@ -790,7 +790,8 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
             skill_costs[:6] if isinstance(skill_costs, list) else [], start=2
         )
         skills: list[dict[str, Any]] = []
-        for skill in entry.get("skills") or []:
+        # 培养任务按技能序号指定专精，过滤无专精消耗的技能时保留原始序号。
+        for skill_index, skill in enumerate(entry.get("skills") or [], start=1):
             if (
                 not isinstance(skill, dict)
                 or not skill.get("skillId")
@@ -805,6 +806,7 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "value": str(skill["skillId"]),
                     "label": str(skill["skillName"]),
                     "maxLevel": max_level,
+                    "skillIndex": skill_index,
                 }
             )
         modules: list[dict[str, Any]] = []
@@ -868,6 +870,11 @@ async def load_operator_catalog(
         and "skills" in operators[0]
         and "maxElite" in operators[0]
         and "maxSkillLevel" in operators[0]
+        and all(
+            "skillIndex" in skill
+            for operator in operators
+            for skill in operator.get("skills", [])
+        )
     ):
         return operators
     # 旧目录缺少维度或可达上限时重拉，避免新目标因缓存缺字段而不可选。

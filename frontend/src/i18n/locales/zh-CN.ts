@@ -317,6 +317,13 @@ export default {
     maaCultivateElite2: '精 2',
     maaCultivateRemove: '移除',
     maaCultivateSkipActivity: '活动期间跳过养成计划',
+    maaCultivateAutoRaise: '自动培养干员',
+    maaCultivateAutoRaiseUnsupported:
+      '自动培养未注入：请使用 MAA v6.19.0-beta.1 或更新版本，并确认 MAA 中有「干员培养」任务；材料刷取照常执行',
+    maaCultivateAutoRaiseDataUnavailable:
+      '自动培养未注入：培养数据暂时不可用，请刷新干员目录后重试；材料刷取照常执行',
+    maaCultivateAutoRaiseHint:
+      '需要 MAA v6.19.0-beta.1 或更新版本，按当前养成目标执行精英化、技能升级和专精；模组暂不支持自动培养。关闭后仍会刷取养成材料。',
     maaCultivateSkipResource: '资源收集期跳过养成计划',
     maaCultivateEmpty: '尚未添加养成目标',
     maaCultivateRecognitionHint:

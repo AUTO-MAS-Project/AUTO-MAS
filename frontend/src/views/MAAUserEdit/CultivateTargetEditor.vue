@@ -22,8 +22,15 @@
       class="cultivate-alert"
     />
 
-    <!-- 跳过开关：作用于整个养成计划，置顶展示（绑定面板上方） -->
+    <!-- 养成选项：置顶展示（绑定面板上方） -->
     <div class="cultivate-skips">
+      <a-checkbox
+        :checked="formData.Task?.CultivateAutoRaise ?? false"
+        :disabled="loading"
+        @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
+      >
+        {{ t('edit.maaCultivateAutoRaise') }}
+      </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringActivity"
         :disabled="loading"
@@ -38,6 +45,9 @@
       >
         {{ t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
+    </div>
+    <div v-if="formData.Task?.CultivateAutoRaise" class="skland-feedback skland-hint">
+      {{ t('edit.maaCultivateAutoRaiseHint') }}
     </div>
 
     <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
