@@ -1515,7 +1515,7 @@ export default {
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このマネージドスクリプト専用のものに置き換えてください',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
-      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → 情報 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未申告',
     updateProcess: '更新の進行',
@@ -1640,6 +1640,12 @@ export default {
     maafwPageTitleConfig: '{name} プロジェクト設定',
     maafwUpdateChannelStable: '安定版',
     maafwUpdateChannelBeta: 'ベータ版',
+    maafwEmulatorTypeGeneral: '汎用エミュレーター',
+    maafwEmulatorTypeMumu: 'MuMu Player',
+    maafwEmulatorTypeLdplayer: 'LDPlayer',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: 'エミュレーター未選択',
+    maafwEmulatorTypeLoading: 'エミュレーターの種類を読み込み中',
     maafwNoMirrorchyanRid:
       'このプロジェクトは MirrorChyan に対応していないため（interface.json に mirrorchyan_rid がありません）、MAS は更新を確認できません',
     updateSourceTip:

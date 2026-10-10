@@ -173,8 +173,9 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       const response = await previewMaaFWInterface(path, scriptId)
       if (!response || response.code !== 200 || !response.data) {
         previewData.value = null
-        previewError.value = response?.message || t('edit.maafwPreviewFailed')
-        message.error(previewError.value)
+        // 后端没给原因就不记：卡片标题已经是「读取项目失败」，不再重复一行
+        previewError.value = response?.message || ''
+        message.error(previewError.value || t('edit.maafwPreviewFailed'))
         return
       }
       previewData.value = response.data as MaaFWInterfacePreviewData
@@ -189,7 +190,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     } catch (error) {
       previewData.value = null
       previewError.value = error instanceof Error ? error.message : String(error)
-      message.error(previewError.value)
+      message.error(previewError.value || t('edit.maafwPreviewFailed'))
     } finally {
       previewLoading.value = false
     }

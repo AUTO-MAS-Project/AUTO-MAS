@@ -9,11 +9,12 @@ const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
 export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
-const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
-  general: '通用模拟器',
-  mumu: 'MuMu 模拟器',
-  ldplayer: '雷电模拟器',
-  emulator2: 'Emulator 2.0',
+// 词表 key：显示时再取，界面语言变了跟着变
+const EMULATOR_TYPE_LABEL_KEYS: Record<EmulatorType, string> = {
+  general: 'edit.maafwEmulatorTypeGeneral',
+  mumu: 'edit.maafwEmulatorTypeMumu',
+  ldplayer: 'edit.maafwEmulatorTypeLdplayer',
+  emulator2: 'edit.maafwEmulatorTypeEmulator2',
 }
 
 // Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
@@ -266,9 +267,13 @@ export function useMaaFWControlConfig(
   const selectedEmulatorType = computed(() => emulatorTypeById.value[maafwConfig.Emulator.Id])
 
   const selectedEmulatorLabel = computed(() => {
-    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') return '未选择模拟器'
+    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
+      return t('edit.maafwEmulatorNotSelected')
+    }
     const emulatorType = selectedEmulatorType.value
-    return emulatorType ? EMULATOR_TYPE_LABELS[emulatorType] : '模拟器类型加载中'
+    return emulatorType
+      ? t(EMULATOR_TYPE_LABEL_KEYS[emulatorType])
+      : t('edit.maafwEmulatorTypeLoading')
   })
 
   // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断

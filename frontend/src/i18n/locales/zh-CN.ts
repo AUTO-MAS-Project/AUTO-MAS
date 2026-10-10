@@ -1567,7 +1567,7 @@ export default {
     cdkMissingForMirror: '已选择 Mirror 酱作为更新源，但未填写 CDK，无法从 Mirror 酱下载更新',
     proxyAddress: '网络代理地址',
     proxyAddressTip:
-      '只对这个项目生效的网络代理。留空跟随全局设置（设置 → 其他 → 网络代理）；填写后此项目的更新下载与运行环境安装只走这里的代理',
+      '只对这个项目生效的网络代理。留空跟随全局设置（设置 → 关于 → 网络代理地址）；填写后此项目的更新下载与运行环境安装只走这里的代理',
     proxyAddressPlaceholder: '如 127.0.0.1:7890，留空跟随全局',
     updateResultVersion: '最新版本',
     updateResultSource: '下载来源',
@@ -1673,7 +1673,7 @@ export default {
     envStatusCached: '无需更新运行环境',
     envStatusFailed: '运行环境准备失败',
     envFailedHint:
-      '多半是下载没成功：需要代理时，在「设置 → 关于 → 网络代理」或本页「项目更新 → 代理地址」填好后点「重试」。具体原因见上方日志。',
+      '多半是下载没成功：需要代理时，在「设置 → 关于 → 网络代理地址」或本页「项目更新 → 网络代理地址」填好后点「重试」。具体原因见上方日志。',
     envReadyAgents: '已就绪的组件',
     envRetry: '重试',
     maafwPreviewFailed: '读取项目失败',
@@ -1689,6 +1689,12 @@ export default {
     maafwPageTitleConfig: '{name} 项目配置',
     maafwUpdateChannelStable: '稳定版',
     maafwUpdateChannelBeta: '测试版',
+    maafwEmulatorTypeGeneral: '通用模拟器',
+    maafwEmulatorTypeMumu: 'MuMu 模拟器',
+    maafwEmulatorTypeLdplayer: '雷电模拟器',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: '未选择模拟器',
+    maafwEmulatorTypeLoading: '模拟器类型加载中',
     maafwNoMirrorchyanRid:
       '该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），MAS 无法检查它的更新',
     mfwUnityResolutionOff: '不修改',
