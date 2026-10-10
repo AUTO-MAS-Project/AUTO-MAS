@@ -124,6 +124,35 @@ export const BAAH_KEY_FIELD_BY_NAME = Object.fromEntries(
   BAAH_PLAN_KEY_FIELDS.map(field => [field.field, field])
 ) as Record<BAAHKeyFieldName, BAAHKeyField>
 
+/**
+ * 关卡安排里还能配的类别：活动关卡、困难关卡、普通关卡。两种布局都按它收窄——
+ * 「每天一类」的关卡选择下拉只列这几类，「多类混打」也只排这几类的行。
+ *
+ * 悬赏通缉、特殊任务、学园交流会不再提供；存量计划表若仍停在这三类，数据原样保留、
+ * 不清掉，只是界面不再给新选（「每天一类」还会把它们按原值补进下拉只读回显）。
+ */
+export const BAAH_PLAN_SELECTABLE_KINDS: BAAHKeyFieldName[] = ['Event', 'Hard', 'Normal']
+
+/** 这一类现在还能从「关卡选择」下拉里选出来；空值「不打」不是类别，不算可选 */
+export const isSelectableStageKind = (kind: BAAHKeyFieldName | ''): boolean =>
+  kind !== '' && BAAH_PLAN_SELECTABLE_KINDS.includes(kind)
+
+/**
+ * 「关卡选择」下拉的取值：空值（不打）+ 三类可选，再补上存量数据里出现过的、已经不再提供的
+ * 类别。补进来的那几项只用于回显旧数据，界面按 selectable=false 标成不可选，否则下拉会把
+ * 它们显示成生 key，用户也看不出这一天原本在打什么。
+ */
+export const buildStageKindChoices = (
+  kinds: (BAAHKeyFieldName | '')[]
+): { kind: BAAHKeyFieldName | ''; selectable: boolean }[] => {
+  const legacy = [...new Set(kinds)].filter(kind => kind !== '' && !isSelectableStageKind(kind))
+  return [
+    { kind: '', selectable: true },
+    ...BAAH_PLAN_SELECTABLE_KINDS.map(kind => ({ kind, selectable: true })),
+    ...legacy.map(kind => ({ kind, selectable: false })),
+  ]
+}
+
 /** 多类混打要的六类齐全形态 */
 export type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
 
@@ -200,7 +229,12 @@ export const readDayFields = (slot: unknown): BAAHDayFields => {
   return fields
 }
 
-/** 多类混打要的六类齐全形态：缺席与空数组都按默认值填出来，输入框才有值可编 */
+/**
+ * 把一格补成六类齐全的形态：缺席与空数组都按默认值填出来。
+ *
+ * 别用它生成要提交的 key——它会把界面上没展示的类别也补成默认值，那几类会因此从
+ * 「不干预」悄悄变成「按默认关卡打」。提交时逐类取值即可（readFieldValues）。
+ */
 export const fillDayFields = (fields: BAAHDayFields): BAAHDayKey => {
   const dayKey = {} as BAAHDayKey
   for (const field of BAAH_PLAN_KEY_FIELDS) {
@@ -318,7 +352,7 @@ export const applySingleNumber = (
   return { fields: buildSingleDayKey(kind, items), corrected }
 }
 
-/** 多类混打：改某一类的某一位，提交的是六类齐全的那一份 key */
+/** 多类混打：改某一类的某一位，其余类别原样带过去——界面没展示的类别不补默认值 */
 export const applyMixedPart = (
   fields: BAAHDayFields | undefined,
   field: BAAHKeyFieldName,
@@ -326,12 +360,11 @@ export const applyMixedPart = (
   raw: number | string | null | undefined
 ): BAAHCellWrite => {
   const spec = BAAH_KEY_FIELD_BY_NAME[field]
-  const filled = fillDayFields(fields ?? {})
-  const items = [...filled[field]]
+  const items = readFieldValues(fields, field)
   // 同上：清空输入框时保持这一位原来的取值
   const value = toPlanInt(raw, items[index] ?? spec.defaultValue[index] ?? 1)
   const corrected = isStagePart(spec.parts[index]) && value === 0
 
   items[index] = corrected ? 1 : value
-  return { fields: { ...filled, [field]: items }, corrected }
+  return { fields: { ...(fields ?? {}), [field]: items }, corrected }
 }

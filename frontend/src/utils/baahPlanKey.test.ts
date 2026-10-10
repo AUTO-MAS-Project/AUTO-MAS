@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   BAAH_KEY_FIELD_BY_NAME,
+  BAAH_PLAN_SELECTABLE_KINDS,
   allowsHighestStage,
   applyMixedPart,
   applySingleNumber,
   buildSingleDayKey,
+  buildStageKindChoices,
   fillDayFields,
   isFieldEnabled,
+  isSelectableStageKind,
   partIndexOf,
   partOptionMax,
   readDayFields,
@@ -170,17 +173,15 @@ describe('applySingleNumber', () => {
 })
 
 describe('applyMixedPart', () => {
-  it('缺席的类别按默认值补齐后一起提交', () => {
+  it('只写目标类别，界面没展示的类别不补默认值', () => {
     const write = applyMixedPart({}, 'Event', 0, 4)
-    expect(write.fields).toEqual({
-      Event: [4, 1],
-      Wanted: [1, -1, 1],
-      Special: [1, -1, 1],
-      Exchange: [1, -1, 1],
-      Hard: [1, 1, -1],
-      Normal: [1, 1, -1],
-    })
+    expect(write.fields).toEqual({ Event: [4, 1] })
     expect(write.corrected).toBe(false)
+  })
+
+  it('别的类别原样带过去', () => {
+    const write = applyMixedPart({ Wanted: [2, 3, 4] }, 'Event', 0, 4)
+    expect(write.fields).toEqual({ Wanted: [2, 3, 4], Event: [4, 1] })
   })
 
   it('保留没在界面上暴露的后端位', () => {
@@ -249,5 +250,56 @@ describe('isFieldEnabled', () => {
   it('缺席也当作没启用', () => {
     expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Normal')).toBe(false)
     expect(isFieldEnabled(undefined, 'Hard')).toBe(false)
+  })
+})
+
+describe('BAAH_PLAN_SELECTABLE_KINDS / isSelectableStageKind', () => {
+  it('关卡选择只提供活动关卡、困难关卡与普通关卡', () => {
+    expect(BAAH_PLAN_SELECTABLE_KINDS).toEqual(['Event', 'Hard', 'Normal'])
+  })
+
+  it('悬赏通缉、特殊任务、学园交流会不再可选', () => {
+    expect(isSelectableStageKind('Wanted')).toBe(false)
+    expect(isSelectableStageKind('Special')).toBe(false)
+    expect(isSelectableStageKind('Exchange')).toBe(false)
+  })
+
+  it('三类可选，「不打」是空值不算类别', () => {
+    expect(isSelectableStageKind('Event')).toBe(true)
+    expect(isSelectableStageKind('Hard')).toBe(true)
+    expect(isSelectableStageKind('Normal')).toBe(true)
+    expect(isSelectableStageKind('')).toBe(false)
+  })
+})
+
+describe('buildStageKindChoices', () => {
+  it('没有存量数据时给出「不打」加三类', () => {
+    expect(buildStageKindChoices([''])).toEqual([
+      { kind: '', selectable: true },
+      { kind: 'Event', selectable: true },
+      { kind: 'Hard', selectable: true },
+      { kind: 'Normal', selectable: true },
+    ])
+  })
+
+  it('存量停在已移除的类别时按原值补一项只读回显', () => {
+    expect(buildStageKindChoices(['Wanted'])).toEqual([
+      { kind: '', selectable: true },
+      { kind: 'Event', selectable: true },
+      { kind: 'Hard', selectable: true },
+      { kind: 'Normal', selectable: true },
+      { kind: 'Wanted', selectable: false },
+    ])
+  })
+
+  it('回显项按出现顺序去重', () => {
+    expect(buildStageKindChoices(['Exchange', 'Wanted', 'Exchange']).slice(4)).toEqual([
+      { kind: 'Exchange', selectable: false },
+      { kind: 'Wanted', selectable: false },
+    ])
+  })
+
+  it('可选的类别不会当成回显项重复列出', () => {
+    expect(buildStageKindChoices(['Hard', 'Event'])).toHaveLength(4)
   })
 })
