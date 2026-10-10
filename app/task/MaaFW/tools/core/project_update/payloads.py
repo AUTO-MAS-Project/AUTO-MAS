@@ -391,6 +391,36 @@ def version_newer(candidate: str, current: str) -> bool:
         return remote != local
 
 
+_RELEASE_PREFIX_RE = re.compile(r"^[vV]?(\d+(?:\.\d+)*)")
+
+
+def _version_strictly_newer(candidate: str, current: str) -> bool:
+    """``candidate`` 是否**确定**比 ``current`` 新；比不出来就算不新。
+
+    :func:`version_newer` 遇到非 PEP 440 的版本号（``v1.2.3-hotfix``、``v2.0.0_fix``）
+    按「不相等即更新」，导入一个更旧的目录也会推进组的 latest、整组降级。这里先按
+    PEP 440 比；比不了就比开头的数字段（``1.2.3``），数字段不同按它定，相同（只差后缀）
+    或取不出数字段一律不算新——不能比较就不前进。
+    """
+
+    remote = str(candidate or "").strip()
+    local = str(current or "").strip()
+    if not remote:
+        return False
+    if not local:
+        return True
+    try:
+        return Version(remote.lstrip("vV")) > Version(local.lstrip("vV"))
+    except InvalidVersion:
+        pass
+    remote_match = _RELEASE_PREFIX_RE.match(remote)
+    local_match = _RELEASE_PREFIX_RE.match(local)
+    if remote_match is None or local_match is None:
+        return False
+    # 数字段相同（只差后缀）时两者相等，返回 False。
+    return Version(remote_match.group(1)) > Version(local_match.group(1))
+
+
 # --------------------------------------------------------------------------
 # 清单
 # --------------------------------------------------------------------------
@@ -985,6 +1015,7 @@ def register(
     bundled: Mapping[str, Any] | None = None,
     projection_revision: int = 0,
     always_advance: bool = False,
+    version_checked: bool = False,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -1003,6 +1034,11 @@ def register(
     ``always_advance``：不比版本，这次登记的就是 ``latest[channel]``。只给开发者模式的脚本
     私有渠道用（宿主侧 ``dev:<视图名>``，组里只有那一个脚本、来源目录就是真相，版本号
     不变的本地修改也要换上去）；其余渠道一律不传，上面几条语义不变。
+
+    「版本更高」的比法：``version_checked``（更新器传：它已按 ``_is_remote_newer`` 确认
+    目标比组版本新）沿用 :func:`version_newer`；其余（导入、采纳、补齐）用
+    :func:`_version_strictly_newer`——非 PEP 440 的版本号比不出先后时不前进，免得导入
+    一个更旧的目录把整组降级。
     """
 
     staging = Path(staging)
@@ -1112,8 +1148,13 @@ def register(
             if latest_dir.is_dir():
                 same_id = str(current_latest["id"]) == payload_id
                 same_version = not version_newer(current_version, version)
-                advanced = (
+                newer = (
                     version_newer(version, current_version)
+                    if version_checked
+                    else _version_strictly_newer(version, current_version)
+                )
+                advanced = (
+                    newer
                     or _replaces_unloadable_latest(
                         latest_dir,
                         target,

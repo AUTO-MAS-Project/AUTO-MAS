@@ -1499,6 +1499,9 @@ async def apply_maafw_project_update(
                 projection_revision=inherited_projection_revision(
                     payload.manifest(), built.plan.package_type
                 ),
+                # 发现阶段已按 _is_remote_newer 确认目标比组版本新：沿用同一口径前进，
+                # 否则非 PEP 440 版本号的更新登记了却推不动 latest、每次运行重来一遍。
+                version_checked=True,
             )
         )
     except PayloadCancelled as exc:
