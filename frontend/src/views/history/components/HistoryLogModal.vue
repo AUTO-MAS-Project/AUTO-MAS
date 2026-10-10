@@ -112,6 +112,7 @@
                 }}
               </a-button>
             </a-popover>
+            <HistoryLogReplayPopover v-if="replays.length > 0" :replays="replays" />
           </div>
         </div>
 
@@ -201,6 +202,8 @@ import {
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
+import type { ReplayRecord } from '@/types/replay'
+import HistoryLogReplayPopover from './HistoryLogReplayPopover.vue'
 
 const { t } = useI18n()
 
@@ -216,6 +219,7 @@ interface Props {
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
   pullCountStatistics: PullCountStatistics | null
+  replays: ReplayRecord[]
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string

@@ -20,6 +20,7 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -340,6 +341,17 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign',
+        });
+    }
+    /**
+     * 试存 OBS 回放
+     * @returns ObsReplaySaveOut Successful Response
+     * @throws ApiError
+     */
+    public static saveObsReplayApiSettingObsSavePost(): CancelablePromise<ObsReplaySaveOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/save',
         });
     }
     /**

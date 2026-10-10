@@ -28,6 +28,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
+from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -255,7 +256,15 @@ class BetterGIManager(ScriptManagerBase):
                     f"{datetime.now().strftime('%m-%d')} | "
                     f"{self.script_info.name or '空白'}的{task_mode}任务报告"
                 )
-                result = self.build_proxy_report()
+                # 按用户交错组装「用户结果行 + 一条龙/执行层节点详情」进报告正文
+                # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
+                user_result_text = build_user_result_text(
+                    self.script_info.user_list,
+                    has_uncompleted=bool(self.collect_user_results().uncompleted_count),
+                )
+                # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+                mirror_report_to_dispatch(self.script_info, user_result_text)
+                result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
                     await push_notification(

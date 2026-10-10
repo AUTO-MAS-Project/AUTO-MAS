@@ -5,11 +5,16 @@
 import type { GlobalConfig_Display } from './GlobalConfig_Display';
 import type { GlobalConfig_Function } from './GlobalConfig_Function';
 import type { GlobalConfig_Notify } from './GlobalConfig_Notify';
+import type { GlobalConfig_Replay } from './GlobalConfig_Replay';
 import type { GlobalConfig_Start } from './GlobalConfig_Start';
 import type { GlobalConfig_UI } from './GlobalConfig_UI';
 import type { GlobalConfig_Update } from './GlobalConfig_Update';
 import type { GlobalConfig_Voice } from './GlobalConfig_Voice';
 export type GlobalConfig = {
+    /**
+     * OBS 失败回放配置
+     */
+    Replay?: (GlobalConfig_Replay | null);
     /**
      * 功能相关配置
      */

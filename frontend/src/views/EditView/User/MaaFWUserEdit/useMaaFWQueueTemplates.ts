@@ -74,7 +74,8 @@ export function useMaaFWQueueTemplates({
   const queueTemplateDraft = computed(() =>
     queue.templateDraftEntries.value.map(entry => ({
       id: entry.id,
-      label: entry.task.label || entry.task.name,
+      // 改过显示名的显示它，与队列行一致
+      label: taskSnapshot.value.taskLabels?.[entry.id] || entry.task.label || entry.task.name,
       invalid: false,
     }))
   )
@@ -134,7 +135,8 @@ export function useMaaFWQueueTemplates({
     const snapshot = buildMaaFWQueueTemplateSnapshot(
       queue.templateDraftEntries.value,
       taskSnapshot.value.taskOptions,
-      queue.passwordFields.value
+      queue.passwordFields.value,
+      taskSnapshot.value.taskLabels
     )
     if (snapshot.taskOrder.length === 0) return false
     return await writeTemplates(latest =>

@@ -118,6 +118,7 @@ const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
 
 // 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
 const NORMALIZED_SETTING_KEYS = new Set([
+  'Replay.Password',
   'Notify.KoishiServerAddress',
   'Notify.OpenClawQQClientSecret',
   'Notify.AuthorizationCode',
@@ -199,6 +200,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   const success = await saveSettings(category, changes)
 
   if (!success) {
+    if (category === 'Replay') throw new Error(t('setting.toast.saveFailed'))
     return
   }
 

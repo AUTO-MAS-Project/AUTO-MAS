@@ -387,6 +387,51 @@
             </a-col>
           </a-row>
         </div>
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.updateTakeover') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.updateTakeoverTip')">
+                    <span class="form-label">
+                      {{ t('edit.updateTakeoverSwitch') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="maaConfig.Update.TakeoverEnabled"
+                  size="large"
+                  @change="handleChange('Update', 'TakeoverEnabled', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.updateTakeoverCdkTip')">
+                    <span class="form-label">
+                      {{ t('edit.updateTakeoverCdk') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-password
+                  v-model:value="maaConfig.Update.MirrorChyanCDK"
+                  :placeholder="t('edit.updateTakeoverCdkPlaceholder')"
+                  size="large"
+                  class="modern-input"
+                  autocomplete="off"
+                  :disabled="!maaConfig.Update.TakeoverEnabled"
+                  @blur="handleChange('Update', 'MirrorChyanCDK', maaConfig.Update.MirrorChyanCDK)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -466,6 +511,10 @@ const maaConfig = reactive<MAAScriptConfig>({
   Emulator: {
     Id: '',
     Index: '',
+  },
+  Update: {
+    TakeoverEnabled: false,
+    MirrorChyanCDK: '',
   },
   SubConfigsInfo: {
     UserData: {
