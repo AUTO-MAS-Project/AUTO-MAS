@@ -29,7 +29,13 @@ const getAppearance = vi.fn(async (id: string): Promise<InstalledAppearance | nu
 let themeConfigCallback: ((config: unknown) => void) | undefined
 
 const storage = new Map<string, string>()
-const rootStyle = { setProperty: vi.fn<(property: string, value: string) => void>() }
+const rootStyleValues = new Map<string, string>()
+const rootStyle = {
+  setProperty: vi.fn<(property: string, value: string) => void>((property, value) => {
+    rootStyleValues.set(property, value)
+  }),
+  getPropertyValue: (property: string) => rootStyleValues.get(property) ?? '',
+}
 const rootClassList = {
   add: vi.fn(),
   remove: vi.fn(),
@@ -213,6 +219,8 @@ describe('useTheme custom appearance persistence', () => {
     )
     expect(rootClassList.add).toHaveBeenCalledWith('appearance-cursor-custom')
     expect(rootClassList.add).toHaveBeenCalledWith('appearance-background-custom')
+    // 背景走 blob: URL，不把 data URL 塞进内联样式（#1275）
+    expect(rootStyle.getPropertyValue('--app-appearance-background-image')).toMatch(/^url\("blob:/)
     expect(rootStyle.setProperty).toHaveBeenCalledWith('--app-appearance-background-opacity', '1')
     expect(rootStyle.setProperty).toHaveBeenCalledWith('--app-appearance-cursor-default', 'auto')
     expect(rootStyle.setProperty).toHaveBeenCalledWith('--app-appearance-cursor-text', 'text')

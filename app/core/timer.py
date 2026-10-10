@@ -37,6 +37,7 @@ from .community_scheduler import (
     should_run_community_for_source,
 )
 from .config import Config
+from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
@@ -80,6 +81,8 @@ class _MainTimer:
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
+        self.calendar_timer: asyncio.Task[None] | None = None
+        self.calendar_send_task: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
         # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
         self._last_timed_check: datetime | None = None
@@ -97,6 +100,7 @@ class _MainTimer:
 
         self.second_timer = asyncio.create_task(self.second_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
+        self.calendar_timer = asyncio.create_task(self.calendar_task())
         self.started = True
 
         if Config.ToolsConfig.get("GameSign", "Enabled") and (
@@ -117,6 +121,8 @@ class _MainTimer:
             for task in (
                 self.second_timer,
                 self.hour_timer,
+                self.calendar_timer,
+                self.calendar_send_task,
                 self.community_sign_task,
             )
             if task is not None and not task.done()
@@ -151,6 +157,9 @@ class _MainTimer:
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
             await self._run_loop_step("明日方舟 PC 工具巡检", arknights_pc_tick)
+            await self._run_loop_step(
+                "游戏日历日程派发", self.schedule_calendar_notifications
+            )
             await asyncio.sleep(1)
 
     async def hour_task(self):
@@ -189,6 +198,23 @@ class _MainTimer:
             await self._run_loop_step("统计上报", upload_statistics)
             await self._run_loop_step("遥测日活", record_telemetry_active)
             await asyncio.sleep(3600)
+
+    async def calendar_task(self) -> None:
+        """启动后登记活动日程，之后每小时补充新活动。"""
+
+        while True:
+            await self._run_loop_step("游戏日历日程刷新", GameCalendar.refresh_schedule)
+            await asyncio.sleep(CALENDAR_REFRESH_INTERVAL_SECONDS)
+
+    async def schedule_calendar_notifications(self) -> None:
+        """按已登记日程到点派发推送，不阻塞队列的定时启动。"""
+
+        if self.calendar_send_task is not None and not self.calendar_send_task.done():
+            return
+        if GameCalendar.has_due_reminders():
+            self.calendar_send_task = asyncio.create_task(
+                self._run_loop_step("游戏日历日程推送", GameCalendar.send_due_reminders)
+            )
 
     async def _run_loop_step(
         self, name: str, step: Callable[[], Awaitable[Any]]

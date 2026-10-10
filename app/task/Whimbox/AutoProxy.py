@@ -49,7 +49,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
-from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
     push_dispatch_log,
@@ -270,6 +269,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_item.status = "运行"
 
         self._takeover_config()
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
@@ -292,12 +293,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if self._incremental_parser is not None:
                 self._incremental_parser.reset()
 
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             await push_dispatch_log(
                 self.script_info, "启动奇想盒无头一条龙: startOneDragon"
             )
@@ -318,11 +313,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = (
                     "检测到奇想盒已完成一条龙序列\n正在等待奇想盒自行退出"
                 )
-                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                        "脚本后任务",
-                    )
                 await asyncio.sleep(3)
                 break
 
@@ -340,11 +330,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
 
             # 重试策略见 _should_retry：上游连着给出同一个结论时收口，不把整条
             # 一条龙再跑一遍（含重启游戏）；用户按提示处理后可手动重新运行

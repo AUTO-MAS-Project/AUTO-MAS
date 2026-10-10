@@ -2,13 +2,12 @@ import { computed, ref, watch } from 'vue'
 import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 import { createAppearanceCursorValue } from '@/components/appearanceCursor'
+import { createAppearanceBackgroundApplier } from './appearanceBackground'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
-import type { InstalledAppearance } from '@/types/appearance'
+import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
 
 type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
 let resolvedAntTokens: AntTokens | undefined
-// null 表示还没写过，首次必须落一次 'none'。
-let appliedBackgroundUrl: string | undefined | null = null
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -33,6 +32,7 @@ const activeAppearance = ref<InstalledAppearance | null>(null)
 const appearances = ref<InstalledAppearance[]>([])
 const isDark = ref(false)
 const logger = window.electronAPI.getLogger('主题')
+const applyAppearanceBackground = createAppearanceBackgroundApplier({ logger })
 let appearanceListenerInitialized = false
 let themeConfigListenerInitialized = false
 let themeRevision = 0
@@ -157,15 +157,8 @@ const updateCSSVariables = () => {
     root.classList.remove('appearance-background-custom')
   }
   // 素材和开关独立于 token bridge，清除外观时立即恢复，不依赖下一次组件渲染。
-  // 背景是数 MB 的 data URL，只在图片真的变了时才写，避免每次换主题色都重解析整串。
-  const backgroundUrl = activeAppearance.value?.backgroundUrl
-  if (backgroundUrl !== appliedBackgroundUrl) {
-    root.style.setProperty(
-      '--app-appearance-background-image',
-      backgroundUrl ? `url("${backgroundUrl}")` : 'none'
-    )
-    appliedBackgroundUrl = backgroundUrl
-  }
+  // 背景只在图片真的变了时才写，避免每次换主题色都重新解码。
+  applyAppearanceBackground(root.style, activeAppearance.value?.backgroundUrl)
   root.style.setProperty(
     '--app-appearance-background-opacity',
     String(activeAppearance.value?.background?.opacity ?? 1)
@@ -684,6 +677,12 @@ export function useTheme() {
       }
     })
 
+  const upsertAppearance = (appearance: InstalledAppearance): void => {
+    const existingIndex = appearances.value.findIndex(item => item.id === appearance.id)
+    if (existingIndex === -1) appearances.value.push(appearance)
+    else appearances.value[existingIndex] = appearance
+  }
+
   const importAppearance = async (
     zipPath: string,
     replace = false
@@ -696,11 +695,24 @@ export function useTheme() {
         error: '当前环境不支持导入外观包',
       }
     }
-    if (result.success && result.appearance) {
-      const existingIndex = appearances.value.findIndex(item => item.id === result.appearance?.id)
-      if (existingIndex === -1) appearances.value.push(result.appearance)
-      else appearances.value[existingIndex] = result.appearance
+    if (result.success && result.appearance) upsertAppearance(result.appearance)
+    return result
+  }
+
+  // 只交主进程里已校验的临时包句柄，路径和下载地址都不经过渲染进程。
+  const installOnlineAppearance = async (
+    token: string,
+    replace = false
+  ): Promise<OnlineAppearanceInstallResult> => {
+    const result = await window.electronAPI.installOnlineAppearance?.(token, replace)
+    if (!result) {
+      return {
+        success: false,
+        code: 'UNSUPPORTED',
+        error: '当前环境不支持在线外观',
+      }
     }
+    if (result.success && result.appearance) upsertAppearance(result.appearance)
     return result
   }
 
@@ -800,6 +812,7 @@ export function useTheme() {
     setAppearance,
     loadAppearances,
     importAppearance,
+    installOnlineAppearance,
     removeAppearance,
     initAppearanceChangedListener,
     initTheme,

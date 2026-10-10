@@ -44,6 +44,7 @@ from app.task.MaaFW.api_service import update as maafw_update_api
 from app.task.MSS.api_service import defense_status as mss_defense_status
 from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
+from app.utils.emulator2 import service as emulator2_service
 from app.utils.io import ConfigCorruptedError
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -295,9 +296,12 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_script(
-            script.scriptId, script.data.model_dump(exclude_unset=True)
-        )
+        data = script.data.model_dump(exclude_unset=True)
+        # 魔改 AVD 目前只支持 M9A：别的脚本选魔改 AVD 设备，保存时就拦下
+        refusal = await emulator2_service.mod_avd_binding_error(script.scriptId, data)
+        if refusal:
+            return OutBase(code=500, status="error", message=refusal)
+        await Config.update_script(script.scriptId, data)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"
