@@ -27,6 +27,9 @@ yarn e2e:init
 yarn e2e:smoke
 yarn e2e:queue
 yarn e2e:scheduler
+yarn e2e:settings
+yarn e2e:history
+yarn e2e:recovery
 yarn e2e --grep '@queue|@scheduler'
 yarn e2e:real
 yarn e2e:report
@@ -47,6 +50,9 @@ yarn playwright show-report playwright-report/real
 - `@smoke`：首页、计划、队列、调度、历史、设置页面导航。
 - `@queue`：新建队列、改名、修改启动设置、离开再返回检查持久化。
 - `@scheduler`：无任务时禁止启动，添加和批量关闭空闲调度台。
+- `@settings`：设置持久化、保存失败回滚、刷新后配置恢复。
+- `@history`：历史记录导航、日期筛选、展开日志、空搜索结果、刷新列表。
+- `@recovery`：页面导航状态保持、页面刷新后 WebSocket 重连、后端重启恢复、任务状态保持。
 - `@init`：隔离后端冷启动，等待健康与后台初始化就绪，并确认明日方舟 PC 工具关闭时不阻塞启动。
 - `@real @game-schedule @account`（另带 `@emulator` 或 `@script-install`）：同一条通用真实调度流程按所选脚本是否绑定模拟器执行前置检查，再验证唯一用户选择、真实调度、任务终态和公开完成事件中的用户结果。BetterGI 可复用入口；运行前需有对应本机安装与有效配置。
 
