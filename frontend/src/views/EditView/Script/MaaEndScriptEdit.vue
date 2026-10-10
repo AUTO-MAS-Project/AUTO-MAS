@@ -382,6 +382,73 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.endfieldAutoUpdate') }}
+                    <a-tooltip :title="t('edit.endfieldAutoUpdateHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Game.IfAutoUpdate"
+                  size="large"
+                  :options="booleanOptions"
+                  @change="handleChange('Game', 'IfAutoUpdate', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.gameUpdateTimeoutMinutes') }}
+                    <a-tooltip :title="t('edit.endfieldUpdateTimeoutHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-number
+                  v-model:value="maaEndConfig.Game.UpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  :precision="0"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleUpdateTimeoutBlur"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item :label="t('edit.endfieldManualUpdate')">
+                <a-tooltip :title="maaEndConfig.Game.Path ? '' : t('edit.pickEndfieldExePath')">
+                  <span class="endfield-update-check">
+                    <a-button
+                      size="large"
+                      :disabled="
+                        !maaEndConfig.Game.Path ||
+                        isSaving ||
+                        pageLoading ||
+                        configLocked ||
+                        updateModal.running ||
+                        updateModal.starting
+                      "
+                      @click="handleCheckUpdate"
+                    >
+                      <template #icon>
+                        <ThunderboltOutlined />
+                      </template>
+                      {{ t('edit.checkUpdates') }}
+                    </a-button>
+                  </span>
+                </a-tooltip>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <div class="form-section">
@@ -497,6 +564,34 @@
       </a-form>
     </a-card>
   </ConfigLockPanel>
+
+  <!-- 锁配置会给整棵子树发 component-disabled，弹窗里点「确定」起更新那一步也会被禁掉 -->
+  <!-- open 只单向绑：antd 点 X/ESC 会先把 update:open 置 false 再发 cancel，用 v-model
+       就成了「窗口先没、后才问要不要中止」，选「取消」时窗口已关、更新还在后台写盘 -->
+  <a-modal
+    :open="updateModal.open"
+    :title="
+      updateModal.running
+        ? t('edit.endfieldUpdateProgressTitle')
+        : t('edit.endfieldCheckUpdateTitle')
+    "
+    :confirm-loading="updateModal.starting"
+    :mask-closable="!updateModal.running"
+    :footer="updateModal.running || updateModal.done ? null : undefined"
+    @ok="startUpdate"
+    @cancel="handleUpdateModalCancel"
+  >
+    <template v-if="updateModal.running || updateModal.done">
+      <div class="update-log-area">
+        <pre class="update-log-content">{{
+          updateModal.log || t('edit.endfieldUpdateConnecting')
+        }}</pre>
+      </div>
+    </template>
+    <template v-else>
+      <a-alert type="info" show-icon :message="t('edit.endfieldWillBeUpdated')" />
+    </template>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
@@ -521,8 +616,15 @@ import {
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import { FolderOpenOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import { useMaaEndUpdate } from './useMaaEndUpdate'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
 
@@ -543,6 +645,11 @@ const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
+// 该脚本的配置是否正被任务锁着：锁着时点「检查更新」只会换来后端一句「已在运行」
+const { configLocked } = useScriptConfigLock(() => scriptId)
+const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useMaaEndUpdate(
+  () => scriptId
+)
 const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
@@ -587,6 +694,8 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RestoreDisplayType: 'Window',
     RestoreResolutionWidth: 1920,
     RestoreResolutionHeight: 1080,
+    IfAutoUpdate: false,
+    UpdateTimeLimit: 240,
   },
 })
 
@@ -736,6 +845,14 @@ const handleResolutionBlur = async (key: 'RestoreResolutionWidth' | 'RestoreReso
   const value = maaEndConfig.Game[key] ?? (key === 'RestoreResolutionWidth' ? 1920 : 1080)
   maaEndConfig.Game[key] = value
   await handleChange('Game', key, value)
+}
+
+// 清空必须回填默认值：后端把 null 按区间下限纠正成 1，输入框看着还是空的，
+// 而每轮更新刚开头就被「超过 1 分钟」掐断
+const handleUpdateTimeoutBlur = async () => {
+  const value = maaEndConfig.Game.UpdateTimeLimit ?? 240
+  maaEndConfig.Game.UpdateTimeLimit = value
+  await handleChange('Game', 'UpdateTimeLimit', value)
 }
 
 const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
@@ -1094,6 +1211,29 @@ onBeforeUnmount(() => {
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
+}
+
+/* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
+.endfield-update-check {
+  display: inline-block;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 
 .path-input-group {

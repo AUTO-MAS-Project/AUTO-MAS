@@ -3094,6 +3094,12 @@ class MaaEndConfig_Game(BaseModel):
     RestoreResolutionHeight: Optional[int] = Field(
         default=None, ge=1, le=16384, description="自定义恢复分辨率高度"
     )
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None, description="任务启动前是否由 MAS 检查并接管更新终末地客户端"
+    )
+    UpdateTimeLimit: Optional[int] = Field(
+        default=None, ge=1, le=9999, description="游戏客户端更新时长限制（分钟）"
+    )
 
 
 class MaaEndConfig(BaseModel):

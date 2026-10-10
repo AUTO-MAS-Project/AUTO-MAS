@@ -404,6 +404,56 @@ MAAEND_SANITY_TASK_FIELDS = (
 )
 """MaaEnd理智任务字段列表"""
 
+ENDFIELD_SERVER_PRESETS: dict[tuple[str, str, str], dict[str, str]] = {
+    ("6LL0KJuqHBVz33WK", "1", "1"): {
+        "label": "官服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "1",
+        "sub_channel": "1",
+        "seq": "5",
+    },
+    ("6LL0KJuqHBVz33WK", "2", "2"): {
+        "label": "B服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "2",
+        "sub_channel": "2",
+        "seq": "5",
+    },
+    ("YDUTE5gscDZ229CW", "6", "6"): {
+        "label": "国际服",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "6",
+        "seq": "3",
+    },
+    ("YDUTE5gscDZ229CW", "6", "802"): {
+        "label": "国际服（Google Play）",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "802",
+        "seq": "3",
+    },
+}
+"""终末地 PC 客户端的四套服务器参数，按渠道区分。
+
+键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`，用来选出官服、
+B服、国际服与国际服（Google Play）中的一种；请求体的每一项都取自选中的这一套，不混用
+（国际服的 `launcher_appcode` 等于它自己的 appcode，序号也是 3 而不是 5）。MAS 没有选服
+入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+
+`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判
+`400 CODEC invalid value for string field`，版本串带首尾空格会被判 `500 get latest game
+fail`（服务端不做 trim）。
+"""
+
 EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",

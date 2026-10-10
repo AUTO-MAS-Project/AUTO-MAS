@@ -1786,6 +1786,26 @@ export default {
     trackChildProcesses: '同时追踪脚本启动的子进程',
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
+    endfieldAutoUpdate: '启动前更新终末地客户端',
+    endfieldAutoUpdateHint:
+      '任务启动前检查终末地 PC 客户端版本，落后时由 MAS 按官方增量包补齐：先核对本地文件，核对通过才会关闭正在运行的客户端，再只下载变化的部分；官方没有这一路增量时不动客户端，改提示手动更新',
+    endfieldUpdateTimeoutHint:
+      'MAS 核对本地文件、退出游戏客户端、下载增量并覆盖安装的最长耗时，超时后中止本次更新并清理已下载文件；一轮更新通常要几十分钟以上，填得过小会稳定被掐断',
+    endfieldManualUpdate: '手动更新',
+    endfieldCheckUpdateTitle: '检查终末地客户端更新',
+    endfieldUpdateProgressTitle: '终末地客户端更新进度',
+    endfieldWillBeUpdated:
+      '由 AUTO-MAS 按官方增量包更新终末地 PC 客户端：先读本地文件核对基线，再只下载变化的部分（一次跨版本要下载几 GB，核对要读完几十 GB）。核对通过才会关闭正在运行的游戏，并锁定该脚本配置；官方没有这条基线的增量时不更新，只提示手动更新',
+    endfieldUpdateCloseConfirm:
+      '关闭弹窗会中止本轮更新，已下载的增量会被清掉，下次从头重下。确定关闭？',
+    endfieldUpdateAbortTitle: '中止本轮更新？',
+    endfieldUpdateAbortConfirm: '仍要关闭',
+    endfieldUpdateAlreadyFinished: '本轮更新已经结束，结论见该脚本的运行日志',
+    endfieldUpdateFailed: '终末地更新失败: {p0}',
+    endfieldUpdateTask: '终末地更新任务已结束',
+    endfieldUpdateConnecting: '正在连接更新任务...',
+    endfieldUpdateStartFailed: '启动终末地更新失败',
+    endfieldUpdateStopFailed: '停止终末地更新失败',
     pickMfwResourceLeave: '选择 Resource，留空时自动选择匹配当前控制方式的第一个 Resource',
     pickMfwProject: '选择项目',
     pickDirectoryHoldingMaaend2: '选择 MaaEnd.exe 所在目录',

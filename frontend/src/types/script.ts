@@ -198,6 +198,8 @@ export interface MaaEndScriptConfig {
     RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
+    IfAutoUpdate: boolean
+    UpdateTimeLimit: number
   }
 }
 

@@ -1740,6 +1740,27 @@ export default {
     trackChildProcesses: 'スクリプトが起動した子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
+    endfieldAutoUpdate: '実行前に Endfield クライアントを更新',
+    endfieldAutoUpdateHint:
+      'タスク開始前に PC クライアントのバージョンを確認し、古い場合は公式の差分パックで補完します。まずローカルファイルを検証し、通ってから実行中のクライアントを終了して、変わった分だけをダウンロードします。このベースライン向けの差分がない場合はクライアントに触れず、手動更新を案内します',
+    endfieldUpdateTimeoutHint:
+      'ローカル検証・ゲーム終了・差分ダウンロード・上書きにかける最長時間。超過すると中断し、ダウンロード済みのファイルを片付けます。1 回の更新は通常数十分以上かかるため、小さすぎると毎回中断します',
+    endfieldManualUpdate: '手動更新',
+    endfieldCheckUpdateTitle: 'Endfield クライアントの更新を確認',
+    endfieldUpdateProgressTitle: 'Endfield クライアントの更新状況',
+    endfieldWillBeUpdated:
+      'AUTO-MAS が公式の差分パックで Endfield PC クライアントを更新します。まずローカルファイルを読み込んでベースラインを検証し、変わった分だけダウンロードします（バージョンをまたぐとダウンロードは数 GB、検証で数十 GB 読みます）。検証が通ると起動中のゲームを終了し、このスクリプトの設定をロックします。このベースライン向けの差分が公式にない場合は更新せず、手動更新を案内します',
+    endfieldUpdateCloseConfirm:
+      'ダイアログを閉じると今回の更新は中断され、ダウンロード済みの差分ファイルは破棄されるため、次回は最初からやり直しになります。閉じますか？',
+    endfieldUpdateAbortTitle: 'この更新を中断しますか？',
+    endfieldUpdateAbortConfirm: 'それでも閉じる',
+    endfieldUpdateAlreadyFinished:
+      'この更新はすでに終了しました。結論はスクリプトの実行ログにあります',
+    endfieldUpdateFailed: 'Endfield 更新に失敗しました: {p0}',
+    endfieldUpdateTask: 'Endfield 更新タスクが終了しました',
+    endfieldUpdateConnecting: '更新タスクに接続中...',
+    endfieldUpdateStartFailed: 'Endfield 更新を開始できませんでした',
+    endfieldUpdateStopFailed: 'Endfield 更新を停止できませんでした',
     pickMfwResourceLeave:
       'リソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
     pickMfwProject: 'プロジェクトを選択',
