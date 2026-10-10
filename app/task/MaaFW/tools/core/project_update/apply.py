@@ -19,7 +19,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Collection, Mapping
+from typing import Any, Callable, Mapping
 
 from .contracts import (
     ArtifactType,
@@ -481,15 +481,14 @@ def _check_disk_space(
     state_required: int,
     project_required: int,
 ) -> None:
-    """两处要的空间放得下吗。两处在同一个卷上时要求相加（以前各查各的、都只比一份，
-    剩余空间在一份与两份之间时预检通过，解压完才在中途报磁盘已满）。
+    """失败文案先给人看的一句（约多少 MB、剩多少 MB），英文排障原文跟在括号里。
 
-    失败文案先给人看的一句（约多少 MB、剩多少 MB），英文排障原文跟在括号里。
+    门槛与以前相同（两处各比各的）：全量包解压之外、新载荷里大文件按内容进共用库的那
+    一份，建载荷前按内容估不准（投影丢掉的外壳大文件、库里已有的都不该算），按大小
+    粗估会误拒本来能更新的情况，所以不加。
     """
 
     reserve = 1024 * 1024
-    state_required = max(0, state_required)
-    project_required = max(0, project_required)
     try:
         state_free = shutil.disk_usage(state_dir).free
         project_free = shutil.disk_usage(project_path).free
@@ -498,23 +497,13 @@ def _check_disk_space(
             "读不到磁盘剩余空间，无法确认放得下更新"
             "（INSUFFICIENT_DISK: cannot determine free space）"
         ) from exc
-    if _same_volume(state_dir, project_path):
-        needed = state_required + project_required
-        if state_free < needed + reserve:
-            raise UpdateApplyError(
-                f"磁盘空间不足：更新需要约 {_mb(needed)} MB，所在磁盘只剩 "
-                f"{_mb(state_free)} MB（INSUFFICIENT_DISK: update staging needs "
-                f"{state_required} + {project_required} bytes on one volume, "
-                f"volume has {state_free} bytes free）"
-            )
-        return
-    if state_free < state_required + reserve:
+    if state_free < max(0, state_required) + reserve:
         raise UpdateApplyError(
             f"磁盘空间不足：更新需要约 {_mb(state_required)} MB，所在磁盘只剩 "
             f"{_mb(state_free)} MB（INSUFFICIENT_DISK: update staging needs "
             f"{state_required} bytes, state volume has {state_free} bytes free）"
         )
-    if project_free < project_required + reserve:
+    if project_free < max(0, project_required) + reserve:
         raise UpdateApplyError(
             f"磁盘空间不足：更新需要约 {_mb(project_required)} MB，所在磁盘只剩 "
             f"{_mb(project_free)} MB（INSUFFICIENT_DISK: project commit needs "
@@ -522,38 +511,8 @@ def _check_disk_space(
         )
 
 
-def _same_volume(first: Path, second: Path) -> bool:
-    try:
-        return os.stat(first).st_dev == os.stat(second).st_dev
-    except OSError:
-        return Path(first).resolve(strict=False) == Path(second).resolve(strict=False)
-
-
 def _mb(value: int) -> str:
     return f"{max(0, value) / (1024 * 1024):.0f}"
-
-
-def estimate_new_shared_bytes(
-    package_path: Path, known_sizes: Collection[int], *, min_bytes: int
-) -> int:
-    """全量包建新载荷时、共用库里要新增的字节的估计（解压量之外的那一份）。
-
-    ≥ ``min_bytes`` 的条目会按内容进共用库（``blob_store.place`` 复制一份进库）；库里
-    已有同内容的不占新空间。建载荷之前拿不到内容哈希，按大小估：与旧载荷里某个文件
-    一样大的当作没变（大文件改了内容而大小不变的很少），其余都算新增。
-    """
-
-    try:
-        with zipfile.ZipFile(package_path, "r") as archive:
-            return sum(
-                int(item.file_size)
-                for item in archive.infolist()
-                if not item.is_dir()
-                and int(item.file_size) >= min_bytes
-                and int(item.file_size) not in known_sizes
-            )
-    except zipfile.BadZipFile as exc:
-        raise InvalidPackageArchive("update package is not a valid zip file") from exc
 
 
 @dataclass(frozen=True)

@@ -28,10 +28,8 @@ from .apply import (
     _find_package_root,
     _read_interface_version,
     _safe_extract_zip,
-    estimate_new_shared_bytes,
     zip_entry_stats,
 )
-from .blob_store import LINK_MIN_BYTES
 from .contracts import normalise_sha256
 from .payloads import (
     ORIGIN_PACKAGE,
@@ -1409,19 +1407,12 @@ async def apply_maafw_project_update(
         timer.start("解压")
         staging_root.mkdir(parents=True, exist_ok=True)
         entry_files, expanded = zip_entry_stats(downloaded.path)
-        # 解压一份；建新载荷时私有文件与小文件从解压目录挪过去（不占新空间），大文件按内容
-        # 复制进共用库——库里已有的（多半是没变的）不占。两份在同一个卷上，要求相加。
-        known_sizes = {
-            int(entry.get("size") or 0)
-            for entry in manifest_files(payload.manifest()).values()
-        }
+        # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
         _check_disk_space(
             staging_root,
             staging_root,
             state_required=expanded,
-            project_required=estimate_new_shared_bytes(
-                downloaded.path, known_sizes, min_bytes=LINK_MIN_BYTES
-            ),
+            project_required=expanded,
         )
         extract_dir.mkdir(parents=True, exist_ok=True)
         send_update_log(
