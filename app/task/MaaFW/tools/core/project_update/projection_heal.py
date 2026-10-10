@@ -73,6 +73,7 @@ from .payloads import (
     lineage_lock,
     manifest_files,
     manifest_path,
+    mark_damaged,
     payload_dir,
     projection_revision_of,
     read_lineage,
@@ -1105,6 +1106,16 @@ def rebuild_payload(
         except OSError:
             logger.warning("MaaFW 补齐 staging 清理失败，留待启动时清理：%s", staging)
         raise
+    if damaged:
+        # 被写穿过的载荷：坏的 inode 经 clone_payload_into 原样链进了新载荷，新 id 也得标
+        # damaged，否则「damaged 只要全量包」的保护在补齐后失效，下次差量包（或区间差量）
+        # 会以坏内容为基线套上去。登记已完成，标记失败只记日志。
+        try:
+            mark_damaged(target.root, target.lineage, registered.payload_id)
+        except (OSError, PayloadError) as exc:
+            logger.warning(
+                "MaaFW 补齐后的载荷 %s 没能标上 damaged：%s", registered.payload_id, exc
+            )
     return registered
 
 
