@@ -74,6 +74,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
 )
 from app.task.MaaFW.tools.embedded.flavor import (
     decide_project_config_class,
+    flavor_for_project,
+    resolve_flavor,
+    retype_notice_lines,
     user_config_type_transform,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -317,6 +320,7 @@ async def _apply_project_flavor(script_id: str) -> None:
     target = decide_project_config_class(interface)
     if type(script_config) is target:
         return
+    previous_flavor = resolve_flavor(script_config)
     try:
         await Config.ScriptConfig.retype(
             script_uid, target, user_config_type_transform(target)
@@ -326,23 +330,25 @@ async def _apply_project_flavor(script_id: str) -> None:
         return
     logger.info(f"脚本 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
     script_name = str(script_config.get("Info", "Name") or str(script_id)[:8])
-    if issubclass(target, RuntimeMaaFWConfig) and target is not RuntimeMaaFWConfig:
-        await Config.push_system_notice(
-            level="warning",
-            title=f"脚本「{script_name}」已按项目识别为 {target.__name__.removesuffix('Config')}",
-            lines=[
-                "运行时会自动补上启动 / 关闭游戏；官服用户的「账号」会用于自动切换账号，"
-                "如果那一栏原来只是备注，请改掉或清空",
-            ],
-        )
-    else:
-        await Config.push_system_notice(
-            level="info",
-            title=f"脚本「{script_name}」已变回通用 MFW 脚本",
-            lines=[
-                "不再自动补启动 / 关闭 / 切换账号；用户与运行设置保留，任务队列请按新项目重排"
-            ],
-        )
+    has_users = len(script_config.UserData) > 0
+    # 各特调的行为说明由特调自己给（retype_notice_lines），引擎不写专项语义
+    target_flavor = flavor_for_project(interface)
+    lines = [
+        *retype_notice_lines(previous_flavor, entering=False, has_users=has_users),
+        *retype_notice_lines(target_flavor, entering=True, has_users=has_users),
+    ]
+    if has_users:
+        lines.append("用户与运行设置保留，任务队列请按新项目重排")
+    type_name = (
+        str(getattr(target_flavor, "type_key", "") or "")
+        if target_flavor is not None
+        else ""
+    ) or "通用 MFW 脚本"
+    await Config.push_system_notice(
+        level="warning" if lines else "info",
+        title=f"脚本「{script_name}」已按项目识别为 {type_name}",
+        lines=lines,
+    )
 
 
 async def get_embedded_status(script_id: str) -> MaaFWApiReply:

@@ -23,9 +23,9 @@
 用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
 
 引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
-``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型、在模拟器启动后
-调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的快照整理钩子。这里不出现任何具体
-专项的名字；专项自己的逻辑全在它自己的包里。
+``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型（换了类型时取可选的
+换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的
+快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
 
 可选钩子 ``sanitize_task_snapshot``（写用户任务快照前整理）的契约：
 
@@ -114,6 +114,17 @@
   剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
 - **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
   ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
+
+可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
+
+- **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
+- **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
+  换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
+- **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
+  ``has_users`` 是脚本此刻有没有用户——只对已有用户说的话（「把账号栏改掉」之类）没有用户时
+  不要返回。
+- **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
+  标题里的类型名取 ``type_key``。
 
 可选属性 ``supports_mod_avd``（能不能用魔改 AVD）的契约：
 
@@ -206,6 +217,20 @@ def unselectable_entries(flavor: Any) -> dict[str, str]:
         for entry, reason in declared.items()
         if str(entry or "").strip()
     }
+
+
+def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
+    """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
+
+    hook = getattr(flavor, "retype_notice_lines", None) if flavor is not None else None
+    if not callable(hook):
+        return []
+    try:
+        lines = hook(entering=entering, has_users=has_users)
+    except Exception as exc:  # noqa: BLE001 - 通知文案出错不该挡住换类型
+        logger.warning(f"MaaFW 特调生成换类型说明失败：{exc}")
+        return []
+    return [str(line).strip() for line in lines or () if str(line or "").strip()]
 
 
 def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
@@ -419,6 +444,7 @@ __all__ = [
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_snapshot_sanitizer",
+    "retype_notice_lines",
     "sanitize_user_task_update",
     "unselectable_entries",
     "user_config_type_transform",

@@ -45,6 +45,8 @@
      `MusesBoxStartParty`、`PreStormProtocolStart`、`CompleteInduction`）要用户先手动停在对应页面，
      M9A 没有导航：用户页不让选（已在队列里的照常显示、给一句提示），运行时剔掉并记一行。
      优先于上面三项声明，`skip_on_retry_entries` 里的同名 entry 留着不动。
+  9. `retype_notice_lines(...)`：引擎的**可选**钩子（契约同上）。导入项目后脚本换成 / 换出 M9A 时，
+     系统通知里说明启停与切号；「账号栏改掉或清空」只在脚本已有用户时说。
 - `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
   直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），
