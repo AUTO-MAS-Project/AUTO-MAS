@@ -177,6 +177,7 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
 .command-footer {
   position: absolute;
+  left: 0;
   right: 0;
   bottom: 0;
   z-index: 1;
@@ -186,6 +187,13 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 }
 
 .command-author {
+  /* 作者名长短不一，让它吃掉剩余宽度并右对齐；否则整个 footer 会随文字宽窄伸缩，
+     「换一句」按钮被推着左右移动，鼠标停在上面的 tooltip 也就丢掉了 mouseleave。 */
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
   line-height: 1.5;
