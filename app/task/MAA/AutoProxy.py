@@ -103,9 +103,9 @@ from .tools.cultivate import (
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
 from .tools.software_update import (
     prepare_maa_software_update,
-    resolve_takeover_credentials,
     start_maa_software_update_precheck,
 )
+from .tools.update_credentials import resolve_takeover_credentials
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5

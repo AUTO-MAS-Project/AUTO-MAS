@@ -49,7 +49,7 @@ import zipfile
 from pathlib import Path
 
 from app.utils import get_logger
-from app.utils.io import read_dict_file, read_file, write_file
+from app.utils.io import ConfigCorruptedError, read_dict_file, write_file
 
 # 复用资源包的同款原语（哈希与覆盖式复制），避免第二套实现
 from .resource_package import _copy_if_changed, _file_sha256
@@ -172,24 +172,21 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     """读已登记的待更新包，返回 (版本名, 包路径)。
 
     读取顺序对齐 UpdateMAA.update_maa：新格式 gui.new.json 的 Update 组
-    优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置读不出时按
-    无登记处理（登记路径对自己要写的文件另有严格校验）。
+    优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置损坏或读取
+    失败上抛，由登记入口告警并停止，不把无法读取伪装成无登记。
     """
-    try:
-        new_set = read_file(maa_root / "config" / "gui.new.json")
-        update = new_set.get("Update")
-        if isinstance(update, dict):
-            package = str(update.get("UpdatePackage") or "")
-            if package:
-                return str(update.get("Name") or ""), package
-        old_set = read_file(maa_root / "config" / "gui.json")
-        global_set = old_set.get("Global")
-        if isinstance(global_set, dict):
-            package = str(global_set.get("VersionUpdate.package") or "")
-            if package:
-                return str(global_set.get("VersionUpdate.name") or ""), package
-    except Exception:
-        pass
+    new_set = read_dict_file(maa_root / "config" / "gui.new.json")
+    update = new_set.get("Update")
+    if isinstance(update, dict):
+        package = str(update.get("UpdatePackage") or "")
+        if package:
+            return str(update.get("Name") or ""), package
+    old_set = read_dict_file(maa_root / "config" / "gui.json")
+    global_set = old_set.get("Global")
+    if isinstance(global_set, dict):
+        package = str(global_set.get("VersionUpdate.package") or "")
+        if package:
+            return str(global_set.get("VersionUpdate.name") or ""), package
     return "", ""
 
 
@@ -229,15 +226,26 @@ def register_pending_update(
     if not target.is_absolute():
         target = Path(os.path.abspath(target))
 
-    existing_name, existing_package = read_pending_update(maa_root)
+    try:
+        existing_name, existing_package = read_pending_update(maa_root)
+    except (ConfigCorruptedError, OSError) as e:
+        logger.warning(f"MAA 本体更新: 无法确认已有待更新登记，跳过登记: {e}")
+        return False
     existing_path = Path(existing_package) if existing_package else None
     if existing_path is not None and not existing_path.is_absolute():
         existing_path = maa_root / existing_path
-    if (
-        existing_path is not None
-        and os.path.normcase(str(existing_path)) != os.path.normcase(str(target))
-        and existing_path.is_file()
-    ):
+    if existing_path is not None and existing_path.is_file():
+        if (
+            os.path.normcase(str(existing_path)) == os.path.normcase(str(target))
+            and existing_name == version
+        ):
+            try:
+                if _file_sha256(existing_path) == package_sha256:
+                    return True
+            except OSError as e:
+                logger.warning(f"MAA 本体更新: 已登记包暂不可读，保留现有登记: {e}")
+                return False
+        # 同版本也可能是 MAA 自己下载的不同压缩包，不能覆盖后再靠删除回滚。
         logger.info(
             f"MAA 本体更新: 已有待更新登记 {existing_name or '未知版本'}"
             f"（{existing_package}），保护现有登记，跳过"
@@ -264,18 +272,20 @@ def register_pending_update(
         old_config = maa_root / "config" / "gui.json"
         if new_config.is_file():
             config_path = new_config
-            data = read_file(config_path)
+            data = read_dict_file(config_path)
             update = data.setdefault("Update", {})
             update["Name"] = version
             update["UpdatePackage"] = str(target)
         elif old_config.is_file():
             config_path = old_config
-            data = read_file(config_path)
+            data = read_dict_file(config_path)
             global_set = data.setdefault("Global", {})
             global_set["VersionUpdate.name"] = version
             global_set["VersionUpdate.package"] = str(target)
         else:
             logger.warning("MAA 本体更新: 安装目录缺少 MAA 配置文件，跳过登记")
+            if copied:
+                target.unlink(missing_ok=True)
             return False
         write_file(config_path, data)
         return True

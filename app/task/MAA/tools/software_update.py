@@ -78,6 +78,7 @@ from typing import NamedTuple
 import psutil
 
 from app.core import Config
+from app.models.config import MaaConfig
 from app.services.update_transport import download_file, request_mirror_resource
 from app.utils import get_logger
 from app.utils.io import read_dict_file, write_file
@@ -85,7 +86,7 @@ from app.utils.io import read_dict_file, write_file
 # 同包族内复用既有原语，避免第二套实现：路径归一化与反滥用识别码与资源
 # 更新保持同一事实源，状态记账原语在 update_state。下划线名限定在同一
 # tools 包族内使用。
-from .resource_update import _path_key, _sp_id
+from .resource_update import _path_key, _run_write_thread, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
@@ -94,6 +95,7 @@ from .software_package import (
     store_cache,
     validate_software_zip,
 )
+from .update_credentials import resolve_takeover_credentials
 from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
 logger = get_logger("MAA 本体更新")
@@ -262,6 +264,14 @@ def read_installed_release(maa_root: Path) -> tuple[str, str] | None:
     return version_text, arch
 
 
+# 私有字段耦合例外：开发者于 2026-10-10 明确接受保留原生通道偏好。
+# 核查 MAA 067cc0d11da1fb5a0f14e6d023b12ae6217c8d31 的 Main/Bootstrapper.cs
+# ParseArgs 仅暴露配置方案等启动参数，未提供通道查询；GUI 设置偏好也没有
+# 文档化查询接口、日志或退出码契约可替代。解析只集中于 read_config_channel，
+# 仅转换 Mirror 请求参数，不扩展上游配置/状态模型。未知值/损坏会告警，字段
+# 缺失时回落实际版本通道；上游提供公开查询入口后移除此字段解析。
+# 证据：https://github.com/MaaAssistantArknights/MaaAssistantArknights/blob/
+# 067cc0d11da1fb5a0f14e6d023b12ae6217c8d31/src/MaaWpfGui/Main/Bootstrapper.cs
 # 上游 UpdateVersionType 枚举序为 Nightly=0, Beta=1, Stable=2；gui.new.json
 # 实测以字符串存储（"Stable"/"Beta"/"Nightly"），旧 gui.json 同为字符串，
 # 兼容两种形态
@@ -330,23 +340,6 @@ def resolve_update_channel(
         if channel is not None:
             return channel
     return detect_channel(version_text)
-
-
-def resolve_takeover_credentials(config: object) -> tuple[bool, str | None]:
-    """解析脚本的更新接管启用状态与生效的 CDK，返回 (启用?, CDK)。
-
-    - 脚本开关「接管更新」关闭 → (False, None)；
-    - 开启后：脚本 CDK 非空用脚本的，否则回退 MAS 全局 CDK；
-    - 两者皆空 → (False, None)——配了接管但无 CDK 不执行任何更新。
-
-    config 为脚本配置（MaaConfig），按 ``get(段, 键)`` 读取。
-    """
-    if not config.get("Update", "TakeoverEnabled"):
-        return False, None
-    cdk = str(config.get("Update", "MirrorChyanCDK") or "").strip()
-    if not cdk:
-        cdk = str(Config.get("Update", "MirrorChyanCDK") or "").strip()
-    return bool(cdk), cdk or None
 
 
 # --------------------------------------------------------------------------
@@ -465,7 +458,7 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
             await download_file(
                 latest.url, part, timeout=_DOWNLOAD_TIMEOUT, proxy=Config.proxy
             )
-        await asyncio.to_thread(
+        await _run_write_thread(
             _store_verified_cache, cache_dir, part, latest, channel, arch
         )
     except asyncio.CancelledError:
@@ -512,44 +505,64 @@ def _cache_key(arch: str, channel: str) -> str:
 
 
 _precheck_tasks: dict[str, asyncio.Task[None]] = {}
+_cache_locks: dict[str, asyncio.Lock] = {}
+# 下载地址只留在内存，避免把带鉴权信息的 URL 写入状态文件。
+_latest_queries: dict[str, _Latest] = {}
+
+
+def _query_key(arch: str, channel: str, cdk: str) -> str:
+    """同通道架构的不同 CDK 独立查询，失败的凭据不阻止其他脚本。"""
+    credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
+    return f"{_cache_key(arch, channel)}/{credential_key}"
 
 
 async def _precheck_flow(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
     """预检查主体：查询 → 版本判断 → 取包入缓存。失败语义见各调用。"""
-    try:
-        await _precheck_inner(maa_root, channel, arch, cdk)
-    except asyncio.CancelledError:
-        raise
-    except _UpdateError as e:
-        async with _state_lock:
-            state = load_state(_STATE_FILE)
-            state["query_fail_until"] = (
-                datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
-            ).isoformat()
-            write_file(_STATE_FILE, state)
-        logger.warning(f"MAA 本体更新: 版本查询失败（1 小时内不再尝试）: {e}")
-    except Exception:
-        logger.exception("MAA 本体更新: 预检查异常（已忽略，不影响本轮任务）")
+    # 不同安装分别判断当前版本，同一缓存的查询/下载串行，后来的旧安装
+    # 可以复用已查到的目标，不能复用首个新版安装的「无需更新」结论。
+    async with _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock()):
+        try:
+            await _precheck_inner(maa_root, channel, arch, cdk)
+        except asyncio.CancelledError:
+            raise
+        except _UpdateError as e:
+            async with _state_lock:
+                state = load_state(_STATE_FILE)
+                state[f"query_fail_until/{_query_key(arch, channel, cdk)}"] = (
+                    datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
+                ).isoformat()
+                write_file(_STATE_FILE, state)
+            logger.warning(
+                f"MAA 本体更新: 该通道架构的版本查询失败（退避 1 小时）: {e}"
+            )
+        except Exception:
+            logger.exception("MAA 本体更新: 预检查异常（已忽略，不影响本轮任务）")
 
 
 async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> None:
+    query_key = _query_key(arch, channel, cdk)
+    latest = _latest_queries.get(query_key)
     async with _state_lock:
         state = load_state(_STATE_FILE)
         now = datetime.now(timezone.utc)
-        if backoff_active(state, "query_fail_until", now):
+        if backoff_active(state, f"query_fail_until/{query_key}", now):
             logger.info("MAA 本体更新: 查询退避期内，本轮跳过检查")
             return
-        last_query = parse_iso(state.get("last_query_at"))
-        if last_query is not None and now - last_query < timedelta(
+        last_query = parse_iso(state.get(f"last_query_at/{query_key}"))
+        within_floor = last_query is not None and now - last_query < timedelta(
             seconds=_QUERY_FLOOR
-        ):
-            logger.info("MAA 本体更新: 距上次查询不足 10 分钟，本轮跳过检查")
+        )
+    if within_floor:
+        if latest is None:
+            logger.info("MAA 本体更新: 距该通道上次查询不足 10 分钟，本轮复用已有包")
             return
-    latest = await _fetch_latest(channel, arch, cdk)
-    async with _state_lock:
-        state = load_state(_STATE_FILE)
-        state["last_query_at"] = datetime.now(timezone.utc).isoformat()
-        write_file(_STATE_FILE, state)
+    else:
+        latest = await _fetch_latest(channel, arch, cdk)
+        async with _state_lock:
+            state = load_state(_STATE_FILE)
+            state[f"last_query_at/{query_key}"] = datetime.now(timezone.utc).isoformat()
+            write_file(_STATE_FILE, state)
+            _latest_queries[query_key] = latest
 
     # 高通道回落低通道版本（beta/alpha 返回正式版）是预期行为，不按响应
     # 版本的通道拦截；方向由下面的版本比较守卫（不降级）
@@ -571,12 +584,12 @@ async def _precheck_inner(maa_root: Path, channel: str, arch: str, cdk: str) -> 
 
 
 def start_maa_software_update_precheck(
-    maa_root: Path, *, config_dir: Path | None = None, config: object | None = None
+    maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
 ) -> None:
     """自动代理开始时启动本体更新预检查：检查版本并把完整包预下载进共享
     缓存，供收尾 prepare_maa_software_update 消费。
 
-    同一缓存键的任务进程内去重（多个用户轮次共享一轮检查）；脚本未开启
+    同一安装的任务进程内去重，同通道架构复用查询结果和完整包；脚本未开启
     更新接管、无生效 CDK 或安装信息无法识别时不创建任务。本函数不等待
     网络，任何失败只写日志。
 
@@ -605,7 +618,7 @@ def start_maa_software_update_precheck(
                 f"MAA 本体更新: 无法识别更新通道（版本={version_text!r}，配置未表达），跳过"
             )
             return
-        key = _cache_key(arch, channel)
+        key = _path_key(maa_root)
         existing = _precheck_tasks.get(key)
         if existing is not None and not existing.done():
             return
@@ -618,7 +631,7 @@ def start_maa_software_update_precheck(
 
 
 async def prepare_maa_software_update(
-    maa_root: Path, *, config_dir: Path | None = None, config: object | None = None
+    maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
 ) -> None:
     """用户轮次收尾、原有 update_maa() 之前调用。
 
@@ -648,7 +661,7 @@ async def prepare_maa_software_update(
         )
         if channel is None:
             return
-        key = _cache_key(arch, channel)
+        key = _path_key(maa_root)
         cache_dir = software_cache_dir("win", arch, channel)
         task = _precheck_tasks.get(key)
         if task is not None and not task.done():
@@ -660,40 +673,57 @@ async def prepare_maa_software_update(
                 return
         if _precheck_tasks.get(key) is task:
             _precheck_tasks.pop(key, None)
-        manifest = load_cache_manifest(cache_dir)
-        if manifest is None:
+        cache_lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
+        try:
+            async with asyncio.timeout(_PRECHECK_GRACE):
+                await cache_lock.acquire()
+        except TimeoutError:
+            logger.info("MAA 本体更新: 共享缓存仍在更新，本轮跳过登记")
             return
-        # 消费前复核缓存内容与清单一致（清理、杀毒删文件等都会造成残缺包）
-        if not await asyncio.to_thread(cache_zip_matches, cache_dir, manifest):
-            logger.warning("MAA 本体更新: 缓存包与清单不一致，作废缓存等待重建")
-            (cache_dir / "manifest.json").unlink(missing_ok=True)
-            return
-        current = parse_version(version_text)
-        target = parse_version(manifest["version"])
-        if current is None or target is None or compare_versions(target, current) <= 0:
-            return
-        # 只拦官方更新器：它正在安装时登记会留下第二份待更新状态。收尾阶段的
-        # 残留 MAA.exe 是本会话自己的进程（成功路径不杀、MAA 收尾段统一清理），
-        # update_maa() 会在安装前先杀 MAA，不构成占用；其他 MAS 进程对同一
-        # 安装的写入已被会话期间持有的访问锁排除，无需在此再拦
-        running = await asyncio.to_thread(_running_updater_paths)
-        install_key = _path_key(maa_root)
-        if any(exe.startswith(install_key + os.sep) for exe in running):
-            logger.warning(
-                "MAA 本体更新: 检测到 MAA.Updater.exe 正在安装，本轮跳过登记"
+        try:
+            # 清单复核和复制期间持缓存锁，防止另一安装的新查询把包换成下一版。
+            manifest = load_cache_manifest(cache_dir)
+            if manifest is None:
+                return
+            if not await _run_write_thread(cache_zip_matches, cache_dir, manifest):
+                logger.warning("MAA 本体更新: 缓存包与清单不一致，作废缓存等待重建")
+                (cache_dir / "manifest.json").unlink(missing_ok=True)
+                return
+            current = parse_version(version_text)
+            target = parse_version(manifest["version"])
+            if (
+                current is None
+                or target is None
+                or compare_versions(target, current) <= 0
+            ):
+                return
+            # 只拦官方更新器；本会话残留的 GUI 由下方 update_maa 先结束。
+            # 安装访问锁由调用方持有，缓存锁也要等登记线程收尾后才能释放。
+            running = await asyncio.to_thread(_running_updater_paths)
+            install_key = _path_key(maa_root)
+            if any(exe.startswith(install_key + os.sep) for exe in running):
+                logger.warning(
+                    "MAA 本体更新: 检测到 MAA.Updater.exe 正在安装，本轮跳过登记"
+                )
+                return
+            # 等待预检查/缓存及进程扫描期间，全局回退 CDK 可能被清空。
+            enabled, _ = resolve_takeover_credentials(config)
+            if not enabled:
+                logger.info("MAA 本体更新: 登记前已不满足接管条件，本轮跳过")
+                return
+            registered = await _run_write_thread(
+                register_pending_update,
+                maa_root,
+                version=manifest["version"],
+                package_zip=cache_dir / "package.zip",
+                package_sha256=manifest["sha256"],
             )
-            return
-        registered = await asyncio.to_thread(
-            register_pending_update,
-            maa_root,
-            version=manifest["version"],
-            package_zip=cache_dir / "package.zip",
-            package_sha256=manifest["sha256"],
-        )
-        if registered:
-            logger.info(
-                f"MAA 本体更新: 已登记 {manifest['version']}，交由 MAA 官方更新器安装"
-            )
+            if registered:
+                logger.info(
+                    f"MAA 本体更新: 已登记 {manifest['version']}，交由 MAA 官方更新器安装"
+                )
+        finally:
+            cache_lock.release()
     except asyncio.CancelledError:
         raise
     except Exception:

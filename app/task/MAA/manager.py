@@ -57,7 +57,7 @@ from .tools.resource_update import (
     get_resource_write_lock,
     prepare_queue_resources,
 )
-from .tools.software_update import resolve_takeover_credentials
+from .tools.update_credentials import resolve_takeover_credentials
 
 logger = get_logger("MAA 调度器")
 

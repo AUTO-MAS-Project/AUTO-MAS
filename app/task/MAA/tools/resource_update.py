@@ -82,6 +82,7 @@ from .resource_package import (
     merge_package_tree,
     resource_tree_hashes,
 )
+from .update_credentials import resolve_takeover_credentials
 from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
 logger = get_logger("MAA 资源更新")
@@ -214,15 +215,16 @@ def get_resource_write_lock(install: Path) -> asyncio.Lock:
 def _snapshot_maa_configs() -> list[tuple[str, bool]]:
     """在事件循环采集路径和占用状态；无法确认时拒绝继续写入。
 
-    只收集开启「更新接管」的脚本——资源更新按脚本开关受控，未接管的
-    安装不参与检查与分发。
+    只收集开启「更新接管」且有生效 CDK 的脚本，未满足接管条件的安装
+    不参与检查与分发。
     """
     try:
         entries = list(Config.ScriptConfig.items())
         result: list[tuple[str, bool]] = []
         for _, config in entries:
             if isinstance(config, MaaConfig):
-                if not bool(config.get("Update", "TakeoverEnabled")):
+                enabled, _ = resolve_takeover_credentials(config)
+                if not enabled:
                     continue
                 raw = str(config.get("Info", "Path") or "")
                 if raw:
@@ -290,10 +292,12 @@ def _snapshot_installs(configs: list[tuple[str, bool]]) -> list[tuple[Path, date
 
 
 def _install_busy_now(install: Path, configs: list[tuple[str, bool]]) -> bool:
-    """合并前复查：消费主协程的配置快照，并在线程中扫描进程。"""
+    """合并前复查接管条件、配置锁和运行进程。"""
     key = _path_key(install)
-    return key in _locked_install_keys(configs) or any(
-        exe.startswith(key + os.sep) for exe in _running_maa_exe_paths()
+    return (
+        key not in {_path_key(raw) for raw, _ in configs}
+        or key in _locked_install_keys(configs)
+        or any(exe.startswith(key + os.sep) for exe in _running_maa_exe_paths())
     )
 
 
@@ -775,7 +779,20 @@ async def _distribute_resource_stage(
                         continue
                     configs = _snapshot_maa_configs()
                     if await asyncio.to_thread(_install_busy_now, install, configs):
-                        logger.info(f"MAA 资源更新: 合并前复查到占用，跳过 {install}")
+                        logger.info(
+                            f"MAA 资源更新: 安装被占用或未满足接管条件，跳过 {install}"
+                        )
+                        continue
+                    # 进程扫描让出事件循环，期间开关/CDK 可能变化；派发写线程
+                    # 前再采集一次配置，已经关闭接管的安装不能沿用下载前的目标。
+                    configs = _snapshot_maa_configs()
+                    install_key = _path_key(install)
+                    if install_key not in {
+                        _path_key(raw) for raw, _ in configs
+                    } or install_key in _locked_install_keys(configs):
+                        logger.info(
+                            f"MAA 资源更新: 接管条件或配置占用发生变化，跳过 {install}"
+                        )
                         continue
                     applied = await _run_write_thread(
                         _apply_stage, install, stage_clock, cdk

@@ -426,9 +426,7 @@
                   class="modern-input"
                   autocomplete="off"
                   :disabled="!maaConfig.Update.TakeoverEnabled"
-                  @blur="
-                    handleChange('Update', 'MirrorChyanCDK', maaConfig.Update.MirrorChyanCDK)
-                  "
+                  @blur="handleChange('Update', 'MirrorChyanCDK', maaConfig.Update.MirrorChyanCDK)"
                 />
               </a-form-item>
             </a-col>
