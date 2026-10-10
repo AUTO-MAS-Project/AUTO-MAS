@@ -39,6 +39,10 @@ from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
 )
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    embedded_projects_root,
+    is_embedded_copy_dir_name,
+)
 from app.task.MaaFW.tools.embedded.flavor import (
     flavor_for_project,
     resolve_flavor,
@@ -151,9 +155,9 @@ _MAAFW_IMAGE_SUFFIXES = {
 }
 """允许外发的图片后缀。
 
-白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，等于把「读任意目录下的
-文件」的能力暴露出去了，只能靠「必须在 root 内」+「必须是图片」两道闸门把它收窄
-成「读项目内的图片」。放开成任意后缀就变成了任意文件读取。
+白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，只能靠「root 必须是某个脚本的
+视图」+「必须在 root 内」+「必须是图片」三道闸门把它收窄成「读项目内的图片」。放开成
+任意后缀就变成了任意文件读取。
 """
 
 
@@ -161,10 +165,15 @@ def maafw_asset_file_path(root: str, asset_path: str) -> Path:
     """把 (项目根, 项目内相对路径) 解析成一个可安全外发的图片绝对路径。
 
     ``/maafw/asset`` 的安全边界就在这里：``FileNotFoundError`` 由端点映射成 404，
-    ``ValueError`` 映射成 400。
+    ``ValueError`` 映射成 400。root 只认 ``data/mfw/<12hex>`` 视图——有效项目根永远是它
+    （前端传的是带 scriptId 预览返回的 ``path``）；任意 root 加上全局 CORS，别的网页就能
+    读本机任意已知路径下的图片。
     """
 
     root_path = Path(root).resolve()
+    views_root = embedded_projects_root().resolve()
+    if root_path.parent != views_root or not is_embedded_copy_dir_name(root_path.name):
+        raise ValueError("只能读取 MFW 项目副本里的图片")
     if not root_path.is_dir():
         raise ValueError("MFW 项目目录不存在")
 
