@@ -65,8 +65,12 @@ export interface SatelliteSlot {
 }
 
 /** 卫星按序号轮流分到各条轨道，同一条轨道上的均分一圈，各条轨道再错开一点相位 */
-export function getSatelliteSlot(index: number, count: number): SatelliteSlot {
-  const ringCount = Math.min(ORBIT_RINGS.length, count)
+export function getSatelliteSlot(
+  index: number,
+  count: number,
+  maxRings = ORBIT_RINGS.length
+): SatelliteSlot {
+  const ringCount = Math.min(maxRings, count)
   const ring = index % ringCount
   const onRing = Math.floor((count - 1 - ring) / ringCount) + 1
   const order = Math.floor(index / ringCount)

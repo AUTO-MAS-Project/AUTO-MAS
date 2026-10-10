@@ -1,4 +1,6 @@
 import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
+import { ORBIT_RINGS } from '../satellite/config'
+import { MOON_ORBIT_SCALE } from '../satellite/planetarySystem'
 import { SATELLITE_COLORS, SATELLITE_CONFIG as C } from './config'
 
 // ==================== 轨道与浮动 ====================
@@ -7,6 +9,28 @@ export interface Point3 {
   x: number
   y: number
   z: number
+}
+
+export interface ClassicOrbit {
+  radiusX: number
+  radiusY: number
+}
+
+/** 各层共用主轨道的半径比例，家族行星和卫星只调整轨道尺度。 */
+export function getClassicOrbit(ring: number, scale = 1): ClassicOrbit {
+  const ratio = (ORBIT_RINGS[ring].radius / ORBIT_RINGS[0].radius) * scale
+  return { radiusX: C.orbitRadiusX * ratio, radiusY: C.orbitRadiusY * ratio }
+}
+
+function getOrbitPosition(baseAngle: number, orbit: ClassicOrbit, time: number): Point3 {
+  const speed = C.satelliteOrbitSpeed * Math.pow(C.orbitRadiusX / orbit.radiusX, 1.5)
+  const angle = baseAngle + time * speed
+  const y = Math.sin(angle) * orbit.radiusY
+  return {
+    x: Math.cos(angle) * orbit.radiusX,
+    y: y * Math.cos(C.orbitTilt),
+    z: y * Math.sin(C.orbitTilt),
+  }
 }
 
 export function easeOutCubic(t: number): number {
@@ -26,24 +50,31 @@ export function getSatellitePosition(
   baseAngle: number,
   index: number,
   count: number,
-  time: number
+  time: number,
+  orbit: ClassicOrbit = getClassicOrbit(0)
 ): Point3 {
-  const angle = baseAngle + time * C.satelliteOrbitSpeed
-  const x = Math.cos(angle) * C.orbitRadiusX
-  const y = Math.sin(angle) * C.orbitRadiusY
+  const position = getOrbitPosition(baseAngle, orbit, time)
   const floatOffset =
     Math.sin(time * C.satelliteFloatSpeed * 0.001 + index * ((Math.PI * 2) / count)) *
     C.satelliteFloatAmplitude
 
   return {
-    x,
-    y: y * Math.cos(C.orbitTilt) + floatOffset,
-    z: y * Math.sin(C.orbitTilt),
+    ...position,
+    y: position.y + floatOffset,
   }
 }
 
 export function getCenterFloat(time: number): number {
   return Math.sin(time * C.centerFloatSpeed * 0.001) * C.centerFloatAmplitude
+}
+
+/** 卫星与主轨道共用分圈和公转计算，只缩小轨道半径。 */
+export function getMoonOrbit(ring: number): ClassicOrbit {
+  return getClassicOrbit(ring, MOON_ORBIT_SCALE)
+}
+
+export function getMoonPosition(baseAngle: number, ring: number, time: number): Point3 {
+  return getOrbitPosition(baseAngle, getMoonOrbit(ring), time)
 }
 
 // ==================== 入场 ====================

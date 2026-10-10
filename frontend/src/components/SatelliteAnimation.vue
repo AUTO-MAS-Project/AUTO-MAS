@@ -32,7 +32,6 @@ import {
   buildOrbitModules,
   centerIconUrl,
   orbitKeysByScriptId,
-  type OrbitModule,
 } from '@/composables/satellite-config'
 import { useSatelliteStatus } from '@/composables/useSatelliteStatus'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
@@ -42,6 +41,11 @@ import { consumeFirstVisit } from './satellite/eggs'
 import type { FloatTextVariant } from './satellite/floatText'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
 import type { CenterGlowMode } from './satellite/motion'
+import {
+  buildPlanetaryModules,
+  getPlanetaryStatuses,
+  type PlanetaryModule,
+} from './satellite/planetarySystem'
 import SatelliteEggStage from './satellite/SatelliteEggStage.vue'
 import SatelliteFloatLayer from './satellite/SatelliteFloatLayer.vue'
 import SatelliteHoverLabel from './satellite/SatelliteHoverLabel.vue'
@@ -74,13 +78,13 @@ const stormTint = ref(false)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
 const hoveredSatellite = ref<number | null>(null)
-const hoveredModule = shallowRef<OrbitModule | null>(null)
+const hoveredModule = shallowRef<PlanetaryModule | null>(null)
 
 /** 实时场景；低性能模式下为 null，所有动画、交互、彩蛋都跟着它一起没有 */
 let scene: SatelliteScene | null = null
 let liveLoading = false
-/** 上轨道的卫星：挂载时按用户建过的脚本算一次 */
-let visibleModules: OrbitModule[] | null = null
+/** 按用户建过的脚本构建行星与卫星 */
+const visibleModules = shallowRef<PlanetaryModule[] | null>(null)
 let centerGlowMode: CenterGlowMode = 'green'
 let isUnmounted = false
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
@@ -95,8 +99,8 @@ const {
   clear: clearStill,
 } = useSatelliteStill({
   getContainer: () => container.value,
-  getModules: () => visibleModules,
-  getStatuses: () => satelliteStatuses.value,
+  getModules: () => visibleModules.value,
+  getStatuses: () => planetaryStatuses.value,
   getCenterGlowMode: () => centerGlowMode,
   isDark: () => isDark.value,
   isWanted: () => !isUnmounted && performanceStore.lowPerformanceMode,
@@ -134,8 +138,11 @@ const {
   onEmptyPress: eggs.tryCatchMeteor,
 })
 
+const planetaryStatuses = computed(() =>
+  getPlanetaryStatuses(visibleModules.value ?? [], satelliteStatuses.value)
+)
 const hoveredStatus = computed(() =>
-  hoveredModule.value ? satelliteStatuses.value.get(hoveredModule.value.key) : undefined
+  hoveredModule.value ? planetaryStatuses.value.get(hoveredModule.value.key) : undefined
 )
 
 // ==================== 监听 ====================
@@ -147,9 +154,9 @@ watch(isDark, dark => {
 })
 
 // 常驻订阅推送新状态时同步刷新展示
-watch(satelliteStatuses, statuses => {
+watch(planetaryStatuses, statuses => {
   scene?.setStatuses(statuses)
-  eggs.onStatusesChange(statuses)
+  eggs.onStatusesChange(satelliteStatuses.value)
   requestRender()
   scheduleStill()
 })
@@ -189,7 +196,7 @@ watch(
     if (scene) {
       scene.resize()
       scene.skipAppear()
-      scene.setStatuses(satelliteStatuses.value)
+      scene.setStatuses(planetaryStatuses.value)
     }
     lastFrameAt = null
     requestRender()
@@ -208,7 +215,7 @@ onMounted(async () => {
   if (isUnmounted) return
 
   try {
-    visibleModules = await loadVisibleModules()
+    visibleModules.value = await loadVisibleModules()
     await applyMode()
   } catch (err) {
     logger.error(`初始化场景失败: ${String(err)}`)
@@ -261,8 +268,8 @@ function waitBackendReady(): Promise<void> {
   })
 }
 
-/** 只有用户建过的脚本才上轨道：每种脚本类型一颗，通用 MFW 每个项目一颗 */
-async function loadVisibleModules(): Promise<OrbitModule[]> {
+/** 有脚本的专项才上轨道，MFW 家族的项目绕共同的行星公转。 */
+async function loadVisibleModules(): Promise<PlanetaryModule[]> {
   let userScripts: Awaited<ReturnType<typeof getScripts>> = []
   try {
     userScripts = await getScripts()
@@ -270,7 +277,7 @@ async function loadVisibleModules(): Promise<OrbitModule[]> {
     logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }
 
-  const modules = buildOrbitModules(userScripts)
+  const modules = buildPlanetaryModules(buildOrbitModules(userScripts))
   setSatelliteScriptKeys(orbitKeysByScriptId(modules))
   if (modules.length === 0) {
     logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
@@ -280,7 +287,7 @@ async function loadVisibleModules(): Promise<OrbitModule[]> {
 
 /** 按当前性能模式摆出实时场景或静态图 */
 async function applyMode(): Promise<void> {
-  if (isUnmounted || !visibleModules) return
+  if (isUnmounted || !visibleModules.value) return
 
   if (performanceStore.lowPerformanceMode) {
     teardownLive()
@@ -295,14 +302,14 @@ async function applyMode(): Promise<void> {
 }
 
 async function startLive(): Promise<void> {
-  if (!container.value || !visibleModules) return
+  if (!container.value || !visibleModules.value) return
 
   liveLoading = true
   const created = new SatelliteScene(container.value, { isDark: isDark.value })
   try {
     const loaded = await created.load(
       centerIconUrl,
-      visibleModules,
+      visibleModules.value,
       () => isUnmounted || performanceStore.lowPerformanceMode
     )
     if (!loaded) {
@@ -319,7 +326,7 @@ async function startLive(): Promise<void> {
   scene = created
   // 加载图片期间主题、状态可能已经变了，watcher 那时还够不着场景
   scene.setDark(isDark.value)
-  scene.setStatuses(satelliteStatuses.value)
+  scene.setStatuses(planetaryStatuses.value)
   scene.setCenterGlowMode(centerGlowMode)
   // 记下此刻已经在跑的脚本：之后看着它开跑才喊「启动」
   eggs.onStatusesChange(satelliteStatuses.value)
@@ -400,8 +407,8 @@ function startStatusPolling(): void {
 function setHovered(index: number | null): void {
   if (hoveredSatellite.value === index) return
   hoveredSatellite.value = index
-  hoveredModule.value = index === null ? null : (visibleModules?.[index] ?? null)
-  pointingSatellite.value = index !== null
+  hoveredModule.value = index === null ? null : (visibleModules.value?.[index] ?? null)
+  pointingSatellite.value = index !== null && !scene?.isFamilyPlanet(index)
   scene?.setHovered(index)
   eggs.onHoverChange(index)
   requestRender()
@@ -418,6 +425,7 @@ function updateLabelPosition(): void {
 
 function handleSatelliteTap(index: number, now: number): void {
   if (!scene) return
+  if (scene.isFamilyPlanet(index)) return
   if (!scene.explode(index, now)) {
     scene.ping(index, now)
   }

@@ -15,7 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -30,6 +30,11 @@ import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createCenterPokeCounter } from './satellite/centerPoke'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
+import {
+  buildPlanetaryModules,
+  getPlanetaryStatuses,
+  type PlanetaryModule,
+} from './satellite/planetarySystem'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
@@ -53,6 +58,10 @@ const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
+const visibleModules = shallowRef<PlanetaryModule[]>([])
+const planetaryStatuses = computed(() =>
+  getPlanetaryStatuses(visibleModules.value, satelliteStatuses.value)
+)
 
 let scene: SatelliteScene | null = null
 let isUnmounted = false
@@ -70,7 +79,7 @@ watch(isDark, dark => {
 })
 
 // 常驻订阅推送新状态时同步刷新展示
-watch(satelliteStatuses, statuses => {
+watch(planetaryStatuses, statuses => {
   scene?.setStatuses(statuses)
   requestRender()
 })
@@ -118,7 +127,7 @@ watch(
     if (scene) {
       scene.resize()
       scene.skipAppear()
-      scene.setStatuses(satelliteStatuses.value)
+      scene.setStatuses(planetaryStatuses.value)
     }
     requestRender()
     void waitBackendReady().then(() => {
@@ -195,8 +204,9 @@ async function initScene(): Promise<void> {
   }
   if (!container.value || isUnmounted) return
 
-  // 只有用户建过的脚本才上轨道：每种脚本类型一颗，通用 MFW 每个项目一颗、用项目自己的图标
-  const modules = buildOrbitModules(userScripts)
+  // 沿用每种专项一颗、通用 MFW 每项目一颗的口径，再补上家族内的小轨道。
+  const modules = buildPlanetaryModules(buildOrbitModules(userScripts))
+  visibleModules.value = modules
   setSatelliteScriptKeys(orbitKeysByScriptId(modules))
   if (modules.length === 0) {
     logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
@@ -220,7 +230,7 @@ async function initScene(): Promise<void> {
   // 加载图片期间主题或低性能模式可能已经变了，watcher 那时还够不着场景
   scene.setDark(isDark.value)
   scene.setLowPerformance(performanceStore.lowPerformanceMode)
-  scene.setStatuses(satelliteStatuses.value)
+  scene.setStatuses(planetaryStatuses.value)
   if (performanceStore.isLowPower) {
     scene.skipAppear()
   } else {
@@ -275,7 +285,8 @@ function pickAt(event: MouseEvent): SatellitePick {
 }
 
 function handlePointerMove(event: PointerEvent): void {
-  pointingSatellite.value = typeof pickAt(event) === 'number'
+  const target = pickAt(event)
+  pointingSatellite.value = typeof target === 'number' && !scene?.isFamilyPlanet(target)
 }
 
 function handlePointerLeave(): void {
@@ -287,13 +298,19 @@ function handlePointerLeave(): void {
 function handlePointerDown(event: PointerEvent): void {
   // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做；
   // 只认主键，右键 / 中键不会产生 click，冒了字也不算连点
-  if (event.button !== 0 || performanceStore.isLowPower || pickAt(event) !== 'center') return
-  scene?.setCenterPressed(true)
-  spawnStarBurst(event.clientX, event.clientY)
+  if (event.button !== 0 || performanceStore.isLowPower || !scene) return
+  const target = pickAt(event)
+  if (target === 'center') {
+    scene.setCenterPressed(true)
+    spawnStarBurst(event.clientX, event.clientY)
+  } else if (typeof target === 'number' && scene.isFamilyPlanet(target)) {
+    scene.setPlanetPressed(target)
+  }
 }
 
 function releaseCenter(): void {
   scene?.setCenterPressed(false)
+  scene?.setPlanetPressed(null)
 }
 
 function handleClick(event: MouseEvent): void {
@@ -303,6 +320,7 @@ function handleClick(event: MouseEvent): void {
     return
   }
   if (target !== null && scene) {
+    if (scene.isFamilyPlanet(target)) return
     scene.explode(target, Date.now())
     requestRender()
   }

@@ -3,6 +3,12 @@ import type { SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
 import { createRainbowIcon, type RainbowIcon } from '../satellite/centerRainbow'
 import { loadImageToCanvas } from '../satellite/sceneParts'
+import { ORBIT_RINGS } from '../satellite/config'
+import {
+  getPlanetaryOrbitRings,
+  getPlanetarySlots,
+  type PlanetarySlot,
+} from '../satellite/planetarySystem'
 import {
   CENTER_PRESS_SCALE_X,
   CENTER_PRESS_SCALE_Y,
@@ -16,10 +22,14 @@ import {
   getAppearProgress,
   getCenterFloat,
   getCenterGlow,
+  getClassicOrbit,
   getErrorGlow,
+  getMoonOrbit,
+  getMoonPosition,
   getSatelliteBaseAngle,
   getSatellitePosition,
   type CenterGlowMode,
+  type ClassicOrbit,
   type GlowAppearance,
 } from './motion'
 
@@ -32,7 +42,11 @@ interface Satellite {
   key: string
   type: ScriptType
   card: CardMesh
-  baseAngle: number
+  slot: PlanetarySlot
+  orbit: ClassicOrbit
+  press: number
+  /** 每圈第一颗卫星负责移动它和同圈卫星共用的小轨道。 */
+  moonOrbit: THREE.Line | null
   activityGlow: THREE.Sprite
   errorGlow: THREE.Sprite
   status: SatelliteModuleStatus
@@ -45,6 +59,7 @@ export interface SatelliteSceneModule {
   iconUrl: string
   /** iconUrl 加载不出来时换用的图标（通用 MFW 项目图标取不到时用 MFW 图标） */
   fallbackIconUrl?: string
+  parentKey?: string
 }
 
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
@@ -142,6 +157,22 @@ function setCardAppear(card: CardMesh, progress: number): void {
   card.scale.set(progress, progress, progress)
 }
 
+function createOrbitLine(orbit: ClassicOrbit, material: THREE.LineBasicMaterial): THREE.Line {
+  const points = new THREE.EllipseCurve(
+    0,
+    0,
+    orbit.radiusX,
+    orbit.radiusY,
+    0,
+    Math.PI * 2,
+    false,
+    0
+  ).getPoints(128)
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material)
+  line.rotation.x = C.orbitTilt
+  return line
+}
+
 function applyGlow(
   sprite: THREE.Sprite,
   appearance: GlowAppearance | null,
@@ -181,6 +212,7 @@ export class SatelliteScene {
   private readonly orbitScene = new THREE.Scene()
   private readonly cardScene = new THREE.Scene()
   private readonly orbitMaterial: THREE.LineBasicMaterial
+  private readonly outerOrbitLine: THREE.Line
   private readonly glowTexture = createGlowTexture()
   private readonly raycaster = new THREE.Raycaster()
   private readonly pointer = new THREE.Vector2()
@@ -193,6 +225,7 @@ export class SatelliteScene {
   private centerRainbow: RainbowIcon | null = null
   private centerGlowMode: CenterGlowMode = 'green'
   private centerPressed = false
+  private pressedPlanet: number | null = null
   private centerScaleX = 1
   private centerScaleY = 1
   /** 入场动画的起点；null 表示不在入场中 */
@@ -212,23 +245,9 @@ export class SatelliteScene {
     this.camera.lookAt(0, 0, 0)
     this.renderer = this.createRenderer()
 
-    const orbitPoints = new THREE.EllipseCurve(
-      0,
-      0,
-      C.orbitRadiusX,
-      C.orbitRadiusY,
-      0,
-      2 * Math.PI,
-      false,
-      0
-    ).getPoints(128)
     this.orbitMaterial = new THREE.LineBasicMaterial({ transparent: true, opacity: C.orbitOpacity })
-    const orbitLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(orbitPoints),
-      this.orbitMaterial
-    )
-    orbitLine.rotation.x = C.orbitTilt
-    this.orbitScene.add(orbitLine)
+    this.outerOrbitLine = createOrbitLine(getClassicOrbit(0), this.orbitMaterial)
+    this.orbitScene.add(this.outerOrbitLine)
     this.setDark(options.isDark)
   }
 
@@ -261,19 +280,45 @@ export class SatelliteScene {
     this.cardScene.add(centerCard)
     this.centerGlow = this.createGlowSprite()
 
+    const slots = getPlanetarySlots(modules)
+    const planetRings = getPlanetaryOrbitRings(modules)
+    const hasMoons = modules.some(module => module.parentKey)
+    this.outerOrbitLine.scale.setScalar(planetRings[0].radius / ORBIT_RINGS[0].radius)
+    const orbitKeys = new Set<string>(['solar:0'])
     this.satellites = satelliteCards.map((card, index) => {
+      const slot = slots[index]
+      // 没有 MFW 家族时，经典场景沿用原来的单轨道和等角分布。
+      if (!hasMoons) {
+        slot.ring = 0
+        slot.baseAngle = getSatelliteBaseAngle(index, modules.length)
+      }
+      const orbit = slot.moonRing
+        ? getMoonOrbit(slot.ring)
+        : getClassicOrbit(slot.ring, planetRings[slot.ring].radius / ORBIT_RINGS[slot.ring].radius)
+      const key = slot.moonRing ? `${slot.parentIndex}:${slot.ring}` : `solar:${slot.ring}`
+      let moonOrbit: THREE.Line | null = null
+      if (!orbitKeys.has(key)) {
+        orbitKeys.add(key)
+        const line = createOrbitLine(orbit, this.orbitMaterial)
+        this.orbitScene.add(line)
+        if (slot.parentIndex !== null) moonOrbit = line
+      }
       this.cardScene.add(card)
       return {
         key: modules[index].key,
         type: modules[index].scriptType,
         card,
-        baseAngle: getSatelliteBaseAngle(index, modules.length),
+        slot,
+        orbit,
+        press: 0,
+        moonOrbit,
         activityGlow: this.createGlowSprite(),
         errorGlow: this.createGlowSprite(),
         status: IDLE_STATUS,
         explosion: null,
       }
     })
+    this.resize()
     return true
   }
 
@@ -311,11 +356,24 @@ export class SatelliteScene {
     this.centerPressed = pressed
   }
 
+  isFamilyPlanet(index: number): boolean {
+    return Boolean(this.satellites[index]?.slot.planetRing)
+  }
+
+  /** 家族中心与恒星一样只产生按压反馈，不参与卫星消除。 */
+  setPlanetPressed(index: number | null): void {
+    this.pressedPlanet = index !== null && this.isFamilyPlanet(index) ? index : null
+  }
+
   /** 松开并立即复原形变，不走平滑逼近 */
   resetCenterPress(): void {
     this.centerPressed = false
     this.centerScaleX = 1
     this.centerScaleY = 1
+    this.pressedPlanet = null
+    this.satellites.forEach(satellite => {
+      satellite.press = 0
+    })
   }
 
   get isCenterRainbow(): boolean {
@@ -395,7 +453,7 @@ export class SatelliteScene {
   explode(index: number, time: number): void {
     const satellite = this.satellites[index]
     const source = satellite && getCardImageCanvas(satellite.card)
-    if (!satellite || satellite.explosion || !source) {
+    if (!satellite || satellite.slot.planetRing || satellite.explosion || !source) {
       return
     }
 
@@ -421,6 +479,9 @@ export class SatelliteScene {
   renderFrame(time: number): boolean {
     const cameraPosition = this.camera.position
     const count = this.satellites.length
+    const planetCount = this.satellites.filter(
+      satellite => satellite.slot.parentIndex === null
+    ).length
 
     let appearElapsed = this.appearStartedAt === null ? null : time - this.appearStartedAt
     if (appearElapsed !== null && appearElapsed > getAppearDuration(count)) {
@@ -430,12 +491,33 @@ export class SatelliteScene {
 
     this.satellites.forEach((satellite, index) => {
       const { card } = satellite
-      const position = getSatellitePosition(satellite.baseAngle, index, count, time)
-      card.position.set(position.x, position.y, position.z)
+      const { slot } = satellite
+      if (slot.parentIndex === null) {
+        const position = getSatellitePosition(
+          slot.baseAngle,
+          index,
+          planetCount,
+          time,
+          satellite.orbit
+        )
+        card.position.set(position.x, position.y, position.z)
+      } else {
+        const position = getMoonPosition(slot.baseAngle, slot.ring, time)
+        const parent = this.satellites[slot.parentIndex].card.position
+        card.position.set(parent.x + position.x, parent.y + position.y, parent.z + position.z)
+        satellite.moonOrbit?.position.copy(parent)
+      }
       card.lookAt(cameraPosition)
       card.rotation.z = 0
       if (appearElapsed !== null) {
         setCardAppear(card, getAppearProgress(appearElapsed, index + 1))
+      } else if (slot.planetRing) {
+        satellite.press += ((this.pressedPlanet === index ? 1 : 0) - satellite.press) * 0.35
+        card.scale.set(
+          1 + (CENTER_PRESS_SCALE_X - 1) * satellite.press,
+          1 + (CENTER_PRESS_SCALE_Y - 1) * satellite.press,
+          1
+        )
       }
     })
 
