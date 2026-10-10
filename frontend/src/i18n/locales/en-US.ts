@@ -1939,8 +1939,7 @@ export default {
       'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
     mssFlavorDefense: 'Catastrophe Defense',
     mssFlavorDefenseHint:
-      "When on, the personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's",
-    mssFlavorDefenseOff: 'Disabled',
+      "The personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's, and turning the switch off skips it entirely",
     mssFlavorDefenseDone: 'Played this period',
     mssFlavorDefensePending: 'Not played this period',
     mssFlavorDefenseArmed: 'Queued for this run',

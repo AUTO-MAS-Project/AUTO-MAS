@@ -4631,6 +4631,10 @@ class MssDefenseStatusIn(BaseModel):
 class MssDefenseStatusData(BaseModel):
     """个人版「灾变防线」这一期的状态：用户页拿它显示「本期未打 / 已打」。"""
 
+    enabled: bool = Field(
+        default=False,
+        description="个人版总开关（Function.IfPersonalMss）开着吗；没开时用户页连这一块都不渲染",
+    )
     period: str = Field(
         default="", description="当前这一期的开始时刻；取不到官网公告时为空"
     )
