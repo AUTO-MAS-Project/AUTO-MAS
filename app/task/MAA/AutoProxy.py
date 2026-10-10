@@ -27,6 +27,7 @@ import re
 import shutil
 import time
 import uuid
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -688,7 +689,7 @@ def _build_depot_maintain_task(
 
 
 def _build_auto_cultivate_task(
-    targets: list[OperatorTarget], catalog: list[dict], source_task: dict | None
+    targets: Sequence[OperatorTarget], catalog: list[dict], source_task: dict | None
 ) -> dict | None:
     """用现有养成目标驱动 MAA 原生培养任务，游戏操作与结果判定交给 MAA。
 
@@ -1685,7 +1686,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             catalog = await depot_cultivate_service.operator_catalog(
                 config_path=Config.config_path, proxy=Config.proxy
             )
-            return _build_auto_cultivate_task(targets, catalog, source)
+            return _build_auto_cultivate_task(
+                targets=targets, catalog=catalog, source_task=source
+            )
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 自动培养准备失败, 本轮不注入: {e}"
@@ -2407,7 +2410,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             or "任务已完成，但出现错误！" in log
             or "任务已结束，以下任务出现错误" in log
         ):
-            # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
+            # 常规任务和动态培养任务的成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if (
                     f"完成任务: {zh_task}" in log
@@ -2416,9 +2419,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 ):
                     self.task_dict[en_task] = False
 
-            if any(self.task_dict.values()) or (
-                not self.cur_user_config.get("Info", "IfQuickConfig")
-                and any(
+            # MAA v6.19.0-beta.1 培养计划失败仍会报任务链完成，须读取其培养汇总。
+            # 只使用 MAA 的失败计数；训练室忙等跳过结果不算失败。
+            cultivate_failed = any(
+                int(failed) > 0
+                for failed in re.findall(
+                    r"干员培养完成：成功 \d+，失败 (\d+)，跳过 \d+", log
+                )
+            )
+            if (
+                any(self.task_dict.values())
+                or cultivate_failed
+                or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
                     for name in re.findall(r"任务出错: ([^\r\n]+)", log)
                 )

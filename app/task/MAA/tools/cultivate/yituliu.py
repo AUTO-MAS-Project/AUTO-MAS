@@ -949,7 +949,7 @@ async def load_dataset(
     max_age_hours: float = 24.0,
     now: float | None = None,
 ) -> CultivateDataSet:
-    """加载数据集：新鲜快照直读，过期/缺失则下载，失败回退旧快照。
+    """加载数据集：新鲜快照直读，过期/缺失则下载，失败仅回退兼容快照。
 
     Args:
         cache_dir: 快照缓存目录（MAS 配置目录）。
@@ -961,24 +961,29 @@ async def load_dataset(
         内核契约数据集。
 
     Raises:
-        YituliuDataError: 下载失败且没有可回退的快照。
+        YituliuDataError: 下载失败且没有兼容的快照可回退。
     """
 
     current = time.time() if now is None else now
     snapshot = read_snapshot(cache_dir)
-    if snapshot is not None and _is_fresh(snapshot, max_age_hours, current):
-        raw = snapshot.get("dataset")
-        if isinstance(raw, Mapping) and raw.get("schema_version") == 2:
-            try:
-                return dataset_from_json(raw)
-            except (KeyError, TypeError, ValueError):
-                pass  # 快照结构损坏：当作无快照处理，走下载路径
+    raw = snapshot.get("dataset") if snapshot is not None else None
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 2:
+        raw = None
+    if (
+        snapshot is not None
+        and raw is not None
+        and _is_fresh(snapshot, max_age_hours, current)
+    ):
+        try:
+            return dataset_from_json(raw)
+        except (KeyError, TypeError, ValueError):
+            pass  # 快照结构损坏：当作无快照处理，走下载路径
     try:
         dataset = await download_dataset(proxy)
     except Exception as e:
-        if snapshot is not None and isinstance(snapshot.get("dataset"), Mapping):
+        if raw is not None:
             try:
-                return dataset_from_json(snapshot["dataset"])
+                return dataset_from_json(raw)
             except (KeyError, TypeError, ValueError):
                 pass  # 回退快照同样损坏：只能报错
         raise YituliuDataError(f"一图流数据不可用且无快照可回退: {e}") from e
