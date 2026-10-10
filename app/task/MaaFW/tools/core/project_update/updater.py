@@ -43,6 +43,7 @@ from .payloads import (
     build_from_package,
     finalize,
     inherited_projection_revision,
+    linked_hashes,
     manifest_files,
     projection_revision_of,
     read_lineage,
@@ -1470,6 +1471,14 @@ async def apply_maafw_project_update(
             raise PayloadCancelled("update cancelled")
         timer.start("生成清单")
         send_update_log("正在为新版本生成文件清单（大项目可能要一两分钟）")
+        # 从旧载荷原样链过来的大文件（同一 inode）直接用旧清单的哈希，不再整读一遍；
+        # 被写穿过的载荷清单与盘上不符，不用。
+        known_hashes = dict(finalized.hashes)
+        if not await asyncio.to_thread(_payload_damaged, payload):
+            inherited = await asyncio.to_thread(
+                linked_hashes, payload.manifest(), payload.directory(), staging
+            )
+            known_hashes = {**inherited, **known_hashes}
         registered = await asyncio.to_thread(
             lambda: register(
                 payload.root,
@@ -1485,7 +1494,7 @@ async def apply_maafw_project_update(
                 by=payload.by,
                 version=actual_version,
                 lineage_info=payload.lineage_info,
-                known_hashes=finalized.hashes,
+                known_hashes=known_hashes,
                 origins=built.origins,
                 projection_revision=inherited_projection_revision(
                     payload.manifest(), built.plan.package_type
@@ -1917,6 +1926,18 @@ def _discovery_from_mirror_check(
             f"{version_check.fallback_reason}，Mirror酱 未提供下载地址"
         ),
     )
+
+
+def _payload_damaged(payload: PayloadTarget) -> bool:
+    """当前载荷有没有被写穿巡检标过 ``damaged``（读不出谱系时按标过算，保守）。"""
+
+    try:
+        return payload.payload_id in {
+            str(item)
+            for item in read_lineage(payload.root, payload.lineage).get("damaged") or []
+        }
+    except (OSError, PayloadError):
+        return True
 
 
 def _mirror_artifact_id(data: Mapping[str, Any], sha256: str | None) -> str | None:

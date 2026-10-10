@@ -773,6 +773,35 @@ def build_from_package(
     return PackageBuild(plan=plan, stale=stale, origins=origins, applied_files=applied)
 
 
+def linked_hashes(
+    old_manifest: Mapping[str, Any], old_payload_dir: Path, staging: Path
+) -> dict[str, str]:
+    """staging 里与旧载荷**同一 inode** 的文件 → 旧清单记的 sha256。
+
+    更新时没变的大文件是从旧载荷硬链接进 staging 的（``clone_payload_into``），内容就是
+    旧清单记的那份，登记时不必再整读一遍算哈希。只认同一 inode：复制来的、被包覆盖的、
+    预检时被重写的都是新 inode，照常重算。被写穿过（``damaged``）的载荷由调用方不传。
+    """
+
+    result: dict[str, str] = {}
+    old_root = Path(old_payload_dir)
+    staging = Path(staging)
+    for rel, entry in manifest_files(old_manifest).items():
+        digest = entry.get("sha256")
+        if not digest:
+            continue
+        try:
+            current = os.stat(staging / rel)
+            if current.st_nlink < 2:
+                continue
+            previous = os.stat(old_root / rel)
+        except OSError:
+            continue
+        if (current.st_ino, current.st_dev) == (previous.st_ino, previous.st_dev):
+            result[rel] = str(digest)
+    return result
+
+
 @dataclass
 class FinalizeResult:
     hashes: dict[str, str] = field(default_factory=dict)
@@ -1369,6 +1398,7 @@ __all__ = [
     "lineage_key",
     "lineage_key_for_project",
     "lineage_lock",
+    "linked_hashes",
     "list_ids",
     "list_lineages",
     "manifest_files",
