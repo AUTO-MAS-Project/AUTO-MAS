@@ -216,6 +216,34 @@ async def prepare_agent_env(
     # 与运行、更新共用同一把项目锁：同一目录同时准备/运行会互相踩。
     reservation_key = await try_reserve_project_path(root_path)
     if reservation_key is None:
+        # 占着预约的多半是这个脚本自己的运行（整轮持有），编辑页一打开就会撞上。上次准备
+        # 的结果只读地看一眼还能不能用：运行期间项目文件不动，指纹稳定；运行期写的
+        # debug / config 等不进指纹。命中就照常回「已就绪」，免得把好好的环境报成准备失败。
+        # 用户点的强制重新准备照旧拒绝——那要真的重跑一遍，必须等预约放开。
+        busy_cached = None
+        if not force:
+            try:
+                busy_fingerprint = await asyncio.to_thread(
+                    project_environment_fingerprint, root_path
+                )
+                busy_cached = await asyncio.to_thread(
+                    load_prepared_environment, root_path, busy_fingerprint
+                )
+            except Exception as exc:  # noqa: BLE001 - 读不了缓存就按「忙」回
+                _maafw_env_logger.debug(f"项目忙时读取运行环境缓存失败：{exc}")
+            if busy_cached is not None:
+                prepared_at = str(busy_cached.get("preparedAt") or "")
+                append_log(
+                    "该 MFW 项目正在运行、更新或准备环境；项目文件自上次准备以来没有变化，"
+                    "沿用已就绪的运行环境"
+                    + (f"（上次准备于 {prepared_at}）" if prepared_at else "")
+                )
+                return MaaFWApiReply(
+                    message="MFW 运行环境已就绪",
+                    data=_maafw_agent_env_prepare_data(
+                        root_path, busy_cached, logs, cached=True
+                    ),
+                )
         return MaaFWApiReply.error(
             409,
             "该 MFW 项目正在运行、更新或准备环境，请稍后重试",
@@ -233,9 +261,10 @@ async def prepare_agent_env(
         fingerprint = await asyncio.to_thread(
             project_environment_fingerprint, root_path
         )
-        # 界面要分「首次准备完成」和「运行环境更新完成」两句话，在写入新缓存前先看一眼
+        # 界面要分「运行环境准备完成」和「运行环境更新完成」两句话，在写入新缓存前先看一眼：
+        # 上次准备时的输入与这次相同（强制重新准备一个没变过的项目）不算更新。
         previously_prepared = await asyncio.to_thread(
-            has_prepared_environment, root_path
+            has_prepared_environment, root_path, fingerprint
         )
         if not force:
             cached_result = await asyncio.to_thread(
