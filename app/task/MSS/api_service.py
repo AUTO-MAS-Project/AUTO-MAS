@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from app.core import Config
@@ -66,11 +67,13 @@ async def defense_status(script_id: str, user_id: str) -> dict[str, Any]:
     """
 
     try:
+        # 带 user_id 时返回的是 {str(uid): 用户配置}，顶层没有 Data
         _, data = await Config.get_user(script_id, user_id)
+        user = data.get(str(uuid.UUID(user_id))) or {}
     except Exception as exc:  # noqa: BLE001 - 脚本或用户已经不在：按「没有记录」继续，别拦页面
         logger.warning(f"读用户配置失败（{script_id} / {user_id}）：{exc}")
-        data = {}
-    record = _record((data.get("Data") or {}).get("PersonalMssDefense"))
+        user = {}
+    record = _record((user.get("Data") or {}).get("PersonalMssDefense"))
     period = await permanent_activity_window(DEFENSE_ACTIVITY_NAME)
 
     same_period = bool(period) and str(record.get("period") or "") == period
