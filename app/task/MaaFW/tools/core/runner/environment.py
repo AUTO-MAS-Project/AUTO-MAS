@@ -64,6 +64,9 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
     is_package_index_offline,
     raise_if_install_cancelled,
 )
+from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
+    read_requirements_file,
+)
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
 #: base venv 的常量包集合：runner 三包自身的三方依赖 + maafw binding 的运行时依赖。
@@ -1414,17 +1417,10 @@ def prefer_active_venv_site_packages(
 
 
 def _load_requirements(project_path: Path) -> list[str]:
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
-    try:
-        for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            packages.append(line)
-    except FileNotFoundError:
-        pass
-    return packages
+    # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
+    # 「  # via ...」时也认得出来。
+    parsed = read_requirements_file(project_path / "requirements.txt")
+    return list(parsed.requirements) if parsed is not None else []
 
 
 def _normalized_sys_path(path: str) -> str:

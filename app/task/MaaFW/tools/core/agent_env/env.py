@@ -29,6 +29,7 @@ from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
+from ..runtime_pool.requirements_file import read_requirements_file
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
@@ -562,6 +563,13 @@ def _prepare_isolated_venv_env(
         packages = _load_project_agent_requirements(
             project_path, runner_maafw_version=runner_maafw_version
         )
+        parsed_requirements = read_requirements_file(project_path / "requirements.txt")
+        if parsed_requirements is not None and parsed_requirements.ignored_options:
+            log(
+                "[Python环境] requirements.txt 里的选项行不传给 pip（索引由 AUTO-MAS 的"
+                "镜像候选决定），已忽略: "
+                + ", ".join(parsed_requirements.ignored_options)
+            )
         log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
         installed, failure_detail = _pip_install(
             python_exe, packages, cwd=str(project_path), env=test_env, log=log
@@ -763,18 +771,11 @@ def _write_isolated_venv_manifest(
 def _load_project_agent_requirements(
     project_path: Path, *, runner_maafw_version: str | None = None
 ) -> list[str]:
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
-    declared = True
-    try:
-        with requirements_path.open("r", encoding="utf-8") as file:
-            for raw_line in file:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                packages.append(line)
-    except FileNotFoundError:
-        declared = False
+    # 清单逐条当独立参数交给 pip / uv（没有 -r 那一层），所以按 pip 的规则先洗一遍：
+    # BOM、行内注释、续行、整行选项与 --hash 都会让原样照抄的那一条装不上。
+    parsed = read_requirements_file(project_path / "requirements.txt")
+    declared = parsed is not None
+    packages: list[str] = list(parsed.requirements) if parsed is not None else []
 
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
