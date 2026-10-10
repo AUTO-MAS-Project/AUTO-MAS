@@ -207,6 +207,8 @@ SIGNAL_SCREENSHOT_KINDS = {
 SIGNAL_UNMATCHED_LOG_LIMIT = 20
 # 回调线程里发起的停止，主线程收尾时最多等它这么久。
 SIGNAL_STOP_JOIN_SECONDS = 10.0
+# agent 输出读到结尾后等它退出、取退出码的上限（秒）。
+AGENT_EXIT_CODE_WAIT_SECONDS = 2.0
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -821,6 +823,8 @@ class MaaFWRunner:
         self.agent_output_threads: list[threading.Thread] = []
         # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
         self._agent_handshake_errors: dict[int, str] = {}
+        # agent 进程 pid -> 日志里用的名字；运行中判「agent 已退出」时报给用户。
+        self._agent_labels: dict[int, str] = {}
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -1477,6 +1481,41 @@ class MaaFWRunner:
             return
         error = RuntimeError(
             f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
+            f"{display_name}: {message}"
+        )
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _exited_agent(self) -> tuple[str, int] | None:
+        """运行中退出了的 agent 子进程（名字, 退出码）；都还活着时返回 None。"""
+
+        for process in self.agent_processes:
+            try:
+                exit_code = process.poll()
+            except Exception:
+                continue
+            if exit_code is not None:
+                label = self._agent_labels.get(process.pid, str(process.pid))
+                return label, exit_code
+        return None
+
+    def _raise_if_agent_exited(
+        self, display_name: str, message: str, cause: BaseException | None = None
+    ) -> None:
+        """任务失败时 agent 子进程已经退出：结束本轮，交给宿主重试。
+
+        连上之后 agent 崩溃（Python 异常退出、Go agent panic、被杀软拦掉），后面用到
+        自定义识别 / 动作的节点全部会失败，接着跑只是逐个白等、报一串节点名；宿主重试
+        会换新 worker 起新 agent。
+        """
+
+        exited = self._exited_agent()
+        if exited is None:
+            return
+        label, exit_code = exited
+        error = RuntimeError(
+            f"Agent 进程已退出（{label}, exit={exit_code}），本轮剩余任务已跳过: "
             f"{display_name}: {message}"
         )
         if cause is not None:
@@ -2297,6 +2336,7 @@ class MaaFWRunner:
                 ) from exc
             self.agent_clients.append(agent_client)
             self.agent_processes.append(process)
+            self._agent_labels[process.pid] = Path(command[0]).name
             self._start_agent_output_reader(process, Path(command[0]).name)
             try:
                 self._connect_agent_client(
@@ -2594,6 +2634,7 @@ class MaaFWRunner:
         thread = threading.Thread(
             target=self._read_agent_output,
             args=(process.stdout, label, process.pid),
+            kwargs={"process": process},
             name=f"maafw-agent-log-{process.pid}",
             daemon=True,
         )
@@ -2601,12 +2642,18 @@ class MaaFWRunner:
         self.agent_output_threads.append(thread)
 
     def _read_agent_output(
-        self, stream: BinaryIO | TextIO, label: str, pid: int | None = None
+        self,
+        stream: BinaryIO | TextIO,
+        label: str,
+        pid: int | None = None,
+        *,
+        process: subprocess.Popen | None = None,
     ) -> None:
         try:
             while True:
                 line = stream.readline()
                 if line in ("", b""):
+                    self._log_agent_output_closed(label, process)
                     break
                 message = self._decode_agent_output_line(line).rstrip()
                 if message:
@@ -2623,6 +2670,28 @@ class MaaFWRunner:
             return
         except Exception as exc:
             self.send_log(f"读取 agent 输出失败: {exc}")
+
+    def _log_agent_output_closed(
+        self, label: str, process: subprocess.Popen | None
+    ) -> None:
+        """agent 输出读到结尾时记一行退出码：运行中崩溃时这是唯一能直接看出根因的一行。"""
+
+        if process is None:
+            return
+        exit_code: int | None = None
+        try:
+            exit_code = process.wait(timeout=AGENT_EXIT_CODE_WAIT_SECONDS)
+        except Exception:
+            with suppress(Exception):
+                exit_code = process.poll()
+        exit_text = "未知" if exit_code is None else str(exit_code)
+        if self._stop_requested.is_set() or not self._initialized:
+            # 收尾时是我们自己结束的 agent；连接阶段退出由连接循环报错。只进 .worker.log
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_text}"
+            )
+            return
+        self.send_log(f"Agent 进程已退出: {label}, exit={exit_text}")
 
     @staticmethod
     def _decode_agent_output_line(line: bytes | str) -> str:
@@ -3000,6 +3069,8 @@ class MaaFWRunner:
                     self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
                 self._raise_if_game_launch_failed(display_name, message, cause=exc)
+                if not task.nonFatalMessage:
+                    self._raise_if_agent_exited(display_name, message, cause=exc)
                 if task.nonFatalMessage:
                     # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
                     # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
