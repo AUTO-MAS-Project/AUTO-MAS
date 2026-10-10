@@ -168,6 +168,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
       displayName: task => getDisplayName(task),
+      separator: t('edit.maafwUnselectableTaskSeparator'),
     })
     if (state?.kind === 'split' && flavor.value.userPage.managed.warningKey) {
       return { type: 'warning', message: t(flavor.value.userPage.managed.warningKey, state) }

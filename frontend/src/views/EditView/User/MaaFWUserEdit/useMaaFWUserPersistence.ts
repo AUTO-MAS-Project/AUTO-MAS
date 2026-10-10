@@ -64,13 +64,14 @@ export function useMaaFWUserPersistence({
       }
 
       const success = await updateUser(scriptId, userIdHolder.value, userData)
-      if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
+      // 这句会进页头的保存失败提示，不带内部字段键名；键名只进日志
+      if (!success) throw new Error(t('edit.couldNotSaveUser'))
       logger.info(`用户配置已保存: ${key}`)
     })
       .then(() => true)
       .catch(error => {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`保存失败: ${errorMsg}`)
+        logger.error(`保存失败 (${key}): ${errorMsg}`)
         return false
       })
   }
@@ -92,7 +93,7 @@ export function useMaaFWUserPersistence({
           TaskSnapshot: taskSnapshotValue,
         },
       })
-      if (!success) throw new Error('任务预设保存失败')
+      if (!success) throw new Error(t('edit.couldNotSaveUser'))
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
     })

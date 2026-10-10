@@ -11,7 +11,9 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <span class="breadcrumb-current">{{ isEdit ? '编辑用户' : '添加用户' }}</span>
+          <span class="breadcrumb-current">{{
+            isEdit ? t('comp.editUser') : t('comp.addUser2')
+          }}</span>
         </a-breadcrumb-item>
       </a-breadcrumb>
       <Transition name="save-chip-fade">
