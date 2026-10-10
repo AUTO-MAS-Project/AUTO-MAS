@@ -1,4 +1,3 @@
-import { OpenAPI } from '@/api'
 import type { EndfieldActivityOverview, HomeModuleKey, SraActivityOverview } from '@/types/home'
 
 /** 各游戏 banner 的主题色，无封面时用来生成底纹；与原卡片上的 accent 保持一致 */
@@ -85,13 +84,11 @@ export const endfieldActivityBanner = (
     activities.find(item => toTimestamp(item.StartTime) > now) ??
     activities[0]
 
-  // 封面优先用版本图（官网当期宣传图）；没有才退回当前活动的背景大图，
-  // 两者都取不到就留空，由轮播用主题色底纹——不拿卡池头像那种小图去凑
-  const cover =
-    versionArt ||
-    (activity?.CoverUrl
-      ? `${OpenAPI.BASE}/api/info/endfield/image?url=${encodeURIComponent(activity.CoverUrl)}`
-      : '')
+  // 封面只认版本图；取不到就留空，让轮播用主题色底纹顶上。
+  // 这里刻意不退回活动的背景大图：那是游戏原生素材，实测单张 2640×1920、20MB 级，
+  // 后端得先把它整个下载下来才能缩放，网络稍差就是长时间挂住或直接失败，横幅反而空着。
+  // 卡池头像那种小图同理不凑数——宁可没有图，也不要一个转不出来的图。
+  const cover = versionArt
 
   // 横幅报的是「这个版本」：标题是版本名，倒计时也应当数到本期内容整体结束，
   // 而不是随便挑一场活动。所以取当前活动与卡池里最晚的结束时间当终点。
