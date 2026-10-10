@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.agent_env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
 )
+from app.task.MaaFW.tools.core.agent_env.env import AGENT_PROGRAM_MISSING_HINT
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
     _read_runtime_maafw_version,
@@ -428,10 +429,7 @@ def _agent_spawn_error_hint(exc: OSError) -> str | None:
     if code is None and exc.errno == errno.ENOENT:
         code = 2
     if code == 2:
-        return (
-            "找不到 Agent 程序文件，常见原因是被杀毒软件隔离或删除；请检查杀毒软件的"
-            "隔离区并把项目目录加入信任，确认无误后在脚本页重新导入项目"
-        )
+        return f"找不到 Agent 程序文件，{AGENT_PROGRAM_MISSING_HINT}"
     if code == 3:
         return "Agent 程序所在的路径不存在，项目文件可能不完整；请在脚本页重新导入项目"
     if code == _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED:

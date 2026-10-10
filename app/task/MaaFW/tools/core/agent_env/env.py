@@ -49,6 +49,13 @@ PIP_INSTALL_PER_INDEX_TIMEOUT = 300
 DETAIL_LOG_PREFIX = "[MaaFW 详情] "
 # 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
 DETAIL_OUTPUT_LIMIT = 20000
+#: Agent 程序文件不见了时给用户的处理建议。准备运行环境（声明的程序不存在）与 runner 起
+#: agent 时的 WinError 2（``runner._agent_spawn_error_hint``）共用：运行期先准备环境再
+#: Popen，杀软刚隔离掉 agent.exe 时用户先看到的是准备环境这一句。
+AGENT_PROGRAM_MISSING_HINT = (
+    "常见原因是被杀毒软件隔离或删除；请检查杀毒软件的隔离区并把项目目录加入信任，"
+    "确认无误后在脚本页重新导入项目"
+)
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
@@ -182,7 +189,7 @@ def prepare_agent_envs(
             raise MaaFWAgentEnvError(
                 "声明的 Agent 程序不存在："
                 f"{_project_relative_text(str(plan.executable), resolved_project_path)}"
-                f"（interface 写的是 {plan.childExec}）"
+                f"（interface 写的是 {plan.childExec}）。{AGENT_PROGRAM_MISSING_HINT}"
             )
         skipped.append(plan.childExec)
         log(f"[Python环境] 跳过外部或非 Python 环境检测: {python_exe}")
