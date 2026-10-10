@@ -988,6 +988,12 @@ class HSRManager(TaskExecuteBase):
                             and self._proxy_times_limit_reached(user_config)
                         ):
                             user_item.status = "跳过"
+                            # 结果与通知是按 log_record 读的，只设 status 会被读成
+                            # 「未开始运行」；补一条带原因的日志记录，界面才说得清
+                            # 这个用户为什么没跑。
+                            user_item.log_record[datetime.now()] = LogRecord(
+                                status="今日代理次数已达上限，跳过"
+                            )
                             self._append_log(
                                 f"用户「{user_item.name}」今日代理次数已达上限, 跳过"
                             )
