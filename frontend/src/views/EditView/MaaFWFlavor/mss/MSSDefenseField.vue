@@ -16,7 +16,11 @@
       <a-tag v-if="!enabled" color="default">
         {{ t('edit.mssFlavorDefenseOff') }}
       </a-tag>
-      <a-tooltip v-else :title="periodHint">
+      <a-tooltip v-else>
+        <!-- 一段一行：字符串里的换行在提示气泡里不会生效 -->
+        <template #title>
+          <div v-for="(line, index) in periodHintLines" :key="index">{{ line }}</div>
+        </template>
         <a-tag :color="statusColor">{{ statusText }}</a-tag>
       </a-tooltip>
     </a-space>
@@ -30,6 +34,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { GetService, MaaFwService, UpdateService, type MssDefenseStatusData } from '@/api'
 import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 
 /**
  * 个人版「灾变防线」：一个全局开关 + 这一期的状态。
@@ -68,15 +73,22 @@ const statusColor = computed(() => {
   return 'orange'
 })
 
-/** 悬停给出这一期的开始时间与已失败的天数：状态标签只有四个字，细节放这里 */
-const periodHint = computed(() => {
+/**
+ * 悬停给出这一期的开始时间与已失败的天数：状态标签只有四个字，细节放这里。
+ * 开始时间是后端带时区的 ISO 串（官网按北京时间），换成本机时间显示
+ */
+const periodHintLines = computed(() => {
   const state = status.value
-  if (!state?.known || !state.period) return t('edit.mssFlavorDefenseUnknown')
-  const parts = [t('edit.mssFlavorDefensePeriod', { period: state.period })]
+  if (!state?.known || !state.period) return [t('edit.mssFlavorDefenseUnknown')]
+  const lines = [t('edit.mssFlavorDefensePeriod', { period: formatBackendDateTime(state.period) })]
   if (state.failedDays?.length) {
-    parts.push(t('edit.mssFlavorDefenseFailedDays', { days: state.failedDays.join('、') }))
+    lines.push(
+      t('edit.mssFlavorDefenseFailedDays', {
+        days: state.failedDays.join(t('edit.maafwListSeparator')),
+      })
+    )
   }
-  return parts.join('\n')
+  return lines
 })
 
 const loadStatus = async () => {
