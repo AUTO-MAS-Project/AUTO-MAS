@@ -103,16 +103,15 @@ class GameMaintenanceClient:
             Config.get("Data", "LastMaintenanceUpdated"), "%Y-%m-%d %H:%M:%S"
         )
         remaining = CACHE_SECONDS - (datetime.now() - checked_at).total_seconds()
-        if cached_windows is not None and remaining > 0:
+        if cached_windows is not None and 0 < remaining <= CACHE_SECONDS:
             self._windows = cached_windows
             self._next_refresh = time.monotonic() + remaining
             return
 
         try:
+            etag = Config.get("Data", "MaintenanceETag")
             headers = (
-                {"If-None-Match": Config.get("Data", "MaintenanceETag")}
-                if cached_windows is not None
-                else {}
+                {"If-None-Match": etag} if cached_windows is not None and etag else {}
             )
             async with asyncio.timeout(10):
                 async with httpx.AsyncClient(
@@ -147,7 +146,7 @@ class GameMaintenanceClient:
                         raise ValueError(
                             f"维护信息响应状态无效: {response.status_code}"
                         )
-        except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+        except (httpx.HTTPError, TimeoutError, ValueError, OSError) as exc:
             self._windows = {}
             self._next_refresh = time.monotonic() + RETRY_SECONDS
             logger.warning(f"检查游戏维护失败，继续正常运行: {exc}")
