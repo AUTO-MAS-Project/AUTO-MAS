@@ -221,6 +221,7 @@ export type { MaaConfig } from './models/MaaConfig';
 export type { MaaConfig_Emulator } from './models/MaaConfig_Emulator';
 export type { MaaConfig_Info } from './models/MaaConfig_Info';
 export type { MaaConfig_Run } from './models/MaaConfig_Run';
+export type { MaaConfig_Update } from './models/MaaConfig_Update';
 export type { MaaCultivateGoalOptionItem } from './models/MaaCultivateGoalOptionItem';
 export type { MaaCultivateOperatorOptionItem } from './models/MaaCultivateOperatorOptionItem';
 export type { MaaCultivateOperatorsOut } from './models/MaaCultivateOperatorsOut';
