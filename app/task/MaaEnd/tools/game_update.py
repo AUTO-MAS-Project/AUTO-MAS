@@ -117,6 +117,10 @@ _APPLY_STEP = 20
 """核对基线与落地覆盖这两段逐条播报的间隔（条）：清单能到上万条，逐条播会把最开始的
 几步挤出调度台的日志窗口，太疏又看不出还在推进。"""
 
+_APPLY_BUSY_RECHECK_SECONDS = 60.0
+"""落地期间隔多久复查一次游戏占用：取一次进程表要百毫秒级，逐条问会把几千条拖成明显
+更久的一轮，而用户在落地中途把客户端开回来的窗口不需要更细的粒度。"""
+
 _RESERVE_BYTES = 256 * 1024**2
 """除下载与落地体积外额外要求的余量：盘刚好占满会把问题转移到下一次运行。"""
 
@@ -138,8 +142,13 @@ _MANIFEST_MAX_AGE = 60.0
 
 _KILL_WAIT_SECONDS = 30.0
 
-_UNPACK_DRAIN_SECONDS = 5.0
-"""中止后等设备线程自己停下的上限：只等它松手（下一块就停），不等它把成员拷完。"""
+_DRAIN_SECONDS = 5.0
+"""中止后等设备自己停下的上限：解包线程与 hpatchz 子进程都只等它松手（放掉文件句柄），
+不等它把这一条做完。"""
+
+_HPATCHZ_POLL_SECONDS = 0.5
+"""打差量期间问一次「要不要中止」的间隔：单条能打到几分钟，取消若只落在等待上，子进程
+还在往输出文件里写。"""
 
 _CONFIG_KEY = bytes.fromhex(
     "c0f30e1ce763bbc21cc355a34303ac50399444bff68c4a22af398c0a166ee143"
@@ -537,6 +546,19 @@ def _replace(source: Path, target: Path) -> None:
         os.replace(_native_path(source), _native_path(target))
 
 
+def _is_link(stat_result: os.stat_result) -> bool:
+    """认符号链接与 NTFS 联接点：联接点在 Windows 上只有重解析点属性认得出来。"""
+
+    return bool(
+        stat.S_ISLNK(stat_result.st_mode)
+        or getattr(stat_result, "st_reparse_tag", 0)
+        or (
+            getattr(stat_result, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        )
+    )
+
+
 def _resolve_within(root: Path, name: str) -> Path:
     """把包内路径解析到安装目录之内。
 
@@ -555,6 +577,19 @@ def _resolve_within(root: Path, name: str) -> Path:
     absolute = os.path.normcase(os.path.abspath(target))
     if absolute != anchor and not absolute.startswith(anchor + os.sep):
         raise EndfieldUpdateError(f"包内路径越出安装目录: {name!r}")
+    # 词法检查只管得住 `..`：目录里躺着一条指向别处的链接时，拼出来的路径仍在安装目录
+    # 之内，顺着它写就写到外面去了。逐段看一眼是不是重解析点，段不存在就不必再看更深
+    for depth in range(1, len(parts) + 1):
+        try:
+            info = os.stat(
+                _native_path(root.joinpath(*parts[:depth])), follow_symlinks=False
+            )
+        except OSError:
+            break
+        if _is_link(info):
+            raise EndfieldUpdateError(
+                f"包内路径 {name!r} 经过一个指向别处的链接，MAS 不顺着它写"
+            )
     # 返回规范化后的绝对路径：`\\\\?\\` 前缀是把字符串直接交给 Win32，内核不做
     # `..` 折叠，留着 `..` 段会让写入莫名失败
     return Path(os.path.normpath(os.path.abspath(target)))
@@ -1072,16 +1107,39 @@ def _describe_os_error(error: OSError, name: str) -> str:
     return f"写入 {name} 失败: {error}"
 
 
-def _run_hpatchz(exe: Path, base: Path, diff: Path, out: Path, new_size: int) -> None:
+def _run_hpatchz(
+    exe: Path,
+    base: Path,
+    diff: Path,
+    out: Path,
+    new_size: int,
+    abort: threading.Event,
+) -> None:
     """单文件模式打差量：`hpatchz <基线> <差量> <输出>`，非 0 退出即失败。
 
     `new_size` 是这一条声明的新文件体积，用来把「盘写不下」从其它失败里分出来。
+    子进程按 `_HPATCHZ_POLL_SECONDS` 问一次 `abort`：大成员能打几十秒到几分钟，取消只
+    取消等待的话，它还攥着输出文件，本次收尾和下一轮都要跟它抢同一个名字。
     """
 
-    process = subprocess.run(
-        [str(exe), str(base), str(diff), str(out)], capture_output=True
+    child = subprocess.Popen(
+        [str(exe), str(base), str(diff), str(out)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    if process.returncode == 0:
+    stdout = stderr = b""
+    while True:
+        try:
+            stdout, stderr = child.communicate(timeout=_HPATCHZ_POLL_SECONDS)
+            break
+        except subprocess.TimeoutExpired:
+            if not abort.is_set():
+                continue
+            child.kill()
+            with suppress(OSError, subprocess.SubprocessError):
+                child.communicate(timeout=_DRAIN_SECONDS)
+            raise EndfieldUpdateError(f"本轮更新已中止（正在打 {base.name}）") from None
+    if child.returncode == 0:
         return
     free = shutil.disk_usage(out.parent).free
     if free < new_size:
@@ -1090,11 +1148,10 @@ def _run_hpatchz(exe: Path, base: Path, diff: Path, out: Path, new_size: int) ->
             f"{(new_size - free) / 1024**3:.1f} GB，当前只剩 "
             f"{free / 1024**3:.1f} GB，请清理磁盘后重试"
         )
-    detail = (process.stdout or b"") + (process.stderr or b"")
-    lines = detail.decode("utf-8", "replace").strip().splitlines()
+    lines = (stdout + stderr).decode("utf-8", "replace").strip().splitlines()
     raise EndfieldUpdateError(
         f"差量应用失败（{base.name} → {out.name}）："
-        f"hpatchz 退出码 {process.returncode}，"
+        f"hpatchz 退出码 {child.returncode}，"
         f"{lines[-1] if lines else '没有输出'}"
     )
 
@@ -1160,6 +1217,27 @@ async def _apply_delta(
         if progress is not None and (done % _APPLY_STEP == 0 or done == total):
             await progress(line)
 
+    next_busy_check = time.monotonic() + _APPLY_BUSY_RECHECK_SECONDS
+
+    async def recheck() -> None:
+        """到点问一次游戏有没有被重新打开，开着就停在下一刀之前。
+
+        一轮落地要跑几十分钟，用户随时可能把客户端开回来；开着的 UE 客户端锁着
+        `.ucas`/`.pak`，那时改名就是 `PermissionError`，不如先停下来给一句看得懂的话。
+        """
+
+        nonlocal next_busy_check
+        now = time.monotonic()
+        if now < next_busy_check:
+            return
+        next_busy_check = now + _APPLY_BUSY_RECHECK_SECONDS
+        busy = await _busy_processes(install_dir)
+        if busy:
+            raise EndfieldUpdateError(
+                f"落地期间游戏被重新启动（{', '.join(busy)}），本轮不覆盖，"
+                "请退出游戏后重试"
+            )
+
     async def _unpack(info: zipfile.ZipInfo, temp: Path) -> None:
         """在工作线程里解出一个成员，别把拷贝压在事件循环上。
 
@@ -1180,10 +1258,11 @@ async def _apply_delta(
             # 等它真的松手：这条线程还攥着暂存卷的读句柄，收尾删暂存就会删不动。
             # 线程最多再写一块就会自停，所以这个等待有上限，不等它把成员拷完。
             with suppress(BaseException):
-                await asyncio.wait({task}, timeout=_UNPACK_DRAIN_SECONDS)
+                await asyncio.wait({task}, timeout=_DRAIN_SECONDS)
             raise
 
     for index, job in enumerate(plan.patches, start=1):
+        await recheck()
         target = _resolve_within(install_dir, job.path)
         temp = target.with_name(target.name + _TEMP_SUFFIX)
         try:
@@ -1195,14 +1274,26 @@ async def _apply_delta(
         diff_file = staging / f"diff-{index:04d}{_TEMP_SUFFIX}"
         await _unpack(archive.getinfo(job.member), diff_file)
         try:
-            await asyncio.to_thread(
-                _run_hpatchz,
-                hpatchz,
-                _resolve_within(install_dir, job.base_path),
-                diff_file,
-                temp,
-                job.size,
+            patch = asyncio.create_task(
+                asyncio.to_thread(
+                    _run_hpatchz,
+                    hpatchz,
+                    _resolve_within(install_dir, job.base_path),
+                    diff_file,
+                    temp,
+                    job.size,
+                    abort,
+                )
             )
+            # 线程里的异常在这里取回，不留「exception was never retrieved」
+            patch.add_done_callback(lambda done: done.cancelled() or done.exception())
+            try:
+                await asyncio.shield(patch)
+            except (TimeoutError, asyncio.CancelledError):
+                abort.set()
+                with suppress(BaseException):
+                    await asyncio.wait({patch}, timeout=_DRAIN_SECONDS)
+                raise
         finally:
             # 清残骸不能顶掉真正的失败原因（或取消）：限时到点与用户手停时，hpatchz
             # 还攥着这个差量文件，Windows 上删不动，删失败必须咽在这里
@@ -1213,6 +1304,7 @@ async def _apply_delta(
         await _report(f"正在打补丁并覆盖游戏文件 {done}/{total}")
 
     for job in plan.moves:
+        await recheck()
         target = _resolve_within(install_dir, job.path)
         temp = target.with_name(target.name + _TEMP_SUFFIX)
         await _unpack(archive.getinfo(job.member), temp)
@@ -1507,6 +1599,21 @@ async def _prefetch_moves(
     return entries
 
 
+_install_dir_locks: dict[str, asyncio.Lock] = {}
+
+
+def _lock_for_install_dir(install_dir: Path) -> asyncio.Lock:
+    """按安装目录取进程内更新锁，串行化并行任务对同一个客户端目录的更新。
+
+    不同脚本可以指向同一个游戏目录，而两轮的暂存目录名与分卷文件名完全相同，并发
+    就会删掉对方正在读的那些。规范化后当键：同一个目录的不同写法要落到同一把锁。
+    """
+
+    return _install_dir_locks.setdefault(
+        os.path.normcase(os.path.abspath(install_dir)), asyncio.Lock()
+    )
+
+
 async def ensure_game_updated(
     game_exe: Path,
     *,
@@ -1525,10 +1632,21 @@ async def ensure_game_updated(
         f"（限时 {time_limit_minutes} 分钟）"
     )
     outcome = ("已取消", "本轮更新被取消（用户点了停止，或看门狗下发了中止）")
+    lock = _lock_for_install_dir(game_exe.parent)
     try:
-        result = await _ensure_game_updated(
-            game_exe, time_limit_minutes=time_limit_minutes, progress=progress
-        )
+        if lock.locked():
+            # 同一目录上的第二轮只会跟第一轮互删暂存与分卷，这一轮不发起，也不排队等：
+            # 一轮落地要几十分钟，排队会让调度轮和手动按钮一起挂住
+            result = GameUpdateResult(
+                "NeedManualUpdate",
+                "已有一轮终末地客户端更新正在这个目录上进行，本轮不再发起，"
+                "请等它结束后再运行",
+            )
+        else:
+            async with lock:
+                result = await _ensure_game_updated(
+                    game_exe, time_limit_minutes=time_limit_minutes, progress=progress
+                )
     except Exception as error:
         outcome = ("异常", f"未得出结论文案：{type(error).__name__}: {error}")
         raise
@@ -1611,12 +1729,6 @@ async def _ensure_game_updated(
     outdated = (
         f"终末地客户端版本落后（已安装 {identity.version}，最新 {release.version}）"
     )
-    short = _disk_shortfall(
-        install_dir, release.download_size + _RESERVE_BYTES, "游戏目录（下载差量包）"
-    )
-    if short:
-        return GameUpdateResult("NeedManualUpdate", f"{outdated}，{short}")
-
     staging = install_dir / _STAGING_DIR_NAME
     abort = threading.Event()
     landed = 0
@@ -1632,7 +1744,18 @@ async def _ensure_game_updated(
         # 清暂存与建目录都在 try 内：本函数对外承诺不抛，暂存名被占成文件、盘只读这类
         # 情况也要落成一条看得懂的结论，而不是让任务直接异常
         force_rmtree(staging)
+        if staging.exists():
+            logger.warning(f"未能清除上轮暂存 {staging}，它占的还要算进本轮磁盘余量")
         staging.mkdir(parents=True, exist_ok=True)
+        # 磁盘门排在清理之后：上一轮删不动的残卷压着同一分区的 free，先判后清就每轮都
+        # 是「放不下」，而那一轮根本走不到清理
+        short = _disk_shortfall(
+            install_dir,
+            release.download_size + _RESERVE_BYTES,
+            "游戏目录（下载差量包）",
+        )
+        if short:
+            return GameUpdateResult("NeedManualUpdate", f"{outdated}，{short}")
         async with asyncio.timeout(time_limit_minutes * 60):
             await report(
                 f"{outdated}\n按 {preset['label']} 的服务器参数核对官方差量清单"
