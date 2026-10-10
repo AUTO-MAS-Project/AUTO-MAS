@@ -833,7 +833,7 @@ export default {
     queueImportNoUsers: 'インポートできるユーザーがいません',
     queueImportPasswordCount: 'パスワード {count} 件の再入力が必要',
     queueTaskCount: '{count} 件のタスク',
-    queueInvalidCount: '{count} 件が無効',
+    queueInvalidCount: '{count} 件が利用不可',
     queueTemplate: 'テンプレート',
     queueTemplateMine: 'マイテンプレート',
     queueTemplatePresets: 'プロジェクトのプリセット',
@@ -1747,6 +1747,8 @@ export default {
     maafwImportingCopy: 'プロジェクトを取り込み中...',
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
+    maafwUnselectableTaskNotice: '「{tasks}」{reason}。MAS は実行時にスキップします',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: 'M9A マネージドスクリプトを編集',
     m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
     m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',

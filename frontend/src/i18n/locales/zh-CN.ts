@@ -873,7 +873,7 @@ export default {
     queueImportNoUsers: '没有可导入的用户',
     queueImportPasswordCount: '{count} 项密码需重填',
     queueTaskCount: '{count} 个任务',
-    queueInvalidCount: '{count} 个已失效',
+    queueInvalidCount: '{count} 个不可用',
     queueTemplate: '模板',
     queueTemplateMine: '我的模板',
     queueTemplatePresets: '项目预设',
@@ -1791,6 +1791,8 @@ export default {
     maafwImportingCopy: '正在导入项目...',
     maafwAccountRecordTooltip:
       '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置',
+    maafwUnselectableTaskNotice: '「{tasks}」{reason}，MAS 运行时会跳过',
+    maafwUnselectableTaskSeparator: '、',
     m9aFlavorScriptTitle: '编辑 M9A 托管',
     m9aFlavorSourceDirectory: 'M9A 程序目录',
     m9aFlavorSourceHint: '选择包含 interface.json 的 M9A 目录',
