@@ -30,23 +30,43 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.7.0-beta.2] - 2026-10-10
 
 ### 新增
 
+- 【MAA】开启脚本的更新接管并填好 Mirror 酱 Key 后，本体与资源更新由 MAS 统一处理 (#1298) by @jinghero
+- 【MAA】新增专项日志与失败截图导出，便于反馈问题 (#1289) by @jinghero
+- 【bgi】任务报告新增一条龙分步节点详情，可按用户开关展示 (#1283) by @AthenaHibou
+- 【MFW】全局选项每个用户只设一次；新增开发者模式（跟随来源目录、立即同步），可直接导入源码形态项目 (#1294) by @qiyinxi
+- 【MFW】任务队列支持右键复制任务、修改显示名和删除任务 (#1301) by @qiyinxi
 - 【主页】主页卫星新增可拖动的 3D 星系样式（设置里切换，默认仍是经典），带状态光效与彩蛋 (#1257) by @qiyinxi
 - 【主页】新增游戏活动开始当天与结束前三天提醒，仅推送首页显示的游戏 by @HarcoChen
+- 【调度】游戏维护期间跳过代理，游戏与资源更新照常进行 by @HarcoChen
+- 【调度】历史记录各项目旁显示成功与失败次数 (#1233) by @anlan1027
+- 【调度】自动代理失败时可保存 OBS 回放并从历史记录查看 (#1225) by @qiyinxi
 - 【模拟器】支持魔改 AVD 模拟器（内测，暂只支持 M9A，需另行获取模拟器内测包） (#1238) by @qiyinxi
+
+### 变更
+
+- 【bgi】统一账号切换部分的 UI，移入游戏配置区 (#1282) by @AthenaHibou
+- 【ok-nte】已有脚本保持原启动方式不变，选项改名为「静默启动 / 启动器界面启动」（仅公测） (#1280) by @AthenaHibou
 
 ### 修复
 
 - 【MAA】修复活动开始后「刷活动关」仍提示当前无可刷活动关的问题 (#1293) by @1w1w11w1
+- 【MAA】修复并行更新游戏时误报需手动更新、停止任务不生效的问题 (#1291) by @jinghero
+- 【MAA】修复多用户共用安装时库存保持误用其他账号库存缓存的问题 (#1267) by @jinghero
+- 【end】修复任务结束后脚本未退出时误报超时并重复执行的问题 by @HarcoChen
+- 【绝区零一条龙】修复从自身配置槽导入失败并可能提前覆盖配置的问题 (#1243) by @anlan1027
 - 【ok-nte】修复异环更新卡住不报错及点击更新无响应 (#1173) by @qiyinxi
+- 【ok-nte】修复 ok-nte 配置编辑页基本设置等页面配置项显示英文的问题 (#1274) by @AthenaHibou
 - 【MFW】失败重试后运行日志开头写明上一次失败的原因 (#1295) by @qiyinxi
+- 【MFW】单任务超时后下一个任务不再直接失败；重试不补跑已完成任务；M9A 关闭游戏失败不重跑、小游戏不可选 (#1296) by @qiyinxi
 - 【通用脚本】修复各专项任务前后脚本在重试时重复执行或遗漏的问题 (#1273) by @1w1w11w1
 - 【主页】修复升级后已隐藏的活动区重新出现，并统一活动封面与常驻活动排序 by @HarcoChen
 - 【调度】修复运行中删除队列后任务结束时报错的问题 by @ClozyA
 - 【调度】修复队列启动即报错、任务总览无法正常结束的问题（仅公测） by @ClozyA
+- 【工具】修复专项问题包混入其他专项失败截图（如 MAA 失败截图）的问题 (#1290) by @AthenaHibou
 - 【设置】修复切换到背景图较大的外观包后，背景仍显示上一个包的问题（仅公测） (#1277) by @qiyinxi
 - 【Runtime】一键导出日志包含 Runtime 日志 by @ClozyA
 
@@ -448,7 +468,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...dev
+[v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2
 [v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
 [v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
