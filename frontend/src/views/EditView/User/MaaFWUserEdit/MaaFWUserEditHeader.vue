@@ -44,7 +44,8 @@
         </template>
         {{ t('comp.openConfigFolder') }}
       </a-button>
-      <a-button size="large" @click="emit('cancel')">
+      <!-- 点了「返回」在等保存 / 确认框开着时转圈，不再重复触发 -->
+      <a-button size="large" :loading="props.leaving" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>

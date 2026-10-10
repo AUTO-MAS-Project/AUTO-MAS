@@ -191,6 +191,8 @@ export interface MaaFWUserHeaderSectionProps {
   scriptRoute: { name: string; params: { id: string } }
   isEdit: boolean
   userId?: string
+  /** 点了「返回」、正在等保存完成或确认框开着：返回按钮转圈 */
+  leaving?: boolean
 }
 
 export interface MaaFWUserHeaderSectionEmits {

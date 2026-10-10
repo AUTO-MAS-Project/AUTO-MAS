@@ -229,7 +229,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
@@ -254,6 +254,11 @@ import {
   storedMaaFWInputFieldValue,
 } from './maafwOptionValues'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from './maafwIconImage'
+import {
+  MAAFW_OPTION_DRAFTS_KEY,
+  maafwOptionDraftKey,
+  parseMaaFWOptionDraftKey,
+} from './maafwOptionDrafts'
 import type {
   MaaFWOptionCaseInfo,
   MaaFWOptionInfo,
@@ -304,6 +309,8 @@ const optionSearchQuery = ref('')
 const passwordDrafts = ref<Record<string, string>>({})
 // 数字 / 文本字段正在输入、还没提交的值，键同上；失焦 / 回车时提交，换了任务同样清空。
 const inputDrafts = ref<Record<string, string>>({})
+// 页面离开前由页面统一提交草稿（不在用户页里时没有登记处）
+const draftRegistry = inject(MAAFW_OPTION_DRAFTS_KEY, null)
 
 const optionMap = computed(() => {
   const entries = props.options.map(option => [option.name, option] as const)
@@ -401,7 +408,7 @@ const getInputValueObject = (option: MaaFWOptionInfo): Record<string, string> =>
 const getStoredInputText = (option: MaaFWOptionInfo, inputName: string) =>
   storedMaaFWInputFieldValue(getStoredValue(option), inputName)
 
-const inputDraftKey = (optionName: string, inputName: string) => `${optionName}\u0000${inputName}`
+const inputDraftKey = maafwOptionDraftKey
 
 const getNumberInputValue = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) => {
   const draft = inputDrafts.value[inputDraftKey(option.name, inputItem.name)]
@@ -576,6 +583,41 @@ const clearPassword = (optionName: string, inputItem: MaaFWOptionInputInfo) => {
   dropPasswordDraft(passwordDraftKey(optionName, inputItem.name))
   handleInputFieldChange(optionName, inputItem, '', false)
 }
+
+const findInputItem = (optionName: string, inputName: string) =>
+  optionMap.value.get(optionName)?.inputs.find(item => item.name === inputName)
+
+// 和已存值不同的文本 / 数字草稿、非空的密码草稿，才算没提交的改动
+const hasPendingDrafts = () => {
+  const inputPending = Object.entries(inputDrafts.value).some(([key, draft]) => {
+    const { optionName, inputName } = parseMaaFWOptionDraftKey(key)
+    const option = optionMap.value.get(optionName)
+    if (!option) return false
+    return draft !== getStoredInputText(option, inputName)
+  })
+  return inputPending || Object.values(passwordDrafts.value).some(Boolean)
+}
+
+// 页面离开前提交全部草稿：校验不过的照常弹提示、留在框里，返回 false 交给页面按未保存处理
+const flushDrafts = () => {
+  for (const key of Object.keys(inputDrafts.value)) {
+    const { optionName, inputName } = parseMaaFWOptionDraftKey(key)
+    const inputItem = findInputItem(optionName, inputName)
+    if (inputItem) commitInputDraft(optionName, inputItem)
+  }
+  for (const key of Object.keys(passwordDrafts.value)) {
+    const { optionName, inputName } = parseMaaFWOptionDraftKey(key)
+    const inputItem = findInputItem(optionName, inputName)
+    if (inputItem) commitPasswordDraft(optionName, inputItem)
+  }
+  return !hasPendingDrafts()
+}
+
+const unregisterDrafts = draftRegistry?.register({
+  hasPending: hasPendingDrafts,
+  flush: flushDrafts,
+})
+onBeforeUnmount(() => unregisterDrafts?.())
 
 const getCheckboxCountHint = (option: MaaFWOptionInfo) => {
   const state = getCheckboxCountState(option, getStringListValue(option))

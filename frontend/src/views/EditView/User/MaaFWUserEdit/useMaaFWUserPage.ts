@@ -1,10 +1,12 @@
 import {
   computed,
+  getCurrentInstance,
   markRaw,
   nextTick,
   onBeforeUnmount,
   onMounted,
   onUnmounted,
+  provide,
   ref,
   shallowRef,
 } from 'vue'
@@ -31,6 +33,7 @@ import type {
 } from '@/types/script'
 import { managedMaaFWQueueState } from '../maafwManagedTasks'
 import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
+import { createMaaFWOptionDraftRegistry, MAAFW_OPTION_DRAFTS_KEY } from '../maafwOptionDrafts'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
 import { useMaaFWUserForm } from './useMaaFWUserForm'
@@ -76,6 +79,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     waitForSaves,
     pendingCount,
   } = useMaaFWUserSaveStatus()
+
+  // 页面上各个选项编辑器里没提交的草稿（文本 / 数字 / 密码失焦才提交），离开页面前统一提交
+  const optionDrafts = createMaaFWOptionDraftRegistry()
+  if (getCurrentInstance()) provide(MAAFW_OPTION_DRAFTS_KEY, optionDrafts)
 
   const userIdHolder: MaaFWUserIdHolder = { value: userId }
   const isEdit = ref(!!userIdHolder.value)
@@ -328,25 +335,45 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     }
   }
 
-  // 还在保存（改完输入框直接点返回，失焦刚触发了保存）就先等它存完；只有存失败、改动确实
-  // 没进后端时才拦下来问
+  // 「返回」：先提交选项编辑器里没提交的草稿；还在保存（改完输入框直接点返回，失焦刚触发了
+  // 保存）就先等它存完；只有存失败、或有校验不过的草稿时才拦下来问。
+  // 从点下到跳走（含确认框开着）期间 leaving 为真：按钮转圈，重复点击直接忽略
+  const leaving = ref(false)
   const handleCancel = async () => {
-    if (isSaving.value) await waitForSaves()
-    if (hasUnsavedChanges.value) {
-      Modal.confirm({
-        title: t('edit.youHaveUnsavedChanges'),
-        content: t('edit.leaveWithoutSavingUnsaved'),
-        okText: t('edit.leave'),
-        cancelText: t('edit.keepEditing'),
-        onOk: () => router.push('/scripts'),
-      })
-      return
+    if (leaving.value) return
+    leaving.value = true
+    let keepLeaving = false
+    try {
+      const draftsCommitted = optionDrafts.flush()
+      if (isSaving.value) await waitForSaves()
+      if (!draftsCommitted || hasUnsavedChanges.value) {
+        keepLeaving = true
+        Modal.confirm({
+          title: t('edit.youHaveUnsavedChanges'),
+          content: t('edit.leaveWithoutSavingUnsaved'),
+          okText: t('edit.leave'),
+          cancelText: t('edit.keepEditing'),
+          onOk: async () => {
+            await router.push('/scripts')
+            leaving.value = false
+          },
+          onCancel: () => {
+            leaving.value = false
+          },
+        })
+        return
+      }
+      await router.push('/scripts')
+    } finally {
+      if (!keepLeaving) leaving.value = false
     }
-    router.push('/scripts')
   }
 
+  // 关窗口 / 刷新：同步提交草稿（提交会立刻排进保存队列，isSaving 随之为真），
+  // 提交不了的草稿与还在保存、保存失败一样拦下来
   const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!isSaving.value && !hasUnsavedChanges.value) return
+    const draftsCommitted = optionDrafts.flush()
+    if (draftsCommitted && !isSaving.value && !hasUnsavedChanges.value) return
     event.preventDefault()
     event.returnValue = ''
   }
@@ -418,6 +445,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     ...restore,
     loadUserData,
     reloadInterface,
+    leaving,
     handleCancel,
   }
 }
