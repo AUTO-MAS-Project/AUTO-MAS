@@ -209,7 +209,9 @@ class MaaEndManager(TaskExecuteBase):
         ):
             return
         if not self.had_original_script_config:
-            logger.info(f"清理任务期写入的 MaaEnd 脚本配置目录: {self.maaend_config_dir}")
+            logger.info(
+                f"清理任务期写入的 MaaEnd 脚本配置目录: {self.maaend_config_dir}"
+            )
             force_rmtree(self.maaend_config_dir)
             if self.maaend_config_dir.exists():
                 raise PermissionError(
