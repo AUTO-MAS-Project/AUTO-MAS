@@ -2212,6 +2212,29 @@ def _same_directory(left: str, right: str) -> bool:
         return False
 
 
+def view_imported_from(script_id: str, source: str, base: Path | None = None) -> bool:
+    """脚本视图挂的载荷是不是从 ``source`` 这个目录导入的（载荷清单 ``source.ref``）。
+
+    组共用载荷：同版本或更旧的导入会挂上组里别人导入的那一份，视图里的 ``config/`` 就是
+    别的目录带来的（外壳配置实例、账号都在里面）。更新得来的载荷（``source.kind=update``）
+    说不清 ``config/`` 是哪个目录带来的，同样不认。
+    """
+
+    marker = read_view_marker(embedded_project_dir(script_id, base))
+    if marker is None or not source:
+        return False
+    try:
+        manifest = payloads.read_manifest(
+            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        )
+    except payloads.PayloadError:
+        return False
+    origin = (manifest or {}).get("source") or {}
+    if str(origin.get("kind") or "") != "import":
+        return False
+    return _same_directory(str(origin.get("ref") or ""), source)
+
+
 def inherit_embedded_record(
     source_config: Any, target_script_id: str, base: Path | None = None
 ) -> dict[str, Any]:
@@ -3158,5 +3181,6 @@ __all__ = [
     "switch_root",
     "switch_in_progress",
     "switch_view",
+    "view_imported_from",
     "write_view_marker",
 ]
