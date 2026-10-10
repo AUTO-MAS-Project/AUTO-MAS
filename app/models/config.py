@@ -1312,8 +1312,10 @@ class MaaConfig(ConfigBase):
         self.Update_TakeoverEnabled = ConfigItem(
             "Update", "TakeoverEnabled", False, BoolValidator()
         )
-        ## 本脚本的 Mirror 酱 CDK（留空回退 MAS 全局配置）
-        self.Update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
+        ## 本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
+        self.Update_MirrorChyanCDK = ConfigItem(
+            "Update", "MirrorChyanCDK", "", EncryptValidator()
+        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 

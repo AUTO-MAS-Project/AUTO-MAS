@@ -127,7 +127,7 @@ def validate_software_zip(zip_path: Path) -> None:
     """校验完整包 zip，不满足完整包特征时抛 ValueError（线程内执行）。
 
     - 全条目 CRC 校验（服务端不下发摘要，损坏只能靠包自身完整性兜底）；
-    - 条目路径安全：绝对路径、盘符、``..`` 段一律拒绝；
+    - 条目路径安全：绝对路径、非法 Windows 文件名和尾部空格/点一律拒绝；
     - 根目录出现 removelist.txt / changes.json 即 OTA 包，拒收；
     - 根目录（或单层包装目录内）须有 MAA.exe 与 MAA.dll。
     """
@@ -141,10 +141,15 @@ def validate_software_zip(zip_path: Path) -> None:
     for name in names:
         normalized = name.replace("\\", "/")
         segments = [segment for segment in normalized.split("/") if segment]
+        # Windows 对尾部空格/点的解释与归档字符串不一致，拒绝歧义组件，
+        # 不把归档重写成另一个路径；逐段检查冒号，阻止目录内的 NTFS 数据流。
+        if normalized.startswith(("/", "\\")) or any(
+            segment.endswith((" ", ".")) or _ILLEGAL_NAME_RE.search(segment)
+            for segment in segments
+        ):
+            raise ValueError(f"更新包含路径异常条目: {name}")
         if not segments:
             continue
-        if normalized.startswith(("/", "\\")) or ":" in segments[0] or ".." in segments:
-            raise ValueError(f"更新包含路径异常条目: {name}")
         if len(segments) == 1 and segments[0].lower() in _OTA_MANIFEST_ENTRIES:
             raise ValueError("更新包是 OTA 包（根目录含 OTA 清单），只支持完整包")
         if segments[-1].lower() in _ESSENTIAL_ENTRIES and len(segments) <= 2:
