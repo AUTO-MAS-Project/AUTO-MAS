@@ -38,7 +38,7 @@ from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import atomic_write, replace_dir
 from app.utils.platform import is_admin
 
-from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
+from .AutoProxy import HSRAutoProxyTask, _server_day_clock, resolve_daily_native_modes
 from .task_mapping import (
     HSR_TASK_MODULES,
     engine_label,
@@ -786,6 +786,21 @@ class HSRManager(TaskExecuteBase):
             and user_config.get("Info", "RemainedDay") != 0
         )
 
+    def _proxy_times_limit_reached(self, user_config) -> bool:
+        """今日代理次数是否已达脚本页设定的上限（0 = 不限）。
+
+        ``Data.ProxyTimes`` 按服务器日期累计，写回逻辑换日时会重新从 1 起算，
+        所以这里只在 ``LastProxyDate`` 是今天时才算数。
+        """
+
+        limit = int(self.script_config.get("Run", "ProxyTimesLimit") or 0)
+        if limit == 0:
+            return False
+        today = _server_day_clock().strftime("%Y-%m-%d")
+        if str(user_config.get("Data", "LastProxyDate") or "") != today:
+            return False
+        return int(user_config.get("Data", "ProxyTimes") or 0) >= limit
+
     def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
@@ -966,6 +981,23 @@ class HSRManager(TaskExecuteBase):
                             user_config,
                         )
                     else:
+                        # 单日代理次数上限只约束 MAS 托管的调度运行：单独运行脚本与
+                        # 直控用户都是用户当场发起的一次性运行，不受这个上限限制。
+                        if (
+                            self.task_info.is_queue_task
+                            and self._proxy_times_limit_reached(user_config)
+                        ):
+                            user_item.status = "跳过"
+                            # 结果与通知是按 log_record 读的，只设 status 会被读成
+                            # 「未开始运行」；补一条带原因的日志记录，界面才说得清
+                            # 这个用户为什么没跑。
+                            user_item.log_record[datetime.now()] = LogRecord(
+                                status="今日代理次数已达上限，跳过"
+                            )
+                            self._append_log(
+                                f"用户「{user_item.name}」今日代理次数已达上限, 跳过"
+                            )
+                            continue
                         self._reset_m7a_config_for_managed(user_item.name)
                         proxy = task_cls(
                             self.script_info,

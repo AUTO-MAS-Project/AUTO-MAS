@@ -3366,6 +3366,7 @@ class HSRConfig_Cloud(BaseModel):
 
 
 class HSRConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(
         default=None, description="失败任务最大尝试次数"
     )

@@ -2553,6 +2553,10 @@ class HSRConfig(ConfigBase):
         self.Cloud_LastLogin = ConfigItem("Cloud", "LastLogin", "{ }", JSONValidator())
 
         ## Run -------------------------------------------------------------
+        ## 代理次数限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
         ## 失败任务最大尝试次数
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
