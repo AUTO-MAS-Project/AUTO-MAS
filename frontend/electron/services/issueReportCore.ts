@@ -486,9 +486,17 @@ export function addVerbatimTextFile(
   }
   let content: Buffer
   try {
-    const text = maskUrlSecrets(fs.readFileSync(sourcePath, 'utf-8'))
+    let text = maskUrlSecrets(fs.readFileSync(sourcePath, 'utf-8'))
     const homePath = os.homedir()
-    content = Buffer.from(homePath ? text.split(homePath).join('<HOME>') : text, 'utf-8')
+    if (homePath) {
+      // 原文是 JSON：Windows 路径写成反斜杠加倍的转义形式，也可能写成正斜杠，三种都换。
+      // 先换最长的转义形式，免得原样形式先吃掉其中一段
+      const variants = [homePath.replace(/\\/g, '\\\\'), homePath, homePath.replace(/\\/g, '/')]
+      for (const variant of [...new Set(variants)]) {
+        text = text.split(variant).join('<HOME>')
+      }
+    }
+    content = Buffer.from(text, 'utf-8')
   } catch (error) {
     addSkippedEntry(state, archivePath, stat.size, `读取文本文件失败: ${String(error)}`)
     return
