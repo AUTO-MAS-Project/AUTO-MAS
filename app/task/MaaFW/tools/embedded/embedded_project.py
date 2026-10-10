@@ -327,21 +327,44 @@ def is_source_form(script_config: Any) -> bool:
     return bool(_embedded_report(script_config).get("sourceForm"))
 
 
+def follow_source_switch_on(script_config: Any) -> bool:
+    """只看开发者模式开关 ``Embedded.FollowSource``，不并上导入报告的 ``sourceForm``。
+
+    决定**这次导入**走不走私有渠道时用它（:func:`import_channel`）：报告是上一次导入的结果，
+    源码形态的脚本刚改选成发行包目录时报告还写着 ``sourceForm``，按它判会把发行包登记成
+    开发者载荷。源码形态不靠这里放行——:func:`import_embedded_project` 按这次投影认出源码布局
+    就强制进私有渠道。
+    """
+
+    try:
+        return bool(script_config.get("Embedded", "FollowSource"))
+    except Exception:  # noqa: BLE001 - 配置桩 / 老配置没有这一项就是没开
+        return False
+
+
 def follow_source_enabled(script_config: Any) -> bool:
     """脚本是否跟随来源目录：开着开发者模式，或项目是源码形态（源码形态始终跟随、不能关）。"""
 
-    try:
-        if script_config.get("Embedded", "FollowSource"):
-            return True
-    except Exception:  # noqa: BLE001 - 配置桩 / 老配置没有这一项就是没开
-        pass
-    return is_source_form(script_config)
+    return follow_source_switch_on(script_config) or is_source_form(script_config)
 
 
 def follow_source_channel(script_id: str) -> str:
     """开发者模式下脚本的私有渠道：``dev:<视图名>``。"""
 
     return f"{payloads.PRIVATE_CHANNEL_PREFIX}{embedded_copy_dir_name(script_id)}"
+
+
+def import_channel(script_id: str, script_config: Any) -> str:
+    """这次导入登记进哪个渠道：开关开着是私有渠道，否则 ``Update.Channel``。
+
+    与 :func:`effective_channel` 的区别只在不看旧报告的 ``sourceForm``（见
+    :func:`follow_source_switch_on`）；导入完成、报告写回之后，组同步与传播仍按
+    :func:`effective_channel`。
+    """
+
+    if follow_source_switch_on(script_config):
+        return follow_source_channel(script_id)
+    return _script_channel(script_config)
 
 
 def effective_channel(script_id: str, script_config: Any) -> str:
@@ -2632,12 +2655,14 @@ def ensure_embedded_copy(
             if not healthy
             else "[MFW 内嵌] 来源目录已更换，正在重新导入副本"
         )
+    # 走不走私有渠道只看开关：源码形态由导入自己按这次的布局认，旧报告的 sourceForm 不作数
+    # （源码形态的脚本改选成了发行包目录时，它还是上一次的结果）
     return import_embedded_project(
         script_id,
         source,
         base=base,
         channel=_script_channel(script_config),
-        follow_source=follow,
+        follow_source=follow_source_switch_on(script_config),
     )
 
 
@@ -3068,6 +3093,8 @@ __all__ = [
     "follow_source_enabled",
     "follow_source_record",
     "follow_source_signature",
+    "follow_source_switch_on",
+    "import_channel",
     "mark_env_confirmed",
     "release_held_reservations",
     "switch_or_confirm_in_progress",

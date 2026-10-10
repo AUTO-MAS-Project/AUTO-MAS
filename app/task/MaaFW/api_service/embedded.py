@@ -64,6 +64,8 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_project_dir,
     embedded_status,
     follow_source_enabled,
+    follow_source_switch_on,
+    import_channel,
     import_embedded_project,
     inherit_embedded_record,
     is_source_form,
@@ -125,9 +127,11 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
 
     try:
         script_config = maafw_script_config(script_id)
-        # 开发者模式：导入到本脚本的私有渠道（不比版本、这份就是它的 latest）
-        follow = follow_source_enabled(script_config)
-        channel = effective_channel(script_id, script_config)
+        # 开发者模式：导入到本脚本的私有渠道（不比版本、这份就是它的 latest）。只看开关：
+        # 源码形态由导入按这次的布局自己认，旧报告的 sourceForm 不作数（源码仓改选成发行包
+        # 目录时它还是上一次的结果）
+        follow = follow_source_switch_on(script_config)
+        channel = import_channel(script_id, script_config)
     except (KeyError, ValueError, TypeError):
         follow = False
         channel = "stable"
@@ -737,8 +741,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                 import_embedded_project,
                 script_id,
                 source_path,
-                channel=effective_channel(script_id, script_config),
-                follow_source=follow_source_enabled(script_config),
+                channel=import_channel(script_id, script_config),
+                follow_source=follow_source_switch_on(script_config),
             )
             cloned = True
     except EmbeddedProjectError as exc:
