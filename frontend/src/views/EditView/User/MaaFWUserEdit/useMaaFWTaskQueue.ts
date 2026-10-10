@@ -71,12 +71,12 @@ export function useMaaFWTaskQueue({
   const selectedTaskId = ref('')
   const showPresetModal = ref(false)
 
-  // 副本序号按「基础名」分组编：改过显示名的按显示名，没改过的仍按任务 name。
-  // 两种键加前缀分开，显示名恰好与某个任务 name 相同时不会混成一组。
+  // 副本序号按队列里显示出来的「基础名」文字分组编：改过显示名的用显示名，否则用 interface 的
+  // label（没有 label 用 name），虚影用它显示的名字。显示一样的几行就一起编号——不同任务改成同名、
+  // 或两个任务原 label 相同，也都编号，用户才分得清。
   const queueEntryCopyKey = (item: QueueEntryDraft) => {
-    if (item.missing) return `name:${item.name}`
-    const label = taskSnapshot.value.taskLabels?.[item.id]
-    return label ? `label:${label}` : `name:${item.task.name}`
+    if (item.missing) return item.name
+    return taskSnapshot.value.taskLabels?.[item.id] || item.task.label || item.task.name
   }
   const orderedTasks = computed<MaaFWQueueEntry[]>(() => {
     const hasInterface = Boolean(previewData.value)

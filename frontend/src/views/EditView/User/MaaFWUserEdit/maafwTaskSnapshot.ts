@@ -41,7 +41,8 @@ export const taskLabelsField = (labels: Record<string, string>) =>
 
 /**
  * 改一份实例的显示名，返回新的显示名表（不改入参）。去首尾空白后为空、或与任务原本的显示名
- * （interface 的 label，没有就是 name）相同时删掉这一条，视为没改名。
+ * （interface 的 label，没有就是 name）相同时删掉这一条，视为没改名；其余截到上限后存下。
+ * 先比原名再截断：原名本身超过上限时，不改直接确定不能存下一份截断后的名字。
  */
 export const withMaaFWTaskLabel = (
   labels: Record<string, string> | undefined,
@@ -50,11 +51,11 @@ export const withMaaFWTaskLabel = (
   defaultName: string
 ): Record<string, string> => {
   const next = { ...(labels || {}) }
-  const trimmed = name.trim().slice(0, MAAFW_TASK_LABEL_MAX_LENGTH)
+  const trimmed = name.trim()
   if (!trimmed || trimmed === defaultName) {
     delete next[taskId]
   } else {
-    next[taskId] = trimmed
+    next[taskId] = trimmed.slice(0, MAAFW_TASK_LABEL_MAX_LENGTH)
   }
   return next
 }

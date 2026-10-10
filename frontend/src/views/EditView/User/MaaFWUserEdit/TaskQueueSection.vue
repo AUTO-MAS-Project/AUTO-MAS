@@ -138,7 +138,7 @@
                     :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
                     @click="emit('selectTask', queuedTask.id)"
                     @keydown.enter="emit('selectTask', queuedTask.id)"
-                    @contextmenu="contextTaskId = queuedTask.id"
+                    @contextmenu="handleRowContextMenu(queuedTask.id)"
                   >
                     <HolderOutlined class="task-drag-handle-disabled" aria-hidden="true" />
                     <div class="task-main">
@@ -176,7 +176,7 @@
                     class="task-row"
                     :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
                     @click="emit('selectTask', queuedTask.id)"
-                    @contextmenu="contextTaskId = queuedTask.id"
+                    @contextmenu="handleRowContextMenu(queuedTask.id)"
                   >
                     <HolderOutlined class="task-drag-handle" aria-hidden="true" />
                     <img
@@ -506,11 +506,16 @@ const canDuplicateContextTask = computed(() => {
   return copyCount < MAAFW_MAX_TASK_REPEAT_COUNT
 })
 
-// 行上右键时 contextTaskId 已在冒泡阶段记下；空白处右键没有行，不弹。
-// 右键的那一行同时选中，右栏与菜单指的是同一个任务
+// 行上右键（冒泡阶段，先于菜单打开）：记下是哪一行，并把这一行同时选中，右栏与菜单指向同一任务。
+// 放在行上而不是菜单打开时做：菜单已开着再右键另一行不会再触发 openChange，选中会停在旧行
+const handleRowContextMenu = (taskId: string) => {
+  contextTaskId.value = taskId
+  emit('selectTask', taskId)
+}
+
+// 空白处右键没有记下行，不弹
 const handleContextMenuOpenChange = (open: boolean) => {
   contextMenuOpen.value = open && Boolean(contextTask.value)
-  if (contextMenuOpen.value && contextTask.value) emit('selectTask', contextTask.value.id)
 }
 // 菜单开着时又在空白处右键、或那一行已经不在了：收起
 watch(contextTask, item => {

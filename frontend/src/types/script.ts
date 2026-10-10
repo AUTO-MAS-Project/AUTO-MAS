@@ -352,7 +352,10 @@ export interface MaaFWQueuedTaskItem {
   missing?: false
   /** 用户给这一份起的显示名；没有时显示任务的 label / name */
   customLabel?: string
-  /** 同一基础名（自定义名或任务本身）的副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  /**
+   * 同一基础名（显示名，没有就是任务的 label / name）的副本中的序号，从 1 起；
+   * 仅在 `copyTotal > 1` 时需要显示
+   */
   copyIndex: number
   copyTotal: number
 }

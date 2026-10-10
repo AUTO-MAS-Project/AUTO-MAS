@@ -105,6 +105,12 @@ describe('MFW 队列实例显示名与复制', () => {
     expect(labels).toEqual({ A: '旧名' })
   })
 
+  it('原名超过上限时不改直接确定：按原名比较，不存截断后的名字', () => {
+    const longName = '长'.repeat(45)
+    expect(withMaaFWTaskLabel({}, 'A', longName, longName)).toEqual({})
+    expect(withMaaFWTaskLabel({ A: '旧名' }, 'A', ` ${longName} `, longName)).toEqual({})
+  })
+
   it('pickMaaFWTaskLabels：非对象给空表，只收给定实例', () => {
     expect(pickMaaFWTaskLabels(null, ['A'])).toEqual({})
     expect(pickMaaFWTaskLabels(['A'], ['A'])).toEqual({})

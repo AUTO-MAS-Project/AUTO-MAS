@@ -206,6 +206,19 @@ describe('useMaaFWUserPage：队列右键菜单', () => {
     scope.stop()
   })
 
+  it('按显示文字分组：改名成另一任务的 label 后两行都编号', async () => {
+    const { scope, page } = await mountPage({
+      taskOrder: ['Start', 'Daily'],
+      taskChecked: {},
+      taskOptions: {},
+    })
+    expect(rowTexts(page.orderedTasks.value)).toEqual(['崩坏三 启动!', '日常'])
+    await page.renameTask('Daily', '崩坏三 启动!')
+    expect(rowTexts(page.orderedTasks.value)).toEqual(['崩坏三 启动! #1', '崩坏三 启动! #2'])
+    expect(lastSavedSnapshot().taskLabels).toEqual({ Daily: '崩坏三 启动!' })
+    scope.stop()
+  })
+
   it('不可选任务不复制', async () => {
     const { scope, page } = await mountPage({
       taskOrder: ['Arcade'],
