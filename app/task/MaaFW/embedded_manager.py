@@ -69,6 +69,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     switch_or_confirm_in_progress,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    is_project_updating,
     release_project_path,
     release_project_path_sync,
     try_reserve_project_path,
@@ -133,6 +134,21 @@ _CDK_STATUS_FALLBACK_ZH = {
     "mismatched": "Mirror 酱 CDK 类型与该资源不匹配",
     "blocked": "Mirror 酱 CDK 已被封禁",
 }
+
+# 运行前检查拿不到本视图预约时的整脚本跳过：项目被同项目的更新 / 编辑页操作暂时占着，
+# 不是故障，脚本记「跳过」、发 warning（与调度层「已被其他任务调度器锁定」同一口径）。
+SKIP_SWITCHING = (
+    "同项目的另一个脚本刚更新了项目，本脚本正在切换到新版本，已跳过本次启动，"
+    "稍后重新开始即可"
+)
+SKIP_UPDATING = (
+    "这个脚本的项目正在更新（可能是编辑页里的操作），已跳过本次启动，完成后重新开始即可"
+)
+SKIP_OCCUPIED = (
+    "这个脚本的项目正在更新或准备运行环境（可能是编辑页里的操作），已跳过本次启动，"
+    "完成后重新开始即可"
+)
+_BENIGN_SKIPS = frozenset({SKIP_SWITCHING, SKIP_UPDATING, SKIP_OCCUPIED})
 
 NoticeLevel = Literal["info", "warning"]
 
@@ -451,9 +467,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 视图正在换版本，或刚被兄弟脚本的更新切过去、后台还在确认运行环境
                 # （预约在确认线程手里）：整个脚本一句话跳过，别让每个用户在
                 # runner_task 里各报一遍「同一路径正在运行或更新」。
-                return "正在切换版本，已跳过本次启动"
+                return SKIP_SWITCHING
+            if is_project_updating(embedded_project_dir(script_id)):
+                # 编辑页的「执行更新」整段持本视图预约（下载可能几十分钟）：放行的话每个
+                # 用户都拿不到预约、各自跳过，脚本却记成「完成」。
+                return SKIP_UPDATING
             if not resolve_maafw_project_root(script_id, script_config).is_dir():
-                return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
+                return SKIP_OCCUPIED
             rebuilt = None
         else:
             # 导入 / 组同步 / 投影补齐都在工作线程里改视图：用户这时点停止，
@@ -1544,11 +1564,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     async def main_task(self) -> None:
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            benign = self.check_result in _BENIGN_SKIPS
+            self.script_info.status = "跳过" if benign else "异常"
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=self.check_result),
+                data=WSTaskNoticeData(
+                    level="warning" if benign else "error", message=self.check_result
+                ),
             )
             return
 
@@ -1708,9 +1731,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         finally:
             # 最后一位用户收尾完，副本上的数据才齐；取消与崩溃路径也从这里写回。
             await self._commit_user_data()
+        # 手动停止时还没轮到的用户保留「等待」（与其他专项一致），汇总里算未完成；
+        # 只有正在跑的那位按中断记「异常」。崩溃路径照旧全记「异常」。
         for user in self.script_info.user_list:
-            if user.status in ("等待", "运行"):
+            if user.status == "运行" or (
+                user.status == "等待" and not self.stopped_manually
+            ):
                 user.status = "异常"
+        waiting_users = [
+            user for user in self.script_info.user_list if user.status == "等待"
+        ]
 
         # 脚本终态必须在这里落定：main_task 里只置过「运行」，不置终态的话
         # 任务结束后脚本行会一直停在「运行」（与第一层 manager.py 同一套口径）。
@@ -1727,7 +1757,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             for user in self.script_info.user_list
             if user.status == "跳过" and user.user_id in maintenance_ids
         ]
-        if self.check_result == "Pass" and not error_users:
+        if self.check_result in _BENIGN_SKIPS:
+            # 项目被暂时占着、整脚本跳过：不是故障（main_task 已按「跳过」发过提示）。
+            self.script_info.status = "跳过"
+        elif self.check_result == "Pass" and not error_users and not waiting_users:
             # 全员因维护跳过时不能显示成「完成」
             self.script_info.status = (
                 "跳过" if maintenance_users and not completed_users else "完成"
@@ -1765,6 +1798,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 error_users=error_users,
                 completed_users=completed_users,
                 maintenance_users=maintenance_users,
+                waiting_users=waiting_users,
             )
 
         # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
@@ -1788,8 +1822,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         error_users: list[UserItem],
         completed_users: list[UserItem],
         maintenance_users: list[UserItem],
+        waiting_users: list[UserItem] | None = None,
     ) -> None:
-        """推送本轮的「代理结果」汇总。"""
+        """推送本轮的「代理结果」汇总。``waiting_users``：手动停止时还没轮到的用户。"""
 
         # 跑完了但队列里有失效任务的用户：状态照常是完成，汇总里算未完成，
         # 这样「仅失败时」推送也会发出来，用户能看到要去处理
@@ -1812,7 +1847,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(completed_users),
             "uncompleted_count": (
-                len(error_users) + len(maintenance_users) + len(attention_users)
+                len(error_users)
+                + len(maintenance_users)
+                + len(attention_users)
+                + len(waiting_users or [])
             ),
             # 失效任务每个用户一行跟在结果后面：通用模板没有单独的块，结果框按原样换行
             "result": "\n\n".join(
