@@ -44,7 +44,13 @@ from .apply import (
     _validate_plan_base,
     build_package_plan,
 )
-from .blob_store import RuntimeBlobStore, _copy_exclusive, place_fresh, sha256_file
+from .blob_store import (
+    RuntimeBlobStore,
+    _copy_exclusive,
+    place_fresh,
+    sha256_file,
+    unlink_forced,
+)
 from .contracts import (
     VIEW_MARKER_FILE_NAME,
     canonical_json,
@@ -145,7 +151,7 @@ def remove_tree(path: Path) -> None:
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(long_path(path), onexc=_clear_readonly_and_retry)
         else:
-            path.unlink()
+            unlink_forced(path)
 
 
 # --------------------------------------------------------------------------
@@ -752,7 +758,8 @@ def build_from_package(
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             if os.path.lexists(target):
-                os.unlink(target)
+                # 老载荷里可能留着来源带来的只读位（硬链接共用属性）：被拒就清掉再删。
+                unlink_forced(target)
             try:
                 os.replace(source, target)
             except OSError:
