@@ -78,6 +78,9 @@ PAYLOAD_STRIP_ROOT_DIRS = frozenset({"debug", "logs", "temp", ".pycache"})
 PROJECTION_REVISION_FIELD = "projectionRevision"
 PROJECTION_CHECK_FIELD = "projectionCheck"
 PROJECTION_CHECK_CLEAN = "clean"
+# 脚本私有渠道（开发者模式「跟随来源目录」）：``dev:<视图名>``，组里只有那一个脚本。登记时
+# 由调用方显式 ``always_advance``；同版本重定 latest 时不参与、也不参选普通渠道。
+PRIVATE_CHANNEL_PREFIX = "dev:"
 
 _LINEAGE_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
 _PAYLOAD_ID_RE = re.compile(r"^[0-9A-Za-z._+-]{1,80}-[0-9a-f]{8}$")
@@ -315,6 +318,12 @@ def lineage_lock(
     directory.mkdir(parents=True, exist_ok=True)
     with DurableFileLock(directory / LINEAGE_LOCK_NAME, timeout=timeout):
         yield
+
+
+def is_private_channel(channel: str) -> bool:
+    """``channel`` 是不是脚本私有渠道（开发者模式），见 ``PRIVATE_CHANNEL_PREFIX``。"""
+
+    return str(channel or "").startswith(PRIVATE_CHANNEL_PREFIX)
 
 
 def version_newer(candidate: str, current: str) -> bool:
@@ -895,6 +904,7 @@ def register(
     origins: Mapping[str, str] | None = None,
     bundled: Mapping[str, Any] | None = None,
     projection_revision: int = 0,
+    always_advance: bool = False,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -909,6 +919,10 @@ def register(
       版本高，见 :func:`_replaces_older_projection_latest`），换成这份。
 
     ``projection_revision``：这份载荷按哪版投影规则算完整，记进清单；0 不记（旧规则）。
+
+    ``always_advance``：不比版本，这次登记的就是 ``latest[channel]``。只给开发者模式的脚本
+    私有渠道用（宿主侧 ``dev:<视图名>``，组里只有那一个脚本、来源目录就是真相，版本号
+    不变的本地修改也要换上去）；其余渠道一律不传，上面几条语义不变。
     """
 
     staging = Path(staging)
@@ -1006,7 +1020,11 @@ def register(
             if str(info_value or "").strip():
                 data[info_key] = str(info_value)
         current_latest = data["latest"].get(channel)
-        if not isinstance(current_latest, Mapping) or not current_latest.get("id"):
+        if (
+            always_advance
+            or not isinstance(current_latest, Mapping)
+            or not current_latest.get("id")
+        ):
             advanced = True
         else:
             current_version = str(current_latest.get("version") or "")
@@ -1175,6 +1193,9 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
     然后才统一切换。返回换成的 id；没变返回 None。损坏（``damaged``）或目录不在的不参选。
     """
 
+    if is_private_channel(channel):
+        # 私有渠道（开发者模式）每次导入的就是 latest，没有「同版本挑一份」这回事。
+        return None
     with lineage_lock(root, key):
         data = read_lineage(root, key)
         entry = data["latest"].get(channel)
@@ -1192,6 +1213,12 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
             if manifest is None:
                 continue
             if str(manifest.get("version") or "").strip().lstrip("vV") != version:
+                continue
+            if payload_id != str(entry["id"]) and is_private_channel(
+                str(manifest.get("channel") or "")
+            ):
+                # 开发者模式导入建出来的载荷（来源目录里本地改过、版本号没变）不参选普通
+                # 渠道的 latest：否则「文件多 / 规则新」会把同组的正式版换成某人的本地修改。
                 continue
             manifests[payload_id] = manifest
         if len(manifests) < 2:
@@ -1317,6 +1344,7 @@ __all__ = [
     "ORIGIN_IMPORT",
     "ORIGIN_PACKAGE",
     "PAYLOAD_STRIP_ROOT_DIRS",
+    "PRIVATE_CHANNEL_PREFIX",
     "PROJECTION_CHECK_CLEAN",
     "PROJECTION_CHECK_FIELD",
     "PROJECTION_REVISION_FIELD",
@@ -1333,6 +1361,7 @@ __all__ = [
     "content_id",
     "finalize",
     "inherited_projection_revision",
+    "is_private_channel",
     "latest",
     "lineage_dir",
     "lineage_identity",

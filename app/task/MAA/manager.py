@@ -32,15 +32,21 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
-from app.task.notify_core import NOTIFY_SCREENSHOT_LIMIT, screenshot_entries
+from app.task.game_update import EmulatorGameUpdateTask
+from app.task.manager_base import ScriptManagerBase
+from app.task.notify_core import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    screenshot_entries,
+)
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     read_config_source,
 )
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH
+from app.utils.game_apk import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
@@ -56,11 +62,13 @@ from .AutoProxy import (
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
     acquire_resource_access_lock,
     get_resource_write_lock,
     prepare_queue_resources,
 )
+from .tools.update_credentials import resolve_takeover_credentials
 
 logger = get_logger("MAA 调度器")
 
@@ -70,8 +78,10 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class MaaManager(TaskExecuteBase):
+class MaaManager(ScriptManagerBase):
     """MAA控制器"""
+
+    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
@@ -94,6 +104,56 @@ class MaaManager(TaskExecuteBase):
         self.config_lock_acquired = False
         self._resource_access: ExitStack = ExitStack()
         self._device_provider = device_provider
+        self.game_update_results: dict[str, GameUpdateResult] = {}
+        self._game_update_tasks: list[EmulatorGameUpdateTask] = []
+
+    async def _run_main_task(self) -> None:
+        # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
+        # 保留更新接管开关与脚本优先的 CDK，失败只记日志，不阻断本轮任务。
+        if self.task_info.mode == "AutoProxy" and self.selected_user_configs():
+
+            async def report_progress(line: str) -> None:
+                self.script_info.log = line
+
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            _, cdk = resolve_takeover_credentials(script_config)
+            await prepare_queue_resources(progress=report_progress, cdk=cdk)
+        await super()._run_main_task()
+
+    async def update_game_before_run(self) -> None:
+        """更新游戏客户端，不执行代理或账号前后置脚本。"""
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        selected = self.selected_user_configs()
+        if not selected or not script_config.get("Run", "IfCheckGameUpdate"):
+            return
+        # 更新与代理分开执行，但更新期间仍保护设备配置，避免安装到变更后的实例。
+        self.config_lock_acquired = True
+        try:
+            await script_config.lock()
+            device_provider = (
+                self._device_provider or EmulatorManager.get_emulator_instance
+            )
+            emulator = await device_provider(script_config.get("Emulator", "Id"))
+            servers = dict.fromkeys(user.get("Info", "Server") for _, user in selected)
+            for server in servers:
+                update_task = EmulatorGameUpdateTask(
+                    script_info=self.script_info,
+                    script_config=script_config,
+                    emulator_manager=emulator,
+                    server=server,
+                    package_name=ARKNIGHTS_PACKAGE_NAME[server],
+                    checker=ensure_game_updated,
+                )
+                # 先登记，取消落在启动设备期间时收尾也能找到对应任务。
+                self._game_update_tasks.append(update_task)
+                await self.spawn(update_task)
+                if update_task.result is not None:
+                    self.game_update_results[server] = update_task.result
+        except Exception as error:
+            logger.warning(f"游戏更新准备失败，沿用原代理流程: {error}")
+        finally:
+            await script_config.unlock()
+            self.config_lock_acquired = False
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
@@ -165,25 +225,11 @@ class MaaManager(TaskExecuteBase):
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-            and self.task_info.is_target_user(str(uid))
+            if self.is_user_selected(uid, config)
         )
 
     async def prepare(self):
         """运行前准备"""
-
-        # MAA 资源按需更新：仅自动代理任务触发，配置会话（含只读预览）不该
-        # 被下载阻塞；必须放在锁定配置之前——lock() 之后本安装会被资源更新
-        # 的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例扫描，自带
-        # 机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；阶段进度写进
-        # 本脚本项的日志字段，调度台运行期即可见（与 AutoProxy 的状态行同通路）。
-        if self.task_info.mode == "AutoProxy":
-
-            async def _report_progress(line: str) -> None:
-                self.script_info.log = line
-
-            await prepare_queue_resources(progress=_report_progress)
 
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -252,15 +298,9 @@ class MaaManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
@@ -337,6 +377,18 @@ class MaaManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            if self.task_info.mode == "AutoProxy":
+                current_user = self.script_info.user_list[
+                    self.script_info.current_index
+                ]
+                current_config = self.user_config[uuid.UUID(current_user.user_id)]
+                update_result = self.game_update_results.get(
+                    current_config.get("Info", "Server")
+                )
+                if not await self.check_user_before_run(
+                    current_user, current_config, game_update_result=update_result
+                ):
+                    continue
             kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,
@@ -346,8 +398,12 @@ class MaaManager(TaskExecuteBase):
             if self.task_info.mode == "ScriptConfig":
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
+            else:
+                kwargs["game_update_result"] = update_result
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
-            await self.spawn(task)
+            await self.run_user_task(
+                self.script_info.user_list[self.script_info.current_index], task
+            )
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
@@ -358,6 +414,12 @@ class MaaManager(TaskExecuteBase):
         # spawn 已等待 MAA 子任务停止并收尾；剩余步骤不再读取资源。
         # prepare 未完成、异常或主动取消也统一释放安装访问锁。
         self._resource_access.close()
+
+        if not self.prepared or not self.has_proxy_run:
+            for update_task in self._game_update_tasks:
+                await update_task.close_owned_emulator()
+        if self.maintenance_only:
+            return
 
         if not self.prepared:
             # prepare() 未走完就结束：备份目录与模拟器实例可能还没建立，没有
@@ -385,46 +447,33 @@ class MaaManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await close_emulator(self)
+            # 准备期间才开始维护时，未实际代理任何账号，不关闭原有模拟器。
+            if self.has_proxy_run:
+                await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_count = sum(
-                1 for u in self.script_info.user_list if u.status == "异常"
-            )
-            over_count = sum(
-                1 for u in self.script_info.user_list if u.status == "完成"
-            )
-            wait_count = sum(
-                1 for u in self.script_info.user_list if u.status == "等待"
-            )
-
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            result = {
-                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                "script_name": self.script_info.name or "空白",
-                "start_time": self.begin_time,
-                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": over_count,
-                "uncompleted_count": error_count + wait_count,
-                "result": self.script_info.result,
-            }
+            result = self.build_proxy_report()
 
             try:
                 # 汇总带图（MaaFW 同款）：各失败用户的现场画面，多了取最后几张
                 rollup_pairs = self._rollup_image_pairs[-NOTIFY_SCREENSHOT_LIMIT:]
                 if rollup_pairs:
                     result["screenshots"] = screenshot_entries(rollup_pairs)
-                await push_notification(
-                    mode="代理结果",
-                    title=title,
-                    message=result,
-                    user_config=None,
-                    task_info=self.task_info,
-                    images=[image for _, image in rollup_pairs],
-                )
+                if self.all_users_maintenance_skipped:
+                    await self.notify_maintenance()
+                else:
+                    await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                        images=[image for _, image in rollup_pairs],
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(
@@ -441,7 +490,9 @@ class MaaManager(TaskExecuteBase):
             swap_in_dir(self.temp_path, self.maa_set_path)
         clear_native_config_snapshot(self.temp_path)
 
-        self.script_info.status = "完成"
+        self.script_info.status = (
+            "跳过" if self.all_users_maintenance_skipped else "完成"
+        )
 
     async def on_crash(self, e: Exception):
 

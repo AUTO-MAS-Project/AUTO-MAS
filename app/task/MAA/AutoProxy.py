@@ -68,6 +68,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
+from app.utils.game_apk import GameUpdateResult
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api
@@ -79,7 +80,6 @@ from .base_preset import (
 )
 from .tools import (
     agree_bilibili,
-    ensure_game_updated,
     log_statistics,
     push_notification,
     update_maa,
@@ -105,6 +105,11 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.software_update import (
+    prepare_maa_software_update,
+    start_maa_software_update_precheck,
+)
+from .tools.update_credentials import resolve_takeover_credentials
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -907,6 +912,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
         emulator_manager: DeviceBase,
+        *,
+        game_update_result: GameUpdateResult | None = None,
     ):
         super().__init__()
 
@@ -918,6 +925,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -977,6 +985,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.log_start_time = datetime.now()
         self.if_game_hot_update = False
         self.pending_res_version = ""
+        # 更新阶段只提供资源版本信号；资源热更新仍由 MAA 原生开始唤醒执行。
+        if (
+            self.game_update_result is not None
+            and self.game_update_result.resource_version
+        ):
+            self.pending_res_version = self.game_update_result.resource_version
+            self.if_game_hot_update = (
+                self.pending_res_version
+                != self.cur_user_config.get("Data", "LastResVersion")
+            )
         self._maa_config_baseline: dict[str, dict] | None = None
         # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
         # 见 _collect_cultivate_archive）；
@@ -1032,6 +1050,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     f"开始日={start_weekday}，本周记录="
                     f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
                 )
+
+        # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
+        # 缓存，收尾在 update_maa() 前由 prepare_maa_software_update 消费；
+        # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
+        # 只写日志。通道偏好读任务前的原生配置快照——会话期间安装目录 config
+        # 是 MAS 托管副本，且预检查发生在快照提交之后、本轮下发之前
+        start_maa_software_update_precheck(
+            self.maa_root_path,
+            config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            config=self.script_config,
+        )
 
     def _resolve_log_file_path(self) -> Path:
         return self.maa_log_path
@@ -1157,12 +1186,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     except Exception as e:
                         logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
-                # 需要用户手动更新游戏时重试无意义，直接结束本模式的重试
-                if self.script_config.get(
-                    "Run", "IfCheckGameUpdate"
-                ) and not await self.handle_game_update(emulator_info):
-                    break
-
                 await self.set_maa(emulator_info)
 
                 # 本轮 MAA 的日志从启动前的文件末尾开始读：gui.log 追加写且跨
@@ -1235,6 +1258,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if self.cur_user_config.get("Info", "IfQuickConfig"):
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
+
+                # 本体更新登记：把 MAS 共享缓存中的完整包复制进安装目录并写入
+                # 上游待更新字段；安装仍由下方未改动的 update_maa() 拉起 MAA
+                # 官方更新链完成。准备内部吞掉一切失败只写日志（主动取消除外），
+                # 不改变 update_maa() 的既有行为（含消费 MAA 原生自有的待更新包）。
+                await prepare_maa_software_update(
+                    self.maa_root_path,
+                    config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    config=self.script_config,
+                )
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
@@ -2001,6 +2034,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "AutoInstallUpdatePackage": False,
             }
         )
+        # MAS 已接管本体更新时（脚本开启「更新接管」且有生效 CDK），压制 MAA
+        # 会话内自下载，避免两个更新器同时取包；只写托管会话配置，任务结束
+        # 换回原生快照，不影响用户单独运行 MAA 时的更新偏好
+        takeover, _ = resolve_takeover_credentials(self.script_config)
+        if takeover:
+            global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
+            gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         if Config.get("Function", "IfSilence"):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
@@ -2121,73 +2161,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(
                 f"用户 {self.cur_user_item.name} 的 MAA 配置变更已回写存档: {name}"
             )
-
-    async def handle_game_update(self, emulator_info: DeviceInfo) -> bool:
-        """启动 MAA 前接管游戏更新。
-
-        Returns:
-            bool: 是否可以继续本次代理；``False`` 表示需要用户手动更新游戏。
-        """
-
-        self.script_info.log = "正在检查游戏更新"
-
-        async def report(text: str) -> None:
-            self.script_info.log = text
-
-        try:
-            result = await ensure_game_updated(
-                adb_path=self.emulator_manager.get_adb_path(),
-                adb_address=emulator_info.adb_address,
-                server=self.cur_user_config.get("Info", "Server"),
-                package_name=ARKNIGHTS_PACKAGE_NAME[
-                    self.cur_user_config.get("Info", "Server")
-                ],
-                apk_dir=Path.cwd() / "data/GameApk",
-                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
-                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
-                progress=report,
-            )
-        except Exception as e:
-            # 检查本身异常不应阻断代理，交回 MAA 原有流程判定
-            logger.opt(exception=True).warning(f"游戏更新检查异常: {e}")
-            return True
-
-        logger.info(f"游戏更新检查结果: {result.status} - {result.message}")
-
-        # 服务端资源版本与上次成功代理时不一致，说明本次开始唤醒会触发资源热更新
-        if result.resource_version:
-            self.pending_res_version = result.resource_version
-            self.if_game_hot_update = (
-                result.resource_version
-                != self.cur_user_config.get("Data", "LastResVersion")
-            )
-            if self.if_game_hot_update:
-                logger.info(
-                    f"检测到待下载的游戏资源热更新: {result.resource_version}，"
-                    f"本次超时限制放宽至 {self.script_config.get('Run', 'GameUpdateTimeLimit')} 分钟"
-                )
-
-        if result.status != "NeedManualUpdate":
-            return True
-
-        self.cur_user_log.content = [result.message]
-        self.cur_user_log.status = "游戏需要手动更新"
-        self.script_info.log = result.message
-
-        await Publisher.send(
-            id=self.task_info.task_id,
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=result.message),
-        )
-        await close_emulator(self)
-
-        await Notify.push_plyer(
-            "游戏需要手动更新！",
-            result.message,
-            f"{self.cur_user_item.name}的游戏需要手动更新",
-            3,
-        )
-        return False
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""

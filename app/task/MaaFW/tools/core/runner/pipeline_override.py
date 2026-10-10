@@ -169,16 +169,26 @@ class MaaFWPipelineOverrideBuilder:
         self,
         task_name: str,
         options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None = None,
     ) -> MaaFWPipelineOverride:
+        """``global_options``：用户的全局表，global_option 那一组（连同它展开的子选项）按它
+        取值；其余三组按 ``options``（这个任务自己的值）。不给时四组都按 ``options``。
+
+        与 PI / MXU / MaaPiCli 一致：同一个选项既在 global_option、又在任务 / 资源 / 控制器
+        自己的 option 里时，两组各按各的值出一份覆盖，后叠的（任务的）盖住先叠的。
+        """
+
         task_definition = self._get_task_definition(task_name)
         if task_definition is None:
             return {}
 
         merged = copy.deepcopy(task_definition.pipeline_override) or {}
-        for option_names in self._task_option_groups(task_definition):
+        for option_names, values in self._task_option_group_values(
+            task_definition, options, global_options
+        ):
             merged = deep_merge_pipeline_override(
                 merged,
-                self._build_option_group_override(option_names, options),
+                self._build_option_group_override(option_names, values),
             )
         return merged
 
@@ -186,6 +196,7 @@ class MaaFWPipelineOverrideBuilder:
         self,
         task_name: str,
         options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None = None,
     ) -> list[str]:
         """这个任务建覆盖时实际会生效的选项名（按出现顺序去重）。
 
@@ -199,7 +210,33 @@ class MaaFWPipelineOverrideBuilder:
         if task_definition is None:
             return []
         names: list[str] = []
-        for option_names in self._task_option_groups(task_definition):
+        for option_names, values in self._task_option_group_values(
+            task_definition, options, global_options
+        ):
+            self._collect_active_option_names(option_names, values, set(), names)
+        return names
+
+    def active_global_option_names(
+        self, global_options: dict[str, MaaFWTaskOptionValue]
+    ) -> list[str]:
+        """global_option 那一组按全局表实际会生效的选项名（口径同 ``active_option_names``）。"""
+
+        names: list[str] = []
+        self._collect_active_option_names(
+            self.interface_model.global_option or [], global_options, set(), names
+        )
+        return names
+
+    def active_task_own_option_names(
+        self, task_name: str, options: dict[str, MaaFWTaskOptionValue]
+    ) -> list[str]:
+        """resource / controller / task 三组按任务自己的值实际会生效的选项名（不含全局组）。"""
+
+        task_definition = self._get_task_definition(task_name)
+        if task_definition is None:
+            return []
+        names: list[str] = []
+        for option_names in self._task_option_groups(task_definition)[1:]:
             self._collect_active_option_names(option_names, options, set(), names)
         return names
 
@@ -231,6 +268,20 @@ class MaaFWPipelineOverrideBuilder:
             self._get_active_controller_type(),
             referenced_values,
         )
+
+    def _task_option_group_values(
+        self,
+        task_definition: MaaFWTask,
+        options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None,
+    ) -> list[tuple[list[str], dict[str, MaaFWTaskOptionValue]]]:
+        """四组选项名各配上取值来源：全局组用全局表（没给就用 ``options``），其余用 ``options``。"""
+
+        groups = self._task_option_groups(task_definition)
+        return [
+            (groups[0], options if global_options is None else global_options),
+            *((names, options) for names in groups[1:]),
+        ]
 
     def _task_option_groups(self, task_definition: MaaFWTask) -> list[list[str]]:
         resource_definition = self._get_resource_definition()

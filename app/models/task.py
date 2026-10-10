@@ -63,14 +63,19 @@ class UserItem:
     push_log_mode: str = field(
         default="汇总"
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
+    # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
+    maintenance_skipped: bool = field(default=False, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
+        previous = getattr(self, name, None)
         super().__setattr__(name, value)
         # 监听所有字段变化
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
+                if name == "status" and previous != value:
+                    ti.on_status_changed(self, previous, value)
                 ti.schedule_on_change()
 
     @property
@@ -100,6 +105,7 @@ class ScriptItem:
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
+        previous = getattr(self, name, None)
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定
@@ -108,6 +114,8 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
+            if name == "status" and previous != value:
+                self.task_info.on_status_changed(self, previous, value)
             self.task_info.schedule_on_change()
 
     @property
@@ -204,6 +212,17 @@ class TaskItem(ABC):
     async def on_change(self):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
+
+    def on_status_changed(
+        self, item: UserItem | ScriptItem, previous: str | None, status: str
+    ) -> None:
+        """同步报告状态变化；副作用由宿主调度层实现。"""
+
+    def on_user_execution_started(self, script: ScriptItem) -> None:
+        """账号执行开始，区分重试中的状态与最终结果。"""
+
+    def on_user_execution_finished(self, script: ScriptItem) -> None:
+        """账号执行及收尾完成。"""
 
     def schedule_on_change(self) -> None:
         """合并高频字段变化，并由应用任务注册表持有异步通知。"""
@@ -429,7 +448,22 @@ class TaskExecuteBase(ABC):
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
-        return self._task_group.create_task(child._execute_task(self._task_group))
+        # 脚本管理器的子任务是账号执行；根调度器的子任务是脚本管理器。
+        # 在真正收尾后报告终态，避免把重试期间临时的「异常」当作最终失败。
+        script = getattr(self, "script_info", None)
+        owner = script.task_info if isinstance(script, ScriptItem) else None
+        if owner is not None:
+            owner.on_user_execution_started(script)
+        task_group = self._task_group
+
+        async def run_child() -> None:
+            try:
+                await child._execute_task(task_group)
+            finally:
+                if owner is not None:
+                    owner.on_user_execution_finished(script)
+
+        return task_group.create_task(run_child())
 
     def execute(self):
         if self.task is not None and not self.task.done():
