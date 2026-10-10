@@ -867,6 +867,7 @@ class MaaFWRuntimePool:
                     self._sweep_staging()
                 )
                 account(staging_footprint)
+                account(self._sweep_pycache_mirrors())
             return {
                 "dryRun": bool(dry_run),
                 "graceSeconds": float(grace_seconds),
@@ -1049,6 +1050,62 @@ class MaaFWRuntimePool:
                 freed += max(0, exclusive - left_exclusive)
                 shared += max(0, linked - left_linked)
         return swept, residue, (freed, shared)
+
+    def _sweep_pycache_mirrors(self) -> tuple[int, int]:
+        """清掉 ``<pool>/.pycache`` 里源目录已经不在的那几支，返回释放的字节。
+
+        worker 与 binding 自检设了 ``PYTHONPYCACHEPREFIX=<pool>/.pycache``（见
+        ``binding.pool_pycache_prefix``），前缀树按源码绝对路径（去掉盘符）镜像：base runtime、
+        各版本 binding 和自检用过的暂存目录都在里面各有一支。回收删掉源目录之后它们没人
+        再用，原来一直堆着。只在持池锁时调用：runtime 安装与 binding 换入都持这把锁，源目录
+        还在（或暂存条目还在册）的一律不碰。
+        """
+
+        from . import binding as binding_module
+
+        freed = 0
+        shared = 0
+        prefix_root = binding_module.pycache_directory(self.root)
+        if not prefix_root.is_dir() or prefix_root.is_symlink():
+            return freed, shared
+        for name in (
+            RUNTIME_DIRECTORY_NAME,
+            binding_module.BINDINGS_DIRECTORY_NAME,
+            binding_module.NATIVE_DIRECTORY_NAME,
+            STAGING_DIRECTORY_NAME,
+        ):
+            source_dir = self.root / name
+            relative = os.path.splitdrive(str(source_dir))[1].lstrip("\\/")
+            mirror_dir = prefix_root / relative
+            try:
+                assert_existing_chain_has_no_reparse(mirror_dir)
+            except MaaFWRuntimePoolError:
+                continue
+            if not mirror_dir.is_dir():
+                continue
+            for child in sorted(mirror_dir.iterdir()):
+                if child.is_symlink():
+                    continue
+                source = source_dir / child.name
+                if source.exists() or source.is_symlink() or is_active_staging(source):
+                    continue
+                exclusive, linked = _directory_footprint(child)
+                if child.is_file():
+                    try:
+                        child.unlink()
+                    except OSError:
+                        continue
+                    freed += exclusive
+                    shared += linked
+                    continue
+                if remove_tree_best_effort(child):
+                    freed += exclusive
+                    shared += linked
+                else:
+                    left_exclusive, left_linked = _directory_footprint(child)
+                    freed += max(0, exclusive - left_exclusive)
+                    shared += max(0, linked - left_linked)
+        return freed, shared
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so

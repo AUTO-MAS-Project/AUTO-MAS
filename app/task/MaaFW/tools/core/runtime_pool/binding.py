@@ -12,8 +12,9 @@ runner venv（base）里不再装 ``maafw``：worker 靠 ``PYTHONPATH`` 里的 b
 来源顺序（方案 D3）：PyPI / 镜像官方 wheel（平台标签 ``win_amd64``，MFW 只支持 x64）
 → MaaFramework tag 源码（无 DLL，只对自带原生库的项目有意义）。每个目录都带全量
 清单（相对路径 + 大小 + sha256），命中判据是清单全量校验通过，不合即当不存在重建；
-校验结果按进程缓存。目录里从不写 pyc：worker 与自检子进程都设
-``PYTHONPYCACHEPREFIX=<pool>/.pycache``，清单才稳定。
+校验结果按进程缓存。worker 与自检子进程设 ``PYTHONPYCACHEPREFIX=<pool>/.pycache``，pyc
+不进 binding 目录；池根太长时不设（``pool_pycache_prefix``），pyc 落进源码旁的
+``__pycache__``——清单与校验本来就不算它。
 
 本模块只用标准库 + ``packaging``（方案 D12）；不读 ``Config``，代理、索引候选、离线
 标记都由调用方传入。
@@ -76,6 +77,7 @@ from .binding_fallback import (
 )
 from .host_environment import (
     LOOPBACK_NO_PROXY_HOSTS,
+    pycache_prefix_fits,
     strip_host_python_environment,
 )
 
@@ -181,6 +183,27 @@ def native_directory(pool_root: Path, version: str) -> Path:
 
 def pycache_directory(pool_root: Path) -> Path:
     return Path(pool_root) / PYCACHE_DIRECTORY_NAME
+
+
+#: 前缀树里最深的一支：base venv 的 site-packages（numpy、pydantic 的 pyc 都写进前缀树，
+#: 池根在路径里出现两遍）。runtime id 定长，所以按形状算长度即可。
+_BASE_SITE_PACKAGES_SHAPE = os.path.join(
+    "runtimes", "maafw-runtime-" + "0" * 24, "environment", "Lib", "site-packages"
+)
+
+
+def pool_pycache_prefix(pool_root: Path) -> Path | None:
+    """``<pool>/.pycache``；池根长到前缀树会撞 MAX_PATH、又没开长路径支持时返回 None。
+
+    超过 MAX_PATH 时解释器写 pyc 静默失败、每次起 worker 都全量重编译（每用户安装目录
+    ``%LOCALAPPDATA%\\Programs\\AUTO-MAS`` 下就会撞上），不如不设前缀。
+    """
+
+    prefix = pycache_directory(pool_root)
+    deepest = os.path.join(str(Path(pool_root)), _BASE_SITE_PACKAGES_SHAPE)
+    if not pycache_prefix_fits(prefix, deepest):
+        return None
+    return prefix
 
 
 def directory_version(name: str) -> str | None:
@@ -1273,13 +1296,16 @@ def binding_environment_variables(
 
     ``MAAFW_BINARY_PATH`` = 副本自带的 ``maafw/`` 或池里的 native 目录，皆无则不设（import 期
     退到 binding 目录里的 ``maa/bin`` 占位）。``PYTHONPYCACHEPREFIX`` 让 pyc 落到池的
-    ``.pycache``，binding 目录的清单才稳定。
+    ``.pycache``；池根太长、前缀树会撞 MAX_PATH 时不设（见 ``pool_pycache_prefix``），
+    pyc 退回源码旁的 ``__pycache__``——binding 清单与校验本来就不算 ``__pycache__``。
     """
 
     env = {
-        "PYTHONPYCACHEPREFIX": str(pycache_directory(pool_root)),
         "AUTO_MAS_MAAFW_BINDING_DIR": str(binding_dir),
     }
+    prefix = pool_pycache_prefix(pool_root)
+    if prefix is not None:
+        env["PYTHONPYCACHEPREFIX"] = str(prefix)
     binary_path = project_runtime_path or native_dir
     if binary_path is not None:
         env["MAAFW_BINARY_PATH"] = str(binary_path)
@@ -1991,6 +2017,7 @@ __all__ = [
     "normalize_version",
     "parse_simple_page",
     "prune_selections",
+    "pool_pycache_prefix",
     "pycache_directory",
     "release_binding",
     "remember_selection",
