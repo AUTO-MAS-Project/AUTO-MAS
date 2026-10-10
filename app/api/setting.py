@@ -22,6 +22,7 @@
 
 
 import asyncio
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Body
@@ -37,10 +38,13 @@ from app.models.schema import (
     NotifyChannelOptionOut,
     NotifyChannelOut,
     NotifyChannelsOut,
+    ObsReplayCheckOut,
+    ObsReplaySaveOut,
     OutBase,
     PatternDebugIn,
     PatternDebugOut,
     PatternDebugResultItem,
+    ReplayRecord,
     SettingGetOut,
     SettingUpdateIn,
     VirtualDisplayCheckOut,
@@ -62,6 +66,50 @@ from app.utils import debug_pattern, get_logger
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
+
+
+@router.post(
+    "/obs/check",
+    tags=["Get"],
+    response_model=ObsReplayCheckOut,
+    operation_id="check_obs_replay_api_setting_obs_check_post",
+    summary="检查 OBS 回放缓冲",
+)
+async def check_obs_replay() -> ObsReplayCheckOut:
+    from app.services.obs_replay import ObsReplay
+
+    try:
+        return await ObsReplay.check(Config.obs_replay_options())
+    except Exception as error:
+        return ObsReplayCheckOut(
+            code=500,
+            status="error",
+            message=str(error),
+            directory=str(ObsReplay.directory),
+        )
+
+
+@router.post(
+    "/obs/save",
+    tags=["Action"],
+    response_model=ObsReplaySaveOut,
+    operation_id="save_obs_replay_api_setting_obs_save_post",
+    summary="试存 OBS 回放",
+)
+async def save_obs_replay() -> ObsReplaySaveOut:
+    from app.services.obs_replay import ObsReplay
+
+    try:
+        record = ReplayRecord(
+            replayId=str(uuid.uuid4()),
+            scriptName="手动测试",
+            failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            reason="试存 OBS 回放",
+        )
+        replay = await ObsReplay.save(Config.obs_replay_options(), record)
+        return ObsReplaySaveOut(replay=replay)
+    except Exception as error:
+        return ObsReplaySaveOut(code=500, status="error", message=str(error))
 
 
 @router.get(

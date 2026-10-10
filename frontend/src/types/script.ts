@@ -286,7 +286,7 @@ export interface MaaFWScriptConfig {
     IfAutoUpdate?: boolean
   }
   /**
-   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上，没有开关。
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
    * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
    */
   Embedded: {
@@ -296,6 +296,11 @@ export interface MaaFWScriptConfig {
     ImportedAt: string
     /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
     Report: string
+    /**
+     * 跟随来源目录（开发者模式）：开着时每次运行前来源目录有变化就重新导入，不做项目更新，
+     * 不与同项目其它脚本共用版本。唯一的开关。
+     */
+    FollowSource: boolean
   }
   Run: {
     ProxyTimesLimit: number
@@ -334,13 +339,18 @@ export interface MaaFWScriptConfig {
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
 
 /**
- * 三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
+ * 前三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
  * 首份的 id 就是裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
  */
 export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /**
+   * 全局选项（interface 的 global_option 及其子选项）的值：每个用户一份、所有任务共用，
+   * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。
+   */
+  globalOptions?: Record<string, MaaFWTaskOptionValue>
   /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
   taskLabels?: Record<string, string>
 }

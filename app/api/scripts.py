@@ -1132,6 +1132,26 @@ async def reimport_maafw_embedded(
 
 
 @router.post(
+    "/maafw/embedded/sync",
+    tags=["MaaFW"],
+    summary="立即从来源目录同步（跟随来源目录 / 源码形态）",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def sync_maafw_embedded(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+
+    只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
+    ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
+    """
+
+    reply = await maafw_embedded_api.sync_embedded(payload.scriptId)
+    return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
     "/maafw/embedded/sources",
     tags=["MaaFW"],
     summary="列出可作为克隆来源的其它 MFW 脚本",

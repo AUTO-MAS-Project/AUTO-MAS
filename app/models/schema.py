@@ -1258,6 +1258,22 @@ class GlobalConfig_Function(BaseModel):
     )
 
 
+class GlobalConfig_Replay(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="失败时保存 OBS 回放")
+    Port: Optional[int] = Field(
+        default=None, ge=1, le=65535, description="本机 OBS WebSocket 端口"
+    )
+    Password: Optional[str] = Field(
+        default=None, description="OBS 密码，仅用于写入；省略时保留"
+    )
+    PasswordConfigured: Optional[bool] = Field(
+        default=None, description="OBS 密码是否已配置，只读"
+    )
+    MaxReplayCount: Optional[int] = Field(
+        default=None, ge=1, le=20, description="最多保留的回放副本数"
+    )
+
+
 class GlobalConfig_Display(BaseModel):
     IfEnableVirtualDisplay: Optional[bool] = Field(
         default=None,
@@ -1469,6 +1485,9 @@ class GlobalConfig_Update(BaseModel):
 
 
 class GlobalConfig(BaseModel):
+    Replay: Optional[GlobalConfig_Replay] = Field(
+        default=None, description="OBS 失败回放配置"
+    )
     Function: Optional[GlobalConfig_Function] = Field(
         default=None, description="功能相关配置"
     )
@@ -4072,6 +4091,10 @@ class MaaFWConfig_Embedded(BaseModel):
         default=None,
         description="投影报告 JSON 文本：省下多少、外壳家族、排除条数与原因",
     )
+    FollowSource: Optional[bool] = Field(
+        default=None,
+        description="跟随来源目录（开发者模式）：运行前来源目录有变化就重新导入，不做项目更新，不与同项目其它脚本共用版本",
+    )
 
 
 class MaaFWConfig_Selection(BaseModel):
@@ -4328,10 +4351,11 @@ class MaaFWOptionInfo(BaseModel):
 
 
 class MaaFWTaskSnapshot(BaseModel):
-    """ProjectInterface 预设转换出的任务快照，三个字段的键都是任务 name。
+    """ProjectInterface 预设转换出的任务快照，前三个字段的键都是任务 name。
 
     与用户自己的任务快照同构。用户队列允许同一个任务加多份，那边的键是任务
     实例 id（首份就是任务 name）；预设里的重复任务会被折叠，因此这里只有 name。
+    全局选项（global_option 及其子选项）的值不在 taskOptions 里，在 globalOptions。
     """
 
     taskOrder: List[str] = Field(default_factory=list, description="任务 name 顺序")
@@ -4340,6 +4364,9 @@ class MaaFWTaskSnapshot(BaseModel):
     )
     taskOptions: Dict[str, Dict[str, Union[str, List[str], Dict[str, str]]]] = Field(
         default_factory=dict, description="任务选项值"
+    )
+    globalOptions: Dict[str, Union[str, List[str], Dict[str, str]]] = Field(
+        default_factory=dict, description="全局选项值（预设里写了的才有）"
     )
 
 
@@ -4470,6 +4497,14 @@ class MaaFWEmbeddedStatusData(BaseModel):
     importedAt: str = Field(default="", description="导入时间")
     report: Optional[MaaFWEmbeddedProjection] = Field(
         default=None, description="投影报告"
+    )
+    followSourceSyncedAt: str = Field(
+        default="",
+        description="跟随来源目录（开发者模式）下视图上次从来源目录同步的时间；没同步过为空",
+    )
+    sourceForm: bool = Field(
+        default=False,
+        description="项目按源码形态导入（interface 在 assets/、Agent 在源码目录）：始终跟随来源目录，不做项目更新",
     )
 
 
@@ -5084,6 +5119,37 @@ PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
 PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
 
 
+class ReplayRecord(BaseModel):
+    replayId: str = Field(..., description="回放唯一标识")
+    taskId: str | None = Field(default=None, description="调度任务标识")
+    scriptId: str | None = Field(default=None, description="脚本标识")
+    userId: str | None = Field(default=None, description="账号标识")
+    scriptName: str = Field(default="", description="脚本名称")
+    userName: str = Field(default="", description="账号名称")
+    failedAt: str = Field(..., description="失败时间")
+    reason: str = Field(..., description="失败原因")
+    filePath: str = Field(default="", description="MAS 保存的回放副本")
+    historyPaths: list[str] = Field(
+        default_factory=list, description="本轮关联历史记录"
+    )
+
+
+class ObsReplayCheckOut(OutBase):
+    connected: bool = False
+    replayActive: bool = False
+    version: str = ""
+    directory: str = ""
+
+
+class ObsReplaySaveOut(OutBase):
+    replay: ReplayRecord | None = None
+
+
+class ReplayListOut(OutBase):
+    replays: list[ReplayRecord] = Field(default_factory=list)
+    directory: str = ""
+
+
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
     status: Literal["DONE", "ERROR"] = Field(..., description="状态")
@@ -5103,6 +5169,9 @@ class PullCountStatistics(BaseModel):
 
 
 class HistoryData(BaseModel):
+    replays: list[ReplayRecord] = Field(
+        default_factory=list, description="本轮失败回放"
+    )
     index: Optional[List[HistoryIndexItem]] = Field(
         default=None, description="历史记录索引列表"
     )

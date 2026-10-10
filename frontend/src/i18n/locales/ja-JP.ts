@@ -1758,6 +1758,18 @@ export default {
     maafwDirectoryLockedHint:
       'プロジェクトは AUTO-MAS 自身のフォルダーへ取り込み済みで、実行も更新もそこで行います。元フォルダーは削除しても構いません。別のプロジェクトを使うには新しいマネージドスクリプトを作成してください',
     maafwImportingCopy: 'プロジェクトを取り込み中...',
+    maafwFollowSource: 'ソースディレクトリに追従（開発者モード）',
+    maafwFollowSourceHint:
+      'オンにすると、ソースディレクトリで変更したファイルが次回の実行から反映されます（実行前に変更を検出して取り込み直します。「今すぐ同期」でも可）。プロジェクトの更新は行わず、同じプロジェクトの他のスクリプトとバージョンを共有しません。オフにすると、選択中の更新チャネルのバージョンに戻ります',
+    maafwFollowSourceStatus: '追従先 {path} · 最終同期 {time}',
+    maafwFollowSourceNotSynced:
+      '追従先 {path} · 未同期、次回の実行前にソースディレクトリから取り込みます',
+    maafwFollowSourceMissing:
+      'ソースディレクトリが見つかりません。実行時は現在のコピーをそのまま使います',
+    maafwFollowSourceSyncNow: '今すぐ同期',
+    maafwSourceFormTag: 'ソース形式',
+    maafwSourceFormHint:
+      'ソース形式で取り込みました（interface は assets/、Agent はソースツリー内、Python と MaaFramework は同梱なし）：常にソースディレクトリに追従し、変更は次回の実行から反映されます（「今すぐ同期」でも可）。Agent は requirements.txt から隔離環境を作ります。プロジェクトの更新は行わず、同じプロジェクトの他のスクリプトとバージョンを共有しません',
     maafwAccountRecordTooltip:
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
     maafwUnselectableTaskNotice: '「{tasks}」{reason}。MAS は実行時にスキップします',
@@ -2172,6 +2184,8 @@ export default {
     depotDeleteSelectedConfirm: '選択した {n} 件の倉庫保持プランを削除しますか？',
     maafwNoMatchingSettings: '一致する設定項目がありません',
     maafwNoConfigurableOptions: 'このタスクに設定できる項目はありません',
+    maafwGlobalOptions: 'グローバル設定',
+    maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
     unknownType: '不明',
@@ -2684,6 +2698,25 @@ export default {
       searchTip: '検索: Ctrl+F',
       emptyLog: 'ログがありません',
     },
+    replays: {
+      fetchFailed: 'リプレイを取得できませんでした',
+      openList: '失敗リプレイ',
+      title: '失敗リプレイ',
+      hint: '最近の失敗リプレイのコピーをここに保持します。元の OBS ファイルは MAS が削除しません。',
+      openDirectory: 'リプレイフォルダーを開く',
+      account: 'アカウント',
+      play: '再生',
+      locate: '場所を表示',
+      associated: '関連リプレイ {count} 件',
+      empty: '保持された失敗リプレイはありません',
+      retry: '再試行',
+      played: 'リプレイファイルを開きました',
+      directoryOpened: 'リプレイフォルダーを開きました',
+      openFileUnsupported: 'この環境ではリプレイファイルを開けません',
+      openFileFailed: 'リプレイファイルを開けませんでした',
+      openDirectoryUnsupported: 'この環境ではリプレイフォルダーを開けません',
+      openDirectoryFailed: 'リプレイフォルダーを開けませんでした',
+    },
     preset: {
       today: '今日',
       yesterday: '昨日',
@@ -3072,6 +3105,19 @@ export default {
     couldNotCheckUpdates: '更新の確認に失敗しました',
     couldNotLoadPlan: 'プランを取得できませんでした',
     sendIssueBundleMas: '問題報告パッケージを MAS グループに送ってください',
+    issueReportSuccess: '{label} の問題報告パッケージを書き出しました',
+    issueReportFailed: '{label} の問題報告パッケージを書き出せませんでした',
+    zipArchive: 'ZIP アーカイブ',
+    maaIssueReportSuccess: 'MAA の問題報告パッケージを書き出しました（{count} ファイル）',
+    maaIssueReportIncomplete:
+      'MAA のログとスクリーンショットを書き出しました（{count} ファイル）。{incompleteCount} ファイルが見つからない、一部のみ収録、または収録できませんでした',
+    maaIssueReportNoInstallation:
+      'MAA のインストール先が設定されていません。スクリプト設定を確認してください。',
+    maaIssueReportNoFiles: '書き出せる MAA のログやスクリーンショットがありません',
+    maaIssueReportFailed:
+      'MAA のログとスクリーンショットを書き出せませんでした。スクリプトのパス、保存先、ログを確認してから再試行してください。',
+    issueReportGuide:
+      '問題報告パッケージ「{fileName}」を作成しました。元の ZIP ファイルを AUTO-MAS 公式 QQ グループ（957750551）に直接送ってください。解凍や編集をしたり、ログの本文だけをコピーして送ったりしないでください。',
     pickExeFile: 'exe ファイルを選択してください',
     accountGroupDeleted: 'アカウントを削除しました',
     input: '入力',
@@ -3968,6 +4014,53 @@ export default {
       personalMssOff: '個人版 MaaStellaSora の専用進行を無効にしました',
       personalMssFailed: '設定に失敗しました。もう一度お試しください',
     },
+    replay: {
+      section: '失敗リプレイ',
+      intro:
+        'タスクが最終的に失敗したとき、実行中の OBS リプレイバッファからトラブル確認用の動画を保存します。',
+      obsGuide:
+        'OBS 側でキャプチャソースとエンコーダーを設定し、リプレイバッファと自動起動を有効にしてください。',
+      durationGuide:
+        'リプレイバッファは 5～30 分を推奨します。MAS はこの PC の OBS にのみ接続します。',
+      enable: '失敗リプレイを有効化',
+      enableTip: '無効にすると OBS に接続せず、タスク失敗時にもリプレイを保存しません。',
+      port: 'OBS WebSocket ポート',
+      portTip: 'OBS の既定ポートは 4455 です。OBS WebSocket のポートと合わせてください。',
+      maxCount: '保持する最大数',
+      maxCountTip: 'MAS が管理するリプレイのコピーを 1～20 件保持し、古いものを自動削除します。',
+      password: 'OBS WebSocket パスワード',
+      passwordTip:
+        '入力欄を空のまま保存せずに離れると現在のパスワードを保持します。削除するには「パスワードを消去」を使います。',
+      passwordPlaceholder: '新しいパスワード（空欄なら変更しない）',
+      savePassword: 'パスワードを保存',
+      clearPassword: 'パスワードを消去',
+      clearPasswordTitle: 'OBS パスワードを消去',
+      clearPasswordContent: '消去後、MAS はパスワードなしで OBS に接続します。続行しますか？',
+      passwordConfigured: 'パスワード設定済み',
+      passwordNotConfigured: 'パスワード未設定',
+      passwordEmpty:
+        'パスワードを入力するか、「パスワードを消去」で現在のパスワードを削除してください',
+      passwordSaved: 'OBS パスワードを保存しました',
+      passwordCleared: 'OBS パスワードを消去しました',
+      actions: '接続とテスト',
+      check: '接続を確認',
+      saveTest: 'リプレイを試保存',
+      openDirectory: 'リプレイフォルダーを開く',
+      checkDone: 'OBS 接続の確認が完了しました',
+      checkFailed: 'OBS 接続の確認に失敗しました',
+      saveDone: 'リプレイを保存しました',
+      saveEmpty: 'OBS から保存できるリプレイファイルが返されませんでした',
+      saveFailed: 'テストリプレイの保存に失敗しました',
+      directoryUnavailable: '開けるリプレイフォルダーがまだありません',
+      openDirectoryFailed: 'リプレイフォルダーを開けませんでした',
+      checkPassed: 'OBS に接続し、リプレイバッファが有効です',
+      checkIssue: 'OBS の接続またはリプレイバッファを確認してください',
+      connection: '接続状態',
+      buffer: 'リプレイバッファ',
+      active: '有効',
+      inactive: '無効',
+      version: 'OBS バージョン',
+    },
     display: {
       section: '仮想ディスプレイ',
       intro:
@@ -4090,6 +4183,7 @@ export default {
       logSection: 'MAS 本体のログ書き出し',
       exportLog: 'ログのアーカイブを書き出す',
       exportMaaEnd: 'MaaEnd の問題報告パッケージを書き出す',
+      exportMaa: 'MAA の問題報告パッケージを書き出す',
       issueSection: '専用の問題報告パッケージ',
       exportOkww: 'ok-ww の問題報告パッケージを書き出す',
       exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',

@@ -16,7 +16,14 @@ import type {
 export type MaaFWEmbeddedStatus = Required<
   Pick<
     MaaFWEmbeddedStatusData,
-    'copyPath' | 'copyHealthy' | 'sourcePath' | 'sourceExists' | 'sourceVersion' | 'importedAt'
+    | 'copyPath'
+    | 'copyHealthy'
+    | 'sourcePath'
+    | 'sourceExists'
+    | 'sourceVersion'
+    | 'importedAt'
+    | 'followSourceSyncedAt'
+    | 'sourceForm'
   >
 > & { report: MaaFWEmbeddedStatusData['report'] }
 
@@ -27,6 +34,8 @@ export const EMPTY_EMBEDDED_STATUS: MaaFWEmbeddedStatus = {
   sourceExists: false,
   sourceVersion: '',
   importedAt: '',
+  followSourceSyncedAt: '',
+  sourceForm: false,
   report: null,
 }
 
@@ -73,6 +82,16 @@ export function useMaaFWEmbeddedApi() {
     return response.data ?? []
   }
 
+  /**
+   * 跟随来源目录（开发者模式 / 源码形态）时立即从来源目录重导：不看签名，内容没变就只刷新同步时间。
+   * 成功的 message 就是结果（变了哪些文件 / 内容未变化）；运行中、被占用、来源不在时抛带原因的 Error。
+   */
+  const syncEmbedded = async (scriptId: string) =>
+    unwrap(
+      await MaaFwService.syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost({ scriptId }),
+      '同步失败'
+    )
+
   /** 从另一个脚本的副本克隆：同一项目再建一个脚本，不用重新选目录投影。 */
   const cloneEmbedded = async (scriptId: string, sourceScriptId: string) =>
     unwrap(
@@ -83,7 +102,13 @@ export function useMaaFWEmbeddedApi() {
       '复用项目失败'
     )
 
-  return { getEmbeddedStatus, reimportEmbedded, listEmbeddedSources, cloneEmbedded }
+  return {
+    getEmbeddedStatus,
+    reimportEmbedded,
+    syncEmbedded,
+    listEmbeddedSources,
+    cloneEmbedded,
+  }
 }
 
 /** 把字节数变成给人看的 MB / GB；报告里的数值都是整数字节。 */

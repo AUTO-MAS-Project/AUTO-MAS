@@ -112,6 +112,30 @@
                 }}
               </a-button>
             </a-popover>
+            <a-popover v-if="replays.length > 0" placement="bottomLeft" trigger="click">
+              <template #content>
+                <div class="replay-popover">
+                  <div v-for="replay in replays" :key="replay.replayId" class="replay-entry">
+                    <div class="replay-entry-info">
+                      <strong>{{ replay.scriptName }}</strong>
+                      <span>{{ formatBackendDateTime(replay.failedAt) }}</span>
+                    </div>
+                    <a-space size="small">
+                      <a-button size="small" type="link" @click="$emit('open-replay', replay)">
+                        {{ t('history.replays.play') }}
+                      </a-button>
+                      <a-button size="small" type="link" @click="$emit('locate-replay', replay)">
+                        {{ t('history.replays.locate') }}
+                      </a-button>
+                    </a-space>
+                  </div>
+                </div>
+              </template>
+              <a-button size="small" class="drop-btn">
+                <PlayCircleOutlined />
+                {{ t('history.replays.associated', { count: replays.length }) }}
+              </a-button>
+            </a-popover>
           </div>
         </div>
 
@@ -196,11 +220,14 @@ import {
   GiftOutlined,
   InboxOutlined,
   LoadingOutlined,
+  PlayCircleOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
+import type { ReplayRecord } from '@/types/replay'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 
 const { t } = useI18n()
 
@@ -216,6 +243,7 @@ interface Props {
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
   pullCountStatistics: PullCountStatistics | null
+  replays: ReplayRecord[]
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string
@@ -229,6 +257,8 @@ defineEmits<{
   close: []
   'open-file': []
   'open-directory': []
+  'open-replay': [ReplayRecord]
+  'locate-replay': [ReplayRecord]
   'update:fontSize': [number]
 }>()
 
@@ -397,6 +427,47 @@ const displayLogContent = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.replay-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 280px;
+  max-width: 420px;
+}
+
+.replay-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.replay-entry:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.replay-entry-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.replay-entry-info strong,
+.replay-entry-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replay-entry-info span {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }

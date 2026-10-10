@@ -2694,9 +2694,10 @@ class MaaFWUserConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         ## 当前选中的 interface preset 名称，留空时使用 interface 默认逻辑
         self.Task_SelectedPreset = ConfigItem("Task", "SelectedPreset", "")
-        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions，可选 taskLabels
-        ## （用户给某一份实例起的显示名，只影响界面显示）；各键都是任务实例 id，
-        ## 同一个任务可以重复入队（见 MaaFWTaskSnapshot）
+        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions，
+        ## 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）；
+        ## 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）；
+        ## globalOptions 是全局选项的值，每个用户一份、所有任务共用
         self.Task_TaskSnapshot = ConfigItem(
             "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
         )
@@ -3000,6 +3001,13 @@ class MaaFWConfig(ConfigBase):
         self.Embedded_ImportedAt = ConfigItem("Embedded", "ImportedAt", "")
         ## 投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串
         self.Embedded_Report = ConfigItem("Embedded", "Report", "{ }", JSONValidator())
+        ## 跟随来源目录（开发者模式），默认关。开着时每次运行前比一下来源目录（投影会带走的
+        ## 文件的路径 + 大小 + 修改时间），变了就重新导入到这个脚本自己的私有渠道（不比版本、
+        ## 不与同项目其它脚本共用版本），不做项目更新；关掉后回到 Update.Channel 的组。
+        ## 见 tools/embedded/embedded_project.py「跟随来源目录」一节。
+        self.Embedded_FollowSource = ConfigItem(
+            "Embedded", "FollowSource", False, BoolValidator()
+        )
 
         ## Run -------------------------------------------------------------
         ## 运行引擎，决定「谁来跑」：
@@ -3084,7 +3092,8 @@ class MaaFWConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         ## 用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项
         ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?}}``，
-        ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务与密码字段；
+        ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段
+        ## 与全局选项（globalOptions 归各用户自己）；
         ## 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。
         self.Task_Templates = ConfigItem(
             "Task", "Templates", "[ ]", JSONValidator(list)
@@ -5132,6 +5141,17 @@ class GlobalConfig(ConfigBase):
     """全局配置"""
 
     def __init__(self):
+        ## Replay -----------------------------------------------------------
+        ## 连接已运行的 OBS，在自动代理最终失败时保存回放。
+        self.Replay_Enabled = ConfigItem("Replay", "Enabled", False, BoolValidator())
+        ## OBS WebSocket 仅连接本机。
+        self.Replay_Port = ConfigItem("Replay", "Port", 4455, RangeValidator(1, 65535))
+        ## OBS 认证密码按现有敏感配置规则加密落盘。
+        self.Replay_Password = ConfigItem("Replay", "Password", "", EncryptValidator())
+        ## MAS 副本的保留数量，不清理 OBS 原文件。
+        self.Replay_MaxReplayCount = ConfigItem(
+            "Replay", "MaxReplayCount", 3, RangeValidator(1, 20)
+        )
 
         ## Function ---------------------------------------------------------
         ## 历史记录保留时间（天）

@@ -11,6 +11,7 @@ import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
 import { ActionService, GetService } from '@/api'
 import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
 import { navigateTo } from '@/router'
+import FailureReplaySettings from './components/FailureReplaySettings.vue'
 
 const { t } = useI18n()
 
@@ -441,6 +442,8 @@ async function submitPersonalMssPassword() {
         </a-col>
       </a-row>
     </div>
+
+    <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
     <div class="form-section">
       <div class="section-header">

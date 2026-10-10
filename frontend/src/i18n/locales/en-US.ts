@@ -1894,6 +1894,17 @@ export default {
     maafwDirectoryLockedHint:
       'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new managed script to use another project',
     maafwImportingCopy: 'Importing project...',
+    maafwFollowSource: 'Follow source directory (developer mode)',
+    maafwFollowSourceHint:
+      'When on, files you change in the source directory take effect on the next run (changes are re-imported before running, or click "Sync now"). No project updates, and no version sharing with other scripts of the same project. Turning it off returns to the version of the selected update channel',
+    maafwFollowSourceSyncNow: 'Sync now',
+    maafwSourceFormTag: 'Source form',
+    maafwSourceFormHint:
+      'Imported in source form (interface in assets/, Agent in the source tree, no bundled Python or MaaFramework): always follows the source directory and changes take effect on the next run (or click "Sync now"). The Agent gets an isolated environment from requirements.txt; no project updates and no version sharing with other scripts of the same project',
+    maafwFollowSourceStatus: 'Following {path} · last synced {time}',
+    maafwFollowSourceNotSynced:
+      'Following {path} · not synced yet, will import before the next run',
+    maafwFollowSourceMissing: 'Source directory is missing; runs keep using the current copy',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
@@ -2785,6 +2796,8 @@ export default {
     depotDeleteSelectedConfirm: 'Delete the {n} selected depot maintenance plans?',
     maafwNoMatchingSettings: 'No matching settings',
     maafwNoConfigurableOptions: 'This task has no configurable options',
+    maafwGlobalOptions: 'Global options',
+    maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
     unknownType: 'Unknown',
@@ -3302,6 +3315,25 @@ export default {
       searchTip: 'Search: Ctrl+F',
       emptyLog: 'No log content',
     },
+    replays: {
+      fetchFailed: 'Could not load replays',
+      openList: 'Failure replays',
+      title: 'Failure replays',
+      hint: 'Recent failure replay copies are kept here. MAS never cleans up the original OBS files.',
+      openDirectory: 'Open replay folder',
+      account: 'Account',
+      play: 'Play',
+      locate: 'Locate',
+      associated: '{count} associated replay(s)',
+      empty: 'No retained failure replays',
+      retry: 'Retry',
+      played: 'Replay file opened',
+      directoryOpened: 'Replay folder opened',
+      openFileUnsupported: 'Opening replay files is not supported in this environment',
+      openFileFailed: 'Could not open the replay file',
+      openDirectoryUnsupported: 'Opening replay folders is not supported in this environment',
+      openDirectoryFailed: 'Could not open the replay folder',
+    },
     preset: {
       today: 'Today',
       yesterday: 'Yesterday',
@@ -3710,6 +3742,19 @@ export default {
     couldNotCheckUpdates: 'Could not check for updates!',
     couldNotLoadPlan: 'Could not load the plan',
     sendIssueBundleMas: 'Send the issue bundle to the MAS group',
+    issueReportSuccess: '{label} issue bundle exported',
+    issueReportFailed: 'Could not export the {label} issue bundle',
+    zipArchive: 'ZIP archive',
+    maaIssueReportSuccess: 'MAA issue bundle exported with {count} files',
+    maaIssueReportIncomplete:
+      'MAA logs and screenshots exported with {count} files; {incompleteCount} files were missing, truncated, or could not be included',
+    maaIssueReportNoInstallation:
+      'No configured MAA installation path found. Check the script settings.',
+    maaIssueReportNoFiles: 'No MAA logs or screenshots available to export',
+    maaIssueReportFailed:
+      'Could not export MAA logs and screenshots. Check the script path, save location, and logs, then try again.',
+    issueReportGuide:
+      'The issue bundle "{fileName}" is ready. Send the original ZIP directly to the official AUTO-MAS QQ group (957750551). Do not extract or modify it, or send only the copied log text.',
     pickExeFile: 'Pick an exe file',
     accountGroupDeleted: 'Account deleted',
     input: 'Input',
@@ -4578,6 +4623,54 @@ export default {
       personalMssOff: 'Personal-edition MaaStellaSora jobs disabled',
       personalMssFailed: 'Failed to save, please try again',
     },
+    replay: {
+      section: 'Failure replays',
+      intro:
+        'When a task finally fails, MAS saves a copy from the running OBS replay buffer for troubleshooting.',
+      obsGuide:
+        'Configure the capture source and encoder in OBS, then enable Replay Buffer and its automatic startup.',
+      durationGuide:
+        'A replay buffer of 5–30 minutes is recommended. MAS connects to OBS on this computer only.',
+      enable: 'Enable failure replays',
+      enableTip: 'When disabled, MAS does not connect to OBS or save a replay after a failed task.',
+      port: 'OBS WebSocket port',
+      portTip:
+        'OBS uses port 4455 by default. Keep this in sync with the OBS WebSocket server port.',
+      maxCount: 'Maximum retained copies',
+      maxCountTip: 'MAS keeps 1–20 managed replay copies and removes older copies automatically.',
+      password: 'OBS WebSocket password',
+      passwordTip:
+        'Leaving the field blank without saving keeps the existing password. Use Clear password to remove it.',
+      passwordPlaceholder: 'Enter a new password (blank keeps the current one)',
+      savePassword: 'Save password',
+      clearPassword: 'Clear password',
+      clearPasswordTitle: 'Clear OBS password',
+      clearPasswordContent:
+        'MAS will connect to OBS without a password after clearing it. Continue?',
+      passwordConfigured: 'Password configured',
+      passwordNotConfigured: 'No password configured',
+      passwordEmpty: 'Enter a password, or use Clear password to remove the current one',
+      passwordSaved: 'OBS password saved',
+      passwordCleared: 'OBS password cleared',
+      actions: 'Connection and test',
+      check: 'Check connection',
+      saveTest: 'Save test replay',
+      openDirectory: 'Open replay folder',
+      checkDone: 'OBS connection check complete',
+      checkFailed: 'OBS connection check failed',
+      saveDone: 'Replay saved',
+      saveEmpty: 'OBS did not return a replay file to save',
+      saveFailed: 'Saving the test replay failed',
+      directoryUnavailable: 'No replay folder is available yet',
+      openDirectoryFailed: 'Could not open the replay folder',
+      checkPassed: 'OBS is connected and the replay buffer is active',
+      checkIssue: 'The OBS connection or replay buffer needs attention',
+      connection: 'Connection',
+      buffer: 'Replay buffer',
+      active: 'Active',
+      inactive: 'Inactive',
+      version: 'OBS version',
+    },
     display: {
       section: 'Virtual display',
       intro:
@@ -4714,6 +4807,7 @@ export default {
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
       exportMaaEnd: 'Export a MaaEnd issue bundle',
+      exportMaa: 'Export an MAA issue bundle',
       issueSection: 'Specialized issue bundles',
       exportOkww: 'Export an ok-ww issue bundle',
       exportOkNte: 'Export an OK-NTE issue bundle',

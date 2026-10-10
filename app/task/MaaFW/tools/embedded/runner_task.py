@@ -59,6 +59,7 @@ from app.task.MaaFW.tools.core.runner.models import (
 from app.task.MaaFW.tools.core.runner.run_plan import (
     NO_RUNNABLE_TASKS_MESSAGE,
     MaaFWRunPlanError,
+    describe_stale_option_values,
     resolve_run_selection,
     select_snapshot_tasks,
 )
@@ -975,6 +976,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 for name in missing_names
             ]
             self.missing_task_names = list(dict.fromkeys(missing_names))
+            # 项目改了 case 名后，保存的值在归一化时被静默换回默认值；同样先按原始快照找出来，
+            # 进计划的提示（运行日志开头列出）
+            stale_warnings: list[str] = []
+            if task_snapshot:
+                try:
+                    stale_warnings = describe_stale_option_values(
+                        self.project_path, interface_model, task_snapshot
+                    )
+                except Exception:  # noqa: BLE001 - 只是提示，算不出来不挡运行
+                    logger.opt(exception=True).warning("MaaFW 失效选项值检查失败")
             if flavor is None:
                 plan = MaaFWRunnerService().build_plan(
                     self.project_path,
@@ -985,8 +996,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     task_snapshot=task_snapshot or None,
                     script_hotkeys=script_hotkeys,
                 )
-                return _with_skipped_tasks(plan, missing_skips)
-            task_ids, task_options = select_snapshot_tasks(
+                return _with_skipped_tasks(
+                    _with_warnings(plan, stale_warnings), missing_skips
+                )
+            task_ids, task_options, global_options = select_snapshot_tasks(
                 interface_model,
                 selected_preset=effective_preset,
                 task_snapshot=task_snapshot or None,
@@ -1017,10 +1030,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 resource_name=resource_name,
                 task_ids=task_ids,
                 task_options=task_options,
+                global_options=global_options,
                 script_hotkeys=script_hotkeys,
             )
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
-            return _with_skipped_tasks(plan, missing_skips)
+            return _with_skipped_tasks(
+                _with_warnings(plan, stale_warnings), missing_skips
+            )
         except Exception as exc:
             message = str(exc)
             if NO_RUNNABLE_TASKS_MESSAGE in message:
@@ -3840,6 +3856,16 @@ def _with_skipped_tasks(
     if not skipped:
         return plan
     return plan.model_copy(update={"skippedTasks": [*skipped, *plan.skippedTasks]})
+
+
+def _with_warnings(plan: MaaFWRunPlan, warnings: list[str]) -> MaaFWRunPlan:
+    """把建计划之外判出的提示接在计划自己的提示后面（重复的只留一条）。"""
+
+    if not warnings:
+        return plan
+    return plan.model_copy(
+        update={"warnings": list(dict.fromkeys([*plan.warnings, *warnings]))}
+    )
 
 
 def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:

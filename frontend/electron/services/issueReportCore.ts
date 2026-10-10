@@ -24,11 +24,13 @@ const TEXT_EXTENSIONS = new Set([
   '.yml',
 ])
 const SENSITIVE_KEY_PATTERN =
-  /(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|path)/i
+  /(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)/i
 const SENSITIVE_BEARER_PATTERN =
-  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|path)[\w-]*["']?\s*[:=]\s*["']?(?:Bearer|Basic)\s+))[^"'\s,;&}\]]+/gi
+  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?(?:Bearer|Basic)\s+))[^"'\s,;&}\]]+/gi
 const SENSITIVE_ASSIGNMENT_PATTERN =
-  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
+  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
+const ACCOUNT_ASSIGNMENT_PATTERN =
+  /((?:["']?(?:[\w.-]+\.)?(?:account(?:[_-]?name)?|user[_-]?name)["']?\s*[:=]\s*))(?:"[^"]*"|'[^']*'|"[^"]*|'[^']*|[^"'\s,;&}\]]+)/gi
 // 上面两条正则在大文件上每 MB 各要十几毫秒；第一条命中的必要条件是出现「: Bearer 」这种形状，
 // 先用便宜得多的这条筛一遍
 const BEARER_OR_BASIC_PATTERN = /[:=]\s*["']?(?:Bearer|Basic)\s/i
@@ -134,7 +136,11 @@ function sanitizeText(text: string): string {
   let sanitized = BEARER_OR_BASIC_PATTERN.test(text)
     ? text.replace(SENSITIVE_BEARER_PATTERN, '$1***')
     : text
-  sanitized = maskUrlSecrets(sanitized.replace(SENSITIVE_ASSIGNMENT_PATTERN, '$1***'))
+  sanitized = maskUrlSecrets(
+    sanitized
+      .replace(SENSITIVE_ASSIGNMENT_PATTERN, '$1***')
+      .replace(ACCOUNT_ASSIGNMENT_PATTERN, '$1***')
+  )
   const homePath = os.homedir()
   if (homePath) {
     sanitized = sanitized.split(homePath).join('<HOME>')
@@ -270,7 +276,7 @@ function addEntry(
   })
 }
 
-function addSkippedEntry(
+export function addSkippedEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
@@ -454,13 +460,17 @@ export function addDiagnosticFile(
 export function addDirectory(
   state: CollectorState,
   sourceDir: string,
-  archiveDir: string
+  archiveDir: string,
+  options: {
+    includeFile?: (sourcePath: string) => boolean
+    addFile?: typeof addDiagnosticFile
+  } = {}
 ): boolean {
   if (!fs.existsSync(sourceDir)) {
     return false
   }
-
   let foundFile = false
+  const addFile = options.addFile ?? addDiagnosticFile
   let entries: fs.Dirent[]
   try {
     entries = fs
@@ -479,13 +489,12 @@ export function addDirectory(
     const sourcePath = path.join(sourceDir, entry.name)
     const archivePath = path.posix.join(archiveDir, entry.name)
     if (entry.isDirectory()) {
-      foundFile = addDirectory(state, sourcePath, archivePath) || foundFile
-    } else if (entry.isFile()) {
-      addDiagnosticFile(state, sourcePath, archivePath)
+      foundFile = addDirectory(state, sourcePath, archivePath, options) || foundFile
+    } else if (entry.isFile() && (!options.includeFile || options.includeFile(sourcePath))) {
+      addFile(state, sourcePath, archivePath)
       foundFile = true
     }
   }
-
   return foundFile
 }
 
@@ -509,8 +518,11 @@ export function addPerInstallationFile(
 }
 
 // 各专项在后端 debug/ 下自有的诊断子目录（对应 app/task/*/tools 里 Path.cwd()/debug 的落盘）。
-// 问题包只收声明方自己的目录，其他专项的目录跳过，避免互相混入
+// debug/ 下的子目录一律视为专项诊断：问题包只收 ownAdapter 声明的目录，登记表里没有的
+// 目录一律跳过并写跳过条目进清单，提醒落盘方登记。早期是黑名单制（只挡已登记的其他
+// 专项目录），MAA 的 maa-failure 因漏登记混进了所有专项的问题包，之后才改成默认跳过。
 const ADAPTER_DEBUG_SUBDIRS = {
+  maa: ['maa-failure'],
   maaend: ['maaend-login'],
   okww: ['okww-account-switch', 'okww-launcher-start'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],
@@ -520,14 +532,15 @@ const ADAPTER_DEBUG_SUBDIRS = {
 export type AdapterDebugDirKey = keyof typeof ADAPTER_DEBUG_SUBDIRS
 
 /**
- * 收集后端 debug/ 目录：通用文件与未登记目录全收，其他专项的诊断子目录跳过，
- * 只有 ownAdapter 声明的子目录会收进包里。
+ * 收集后端 debug/ 目录：顶层通用文件全收；子目录只收 ownAdapter 声明的登记目录，
+ * 其他专项的目录静默跳过，登记表里没有的目录写跳过条目进清单。
  */
 export function addDebugDirectory(
   state: CollectorState,
   sourceDir: string,
   archiveDir: string,
-  ownAdapter?: AdapterDebugDirKey
+  ownAdapter?: AdapterDebugDirKey,
+  includeFile?: (sourcePath: string) => boolean
 ): boolean {
   if (!fs.existsSync(sourceDir)) {
     return false
@@ -543,10 +556,8 @@ export function addDebugDirectory(
     return false
   }
 
-  const foreignDirs = new Set(Object.values(ADAPTER_DEBUG_SUBDIRS).flat())
-  for (const name of ownAdapter ? ADAPTER_DEBUG_SUBDIRS[ownAdapter] : []) {
-    foreignDirs.delete(name)
-  }
+  const registeredDirs = new Set(Object.values(ADAPTER_DEBUG_SUBDIRS).flat())
+  const ownDirs = new Set(ownAdapter ? ADAPTER_DEBUG_SUBDIRS[ownAdapter] : [])
 
   let foundFile = false
   for (const entry of entries) {
@@ -557,11 +568,18 @@ export function addDebugDirectory(
     const sourcePath = path.join(sourceDir, entry.name)
     const archivePath = path.posix.join(archiveDir, entry.name)
     if (entry.isDirectory()) {
-      if (foreignDirs.has(entry.name)) {
+      if (!registeredDirs.has(entry.name)) {
+        // 收进来会混进所有专项的问题包；清单里留条跳过记录，落盘方导出自己的
+        // 问题包时就能直接看到漏登记，而不是等别人的包混进自己的诊断才暴露
+        logger.debug(`debug/ 诊断子目录未登记，跳过: ${entry.name}`)
+        addSkippedEntry(state, archivePath, 0, 'debug/ 诊断子目录未登记，已跳过')
         continue
       }
-      foundFile = addDirectory(state, sourcePath, archivePath) || foundFile
-    } else if (entry.isFile()) {
+      if (!ownDirs.has(entry.name)) {
+        continue
+      }
+      foundFile = addDirectory(state, sourcePath, archivePath, { includeFile }) || foundFile
+    } else if (entry.isFile() && (!includeFile || includeFile(sourcePath))) {
       addDiagnosticFile(state, sourcePath, archivePath)
       foundFile = true
     }
@@ -702,7 +720,22 @@ export function addRecentFailedMaaEndHistoryLogs(
   dataRoots: string[],
   limit = 3
 ): string[] {
+  return addRecentAdapterHistoryLogs(state, dataRoots, { resultKey: 'maaend_result', limit })
+}
+
+/** 按专项结果字段收历史；没有失败记录时可回退到该专项最近一次运行。 */
+export function addRecentAdapterHistoryLogs(
+  state: CollectorState,
+  dataRoots: string[],
+  options: {
+    resultKey: 'maa_result' | 'maaend_result'
+    limit?: number
+    fallbackLatest?: boolean
+    includeJson?: boolean
+  }
+): string[] {
   const candidates: HistoryRecordCandidate[] = []
+  const failedPaths = new Set<string>()
   const seenPaths = new Set<string>()
 
   const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
@@ -710,7 +743,7 @@ export function addRecentFailedMaaEndHistoryLogs(
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })
     } catch (error) {
-      logger.debug(`读取 MaaEnd 历史日志目录失败: ${currentDir}, ${String(error)}`)
+      logger.debug(`读取专项历史日志目录失败: ${currentDir}, ${String(error)}`)
       return
     }
 
@@ -730,14 +763,11 @@ export function addRecentFailedMaaEndHistoryLogs(
       }
 
       const data = readJson(sourcePath)
-      if (!isRecord(data) || typeof data.maaend_result !== 'string') {
+      if (!isRecord(data) || typeof data[options.resultKey] !== 'string') {
         continue
       }
 
-      const result = data.maaend_result.replace(/^\[[^\]]+\]\s*/, '')
-      if (result === 'Success!') {
-        continue
-      }
+      const result = (data[options.resultKey] as string).replace(/^\[[^\]]+\]\s*/, '')
 
       const normalizedPath = path.resolve(sourcePath)
       const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
@@ -755,8 +785,9 @@ export function addRecentFailedMaaEndHistoryLogs(
           mtimeMs: fs.statSync(sourcePath).mtimeMs,
         })
         seenPaths.add(pathKey)
+        if (result !== 'Success!') failedPaths.add(sourcePath)
       } catch (error) {
-        logger.debug(`读取 MaaEnd 历史日志信息失败: ${sourcePath}, ${String(error)}`)
+        logger.debug(`读取专项历史日志信息失败: ${sourcePath}, ${String(error)}`)
       }
     }
   }
@@ -769,24 +800,29 @@ export function addRecentFailedMaaEndHistoryLogs(
   }
 
   const addedPaths: string[] = []
+  candidates.sort(
+    (left, right) =>
+      right.mtimeMs - left.mtimeMs || right.relativeBasePath.localeCompare(left.relativeBasePath)
+  )
+  const limit = Math.max(options.limit ?? 3, 0)
   const selected = candidates
-    .sort(
-      (left, right) =>
-        right.mtimeMs - left.mtimeMs || right.relativeBasePath.localeCompare(left.relativeBasePath)
-    )
-    .slice(0, Math.max(limit, 0))
+    .filter(candidate => failedPaths.has(candidate.jsonPath))
+    .slice(0, limit)
+  if (!selected.length && limit > 0 && options.fallbackLatest && candidates.length)
+    selected.push(candidates[0])
 
   for (const candidate of selected) {
-    for (const [sourcePath, extension] of [
-      [candidate.logPath, '.log'],
-      [candidate.jsonPath, '.json'],
-    ] as const) {
+    const files: Array<[string, string]> = [[candidate.logPath, '.log']]
+    if (options.includeJson !== false) files.push([candidate.jsonPath, '.json'])
+    for (const [sourcePath, extension] of files) {
       const archivePath = path.posix.join(
         candidate.archiveRoot,
         `${candidate.relativeBasePath}${extension}`
       )
       const entryCount = state.entries.length
       addDiagnosticFile(state, sourcePath, archivePath)
+      if (state.entries.length === entryCount)
+        addSkippedEntry(state, archivePath, 0, '历史文件不存在或无法读取')
       if (state.entries.length > entryCount) {
         addedPaths.push(state.entries[state.entries.length - 1].path)
       }

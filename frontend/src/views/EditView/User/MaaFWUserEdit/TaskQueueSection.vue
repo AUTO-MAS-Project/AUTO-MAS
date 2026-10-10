@@ -1,5 +1,24 @@
 <template>
   <div class="form-section">
+    <!-- 全局选项每个用户只设一次，队列里的所有任务共用；任务配置里不再列它们 -->
+    <div v-if="!interfaceLoading && previewData && showGlobalOptions" class="global-option-section">
+      <div class="column-header">
+        <span class="column-title">{{ t('edit.maafwGlobalOptions') }}</span>
+      </div>
+      <div class="global-option-panel">
+        <div class="global-option-hint">{{ t('edit.maafwGlobalOptionsHint') }}</div>
+        <MaaFWTaskOptionEditor
+          :option-names="previewData.globalOption"
+          :options="previewData.options"
+          :task-options="taskSnapshot.globalOptions || {}"
+          :controller-name="effectiveControllerName"
+          :resource-name="effectiveResourceName"
+          :base-path="previewData.path"
+          :disabled="interfaceDependentDisabled"
+          @update="payload => emit('globalOptionUpdate', payload)"
+        />
+      </div>
+    </div>
     <div v-if="interfaceLoading" class="task-loading">
       <a-spin :tip="t('edit.readingInterfaceJson')">
         <a-alert
@@ -404,6 +423,7 @@ import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
+import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
 import { MAAFW_TASK_LABEL_MAX_LENGTH } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import type {
@@ -604,6 +624,16 @@ const uniqueOptionNames = (optionGroups: string[][]) => {
   return optionNames
 }
 
+// 全局选项在队列上方设一次；任务配置只列资源 / 控制器 / 任务自己的选项（同一选项也被它们
+// 引用时照常列出，按任务存值，运行时叠在全局之上——与 MXU 一致）
+const showGlobalOptions = computed(() =>
+  hasEditableMaaFWGlobalOptions(
+    props.previewData,
+    props.effectiveControllerName,
+    props.effectiveResourceName
+  )
+)
+
 const getTaskOptionNames = (task: MaaFWTaskInfo) => {
   if (task.entry === 'MXU_PRETASK') {
     return uniqueOptionNames([task.option || []])
@@ -616,7 +646,6 @@ const getTaskOptionNames = (task: MaaFWTaskInfo) => {
     item => item.name === props.effectiveControllerName
   )
   return uniqueOptionNames([
-    previewData?.globalOption || [],
     effectiveResource?.option || [],
     effectiveController?.option || [],
     task.option || [],
@@ -675,6 +704,24 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   padding: 24px;
   border: 1px dashed var(--ant-color-border);
   border-radius: 8px;
+}
+
+/* 全局选项：队列上方一块，框线与右侧任务配置面板一致 */
+.global-option-section {
+  margin-bottom: 24px;
+}
+
+.global-option-panel {
+  padding: 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.global-option-hint {
+  margin-bottom: 16px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
 }
 
 /* 左右两栏等高、高度固定：队列再长也不把页面撑长，各自在框里滚 */
