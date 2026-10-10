@@ -107,6 +107,8 @@
             @global-option-update="handleGlobalOptionUpdate"
             @delete-selected-task="deleteSelectedTask"
             @delete-task="deleteTask"
+            @duplicate-task="duplicateTask"
+            @rename-task="renameTask"
           />
           <MaaFWFlavorSlot
             part="userPage"
@@ -231,6 +233,8 @@ const {
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
+  duplicateTask,
+  renameTask,
   handleTaskOptionUpdate,
   handleGlobalOptionUpdate,
   moveTask,

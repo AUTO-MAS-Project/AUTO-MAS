@@ -52,6 +52,9 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个用户只存一份，
     # 所有任务共用；taskOptions 里不再有它们。
     globalOptions: dict[str, MaaFWTaskOptionValue] = Field(default_factory=dict)
+    # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
+    # 运行与项目更新匹配仍按实例 id / 任务 name。
+    taskLabels: dict[str, str] = Field(default_factory=dict)
 
 
 class MaaFWTaskConfig(BaseModel):
@@ -154,6 +157,12 @@ def normalize_snapshot(
         normalized_order,
         interface_model,
     )
+    normalized_order_set = set(normalized_order)
+    normalized_labels = {
+        task_id: label
+        for task_id, label in raw_snapshot["taskLabels"].items()
+        if task_id in normalized_order_set
+    }
     return MaaFWTaskPresetSnapshot(
         taskOrder=normalized_order,
         taskChecked=normalized_checked,
@@ -162,6 +171,7 @@ def normalize_snapshot(
             _migrate_global_option_values(raw_snapshot, interface_model),
             interface_model,
         ),
+        taskLabels=normalized_labels,
     )
 
 
@@ -601,6 +611,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             },
             "taskOptions": _normalize_raw_task_options(snapshot.taskOptions),
             "globalOptions": _normalize_raw_option_values(snapshot.globalOptions),
+            "taskLabels": _normalize_raw_task_labels(snapshot.taskLabels),
         }
 
     if not isinstance(snapshot, dict):
@@ -609,6 +620,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskChecked": {},
             "taskOptions": {},
             "globalOptions": {},
+            "taskLabels": {},
         }
 
     task_order = snapshot.get("taskOrder")
@@ -630,6 +642,19 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
         ),
         "taskOptions": _normalize_raw_task_options(snapshot.get("taskOptions")),
         "globalOptions": _normalize_raw_option_values(snapshot.get("globalOptions")),
+        "taskLabels": _normalize_raw_task_labels(snapshot.get("taskLabels")),
+    }
+
+
+def _normalize_raw_task_labels(value: Any) -> dict[str, str]:
+    """实例显示名只留键值都是字符串、去首尾空白后非空的。"""
+
+    if not isinstance(value, dict):
+        return {}
+    return {
+        task_id: label.strip()
+        for task_id, label in value.items()
+        if isinstance(task_id, str) and isinstance(label, str) and label.strip()
     }
 
 

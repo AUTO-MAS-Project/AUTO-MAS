@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { MaaFWInterfacePreviewData, MaaFWTaskInfo } from '@/types/script'
-import { normalizeTaskSnapshot, parseTaskSnapshot } from './maafwTaskSnapshot'
+import {
+  MAAFW_TASK_LABEL_MAX_LENGTH,
+  duplicateMaaFWQueuedTask,
+  maafwQueueEntryBaseName,
+  maafwQueueEntryTitle,
+  normalizeTaskSnapshot,
+  parseTaskSnapshot,
+  pickMaaFWTaskLabels,
+  withMaaFWTaskLabel,
+} from './maafwTaskSnapshot'
 import { getDefaultMaaFWUserData } from './maafwUserDefaults'
 
 const task = (name: string): MaaFWTaskInfo => ({
@@ -65,6 +74,121 @@ describe('MFW 用户页任务快照', () => {
       taskChecked: {},
       taskOptions: {},
     })
+  })
+
+  it('实例显示名只留队列里的实例、去首尾空白后非空的；一个都没有时不写 taskLabels 键', () => {
+    const snapshot = normalizeTaskSnapshot(
+      {
+        taskOrder: ['A', 'A__MAS_DUP__x1', 'B'],
+        taskChecked: { B: false },
+        taskOptions: {},
+        taskLabels: { A: ' 早班 ', A__MAS_DUP__x1: '   ', B: '晚班', Gone: '旧', C: 3 },
+      },
+      preview(['A', 'B'])
+    )
+    expect(snapshot.taskLabels).toEqual({ A: '早班' })
+    const plain = normalizeTaskSnapshot(
+      { taskOrder: ['A'], taskChecked: {}, taskOptions: {}, taskLabels: { A: '' } },
+      preview(['A'])
+    )
+    expect('taskLabels' in plain).toBe(false)
+  })
+})
+
+describe('MFW 队列实例显示名与复制', () => {
+  it('改名：去首尾空白、截到上限；清空或改回原显示名即删掉这一条；不改入参', () => {
+    const labels = { A: '旧名' }
+    expect(withMaaFWTaskLabel(labels, 'A', '  新名 ', '收菜')).toEqual({ A: '新名' })
+    expect(withMaaFWTaskLabel(labels, 'A', '   ', '收菜')).toEqual({})
+    expect(withMaaFWTaskLabel(labels, 'A', '收菜', '收菜')).toEqual({})
+    expect(withMaaFWTaskLabel(undefined, 'B', 'x'.repeat(60), '收菜')).toEqual({
+      B: 'x'.repeat(MAAFW_TASK_LABEL_MAX_LENGTH),
+    })
+    expect(labels).toEqual({ A: '旧名' })
+  })
+
+  it('原名超过上限时不改直接确定：按原名比较，不存截断后的名字', () => {
+    const longName = '长'.repeat(45)
+    expect(withMaaFWTaskLabel({}, 'A', longName, longName)).toEqual({})
+    expect(withMaaFWTaskLabel({ A: '旧名' }, 'A', ` ${longName} `, longName)).toEqual({})
+  })
+
+  it('pickMaaFWTaskLabels：非对象给空表，只收给定实例', () => {
+    expect(pickMaaFWTaskLabels(null, ['A'])).toEqual({})
+    expect(pickMaaFWTaskLabels(['A'], ['A'])).toEqual({})
+    expect(pickMaaFWTaskLabels({ A: 'a', B: 'b' }, ['B'])).toEqual({ B: 'b' })
+  })
+
+  it('复制：插在原任务正下方，勾选、选项（深拷贝）与显示名一起复制，原快照不动', () => {
+    const snapshot = {
+      taskOrder: ['A', 'B'],
+      taskChecked: { A: true, B: true },
+      taskOptions: { A: { o: ['x'] } },
+      taskLabels: { A: '账号A' },
+    }
+    const result = duplicateMaaFWQueuedTask(snapshot, 'A', 'A')
+    expect(result).not.toBeNull()
+    const { snapshot: next, taskId } = result!
+    expect(taskId.startsWith('A__MAS_DUP__')).toBe(true)
+    expect(next.taskOrder).toEqual(['A', taskId, 'B'])
+    expect(next.taskChecked[taskId]).toBe(true)
+    expect(next.taskOptions[taskId]).toEqual({ o: ['x'] })
+    expect(next.taskOptions[taskId]).not.toBe(snapshot.taskOptions.A)
+    expect((next.taskOptions[taskId].o as string[]) === snapshot.taskOptions.A.o).toBe(false)
+    expect(next.taskLabels).toEqual({ A: '账号A', [taskId]: '账号A' })
+    expect(snapshot.taskOrder).toEqual(['A', 'B'])
+    expect(snapshot.taskLabels).toEqual({ A: '账号A' })
+  })
+
+  it('复制没改过名的实例：副本也没有显示名，不凭空写 taskLabels 键', () => {
+    const snapshot = { taskOrder: ['A'], taskChecked: { A: true }, taskOptions: {} }
+    const { snapshot: next, taskId } = duplicateMaaFWQueuedTask(snapshot, 'A', 'A')!
+    expect(next.taskOrder).toEqual(['A', taskId])
+    expect('taskLabels' in next).toBe(false)
+    expect(next.taskOptions).toEqual({})
+    expect(duplicateMaaFWQueuedTask(snapshot, 'Gone', 'Gone')).toBeNull()
+  })
+
+  it('复制没勾选的实例：副本也不勾选；全局选项等其余键原样带着', () => {
+    const snapshot = {
+      taskOrder: ['A', 'B'],
+      taskChecked: { A: false, B: true },
+      taskOptions: {},
+      globalOptions: { g: 'x' },
+    }
+    const { snapshot: next, taskId } = duplicateMaaFWQueuedTask(snapshot, 'A', 'A')!
+    expect(next.taskChecked[taskId]).toBe(false)
+    expect(next.globalOptions).toEqual({ g: 'x' })
+  })
+})
+
+describe('MFW 队列行显示文字', () => {
+  const task = { name: 'Start', label: '崩坏三 启动!' }
+
+  it('基础名：显示名 > label > name；虚影没改过名时用原任务名', () => {
+    expect(maafwQueueEntryBaseName({ task })).toBe('崩坏三 启动!')
+    expect(maafwQueueEntryBaseName({ task: { name: 'Start', label: null } })).toBe('Start')
+    expect(maafwQueueEntryBaseName({ task, customLabel: '账号A' })).toBe('账号A')
+    expect(maafwQueueEntryBaseName({ missing: true, name: 'Gone' })).toBe('Gone')
+    expect(maafwQueueEntryBaseName({ missing: true, name: 'Gone', customLabel: '旧名' })).toBe(
+      '旧名'
+    )
+  })
+
+  it('序号只在同一基础名 ≥ 2 份时给出，单独一份为 null', () => {
+    expect(maafwQueueEntryTitle({ task, copyIndex: 1, copyTotal: 1 })).toEqual({
+      name: '崩坏三 启动!',
+      index: null,
+    })
+    expect(
+      maafwQueueEntryTitle({
+        missing: true,
+        name: 'Gone',
+        customLabel: '旧名',
+        copyIndex: 2,
+        copyTotal: 2,
+      })
+    ).toEqual({ name: '旧名', index: 2 })
   })
 })
 
