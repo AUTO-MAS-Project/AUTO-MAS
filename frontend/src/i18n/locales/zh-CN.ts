@@ -1227,7 +1227,7 @@ export default {
     clickSaveSettingsWhen: '配置完成后，点击「保存并关闭」结束本次会话。',
     notWiredIntoRun: '尚未接入运行流程：当前版本开启后运行前也不会自动检查更新，请用右侧的手动更新',
     noOkWwSettings: '尚未生成 ok-ww 设置',
-    interfaceJsonHasNot: '尚未读取 interface.json',
+    interfaceJsonHasNot: '没有读到项目：脚本还没导入项目，或项目读取失败（稍后重新打开本页）',
     nativeTaskConfigurationHas: '尚未读取到原生任务配置',
     invalidManagedOverridesCleared: '已清除 {n} 项失效的设置',
     scriptLevelMaaendConfiguration: '已启动共享 MaaEnd 配置',
