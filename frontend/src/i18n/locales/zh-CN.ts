@@ -1594,7 +1594,7 @@ export default {
     cdkHintRemaining: '剩余 {days} 天（{date} 到期）',
     cdkHintLessThanDay: '不足 1 天（{date} 到期）',
     cdkHintExpired: 'CDK 已过期',
-    cdkHintExpiredOn: 'CDK 已过期（{date} 到期）',
+    cdkHintExpiredOn: 'CDK 已于 {date} 过期',
     cdkHintInvalid: 'CDK 无效，请检查是否填写正确',
     cdkHintQuota: 'CDK 今日下载次数已用尽',
     cdkHintQuotaRemaining: 'CDK 今日下载次数已用尽，{remaining}',

@@ -1516,7 +1516,7 @@ export default {
     cdkHintRemaining: '残り {days} 日（{date} 期限）',
     cdkHintLessThanDay: '残り 1 日未満（{date} 期限）',
     cdkHintExpired: 'CDK の有効期限が切れています',
-    cdkHintExpiredOn: 'CDK の有効期限が切れています（{date} 期限）',
+    cdkHintExpiredOn: 'CDK の有効期限は {date} に切れました',
     cdkHintInvalid: 'CDK が無効です。正しく入力されているか確認してください',
     cdkHintQuota: 'CDK の本日のダウンロード回数を使い切りました',
     cdkHintQuotaRemaining: 'CDK の本日のダウンロード回数を使い切りました。{remaining}',
