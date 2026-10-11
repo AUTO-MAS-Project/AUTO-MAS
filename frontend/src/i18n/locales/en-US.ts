@@ -3791,13 +3791,6 @@ export default {
     viewLabel: 'View:',
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
-    // Stage layout: the two ways a BAAH plan can be arranged
-    baahLayout: {
-      label: 'Layout:',
-      mixed: 'Mixed stages',
-      single: 'One type per day',
-      emptyOption: 'None',
-    },
     typeFallback: 'plan',
     type: {
       maa: 'MAA plan',
@@ -3859,14 +3852,6 @@ export default {
       partAcademy: 'Academy',
       partChapter: 'Chapter',
       partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
-      // One row per thing in the one-kind-per-day layout, so the hint spells out that row's range
-      rowKind: 'Stage type',
-      rowStage: 'Stage name',
-      rowTimes: 'Battle count',
-      rowKindHint: 'Which stage kind to run today; "None" runs no stage today',
-      rowStageHint:
-        'Which stage of that kind to run; kinds that accept a negative index can pick the last raid-able stage from the end (it steps one stage back when that one cannot be raided), the others only take a concrete stage number',
-      rowTimesHint: 'How many times to run it; "Max runs" sweeps every remaining run at once',
       // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
       stageHighest: 'Last raid-able',
       timesMax: 'Max runs',

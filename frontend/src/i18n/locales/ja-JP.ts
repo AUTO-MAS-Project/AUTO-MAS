@@ -3154,13 +3154,6 @@ export default {
     viewLabel: '表示：',
     viewConfig: '設定ビュー',
     viewSimple: '簡易ビュー',
-    // ステージ編成：BAAH プランの 2 通りの並べ方
-    baahLayout: {
-      label: '形式：',
-      mixed: '複数種類',
-      single: '1日1種類',
-      emptyOption: 'なし',
-    },
     typeFallback: 'プラン',
     type: {
       maa: 'MAA プラン',
@@ -3222,14 +3215,6 @@ export default {
       partAcademy: '学園',
       partChapter: '章',
       partLevelZeroFixed: 'ステージは -1（最後のステージ）または 1 以上のみです。1 に変更しました',
-      // 1 日 1 種類のレイアウトは 1 行につき 1 項目なので、ヒントにその行の範囲を書く
-      rowKind: 'ステージ選択',
-      rowStage: 'ステージ名',
-      rowTimes: '戦闘回数',
-      rowKindHint: '今日やるステージ種別。「なし」なら今日はどのステージも実行しません',
-      rowStageHint:
-        'その種別で具体的にどのステージをやるか。負の値を取れる種別は「最後から1番目」（掃討できる最後のステージ。掃討できなければ 1 つ前へ戻る）が選べ、それ以外は具体的な番号のみ',
-      rowTimesHint: 'この種別を何回やるか。「最大回数」で残りを一度に消化します',
       // -1 を表す選択肢：ステージは掃討できる最後のステージ、回数は最大
       stageHighest: '最後から1番目',
       timesMax: '最大回数',

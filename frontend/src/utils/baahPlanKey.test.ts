@@ -1,31 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  BAAH_KEY_FIELD_BY_NAME,
-  BAAH_PLAN_SELECTABLE_KINDS,
-  allowsHighestStage,
-  applyMixedPart,
-  applySingleNumber,
-  buildSingleDayKey,
-  buildStageKindChoices,
-  fillDayFields,
-  isFieldEnabled,
-  isSelectableStageKind,
-  partIndexOf,
-  partOptionMax,
-  readDayFields,
-  readSingleCell,
-  resolveDayKind,
-  type BAAHKeyFieldName,
-} from './baahPlanKey'
-
-const ALL_EMPTY = {
-  Event: [],
-  Wanted: [],
-  Special: [],
-  Exchange: [],
-  Hard: [],
-  Normal: [],
-} as Record<BAAHKeyFieldName, number[]>
+import { applyMixedPart, isFieldEnabled, partOptionMax, readDayFields } from './baahPlanKey'
 
 describe('readDayFields', () => {
   it('缺席的类别不补默认值', () => {
@@ -61,119 +35,8 @@ describe('readDayFields', () => {
   })
 })
 
-describe('fillDayFields', () => {
-  it('缺席与空数组都补成该类的默认值', () => {
-    const filled = fillDayFields({ Wanted: [] })
-    expect(filled.Wanted).toEqual([1, -1, 1])
-    expect(filled.Event).toEqual([1, 1])
-    expect(filled.Normal).toEqual([1, 1, -1])
-  })
-})
-
-describe('resolveDayKind', () => {
-  it('恰好一类有值时判为该类', () => {
-    expect(resolveDayKind({ Wanted: [1, -1, 1], Event: [] })).toBe('Wanted')
-  })
-
-  it('恰好一类缺席、其余五类空数组时也认出来', () => {
-    // 缺席是「不干预」，空数组是「不打」，两者都表达这一天只交给这一类
-    expect(resolveDayKind({ Event: [], Special: [], Exchange: [], Hard: [], Normal: [] })).toBe(
-      'Wanted'
-    )
-  })
-
-  it('六类全空数组是「不打」', () => {
-    expect(resolveDayKind(ALL_EMPTY)).toBe('')
-  })
-
-  it('多类有值是混打的排法，不当作每天一类', () => {
-    expect(resolveDayKind(fillDayFields({}))).toBe('')
-  })
-
-  it('没有数据时是「不打」', () => {
-    expect(resolveDayKind(undefined)).toBe('')
-  })
-})
-
-describe('partIndexOf', () => {
-  it('活动关卡只有关卡与次数两位', () => {
-    const spec = BAAH_KEY_FIELD_BY_NAME.Event
-    expect(partIndexOf(spec, 'stage')).toBe(0)
-    expect(partIndexOf(spec, 'times')).toBe(1)
-  })
-
-  it('其余五类以关卡与次数收尾', () => {
-    const names: BAAHKeyFieldName[] = ['Wanted', 'Special', 'Exchange', 'Hard', 'Normal']
-    for (const name of names) {
-      const spec = BAAH_KEY_FIELD_BY_NAME[name]
-      expect(partIndexOf(spec, 'stage')).toBe(1)
-      expect(partIndexOf(spec, 'times')).toBe(2)
-    }
-  })
-})
-
-describe('readSingleCell', () => {
-  it('读出一类的关卡与次数', () => {
-    expect(readSingleCell({ Hard: [2, 3, 5] })).toEqual({ kind: 'Hard', stage: 3, times: 5 })
-  })
-
-  it('旧数据里恰好一类缺席时按默认值给出可编的值', () => {
-    const legacy = { Event: [], Special: [], Exchange: [], Hard: [], Normal: [] }
-    expect(readSingleCell(legacy)).toEqual({ kind: 'Wanted', stage: -1, times: 1 })
-  })
-
-  it('没选类时三行都没有值', () => {
-    expect(readSingleCell(ALL_EMPTY)).toEqual({ kind: '', stage: 1, times: 1 })
-  })
-})
-
-describe('buildSingleDayKey', () => {
-  it('选中那一类有值，其余五类空数组', () => {
-    expect(buildSingleDayKey('Hard', [1, 2, 3])).toEqual({ ...ALL_EMPTY, Hard: [1, 2, 3] })
-  })
-
-  it('不打时六类全空', () => {
-    expect(buildSingleDayKey('', [])).toEqual(ALL_EMPTY)
-  })
-})
-
-describe('applySingleNumber', () => {
-  it('改次数不动关卡', () => {
-    const write = applySingleNumber({ Hard: [2, 3, 5] }, 'times', 9)
-    expect(write?.fields).toEqual(buildSingleDayKey('Hard', [2, 3, 9]))
-    expect(write?.corrected).toBe(false)
-  })
-
-  it('困难图的关卡填 0 当场改成 1', () => {
-    const write = applySingleNumber({ Hard: [2, 3, 5] }, 'stage', 0)
-    expect(write?.fields).toEqual(buildSingleDayKey('Hard', [2, 1, 5]))
-    expect(write?.corrected).toBe(true)
-  })
-
-  it('悬赏通缉的关卡位可以填 -1（最高关）', () => {
-    const write = applySingleNumber({ Wanted: [1, 2, 3] }, 'stage', -1)
-    expect(write?.fields).toEqual(buildSingleDayKey('Wanted', [1, -1, 3]))
-    expect(write?.corrected).toBe(false)
-  })
-
-  it('次数位填 0 不纠正', () => {
-    const write = applySingleNumber({ Wanted: [1, 2, 3] }, 'times', 0)
-    expect(write?.fields).toEqual(buildSingleDayKey('Wanted', [1, 2, 0]))
-    expect(write?.corrected).toBe(false)
-  })
-
-  it('输入框给回空值时退回原来的取值', () => {
-    const write = applySingleNumber({ Hard: [2, 3, 5] }, 'stage', null)
-    expect(write?.fields).toEqual(buildSingleDayKey('Hard', [2, 3, 5]))
-  })
-
-  it('没选类时改不动', () => {
-    expect(applySingleNumber(ALL_EMPTY, 'times', 3)).toBeNull()
-  })
-})
-
 describe('applyMixedPart', () => {
-  it('只写目标类别，界面没展示的类别不补默认值', () => {
+  it('只写目标类别，别的类别不补默认值', () => {
     const write = applyMixedPart({}, 'Event', 0, 4)
     expect(write.fields).toEqual({ Event: [4, 1] })
     expect(write.corrected).toBe(false)
@@ -194,26 +57,16 @@ describe('applyMixedPart', () => {
     expect(write.fields.Normal).toEqual([1, 1, 3])
     expect(write.corrected).toBe(true)
   })
-})
 
-describe('allowsHighestStage', () => {
-  it('悬赏通缉、特殊任务、学园交流会可以选「最高关」', () => {
-    expect(allowsHighestStage('Wanted')).toBe(true)
-    expect(allowsHighestStage('Special')).toBe(true)
-    expect(allowsHighestStage('Exchange')).toBe(true)
+  it('悬赏通缉的关卡位可以填 -1（倒数第一个），不纠正', () => {
+    const write = applyMixedPart({ Wanted: [1, 2, 3] }, 'Wanted', 1, -1)
+    expect(write.fields.Wanted).toEqual([1, -1, 3])
+    expect(write.corrected).toBe(false)
   })
 
-  it('困难与普通关卡的关卡位不能填 -1', () => {
-    expect(allowsHighestStage('Hard')).toBe(false)
-    expect(allowsHighestStage('Normal')).toBe(false)
-  })
-
-  it('活动关卡没有「最高关」这一说', () => {
-    expect(allowsHighestStage('Event')).toBe(false)
-  })
-
-  it('还没选类时不出现「倒数第一个」', () => {
-    expect(allowsHighestStage('')).toBe(false)
+  it('活动关卡只有关卡与次数两位', () => {
+    const write = applyMixedPart(undefined, 'Event', 1, 5)
+    expect(write.fields.Event).toEqual([1, 5])
   })
 })
 
@@ -250,56 +103,5 @@ describe('isFieldEnabled', () => {
   it('缺席也当作没启用', () => {
     expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Normal')).toBe(false)
     expect(isFieldEnabled(undefined, 'Hard')).toBe(false)
-  })
-})
-
-describe('BAAH_PLAN_SELECTABLE_KINDS / isSelectableStageKind', () => {
-  it('关卡选择只提供活动关卡、困难关卡与普通关卡', () => {
-    expect(BAAH_PLAN_SELECTABLE_KINDS).toEqual(['Event', 'Hard', 'Normal'])
-  })
-
-  it('悬赏通缉、特殊任务、学园交流会不再可选', () => {
-    expect(isSelectableStageKind('Wanted')).toBe(false)
-    expect(isSelectableStageKind('Special')).toBe(false)
-    expect(isSelectableStageKind('Exchange')).toBe(false)
-  })
-
-  it('三类可选，「不打」是空值不算类别', () => {
-    expect(isSelectableStageKind('Event')).toBe(true)
-    expect(isSelectableStageKind('Hard')).toBe(true)
-    expect(isSelectableStageKind('Normal')).toBe(true)
-    expect(isSelectableStageKind('')).toBe(false)
-  })
-})
-
-describe('buildStageKindChoices', () => {
-  it('没有存量数据时给出「不打」加三类', () => {
-    expect(buildStageKindChoices([''])).toEqual([
-      { kind: '', selectable: true },
-      { kind: 'Event', selectable: true },
-      { kind: 'Hard', selectable: true },
-      { kind: 'Normal', selectable: true },
-    ])
-  })
-
-  it('存量停在已移除的类别时按原值补一项只读回显', () => {
-    expect(buildStageKindChoices(['Wanted'])).toEqual([
-      { kind: '', selectable: true },
-      { kind: 'Event', selectable: true },
-      { kind: 'Hard', selectable: true },
-      { kind: 'Normal', selectable: true },
-      { kind: 'Wanted', selectable: false },
-    ])
-  })
-
-  it('回显项按出现顺序去重', () => {
-    expect(buildStageKindChoices(['Exchange', 'Wanted', 'Exchange']).slice(4)).toEqual([
-      { kind: 'Exchange', selectable: false },
-      { kind: 'Wanted', selectable: false },
-    ])
-  })
-
-  it('可选的类别不会当成回显项重复列出', () => {
-    expect(buildStageKindChoices(['Hard', 'Event'])).toHaveLength(4)
   })
 })

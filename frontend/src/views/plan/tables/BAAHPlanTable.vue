@@ -2,7 +2,7 @@
   <div class="config-table-wrapper">
     <!-- 行对象的字段是 rowKey，Ant 默认取 key，不指定会退回索引做主键 -->
     <a-table
-      :key="`baah-config-table-${currentMode}-${baahLayout}`"
+      :key="`baah-config-table-${currentMode}`"
       :columns="configColumns"
       :data-source="configRows"
       :row-key="rowKeyOf"
@@ -17,36 +17,7 @@
           <a-tooltip :title="record.fieldHint">{{ record.fieldName }}</a-tooltip>
         </template>
 
-        <!-- 每天一类：选今天打哪一类，选中后下面两行填这一类的关卡与次数 -->
-        <template v-else-if="record.rowKind === 'kind'">
-          <a-select
-            class="config-select"
-            size="small"
-            :bordered="false"
-            :value="singleCells[asTimeKey(column.key)].kind"
-            :options="kindOptions"
-            :disabled="isColumnDisabled(asTimeKey(column.key))"
-            :aria-label="cellLabel(record.fieldName, column.key)"
-            @update:value="handleSingleKindChange(asTimeKey(column.key), $event)"
-          />
-        </template>
-
-        <!-- 关卡名称与战斗次数都是下拉：-1 那项读作「倒数第一个」或「最大次数」 -->
-        <template v-else-if="record.rowKind === 'stage' || record.rowKind === 'times'">
-          <a-select
-            class="config-select"
-            size="small"
-            :bordered="false"
-            placeholder="-"
-            :value="singleCellValue(asTimeKey(column.key), record.rowKind)"
-            :options="rowOptions(asTimeKey(column.key), record.rowKind)"
-            :disabled="singleCellNumberDisabled(asTimeKey(column.key))"
-            :aria-label="cellLabel(record.fieldName, column.key)"
-            @update:value="handleSingleNumberChange(asTimeKey(column.key), record.rowKind, $event)"
-          />
-        </template>
-
-        <!-- 多类混打：每类头上先一行开关，关了就是这一天不跑这一类 -->
+        <!-- 每类头上先一行开关，关了就是这一天不跑这一类 -->
         <template v-else-if="record.rowKind === 'enabled'">
           <a-switch
             size="small"
@@ -84,25 +55,15 @@ import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 import {
-  allowsHighestStage,
-  BAAH_KEY_FIELD_BY_NAME,
   BAAH_PLAN_KEY_FIELDS,
-  BAAH_PLAN_SELECTABLE_KINDS,
   BAAH_PLAN_TIME_KEYS,
   applyMixedPart,
-  applySingleNumber,
-  buildSingleDayKey,
-  buildStageKindChoices,
   isFieldEnabled,
-  partIndexOf,
   partOptionMax,
   readDayFields,
   readFieldValues,
-  readSingleCell,
   type BAAHDayFields,
   type BAAHKeyFieldName,
-  type BAAHSingleCell,
-  type BAAHSingleRowKind,
   type PlanTimeKey,
 } from '@/utils/baahPlanKey'
 
@@ -111,17 +72,8 @@ const { t } = useI18n()
 interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
-  /**
-   * BAAH 两种排法都挤不进「简化视图」：多类混打 23 行、每天一类 3 行，
-   * 转置只会更难读，所以配置视图与简化视图共用这一张表。
-   */
+  /** BAAH 的排法挤不进「简化视图」，转置只会更难读，配置视图与简化视图共用这一张表 */
   viewMode: 'config' | 'simple'
-  /**
-   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（每类一行开关加各自参数，共 23 行）。
-   * 两种排法的参数行都是一格一个下拉，只在「一行代表什么、整份 key 怎么组」上分叉，
-   * 表格方向都是列 = 全局 / 周一~周日。
-   */
-  baahLayout: 'mixed' | 'single'
   planId?: string
   handlePlanChange: PlanChangeHandler
 }
@@ -142,9 +94,9 @@ const syncLocalTableData = (tableData: Record<string, any> | null) => {
 watch(() => props.tableData, syncLocalTableData, { immediate: true })
 
 const configColumns = computed(() => {
-  // 两种排法都是一格一个控件，列宽与 MAA 的配置视图一致
-  // 多类混打的行标题是「悬赏通缉 · 地区」这样的两段式，首列得留宽一点
-  const titleWidth = props.baahLayout === 'single' ? 120 : 160
+  // 一格一个控件，列宽与 MAA 的配置视图一致
+  // 行标题是「悬赏通缉 · 地区」这样的两段式，首列得留宽一点
+  const titleWidth = 160
 
   return [
     {
@@ -175,17 +127,6 @@ const isColumnDisabled = (timeKey: PlanTimeKey) => {
   return timeKey === 'ALL'
 }
 
-const singleCells = computed(
-  () =>
-    Object.fromEntries(
-      BAAH_PLAN_TIME_KEYS.map(timeKey => [timeKey, readSingleCell(localTableData.value[timeKey])])
-    ) as Record<PlanTimeKey, BAAHSingleCell>
-)
-
-/** 没选今天打哪一类时这一格没有值，下拉显示占位符 */
-const singleCellValue = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
-  singleCells.value[timeKey].kind ? singleCells.value[timeKey][rowKind] : undefined
-
 const rangeOptions = (max: number) =>
   Array.from({ length: max }, (_, index) => ({ value: index + 1, label: String(index + 1) }))
 
@@ -207,71 +148,9 @@ const partOptions = (hintKey: string, min: number) => [
   ...rangeOptions(partOptionMax(hintKey)),
 ]
 
-/** 关卡名称：困难图与普通图的关卡位不能填负数，选项里就没有「倒数第一个」 */
-const stageOptions = (timeKey: PlanTimeKey) => {
-  const { kind } = singleCells.value[timeKey]
-  const spec = kind ? BAAH_KEY_FIELD_BY_NAME[kind] : undefined
-  const part = spec?.parts[partIndexOf(spec, 'stage')]
-
-  return partOptions(part?.hintKey ?? 'plan.baah.partLevel', allowsHighestStage(kind) ? -1 : 1)
-}
-
-/** 战斗次数：固定带「最大次数」 */
-const timesOptions = () => partOptions('plan.baah.partTimes', -1)
-
-const rowOptions = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
-  rowKind === 'stage' ? stageOptions(timeKey) : timesOptions()
-
-/** 还没选今天打哪一类时，关卡与次数无从填起，下拉跟着禁用 */
-const singleCellNumberDisabled = (timeKey: PlanTimeKey) =>
-  isColumnDisabled(timeKey) || !singleCells.value[timeKey].kind
-
-/**
- * 「关卡选择」的选项：不打 + 活动关卡 / 困难关卡 / 普通关卡。
- *
- * 悬赏通缉、特殊任务、学园交流会不再可选；存量计划表停在这三类时按原值补一项并标成不可选，
- * 让下拉显示它们的名字而不是生 key，也留下这一格原本在打什么的线索。
- */
-const kindOptions = computed(() =>
-  buildStageKindChoices(BAAH_PLAN_TIME_KEYS.map(timeKey => singleCells.value[timeKey].kind)).map(
-    ({ kind, selectable }) => ({
-      value: kind as string,
-      label: kind ? t(BAAH_KEY_FIELD_BY_NAME[kind].labelKey) : t('plan.baahLayout.emptyOption'),
-      disabled: !selectable,
-    })
-  )
-)
-
 const configRows = computed(() => {
-  // 每天一类：三行各管一件事，八列各一组控件
-  if (props.baahLayout === 'single') {
-    return [
-      {
-        rowKey: 'kind',
-        rowKind: 'kind',
-        fieldName: t('plan.baah.rowKind'),
-        fieldHint: t('plan.baah.rowKindHint'),
-      },
-      {
-        rowKey: 'stage',
-        rowKind: 'stage',
-        fieldName: t('plan.baah.rowStage'),
-        fieldHint: t('plan.baah.rowStageHint'),
-      },
-      {
-        rowKey: 'times',
-        rowKind: 'times',
-        fieldName: t('plan.baah.rowTimes'),
-        fieldHint: t('plan.baah.rowTimesHint'),
-      },
-    ]
-  }
-
-  // 多类混打：只排「关卡选择」里还能配的类别（活动关卡、困难关卡、普通关卡），
   // 每类先一行「启用」开关，再按位各占一行，行标题写成「类名 · 位名」
-  return BAAH_PLAN_KEY_FIELDS.filter(field =>
-    BAAH_PLAN_SELECTABLE_KINDS.includes(field.field)
-  ).flatMap(field => [
+  return BAAH_PLAN_KEY_FIELDS.flatMap(field => [
     {
       rowKey: `${field.field}.enabled`,
       rowKind: 'enabled',
@@ -360,29 +239,6 @@ const handlePartEnabledChange = async (
 
   // 只动这一类，别的类别原样带过去：界面没展示的类别不该被补成默认值
   await submitDayKey(timeKey, { ...(previousFields ?? {}), [field]: items }, previousFields)
-}
-
-const handleSingleKindChange = async (timeKey: PlanTimeKey, value: unknown) => {
-  const previousFields = localTableData.value[timeKey]
-  const choice = (typeof value === 'string' ? value : '') as BAAHKeyFieldName | ''
-  // 换类时带上这一类的默认参数，切过去就有值可改，不会先落一份空
-  const items = choice ? [...BAAH_KEY_FIELD_BY_NAME[choice].defaultValue] : []
-
-  await submitDayKey(timeKey, buildSingleDayKey(choice, items), previousFields)
-}
-
-const handleSingleNumberChange = async (
-  timeKey: PlanTimeKey,
-  rowKind: BAAHSingleRowKind,
-  value: number | string | null
-) => {
-  const previousFields = localTableData.value[timeKey]
-  const write = applySingleNumber(previousFields, rowKind, value)
-  if (!write) return
-
-  if (write.corrected) message.warning(t('plan.baah.partLevelZeroFixed'))
-
-  await submitDayKey(timeKey, write.fields, previousFields)
 }
 </script>
 

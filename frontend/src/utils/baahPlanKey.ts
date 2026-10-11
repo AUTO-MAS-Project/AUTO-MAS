@@ -124,35 +124,6 @@ export const BAAH_KEY_FIELD_BY_NAME = Object.fromEntries(
   BAAH_PLAN_KEY_FIELDS.map(field => [field.field, field])
 ) as Record<BAAHKeyFieldName, BAAHKeyField>
 
-/**
- * 关卡安排里还能配的类别：活动关卡、困难关卡、普通关卡。两种布局都按它收窄——
- * 「每天一类」的关卡选择下拉只列这几类，「多类混打」也只排这几类的行。
- *
- * 悬赏通缉、特殊任务、学园交流会不再提供；存量计划表若仍停在这三类，数据原样保留、
- * 不清掉，只是界面不再给新选（「每天一类」还会把它们按原值补进下拉只读回显）。
- */
-export const BAAH_PLAN_SELECTABLE_KINDS: BAAHKeyFieldName[] = ['Event', 'Hard', 'Normal']
-
-/** 这一类现在还能从「关卡选择」下拉里选出来；空值「不打」不是类别，不算可选 */
-export const isSelectableStageKind = (kind: BAAHKeyFieldName | ''): boolean =>
-  kind !== '' && BAAH_PLAN_SELECTABLE_KINDS.includes(kind)
-
-/**
- * 「关卡选择」下拉的取值：空值（不打）+ 三类可选，再补上存量数据里出现过的、已经不再提供的
- * 类别。补进来的那几项只用于回显旧数据，界面按 selectable=false 标成不可选，否则下拉会把
- * 它们显示成生 key，用户也看不出这一天原本在打什么。
- */
-export const buildStageKindChoices = (
-  kinds: (BAAHKeyFieldName | '')[]
-): { kind: BAAHKeyFieldName | ''; selectable: boolean }[] => {
-  const legacy = [...new Set(kinds)].filter(kind => kind !== '' && !isSelectableStageKind(kind))
-  return [
-    { kind: '', selectable: true },
-    ...BAAH_PLAN_SELECTABLE_KINDS.map(kind => ({ kind, selectable: true })),
-    ...legacy.map(kind => ({ kind, selectable: false })),
-  ]
-}
-
 /** 多类混打要的六类齐全形态 */
 export type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
 
@@ -161,9 +132,6 @@ export type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
  * BAAH 沿用自己配置文件里的关卡与开关。空数组则是「今天不打这一类」。
  */
 export type BAAHDayFields = Partial<Record<BAAHKeyFieldName, number[]>>
-
-/** 「每天一类」那三行分别是打哪类、第几关、打几次 */
-export type BAAHSingleRowKind = 'stage' | 'times'
 
 /**
  * 每一位在下拉里能选到几：次数最少，章节最多，地区与学院居中，其余按关卡给。
@@ -174,12 +142,6 @@ export const partOptionMax = (hintKey: string): number => {
   if (hintKey === 'plan.baah.partRegion' || hintKey === 'plan.baah.partAcademy') return 10
   if (hintKey === 'plan.baah.partChapter') return 30
   return 15
-}
-
-export interface BAAHSingleCell {
-  kind: BAAHKeyFieldName | ''
-  stage: number
-  times: number
 }
 
 /** 关卡位：填 0 算不出关卡坐标，上游只认 -1（最高关）或 1 以上 */
@@ -229,42 +191,6 @@ export const readDayFields = (slot: unknown): BAAHDayFields => {
   return fields
 }
 
-/**
- * 把一格补成六类齐全的形态：缺席与空数组都按默认值填出来。
- *
- * 别用它生成要提交的 key——它会把界面上没展示的类别也补成默认值，那几类会因此从
- * 「不干预」悄悄变成「按默认关卡打」。提交时逐类取值即可（readFieldValues）。
- */
-export const fillDayFields = (fields: BAAHDayFields): BAAHDayKey => {
-  const dayKey = {} as BAAHDayKey
-  for (const field of BAAH_PLAN_KEY_FIELDS) {
-    const items = [...(fields[field.field] ?? [])].slice(0, field.maxLength)
-    for (let index = items.length; index < field.parts.length; index += 1) {
-      items.push(field.defaultValue[index] ?? 1)
-    }
-    dayKey[field.field] = items
-  }
-  return dayKey
-}
-
-/**
- * 从一格读出「今天打哪一类」。
- *
- * 这种排法的落盘形状是恰好一类有值、其余五类空数组；旧数据写成恰好一类缺席、其余五类
- * 空数组，这里一并认出来，但不替用户改写数据——只有用户真的动过这一格才会按现在的规则
- * 落盘。读不出这两种形状时（多类混打的排法）返回空。
- */
-export const resolveDayKind = (fields: BAAHDayFields | undefined): BAAHKeyFieldName | '' => {
-  if (!fields) return ''
-
-  const valued = BAAH_PLAN_KEY_FIELDS.filter(field => (fields[field.field] ?? []).length > 0)
-  if (valued.length === 1) return valued[0].field
-  if (valued.length > 1) return ''
-
-  const absent = BAAH_PLAN_KEY_FIELDS.filter(field => !(field.field in fields))
-  return absent.length === 1 ? absent[0].field : ''
-}
-
 /** 读一类的参数：空数组与缺席都按该类默认值填出来，输入框才有值可编 */
 export const readFieldValues = (
   fields: BAAHDayFields | undefined,
@@ -278,78 +204,16 @@ export const readFieldValues = (
   return items
 }
 
-/**
- * 「关卡」与「次数」各对应这一类参数的第几位。
- *
- * 六类都以「… / 关卡 / 次数」收尾，所以从后往前数与类别无关；前面的地区 / 章节 /
- * 学院位沿用原值或默认值，不在这三行里编辑。
- */
-export const partIndexOf = (spec: BAAHKeyField, rowKind: BAAHSingleRowKind): number =>
-  rowKind === 'stage' ? spec.parts.length - 2 : spec.parts.length - 1
-
-/**
- * 这一类的关卡位能不能选「最高关」（-1）。
- * 悬赏通缉 / 特殊任务 / 学园交流会可以，困难与普通关卡走上游的滚动选择，只能填具体关卡号。
- */
-export const allowsHighestStage = (kind: BAAHKeyFieldName | ''): boolean => {
-  const spec = kind ? BAAH_KEY_FIELD_BY_NAME[kind] : undefined
-  if (!spec) return false
-  return spec.parts[partIndexOf(spec, 'stage')].min === -1
-}
-
-/** 每天一类：一格读成三行要显示的那三个值 */
-export const readSingleCell = (fields: BAAHDayFields | undefined): BAAHSingleCell => {
-  const kind = resolveDayKind(fields)
-  if (!kind) return { kind: '', stage: 1, times: 1 }
-
-  const spec = BAAH_KEY_FIELD_BY_NAME[kind]
-  const values = readFieldValues(fields, kind)
-  return {
-    kind,
-    stage: values[spec.parts.length - 2] ?? 1,
-    times: values[spec.parts.length - 1] ?? 1,
-  }
-}
-
 /** 这一类今天要不要跑：空数组与缺席都算不打 */
 export const isFieldEnabled = (
   fields: BAAHDayFields | undefined,
   field: BAAHKeyFieldName
 ): boolean => (fields?.[field] ?? []).length > 0
 
-/** 每天一类：选中那一类有值，其余五类空数组（今天不打），选「不打」则六类全空 */
-export const buildSingleDayKey = (kind: BAAHKeyFieldName | '', items: number[]): BAAHDayFields => {
-  const dayKey: BAAHDayFields = {}
-  for (const field of BAAH_PLAN_KEY_FIELDS) {
-    dayKey[field.field] = kind && field.field === kind ? items : []
-  }
-  return dayKey
-}
-
 export interface BAAHCellWrite {
   fields: BAAHDayFields
   /** 手输的 0 被改成 1 时为 true，界面据此提示用户 */
   corrected: boolean
-}
-
-/** 每天一类：改选中那一类的关卡或次数，其余五类照旧空数组 */
-export const applySingleNumber = (
-  fields: BAAHDayFields | undefined,
-  rowKind: BAAHSingleRowKind,
-  raw: number | string | null | undefined
-): BAAHCellWrite | null => {
-  const { kind } = readSingleCell(fields)
-  if (!kind) return null
-
-  const spec = BAAH_KEY_FIELD_BY_NAME[kind]
-  const index = partIndexOf(spec, rowKind)
-  const items = readFieldValues(fields, kind)
-  // 输入框清空时给回 null，这时保持原来的取值，不能退回默认值把用户填过的数字抹掉
-  const value = toPlanInt(raw, items[index] ?? spec.defaultValue[index] ?? 1)
-  const corrected = isStagePart(spec.parts[index]) && value === 0
-
-  items[index] = corrected ? 1 : value
-  return { fields: buildSingleDayKey(kind, items), corrected }
 }
 
 /** 多类混打：改某一类的某一位，其余类别原样带过去——界面没展示的类别不补默认值 */

@@ -3682,13 +3682,6 @@ export default {
     viewLabel: '视图：',
     viewConfig: '配置视图',
     viewSimple: '简化视图',
-    // 关卡安排：BAAH 计划表的两种排法，切换只影响表格怎么排、整份 key 怎么组
-    baahLayout: {
-      label: '关卡：',
-      mixed: '多类混打',
-      single: '每天一类',
-      emptyOption: '不打',
-    },
     typeFallback: '计划表',
     type: {
       maa: 'MAA 计划表',
@@ -3751,14 +3744,6 @@ export default {
       partChapter: '章节',
       // 关卡位只认 -1 或 >= 1，用户填 0 时界面直接改成 1，这条说明改了什么
       partLevelZeroFixed: '关卡位只能填 -1（最高关）或 1 以上，已改为 1',
-      // 每天一类那三行的行标题：一行只管一件事，行首的提示写明这一行的取值范围
-      rowKind: '关卡选择',
-      rowStage: '关卡名称',
-      rowTimes: '战斗次数',
-      rowKindHint: '今天打哪一类关卡；选「不打」则今天不跑关卡',
-      rowStageHint:
-        '这一类具体打哪一关；能填负数关卡的类别可以选「倒数第一个」（倒数第一个能扫荡的关卡，扫不了会自动往前退一关），其余类别只能选具体关卡号',
-      rowTimesHint: '这一类打几次；选「最大次数」表示把剩下的次数一次扫完',
       // 下拉里代表 -1 的那一项：关卡位是倒数第一个能扫荡的关卡，次数位是扫荡次数拉满
       stageHighest: '倒数第一个',
       timesMax: '最大次数',
