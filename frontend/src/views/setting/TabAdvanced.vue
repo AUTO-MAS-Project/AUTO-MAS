@@ -44,7 +44,7 @@ const { exporting: exportingMaaFWLogs, exportMaaFWIssueReport } = useMaaFWIssueR
 const { exporting: exportingM9ALogs, exportM9AIssueReport } = useM9AIssueReport(logger)
 const { exporting: exportingMSSLogs, exportMSSIssueReport } = useMSSIssueReport(logger)
 
-const { getScripts } = useScriptApi()
+const { getScripts, error: scriptApiError } = useScriptApi()
 /** 已添加的脚本类型：设置页只显示这些专项的导出按钮 */
 const addedScriptTypes = ref<Set<ScriptType>>(new Set())
 /** 脚本列表没读到：这时按「全都显示」处理，免得一次读取失败把所有导出入口都藏掉 */
@@ -54,6 +54,8 @@ const loadAddedScriptTypes = async () => {
   try {
     // 不接管 loading：这里只决定按钮显不显示，不该让整个设置页跟着转圈
     const scripts = await getScripts(false)
+    // getScripts 读失败时不抛错，只把原因写进 error 并返回空数组，照收会误判成「一个专项都没加」
+    if (scriptApiError.value) throw new Error(scriptApiError.value)
     addedScriptTypes.value = new Set(scripts.map(script => script.type))
     addedScriptTypesUnknown.value = false
   } catch (error) {
