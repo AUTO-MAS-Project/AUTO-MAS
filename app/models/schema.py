@@ -4768,6 +4768,17 @@ PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
 PLAN_ROTATE_DAYS_DEFAULT = 7
 PLAN_ROTATE_DAYS_MAX = 31
 
+PLAN_WEEKDAY_NAMES = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+"""周计划的七天，顺序与 calendar.day_name 一致。"""
+
 
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
@@ -4807,6 +4818,37 @@ class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):
         default_factory=dict,
         description='每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键',
     )
+    # 过渡期兼容：天槽位收进 Days 之前，周计划是顶层 Monday~Sunday 七个字段。老客户端
+    # 仍按这个形态收发，所以这七个字段继续留着——请求里带着它们照旧能写进去（存储层一天
+    # 一个分组，两种形态都认），响应里由下面的校验器用 Days 的同一份数据补齐。
+    Monday: Optional[TPlanItem] = Field(default=None, description="周一（兼容旧接口）")
+    Tuesday: Optional[TPlanItem] = Field(default=None, description="周二（兼容旧接口）")
+    Wednesday: Optional[TPlanItem] = Field(
+        default=None, description="周三（兼容旧接口）"
+    )
+    Thursday: Optional[TPlanItem] = Field(
+        default=None, description="周四（兼容旧接口）"
+    )
+    Friday: Optional[TPlanItem] = Field(default=None, description="周五（兼容旧接口）")
+    Saturday: Optional[TPlanItem] = Field(
+        default=None, description="周六（兼容旧接口）"
+    )
+    Sunday: Optional[TPlanItem] = Field(default=None, description="周日（兼容旧接口）")
+
+    @model_validator(mode="after")
+    def fill_legacy_weekdays(self):
+        """把 Days 里的周计划槽位补到顶层星期字段，供还在读旧形态的客户端使用。
+
+        只在这七个字段为空时补，不覆盖请求本身带来的取值；``setattr`` 也不会把它们记进
+        ``model_fields_set``，所以 ``model_dump(exclude_unset=True)`` 仍旧只带客户端真正
+        提交过的字段，不会凭空多出七个空槽位。
+        """
+
+        days = self.Days or {}
+        for name in PLAN_WEEKDAY_NAMES:
+            if getattr(self, name) is None and name in days:
+                setattr(self, name, days[name])
+        return self
 
 
 class MaaPlanConfig(WeeklyPlanConfig[MaaPlanConfig_Info, MaaPlanConfig_Item]):

@@ -126,33 +126,36 @@ async function loadStageOptions(poolKey: TimeKey): Promise<ComboBoxItem[]> {
 // 预加载关卡选项。传入当前的天键集合时只拉这些天真正会读的池，缺省拉全部池。
 export async function preloadAllStageOptions(dayKeys?: readonly string[]): Promise<void> {
   const poolKeys = [...new Set((dayKeys ?? TIME_KEYS).map(stagePoolKeyOf))]
-  const hasCompleteCache = poolKeys.every(poolKey =>
-    Array.isArray(stageOptionsCache.value[poolKey])
-  )
-  if (hasCompleteCache) {
-    return
-  }
 
-  if (!stageOptionsPreloadPromise) {
-    const generation = stageOptionsGeneration
-    const preloadPromise: Promise<void> = Promise.all(
-      poolKeys.map(poolKey => loadStageOptions(poolKey))
-    )
-      .then(() => {
-        if (generation === stageOptionsGeneration) {
-          logger.info('关卡选项预加载完成')
-        }
-      })
-      .finally(() => {
-        // 仅清理自己持有的 promise：refresh 后启动的新 preload 不应被过期轮次清掉
-        if (stageOptionsPreloadPromise === preloadPromise) {
-          stageOptionsPreloadPromise = null
-        }
-      })
-    stageOptionsPreloadPromise = preloadPromise
-  }
+  // 排队串行：等上一轮收尾之后再算这次缺哪些池。两轮要的池可能不同（从轮换切回周计划就是
+  // 这样：ALL 已经在缓存里、七天池一个都没有），拿上一轮的需求去顶就会把这七个漏掉。
+  const previous = stageOptionsPreloadPromise ?? Promise.resolve()
+  const generation = stageOptionsGeneration
+  const preloadPromise: Promise<void> = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const missingKeys = poolKeys.filter(
+        poolKey => !Array.isArray(stageOptionsCache.value[poolKey])
+      )
+      if (missingKeys.length === 0) {
+        return
+      }
 
-  await stageOptionsPreloadPromise
+      await Promise.all(missingKeys.map(poolKey => loadStageOptions(poolKey)))
+      if (generation === stageOptionsGeneration) {
+        logger.info('关卡选项预加载完成')
+      }
+    })
+    .finally(() => {
+      // 仅清理自己持有的 promise：refresh 后启动的新 preload 不应被过期轮次清掉
+      if (stageOptionsPreloadPromise === preloadPromise) {
+        stageOptionsPreloadPromise = null
+      }
+    })
+
+  stageOptionsPreloadPromise = preloadPromise
+
+  await preloadPromise
 }
 
 // 清除缓存（用于刷新数据）

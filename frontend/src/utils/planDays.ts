@@ -56,3 +56,28 @@ export const readPlanColumn = (tableData: Record<string, any> | null, key: strin
 /** 写某一列的接口路径：ALL 在顶层，每天在 Days 里 */
 export const planColumnPath = (key: string, field: string): string =>
   key === 'ALL' ? `${key}.${field}` : `Days.${key}.${field}`
+
+/** 计划数据里的全部天键：ALL 加 Days 里的每一个 */
+export const planAllDayKeys = (planData: Record<string, any> | null | undefined): string[] => [
+  'ALL',
+  ...Object.keys((planData?.Days ?? {}) as Record<string, unknown>),
+]
+
+/**
+ * 合并两份计划数据：以 override 为准，其余槽位用 base 补齐。
+ *
+ * 协调器只持有当前显示的那几天，改名之类要覆盖所有引用的操作得拿后端返回的完整配置打底，
+ * 否则切回另一种模式时那些槽位还留着旧值。
+ */
+export const mergePlanData = (
+  base: Record<string, any> | null | undefined,
+  override: Record<string, any>
+): Record<string, any> => ({
+  ...(base ?? {}),
+  ...override,
+  ALL: override.ALL ?? base?.ALL,
+  Days: {
+    ...((base?.Days ?? {}) as Record<string, any>),
+    ...((override?.Days ?? {}) as Record<string, any>),
+  },
+})

@@ -158,6 +158,8 @@ import {
   getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
 import {
+  mergePlanData,
+  planAllDayKeys,
   planColumnKeys,
   planColumnPath,
   planDayLabel,
@@ -290,33 +292,39 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   // 更新自定义关卡定义
   coordinator.updateCustomStageDefinition(index, newValue)
 
-  // 保存自定义关卡涉及更新所有使用它的时间配置
-  // 需要将所有关卡配置一起保存
-  const planConfig = coordinator.toApiData()
+  // 改名要覆盖所有引用这一关卡的槽位：协调器只持有当前显示的那几天（轮换模式下就是
+  // 第 1~N 天），所以拿后端返回的完整配置打底，再用协调器里的最新编辑值覆盖一遍。
+  const planConfig = mergePlanData(props.tableData, coordinator.toApiData())
+  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
+  const pending: { path: string; config: Record<string, any> }[] = []
 
-  // 找出哪些时间配置使用了旧的自定义关卡，更新为新值。
-  // 多天轮换不显示 ALL 那一格，但切回全局模式还要用它，一并更新。
-  const timeKeys = [...new Set(['ALL', ...columnKeys.value])]
-  let allSaved = true
-  for (let i = 0; i < timeKeys.length; i++) {
-    const timeKey = timeKeys[i]
+  for (const timeKey of planAllDayKeys(planConfig)) {
     const timeConfig = readPlanColumn(planConfig, timeKey) as Record<string, any> | undefined
-    if (timeConfig) {
-      // 检查每个关卡字段是否使用了旧的自定义关卡
-      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
-      for (const field of stageFields) {
-        if (timeConfig[field] === oldValue && oldValue !== '') {
-          // 更新为新值
-          timeConfig[field] = newValue
-        }
-      }
-      // 保存更新后的时间配置
-      const saved = await props.handlePlanChange(dayConfigPath(timeKey), timeConfig, {
-        refresh: i === timeKeys.length - 1,
-        forceCustomStages: false,
-      })
-      allSaved = allSaved && saved
+    if (!timeConfig) {
+      continue
     }
+
+    const before = stageFields.map(field => timeConfig[field])
+    for (const field of stageFields) {
+      if (timeConfig[field] === oldValue && oldValue !== '') {
+        // 更新为新值
+        timeConfig[field] = newValue
+      }
+    }
+
+    // 只发真的改到的槽位：轮换 31 天时一共三十多个槽位，多数用不到这个自定义关卡
+    if (stageFields.some((field, position) => timeConfig[field] !== before[position])) {
+      pending.push({ path: dayConfigPath(timeKey), config: timeConfig })
+    }
+  }
+
+  let allSaved = true
+  for (let i = 0; i < pending.length; i += 1) {
+    const saved = await props.handlePlanChange(pending[i].path, pending[i].config, {
+      refresh: i === pending.length - 1,
+      forceCustomStages: false,
+    })
+    allSaved = allSaved && saved
   }
 
   if (allSaved) {
@@ -554,6 +562,9 @@ watch(
 
       // 从后端数据加载到协调器
       coordinator.fromApiData(cleanData)
+      // 切模式或改轮换天数之后，当前列要的池可能还没拉过（例如从轮换切回周计划要七天池），
+      // 这里补一轮；已经齐全的池会被跳过，不重复请求。
+      void preloadAllStageOptions(columnKeys.value).catch(() => undefined)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
       // 非初始刷新可能保留了 fromApiData(false) 续住的未保存输入，
