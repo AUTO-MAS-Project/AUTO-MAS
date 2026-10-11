@@ -404,6 +404,26 @@
                           >
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
+
+                          <!-- 当前配置来源与覆写状态：跟在账号标签之后，与账号名同行左对齐，弱化显示 -->
+                          <div
+                            v-if="getConfigSource(script, user)"
+                            class="user-config-summary"
+                            :class="{ 'is-overlay-on': getOverlayState(script, user) }"
+                          >
+                            <span class="user-config-summary__label">{{
+                              t('comp.currentConfig', { source: getConfigSource(script, user) })
+                            }}</span>
+                            <template v-if="getOverlayState(script, user) !== null">
+                              <span class="user-config-summary__sep" aria-hidden="true">·</span>
+                              <span class="user-config-summary__dot" aria-hidden="true"></span>
+                              {{
+                                getOverlayState(script, user)
+                                  ? t('comp.configOverrideEnabled')
+                                  : t('comp.configOverrideDisabled')
+                              }}
+                            </template>
+                          </div>
                         </div>
 
                         <!-- 用户详细信息 - MAA和SRC脚本用户 -->
@@ -462,9 +482,6 @@
                           >
                             {{ tag.text }}
                           </a-tag>
-                        </div>
-                        <div v-if="getUserConfigSummary(script, user)" class="user-config-summary">
-                          {{ getUserConfigSummary(script, user) }}
                         </div>
                       </div>
                     </div>
@@ -775,7 +792,7 @@ const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
   return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
 }
 
-const getUserConfigSummary = (script: Script, user: User): string => {
+const getConfigSource = (script: Script, user: User): string => {
   let mode = user.Info.Mode
   // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
   if (isMaaFWFamily(script.type)) mode = '用户'
@@ -783,17 +800,14 @@ const getUserConfigSummary = (script: Script, user: User): string => {
   // 这些专项没有共享配置来源，旧的“脚本”值仍按账号配置运行。
   else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === '脚本') mode = '用户'
   const sourceKey = CONFIG_SOURCE_KEYS[mode]
-  if (!sourceKey) return ''
-
-  const summary = t('comp.currentConfig', { source: t(sourceKey) })
-  if (!OVERLAY_SCRIPT_TYPES.has(script.type) || user.Info.IfQuickConfig === undefined)
-    return summary
-
-  const overlayKey = user.Info.IfQuickConfig
-    ? 'comp.configOverrideEnabled'
-    : 'comp.configOverrideDisabled'
-  return `${summary} · ${t(overlayKey)}`
+  return sourceKey ? t(sourceKey) : ''
 }
+
+// null 表示该专项没有覆写层或状态未知，此时不显示覆写段。
+const getOverlayState = (script: Script, user: User): boolean | null =>
+  OVERLAY_SCRIPT_TYPES.has(script.type) && user.Info.IfQuickConfig !== undefined
+    ? user.Info.IfQuickConfig
+    : null
 
 const handleStartOkwwConfig = (script: Script) => {
   emit('startOkwwConfig', script)
@@ -1379,11 +1393,33 @@ const onUserDragEnd = async (script: Script) => {
 }
 
 .user-config-summary {
-  margin-top: -4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   line-height: 18px;
   color: var(--ant-color-text-secondary);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.user-config-summary__label {
+  color: var(--ant-color-text-tertiary);
+}
+
+.user-config-summary__sep {
+  color: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary.is-overlay-on .user-config-summary__dot {
+  background: var(--ant-color-success);
 }
 
 .info-tag {
