@@ -1562,6 +1562,9 @@ def account_switch(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("BetterGI 账号切换仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
     account = str(account or "").strip()
     password = str(password or "")
     resource = str(resource or "官服").strip() or "官服"
