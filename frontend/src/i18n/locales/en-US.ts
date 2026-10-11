@@ -1669,7 +1669,15 @@ export default {
     sourceGithub: 'GitHub',
     cdkStatusIssue:
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
-    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
+    cdkHintRemaining: '{days} d left (expires on {date})',
+    cdkHintLessThanDay: 'Less than 1 day left (expires on {date})',
+    cdkHintExpired: 'The CDK has expired',
+    cdkHintExpiredOn: 'The CDK has expired (expired on {date})',
+    cdkHintInvalid: 'Invalid CDK; check that it was entered correctly',
+    cdkHintQuota: "The CDK's download quota for today is used up",
+    cdkHintQuotaRemaining: "The CDK's download quota for today is used up; {remaining}",
+    cdkHintMismatched: 'This CDK type does not match this project',
+    cdkHintBlocked: 'The CDK has been blocked',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',

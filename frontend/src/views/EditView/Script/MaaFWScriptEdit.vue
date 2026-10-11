@@ -138,6 +138,7 @@
         <div v-show="!isWizard || currentStep === 2">
           <component
             :is="sections.update"
+            :script-id="scriptId"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :is-auto-update-disabled="isAutoUpdateDisabled"

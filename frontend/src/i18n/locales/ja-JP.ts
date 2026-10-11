@@ -1513,6 +1513,15 @@ export default {
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このマネージドスクリプト専用のものに置き換えてください',
+    cdkHintRemaining: '残り {days} 日（{date} 期限）',
+    cdkHintLessThanDay: '残り 1 日未満（{date} 期限）',
+    cdkHintExpired: 'CDK の有効期限が切れています',
+    cdkHintExpiredOn: 'CDK の有効期限が切れています（{date} 期限）',
+    cdkHintInvalid: 'CDK が無効です。正しく入力されているか確認してください',
+    cdkHintQuota: 'CDK の本日のダウンロード回数を使い切りました',
+    cdkHintQuotaRemaining: 'CDK の本日のダウンロード回数を使い切りました。{remaining}',
+    cdkHintMismatched: 'CDK の種類がこのプロジェクトと一致しません',
+    cdkHintBlocked: 'CDK は利用停止されています',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
       'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
