@@ -294,8 +294,9 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   // 需要将所有关卡配置一起保存
   const planConfig = coordinator.toApiData()
 
-  // 找出哪些时间配置使用了旧的自定义关卡，更新为新值
-  const timeKeys = columnKeys.value
+  // 找出哪些时间配置使用了旧的自定义关卡，更新为新值。
+  // 多天轮换不显示 ALL 那一格，但切回全局模式还要用它，一并更新。
+  const timeKeys = [...new Set(['ALL', ...columnKeys.value])]
   let allSaved = true
   for (let i = 0; i < timeKeys.length; i++) {
     const timeKey = timeKeys[i]
