@@ -36,7 +36,7 @@ import io
 import json
 import struct
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any, NamedTuple
 
 import httpx
@@ -250,9 +250,12 @@ def _entry(
     )
 
 
-def _central_entries(cd: bytes, declared: int, member: str) -> _Entry:
-    """按总表逐条走一遍，找回要的那个成员。"""
-    found: _Entry | None = None
+def _iter_central(cd: bytes, declared: int, wanted: set[str]) -> Iterator[_Entry]:
+    """按总表逐条走一遍，补出 `wanted` 里那些成员的记录。
+
+    走到底才发现条数与结尾记录声明的对不上，同样判废——只认前几条会让体积问出假数。
+    """
+
     at = 0
     count = 0
     while at < len(cd):
@@ -270,8 +273,8 @@ def _central_entries(cd: bytes, declared: int, member: str) -> _Entry:
         name = raw[_CENTRAL_FIXED : _CENTRAL_FIXED + name_len].decode(
             "utf-8" if fields[2] & 0x800 else "cp437", "replace"
         )
-        if name == member and found is None:
-            found = _entry(
+        if name in wanted:
+            yield _entry(
                 name=name,
                 raw=raw,
                 usize=fields[8],
@@ -284,9 +287,38 @@ def _central_entries(cd: bytes, declared: int, member: str) -> _Entry:
         at += size
     if count != declared:
         raise _Unreadable(f"总表实有 {count} 条，与结尾声明的 {declared} 条不符")
+
+
+def _central_entry(cd: bytes, declared: int, member: str) -> _Entry:
+    """从总表里取出要的那一条。"""
+
+    found: _Entry | None = None
+    for entry in _iter_central(cd, declared, {member}):
+        if found is None:
+            found = entry
     if found is None:
         raise _Unreadable(f"总表里没有 {member}")
     return found
+
+
+async def _central_directory(
+    client: httpx.AsyncClient, volumes: Sequence[RemoteVolume]
+) -> tuple[bytes, int]:
+    """取回整张中央目录：尾部一次 Range，没盖满时按坐标补取一次。"""
+
+    total = sum(volume.size for volume in volumes)
+    tail_start = max(total - _TAIL_BYTES, 0)
+    tail = await _read_span(client, volumes, tail_start, total - tail_start)
+    cd_offset, cd_size, declared = _central_dir_bounds(tail, tail_start)
+    if cd_size > _MAX_CENTRAL_DIR_BYTES:
+        raise _Unreadable(f"总表有 {cd_size} 字节，超出上限")
+    if cd_offset + cd_size > total:
+        raise _Unreadable(f"总表区间越过流末尾: {cd_offset}+{cd_size} > {total}")
+    covered_from = cd_offset - tail_start
+    if covered_from >= 0 and covered_from + cd_size <= len(tail):
+        return tail[covered_from : covered_from + cd_size], declared
+    # 尾部窗口没盖满总表（成员太多、总表比窗口还长）时按坐标补取一次
+    return await _read_span(client, volumes, cd_offset, cd_size), declared
 
 
 def _single_member_archive(header: bytes, cipher: bytes, entry: _Entry) -> bytes:
@@ -341,21 +373,8 @@ async def _fetch_member_json(
     member: str,
     max_plain_bytes: int,
 ) -> dict[str, Any]:
-    total = sum(volume.size for volume in volumes)
-    tail_start = max(total - _TAIL_BYTES, 0)
-    tail = await _read_span(client, volumes, tail_start, total - tail_start)
-    cd_offset, cd_size, declared = _central_dir_bounds(tail, tail_start)
-    if cd_size > _MAX_CENTRAL_DIR_BYTES:
-        raise _Unreadable(f"总表有 {cd_size} 字节，超出上限")
-    if cd_offset + cd_size > total:
-        raise _Unreadable(f"总表区间越过流末尾: {cd_offset}+{cd_size} > {total}")
-    covered_from = cd_offset - tail_start
-    if covered_from >= 0 and covered_from + cd_size <= len(tail):
-        cd = tail[covered_from : covered_from + cd_size]
-    else:
-        # 尾部窗口没盖满总表（成员太多、总表比窗口还长）时按坐标补取一次
-        cd = await _read_span(client, volumes, cd_offset, cd_size)
-    entry = _central_entries(cd, declared, member)
+    cd, declared = await _central_directory(client, volumes)
+    entry = _central_entry(cd, declared, member)
 
     # 清单这种成员，压缩前后都不该靠近上限：真到那个量级就是包不认识，
     # 而按声明体积去取整段正文，先撑爆的是 MAS 自己
@@ -413,3 +432,28 @@ async def fetch_member_json(
     except Exception as error:
         logger.warning(f"未能从远端读出 {member}：{type(error).__name__}: {error}")
         return None
+
+
+async def fetch_expanded_sizes(
+    *,
+    client: httpx.AsyncClient,
+    volumes: Sequence[RemoteVolume],
+    members: Sequence[str],
+) -> dict[str, int]:
+    """按成员名问出各自解压到盘上有多大：只读总表，不取正文、不碰口令。
+
+    差量成员要落地就得先整份展开到盘上，这份体积只写在总表里，两份清单都不给。问不到
+    就返回空表，调用方按「这一项没有担保」继续，而不是当成零体积。
+    """
+
+    try:
+        cd, declared = await _central_directory(client, volumes)
+        sizes = {
+            entry.name: entry.uncompressed_size
+            for entry in _iter_central(cd, declared, set(members))
+        }
+    except Exception as error:
+        logger.warning(f"未能从远端读出成员体积：{type(error).__name__}: {error}")
+        return {}
+    logger.info(f"从远端总表问到 {len(sizes)} 个成员的展开体积")
+    return sizes

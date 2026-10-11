@@ -652,26 +652,28 @@ def _landing_need(
     patches: Sequence[PatchJob | _PatchSpec],
     moves: Sequence[MoveJob | MoveEntry],
     install_dir: Path,
+    expanded: int = 0,
 ) -> int:
-    """落地期间最多要腾出多少字节：整轮累计净增，再加单条改名时的瞬时量。
+    """落地期间最多要额外腾出多少空闲：按落地顺序逐条累，取全程最大。
 
-    改名之前旧文件不释放，所以最大那一条按新旧两份同时在盘算；其余是一条接一条累上去的
-    净增，只增不减——整搬的目标本来不存在时整条体积都是新增。只按单条峰值估会放过一个根本
-    装不下的盘，等到客户端被写了一半才失败。
+    新文件先落在目标旁边的临时文件里，目标位置上那份要等改名才让出来——它本来就在盘上，
+    所以要新腾出的空闲只有新文件这一份。释放量只看被改名的那个位置原本有多大，读不到算 0：
+    基线在别处的那份腾不出任何东西，新增文件则整条体积都是净增。删除表的清理排在所有写入
+    之后，这里不替它提前记释放，于是这个数只会偏大。
+
+    `expanded` 是落地中途还要额外展开在暂存目录里的最大那一份差量：它从总表问得到，
+    却不在任何清单里，漏掉它等于把三笔同时占盘只算两笔。问不到就留 0，由固定余量兜。
 
     下载前的预估与下载后的判定共用这一套算法，两道门不会各算各的账。
     """
 
+    peak = 0
     net_growth = 0
-    widest = 0
-    for job in patches:
-        net_growth += job.size - job.base_size
-        widest = max(widest, job.size + job.base_size)
-    for job in moves:
+    for job in (*patches, *moves):
         old = max(_size_of(_resolve_within(install_dir, job.path)), 0)
+        peak = max(peak, net_growth + job.size)
         net_growth += job.size - old
-        widest = max(widest, job.size + old)
-    return max(net_growth, 0) + widest
+    return peak + expanded
 
 
 def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
@@ -1599,6 +1601,29 @@ async def _prefetch_moves(
     return entries
 
 
+async def _prefetch_expanded(
+    client: httpx.AsyncClient,
+    release: Release,
+    specs: Sequence[_PatchSpec],
+) -> int:
+    """下载前问一次「落地中途会展开多大的差量」：它只在包内总表里，清单不给。
+
+    差量成员必须先整份解到暂存目录，hpatchz 才有输入文件可读；这一份与卷、与新临时文件
+    是同时占盘的。只读总表，不取正文；问不到就返回 0，由固定余量兜。
+    """
+
+    if not specs:
+        return 0
+    sizes = await package_index.fetch_expanded_sizes(
+        client=client,
+        volumes=[
+            package_index.RemoteVolume(part.url, part.size) for part in release.parts
+        ],
+        members=[spec.member for spec in specs],
+    )
+    return max(sizes.values(), default=0)
+
+
 _install_dir_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -1770,10 +1795,15 @@ async def _ensure_game_updated(
                     client, release.patch_info_url, release.patch_info_md5
                 )
                 prefetched = await _prefetch_moves(client, release, report)
+                expanded = (
+                    await _prefetch_expanded(client, release, specs)
+                    if prefetched is not None
+                    else 0
+                )
             if prefetched is not None:
                 # 下载与落地共用一个盘，两笔体积必须在这一刻一起算：卷要读到最后一刻
                 # 才清，落地那一刻暂存卷还压在同一个目录里
-                landing_need = _landing_need(specs, prefetched, install_dir)
+                landing_need = _landing_need(specs, prefetched, install_dir, expanded)
                 short = _disk_shortfall(
                     install_dir,
                     release.download_size + landing_need + _RESERVE_BYTES,
@@ -1829,9 +1859,14 @@ async def _ensure_game_updated(
                 }
                 moves, deletes = _read_package_manifests(archive, members)
                 plan = _build_delta_plan(specs, members, moves, deletes)
+                # 落地中途这条差量要先整份解到暂存目录；包已经打开，这份体积是准数
+                max_expanded = max(
+                    (archive.getinfo(job.member).file_size for job in plan.patches),
+                    default=0,
+                )
                 landing = _disk_shortfall(
                     install_dir,
-                    _landing_need(plan.patches, plan.moves, install_dir)
+                    _landing_need(plan.patches, plan.moves, install_dir, max_expanded)
                     + _RESERVE_BYTES,
                     "游戏目录（差量落地）",
                 )
