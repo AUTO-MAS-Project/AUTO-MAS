@@ -3133,21 +3133,144 @@ class MSSConfig(MaaFWConfig):
     FLAVOR = "app.task.MSS.flavor:FLAVOR"
 
 
-class MaaPlanConfig(ConfigBase):
+PLAN_WEEKDAY_GROUPS: list[str] = list(calendar.day_name)
+"""周计划的七天分组名，顺序与 calendar.day_name 一致（周一到周日）。"""
+
+
+def plan_day_group(index: int) -> str:
+    """多天轮换第 index 天在配置里的分组名。"""
+
+    return f"Day{index}"
+
+
+class PlanDaysConfig(ConfigBase):
+    """按天分组的计划表基类。
+
+    存储层一天一个分组：周计划沿用 Monday~Sunday，多天轮换用 Day1~Day31（都建出来，
+    只有前 N 天会落盘）。对外的 ``Days`` 字典把两者统一成「键 = 星期名或 "1"~"N"」，
+    前端不必关心存储细节，换算只在本类里做一次。
+    """
+
+    def _init_plan_days_info(self, default_name: str) -> None:
+        """建三种计划表共用的 Info 项。"""
+
+        self.Info_Name = ConfigItem("Info", "Name", default_name)
+        self.Info_Mode = ConfigItem(
+            "Info",
+            "Mode",
+            "ALL",
+            OptionsValidator(["ALL", "Weekly", "Rotate"]),
+        )
+        self.Info_RotateDays = ConfigItem(
+            "Info",
+            "RotateDays",
+            schema_model.PLAN_ROTATE_DAYS_DEFAULT,
+            RangeValidator(1, schema_model.PLAN_ROTATE_DAYS_MAX),
+        )
+
+    @staticmethod
+    def rotate_groups() -> list[str]:
+        """多天轮换的全部候选分组。"""
+
+        return [
+            plan_day_group(index)
+            for index in range(1, schema_model.PLAN_ROTATE_DAYS_MAX + 1)
+        ]
+
+    def rotate_days(self) -> int:
+        """当前的多天轮换天数，落在 1~31。"""
+
+        try:
+            days = int(self.get("Info", "RotateDays"))
+        except (TypeError, ValueError):
+            return schema_model.PLAN_ROTATE_DAYS_DEFAULT
+        return min(max(days, 1), schema_model.PLAN_ROTATE_DAYS_MAX)
+
+    def rotate_group(self, now: datetime) -> str:
+        """多天轮换在 ``now`` 这天该用哪个分组。"""
+
+        return plan_day_group((now.day - 1) % self.rotate_days() + 1)
+
+    @staticmethod
+    def day_group_of(day: str) -> str | None:
+        """对外的天键换算成分组名，认不出来就返回 None。"""
+
+        if day in PLAN_WEEKDAY_GROUPS:
+            return day
+        if day.isdigit() and 1 <= int(day) <= schema_model.PLAN_ROTATE_DAYS_MAX:
+            return plan_day_group(int(day))
+        return None
+
+    @staticmethod
+    def flatten_days(data: dict) -> dict:
+        """把对外的 Days 摊回按天分组，读取侧用的仍是分组形态。"""
+
+        if not isinstance(data, dict):
+            return data
+
+        days = data.get("Days")
+        if not isinstance(days, dict):
+            return data
+
+        flat = {key: value for key, value in data.items() if key != "Days"}
+        for day, item in days.items():
+            group = PlanDaysConfig.day_group_of(str(day))
+            if group is not None:
+                flat[group] = item
+        return flat
+
+    async def load(self, data: dict) -> bool:
+        return await super().load(self.flatten_days(data))
+
+    async def toDict(
+        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+    ) -> dict[str, Any]:
+        """把按天的分组收进 Days：周计划给七个星期名，轮换只给前 N 天。"""
+
+        data = await super().toDict(if_decrypt, regenerate_uuids)
+
+        days: dict[str, Any] = {}
+        for group in PLAN_WEEKDAY_GROUPS:
+            if group in data:
+                days[group] = data.pop(group)
+        for index in range(1, self.rotate_days() + 1):
+            group = plan_day_group(index)
+            if group in data:
+                days[str(index)] = data.pop(group)
+        # 轮换天数之外的分组不对外出现，也就不用落盘
+        for index in range(1, schema_model.PLAN_ROTATE_DAYS_MAX + 1):
+            data.pop(plan_day_group(index), None)
+
+        data["Days"] = days
+        return data
+
+    async def update(self, data: dict[str, dict[str, Any]]) -> None:
+        """接受 Days 形态的更新：把星期名与 "1"~"N" 摊回各自的分组。"""
+
+        translated: dict[str, dict[str, Any]] = {}
+        for group, items in data.items():
+            if group != "Days" or not isinstance(items, dict):
+                translated[group] = items
+                continue
+
+            for day, item in items.items():
+                group_name = self.day_group_of(str(day))
+                if group_name is not None:
+                    translated[group_name] = item
+
+        await super().update(translated)
+
+
+class MaaPlanConfig(PlanDaysConfig):
     """MAA计划表配置"""
 
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
-        ## 计划表名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 MAA 计划表")
-        ## 计划表模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
-        )
+        self._init_plan_days_info("新 MAA 计划表")
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
-        for group in ["ALL", *calendar.day_name]:
+        for group in ["ALL", *PLAN_WEEKDAY_GROUPS, *self.rotate_groups()]:
             self.config_item_dict[group] = {}
 
             ## 理智药数量
@@ -3175,10 +3298,11 @@ class MaaPlanConfig(ConfigBase):
     def get_current_info(self, name: str, server: str | None = None) -> ConfigItem:
         """获取当前的计划表配置项，周模式按 server 区服的游戏日取当天配置"""
 
-        if self.get("Info", "Mode") == "ALL":
+        mode = self.get("Info", "Mode")
+        if mode == "ALL":
             return self.config_item_dict["ALL"][name]
 
-        elif self.get("Info", "Mode") == "Weekly":
+        elif mode == "Weekly":
             today = game_now(server).strftime("%A")
 
             if today in self.config_item_dict:
@@ -3186,12 +3310,15 @@ class MaaPlanConfig(ConfigBase):
             else:
                 return self.config_item_dict["ALL"][name]
 
+        elif mode == "Rotate":
+            return self.config_item_dict[self.rotate_group(game_now(server))][name]
+
         else:
             raise ValueError("非法的计划表模式")
 
 
-class WeeklyKeyPlanConfig(ConfigBase):
-    """只保存日期槽位并返回完整 key 的通用周计划表。"""
+class WeeklyKeyPlanConfig(PlanDaysConfig):
+    """只保存日期槽位并返回完整 key 的通用计划表。"""
 
     def __init__(
         self,
@@ -3199,13 +3326,10 @@ class WeeklyKeyPlanConfig(ConfigBase):
         default_key: Any,
         key_validator: ValidatorBase,
     ) -> None:
-        self.Info_Name = ConfigItem("Info", "Name", default_name)
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
-        )
+        self._init_plan_days_info(default_name)
 
         self.config_item_dict: dict[str, ConfigItem] = {}
-        for group in ["ALL", *calendar.day_name]:
+        for group in ["ALL", *PLAN_WEEKDAY_GROUPS, *self.rotate_groups()]:
             item = ConfigItem(group, "Key", deepcopy(default_key), key_validator)
             self.config_item_dict[group] = item
             setattr(self, f"{group}_Key", item)
@@ -3215,11 +3339,20 @@ class WeeklyKeyPlanConfig(ConfigBase):
     def get_current_key(self) -> Any:
         """按当前模式返回完整 key，不解释 key 内容。"""
 
-        if self.get("Info", "Mode") == "ALL":
+        mode = self.get("Info", "Mode")
+        if mode == "ALL":
             return self.config_item_dict["ALL"].getValue()
 
-        today = datetime.now(tz=UTC4).strftime("%A")
-        return self.config_item_dict[today].getValue()
+        if mode == "Weekly":
+            today = datetime.now(tz=UTC4).strftime("%A")
+            return self.config_item_dict[today].getValue()
+
+        if mode == "Rotate":
+            return self.config_item_dict[
+                self.rotate_group(datetime.now(tz=UTC4))
+            ].getValue()
+
+        raise ValueError("非法的计划表模式")
 
 
 class MaaEndPlanConfig(WeeklyKeyPlanConfig):

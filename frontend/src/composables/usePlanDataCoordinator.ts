@@ -9,13 +9,14 @@
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
+import type { MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
+import { planColumnKeys, readPlanColumn, type PlanMode } from '@/utils/planDays'
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
-// 时间维度常量
+// 时间维度常量。这里只列一周七天：多天轮换的天键是 "1"~"N"，由计划表数据决定，不在常量里。
 export const TIME_KEYS = [
   'ALL',
   'Monday',
@@ -28,29 +29,39 @@ export const TIME_KEYS = [
 ] as const
 export type TimeKey = (typeof TIME_KEYS)[number]
 
+/**
+ * 天键 → 关卡池键。
+ *
+ * 关卡池接口仍按 ALL + 星期名给池子（后端没改）：周计划的天本身就是星期名，直接用自己的池；
+ * 多天轮换的第 i 天与真实星期没有对应关系，拿不到属于它的池，所以所有轮换天都读 ALL 池。
+ */
+const stagePoolKeyOf = (dayKey: string): TimeKey =>
+  (TIME_KEYS as readonly string[]).includes(dayKey) ? (dayKey as TimeKey) : 'ALL'
+
+// 一天的配置
+interface PlanDayConfig {
+  medicineNumb: number
+  seriesNumb: string
+  stages: {
+    primary: string // Stage
+    backup1: string // Stage_1
+    backup2: string // Stage_2
+    backup3: string // Stage_3
+  }
+}
+
 // 统一的数据结构
 interface PlanDataState {
   // 基础信息
   info: {
     name: string
-    mode: 'ALL' | 'Weekly'
+    mode: PlanMode
     type: string
   }
 
-  // 时间维度的配置数据
-  timeConfigs: Record<
-    TimeKey,
-    {
-      medicineNumb: number
-      seriesNumb: string
-      stages: {
-        primary: string // Stage
-        backup1: string // Stage_1
-        backup2: string // Stage_2
-        backup3: string // Stage_3
-      }
-    }
-  >
+  // 按天的配置数据。天键由计划表自己的模式与轮换天数决定：
+  // 周计划是 Monday~Sunday，多天轮换是 "1"~"N"，ALL 一直在。
+  timeConfigs: Record<string, PlanDayConfig>
 
   // 自定义关卡定义
   customStageDefinitions: {
@@ -61,17 +72,17 @@ interface PlanDataState {
   }
 }
 
-// 标准关卡选项缓存（按时间维度）
+// 标准关卡选项缓存（按关卡池键：ALL 或星期名）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
 let stageOptionsPreloadPromise: Promise<void> | null = null
 // 缓存代次：clearStageOptionsCache 自增，清缓存前发出的请求完成后不得写入新缓存
 let stageOptionsGeneration = 0
 
-// 加载标准关卡选项
-async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
+// 加载标准关卡选项，参数是关卡池键（ALL 或星期名）
+async function loadStageOptions(poolKey: TimeKey): Promise<ComboBoxItem[]> {
   // 如果已缓存，直接返回
-  if (stageOptionsCache.value[timeKey]) {
-    return stageOptionsCache.value[timeKey]
+  if (stageOptionsCache.value[poolKey]) {
+    return stageOptionsCache.value[poolKey]
   }
 
   const generation = stageOptionsGeneration
@@ -90,7 +101,7 @@ async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
     }
 
     const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: typeMap[timeKey],
+      type: typeMap[poolKey],
     })
 
     if (response.code === 200 || response.code === undefined) {
@@ -99,23 +110,24 @@ async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
         return []
       }
       // 缓存结果
-      stageOptionsCache.value[timeKey] = response.data
+      stageOptionsCache.value[poolKey] = response.data
       return response.data
     } else {
-      logger.error(`加载失败 (${timeKey}): ${response.message}`)
+      logger.error(`加载失败 (${poolKey}): ${response.message}`)
       return []
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载异常 (${timeKey}): ${errorMsg}`)
+    logger.error(`加载异常 (${poolKey}): ${errorMsg}`)
     return []
   }
 }
 
-// 预加载所有时间维度的关卡选项
-export async function preloadAllStageOptions(): Promise<void> {
-  const hasCompleteCache = TIME_KEYS.every(timeKey =>
-    Array.isArray(stageOptionsCache.value[timeKey])
+// 预加载关卡选项。传入当前的天键集合时只拉这些天真正会读的池，缺省拉全部池。
+export async function preloadAllStageOptions(dayKeys?: readonly string[]): Promise<void> {
+  const poolKeys = [...new Set((dayKeys ?? TIME_KEYS).map(stagePoolKeyOf))]
+  const hasCompleteCache = poolKeys.every(poolKey =>
+    Array.isArray(stageOptionsCache.value[poolKey])
   )
   if (hasCompleteCache) {
     return
@@ -124,7 +136,7 @@ export async function preloadAllStageOptions(): Promise<void> {
   if (!stageOptionsPreloadPromise) {
     const generation = stageOptionsGeneration
     const preloadPromise: Promise<void> = Promise.all(
-      TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
+      poolKeys.map(poolKey => loadStageOptions(poolKey))
     )
       .then(() => {
         if (generation === stageOptionsGeneration) {
@@ -152,9 +164,9 @@ export function clearStageOptionsCache(): void {
   logger.info('关卡选项缓存已清除')
 }
 
-// 获取缓存的关卡选项
-export function getCachedStageOptions(timeKey: TimeKey): ComboBoxItem[] {
-  return stageOptionsCache.value[timeKey] || []
+// 获取缓存的关卡选项。参数可以是任意天键：轮换天没有自己的池，会落到 ALL 池。
+export function getCachedStageOptions(dayKey: string): ComboBoxItem[] {
+  return stageOptionsCache.value[stagePoolKeyOf(dayKey)] || []
 }
 
 /**
@@ -164,11 +176,39 @@ export function usePlanDataCoordinator() {
   // 当前计划表ID
   const currentPlanId = ref<string>('default')
 
+  // 当前计划表的天键（含 ALL）：由接口数据的 Info.Mode 与 Info.RotateDays 决定，
+  // 周计划是星期名，多天轮换是 "1"~"N"。本地结构、视图数据都按它来。
+  const dayKeys = ref<string[]>([...TIME_KEYS])
+
   const getDefaultCustomStageDefinitions = () => ({
     custom_stage_1: '',
     custom_stage_2: '',
     custom_stage_3: '',
     custom_stage_4: '',
+  })
+
+  /** 空的一天 */
+  const createEmptyDayConfig = (): PlanDayConfig => ({
+    medicineNumb: 0,
+    seriesNumb: '0',
+    stages: {
+      primary: '-',
+      backup1: '-',
+      backup2: '-',
+      backup3: '-',
+    },
+  })
+
+  /** 接口里的一天 → 本地结构；该天还没有数据时给一份空的（天键刚换、后端尚未落盘时会遇到） */
+  const toDayConfig = (timeData: MaaPlanConfig_Item | null | undefined): PlanDayConfig => ({
+    medicineNumb: timeData?.MedicineNumb || 0,
+    seriesNumb: timeData?.SeriesNumb || '0',
+    stages: {
+      primary: timeData?.Stage || '-',
+      backup1: timeData?.Stage_1 || '-',
+      backup2: timeData?.Stage_2 || '-',
+      backup3: timeData?.Stage_3 || '-',
+    },
   })
 
   // 单一数据源
@@ -178,24 +218,15 @@ export function usePlanDataCoordinator() {
       mode: 'ALL',
       type: PLAN_CONFIG_TYPES.MAA,
     },
-    timeConfigs: {} as Record<TimeKey, any>,
+    timeConfigs: {},
     customStageDefinitions: getDefaultCustomStageDefinitions(),
   })
 
-  // 初始化时间配置
+  // 按当前天键重建时间配置
   const initializeTimeConfigs = () => {
-    TIME_KEYS.forEach(timeKey => {
-      planData.value.timeConfigs[timeKey] = {
-        medicineNumb: 0,
-        seriesNumb: '0',
-        stages: {
-          primary: '-',
-          backup1: '-',
-          backup2: '-',
-          backup3: '-',
-        },
-      }
-    })
+    planData.value.timeConfigs = Object.fromEntries(
+      dayKeys.value.map(dayKey => [dayKey, createEmptyDayConfig()])
+    )
   }
 
   // 初始化数据
@@ -203,35 +234,28 @@ export function usePlanDataCoordinator() {
 
   // 从API数据转换为内部数据结构
   const fromApiData = (
-    apiData: MaaPlanConfig,
+    apiData: Record<string, any>,
     forceUpdateCustomStages = false,
     inferCustomStages = true
   ) => {
     // 更新基础信息
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
-      planData.value.info.mode = apiData.Info.Mode || 'ALL'
+      planData.value.info.mode = (apiData.Info.Mode || 'ALL') as PlanMode
 
       // 如果API数据中包含计划表ID信息，更新当前planId
       // 注意：这里假设planId通过其他方式传入，API数据本身可能不包含ID
     }
 
-    // 更新时间配置
-    TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
-      if (timeData) {
-        planData.value.timeConfigs[timeKey] = {
-          medicineNumb: timeData.MedicineNumb || 0,
-          seriesNumb: timeData.SeriesNumb || '0',
-          stages: {
-            primary: timeData.Stage || '-',
-            backup1: timeData.Stage_1 || '-',
-            backup2: timeData.Stage_2 || '-',
-            backup3: timeData.Stage_3 || '-',
-          },
-        }
-      }
-    })
+    // 天键跟着计划表的模式与轮换天数走：切换模式或改天数会整套换键（星期名 ↔ "1"~"N"），
+    // 所以这里连本地结构一起重建。旧模式的天不能留着，否则 toApiData 会把它们当成当前的天写回接口。
+    dayKeys.value = planColumnKeys(planData.value.info.mode, apiData.Info?.RotateDays)
+    planData.value.timeConfigs = Object.fromEntries(
+      dayKeys.value.map(dayKey => [
+        dayKey,
+        toDayConfig(readPlanColumn(apiData, dayKey) as MaaPlanConfig_Item | null),
+      ])
+    )
 
     if (!inferCustomStages) {
       return
@@ -240,8 +264,8 @@ export function usePlanDataCoordinator() {
     // 从所有时间配置中推断自定义关卡定义
     const inferredStages = new Set<string>()
 
-    TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+    dayKeys.value.forEach(timeKey => {
+      const timeData = readPlanColumn(apiData, timeKey) as MaaPlanConfig_Item | null
       if (timeData) {
         // 检查所有关卡字段
         const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
@@ -306,24 +330,36 @@ export function usePlanDataCoordinator() {
     }
   }
 
-  // 转换为API数据格式
-  const toApiData = (): MaaPlanConfig => {
-    const result: MaaPlanConfig = {
+  // 转换为API数据格式。形态与后端 PlanDaysConfig 一致：ALL 仍在顶层，其余天收进 Days，
+  // 调用方用 readPlanColumn 取具体某一天（生成的 API 模型还没跟上，这里先按结构拼）。
+  const toApiData = (): Record<string, any> => {
+    const result: Record<string, any> = {
       Info: {
         Name: planData.value.info.name,
         Mode: planData.value.info.mode,
       },
     }
 
-    TIME_KEYS.forEach(timeKey => {
+    dayKeys.value.forEach(timeKey => {
       const config = planData.value.timeConfigs[timeKey]
-      result[timeKey] = {
+      if (!config) {
+        return
+      }
+
+      const day = {
         MedicineNumb: config.medicineNumb,
         SeriesNumb: config.seriesNumb as any,
         Stage: config.stages.primary,
         Stage_1: config.stages.backup1,
         Stage_2: config.stages.backup2,
         Stage_3: config.stages.backup3,
+      }
+
+      if (timeKey === 'ALL') {
+        result.ALL = day
+      } else {
+        result.Days = result.Days ?? {}
+        result.Days[timeKey] = day
       }
     })
 
@@ -339,7 +375,7 @@ export function usePlanDataCoordinator() {
         key: 'MedicineNumb',
         taskName: '吃理智药',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.medicineNumb || 0,
           ])
@@ -349,7 +385,7 @@ export function usePlanDataCoordinator() {
         key: 'SeriesNumb',
         taskName: '连战次数',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.seriesNumb || '0',
           ])
@@ -359,7 +395,7 @@ export function usePlanDataCoordinator() {
         key: 'Stage',
         taskName: '关卡选择',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.stages.primary || '-',
           ])
@@ -369,7 +405,7 @@ export function usePlanDataCoordinator() {
         key: 'Stage_1',
         taskName: '备选关卡-1',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.stages.backup1 || '-',
           ])
@@ -379,7 +415,7 @@ export function usePlanDataCoordinator() {
         key: 'Stage_2',
         taskName: '备选关卡-2',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.stages.backup2 || '-',
           ])
@@ -389,7 +425,7 @@ export function usePlanDataCoordinator() {
         key: 'Stage_3',
         taskName: '备选关卡-3',
         ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
+          dayKeys.value.map(timeKey => [
             timeKey,
             planData.value.timeConfigs[timeKey]?.stages.backup3 || '-',
           ])
@@ -406,7 +442,7 @@ export function usePlanDataCoordinator() {
     Object.entries(planData.value.customStageDefinitions).forEach(([, stageName]) => {
       if (stageName && stageName.trim()) {
         const stageStates: Record<string, boolean> = {}
-        TIME_KEYS.forEach(timeKey => {
+        dayKeys.value.forEach(timeKey => {
           const config = planData.value.timeConfigs[timeKey]
           stageStates[timeKey] = Object.values(config.stages).includes(stageName)
         })
@@ -427,7 +463,7 @@ export function usePlanDataCoordinator() {
       .filter(option => option.value && option.value !== '-')
       .forEach(option => {
         const stageStates: Record<string, boolean> = {}
-        TIME_KEYS.forEach(timeKey => {
+        dayKeys.value.forEach(timeKey => {
           const config = planData.value.timeConfigs[timeKey]
           stageStates[timeKey] = Object.values(config.stages).includes(option.value!)
         })
@@ -445,24 +481,30 @@ export function usePlanDataCoordinator() {
   })
 
   // 更新配置数据
-  const updateConfig = (timeKey: TimeKey, field: string, value: any) => {
+  const updateConfig = (timeKey: string, field: string, value: any) => {
+    // 天键跟着模式与轮换天数变，重建的间隙里取不到这一天就什么也不做
+    const config = planData.value.timeConfigs[timeKey]
+    if (!config) {
+      return
+    }
+
     if (field === 'MedicineNumb') {
-      planData.value.timeConfigs[timeKey].medicineNumb = value
+      config.medicineNumb = value
     } else if (field === 'SeriesNumb') {
-      planData.value.timeConfigs[timeKey].seriesNumb = value
+      config.seriesNumb = value
     } else if (field === 'Stage') {
-      planData.value.timeConfigs[timeKey].stages.primary = value
+      config.stages.primary = value
     } else if (field === 'Stage_1') {
-      planData.value.timeConfigs[timeKey].stages.backup1 = value
+      config.stages.backup1 = value
     } else if (field === 'Stage_2') {
-      planData.value.timeConfigs[timeKey].stages.backup2 = value
+      config.stages.backup2 = value
     } else if (field === 'Stage_3') {
-      planData.value.timeConfigs[timeKey].stages.backup3 = value
+      config.stages.backup3 = value
     }
   }
 
   // 切换关卡状态（简化视图用）
-  const toggleStage = (stageName: string, timeKey: TimeKey, enabled: boolean) => {
+  const toggleStage = (stageName: string, timeKey: string, enabled: boolean) => {
     const config = planData.value.timeConfigs[timeKey]
     const stageSlots = ['primary', 'backup1', 'backup2', 'backup3'] as const
 
@@ -487,7 +529,7 @@ export function usePlanDataCoordinator() {
   }
 
   // 按简化视图顺序重新分配槽位
-  const reassignSlotsBySimpleViewOrder = (timeKey: TimeKey) => {
+  const reassignSlotsBySimpleViewOrder = (timeKey: string) => {
     const config = planData.value.timeConfigs[timeKey]
     const stageSlots = ['primary', 'backup1', 'backup2', 'backup3'] as const
 
@@ -545,7 +587,7 @@ export function usePlanDataCoordinator() {
 
     // 如果名称改变了，需要更新所有引用
     if (oldName !== name) {
-      TIME_KEYS.forEach(timeKey => {
+      dayKeys.value.forEach(timeKey => {
         const config = planData.value.timeConfigs[timeKey]
         Object.keys(config.stages).forEach(stageKey => {
           if (config.stages[stageKey as keyof typeof config.stages] === oldName) {

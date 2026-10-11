@@ -1,16 +1,6 @@
 // BAAH 计划表 key 的前端契约：六类关卡每一位的含义、缺席 / 空 / 有值三态的读法与换算。
 // 取值规则与后端 app/models/config.py 的 BAAH_PLAN_KEY_SHAPE 一一对应，改一处要改两处。
 
-export type PlanTimeKey =
-  | 'ALL'
-  | 'Monday'
-  | 'Tuesday'
-  | 'Wednesday'
-  | 'Thursday'
-  | 'Friday'
-  | 'Saturday'
-  | 'Sunday'
-
 export type BAAHKeyFieldName = 'Event' | 'Wanted' | 'Special' | 'Exchange' | 'Hard' | 'Normal'
 
 /** 参数里的一位：词表 key 说明这一位是什么，min 是允许的最小值（-1 = 最高关或最大次数） */
@@ -30,17 +20,6 @@ export interface BAAHKeyField {
   /** 界面暴露的位，顺序与存储顺序一致 */
   parts: BAAHKeyPart[]
 }
-
-export const BAAH_PLAN_TIME_KEYS: PlanTimeKey[] = [
-  'ALL',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-]
 
 // 六类关卡的参数都是「… / 关卡 / 次数」收尾：悬赏通缉、特殊任务、学园交流会前面是
 // 地区或学院，困难图与普通图前面是章节，活动关卡没有前面那位。关卡位只有悬赏通缉、

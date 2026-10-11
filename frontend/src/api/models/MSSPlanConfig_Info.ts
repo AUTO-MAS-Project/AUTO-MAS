@@ -11,6 +11,10 @@ export type MSSPlanConfig_Info = {
      * 计划表模式
      */
     Mode?: MSSPlanConfig_Info.Mode;
+    /**
+     * 多天轮换的天数，仅 Rotate 模式使用
+     */
+    RotateDays?: number;
 };
 export namespace MSSPlanConfig_Info {
     /**
@@ -19,6 +23,7 @@ export namespace MSSPlanConfig_Info {
     export enum Mode {
         ALL = 'ALL',
         WEEKLY = 'Weekly',
+        ROTATE = 'Rotate',
     }
 }
 

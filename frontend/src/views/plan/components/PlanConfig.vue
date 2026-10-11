@@ -37,9 +37,22 @@
           :options="[
             { label: t('plan.modeAll'), value: 'ALL' },
             { label: t('plan.modeWeekly'), value: 'Weekly' },
+            { label: t('plan.modeRotate'), value: 'Rotate' },
           ]"
           @change="handleModeChange"
         />
+        <!-- 只有多天轮换用得上这个天数，别的模式下摆出来会让人以为周计划也按它排 -->
+        <template v-if="currentMode === 'Rotate'">
+          <span class="mode-label">{{ t('plan.rotateDaysLabel') }}</span>
+          <a-input-number
+            :value="rotateDays"
+            :min="PLAN_ROTATE_DAYS_MIN"
+            :max="PLAN_ROTATE_DAYS_MAX"
+            size="small"
+            class="rotate-days-input"
+            @update:value="handleRotateDaysChange"
+          />
+        </template>
         <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
         <template v-if="supportsSimpleView">
           <span class="view-label">{{ t('plan.viewLabel') }}</span>
@@ -65,12 +78,20 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
+import {
+  PLAN_ROTATE_DAYS_MAX,
+  PLAN_ROTATE_DAYS_MIN,
+  clampRotateDays,
+  type PlanMode,
+} from '@/utils/planDays'
 
 const { t } = useI18n()
 
 interface Props {
   currentPlanName: string
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
+  /** 多天轮换的天数，只影响 Rotate 模式的列数 */
+  rotateDays: number
   viewMode: 'config' | 'simple'
   /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
   supportsSimpleView: boolean
@@ -80,7 +101,9 @@ interface Props {
 interface Emits {
   (e: 'update:current-plan-name', value: string): void
 
-  (e: 'update:current-mode', value: 'ALL' | 'Weekly'): void
+  (e: 'update:current-mode', value: PlanMode): void
+
+  (e: 'update:rotate-days', value: number): void
 
   (e: 'update:view-mode', value: 'config' | 'simple'): void
 
@@ -94,9 +117,13 @@ interface Emits {
 defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const handleModeChange = (value: 'ALL' | 'Weekly') => {
+const handleModeChange = (value: PlanMode) => {
   emit('update:current-mode', value)
   emit('mode-change')
+}
+
+const handleRotateDaysChange = (value: number | string | null) => {
+  emit('update:rotate-days', clampRotateDays(value))
 }
 </script>
 
@@ -112,6 +139,11 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   font-weight: 500;
+}
+
+/* 轮换天数是三选一旁边的一个小数，给个固定宽度免得它随数字位数跳 */
+.rotate-days-input {
+  width: 72px;
 }
 
 .plan-title-container {

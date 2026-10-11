@@ -14,32 +14,8 @@ export type MSSPlanConfig_Output = {
      */
     ALL?: (MSSPlanConfig_Item | null);
     /**
-     * 周一
+     * 每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键
      */
-    Monday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (MSSPlanConfig_Item | null);
+    Days?: Record<string, MSSPlanConfig_Item>;
 };
 
