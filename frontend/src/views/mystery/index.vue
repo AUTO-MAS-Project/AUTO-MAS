@@ -183,7 +183,10 @@ const lock = async () => {
           </a-card>
         </a-col>
         <a-col :xs="24" :sm="12" :lg="8">
-          <a-card :title="t('mystery.personalMss.title')" :aria-label="t('mystery.personalMss.title')">
+          <a-card
+            :title="t('mystery.personalMss.title')"
+            :aria-label="t('mystery.personalMss.title')"
+          >
             {{ t('mystery.personalMss.hint') }}
             <div class="personal-mss-switch">
               <a-switch
