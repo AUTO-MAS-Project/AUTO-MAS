@@ -1342,7 +1342,9 @@ export function useScriptApi() {
                       IfQuickConfig:
                         info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
                           ? info.IfQuickConfig
-                          : undefined,
+                          : typeof user.Info.IfQuickConfig === 'boolean'
+                            ? user.Info.IfQuickConfig
+                            : undefined,
                     },
                   }
                 })
