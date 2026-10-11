@@ -37,9 +37,6 @@
           </div>
         </div>
       </div>
-      <div v-else-if="usePlainLog" ref="plainLogContainerRef" class="plain-log-container">
-        <pre class="log-text">{{ logContent }}</pre>
-      </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
           :value="logContent"
@@ -81,8 +78,6 @@ const props = defineProps<Props>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
 const { logContent } = toRefs(props)
-const LARGE_LOG_MONACO_THRESHOLD = 60000
-const usePlainLog = computed(() => logContent.value.length > LARGE_LOG_MONACO_THRESHOLD)
 
 const { isDark } = useTheme()
 const { token } = theme.useToken()
@@ -120,7 +115,6 @@ const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors,
   useLogHighlight({ name: 'scheduler-log', isDark: logIsDark, colors: editorColors })
 
 const logContentRef = ref<HTMLElement | null>(null)
-const plainLogContainerRef = ref<HTMLElement | null>(null)
 
 // 在编辑器挂载前注册语言
 let monacoInstance: typeof import('monaco-editor') | null = null
@@ -146,12 +140,6 @@ watch(
     }
   }
 )
-
-watch(usePlainLog, plain => {
-  if (plain) {
-    editorInstance = null
-  }
-})
 
 // Monaco Editor 实例
 let editorInstance: any = null
@@ -219,8 +207,6 @@ const scrollToBottom = () => {
       editorInstance.revealLine(lineCount)
       editorInstance.setScrollTop(editorInstance.getScrollHeight())
     }
-  } else if (plainLogContainerRef.value) {
-    plainLogContainerRef.value.scrollTop = plainLogContainerRef.value.scrollHeight
   } else if (logContentRef.value) {
     logContentRef.value.scrollTop = logContentRef.value.scrollHeight
   }
@@ -304,13 +290,6 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.plain-log-container {
-  height: 100%;
-  overflow: auto;
-  padding: 12px 16px;
-  background: inherit;
-}
-
 .monaco-container :deep(.monaco-editor) {
   height: 100% !important;
 }
@@ -323,14 +302,6 @@ onUnmounted(() => {
 .log-locked::-webkit-scrollbar-thumb {
   background-color: var(--ant-color-primary) !important;
   border-radius: 6px;
-}
-
-.log-text {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: inherit;
-  font: inherit;
 }
 
 .empty-state-mini {
