@@ -6,7 +6,18 @@
 
 ## 按 PR 选择
 
-`frontend/e2e/run.mjs` 是唯一启动入口：它创建临时工作目录、启动 Playwright 和两个开发服务，并在服务退出后删除临时目录。若系统 `TEMP/TMP` 被配置到 `frontend` 内，入口会改用 `frontend` 外的专用临时目录，避免 Vite 监听运行数据。不要绕过它直接运行 `playwright test`。
+`frontend/e2e/run.mjs` 是唯一启动入口：它创建临时工作目录（只用于 `TEMP/TMP` 重定向）、启动 Playwright 和两个开发服务，并在服务退出后删除该目录。若系统 `TEMP/TMP` 被配置到 `frontend` 内，入口会改用 `frontend` 外的专用临时目录，避免 Vite 监听运行数据。不要绕过它直接运行 `playwright test`。
+
+入口默认把**当前检出**作为后端数据根，也就是开发者手工调试时留下的 `config/`、`data/`、`history/` 和 `debug/`。测试直接读写它们：后端启动即做配置迁移与归一化并写回盘，用例会新建队列、改设置，并写 `history/`、`debug/` 和 `data/data.db`。运行前请关闭自己启动的实例，避免两个后端同时写同一份配置与数据库。
+
+需要指向别处（例如 worktree 调试时复用主检出）时显式给出目录：
+
+```powershell
+$env:AUTO_MAS_E2E_DATA_ROOT = (Resolve-Path ..).Path
+yarn e2e --grep "@smoke"
+```
+
+入口把该目录当作后端工作目录，不复制、不裁剪、不清理，也不改写其中的 `config/ToolsConfig.json`；真实模式同样直接使用它。
 
 首次准备本机环境时，在仓库根目录安装 Python 开发依赖，再安装前端依赖和 Playwright Chromium：
 
@@ -36,9 +47,9 @@ yarn e2e:report
 yarn playwright show-report playwright-report/real
 ```
 
-`e2e:check` 运行 harness 自检和 E2E TypeScript 检查；`e2e:init` 运行隔离后端冷启动流程。`e2e:report` 打开浏览器 HTML 报告；真实流程使用 `playwright show-report playwright-report/real`。`--grep` 是正则表达式，空值默认运行 Playwright 配置中的默认集合。默认配置排除所有 `@real` 用例；真实流程由作者本机运行，不访问共享 CI 账号、模拟器或游戏资源。真实命令从当前检出的分支启动，`dev` 与 `release/*` 均可验证各自代码。E2E 不阻断合并，PR 作者按改动选择需要的流程，并手动附上经过检查的截图或摘要。
+`e2e:check` 运行 harness 自检和 E2E TypeScript 检查；`e2e:init` 运行后端冷启动流程。`e2e:report` 打开浏览器 HTML 报告；真实流程使用 `playwright show-report playwright-report/real`。`--grep` 是正则表达式，空值默认运行 Playwright 配置中的默认集合。默认配置排除所有 `@real` 用例；真实流程由作者本机运行，不访问共享 CI 账号、模拟器或游戏资源。真实命令从当前检出的分支启动，`dev` 与 `release/*` 均可验证各自代码。E2E 不阻断合并，PR 作者按改动选择需要的流程，并手动附上经过检查的截图或摘要。
 
-结果按模式隔离：
+结果按模式存放：
 
 | 模式 | 测试产物 | HTML 报告 |
 | --- | --- | --- |
@@ -53,7 +64,7 @@ yarn playwright show-report playwright-report/real
 - `@settings`：设置持久化、保存失败回滚、刷新后配置恢复。
 - `@history`：历史记录导航、按日期区间筛选、展开日志（数据根无历史记录时跳过）。
 - `@recovery`：页面导航状态保持、页面刷新后 WebSocket 重连、后端重启恢复、任务状态保持。
-- `@init`：隔离后端冷启动，等待健康与后台初始化就绪，并确认明日方舟 PC 工具关闭时不阻塞启动。
+- `@init`：后端冷启动，等待健康与后台初始化就绪；数据根里未启用明日方舟 PC 工具时，同时确认启动不会初始化它。
 - `@real @game-schedule @account`（另带 `@emulator` 或 `@script-install`）：同一条通用真实调度流程按所选脚本是否绑定模拟器执行前置检查，再验证唯一用户选择、真实调度、任务终态和公开完成事件中的用户结果。BetterGI 可复用入口；运行前需有对应本机安装与有效配置。
 
 ## 为单个 PR 添加流程
@@ -61,7 +72,7 @@ yarn playwright show-report playwright-report/real
 - 文件使用 `frontend/e2e/<场景>.pw.ts`，从 `./fixtures` 导入 `test`、`expect`，按用户路径操作 UI。复用 `app.goto()` 和 `app.evidence()`，不要直接改页面内部状态。
 - 用 `test.describe('@标签', ...)` 命名流程；有真实游戏副作用的用例必须带 `@real`。`--grep` 接收正则：`@queue|@scheduler` 是 OR；`(?=.*@real)(?=.*@my-feature)` 是 AND。`'@real @my-feature'` 只匹配标题中相邻且顺序一致的文本，不是通用 AND 选择器。
 - 普通一次性流程用 `yarn e2e --grep '@my-feature'` 运行。新增长期标签只需要在对应 spec 和本文档中说明用途，不需要维护 CI 标签映射。
-- 真实一次性流程用 `pwsh -NoProfile -File ./e2e/run-real.ps1 -Grep '(?=.*@real)(?=.*@my-feature)'` 运行；它复用已选脚本和用户的 MAS 配置，并将所需数据复制到临时目录。入口按脚本是否绑定模拟器决定是否执行模拟器步骤。新专项若有不同于标准 MAS 用户配置目录的前置数据，作者需扩展 seed 契约并补自检。
+- 真实一次性流程用 `pwsh -NoProfile -File ./e2e/run-real.ps1 -Grep '(?=.*@real)(?=.*@my-feature)'` 运行；它直接使用当前检出里已调配好的脚本、用户和模拟器配置。入口按脚本是否绑定模拟器决定是否执行模拟器步骤。新增专项只需声明公开前置条件（脚本、用户、可选模拟器）并在本机配置里准备好。
 - 功能或 bugfix 的一次性流程属于 PR 验证产物；跑完并检查证据后，按仓库规则在合并前删除。跨功能且长期稳定的公共流程才保留。
 - 凭据从本机已有配置读取，不写进 spec、仓库、PR 输入或证据。真实流程只分享精选截图和摘要，完整报告不能视为已脱敏。
 
@@ -85,12 +96,12 @@ test.describe('@my-feature', () => {
 
 | 优先级 / 范围 | 用户实际操作与验收 | 所需环境 |
 | --- | --- | --- |
-| P0 `@smoke` | 启动、初始化、首页入口、核心页面导航；空态、加载态和返回正常。 | 干净临时配置 |
-| P0 `@queue` | 队列和队列项的新增、编辑、重排、删除；定时项启停和持久化；刷新后顺序一致。 | 隔离后端；部分场景需脚本配置 |
-| P0 `@settings` | 安全设置持久化；保存失败回滚；仅在受控通知替身下验证通知。 | 临时配置与通知替身 |
+| P0 `@smoke` | 启动、初始化、首页入口、核心页面导航；空态、加载态和返回正常。 | 本机现有配置 |
+| P0 `@queue` | 队列和队列项的新增、编辑、重排、删除；定时项启停和持久化；刷新后顺序一致。 | 本机后端；部分场景需脚本配置 |
+| P0 `@settings` | 安全设置持久化；保存失败回滚；仅在受控通知替身下验证通知。 | 本机配置与通知替身 |
 | P1 `@scheduler` | 缺任务/模式/用户时禁止启动；单用户、多用户、队列范围、禁用项、重复启动、停止终态。 | 确定性执行器或真实脚本 |
 | P1 `@scheduler` | 循环预览、到期执行、重试、恢复入口、运行时修改与删除保护。 | 可控时钟或真实时间流程 |
-| P1 `@history` | 按日期和用户搜索；展开日志；无结果、坏记录和刷新恢复；运行结果与历史一致。 | 隔离历史数据 |
+| P1 `@history` | 按日期和用户搜索；展开日志；无结果、坏记录和刷新恢复；运行结果与历史一致。 | 本机历史数据 |
 | P1 `@recovery` | 页面切换、renderer 刷新；WS 断线、延迟、重复、乱序和快照失败；重连后状态与日志收敛。 | 受控网络故障与确定性任务 |
 | P2 模拟器 | 搜索/纳管、实例绑定、离线启动、ADB 就绪、重复操作、超时/失败提示、关闭恢复。 | 作者已有模拟器和 TCP ADB |
 | P2 游戏调度 | 游戏包安装检查；选择脚本和用户；真实启动、公开结果、日志、失败、取消和重跑。 | 作者已有游戏与受支持脚本 |
@@ -107,15 +118,15 @@ test.describe('@my-feature', () => {
 | `AUTO_MAS_E2E_USER_ID` | 脚本下已启用用户 UUID |
 | `AUTO_MAS_E2E_ACCOUNT_NAME` | 配置中该用户的名称 |
 
-`AUTO_MAS_E2E_TEMPLATE_ROOT` 可选，默认当前仓库根目录；worktree 使用原工作区配置时显式指向原工作区。模板需有 `config/ScriptConfig.json`；绑定模拟器时还需对应 `config/EmulatorConfig.json`，用户的计划字段（MAA/BAAH 为 `Info.StageMode`、MaaEnd 为 `Info.SanityMode`、MSS 为 `Info.PlanMode`）引用计划时还需 `config/PlanConfig.json`。模拟器 ID 和实例索引从所选脚本绑定读取并校验，也可通过 `AUTO_MAS_E2E_EMULATOR_ID`、`AUTO_MAS_E2E_EMULATOR_INDEX` 限定目标；未绑定模拟器的脚本可省略它们。密码和密文按不透明配置透传，须在能解密原配置的 Windows 身份下运行。
+数据根里的配置需能直接跑通所选流程：`config/ScriptConfig.json` 有该脚本，绑定模拟器时 `config/EmulatorConfig.json` 有对应实例，用户的计划字段（MAA/BAAH 为 `Info.StageMode`、MaaEnd 为 `Info.SanityMode`、MSS 为 `Info.PlanMode`）引用计划时 `config/PlanConfig.json` 有该计划。模拟器 ID 和实例索引从所选脚本绑定读取，也可通过 `AUTO_MAS_E2E_EMULATOR_ID`、`AUTO_MAS_E2E_EMULATOR_INDEX` 限定目标；未绑定模拟器的脚本可省略它们。密码和密文按不透明配置透传，须在能解密原配置的 Windows 身份下运行。
 
-`run.mjs` 校验目标后，只保留选中的脚本和一个启用用户；若脚本绑定模拟器，也只保留对应模拟器。入口登记了当前所有专项配置类型：MAA、General、Okww、OkNte、SRC、MaaEnd、MaaFW/M9A、HSR、BetterGI、ZzzOd、BAAH、Whimbox、MSS；未知类型会直接失败并要求专项作者补充适配。通知配置会从临时用户副本移除。普通专项按原样复制 `data/<scriptId>/{Default,<userId>}/{ConfigFile,Infrastructure}`；BetterGI 额外复制选中用户的 `OneDragon`、`ScriptGroup`、`GlobalDomain` 和 `GlobalStygian`，这些是 MAS 当前公开的 BetterGI 用户副本目录。临时环境不复制全局设置、队列、工具/社区配置、通知密钥、历史、`Temp`、备份池或上次运行的恢复事务。BetterGI 和其他把原生配置留在安装目录的专项，其安装根目录与脚本资产仍由专项配置指向本机已有安装，入口不复制或解析上游安装目录。
+`run.mjs` 不复制也不改写配置：后端直接用数据根里的 `config/` 与 `data/` 运行。因此真实运行会改动其中的队列、设置、历史和 `data/data.db`，通知配置也不会被剥离——本机通知照常触发。BetterGI 和其他把原生配置留在安装目录的专项，其安装根目录与脚本资产仍由专项配置指向本机已有安装，入口不复制或解析上游安装目录。
 
-MAS 配置和托管数据在临时副本中运行，原 `config/`、`data/` 不被覆盖；脚本安装路径仍指向本机真实安装，正常的配置注入/恢复可能改变游戏状态或消耗资源。临时目录不能隔离这些外部副作用，作者应选择合适的现有脚本与用户。
+MAS 配置和托管数据就地运行，脚本安装路径也指向本机真实安装；正常的配置注入/恢复可能改变游戏状态或消耗资源，作者应选择合适的现有脚本与用户。
 
 流程顺序为：确认无运行任务和唯一目标用户 → 若脚本绑定模拟器，必要时启动并等待操作完成、在线及 ADB 就绪 → 在调度台选择脚本及用户 → 启动一次真实调度 → 等待任务终态并核对公开完成事件中的目标用户状态 → 保存证据。未绑定模拟器时跳过模拟器步骤。`finally` 停止仍运行的任务，只关闭本次由测试启动的模拟器；已在线实例不由测试额外关闭。统一入口等两个服务退出后再删除临时目录。
 
-真实入口在机器级临时目录建立原子锁（Windows 为 `%SystemRoot%\Temp\AUTO-MAS`），同一台电脑同时只允许一个真实 E2E；强制结束进程后若留下锁文件，确认没有测试运行再手动删除该锁文件。新增专项时，专项作者必须先把类型加入入口白名单，再按实际 MAS 数据归属扩展 seed 自检和公开前置条件。
+真实入口在机器级临时目录建立原子锁（Windows 为 `%SystemRoot%\Temp\AUTO-MAS`），同一台电脑同时只允许一个真实 E2E；强制结束进程后若留下锁文件，确认没有测试运行再手动删除该锁文件。新增专项时，专项作者只需声明公开前置条件（脚本、用户、可选模拟器），并在本机配置里准备好它们。
 
 真实模式不会自动复制后端原始日志，也不把完整后端输出附加到报告。`real-e2e-summary.json` 记录起止时间、阶段、调度状态、账号完成情况和清理状态；Playwright 只附加用例明确生成的精选截图和摘要。完整 HTML 报告、断言错误和终端输出仍可能包含本机信息，分享前人工检查。
 
@@ -126,7 +137,7 @@ MAS 配置和托管数据在临时副本中运行，原 `config/`、`data/` 不�
 - 用可见状态、API 响应、公开任务结果和带超时的轮询等待；不使用固定长 `sleep`。测试 debounce、轮询、重连退避时可注入短延迟，但要和真实启动/运行耗时区分。
 - 对绑定模拟器的脚本，`POST /api/emulator/operate` 仅表示操作已排队；须等待 `EmulatorManager:emulator.operation.finished`，再确认设备状态。HTTP 200 本身不能证明启动完成。
 - 调度初始状态来自 `GET /api/dispatch/runtime-snapshot`，后续状态来自 WebSocket；`POST /api/dispatch/start`、`/stop` 是真实入口，`GET /api/dispatch/task/{task_id}` 查询终态。调度成功不等于每个游戏用户成功，因此真实用例还检查目标用户的公开完成结果。
-- 普通流程失败时保留截图、trace、video；fixture 可附加隔离后端 `debug/app.log`，关键成功步骤可显式截图。开发者从本机结果目录中挑选脱敏证据附到 PR。
+- 普通流程失败时保留截图、trace、video；fixture 可附加后端 `debug/app.log`，关键成功步骤可显式截图。开发者从本机结果目录中挑选脱敏证据附到 PR。
 - 真实模式关闭自动截图、trace、video 和后端进程输出；spec 只附加精选截图及 `real-e2e-summary.json`。真实 HTML 报告、断言错误和终端输出仍可能包含本机信息，不能宣称完整报告已脱敏。附到 PR 前人工检查，不要直接上传整个 real 结果目录。
 - 密码、Cookie、Token 和无关个人信息不得出现在共享证据中。真实流程可能产生游戏内副作用，失败时也必须执行清理。
 
@@ -212,7 +223,7 @@ MAS 测试**不读取或推断上游脚本内部状态**，只验证 MAS 公开�
 - `frontend/test-results/<browser|real>/` - Playwright 截图、trace、video，以及真实模式的 `real-e2e-summary.json`
 - `frontend/playwright-report/<browser|real>/` - HTML 报告
 - `yarn e2e:real` 走 [`run-real.ps1`](../../frontend/e2e/run-real.ps1)，需要 PowerShell（Windows）
-- `<临时目录>/data/debug/app.log` - 后端日志（测试结束后自动删除）
+- `<数据根>/debug/app.log` - 后端日志（就地运行，不会自动删除）
 - 终端输出 - 测试过程中的 console.log 和错误栈
 
 真实模式失败时，优先检查 `real-e2e-summary.json` 中的字段：

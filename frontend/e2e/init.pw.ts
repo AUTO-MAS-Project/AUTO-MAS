@@ -6,10 +6,7 @@ const backendUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 
 const dataRoot = process.env.AUTO_MAS_E2E_DATA_ROOT
 
 test.describe('@init backend cold start', () => {
-  test('reaches background ready with the optional Arknights PC toolkit disabled', async ({
-    app,
-    page,
-  }, testInfo) => {
+  test('reaches background ready with the local configuration', async ({ app, page }, testInfo) => {
     const startedAt = performance.now()
     await app.goto('/home')
 
@@ -31,7 +28,6 @@ test.describe('@init backend cold start', () => {
     const warnings = Array.isArray(health.backgroundWarnings)
       ? health.backgroundWarnings.map(String)
       : []
-    expect(warnings.some(warning => warning.startsWith('明日方舟 PC 工具初始化'))).toBe(false)
     const toolsResponse = await page.request.post(`${backendUrl}/api/tools/get`)
     expect(toolsResponse.ok()).toBe(true)
     const tools = (await toolsResponse.json()) as {
@@ -39,22 +35,26 @@ test.describe('@init backend cold start', () => {
       data?: { ArknightsPC?: { Enabled?: boolean } }
     }
     expect(tools.code).toBe(200)
-    expect(tools.data?.ArknightsPC?.Enabled).toBe(false)
+    const arknightsPcEnabled = tools.data?.ArknightsPC?.Enabled === true
 
     expect(dataRoot).toBeTruthy()
-    await expect
-      .poll(
-        async () => {
-          try {
-            await access(path.join(dataRoot!, 'config', 'maa_option.json'))
-            return true
-          } catch {
-            return false
-          }
-        },
-        { timeout: 5_000 }
-      )
-      .toBe(false)
+    if (!arknightsPcEnabled) {
+      // 就地运行用的是开发者自己的工具配置，只在本机未启用该工具时断言它不初始化。
+      expect(warnings.some(warning => warning.startsWith('明日方舟 PC 工具初始化'))).toBe(false)
+      await expect
+        .poll(
+          async () => {
+            try {
+              await access(path.join(dataRoot!, 'config', 'maa_option.json'))
+              return true
+            } catch {
+              return false
+            }
+          },
+          { timeout: 5_000 }
+        )
+        .toBe(false)
+    }
 
     await testInfo.attach('backend-startup.json', {
       body: Buffer.from(
@@ -64,8 +64,8 @@ test.describe('@init backend cold start', () => {
             ready: health.ready,
             backgroundStatus: health.backgroundStatus,
             backgroundWarnings: warnings,
-            arknightsPcEnabled: tools.data?.ArknightsPC?.Enabled,
-            maaOptionCreated: false,
+            arknightsPcEnabled,
+            maaOptionCreated: arknightsPcEnabled ? 'not-checked' : false,
           },
           null,
           2

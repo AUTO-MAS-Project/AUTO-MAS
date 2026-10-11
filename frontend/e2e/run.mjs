@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -17,31 +17,6 @@ const configuredTempParent = path.resolve(tmpdir())
 const tempBase = isPathInside(frontendRoot, configuredTempParent)
   ? path.dirname(repositoryRoot)
   : configuredTempParent
-const supportedScriptTypes = new Set([
-  'MaaConfig',
-  'GeneralConfig',
-  'OkwwConfig',
-  'OkNteConfig',
-  'SrcConfig',
-  'MaaEndConfig',
-  'MaaFWConfig',
-  'M9AConfig',
-  'HSRConfig',
-  'BetterGIConfig',
-  'ZzzOdConfig',
-  'BAAHConfig',
-  'WhimboxConfig',
-  'MSSConfig',
-])
-const embeddedScriptTypes = new Set(['MaaFWConfig', 'M9AConfig', 'MSSConfig'])
-
-const planSelectionByScriptType = {
-  MaaConfig: { field: 'StageMode', type: 'MaaPlanConfig' },
-  MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
-  BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
-  MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
-}
-
 const defaultRealRunLockPath =
   process.platform === 'win32'
     ? path.join(
@@ -87,187 +62,25 @@ export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
   }
 }
 
-const readConfig = async file => {
-  try {
-    const details = await lstat(file)
-    if (details.isSymbolicLink() || !details.isFile()) throw new Error('invalid file')
-    return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''))
-  } catch {
-    throw new Error(`无法读取 E2E 配置 ${path.basename(file)}`)
-  }
-}
-
-const selectEntry = (collection, id, expectedType) => {
-  const entry = collection.instances?.find(item => item.uid === id)
-  if (!entry || !collection[id]) throw new Error('所选 E2E 配置项不存在')
-  if (expectedType && entry.type !== expectedType) {
-    throw new Error(`所选 E2E 计划表类型不匹配，需要 ${expectedType}`)
-  }
-  return { instances: [entry], [id]: collection[id] }
-}
-
-export async function seedRealProfile(sourceRoot, dataRoot, env) {
-  const required = ['SCRIPT_ID', 'USER_ID', 'ACCOUNT_NAME']
-  for (const key of required) {
-    if (!env[`AUTO_MAS_E2E_${key}`]?.trim()) throw new Error(`缺少 AUTO_MAS_E2E_${key}`)
-  }
-  for (const key of ['SCRIPT_ID', 'USER_ID']) {
-    if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(env[`AUTO_MAS_E2E_${key}`])) {
-      throw new Error(`AUTO_MAS_E2E_${key} 必须是配置 UUID`)
-    }
-  }
-
-  const scriptId = env.AUTO_MAS_E2E_SCRIPT_ID
-  const userId = env.AUTO_MAS_E2E_USER_ID
-  sourceRoot = path.resolve(sourceRoot)
-  const sourceConfig = path.join(sourceRoot, 'config')
-  const scripts = selectEntry(
-    await readConfig(path.join(sourceConfig, 'ScriptConfig.json')),
-    scriptId
-  )
-  const script = scripts[scriptId]
-  const scriptType = scripts.instances[0].type
-  if (!supportedScriptTypes.has(scriptType)) {
-    throw new Error(`真实 E2E 尚未登记专项类型 ${scriptType}，请由专项作者补充适配`)
-  }
-  const emulatorId = typeof script.Emulator?.Id === 'string' ? script.Emulator.Id : ''
-  const emulatorIndex = script.Emulator?.Index == null ? '' : String(script.Emulator.Index)
-  if (Boolean(emulatorId) !== Boolean(emulatorIndex)) {
-    throw new Error('所选脚本的模拟器绑定不完整')
-  }
-  if (emulatorId) {
-    if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(emulatorId)) {
-      throw new Error('所选脚本的模拟器 ID 无效')
-    }
-    if (!/^\d+$/.test(emulatorIndex)) throw new Error('模拟器实例索引必须是数字')
-    if (env.AUTO_MAS_E2E_EMULATOR_ID && env.AUTO_MAS_E2E_EMULATOR_ID !== emulatorId) {
-      throw new Error('所选脚本绑定的模拟器与 E2E 目标不一致')
-    }
-    if (env.AUTO_MAS_E2E_EMULATOR_INDEX && env.AUTO_MAS_E2E_EMULATOR_INDEX !== emulatorIndex) {
-      throw new Error('所选脚本绑定的模拟器与 E2E 目标不一致')
-    }
-  }
-  const users = selectEntry(script.SubConfigsInfo?.UserData ?? {}, userId)
-  const user = users[userId]
-  if (user.Info?.Name !== env.AUTO_MAS_E2E_ACCOUNT_NAME || user.Info?.Status !== true) {
-    throw new Error('所选用户名称不匹配或用户未启用')
-  }
-  script.SubConfigsInfo.UserData = users
-  // 移除所有通知配置，避免测试发送真实通知
-  for (const key of Object.keys(user)) {
-    if (key.includes('Notify')) delete user[key]
-  }
-  if (user.SubConfigsInfo) {
-    for (const key of Object.keys(user.SubConfigsInfo)) {
-      if (key.includes('Notify')) delete user.SubConfigsInfo[key]
-    }
-  }
-
-  const targetConfig = path.join(dataRoot, 'config')
-  await mkdir(targetConfig, { recursive: true })
-  const selectedConfig = { ScriptConfig: scripts }
-  if (emulatorId) {
-    selectedConfig.EmulatorConfig = selectEntry(
-      await readConfig(path.join(sourceConfig, 'EmulatorConfig.json')),
-      emulatorId
-    )
-  }
-  // ponytail: 只序列化被选中的条目，避免重新序列化可能有几 MB 的完整配置文件
-  for (const [name, value] of Object.entries(selectedConfig)) {
-    await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value, null, 2))
-  }
-  const planSelection = planSelectionByScriptType[scriptType]
-  const planId = planSelection ? user.Info?.[planSelection.field] : undefined
-  if (planSelection && planId && !['Fixed', '-'].includes(planId)) {
-    const plans = selectEntry(
-      await readConfig(path.join(sourceConfig, 'PlanConfig.json')),
-      planId,
-      planSelection.type
-    )
-    await writeFile(path.join(targetConfig, 'PlanConfig.json'), JSON.stringify(plans, null, 2))
-  }
-
-  // 只复制 MAS 托管配置，不复制上次运行的 Temp 恢复事务、备份池或账号历史。
-  // BetterGI 的用户配置副本由这些公开目录组成；安装根目录仍由专项配置指向本机已有安装。
-  const copyDirectory = async relative => {
-    const source = path.join(sourceRoot, relative)
-    const inspect = async folder => {
-      let entries
-      try {
-        const details = await lstat(folder)
-        if (details.isSymbolicLink() || !details.isDirectory()) {
-          throw new Error(`E2E 配置目录无效: ${relative}`)
-        }
-        entries = await readdir(folder, { withFileTypes: true })
-      } catch (error) {
-        if (error.code === 'ENOENT') return false
-        throw error
-      }
-      for (const entry of entries) {
-        if (entry.isSymbolicLink()) throw new Error(`E2E 配置目录禁止链接: ${relative}`)
-        if (entry.isDirectory()) await inspect(path.join(folder, entry.name))
-      }
-      return true
-    }
-    if (!(await inspect(source))) return false
-    const target = path.join(dataRoot, relative)
-    await mkdir(path.dirname(target), { recursive: true })
-    await cp(source, target, { recursive: true })
-    return true
-  }
-
-  const dataOwners = scriptType === 'BetterGIConfig' ? [userId] : ['Default', userId]
-  const dataDirectories =
-    scriptType === 'BetterGIConfig'
-      ? [
-          'ConfigFile',
-          'Infrastructure',
-          'OneDragon',
-          'ScriptGroup',
-          'GlobalDomain',
-          'GlobalStygian',
-        ]
-      : ['ConfigFile', 'Infrastructure']
-  for (const owner of dataOwners) {
-    for (const directory of dataDirectories) {
-      await copyDirectory(path.join('data', scriptId, owner, directory))
-    }
-  }
-  if (embeddedScriptTypes.has(scriptType)) {
-    await copyDirectory(
-      path.join('data', 'mfw', scriptId.replaceAll('-', '').toLowerCase().slice(0, 12))
-    )
-  }
-  if (scriptType === 'HSRConfig' && script.Game?.Platform === 'Cloud') {
-    await copyDirectory(path.join('data', scriptId, userId, 'cloud-profile'))
-  }
-  return { emulatorId, emulatorIndex }
-}
-
 async function main() {
   const real = process.env.AUTO_MAS_E2E_REAL === '1'
   const releaseRealRunLock = real ? await acquireRealRunLock() : undefined
-  let dataRoot
+  // 端到端测试直接用开发者预先调配好的真实配置：默认就是当前检出（手工调试时的 config/data/history/debug）
+  const dataRoot = path.resolve(process.env.AUTO_MAS_E2E_DATA_ROOT?.trim() || repositoryRoot)
   let runRoot
   try {
     await mkdir(tempBase, { recursive: true })
     runRoot = await mkdtemp(path.join(tempBase, 'auto-mas-e2e-'))
-    dataRoot = path.join(runRoot, 'data')
     const tempDirectory = path.join(runRoot, 'temp')
     await mkdir(tempDirectory, { recursive: true })
-    let selected = { emulatorId: '', emulatorIndex: '' }
+    console.warn(
+      `[e2e] 数据根 ${dataRoot}：测试会写入它的 config/data/history/debug，结束后不清理；请先关闭自己运行的实例`
+    )
     if (real) {
-      selected = await seedRealProfile(
-        process.env.AUTO_MAS_E2E_TEMPLATE_ROOT ?? path.resolve(frontendRoot, '..'),
-        dataRoot,
-        process.env
+      console.warn(
+        '[e2e] 真实模式：会驱动该配置里的真实账号与模拟器；Notify 未剥离，可能推送真实通知；只与其它 E2E 真实运行互斥'
       )
     }
-    await mkdir(path.join(dataRoot, 'config'), { recursive: true })
-    await writeFile(
-      path.join(dataRoot, 'config', 'ToolsConfig.json'),
-      JSON.stringify({ ArknightsPC: { Enabled: false } })
-    )
     const cli = path.join(path.dirname(require.resolve('@playwright/test/package.json')), 'cli.js')
     const child = spawn(process.execPath, [cli, 'test', ...process.argv.slice(2)], {
       cwd: frontendRoot,
@@ -279,8 +92,6 @@ async function main() {
         TMP: tempDirectory,
         TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
-        AUTO_MAS_E2E_EMULATOR_ID: selected.emulatorId,
-        AUTO_MAS_E2E_EMULATOR_INDEX: selected.emulatorIndex,
         ...(real ? { PLAYWRIGHT_NO_COPY_PROMPT: '1' } : {}),
       },
     })

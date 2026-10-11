@@ -6,10 +6,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-if ([string]::IsNullOrWhiteSpace($env:AUTO_MAS_E2E_TEMPLATE_ROOT)) {
-  $env:AUTO_MAS_E2E_TEMPLATE_ROOT = $repositoryRoot
-}
 $env:AUTO_MAS_E2E_REAL = '1'
 
 $required = @(
@@ -22,7 +18,7 @@ if ($missing.Count -gt 0) {
   throw "缺少本机真实 E2E 配置: $($missing -join ', ')"
 }
 
-Write-Host '运行本机真实专项、游戏和账号 E2E；按所选脚本绑定的资源执行，测试会使用隔离临时目录，不修改当前 config/data。'
+Write-Host '运行本机真实专项、游戏和账号 E2E；按所选脚本绑定的资源执行，直接使用当前 config/data，测试会写入其中。'
 if ([string]::IsNullOrWhiteSpace($Grep)) {
   $Grep = $env:AUTO_MAS_E2E_GREP
 }
