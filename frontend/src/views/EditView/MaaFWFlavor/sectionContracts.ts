@@ -117,6 +117,8 @@ export interface MaaFWScriptControlSectionEmits {
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */
 export interface MaaFWScriptUpdateSectionProps {
+  /** 脚本 ID：CDK 输入框下那行剩余时间 / CDK 状态按它查 */
+  scriptId: string
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   isAutoUpdateDisabled: boolean

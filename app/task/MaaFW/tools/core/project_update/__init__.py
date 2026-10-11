@@ -12,6 +12,7 @@ from .precheck_memo import (
     write_runtime_precheck,
 )
 from .updater import (
+    MaaFWMirrorCdkStatus,
     MaaFWProjectUpdateCandidate,
     MaaFWProjectUpdateDiscovery,
     MaaFWProjectUpdateError,
@@ -19,10 +20,12 @@ from .updater import (
     apply_maafw_project_update,
     detect_maafw_project_shell_hint,
     discover_maafw_project_update,
+    query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
 )
 
 __all__ = [
+    "MaaFWMirrorCdkStatus",
     "MaaFWProjectUpdateCandidate",
     "MaaFWProjectUpdateDiscovery",
     "MaaFWProjectUpdateError",
@@ -35,6 +38,7 @@ __all__ = [
     "discover_maafw_project_update",
     "precheck_memo_path",
     "project_state_dir_for",
+    "query_mirrorchyan_cdk_status",
     "read_runtime_precheck",
     "update_maafw_project_if_needed",
     "write_runtime_precheck",
