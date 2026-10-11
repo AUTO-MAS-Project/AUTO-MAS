@@ -30,6 +30,17 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 变更
+
+- 【MSS】个人版 MSS 编排开关移入神秘入口，设置页不再单独展示 by @ClozyA
+
+### 修复
+
+- 【主页】深色模式下主页 3D 卫星不再显示星空和星云背景（仅公测） by @ClozyA
+- 【设置】修复主题商店外观弹窗紧贴标题栏的问题（仅公测） by @ClozyA
+
 ## [v5.7.0-beta.2] - 2026-10-10
 
 ### 新增
@@ -468,6 +479,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...dev
 [v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2
 [v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2

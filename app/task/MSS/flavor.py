@@ -190,7 +190,7 @@ def defense_period() -> str | None:
 
 
 def personal_mss_enabled() -> bool:
-    """设置页那个个人版开关（``Function.IfPersonalMss``）有没有打开。"""
+    """神秘入口里那个个人版开关（``Function.IfPersonalMss``）有没有打开。"""
 
     from app.core.config import Config
 
