@@ -3283,6 +3283,7 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    satelliteEffectsPaused: '动效已暂停 · 点击继续',
     satelliteEgg: {
       star: 'star！',
       overclock: '超频！',
@@ -4481,6 +4482,9 @@ export default {
       lowPerf: '低性能模式',
       lowPerfTip:
         '降低装饰性动画和后台渲染占用，不影响脚本执行和任务调度；窗口最小化时会自动暂停装饰性动画',
+      pauseHomeEffects: '脚本运行时暂停主页动效',
+      pauseHomeEffectsTip:
+        '有脚本任务运行时自动暂停主页卫星动画，降低显卡占用；卫星的运行状态颜色照常更新，暂停时点卫星区右上角的提示可临时恢复',
       traySection: '系统托盘',
       showTray: '常态显示托盘图标',
       showTrayTip: '即使界面未最小化仍显示系统托盘图标',
@@ -4836,6 +4840,7 @@ export default {
       fluidOk: '确认开启',
       cursorSaveFailed: '光标效果保存失败',
       lowPerfSaveFailed: '低性能模式保存失败',
+      pauseHomeEffectsSaveFailed: '脚本运行暂停主页动效保存失败',
       homeSatelliteSaveFailed: '主页卫星样式保存失败',
       testUnknown: '测试通知发送结果未知',
       testSent: '测试通知已发送',

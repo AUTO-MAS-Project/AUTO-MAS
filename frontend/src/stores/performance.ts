@@ -1,13 +1,19 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
 import { getConfig, saveConfig } from '@/utils/config'
 
 export type WindowActivity = 'visible' | 'background'
 
 const DEFAULT_LOW_PERFORMANCE_MODE = false
+/** 有脚本任务在跑就自动暂停主页动效：默认开，旧配置缺省同此 */
+const DEFAULT_PAUSE_HOME_EFFECTS_WHEN_RUNNING = true
+/** 任务清零后延迟这么久再恢复动效：避开队列内脚本交接、任务收尾的瞬时无运行窗口 */
+const HOME_EFFECTS_RESUME_DELAY_MS = 5000
 
 export const usePerformanceStore = defineStore('performance', () => {
   const lowPerformanceMode = ref(DEFAULT_LOW_PERFORMANCE_MODE)
+  const pauseHomeEffectsWhenRunning = ref(DEFAULT_PAUSE_HOME_EFFECTS_WHEN_RUNNING)
   const windowActivity = ref<WindowActivity>('visible')
   const initialized = ref(false)
   const saving = ref(false)
@@ -18,6 +24,48 @@ export const usePerformanceStore = defineStore('performance', () => {
 
   const isBackgrounded = computed(() => windowActivity.value === 'background')
   const isLowPower = computed(() => lowPerformanceMode.value || isBackgrounded.value)
+
+  // 任务运行状态来自常驻订阅（WS 增量 + HTTP 快照兜底），这里只读
+  const { scriptStatusesByType } = useTaskRuntimeState()
+  /** 是否有脚本任务在运行（手动 / 定时 / 周期 / 自动代理都算） */
+  const anyScriptRunning = computed(() =>
+    [...scriptStatusesByType.value.values()].some(status => status.running)
+  )
+  /**
+   * 脚本运行期间自动暂停主页动效；与低性能模式、窗口后台是三条独立的停帧路径。
+   * 暂停立即生效；恢复延后 HOME_EFFECTS_RESUME_DELAY_MS，队列内脚本交接或任务收尾
+   * 时会短暂没有脚本处于「运行」，延迟恢复可避免动效跟着一闪一闪。
+   */
+  const homeEffectsPaused = ref(false)
+  let resumeTimer: ReturnType<typeof setTimeout> | null = null
+
+  const clearResumeTimer = () => {
+    if (resumeTimer !== null) {
+      clearTimeout(resumeTimer)
+      resumeTimer = null
+    }
+  }
+
+  watch(
+    [anyScriptRunning, pauseHomeEffectsWhenRunning],
+    ([running, enabled]) => {
+      clearResumeTimer()
+      if (!enabled) {
+        homeEffectsPaused.value = false
+        return
+      }
+      if (running) {
+        homeEffectsPaused.value = true
+        return
+      }
+      if (!homeEffectsPaused.value) return
+      resumeTimer = setTimeout(() => {
+        resumeTimer = null
+        homeEffectsPaused.value = false
+      }, HOME_EFFECTS_RESUME_DELAY_MS)
+    },
+    { immediate: true }
+  )
 
   const registerWindowActivityListener = () => {
     if (
@@ -69,8 +117,10 @@ export const usePerformanceStore = defineStore('performance', () => {
       try {
         const config = await getConfig()
         lowPerformanceMode.value = config.lowPerformanceMode === true
+        pauseHomeEffectsWhenRunning.value = config.pauseHomeEffectsWhenRunning !== false
       } catch {
         lowPerformanceMode.value = DEFAULT_LOW_PERFORMANCE_MODE
+        pauseHomeEffectsWhenRunning.value = DEFAULT_PAUSE_HOME_EFFECTS_WHEN_RUNNING
       } finally {
         initialized.value = true
         initializePromise = null
@@ -102,19 +152,45 @@ export const usePerformanceStore = defineStore('performance', () => {
     }
   }
 
+  const setPauseHomeEffectsWhenRunning = async (enabled: boolean): Promise<void> => {
+    await initialize()
+
+    if (saving.value || enabled === pauseHomeEffectsWhenRunning.value) {
+      return
+    }
+
+    const previousValue = pauseHomeEffectsWhenRunning.value
+    saving.value = true
+    pauseHomeEffectsWhenRunning.value = enabled
+
+    try {
+      await saveConfig({ pauseHomeEffectsWhenRunning: enabled })
+    } catch (error) {
+      pauseHomeEffectsWhenRunning.value = previousValue
+      throw error
+    } finally {
+      saving.value = false
+    }
+  }
+
   onScopeDispose(() => {
+    clearResumeTimer()
     removeWindowActivityListener?.()
     removeWindowActivityListener = null
   })
 
   return {
     lowPerformanceMode,
+    pauseHomeEffectsWhenRunning,
     windowActivity,
     initialized,
     saving,
     isBackgrounded,
     isLowPower,
+    anyScriptRunning,
+    homeEffectsPaused,
     initialize,
     setLowPerformanceMode,
+    setPauseHomeEffectsWhenRunning,
   }
 })

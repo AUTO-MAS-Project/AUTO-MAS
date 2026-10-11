@@ -23,6 +23,7 @@ import {
   getCenterGlow,
   getErrorGlow,
   getKnockback,
+  KNOCKBACK_MS,
   getRingBasis,
   getRingPoint,
   getRingSpeed,
@@ -127,6 +128,8 @@ const INTRO_DOLLY_FROM = 3.4
 const STORM_MS = 6500
 const VANISH_MS = 3000
 const CORE_FLASH_MS = 1400
+/** 悬停缩放渐变的时间常数约 90ms，留个收尾窗口让暂停前滑到位 */
+const HOVER_EASE_MS = 320
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
@@ -207,6 +210,8 @@ export class SatelliteScene {
   private readonly parallax = new THREE.Vector2()
   private readonly parallaxTarget = new THREE.Vector2()
   private hovered: number | null = null
+  /** 最近一次悬停目标变化时刻：暂停帧循环时据此续几帧，让缩放渐变滑到位 */
+  private hoverChangedAt = -Infinity
 
   /** 愚人节：倒着转、图标倒过来 */
   private readonly reversed = isAprilFools(new Date())
@@ -456,6 +461,7 @@ export class SatelliteScene {
 
   setHovered(index: number | null): void {
     this.hovered = index
+    this.hoverChangedAt = Date.now()
   }
 
   /** 指针在容器里的归一化坐标（-1~1），镜头跟着轻轻偏转；拖出容器外的按边缘算 */
@@ -705,8 +711,8 @@ export class SatelliteScene {
 
   // ==================== 渲染 ====================
 
-  /** 推进到 time 时刻并画一帧 */
-  renderFrame(time: number): void {
+  /** 推进到 time 时刻并画一帧；返回是否还有动效在飞，暂停帧循环时据此续帧 */
+  renderFrame(time: number): boolean {
     const dt = this.lastTime === null ? 16 : Math.min(50, Math.max(0, time - this.lastTime))
     this.lastTime = time
 
@@ -759,6 +765,40 @@ export class SatelliteScene {
     this.fx.update(time, this.isDark && time - this.introAt >= INTRO_DOLLY_MS)
 
     this.renderer.render(this.scene, this.camera)
+    return this.isBusy(time, overclock, dizzy, storm)
+  }
+
+  /** 还有动效在飞。暂停帧循环时据此续帧，把正在放的特效放完再停，别冻在半空 */
+  private isBusy(time: number, overclock: number, dizzy: number, storm: number): boolean {
+    if (this.appearStartedAt !== null) return true
+    if (this.centerPressed) return true
+    if (!this.isCenterDeformSettled()) return true
+    if (this.reveal !== null || this.revealPending) return true
+    if (time - this.introAt < INTRO_DOLLY_MS) return true
+    if (time - this.vanishAt < VANISH_MS) return true
+    if (time - this.coreFlashAt < CORE_FLASH_MS) return true
+    if (time - this.hoverChangedAt < HOVER_EASE_MS) return true
+    if (time - this.shockwaveAt < KNOCKBACK_MS) return true
+    if (overclock > 0 || dizzy > 0 || storm > 0) return true
+    if (this.fx.busy) return true
+    return this.satellites.some(
+      satellite =>
+        satellite.explosion !== null ||
+        time - satellite.punchAt < PUNCH_MS ||
+        time - satellite.pingAt < PING_MS
+    )
+  }
+
+  /** 按压形变（含蓄力鼓胀）是否已滑到目标值：暂停时据此续帧，别把星核冻在半途 */
+  private isCenterDeformSettled(): boolean {
+    // 目标值与 updateCore 里的形变公式保持一致：按住压扁，蓄力鼓胀
+    const swell = 1 + 0.16 * this.charge
+    const targetX = (this.centerPressed ? CENTER_PRESS_SCALE_X : 1) * swell
+    const targetY = (this.centerPressed ? CENTER_PRESS_SCALE_Y : 1) * swell
+    return (
+      Math.abs(this.centerScaleX - targetX) <= 0.002 &&
+      Math.abs(this.centerScaleY - targetY) <= 0.002
+    )
   }
 
   resize(): void {

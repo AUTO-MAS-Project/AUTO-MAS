@@ -1,12 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { getConfig, saveConfig } from '@/utils/config'
+import type { ScriptRuntimeStatus } from '@/composables/useTaskRuntimeState'
 import { usePerformanceStore } from './performance'
 
 vi.mock('@/utils/config', () => ({
   getConfig: vi.fn(),
   saveConfig: vi.fn(),
 }))
+
+// useTaskRuntimeState 在模块加载时就摸 window.electronAPI 建 logger，node 测试环境没有；
+// 整条斩掉，换成手动驱动的状态表，顺便覆盖 store 里的运行态派生逻辑
+vi.mock('@/composables/useTaskRuntimeState', async () => {
+  const { ref } = await import('vue')
+  const scriptStatusesByType = ref(new Map<string, ScriptRuntimeStatus>())
+  return {
+    useTaskRuntimeState: () => ({ scriptStatusesByType }),
+    setScriptStatuses: (entries: [string, ScriptRuntimeStatus][]) => {
+      scriptStatusesByType.value = new Map(entries)
+    },
+  }
+})
 
 const mockedGetConfig = vi.mocked(getConfig)
 const mockedSaveConfig = vi.mocked(saveConfig)
@@ -72,5 +87,85 @@ describe('performance store', () => {
 
     expect(onWindowActivityChange).toHaveBeenCalledOnce()
     expect(removeWindowActivityListener).toHaveBeenCalledOnce()
+  })
+
+  it('pauses home effects while a script runs, and resumes only after the debounce', async () => {
+    vi.useFakeTimers()
+    try {
+      // vi.mock 不改 TS 类型，这里只取测试注入用的出口
+      const taskRuntimeMock = (await import('@/composables/useTaskRuntimeState')) as unknown as {
+        setScriptStatuses: (entries: [string, ScriptRuntimeStatus][]) => void
+      }
+      const running: [string, ScriptRuntimeStatus] = [
+        'maa',
+        { queued: false, running: true, lastFailed: false },
+      ]
+
+      const store = usePerformanceStore()
+      await store.initialize()
+      // 旧配置缺省按开启算
+      expect(store.pauseHomeEffectsWhenRunning).toBe(true)
+      expect(store.homeEffectsPaused).toBe(false)
+
+      taskRuntimeMock.setScriptStatuses([running])
+      await nextTick()
+      expect(store.anyScriptRunning).toBe(true)
+      expect(store.homeEffectsPaused).toBe(true)
+
+      // 队列内脚本交接：瞬时无脚本处于运行，防抖窗口内不恢复
+      taskRuntimeMock.setScriptStatuses([
+        ['maa', { queued: true, running: false, lastFailed: false }],
+      ])
+      await nextTick()
+      expect(store.anyScriptRunning).toBe(false)
+      expect(store.homeEffectsPaused).toBe(true)
+
+      // 窗口内又跑起来：取消恢复，保持暂停
+      taskRuntimeMock.setScriptStatuses([running])
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(store.homeEffectsPaused).toBe(true)
+
+      // 清零后要等满整个防抖窗口才恢复
+      taskRuntimeMock.setScriptStatuses([])
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(store.homeEffectsPaused).toBe(true)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(store.homeEffectsPaused).toBe(false)
+
+      // 关掉设置立即恢复，不看防抖
+      taskRuntimeMock.setScriptStatuses([running])
+      await nextTick()
+      expect(store.homeEffectsPaused).toBe(true)
+      await store.setPauseHomeEffectsWhenRunning(false)
+      await nextTick()
+      expect(mockedSaveConfig).toHaveBeenCalledWith({ pauseHomeEffectsWhenRunning: false })
+      expect(store.homeEffectsPaused).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the pending resume when the store is disposed', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = usePerformanceStore()
+      await store.initialize()
+      // 先进入暂停，再清零并销毁：恢复定时器应被清掉，不再改动状态
+      const { setScriptStatuses } =
+        (await import('@/composables/useTaskRuntimeState')) as unknown as {
+          setScriptStatuses: (entries: [string, ScriptRuntimeStatus][]) => void
+        }
+      setScriptStatuses([['maa', { queued: false, running: true, lastFailed: false }]])
+      await nextTick()
+      setScriptStatuses([])
+      await nextTick()
+      store.$dispose()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(store.homeEffectsPaused).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

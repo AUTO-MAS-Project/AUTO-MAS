@@ -16,6 +16,11 @@
       :name="hoveredModule?.label ?? null"
       :status="hoveredStatus"
     />
+    <!-- 低性能模式下没有实时场景，谈不上恢复 -->
+    <SatelliteEffectsPausedChip
+      v-if="effectsPaused && !performanceStore.lowPerformanceMode"
+      @resume="manuallyResumed = true"
+    />
     <SatelliteFloatLayer ref="floatLayer" />
     <SatelliteEggStage
       ref="eggStage"
@@ -49,6 +54,7 @@ import { INTRO_IGNITE_MS, SatelliteScene, type ScreenPoint } from './satellite/s
 import { useSatelliteEggs } from './satellite/useSatelliteEggs'
 import { useSatellitePointer } from './satellite/useSatellitePointer'
 import { useSatelliteStill } from './satellite/useSatelliteStill'
+import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
@@ -138,6 +144,10 @@ const hoveredStatus = computed(() =>
   hoveredModule.value ? satelliteStatuses.value.get(hoveredModule.value.key) : undefined
 )
 
+/** 脚本运行期间动效自动暂停；点「继续」只对当前这轮任务生效，任务清零后复位 */
+const manuallyResumed = ref(false)
+const effectsPaused = computed(() => performanceStore.homeEffectsPaused && !manuallyResumed.value)
+
 // ==================== 监听 ====================
 
 watch(isDark, dark => {
@@ -198,6 +208,22 @@ watch(
       void refreshSatelliteStatuses()
       startStatusPolling()
     })
+  }
+)
+
+// 脚本运行暂停不用硬停：帧循环画完闲置帧后在 drawFrame 里自然停；
+// 恢复（任务清零或点了继续）时补一帧重新拉起循环
+watch(effectsPaused, paused => {
+  if (paused) return
+  lastFrameAt = null
+  requestRender()
+})
+
+// 本轮任务清零（或关闭设置）后复位手动恢复，下一轮任务开始重新自动暂停
+watch(
+  () => performanceStore.homeEffectsPaused,
+  paused => {
+    if (!paused) manuallyResumed.value = false
   }
 )
 
@@ -325,7 +351,7 @@ async function startLive(): Promise<void> {
   eggs.onStatusesChange(satelliteStatuses.value)
 
   const now = Date.now()
-  if (performanceStore.isBackgrounded) {
+  if (performanceStore.isBackgrounded || effectsPaused.value) {
     scene.skipAppear()
   } else if (consumeFirstVisit()) {
     // 本次启动应用后第一次进主页：曲速跃迁进场，星核点燃时卫星再甩出来
@@ -349,7 +375,7 @@ function teardownLive(): void {
   scene = null
 }
 
-/** 实时场景逐帧连续画 */
+/** 实时场景逐帧连续画；脚本运行暂停期间只把在飞的动效放完，闲置就停，状态推送时补一帧 */
 function drawFrame(): void {
   if (isUnmounted || !scene || performanceStore.isBackgrounded) return
 
@@ -360,9 +386,11 @@ function drawFrame(): void {
   updateCoreCharge()
   eggs.checkDizzy(dt, now)
 
-  scene.renderFrame(now)
+  const busy = scene.renderFrame(now)
   updateLabelPosition()
-  frameScheduler.request(drawFrame)
+  if (!effectsPaused.value || busy) {
+    frameScheduler.request(drawFrame)
+  }
 }
 
 function requestRender(): void {
