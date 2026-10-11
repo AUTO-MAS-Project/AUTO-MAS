@@ -4009,6 +4009,9 @@ export default {
     },
     log: {
       title: '日志',
+      theme: '日志主题',
+      followTheme: '跟随主题色',
+      saveThemeFailed: '无法保存日志主题偏好',
       follow: '保持最新',
       browse: '自由浏览',
       empty: '暂无数据',
