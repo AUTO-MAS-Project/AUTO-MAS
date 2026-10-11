@@ -1332,6 +1332,20 @@ export function useScriptApi() {
                   return null
                 })
                 .filter((user): user is User => user !== null)
+                .map(user => {
+                  const info = userResponse.data[user.id]?.Info
+                  return {
+                    ...user,
+                    Info: {
+                      ...user.Info,
+                      Mode: info?.Mode ?? user.Info.Mode,
+                      IfQuickConfig:
+                        info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
+                          ? info.IfQuickConfig
+                          : undefined,
+                    },
+                  }
+                })
 
               return {
                 ...script,

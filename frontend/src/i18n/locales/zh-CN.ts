@@ -24,6 +24,12 @@ export default {
     unknown: '未知',
   },
   comp: {
+    currentConfig: '当前配置：{source}',
+    configSourceShared: '共享配置',
+    configSourceIndependent: '独立配置',
+    configSourceNative: '脚本原生配置',
+    configOverrideEnabled: '覆写开启',
+    configOverrideDisabled: '覆写关闭',
     changelog: {
       empty: '本版本暂无更新日志',
       loadFailed: '更新日志加载失败，可直接下载更新',

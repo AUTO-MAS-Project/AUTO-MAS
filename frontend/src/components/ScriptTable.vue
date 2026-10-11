@@ -463,6 +463,9 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
+                        <div v-if="getUserConfigSummary(script, user)" class="user-config-summary">
+                          {{ getUserConfigSummary(script, user) }}
+                        </div>
                       </div>
                     </div>
 
@@ -584,6 +587,22 @@ import {
 } from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
+
+const CONFIG_SOURCE_KEYS: Record<string, string> = {
+  脚本: 'comp.configSourceShared',
+  用户: 'comp.configSourceIndependent',
+  直控: 'comp.configSourceNative',
+}
+
+const OVERLAY_SCRIPT_TYPES = new Set([
+  'MAA',
+  'SRC',
+  'MaaEnd',
+  'Okww',
+  'OkNte',
+  'BetterGI',
+  'Whimbox',
+])
 
 interface Props {
   scripts: Script[]
@@ -754,6 +773,22 @@ const isMaaEndPresetSupported = (script: Script) => {
 // 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
   return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
+}
+
+const getUserConfigSummary = (script: Script, user: User): string => {
+  // MaaFW 和 BAAH 始终使用账号配置，不按只供备份预览的 Mode 字段判断。
+  const mode = isMaaFWFamily(script.type) || script.type === 'BAAH' ? '用户' : user.Info.Mode
+  const sourceKey = CONFIG_SOURCE_KEYS[mode]
+  if (!sourceKey) return ''
+
+  const summary = t('comp.currentConfig', { source: t(sourceKey) })
+  if (!OVERLAY_SCRIPT_TYPES.has(script.type) || user.Info.IfQuickConfig === undefined)
+    return summary
+
+  const overlayKey = user.Info.IfQuickConfig
+    ? 'comp.configOverrideEnabled'
+    : 'comp.configOverrideDisabled'
+  return `${summary} · ${t(overlayKey)}`
 }
 
 const handleStartOkwwConfig = (script: Script) => {
@@ -1337,6 +1372,14 @@ const onUserDragEnd = async (script: Script) => {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.user-config-summary {
+  margin-top: -4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ant-color-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .info-tag {

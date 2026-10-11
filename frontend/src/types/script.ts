@@ -643,6 +643,7 @@ export interface User {
     InfrastName: string
     MedicineNumb: number
     Mode: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string

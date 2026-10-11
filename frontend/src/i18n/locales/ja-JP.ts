@@ -23,6 +23,12 @@ export default {
     unknown: '不明',
   },
   comp: {
+    currentConfig: '使用設定：{source}',
+    configSourceShared: '共有設定',
+    configSourceIndependent: '独立設定',
+    configSourceNative: 'スクリプト標準設定',
+    configOverrideEnabled: '上書き有効',
+    configOverrideDisabled: '上書き無効',
     changelog: {
       empty: 'このバージョンの更新履歴はまだありません',
       loadFailed: '更新履歴の読み込みに失敗しました。更新のダウンロードは可能です',
