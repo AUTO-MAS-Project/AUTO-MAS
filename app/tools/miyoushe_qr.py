@@ -55,6 +55,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from app.core import Config
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
@@ -219,9 +220,8 @@ async def _supplement_stoken(
         return
 
     try:
-        async with httpx.AsyncClient(
+        async with create_community_client(
             proxy=proxy or Config.proxy,
-            trust_env=False,
         ) as client:
             resp = await client.get(
                 MULTI_TOKEN_URL,
@@ -397,9 +397,8 @@ async def _supplement_qr_tokens(
         "x-rpc-app_version": "2.63.1",
         "User-Agent": "Hyperion/275 CFNetwork/1402.0.8 Darwin/22.2.0",
     }
-    async with httpx.AsyncClient(
+    async with create_community_client(
         proxy=proxy or Config.proxy,
-        trust_env=False,
         cookies={"stoken": stoken, "mid": mid, "stuid": uid},
     ) as client:
         for field, url in pending:
@@ -503,9 +502,8 @@ async def _create_passport_app_qr(
 ) -> tuple[str, str] | None:
     """创建新版 Passport App 扫码二维码。"""
 
-    async with httpx.AsyncClient(
+    async with create_community_client(
         proxy=proxy or Config.proxy,
-        trust_env=False,
     ) as client:
         response = await client.post(
             PASSPORT_APP_CREATE_URL,
@@ -552,9 +550,7 @@ async def create_qr_login(proxy: str | None = None) -> dict:
 
     try:
         headers = _qr_headers(device)
-        async with httpx.AsyncClient(
-            proxy=proxy or Config.proxy, trust_env=False
-        ) as client:
+        async with create_community_client(proxy=proxy or Config.proxy) as client:
             resp = await client.post(
                 CREATE_QRCODE_URL,
                 headers=headers,
@@ -613,9 +609,8 @@ async def _check_passport_app_qr_status(
 
     body = json.dumps({"ticket": ticket}, separators=(",", ":"))
     try:
-        async with httpx.AsyncClient(
+        async with create_community_client(
             proxy=proxy or Config.proxy,
-            trust_env=False,
         ) as client:
             response = await client.post(
                 PASSPORT_APP_CHECK_URL,
@@ -698,9 +693,8 @@ async def _check_game_token_qr_status(
     """查询 GameToken 二维码并兑换为可保存的完整 Cookie。"""
 
     try:
-        async with httpx.AsyncClient(
+        async with create_community_client(
             proxy=proxy or Config.proxy,
-            trust_env=False,
         ) as client:
             response = await client.post(
                 GAME_TOKEN_CHECK_URL,
@@ -863,9 +857,7 @@ async def check_qr_status(
 
     try:
         headers = _qr_headers(device)
-        async with httpx.AsyncClient(
-            proxy=proxy or Config.proxy, trust_env=False
-        ) as client:
+        async with create_community_client(proxy=proxy or Config.proxy) as client:
             resp = await client.post(
                 CHECK_QRCODE_URL,
                 headers=headers,
@@ -1112,9 +1104,8 @@ async def exchange_stoken(
     headers = {"x-rpc-app_id": "bll8iq97cem8"}
 
     try:
-        async with httpx.AsyncClient(
+        async with create_community_client(
             proxy=proxy or Config.proxy,
-            trust_env=False,
         ) as client:
             response = await client.post(
                 GAME_TOKEN_STOKEN_URL,
