@@ -97,7 +97,7 @@
                   maafwConfig.Emulator.Id &&
                   maafwConfig.Emulator.Id !== '-'
                 "
-                v-model:value="maafwConfig.Emulator.Index"
+                v-model:value="emulatorIndexValue"
                 size="large"
                 :placeholder="t('edit.enterEmulatorInstanceIndex')"
                 class="modern-input"
@@ -333,7 +333,8 @@ const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
 
 // 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
-// （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字
+// （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字；
+// 扫不到实例改手动输入时同理
 const shownWhenListed = (value: string, options: Array<{ value: string | null }>) =>
   value === '-' && !options.some(item => item.value === '-') ? undefined : value
 
