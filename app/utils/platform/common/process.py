@@ -360,7 +360,7 @@ class ProcessManager:
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
         """
 
-        def _scan() -> psutil.Process | None:
+        def _scan() -> tuple[psutil.Process, float | None] | None:
             for proc in psutil.process_iter(
                 ["pid", "name", "exe", "cmdline", "create_time"]
             ):
@@ -371,19 +371,21 @@ class ProcessManager:
                     create_time is None or create_time < min_create_time - 2
                 ):
                     continue
-                return proc
+                return proc, create_time
             return None
 
         # 全量进程扫描放到线程里, 避免阻塞事件循环
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            proc = await asyncio.to_thread(_scan)
-            if proc is not None:
+            found = await asyncio.to_thread(_scan)
+            if found is not None:
+                proc, create_time = found
                 self.target_process = proc
-                # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程
+                # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程。
+                # 创建时间取扫描阶段已读到的值, 不重新查询: 进程可能在扫描后
+                # 退出而抛异常, 受保护进程的创建时间也可能读不到
                 self._target_info = target_process
-                with suppress(psutil.NoSuchProcess):
-                    self._target_create_time = proc.create_time()
+                self._target_create_time = create_time
                 return
             await asyncio.sleep(0.1)
         else:
