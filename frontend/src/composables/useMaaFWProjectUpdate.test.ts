@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveAutoUpdateMode, resolveCdkExpiry, resolveCdkWarning } from './useMaaFWProjectUpdate'
+import { resolveAutoUpdateMode, resolveCdkHint, resolveCdkWarning } from './useMaaFWProjectUpdate'
 
 describe('resolveAutoUpdateMode', () => {
   it('新字段合法时直接采用', () => {
@@ -75,40 +75,101 @@ describe('resolveCdkWarning', () => {
   })
 })
 
-describe('resolveCdkExpiry', () => {
-  const now = Date.UTC(2026, 8, 2, 12, 0, 0) // 2026-09-02T12:00:00Z
-  const DAY = 24 * 60 * 60 * 1000
-  const secondsAt = (ms: number) => Math.floor(ms / 1000)
+describe('resolveCdkHint', () => {
+  // 一律用本地时区构造时间：剩余天数按本地日历算，测试在哪个时区跑都一样
+  const now = new Date(2026, 9, 11, 14, 0, 0).getTime() // 2026-10-11 14:00 本地
+  const secondsAt = (date: Date) => Math.floor(date.getTime() / 1000)
 
-  it('7 天内到期时给出剩余天数与日期', () => {
-    const expiry = resolveCdkExpiry({ cdkExpiredTime: secondsAt(now + 3 * DAY) }, now)
-    expect(expiry).not.toBeNull()
-    expect(expiry?.daysLeft).toBe(3)
-    expect(expiry?.dateText).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(expiry?.expiresAt.getTime()).toBe(secondsAt(now + 3 * DAY) * 1000)
+  it('正常且剩余多于 7 天：普通灰色，天数按本地日历整天算', () => {
+    const hint = resolveCdkHint('ok', secondsAt(new Date(2026, 10, 3, 9, 30)), now)
+    expect(hint).toEqual({
+      kind: 'remaining',
+      warning: false,
+      daysLeft: 23,
+      dateText: '2026-11-03',
+    })
   })
 
-  it('恰好 7 天算在提示范围内，超过 7 天不提示', () => {
-    expect(resolveCdkExpiry({ cdkExpiredTime: secondsAt(now + 7 * DAY) }, now)?.daysLeft).toBe(7)
-    expect(resolveCdkExpiry({ cdkExpiredTime: secondsAt(now + 7 * DAY + 1000) }, now)).toBeNull()
-    expect(resolveCdkExpiry({ cdkExpiredTime: secondsAt(now + 30 * DAY) }, now)).toBeNull()
+  it('剩余不超过 7 天用警告色，恰好 7 天也算', () => {
+    expect(resolveCdkHint('ok', secondsAt(new Date(2026, 9, 18, 23, 0)), now)).toEqual({
+      kind: 'remaining',
+      warning: true,
+      daysLeft: 7,
+      dateText: '2026-10-18',
+    })
+    expect(resolveCdkHint('ok', secondsAt(new Date(2026, 9, 19, 0, 30)), now)?.warning).toBe(false)
   })
 
-  it('已过期也返回，daysLeft 为 0 或负数', () => {
-    expect(resolveCdkExpiry({ cdkExpiredTime: secondsAt(now - 2 * DAY) }, now)?.daysLeft).toBe(-2)
+  it('今天晚些时候到期记 0 天（页面写不足 1 天）；明天凌晨到期记 1 天', () => {
+    expect(resolveCdkHint('ok', secondsAt(new Date(2026, 9, 11, 23, 59)), now)).toEqual({
+      kind: 'remaining',
+      warning: true,
+      daysLeft: 0,
+      dateText: '2026-10-11',
+    })
+    expect(resolveCdkHint('ok', secondsAt(new Date(2026, 9, 12, 0, 5)), now)?.daysLeft).toBe(1)
+  })
+
+  it('到期时间已过按已过期提示，带上日期', () => {
+    expect(resolveCdkHint('ok', secondsAt(new Date(2026, 9, 11, 13, 0)), now)).toEqual({
+      kind: 'expired',
+      warning: true,
+      daysLeft: null,
+      dateText: '2026-10-11',
+    })
+  })
+
+  it('正常但服务端没给到期时间：什么都不显示', () => {
+    expect(resolveCdkHint('ok', null, now)).toBeNull()
+    expect(resolveCdkHint('ok', undefined, now)).toBeNull()
+    expect(resolveCdkHint('ok', 0, now)).toBeNull()
+    expect(resolveCdkHint('ok', 'soon', now)).toBeNull()
   })
 
   it('接受字符串形式的秒数', () => {
     expect(
-      resolveCdkExpiry({ cdkExpiredTime: String(secondsAt(now + 1 * DAY)) }, now)?.daysLeft
-    ).toBe(1)
+      resolveCdkHint('ok', String(secondsAt(new Date(2026, 10, 3, 9, 30))), now)?.daysLeft
+    ).toBe(23)
   })
 
-  it('缺失、非数字、非正数不提示', () => {
-    expect(resolveCdkExpiry({}, now)).toBeNull()
-    expect(resolveCdkExpiry(null, now)).toBeNull()
-    expect(resolveCdkExpiry({ cdkExpiredTime: null }, now)).toBeNull()
-    expect(resolveCdkExpiry({ cdkExpiredTime: 0 }, now)).toBeNull()
-    expect(resolveCdkExpiry({ cdkExpiredTime: 'soon' }, now)).toBeNull()
+  it('7001-7005 各自一种警告；过期知道日期就带上', () => {
+    expect(resolveCdkHint('expired', null, now)).toEqual({
+      kind: 'expired',
+      warning: true,
+      daysLeft: null,
+      dateText: null,
+    })
+    expect(resolveCdkHint('expired', secondsAt(new Date(2026, 9, 1, 8, 0)), now)?.dateText).toBe(
+      '2026-10-01'
+    )
+    for (const status of ['invalid', 'mismatched', 'blocked'] as const) {
+      expect(resolveCdkHint(status, null, now)).toEqual({
+        kind: status,
+        warning: true,
+        daysLeft: null,
+        dateText: null,
+      })
+    }
+  })
+
+  it('次数用尽时知道剩余天数就一并给出', () => {
+    expect(resolveCdkHint('quota', secondsAt(new Date(2026, 10, 3, 9, 30)), now)).toEqual({
+      kind: 'quota',
+      warning: true,
+      daysLeft: 23,
+      dateText: '2026-11-03',
+    })
+    expect(resolveCdkHint('quota', null, now)).toEqual({
+      kind: 'quota',
+      warning: true,
+      daysLeft: null,
+      dateText: null,
+    })
+  })
+
+  it('没填、项目不支持、查询失败、未知状态：什么都不显示', () => {
+    for (const status of ['absent', 'unsupported', 'error', '', '  ', 'weird', null, undefined]) {
+      expect(resolveCdkHint(status, secondsAt(new Date(2026, 10, 3)), now)).toBeNull()
+    }
   })
 })

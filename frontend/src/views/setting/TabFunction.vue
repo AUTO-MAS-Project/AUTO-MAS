@@ -120,59 +120,6 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   voiceTypeOptions: { label: string; value: string }[]
   handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
 }>()
-
-// 「并非神秘入口」：个人版 MaaStellaSora 的专属编排开关（Function.IfPersonalMss）。
-// 密码只是个防手滑的门槛，不是安全机制，所以这里比对哈希而不是存明文；
-// 换密码就把这一行换成新密码的 SHA-256（小写十六进制）。
-const PERSONAL_MSS_UNLOCK_SHA256 =
-  'b0da7d240184ebd2008c3de02c00f774b896035cb5bfbe2121f10e7c8a5c01ed'
-
-const personalMssUnlocked = computed(() => settings.Function?.IfPersonalMss === true)
-const personalMssEntryLabel = computed(() =>
-  t(personalMssUnlocked.value ? 'setting.func.personalMssEntryOn' : 'setting.func.personalMssEntry')
-)
-
-const personalMssModalOpen = ref(false)
-const personalMssPassword = ref('')
-const personalMssSubmitting = ref(false)
-
-async function hashPersonalMssPassword(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return Array.from(new Uint8Array(digest))
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-async function savePersonalMss(enabled: boolean) {
-  personalMssSubmitting.value = true
-  try {
-    await handleSettingChange('Function', 'IfPersonalMss', enabled)
-    message.success(t(enabled ? 'setting.func.personalMssOn' : 'setting.func.personalMssOff'))
-  } catch {
-    message.error(t('setting.func.personalMssFailed'))
-  } finally {
-    personalMssSubmitting.value = false
-  }
-}
-
-async function openPersonalMssEntry() {
-  // 已启用时点它是「关掉」：这个方向不会误开功能，不必再问一次密码
-  if (personalMssUnlocked.value) {
-    await savePersonalMss(false)
-    return
-  }
-  personalMssPassword.value = ''
-  personalMssModalOpen.value = true
-}
-
-async function submitPersonalMssPassword() {
-  if ((await hashPersonalMssPassword(personalMssPassword.value)) !== PERSONAL_MSS_UNLOCK_SHA256) {
-    message.error(t('setting.func.personalMssWrong'))
-    return
-  }
-  personalMssModalOpen.value = false
-  await savePersonalMss(true)
-}
 </script>
 <template>
   <div class="tab-content">
@@ -595,36 +542,14 @@ async function submitPersonalMssPassword() {
         </a-col>
       </a-row>
     </div>
-    <!-- 两个小入口并排放在虚拟显示器这一节下面：左边是群友的「神秘入口」，
-         右边是个人版编排的「并非神秘入口」，样式共用一层容器 -->
+    <!-- 个人版编排的「并非神秘入口」已移入神秘入口，这里只留群友的「神秘入口」一个入口 -->
     <div class="flavor-entries">
       <div class="mystery-entry">
         <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
           {{ t('mystery.entry') }}
         </a-button>
       </div>
-      <div class="personal-mss-entry">
-        <a-button type="text" size="small" @click="openPersonalMssEntry">
-          {{ personalMssEntryLabel }}
-        </a-button>
-      </div>
     </div>
-
-    <a-modal
-      v-model:open="personalMssModalOpen"
-      :title="t('setting.func.personalMssEntry')"
-      :confirm-loading="personalMssSubmitting"
-      :ok-text="t('common.confirm')"
-      :cancel-text="t('common.cancel')"
-      @ok="submitPersonalMssPassword"
-    >
-      <p class="personal-mss-hint">{{ t('setting.func.personalMssHint') }}</p>
-      <a-input-password
-        v-model:value="personalMssPassword"
-        :placeholder="t('setting.func.personalMssPlaceholder')"
-        @press-enter="submitPersonalMssPassword"
-      />
-    </a-modal>
   </div>
 </template>
 
@@ -638,11 +563,6 @@ async function submitPersonalMssPassword() {
 .flavor-entries :deep(.ant-btn) {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
-}
-
-.personal-mss-hint {
-  margin: 0 0 12px;
-  color: var(--ant-color-text-secondary);
 }
 
 .vdd-alert {
