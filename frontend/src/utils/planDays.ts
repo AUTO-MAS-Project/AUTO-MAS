@@ -40,11 +40,14 @@ export const planDayLabel = (day: string): { key: string; params: Record<string,
     ? { key: `plan.week.${day}`, params: {} }
     : { key: 'plan.rotateDay', params: { n: day } }
 
-/** 列的键：ALL 一列加当天的天键 */
-export const planColumnKeys = (mode: string | undefined, rotateDays: unknown): string[] => [
-  'ALL',
-  ...planDayKeys(mode, rotateDays),
-]
+/**
+ * 列的键：全局模式与周计划是 ALL 加当天的天键；多天轮换是一次接一次的循环，
+ * 没有「每天」那一格的用武之地，只给天键。
+ */
+export const planColumnKeys = (mode: string | undefined, rotateDays: unknown): string[] => {
+  const days = planDayKeys(mode, rotateDays)
+  return mode === 'Rotate' ? days : ['ALL', ...days]
+}
 
 /** 读某一列的数据：ALL 在接口顶层，每天在 Days 里 */
 export const readPlanColumn = (tableData: Record<string, any> | null, key: string): unknown =>

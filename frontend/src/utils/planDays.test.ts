@@ -51,9 +51,13 @@ describe('planDayKeys', () => {
 })
 
 describe('planColumnKeys', () => {
-  it('ALL 永远在最前', () => {
-    expect(planColumnKeys('Rotate', 2)).toEqual(['ALL', '1', '2'])
+  it('全局模式与周计划把 ALL 放在最前', () => {
     expect(planColumnKeys('Weekly', 7)[0]).toBe('ALL')
+    expect(planColumnKeys('ALL', 7)[0]).toBe('ALL')
+  })
+
+  it('多天轮换没有「每天」这一格，只给天键', () => {
+    expect(planColumnKeys('Rotate', 2)).toEqual(['1', '2'])
   })
 })
 
