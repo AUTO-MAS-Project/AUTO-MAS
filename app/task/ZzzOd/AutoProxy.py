@@ -1231,7 +1231,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         return "Pass"
 
     async def prepare(self):
-        self.launcher_process_manager = ProcessManager()
+        # 启动器是引导式进程（自更新/接力时会更换进程实例）：跟踪的旧进程退出
+        # 时按目标信息改绑后继实例，避免把接力误判成一条龙运行结束、提前收尾
+        self.launcher_process_manager = ProcessManager(reseek_target=True)
         # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体（对齐 ok-nte）
         self.game_process_manager = (
             ProcessManager()
@@ -1582,13 +1584,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 log_status = "Success!"
                 user_status = "完成"
                 self.script_info.log = "检测到 ZZZ-OD 已完成任务"
-            elif self._launch_evidence(log, False) or _ZZZOD_ONE_DRAGON_SUCCESS in log:
-                # 记录无变化但有一条龙运行证据（应用层日志/成功标志）：
-                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）。
-                # 结果向框架成功契约 Success! 归一，可读说明放到 script_info.log
+            elif _ZZZOD_ONE_DRAGON_SUCCESS in log:
+                # 记录无变化但出现「整轮跑完」标志：直控态=今日任务均已完成
+                # （zzz-od 启动后按记录跳过全部任务，应用组执行完仍打标志）。
+                # 与 _judge_all_skipped 同判据：启动证据（框架初始化日志）发生
+                # 在应用组之前，不算完成证据——启动器进程被提前误判结束时日志
+                # 里只有它们，当成完成会整轮空跑。结果向框架成功契约 Success!
+                # 归一，可读说明放到 script_info.log
                 log_status = "Success!"
                 user_status = "完成"
                 self.script_info.log = "今日任务均已完成"
+            elif self._launch_evidence(log, False):
+                # 有启动证据（框架初始化日志）但无记录变化、无整轮完成标志：
+                # 一条龙启动了却没跑完就退出（启动器接力换进程间隙被误判结束、
+                # 框架早退等），判失败走重试
+                log_status = "ZZZ-OD 一条龙未完成即退出"
+                user_status = "异常"
             else:
                 # 记录无变化且无任何启动证据：启动器未能真正拉起一条龙
                 # （缺依赖早退等），判失败走重试/启动器切换，不得报成功
