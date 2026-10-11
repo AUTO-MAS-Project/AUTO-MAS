@@ -728,7 +728,6 @@ export default {
     executables: 'Executables',
     enabled3: 'Enabled',
     jsonFiles: 'JSON files',
-    unspecified: 'Unspecified',
     keyword2: 'Keyword',
     include: 'Include',
     on2: 'On',

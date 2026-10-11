@@ -712,7 +712,6 @@ export default {
     executables: '可执行文件',
     enabled3: '启用',
     jsonFiles: 'JSON 文件',
-    unspecified: '不指定',
     keyword2: '关键字',
     include: '包含',
     on2: '开启',

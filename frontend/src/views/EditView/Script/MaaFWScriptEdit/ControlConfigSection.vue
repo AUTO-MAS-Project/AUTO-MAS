@@ -68,14 +68,13 @@
                 <span class="form-label">{{ t('edit.emulator') }}</span>
               </template>
               <a-select
-                v-model:value="maafwConfig.Emulator.Id"
+                v-model:value="emulatorIdValue"
                 size="large"
                 :placeholder="t('edit.pickEmulator')"
                 :loading="emulatorLoading"
                 :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
               >
-                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorOptions"
                   :key="item.value"
@@ -107,7 +106,7 @@
               />
               <a-select
                 v-else
-                v-model:value="maafwConfig.Emulator.Index"
+                v-model:value="emulatorIndexValue"
                 size="large"
                 :placeholder="t('edit.pickEmulatorFirst')"
                 :loading="emulatorDeviceLoading"
@@ -119,7 +118,6 @@
                 "
                 @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
               >
-                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorDeviceOptions"
                   :key="item.value"
@@ -333,6 +331,25 @@ const props = defineProps<MaaFWScriptControlSectionProps>()
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
+
+// 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
+// （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字
+const shownWhenListed = (value: string, options: Array<{ value: string | null }>) =>
+  value === '-' && !options.some(item => item.value === '-') ? undefined : value
+
+const emulatorIdValue = computed({
+  get: () => shownWhenListed(props.maafwConfig.Emulator.Id, props.emulatorOptions),
+  set: (value: string | undefined) => {
+    props.maafwConfig.Emulator.Id = value ?? '-'
+  },
+})
+
+const emulatorIndexValue = computed({
+  get: () => shownWhenListed(props.maafwConfig.Emulator.Index, props.emulatorDeviceOptions),
+  set: (value: string | undefined) => {
+    props.maafwConfig.Emulator.Index = value ?? '-'
+  },
+})
 
 // 键位映射弹窗保存：先改草稿再走页面的自动保存通道
 const handleHotkeysSave = (value: string) => {
