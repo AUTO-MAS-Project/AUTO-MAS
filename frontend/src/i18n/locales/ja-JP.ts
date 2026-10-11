@@ -682,7 +682,6 @@ export default {
     executables: '実行ファイル',
     enabled3: '有効',
     jsonFiles: 'JSON ファイル',
-    unspecified: '指定しない',
     keyword2: 'キーワード',
     include: '含める',
     on2: 'オン',
