@@ -1,6 +1,6 @@
 ---
 name: mas-data-model
-description: Define backend data modeling standards for Python services. Use when designing or refactoring models in app/models (schema/config/task), normalizing shared fields, choosing types/defaults/validation strategy, and evolving model contracts with backward compatibility.
+description: Use when designing or refactoring models in app/models (schema/config/task), normalizing shared fields, or choosing types/defaults/validation while evolving a model contract backward-compatibly.
 ---
 
 # MAS Data Model

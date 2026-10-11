@@ -1,6 +1,6 @@
 ---
 name: mas-api-contract
-description: Define backend API contract standards for FastAPI services. Use when adding or refactoring HTTP/WebSocket endpoints in app/api, designing request/response schemas in app/models/schema.py, standardizing status/error contracts, and maintaining backward compatibility for clients.
+description: Use when adding or refactoring HTTP/WebSocket endpoints in app/api or request/response schemas in app/models/schema.py, or when a client-facing contract changes (status/error semantics, backward compatibility).
 ---
 
 # MAS API Contract

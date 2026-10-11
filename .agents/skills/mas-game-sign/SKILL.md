@@ -1,11 +1,6 @@
 ---
 name: mas-game-sign
-description: >-
-  Add, refactor, or review AUTO-MAS game community sign-in (game sign) code,
-  including the provider registry in app/tools/game_sign.py, platform adapters
-  for Skland/Miyoushe/Kuro/Taygedo, credential encryption and one-time login
-  routes, sign-in locks and trigger paths, result and notification contracts,
-  the GameSign account-group config, and the frontend gamesign views.
+description: Add, refactor, or review AUTO-MAS game community sign-in (game sign) code (app/tools/game_sign.py) — platform adapters for Skland/Miyoushe/Kuro/Taygedo, credential encryption and one-time login, sign-in locks, and the gamesign frontend views.
 ---
 
 # 游戏社区签到

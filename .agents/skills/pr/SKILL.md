@@ -1,6 +1,6 @@
 ---
 name: pr
-description: "在撰写 PR body 时使用。"
+description: "在撰写或修改 PR body 时使用（摘要、Closes #n、未运行的检查说明）。"
 metadata:
   credits:
     skill: show-me

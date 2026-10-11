@@ -1,6 +1,6 @@
 ---
 name: mas-function-design
-description: Define backend function design standards for Python services. Use when implementing or refactoring functions in app/, choosing function boundaries, designing signatures and return contracts, controlling side effects, and reviewing correctness/readability in core/task/services/api modules.
+description: Use when implementing or refactoring functions in app/ (core/task/services/api), choosing function boundaries, designing signatures and return contracts, or controlling side effects.
 ---
 
 # MAS Function Design

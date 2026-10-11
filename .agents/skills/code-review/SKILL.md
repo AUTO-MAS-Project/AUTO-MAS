@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: 从固定点（commit、branch、tag 或 merge-base）开始，沿两条轴线审查变更——规范（代码是否遵循仓库文档化的编码规范？）和规格（代码是否与原始 issue/PRD 的要求一致？）。两条审查线在并行子 agent 中运行，并以并排方式报告结果。当用户想审查一个分支、PR、进行中的变更，或要求"从 X 开始审查"时使用。
+description: 当用户想审查一个分支、PR、进行中的变更，或要求"从 X 开始审查"时使用；从固定点（commit、branch、tag 或 merge-base）起，沿规范与规格两条轴并行审查并排报告。
 ---
 
 # 审查

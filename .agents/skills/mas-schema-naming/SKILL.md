@@ -1,6 +1,6 @@
 ---
 name: mas-schema-naming
-description: Define canonical naming for future backend schema domains. Use when creating new specialized schema models or extending Pydantic contracts in app/models/schema.py, standardizing shared Info/Data/Notify/Run semantics, and avoiding new naming drift without forcing retroactive changes on legacy modules.
+description: Use when creating new specialized schema models or extending Pydantic contracts in app/models/schema.py — naming for new schema domains only, standardizing shared Info/Data/Notify/Run semantics without retrofitting legacy modules.
 ---
 
 # MAS Schema Naming

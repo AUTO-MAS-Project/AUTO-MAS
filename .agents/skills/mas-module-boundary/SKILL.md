@@ -1,6 +1,6 @@
 ---
 name: mas-module-boundary
-description: Define and enforce backend module boundaries for Python services. Use when adding or refactoring backend code under app/, reviewing dependency direction, deciding layer ownership, or preventing logic leakage across schema/api/core/services/task/utils modules.
+description: Use when adding or refactoring backend code under app/, or when reviewing dependency direction, layer ownership, or logic leakage across schema/api/core/services/task/utils.
 ---
 
 # MAS Module Boundary
