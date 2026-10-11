@@ -51,7 +51,7 @@ yarn playwright show-report playwright-report/real
 - `@queue`：新建队列、改名、修改启动设置、离开再返回检查持久化。
 - `@scheduler`：无任务时禁止启动，添加和批量关闭空闲调度台。
 - `@settings`：设置持久化、保存失败回滚、刷新后配置恢复。
-- `@history`：历史记录导航、日期筛选、展开日志、空搜索结果、刷新列表。
+- `@history`：历史记录导航、按日期区间筛选、展开日志（数据根无历史记录时跳过）。
 - `@recovery`：页面导航状态保持、页面刷新后 WebSocket 重连、后端重启恢复、任务状态保持。
 - `@init`：隔离后端冷启动，等待健康与后台初始化就绪，并确认明日方舟 PC 工具关闭时不阻塞启动。
 - `@real @game-schedule @account`（另带 `@emulator` 或 `@script-install`）：同一条通用真实调度流程按所选脚本是否绑定模拟器执行前置检查，再验证唯一用户选择、真实调度、任务终态和公开完成事件中的用户结果。BetterGI 可复用入口；运行前需有对应本机安装与有效配置。
@@ -209,9 +209,9 @@ MAS 测试**不读取或推断上游脚本内部状态**，只验证 MAS 公开�
 
 失败时检查以下位置：
 
-- `frontend/e2e-results/*/test-results/*/` - Playwright 截图、trace、video
-- `frontend/e2e-results/*/playwright-report/` - HTML 报告
-- `frontend/e2e-results/*/real-e2e-summary.json` - 真实模式摘要（仅真实模式）
+- `frontend/test-results/<browser|real>/` - Playwright 截图、trace、video，以及真实模式的 `real-e2e-summary.json`
+- `frontend/playwright-report/<browser|real>/` - HTML 报告
+- `yarn e2e:real` 走 [`run-real.ps1`](../../frontend/e2e/run-real.ps1)，需要 PowerShell（Windows）
 - `<临时目录>/data/debug/app.log` - 后端日志（测试结束后自动删除）
 - 终端输出 - 测试过程中的 console.log 和错误栈
 

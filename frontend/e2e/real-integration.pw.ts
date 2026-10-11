@@ -444,9 +444,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         throw new Error('无法解析启动请求体')
       }
       if (!isAllowedStart(requestBody, config)) {
-        throw new Error(
-          `启动请求参数不匹配预期配置: ${JSON.stringify(requestBody)}`
-        )
+        throw new Error(`启动请求参数不匹配预期配置: ${JSON.stringify(requestBody)}`)
       }
 
       // 提取 taskId
