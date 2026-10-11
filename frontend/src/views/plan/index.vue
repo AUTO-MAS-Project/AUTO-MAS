@@ -44,11 +44,13 @@
           v-if="currentPlanDescriptor"
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
+          :rotate-days="currentRotateDays"
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
           @update:current-plan-name="currentPlanName = $event"
           @update:current-mode="currentMode = $event"
+          @update:rotate-days="handleRotateDaysChange"
           @update:view-mode="viewMode = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
@@ -89,6 +91,7 @@ import {
   type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
@@ -115,7 +118,8 @@ const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
 
 const currentPlanName = ref<string>('')
-const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+const currentMode = ref<PlanMode>('ALL')
+const currentRotateDays = ref<number>(PLAN_ROTATE_DAYS_DEFAULT)
 const viewMode = ref<'config' | 'simple'>('config')
 
 const isEditingPlanName = ref<boolean>(false)
@@ -160,6 +164,7 @@ const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   }
 
   currentMode.value = planData.Info?.Mode || 'ALL'
+  currentRotateDays.value = clampRotateDays(planData.Info?.RotateDays)
   tableData.value = { ...clonePlanData(planData), _isInitialLoad: forceCustomStages }
   return true
 }
@@ -451,6 +456,17 @@ const finishEditPlanName = async () => {
 const onModeChange = async () => {
   // 只发送修改的字段
   await handlePlanChange('Info.Mode', currentMode.value)
+}
+
+/** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
+const handleRotateDaysChange = async (days: number) => {
+  const previous = currentRotateDays.value
+  currentRotateDays.value = days
+
+  const saved = await handlePlanChange('Info.RotateDays', days)
+  if (!saved) {
+    currentRotateDays.value = previous
+  }
 }
 
 const loadPlanData = async (planId: string, force = false, forceCustomStages = false) => {

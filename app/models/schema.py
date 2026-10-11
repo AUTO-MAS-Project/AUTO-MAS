@@ -4763,6 +4763,11 @@ PlanConfigType = Literal[
 ]
 PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
 
+# 计划表的天数：周计划固定七天，多天轮换的天数由 Info.RotateDays 决定，两者共用同一套
+# 槽位存储，对外的键分别是星期名与 "1"~"N"。
+PLAN_ROTATE_DAYS_DEFAULT = 7
+PLAN_ROTATE_DAYS_MAX = 31
+
 
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
@@ -4771,8 +4776,14 @@ class PlanIndexItem(BaseModel):
 
 class MaaPlanConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="计划表名称")
-    Mode: Optional[Literal["ALL", "Weekly"]] = Field(
+    Mode: Optional[Literal["ALL", "Weekly", "Rotate"]] = Field(
         default=None, description="计划表模式"
+    )
+    RotateDays: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=PLAN_ROTATE_DAYS_MAX,
+        description="多天轮换的天数，仅 Rotate 模式使用",
     )
 
 
@@ -4792,13 +4803,10 @@ class MaaPlanConfig_Item(BaseModel):
 class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):
     Info: Optional[TPlanInfo] = Field(default=None, description="基础信息")
     ALL: Optional[TPlanItem] = Field(default=None, description="全局")
-    Monday: Optional[TPlanItem] = Field(default=None, description="周一")
-    Tuesday: Optional[TPlanItem] = Field(default=None, description="周二")
-    Wednesday: Optional[TPlanItem] = Field(default=None, description="周三")
-    Thursday: Optional[TPlanItem] = Field(default=None, description="周四")
-    Friday: Optional[TPlanItem] = Field(default=None, description="周五")
-    Saturday: Optional[TPlanItem] = Field(default=None, description="周六")
-    Sunday: Optional[TPlanItem] = Field(default=None, description="周日")
+    Days: Dict[str, TPlanItem] = Field(
+        default_factory=dict,
+        description='每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键',
+    )
 
 
 class MaaPlanConfig(WeeklyPlanConfig[MaaPlanConfig_Info, MaaPlanConfig_Item]):
@@ -4809,7 +4817,15 @@ class MaaEndPlanConfig_Info(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     Name: str = Field(default="新 MaaEnd 计划表", description="计划表名称")
-    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+    Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+        default="ALL", description="计划表模式"
+    )
+    RotateDays: int = Field(
+        default=PLAN_ROTATE_DAYS_DEFAULT,
+        ge=1,
+        le=PLAN_ROTATE_DAYS_MAX,
+        description="多天轮换的天数，仅 Rotate 模式使用",
+    )
 
 
 class MaaEndProtocolSpacePlanKey(BaseModel):
@@ -4876,7 +4892,15 @@ class BAAHPlanConfig_Info(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     Name: str = Field(default="新 BAAH 计划表", description="计划表名称")
-    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+    Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+        default="ALL", description="计划表模式"
+    )
+    RotateDays: int = Field(
+        default=PLAN_ROTATE_DAYS_DEFAULT,
+        ge=1,
+        le=PLAN_ROTATE_DAYS_MAX,
+        description="多天轮换的天数，仅 Rotate 模式使用",
+    )
 
 
 class BAAHSlotRule(NamedTuple):
@@ -5084,7 +5108,15 @@ class MSSPlanConfig_Info(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     Name: str = Field(default="新 MSS 计划表", description="计划表名称")
-    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+    Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
+        default="ALL", description="计划表模式"
+    )
+    RotateDays: int = Field(
+        default=PLAN_ROTATE_DAYS_DEFAULT,
+        ge=1,
+        le=PLAN_ROTATE_DAYS_MAX,
+        description="多天轮换的天数，仅 Rotate 模式使用",
+    )
 
 
 class MSSPlanKey(BaseModel):

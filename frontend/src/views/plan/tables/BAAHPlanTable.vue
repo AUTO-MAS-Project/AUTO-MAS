@@ -2,7 +2,7 @@
   <div class="config-table-wrapper">
     <!-- 行对象的字段是 rowKey，Ant 默认取 key，不指定会退回索引做主键 -->
     <a-table
-      :key="`baah-config-table-${currentMode}`"
+      :key="`baah-config-table-${currentMode}-${columnKeys.length}`"
       :columns="configColumns"
       :data-source="configRows"
       :row-key="rowKeyOf"
@@ -25,13 +25,13 @@
             :bordered="false"
             :value="record[column.key]"
             :options="fieldStateOptions"
-            :disabled="isColumnDisabled(asTimeKey(column.key))"
+            :disabled="isColumnDisabled(column.key)"
             :aria-label="cellLabel(record.fieldName, column.key)"
-            @update:value="handleFieldStateChange(asTimeKey(column.key), record.field, $event)"
+            @update:value="handleFieldStateChange(column.key, record.field, $event)"
           />
         </template>
 
-        <!-- 多类混打：每类关卡的每一位各占一行，一格一个下拉，与每天一类同一套控件 -->
+        <!-- 多类混打：每类关卡的每一位各占一行，一格一个下拉 -->
         <template v-else>
           <a-select
             class="config-select"
@@ -40,11 +40,9 @@
             placeholder="-"
             :value="record[column.key]"
             :options="partOptions(record.hintKey, record.min)"
-            :disabled="isColumnDisabled(asTimeKey(column.key))"
+            :disabled="isColumnDisabled(column.key)"
             :aria-label="cellLabel(record.fieldName, column.key)"
-            @update:value="
-              handlePartChange(asTimeKey(column.key), record.field, record.index, $event)
-            "
+            @update:value="handlePartChange(column.key, record.field, record.index, $event)"
           />
         </template>
       </template>
@@ -59,7 +57,6 @@ import { message } from 'ant-design-vue'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 import {
   BAAH_PLAN_KEY_FIELDS,
-  BAAH_PLAN_TIME_KEYS,
   applyFieldState,
   applyMixedPart,
   partOptionMax,
@@ -69,14 +66,20 @@ import {
   type BAAHDayFields,
   type BAAHFieldState,
   type BAAHKeyFieldName,
-  type PlanTimeKey,
 } from '@/utils/baahPlanKey'
+import {
+  planColumnKeys,
+  planColumnPath,
+  planDayLabel,
+  readPlanColumn,
+  type PlanMode,
+} from '@/utils/planDays'
 
 const { t } = useI18n()
 
 interface Props {
   tableData: Record<string, any> | null
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
   /** BAAH 的排法挤不进「简化视图」，转置只会更难读，配置视图与简化视图共用这一张表 */
   viewMode: 'config' | 'simple'
   planId?: string
@@ -88,15 +91,28 @@ const props = defineProps<Props>()
 /** a-table 的行主键：行对象的字段是 rowKey，Ant 默认取 key，不指定会退回索引 */
 const rowKeyOf = (record: { rowKey: string }) => record.rowKey
 
-const localTableData = ref<Partial<Record<PlanTimeKey, BAAHDayFields>>>({})
+/** 列键：ALL 加当天的天键；周计划是星期名，多天轮换是 "1"~"N" */
+const columnKeys = computed(() =>
+  planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays)
+)
+
+const columnTitle = (key: string) =>
+  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+
+const localTableData = ref<Record<string, BAAHDayFields>>({})
 
 const syncLocalTableData = (tableData: Record<string, any> | null) => {
   localTableData.value = Object.fromEntries(
-    BAAH_PLAN_TIME_KEYS.map(timeKey => [timeKey, readDayFields(tableData?.[timeKey])])
-  ) as Partial<Record<PlanTimeKey, BAAHDayFields>>
+    columnKeys.value.map(key => [key, readDayFields(readPlanColumn(tableData, key))])
+  ) as Record<string, BAAHDayFields>
 }
 
-watch(() => props.tableData, syncLocalTableData, { immediate: true })
+// 列键同时取决于模式与轮换天数，任何一个变了都要重读一遍
+watch(
+  () => [props.tableData, props.currentMode, props.tableData?.Info?.RotateDays] as const,
+  () => syncLocalTableData(props.tableData),
+  { immediate: true }
+)
 
 const configColumns = computed(() => {
   // 一格一个控件，列宽与 MAA 的配置视图一致
@@ -112,24 +128,22 @@ const configColumns = computed(() => {
       fixed: 'left',
       align: 'center',
     },
-    ...BAAH_PLAN_TIME_KEYS.map(timeKey => ({
-      title: t(`plan.week.${timeKey}`),
-      dataIndex: timeKey,
-      key: timeKey,
+    ...columnKeys.value.map(key => ({
+      title: columnTitle(key),
+      dataIndex: key,
+      key,
       width: 120,
       align: 'center',
     })),
   ]
 })
 
-const asTimeKey = (value: string): PlanTimeKey => value as PlanTimeKey
+/** 格的读屏标签：行标题 + 天，八个一模一样的控件否则念出来分不清 */
+const cellLabel = (name: string, key: string) => `${name} ${columnTitle(key)}`
 
-/** 格的读屏标签：行标题 + 星期，八个一模一样的控件否则念出来分不清 */
-const cellLabel = (name: string, timeKey: string) => `${name} ${t(`plan.week.${timeKey}`)}`
-
-const isColumnDisabled = (timeKey: PlanTimeKey) => {
-  if (props.currentMode === 'ALL') return timeKey !== 'ALL'
-  return timeKey === 'ALL'
+const isColumnDisabled = (key: string) => {
+  if (props.currentMode === 'ALL') return key !== 'ALL'
+  return key === 'ALL'
 }
 
 const rangeOptions = (max: number) =>
@@ -170,10 +184,7 @@ const configRows = computed(() => {
       fieldName: `${t(field.labelKey)} · ${t('plan.baah.rowState')}`,
       fieldHint: t('plan.baah.rowStateHint'),
       ...Object.fromEntries(
-        BAAH_PLAN_TIME_KEYS.map(timeKey => [
-          timeKey,
-          readFieldState(localTableData.value[timeKey], field.field),
-        ])
+        columnKeys.value.map(key => [key, readFieldState(localTableData.value[key], field.field)])
       ),
     },
     ...field.parts.map((part, index) => ({
@@ -186,11 +197,11 @@ const configRows = computed(() => {
       fieldName: `${t(field.labelKey)} · ${t(part.hintKey)}`,
       fieldHint: t(field.hintKey),
       ...Object.fromEntries(
-        BAAH_PLAN_TIME_KEYS.map(timeKey => [
-          timeKey,
+        columnKeys.value.map(key => [
+          key,
           // 这一类今天没在打时参数行留空，免得填了却不生效
-          readFieldState(localTableData.value[timeKey], field.field) === 'on'
-            ? readFieldValues(localTableData.value[timeKey], field.field)[index]
+          readFieldState(localTableData.value[key], field.field) === 'on'
+            ? readFieldValues(localTableData.value[key], field.field)[index]
             : undefined,
         ])
       ),
@@ -201,52 +212,52 @@ const configRows = computed(() => {
 /**
  * 整格提交：先落到本地让界面即时反馈，保存失败再退回原来的那一格。
  *
- * 后端按「日期 → Key」两级写入，一格只能整份提交：只发一个字段会被当成整份 Key，
+ * 后端按「天 → Key」两级写入，一格只能整份提交：只发一个字段会被当成整份 Key，
  * 其余五类关卡会跟着变成「交给 BAAH」，静默丢掉原本的取值。
  */
 const submitDayKey = async (
-  timeKey: PlanTimeKey,
+  key: string,
   nextDayKey: BAAHDayFields,
   previousFields: BAAHDayFields | undefined
 ) => {
   localTableData.value = {
     ...localTableData.value,
-    [timeKey]: nextDayKey,
+    [key]: nextDayKey,
   }
 
-  const saved = await props.handlePlanChange(`${timeKey}.Key`, nextDayKey, false)
+  const saved = await props.handlePlanChange(planColumnPath(key, 'Key'), nextDayKey, false)
   if (!saved) {
     localTableData.value = {
       ...localTableData.value,
-      [timeKey]: previousFields ?? {},
+      [key]: previousFields ?? {},
     }
   }
 }
 
 const handlePartChange = async (
-  timeKey: PlanTimeKey,
+  key: string,
   field: BAAHKeyFieldName,
   index: number,
   value: number | string | null
 ) => {
-  const previousFields = localTableData.value[timeKey]
+  const previousFields = localTableData.value[key]
   const write = applyMixedPart(previousFields, field, index, value)
 
   if (write.corrected) message.warning(t('plan.baah.partLevelZeroFixed'))
 
-  await submitDayKey(timeKey, write.fields, previousFields)
+  await submitDayKey(key, write.fields, previousFields)
 }
 
 /** 三态切换：开＝按这里的参数打，关＝今天不打，交给 BAAH＝今天不干预这一类 */
 const handleFieldStateChange = async (
-  timeKey: PlanTimeKey,
+  key: string,
   field: BAAHKeyFieldName,
   state: BAAHFieldState
 ) => {
-  const previousFields = localTableData.value[timeKey]
+  const previousFields = localTableData.value[key]
 
   // 只动这一类，别的类别原样带过去：界面没展示的类别不该被补成默认值
-  await submitDayKey(timeKey, applyFieldState(previousFields, field, state), previousFields)
+  await submitDayKey(key, applyFieldState(previousFields, field, state), previousFields)
 }
 </script>
 

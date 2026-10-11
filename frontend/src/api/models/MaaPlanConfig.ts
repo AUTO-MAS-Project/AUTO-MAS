@@ -14,32 +14,8 @@ export type MaaPlanConfig = {
      */
     ALL?: (MaaPlanConfig_Item | null);
     /**
-     * 周一
+     * 每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键
      */
-    Monday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (MaaPlanConfig_Item | null);
+    Days?: Record<string, MaaPlanConfig_Item>;
 };
 

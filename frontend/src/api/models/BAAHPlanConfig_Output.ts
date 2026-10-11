@@ -14,32 +14,8 @@ export type BAAHPlanConfig_Output = {
      */
     ALL?: (BAAHPlanConfig_Item | null);
     /**
-     * 周一
+     * 每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键
      */
-    Monday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (BAAHPlanConfig_Item | null);
+    Days?: Record<string, BAAHPlanConfig_Item>;
 };
 
