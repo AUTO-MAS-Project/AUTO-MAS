@@ -49,6 +49,7 @@
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
           :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
+          :disabled="planOperationPending"
           @update:current-plan-name="currentPlanName = $event"
           @update:current-mode="onModeChange"
           @update:rotate-days="handleRotateDaysChange"
@@ -489,20 +490,28 @@ const finishEditPlanName = async () => {
 const onModeChange = async (mode: PlanMode) => {
   if (mode === currentMode.value || !canLeaveTable()) return
   const previous = currentMode.value
+  planOperationPending.value = true
   currentMode.value = mode
-  const saved = await handlePlanChange('Info.Mode', mode)
-  if (!saved) currentMode.value = previous
+  try {
+    const saved = await handlePlanChange('Info.Mode', mode)
+    if (!saved) currentMode.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
 }
 
 /** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
 const handleRotateDaysChange = async (days: number) => {
   if (days === currentRotateDays.value || !canLeaveTable()) return
   const previous = currentRotateDays.value
+  planOperationPending.value = true
   currentRotateDays.value = days
 
-  const saved = await handlePlanChange('Info.RotateDays', days)
-  if (!saved) {
-    currentRotateDays.value = previous
+  try {
+    const saved = await handlePlanChange('Info.RotateDays', days)
+    if (!saved) currentRotateDays.value = previous
+  } finally {
+    planOperationPending.value = false
   }
 }
 

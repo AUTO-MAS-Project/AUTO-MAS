@@ -34,6 +34,7 @@
         <span class="mode-label">{{ t('plan.modeLabel') }}</span>
         <a-segmented
           :value="currentMode"
+          :disabled="disabled"
           :options="[
             { label: t('plan.modeAll'), value: 'ALL' },
             { label: t('plan.modeWeekly'), value: 'Weekly' },
@@ -46,6 +47,7 @@
           <span class="mode-label">{{ t('plan.rotateDaysLabel') }}</span>
           <a-input-number
             :value="rotateDays"
+            :disabled="disabled"
             :min="PLAN_ROTATE_DAYS_MIN"
             :max="PLAN_ROTATE_DAYS_MAX"
             size="small"
@@ -98,6 +100,8 @@ interface Props {
   isEditingPlanName: boolean
   /** 摘要表使用紧凑标题，窄窗口允许执行模式换行。 */
   compact?: boolean
+  /** 会改变计划表列的请求尚未完成时，暂停切模式和改天数。 */
+  disabled?: boolean
 }
 
 interface Emits {
