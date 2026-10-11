@@ -22,7 +22,7 @@ export type QueueConfig_Info = {
     /**
      * 完成后操作
      */
-    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'Logoff' | null);
+    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'RestartSelf' | 'Logoff' | null);
     /**
      * 完成后操作的延时时长(分钟)
      */

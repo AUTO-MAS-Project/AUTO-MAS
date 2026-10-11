@@ -48,6 +48,7 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
   [PowerIn.signal.HIBERNATE]: 'scheduler.power.hibernate',
   [PowerIn.signal.SLEEP]: 'scheduler.power.sleep',
   [PowerIn.signal.KILL_SELF]: 'scheduler.power.killSelf',
+  [PowerIn.signal.RESTART_SELF]: 'scheduler.power.restartSelf',
   [PowerIn.signal.LOGOFF]: 'scheduler.power.logoff',
 }
 export interface SchedulerTab {

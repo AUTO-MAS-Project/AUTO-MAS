@@ -34,6 +34,7 @@ import {
   WS_BACKEND_SHUTDOWN_READY,
   WS_CLOSE_CODE_REPLACED,
   WS_FRONTEND_CLOSE_REQUESTED,
+  WS_FRONTEND_RESTART_REQUESTED,
   WS_ID_MAIN,
   WS_POWER_COUNTDOWN_CANCELLED,
   WS_POWER_COUNTDOWN_UPDATED,
@@ -149,11 +150,15 @@ const handleShutdownReady = (): void => {
   resolveShutdownReady?.(true)
 }
 
-const handleCloseRequested = (): void => {
-  logger.info('收到后端关闭请求 frontend.close.requested，前端开始退出')
+const handleCloseRequested = (restart = false): void => {
+  logger.info(
+    restart
+      ? '收到后端重启请求 frontend.restart.requested，收尾后重启应用'
+      : '收到后端关闭请求 frontend.close.requested，前端开始退出'
+  )
   closeRequestedByBackend = true
   if (isClosing()) return
-  closePromise = runBackendRequestedClose().catch(error => {
+  closePromise = runBackendRequestedClose(restart).catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端请求关闭流程异常: ${errorMsg}`)
     stopReconnect()
@@ -511,13 +516,13 @@ const runCloseFlow = async (): Promise<void> => {
   await window.electronAPI?.appQuit?.()
 }
 
-const runBackendRequestedClose = async (): Promise<void> => {
+const runBackendRequestedClose = async (restart = false): Promise<void> => {
   backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
   stopReconnect()
-  shutdownConnection('后端请求关闭')
+  shutdownConnection(restart ? '后端请求重启' : '后端请求关闭')
   if (await queryRuntimeSupervised()) {
     // Runtime 链路：后端自行退出会被 Runtime 当作异常并重启，必须让 Electron 经 Runtime 收口
     const stopped = await stopBackendViaRuntime()
@@ -528,7 +533,8 @@ const runBackendRequestedClose = async (): Promise<void> => {
     }
   }
   disposeAppLifecycle()
-  await window.electronAPI?.appQuit?.()
+  // 重启走 appRestart（主进程据此置 relaunchAfterQuit），退出走 appQuit
+  await (restart ? window.electronAPI?.appRestart?.() : window.electronAPI?.appQuit?.())
 }
 
 /**
@@ -933,6 +939,9 @@ export function initializeAppLifecycle(): void {
   residentSubscriptionIds = [
     subscribe({ id: WS_ID_MAIN, type: WS_BACKEND_SHUTDOWN_READY }, () => handleShutdownReady()),
     subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_CLOSE_REQUESTED }, () => handleCloseRequested()),
+    subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_RESTART_REQUESTED }, () =>
+      handleCloseRequested(true)
+    ),
     subscribe({ id: WS_ID_MAIN, type: WS_POWER_COUNTDOWN_UPDATED }, message =>
       handlePowerCountdownUpdated(message.data)
     ),

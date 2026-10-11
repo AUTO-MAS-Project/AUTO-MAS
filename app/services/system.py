@@ -114,6 +114,7 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ],
         from_frontend: bool = False,
@@ -134,15 +135,17 @@ class _SystemHandler:
         if not await ObsReplay.drain():
             logger.warning("失败回放尚未保存完成，继续执行电源操作")
 
-        if mode == "KillSelf" and Config.server is not None:
-            logger.info("执行退出主程序操作")
+        if mode in {"KillSelf", "RestartSelf"} and Config.server is not None:
+            restart = mode == "RestartSelf"
+            action = "重启" if restart else "退出"
+            logger.info(f"执行{action}主程序操作")
             if not from_frontend:
                 try:
-                    await self._request_frontend_close()
+                    await self._request_frontend_close(restart=restart)
                 except TimeoutError as e:
-                    # 退出是用户设定的完成后操作或安装更新的要求，前端卡死不能让
+                    # 退出 / 重启是用户设定的完成后操作或安装更新的要求，前端卡死不能让
                     # 后端就此留下不退；此前这里只抛异常，退出被静默放弃。
-                    logger.error(f"{e}，仍继续退出主程序")
+                    logger.error(f"{e}，仍继续{action}主程序")
             Config.server.should_exit = True
             return
 
@@ -159,15 +162,21 @@ class _SystemHandler:
         # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
-    async def _request_frontend_close(self) -> None:
-        """请求前端退出，并等待主会话断开（仅用于后端自行退出的 KillSelf 场景）。"""
+    async def _request_frontend_close(self, restart: bool = False) -> None:
+        """请求前端退出或重启，并等待主会话断开（后端自行的 KillSelf / RestartSelf 场景）。"""
 
+        action = "重启" if restart else "退出"
         sent = await Publisher.send(
-            id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
+            id=protocol.ID_MAIN,
+            type=(
+                protocol.FRONTEND_RESTART_REQUESTED
+                if restart
+                else protocol.FRONTEND_CLOSE_REQUESTED
+            ),
         )
         if not sent:
             # 当前没有前端会话，本身已满足“前端关闭”前置条件。
-            logger.info("当前无前端主连接，继续退出主程序")
+            logger.info(f"当前无前端主连接，继续{action}主程序")
             return
 
         disconnected = await MainConnection.wait_until_disconnected(
@@ -191,6 +200,7 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ],
         delay: int = 0,

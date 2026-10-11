@@ -332,6 +332,7 @@ const afterAccomplishOptions = computed(() => [
   { label: t('queue.action.Hibernate'), value: 'Hibernate' },
   { label: t('queue.action.Sleep'), value: 'Sleep' },
   { label: t('queue.action.KillSelf'), value: 'KillSelf' },
+  { label: t('queue.action.RestartSelf'), value: 'RestartSelf' },
   { label: t('queue.action.Logoff'), value: 'Logoff' },
 ])
 

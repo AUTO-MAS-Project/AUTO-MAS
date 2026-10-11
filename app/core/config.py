@@ -224,6 +224,7 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ] = "NoAction"
         # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
