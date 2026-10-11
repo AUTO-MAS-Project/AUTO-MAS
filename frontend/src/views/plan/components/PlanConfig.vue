@@ -1,5 +1,5 @@
 <template>
-  <a-card class="plan-config-card" :bordered="false">
+  <a-card class="plan-config-card" :class="{ 'plan-config-compact': compact }" :bordered="false">
     <template #title>
       <div class="plan-title-container">
         <div v-if="!isEditingPlanName" class="plan-title-display">
@@ -30,7 +30,7 @@
       </div>
     </template>
     <template #extra>
-      <a-space>
+      <a-space :wrap="compact">
         <span class="mode-label">{{ t('plan.modeLabel') }}</span>
         <a-segmented
           :value="currentMode"
@@ -96,6 +96,8 @@ interface Props {
   /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
   supportsSimpleView: boolean
   isEditingPlanName: boolean
+  /** 摘要表使用紧凑标题，窄窗口允许执行模式换行。 */
+  compact?: boolean
 }
 
 interface Emits {
@@ -192,6 +194,23 @@ const handleRotateDaysChange = (value: number | string | null) => {
 .plan-config-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+.plan-config-compact .plan-title-container {
+  margin-bottom: 0;
+}
+
+.plan-config-compact :deep(.ant-card-head) {
+  padding: 12px 24px;
+}
+
+.plan-config-compact :deep(.ant-card-head-wrapper) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-config-compact :deep(.ant-card-extra) {
+  margin-inline-start: 0;
 }
 
 .plan-title-input :deep(.ant-input) {

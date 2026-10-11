@@ -48,17 +48,18 @@
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
+          :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
           @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event"
+          @update:current-mode="onModeChange"
           @update:rotate-days="handleRotateDaysChange"
           @update:view-mode="viewMode = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange"
         >
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"
+            ref="planTable"
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
@@ -74,7 +75,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
@@ -86,6 +87,7 @@ import {
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
+  PLAN_CONFIG_TYPES,
   isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
@@ -126,6 +128,11 @@ const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
+const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
+const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+
+onBeforeRouteLeave(() => canLeaveTable())
+onBeforeRouteUpdate((to, from) => to.query.planId === from.query.planId || canLeaveTable())
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -193,6 +200,7 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 }
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+  if (!canLeaveTable()) return
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -233,6 +241,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
 }
 
 const handleRemovePlan = async (planId: string) => {
+  if (isActivePlan(planId) && !canLeaveTable()) return
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -350,6 +359,7 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
+  if (!canLeaveTable()) return
 
   try {
     // 立即切换到新计划
@@ -453,13 +463,17 @@ const finishEditPlanName = async () => {
   }
 }
 
-const onModeChange = async () => {
-  // 只发送修改的字段
-  await handlePlanChange('Info.Mode', currentMode.value)
+const onModeChange = async (mode: PlanMode) => {
+  if (mode === currentMode.value || !canLeaveTable()) return
+  const previous = currentMode.value
+  currentMode.value = mode
+  const saved = await handlePlanChange('Info.Mode', mode)
+  if (!saved) currentMode.value = previous
 }
 
 /** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
 const handleRotateDaysChange = async (days: number) => {
+  if (days === currentRotateDays.value || !canLeaveTable()) return
   const previous = currentRotateDays.value
   currentRotateDays.value = days
 
@@ -575,8 +589,7 @@ watch(
     if (!newPlanId) return
     const target = planList.value.find(p => p.id === newPlanId)
     if (target && target.id !== activePlanId.value) {
-      activePlanId.value = target.id
-      await loadPlanData(activePlanId.value)
+      await onPlanChange(target.id)
     }
   }
 )
