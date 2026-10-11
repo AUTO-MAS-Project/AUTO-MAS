@@ -14,7 +14,7 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'fieldName'">
-          <a-tooltip :title="record.fieldHint">{{ record.fieldName }}</a-tooltip>
+          {{ record.fieldName }}
         </template>
 
         <!-- 每类头上先一行开关，关了就是这一天不跑这一类 -->
@@ -156,7 +156,6 @@ const configRows = computed(() => {
       rowKind: 'enabled',
       field: field.field,
       fieldName: `${t(field.labelKey)} · ${t('plan.baah.partEnabled')}`,
-      fieldHint: t(field.hintKey),
       ...Object.fromEntries(
         BAAH_PLAN_TIME_KEYS.map(timeKey => [
           timeKey,
@@ -172,7 +171,6 @@ const configRows = computed(() => {
       hintKey: part.hintKey,
       min: part.min,
       fieldName: `${t(field.labelKey)} · ${t(part.hintKey)}`,
-      fieldHint: t(field.hintKey),
       ...Object.fromEntries(
         BAAH_PLAN_TIME_KEYS.map(timeKey => [
           timeKey,

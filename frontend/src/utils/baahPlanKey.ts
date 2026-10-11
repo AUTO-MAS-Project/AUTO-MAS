@@ -23,7 +23,6 @@ export interface BAAHKeyPart {
 export interface BAAHKeyField {
   field: BAAHKeyFieldName
   labelKey: string
-  hintKey: string
   /** 界面暴露那几位的默认值，顺序与 parts 一致 */
   defaultValue: number[]
   /** 后端允许的最长位数；多出来的位照旧保留，只是界面不编辑 */
@@ -50,7 +49,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Event',
     labelKey: 'plan.baah.event',
-    hintKey: 'plan.baah.eventHint',
     defaultValue: [1, 1],
     maxLength: 3,
     parts: [
@@ -61,7 +59,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Wanted',
     labelKey: 'plan.baah.wanted',
-    hintKey: 'plan.baah.wantedHint',
     defaultValue: [1, -1, 1],
     maxLength: 4,
     parts: [
@@ -73,7 +70,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Special',
     labelKey: 'plan.baah.special',
-    hintKey: 'plan.baah.specialHint',
     defaultValue: [1, -1, 1],
     maxLength: 4,
     parts: [
@@ -85,7 +81,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Exchange',
     labelKey: 'plan.baah.exchange',
-    hintKey: 'plan.baah.exchangeHint',
     defaultValue: [1, -1, 1],
     maxLength: 4,
     parts: [
@@ -97,7 +92,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Hard',
     labelKey: 'plan.baah.hard',
-    hintKey: 'plan.baah.hardHint',
     defaultValue: [1, 1, -1],
     maxLength: 4,
     parts: [
@@ -109,7 +103,6 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Normal',
     labelKey: 'plan.baah.normal',
-    hintKey: 'plan.baah.normalHint',
     defaultValue: [1, 1, -1],
     maxLength: 4,
     parts: [
