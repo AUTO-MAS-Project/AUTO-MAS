@@ -1336,6 +1336,26 @@ async def update_maafw_project(
 
 
 @router.post(
+    "/maafw/mirror-cdk",
+    tags=["MaaFW"],
+    summary="查询 MFW 项目的 Mirror 酱 CDK 状态",
+    response_model=MaaFWMirrorCdkOut,
+    status_code=200,
+)
+async def query_maafw_mirror_cdk(
+    payload: MaaFWMirrorCdkIn = Body(...),
+) -> MaaFWMirrorCdkOut:
+    """脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+
+    带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
+    不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
+    """
+
+    reply = await maafw_update_api.query_mirror_cdk(payload.scriptId, payload.cdk)
+    return MaaFWMirrorCdkOut(**reply.out_fields())
+
+
+@router.post(
     "/maafw/agent-env/prepare",
     tags=["MaaFW"],
     summary="预备 MFW 运行环境",

@@ -22,6 +22,12 @@ export interface MaaFWUpdateResult {
   cdkExpiredTime?: number | null
 }
 
+/** `/maafw/mirror-cdk` 的结果：`status` 见后端 MaaFWMirrorCdkData，`expiredTime` 是 unix 秒。 */
+export interface MaaFWMirrorCdkState {
+  status: string
+  expiredTime: number | null
+}
+
 const EMPTY_DATA: Omit<MaaFWUpdateResult, 'message'> = {
   checked: false,
   updated: false,
@@ -74,5 +80,25 @@ export function useMaaFWUpdateApi() {
   const applyMaaFWUpdate = (scriptId: string): Promise<MaaFWUpdateResult> =>
     request(scriptId, 'apply')
 
-  return { checkMaaFWUpdate, applyMaaFWUpdate }
+  /**
+   * 查 Mirror 酱 CDK 的状态与到期时间（CDK 输入框下那行小字用）。CDK 只放请求体。
+   * 这只是一行提示：请求失败一律返回 null，不弹错误。
+   */
+  const queryMaaFWMirrorCdk = async (
+    scriptId: string,
+    cdk: string
+  ): Promise<MaaFWMirrorCdkState | null> => {
+    try {
+      const payload = await MaaFwService.queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost({
+        scriptId,
+        cdk,
+      })
+      if (payload.code !== 200 || !payload.data) return null
+      return { status: payload.data.status, expiredTime: payload.data.expiredTime ?? null }
+    } catch {
+      return null
+    }
+  }
+
+  return { checkMaaFWUpdate, applyMaaFWUpdate, queryMaaFWMirrorCdk }
 }
