@@ -1887,7 +1887,7 @@ export default {
     endfieldWillBeUpdated:
       'AUTO-MAS updates the Endfield PC client with the official delta pack: it reads local files to verify the baseline, then downloads only what changed (a cross-version run downloads a few GB and reads tens of GB to verify). Once the baseline verifies it closes the running game and locks this script config. When the official pack has no delta for this baseline nothing is downloaded and you are asked to update manually',
     endfieldUpdateCloseConfirm:
-      'Closing the dialog aborts this run, and the delta files already downloaded are deleted, so the next run starts over. Close anyway?',
+      'Closing the dialog aborts this run, and the delta files already downloaded are deleted, so the next run starts over. Once game files are being overwritten the client is left half-updated and AUTO-MAS will not resume it — update once with the official launcher. Close anyway?',
     endfieldUpdateAbortTitle: 'Abort this update run?',
     endfieldUpdateAbortConfirm: 'Close anyway',
     endfieldUpdateAlreadyFinished:

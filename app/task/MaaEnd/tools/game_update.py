@@ -470,17 +470,13 @@ def read_install_identity(install_dir: Path) -> InstallIdentity:
         logger.info(f"读取终末地 config.ini 失败，按版本未知处理: {error}")
         return InstallIdentity(version="")
 
-    if len(raw) % 16:
-        # 未加密的 config.ini 是真实存在的磁盘状态，不能因为解不开就报错
-        logger.warning(f"终末地 config.ini 长度不是分组倍数，按明文处理: {config_path}")
-        text = raw.decode("utf-8", "replace")
-    else:
-        try:
-            cipher = AES.new(_CONFIG_KEY, AES.MODE_CBC, _CONFIG_IV)
-            text = _strip_padding(cipher.decrypt(raw)).decode("utf-8", "replace")
-        except (ValueError, KeyError, UnicodeDecodeError) as error:
-            logger.warning(f"终末地 config.ini 解密失败，按版本未知处理: {error}")
-            return InstallIdentity(version="")
+    # 这份配置只有加密一种形态：解不开就按读不到处理，不猜内容，也不试明文
+    try:
+        cipher = AES.new(_CONFIG_KEY, AES.MODE_CBC, _CONFIG_IV)
+        text = _strip_padding(cipher.decrypt(raw)).decode("utf-8", "replace")
+    except (ValueError, KeyError, UnicodeDecodeError) as error:
+        logger.warning(f"终末地 config.ini 解密失败，按版本未知处理: {error}")
+        return InstallIdentity(version="")
 
     found: dict[str, str] = {}
     for line in text.splitlines():
