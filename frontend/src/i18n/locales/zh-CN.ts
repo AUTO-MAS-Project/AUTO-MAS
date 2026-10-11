@@ -322,6 +322,8 @@ export default {
       '自动培养未注入：请使用 MAA v6.19.0-beta.1 或更新版本，并确认 MAA 中有「干员培养」任务；材料刷取照常执行',
     maaCultivateAutoRaiseDataUnavailable:
       '自动培养未注入：培养数据暂时不可用，请刷新干员目录后重试；材料刷取照常执行',
+    maaCultivateSklandSyncFailed:
+      '森空岛练度同步失败，本轮养成已暂停；请检查网络或重新绑定森空岛，日常与库存保持照常执行',
     maaCultivateAutoRaiseHint:
       '需要 MAA v6.19.0-beta.1 或更新版本，按当前养成目标执行精英化、技能升级和专精；模组暂不支持自动培养。关闭后仍会刷取养成材料。',
     maaCultivateSkipResource: '资源收集期跳过养成计划',

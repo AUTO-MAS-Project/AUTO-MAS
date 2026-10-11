@@ -977,6 +977,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
     _cultivate_auto_raise_injected: bool = False
+    # 每轮准备材料计划时重置；同步失败后阻止继续注入自动培养。
+    _cultivate_skland_unavailable: bool = False
     _depot_maintain_suppressed: bool = False
 
     def __init__(
@@ -1075,6 +1077,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._cultivate_collected_depot = False
         self._cultivate_collected_oper_box = False
         self._cultivate_auto_raise_injected = False
+        self._cultivate_skland_unavailable = False
         self._cultivate_achievement_summary: list[str] = []
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
@@ -1505,6 +1508,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 str(self.cur_user_uid),
                 force=auto_raise_injected,
             )
+            skland_bound = bool(
+                self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
+                and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+            )
+            if skland_bound and not (skland and skland[0]):
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 森空岛练度刷新失败, 保留养成目标"
+                )
+                self._cultivate_collected_depot = False
+                self._cultivate_collected_oper_box = False
+                self._cultivate_auto_raise_injected = False
+                return
             context = ProviderContext(
                 maa_data_dir=self._cultivate_archive_dir(),
                 skland_progressions=skland[0] if skland else {},
@@ -1557,7 +1572,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
         练度、库存任何异常一律 fail-open——本轮不注入、不接管，既有任务
-        队列不受影响（决策 28）。
+        队列不受影响（决策 28）。绑定森空岛后拉取失败时暂停自动培养，
+        不使用缺少本轮识别保障的旧练度档案。
 
         Returns:
             (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
@@ -1566,6 +1582,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
         # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
         # 养成后仍按残留目标注入并抑制库存保持
+        self._cultivate_skland_unavailable = False
         raw_targets: object
         try:
             raw_targets = json.loads(
@@ -1581,12 +1598,42 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return None, False, False
         targets = parse_cultivate_targets(raw_targets)
 
+        skland_bound = bool(
+            self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
+            and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+        )
         try:
-            # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
-            # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
+            # 注入前强刷；未绑定时沿用本地识别，绑定失败时暂停本轮养成。
             skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid), force=True
             )
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 森空岛练度查询失败: {e}"
+            )
+            skland = None
+        if skland_bound and not (skland and skland[0]):
+            self._cultivate_skland_unavailable = True
+            await self._set_cultivate_notice("")
+            message = (
+                "森空岛练度同步失败，本轮养成已暂停；请检查网络或重新绑定森空岛，"
+                "日常与库存保持照常执行"
+            )
+            logger.warning(f"用户 {self.cur_user_item.name} {message}")
+            if message not in self._missing_task_source_warned:
+                self._missing_task_source_warned.add(message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=message,
+                        messageKey="edit.maaCultivateSklandSyncFailed",
+                    ),
+                )
+            return None, True, False
+
+        try:
             (
                 updated_targets,
                 plan,
@@ -1642,9 +1689,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _prepare_auto_cultivate_injection(
         self, source_queue: list[dict]
     ) -> dict | None:
-        """自动培养独立门控；关闭时不查询目录，也不影响材料刷取。"""
+        """自动培养独立门控；关闭或森空岛同步失败时不查询目录。"""
 
-        if not (
+        if self._cultivate_skland_unavailable or not (
             self.cur_user_config.get("Task", "IfCultivate")
             and self.cur_user_config.get("Task", "CultivateAutoRaise")
         ):
