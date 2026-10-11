@@ -1751,6 +1751,14 @@ ipcMain.handle('app-restart', () => {
   requestRendererClose('应用重启')
 })
 
+// 后端请求的重启：只置「这次退出后重新拉起」，退出本身仍走 app-quit 那条已协调好的路。
+// 这里不调 requestRendererClose：调用它的收尾流程已经把连接关了，再发一次窗口关闭请求
+// 只会等渲染进程确认，等不到就落进强制退出兜底，反而把重启变成超时。
+ipcMain.handle('app-restart-on-quit', () => {
+  logger.info('已标记退出后重新启动应用')
+  relaunchAfterQuit = true
+})
+
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()

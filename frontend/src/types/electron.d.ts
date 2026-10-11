@@ -210,6 +210,8 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   appRestart: () => Promise<void>
+  /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
+  appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */

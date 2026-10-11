@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
   appCancelQuit: (token?: number) => ipcRenderer.invoke('app-cancel-quit', token),
   appRestart: () => ipcRenderer.invoke('app-restart'),
+  appRestartOnQuit: () => ipcRenderer.invoke('app-restart-on-quit'),
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume: (callback: () => void) => {

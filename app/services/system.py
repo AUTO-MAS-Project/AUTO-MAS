@@ -175,8 +175,11 @@ class _SystemHandler:
             ),
         )
         if not sent:
-            # 当前没有前端会话，本身已满足“前端关闭”前置条件。
+            # 当前没有前端会话。退出时这本身已满足“前端关闭”前置条件；重启则没人接收信号，
+            # 只能退到后端退出这一步（Runtime 监督下会被重新拉起），记一条日志免得看着像成功了。
             logger.info(f"当前无前端主连接，继续{action}主程序")
+            if restart:
+                logger.warning("重启请求没有前端接收，本次只重启后端进程")
             return
 
         disconnected = await MainConnection.wait_until_disconnected(
