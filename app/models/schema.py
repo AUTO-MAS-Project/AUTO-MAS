@@ -4693,6 +4693,34 @@ class MaaFWProjectUpdateOut(OutBase):
     )
 
 
+class MaaFWMirrorCdkIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    cdk: str = Field(
+        default="",
+        description="要查询的 Mirror 酱 CDK（编辑页输入框当前值，可能还没落盘）；只走请求体，不进日志",
+    )
+
+
+class MaaFWMirrorCdkData(BaseModel):
+    status: str = Field(
+        ...,
+        description=(
+            "CDK 状态：ok / absent（没填）/ unsupported（项目没声明 mirrorchyan_rid 或读不了）/ "
+            "error（查询失败）/ expired / invalid / quota / mismatched / blocked"
+        ),
+    )
+    expiredTime: Optional[int] = Field(
+        default=None,
+        description="Mirror 酱返回的 CDK 到期时间（unix 秒）；没返回时为空",
+    )
+
+
+class MaaFWMirrorCdkOut(OutBase):
+    data: Optional[MaaFWMirrorCdkData] = Field(
+        default=None, description="Mirror 酱 CDK 状态"
+    )
+
+
 class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(default="", description="MFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(
