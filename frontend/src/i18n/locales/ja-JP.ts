@@ -3218,8 +3218,13 @@ export default {
       // -1 を表す選択肢：ステージは掃討できる最後のステージ、回数は最大
       stageHighest: '最後から1番目',
       timesMax: '最大回数',
-      // 複数種類レイアウトで各種別の上に付くスイッチ
-      partEnabled: '有効',
+      // 各種別の上に付く状態行：オン / オフ / BAAH に任せる
+      rowState: '設定',
+      rowStateHint:
+        'オン：ここの値でこの種別を実行します。オフ：今日はこの種別を実行しません。BAAH に任せる：今日はこの種別に触れず、BAAH 側の設定をそのまま使います',
+      stateOn: 'オン',
+      stateOff: 'オフ',
+      stateAuto: 'BAAH に任せる',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',

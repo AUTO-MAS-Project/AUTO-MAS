@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { applyMixedPart, isFieldEnabled, partOptionMax, readDayFields } from './baahPlanKey'
+import {
+  applyFieldState,
+  applyMixedPart,
+  partOptionMax,
+  readDayFields,
+  readFieldState,
+} from './baahPlanKey'
 
 describe('readDayFields', () => {
   it('缺席的类别不补默认值', () => {
@@ -91,17 +97,44 @@ describe('partOptionMax', () => {
   })
 })
 
-describe('isFieldEnabled', () => {
-  it('有值的类算启用', () => {
-    expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Hard')).toBe(true)
+describe('readFieldState', () => {
+  it('有值的类算开', () => {
+    expect(readFieldState({ Hard: [1, 2, 3] }, 'Hard')).toBe('on')
   })
 
   it('空数组是「今天不打」', () => {
-    expect(isFieldEnabled({ Hard: [] }, 'Hard')).toBe(false)
+    expect(readFieldState({ Hard: [] }, 'Hard')).toBe('off')
   })
 
-  it('缺席也当作没启用', () => {
-    expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Normal')).toBe(false)
-    expect(isFieldEnabled(undefined, 'Hard')).toBe(false)
+  it('缺席是「交给 BAAH」', () => {
+    expect(readFieldState({ Hard: [1, 2, 3] }, 'Normal')).toBe('auto')
+    expect(readFieldState(undefined, 'Hard')).toBe('auto')
+  })
+})
+
+describe('applyFieldState', () => {
+  it('开：沿用原来填过的值，不重置成默认值', () => {
+    expect(applyFieldState({ Event: [4, 6] }, 'Event', 'on')).toEqual({ Event: [4, 6] })
+  })
+
+  it('开：原来是空的就补回默认值', () => {
+    expect(applyFieldState({ Event: [] }, 'Event', 'on')).toEqual({ Event: [1, 1] })
+  })
+
+  it('关：写成空数组', () => {
+    expect(applyFieldState({ Event: [4, 6] }, 'Event', 'off')).toEqual({ Event: [] })
+  })
+
+  it('交给 BAAH：把这一类整个从今天去掉', () => {
+    const next = applyFieldState({ Event: [4, 6], Hard: [] }, 'Event', 'auto')
+    expect(next).toEqual({ Hard: [] })
+    expect('Event' in next).toBe(false)
+  })
+
+  it('只动目标类别：把一类交给 BAAH 不会改到别的类', () => {
+    expect(applyFieldState({ Wanted: [], Hard: [1, 2, 3] }, 'Normal', 'auto')).toEqual({
+      Wanted: [],
+      Hard: [1, 2, 3],
+    })
   })
 })

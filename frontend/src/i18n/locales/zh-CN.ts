@@ -3747,8 +3747,13 @@ export default {
       // 下拉里代表 -1 的那一项：关卡位是倒数第一个能扫荡的关卡，次数位是扫荡次数拉满
       stageHighest: '倒数第一个',
       timesMax: '最大次数',
-      // 多类混打里每一类头上那一行开关，关了就是这一天不跑这一类
-      partEnabled: '启用',
+      // 每一类头上那一行状态：开 / 关 / 交给 BAAH
+      rowState: '开关',
+      rowStateHint:
+        '开：按这里的参数打这一类；关：今天不打这一类；交给 BAAH：今天不干预这一类，沿用 BAAH 自己配置里的关卡与开关',
+      stateOn: '开',
+      stateOff: '关',
+      stateAuto: '交给 BAAH',
     },
     toast: {
       created: '已创建新的{type}：「{name}」，建议你修改为更有意义的名称',

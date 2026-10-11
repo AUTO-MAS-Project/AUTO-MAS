@@ -3855,8 +3855,13 @@ export default {
       // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
       stageHighest: 'Last raid-able',
       timesMax: 'Max runs',
-      // The switch row above each stage kind in the mixed layout
-      partEnabled: 'Enabled',
+      // The state row above each stage kind: on / off / leave it to BAAH
+      rowState: 'Mode',
+      rowStateHint:
+        'On: run this kind with the values here; Off: skip this kind today; Defer to BAAH: leave this kind untouched today and keep the settings in BAAH itself',
+      stateOn: 'On',
+      stateOff: 'Off',
+      stateAuto: 'Defer to BAAH',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

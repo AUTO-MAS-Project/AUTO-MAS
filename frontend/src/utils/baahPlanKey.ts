@@ -1,5 +1,4 @@
-// BAAH 计划表 key 的前端契约：六类关卡每一位的含义、缺席 / 空 / 有值三态的读法，
-// 以及「每天一类」那三行与整份 key 之间的换算。
+// BAAH 计划表 key 的前端契约：六类关卡每一位的含义、缺席 / 空 / 有值三态的读法与换算。
 // 取值规则与后端 app/models/config.py 的 BAAH_PLAN_KEY_SHAPE 一一对应，改一处要改两处。
 
 export type PlanTimeKey =
@@ -204,11 +203,44 @@ export const readFieldValues = (
   return items
 }
 
-/** 这一类今天要不要跑：空数组与缺席都算不打 */
-export const isFieldEnabled = (
+/**
+ * 一类关卡在某一天的状态：开＝按这里的参数打，关＝今天不打这一类，
+ * 交给 BAAH＝今天不干预，沿用上游配置文件里的关卡与开关。
+ */
+export type BAAHFieldState = 'on' | 'off' | 'auto'
+
+export const readFieldState = (
   fields: BAAHDayFields | undefined,
   field: BAAHKeyFieldName
-): boolean => (fields?.[field] ?? []).length > 0
+): BAAHFieldState => {
+  const items = fields?.[field]
+  // 字段不在就是交给 BAAH：后端读到缺席会沿用上游配置，补一份出来就成了按默认关卡打
+  if (items === undefined) return 'auto'
+  return items.length > 0 ? 'on' : 'off'
+}
+
+/**
+ * 切换一类关卡的状态，只动这一类，其余类别原样带过去。
+ *
+ * 「交给 BAAH」要把字段整个从这一天的 key 里去掉：后端按整份 key 覆写，字段不在才
+ * 表示不干预；写成空数组会被上游当成「今天不打」，写成 null 则要看后端是否剔除。
+ */
+export const applyFieldState = (
+  fields: BAAHDayFields | undefined,
+  field: BAAHKeyFieldName,
+  state: BAAHFieldState
+): BAAHDayFields => {
+  const next: BAAHDayFields = { ...(fields ?? {}) }
+
+  if (state === 'auto') {
+    delete next[field]
+    return next
+  }
+
+  // 打开时优先沿用原来填过的值，不会把用户改过的关卡重置成默认值
+  next[field] = state === 'on' ? readFieldValues(fields, field) : []
+  return next
+}
 
 export interface BAAHCellWrite {
   fields: BAAHDayFields

@@ -17,14 +17,17 @@
           <a-tooltip :title="record.fieldHint">{{ record.fieldName }}</a-tooltip>
         </template>
 
-        <!-- 每类头上先一行开关，关了就是这一天不跑这一类 -->
-        <template v-else-if="record.rowKind === 'enabled'">
-          <a-switch
+        <!-- 每类头上先一行状态：开＝按这里的参数打，关＝今天不打，交给 BAAH＝沿用上游配置 -->
+        <template v-else-if="record.rowKind === 'state'">
+          <a-select
+            class="config-select"
             size="small"
-            :checked="record[column.key]"
+            :bordered="false"
+            :value="record[column.key]"
+            :options="fieldStateOptions"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
             :aria-label="cellLabel(record.fieldName, column.key)"
-            @change="handlePartEnabledChange(asTimeKey(column.key), record.field, $event)"
+            @update:value="handleFieldStateChange(asTimeKey(column.key), record.field, $event)"
           />
         </template>
 
@@ -57,12 +60,14 @@ import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 import {
   BAAH_PLAN_KEY_FIELDS,
   BAAH_PLAN_TIME_KEYS,
+  applyFieldState,
   applyMixedPart,
-  isFieldEnabled,
   partOptionMax,
   readDayFields,
+  readFieldState,
   readFieldValues,
   type BAAHDayFields,
+  type BAAHFieldState,
   type BAAHKeyFieldName,
   type PlanTimeKey,
 } from '@/utils/baahPlanKey'
@@ -148,19 +153,26 @@ const partOptions = (hintKey: string, min: number) => [
   ...rangeOptions(partOptionMax(hintKey)),
 ]
 
+/** 一类关卡在某一天的三态：开 / 关 / 交给 BAAH */
+const fieldStateOptions = computed(() => [
+  { value: 'on', label: t('plan.baah.stateOn') },
+  { value: 'off', label: t('plan.baah.stateOff') },
+  { value: 'auto', label: t('plan.baah.stateAuto') },
+])
+
 const configRows = computed(() => {
-  // 每类先一行「启用」开关，再按位各占一行，行标题写成「类名 · 位名」
+  // 每类先一行状态，再按位各占一行，行标题写成「类名 · 位名」
   return BAAH_PLAN_KEY_FIELDS.flatMap(field => [
     {
-      rowKey: `${field.field}.enabled`,
-      rowKind: 'enabled',
+      rowKey: `${field.field}.state`,
+      rowKind: 'state',
       field: field.field,
-      fieldName: `${t(field.labelKey)} · ${t('plan.baah.partEnabled')}`,
-      fieldHint: t(field.hintKey),
+      fieldName: `${t(field.labelKey)} · ${t('plan.baah.rowState')}`,
+      fieldHint: t('plan.baah.rowStateHint'),
       ...Object.fromEntries(
         BAAH_PLAN_TIME_KEYS.map(timeKey => [
           timeKey,
-          isFieldEnabled(localTableData.value[timeKey], field.field),
+          readFieldState(localTableData.value[timeKey], field.field),
         ])
       ),
     },
@@ -176,8 +188,8 @@ const configRows = computed(() => {
       ...Object.fromEntries(
         BAAH_PLAN_TIME_KEYS.map(timeKey => [
           timeKey,
-          // 这一类今天没启用时参数行留空，免得填了却不生效
-          isFieldEnabled(localTableData.value[timeKey], field.field)
+          // 这一类今天没在打时参数行留空，免得填了却不生效
+          readFieldState(localTableData.value[timeKey], field.field) === 'on'
             ? readFieldValues(localTableData.value[timeKey], field.field)[index]
             : undefined,
         ])
@@ -190,7 +202,7 @@ const configRows = computed(() => {
  * 整格提交：先落到本地让界面即时反馈，保存失败再退回原来的那一格。
  *
  * 后端按「日期 → Key」两级写入，一格只能整份提交：只发一个字段会被当成整份 Key，
- * 其余五类关卡会被 validator 补成默认值，静默丢掉取值。
+ * 其余五类关卡会跟着变成「交给 BAAH」，静默丢掉原本的取值。
  */
 const submitDayKey = async (
   timeKey: PlanTimeKey,
@@ -225,20 +237,16 @@ const handlePartChange = async (
   await submitDayKey(timeKey, write.fields, previousFields)
 }
 
-/**
- * 多类混打：开关关掉就把这一类写成空数组（今天不打），打开则补回参数。
- * 打开时优先沿用原来填过的值，不会把用户改过的关卡重置成默认值。
- */
-const handlePartEnabledChange = async (
+/** 三态切换：开＝按这里的参数打，关＝今天不打，交给 BAAH＝今天不干预这一类 */
+const handleFieldStateChange = async (
   timeKey: PlanTimeKey,
   field: BAAHKeyFieldName,
-  checked: unknown
+  state: BAAHFieldState
 ) => {
   const previousFields = localTableData.value[timeKey]
-  const items = checked ? readFieldValues(previousFields, field) : []
 
   // 只动这一类，别的类别原样带过去：界面没展示的类别不该被补成默认值
-  await submitDayKey(timeKey, { ...(previousFields ?? {}), [field]: items }, previousFields)
+  await submitDayKey(timeKey, applyFieldState(previousFields, field, state), previousFields)
 }
 </script>
 
