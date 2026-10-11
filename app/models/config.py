@@ -3187,9 +3187,13 @@ class PlanDaysConfig(ConfigBase):
         return min(max(days, 1), schema_model.PLAN_ROTATE_DAYS_MAX)
 
     def rotate_group(self, now: datetime) -> str:
-        """多天轮换在 ``now`` 这天该用哪个分组。"""
+        """多天轮换在 ``now`` 这天该用哪个分组。
 
-        return plan_day_group((now.day - 1) % self.rotate_days() + 1)
+        按日期本身连续往下数，跨月不重置：3 天轮换时，上月最后一天排到第 2 天，
+        这个月 1 号就接着排第 3 天。
+        """
+
+        return plan_day_group(now.date().toordinal() % self.rotate_days() + 1)
 
     @staticmethod
     def day_group_of(day: str) -> str | None:
