@@ -776,8 +776,12 @@ const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
 }
 
 const getUserConfigSummary = (script: Script, user: User): string => {
-  // MaaFW 和 BAAH 始终使用账号配置，不按只供备份预览的 Mode 字段判断。
-  const mode = isMaaFWFamily(script.type) || script.type === 'BAAH' ? '用户' : user.Info.Mode
+  let mode = user.Info.Mode
+  // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
+  if (isMaaFWFamily(script.type)) mode = '用户'
+  else if (script.type === 'BAAH') mode = '直控'
+  // 这些专项没有共享配置来源，旧的“脚本”值仍按账号配置运行。
+  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === '脚本') mode = '用户'
   const sourceKey = CONFIG_SOURCE_KEYS[mode]
   if (!sourceKey) return ''
 
