@@ -1476,10 +1476,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
     async def _finish_cultivate_round(self) -> None:
-        """运行结束钩子：本轮采集到识别数据时刷新达成状态并持久化（T1.11）。
+        """采集识别数据或注入自动培养后，刷新达成状态并持久化。
 
-        无采集观测时 no-op（绿票/剿灭轮天然空转）；判定只用可自证链，
-        异常只记日志，档案留待下一轮注入前拦截兜底。
+        未采集也未注入时空转；取消时保留标记，交给 final_task 兜底。
+        判定只用可自证链，异常只记日志，档案留待下一轮注入前拦截兜底。
         """
 
         auto_raise_injected = self._cultivate_auto_raise_injected
@@ -1489,14 +1489,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             or auto_raise_injected
         ):
             return
-        self._cultivate_collected_depot = False
-        self._cultivate_collected_oper_box = False
-        self._cultivate_auto_raise_injected = False
         try:
             targets = parse_cultivate_targets(
                 json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
             )
             if not targets:
+                self._cultivate_collected_depot = False
+                self._cultivate_collected_oper_box = False
+                self._cultivate_auto_raise_injected = False
                 return
             # 培养会改变练度，必须重新查询，不能复用培养前的快照。
             # 仅刷材料时沿用 TTL 缓存，保持既有请求次数。
@@ -1538,6 +1538,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 养成达成刷新失败: {e}"
             )
+        # 刷新被取消时不会执行到这里，收尾仍可重试本轮尚未完成的刷新。
+        self._cultivate_collected_depot = False
+        self._cultivate_collected_oper_box = False
+        self._cultivate_auto_raise_injected = False
 
     async def _set_cultivate_notice(self, notice: str) -> None:
         """写接管提示字段；值未变化时跳过，避免每轮无谓的配置写盘。"""
@@ -2517,6 +2521,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+
+        # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
+        await self._finish_cultivate_round()
 
         logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
