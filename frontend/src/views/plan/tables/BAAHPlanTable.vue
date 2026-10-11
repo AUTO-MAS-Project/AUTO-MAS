@@ -14,7 +14,11 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'fieldName'">
-          <a-tooltip :title="record.fieldHint">{{ record.fieldName }}</a-tooltip>
+          <!-- 三态那一行有说明，参数行没有：有说明才套浮层 -->
+          <a-tooltip v-if="record.fieldHint" :title="record.fieldHint">
+            {{ record.fieldName }}
+          </a-tooltip>
+          <span v-else>{{ record.fieldName }}</span>
         </template>
 
         <!-- 每类头上先一行状态：开＝按这里的参数打，关＝今天不打，交给 BAAH＝沿用上游配置 -->
@@ -195,7 +199,6 @@ const configRows = computed(() => {
       hintKey: part.hintKey,
       min: part.min,
       fieldName: `${t(field.labelKey)} · ${t(part.hintKey)}`,
-      fieldHint: t(field.hintKey),
       ...Object.fromEntries(
         columnKeys.value.map(key => [
           key,
