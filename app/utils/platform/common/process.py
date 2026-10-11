@@ -46,6 +46,11 @@ logger = get_logger("进程管理")
 # 后继进程改绑的搜索窗口（秒）: 覆盖引导式启动器自更新/接力换进程的间隙
 _RESEEK_TIMEOUT_SECONDS = 5.0
 
+# 接力后继的最长「年龄」（秒）: 合法后继在原进程退出前后数秒内创建, 而检测到
+# 原进程退出最多晚一个日志空闲回调周期（60s）, 留足余量后仍能把运行期间早已
+# 存在的同 exe 无关实例（如用户手动打开的启动器 GUI）挡在改绑之外
+_RESEEK_MAX_SUCCESSOR_AGE_SECONDS = 180.0
+
 
 @dataclass
 class ProcessInfo:
@@ -410,13 +415,14 @@ class ProcessManager:
         return False
 
     async def _reseek_target(self) -> bool:
-        """搜索跟踪目标的后继进程（同目标信息、创建更晚）, 命中则改绑跟踪。
+        """搜索跟踪目标的后继进程（同目标信息、创建更晚且足够新）, 命中则改绑。
 
-        后继进程由原进程接力派出, 创建时间必然晚于原进程, 以原进程创建时间
-        为下限可排除早于本次启动的残留实例; 搜索窗口覆盖接力换进程的间隙。
-        匹配只按目标信息（name/exe）进行: 匹配发生时同 exe 的其他实例（如
-        用户手动打开的启动器 GUI、指向同安装的并行任务）也会命中, 误改绑
-        只会拉长等待——最终由调用方的运行超时判定与按路径收尾兜底。
+        后继进程由原进程接力派出, 创建时间必然晚于原进程, 以原进程创建时间为
+        下限可排除早于本次启动的残留实例; 再叠加「近期创建」下限, 把运行期间
+        早已存在的同 exe 无关实例（用户手动打开的启动器 GUI、指向同安装的并行
+        任务）挡在改绑之外。匹配毕竟只按目标信息（name/exe）进行, 同期新起的
+        同 exe 实例仍可能命中, 误改绑只会拉长等待——最终由调用方的运行超时
+        判定与按路径收尾兜底。搜索窗口覆盖接力换进程的间隙。
         """
 
         if self._target_info is None or self._target_create_time is None:
@@ -426,11 +432,15 @@ class ProcessManager:
             exe=self._target_info.exe,
             cmdline=self._target_info.cmdline,
         )
+        min_successor_create_time = max(
+            self._target_create_time,
+            time.time() - _RESEEK_MAX_SUCCESSOR_AGE_SECONDS,
+        )
         try:
             await self.search_process(
                 successor,
                 _RESEEK_TIMEOUT_SECONDS,
-                min_create_time=self._target_create_time,
+                min_create_time=min_successor_create_time,
             )
         except RuntimeError:
             return False
