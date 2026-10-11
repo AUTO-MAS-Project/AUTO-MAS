@@ -4123,6 +4123,9 @@ export default {
     },
     log: {
       title: 'Log',
+      theme: 'Log theme',
+      followTheme: 'Follow theme color',
+      saveThemeFailed: 'Could not save the log theme preference',
       follow: 'Follow',
       browse: 'Browse',
       empty: 'No data',
