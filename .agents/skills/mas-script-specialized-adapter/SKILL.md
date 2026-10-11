@@ -1,15 +1,6 @@
 ---
 name: mas-script-specialized-adapter
-description: >-
-  Review, add, or refactor AUTO-MAS specialized script adapters by upstream
-  architecture, including MAA, SRC, MaaEnd/MXU, General, ok-script
-  adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
-  one-dragon line such as BetterGI, as well as per-adapter issue-bundle
-  exports. Use when lowering user setup friction, judging whether a change
-  stays inside the black-box boundary (barrier first, then capability
-  ownership), or changing ScriptType registration, task lifecycle, config
-  ownership, ScriptConfig sessions, Electron integration, frontend edit
-  surfaces, and verification.
+description: Review, add, or refactor AUTO-MAS specialized script adapters (MAA, SRC, MaaEnd/MXU, General, Okww, OkNte, HSR, BetterGI, BAAH, Whimbox, ZzzOd). Use when lowering user setup friction, judging whether a change stays inside the black-box boundary, or changing ScriptType registration, config ownership, or frontend edit surfaces.
 ---
 
 # 专项适配
@@ -35,7 +26,7 @@ description: >-
 
 判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？判据、能力归属表、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
 
-**方案分析时参考黑箱边界**：按需核对能力归属、上游入口和私有格式依赖；相关事实、风险或替代方案可作为参考意见提供给用户，不要求在开工阶段输出固定结论。
+**方案分析时参考黑箱边界**：按需核对能力归属、上游入口和私有格式依赖；相关事实、风险或替代方案可作为参考意见提供给用户，分析阶段不要求输出固定结论（立项前仍须按「立项判定」回答）。
 
 代码落点（决定代码放哪、谁是事实来源）：
 
@@ -50,7 +41,7 @@ description: >-
 
 0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner；参考[黑箱边界](references/blackbox-boundary.md)分析能力归属（上游领域 / MAS 领域 / 上游私有格式），必要时将事实依据、风险与替代方案作为参考意见提供给用户。
 1. 读上游仓库/发行版：CLI、`--help`、进程、日志、配置目录、配置 UI。
-2. 按 [架构线判据](references/script-frontend-architectures.md) 归类，**让用户确认架构线**后再动手。
+2. 按 [架构线判据](references/script-frontend-architectures.md) 归类（为何以前端表面为专项单位见 [补充说明](references/guide.md)），**让用户确认架构线**后再动手。
 3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
    [SRC](references/examples-src.md) ·
    [MaaEnd/MXU](references/examples-maaend.md) ·
