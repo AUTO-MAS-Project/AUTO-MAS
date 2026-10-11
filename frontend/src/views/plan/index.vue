@@ -60,6 +60,11 @@
           <component
             :is="currentPlanDescriptor.tableComponent"
             ref="planTable"
+            v-bind="
+              currentPlan?.type === PLAN_CONFIG_TYPES.BAAH
+                ? { interactionDisabled: planOperationPending }
+                : {}
+            "
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
@@ -129,7 +134,14 @@ const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
 const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
-const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+const planOperationPending = ref(false)
+const canLeaveTable = () => {
+  if (planOperationPending.value) {
+    message.warning(t('plan.operationPending'))
+    return false
+  }
+  return planTable.value?.beforeLeave?.() ?? true
+}
 
 onBeforeRouteLeave(() => canLeaveTable())
 onBeforeRouteUpdate((to, from) => to.query.planId === from.query.planId || canLeaveTable())
@@ -201,6 +213,7 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
   if (!canLeaveTable()) return
+  planOperationPending.value = true
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -237,11 +250,14 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 const handleRemovePlan = async (planId: string) => {
-  if (isActivePlan(planId) && !canLeaveTable()) return
+  if (!canLeaveTable()) return
+  planOperationPending.value = true
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -264,11 +280,17 @@ const handleRemovePlan = async (planId: string) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (planId: string, changes: Record<string, any>): Promise<boolean> => {
+const savePlanField = async (
+  planId: string,
+  changes: Record<string, any>,
+  onError?: PlanChangeOptions['onError']
+): Promise<boolean> => {
   if (!planId) {
     return false
   }
@@ -280,6 +302,7 @@ const savePlanField = async (planId: string, changes: Record<string, any>): Prom
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存计划字段失败: ${errorMsg}`)
+    onError?.(errorMsg)
     return false
   }
 }
@@ -317,7 +340,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes)
+  const success = await savePlanField(planId, changes, options?.onError)
 
   if (!success) {
     return false

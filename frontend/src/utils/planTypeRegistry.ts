@@ -19,6 +19,8 @@ export const PLAN_CONFIG_TYPES = {
 export interface PlanChangeOptions {
   refresh?: boolean
   forceCustomStages?: boolean
+  /** 弹出编辑保留草稿时，展示服务端提供的保存失败原因。 */
+  onError?: (_reason: string) => void
 }
 
 export type PlanChangeHandler = (

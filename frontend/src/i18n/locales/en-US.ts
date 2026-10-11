@@ -3784,6 +3784,7 @@ export default {
     rename: 'Rename',
     count: '{count} plan | {count} plans',
     configTitle: 'Plan configuration',
+    operationPending: 'Updating plans. Please wait.',
     namePlaceholder: 'Enter a plan name',
     modeLabel: 'Mode:',
     modeAll: 'Global',
@@ -3880,6 +3881,7 @@ export default {
       },
       unsavedHint: 'You have unsaved parameters. Save or cancel editing first.',
       savingHint: 'Saving parameters. Please wait.',
+      planChanged: 'The plan has changed. Cancel editing and select a stage again.',
       saveFailed: 'Could not save. Your parameters have been kept; please try again.',
     },
     toast: {

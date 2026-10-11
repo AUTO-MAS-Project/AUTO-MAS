@@ -3147,6 +3147,7 @@ export default {
     rename: '名前の変更',
     count: '{count} 件のプラン | {count} 件のプラン',
     configTitle: 'プラン設定',
+    operationPending: 'プランを更新中です。しばらくお待ちください。',
     namePlaceholder: 'プラン名を入力してください',
     modeLabel: '実行モード：',
     modeAll: '全体モード',
@@ -3243,6 +3244,7 @@ export default {
       },
       unsavedHint: '未保存のパラメータがあります。先に保存するか編集をキャンセルしてください。',
       savingHint: 'パラメータを保存中です。しばらくお待ちください。',
+      planChanged: 'プランが切り替わりました。編集をキャンセルしてステージを選び直してください。',
       saveFailed:
         '保存できませんでした。入力したパラメータは保持されています。再試行してください。',
     },

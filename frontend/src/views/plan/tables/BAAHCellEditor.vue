@@ -37,7 +37,13 @@
       <p v-else class="baah-editor-hint">
         {{ t(state === 'off' ? 'plan.baah.skipToday' : 'plan.baah.upstreamSettings') }}
       </p>
-      <a-alert v-if="saveError" type="error" show-icon :message="t('plan.baah.saveFailed')" />
+      <a-alert
+        v-if="saveError"
+        type="error"
+        show-icon
+        :message="t('plan.baah.saveFailed')"
+        :description="saveErrorReason || undefined"
+      />
     </a-form>
     <div class="baah-editor-footer">
       <a-button :disabled="saving" @click="$emit('cancel')">{{ t('common.cancel') }}</a-button>
@@ -67,6 +73,7 @@ const props = defineProps<{
   values: number[]
   saving: boolean
   saveError: boolean
+  saveErrorReason: string
 }>()
 const emit = defineEmits<{
   'update:state': [value: BAAHFieldState]

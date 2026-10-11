@@ -33,6 +33,7 @@
               :values="editor.values"
               :saving="saving"
               :save-error="saveError"
+              :save-error-reason="saveErrorReason"
               @update:state="editor.state = $event"
               @update:values="editor.values = $event"
               @save="saveEditor"
@@ -95,10 +96,12 @@ const props = defineProps<{
   /** BAAH 六类共用摘要表，不提供转置的简化视图。 */
   viewMode: 'config' | 'simple'
   planId?: string
+  interactionDisabled?: boolean
   handlePlanChange: PlanChangeHandler
 }>()
 
 interface CellDraft {
+  planId?: string
   key: string
   field: BAAHKeyFieldName
   state: BAAHFieldState
@@ -110,6 +113,7 @@ interface CellDraft {
 const editor = ref<CellDraft | null>(null)
 const saving = ref(false)
 const saveError = ref(false)
+const saveErrorReason = ref('')
 let triggerButton: HTMLElement | null = null
 let clickedButton: HTMLElement | null = null
 
@@ -138,7 +142,7 @@ const rows = computed(() =>
   }))
 )
 const isColumnDisabled = (key: string) =>
-  props.currentMode === 'ALL' ? key !== 'ALL' : key === 'ALL'
+  props.interactionDisabled || (props.currentMode === 'ALL' ? key !== 'ALL' : key === 'ALL')
 const isEditing = (key: string, field: BAAHKeyFieldName) =>
   editor.value?.key === key && editor.value.field === field
 const isDirty = computed(() => {
@@ -158,6 +162,7 @@ const closeEditor = (restoreFocus = true) => {
   if (saving.value) return
   editor.value = null
   saveError.value = false
+  saveErrorReason.value = ''
   if (restoreFocus) triggerButton?.focus()
 }
 
@@ -187,23 +192,43 @@ const handleOpenChange = (open: boolean, key: string, field: BAAHKeyFieldName) =
   const fields = dayFields.value[key]
   const state = readFieldState(fields, field)
   const values = readFieldValues(fields, field)
-  editor.value = { key, field, state, values, initialState: state, initialValues: [...values] }
+  editor.value = {
+    planId: props.planId,
+    key,
+    field,
+    state,
+    values,
+    initialState: state,
+    initialValues: [...values],
+  }
   saveError.value = false
 }
 
 const saveEditor = async () => {
   const draft = editor.value
   if (!draft || saving.value) return
+  if (draft.planId !== props.planId) {
+    saveError.value = true
+    saveErrorReason.value = t('plan.baah.planChanged')
+    return
+  }
   saving.value = true
   saveError.value = false
+  saveErrorReason.value = ''
   // 后端按「天 → Key」整份覆写；必须带上其余五类及未编辑的可选尾位。
   const nextFields = applyFieldState(dayFields.value[draft.key], draft.field, draft.state)
   if (draft.state === 'on') nextFields[draft.field] = [...draft.values]
   try {
-    const saved = await props.handlePlanChange(planColumnPath(draft.key, 'Key'), nextFields, false)
+    const saved = await props.handlePlanChange(planColumnPath(draft.key, 'Key'), nextFields, {
+      refresh: false,
+      onError: reason => {
+        saveErrorReason.value = reason
+      },
+    })
     saveError.value = !saved
-  } catch {
+  } catch (error) {
     saveError.value = true
+    saveErrorReason.value = error instanceof Error ? error.message : String(error)
   } finally {
     saving.value = false
   }
