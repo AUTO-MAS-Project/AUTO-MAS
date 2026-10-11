@@ -136,16 +136,13 @@ const loading = ref(true)
 const tableData = ref<Record<string, any>>({})
 const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
 const planOperationPending = ref(false)
-const canLeaveTable = () => {
-  if (planOperationPending.value) {
-    message.warning(t('plan.operationPending'))
-    return false
-  }
-  return planTable.value?.beforeLeave?.() ?? true
-}
+const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
 
 onBeforeRouteLeave(() => canLeaveTable())
-onBeforeRouteUpdate((to, from) => to.query.planId === from.query.planId || canLeaveTable())
+onBeforeRouteUpdate(
+  (to, from) =>
+    to.query.planId === from.query.planId || (!planOperationPending.value && canLeaveTable())
+)
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -213,7 +210,7 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 }
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
-  if (!canLeaveTable()) return
+  if (planOperationPending.value || !canLeaveTable()) return
   planOperationPending.value = true
   try {
     const response = await createPlan(planType)
@@ -257,7 +254,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
 }
 
 const handleRemovePlan = async (planId: string) => {
-  if (!canLeaveTable()) return
+  if (planOperationPending.value || !canLeaveTable()) return
   planOperationPending.value = true
   try {
     await deletePlan(planId)
@@ -383,7 +380,7 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
-  if (!canLeaveTable()) return
+  if (planOperationPending.value || !canLeaveTable()) return
 
   try {
     // 立即切换到新计划
@@ -488,7 +485,7 @@ const finishEditPlanName = async () => {
 }
 
 const onModeChange = async (mode: PlanMode) => {
-  if (mode === currentMode.value || !canLeaveTable()) return
+  if (mode === currentMode.value || planOperationPending.value || !canLeaveTable()) return
   const previous = currentMode.value
   planOperationPending.value = true
   currentMode.value = mode
@@ -502,7 +499,7 @@ const onModeChange = async (mode: PlanMode) => {
 
 /** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
 const handleRotateDaysChange = async (days: number) => {
-  if (days === currentRotateDays.value || !canLeaveTable()) return
+  if (days === currentRotateDays.value || planOperationPending.value || !canLeaveTable()) return
   const previous = currentRotateDays.value
   planOperationPending.value = true
   currentRotateDays.value = days

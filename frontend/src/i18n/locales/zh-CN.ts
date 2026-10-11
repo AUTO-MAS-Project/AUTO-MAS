@@ -3675,7 +3675,6 @@ export default {
     rename: '重命名',
     count: '{count} 个计划 | {count} 个计划',
     configTitle: '计划配置',
-    operationPending: '正在更新计划，请稍候',
     namePlaceholder: '请输入计划名称',
     modeLabel: '执行模式：',
     modeAll: '全局模式',
@@ -3773,7 +3772,6 @@ export default {
       },
       unsavedHint: '参数尚未保存，请先保存或取消编辑',
       savingHint: '正在保存参数，请稍候',
-      planChanged: '计划已切换，请取消编辑后重新选择关卡',
       saveFailed: '保存失败，已保留填写的参数，请重试',
     },
     toast: {

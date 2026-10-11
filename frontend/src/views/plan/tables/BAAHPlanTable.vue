@@ -101,7 +101,6 @@ const props = defineProps<{
 }>()
 
 interface CellDraft {
-  planId?: string
   key: string
   field: BAAHKeyFieldName
   state: BAAHFieldState
@@ -193,7 +192,6 @@ const handleOpenChange = (open: boolean, key: string, field: BAAHKeyFieldName) =
   const state = readFieldState(fields, field)
   const values = readFieldValues(fields, field)
   editor.value = {
-    planId: props.planId,
     key,
     field,
     state,
@@ -207,11 +205,6 @@ const handleOpenChange = (open: boolean, key: string, field: BAAHKeyFieldName) =
 const saveEditor = async () => {
   const draft = editor.value
   if (!draft || saving.value) return
-  if (draft.planId !== props.planId) {
-    saveError.value = true
-    saveErrorReason.value = t('plan.baah.planChanged')
-    return
-  }
   saving.value = true
   saveError.value = false
   saveErrorReason.value = ''
