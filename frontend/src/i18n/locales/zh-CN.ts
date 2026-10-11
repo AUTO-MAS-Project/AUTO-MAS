@@ -1790,14 +1790,14 @@ export default {
     endfieldAutoUpdateHint:
       '任务启动前检查终末地 PC 客户端版本，落后时由 MAS 按官方增量包补齐：先核对本地文件，核对通过才会关闭正在运行的客户端，再只下载变化的部分；官方没有这一路增量时不动客户端，改提示手动更新',
     endfieldUpdateTimeoutHint:
-      'MAS 核对本地文件、退出游戏客户端、下载增量并覆盖安装的最长耗时，超时后中止本次更新并清理已下载文件；一轮更新通常要几十分钟以上，填得过小会稳定被掐断',
+      'MAS 核对本地文件、退出游戏客户端、下载增量并覆盖安装的最长耗时，超时后中止本次更新；已下载的增量与已写好的文件会留在盘上，下次接着下、接着写；一轮更新通常要几十分钟以上，填得过小会稳定被掐断',
     endfieldManualUpdate: '手动更新',
     endfieldCheckUpdateTitle: '检查终末地客户端更新',
     endfieldUpdateProgressTitle: '终末地客户端更新进度',
     endfieldWillBeUpdated:
       '由 AUTO-MAS 按官方增量包更新终末地 PC 客户端：先读本地文件核对基线，再只下载变化的部分（一次跨版本要下载几 GB，核对要读完几十 GB）。核对通过才会关闭正在运行的游戏，并锁定该脚本配置；官方没有这条基线的增量时不更新，只提示手动更新',
     endfieldUpdateCloseConfirm:
-      '关闭弹窗会中止本轮更新，已下载的增量会被清掉，下次从头重下。如果已经开始覆盖游戏文件，客户端会停在半新半旧，AUTO-MAS 下次不会接着更新，要用官方启动器手动更新一次。确定关闭？',
+      '关闭弹窗会中止本轮更新。已下载的增量与已经写好的游戏文件会留在盘上，下次运行接着下、接着写，不会从头重来。确定关闭？',
     endfieldUpdateAbortTitle: '中止本轮更新？',
     endfieldUpdateAbortConfirm: '仍要关闭',
     endfieldUpdateAlreadyFinished: '本轮更新已经结束，结论见该脚本的运行日志',

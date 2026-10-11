@@ -151,11 +151,16 @@ async def _download_release(
     staging: Path,
     progress: ProgressFn | None,
     identity: InstallIdentity,
+    reusable: Sequence[Path | None] | None = None,
 ) -> list[Path]:
     """下载差量分卷，逐卷校验后改名；残留完整卷校验后可复用。
 
     暂存每轮尝试清理，但 Windows 句柄占用可能留下残卷。刷新地址时必须保持同一构建，
-    各卷试满仍不完整则停止，不能将缺卷结果交给落地流程。"""
+    各卷试满仍不完整则停止，不能将缺卷结果交给落地流程。
+
+    体积相符的既有分卷先比 MD5 决定复用，不重下：`reusable` 是开局按续传状态认出来的
+    槽位（与本轮清单对齐），预先给上的直接采信，不再重复读一遍几十 GB 去算 MD5。中途换
+    新签名地址或某一卷重下时同样兜住。"""
 
     files: list[Path] = []
     count = len(release.parts)
@@ -172,6 +177,12 @@ async def _download_release(
     ) as client:
         for index, planned in enumerate(release.parts, start=1):
             target = staging / names[index - 1]
+            claimed = reusable[index - 1] if reusable is not None else None
+            if claimed is not None and file_size(claimed) == planned.size:
+                logger.info(f"复用上轮已下好的分卷: {target.name}")
+                await reporter.add(planned.size, index)
+                files.append(claimed)
+                continue
             if await file_matches(target, size=planned.size, md5=planned.md5 or None):
                 logger.info(f"复用已下载的分卷: {target.name}")
                 await reporter.add(planned.size, index)
@@ -253,8 +264,12 @@ async def _prefetch_package(
     release: Release,
     specs: Sequence[PatchJob],
     report: ProgressFn,
-) -> tuple[tuple[MoveJob, ...] | None, int | None]:
-    """预读整文件清单和最大差量展开大小；未知结果保留为 None。"""
+) -> tuple[tuple[MoveJob, ...] | None, dict[str, int] | None]:
+    """预读整文件清单与各差量成员的展开体积；未知结果保留为 None。
+
+    一次中央目录读取同时取出清单与全部成员体积：整包是单条 zip 的纯字节切片，分两次问要
+    把同一份总表读两遍。展开体积按成员名给整份，取哪几条由调用方按本轮还要做的条目筛。
+    """
     await report("正在预读包内清单，估算磁盘空间")
     doc, sizes = await package_index.fetch_package_metadata(
         client=client,
@@ -267,9 +282,8 @@ async def _prefetch_package(
         max_plain_bytes=_MANIFEST_MAX_BYTES,
     )
     moves = _move_entries(doc) if doc is not None else None
-    expanded = max(sizes.values(), default=0) if sizes is not None else None
-    if moves is None or expanded is None:
+    if moves is None or sizes is None:
         await report("未能完整预估更新空间，下载后再核对实际大小")
     else:
         await report(f"预读到整文件清单 {len(moves)} 条，核对下载与更新所需空间")
-    return moves, expanded
+    return moves, sizes

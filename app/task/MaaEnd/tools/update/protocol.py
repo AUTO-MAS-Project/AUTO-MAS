@@ -81,6 +81,19 @@ def _file_name_from_url(url: str) -> str:
     return name
 
 
+def _safe_file_name(url: str) -> str:
+    """取分卷落盘名；名字不可用时返回空串，交给需要报错的那一处去报。
+
+    认盘上已有文件时不值得为「名字不可用」当场判废：那一卷没有可复用的候选，重下就好。
+    真正要拦下的地方是 `_download_release`——那里名字缺失就意味着拼流会缺卷，必须响亮报错。
+    """
+
+    try:
+        return _file_name_from_url(url)
+    except EndfieldUpdateError:
+        return ""
+
+
 def _parse_int(raw: object) -> int:
     """服务端把体积给成字符串；解析失败时返回 0，由调用方检查是否有效。"""
 

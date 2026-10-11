@@ -31,7 +31,7 @@ import subprocess
 import threading
 import time
 import zipfile
-from collections.abc import Coroutine, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
@@ -359,6 +359,46 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
     replace_file(temp, target, clear_readonly=True)
 
 
+async def _commit_verified(temp: Path, target: Path, size: int) -> None:
+    """提交一个**已经**比过指纹的临时文件：只复核体积，不再读一遍内容。
+
+    复用上一轮打好的临时文件时走这里。`_reusable_output` 刚把整份内容读过一次算 MD5，
+    紧接着再让 `_commit` 读第二遍，等于为一个 GB 级的整文件成员白扫一遍盘。体积仍要
+    复核：从校验到改名之间窗口很短，但把这一步省掉就等于「校验过的东西」不再有下限。
+    """
+
+    actual = file_size(temp)
+    if actual != size:
+        with suppress(OSError):
+            temp.unlink(missing_ok=True)
+        logger.warning(f"{target} 落地体积不符：期望 {size} 实际 {actual}")
+        raise EndfieldUpdateError(f"{target.name} 落地后的体积不对，已停止覆盖")
+    replace_file(temp, target, clear_readonly=True)
+
+
+async def _reusable_output(temp: Path, md5: str, size: int) -> bool:
+    """`temp` 是不是上一轮已经做好、只差改名的那一条：体积与 MD5 都对得上才算。
+
+    认出来就能省掉一次解包加一次 `hpatchz`——整文件成员可以到 GB 级，重做一遍的代价
+    是实打实的。对不上的一律删掉：留着它，下一轮的 `hpatchz` 或解包会从残骸上接着写。
+
+    `md5` 缺失时一律返回 False，退回重做：改动后的提交入口（`_commit_verified`）不再复核
+    内容，只靠体积就放行等于把一个没验过内容的文件写进游戏目录；而改动前那条路是
+    `_commit`，它对空 `md5` 必然判失败——这里保持同样的保守口径。
+    """
+
+    if not md5:
+        return False
+    if file_size(temp) != size:
+        return False
+    try:
+        if await asyncio.to_thread(file_md5, temp) != md5:
+            return False
+    except OSError:
+        return False
+    return True
+
+
 def _collect_temp_files(root: Path) -> list[Path]:
     """在工作线程里收一遍残留的临时文件：遍历十万级目录是秒级的活，别压在事件循环上。"""
 
@@ -373,17 +413,28 @@ async def _apply_delta(
     hpatchz: Path,
     progress: ProgressFn | None,
     abort: threading.Event,
+    mark_landing_started: Callable[[], None] | None = None,
 ) -> int:
-    """依次打补丁、搬整文件、清理删除表，最后提交包内 config.ini。
+    """按差量计划落地：打差量 → 搬整文件 → 清理删除表 → 最后提交 `config.ini`。
 
-    每条先写目标旁的临时文件，通过 MD5 后原子改名；新版配置表示其余文件已就位。
-    中断不回滚，保留旧版本号供下轮重新核对；不删除清单外的用户文件。"""
+    每条都先写进目标旁边的临时文件，比过 MD5 才改名；`config.ini` 单独暂存到收尾才
+    提交，于是「安装目录里的版本号已是新版」等价于「本次其余文件都已落盘」。上一轮
+    落到一半的那些条目由调用方先按新指纹挑走，剩下的在这里做；已经做好的临时文件也
+    认指纹直接改名，不重打一遍。清单里没有而本地多出来的文件不删——删错了不可逆，
+    而留着只是占地方。"""
 
     total = len(plan.patches) + len(plan.moves)
     done = 0
-    # 回收上一轮被中断时留下的临时文件：同名目标会被本轮截断覆盖，但文件名一旦变了，
-    # 旧孤儿就永久留在游戏目录里。只认我们自己独占的那个后缀。
+    planned_temps: set[str] = set()
+    for job in (*plan.patches, *plan.moves):
+        target = _resolve_within(install_dir, job.path)
+        planned_temps.add(target.with_name(target.name + _TEMP_SUFFIX).name)
+    # 只回收与本轮计划无关的孤儿：计划内那些临时文件正是续传要接着用的东西，一并扫掉
+    # 就等于每轮都从零开始。同名目标会被本轮截断覆盖，但文件名一旦变了，旧孤儿就永久
+    # 留在游戏目录里，所以仍要收。只认我们自己独占的那个后缀。
     for stray in await asyncio.to_thread(_collect_temp_files, install_dir):
+        if stray.name in planned_temps:
+            continue
         try:
             stray.unlink(missing_ok=True)
         except OSError as error:
@@ -428,6 +479,11 @@ async def _apply_delta(
         # 大成员解包放在线程里，保持事件循环响应；中止由逐块检查 abort 实现。
         await run_worker(asyncio.to_thread(_write_member, archive, info, temp, abort))
 
+    if mark_landing_started is not None:
+        # 置位必须早于第一次写入：此后崩溃留下的就是「可能半新半旧」的现场，而在这之前
+        # 一个字都没写进游戏目录，不该让下一轮误判
+        mark_landing_started()
+
     for index, job in enumerate(plan.patches, start=1):
         await recheck()
         target = _resolve_within(install_dir, job.path)
@@ -438,6 +494,16 @@ async def _apply_delta(
             raise EndfieldUpdateError(
                 f"无法创建游戏目录 {temp.parent}：{error}"
             ) from error
+        if await _reusable_output(temp, job.md5, job.size):
+            # 上一轮已经打好了，只差改名；省掉解包与 hpatchz 两道重活。指纹刚在上面
+            # 比过，这里不再读第二遍
+            logger.info(f"复用上轮已打好的临时文件: {temp.name}")
+            await _commit_verified(temp, target, job.size)
+            done += 1
+            await _report(f"正在打补丁并覆盖游戏文件 {done}/{total}")
+            continue
+        with suppress(OSError):
+            temp.unlink(missing_ok=True)
         diff_file = staging / f"diff-{index:04d}{_TEMP_SUFFIX}"
         await _unpack(archive.getinfo(job.member), diff_file)
         try:
@@ -465,6 +531,14 @@ async def _apply_delta(
         await recheck()
         target = _resolve_within(install_dir, job.path)
         temp = target.with_name(target.name + _TEMP_SUFFIX)
+        if await _reusable_output(temp, job.md5, job.size):
+            logger.info(f"复用上轮已解好的临时文件: {temp.name}")
+            await _commit_verified(temp, target, job.size)
+            done += 1
+            await _report(f"正在打补丁并覆盖游戏文件 {done}/{total}")
+            continue
+        with suppress(OSError):
+            temp.unlink(missing_ok=True)
         await _unpack(archive.getinfo(job.member), temp)
         await _commit(temp, target, job.md5, job.size)
         done += 1

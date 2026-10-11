@@ -176,29 +176,65 @@ def _write_probe(directory: Path) -> str | None:
 
 async def _check_baselines(
     specs: Sequence[PatchJob],
+    moves: Sequence[MoveJob] | None,
     install_dir: Path,
     progress: ProgressFn | None,
     abort: threading.Event,
-) -> list[str]:
-    """核对本地基线，先比体积再算 MD5，返回不符的路径。
+) -> tuple[set[str], list[str]]:
+    """核一遍每个条目还要不要做，返回 `(已落地的路径, 与基线不符的路径)`。
 
-    必须在覆盖游戏文件之前完成，避免落地校验才发现基线错误而留下部分更新。"""
+    判据顺序是**先看新文件、再看旧基线**：上一轮中途停下时，已经改名就位的那些条目在盘上
+    已经是新值，若只认旧基线就会把它们一律判成「与官方不符」，于是用户永远停在
+    「请手动更新」——这正是续传要解决的事。新值对得上就是已完成，本轮不必重打一遍。
 
+    体积先比、MD5 后算：体积就不对的文件没必要读内容（`file_md5` 一次要读完整份文件，
+    而整文件成员可以到 GB 级）。这一步跑完之前一个字都不写进游戏目录——差量打在错基线上
+    产出的是「长度对得上、内容坏了」的文件，只有落盘前那次 MD5 能发现，而那时游戏目录
+    已经被写了一半。
+
+    `moves` 为 `None` 表示包内清单没预取到：那些整文件只能按「要不要做」留在待办里，
+    它们没有基线，不参与「不符」判定。
+    """
+
+    done: set[str] = set()
     bad: list[str] = []
-    total = len(specs)
-    for index, spec in enumerate(specs, start=1):
+    entries: list[tuple[str, str, int, str | None, str, int]] = [
+        (spec.path, spec.md5, spec.size, spec.base_path, spec.base_md5, spec.base_size)
+        for spec in specs
+    ]
+    # 整文件没有基线：本地不是新值就重写一份，没有「不符」可言
+    entries += [
+        (entry.path, entry.md5, entry.size, None, "", 0) for entry in (moves or ())
+    ]
+    total = len(entries)
+    for index, (path, md5, size, base_path, base_md5, base_size) in enumerate(
+        entries, start=1
+    ):
         if abort.is_set():
             break
-        base = _resolve_within(install_dir, spec.base_path)
-        if file_size(base) != spec.base_size:
-            bad.append(spec.base_path)
-            continue
-        try:
-            digest = await asyncio.to_thread(file_md5, base)
-        except OSError:
-            digest = ""
-        if digest != spec.base_md5:
-            bad.append(spec.base_path)
+        target = _resolve_within(install_dir, path)
+        if md5 and file_size(target) == size:
+            try:
+                if await asyncio.to_thread(file_md5, target) == md5:
+                    done.add(path)
+                    if progress is not None and (
+                        index % _APPLY_STEP == 0 or index == total
+                    ):
+                        await progress(f"正在核对本地基线文件 {index}/{total}")
+                    continue
+            except OSError:
+                pass
+        if base_path is not None:
+            base = _resolve_within(install_dir, base_path)
+            if file_size(base) != base_size:
+                bad.append(base_path)
+            else:
+                try:
+                    digest = await asyncio.to_thread(file_md5, base)
+                except OSError:
+                    digest = ""
+                if digest != base_md5:
+                    bad.append(base_path)
         if progress is not None and (index % _APPLY_STEP == 0 or index == total):
             await progress(f"正在核对本地基线文件 {index}/{total}")
-    return bad
+    return done, bad
