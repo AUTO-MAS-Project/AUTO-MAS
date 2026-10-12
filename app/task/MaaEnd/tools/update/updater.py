@@ -18,6 +18,10 @@
 
 #   Contact: DLmaster_361@163.com
 
+#   Update check, download and landing orchestration adapted from:
+#       Hi3Helper.Plugin.Hypergryph Copyright (c) 2025 Collapse Launcher (MIT License)
+#       https://github.com/misaka10843/Hi3Helper.Plugin.Hypergryph
+
 """终末地客户端更新入口：检查、前置门、下载与落地编排。
 
 自动任务和手动按钮共用 ensure_game_updated。模块分工：

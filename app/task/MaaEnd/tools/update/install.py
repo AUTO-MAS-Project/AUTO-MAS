@@ -18,6 +18,10 @@
 
 #   Contact: DLmaster_361@163.com
 
+#   Patch landing order and per-file replacement adapted from:
+#       Hi3Helper.Plugin.Hypergryph Copyright (c) 2025 Collapse Launcher (MIT License)
+#       https://github.com/misaka10843/Hi3Helper.Plugin.Hypergryph
+
 """终末地差量包读取与落地：校验后逐文件替换，最后提交版本配置。"""
 
 from __future__ import annotations

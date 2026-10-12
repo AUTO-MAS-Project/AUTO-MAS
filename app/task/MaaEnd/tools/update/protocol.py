@@ -18,6 +18,10 @@
 
 #   Contact: DLmaster_361@163.com
 
+#   Update response and patch manifest field semantics adapted from:
+#       Hi3Helper.Plugin.Hypergryph Copyright (c) 2025 Collapse Launcher (MIT License)
+#       https://github.com/misaka10843/Hi3Helper.Plugin.Hypergryph
+
 """终末地客户端身份、官方更新响应与差量清单解析。"""
 
 from __future__ import annotations
