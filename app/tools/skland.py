@@ -163,16 +163,49 @@ def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
     return create_community_client(proxy)
 
 
-def _response_server_time(response: httpx.Response) -> float | None:
-    """读取未被缓存的 HTTPS 响应时间，不依赖第三方时间 API。"""
+def _response_server_time(
+    response: httpx.Response, payload: dict[str, object] | None = None
+) -> float | None:
+    """优先读取接口返回的秒级 timestamp，缺失时兼容 Date 响应头。"""
 
     try:
         if int(response.headers.get("Age", "0")) > 0:
             return None
+    except (ValueError, TypeError):
+        return None
+    if payload is not None:
+        timestamp = payload.get("timestamp")
+        if isinstance(timestamp, (str, int, float)) and not isinstance(timestamp, bool):
+            try:
+                server_time = float(timestamp)
+                # 上游字段是秒级时间，拒绝非有限值和误传的毫秒时间。
+                if 0 < server_time < 10_000_000_000:
+                    return server_time
+            except (ValueError, OverflowError):
+                pass
+    try:
         value = parsedate_to_datetime(response.headers["Date"])
         return value.timestamp() if value.tzinfo is not None else None
     except (KeyError, ValueError, TypeError, OverflowError):
         return None
+
+
+def _update_skland_time(
+    response: httpx.Response, payload: dict[str, object] | None = None
+) -> None:
+    """记录 cred 获取或刷新响应的服务器时间，后续签名由单调时钟推进。"""
+
+    global _server_clock
+    server_time = _response_server_time(response, payload)
+    if server_time is None:
+        return
+    # 采样点取收到响应之后，不能把连接失败或 DNS 回退耗时算入偏移。
+    _server_clock = (server_time, time.monotonic())
+    offset = abs(server_time - time.time())
+    if offset > 30:
+        logger.warning(
+            f"系统时间与森空岛服务器偏差约 {offset:.0f} 秒，本次请求已使用服务器时间"
+        )
 
 
 def _skland_time() -> float:
@@ -187,9 +220,8 @@ def _skland_time() -> float:
 
 
 async def _sync_skland_time(client: httpx.AsyncClient) -> None:
-    """只校正森空岛请求的时间，不修改系统时间；取时失败仍允许正常请求。"""
+    """仅在没有新鲜 cred 响应时间时补充取时，兼容已保存的 cred/token。"""
 
-    global _server_clock
     started = time.monotonic()
     if (
         _server_clock is not None
@@ -202,17 +234,7 @@ async def _sync_skland_time(client: httpx.AsyncClient) -> None:
             headers={"Cache-Control": "no-cache"},
             timeout=5.0,
         )
-        finished = time.monotonic()
-        server_time = _response_server_time(response)
-        if server_time is None:
-            return
-        # Date 是服务端生成响应的时刻，不能把连接失败和 DNS 回退耗时算入偏移。
-        _server_clock = (server_time, finished)
-        offset = abs(_skland_time() - time.time())
-        if offset > 30:
-            logger.warning(
-                f"系统时间与森空岛服务器偏差约 {offset:.0f} 秒，本次请求已使用服务器时间"
-            )
+        _update_skland_time(response)
     except httpx.HTTPError:
         logger.debug("森空岛服务器取时暂不可用，继续签到并由请求结果报告原因")
 
@@ -235,7 +257,7 @@ def _parse_json_object(response: httpx.Response) -> dict[str, object]:
         message = str(payload.get("message") or payload.get("msg") or "")
         if "grantv2req.token" in message.lower() and "'max'" in message.lower():
             raise ValueError("森空岛凭据解码失败，请重新复制 Token 或完整凭据")
-        server_time = _response_server_time(response)
+        server_time = _response_server_time(response, payload)
         try:
             signed_at = float(response.request.headers.get("timestamp", "nan"))
         except (RuntimeError, ValueError):
@@ -696,6 +718,7 @@ async def _get_cred_by_code(
     data = response_data.get("data")
     if not isinstance(data, dict) or not data.get("token") or not data.get("cred"):
         raise ValueError("森空岛 cred 响应格式无效")
+    _update_skland_time(response, response_data)
     return data
 
 
@@ -771,8 +794,8 @@ async def prepare_skland_session_credential(
     # 直调签到历史上允许凭据同时携带 OAuth Token 和不完整缓存；
     # 此时丢弃缓存并重新授权。活动入口仍会在调用本函数前执行严格校验。
     credential = parse_skland_credential(raw_credential)
-    await _sync_skland_time(client)
     if credential["cred"] and credential["token"]:
+        await _sync_skland_time(client)
         return credential
     if not credential["oauthToken"]:
         raise ValueError("森空岛登录凭据为空")
@@ -830,6 +853,7 @@ async def refresh_skland_session_credential(
     data = response_data.get("data")
     if not isinstance(data, dict) or not data.get("token"):
         raise ValueError("森空岛凭据刷新响应格式无效")
+    _update_skland_time(response, response_data)
     return parse_skland_credential({**credential, "token": data["token"]})
 
 
