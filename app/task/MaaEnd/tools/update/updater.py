@@ -427,10 +427,20 @@ async def _ensure_game_updated(
             if isinstance(error, OSError)
             else str(error)
         )
-        logger.warning(f"终末地差量更新失败: {error}")
+        if not detail:
+            cause = error.__cause__
+            while cause is not None and not str(cause):
+                cause = cause.__cause__
+            detail = str(cause) if cause else type(error).__name__
+        logger.opt(exception=True).warning(f"终末地差量更新失败: {error}")
+        hint = (
+            "请检查网络环境后重试"
+            if isinstance(error, httpx.HTTPError)
+            else "请手动更新游戏"
+        )
         return GameUpdateResult(
             "NeedManualUpdate",
-            f"{outdated}，MAS 自动更新失败（{detail}），请手动更新游戏后重试",
+            f"{outdated}，MAS 自动更新失败（{detail}），{hint}",
         )
     except Exception as error:
         # 兜底：本函数对外承诺不抛，调用方才能拿 status 决定放行还是阻断。走到这里
