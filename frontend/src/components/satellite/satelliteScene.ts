@@ -225,6 +225,8 @@ export class SatelliteScene {
   private introAt = -Infinity
   private stormAt = -Infinity
   private vanishAt = -Infinity
+  /** 背景流星开关：脚本运行暂停动效时关掉，避免补帧撞上过期的 nextMeteorAt 照放流星 */
+  private meteorsEnabled = true
   private reveal: { effect: ZhougeReveal; satellite: number } | null = null
   private revealPending = false
   private disposed = false
@@ -421,6 +423,11 @@ export class SatelliteScene {
     material.map.dispose()
     material.map = texture
     material.needsUpdate = true
+  }
+
+  /** 背景流星开关（脚本运行暂停动效时由组件关掉） */
+  setMeteorsEnabled(enabled: boolean): void {
+    this.meteorsEnabled = enabled
   }
 
   startAppear(time: number): void {
@@ -761,8 +768,11 @@ export class SatelliteScene {
     }
     this.updateShockwave(time, centerY)
     this.updateReveal(time)
-    // 流星只在深色主题、不在入场时出
-    this.fx.update(time, this.isDark && time - this.introAt >= INTRO_DOLLY_MS)
+    // 流星只在深色主题、不在入场时出；脚本运行暂停期间完全关掉
+    this.fx.update(
+      time,
+      this.meteorsEnabled && this.isDark && time - this.introAt >= INTRO_DOLLY_MS
+    )
 
     this.renderer.render(this.scene, this.camera)
     return this.isBusy(time, overclock, dizzy, storm)
@@ -773,6 +783,8 @@ export class SatelliteScene {
     if (this.appearStartedAt !== null) return true
     if (this.centerPressed) return true
     if (!this.isCenterDeformSettled()) return true
+    // 拖动惯性还在衰减（updateCamera 里衰减到阈值以下才归零），停了循环镜头会一顿一顿地转
+    if (this.spinVelocity !== 0) return true
     if (this.reveal !== null || this.revealPending) return true
     if (time - this.introAt < INTRO_DOLLY_MS) return true
     if (time - this.vanishAt < VANISH_MS) return true

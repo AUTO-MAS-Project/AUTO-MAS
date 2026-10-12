@@ -26,8 +26,9 @@ const { t } = useI18n()
 <style scoped>
 .effects-paused-chip {
   position: absolute;
+  /* 右上角是开发者打榜按钮（SatelliteEggStage 的 .egg-launcher），挪到左上角避开 */
   top: 12px;
-  right: 12px;
+  left: 12px;
   z-index: 6;
   display: inline-flex;
   align-items: center;

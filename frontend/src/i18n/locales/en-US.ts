@@ -4572,7 +4572,7 @@ export default {
         'Reduces decorative animations and background rendering. Script execution and task scheduling are unaffected; decorative animations pause automatically while the window is minimized.',
       pauseHomeEffects: 'Pause home effects while scripts run',
       pauseHomeEffectsTip:
-        'Pauses the home satellite animation while any script task is running to save GPU; satellite status colors keep updating, and the hint at the top-right of the satellite area resumes it temporarily.',
+        'Pauses the home satellite animation while any script task is running to save GPU; satellite status colors keep updating, and the hint at the top-left of the satellite area resumes it temporarily.',
       traySection: 'System tray',
       showTray: 'Always show tray icon',
       showTrayTip: 'Keep the tray icon visible even when the window is not minimized',

@@ -37,6 +37,10 @@ export const usePerformanceStore = defineStore('performance', () => {
    * 时会短暂没有脚本处于「运行」，延迟恢复可避免动效跟着一闪一闪。
    */
   const homeEffectsPaused = ref(false)
+  /** 用户点了暂停提示上的「继续」：只对当前这轮任务生效，动效恢复时一并复位。
+   * 放在 store 里而不是组件里：主页不在 keep-alive 里，切页回来组件会重建，
+   * 局部状态会把「恢复到本轮任务结束」变成「恢复到切页为止」。 */
+  const homeEffectsManuallyResumed = ref(false)
   let resumeTimer: ReturnType<typeof setTimeout> | null = null
 
   const clearResumeTimer = () => {
@@ -52,6 +56,7 @@ export const usePerformanceStore = defineStore('performance', () => {
       clearResumeTimer()
       if (!enabled) {
         homeEffectsPaused.value = false
+        homeEffectsManuallyResumed.value = false
         return
       }
       if (running) {
@@ -62,6 +67,7 @@ export const usePerformanceStore = defineStore('performance', () => {
       resumeTimer = setTimeout(() => {
         resumeTimer = null
         homeEffectsPaused.value = false
+        homeEffectsManuallyResumed.value = false
       }, HOME_EFFECTS_RESUME_DELAY_MS)
     },
     { immediate: true }
@@ -189,6 +195,7 @@ export const usePerformanceStore = defineStore('performance', () => {
     isLowPower,
     anyScriptRunning,
     homeEffectsPaused,
+    homeEffectsManuallyResumed,
     initialize,
     setLowPerformanceMode,
     setPauseHomeEffectsWhenRunning,

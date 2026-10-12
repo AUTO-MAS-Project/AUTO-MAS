@@ -19,7 +19,7 @@
     <!-- 低性能模式下没有实时场景，谈不上恢复 -->
     <SatelliteEffectsPausedChip
       v-if="effectsPaused && !performanceStore.lowPerformanceMode"
-      @resume="manuallyResumed = true"
+      @resume="performanceStore.homeEffectsManuallyResumed = true"
     />
     <SatelliteFloatLayer ref="floatLayer" />
     <SatelliteEggStage
@@ -144,9 +144,10 @@ const hoveredStatus = computed(() =>
   hoveredModule.value ? satelliteStatuses.value.get(hoveredModule.value.key) : undefined
 )
 
-/** 脚本运行期间动效自动暂停；点「继续」只对当前这轮任务生效，任务清零后复位 */
-const manuallyResumed = ref(false)
-const effectsPaused = computed(() => performanceStore.homeEffectsPaused && !manuallyResumed.value)
+/** 脚本运行期间动效自动暂停；手动恢复状态在 performance store 里（随本轮任务生效），任务清零后由 store 复位 */
+const effectsPaused = computed(
+  () => performanceStore.homeEffectsPaused && !performanceStore.homeEffectsManuallyResumed
+)
 
 // ==================== 监听 ====================
 
@@ -212,20 +213,14 @@ watch(
 )
 
 // 脚本运行暂停不用硬停：帧循环画完闲置帧后在 drawFrame 里自然停；
+// 暂停时关掉背景流星（不然每次补帧都撞上过期的 nextMeteorAt，卫星冻着流星照飞）；
 // 恢复（任务清零或点了继续）时补一帧重新拉起循环
 watch(effectsPaused, paused => {
+  scene?.setMeteorsEnabled(!paused)
   if (paused) return
   lastFrameAt = null
   requestRender()
 })
-
-// 本轮任务清零（或关闭设置）后复位手动恢复，下一轮任务开始重新自动暂停
-watch(
-  () => performanceStore.homeEffectsPaused,
-  paused => {
-    if (!paused) manuallyResumed.value = false
-  }
-)
 
 // ==================== 生命周期 ====================
 
@@ -347,6 +342,8 @@ async function startLive(): Promise<void> {
   scene.setDark(isDark.value)
   scene.setStatuses(satelliteStatuses.value)
   scene.setCenterGlowMode(centerGlowMode)
+  // 挂载时已在暂停中就别放背景流星（watcher 只在变化时触发，这里补初始状态）
+  scene.setMeteorsEnabled(!effectsPaused.value)
   // 记下此刻已经在跑的脚本：之后看着它开跑才喊「启动」
   eggs.onStatusesChange(satelliteStatuses.value)
 

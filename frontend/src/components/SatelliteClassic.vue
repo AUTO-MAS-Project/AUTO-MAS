@@ -14,7 +14,7 @@
     <!-- 低性能模式下动效本来就停着，恢复按钮恢复不了它 -->
     <SatelliteEffectsPausedChip
       v-if="effectsPaused && !performanceStore.lowPerformanceMode"
-      @resume="manuallyResumed = true"
+      @resume="performanceStore.homeEffectsManuallyResumed = true"
     />
   </div>
 </template>
@@ -59,9 +59,10 @@ const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
-/** 脚本运行期间动效自动暂停；点「继续」只对当前这轮任务生效，任务清零后复位 */
-const manuallyResumed = ref(false)
-const effectsPaused = computed(() => performanceStore.homeEffectsPaused && !manuallyResumed.value)
+/** 脚本运行期间动效自动暂停；手动恢复状态在 performance store 里（随本轮任务生效），任务清零后由 store 复位 */
+const effectsPaused = computed(
+  () => performanceStore.homeEffectsPaused && !performanceStore.homeEffectsManuallyResumed
+)
 
 let scene: SatelliteScene | null = null
 let isUnmounted = false
@@ -144,14 +145,6 @@ watch(effectsPaused, paused => {
   if (paused) return
   requestRender()
 })
-
-// 本轮任务清零（或关闭设置）后复位手动恢复，下一轮任务开始重新自动暂停
-watch(
-  () => performanceStore.homeEffectsPaused,
-  paused => {
-    if (!paused) manuallyResumed.value = false
-  }
-)
 
 // ==================== 生命周期 ====================
 

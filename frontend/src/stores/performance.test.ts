@@ -112,6 +112,9 @@ describe('performance store', () => {
       expect(store.anyScriptRunning).toBe(true)
       expect(store.homeEffectsPaused).toBe(true)
 
+      // 点「继续」：手动恢复挂在 store 上，切页/切样式（组件重建）不丢
+      store.homeEffectsManuallyResumed = true
+
       // 队列内脚本交接：瞬时无脚本处于运行，防抖窗口内不恢复
       taskRuntimeMock.setScriptStatuses([
         ['maa', { queued: true, running: false, lastFailed: false }],
@@ -126,13 +129,15 @@ describe('performance store', () => {
       await vi.advanceTimersByTimeAsync(4000)
       expect(store.homeEffectsPaused).toBe(true)
 
-      // 清零后要等满整个防抖窗口才恢复
+      // 清零后要等满整个防抖窗口才恢复，手动恢复随之复位
       taskRuntimeMock.setScriptStatuses([])
       await nextTick()
       await vi.advanceTimersByTimeAsync(4999)
       expect(store.homeEffectsPaused).toBe(true)
+      expect(store.homeEffectsManuallyResumed).toBe(true)
       await vi.advanceTimersByTimeAsync(1)
       expect(store.homeEffectsPaused).toBe(false)
+      expect(store.homeEffectsManuallyResumed).toBe(false)
 
       // 关掉设置立即恢复，不看防抖
       taskRuntimeMock.setScriptStatuses([running])
