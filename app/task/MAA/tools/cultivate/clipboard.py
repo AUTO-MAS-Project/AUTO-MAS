@@ -80,7 +80,7 @@ def parse_clipboard_targets(
                 raise CultivateImportError(kind, index=index, name=name)
             # 0 表示未设置；技能 1 级没有升级需求，不创建目标。
             if level > (1 if kind == "skill" else 0):
-                goals.append(Goal(kind, "", level))
+                goals.append(Goal(kind=kind, target_id="", to_level=level))
 
         masteries = item.get("skill_mastery", [])
         if not isinstance(masteries, list) or len(masteries) > 3:
@@ -94,12 +94,12 @@ def parse_clipboard_targets(
             skill = skills_by_index.get(skill_index)
             if skill is None or level > skill["maxLevel"]:
                 raise CultivateImportError("mastery", index=index, name=name)
-            goals.append(Goal("mastery", skill["value"], level))
+            goals.append(Goal(kind="mastery", target_id=skill["value"], to_level=level))
         if any(goal.kind == "mastery" for goal in goals):
             if operator["maxSkillLevel"] < 7:
                 raise CultivateImportError("skill", index=index, name=name)
             goals = [goal for goal in goals if goal.kind != "skill"]
-            goals.insert(0, Goal("skill", "", 7))
+            goals.insert(0, Goal(kind="skill", target_id="", to_level=7))
         if goals:
             targets.append(OperatorTarget(operator["value"], tuple(goals)))
     if not targets:
