@@ -190,7 +190,8 @@ export function useScriptApi() {
                             ? maaUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Base: maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
+                        Base:
+                          maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
                         StageMode:
                           maaUserData.Info?.StageMode !== undefined
                             ? maaUserData.Info.StageMode
@@ -335,7 +336,8 @@ export function useScriptApi() {
                         Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
                         Password:
                           srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Base: srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
+                        Base:
+                          srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
                         Server:
                           srcUserData.Info?.Server !== undefined
                             ? srcUserData.Info.Server
@@ -1160,7 +1162,9 @@ export function useScriptApi() {
                             ? zzzodUserData.Info.Status
                             : true,
                         Base:
-                          zzzodUserData.Info?.Base !== undefined ? zzzodUserData.Info.Base : 'independent',
+                          zzzodUserData.Info?.Base !== undefined
+                            ? zzzodUserData.Info.Base
+                            : 'independent',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay

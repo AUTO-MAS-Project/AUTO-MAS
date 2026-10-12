@@ -25,7 +25,9 @@ describe('base ⊕ overlay 生效语义', () => {
     expect(composeConfigSemantics('shared', false, t).formula).toBe('直接使用共享基础配置')
     expect(composeConfigSemantics('shared', true, t).formula).toBe('共享基础配置 + 本账号的覆写')
     expect(composeConfigSemantics('independent', false, t).formula).toBe('直接使用独立基础配置')
-    expect(composeConfigSemantics('independent', true, t).formula).toBe('独立基础配置 + 本账号的覆写')
+    expect(composeConfigSemantics('independent', true, t).formula).toBe(
+      '独立基础配置 + 本账号的覆写'
+    )
     expect(composeConfigSemantics('native', false, t).formula).toBe('直接使用外部脚本的原生配置')
     expect(composeConfigSemantics('native', true, t).formula).toBe('用本页字段覆写脚本自带的配置')
   })

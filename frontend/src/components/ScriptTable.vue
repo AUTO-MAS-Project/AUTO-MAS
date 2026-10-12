@@ -798,7 +798,8 @@ const getConfigSource = (script: Script, user: User): string => {
   if (isMaaFWFamily(script.type)) mode = 'independent'
   else if (script.type === 'BAAH') mode = 'native'
   // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
-  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared') mode = 'independent'
+  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
+    mode = 'independent'
   const sourceKey = CONFIG_SOURCE_KEYS[mode]
   return sourceKey ? t(sourceKey) : ''
 }
