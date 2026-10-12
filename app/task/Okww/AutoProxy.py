@@ -99,11 +99,18 @@ _GAME_EXIT_WAIT_SECONDS = 90
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    ("connected:False", "OK-WW 未连接游戏客户端"),
     (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
-_OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
+# 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
+# hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
+# 它不进内置 fatal：ok-ww 成功后按 -e 关游戏（stop_hwnd）同样会打 connected:0，只比完成日志晚
+# 约 5s；日志监控若跨过这 5s，两行会落进同一批，故只在没有完成日志时判未连接（见 check_log）。
+_OKWW_DISCONNECT_LOG: tuple[str, ...] = ("connected:False", "connected:0")
+_OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
+# 成功只认任务级完成日志：ok-ww 的 DailyTask 正常跑完（run() 末尾）才会打印；
+# 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
+_OKWW_SUCCESS_LOG = "Daily Task Completed"
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
@@ -932,6 +939,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if _OKWW_SUCCESS_LOG in log:
                 log_status = "Success!"
                 user_item_status = "完成"
+            elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
+                log_status = _OKWW_DISCONNECT_MSG
+                user_item_status = "异常"
             elif not await self.okww_process_manager.is_running():
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"

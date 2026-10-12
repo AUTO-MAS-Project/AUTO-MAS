@@ -128,7 +128,6 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"当前体力 (\d+)", r'"体力当前:" + $((?:当前体力 )(\d+))'),
     (r"current_stamina (\d+)", r'"体力当前:" + $((?:current_stamina )(\d+))'),
     (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
-    (r"MainWindow:退出", r'"✅ 成功: 退出"'),
     # 多账号：登录成功
     (r"登录成功", r'"✅ 成功: 登录"'),
 ]
