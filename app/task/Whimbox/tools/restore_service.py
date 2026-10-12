@@ -55,6 +55,7 @@ from app.utils.config_archive import (
     read_overlay_sidecar,
 )
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
+from app.utils.constants import BASE_SOURCE_LABELS
 
 from .upstream import WheelAssetsConfigSurface, parse_override_map
 
@@ -97,7 +98,7 @@ def _read_overlay(ctx: RestoreContext) -> dict:
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     return {
-        _INFO_SECTION: {"Mode": user.get("Info", "Mode")},
+        _INFO_SECTION: {"Base": user.get("Info", "Base")},
         "OneDragon": {
             "IfRunAllAccounts": bool(user.get("OneDragon", "IfRunAllAccounts")),
         },
@@ -111,7 +112,7 @@ def _read_overlay(ctx: RestoreContext) -> dict:
 def _group_restore(overlay: dict) -> dict[str, dict]:
     """把侧车分组为可回填的结构（来源段与展示快照排除）。
 
-    来源（``Info.Mode``）回填旧值会静默翻转「MAS 是否写入上游」，恢复以
+    来源（``Info.Base``）回填旧值会静默翻转「MAS 是否写入上游」，恢复以
     当前来源为准；展示快照是预览派生数据，无回填语义。
     """
 
@@ -201,13 +202,15 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
         return {"sections": []}
 
     sections: list[dict] = []
-    mode = overlay.get(_INFO_SECTION, {}).get("Mode")
-    if mode:
+    base = str(overlay.get(_INFO_SECTION, {}).get("Base") or "")
+    if base:
         sections.append(
             {
                 "name": "mas-only",
                 "label": "MAS 独有配置",
-                "rows": [{"key": "配置来源", "value": str(mode)}],
+                "rows": [
+                    {"key": "配置来源", "value": BASE_SOURCE_LABELS.get(base, base)}
+                ],
             }
         )
 
@@ -340,7 +343,7 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="sidecar_only",
+        mas_base="sidecar_only",
         files=_mas_files,
         backup_root=_mas_backup_root,
         preview=_preview_mas,

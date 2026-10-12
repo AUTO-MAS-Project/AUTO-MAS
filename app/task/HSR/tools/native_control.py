@@ -1,13 +1,13 @@
-"""HSR 原生配置与脚本直控的 old-dev 兼容层。
+"""HSR 原生配置与脚本原生来源的 old-dev 兼容层。
 
 old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和用户 ``Info`` 凭据。
-本模块不启动原生编辑器；provider 仅负责检查与运行直控会话，外部配置文件
+本模块不启动原生编辑器；provider 仅负责检查与运行原生来源会话，外部配置文件
 的写回由 HSRManager 的备份/恢复区负责。
 
-直控只有一种形态：直接用脚本当前的原生配置运行——SRA 把 ``--inline run``
+原生来源只有一种形态：直接用脚本当前的原生配置运行——SRA 把 ``--inline run``
 指向真实 profile 文件，三月七以真实安装根目录启动。不建临时目录、不复制
 任何东西，用户在脚本 GUI 里改什么下次就跑什么。这是
-``mas-script-specialized-adapter`` 里「直控＝直接使用脚本原有配置、由原生
+``mas-script-specialized-adapter`` 里「原生来源＝直接使用脚本原有配置、由原生
 GUI 维护」的口径。一个脚本挂多个账号、各跑不同计划的需求由「用户」来源
 承担（每用户一份计划叠在活配置上），不再有直控快照。
 """
@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, normalize_base_source
 
 from .m7a_runtime import M7ARunner
 from .run_model import HSRPhase
@@ -33,7 +35,7 @@ HSREngine = Literal["SRA", "M7A"]
 _HSR_ENGINE_ORDER: tuple[HSREngine, ...] = ("M7A", "SRA")
 
 # 各周期的超时配置键与默认值（分钟），默认值须与 HSRConfig.Run_*TimeLimit 一致。
-# 托管队列按模块所属周期取值；直控整轮跑原生配置，取两者之和。
+# 托管队列按模块所属周期取值；原生来源整轮跑原生配置，取两者之和。
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
     "weekly": ("WeeklyTimeLimit", 60),
@@ -42,10 +44,10 @@ PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
 
 @dataclass(frozen=True, slots=True)
 class HSRNativeControlSnapshot:
-    """脚本级的直控就绪诊断，不看任何用户配置。
+    """脚本级的原生来源就绪诊断，不看任何用户配置。
 
     ``import_ready``：原生配置文件当前存在（字段名沿用旧契约）。
-    ``direct_run_ready``：可执行文件与原生配置文件都存在，直控此刻就能跑。
+    ``direct_run_ready``：可执行文件与原生配置文件都存在，原生来源此刻就能跑。
     """
 
     engine: HSREngine
@@ -151,28 +153,29 @@ HSRPlanOwner = Literal["script", "user"]
 
 
 def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
-    """按 ``Info.Mode`` 决定该用户的任务计划挂在谁身上。
+    """按 ``Info.Base`` 决定该用户的任务计划挂在谁身上。
 
-    - 「脚本」→ ``"script"``：本脚本下所有脚本来源用户共用 ``HSRConfig`` 上的
-      同名组（TaskSwitch / Stage / TaskOpt / Managed.Options / TaskMapping）；
-    - 「用户」→ ``"user"``：该用户 ``HSRUserConfig`` 上自己的一份；
-    - 「直控」→ ``None``：没有 MAS 计划，原样运行原生配置。
+    - ``shared``（共享来源）→ ``"script"``：本脚本下所有共享来源用户共用
+      ``HSRConfig`` 上的同名组（TaskSwitch / Stage / TaskOpt /
+      Managed.Options / TaskMapping）；
+    - ``independent``（独立来源）→ ``"user"``：该用户 ``HSRUserConfig`` 上自己的一份；
+    - ``native``（原生来源）→ ``None``：没有 MAS 计划，原样运行原生配置。
 
     账号密码、剩余天数、完成态（``Data``）与通知恒按用户，不随 owner 变化。
-    非法值由 ``UserDirectConfigModeValidator`` 在加载时纠成「脚本」，这里对
-    空值（如未指定用户的接口调用）同样按「脚本」处理。
+    非法值由 ``BaseSourceValidator`` 在加载时纠成 ``shared``，这里对空值（如未
+    指定用户的接口调用）同样按 ``shared`` 处理。
     """
 
-    mode = str(_config_value(user_config, "Info", "Mode", "") or "").strip()
-    if mode == "直控":
+    base = normalize_base_source(_config_value(user_config, "Info", "Base", "") or "")
+    if base == BASE_NATIVE:
         return None
-    if mode == "用户":
+    if base == BASE_INDEPENDENT:
         return "user"
     return "script"
 
 
 def resolve_plan(user_config: Any, script_config: Any) -> Any | None:
-    """返回该用户实际生效的任务计划对象；直控返回 ``None``。
+    """返回该用户实际生效的任务计划对象；原生来源返回 ``None``。
 
     两份计划组名、键名完全相同（``declare_hsr_plan_items``），调用方只需把
     返回值当作「读计划键的对象」传下去：读计划键用它，读 ``Info`` / ``Data`` /
@@ -191,12 +194,12 @@ def resolve_user_control(
     *,
     script_config: Any | None = None,
 ) -> "HSRUserControlSettings":
-    """Resolve per-user managed/direct mode from ``Info.Mode``.
+    """Resolve per-user managed/direct mode from ``Info.Base``.
 
-    ``Info.Mode`` 是唯一的模式轴：「直控」→ ``direct``，「脚本」/「用户」都是
-    MAS 托管（区别只在计划 owner，见 :func:`resolve_plan_owner`）。直控跑哪些
-    引擎由 ``Control.{engine}`` 决定，一个都没勾时回落到已配置脚本路径的引擎
-    （否则会「直控但什么都不跑」）。
+    ``Info.Base`` 是唯一的模式轴：``native``（原生来源）→ ``direct``，``shared`` /
+    ``independent`` 都是 MAS 托管（区别只在计划 owner，见 :func:`resolve_plan_owner`）。
+    原生来源跑哪些引擎由 ``Control.{engine}`` 决定，一个都没勾时回落到已配置脚本
+    路径的引擎（否则会「原生来源但什么都不跑」）。
 
     ``Info.IfQuickConfig``：HSR **明确声明不支持快速配置**——SRA/M7A 的原生
     配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合托管
@@ -212,14 +215,14 @@ def resolve_user_control(
         if bool(_config_value(user_config, "Control", engine, False))
     )  # type: ignore[assignment]
     if direct and not engines and script_config is not None:
-        # 直控但未勾选引擎：回落到「配了脚本路径」的引擎，与脚本管理页展示的
-        # effective_engines 同源，避免用户选了直控却什么都不跑。
+        # 原生来源但未勾选引擎：回落到「配了脚本路径」的引擎，与脚本管理页展示的
+        # effective_engines 同源，避免用户选了原生来源却什么都不跑。
         engines = resolve_configured_engines(script_config)
         from .account_switch import is_cloud_platform
 
         if is_cloud_platform(script_config):
             # 云·星穹铁道只有三月七能跑；回落时不把 SRA 带进来（显式勾了 SRA
-            # 的直控由 check() 报错）。
+            # 的原生来源由 check() 报错）。
             engines = tuple(engine for engine in engines if engine == "M7A")
     return HSRUserControlSettings(
         mode=mode,
@@ -231,12 +234,12 @@ def resolve_user_control(
 
 @dataclass(frozen=True, slots=True)
 class HSRUserControlSettings:
-    """一个用户的托管/直控设置。
+    """一个用户的托管/原生来源设置。
 
-    直控把整份原生配置交给 ``SRA-cli run`` / ``M7A main`` 一次跑完，日常与周常
-    没有边界，所以单个引擎的运行上限取脚本「日常 + 周常」两项超时之和，而不是
-    托管队列那样按模块分别计时。此前这里写死 120 分钟，用户改超时设置对直控
-    完全无效（issue #933）。
+    原生来源把整份原生配置交给 ``SRA-cli run`` / ``M7A main`` 一次跑完，日常与
+    周常没有边界，所以单个引擎的运行上限取脚本「日常 + 周常」两项超时之和，而
+    不是托管队列那样按模块分别计时。此前这里写死 120 分钟，用户改超时设置对
+    原生来源完全无效（issue #933）。
     """
 
     mode: Literal["managed", "direct"]
@@ -254,7 +257,7 @@ class HSRUserControlSettings:
 
 
 class SRADirectControlSession:
-    """一次 SRA 直控运行：``config_path`` 指向脚本当前的活 profile。"""
+    """一次 SRA 原生来源运行：``config_path`` 指向脚本当前的活 profile。"""
 
     def __init__(self, executable: Path, config_path: Path, log) -> None:
         self._executable = executable
@@ -295,7 +298,7 @@ class SRANativeControlProvider:
         return Path(_script_path(script_config, "SRA"))
 
     def native_config_path(self, script_config: Any) -> Path:
-        """脚本当前选中的 SRA profile 文件，直控直接运行它。"""
+        """脚本当前选中的 SRA profile 文件，原生来源直接运行它。"""
 
         _selected_id, selected_path = resolve_sra_profile(
             script_config,
@@ -315,7 +318,7 @@ class SRANativeControlProvider:
             import_reason = ""
             direct_reason = ""
             if not selected_profile.is_file():
-                # 直控直接运行这份文件，没有它就跑不了。
+                # 原生来源直接运行这份文件，没有它就跑不了。
                 import_reason = f"SRA 原生配置不存在：{selected_profile.stem}"
                 direct_reason = (
                     f"SRA 原生配置不存在：{selected_profile}，请先在 SRA 中保存一次设置"
@@ -353,12 +356,12 @@ class SRANativeControlProvider:
 
 
 class M7ADirectControlSession:
-    """一次三月七直控运行：以真实安装根目录启动，跑三月七 GUI 里的 config.yaml。"""
+    """一次三月七原生来源运行：以真实安装根目录启动，跑三月七 GUI 里的 config.yaml。"""
 
     def __init__(self, root: Path, log, script_config: Any = None) -> None:
         self._root = root
         self._log = log
-        # 直控不写用户配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
+        # 原生来源不写用户配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
         # 平台不钉云开关，按三月七自己的配置跑（见 configure_m7a_runner）。
         self._script_config = script_config
         self._runner: M7ARunner | None = None
@@ -399,7 +402,7 @@ class M7ANativeControlProvider:
         return Path(_script_path(script_config, "M7A"))
 
     def native_config_path(self, script_config: Any) -> Path:
-        """三月七安装根目录下的 config.yaml，直控直接运行它。"""
+        """三月七安装根目录下的 config.yaml，原生来源直接运行它。"""
 
         return self._root(script_config) / "config.yaml"
 
@@ -415,7 +418,7 @@ class M7ANativeControlProvider:
             import_reason = ""
             direct_reason = ""
             if not config_path.is_file():
-                # 直控直接运行这份文件，没有它就跑不了。
+                # 原生来源直接运行这份文件，没有它就跑不了。
                 import_reason = f"三月七原生配置不存在：{config_path}"
                 direct_reason = (
                     f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"

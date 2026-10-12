@@ -2431,7 +2431,7 @@ export default {
     configRestoreUnrestorableTitle: 'This backup cannot be restored',
     configRestoreUnrestorableDesc:
       'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
     configRestoreModeDirect: 'Native',
@@ -2453,7 +2453,7 @@ export default {
       'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
     configSessionDiscardedUnknown:
       'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）

@@ -18,7 +18,7 @@
 
 """直控模式：实例原生配置的页面编辑原语（强绑定 one_dragon 原始 YAML）。
 
-与用户模式的字段化配置（ConfigItem 为事实源、运行时注入绑定槽）不同，
+与注入模式的字段化配置（ConfigItem 为事实源、运行时注入绑定槽）不同，
 直控页面直接读写所选实例目录下的 ``game_account.yml``、``game.yml`` 与
 ``one_dragon/_group.yml``——页面即 zzz-od 原生配置编辑器的 web 化入口，
 保存立即落盘，不经过注入/备份/恢复，所见即所得。
@@ -167,7 +167,7 @@ def read_native_launch_args(root, slot_idx: int) -> dict[str, Any]:
     """读取实例原生启动参数（game.yml，缺失字段合并上游 BasicGameConfig 默认值）。
 
     ``-use-d3d12`` 从高级参数拆出为独立 ``dx12`` 开关（MAS 便捷字段，与
-    用户模式同构）；返回的 ``launch_argument_advance`` 只含其余参数。
+    注入模式同构）；返回的 ``launch_argument_advance`` 只含其余参数。
     """
 
     data = read_game(instance_dir(root, int(slot_idx)))

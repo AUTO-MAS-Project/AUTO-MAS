@@ -38,9 +38,9 @@
           <a-list-item>
             <div class="backup-main">
               <span class="backup-time">{{ formatBackupTime(item.time) }}</span>
-              <!-- 备份时点的配置来源标签（脚本级/用户级/直控；旧版备份无标注不显示） -->
-              <a-tag v-if="item.mode" :color="modeTag(item.mode).color">
-                {{ modeTag(item.mode).label }}
+              <!-- 备份时点的配置来源标签（共享/独立/原生；旧版备份无标注不显示） -->
+              <a-tag v-if="item.base" :color="modeTag(item.base).color">
+                {{ modeTag(item.base).label }}
               </a-tag>
             </div>
             <a-space>
@@ -266,9 +266,9 @@ const props = defineProps<{
     list: (target: string) => Promise<{
       code?: number
       message?: string
-      data?: Array<{ time: string; mode?: string | null }>
+      data?: Array<{ time: string; base?: string | null }>
       /** 当前配置来源（仅三态专项返回；据此比对是否需要跨来源提示） */
-      mode?: string | null
+      base?: string | null
     }>
     preview: (
       target: string,
@@ -325,7 +325,7 @@ const props = defineProps<{
       取消/失败保持预览打开。 */
   onDetail?: (
     target: string,
-    item: { time: string; mode?: string | null },
+    item: { time: string; base?: string | null },
     currentMode?: string | null
   ) => Promise<boolean>
 }>()
@@ -358,8 +358,8 @@ const targetOptions = computed(() =>
 // ══ 备份列表 ══
 interface BackupItem {
   time: string
-  /** 备份时点的配置来源（脚本/用户/直控）；无标注为 null */
-  mode?: string | null
+  /** 备份时点的配置来源（shared/independent/native）；无标注为 null */
+  base?: string | null
 }
 
 const backups = ref<BackupItem[]>([])
@@ -371,10 +371,10 @@ const blockedRestoreTimes = ref(new Set<string>())
 const formatBackupTime = (ts: string) =>
   `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)} ${ts.slice(9, 11)}:${ts.slice(11, 13)}:${ts.slice(13, 15)}`
 
-/** 配置来源标签（备份时点 Info.Mode → 文案与标签色）；未知值按用户级兜底 */
-const modeTag = (mode: string): { label: string; color: string } => ({
-  label: t(sourceLabelKey(mode)),
-  color: sourceTagColor(mode),
+/** 配置来源标签（备份时点 Info.Base → 文案与标签色）；未知值按独立兜底 */
+const modeTag = (base: string): { label: string; color: string } => ({
+  label: t(sourceLabelKey(base)),
+  color: sourceTagColor(base),
 })
 
 const isRestoreBlocked = (item: BackupItem): boolean => blockedRestoreTimes.value.has(item.time)
@@ -388,7 +388,7 @@ const loadBackups = async () => {
       throw new Error(resp.message || t('edit.configRestoreListFailed'))
     }
     backups.value = resp.data ?? []
-    currentSource.value = resp.mode ?? null
+    currentSource.value = resp.base ?? null
   } catch (e) {
     // 失败时清空列表与当前来源：残留上一次（可能是切 target 前）的数据
     // 会诱导用户对着过期列表做恢复判断
@@ -453,7 +453,7 @@ const previewRows = computed(() => {
   const order: Array<{ key: string; label: string; src: 'info' | 'account' }> = [
     { key: 'name', label: t('edit.username'), src: 'info' },
     { key: 'status', label: t('edit.enabled'), src: 'info' },
-    { key: 'mode', label: t('edit.configRestorePreviewMode'), src: 'info' },
+    { key: 'base', label: t('edit.configRestorePreviewMode'), src: 'info' },
     { key: 'launcher_mode', label: t('edit.configRestorePreviewLauncher'), src: 'info' },
     { key: 'game_region', label: t('edit.configRestorePreviewRegion'), src: 'account' },
     { key: 'game_path', label: t('edit.configRestorePreviewGamePath'), src: 'account' },
@@ -665,7 +665,7 @@ const confirmRestore = (item: BackupItem) => {
   const { title, paragraphs } = buildRestoreConfirm(
     t,
     { title: t('edit.configRestoreConfirmTitle'), desc: t('edit.configRestoreConfirmDesc') },
-    item.mode,
+    item.base,
     currentSource.value
   )
   Modal.confirm({

@@ -141,7 +141,7 @@ const getDefaultWhimboxUserData = () => ({
   Info: {
     Name: '',
     Status: true,
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: false,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -212,12 +212,12 @@ watch(
   }
 )
 
-// base 来源切换（共享/独立/原生）：校验 value ∈ 三态白名单 → 赋值 Info.Mode → 保存
+// base 来源切换（共享/独立/原生）：校验 value ∈ 三态白名单 → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string') return
   if (!(WHIMBOX_CONFIG_MODES as readonly string[]).includes(value)) return
-  formData.Info.Mode = value
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  formData.Info.Base = value
+  await handleFieldSave('Info.Base', formData.Info.Base)
 }
 
 // 覆写层（快速配置）切换：与来源独立的账号级开关；原生态开启时任务前物化面板

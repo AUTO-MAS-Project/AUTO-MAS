@@ -121,7 +121,7 @@
         <!-- 三态 base 来源卡片 + 覆写层开关（基座渲染，绑定账号级 Info.IfQuickConfig：
              原生态开启时任务前物化面板覆盖集、结束还原；共享/独立态面板本就是 base） -->
         <GeneralConfigModeSelector
-          :model-value="formData.Info.Mode"
+          :model-value="formData.Info.Base"
           :options="whimboxConfigModeOptions"
           :disabled="loading"
           :quick-config="formData.Info.IfQuickConfig"
@@ -150,7 +150,7 @@ const props = defineProps<{
     Info: {
       Name: string
       Status: boolean
-      Mode: string
+      Base: string
       IfQuickConfig: boolean
       RemainedDay: number
       Notes: string
@@ -171,25 +171,25 @@ const formData = props.formData
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 
-// 配置来源三态卡片（#879 语义：base 来源=共享/独立/原生）：「脚本/用户」=共享/
-// 独立 base（本页面板值，当前运行行为一致、为后续特殊功能预留），「直控」=原生
-// base（奇想盒自带配置，MAS 零写入）。
+// 配置来源三态卡片（#879 语义：base 来源=共享/独立/原生）：shared/independent base 是
+// 本页面板值（当前运行行为一致、为后续特殊功能预留），native base 即奇想盒自带配置
+//（MAS 零写入）。
 // 值域来自共享表（同时被页面的切换校验消费），新增状态会在本表漏写时报类型错。
 const modeMeta: Record<
   WhimboxConfigMode,
   { title: string; description: string; icon: 'database' | 'file' | 'setting' }
 > = {
-  脚本: {
+  shared: {
     title: t('edit.script'),
     description: t('edit.whimboxModeScriptDesc'),
     icon: 'database',
   },
-  用户: {
+  independent: {
     title: t('edit.user'),
     description: t('edit.whimboxModeUserDesc'),
     icon: 'file',
   },
-  直控: {
+  native: {
     title: t('edit.directControl'),
     description: t('edit.whimboxModeDirectDesc'),
     icon: 'setting',

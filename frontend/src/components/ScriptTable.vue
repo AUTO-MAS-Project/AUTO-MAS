@@ -346,7 +346,7 @@
                             }}
                           </a-tag>
 
-                          <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
+                          <!-- ZzzOd 脚本显示配置来源标签（独立来源/原生来源） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
                             :color="getZzzOdModeTagColor(user)"
@@ -355,7 +355,7 @@
                             {{ getZzzOdModeLabel(user) }}
                           </a-tag>
 
-                          <!-- ZzzOd 用户模式显示区服/账号（直控事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
+                          <!-- ZzzOd 独立来源显示区服/账号（原生来源的事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
                           <template v-if="script.type === 'ZzzOd' && isZzzOdUserMode(user)">
                             <a-tag color="blue" class="server-tag">
                               {{ getZzzOdRegionLabel(user) }}
@@ -606,9 +606,9 @@ import {
 const { t } = useI18n()
 
 const CONFIG_SOURCE_KEYS: Record<string, string> = {
-  脚本: 'comp.configSourceShared',
-  用户: 'comp.configSourceIndependent',
-  直控: 'comp.configSourceNative',
+  shared: 'comp.configSourceShared',
+  independent: 'comp.configSourceIndependent',
+  native: 'comp.configSourceNative',
 }
 
 const OVERLAY_SCRIPT_TYPES = new Set([
@@ -787,18 +787,19 @@ const isMaaEndPresetSupported = (script: Script) => {
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
-// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
+// 原生来源直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
+  return script.type === 'MaaEnd' && user.Info?.Base === 'independent'
 }
 
 const getConfigSource = (script: Script, user: User): string => {
-  let mode = user.Info.Mode
+  let mode = user.Info.Base
   // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
-  if (isMaaFWFamily(script.type)) mode = '用户'
-  else if (script.type === 'BAAH') mode = '直控'
-  // 这些专项没有共享配置来源，旧的“脚本”值仍按账号配置运行。
-  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === '脚本') mode = '用户'
+  if (isMaaFWFamily(script.type)) mode = 'independent'
+  else if (script.type === 'BAAH') mode = 'native'
+  // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
+  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
+    mode = 'independent'
   const sourceKey = CONFIG_SOURCE_KEYS[mode]
   return sourceKey ? t(sourceKey) : ''
 }
@@ -1017,12 +1018,12 @@ const getServerDisplayName = (server: string): string => {
 
 // ZzzOd：配置来源标签（独立模式/原生模式）
 const getZzzOdModeLabel = (user: User): string =>
-  user.Info.Mode === '直控' ? '原生模式' : '独立模式'
+  user.Info.Base === 'native' ? '原生模式' : '独立模式'
 
-const getZzzOdModeTagColor = (user: User): string => (user.Info.Mode === '直控' ? 'gold' : 'blue')
+const getZzzOdModeTagColor = (user: User): string => (user.Info.Base === 'native' ? 'gold' : 'blue')
 
-// ZzzOd：字段类标签仅在用户模式展示（直控的事实源是一条龙原生配置）
-const isZzzOdUserMode = (user: User): boolean => user.Info.Mode !== '直控'
+// ZzzOd：字段类标签仅在独立来源展示（原生来源的事实源是一条龙原生配置）
+const isZzzOdUserMode = (user: User): boolean => user.Info.Base !== 'native'
 
 const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
 

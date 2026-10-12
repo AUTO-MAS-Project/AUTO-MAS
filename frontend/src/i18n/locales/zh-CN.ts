@@ -1615,7 +1615,7 @@ export default {
     configSourceHintBase:
       '共享配置使用本托管共享的基础配置，独立配置使用当前账号的基础配置，原生使用脚本原有配置。',
     nativeConfigSourceDescription: '直接使用脚本自带的那份配置。',
-    // 「脚本」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
+    // 「共享」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
     scriptModeDisabled: '不支持',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
@@ -2307,7 +2307,7 @@ export default {
     configRestoreForceAction: '强制恢复',
     configRestoreUnrestorableTitle: '该备份无法恢复',
     configRestoreUnrestorableDesc: '备份内容不完整或包含 MAS 临时实例，已禁用恢复。',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: '共享',
     configRestoreModeUser: '独立',
     configRestoreModeDirect: '原生',
@@ -2328,7 +2328,7 @@ export default {
     configSessionDiscardedNotWritten:
       '原生程序没有写出完整配置（可能被强制结束），本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次，退出时让程序自行关闭。',
     configSessionDiscardedUnknown: '本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次。',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）

@@ -190,7 +190,8 @@ export function useScriptApi() {
                             ? maaUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Mode: maaUserData.Info?.Mode !== undefined ? maaUserData.Info.Mode : '脚本',
+                        Base:
+                          maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
                         StageMode:
                           maaUserData.Info?.StageMode !== undefined
                             ? maaUserData.Info.StageMode
@@ -335,7 +336,8 @@ export function useScriptApi() {
                         Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
                         Password:
                           srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '脚本',
+                        Base:
+                          srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
                         Server:
                           srcUserData.Info?.Server !== undefined
                             ? srcUserData.Info.Server
@@ -519,10 +521,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Password !== undefined
                             ? maaEndUserData.Info.Password
                             : '',
-                        Mode:
-                          maaEndUserData.Info?.Mode !== undefined
-                            ? maaEndUserData.Info.Mode
-                            : '脚本',
+                        Base:
+                          maaEndUserData.Info?.Base !== undefined
+                            ? maaEndUserData.Info.Base
+                            : 'shared',
                         SanityMode:
                           maaEndUserData.Info?.SanityMode !== undefined
                             ? maaEndUserData.Info.SanityMode
@@ -736,8 +738,8 @@ export function useScriptApi() {
                           okwwUserData.Info?.Password !== undefined
                             ? okwwUserData.Info.Password
                             : '',
-                        Mode:
-                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '脚本',
+                        Base:
+                          okwwUserData.Info?.Base !== undefined ? okwwUserData.Info.Base : 'shared',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig
@@ -1059,10 +1061,10 @@ export function useScriptApi() {
                           whimboxUserData.Info?.Status !== undefined
                             ? whimboxUserData.Info.Status
                             : true,
-                        Mode:
-                          whimboxUserData.Info?.Mode !== undefined
-                            ? whimboxUserData.Info.Mode
-                            : '脚本',
+                        Base:
+                          whimboxUserData.Info?.Base !== undefined
+                            ? whimboxUserData.Info.Base
+                            : 'shared',
                         RemainedDay:
                           whimboxUserData.Info?.RemainedDay !== undefined
                             ? whimboxUserData.Info.RemainedDay
@@ -1159,8 +1161,10 @@ export function useScriptApi() {
                           zzzodUserData.Info?.Status !== undefined
                             ? zzzodUserData.Info.Status
                             : true,
-                        Mode:
-                          zzzodUserData.Info?.Mode !== undefined ? zzzodUserData.Info.Mode : '用户',
+                        Base:
+                          zzzodUserData.Info?.Base !== undefined
+                            ? zzzodUserData.Info.Base
+                            : 'independent',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay
@@ -1338,7 +1342,7 @@ export function useScriptApi() {
                     ...user,
                     Info: {
                       ...user.Info,
-                      Mode: info?.Mode ?? user.Info.Mode,
+                      Base: info?.Base ?? user.Info.Base,
                       IfQuickConfig:
                         info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
                           ? info.IfQuickConfig

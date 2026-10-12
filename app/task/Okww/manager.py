@@ -30,7 +30,12 @@ from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils.constants import (
+    BASE_NATIVE,
+    BASE_SHARED,
+    BASE_SOURCE_LABELS,
+    TASK_MODE_ZH,
+)
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
@@ -44,7 +49,7 @@ from .AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
     _OKWW_REL_EXE,
     AutoProxyTask,
-    _okww_config_mode,
+    _okww_config_base,
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
@@ -70,7 +75,7 @@ class OkwwManager(ScriptManagerBase):
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
-        self.script_config_mode = "脚本"
+        self.script_config_base = BASE_SHARED
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
@@ -163,8 +168,8 @@ class OkwwManager(ScriptManagerBase):
                 )
             ]
             if target_user_id != "Default":
-                self.script_config_mode = _okww_config_mode(
-                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+                self.script_config_base = _okww_config_base(
+                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Base")
                 )
         else:
             self.script_info.user_list = self.build_proxy_user_list(
@@ -286,9 +291,12 @@ class OkwwManager(ScriptManagerBase):
             ):
                 continue
             current_config = self.user_config[uuid.UUID(current_user.user_id)]
-            config_mode = _okww_config_mode(current_config.get("Info", "Mode"))
-            logger.info(f"用户 {current_user.user_id} 配置来源: {config_mode}")
-            if config_mode == "直控":
+            config_base = _okww_config_base(current_config.get("Info", "Base"))
+            logger.info(
+                f"用户 {current_user.user_id} 配置来源: "
+                f"{BASE_SOURCE_LABELS.get(config_base, config_base)}"
+            )
+            if config_base == BASE_NATIVE:
                 await self._restore_script_config_from_temp()
 
             method = AutoProxyTask(
@@ -322,7 +330,7 @@ class OkwwManager(ScriptManagerBase):
             if not self._keep_script_config_changes():
                 await self._restore_script_config_from_temp()
             else:
-                logger.info("直控配置会话成功，保留脚本原生配置")
+                logger.info("原生来源配置会话成功，保留脚本原生配置")
             self._cleanup_script_config_temp()
 
             # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
@@ -392,7 +400,7 @@ class OkwwManager(ScriptManagerBase):
                     await script_cfg.unlock()
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功后保留脚本原生 GUI 写回的配置。
+        """原生来源配置会话成功后保留脚本原生 GUI 写回的配置。
 
         查看会话（view_only）不在此列：只读预览结束后原生现场必须按任务前
         快照还原，不能把 GUI 里的临时改动当作直控保存保留下来。
@@ -401,7 +409,7 @@ class OkwwManager(ScriptManagerBase):
         return (
             self.task_info.mode == "ScriptConfig"
             and not self.task_info.view_only
-            and self.script_config_mode == "直控"
+            and self.script_config_base == BASE_NATIVE
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"
         )

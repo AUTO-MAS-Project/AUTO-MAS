@@ -36,7 +36,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
+      :user-mode="formData.Info.Base"
       :maa-config-loading="preparingSession || maaConfigLoading"
       :leaving="leavingPage"
       :show-maa-config-mask="showMaaConfigMask"
@@ -561,7 +561,7 @@ const getDefaultMAAUserData = () => ({
     SeriesNumb: '0',
     Notes: '',
     Status: true,
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     InfrastMode: 'Normal',
     InfrastName: '',
@@ -743,11 +743,11 @@ const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
 }
 
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await handleFieldSave('Info.Base', formData.Info.Base)
 }
 
 // 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存
@@ -1527,7 +1527,7 @@ const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -1539,7 +1539,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: MAA_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({

@@ -19,3 +19,4 @@ export type ReplayListOut = {
     replays?: Array<ReplayRecord>;
     directory?: string;
 };
+

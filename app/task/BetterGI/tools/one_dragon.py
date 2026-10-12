@@ -30,7 +30,7 @@ UUID 是每实例随机生成的临时标识，因此本模块按组名识别与
   下的 ``MAS-{短id}-自定义配置组{N}.json``（N 为队列顺序编号），并同步改写槽位 ``TaskDefinitions`` 引用；
   原名只保留在 per-user 副本（前端显示名），BGI 内部名不暴露原名；运行结束删除，BGI 本体目录
   平时保持干净（``remove_materialized_script_groups``）。
-非独立模式（``IfUseMasConfig=False``）保持直控 BGI 所选实配，本模块的独立槽位逻辑不生效。
+非独立模式（``IfUseMasConfig=False``）保持原生来源 BGI 所选实配，本模块的独立槽位逻辑不生效。
 """
 
 import hashlib
@@ -963,7 +963,7 @@ def _custom_groups_from_config(config: dict[str, Any]) -> list[dict[str, Any]]:
 def list_custom_groups(root: Path, config_name: str) -> list[dict[str, Any]]:
     """列出某一条龙配置（BGI 实配）里的自定义配置组。
 
-    供「非独立模式」/直控场景读取 BGI 现有配置返回
+    供「非独立模式」/原生来源场景读取 BGI 现有配置返回
     ``[{"name": ..., "enabled": ...}, ...]``。
     """
     return _custom_groups_from_config(load_one_dragon(root, config_name))
@@ -1510,7 +1510,7 @@ def _exclude_tasks(config: dict, task_names: list[str]) -> dict:
 
 
 def read_native_one_dragon(root: Path, config_name: str) -> dict[str, Any] | None:
-    """读取 BGI 原生一条龙配置（直控来源的快照与比对用）。
+    """读取 BGI 原生一条龙配置（原生来源的快照与比对用）。
 
     不存在、非 JSON 对象或为空时返回 None——调用方据此判断"这份原生配置不可接管"。
     """
@@ -1521,7 +1521,7 @@ def read_native_one_dragon(root: Path, config_name: str) -> dict[str, Any] | Non
 def _enabled_builtin_names(config: dict[str, Any]) -> list[str]:
     """配置里当前启用的内置一条龙组名（按 ``TaskOrder`` 顺序）。
 
-    只给「调用方不提供组开关」的直控写入用（见 ``write_native_one_dragon``）：拿它当
+    只给「调用方不提供组开关」的原生来源写入用（见 ``write_native_one_dragon``）：拿它当
     ``apply_groups`` 的 ``enabled`` 传进去，结果就是**启停原样保留**——启用中的仍是启用、
     已关的仍是关闭（启用表缺项与 ``apply_groups`` 同口径，按启用处理）。
     """
@@ -1552,7 +1552,7 @@ def write_native_one_dragon(
     exclude_task_names: list[str] | None = None,
     native_step_settings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """把面板值写入 **BGI 原生一条龙配置**（直控来源 + 快速配置开启时使用）。
+    """把面板值写入 **BGI 原生一条龙配置**（原生来源 + 快速配置开启时使用）。
 
     与 ``write_user_one_dragon`` 的区别：
     - 种子是**该原生配置自身**（保留用户的一条龙结构与自定义组定义，不回退内置模板）；
@@ -1563,10 +1563,10 @@ def write_native_one_dragon(
     非组字段（领取奖励队伍 / 战斗队伍 / 战斗策略 / 周表默认行）与槽位路径同口径：
     仅在非空时写入，留空则保持原生配置现有值。
 
-    ``groups`` 为空表示「调用方不提供组开关」（直控下 MAS 不接管一条龙启停，面板 Groups
+    ``groups`` 为空表示「调用方不提供组开关」（原生来源下 MAS 不接管一条龙启停，面板 Groups
     也不参与）：此时**沿用配置自身启用的内置组**，绝不能把空表直接交给 ``apply_groups``
     ——它把空表理解成「全部关掉」，会让用户在运行期间一条龙任务一个都不跑（2026-09-18/19
-    实机：直控 + 快速配置的用户只剩自定义配置组任务在跑，内置任务全被写成关闭）。
+    实机：原生来源 + 快速配置的用户只剩自定义配置组任务在跑，内置任务全被写成关闭）。
 
     Returns:
         写入后的配置 dict；原生配置不存在或非法时返回 None（不凭空造一份）。
@@ -1610,7 +1610,7 @@ def write_native_one_dragon(
     # 全局段叶子（秘境刷取配置 / 幽境刷取策略）落 config.json 各自段。
     # 秘境同样要落本文件：DomainName / PartyName / WeeklyDomainEnabled 与周表键都是一条龙
     # 顶层键，只送去全局写入器会被它的白名单挡掉（那里只管「秘境刷取配置」那几个叶子），
-    # 表现为直控 + 快速配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
+    # 表现为原生来源 + 快速配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
     if native_step_settings:
         for _group in ("自动秘境", "自动首领讨伐", "自动地脉花"):
             for _key, _value in (native_step_settings.get(_group) or {}).items():
@@ -2481,7 +2481,7 @@ def _seed_user_one_dragon_config(
 
     - 固定槽位名（MAS独立配置，用户独立模式）：副本缺失时以纯内置模板开始，
       不回退 BGI 实配（实配不是权威源，避免把 BGI 同名用户配置当底稿）。
-    - 其它配置名（非独立模式直控）：副本缺失时回退 BGI 实配 → 内置模板（旧行为）。
+    - 其它配置名（非独立模式原生来源）：副本缺失时回退 BGI 实配 → 内置模板（旧行为）。
     """
     config_name = resolve_config_name(config_name)
     config: dict[str, Any] = {}

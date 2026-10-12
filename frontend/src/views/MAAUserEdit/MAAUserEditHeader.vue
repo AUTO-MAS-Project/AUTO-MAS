@@ -24,7 +24,7 @@
         {{ t('comp.openConfigFolder') }}
       </a-button>
       <a-button
-        v-if="userMode === '用户' && !showMaaConfigMask"
+        v-if="userMode === 'independent' && !showMaaConfigMask"
         type="primary"
         ghost
         size="large"
@@ -38,7 +38,7 @@
         {{ t('edit.maaConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode === '用户' && showMaaConfigMask"
+        v-if="userMode === 'independent' && showMaaConfigMask"
         type="default"
         size="large"
         disabled
