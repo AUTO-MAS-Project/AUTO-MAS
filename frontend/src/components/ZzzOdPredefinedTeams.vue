@@ -77,7 +77,7 @@ interface TeamItem {
 const props = defineProps<{
   scriptId: string
   userId: string
-  /** 直控模式为所选实例下标；用户模式传 null（写绑定槽） */
+  /** 原生来源为所选实例下标；独立来源传 null（写绑定槽） */
   instanceIdx: number | null
 }>()
 
@@ -172,7 +172,7 @@ onMounted(() => {
   void loadTeams()
 })
 
-// 直控切换所选实例：编队跟随目标位置重载（instanceIdx=null=用户绑定槽）
+// 原生来源切换所选实例：编队跟随目标位置重载（instanceIdx=null=独立来源绑定槽）
 watch(
   () => props.instanceIdx,
   () => {

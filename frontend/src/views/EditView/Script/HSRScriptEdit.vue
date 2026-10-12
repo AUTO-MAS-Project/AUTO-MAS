@@ -1224,7 +1224,7 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-// 清空路径：保存空字符串到后端；任务映射在用户页维护（脚本来源写脚本级，用户来源写用户级）。
+// 清空路径：保存空字符串到后端；任务映射在用户页维护（shared 来源写脚本级，independent 来源写用户级）。
 const clearPath = async (key: string) => {
   if (key === 'M7APath' || key === 'SRAPath') {
     await handleChange('Info', key, '')

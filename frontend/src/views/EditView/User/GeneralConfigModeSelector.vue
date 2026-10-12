@@ -60,7 +60,7 @@
     <!--
       覆写常规配置（overlay 层）：账号级开关，两者合起来就是 3×2 的 base ⊕ overlay 子态。
       只有声明了 quickConfig 的调用方才渲染，避免给未接入运行时的专项做出死开关。
-      形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（直控 = 关、
+      形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（原生来源 = 关、
       共享 / 独立 = 开），传 quickConfigReadonly 只读展示派生结果，避免出现可点却无效的卡片。
     -->
     <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
@@ -152,7 +152,7 @@ const props = withDefaults(
     options?: ConfigModeOption[]
     alertMessage?: string
     /**
-     * 快速配置开关（用户级，独立于 Info.Mode）。
+     * 快速配置开关（用户级，独立于 Info.Base）。
      * 未传入表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
      * 必须显式 default: undefined：Boolean prop 未声明 default 时 Vue 会
      * casting 成 false，「不传」与「显式传 false」无法区分，守卫
@@ -343,7 +343,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-  /* 描述文案可能含 \n 换行（如 ZZZ-OD 直控的约束说明），按原文换行渲染 */
+  /* 描述文案可能含 \n 换行（如 ZZZ-OD 原生来源的约束说明），按原文换行渲染 */
   white-space: pre-line;
 }
 

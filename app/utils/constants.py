@@ -1310,3 +1310,40 @@ CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
 """循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""
+
+BASE_SHARED = "shared"
+"""base 来源：脚本级共享配置（旧字面量「脚本」/「简洁」）"""
+
+BASE_INDEPENDENT = "independent"
+"""base 来源：用户独立配置（旧字面量「用户」/「详细」/「自定义」）"""
+
+BASE_NATIVE = "native"
+"""base 来源：脚本原生配置（旧字面量「直控」）"""
+
+LEGACY_BASE_SOURCES = {
+    "脚本": BASE_SHARED,
+    "用户": BASE_INDEPENDENT,
+    "直控": BASE_NATIVE,
+    "简洁": BASE_SHARED,
+    "详细": BASE_INDEPENDENT,
+    "自定义": BASE_INDEPENDENT,
+}
+"""旧配置来源字面量 → base 来源：只出现在存量数据与旧备份里，读取时归一"""
+
+
+def normalize_base_source(value: object) -> str:
+    """把配置来源值归一为 base 来源三态（shared / independent / native）。
+
+    无法识别的值原样返回，由调用方决定是否回落；空值返回空串。
+    """
+
+    text = str(value or "").strip()
+    return LEGACY_BASE_SOURCES.get(text, text)
+
+
+BASE_SOURCE_LABELS = {
+    BASE_SHARED: "共享",
+    BASE_INDEPENDENT: "独立",
+    BASE_NATIVE: "原生",
+}
+"""base 来源三态的展示词表（后端预览等无前端 i18n 处使用）"""

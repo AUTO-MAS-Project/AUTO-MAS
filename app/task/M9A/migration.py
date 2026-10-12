@@ -75,6 +75,12 @@ from app.task.M9A.managed import (
 )
 from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
 from app.utils import get_logger
+from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    normalize_base_source,
+)
 
 logger = get_logger("M9A 迁移")
 
@@ -979,14 +985,16 @@ def _instance_file_items(
     """旧「配置来源」三态对应的 MFAA 实例文件里 ``default_check`` 为真的任务。"""
 
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
-    mode = str(info.get("Mode") or "用户")
+    base = (
+        normalize_base_source(info.get("Base") or info.get("Mode")) or BASE_INDEPENDENT
+    )
     source_path = str((script_payload.get("Info") or {}).get("Path") or "").strip()
     candidates: list[Path] = []
-    if mode == "脚本" and script_uid:
+    if base == BASE_SHARED and script_uid:
         candidates.append(
             Path.cwd() / "data" / script_uid / "Default" / "ConfigFile" / "default.json"
         )
-    elif mode == "直控" and source_path:
+    elif base == BASE_NATIVE and source_path:
         instances_dir = Path(source_path) / "config" / "instances"
         candidates.append(instances_dir / "default.json")
         if instances_dir.is_dir():
@@ -1428,7 +1436,7 @@ def repair_script_config_payload(
             continue
         script_label = _script_label(payload, uid)
         # 用迁移当时读的来源目录重算，答案才和那版的输出逐项对得上；来源目录删了就退到副本
-        # （副本里也有 interface 与直控用的 config/instances）
+        # （副本里也有 interface 与原生来源用的 config/instances）
         root = _project_root_for_detection(legacy, uid, prefer_source=True)
         index = _InterfaceIndex(_read_interface_dict(root) if root else None)
         if root is None or not index.available:

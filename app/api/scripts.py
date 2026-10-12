@@ -1458,7 +1458,7 @@ async def get_bettergi_custom_groups_api(
 
     ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
     槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-    否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+    否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
     """
 
     try:
@@ -2109,7 +2109,7 @@ async def get_bettergi_global_domain_settings_api(
     """返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
 
     ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
     """
 
@@ -2160,7 +2160,7 @@ async def get_bettergi_global_domain_settings_api(
 async def save_bettergi_global_domain_settings_api(
     req: BetterGIGlobalDomainSettingsIn = Body(...),
 ) -> OutBase:
-    """把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+    """把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。"""
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
@@ -2213,7 +2213,7 @@ async def get_bettergi_global_stygian_settings_api(
     """返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
 
     ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
     """
 
@@ -2264,7 +2264,7 @@ async def get_bettergi_global_stygian_settings_api(
 async def save_bettergi_global_stygian_settings_api(
     req: BetterGIGlobalStygianSettingsIn = Body(...),
 ) -> OutBase:
-    """把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+    """把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。"""
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
@@ -2593,7 +2593,7 @@ async def set_zzzod_instance_force_login_api(
 @router.post(
     "/zzzod/instances/run-mode",
     tags=["ZZZ-OD"],
-    summary="设置运行实例（直控；one_dragon.yml 全局 instance_run）",
+    summary="设置运行实例（原生来源；one_dragon.yml 全局 instance_run）",
     response_model=OutBase,
     status_code=200,
 )
@@ -3022,7 +3022,7 @@ async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOpti
 async def save_zzzod_app_config_api(
     script: ZzzOdAppConfigSaveIn = Body(...),
 ) -> ZzzOdAppConfigOut:
-    """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。"""
+    """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。"""
 
     try:
         data = await Config.save_zzzod_app_config(
@@ -3147,7 +3147,7 @@ async def get_zzzod_native_config_api(
 @router.post(
     "/zzzod/native-config/save",
     tags=["ZZZ-OD"],
-    summary="保存实例原生配置（直控模式直接写回一条龙原始 YAML）",
+    summary="保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）",
     response_model=ZzzOdNativeConfigOut,
     status_code=200,
 )
@@ -3206,7 +3206,7 @@ async def save_zzzod_native_config_api(
     status_code=200,
 )
 async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
-    """渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。"""
+    """渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。"""
 
     try:
         data = Config.get_zzzod_launchers(scriptId)

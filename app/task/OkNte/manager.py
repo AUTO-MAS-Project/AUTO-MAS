@@ -29,7 +29,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
+from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -209,9 +209,7 @@ class OkNteManager(ScriptManagerBase):
                 user_id = self.task_info.user_id
                 if user_id and user_id != "Default":
                     cfg = self.user_config[uuid.UUID(user_id)]
-                    if user_uses_direct_control(cfg) and not user_uses_quick_config(
-                        cfg
-                    ):
+                    if user_uses_native_base(cfg) and not user_uses_quick_config(cfg):
                         return
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
                 if not self.had_original_script_config:

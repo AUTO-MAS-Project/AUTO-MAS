@@ -150,7 +150,7 @@ export class ZzzOdService {
         });
     }
     /**
-     * 设置运行实例（直控；one_dragon.yml 全局 instance_run）
+     * 设置运行实例（原生来源；one_dragon.yml 全局 instance_run）
      * 白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。
      * @param requestBody
      * @returns OutBase Successful Response
@@ -338,7 +338,7 @@ export class ZzzOdService {
     }
     /**
      * 保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）
-     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。
+     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。
      * @param requestBody
      * @returns ZzzOdAppConfigOut Successful Response
      * @throws ApiError
@@ -381,7 +381,7 @@ export class ZzzOdService {
         });
     }
     /**
-     * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
+     * 保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）
      * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
@@ -402,7 +402,7 @@ export class ZzzOdService {
     }
     /**
      * 获取一条龙两种启动器的安装情况与默认项
-     * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
+     * 渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。
      * @param scriptId
      * @returns ZzzOdLauncherOut Successful Response
      * @throws ApiError

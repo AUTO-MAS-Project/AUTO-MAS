@@ -14,20 +14,20 @@ const i18n = createI18n({
 const t = i18n.global.t as unknown as Translate
 
 const kindOf = {
-  shared: { off: ['脚本', false], on: ['脚本', true] },
-  independent: { off: ['用户', false], on: ['用户', true] },
-  native: { off: ['直控', false], on: ['直控', true] },
+  shared: { off: ['shared', false], on: ['shared', true] },
+  independent: { off: ['independent', false], on: ['independent', true] },
+  native: { off: ['native', false], on: ['native', true] },
 } as const
 
 describe('base ⊕ overlay 生效语义', () => {
   // 六个子态各给一条完整说明：配置归谁、任务期间怎么用、结束会不会留下改动。
   it('六个子态的标题逐字点明用的哪份配置、有没有覆写', () => {
-    expect(composeConfigSemantics('脚本', false, t).formula).toBe('直接使用共享基础配置')
-    expect(composeConfigSemantics('脚本', true, t).formula).toBe('共享基础配置 + 本账号的覆写')
-    expect(composeConfigSemantics('用户', false, t).formula).toBe('直接使用独立基础配置')
-    expect(composeConfigSemantics('用户', true, t).formula).toBe('独立基础配置 + 本账号的覆写')
-    expect(composeConfigSemantics('直控', false, t).formula).toBe('直接使用外部脚本的原生配置')
-    expect(composeConfigSemantics('直控', true, t).formula).toBe('用本页字段覆写脚本自带的配置')
+    expect(composeConfigSemantics('shared', false, t).formula).toBe('直接使用共享基础配置')
+    expect(composeConfigSemantics('shared', true, t).formula).toBe('共享基础配置 + 本账号的覆写')
+    expect(composeConfigSemantics('independent', false, t).formula).toBe('直接使用独立基础配置')
+    expect(composeConfigSemantics('independent', true, t).formula).toBe('独立基础配置 + 本账号的覆写')
+    expect(composeConfigSemantics('native', false, t).formula).toBe('直接使用外部脚本的原生配置')
+    expect(composeConfigSemantics('native', true, t).formula).toBe('用本页字段覆写脚本自带的配置')
   })
 
   it('overlay 未启用：说明这份基础配置不会被 MAS 改动', () => {
@@ -64,7 +64,7 @@ describe('base ⊕ overlay 生效语义', () => {
   it('未接入 overlay 的专项不渲染语义：没有覆写层就没有子态可讲', () => {
     // General / HSR / BAAH / ZzzOd 没有覆写层，且本身就是 MAS 在写配置，
     // off 文案里的「不覆写常规配置时 MAS 仅启动脚本」对它们不成立。
-    for (const base of ['脚本', '用户', '直控'] as const) {
+    for (const base of ['shared', 'independent', 'native'] as const) {
       expect(composeConfigSemantics(base, undefined, t)).toEqual({
         formula: '',
         note: '',

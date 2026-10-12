@@ -2,7 +2,7 @@
   <div class="managed-task-section">
     <div class="section-header">
       <h3>{{ t('edit.hsrTaskConfig') }}</h3>
-      <!-- 脚本态编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
+      <!-- 共享来源编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
       <a-tooltip v-if="shared" :title="t('edit.hsrSharedPlanHint')">
         <a-tag color="blue" class="shared-tag">{{ t('edit.hsrSharedPlanTag') }}</a-tag>
       </a-tooltip>
@@ -114,7 +114,7 @@ const props = defineProps<{
   taskSwitch: Record<string, boolean | null | undefined>
   saving: boolean
   loading: boolean
-  /** 当前编辑的是脚本共享计划（「脚本」来源）：只影响提示与确认文案。 */
+  /** 当前编辑的是共享计划（「共享」来源）：只影响提示与确认文案。 */
   shared?: boolean
   /** 云·星穹铁道：引擎恒为三月七，不给引擎分段控件。 */
   cloud?: boolean

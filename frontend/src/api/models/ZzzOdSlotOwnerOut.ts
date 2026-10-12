@@ -23,8 +23,8 @@ export type ZzzOdSlotOwnerOut = {
      */
     userName: string;
     /**
-     * 该用户的配置来源（脚本/用户/直控）
+     * 该用户的 base 来源（shared/independent/native）
      */
-    mode: string;
+    base: string;
 };
 

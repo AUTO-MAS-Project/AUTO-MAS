@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.utils.config_archive import archive_files, get_backup_dir, read_backup_mode
+from app.utils.config_archive import archive_files, get_backup_dir, read_backup_base
 from app.utils.config_restore import (
     ConfigRestorePool,
     RestoreContext,
@@ -91,12 +91,12 @@ def test_binding_and_dispatch() -> None:
 
     service = build_restore_service(_ctx(), POOLS)
     assert service.target_keys == ["mas", "native"]
-    # list 项为 dict（time + 三态 mode 标注；未声明三态 mode=None）
+    # list 项为 dict（time + 三态 base 标注；未声明三态 base=None）
     assert [item["time"] for item in asyncio.run(service.list("mas"))] == [
         "t2",
         "t1",
     ]
-    assert [item["mode"] for item in asyncio.run(service.list("mas"))] == [None, None]
+    assert [item["base"] for item in asyncio.run(service.list("mas"))] == [None, None]
     assert asyncio.run(service.preview("mas", "t1")) == {
         "time": "t1",
         "marker": "s1",
@@ -122,7 +122,7 @@ def test_dispatch_rejects_unknown_and_missing() -> None:
 async def _decl_files(ctx) -> dict[str, str] | None:
     if ctx.script_id == "no-content":
         return None
-    return {"_mas_overlay.json": '{"Mode": "用户"}'}
+    return {"_mas_overlay.json": '{"Base": "independent"}'}
 
 
 async def _decl_root(ctx) -> Path | None:
@@ -152,18 +152,18 @@ def test_declarative_derivation(tmp_path, monkeypatch) -> None:
     assert created["created"] is True and created["time"]
     items = asyncio.run(service.list("decl"))
     assert [item["time"] for item in items] == [created["time"]]
-    assert items[0]["mode"] is None  # 未声明三态：无 Mode 标注
+    assert items[0]["base"] is None  # 未声明三态：无 base 标注
     payload = asyncio.run(service.preview("decl", created["time"]))
     assert payload["files"] == [
         {
             "path": "_mas_overlay.json",
-            "size": len('{"Mode": "用户"}'.encode("utf-8")),
+            "size": len('{"Base": "independent"}'.encode("utf-8")),
         }
     ]
     content = asyncio.run(
         service.read_backup_file("decl", created["time"], "_mas_overlay.json")
     )
-    assert '"Mode"' in content["content"]
+    assert '"Base"' in content["content"]
 
     # 无可归档内容：snapshot 报无变化（不产生条目）
     no_content = build_restore_service(
@@ -191,28 +191,28 @@ def test_declarative_none_root_is_silent(tmp_path, monkeypatch) -> None:
     asyncio.run(no_root.restore("decl", "whatever"))
 
 
-# ═══════════════ 三态增强回归（mas_mode 标注 / 指纹去重 / 跨来源校验） ═══════════════
+# ═══════════════ 三态增强回归（mas_base 标注 / 指纹去重 / 跨来源校验） ═══════════════
 
 
-class _ModeUser:
-    """三态桩用户：支持 ``get("Info", "Mode")`` 与 ``async update``（记录写回）。"""
+class _BaseUser:
+    """三态桩用户：支持 ``get("Info", "Base")`` 与 ``async update``（记录写回）。"""
 
-    def __init__(self, mode: str):
-        self._mode = mode
+    def __init__(self, base: str):
+        self._base = base
         self.updated: list[dict] = []
 
     def get(self, group: str, key: str):
-        return self._mode if (group, key) == ("Info", "Mode") else None
+        return self._base if (group, key) == ("Info", "Base") else None
 
     async def update(self, grouped: dict) -> None:
         self.updated.append(grouped)
-        mode = grouped.get("Info", {}).get("Mode")
-        if mode:
-            self._mode = mode
+        base = grouped.get("Info", {}).get("Base")
+        if base:
+            self._base = base
 
 
 async def _tri_files(ctx) -> dict[str, str] | None:
-    return {"config.json": '{"x": 1}', "_mas_overlay.json": '{"Mode": "用户"}'}
+    return {"config.json": '{"x": 1}', "_mas_overlay.json": '{"Base": "independent"}'}
 
 
 def _tri_root_path(ctx: RestoreContext) -> Path:
@@ -223,11 +223,11 @@ async def _tri_root(ctx: RestoreContext) -> Path:
     return _tri_root_path(ctx)
 
 
-def _tri_ctx(script_id: str, mode: str) -> tuple[RestoreContext, _ModeUser]:
-    """构造 tri_state 上下文：UserData 支持 ``get("Info", "Mode")`` 与写回。"""
+def _tri_ctx(script_id: str, base: str) -> tuple[RestoreContext, _BaseUser]:
+    """构造 tri_state 上下文：UserData 支持 ``get("Info", "Base")`` 与写回。"""
 
     uid = uuid.uuid4()
-    user = _ModeUser(mode)
+    user = _BaseUser(base)
     script_config = SimpleNamespace(UserData={uid: user})
     return (
         RestoreContext(
@@ -241,30 +241,30 @@ def _tri_ctx(script_id: str, mode: str) -> tuple[RestoreContext, _ModeUser]:
 
 
 def _tri_pool(recorder: dict) -> ConfigRestorePool:
-    """tri_state 声明式池：restore / set_mode 调用顺序记录到 recorder。"""
+    """tri_state 声明式池：restore / set_base 调用顺序记录到 recorder。"""
 
     async def restore(ctx: RestoreContext, ts: str) -> object:
         recorder["restored"].append(ts)
         return {"restored": ts}
 
-    async def set_mode(ctx: RestoreContext, mode: str) -> None:
-        recorder["set_modes"].append(mode)
+    async def set_base(ctx: RestoreContext, base: str) -> None:
+        recorder["set_bases"].append(base)
         user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-        await user.update({"Info": {"Mode": mode}})
+        await user.update({"Info": {"Base": base}})
 
     return ConfigRestorePool(
         key="tri",
         kind="user",
-        mas_mode="tri_state",
+        mas_base="tri_state",
         files=_tri_files,
         backup_root=_tri_root,
         restore=restore,
-        set_mode=set_mode,
+        set_base=set_base,
     )
 
 
 def _user_only_pool(recorder: dict) -> ConfigRestorePool:
-    """user_only 声明式池：备份恒标注「用户」，无跨来源校验。"""
+    """user_only 声明式池：备份恒标注独立来源，无跨来源校验。"""
 
     async def restore(ctx: RestoreContext, ts: str) -> object:
         recorder["restored"].append(ts)
@@ -273,7 +273,7 @@ def _user_only_pool(recorder: dict) -> ConfigRestorePool:
     return ConfigRestorePool(
         key="tri",
         kind="user",
-        mas_mode="user_only",
+        mas_base="user_only",
         files=_tri_files,
         backup_root=_tri_root,
         restore=restore,
@@ -281,7 +281,7 @@ def _user_only_pool(recorder: dict) -> ConfigRestorePool:
 
 
 def _sidecar_only_pool(recorder: dict) -> ConfigRestorePool:
-    """sidecar_only 声明式池：备份标注实际 Mode 供列表标签，无目录迁移校验。"""
+    """sidecar_only 声明式池：备份标注实际 base 供列表标签，无目录迁移校验。"""
 
     async def restore(ctx: RestoreContext, ts: str) -> object:
         recorder["restored"].append(ts)
@@ -290,70 +290,70 @@ def _sidecar_only_pool(recorder: dict) -> ConfigRestorePool:
     return ConfigRestorePool(
         key="tri",
         kind="user",
-        mas_mode="sidecar_only",
+        mas_base="sidecar_only",
         files=_tri_files,
         backup_root=_tri_root,
         restore=restore,
     )
 
 
-def test_tristate_backup_mode_annotation(
+def test_tristate_backup_base_annotation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """三态标注：ensure 归档后写 _mas_mode（tri_state=Info.Mode 值 / user_only=恒
-    「用户」/ sidecar_only=实际 Mode / 未声明=None），``service.list`` 项带 mode。"""
+    """三态标注：ensure 归档后写 _mas_base（tri_state=Info.Base 值 / user_only=恒
+    独立来源 / sidecar_only=实际 base / 未声明=None），``service.list`` 项带 base。"""
 
     monkeypatch.chdir(tmp_path)
 
-    # tri_state：备份时点 Mode = UserData.Info.Mode
-    ctx, _ = _tri_ctx("tri-anno-a", "脚本")
-    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_modes": []})])
+    # tri_state：备份时点 base = UserData.Info.Base
+    ctx, _ = _tri_ctx("tri-anno-a", "shared")
+    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_bases": []})])
     created = asyncio.run(service.ensure("tri"))
     assert created["created"] is True
     backup_dir = get_backup_dir(_tri_root_path(ctx), created["time"])
     assert backup_dir is not None
-    assert read_backup_mode(backup_dir) == "脚本"
+    assert read_backup_base(backup_dir) == "shared"
     item = asyncio.run(service.list("tri"))[0]
-    assert item["time"] == created["time"] and item["mode"] == "脚本"
+    assert item["time"] == created["time"] and item["base"] == "shared"
 
-    # user_only：恒标注「用户」，与 Info.Mode 无关
-    ctx_u, _ = _tri_ctx("tri-anno-b", "直控")
+    # user_only：恒标注独立来源，与 Info.Base 无关
+    ctx_u, _ = _tri_ctx("tri-anno-b", "native")
     only = build_restore_service(ctx_u, [_user_only_pool({"restored": []})])
     created_u = asyncio.run(only.ensure("tri"))
     backup_dir_u = get_backup_dir(_tri_root_path(ctx_u), created_u["time"])
     assert backup_dir_u is not None
-    assert read_backup_mode(backup_dir_u) == "用户"
-    assert asyncio.run(only.list("tri"))[0]["mode"] == "用户"
+    assert read_backup_base(backup_dir_u) == "independent"
+    assert asyncio.run(only.list("tri"))[0]["base"] == "independent"
 
-    # sidecar_only：标注实际 Mode（纯字段侧车，无目录语义，直控态同样标注）
-    ctx_s, _ = _tri_ctx("tri-anno-d", "直控")
+    # sidecar_only：标注实际 base（纯字段侧车，无目录语义，原生来源同样标注）
+    ctx_s, _ = _tri_ctx("tri-anno-d", "native")
     side = build_restore_service(ctx_s, [_sidecar_only_pool({"restored": []})])
     created_s = asyncio.run(side.ensure("tri"))
     backup_dir_s = get_backup_dir(_tri_root_path(ctx_s), created_s["time"])
     assert backup_dir_s is not None
-    assert read_backup_mode(backup_dir_s) == "直控"
-    assert asyncio.run(side.list("tri"))[0]["mode"] == "直控"
+    assert read_backup_base(backup_dir_s) == "native"
+    assert asyncio.run(side.list("tri"))[0]["base"] == "native"
 
-    # 未声明三态：不写 _mas_mode，list 项 mode=None
-    ctx_p, _ = _tri_ctx("tri-anno-c", "脚本")
+    # 未声明三态：不写 _mas_base，list 项 base=None
+    ctx_p, _ = _tri_ctx("tri-anno-c", "shared")
     plain = build_restore_service(ctx_p, [DECL_POOL])
     created_p = asyncio.run(plain.ensure("decl"))
     backup_dir_p = get_backup_dir(
         Path.cwd() / "data" / ctx_p.script_id / "test-decl", created_p["time"]
     )
     assert backup_dir_p is not None
-    assert read_backup_mode(backup_dir_p) is None
-    assert asyncio.run(plain.list("decl"))[0]["mode"] is None
+    assert read_backup_base(backup_dir_p) is None
+    assert asyncio.run(plain.list("decl"))[0]["base"] is None
 
 
-def test_tristate_ensure_dedup_ignores_mode_metadata(
+def test_tristate_ensure_dedup_ignores_base_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """指纹去重：_mas_mode 是归档后元数据，不破坏同内容二次 ensure 的去重。"""
+    """指纹去重：_mas_base 是归档后元数据，不破坏同内容二次 ensure 的去重。"""
 
     monkeypatch.chdir(tmp_path)
-    ctx, _ = _tri_ctx("tri-dedup", "用户")
-    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_modes": []})])
+    ctx, _ = _tri_ctx("tri-dedup", "independent")
+    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_bases": []})])
     first = asyncio.run(service.ensure("tri"))
     assert first["created"] is True
     second = asyncio.run(service.ensure("tri"))
@@ -362,71 +362,71 @@ def test_tristate_ensure_dedup_ignores_mode_metadata(
     assert len(asyncio.run(service.list("tri"))) == 1
 
 
-def test_tristate_cross_source_restore_switches_mode(
+def test_tristate_cross_source_restore_switches_base(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """跨来源恢复：备份 Mode ≠ 当前 Mode 时自动 set_mode 切回备份时点再执行；
-    同 Mode / user_only / sidecar_only / 旧备份（无 _mas_mode）直接执行。
-    ``service.current_mode`` 只在 tri_state 池返回当前来源（前端比对用）。"""
+    """跨来源恢复：备份 base ≠ 当前 base 时自动 set_base 切回备份时点再执行；
+    同 base / user_only / sidecar_only / 旧备份（无 _mas_base）直接执行。
+    ``service.current_base`` 只在 tri_state 池返回当前来源（前端比对用）。"""
 
     monkeypatch.chdir(tmp_path)
 
-    # 备份时点 Mode=脚本；随后用户切到「用户」态
-    ctx, user = _tri_ctx("tri-cross", "脚本")
-    recorder = {"restored": [], "set_modes": []}
+    # 备份时点 base=shared；随后用户切到 independent 态
+    ctx, user = _tri_ctx("tri-cross", "shared")
+    recorder = {"restored": [], "set_bases": []}
     service = build_restore_service(ctx, [_tri_pool(recorder)])
     created = asyncio.run(service.ensure("tri"))
     assert (
-        read_backup_mode(get_backup_dir(_tri_root_path(ctx), created["time"])) == "脚本"
+        read_backup_base(get_backup_dir(_tri_root_path(ctx), created["time"])) == "shared"
     )
-    assert asyncio.run(service.current_mode("tri")) == "脚本"
-    user._mode = "用户"
-    assert asyncio.run(service.current_mode("tri")) == "用户"
+    assert asyncio.run(service.current_base("tri")) == "shared"
+    user._base = "independent"
+    assert asyncio.run(service.current_base("tri")) == "independent"
 
-    # 跨来源（脚本→用户）：先 set_mode 写回备份时点，再执行专项 restore
+    # 跨来源（shared→independent）：先 set_base 写回备份时点，再执行专项 restore
     asyncio.run(service.restore("tri", created["time"]))
-    assert recorder["set_modes"] == ["脚本"]
-    assert user.updated[-1] == {"Info": {"Mode": "脚本"}}  # 桩记录 Mode 已写回
+    assert recorder["set_bases"] == ["shared"]
+    assert user.updated[-1] == {"Info": {"Base": "shared"}}  # 桩记录 base 已写回
     assert recorder["restored"] == [created["time"]]
 
-    # 同 Mode：不再重复 set_mode，直接执行
+    # 同 base：不再重复 set_base，直接执行
     asyncio.run(service.restore("tri", created["time"]))
-    assert recorder["set_modes"] == ["脚本"]
+    assert recorder["set_bases"] == ["shared"]
     assert recorder["restored"] == [created["time"], created["time"]]
 
-    # user_only 池跨 Mode：无来源概念，current_mode 为 None、直接执行
-    ctx_u, _ = _tri_ctx("tri-cross-u", "脚本")
+    # user_only 池跨 base：无来源概念，current_base 为 None、直接执行
+    ctx_u, _ = _tri_ctx("tri-cross-u", "shared")
     rec_u = {"restored": []}
     only = build_restore_service(ctx_u, [_user_only_pool(rec_u)])
     created_u = asyncio.run(only.ensure("tri"))
     assert (
-        read_backup_mode(get_backup_dir(_tri_root_path(ctx_u), created_u["time"]))
-        == "用户"
+        read_backup_base(get_backup_dir(_tri_root_path(ctx_u), created_u["time"]))
+        == "independent"
     )
-    assert asyncio.run(only.current_mode("tri")) is None
+    assert asyncio.run(only.current_base("tri")) is None
     asyncio.run(only.restore("tri", created_u["time"]))
     assert rec_u["restored"] == [created_u["time"]]
 
-    # sidecar_only 池跨 Mode：纯字段回填、无目录迁移，同样直接执行
-    ctx_s, user_s = _tri_ctx("tri-cross-s", "脚本")
+    # sidecar_only 池跨 base：纯字段回填、无目录迁移，同样直接执行
+    ctx_s, user_s = _tri_ctx("tri-cross-s", "shared")
     rec_s = {"restored": []}
     side = build_restore_service(ctx_s, [_sidecar_only_pool(rec_s)])
     created_s = asyncio.run(side.ensure("tri"))
-    user_s._mode = "直控"
-    assert asyncio.run(side.current_mode("tri")) is None
+    user_s._base = "native"
+    assert asyncio.run(side.current_base("tri")) is None
     asyncio.run(side.restore("tri", created_s["time"]))
     assert rec_s["restored"] == [created_s["time"]]
 
-    # 旧备份（无 _mas_mode）：读不到标注 → 无来源切换，直接执行
-    ctx_old, _ = _tri_ctx("tri-cross-old", "用户")
+    # 旧备份（无 _mas_base）：读不到标注 → 无来源切换，直接执行
+    ctx_old, _ = _tri_ctx("tri-cross-old", "independent")
     rec_old = {"restored": []}
     old_service = build_restore_service(ctx_old, [_tri_pool(rec_old)])
     legacy = archive_files(asyncio.run(_tri_files(ctx_old)), _tri_root_path(ctx_old))
     assert legacy is not None
-    assert read_backup_mode(legacy) is None  # 未写 _mas_mode 的旧备份
+    assert read_backup_base(legacy) is None  # 未写 _mas_base 的旧备份
     asyncio.run(old_service.restore("tri", legacy.name))
     assert rec_old["restored"] == [legacy.name]
 
-    # 声明式池（未声明三态）：current_mode 为 None（不参与跨来源比对）
+    # 声明式池（未声明三态）：current_base 为 None（不参与跨来源比对）
     plain = build_restore_service(_ctx(), [DECL_POOL])
-    assert asyncio.run(plain.current_mode("decl")) is None
+    assert asyncio.run(plain.current_base("decl")) is None

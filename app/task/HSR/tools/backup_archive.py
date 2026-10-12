@@ -34,7 +34,7 @@ HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游
 收录 **MAS 用户配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径），分两表：
 
 - 用户表（恒读写用户配置）：Info（名称/状态/服务器/剩余天数/前后脚本/
-  备注）、Notify 通知、Control 直控引擎开关；
+  备注）、Notify 通知、Control 原生来源引擎开关；
 - 计划表（按配置来源读写）：TaskSwitch 任务开关、Stage 副本配置（含原生
   关卡 JSON）、TaskOpt、Managed.TaskMapping/Options（托管覆盖值，运行时
   物化进原生）。「脚本」来源读写脚本配置上的共享计划（不含惰性的
@@ -44,8 +44,8 @@ HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游
 侧车内平铺键为 ``组.键``（如 ``TaskSwitch.Daily``）。**不收录**：
 Info.Id/Password（加密凭据）、IfQuickConfig（HSR 不支持快速配置，死开关）、
 Info.Tag（虚拟字段）、Data.*（运行统计与完成态，恢复配置不恢复统计）、
-Notify.CustomWebhooks（子表结构）。Info.Mode 仅预览不回填（回填旧来源会
-翻转脚本态/用户态/直控）。恢复即字段回填，计划表写回**当前** owner；旧版
+Notify.CustomWebhooks（子表结构）。Info.Base 仅预览不回填（回填旧来源会
+翻转 shared/independent/native）。恢复即字段回填，计划表写回**当前** owner；旧版
 侧车里已删除的 ``Direct.*`` 等键不回填。
 
 ``native`` 池 = M7A ``config.yaml`` + SRA ``settings.json``/``cache.json``/
@@ -75,6 +75,7 @@ from app.utils.config_archive import (
     read_overlay_sidecar,
     restore_files,
 )
+from app.utils.constants import BASE_SOURCE_LABELS
 
 from .managed_config import SRA_REWARD_LABELS
 from .sra_runtime import build_sra_tasklist_description
@@ -85,7 +86,7 @@ logger = get_logger("HSR 配置备份")
 
 _USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "Info": (
-        "Mode",
+        "Base",
         "Name",
         "Status",
         "Server",
@@ -126,7 +127,7 @@ _SCRIPT_PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "Managed": ("Options",),
 }
 """脚本共享计划实际读写的键：脚本级 ``Managed.TaskMapping`` 是恒为空的惰性
-字段（脚本态引擎分配在脚本 ``TaskMapping`` 组），既不备份也不回填，免得把
+字段（shared 来源引擎分配在脚本 ``TaskMapping`` 组），既不备份也不回填，免得把
 某个用户的旧覆盖写成全体共享的隐藏覆盖。"""
 
 _PLAN_OWNER_KEY = "_plan_owner"
@@ -134,11 +135,11 @@ _PLAN_OWNER_KEY = "_plan_owner"
 
 _PLAN_OWNER_LABELS = {"script": "脚本共享", "user": "用户独立"}
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Info.Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Info.Base"}
 """仅预览不回填的字段：配置来源决定运行方式，恢复时以当前值为准"""
 
 _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
-    ("Info", "Mode"): "配置来源",
+    ("Info", "Base"): "配置来源",
     ("Info", "Name"): "用户名",
     ("Info", "Status"): "启用状态",
     ("Info", "Server"): "服务器",
@@ -220,7 +221,7 @@ def read_overlay_values(config, groups: dict[str, tuple[str, ...]]) -> dict:
 
 
 def _plan_target(user_config, script_config):
-    """当前生效的任务计划对象与 owner 标注（直控按用户处理：没有共享计划）。"""
+    """当前生效的任务计划对象与 owner 标注（原生来源按用户处理：没有共享计划）。"""
 
     from .native_control import resolve_plan_owner
 
@@ -250,7 +251,7 @@ def read_mas_overlay(user_config, script_config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把 ``组.键`` 平铺侧车按配置段分组。
 
-    仅预览字段（配置来源）不回填：回填旧来源会静默翻转脚本态/用户态/直控。
+    仅预览字段（配置来源）不回填：回填旧来源会静默翻转 shared/independent/native。
     无组前缀的键（旧格式侧车、``_plan_owner`` 标注）无法定位段，跳过不回填。
     """
 
@@ -570,6 +571,8 @@ def _overlay_row(flat_key: str, value) -> dict:
     """侧车字段 → 预览行；敏感键脱敏（回填完整值，预览不外泄）。"""
 
     label = _OVERLAY_FIELD_LABELS[tuple(flat_key.split(".", 1))]
+    if flat_key == "Info.Base":
+        value = BASE_SOURCE_LABELS.get(str(value), value)
     if flat_key in _OVERLAY_SECRET_FLAT_KEYS:
         value = "已设置（不显示）" if str(value).strip() else "未设置"
     return {"key": label, "value": _summary_text(value)}
@@ -578,7 +581,7 @@ def _overlay_row(flat_key: str, value) -> dict:
 def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> dict:
     """mas 池预览：MAS 用户配置全量分区（侧车收录什么就展示什么）。
 
-    分区：MAS 独有配置（来源/用户名/启用状态/服务器/脚本/直控引擎/备注）
+    分区：MAS 独有配置（来源/用户名/启用状态/服务器/脚本/原生来源引擎/备注）
     → 任务配置（来源/任务开关/副本）→ 通知 → 托管配置（映射/覆盖）。
 
     ``current_owner`` 是该用户**当前**的计划 owner（``script`` / ``user``）：
@@ -592,8 +595,8 @@ def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> di
         return f"{group}.{key}" in overlay
 
     mas_rows: list[dict] = []
-    if has("Info", "Mode"):
-        mas_rows.append(_overlay_row("Info.Mode", overlay["Info.Mode"]))
+    if has("Info", "Base"):
+        mas_rows.append(_overlay_row("Info.Base", overlay["Info.Base"]))
     if has("Info", "Name"):
         mas_rows.append(_overlay_row("Info.Name", overlay["Info.Name"]))
     if has("Info", "Status"):
@@ -637,7 +640,7 @@ def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> di
     ]
     if has("Control", "SRA") or has("Control", "M7A"):
         mas_rows.append(
-            {"key": "直控引擎", "value": "、".join(engines) if engines else "无"}
+            {"key": "原生来源引擎", "value": "、".join(engines) if engines else "无"}
         )
     if has("Info", "Notes"):
         mas_rows.append(_overlay_row("Info.Notes", overlay["Info.Notes"]))

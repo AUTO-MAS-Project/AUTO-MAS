@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）
+ * BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）
  */
 export type BetterGIGlobalStygianSettingsIn = {
     /**
