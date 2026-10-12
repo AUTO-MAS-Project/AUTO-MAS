@@ -259,17 +259,6 @@ def apply_display(root: str | Path, native_index: int | str) -> bool:
     return True
 
 
-def validate_memory(memory_mb: int) -> int:
-    """内存只收固定档位，不做静默吸附。"""
-    memory = int(memory_mb)
-    if memory not in MEMORY_CHOICES_MB:
-        raise ValueError(
-            "魔改 AVD 的内存只能选 "
-            + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
-        )
-    return memory
-
-
 def memory_for(meta: dict[str, Any]) -> int:
     """实例的内存，每次开机原样传 ``-memory``。
 
@@ -315,7 +304,6 @@ def create_instance_files(
     memory_mb: int,
     cpu: int,
     data_partition_gb: int,
-    balloon: bool = True,
 ) -> AvdInstance:
     """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
 
@@ -358,7 +346,6 @@ def create_instance_files(
         root,
         native_index,
         memoryMb=memory_mb,
-        balloon=balloon,
         initialized=False,
         createdAt=datetime.now().isoformat(timespec="seconds"),
     )

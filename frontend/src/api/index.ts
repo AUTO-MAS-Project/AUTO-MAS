@@ -90,7 +90,6 @@ export type { Emulator2AvdApkInstallOut } from './models/Emulator2AvdApkInstallO
 export type { Emulator2AvdComponentItem } from './models/Emulator2AvdComponentItem';
 export type { Emulator2AvdInstanceIn } from './models/Emulator2AvdInstanceIn';
 export type { Emulator2AvdInstanceOptionsOut } from './models/Emulator2AvdInstanceOptionsOut';
-export type { Emulator2AvdInstanceOptionsSetIn } from './models/Emulator2AvdInstanceOptionsSetIn';
 export type { Emulator2AvdPrecheckItem } from './models/Emulator2AvdPrecheckItem';
 export type { Emulator2AvdStatusIn } from './models/Emulator2AvdStatusIn';
 export type { Emulator2AvdStatusOut } from './models/Emulator2AvdStatusOut';

@@ -16,10 +16,6 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     message?: string;
     /**
-     * 空闲页上报 (气球) 是否开启
-     */
-    balloon?: boolean;
-    /**
      * 内存 MB, 每次开机用 -memory 传
      */
     memoryMb?: (number | null);

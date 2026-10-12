@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Emulator2AvdComponentItem, Emulator2AvdInstanceOptionsOut } from '@/api'
+import type { Emulator2AvdComponentItem } from '@/api'
 import {
   DEFAULT_MEMORY_MB,
   componentDetail,
@@ -10,8 +10,6 @@ import {
   hasBlockingFailure,
   isRootAdded,
   markModAvdOptions,
-  optionsChanges,
-  optionsFromOut,
   precheckLevel,
   samePath,
 } from './avdLogic'
@@ -25,32 +23,13 @@ const component = (over: Partial<Emulator2AvdComponentItem>): Emulator2AvdCompon
 
 describe('instance options', () => {
   it('defaults follow the user-decided values', () => {
-    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144, balloon: true })
+    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144 })
     expect(DEFAULT_MEMORY_MB).toBe(6144)
   })
 
-  it('reads the instance memory as is', () => {
-    const out: Emulator2AvdInstanceOptionsOut = { memoryMb: 4096, balloon: false }
-    expect(optionsFromOut(out)).toEqual({ memoryMb: 4096, balloon: false })
-    expect(optionsFromOut({ ...out, balloon: undefined }).balloon).toBe(true)
-    expect(optionsFromOut({ ...out, memoryMb: null }).memoryMb).toBe(DEFAULT_MEMORY_MB)
-  })
-
-  it('only sends changed fields', () => {
-    const base = defaultAvdOptions()
-    expect(optionsChanges(base, { ...base })).toEqual({})
-    expect(optionsChanges({ ...base, memoryMb: 5120 }, { ...base, balloon: false })).toEqual({
-      memoryMb: 6144,
-      balloon: false,
-    })
-  })
-
-  it('create sends memory and balloon only (display and sound are fixed)', () => {
-    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144, balloon: true })
-    expect(createOptions({ memoryMb: 4096, balloon: false })).toEqual({
-      memoryMb: 4096,
-      balloon: false,
-    })
+  it('create sends memory only (display, sound and balloon are fixed)', () => {
+    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144 })
+    expect(createOptions({ memoryMb: 4096 })).toEqual({ memoryMb: 4096 })
   })
 })
 

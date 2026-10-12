@@ -11,7 +11,6 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
   AppstoreOutlined,
-  ControlOutlined,
   DeleteOutlined,
   LoadingOutlined,
   EyeInvisibleOutlined,
@@ -26,6 +25,7 @@ import {
 import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
+import { useAvdApi } from '@/composables/useAvdApi'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_EMULATOR_OPERATION_FINISHED,
@@ -47,9 +47,21 @@ import {
   type PendingOp,
 } from './emulator2Status'
 import { createOptions, defaultAvdOptions, type AvdOptionsForm } from './avdLogic'
-import AvdOptionsDialog from './components/AvdOptionsDialog.vue'
+import {
+  alignSettings,
+  batchChanges as tierBatchChanges,
+  batchKindOf,
+  emptyTierForm,
+  settingsChanges,
+  tierKindOf,
+  type ActualSettings,
+  type SnappedActual,
+  type TierForm,
+  type TierKind,
+} from './settingsTiers'
 import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
+import SettingsTierFields from './components/SettingsTierFields.vue'
 import type {
   Emulator2AffectedScript,
   Emulator2BatchResult,
@@ -324,15 +336,6 @@ const onAvdAdded = async () => {
   await loadDevices({ silent: true })
 }
 
-const avdOptionsOpen = ref(false)
-const avdOptionsTarget = ref<Emulator2DeviceItem | null>(null)
-const openAvdOptions = (device: Emulator2DeviceItem) => {
-  avdOptionsTarget.value = device
-  avdOptionsOpen.value = true
-}
-
-const isAvdRow = (row: DeviceRow) => row.realType === 'avd' && !row.pendingKey
-
 // ---- 新建 / 删除实例 ----
 
 const createOpen = ref(false)
@@ -464,16 +467,6 @@ const confirmDelete = async () => {
 
 const FIELDS = ['width', 'height', 'dpi', 'cpu', 'memoryMb', 'fps'] as const
 type FieldName = (typeof FIELDS)[number]
-type FieldForm = Record<FieldName, number | null>
-
-const emptyForm = (): FieldForm => ({
-  width: null,
-  height: null,
-  dpi: null,
-  cpu: null,
-  memoryMb: null,
-  fps: null,
-})
 
 const fieldOf = (device: Emulator2DeviceItem, name: FieldName): Emulator2SettingField | undefined =>
   device.settings?.[name]
@@ -502,33 +495,57 @@ const resolutionText = (device: Emulator2DeviceItem) => {
 
 // ---- 单台设置 ----
 
+const { getInstanceOptions } = useAvdApi()
+
 const settingsOpen = ref(false)
 const savingSettings = ref(false)
 const settingsTarget = ref<Emulator2DeviceItem | null>(null)
-const settingsForm = ref<FieldForm>(emptyForm())
-/** 表单打开时看到的值。保存时带回后端做冲突比对，避免盖掉别人的改动。 */
-const settingsBaseline = ref<FieldForm>(emptyForm())
+const settingsKind = ref<TierKind>('standard')
+const settingsForm = ref<TierForm>(emptyTierForm())
+/** 打开时被对齐到档位的项的实际值，字段下的小字用 */
+const settingsSnapped = ref<SnappedActual | null>(null)
+/** 表单打开时看到的实际值。保存时带回后端做冲突比对，避免盖掉别人的改动。 */
+const settingsBaseline = ref<ActualSettings>(actualSettingsOf())
+/** 魔改 AVD 实例在用软件渲染：首次开机检测到没有可用显卡驱动时由后端记下 */
+const settingsSoftwareRenderer = ref(false)
+
+function actualSettingsOf(device?: Emulator2DeviceItem): ActualSettings {
+  const actual = {} as ActualSettings
+  for (const name of FIELDS) actual[name] = device ? fieldValue(device, name) : null
+  return actual
+}
+
+/** 魔改 AVD 行打开设置时顺带读一次实例选项，只为软件渲染那条警告；读不到不影响改设置 */
+const loadSoftwareRenderer = async (slot: string) => {
+  try {
+    const out = await getInstanceOptions(props.emulatorId, slot)
+    if (settingsTarget.value?.slot === slot) {
+      settingsSoftwareRenderer.value = Boolean(out.softwareRenderer)
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取魔改 AVD 实例 #${slot} 的选项失败: ${detail}`)
+  }
+}
 
 const openSettings = (device: Emulator2DeviceItem) => {
   settingsTarget.value = device
-  const form = emptyForm()
-  for (const name of FIELDS) form[name] = fieldValue(device, name)
-  settingsForm.value = { ...form }
-  settingsBaseline.value = { ...form }
+  const actual = actualSettingsOf(device)
+  const kind = tierKindOf(device.realType)
+  const { form, snapped } = alignSettings(actual, kind)
+  settingsKind.value = kind
+  settingsForm.value = form
+  settingsSnapped.value = snapped
+  settingsBaseline.value = actual
+  settingsSoftwareRenderer.value = false
   settingsOpen.value = true
+  if (kind === 'avd') void loadSoftwareRenderer(device.slot)
 }
 
-/** 只提交用户真正改过的字段——其余键在文件里原样保留。 */
-const changedFields = computed(() => {
-  const changes: Record<string, number> = {}
-  for (const name of FIELDS) {
-    const value = settingsForm.value[name]
-    if (value === null || value === undefined) continue
-    if (value === settingsBaseline.value[name]) continue
-    changes[name] = value
-  }
-  return changes
-})
+/** 只提交与实际值不同的字段（含打开时对齐过的）——其余键在文件里原样保留。 */
+const changedFields = computed(() =>
+  settingsChanges(settingsBaseline.value, settingsForm.value, settingsKind.value)
+)
 
 const confirmSettings = async () => {
   if (!settingsTarget.value) return
@@ -574,26 +591,21 @@ const confirmSettings = async () => {
 
 const batchOpen = ref(false)
 const batchSaving = ref(false)
-const batchForm = ref<FieldForm>(emptyForm())
+const batchForm = ref<TierForm>(emptyTierForm())
+/** 整条配置都是魔改 AVD 时只给它能改的项 */
+const batchKind = computed(() => batchKindOf(paths.value.map(item => item.type ?? '')))
 
 /** 批量写入里失败的那几台，连原因一起显示在弹窗内。 */
 const batchFailures = ref<Emulator2BatchResult[]>([])
 
 const openBatch = () => {
-  batchForm.value = emptyForm()
+  batchForm.value = emptyTierForm()
   batchFailures.value = []
   batchOpen.value = true
 }
 
-/** 留空的字段不下发——批量设置只改用户填了的那几项。 */
-const batchChanges = computed(() => {
-  const changes: Record<string, number> = {}
-  for (const name of FIELDS) {
-    const value = batchForm.value[name]
-    if (value !== null && value !== undefined) changes[name] = value
-  }
-  return changes
-})
+/** 没选的项不下发——批量设置只改用户选了的那几项。 */
+const batchChanges = computed(() => tierBatchChanges(batchForm.value, batchKind.value))
 
 const confirmBatch = async () => {
   const changes = batchChanges.value
@@ -1230,16 +1242,6 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="openStore(record)"
                   />
                 </a-tooltip>
-                <a-tooltip v-if="isAvdRow(record)" :title="t('emulator2.avd.options')">
-                  <a-button
-                    size="small"
-                    type="text"
-                    :icon="h(ControlOutlined)"
-                    :aria-label="t('emulator2.avd.options')"
-                    :disabled="record.availability !== 'ok'"
-                    @click="openAvdOptions(record)"
-                  />
-                </a-tooltip>
                 <a-tooltip
                   :title="
                     actionsOf(record).settings ? t('emulator2.settings') : blockedReason(record)
@@ -1292,76 +1294,20 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         {{ t('emulator2.nativeIndex', { index: settingsTarget.nativeIndex }) }}
       </p>
       <a-form layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldWidth')">
-              <a-input-number
-                v-model:value="settingsForm.width"
-                :min="160"
-                :max="4096"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldHeight')">
-              <a-input-number
-                v-model:value="settingsForm.height"
-                :min="160"
-                :max="4096"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldDpi')">
-              <a-input-number
-                v-model:value="settingsForm.dpi"
-                :min="80"
-                :max="640"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldFps')">
-              <a-input-number
-                v-model:value="settingsForm.fps"
-                :min="1"
-                :max="240"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldCpu')">
-              <a-input-number
-                v-model:value="settingsForm.cpu"
-                :min="1"
-                :max="64"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldMemory')">
-              <a-input-number
-                v-model:value="settingsForm.memoryMb"
-                :min="512"
-                :max="65536"
-                :step="512"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <SettingsTierFields
+          v-model="settingsForm"
+          :kind="settingsKind"
+          :snapped="settingsSnapped"
+          show-fixed
+        />
       </a-form>
+      <a-alert
+        v-if="settingsSoftwareRenderer"
+        type="warning"
+        show-icon
+        :message="t('emulator2.avd.softwareRenderer')"
+        style="margin-bottom: 12px"
+      />
       <a-alert type="info" show-icon :message="t('emulator2.settingsHint')" />
     </a-modal>
 
@@ -1382,75 +1328,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         style="margin-bottom: 12px"
       />
       <a-form layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldWidth')">
-              <a-input-number
-                v-model:value="batchForm.width"
-                :min="160"
-                :max="4096"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldHeight')">
-              <a-input-number
-                v-model:value="batchForm.height"
-                :min="160"
-                :max="4096"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldDpi')">
-              <a-input-number
-                v-model:value="batchForm.dpi"
-                :min="80"
-                :max="640"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldFps')">
-              <a-input-number
-                v-model:value="batchForm.fps"
-                :min="1"
-                :max="240"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldCpu')">
-              <a-input-number
-                v-model:value="batchForm.cpu"
-                :min="1"
-                :max="64"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('emulator2.fieldMemory')">
-              <a-input-number
-                v-model:value="batchForm.memoryMb"
-                :min="512"
-                :max="65536"
-                :step="512"
-                style="width: 100%"
-                :placeholder="t('emulator2.keepCurrent')"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <SettingsTierFields v-model="batchForm" :kind="batchKind" clearable />
       </a-form>
       <a-alert type="info" show-icon :message="t('emulator2.batchHint')" />
       <a-list
@@ -1581,15 +1459,6 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       :initial-root="avdRootInitial"
       :added-roots="avdRoots"
       @added="onAvdAdded"
-    />
-
-    <!-- 魔改 AVD 实例选项 -->
-    <AvdOptionsDialog
-      v-if="avdOptionsTarget"
-      v-model:open="avdOptionsOpen"
-      :emulator-id="emulatorId"
-      :device-slot="avdOptionsTarget.slot"
-      :title="avdOptionsTarget.title || avdOptionsTarget.alias || ''"
     />
 
     <!-- 移除路径 -->
