@@ -49,7 +49,7 @@ from app.services.wuthering_waves import (
 )
 from app.utils import get_logger
 from app.utils.hpatchz import ensure_hpatchz
-from app.utils.update_files import file_matches
+from app.utils.update_files import file_matches, file_size
 from app.utils.update_files import resolve_within as resolve_update_path
 
 logger = get_logger("鸣潮更新")
@@ -469,6 +469,22 @@ async def _download_entry(
                 await _stream_to_file(client, url, target, entry.size, on_bytes)
                 if await file_matches(target, size=entry.size, md5=entry.md5):
                     return target
+                # 实收的两个值只进日志：判断「同一 CDN 上拿到的文件总是不对」靠的就是它们。
+                # 大小已经不符时不再整份读一遍算 MD5。
+                actual_size = file_size(target)
+                actual_md5 = (
+                    "跳过（大小已不符）"
+                    if actual_size != entry.size
+                    else await file_md5(target)
+                )
+                logger.warning(
+                    "{} 校验未通过: 期望 {} 字节 / MD5 {}，实收 {} 字节 / MD5 {}",
+                    entry.dest,
+                    entry.size,
+                    entry.md5,
+                    actual_size,
+                    actual_md5,
+                )
                 last_error = ValueError(
                     f"文件校验未通过: 期望大小 {entry.size}、MD5 {entry.md5}"
                 )

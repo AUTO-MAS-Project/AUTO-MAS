@@ -219,7 +219,7 @@ async def _range_blocks(
         async for block in response.aiter_bytes(_DOWNLOAD_CHUNK):
             received += len(block)
             if received > length:
-                raise ValueError(f"分片长度不符: 期望 {length}，实际超过范围")
+                raise ValueError(f"分片长度不符: 期望 {length}，实际已收 {received}")
             yield block
     if received != length:
         raise ValueError(f"分片长度不符: 期望 {length}，实际 {received}")
