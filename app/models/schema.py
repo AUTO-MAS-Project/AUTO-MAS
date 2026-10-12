@@ -45,6 +45,13 @@ from pydantic import (
     model_validator,
 )
 
+from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    normalize_base_source,
+)
+
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
 
@@ -1687,7 +1694,28 @@ class UserIndexItem(BaseModel):
     ] = Field(..., description="配置类型")
 
 
-class MaaUserConfig_Info(BaseModel):
+class UserConfigInfoBase(BaseModel):
+    """用户配置 Info 的公共基类：兼容旧请求的 ``Mode`` 来源字段。
+
+    旧「脚本/用户/直控」来源已迁移为 ``Base``（shared/independent/native），
+    存量调用方仍可能提交 ``Info.Mode``；在解析前归一，避免字段被静默丢弃、
+    接口返回成功但来源实际未变。
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_base(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("Base") is not None:
+            return data
+        base = normalize_base_source(data.get("Mode"))
+        if not base:
+            return data
+        if base not in (BASE_SHARED, BASE_INDEPENDENT, BASE_NATIVE):
+            raise ValueError(f"未知的配置来源: {data.get('Mode')!r}")
+        return {**data, "Base": base}
+
+
+class MaaUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Base: Optional[Literal["shared", "independent", "native"]] = Field(
@@ -1893,7 +1921,7 @@ class MaaConfig(BaseModel):
     Update: Optional[MaaConfig_Update] = Field(default=None, description="更新接管配置")
 
 
-class GeneralUserConfig_Info(BaseModel):
+class GeneralUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -2228,7 +2256,7 @@ class BetterGIUserConfig(BaseModel):
     )
 
 
-class ZzzOdUserConfig_Info(BaseModel):
+class ZzzOdUserConfig_Info(UserConfigInfoBase):
     """ZZZ-OD 用户信息
 
     配置主体是本模型的 Game / OneDragon 字段（MAS ConfigItem 体系，web
@@ -2365,7 +2393,7 @@ class ZzzOdUserConfig(BaseModel):
     )
 
 
-class BAAHUserConfig_Info(BaseModel):
+class BAAHUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -2790,7 +2818,7 @@ class WhimboxConfig(BaseModel):
     Run: Optional[WhimboxConfig_Run] = Field(default=None, description="运行配置")
 
 
-class WhimboxUserConfig_Info(BaseModel):
+class WhimboxUserConfig_Info(UserConfigInfoBase):
     """奇想盒用户信息
 
     base 来源三态（#879 语义）：shared/independent=共享/独立 base（MAS 面板值，
@@ -2910,7 +2938,7 @@ class WhimboxTaskCatalogOut(OutBase):
     data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
 
 
-class MaaEndUserConfig_Info(BaseModel):
+class MaaEndUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
@@ -3109,7 +3137,7 @@ class MaaEndConfig(BaseModel):
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
 
 
-class SrcUserConfig_Info(BaseModel):
+class SrcUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
@@ -3493,7 +3521,7 @@ class HSRConfig(BaseModel):
     )
 
 
-class HSRUserConfig_Info(BaseModel):
+class HSRUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID（账号）")
@@ -3886,7 +3914,7 @@ class HSRSRAProfilesOut(OutBase):
     )
 
 
-class MaaFWUserConfig_Info(BaseModel):
+class MaaFWUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")

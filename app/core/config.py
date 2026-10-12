@@ -4509,6 +4509,9 @@ class AppConfig(GlobalConfig):
             "HSR 失败任务补跑完成",
             "HSR 本轮无需执行，已跳过",
             "HSR 脚本原生来源完成",
+            # 「HSR 脚本直控完成」= 来源术语迁移前的历史存量文案, 运行时已改写为
+            # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
+            "HSR 脚本直控完成",
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:

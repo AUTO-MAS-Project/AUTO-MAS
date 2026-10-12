@@ -3583,8 +3583,8 @@ async def batch_update_oknte_configs(
 async def list_config_backups_api(
     scriptId: str, userId: str, target: str
 ) -> ConfigBackupListOut:
-    """返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
-    来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
+    """返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
+    来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
 
     try:
         data = await Config.list_config_backups(scriptId, userId, target)
@@ -3592,7 +3592,7 @@ async def list_config_backups_api(
             code=200,
             status="success",
             message=f"共 {len(data['items'])} 份备份",
-            mode=data["mode"],
+            base=data["base"],
             data=[ConfigBackupItemOut(**item) for item in data["items"]],
         )
     except Exception as e:
