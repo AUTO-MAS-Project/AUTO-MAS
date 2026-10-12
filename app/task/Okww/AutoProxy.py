@@ -101,14 +101,14 @@ _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     # 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
     # hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
-    ("connected:0", "OK-WW 未连接游戏客户端"),
     ("connected:False", "OK-WW 未连接游戏客户端"),
     (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
+    # 未连接放在游戏更新之后：更新期间窗口同样会消失，不能让本条目顶掉保底重跑（见 main_task）。
+    ("connected:0", "OK-WW 未连接游戏客户端"),
 )
-# 成功只认任务级完成日志：ok-ww 的 DailyTask 正常跑完（run() 末尾）才会打印。窗口关闭日志
-# （Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据；
-# check_log 的判定顺序是「先完成日志、再进程退出」，后者未见到前者即异常。
+# 成功只认任务级完成日志：ok-ww 的 DailyTask 正常跑完（run() 末尾）才会打印；
+# 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
 _OKWW_SUCCESS_LOG = "Daily Task Completed"
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
