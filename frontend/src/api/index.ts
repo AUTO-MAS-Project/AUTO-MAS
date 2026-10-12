@@ -224,6 +224,8 @@ export type { MaaConfig_Info } from './models/MaaConfig_Info';
 export type { MaaConfig_Run } from './models/MaaConfig_Run';
 export type { MaaConfig_Update } from './models/MaaConfig_Update';
 export type { MaaCultivateGoalOptionItem } from './models/MaaCultivateGoalOptionItem';
+export type { MaaCultivateImportIn } from './models/MaaCultivateImportIn';
+export type { MaaCultivateImportOut } from './models/MaaCultivateImportOut';
 export type { MaaCultivateOperatorOptionItem } from './models/MaaCultivateOperatorOptionItem';
 export type { MaaCultivateOperatorsOut } from './models/MaaCultivateOperatorsOut';
 export type { MaaDepotInventoryOut } from './models/MaaDepotInventoryOut';

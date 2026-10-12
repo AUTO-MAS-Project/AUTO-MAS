@@ -115,6 +115,7 @@
             :cultivate-preview-loading="cultivatePreviewLoading"
             :cultivate-preview-error="cultivatePreviewError"
             :load-cultivate-preview="loadCultivatePreview"
+            :import-cultivate-targets="importCultivateTargets"
             :fight-summary="fightSummary"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
@@ -224,6 +225,7 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
+import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
@@ -243,7 +245,14 @@ import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintain
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
 import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
-import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
+import {
+  mergeCultivateTargets,
+  normalizeCultivateCatalog,
+  parseCultivateTargets,
+  serializeCultivateTargets,
+  type CultivateImportResult,
+  type CultivateOperatorCatalogEntry,
+} from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -251,6 +260,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
 const { t } = useI18n()
+const { parseImport } = useMaaCultivateImportApi()
 
 const router = useRouter()
 const route = useRoute()
@@ -1040,27 +1050,7 @@ const loadCultivateOperatorOptions = async () => {
       cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
       return
     }
-    cultivateOperatorCatalog.value = (response.data ?? [])
-      .filter(option => option.value)
-      .map(option => ({
-        value: option.value,
-        label: option.label,
-        rarity: option.rarity ?? 0,
-        profession: option.profession ?? '',
-        maxElite: option.maxElite ?? 2,
-        maxSkillLevel: option.maxSkillLevel ?? 0,
-        dataMissing: option.dataMissing ?? false,
-        skills: (option.skills ?? []).map(item => ({
-          label: item.label,
-          value: item.value as string,
-          maxLevel: item.maxLevel ?? 0,
-        })),
-        modules: (option.modules ?? []).map(item => ({
-          label: item.label,
-          value: item.value as string,
-          maxLevel: item.maxLevel ?? 0,
-        })),
-      }))
+    cultivateOperatorCatalog.value = normalizeCultivateCatalog(response.data ?? [])
   } catch (error) {
     if (seq !== cultivateOperatorCatalogSeq) return
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -1070,6 +1060,31 @@ const loadCultivateOperatorOptions = async () => {
     if (seq === cultivateOperatorCatalogSeq) cultivateOperatorOptionsLoading.value = false
   }
 }
+
+const importCultivateTargets = (content: string): Promise<CultivateImportResult> =>
+  trackEdit(async () => {
+    if (!userId || configLocked.value) throw new Error(t('edit.maaCultivateImportUnavailable'))
+    const imported = await parseImport(scriptId, content)
+    const merged = mergeCultivateTargets(
+      parseCultivateTargets(formData.Task.CultivateTargets),
+      parseCultivateTargets(imported.targets)
+    )
+    if (!merged.result.operatorIds.length) return merged.result
+    const saved = await handleFieldSave(
+      'Task.CultivateTargets',
+      serializeCultivateTargets(merged.rows)
+    )
+    if (!saved) throw new Error(t('edit.couldNotSaveUser'))
+    // 导入可包含已满级、被选择器过滤的干员，补回其名称和技能目录。
+    const additions = normalizeCultivateCatalog(imported.data ?? [])
+    const importedIds = new Set(additions.map(item => item.value))
+    cultivateOperatorCatalog.value = [
+      ...cultivateOperatorCatalog.value.filter(item => !importedIds.has(item.value)),
+      ...additions,
+    ]
+    await loadCultivateOperatorOptions()
+    return merged.result
+  })
 
 const loadSklandRoleOptions = async () => {
   // 该端点要遍历所有已配置森空岛凭据的账号组做凭据刷新+角色拉取，代价高；

@@ -193,6 +193,7 @@
           :cultivate-preview-loading="cultivatePreviewLoading"
           :cultivate-preview-error="cultivatePreviewError"
           :load-cultivate-preview="loadCultivatePreview"
+          :import-cultivate-targets="importCultivateTargets"
           @save="emitSave"
         />
       </PipelineRow>
@@ -349,6 +350,7 @@ import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
   CultivateGoalOption as GoalOption,
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
+  CultivateImportResult,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
@@ -406,6 +408,7 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
+  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean

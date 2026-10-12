@@ -320,6 +320,33 @@ export default {
       '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
     maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
+    maaCultivateImportClipboard: 'クリップボードからインポート',
+    maaCultivateImporting: 'インポート中',
+    maaCultivateImportSubmit: 'インポート',
+    maaCultivateImportPasteHint:
+      'クリップボードを読み取れません。明日方舟ツールボックスの「MAA にエクスポート」でコピーした育成目標を貼り付けてください。',
+    maaCultivateImportPlaceholder: '育成目標の JSON を貼り付け',
+    maaCultivateImportSuccess: '{added} 人を追加し、{updated} 人の目標を更新しました',
+    maaCultivateImportUnchanged: '目標は登録済みのため、更新は不要です',
+    maaCultivateImportFailed:
+      'インポートに失敗しました。バックエンドの接続を確認して再試行してください',
+    maaCultivateImportEmpty: 'インポートできる育成目標がありません',
+    maaCultivateImportFormatError:
+      '形式が正しくありません。ツールボックスの「MAA にエクスポート」で育成目標をコピーしてください',
+    maaCultivateImportOperatorError:
+      '名前と職業を照合できません。ツールボックスが出力した中国語名を使用してください',
+    maaCultivateImportAmbiguous: '同名のオペレーターが複数います。職業を指定してください',
+    maaCultivateImportEliteError: '昇進目標が無効、または対象の育成データがありません',
+    maaCultivateImportSkillError: 'スキルレベル目標が無効、または対象の育成データがありません',
+    maaCultivateImportMasteryError: '特化目標が無効、または対象スキルの特化データがありません',
+    maaCultivateImportUnsupported:
+      '未対応の目標が含まれています。ツールボックスの「MAA にエクスポート」で育成目標をコピーしてください',
+    maaCultivateImportCatalogError:
+      'オペレーターの育成データを取得できません。後でもう一度お試しください',
+    maaCultivateImportRowError: '{index} 件目（{name}）：{reason}',
+    maaCultivateImportUnnamed: '名前未入力',
+    maaCultivateImportUnavailable:
+      'ユーザーを保存し、進行中の設定操作を終了してからインポートしてください',
     maaCultivateNoOperators: 'オペレーターカタログを利用できません',
     maaCultivateElite0: '昇進 0',
     maaCultivateElite1: '昇進 1',

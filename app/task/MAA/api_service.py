@@ -450,6 +450,27 @@ async def get_cultivate_operators(
     return [item for item in catalog if item.get("label") and item.get("value")]
 
 
+async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]:
+    """转换剪贴板目标，不写用户配置；完整目录避免过滤掉已满级干员。"""
+
+    from app.task.MAA.tools.cultivate import (
+        depot_cultivate_service,
+        dump_cultivate_targets,
+        parse_clipboard_targets,
+    )
+
+    _maa_script_config(script_id)
+    catalog = await depot_cultivate_service.operator_catalog(
+        config_path=Config.config_path, proxy=Config.proxy
+    )
+    targets = parse_clipboard_targets(content, catalog)
+    imported_ids = {target.operator_id for target in targets}
+    return {
+        "targets": json.dumps(dump_cultivate_targets(targets), ensure_ascii=False),
+        "data": [entry for entry in catalog if entry["value"] in imported_ids],
+    }
+
+
 async def _item_names(script_id: str) -> dict[str, str]:
     """MAA 物品 id→名称全量映射（不受选择器排除规则影响，预览展示用）。"""
 

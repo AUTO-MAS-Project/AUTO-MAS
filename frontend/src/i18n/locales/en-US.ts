@@ -315,6 +315,34 @@ export default {
       'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
     maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
+    maaCultivateImportClipboard: 'Import from clipboard',
+    maaCultivateImporting: 'Importing',
+    maaCultivateImportSubmit: 'Import',
+    maaCultivateImportPasteHint:
+      'Cannot read the clipboard. Paste the training targets from Arknights Toolbox’s “Export to MAA”.',
+    maaCultivateImportPlaceholder: 'Paste training targets as JSON',
+    maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
+    maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
+    maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
+    maaCultivateImportEmpty: 'No training targets to import',
+    maaCultivateImportFormatError:
+      'Invalid format. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportOperatorError:
+      'Cannot match the operator name and class. Use the Chinese names exported by the toolbox',
+    maaCultivateImportAmbiguous:
+      'Multiple operators share this name. Specify the class to identify the operator',
+    maaCultivateImportEliteError:
+      'Invalid promotion target or missing training data for this operator',
+    maaCultivateImportSkillError:
+      'Invalid skill level target or missing training data for this operator',
+    maaCultivateImportMasteryError: 'Invalid mastery target or missing mastery data for this skill',
+    maaCultivateImportUnsupported:
+      'Unsupported targets. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportCatalogError: 'Operator training data is unavailable. Try again later',
+    maaCultivateImportRowError: 'Entry {index} ({name}): {reason}',
+    maaCultivateImportUnnamed: 'Operator name missing',
+    maaCultivateImportUnavailable:
+      'Save the user and finish any ongoing configuration operation before importing',
     maaCultivateNoOperators: 'Operator catalog unavailable',
     maaCultivateElite0: 'Elite 0',
     maaCultivateElite1: 'Elite 1',

@@ -26,21 +26,21 @@
     <div class="cultivate-skips">
       <a-checkbox
         :checked="formData.Task?.CultivateAutoRaise ?? false"
-        :disabled="loading"
+        :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
       >
         {{ t('edit.maaCultivateAutoRaise') }}
       </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringActivity"
-        :disabled="loading"
+        :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
       >
         {{ t('edit.maaCultivateSkipActivity') }}
       </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringResourceCollection"
-        :disabled="loading"
+        :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)"
       >
         {{ t('edit.maaCultivateSkipResource') }}
@@ -66,7 +66,7 @@
             :options="sklandRoleOptionsWithBound"
             :loading="sklandRoleLoading"
             :placeholder="t('edit.maaCultivateSklandRole')"
-            :disabled="loading"
+            :disabled="editorLoading"
             allow-clear
             :get-popup-container="getPopupContainer"
             @dropdown-visible-change="onRoleDropdownVisible"
@@ -88,19 +88,29 @@
             :hint="t('edit.maaCultivatePickOperatorsHint')"
           />
         </template>
-        <a-select
-          :value="null"
-          :options="pickerOptions"
-          :loading="operatorOptionsLoading"
-          :disabled="loading || operatorOptionsLoading || availableOperatorOptions.length === 0"
-          :placeholder="operatorPlaceholder"
-          show-search
-          :filter-option="false"
-          :virtual="false"
-          :get-popup-container="getPopupContainer"
-          @search="handleOperatorSearch"
-          @change="handleAddOperator"
-        />
+        <div class="cultivate-picker-actions">
+          <a-select
+            :value="null"
+            :options="pickerOptions"
+            :loading="operatorOptionsLoading"
+            :disabled="
+              editorLoading || operatorOptionsLoading || availableOperatorOptions.length === 0
+            "
+            :placeholder="operatorPlaceholder"
+            show-search
+            :filter-option="false"
+            :virtual="false"
+            :get-popup-container="getPopupContainer"
+            @search="handleOperatorSearch"
+            @change="handleAddOperator"
+          />
+          <CultivateClipboardImport
+            :disabled="loading"
+            :import-targets="importCultivateTargets"
+            @busy="importing = $event"
+            @imported="expandImportedOperators"
+          />
+        </div>
       </a-form-item>
     </div>
 
@@ -145,7 +155,7 @@
               <a-button
                 size="small"
                 danger
-                :disabled="loading"
+                :disabled="editorLoading"
                 @click="handleRemoveOperator(row.operatorId)"
               >
                 {{ t('edit.maaCultivateRemove') }}
@@ -310,6 +320,7 @@ import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 import { computed, onMounted, ref, watch } from 'vue'
 import LabelWithHint from './LabelWithHint.vue'
+import CultivateClipboardImport from './CultivateClipboardImport.vue'
 import {
   appendOperator,
   levelOptionsWithSaved,
@@ -325,6 +336,7 @@ import {
   type CultivateGoalOption as GoalOption,
   type CultivateOperatorCatalogEntry as OperatorCatalogEntry,
   type CultivateTargetRow,
+  type CultivateImportResult,
 } from './cultivateTargets'
 
 const { t } = useI18n()
@@ -352,11 +364,14 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
+  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
 }>()
 
 const emit = defineEmits<{ save: [key: string, value: any] }>()
 
 const rows = ref<CultivateTargetRow[]>([])
+const importing = ref(false)
+const editorLoading = computed(() => props.loading || importing.value)
 // 本组件刚序列化写回的 JSON：watch 回声时跳过重建，避免下拉与行列表闪变
 let lastEmitted: string | null = null
 
@@ -530,6 +545,11 @@ const operatorName = (operatorId: string) => operatorLabelById.value.get(operato
 
 // 每个干员组独立折叠（默认展开）：标题行保留精英化信息，专精/模组逐行列表可收起
 const collapsedGroups = ref<Set<string>>(new Set())
+const expandImportedOperators = (operatorIds: string[]) => {
+  const next = new Set(collapsedGroups.value)
+  for (const id of operatorIds) next.delete(id)
+  collapsedGroups.value = next
+}
 const isGroupCollapsed = (row: CultivateTargetRow) => collapsedGroups.value.has(row.operatorId)
 const toggleGroup = (operatorId: string) => {
   const next = new Set(collapsedGroups.value)
@@ -702,7 +722,7 @@ const eliteLineOf = (row: CultivateTargetRow): FlatGoalLine => {
     current: currentTextOf(prog, 'elite', ''),
     currentUnknown: currentUnknownOf(prog),
     state: null,
-    disabled: props.loading || achieved,
+    disabled: editorLoading.value || achieved,
     achieved,
     maxed: currentElite !== null && maxElite >= 1 && currentElite >= maxElite,
   }
@@ -736,7 +756,7 @@ const itemLinesOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): FlatG
       state: saved
         ? (goalStateBadge(saved.state) ?? (achieved ? GOAL_STATE_BADGE.achieved : null))
         : null,
-      disabled: props.loading || !sklandBound.value || achieved,
+      disabled: editorLoading.value || !sklandBound.value || achieved,
       achieved,
       maxed: !unknown && current !== null && maxLevel >= 1 && current >= maxLevel,
     }
@@ -771,7 +791,7 @@ const skillLineOf = (row: CultivateTargetRow): FlatGoalLine | null => {
     state: saved
       ? (goalStateBadge(saved.state) ?? (achieved ? GOAL_STATE_BADGE.achieved : null))
       : null,
-    disabled: props.loading || !sklandBound.value || achieved,
+    disabled: editorLoading.value || !sklandBound.value || achieved,
     achieved,
     maxed: !unknown && current !== null && maxLevel > 1 && current >= maxLevel,
   }
@@ -881,6 +901,18 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   flex: 1 1 380px;
   min-width: 0;
   margin-bottom: 0;
+}
+
+.cultivate-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cultivate-picker-actions > .ant-select {
+  flex: 1 1 180px;
+  min-width: 120px;
 }
 
 .cultivate-skland {

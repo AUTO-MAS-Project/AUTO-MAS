@@ -146,6 +146,18 @@ class MaaCultivateOperatorsOut(OutBase):
     )
 
 
+class MaaCultivateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
+
+
+class MaaCultivateImportOut(MaaCultivateOperatorsOut):
+    targets: str = Field(default="[]", description="转换后的现有养成目标 JSON，不落库")
+    error: Optional[str] = Field(default=None, description="可本地化的导入错误类型")
+    index: Optional[int] = Field(default=None, description="出错条目的序号，从 1 开始")
+    name: str = Field(default="", description="出错条目的干员名称")
+
+
 class CultivatePreviewIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     userId: str = Field(..., description="用户ID")
