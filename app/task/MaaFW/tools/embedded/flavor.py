@@ -134,7 +134,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.utils import get_logger
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("MaaFW 特调")
 

@@ -18,17 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""终末地 Win32 客户端差量更新，仅服务 MaaEnd 专项。
+"""终末地 Win32 客户端差量更新
 
 流程：读取客户端身份 → 获取官方差量清单 → 核对本地基线 → 退出客户端 → 下载并校验
 分卷 → 解包、打补丁并逐文件校验覆盖 → 清理删除表 → 最后提交包内 config.ini。
-分卷拼成可 seek 的流交给 pyzipper，不物理合包；AES 口令取自服务端 cd_key。
-
-约束：
-- 本地版本号原样上报，不补段或加后缀，否则服务端精确匹配不到差量。
-- 用 config.ini 的服务器三元组匹配 ENDFIELD_SERVER_PRESETS；请求参数整套取自同一预设。
-- 不自行生成或修改 config.ini，只用包内原件在最后覆盖，作为更新完成的判据。
-- 只做差量，不做整包或回滚；未知版本、服务器、基线不符或没有差量时不接管。
+分卷拼成可 seek 的流交给 pyzipper,AES 口令取自服务端 cd_key。
 
 直接写游戏目录的先行补位与移除条件见 ../AGENTS.md。"""
 
@@ -62,7 +56,7 @@ from Crypto.Cipher import AES
 from app.services import System
 from app.utils import get_logger
 from app.utils.constants import ENDFIELD_SERVER_PRESETS
-from app.utils.game_apk import GameUpdateResult, is_client_outdated
+from app.utils.game_update import GameUpdateResult, is_client_outdated
 from app.utils.hpatchz import ensure_hpatchz
 from app.utils.io import force_rmtree
 from app.utils.update_files import (

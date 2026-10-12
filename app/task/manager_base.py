@@ -22,7 +22,7 @@ from app.task.maintenance import (
 from app.task.notify_core import push_maintenance_notice
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("脚本调度")
 

@@ -68,7 +68,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api

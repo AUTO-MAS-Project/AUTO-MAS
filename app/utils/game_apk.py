@@ -20,7 +20,7 @@
 
 """模拟器层面的游戏客户端 APK 更新公共原语。
 
-模块只提供与具体游戏无关的能力：通过 adb 读取/安装客户端、版本比较、
+模块只提供与具体游戏无关的能力：通过 adb 读取/安装客户端、
 流式下载安装包、按 HTTP Range 读取远端安装包的版本号。各专项（MAA / SRC 等）
 与 MaaFW 特调（M9A）自行对接各自游戏的版本接口与下载入口后调用本模块完成
 "检查版本 → 下载 → 安装"的编排。
@@ -38,12 +38,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import aiofiles
 import httpx
 
 from app.utils import ProcessRunner, get_logger
+from app.utils.game_update import GameUpdateResult as GameUpdateResult
+from app.utils.game_update import is_client_outdated as is_client_outdated
 
 logger = get_logger("游戏 APK 更新")
 
@@ -77,20 +78,6 @@ _ANDROID_ATTR_NAMES = {
     0x0101021B: "versionCode",
     0x0101021C: "versionName",
 }
-
-
-@dataclass
-class GameUpdateResult:
-    """游戏更新检查与接管的结果"""
-
-    status: Literal["Skipped", "UpToDate", "Updated", "NeedManualUpdate"]
-    """``Skipped`` 未执行检查；``UpToDate`` 无需更新；``Updated`` 已由 MAS 完成更新；
-    ``NeedManualUpdate`` 需要用户手动更新，本次不应继续代理"""
-    message: str
-    """面向用户的说明文本"""
-    resource_version: str = ""
-    """可选的服务端资源版本号；仅部分游戏提供（如明日方舟用于识别待下载的资源热更新），
-    未提供时为空字符串"""
 
 
 #: 当前任务上下文里接管 adb 的通道（``await runner(*args, timeout=…)`` → ``(返回码, 输出)``）。
@@ -226,38 +213,6 @@ async def get_installed_client_info(
         f"模拟器内 {package_name} 已安装版本: {version}（versionCode={version_code}）"
     )
     return version, version_code
-
-
-def _parse_version(version: str) -> tuple[int, ...]:
-    """把形如 ``2.7.61`` 的版本号解析为可比较的整数元组，无法解析的段落按 0 处理。
-
-    只比较主版本号：开头的 ``v`` / ``V`` 去掉，第一个 ``-`` / ``+`` 之后的构建后缀
-    不参与比较（``3.9.0-112.0.1361`` 按 ``3.9.0`` 算）。否则后缀里的数字会被当成
-    更低位的版本段，同一主版本、一边带构建号一边不带时就会误判成落后，触发一次
-    白下的安装包。
-    """
-
-    core = re.split(r"[-+]", version.strip().lstrip("vV"), maxsplit=1)[0]
-    parts: list[int] = []
-    for segment in core.split("."):
-        digits = re.match(r"\d+", segment.strip())
-        parts.append(int(digits.group()) if digits else 0)
-    return tuple(parts)
-
-
-def is_client_outdated(installed: str, remote: str) -> bool:
-    """判断已安装客户端是否落后于服务端版本。"""
-
-    installed_parts = _parse_version(installed)
-    remote_parts = _parse_version(remote)
-    if not any(installed_parts) or not any(remote_parts):
-        # 任一侧完全解析不出数字时不敢下判断，按未落后处理，交给上游原有流程
-        logger.warning(f"版本号无法比较: 已安装 {installed}, 服务端 {remote}")
-        return False
-    length = max(len(installed_parts), len(remote_parts))
-    installed_parts += (0,) * (length - len(installed_parts))
-    remote_parts += (0,) * (length - len(remote_parts))
-    return installed_parts < remote_parts
 
 
 @dataclass

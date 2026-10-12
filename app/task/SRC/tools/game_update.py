@@ -45,14 +45,13 @@ import httpx
 from app.utils import get_logger
 from app.utils.constants import STARRAIL_UPDATE_LINK_SERVER
 from app.utils.game_apk import (
-    GameUpdateResult,
     cleanup_apk_leftovers,
     download_apk,
     get_apk_update_lock,
     get_installed_client_version,
     install_apk,
-    is_client_outdated,
 )
+from app.utils.game_update import GameUpdateResult, is_client_outdated
 
 logger = get_logger("SRC 游戏更新")
 
