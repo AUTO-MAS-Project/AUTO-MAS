@@ -147,9 +147,13 @@ async def download_resumable(
 
     on_bytes 只报告本次接收量；续传被服务器忽略时先以负数扣除被覆盖的前缀。
     digest 可传入本次下载新建的摘要，续传前自动计入已有前缀。
+
+    落盘大小已经等于期望值时没有可续的段，`Range: bytes={N}-` 是空区间（真实 CDN 会回
+    416），只能整份重来。实收超过期望值直接判废，不写进盘：磁盘门按声明体积留的余量，
+    超发会把那份余量吃穿、把问题转成落地的 OSError。
     """
     done = max(file_size(destination), 0)
-    if done > expected_size:
+    if done >= expected_size:
         destination.unlink(missing_ok=True)
         done = 0
     headers = {"Range": f"bytes={done}-"} if done else {}
@@ -169,6 +173,11 @@ async def download_resumable(
             async for block in response.aiter_bytes(_DOWNLOAD_CHUNK):
                 if not block:
                     continue
+                if done + len(block) > expected_size:
+                    raise ValueError(
+                        f"实收超过声明长度: 期望 {expected_size}，已收 {done}，"
+                        f"这一片 {len(block)}"
+                    )
                 await sink.write(block)
                 done += len(block)
                 if digest is not None:

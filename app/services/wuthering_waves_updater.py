@@ -474,7 +474,7 @@ async def _download_entry(
                 )
                 # 校验失败的残留必须删掉，否则下一轮续传会接在坏字节后面。
                 target.unlink(missing_ok=True)
-            except (httpx.HTTPError, OSError) as exc:
+            except (httpx.HTTPError, OSError, ValueError) as exc:
                 last_error = exc
                 logger.warning(
                     "下载 {} 失败({}/{}): {}", entry.dest, attempt + 1, attempts, exc

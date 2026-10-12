@@ -205,7 +205,11 @@ async def _download_release(
                     digest = await _download_part(
                         client, part.url, planned.size, temp, reporter, index
                     )
-                except (httpx.HTTPStatusError, httpx.TransportError) as error:
+                except (
+                    httpx.HTTPStatusError,
+                    httpx.TransportError,
+                    ValueError,
+                ) as error:
                     if isinstance(error, httpx.HTTPStatusError):
                         status = error.response.status_code
                         if status not in (401, 403, 404, 410):
