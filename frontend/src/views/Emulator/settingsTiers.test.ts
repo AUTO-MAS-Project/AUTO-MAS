@@ -136,14 +136,23 @@ describe('align on open (standard)', () => {
     expect(form.resolution).toBe('720p')
     expect(snapped.resolution).toEqual({ width: 720, height: 1280 })
     expect(snapped.dpi).toBeNull()
-    expect(settingsChanges(current, form, 'standard')).toEqual({ width: 1280, height: 720 })
+    expect(settingsChanges(current, form, 'standard')).toEqual({
+      width: 1280,
+      height: 720,
+      dpi: 240,
+    })
   })
 
-  it('a DPI that does not match the resolution is corrected on its own', () => {
-    const current = actual({ dpi: 320 })
+  it('a DPI that does not match the resolution writes the whole resolution tier', () => {
+    // MuMu 写任一分辨率项都会切到自定义模式，只写 DPI 会让宽高落到旧的自定义值上
+    const current = actual({ width: 1920, height: 1080, dpi: 280 })
     const { form, snapped } = alignSettings(current, 'standard')
-    expect(snapped).toMatchObject({ resolution: null, dpi: 320 })
-    expect(settingsChanges(current, form, 'standard')).toEqual({ dpi: 240 })
+    expect(snapped).toMatchObject({ resolution: null, dpi: 280 })
+    expect(settingsChanges(current, form, 'standard')).toEqual({
+      width: 1920,
+      height: 1080,
+      dpi: 360,
+    })
   })
 
   it('unset or unreadable fields are not aligned and not written', () => {

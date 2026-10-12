@@ -152,7 +152,8 @@ export const alignSettings = (
 /**
  * 单台保存：只提交与实际值不同的字段。
  *
- * 分辨率一变就宽高一起写；DPI 和所选分辨率推出的值不同就写（实例从没设过 DPI、分辨率又没变时不写）。
+ * 分辨率按档位整体处理：宽高与档位不同、或 DPI 与档位推出的值不同，就宽、高、DPI 三项一起写
+ * （实例从没设过 DPI、宽高又正好在档位上时不写）。
  * 魔改 AVD 只写核数与内存。
  */
 export const settingsChanges = (
@@ -164,11 +165,14 @@ export const settingsChanges = (
   if (kind === 'standard' && form.resolution) {
     const target = RESOLUTIONS[form.resolution]
     const resized = actual.width !== target.width || actual.height !== target.height
-    if (resized) {
+    const dpiOff = actual.dpi !== null && actual.dpi !== target.dpi
+    // 分辨率是一个整体档位：要写就三项一起写。MuMu 写任一项都会把整组切到自定义模式，
+    // 只写一项的话另外两项会落到自定义键里的旧值上
+    if (resized || dpiOff) {
       changes.width = target.width
       changes.height = target.height
+      changes.dpi = target.dpi
     }
-    if (actual.dpi !== target.dpi && (resized || actual.dpi !== null)) changes.dpi = target.dpi
   }
   const fields =
     kind === 'avd' ? (['cpu', 'memoryMb'] as const) : (['cpu', 'memoryMb', 'fps'] as const)

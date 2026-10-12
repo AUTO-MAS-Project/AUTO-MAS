@@ -3014,7 +3014,6 @@ export default {
     batchTitle: 'Apply settings to all instances',
     batchApply: 'Apply to all',
     batchWarning: 'Fields you pick are written to all {count} devices; the rest are left alone.',
-    batchHint: 'Applied on next start; running instances keep their current configuration.',
     batchFailures: 'Devices that were not updated',
     field: {
       width: 'Width',

@@ -2403,7 +2403,6 @@ export default {
     batchTitle: '全インスタンスに一括設定',
     batchApply: 'すべてに適用',
     batchWarning: '選んだ項目が全 {count} 台に書き込まれます。選んでいない項目は変更されません。',
-    batchHint: '次回起動時に反映されます。実行中のインスタンスは現在の構成のままです。',
     batchFailures: '適用できなかったデバイス',
     field: {
       width: '幅',

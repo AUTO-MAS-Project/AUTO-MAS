@@ -622,7 +622,7 @@ const confirmBatch = async () => {
     }
     const failed = response.failCount ?? 0
     if (failed > 0) {
-      // 只报「N 台失败」用户没法行动，把每台的原因一并列出来
+      // 只报「N 台失败」用户没法行动：弹窗不关，就地列出每台的原因
       batchFailures.value = (response.results || []).filter(item => !item.ok)
       message.warning(
         t('emulator2.toast.batchPartial', {
@@ -633,8 +633,8 @@ const confirmBatch = async () => {
     } else {
       batchFailures.value = []
       message.success(t('emulator2.toast.batchOk', { count: response.okCount ?? 0 }))
+      batchOpen.value = false
     }
-    batchOpen.value = false
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -1330,7 +1330,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       <a-form layout="vertical">
         <SettingsTierFields v-model="batchForm" :kind="batchKind" clearable />
       </a-form>
-      <a-alert type="info" show-icon :message="t('emulator2.batchHint')" />
+      <a-alert type="info" show-icon :message="t('emulator2.settingsHint')" />
       <a-list
         v-if="batchFailures.length"
         size="small"

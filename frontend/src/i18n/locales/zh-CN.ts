@@ -2863,7 +2863,6 @@ export default {
     batchTitle: '批量设置全部实例',
     batchApply: '全部应用',
     batchWarning: '选了的项会写入全部 {count} 台设备，没选的项不改动。',
-    batchHint: '保存后下次启动生效；正在运行的实例仍使用旧配置。',
     batchFailures: '未能应用的设备',
     field: {
       width: '宽度',

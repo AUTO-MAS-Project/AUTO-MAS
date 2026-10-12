@@ -93,6 +93,7 @@ from .constants import (
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     SCREEN_DENSITY,
+    SCREEN_FPS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
@@ -1286,8 +1287,13 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。"""
+        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。
+
+        帧率给的正是固定的 60 时当作没改（混放配置批量选 60 帧不该把 CPU / 内存一起拒掉），
+        其他帧率照样拒绝。"""
         cleaned = validate_setting_changes(changes)
+        if cleaned.get("fps") == SCREEN_FPS:
+            del cleaned["fps"]
         if "fps" in cleaned:
             raise ValueError("魔改 AVD 没有可设置的帧率")
         instance = self._instance(idx)
