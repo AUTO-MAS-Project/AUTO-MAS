@@ -214,7 +214,7 @@ class _GameCalendar:
         )
 
     async def send_due_reminders(self) -> None:
-        """执行已到点的日程，按渠道保存送达状态与下次重试时刻。"""
+        """按游戏汇总已到点的日程，按渠道保存送达状态与重试时刻。"""
 
         self._load_schedule()
         async with self._lock:
@@ -223,8 +223,9 @@ class _GameCalendar:
             games = self._visible_games()
             target = global_target(include_system=True, empty_policy="skip")
             target_ids = {channel_target.id for _, channel_target in target.channels}
+            now = datetime.now(tz=UTC8)
+            due_games: dict[str, list[CalendarReminder]] = {}
             for reminder in self._reminders.values():
-                now = datetime.now(tz=UTC8)
                 if reminder.completed or not (
                     (reminder.next_attempt_at or reminder.due_at)
                     <= now
@@ -242,35 +243,62 @@ class _GameCalendar:
                     )
                     self._save_schedule()
                     continue
-                try:
-                    if target_ids.issubset(reminder.delivered):
-                        reminder.completed = True
-                    else:
+                if target_ids.issubset(reminder.delivered):
+                    reminder.completed = True
+                    self._save_schedule()
+                    continue
+                due_games.setdefault(reminder.game, []).append(reminder)
+
+            for game, reminders in due_games.items():
+                # 每个渠道只汇总尚未送达的活动，内容相同的渠道一起分发。
+                channel_groups: dict[tuple[str, ...], set[str]] = {}
+                reminders_by_key = {reminder.key: reminder for reminder in reminders}
+                for channel_id in target_ids:
+                    pending = tuple(
+                        reminder.key
+                        for reminder in reminders
+                        if channel_id not in reminder.delivered
+                    )
+                    if pending:
+                        channel_groups.setdefault(pending, set()).add(channel_id)
+                label = games[game][1]
+                for keys, channel_ids in channel_groups.items():
+                    batch = [reminders_by_key[key] for key in keys]
+                    payload = NotifyPayload(
+                        title=f"{label}活动提醒",
+                        body_title=f"【{label}活动提醒】",
+                        text="\n\n".join(reminder.payload.text for reminder in batch),
+                    )
+                    try:
                         result = await dispatch(
-                            reminder.payload,
+                            payload,
                             [target],
-                            skip_channel_ids=reminder.delivered,
+                            skip_channel_ids=target_ids - channel_ids,
                             attempts=3,
                             retry_delay=3,
                         )
-                        reminder.delivered = tuple(
-                            dict.fromkeys((*reminder.delivered, *result.succeeded_ids))
-                        )
-                        reminder.completed = result.attempted > 0 and not result.failed
+                        for reminder in batch:
+                            reminder.delivered = tuple(
+                                dict.fromkeys(
+                                    (*reminder.delivered, *result.succeeded_ids)
+                                )
+                            )
+                            reminder.completed = target_ids.issubset(reminder.delivered)
                         if result.failed:
                             logger.warning(
                                 f"游戏日历提醒部分发送失败：{'、'.join(result.failed)}"
                             )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as error:
-                    logger.opt(exception=error).warning(
-                        "执行游戏日历日程失败，下次重试"
-                    )
-                reminder.next_attempt_at = now + timedelta(
-                    seconds=CALENDAR_RETRY_INTERVAL_SECONDS
-                )
-                self._save_schedule()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:
+                        logger.opt(exception=error).warning(
+                            "执行游戏日历日程失败，下次重试"
+                        )
+                    for reminder in batch:
+                        reminder.next_attempt_at = now + timedelta(
+                            seconds=CALENDAR_RETRY_INTERVAL_SECONDS
+                        )
+                    self._save_schedule()
 
     def _save_schedule(self) -> None:
         self._dirty = True
