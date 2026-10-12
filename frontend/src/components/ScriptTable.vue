@@ -498,36 +498,6 @@
                       </div>
 
                       <div class="user-actions">
-                        <a-tooltip
-                          v-if="shouldShowMaaEndUserConfigButton(script, user)"
-                          :title="t('comp.configurePerUserMaaend')"
-                        >
-                          <a-button
-                            v-if="!props.activeConnections.has(user.id)"
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleStartMaaEndUserConfig(script, user)"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configureMaaend') }}
-                          </a-button>
-                          <a-button
-                            v-else
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            disabled
-                            style="color: #52c41a; border-color: #52c41a"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configuring') }}
-                          </a-button>
-                        </a-tooltip>
                         <a-tooltip :title="t('comp.editUserConfiguration')">
                           <a-button
                             type="default"
@@ -646,8 +616,6 @@ interface Emits {
   (e: 'startSrcConfig', script: Script): void
 
   (e: 'startMaaEndConfig', script: Script): void
-
-  (e: 'startMaaEndUserConfig', script: Script, user: User): void
 
   (e: 'startOkwwConfig', script: Script): void
 
@@ -777,19 +745,10 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
-const handleStartMaaEndUserConfig = (script: Script, user: User) => {
-  emit('startMaaEndUserConfig', script, user)
-}
-
 const isMaaEndPresetSupported = (script: Script) => {
   const controllerType =
     script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
-}
-
-// 原生来源直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
-const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Base === 'independent'
 }
 
 const getConfigSource = (script: Script, user: User): string => {
