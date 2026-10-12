@@ -34,9 +34,17 @@ _directory_locks: dict[str, asyncio.Lock] = {}
 
 
 def native_path(path: str | Path) -> str:
-    """Windows 长路径加扩展前缀，UNC 路径使用对应的 UNC 前缀。"""
+    """Windows 长路径加扩展前缀，UNC 路径使用对应的 UNC 前缀。
+
+    已经带前缀的原样返回：`abspath` 会把 `\\\\?\\` 当成普通路径段再拼一次前缀，出来的串
+    谁都认不得；长度够不够是第二件事，判前缀要排在它前面。
+    """
     text = str(path)
-    if os.name != "nt" or len(text) < _LONG_PATH_THRESHOLD:
+    if (
+        os.name != "nt"
+        or text.startswith("\\\\?\\")
+        or len(text) < _LONG_PATH_THRESHOLD
+    ):
         return text
     absolute = os.path.abspath(text)
     if absolute.startswith("\\\\"):

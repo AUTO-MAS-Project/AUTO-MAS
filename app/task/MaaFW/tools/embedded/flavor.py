@@ -55,7 +55,7 @@
   ``resource_name`` 是运行计划的资源名；``package_name`` 是这次随模拟器拉起的包名（空串
   表示没拉起游戏）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``if_auto_install``
   对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
-  返回 ``app.utils.game_apk.GameUpdateResult``。
+  返回 ``app.utils.game_update.GameUpdateResult``。
 - **结果**：``NeedManualUpdate`` → 本用户本次运行判失败，失败原因就是 ``message``，发错误
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``

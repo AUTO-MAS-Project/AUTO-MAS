@@ -43,8 +43,6 @@ import aiofiles
 import httpx
 
 from app.utils import ProcessRunner, get_logger
-from app.utils.game_update import GameUpdateResult as GameUpdateResult
-from app.utils.game_update import is_client_outdated as is_client_outdated
 
 logger = get_logger("游戏 APK 更新")
 
