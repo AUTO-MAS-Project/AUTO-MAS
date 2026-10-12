@@ -360,7 +360,7 @@ const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }]
 
 // 计划模式状态
 const isPlanMode = computed(() => {
-  return formData.Info.StageMode !== 'Fixed'
+  return formData.Stage.StageMode !== 'Fixed'
 })
 const planModeConfig = ref<any>(null)
 // 新增：存储完整的计划数据用于悬浮提示
@@ -429,11 +429,11 @@ const displayMedicineNumb = computed({
     if (isPlanMode.value && planModeConfig.value?.MedicineNumb !== undefined) {
       return planModeConfig.value.MedicineNumb
     }
-    return formData.Info.MedicineNumb
+    return formData.Stage.MedicineNumb
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.MedicineNumb = value
+      formData.Stage.MedicineNumb = value
     }
   },
 })
@@ -443,11 +443,11 @@ const displaySeriesNumb = computed({
     if (isPlanMode.value && planModeConfig.value?.SeriesNumb !== undefined) {
       return planModeConfig.value.SeriesNumb
     }
-    return formData.Info.SeriesNumb
+    return formData.Stage.SeriesNumb
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.SeriesNumb = value
+      formData.Stage.SeriesNumb = value
     }
   },
 })
@@ -457,11 +457,11 @@ const displayStage = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage !== undefined) {
       return planModeConfig.value.Stage
     }
-    return formData.Info.Stage
+    return formData.Stage.Stage
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage = value
+      formData.Stage.Stage = value
     }
   },
 })
@@ -471,11 +471,11 @@ const displayStage1 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_1 !== undefined) {
       return planModeConfig.value.Stage_1
     }
-    return formData.Info.Stage_1
+    return formData.Stage.Stage_1
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_1 = value
+      formData.Stage.Stage_1 = value
     }
   },
 })
@@ -485,11 +485,11 @@ const displayStage2 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_2 !== undefined) {
       return planModeConfig.value.Stage_2
     }
-    return formData.Info.Stage_2
+    return formData.Stage.Stage_2
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_2 = value
+      formData.Stage.Stage_2 = value
     }
   },
 })
@@ -499,11 +499,11 @@ const displayStage3 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_3 !== undefined) {
       return planModeConfig.value.Stage_3
     }
-    return formData.Info.Stage_3
+    return formData.Stage.Stage_3
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_3 = value
+      formData.Stage.Stage_3 = value
     }
   },
 })
@@ -552,28 +552,31 @@ const getDefaultMAAUserData = () => ({
     Id: '',
     Password: '',
     Server: 'Official',
-    MedicineNumb: 0,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
-    SeriesNumb: '0',
     Notes: '',
     Status: true,
     Base: 'shared',
     IfQuickConfig: true,
-    InfrastMode: 'Normal',
-    InfrastName: '',
-    Annihilation: 'Annihilation',
-    Stage: '1-7',
+  },
+  Stage: {
     StageMode: 'Fixed',
+    MedicineNumb: 0,
+    SeriesNumb: '0',
+    Stage: '1-7',
     Stage_1: '',
     Stage_2: '',
     Stage_3: '',
   },
   Task: {
     IfStartUp: true,
+    Annihilation: 'Annihilation',
+    AnnihilationStartWeekday: 'Monday',
+    InfrastMode: 'Normal',
+    InfrastName: '',
     IfInfrast: true,
     IfFight: true,
     IfMall: true,
@@ -632,8 +635,8 @@ const fightSummary = computed(() =>
   summarizeFight({
     enabled: formData.Task.IfFight,
     planLabel: isPlanMode.value
-      ? stageModeOptions.value.find(option => option.value === formData.Info.StageMode)?.label ||
-        formData.Info.StageMode
+      ? stageModeOptions.value.find(option => option.value === formData.Stage.StageMode)?.label ||
+        formData.Stage.StageMode
       : '',
     stage: displayStage.value,
     series: displaySeriesNumb.value,
@@ -871,7 +874,7 @@ const loadUserData = async (): Promise<boolean> => {
 const appendConfiguredCustomStages = () => {
   const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
   stageFields.forEach(field => {
-    const stageValue = (formData.Info as any)[field]
+    const stageValue = (formData.Stage as any)[field]
     if (stageValue && isCustomStage(stageValue)) {
       const exists = stageOptions.value.find((option: any) => option.value === stageValue)
       if (!exists) {
@@ -1210,7 +1213,7 @@ const selectAndImportInfrastructureConfig = () =>
         if (result && result.code === 200) {
           // 从文件路径中提取文件名作为 InfrastName
           const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
-          formData.Info.InfrastName = fileName.replace('.json', '')
+          formData.Task.InfrastName = fileName.replace('.json', '')
 
           message.success(t('edit.baseConfigurationImported'))
 
@@ -1342,8 +1345,8 @@ type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3'
 const updateStageField = (field: StageField, value: string) => {
   if (isPlanMode.value) return
 
-  formData.Info[field] = value
-  void handleFieldSave(`Info.${field}`, value)
+  formData.Stage[field] = value
+  void handleFieldSave(`Stage.${field}`, value)
 }
 
 // 添加自定义关卡到选项列表
@@ -1422,15 +1425,15 @@ const addCustomStage3 = (stageName: string) => {
 
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
-    formData.Info.MedicineNumb = value
-    handleFieldSave('Info.MedicineNumb', value)
+    formData.Stage.MedicineNumb = value
+    handleFieldSave('Stage.MedicineNumb', value)
   }
 }
 
 const updateSeriesNumb = (value: string) => {
   if (!isPlanMode.value) {
-    formData.Info.SeriesNumb = value
-    handleFieldSave('Info.SeriesNumb', value)
+    formData.Stage.SeriesNumb = value
+    handleFieldSave('Stage.SeriesNumb', value)
   }
 }
 
@@ -1622,7 +1625,7 @@ onMounted(async () => {
 
   // 设置StageMode变化监听器
   watch(
-    () => formData.Info.StageMode,
+    () => formData.Stage.StageMode,
     async newStageMode => {
       if (newStageMode === 'Fixed') {
         // 切换到固定模式，清除计划配置

@@ -906,15 +906,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
         )
-        ## 关卡模式
-        self.Info_StageMode = ConfigItem(
-            "Info",
-            "StageMode",
-            "Fixed",
-            TypedMultipleUIDValidator(
-                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
-            ),
-        )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -929,49 +920,6 @@ class MaaUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
-        )
-        ## 剿灭模式
-        self.Info_Annihilation = ConfigItem(
-            "Info",
-            "Annihilation",
-            "Annihilation",
-            OptionsValidator(
-                [
-                    "Close",
-                    "Annihilation",
-                    "Chernobog@Annihilation",
-                    "LungmenOutskirts@Annihilation",
-                    "LungmenDowntown@Annihilation",
-                ]
-            ),
-        )
-        ## 剿灭开始星期
-        self.Info_AnnihilationStartWeekday = ConfigItem(
-            "Info",
-            "AnnihilationStartWeekday",
-            "Monday",
-            OptionsValidator(
-                [
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                    "Sunday",
-                ]
-            ),
-        )
-        ## 基建模式
-        self.Info_InfrastMode = ConfigItem(
-            "Info",
-            "InfrastMode",
-            "Normal",
-            OptionsValidator(["Normal", "Rotation", "Custom"]),
-        )
-        ## 基建配置名称
-        self.Info_InfrastName = ConfigItem(
-            "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
         )
         ## 任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
@@ -989,28 +937,41 @@ class MaaUserConfig(ConfigBase):
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        ## 理智药数量
-        self.Info_MedicineNumb = ConfigItem(
-            "Info", "MedicineNumb", 0, RangeValidator(0, 9999)
-        )
-        ## 连战次数
-        self.Info_SeriesNumb = ConfigItem(
-            "Info",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        ## 关卡
-        self.Info_Stage = ConfigItem("Info", "Stage", "-")
-        ## 关卡 1
-        self.Info_Stage_1 = ConfigItem("Info", "Stage_1", "-")
-        ## 关卡 2
-        self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
-        ## 关卡 3
-        self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
         ## 用户标签信息（虚拟字段，供前端显示）
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Stage -----------------------------------------------------------
+        ## 关卡模式（Fixed 或关卡计划表 UUID）
+        self.Stage_StageMode = ConfigItem(
+            "Stage",
+            "StageMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
+            ),
+            legacy_group="Info",
+        )
+        ## 主关卡
+        self.Stage_Stage = ConfigItem("Stage", "Stage", "-", legacy_group="Info")
+        ## 备选关卡 1
+        self.Stage_Stage_1 = ConfigItem("Stage", "Stage_1", "-", legacy_group="Info")
+        ## 备选关卡 2
+        self.Stage_Stage_2 = ConfigItem("Stage", "Stage_2", "-", legacy_group="Info")
+        ## 备选关卡 3
+        self.Stage_Stage_3 = ConfigItem("Stage", "Stage_3", "-", legacy_group="Info")
+        ## 理智药数量
+        self.Stage_MedicineNumb = ConfigItem(
+            "Stage", "MedicineNumb", 0, RangeValidator(0, 9999), legacy_group="Info"
+        )
+        ## 连战次数
+        self.Stage_SeriesNumb = ConfigItem(
+            "Stage",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+            legacy_group="Info",
         )
 
         ## Data ------------------------------------------------------------
@@ -1049,8 +1010,58 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfStartUp = ConfigItem("Task", "IfStartUp", True, BoolValidator())
         ## 是否理智作战
         self.Task_IfFight = ConfigItem("Task", "IfFight", True, BoolValidator())
+        ## 剿灭模式
+        self.Task_Annihilation = ConfigItem(
+            "Task",
+            "Annihilation",
+            "Annihilation",
+            OptionsValidator(
+                [
+                    "Close",
+                    "Annihilation",
+                    "Chernobog@Annihilation",
+                    "LungmenOutskirts@Annihilation",
+                    "LungmenDowntown@Annihilation",
+                ]
+            ),
+            legacy_group="Info",
+        )
+        ## 剿灭开始星期
+        self.Task_AnnihilationStartWeekday = ConfigItem(
+            "Task",
+            "AnnihilationStartWeekday",
+            "Monday",
+            OptionsValidator(
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ),
+            legacy_group="Info",
+        )
         ## 是否基建换班
         self.Task_IfInfrast = ConfigItem("Task", "IfInfrast", True, BoolValidator())
+        ## 基建模式
+        self.Task_InfrastMode = ConfigItem(
+            "Task",
+            "InfrastMode",
+            "Normal",
+            OptionsValidator(["Normal", "Rotation", "Custom"]),
+            legacy_group="Info",
+        )
+        ## 基建配置名称
+        self.Task_InfrastName = ConfigItem(
+            "Task",
+            "InfrastName",
+            "-",
+            VirtualConfigValidator(self.getInfrastName),
+            legacy_group="Info",
+        )
         ## 是否公开招募
         self.Task_IfRecruit = ConfigItem("Task", "IfRecruit", True, BoolValidator())
         ## 是否信用收支
@@ -1148,7 +1159,7 @@ class MaaUserConfig(ConfigBase):
 
     def getInfrastName(self) -> str:
 
-        if self.get("Info", "InfrastMode") != "Custom":
+        if self.get("Task", "InfrastMode") != "Custom":
             return "未使用自定义基建模式"
 
         infrast_data = json.loads(self.get("Data", "CustomInfrast"))
@@ -1175,7 +1186,7 @@ class MaaUserConfig(ConfigBase):
         tags.append(_tag_remained_days(self))
 
         # 基建模式标签
-        infrast_mode = self.get("Info", "InfrastMode")
+        infrast_mode = self.get("Task", "InfrastMode")
         if self.get("Task", "IfInfrast"):
             if infrast_mode == "Normal":
                 infrast_text = "基建：常规"
@@ -1190,15 +1201,15 @@ class MaaUserConfig(ConfigBase):
             tags.append({"text": "基建：关闭", "color": "red"})
 
         # 关卡信息标签
-        if self.get("Info", "StageMode") == "Fixed":
+        if self.get("Stage", "StageMode") == "Fixed":
             plan_data = {
-                stage_key: self.get_stage_zh(self.get("Info", stage_key))
+                stage_key: self.get_stage_zh(self.get("Stage", stage_key))
                 for stage_key in MAA_STAGE_KEY[2:]
             }
             tag_color = "blue"
         else:
             plan = self.related_config["PlanConfig"][
-                uuid.UUID(self.get("Info", "StageMode"))
+                uuid.UUID(self.get("Stage", "StageMode"))
             ]
             if isinstance(plan, MaaPlanConfig):
                 plan_data = {

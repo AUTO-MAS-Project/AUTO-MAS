@@ -1725,36 +1725,11 @@ class MaaUserConfig_Info(UserConfigInfoBase):
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
     )
-    StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
         Literal["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
     ] = Field(default=None, description="服务器")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Annihilation: Optional[
-        Literal[
-            "Close",
-            "Annihilation",
-            "Chernobog@Annihilation",
-            "LungmenOutskirts@Annihilation",
-            "LungmenDowntown@Annihilation",
-        ]
-    ] = Field(default=None, description="剿灭模式")
-    AnnihilationStartWeekday: Optional[
-        Literal[
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
-    ] = Field(default=None, description="剿灭开始星期")
-    InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
-        default=None, description="基建模式"
-    )
-    InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
     Password: Optional[str] = Field(default=None, description="密码")
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -1765,6 +1740,11 @@ class MaaUserConfig_Info(UserConfigInfoBase):
     )
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="状态标签列表")
+
+
+class MaaUserConfig_Stage(BaseModel):
+    StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药数量")
     SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
         default=None, description="连战次数"
@@ -1773,7 +1753,6 @@ class MaaUserConfig_Info(UserConfigInfoBase):
     Stage_1: Optional[str] = Field(default=None, description="备选关卡 - 1")
     Stage_2: Optional[str] = Field(default=None, description="备选关卡 - 2")
     Stage_3: Optional[str] = Field(default=None, description="备选关卡 - 3")
-    Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
 class MaaUserConfig_Data(BaseModel):
@@ -1795,7 +1774,31 @@ class MaaUserConfig_Task(BaseModel):
     IfStartUp: Optional[bool] = Field(default=None, description="开始唤醒")
     IfRecruit: Optional[bool] = Field(default=None, description="自动公招")
     IfInfrast: Optional[bool] = Field(default=None, description="基建换班")
+    InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
+        default=None, description="基建模式"
+    )
+    InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
+    Annihilation: Optional[
+        Literal[
+            "Close",
+            "Annihilation",
+            "Chernobog@Annihilation",
+            "LungmenOutskirts@Annihilation",
+            "LungmenDowntown@Annihilation",
+        ]
+    ] = Field(default=None, description="剿灭模式")
+    AnnihilationStartWeekday: Optional[
+        Literal[
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+    ] = Field(default=None, description="剿灭开始星期")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
@@ -1860,6 +1863,7 @@ class GeneralUserConfig_Notify(BaseModel):
 
 class MaaUserConfig(BaseModel):
     Info: Optional[MaaUserConfig_Info] = Field(default=None, description="基础信息")
+    Stage: Optional[MaaUserConfig_Stage] = Field(default=None, description="关卡配置")
     Data: Optional[MaaUserConfig_Data] = Field(default=None, description="用户数据")
     Task: Optional[MaaUserConfig_Task] = Field(default=None, description="任务列表")
     Notify: Optional[MaaUserConfig_Notify] = Field(default=None, description="单独通知")

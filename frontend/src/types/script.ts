@@ -637,11 +637,7 @@ export interface User {
     ProxyTimes: number
   }
   Info: {
-    Annihilation: string
     Id: string
-    InfrastMode: string
-    InfrastName: string
-    MedicineNumb: number
     Base: string
     IfQuickConfig?: boolean
     Name: string
@@ -651,15 +647,20 @@ export interface User {
     Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
-    SeriesNumb: string
     Server: string
-    Stage: string
-    StageMode: string
-    Stage_1: string
-    Stage_2: string
-    Stage_3: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
+  }
+  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
+  Stage?: {
+    StageMode?: string
+    MedicineNumb?: number
+    SeriesNumb?: string
+    Stage?: string
+    Stage_1?: string
+    Stage_2?: string
+    Stage_3?: string
+    [key: string]: unknown
   }
   Notify: {
     Enabled: boolean
@@ -693,6 +694,9 @@ export interface User {
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
+    Annihilation?: string
+    InfrastMode?: string
+    InfrastName?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

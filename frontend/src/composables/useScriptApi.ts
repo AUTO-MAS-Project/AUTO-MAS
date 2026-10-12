@@ -192,10 +192,6 @@ export function useScriptApi() {
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
                         Base:
                           maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
-                        StageMode:
-                          maaUserData.Info?.StageMode !== undefined
-                            ? maaUserData.Info.StageMode
-                            : 'Fixed',
                         Server:
                           maaUserData.Info?.Server !== undefined
                             ? maaUserData.Info.Server
@@ -206,37 +202,32 @@ export function useScriptApi() {
                           maaUserData.Info?.RemainedDay !== undefined
                             ? maaUserData.Info.RemainedDay
                             : -1,
-                        Annihilation:
-                          maaUserData.Info?.Annihilation !== undefined
-                            ? maaUserData.Info.Annihilation
-                            : 'Annihilation',
-                        InfrastMode:
-                          maaUserData.Info?.InfrastMode !== undefined
-                            ? maaUserData.Info.InfrastMode
-                            : 'Normal',
-                        InfrastName:
-                          maaUserData.Info?.InfrastName !== undefined
-                            ? maaUserData.Info.InfrastName
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
+                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                      },
+                      Stage: {
+                        StageMode:
+                          maaUserData.Stage?.StageMode !== undefined
+                            ? maaUserData.Stage.StageMode
+                            : 'Fixed',
                         MedicineNumb:
-                          maaUserData.Info?.MedicineNumb !== undefined
-                            ? maaUserData.Info.MedicineNumb
+                          maaUserData.Stage?.MedicineNumb !== undefined
+                            ? maaUserData.Stage.MedicineNumb
                             : 0,
                         SeriesNumb:
-                          maaUserData.Info?.SeriesNumb !== undefined
-                            ? maaUserData.Info.SeriesNumb
+                          maaUserData.Stage?.SeriesNumb !== undefined
+                            ? maaUserData.Stage.SeriesNumb
                             : '0',
-                        Stage: maaUserData.Info?.Stage !== undefined ? maaUserData.Info.Stage : '-',
+                        Stage:
+                          maaUserData.Stage?.Stage !== undefined ? maaUserData.Stage.Stage : '-',
                         Stage_1:
-                          maaUserData.Info?.Stage_1 !== undefined ? maaUserData.Info.Stage_1 : '-',
+                          maaUserData.Stage?.Stage_1 !== undefined ? maaUserData.Stage.Stage_1 : '-',
                         Stage_2:
-                          maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
+                          maaUserData.Stage?.Stage_2 !== undefined ? maaUserData.Stage.Stage_2 : '-',
                         Stage_3:
-                          maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                          maaUserData.Stage?.Stage_3 !== undefined ? maaUserData.Stage.Stage_3 : '-',
                       },
                       Task: {
                         IfStartUp:
@@ -276,11 +267,23 @@ export function useScriptApi() {
                         ActivityMedicineNumb:
                           maaUserData.Task?.ActivityMedicineNumb !== undefined
                             ? maaUserData.Task.ActivityMedicineNumb
-                            : (maaUserData.Info?.MedicineNumb ?? 0),
+                            : (maaUserData.Stage?.MedicineNumb ?? 0),
                         DepotMaintainPlans:
                           maaUserData.Task?.DepotMaintainPlans !== undefined
                             ? maaUserData.Task.DepotMaintainPlans
                             : '[]',
+                        Annihilation:
+                          maaUserData.Task?.Annihilation !== undefined
+                            ? maaUserData.Task.Annihilation
+                            : 'Annihilation',
+                        InfrastMode:
+                          maaUserData.Task?.InfrastMode !== undefined
+                            ? maaUserData.Task.InfrastMode
+                            : 'Normal',
+                        InfrastName:
+                          maaUserData.Task?.InfrastName !== undefined
+                            ? maaUserData.Task.InfrastName
+                            : '',
                       },
                       Notify: {
                         Enabled:
