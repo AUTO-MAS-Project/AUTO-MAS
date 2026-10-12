@@ -26,11 +26,8 @@ import asyncio
 import os
 import shutil
 import threading
-import time
 from collections.abc import Sequence
 from pathlib import Path
-
-import psutil
 
 from app.services import System
 from app.utils.update_files import (
@@ -48,8 +45,6 @@ from .common import (
     logger,
 )
 
-_KILL_WAIT_SECONDS = 30.0
-
 
 def _resolve_within(root: Path, name: str) -> Path:
     """解析已规范化的清单路径，保留终末地不经过链接的落地约束。"""
@@ -59,57 +54,20 @@ def _resolve_within(root: Path, name: str) -> Path:
         raise EndfieldUpdateError(str(error)) from error
 
 
-def _processes_under(root: Path) -> list[str]:
-    """列出镜像路径落在安装目录里的进程。
+async def _release_install_dir(game_exe: Path) -> str | None:
+    """让客户端退出；退不掉时返回给用户看的说明。
 
-    按镜像路径而不是进程名判断：终末地是 UE 客户端，会带一串同名子进程，同时别家
-    同名的 `Endfield.exe` 不该被误伤。
+    不等句柄释放：从这一步到第一次写盘之间还隔着取 hpatchz 与下完几 GB 差量，那几分钟
+    本身就是等待。检测与中止都按镜像路径的精确匹配走，同一套判据——认不出来的进程既不会
+    被关掉，也不会被当成占用者；游戏目录下别的进程挡路时由落地的 PermissionError 说。
     """
 
-    try:
-        anchor = root.resolve()
-    except OSError:
-        return []
-    found: list[str] = []
-    for process in psutil.process_iter(["pid", "name", "exe"]):
-        try:
-            executable = process.info.get("exe")
-            if not executable:
-                continue
-            image = Path(executable)
-            if anchor != image.parent and anchor not in image.parents:
-                continue
-            found.append(
-                f"{process.info.get('name') or image.name}（PID {process.info.get('pid')}）"
-            )
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            continue
-    return found
-
-
-async def _release_install_dir(game_exe: Path) -> str | None:
-    """让安装目录脱离进程占用；仍被占用时返回给用户看的说明。"""
-
-    install_dir = game_exe.parent
-    busy = await _busy_processes(install_dir)
-    if not busy:
+    if not await System.is_process_running(game_exe):
         return None
-    logger.info(f"终末地客户端正在运行，先请求退出: {', '.join(busy)}")
-    await System.kill_process(game_exe)
-    deadline = time.monotonic() + _KILL_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        if not await _busy_processes(install_dir):
-            return None
-        await asyncio.sleep(2.0)
-    busy = await _busy_processes(install_dir)
-    # 占用者按镜像路径认，未必只有游戏本身：游戏目录里放着的别的工具同样会挡路
-    return f"{', '.join(busy)} 仍在使用游戏目录，请退出上面列出的程序后重试"
-
-
-async def _busy_processes(root: Path) -> list[str]:
-    """在工作线程里问一遍进程占用：Windows 上取每个进程的镜像路径是百毫秒级的活。"""
-
-    return await asyncio.to_thread(_processes_under, root)
+    logger.info(f"终末地客户端正在运行，先请求退出: {game_exe}")
+    if await System.kill_process(game_exe):
+        return None
+    return "终末地客户端没能退出，请手动退出游戏后重试"
 
 
 def _landing_need(

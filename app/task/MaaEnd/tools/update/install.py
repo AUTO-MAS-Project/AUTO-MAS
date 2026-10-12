@@ -39,6 +39,7 @@ from typing import Any
 
 import pyzipper
 
+from app.services import System
 from app.utils.update_files import (
     file_md5,
     file_size,
@@ -46,7 +47,7 @@ from app.utils.update_files import (
     replace_file,
 )
 
-from .checks import _busy_processes, _resolve_within
+from .checks import _resolve_within
 from .common import (
     _APPLY_STEP,
     _CONFIG_MEMBER,
@@ -408,6 +409,7 @@ def _collect_temp_files(root: Path) -> list[Path]:
 async def _apply_delta(
     archive: pyzipper.AESZipFile,
     plan: DeltaPlan,
+    game_exe: Path,
     install_dir: Path,
     staging: Path,
     hpatchz: Path,
@@ -454,11 +456,9 @@ async def _apply_delta(
         if now < next_busy_check:
             return
         next_busy_check = now + _APPLY_BUSY_RECHECK_SECONDS
-        busy = await _busy_processes(install_dir)
-        if busy:
+        if await System.is_process_running(game_exe):
             raise EndfieldUpdateError(
-                f"落地期间游戏被重新启动（{', '.join(busy)}），本轮不覆盖，"
-                "请退出游戏后重试"
+                "落地期间游戏被重新启动，本轮不再覆盖，请退出游戏后重试"
             )
 
     async def run_worker(work: Coroutine[Any, Any, None]) -> None:
