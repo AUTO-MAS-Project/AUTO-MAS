@@ -117,6 +117,10 @@ _OVERLAY_INFO_KEYS = (
     "Id",
     "Base",
     "IfQuickConfig",
+)
+"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.json）"""
+
+_OVERLAY_STAGE_KEYS = (
     "StageMode",
     "MedicineNumb",
     "SeriesNumb",
@@ -124,12 +128,8 @@ _OVERLAY_INFO_KEYS = (
     "Stage_1",
     "Stage_2",
     "Stage_3",
-    "Annihilation",
-    "AnnihilationStartWeekday",
-    "InfrastMode",
-    "InfrastName",
 )
-"""MAS 页面基础/战斗/基建字段（UserData.Info，运行时注入 gui.json）"""
+"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -149,11 +149,19 @@ _OVERLAY_TASK_KEYS = (
     "CultivateTargets",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
+    "Annihilation",
+    "AnnihilationStartWeekday",
+    "InfrastMode",
+    "InfrastName",
 )
 """MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
 
-_OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
-"""侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
+_OVERLAY_KEY_GROUPS = {
+    "Info": _OVERLAY_INFO_KEYS,
+    "Stage": _OVERLAY_STAGE_KEYS,
+    "Task": _OVERLAY_TASK_KEYS,
+}
+"""侧车字段的配置段归属（各段键名无交集，侧车内平铺存储）"""
 
 _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
@@ -261,7 +269,7 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 def read_overlay_values(config) -> dict:
     """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    覆盖 Info / Task 两段的全部 MAS 可配置核心内容；值为 ``None``（配置项
+    覆盖 Info / Stage / Task 三段的全部 MAS 可配置核心内容；值为 ``None``（配置项
     不存在）的键不纳入侧车。
     """
 

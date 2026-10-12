@@ -523,7 +523,8 @@ class AppConfig(GlobalConfig):
                                         )
                                     )
 
-                                    user_config["Info"]["StageMode"] = plan_dict.get(
+                                    stage_cfg = user_config.setdefault("Stage", {})
+                                    stage_cfg["StageMode"] = plan_dict.get(
                                         user_config["Info"]["StageMode"], "Fixed"
                                     )
                                     user_config["Info"]["Password"] = ""

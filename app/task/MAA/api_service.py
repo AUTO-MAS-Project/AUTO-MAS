@@ -321,7 +321,7 @@ async def get_user_combox_infrastructure(script_id: str, user_id: str) -> dict:
     user_config = script_config.UserData[user_uid]
     plans, problem, state = _infrast_plans(script_id, user_id)
     # 仅自定义模式下不可用才值得提醒; 普通模式空排班表是正常状态
-    if problem is not None and user_config.get("Info", "InfrastMode") == "Custom":
+    if problem is not None and user_config.get("Task", "InfrastMode") == "Custom":
         logger.warning(f"自定义基建排班不可用, 下拉选项按空返回: {problem}")
     data = []
     for i, plan in enumerate(plans):

@@ -1011,7 +1011,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             "GreenTicketStore": not quick_config
             or not self.cur_user_config.get("Task", "IfGreenTicketStore"),
             "Annihilation": not quick_config
-            or self.cur_user_config.get("Info", "Annihilation") == "Close",
+            or self.cur_user_config.get("Task", "Annihilation") == "Close",
             "Routine": False,
         }
 
@@ -1029,7 +1029,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if not self.run_book["Annihilation"]:
             now = game_now(self.cur_user_config.get("Info", "Server"))
-            start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
+            start_weekday = self.cur_user_config.get("Task", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
                 start_weekday,
@@ -1804,14 +1804,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         # 加载关卡号配置
-        if self.cur_user_config.get("Info", "StageMode") == "Fixed":
+        if self.cur_user_config.get("Stage", "StageMode") == "Fixed":
             plan_data = {
-                stage_key: self.cur_user_config.get("Info", stage_key)
+                stage_key: self.cur_user_config.get("Stage", stage_key)
                 for stage_key in MAA_STAGE_KEY
             }
         else:
             plan = Config.PlanConfig[
-                uuid.UUID(self.cur_user_config.get("Info", "StageMode"))
+                uuid.UUID(self.cur_user_config.get("Stage", "StageMode"))
             ]
             plan_data = {
                 stage_key: plan.get_current_info(
@@ -1833,7 +1833,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
-                "Info", "Annihilation"
+                "Task", "Annihilation"
             )
 
         elif self.mode == "Routine":
@@ -1872,7 +1872,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 fight_source = deepcopy(task_set["Fight"])
 
             # 基建配置
-            if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
+            if self.cur_user_config.get("Task", "InfrastMode") == "Custom":
                 infrast_path = (
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
@@ -1933,7 +1933,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
                 task_set["Infrast"]["Mode"] = self.cur_user_config.get(
-                    "Info", "InfrastMode"
+                    "Task", "InfrastMode"
                 )
 
         activity_fight = None
