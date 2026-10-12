@@ -190,9 +190,7 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
                     for reason in window_fails.values()
                     if reason in _WARNING_FAIL_REASONS
                 )
-                warn_texts = [
-                    f"⚠ 异常: {node}（{reason}）" for reason in reasons
-                ]
+                warn_texts = [f"⚠ 异常: {node}（{reason}）" for reason in reasons]
             warnings[key] = warn_texts
 
         multi = len(seg_names) > 1
