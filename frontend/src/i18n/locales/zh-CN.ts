@@ -2698,6 +2698,9 @@ export default {
     bettergiRewardDefault: '默认',
     bettergiDomainPickerClearAll: '清除全部',
     bettergiDomainPickerClearAllConfirm: '确认清除全部已选秘境？',
+    bettergiDomainPickerGuide: '根据提升指南选择秘境',
+    bettergiDomainPickerGuideTip:
+      '由 BetterGI 读取游戏内提升指南的培养目标，自动选择对应秘境与最高难度关卡（需 BetterGI 0.66 或更高版本）',
     bettergiDomainPickerNone: '暂无可选秘境',
     bettergiDomainPickerOk: '确定',
     bettergiDomainPickerTitle: '秘境选择器',
