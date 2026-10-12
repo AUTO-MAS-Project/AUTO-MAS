@@ -104,7 +104,6 @@ from .tools.cultivate import (
     summarize_achievements,
     takeover_notice_patch_value,
 )
-from .tools.proxy_limit import check_daily_proxy_limit
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
 from .tools.software_update import (
     prepare_maa_software_update,
@@ -945,15 +944,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_advanced = False
 
     async def check(self) -> str:
-
-        reason = await check_daily_proxy_limit(
-            self.script_config,
-            self.cur_user_config,
-            is_queue_task=self.task_info.is_queue_task,
-        )
-        if reason is not None:
-            self.cur_user_item.status = "跳过"
-            return reason
 
         if (
             self.cur_user_config.get("Info", "Mode") == "用户"

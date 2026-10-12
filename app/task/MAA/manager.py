@@ -45,7 +45,7 @@ from app.task.proxy_helpers import (
     read_config_source,
 )
 from app.utils import get_logger
-from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH
+from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
 from app.utils.game_apk import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
@@ -63,7 +63,6 @@ from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 from .tools.game_update import ensure_game_updated
-from .tools.proxy_limit import check_daily_proxy_limit
 from .tools.resource_update import (
     acquire_resource_access_lock,
     get_resource_write_lock,
@@ -383,20 +382,29 @@ class MaaManager(ScriptManagerBase):
                     self.script_info.current_index
                 ]
                 current_config = self.user_config[uuid.UUID(current_user.user_id)]
-                reason = await check_daily_proxy_limit(
-                    self.script_config,
-                    current_config,
-                    is_queue_task=self.task_info.is_queue_task,
-                )
-                if reason is not None:
-                    await self.skip_user(current_user, reason)
-                    continue
                 update_result = self.game_update_results.get(
                     current_config.get("Info", "Server")
                 )
                 if not await self.check_user_before_run(
                     current_user, current_config, game_update_result=update_result
                 ):
+                    continue
+                # 单独运行是用户主动指定的一次性运行；上限为 0 时不限次数。
+                curdate = game_now(current_config.get("Info", "Server")).strftime(
+                    "%Y-%m-%d"
+                )
+                if current_config.get("Data", "LastProxyDate") != curdate:
+                    await current_config.set("Data", "LastProxyDate", curdate)
+                    await current_config.set("Data", "ProxyTimes", 0)
+                limit = self.script_config.get("Run", "ProxyTimesLimit")
+                if (
+                    self.task_info.is_queue_task
+                    and limit != 0
+                    and current_config.get("Data", "ProxyTimes") >= limit
+                ):
+                    await self.skip_user(
+                        current_user, "今日代理次数已达上限, 跳过该用户"
+                    )
                     continue
             kwargs: dict = dict(
                 script_info=self.script_info,
