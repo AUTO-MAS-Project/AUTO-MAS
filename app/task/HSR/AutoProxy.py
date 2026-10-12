@@ -1021,7 +1021,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not plan.get("TaskSwitch", module.key):
                 continue
 
-            # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
+            # shared 来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
             # 自然落到脚本级 TaskMapping。
             assigned = resolve_script_assignment(
                 module,
@@ -1417,7 +1417,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[HSRRunItem]:
         """按用户构建本轮 HSR 执行队列。
 
-        ``plan`` 是该用户生效的任务计划（脚本来源为脚本配置，用户来源为
+        ``plan`` 是该用户生效的任务计划（shared 来源为脚本配置，independent 来源为
         ``user_cfg`` 本身）；``Data`` / ``Info`` 恒读 ``user_cfg``。
         """
 
@@ -1847,10 +1847,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
-        # 直控用户由 HSRManager._run_direct_user 执行，不会进这里。
+        # 原生来源用户由 HSRManager._run_direct_user 执行，不会进这里。
         plan = resolve_plan(user_cfg, self.script_config)
         if plan is None:
-            raise RuntimeError(f"用户「{user_name}」为直控来源，不能进入 MAS 托管队列")
+            raise RuntimeError(f"用户「{user_name}」为原生来源，不能进入 MAS 托管队列")
         m7a_path = resolve_script_path(self.script_config, "M7A")
         sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id

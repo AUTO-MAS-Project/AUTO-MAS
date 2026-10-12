@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""奇想盒（Whimbox）专项的模块内契约：PC 前台直控家族共性的四个边界。
+"""奇想盒（Whimbox）专项的模块内契约：PC 前台原生来源家族共性的四个边界。
 
 抽象严格限定在本模块内部（L1，构造注入 + 实现侧就地兜底构造，零容器）；
 命名按家族语义而非 Whimbox 字面，第二个同线专项立项时整体上提（L2）。

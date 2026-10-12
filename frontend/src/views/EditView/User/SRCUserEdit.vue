@@ -41,7 +41,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
+      :user-mode="formData.Info.Base"
       :src-config-loading="srcConfigLoading"
       :show-src-config-mask="showSrcConfigMask"
       :loading="loading"
@@ -241,7 +241,7 @@ const getDefaultSRCUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     Server: 'CN-Official',
     RemainedDay: -1,
@@ -351,11 +351,11 @@ const handleQuickConfigChange = async (value: boolean) => {
   }
 }
 
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await handleFieldSave('Info.Base', formData.Info.Base)
 }
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
@@ -417,7 +417,7 @@ const handleRestored = async (target: string) => {
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -429,7 +429,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: SRC_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({

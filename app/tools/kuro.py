@@ -43,6 +43,7 @@ from datetime import datetime
 import httpx
 
 from app.core import Config
+from app.services.community_http import create_community_client
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
@@ -420,7 +421,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
     token, dev_code, distinct_id = parse_kuro_credential(token)
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+    async with create_community_client(proxy=resolved_proxy) as client:
         # 获取用户信息
         try:
             user_info = await _get_user_info(token, dev_code, distinct_id, client)

@@ -47,7 +47,7 @@ logger = get_logger("奇想盒 调度器")
 
 
 class WhimboxManager(ScriptManagerBase):
-    """奇想盒控制器（无限暖暖，PC 前台直控线）"""
+    """奇想盒控制器（无限暖暖，PC 前台原生来源线）"""
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()

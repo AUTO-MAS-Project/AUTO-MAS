@@ -46,7 +46,7 @@ export type HSRPerEngineStageStore<T> = {
   byEngine?: Partial<Record<HSRStageEngine, T>>
 }
 
-// 直控时跑哪几个引擎；配置来源只看 Info.Mode，这里没有模式字段
+// 原生来源时跑哪几个引擎；配置来源只看 Info.Base，这里没有模式字段
 type HSRUserControl = {
   SRA?: boolean | null
   M7A?: boolean | null
@@ -80,8 +80,8 @@ export type HSRUserConfigData = {
 }
 
 /**
- * 一份任务计划：「脚本」来源时取自脚本配置上的同名组（本脚本下脚本来源用户共用），
- * 「用户」来源时就是该用户自己的这几组。脚本级计划不用 Managed.TaskMapping，
+ * 一份任务计划：「共享」来源时取自脚本配置上的同名组（本脚本下共享来源用户共用），
+ * 「独立」来源时就是该用户自己的这几组。脚本级计划不用 Managed.TaskMapping，
  * 引擎分配直接写脚本的 TaskMapping 组。
  */
 export type HSRPlanData = Pick<HSRUserConfigData, 'Stage' | 'TaskSwitch' | 'TaskOpt' | 'Managed'>

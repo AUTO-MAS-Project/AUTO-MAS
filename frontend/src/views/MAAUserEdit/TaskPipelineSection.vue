@@ -65,10 +65,10 @@
           <a-col :xs="24" :md="12">
             <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
               <a-select
-                :value="formData.Info.Annihilation"
+                :value="formData.Task.Annihilation"
                 :options="annihilationStageOptions"
                 :disabled="loading"
-                @change="emitSave('Info.Annihilation', $event)"
+                @change="emitSave('Task.Annihilation', $event)"
               />
             </a-form-item>
           </a-col>
@@ -81,10 +81,10 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.AnnihilationStartWeekday || 'Monday'"
+                :value="formData.Task.AnnihilationStartWeekday || 'Monday'"
                 :options="annihilationWeekdayOptions"
                 :disabled="loading"
-                @change="emitSave('Info.AnnihilationStartWeekday', $event)"
+                @change="emitSave('Task.AnnihilationStartWeekday', $event)"
               />
             </a-form-item>
           </a-col>
@@ -249,15 +249,15 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.InfrastMode"
+                :value="formData.Task.InfrastMode"
                 :options="INFRAST_MODE_OPTIONS"
                 :disabled="loading"
-                @change="emitSave('Info.InfrastMode', $event)"
+                @change="emitSave('Task.InfrastMode', $event)"
               />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="16">
+        <a-row v-if="formData.Task.InfrastMode === 'Custom'" :gutter="16">
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
@@ -268,7 +268,7 @@
               </template>
               <div class="detail-inline">
                 <a-input
-                  :value="formData.Info.InfrastName"
+                  :value="formData.Task.InfrastName"
                   :placeholder="t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
@@ -430,7 +430,7 @@ const dailyTasks = [
   { key: 'IfAward', label: t('edit.claimRewards') },
 ] as const
 
-const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')
+const annihilationEnabled = computed(() => formData.value.Task.Annihilation !== 'Close')
 
 // 剿灭周 / 绿票月标记按用户区服的游戏日换日，与后端 AutoProxy 一致
 const gameDayOffset = () => getGameDayOffset(formData.value.Info.Server)
@@ -445,17 +445,17 @@ const annihilationCompletedThisWeek = computed(
 let lastAnnihilationStage = 'Annihilation'
 const handleAnnihilationToggle = (checked: boolean) => {
   if (checked) {
-    emitSave('Info.Annihilation', lastAnnihilationStage)
+    emitSave('Task.Annihilation', lastAnnihilationStage)
   } else {
-    lastAnnihilationStage = formData.value.Info.Annihilation || 'Annihilation'
-    emitSave('Info.Annihilation', 'Close')
+    lastAnnihilationStage = formData.value.Task.Annihilation || 'Annihilation'
+    emitSave('Task.Annihilation', 'Close')
   }
 }
 
 const annihilationSummary = computed(() =>
   summarizeAnnihilation(
-    formData.value.Info.Annihilation,
-    formData.value.Info.AnnihilationStartWeekday || 'Monday',
+    formData.value.Task.Annihilation,
+    formData.value.Task.AnnihilationStartWeekday || 'Monday',
     annihilationCompletedThisWeek.value
   )
 )
@@ -533,12 +533,12 @@ const infrastHint = computed(() => {
 })
 
 const infrastSummary = computed(() => {
-  const customLabel = [formData.value.Info.InfrastName, infrastSelectLabel.value]
+  const customLabel = [formData.value.Task.InfrastName, infrastSelectLabel.value]
     .filter(Boolean)
     .join(' · ')
   return summarizeInfrast(
     formData.value.Task.IfInfrast,
-    formData.value.Info.InfrastMode,
+    formData.value.Task.InfrastMode,
     customLabel
   )
 })

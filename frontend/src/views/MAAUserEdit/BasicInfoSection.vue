@@ -137,7 +137,7 @@
     <a-row :gutter="24">
       <a-col :span="24">
         <GeneralConfigModeSelector
-          :model-value="formData.Info.Mode"
+          :model-value="formData.Info.Base"
           :options="maaConfigModeOptions"
           :disabled="loading"
           :alert-message="t('edit.configSourceHintBase')"
@@ -181,31 +181,31 @@ defineProps<{
   serverOptions: any[]
 }>()
 
-// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
 const maaConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',

@@ -664,6 +664,9 @@ def account_switch(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-NTE 账号切换仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
     account_id = str(account_id or "").strip()
     if len(account_id) < 4:
         raise RuntimeError("账号不足四位，无法按手机号后 4 位匹配登录账号")

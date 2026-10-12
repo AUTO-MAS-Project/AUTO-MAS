@@ -50,9 +50,10 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_SCRIPT,
-    CONFIG_SOURCE_USER,
-    resolve_config_source,
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    resolve_config_base,
 )
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
@@ -929,12 +930,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
+        # base 来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
         # 快速配置决定是否把面板值写进 MAA 原生配置（两段互不替代）。
-        self.config_mode, self.direct_control = resolve_config_source(
-            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        self.config_base, self.native_base = resolve_config_base(
+            self.cur_user_config, CONFIG_BASE_SHARED
         )
         self.check_result = "-"
+        self.maa_root_path: Path | None = None
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -944,18 +946,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def check(self) -> str:
 
-        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
-            self.task_info.is_queue_task
-            and self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
-        ):
-            self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
-
-        if (
-            self.cur_user_config.get("Info", "Mode") == "用户"
+            self.config_base == CONFIG_BASE_INDEPENDENT
             and not (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -1019,7 +1011,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             "GreenTicketStore": not quick_config
             or not self.cur_user_config.get("Task", "IfGreenTicketStore"),
             "Annihilation": not quick_config
-            or self.cur_user_config.get("Info", "Annihilation") == "Close",
+            or self.cur_user_config.get("Task", "Annihilation") == "Close",
             "Routine": False,
         }
 
@@ -1037,7 +1029,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if not self.run_book["Annihilation"]:
             now = game_now(self.cur_user_config.get("Info", "Server"))
-            start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
+            start_weekday = self.cur_user_config.get("Task", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
                 start_weekday,
@@ -1067,14 +1059,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def main_task(self):
         """自动代理模式主逻辑"""
-
-        # 初始化每日代理状态（按用户区服的游戏日换日）
-        self.curdate = game_now(self.cur_user_config.get("Info", "Server")).strftime(
-            "%Y-%m-%d"
-        )
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -1340,10 +1324,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             await super()._finalize_task()
         finally:
-            restore_depot_cache(
-                self.maa_root_path,
-                depot_cache_snapshot_dir(self.script_info.script_id),
-            )
+            if self.maa_root_path is not None:
+                restore_depot_cache(
+                    self.maa_root_path,
+                    depot_cache_snapshot_dir(self.script_info.script_id),
+                )
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
@@ -1611,7 +1596,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 下发前归档 MAS 配置到用户池（下发源，运行回写 _sync_maa_config_updates
         # 会覆盖它；带页面任务字段侧车，指纹去重，失败不阻断运行）。目标路径
-        # 按来源 owner（脚本态共享 Default 目录，直控无 MAS 配置目录不归档）。
+        # 按来源 owner（共享来源共享 Default 目录，原生来源无 MAS 配置目录不归档）。
         # native 池由 manager prepare 在任务级一次性归档
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
@@ -1622,26 +1607,25 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 archive_dir,
                 overlay=read_overlay_values(self.cur_user_config),
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode=str(self.cur_user_config.get("Info", "Mode") or "").strip()
-                or None,
+                base=self.config_base,
             )
 
         # ── 第一段：来源落盘 ──────────────────────────────────────────
-        # 用 MAS 托管配置覆盖 MAA 原生配置目录。直控来源跳过这一段——
-        # 直控的事实源是 MAA 安装目录里现有的原生配置。
+        # 用 MAS 托管配置覆盖 MAA 原生配置目录。原生来源跳过这一段——
+        # 原生来源的事实源是 MAA 安装目录里现有的原生配置。
         # 来源目录可能不存在（新建脚本/用户首次运行，或用户删掉专项重建）：
         # 此时保持安装目录现有的 MAA 配置不动，它天然是可运行的默认配置。
-        if self.config_mode == CONFIG_SOURCE_SCRIPT:
+        if self.config_base == CONFIG_BASE_SHARED:
             self._copy_source_config(
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
-        elif self.config_mode == CONFIG_SOURCE_USER:
+        elif self.config_base == CONFIG_BASE_INDEPENDENT:
             self._copy_source_config(
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
-        elif self.direct_control:
-            # 直控从本轮原生快照开始，不能继承上一用户或上一阶段的快速配置。
+        elif self.native_base:
+            # 原生来源从本轮原生快照开始，不能继承上一用户或上一阶段的快速配置。
             source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             if source.is_dir():
                 shutil.copytree(source, self.maa_set_path, dirs_exist_ok=True)
@@ -1652,14 +1636,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
-        # Default 本身也可能缺失——直控/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
+        # Default 本身也可能缺失——原生来源/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
         ensure_maa_default_configuration(gui_set, gui_new_set)
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # 非直控模式才由 MAS 修正队列条目；直控的 TaskQueue 完全由用户维护。
-        if not self.direct_control:
+        # 非原生来源才由 MAS 修正队列条目；原生来源的 TaskQueue 完全由用户维护。
+        if not self.native_base:
             for configurations in (gui_new_set.get("Configurations") or {}).values():
                 if isinstance(configurations, dict):
                     queue = configurations.get("TaskQueue")
@@ -1670,10 +1654,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
-        # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
-        if not self.direct_control and self.cur_user_config.get(
-            "Info", "IfQuickConfig"
-        ):
+        # 原生来源的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
+        if not self.native_base and self.cur_user_config.get("Info", "IfQuickConfig"):
             await self._apply_maa_quick_config(gui_new_set)
 
         # 库存缓存按账号隔离属 overlay 层行为，与上方面板覆写同一个开关：
@@ -1822,14 +1804,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         # 加载关卡号配置
-        if self.cur_user_config.get("Info", "StageMode") == "Fixed":
+        if self.cur_user_config.get("Stage", "StageMode") == "Fixed":
             plan_data = {
-                stage_key: self.cur_user_config.get("Info", stage_key)
+                stage_key: self.cur_user_config.get("Stage", stage_key)
                 for stage_key in MAA_STAGE_KEY
             }
         else:
             plan = Config.PlanConfig[
-                uuid.UUID(self.cur_user_config.get("Info", "StageMode"))
+                uuid.UUID(self.cur_user_config.get("Stage", "StageMode"))
             ]
             plan_data = {
                 stage_key: plan.get_current_info(
@@ -1851,7 +1833,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
-                "Info", "Annihilation"
+                "Task", "Annihilation"
             )
 
         elif self.mode == "Routine":
@@ -1883,14 +1865,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             task_set["Fight"]["UseOptionalStage"] = True
             task_set["Fight"]["UseWeeklySchedule"] = False
 
-            # 脚本模式下托管的配置
-            if self.cur_user_config.get("Info", "Mode") == "脚本":
+            # 共享来源下托管的配置
+            if self.config_base == CONFIG_BASE_SHARED:
                 task_set["Fight"]["EnableTimesLimit"] = False
                 task_set["Fight"]["EnableTargetDrop"] = False
                 fight_source = deepcopy(task_set["Fight"])
 
             # 基建配置
-            if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
+            if self.cur_user_config.get("Task", "InfrastMode") == "Custom":
                 infrast_path = (
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
@@ -1951,7 +1933,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
                 task_set["Infrast"]["Mode"] = self.cur_user_config.get(
-                    "Info", "InfrastMode"
+                    "Task", "InfrastMode"
                 )
 
         activity_fight = None
@@ -1986,9 +1968,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.mode == "GreenTicketStore":
             task_queue.append(dict(MAA_GREEN_TICKET_STORE_TASK))
 
-        # 非直控模式队列严格等于 MAS 合成结果：来源队列里的未知任务(自动肉鸽、
-        # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在直控
-        # 模式存在(MAS 零写入, 安装目录原生配置即现场)。
+        # 非原生来源队列严格等于 MAS 合成结果：来源队列里的未知任务(自动肉鸽、
+        # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在原生
+        # 来源存在(MAS 零写入, 安装目录原生配置即现场)。
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
@@ -2094,15 +2076,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _config_archive_dir(self) -> Path | None:
         """当前用户的 MAA 配置来源存档目录, 与 set_maa 的导入路径对称。
 
-        直控用户没有 MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），
+        原生来源用户没有 MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），
         返回 ``None``：不下发前归档、运行产出也不回写——安装目录现场由
         任务结束的原生配置快照恢复机制管理。
         """
 
-        mode = str(self.cur_user_config.get("Info", "Mode") or "").strip()
-        if mode == "直控":
+        if self.config_base == CONFIG_BASE_NATIVE:
             return None
-        if mode == "脚本":
+        if self.config_base == CONFIG_BASE_SHARED:
             return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         return (
             Path.cwd()
@@ -2116,7 +2097,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         存活, 下次托管 MAA 读到自己的记录后自行去重; 失败只记日志不抛出。
         """
 
-        if self.direct_control:
+        if self.native_base:
             return
         baseline = self._maa_config_baseline
         if baseline is None:

@@ -36,7 +36,12 @@ from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils.constants import (
+    BASE_NATIVE,
+    BASE_SHARED,
+    BASE_SOURCE_LABELS,
+    TASK_MODE_ZH,
+)
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
@@ -47,7 +52,7 @@ from app.utils.io import (
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
-from .ScriptConfig import ScriptConfigTask, maaend_config_mode
+from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
 from .tools.notify import collect_recent_error_images, push_notification
 from .tools.update import ensure_game_updated
@@ -86,7 +91,7 @@ class MaaEndManager(ScriptManagerBase):
         self.maaend_config_dir: Path | None = None
         self.temp_path: Path | None = None
         self.had_original_script_config = False
-        self.script_config_mode = "脚本"
+        self.script_config_base = BASE_SHARED
         self._device_provider = device_provider
 
     async def check(self) -> str:
@@ -212,8 +217,8 @@ class MaaEndManager(ScriptManagerBase):
                 UserItem(user_id=target_user_id, name="", status="等待")
             ]
             if target_user_id != "Default":
-                self.script_config_mode = maaend_config_mode(
-                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+                self.script_config_base = maaend_config_base(
+                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Base")
                 )
         else:
             self.script_info.user_list = self.build_proxy_user_list(
@@ -259,15 +264,15 @@ class MaaEndManager(ScriptManagerBase):
             clear_native_config_snapshot(self.temp_path)
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功时保留 MaaEnd GUI 的写回。"""
+        """原生来源配置会话成功时保留 MaaEnd GUI 的写回。"""
 
         # 配置会话的唯一出口就是用户在配置窗口点「保存配置」发起的中止,
-        # 因此这里不能把 stopped_manually 当作丢弃的依据, 否则直控模式下
+        # 因此这里不能把 stopped_manually 当作丢弃的依据, 否则原生来源模式下
         # MaaEnd GUI 的写回会被随后的配置复原抹掉。
         # viewOnly 查看会话不保留任何现场改动，结束后恢复任务前快照。
         return (
             self.task_info.mode == "ScriptConfig"
-            and self.script_config_mode == "直控"
+            and self.script_config_base == BASE_NATIVE
             and not self.task_info.view_only
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"
@@ -379,9 +384,12 @@ class MaaEndManager(ScriptManagerBase):
                     continue
             if self.task_info.mode != "ScriptConfig":
                 current_config = self.user_config[uuid.UUID(current_user.user_id)]
-                config_mode = maaend_config_mode(current_config.get("Info", "Mode"))
-                logger.info(f"用户 {current_user.user_id} 配置来源: {config_mode}")
-                if config_mode == "直控":
+                config_base = maaend_config_base(current_config.get("Info", "Base"))
+                logger.info(
+                    f"用户 {current_user.user_id} 配置来源: "
+                    f"{BASE_SOURCE_LABELS.get(config_base, config_base)}"
+                )
+                if config_base == BASE_NATIVE:
                     await self._restore_script_config_from_temp()
 
             kwargs: dict = dict(
@@ -414,7 +422,7 @@ class MaaEndManager(ScriptManagerBase):
 
         logger.info("MaaEnd 主任务已结束, 开始执行后续操作")
         if self._keep_script_config_changes():
-            logger.info("直控配置会话成功，保留 MaaEnd 原生配置")
+            logger.info("原生来源配置会话成功，保留 MaaEnd 原生配置")
         else:
             await self._restore_script_config_from_temp()
         self._cleanup_script_config_temp()

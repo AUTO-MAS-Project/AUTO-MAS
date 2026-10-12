@@ -36,7 +36,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
+      :user-mode="formData.Info.Base"
       :maa-config-loading="preparingSession || maaConfigLoading"
       :leaving="leavingPage"
       :show-maa-config-mask="showMaaConfigMask"
@@ -360,7 +360,7 @@ const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }]
 
 // 计划模式状态
 const isPlanMode = computed(() => {
-  return formData.Info.StageMode !== 'Fixed'
+  return formData.Stage.StageMode !== 'Fixed'
 })
 const planModeConfig = ref<any>(null)
 // 新增：存储完整的计划数据用于悬浮提示
@@ -429,11 +429,11 @@ const displayMedicineNumb = computed({
     if (isPlanMode.value && planModeConfig.value?.MedicineNumb !== undefined) {
       return planModeConfig.value.MedicineNumb
     }
-    return formData.Info.MedicineNumb
+    return formData.Stage.MedicineNumb
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.MedicineNumb = value
+      formData.Stage.MedicineNumb = value
     }
   },
 })
@@ -443,11 +443,11 @@ const displaySeriesNumb = computed({
     if (isPlanMode.value && planModeConfig.value?.SeriesNumb !== undefined) {
       return planModeConfig.value.SeriesNumb
     }
-    return formData.Info.SeriesNumb
+    return formData.Stage.SeriesNumb
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.SeriesNumb = value
+      formData.Stage.SeriesNumb = value
     }
   },
 })
@@ -457,11 +457,11 @@ const displayStage = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage !== undefined) {
       return planModeConfig.value.Stage
     }
-    return formData.Info.Stage
+    return formData.Stage.Stage
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage = value
+      formData.Stage.Stage = value
     }
   },
 })
@@ -471,11 +471,11 @@ const displayStage1 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_1 !== undefined) {
       return planModeConfig.value.Stage_1
     }
-    return formData.Info.Stage_1
+    return formData.Stage.Stage_1
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_1 = value
+      formData.Stage.Stage_1 = value
     }
   },
 })
@@ -485,11 +485,11 @@ const displayStage2 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_2 !== undefined) {
       return planModeConfig.value.Stage_2
     }
-    return formData.Info.Stage_2
+    return formData.Stage.Stage_2
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_2 = value
+      formData.Stage.Stage_2 = value
     }
   },
 })
@@ -499,11 +499,11 @@ const displayStage3 = computed({
     if (isPlanMode.value && planModeConfig.value?.Stage_3 !== undefined) {
       return planModeConfig.value.Stage_3
     }
-    return formData.Info.Stage_3
+    return formData.Stage.Stage_3
   },
   set: value => {
     if (!isPlanMode.value) {
-      formData.Info.Stage_3 = value
+      formData.Stage.Stage_3 = value
     }
   },
 })
@@ -552,28 +552,31 @@ const getDefaultMAAUserData = () => ({
     Id: '',
     Password: '',
     Server: 'Official',
-    MedicineNumb: 0,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
-    SeriesNumb: '0',
     Notes: '',
     Status: true,
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
-    InfrastMode: 'Normal',
-    InfrastName: '',
-    Annihilation: 'Annihilation',
-    Stage: '1-7',
+  },
+  Stage: {
     StageMode: 'Fixed',
+    MedicineNumb: 0,
+    SeriesNumb: '0',
+    Stage: '1-7',
     Stage_1: '',
     Stage_2: '',
     Stage_3: '',
   },
   Task: {
     IfStartUp: true,
+    Annihilation: 'Annihilation',
+    AnnihilationStartWeekday: 'Monday',
+    InfrastMode: 'Normal',
+    InfrastName: '',
     IfInfrast: true,
     IfFight: true,
     IfMall: true,
@@ -632,8 +635,8 @@ const fightSummary = computed(() =>
   summarizeFight({
     enabled: formData.Task.IfFight,
     planLabel: isPlanMode.value
-      ? stageModeOptions.value.find(option => option.value === formData.Info.StageMode)?.label ||
-        formData.Info.StageMode
+      ? stageModeOptions.value.find(option => option.value === formData.Stage.StageMode)?.label ||
+        formData.Stage.StageMode
       : '',
     stage: displayStage.value,
     series: displaySeriesNumb.value,
@@ -743,11 +746,11 @@ const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
 }
 
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await handleFieldSave('Info.Base', formData.Info.Base)
 }
 
 // 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存
@@ -822,6 +825,7 @@ const loadUserData = async (): Promise<boolean> => {
         if (userIndex.type === 'MaaUserConfig') {
           Object.assign(formData, {
             Info: { ...getDefaultMAAUserData().Info, ...userData.Info },
+            Stage: { ...getDefaultMAAUserData().Stage, ...userData.Stage },
             Task: { ...getDefaultMAAUserData().Task, ...userData.Task },
             Notify: { ...getDefaultMAAUserData().Notify, ...userData.Notify },
             Data: { ...getDefaultMAAUserData().Data, ...userData.Data },
@@ -871,7 +875,7 @@ const loadUserData = async (): Promise<boolean> => {
 const appendConfiguredCustomStages = () => {
   const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
   stageFields.forEach(field => {
-    const stageValue = (formData.Info as any)[field]
+    const stageValue = (formData.Stage as any)[field]
     if (stageValue && isCustomStage(stageValue)) {
       const exists = stageOptions.value.find((option: any) => option.value === stageValue)
       if (!exists) {
@@ -1210,7 +1214,7 @@ const selectAndImportInfrastructureConfig = () =>
         if (result && result.code === 200) {
           // 从文件路径中提取文件名作为 InfrastName
           const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
-          formData.Info.InfrastName = fileName.replace('.json', '')
+          formData.Task.InfrastName = fileName.replace('.json', '')
 
           message.success(t('edit.baseConfigurationImported'))
 
@@ -1342,8 +1346,8 @@ type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3'
 const updateStageField = (field: StageField, value: string) => {
   if (isPlanMode.value) return
 
-  formData.Info[field] = value
-  void handleFieldSave(`Info.${field}`, value)
+  formData.Stage[field] = value
+  void handleFieldSave(`Stage.${field}`, value)
 }
 
 // 添加自定义关卡到选项列表
@@ -1422,15 +1426,15 @@ const addCustomStage3 = (stageName: string) => {
 
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
-    formData.Info.MedicineNumb = value
-    handleFieldSave('Info.MedicineNumb', value)
+    formData.Stage.MedicineNumb = value
+    handleFieldSave('Stage.MedicineNumb', value)
   }
 }
 
 const updateSeriesNumb = (value: string) => {
   if (!isPlanMode.value) {
-    formData.Info.SeriesNumb = value
-    handleFieldSave('Info.SeriesNumb', value)
+    formData.Stage.SeriesNumb = value
+    handleFieldSave('Stage.SeriesNumb', value)
   }
 }
 
@@ -1527,7 +1531,7 @@ const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -1539,7 +1543,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: MAA_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({
@@ -1622,7 +1626,7 @@ onMounted(async () => {
 
   // 设置StageMode变化监听器
   watch(
-    () => formData.Info.StageMode,
+    () => formData.Stage.StageMode,
     async newStageMode => {
       if (newStageMode === 'Fixed') {
         // 切换到固定模式，清除计划配置

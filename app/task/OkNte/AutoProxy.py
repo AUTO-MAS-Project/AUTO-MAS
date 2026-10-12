@@ -38,13 +38,13 @@ from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_SCRIPT,
+    CONFIG_BASE_SHARED,
     append_push_log,
     find_pids_by_name,
     kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
-    resolve_config_source,
+    resolve_config_base,
     split_args,
     user_uses_quick_config,
 )
@@ -295,8 +295,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: OkNteUserConfig = self.user_config[self.cur_user_uid]
         # 来源负责基线，面板独立保存，只在开启时覆盖。
-        self.config_mode, self.direct_control = resolve_config_source(
-            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        self.config_base, self.native_base = resolve_config_base(
+            self.cur_user_config, CONFIG_BASE_SHARED
         )
         self.curdate = ""
         self.user_run_result_persisted = False
@@ -330,9 +330,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
-        # 直控不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
+        # 原生来源不做任何下发，脚本原生配置就是本次运行的全部配置来源：缺失时
         # 必须提前报错，否则会静默启动一个未配置的 ok-nte（对齐 Okww）。
-        if self.direct_control and not self._native_config_ready():
+        if self.native_base and not self._native_config_ready():
             return "未找到 OK-NTE 脚本原有配置，请先在 OK-NTE 中保存设置"
 
         if (
@@ -472,7 +472,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
     def _native_config_ready(self) -> bool:
-        """直控运行前检查：脚本原生配置是否存在（Folder=目录非空 / File=文件存在）。
+        """原生来源运行前检查：脚本原生配置是否存在（Folder=目录非空 / File=文件存在）。
 
         从 ScriptConfig 现场解析 ConfigPath：本方法在 check() 阶段调用，早于
         prepare()，此时 self.script_config_path 尚未赋值。
@@ -489,7 +489,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         return mas_config_dir(
             self.script_info.script_id,
             "Default"
-            if self.config_mode == CONFIG_SOURCE_SCRIPT
+            if self.config_base == CONFIG_BASE_SHARED
             else str(self.cur_user_uid),
         )
 
@@ -542,12 +542,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         folder_mode = self.script_config.get("Script", "ConfigPathMode") == "Folder"
-        if not self.direct_control or user_uses_quick_config(self.cur_user_config):
+        if not self.native_base or user_uses_quick_config(self.cur_user_config):
             archive_mas_runtime_backup(
                 self.script_info.script_id, str(self.cur_user_uid)
             )
-        # 每用户先还原任务级原生基线，避免直控沿用上一用户的注入值。
-        if self.direct_control:
+        # 每用户先还原任务级原生基线，避免原生来源沿用上一用户的注入值。
+        if self.native_base:
             if folder_mode and temp.is_dir():
                 swap_in_dir(temp, self.script_config_path)
             elif not folder_mode and (temp / "config.temp").is_file():
@@ -599,11 +599,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
 
-        # 直控：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
-        # 下一次切回「用户」来源会把这个直控用户的原生配置当成他的独立配置。
+        # 原生来源：原生配置不属于 MAS，不得把它抄回 MAS 侧 ConfigFile——否则
+        # 下一次切回「用户」来源会把这个原生来源用户的原生配置当成他的独立配置。
         quick = user_uses_quick_config(self.cur_user_config)
-        if self.direct_control and not quick:
-            logger.info("OK-NTE 直控配置：跳过配置回写 MAS")
+        if self.native_base and not quick:
+            logger.info("OK-NTE 原生来源配置：跳过配置回写 MAS")
             return
 
         mas_config_dir = (

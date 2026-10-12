@@ -37,11 +37,11 @@
 - per-user 副本：``data/{script_id}/{user_id}/`` 下的 ``OneDragon/``
   （一条龙配置副本）、``ScriptGroup/``（配置组副本）、``GlobalDomain/``
   （秘境刷取配置副本）——前端端点直接读写、就是页面编辑对象（对齐
-  OkNte「ConfigFile 即页面编辑对象」）；脚本态/用户态/直控都走 per-user
-  副本（副本与来源无关，直控下前端编辑同样落盘），池**恒按用户分桶**，
+  OkNte「ConfigFile 即页面编辑对象」）；shared/independent/native 都走 per-user
+  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按用户分桶**，
   无 owner 解耦（对齐 General）。
 - 字段侧车：OneDragon 段全部字段 + Task.OneDragonConfigName + Switch.
-  Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Mode（仅预览：
+  Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Base（仅预览：
   决定是否物化）。Id/Password/前后置脚本/通知/Data 由 MAS 自己消费（登录
   与执行域），不属于 BetterGI 配置内容，不进备份。恢复 = 副本目录回滚 +
   字段回填 UserData。
@@ -50,7 +50,7 @@
 **BGI 一条龙实配**（``{RootPath}/User/OneDragon/*.json``，排除 MAS 运行时
 临时槽位「MAS独立配置.json」——运行物化、结束删除，不是用户实配），按
 物理安装根指纹分桶、跨脚本共享、不随脚本删除。一条龙实配在用户独立配置
-模式下 MAS 零接触，但它是用户在 BGI GUI 里的直接编辑对象（直控/手工编辑
+模式下 MAS 零接触，但它是用户在 BGI GUI 里的直接编辑对象（原生来源/手工编辑
 场景），纳入备份提供改坏找回点。
 
 时间戳快照、指纹去重、保留清理与文件/目录恢复由公共模块
@@ -64,7 +64,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    META_FILE_NAMES,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
@@ -74,13 +74,14 @@ from app.utils.config_archive import (
     read_overlay_sidecar,
     restore_files,
 )
+from app.utils.constants import BASE_SOURCE_LABELS
 
 logger = get_logger("BetterGI 配置备份")
 
 # ══════════════════ MAS 用户配置（per-user 副本 + 字段侧车） ══════════════════
 
 _OVERLAY_KEY_GROUPS = {
-    "Info": ("Mode",),
+    "Info": ("Base",),
     "Task": ("OneDragonConfigName",),
     "OneDragon": (
         "Groups",
@@ -103,7 +104,7 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 """仅预览不回填的字段：配置来源决定 MAS 是否物化，恢复以当前值为准"""
 
 # 预览分区一：与 BetterGI 概念对应的字段（可在 BetterGI GUI 对照）
@@ -123,10 +124,10 @@ _OVERLAY_BGI_ORDER = (
     "Resource",
 )
 # 预览分区二：MAS 独有字段（BetterGI GUI 无对应概念）
-_OVERLAY_MAS_ONLY_ORDER = ("Mode",)
+_OVERLAY_MAS_ONLY_ORDER = ("Base",)
 
 _OVERLAY_FIELD_LABELS = {
-    "Mode": "配置来源",
+    "Base": "配置来源",
     "OneDragonConfigName": "一条龙配置名",
     "Groups": "已启用任务",
     "DailyRewardPartyName": "领取奖励队伍",
@@ -150,7 +151,7 @@ _PER_USER_SUB_DIRS = ("OneDragon", "ScriptGroup", "GlobalDomain")
 def read_overlay_values(config) -> dict:
     """读取配置对象的 BetterGI 页面字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    覆盖 Info.Mode / Task.OneDragonConfigName / OneDragon 段全部字段 /
+    覆盖 Info.Base / Task.OneDragonConfigName / OneDragon 段全部字段 /
     Switch.Resource；值为 ``None``（配置项不存在）的键不纳入侧车。
     """
 
@@ -261,7 +262,8 @@ def restore_mas_backup(
     备份之外的残留一并清理，恢复结果与备份完全一致；per-user 根目录其余
     内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
     供调用方回填 UserData 后即分离删除。
-    归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首用户态）时
+    归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首个
+    independent 来源用户）时
     无副本可写回，跳过文件恢复只回填侧车——此时强行调用会因受管键为空
     抛「备份内容为空」。
 
@@ -277,7 +279,7 @@ def restore_mas_backup(
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
         restore_files(backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed)
@@ -503,10 +505,11 @@ def build_overlay_preview(overlay: dict) -> dict:
     mas_rows: list[dict] = []
     for key in _OVERLAY_MAS_ONLY_ORDER:
         if key in overlay:
+            raw = overlay[key]
             mas_rows.append(
                 {
                     "key": _OVERLAY_FIELD_LABELS.get(key, key),
-                    "value": _summary_text(overlay[key]),
+                    "value": BASE_SOURCE_LABELS.get(str(raw), _summary_text(raw)),
                 }
             )
     if mas_rows:
@@ -531,7 +534,7 @@ def build_overlay_preview(overlay: dict) -> dict:
 def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     """mas 池预览载荷：字段分区 + 副本文件摘要（相对键 + 大小）。
 
-    副本摘要排除备份元数据（``_mas_mode`` / ``_mas_overlay.json``）——
+    副本摘要排除备份元数据（``_mas_base`` / ``_mas_overlay.json``）——
     前者由基座列表标签消费，后者已在本预览的字段分区里展示。
     """
 
@@ -539,7 +542,7 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     files = {
         rel: path.stat().st_size
         for rel, path in dir_files(backup_dir).items()
-        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     }
     if files:
         file_rows = [

@@ -33,6 +33,7 @@ from collections.abc import Mapping
 import httpx
 
 from app.core import Config
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
@@ -391,10 +392,7 @@ async def cloud_genshin_sign_in(
 
     try:
         resolved_proxy = proxy if proxy is not None else Config.proxy
-        async with httpx.AsyncClient(
-            proxy=resolved_proxy,
-            trust_env=False,
-        ) as client:
+        async with create_community_client(proxy=resolved_proxy) as client:
             (
                 credential,
                 from_miyoushe_cookie,

@@ -207,7 +207,7 @@ describe('MFW 用户页默认值', () => {
     expect(Object.keys(defaults)).toEqual(['Info', 'Task', 'Notify', 'Data'])
     expect(defaults.Info).toMatchObject({
       Status: true,
-      Mode: '用户',
+      Base: 'independent',
       IfQuickConfig: true,
       RemainedDay: -1,
       PlanMode: 'Fixed',

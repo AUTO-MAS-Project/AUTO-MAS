@@ -57,6 +57,7 @@ watch(
     :open="open"
     :width="520"
     :z-index="90"
+    :style="{ top: '48px' }"
     :title="t('themeStore.mine.editDescription')"
     :closable="!saving"
     :keyboard="!saving"

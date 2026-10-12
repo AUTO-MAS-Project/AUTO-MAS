@@ -38,11 +38,11 @@ export type HSRConfig = {
      */
     TaskMapping?: (HSRConfig_TaskMapping | null);
     /**
-     * 共享计划：模块执行开关（脚本来源用户共用）
+     * 共享计划：模块执行开关（shared 来源用户共用）
      */
     TaskSwitch?: (HSRConfig_TaskSwitch | null);
     /**
-     * 共享计划：关卡配置（脚本来源用户共用）
+     * 共享计划：关卡配置（shared 来源用户共用）
      */
     Stage?: (HSRConfig_Stage | null);
     /**

@@ -13,13 +13,13 @@
 export type ConfigBaseKind = 'shared' | 'independent' | 'native'
 
 /**
- * base 取值 → 语义种类。三态卡片的 value 就是后端 wire 值（脚本/用户/直控）；
- * 默认两态卡片用布尔（true = 用户级 = 独立，false = 直控 = 原生）。
+ * base 取值 → 语义种类。三态卡片的 value 就是后端 wire 值（shared/independent/native）；
+ * 默认两态卡片用布尔（true = independent，false = native）。
  */
 const BASE_KINDS: Record<string, ConfigBaseKind> = {
-  脚本: 'shared',
-  用户: 'independent',
-  直控: 'native',
+  shared: 'shared',
+  independent: 'independent',
+  native: 'native',
   true: 'independent',
   false: 'native',
 }
@@ -45,7 +45,7 @@ const SEMANTICS_KEYS: Record<
 
 /**
  * 每个 base 来源的「界面入口」说明 key：打开脚本自带界面时改的是哪一份配置。
- * 后端 owner 规则决定这一点随来源变化（如 MaaEnd 脚本态写 Default 共享目录、用户态写该账号目录、直控不回写）。
+ * 后端 owner 规则决定这一点随来源变化（如 MaaEnd 共享来源写 Default 共享目录、独立来源写该账号目录、原生来源不回写）。
  */
 const SEMANTICS_GUI_KEYS: Record<ConfigBaseKind, string> = {
   shared: 'edit.configSemanticsSharedGui',
@@ -65,7 +65,7 @@ export type ConfigSemantics = {
 }
 
 /**
- * @param modelValue 当前 base 取值（Info.Mode 的 wire 值或默认两态的布尔）
+ * @param modelValue 当前 base 取值（Info.Base 的 wire 值或默认两态的布尔）
  * @param quickConfig Info.IfQuickConfig；undefined 表示该专项未接入 overlay，没有 3×2 子态，不渲染语义
  */
 export const composeConfigSemantics = (

@@ -95,7 +95,7 @@ METHOD_BOOK: dict[str, type[HSRAutoProxyTask]] = {
 }
 
 _M7A_CONFIG_LABEL = "三月七 config.yaml"
-"""外部配置备份表里三月七 config.yaml 的标签：进日志，也是直控前单独还原它的判据。"""
+"""外部配置备份表里三月七 config.yaml 的标签：进日志，也是原生来源前单独还原它的判据。"""
 
 
 def _remove_path(path: Path) -> None:
@@ -152,7 +152,7 @@ class HSRManager(TaskExecuteBase):
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
         # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
         self._external_path_lock: HSRExternalPathLockLease | None = None
-        # 旧 dev 没有插件 registry；由调度器独占本轮直控会话并在停止时取消。
+        # 旧 dev 没有插件 registry；由调度器独占本轮原生来源会话并在停止时取消。
         self._direct_sessions: dict[str, Any] = {}
 
     def _release_external_path_lock(self) -> None:
@@ -379,9 +379,7 @@ class HSRManager(TaskExecuteBase):
             try:
                 await session.cancel()
             except Exception as exc:  # noqa: BLE001
-                message = (
-                    f"终止 HSR {engine_label(engine, left=False)}直控会话失败：{exc}"
-                )
+                message = f"终止 HSR {engine_label(engine, left=False)}原生来源会话失败：{exc}"
                 logger.warning(message)
                 self._append_log(message)
 
@@ -467,7 +465,7 @@ class HSRManager(TaskExecuteBase):
         sra_needed = False
         managed_user_count = 0
         managed_users_with_credentials = 0
-        # 直控用户共用同一份三月七 config.yaml，原生云模式的提示只说一次。
+        # 原生来源用户共用同一份三月七 config.yaml，原生云模式的提示只说一次。
         m7a_native_cloud_warned = False
         enabled_module_keys: set[str] = set()
         # (计划, 用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置
@@ -480,7 +478,7 @@ class HSRManager(TaskExecuteBase):
             if user_config.get("Info", "RemainedDay") == 0:
                 continue
             # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
-            # 用户的直控前置条件、引擎需求与托管账号数把这一个用户拦下来。
+            # 用户的原生来源前置条件、引擎需求与托管账号数把这一个用户拦下来。
             if not self.task_info.is_target_user(str(uid)):
                 continue
             has_executable_user = True
@@ -490,20 +488,20 @@ class HSRManager(TaskExecuteBase):
             if control.mode == "direct":
                 has_direct_user = True
                 if self.task_info.mode != "AutoProxy":
-                    return f"用户「{user_name}」启用了脚本直控，但直控仅支持自动代理"
+                    return f"用户「{user_name}」启用了脚本原生模式，但原生模式仅支持自动代理"
                 if cloud and "SRA" in control.engines:
                     return (
-                        f"用户「{user_name}」启用了 SRA 直控，"
-                        "云·星穹铁道不支持 SRA 直控，请改用三月七直控"
+                        f"用户「{user_name}」启用了 SRA 原生模式，"
+                        "云·星穹铁道不支持 SRA 原生模式，请改用三月七原生模式"
                     )
                 if not control.engines:
-                    return f"用户「{user_name}」尚未启用任何直控脚本"
+                    return f"用户「{user_name}」尚未启用任何原生模式引擎"
                 for engine in control.engines:
-                    # 直控直接跑脚本当前的原生配置：CLI/Assistant 可执行与
+                    # 原生来源直接跑脚本当前的原生配置：CLI/Assistant 可执行与
                     # 原生配置文件都是硬条件。
                     script_root = resolve_script_path(script_config, engine)
                     label = engine_label(engine, left=False)
-                    unavailable = f"用户「{user_name}」{label}直控不可用："
+                    unavailable = f"用户「{user_name}」{label}原生模式不可用："
                     if not script_root:
                         return f"{unavailable}未配置原生脚本路径"
                     executable = Path(script_root) / (
@@ -528,21 +526,21 @@ class HSRManager(TaskExecuteBase):
                         script_config
                     )
                 if cloud:
-                    # 直控不改用户配置：云浏览器必须开在三月七自己配置的调试端口上。
+                    # 原生来源不改用户配置：云浏览器必须开在三月七自己配置的调试端口上。
                     port = self._m7a_direct_debug_port(script_config)
                     if not is_port_free(port):
                         return (
-                            f"用户「{user_name}」三月七直控不可用：三月七配置的浏览器"
+                            f"用户「{user_name}」三月七原生模式不可用：三月七配置的浏览器"
                             f"调试端口 {port} 已被占用，请在三月七设置中修改"
                         )
-                # 直控由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
+                # 原生来源由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
                 continue
 
             managed_user_count += 1
             if user_needs_account_switch(user_config):
                 managed_users_with_credentials += 1
 
-            # 任务开关、副本与引擎分配读计划（脚本来源 = 脚本配置上的共享计划），
+            # 任务开关、副本与引擎分配读计划（shared 来源 = 脚本配置上的共享计划），
             # 账号与完成态仍读用户配置。
             plan = resolve_plan(user_config, script_config)
             for module in HSR_TASK_MODULES:
@@ -644,7 +642,7 @@ class HSRManager(TaskExecuteBase):
                     f"（三月七已保存账号：{accounts_dir}）"
                 )
 
-        # 脚本来源用户共用一份计划，同一条「未选择副本」提示只记一次。
+        # shared 来源用户共用一份计划，同一条「未选择副本」提示只记一次。
         precheck_seen: set[str] = set()
         for plan, user_config, user_name, assigned in daily_stage_checks:
             self._precheck_daily_stages(
@@ -668,9 +666,9 @@ class HSRManager(TaskExecuteBase):
         return check_cloud_prerequisites(script_config)
 
     def _warn_m7a_native_cloud_game(self, script_config: HSRConfig) -> bool:
-        """客户端平台 + 三月七直控，而三月七自己开了云游戏：只提示，不报错。
+        """客户端平台 + 三月七原生来源，而三月七自己开了云游戏：只提示，不报错。
 
-        直控不钉云开关、尊重三月七的配置，这是上游一直支持的用法；这里建议改用
+        原生来源不钉云开关、尊重三月七的配置，这是上游一直支持的用法；这里建议改用
         云·星穹铁道平台，由 MAS 托管浏览器并按用户隔离登录。返回是否提示过。
         """
 
@@ -692,7 +690,7 @@ class HSRManager(TaskExecuteBase):
 
     @staticmethod
     def _m7a_direct_debug_port(script_config: HSRConfig) -> int:
-        """直控读三月七自己配置的浏览器调试端口（缺省 9222），MAS 不改它。"""
+        """原生来源读三月七自己配置的浏览器调试端口（缺省 9222），MAS 不改它。"""
 
         try:
             value = load_m7a_native_config(script_config).get("browser_debug_port")
@@ -1038,10 +1036,10 @@ class HSRManager(TaskExecuteBase):
         )
 
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
-        """按脚本直控运行一个用户。
+        """按脚本原生来源运行一个用户。
 
         直接执行 SRA/M7A 当前的原生配置（见 ``native_control`` 模块说明）。
-        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        原生来源只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
         日志、取消和会话收尾始终由 MAS 负责。
         """
 
@@ -1050,14 +1048,14 @@ class HSRManager(TaskExecuteBase):
         control = resolve_user_control(user_config, script_config=self.script_config)
         user_name = str(user_config.get("Info", "Name") or user_item.name)
         started_at = datetime.now()
-        log_item = LogRecord(status="HSR 脚本直控运行中")
+        log_item = LogRecord(status="HSR 脚本原生来源运行中")
         user_item.log_record[started_at] = log_item
         user_item.status = "运行"
         log_start = len(self._log_lines)
 
         if "M7A" in control.engines:
             # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
-            # 必须在任务前脚本之前：直控多账号共用一份 config.yaml，按账号改它的
+            # 必须在任务前脚本之前：原生来源多账号共用一份 config.yaml，按账号改它的
             # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
             self._reset_m7a_config_for_direct(user_name)
 
@@ -1074,8 +1072,8 @@ class HSRManager(TaskExecuteBase):
         self._runtime.game_launch_checked = False
         cloud = is_cloud_platform(self.script_config)
         if cloud:
-            # 直控 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
-            # browser_debug_port（直控不写用户配置）。
+            # 原生来源 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
+            # browser_debug_port（原生来源不写用户配置）。
             await switcher.ensure_cloud_browser(
                 fixed_port=self._m7a_direct_debug_port(self.script_config)
             )
@@ -1083,26 +1081,26 @@ class HSRManager(TaskExecuteBase):
             await switcher.ensure_game_started_by_mas()
         if cloud:
             self._append_log(
-                f"用户「{user_name}」进入脚本直控；MAS 托管该用户的云浏览器，"
+                f"用户「{user_name}」进入脚本原生来源；MAS 托管该用户的云浏览器，"
                 f"三月七按原生配置连接并执行：{engine_list(control.engines)}"
             )
         elif is_game_management_enabled(self.script_config):
             self._append_log(
-                f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
+                f"用户「{user_name}」进入脚本原生来源；MAS 负责先启动游戏并跟踪脚本进程，"
                 f"原生配置原样执行：{engine_list(control.engines)}"
             )
         else:
             self._append_log(
-                f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
+                f"用户「{user_name}」进入脚本原生来源；MAS 不管理游戏，"
                 f"仅运行原生配置并跟踪脚本进程：{engine_list(control.engines)}"
             )
         timeout_seconds = control.timeout_seconds
         if cloud:
-            # 云·星穹铁道整轮只排一次队，直控加一份排队预算。
+            # 云·星穹铁道整轮只排一次队，原生来源加一份排队预算。
             queue_minutes = cloud_max_queue_minutes(self.script_config)
             timeout_seconds += queue_minutes * 60
             self._append_log(
-                f"直控按整份原生配置一次跑完，单个脚本运行上限 "
+                f"原生来源按整份原生配置一次跑完，单个脚本运行上限 "
                 f"{control.timeout_minutes + queue_minutes} 分钟"
                 f"（日常 {control.daily_limit_minutes} + 周常 "
                 f"{control.weekly_limit_minutes} + 云排队 {queue_minutes}），"
@@ -1110,7 +1108,7 @@ class HSRManager(TaskExecuteBase):
             )
         else:
             self._append_log(
-                f"直控按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
+                f"原生来源按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
                 f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
                 "超时将终止脚本进程"
             )
@@ -1139,11 +1137,11 @@ class HSRManager(TaskExecuteBase):
                     if not result.success:
                         raise RuntimeError(
                             result.error
-                            or f"{engine_label(engine, left=False)}直控执行失败"
+                            or f"{engine_label(engine, left=False)}原生来源执行失败"
                         )
                     summary = (
                         result.summary
-                        or f"{engine_label(engine, left=False)}直控执行完成"
+                        or f"{engine_label(engine, left=False)}原生来源执行完成"
                     )
                     summaries.append(summary)
                     self._append_log(f"用户「{user_name}」{summary}")
@@ -1158,26 +1156,26 @@ class HSRManager(TaskExecuteBase):
                             self._direct_sessions.pop(engine, None)
         except Exception:
             user_item.status = "异常"
-            log_item.status = "HSR 脚本直控异常"
+            log_item.status = "HSR 脚本原生来源异常"
             log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
             # 执行任务后脚本（每用户仅一次）
             await run_script_after_task(user_config)
             raise
 
         user_item.status = "完成"
-        log_item.status = "HSR 脚本直控完成"
+        log_item.status = "HSR 脚本原生来源完成"
         log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
         # 执行任务后脚本（每用户仅一次）
         await run_script_after_task(user_config)
         return len(control.engines)
 
     def _reset_m7a_config_for_direct(self, user_name: str) -> None:
-        """直控前把三月七 config.yaml 还原成本轮开始前的原样。
+        """原生来源前把三月七 config.yaml 还原成本轮开始前的原样。
 
         托管三月七模块把 MAS 模板字段（副本、奖励开关、关通知、云平台端口等）
         直接写进真实 config.yaml，整轮结束才按运行期备份还原；三月七自己也会
         把运行状态（各任务时间戳等）写回同一个文件。同一轮里排在别的用户之后的
-        直控用户不还原，跑的就是上一个用户留下的配置，而不是「原样跑原生配置」。
+        原生来源用户不还原，跑的就是上一个用户留下的配置，而不是「原样跑原生配置」。
         备份在 ``prepare`` 里取，还原不动备份，收尾照常再还原一次。
         """
 
@@ -1187,14 +1185,14 @@ class HSRManager(TaskExecuteBase):
             try:
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
-                logger.opt(exception=True).warning(f"直控前还原三月七配置失败：{e}")
+                logger.opt(exception=True).warning(f"原生来源前还原三月七配置失败：{e}")
                 self._append_log(
-                    f"用户「{user_name}」直控前还原三月七 config.yaml 失败，"
+                    f"用户「{user_name}」原生来源前还原三月七 config.yaml 失败，"
                     f"将按当前文件运行：{e}"
                 )
                 return
             self._append_log(
-                f"用户「{user_name}」直控前已把三月七 config.yaml 还原为本轮开始前的原生配置"
+                f"用户「{user_name}」原生来源前已把三月七 config.yaml 还原为本轮开始前的原生配置"
             )
             return
 
@@ -1236,7 +1234,7 @@ class HSRManager(TaskExecuteBase):
         return None
 
     def _read_m7a_config_bytes(self) -> bytes | None:
-        """直控开跑前三月七 config.yaml 的原始字节，读不到时为 None。"""
+        """原生来源开跑前三月七 config.yaml 的原始字节，读不到时为 None。"""
 
         target = self._m7a_backup_target()
         if target is None:
@@ -1249,17 +1247,17 @@ class HSRManager(TaskExecuteBase):
     def _refresh_m7a_backup_after_direct(
         self, user_name: str, before_run: bytes | None
     ) -> None:
-        """直控三月七跑完后，把本轮 config.yaml 的运行期备份刷新为当前文件。
+        """原生来源三月七跑完后，把本轮 config.yaml 的运行期备份刷新为当前文件。
 
-        直控前 :meth:`_reset_m7a_config_for_direct` 已把文件还原成本轮开始前的原生
+        原生来源前 :meth:`_reset_m7a_config_for_direct` 已把文件还原成本轮开始前的原生
         配置，跑完的文件就是「原生配置 + 三月七自己写回的状态」（周常时间戳、
         体力计划余量、每日实训记录等）。``final_task`` / ``on_crash`` 按备份整轮还原，
-        不刷新的话这些状态每轮都被抹掉，直控用户的周常每轮重进。同一轮后面的托管
-        用户仍在刷新后的文件上打 patch，整轮结束还原回刷新后的备份；后面的直控用户
-        直控前也还原成它。
+        不刷新的话这些状态每轮都被抹掉，原生来源用户的周常每轮重进。同一轮后面的托管
+        用户仍在刷新后的文件上打 patch，整轮结束还原回刷新后的备份；后面的原生来源用户
+        原生来源前也还原成它。
 
         只在开跑前的文件与备份逐字节一致时刷新：不一致说明任务前脚本改过它（按账号
-        切换整份配置的用法）或直控前还原失败，这时跑完的文件不是「原生 + 三月七状态」，
+        切换整份配置的用法）或原生来源前还原失败，这时跑完的文件不是「原生 + 三月七状态」，
         保持原先的整轮还原语义。刷新失败只记日志，不影响后续用户与收尾。
         """
 
@@ -1272,8 +1270,8 @@ class HSRManager(TaskExecuteBase):
         try:
             if before_run is None or before_run != backup.read_bytes():
                 self._append_log(
-                    f"用户「{user_name}」直控前三月七 config.yaml 与本轮开始前的原生配置"
-                    "不一致（任务前脚本改过或直控前还原失败），不刷新运行期备份，"
+                    f"用户「{user_name}」原生来源前三月七 config.yaml 与本轮开始前的原生配置"
+                    "不一致（任务前脚本改过或原生来源前还原失败），不刷新运行期备份，"
                     "整轮结束仍按本轮开始前的配置还原"
                 )
                 return
@@ -1286,26 +1284,28 @@ class HSRManager(TaskExecuteBase):
                 parsed = None
             if not isinstance(parsed, dict) or not parsed:
                 self._append_log(
-                    f"用户「{user_name}」直控后三月七 config.yaml 不是有效配置，"
+                    f"用户「{user_name}」原生来源后三月七 config.yaml 不是有效配置，"
                     "不刷新运行期备份，整轮结束按本轮开始前的配置还原"
                 )
                 return
             atomic_write(backup, current)
         except Exception as e:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"直控后刷新{label}运行期备份失败：{e}")
+            logger.opt(exception=True).warning(
+                f"原生来源后刷新{label}运行期备份失败：{e}"
+            )
             self._append_log(
-                f"用户「{user_name}」直控后刷新三月七 config.yaml 备份失败，"
+                f"用户「{user_name}」原生来源后刷新三月七 config.yaml 备份失败，"
                 f"整轮结束将按本轮开始前的配置还原：{e}"
             )
             return
-        logger.info(f"{label} 运行期备份已刷新为直控后的文件：{source} -> {backup}")
+        logger.info(f"{label} 运行期备份已刷新为原生来源后的文件：{source} -> {backup}")
         self._append_log(
-            f"用户「{user_name}」直控结束，三月七 config.yaml 的运行期备份已刷新，"
+            f"用户「{user_name}」原生来源结束，三月七 config.yaml 的运行期备份已刷新，"
             "整轮结束保留三月七自己写回的运行状态"
         )
 
     def _log_ignored_m7a_after_finish(self) -> None:
-        """直控下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
+        """原生来源下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
 
         try:
             after_finish = load_m7a_native_config(self.script_config).get(

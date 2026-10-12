@@ -30,6 +30,27 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【MFW】脚本编辑页显示 Mirror 酱 CDK 剩余天数，CDK 有问题时给出提示 (#1330) by @qiyinxi
+- 【调度】调度日志默认跟随主题色，并支持手动切换深色或浅色。 (#1335) by @ClozyA
+
+### 变更
+
+- 【MSS】个人版 MSS 编排开关移入神秘入口，设置页不再单独展示 by @ClozyA
+- 【设置】失败回放设置的启用开关改为是/否下拉框，不再显示为整列长条（仅公测） (#1329) by @qiyinxi
+
+### 修复
+
+- 【MFW】模拟器和实例下拉框不再同时出现「不指定」和「未选择」两个相同选项 (#1331) by @qiyinxi
+- 【主页】深色模式下主页 3D 卫星不再显示星空和星云背景（仅公测） by @ClozyA
+- 【调度】修复调度日志过长时高亮消失的问题。 (#1336) by @ClozyA
+- 【工具】修复代理或时间偏差导致社区签到失败及误报凭据失效、凭据解码失败误报长度错误的问题 by @Lance0174
+- 【设置】修复主题商店外观弹窗紧贴标题栏的问题（仅公测） by @ClozyA
+- 【设置】修复登录分享站后立刻掉线、主题商店和配置上传用不了的问题 (#1316) by @qiyinxi
+
 ## [v5.7.0-beta.2] - 2026-10-10
 
 ### 新增
@@ -468,6 +489,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...dev
 [v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2
 [v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2

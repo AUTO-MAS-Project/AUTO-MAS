@@ -34,7 +34,7 @@ from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -174,7 +174,7 @@ class GeneralManager(ScriptManagerBase):
             try:
                 self.script_config_path.unlink()
             except OSError as e:
-                logger.opt(exception=True).warning(f"清理脚本直控配置失败: {e}")
+                logger.opt(exception=True).warning(f"清理脚本原生配置失败: {e}")
         return not self.script_config_path.exists()
 
     def _recover_previous_run(self) -> None:
@@ -193,7 +193,7 @@ class GeneralManager(ScriptManagerBase):
             )
 
     def _snapshot_external_config(self) -> None:
-        """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
+        """保存脚本原生来源配置，作为用户切换和任务结束时的恢复基线。"""
         self.external_config_exists = self.script_config_path.exists()
 
         if self.external_config_exists:
@@ -210,14 +210,14 @@ class GeneralManager(ScriptManagerBase):
         self.external_config_snapshot_ready = True
 
     def _restore_external_config(self) -> None:
-        """恢复脚本直控配置，隔离 MAS 用户配置的运行结果。"""
+        """恢复脚本原生来源配置，隔离 MAS 用户配置的运行结果。"""
         if not self.external_config_snapshot_ready:
             return
 
         if not self.external_config_exists:
             # 任务前原生配置不存在: 现场内容只可能是本任务注入的 MAS 配置
-            # (查看会话恢复的备份 / 非直控用户的下发), 删除即恢复「不存在」
-            # 原状——混合用户时直控用户也因此拿到干净的原始现场
+            # (查看会话恢复的备份 / 非原生来源用户的下发), 删除即恢复「不存在」
+            # 原状——混合用户时原生来源用户也因此拿到干净的原始现场
             self._remove_script_config()
             logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
@@ -230,7 +230,7 @@ class GeneralManager(ScriptManagerBase):
             # 否则用户目录会停在半删状态
             if not self._remove_script_config():
                 logger.warning(
-                    f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
+                    f"脚本原生来源配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
                 )
             self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
@@ -246,8 +246,8 @@ class GeneralManager(ScriptManagerBase):
         if user_id == "Default":
             return True
         user_config = self.user_config[uuid.UUID(user_id)]
-        # 直控=不写；脚本/用户来源都写面板值
-        return read_config_source(user_config) != CONFIG_SOURCE_DIRECT
+        # 原生来源=不写；shared/independent 来源都写面板值
+        return read_config_base(user_config) != CONFIG_BASE_NATIVE
 
     async def prepare(self):
         """运行前准备"""
@@ -298,7 +298,7 @@ class GeneralManager(ScriptManagerBase):
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
 
-        logger.info(f"记录脚本直控配置: {self.script_config_path}")
+        logger.info(f"记录脚本原生来源配置: {self.script_config_path}")
         self._recover_previous_run()
         self._snapshot_external_config()
 
@@ -345,7 +345,7 @@ class GeneralManager(ScriptManagerBase):
             user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
                 f"用户 {user_id} 配置来源: "
-                f"{'MAS 独立配置' if use_mas_config else '脚本直控配置'}"
+                f"{'MAS 独立配置' if use_mas_config else '脚本原生来源配置'}"
             )
             if not use_mas_config:
                 self._restore_external_config()
@@ -437,7 +437,9 @@ class GeneralManager(ScriptManagerBase):
             self._restore_external_config()
             self._cleanup_external_config_snapshot()
         except Exception as restore_error:
-            logger.opt(exception=True).warning(f"恢复脚本直控配置失败: {restore_error}")
+            logger.opt(exception=True).warning(
+                f"恢复脚本原生来源配置失败: {restore_error}"
+            )
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

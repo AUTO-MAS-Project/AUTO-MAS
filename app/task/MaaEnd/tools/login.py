@@ -419,6 +419,9 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
     """切换到终末地客户端已保存的最近账号。"""
     if not IS_WINDOWS:
         raise RuntimeError("终末地账号切换仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
     if emulator_info is not None:
         raise RuntimeError("终末地模拟器登录暂未实现")
     if len(id) < 4:
