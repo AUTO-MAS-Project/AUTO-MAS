@@ -239,8 +239,10 @@ async def _sync_skland_time(client: httpx.AsyncClient) -> None:
         logger.debug("森空岛服务器取时暂不可用，继续签到并由请求结果报告原因")
 
 
-def _parse_json_object(response: httpx.Response) -> dict[str, object]:
-    """解析森空岛响应，并拒绝空值或非对象 JSON。"""
+def _parse_json_object(
+    response: httpx.Response, *, allow_already_signed: bool = False
+) -> dict[str, object]:
+    """解析森空岛响应，签到接口可保留已签到的业务结果。"""
 
     try:
         payload = response.json()
@@ -253,7 +255,14 @@ def _parse_json_object(response: httpx.Response) -> dict[str, object]:
     code = payload.get("code", payload.get("status"))
     if code is None:
         raise ValueError("森空岛接口响应缺少状态信息，请检查代理/DNS 设置或稍后重试")
-    if not response.is_success or (code != 0 and not is_skland_already_signed(payload)):
+    # 终末地已签到时仍返回 403；10001 在其他接口可能表示参数错误。
+    if (
+        allow_already_signed
+        and (response.is_success or response.status_code == 403)
+        and is_skland_already_signed(payload)
+    ):
+        return payload
+    if not response.is_success or code != 0:
         message = str(payload.get("message") or payload.get("msg") or "")
         if "grantv2req.token" in message.lower() and "'max'" in message.lower():
             raise ValueError("森空岛凭据解码失败，请重新复制 Token 或完整凭据")
@@ -1308,7 +1317,7 @@ async def _run_skland_sign_in(
                     headers=sign_headers,
                     content=json.dumps(body),
                 )
-                rsp = _parse_json_object(response)
+                rsp = _parse_json_object(response, allow_already_signed=True)
 
                 if rsp.get("code") != 0:
                     if is_skland_already_signed(rsp):
@@ -1363,7 +1372,7 @@ async def _run_skland_sign_in(
 
         assert client is not None
         response = await client.post(endfield_sign_url, headers=headers)
-        return _parse_json_object(response)
+        return _parse_json_object(response, allow_already_signed=True)
 
     async def sign_for_endfield(cred, sign_token) -> dict[str, object]:
         """终末地签到"""

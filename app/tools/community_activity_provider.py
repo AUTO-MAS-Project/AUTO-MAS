@@ -632,6 +632,7 @@ class CommunityActivityProvider:
         client: httpx.AsyncClient,
     ) -> tuple[dict[str, str], str]:
         from .skland import (
+            SklandAuthenticationError,
             get_cached_device_id,
             prepare_skland_session_credential,
             refresh_skland_session_credential,
@@ -665,6 +666,7 @@ class CommunityActivityProvider:
                         )
                     except (
                         CommunityActivityTransportError,
+                        SklandAuthenticationError,
                         httpx.HTTPError,
                         OSError,
                         ValueError,
