@@ -936,6 +936,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_config, CONFIG_BASE_SHARED
         )
         self.check_result = "-"
+        self.maa_root_path: Path | None = None
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -944,16 +945,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_advanced = False
 
     async def check(self) -> str:
-
-        # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
-        if (
-            self.task_info.is_queue_task
-            and self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
-        ):
-            self.cur_user_item.status = "跳过"
-            return "今日代理次数已达上限, 跳过该用户"
 
         if (
             self.config_base == CONFIG_BASE_INDEPENDENT
@@ -1068,14 +1059,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def main_task(self):
         """自动代理模式主逻辑"""
-
-        # 初始化每日代理状态（按用户区服的游戏日换日）
-        self.curdate = game_now(self.cur_user_config.get("Info", "Server")).strftime(
-            "%Y-%m-%d"
-        )
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -1341,10 +1324,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         try:
             await super()._finalize_task()
         finally:
-            restore_depot_cache(
-                self.maa_root_path,
-                depot_cache_snapshot_dir(self.script_info.script_id),
-            )
+            if self.maa_root_path is not None:
+                restore_depot_cache(
+                    self.maa_root_path,
+                    depot_cache_snapshot_dir(self.script_info.script_id),
+                )
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
