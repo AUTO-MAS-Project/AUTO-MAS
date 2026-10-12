@@ -377,7 +377,8 @@ def test_tristate_cross_source_restore_switches_base(
     service = build_restore_service(ctx, [_tri_pool(recorder)])
     created = asyncio.run(service.ensure("tri"))
     assert (
-        read_backup_base(get_backup_dir(_tri_root_path(ctx), created["time"])) == "shared"
+        read_backup_base(get_backup_dir(_tri_root_path(ctx), created["time"]))
+        == "shared"
     )
     assert asyncio.run(service.current_base("tri")) == "shared"
     user._base = "independent"
