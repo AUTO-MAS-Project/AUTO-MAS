@@ -825,6 +825,7 @@ const loadUserData = async (): Promise<boolean> => {
         if (userIndex.type === 'MaaUserConfig') {
           Object.assign(formData, {
             Info: { ...getDefaultMAAUserData().Info, ...userData.Info },
+            Stage: { ...getDefaultMAAUserData().Stage, ...userData.Stage },
             Task: { ...getDefaultMAAUserData().Task, ...userData.Task },
             Notify: { ...getDefaultMAAUserData().Notify, ...userData.Notify },
             Data: { ...getDefaultMAAUserData().Data, ...userData.Data },
