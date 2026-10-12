@@ -53,7 +53,11 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 ## 判态与清理
 
-判态顺序：内置 fatal 日志 → `Daily Task Completed`（ok-ww 的 DailyTask 跑完才打印）视为成功 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。`Window closed exit_event.is_set` 是关窗日志，任何退出路径都会打，不能作完成依据。
+判态顺序：内置 fatal 日志（游戏更新、`info_set 错误`）→ `Daily Task Completed`（ok-ww 的 DailyTask 跑完才打印）视为成功 → `connected:0`/`connected:False` 视为未连接异常 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
+
+`Window closed exit_event.is_set` 是关窗日志，任何退出路径都会打，不能作完成依据。`connected:0` 也不能进内置 fatal：ok-ww 成功后按 `-e` 关游戏同样会打它（只比完成日志晚约 5s），日志监控若跨过这 5s，两行会落进同一批——所以未连接只在没有完成日志时判定。
+
+判据依赖上游契约：成功标记 `Daily Task Completed`（ok-ww `src/task/DailyTask.py` 的 `run()` 末尾）与 `-t 1` 指向的 `onetime_tasks[0]` 都归上游所有，而 ok-ww 走 `AUTO_UPDATE`（MAS 不钉版本）：上游改名或调整任务顺序会让本专项静默退化（永不判成功，每轮等到超时）。改判据前先核对这两个上游事实。
 
 「游戏更新成功, 游戏即将重启」是环境变更而非脚本错误：命中后照常杀进程收尾，但本轮运行次数用尽也要把次数延长一轮保底重跑——重试时游戏已是新版，预期成功。每个任务只延长一次（总轮次封顶 `RunTimesLimit + 1`）：再命中说明更新根本没应用成功，属持久性环境问题，按异常收尾。这是唯一允许突破 `RunTimesLimit` 的 fatal；MAS 的鸣潮前置更新器只镜像官方启动器通道（index.json + state 记账），客户端自身的游戏内更新检查是另一条通道，前置判「无需更新」时它仍可能弹框，此标记是唯一的兜底网。其他专项未实测出游戏内自更新通道前，不要预加同类标记，交给通用兜底 + 默认次数承接。
 
