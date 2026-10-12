@@ -43,23 +43,18 @@ from typing import Any, Awaitable, Callable, Literal
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    META_FILE_NAMES,
     archive_files,
     dir_files,
     get_backup_dir,
     list_times,
-    read_backup_mode,
+    read_backup_base,
     read_backup_text,
-    write_backup_mode,
+    write_backup_base,
 )
+from app.utils.constants import BASE_INDEPENDENT, BASE_SHARED
 
 logger = get_logger("配置恢复服务")
-
-MODE_SCRIPT = "脚本"
-"""三态配置来源：脚本级（owner = 共享 Default 目录）"""
-
-MODE_USER = "用户"
-"""三态配置来源：用户级（owner = 用户独立目录）"""
 
 
 @dataclass
@@ -108,7 +103,7 @@ class ConfigRestorePool:
     kind: str
     """池类别：``user`` 或 ``script``。
 
-    用于构建校验与三态增强的作用域判定（``mas_mode`` 仅 user 池生效）；
+    用于构建校验与来源增强的作用域判定（``mas_base`` 仅 user 池生效）；
     前端分段展示顺序由池表顺序决定（MAS 在前、脚本在后）。
     """
 
@@ -163,33 +158,33 @@ class ConfigRestorePool:
     生效。
     """
 
-    mas_mode: Literal["tri_state", "user_only", "sidecar_only"] | None = None
-    """MAS 池的配置来源三态声明（仅 ``kind="user"`` 池有意义；缺省 ``None``
-    表示不启用三态增强，行为完全等于现状，向后兼容）。
+    mas_base: Literal["tri_state", "user_only", "sidecar_only"] | None = None
+    """MAS 池的配置来源声明（仅 ``kind="user"`` 池有意义；缺省 ``None``
+    表示不启用来源增强，行为完全等于现状，向后兼容）。
 
-    - ``"tri_state"``：owner 随 ``Info.Mode`` 切换（脚本=共享 ``Default``
-      目录、用户=独立目录、直控=无 MAS 配置）。归档时把备份时点 Mode 写入
-      备份元数据（``_mas_mode``）；恢复时若备份 Mode ≠ 当前 Mode，自动把
-      ``Info.Mode`` 写回备份时点再执行恢复——专项 restore 回调按当前 Mode
-      解析 owner，写回后目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
-      重定向 + 状态切回）。提示由前端比对 ``list`` 返回的当前来源给出。
-    - ``"user_only"``：恒按用户目录（无 owner 解耦）。备份恒标注「用户级」，
-      无跨来源校验（备份内容与 Mode 无关）。
-    - ``"sidecar_only"``：纯字段侧车、无目录副本。备份标注实际 Mode 供列表
-      标签，无目录迁移校验（恢复是字段回填，Mode 仅预览不回填）。
+    - ``"tri_state"``：owner 随 ``Info.Base`` 切换（shared=共享 ``Default``
+      目录、independent=独立目录、native=无 MAS 配置）。归档时把备份时点
+      base 写入备份元数据（``_mas_base``）；恢复时若备份 base ≠ 当前 base，
+      自动把 ``Info.Base`` 写回备份时点再执行恢复——专项 restore 回调按当前
+      base 解析 owner，写回后目标自然就是备份 base 的目录（跨来源恢复 =
+      目录重定向 + 状态切回）。提示由前端比对 ``list`` 返回的当前来源给出。
+    - ``"user_only"``：恒按用户目录（无 owner 解耦）。备份恒标注独立来源，
+      无跨来源校验（备份内容与 base 无关）。
+    - ``"sidecar_only"``：纯字段侧车、无目录副本。备份标注实际 base 供列表
+      标签，无目录迁移校验（恢复是字段回填，base 仅预览不回填）。
     """
 
-    current_mode: Callable[[RestoreContext], Awaitable[str | None]] | None = None
-    """读当前配置来源 Mode（如 ``UserData.Info.Mode``）。
+    current_base: Callable[[RestoreContext], Awaitable[str | None]] | None = None
+    """读当前配置来源 base（如 ``UserData.Info.Base``）。
 
-    缺省用基座默认读取（统一字段 ``Info.Mode``，读不到返回 ``None``）；
-    ``tri_state`` / ``sidecar_only`` 标注备份时点 Mode 用。
+    缺省用基座默认读取（统一字段 ``Info.Base``，读不到返回 ``None``）；
+    ``tri_state`` / ``sidecar_only`` 标注备份时点 base 用。
     """
 
-    set_mode: Callable[[RestoreContext, str], Awaitable[None]] | None = None
-    """跨来源恢复时把 ``Info.Mode`` 写回备份时点（``tri_state`` 必须）。
+    set_base: Callable[[RestoreContext, str], Awaitable[None]] | None = None
+    """跨来源恢复时把 ``Info.Base`` 写回备份时点（``tri_state`` 必须）。
 
-    缺省 ``None``：跨来源恢复（备份 Mode ≠ 当前 Mode）时拒绝执行并报错，
+    缺省 ``None``：跨来源恢复（备份 base ≠ 当前 base）时拒绝执行并报错，
     避免「目录写过去了状态没切回、下次运行 owner 又变回去」的半恢复。
     """
 
@@ -225,14 +220,14 @@ class ConfigRestoreTarget:
     """``ts`` → 归档目录（缺省派生用）；service.preview 借此为未带 ``files``
     字段的定制预览载荷注入标准文件清单（见 skill 文档 §3.4 备份文件兜底）。"""
 
-    mas_mode: Literal["tri_state", "user_only", "sidecar_only"] | None = None
-    """池声明的三态类型（绑定后透传；``list`` 标注 / ``restore`` 切换用）。"""
+    mas_base: Literal["tri_state", "user_only", "sidecar_only"] | None = None
+    """池声明的来源类型（绑定后透传；``list`` 标注 / ``restore`` 切换用）。"""
 
-    current_mode: Callable[[], Awaitable[str | None]] | None = None
-    """读当前配置来源 Mode（绑定上下文后无参调用）。"""
+    current_base: Callable[[], Awaitable[str | None]] | None = None
+    """读当前配置来源 base（绑定上下文后无参调用）。"""
 
-    set_mode: Callable[[str], Awaitable[None]] | None = None
-    """跨来源恢复时写回备份时点 Mode（绑定上下文后无参调用）。"""
+    set_base: Callable[[str], Awaitable[None]] | None = None
+    """跨来源恢复时写回备份时点 base（绑定上下文后无参调用）。"""
 
 
 class ConfigRestoreService:
@@ -259,11 +254,11 @@ class ConfigRestoreService:
         return target
 
     async def list(self, key: str) -> list[dict]:
-        """备份列表（倒序），每项带配置来源标注：``[{"time", "mode"}]``。
+        """备份列表（倒序），每项带配置来源标注：``[{"time", "base"}]``。
 
-        ``mode`` 为备份时点的三态 Mode（``脚本`` / ``用户`` / ``直控``）；
-        无标注（旧版备份或未声明三态）为 ``None``。当前来源见
-        :meth:`current_mode`。
+        ``base`` 为备份时点的配置来源（``shared`` / ``independent`` /
+        ``native``）；无标注（旧版备份或未声明来源）为 ``None``。当前来源见
+        :meth:`current_base`。
         """
 
         target = self.get_target(key)
@@ -272,25 +267,25 @@ class ConfigRestoreService:
         times = await target.list_backups()
         items: list[dict] = []
         for ts in times:
-            mode: str | None = None
-            if target.mas_mode is not None and target.backup_dir_for is not None:
+            base: str | None = None
+            if target.mas_base is not None and target.backup_dir_for is not None:
                 backup_dir = await target.backup_dir_for(ts)
                 if backup_dir is not None:
-                    mode = read_backup_mode(backup_dir)
-            items.append({"time": ts, "mode": mode})
+                    base = read_backup_base(backup_dir)
+            items.append({"time": ts, "base": base})
         return items
 
-    async def current_mode(self, key: str) -> str | None:
-        """该池当前的配置来源 Mode（``脚本`` / ``用户`` / ``直控``）。
+    async def current_base(self, key: str) -> str | None:
+        """该池当前的配置来源 base（``shared`` / ``independent`` / ``native``）。
 
         只有 ``tri_state`` 池有「跨来源」概念：``user_only`` / ``sidecar_only``
-        与脚本级池返回 ``None``（备份标注的实际 Mode 只作展示，不参与比对）。
+        与脚本级池返回 ``None``（备份标注的实际 base 只作展示，不参与比对）。
         """
 
         target = self.get_target(key)
-        if target.mas_mode != "tri_state" or target.current_mode is None:
+        if target.mas_base != "tri_state" or target.current_base is None:
             return None
-        return await target.current_mode()
+        return await target.current_base()
 
     async def preview(self, key: str, ts: str) -> dict:
         """预览载荷（专项定制结构）+ 标准 ``files`` 字段统一注入。
@@ -310,21 +305,21 @@ class ConfigRestoreService:
                 payload["files"] = [
                     {"path": rel, "size": path.stat().st_size}
                     for rel, path in sorted(dir_files(backup_dir).items())
-                    if rel != MODE_FILE_NAME  # 模式标注是元数据，不进文件清单
+                    if rel not in META_FILE_NAMES  # 来源标注是元数据，不进文件清单
                 ]
         return payload
 
     async def restore(self, key: str, ts: str) -> None:
         """执行恢复（三态跨来源则自动切换来源）。
 
-        ``tri_state`` 池的 mas 备份若标注的 Mode ≠ 当前 Mode，先把
-        ``Info.Mode`` 写回备份时点再执行——专项 restore 按当前 Mode 解析
-        owner，写回后目标即备份 Mode 的目录（跨来源恢复 = 目录重定向 +
-        状态切回）。**顺序固定为 set_mode 先于 restore**：若 restore 失败
-        （如目标目录被占用），Mode 已停在备份时点而目录未恢复，下次运行
-        会按备份时点 Mode 读当前目录——恢复前 force 归档已留存底，可手动
-        找回，勿调整为可交换顺序。其余情况（同 Mode / 无标注旧备份 /
-        非 tri_state）直接执行，行为与未声明三态一致。前端据 ``list``
+        ``tri_state`` 池的 mas 备份若标注的 base ≠ 当前 base，先把
+        ``Info.Base`` 写回备份时点再执行——专项 restore 按当前 base 解析
+        owner，写回后目标即备份 base 的目录（跨来源恢复 = 目录重定向 +
+        状态切回）。**顺序固定为 set_base 先于 restore**：若 restore 失败
+        （如目标目录被占用），base 已停在备份时点而目录未恢复，下次运行
+        会按备份时点 base 读当前目录——恢复前 force 归档已留存底，可手动
+        找回，勿调整为可交换顺序。其余情况（同来源 / 无标注旧备份 /
+        非 tri_state）直接执行，行为与未声明来源一致。前端据 ``list``
         返回的当前来源提示。
         """
 
@@ -332,24 +327,24 @@ class ConfigRestoreService:
         if target.restore is None:
             raise ValueError(f"目标「{key}」不支持恢复")
         if (
-            target.mas_mode == "tri_state"
+            target.mas_base == "tri_state"
             and target.backup_dir_for is not None
-            and target.current_mode is not None
+            and target.current_base is not None
         ):
             backup_dir = await target.backup_dir_for(ts)
             if backup_dir is not None:
-                backup_mode = read_backup_mode(backup_dir)
-                current_mode = await target.current_mode()
+                backup_base = read_backup_base(backup_dir)
+                current_base = await target.current_base()
                 if (
-                    backup_mode in (MODE_SCRIPT, MODE_USER)
-                    and current_mode
-                    and backup_mode != current_mode
+                    backup_base in (BASE_SHARED, BASE_INDEPENDENT)
+                    and current_base
+                    and backup_base != current_base
                 ):
-                    if target.set_mode is None:
+                    if target.set_base is None:
                         raise ValueError(
                             "该备份来自其他配置来源，当前专项不支持来源切换恢复"
                         )
-                    await target.set_mode(backup_mode)
+                    await target.set_base(backup_base)
         await target.restore(ts)
 
     async def ensure(self, key: str) -> dict:
@@ -387,18 +382,18 @@ def _bind_context(
     return call
 
 
-async def _default_current_mode(ctx: RestoreContext) -> str | None:
-    """基座默认读取当前配置来源 Mode（统一字段 ``UserData.Info.Mode``）。
+async def _default_current_base(ctx: RestoreContext) -> str | None:
+    """基座默认读取当前配置来源 base（统一字段 ``UserData.Info.Base``）。
 
     读不到（UserData 结构不匹配 / 用户不存在）返回 ``None``（不标注不校验，
-    降级为现状）。专项 UserData 结构特殊时可用 :attr:`ConfigRestorePool.current_mode`
+    降级为现状）。专项 UserData 结构特殊时可用 :attr:`ConfigRestorePool.current_base`
     覆盖。
     """
 
     try:
         user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-        mode = user.get("Info", "Mode")
-        return str(mode) if mode else None
+        base = user.get("Info", "Base")
+        return str(base) if base else None
     except Exception:
         return None
 
@@ -424,16 +419,16 @@ def _build_target(pool: ConfigRestorePool, ctx: RestoreContext) -> ConfigRestore
     bound_read_file = _bind_context(pool.read_file, ctx)
     bound_files = _bind_context(pool.files, ctx)
     bound_root = _bind_context(pool.backup_root, ctx)
-    bound_current_mode = _bind_context(pool.current_mode, ctx)
-    bound_set_mode = _bind_context(pool.set_mode, ctx)
+    bound_current_base = _bind_context(pool.current_base, ctx)
+    bound_set_base = _bind_context(pool.set_base, ctx)
 
     declarative = bound_files is not None and bound_root is not None
     root_only = bound_root is not None
 
-    # 三态增强：只对 kind="user" 池有意义；缺省 Mode 读取用基座默认
-    effective_mas_mode = pool.mas_mode if pool.kind == "user" else None
-    if effective_mas_mode is not None and bound_current_mode is None:
-        bound_current_mode = _bind_context(_default_current_mode, ctx)
+    # 来源增强：只对 kind="user" 池有意义；缺省 base 读取用基座默认
+    effective_mas_base = pool.mas_base if pool.kind == "user" else None
+    if effective_mas_base is not None and bound_current_base is None:
+        bound_current_base = _bind_context(_default_current_base, ctx)
 
     backup_dir_for: Callable[[str], Awaitable[Path | None]] | None = None
     if root_only:
@@ -462,14 +457,14 @@ def _build_target(pool: ConfigRestorePool, ctx: RestoreContext) -> ConfigRestore
             dest = archive_files(payload, root)
             if dest is None:
                 return {"created": False, "time": latest}
-            # 三态增强：归档时标注备份时点 Mode（列表标签 / 恢复校验用）
-            if effective_mas_mode is not None:
-                if effective_mas_mode == "user_only":
-                    mode = MODE_USER
+            # 来源增强：归档时标注备份时点 base（列表标签 / 恢复校验用）
+            if effective_mas_base is not None:
+                if effective_mas_base == "user_only":
+                    base = BASE_INDEPENDENT
                 else:
-                    mode = await bound_current_mode()  # type: ignore[misc]
-                if mode:
-                    write_backup_mode(dest, mode)
+                    base = await bound_current_base()  # type: ignore[misc]
+                if base:
+                    write_backup_base(dest, base)
             logger.info(f"池「{pool.key}」配置已归档: {dest.name}")
             return {"created": True, "time": dest.name}
 
@@ -498,9 +493,9 @@ def _build_target(pool: ConfigRestorePool, ctx: RestoreContext) -> ConfigRestore
         snapshot=bound_snapshot,
         read_file=bound_read_file,
         backup_dir_for=backup_dir_for,
-        mas_mode=effective_mas_mode,
-        current_mode=bound_current_mode,
-        set_mode=bound_set_mode,
+        mas_base=effective_mas_base,
+        current_base=bound_current_base,
+        set_base=bound_set_base,
     )
 
 
@@ -523,8 +518,8 @@ def build_restore_service(
         seen.add(pool.key)
         if pool.kind not in ("user", "script"):
             raise ValueError(f"池「{pool.key}」的 kind 非法: {pool.kind}")
-        if pool.mas_mode not in (None, "tri_state", "user_only", "sidecar_only"):
-            raise ValueError(f"池「{pool.key}」的 mas_mode 非法: {pool.mas_mode}")
+        if pool.mas_base not in (None, "tri_state", "user_only", "sidecar_only"):
+            raise ValueError(f"池「{pool.key}」的 mas_base 非法: {pool.mas_base}")
         # 声明式形态：files 与 backup_root 必须成对，否则 list/preview/ensure
         # 全部派生不出来，运行期才报「不支持」是误导性错误
         if pool.files is not None and pool.backup_root is None:

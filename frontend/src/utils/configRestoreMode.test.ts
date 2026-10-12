@@ -16,15 +16,15 @@ const t = (key: string, named?: Record<string, string>) =>
 
 describe('sourceLabelKey / sourceTagColor', () => {
   it('三态取值映射到各自词条与标签色', () => {
-    expect(sourceLabelKey('脚本')).toBe('edit.configRestoreModeScript')
-    expect(sourceLabelKey('用户')).toBe('edit.configRestoreModeUser')
-    expect(sourceLabelKey('直控')).toBe('edit.configRestoreModeDirect')
-    expect(sourceTagColor('脚本')).toBe('blue')
-    expect(sourceTagColor('用户')).toBe('green')
-    expect(sourceTagColor('直控')).toBe('orange')
+    expect(sourceLabelKey('shared')).toBe('edit.configRestoreModeScript')
+    expect(sourceLabelKey('independent')).toBe('edit.configRestoreModeUser')
+    expect(sourceLabelKey('native')).toBe('edit.configRestoreModeDirect')
+    expect(sourceTagColor('shared')).toBe('blue')
+    expect(sourceTagColor('independent')).toBe('green')
+    expect(sourceTagColor('native')).toBe('orange')
   })
 
-  it('未知值按用户级兜底', () => {
+  it('未知值按独立兜底', () => {
     expect(sourceLabelKey('未知')).toBe('edit.configRestoreModeUser')
     expect(sourceTagColor('未知')).toBe('green')
   })
@@ -32,14 +32,14 @@ describe('sourceLabelKey / sourceTagColor', () => {
 
 describe('isCrossSourceRestore', () => {
   it('两侧都已标注且不一致才跨来源', () => {
-    expect(isCrossSourceRestore('脚本', '用户')).toBe(true)
-    expect(isCrossSourceRestore('用户', '脚本')).toBe(true)
+    expect(isCrossSourceRestore('shared', 'independent')).toBe(true)
+    expect(isCrossSourceRestore('independent', 'shared')).toBe(true)
   })
 
   it('同来源或任一侧未标注都不跨', () => {
-    expect(isCrossSourceRestore('脚本', '脚本')).toBe(false)
-    expect(isCrossSourceRestore('脚本', null)).toBe(false)
-    expect(isCrossSourceRestore(null, '脚本')).toBe(false)
+    expect(isCrossSourceRestore('shared', 'shared')).toBe(false)
+    expect(isCrossSourceRestore('shared', null)).toBe(false)
+    expect(isCrossSourceRestore(null, 'shared')).toBe(false)
     expect(isCrossSourceRestore(undefined, undefined)).toBe(false)
   })
 })
@@ -48,7 +48,7 @@ describe('buildRestoreConfirm', () => {
   const base = { title: '恢复确认', desc: '将覆盖当前配置' }
 
   it('未跨来源：保留原标题，仅原始描述一段', () => {
-    expect(buildRestoreConfirm(t, base, '脚本', '脚本')).toEqual({
+    expect(buildRestoreConfirm(t, base, 'shared', 'shared')).toEqual({
       title: '恢复确认',
       paragraphs: ['将覆盖当前配置'],
     })
@@ -59,7 +59,7 @@ describe('buildRestoreConfirm', () => {
   })
 
   it('跨来源：换标题并追加来源切换说明（含两侧标签插值）', () => {
-    const result = buildRestoreConfirm(t, base, '用户', '脚本')
+    const result = buildRestoreConfirm(t, base, 'independent', 'shared')
     expect(result.title).toBe('edit.configRestoreCrossSourceTitle')
     expect(result.paragraphs[0]).toBe('将覆盖当前配置')
     expect(result.paragraphs[1]).toContain('"backup":"edit.configRestoreModeUser"')
@@ -68,23 +68,23 @@ describe('buildRestoreConfirm', () => {
   })
 
   it('备份来自脚本级时额外提醒共享配置被覆盖', () => {
-    const result = buildRestoreConfirm(t, base, '脚本', '用户')
+    const result = buildRestoreConfirm(t, base, 'shared', 'independent')
     expect(result.paragraphs).toHaveLength(3)
     expect(result.paragraphs[2]).toBe('edit.configRestoreCrossSourceShared')
   })
 
-  it('备份来自直控：跨来源但不追加共享覆盖提醒（只有脚本备份才提醒）', () => {
-    const result = buildRestoreConfirm(t, base, '直控', '脚本')
+  it('备份来自原生来源：跨来源但不追加共享覆盖提醒（只有共享备份才提醒）', () => {
+    const result = buildRestoreConfirm(t, base, 'native', 'shared')
     expect(result.title).toBe('edit.configRestoreCrossSourceTitle')
     expect(result.paragraphs).toHaveLength(2)
   })
 
-  it('当前来源为直控：直控备份同源不跨；脚本备份跨来源仍追加共享提醒', () => {
-    expect(buildRestoreConfirm(t, base, '直控', '直控')).toEqual({
+  it('当前来源为原生来源：原生来源备份同源不跨；共享备份跨来源仍追加共享提醒', () => {
+    expect(buildRestoreConfirm(t, base, 'native', 'native')).toEqual({
       title: '恢复确认',
       paragraphs: ['将覆盖当前配置'],
     })
-    const result = buildRestoreConfirm(t, base, '脚本', '直控')
+    const result = buildRestoreConfirm(t, base, 'shared', 'native')
     expect(result.title).toBe('edit.configRestoreCrossSourceTitle')
     expect(result.paragraphs).toHaveLength(3)
     expect(result.paragraphs[2]).toBe('edit.configRestoreCrossSourceShared')

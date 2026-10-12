@@ -4,7 +4,7 @@ export const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
   Info: {
     Name: '',
     Status: true,
-    Mode: '用户',
+    Base: 'independent',
     // 快速配置：独立于配置来源的用户级开关（生成模型 MaaFWUserConfig_Info 已含该字段）
     IfQuickConfig: true,
     RemainedDay: -1,

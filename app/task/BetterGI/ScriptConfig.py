@@ -27,7 +27,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import ProcessManager, get_logger
 from app.utils.platform import IS_ELEVATED
 
@@ -38,7 +38,7 @@ logger = get_logger("BetterGI 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """无参数启动 BetterGI 本体，供用户修改程序设置（原生 GUI 直控）。"""
+    """无参数启动 BetterGI 本体，供用户修改程序设置（原生 GUI 原生来源）。"""
 
     def __init__(
         self,
@@ -65,9 +65,9 @@ class ScriptConfigTask(TaskExecuteBase):
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
             user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            # 直控来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
-            mode = read_config_source(user_config)
-            self.use_mas_config = mode != CONFIG_SOURCE_DIRECT
+            # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
+            base = read_config_base(user_config)
+            self.use_mas_config = base != CONFIG_BASE_NATIVE
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
@@ -93,7 +93,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await self._kill_processes()
         logger.info(f"启动 BetterGI 设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
-        # 任务配置以 MAS 前端为准：GUI 直控只打开 BGI 供查看游戏/程序环境，
+        # 任务配置以 MAS 前端为准：GUI 原生来源只打开 BGI 供查看游戏/程序环境，
         # 不再预置一条龙槽位，也不在结束后回读（MAS 前端是唯一编辑入口）。
         self._cleanup_leftover_slot()
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
@@ -115,7 +115,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 data=WSTaskNoticeData(level="warning", message=_BGI_UNKILLABLE_HINT),
             )
         if not self.crashed:
-            logger.success("BetterGI 直控配置已打开（任务配置请以 MAS 前端为准）")
+            logger.success("BetterGI 原生来源配置已打开（任务配置请以 MAS 前端为准）")
             self.cur_user_item.status = "完成"
         self._cleanup_leftover_slot()
 

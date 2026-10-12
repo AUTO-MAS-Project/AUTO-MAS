@@ -24,6 +24,12 @@ export default {
     unknown: '未知',
   },
   comp: {
+    currentConfig: '当前配置：{source}',
+    configSourceShared: '共享配置',
+    configSourceIndependent: '独立配置',
+    configSourceNative: '脚本原生配置',
+    configOverrideEnabled: '覆写开启',
+    configOverrideDisabled: '覆写关闭',
     changelog: {
       empty: '本版本暂无更新日志',
       loadFailed: '更新日志加载失败，可直接下载更新',
@@ -266,7 +272,6 @@ export default {
     configureSrc: '配置SRC',
     configureOkWw: '配置ok-ww',
     configureWhimbox: '配置奇想盒',
-    configurePerUserMaaend: '在 MaaEnd 配置界面中编辑该账号的独立配置。',
     restartingAutoMasStops: '重启 AUTO-MAS 会停止当前正在运行的任务，确认重启吗？',
     restartBackendUpdate: '重启后端以更新',
     resetEverything: '重置全部',
@@ -1641,7 +1646,7 @@ export default {
     configSourceHintBase:
       '共享配置使用本托管共享的基础配置，独立配置使用当前账号的基础配置，原生使用脚本原有配置。',
     nativeConfigSourceDescription: '直接使用脚本自带的那份配置。',
-    // 「脚本」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
+    // 「共享」配置来源不可选时的悬停原因（运行时不存在脚本级共享语义的专项，统一文案）
     scriptModeDisabled: '不支持',
     ok: '确定',
     deleteThisTask2: '确定要删除这个任务吗？',
@@ -2333,7 +2338,7 @@ export default {
     configRestoreForceAction: '强制恢复',
     configRestoreUnrestorableTitle: '该备份无法恢复',
     configRestoreUnrestorableDesc: '备份内容不完整或包含 MAS 临时实例，已禁用恢复。',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: '共享',
     configRestoreModeUser: '独立',
     configRestoreModeDirect: '原生',
@@ -2354,7 +2359,7 @@ export default {
     configSessionDiscardedNotWritten:
       '原生程序没有写出完整配置（可能被强制结束），本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次，退出时让程序自行关闭。',
     configSessionDiscardedUnknown: '本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次。',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
@@ -4028,12 +4033,12 @@ export default {
       selectAllUsers: '全选',
       clearAllUsers: '取消全选',
       runScopeTitle: '本次运行范围',
-      runScopeExpand: '展开',
-      runScopeCollapse: '收起',
       runScopeTip: '取消勾选的托管与账号本次不运行；运行结束后这里的勾选会保留',
-      runScopeSelected: '已选 {selected}/{total} 个账号',
+      runScopeSelected: '已选 {selected}/{total} 个可运行账号',
       runScopeLoading: '账号加载中…',
       runScopeNoUsers: '没有可运行的账号',
+      runScopeUserDisabled: '未启用',
+      runScopeUserExpired: '天数已耗尽',
       runScopeLoadFailed: '账号加载失败，请重试',
       runScopeRetry: '重试',
       stop: '停止任务',
@@ -4292,10 +4297,7 @@ export default {
       startFailedRaw: '启动 {label} 配置失败',
       saveFailedRaw: '保存 {label} 配置失败',
       maaEndUnsupported: '当前控制器暂不支持共享 MaaEnd 配置，请使用独立配置入口',
-      maaEndUserStarted: '已启动 {script} / {user} 的 MaaEnd 配置',
       maaEndScriptStarted: '已启动 {script} 的 MaaEnd 配置',
-      maaEndUserTimeout: '{script} / {user} 配置会话已超时断开',
-      maaEndUserSaved: '{script} / {user} 的配置已保存',
       okwwStarted: '已打开 {name} 的 ok-ww 设置',
       okwwStartFailed: '启动 ok-ww 设置失败: {error}',
       okwwSaved: '{name} 的设置已保存',

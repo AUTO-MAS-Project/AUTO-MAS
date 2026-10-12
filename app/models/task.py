@@ -154,7 +154,9 @@ class TaskItem(ABC):
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
-    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
+    instance_idx: int | None = (
+        None  # 配置会话（原生来源）：会话窗口临时切换到的原生实例
+    )
     cycle_next_list: List[dict] = field(
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览

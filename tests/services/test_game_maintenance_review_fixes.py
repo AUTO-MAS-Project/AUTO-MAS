@@ -7,14 +7,52 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
-from tests.services.test_game_maintenance_notice_cache import (
-    environment as environment,
-)
-from tests.services.test_game_maintenance_notice_cache import (
-    maintenance_data,
-    transport,
-)
+from app.utils.constants import UTC8
+
+
+@pytest.fixture
+def environment(monkeypatch):
+    config = GlobalConfig()
+    clock = [0.0]
+    fixed_now = datetime(2026, 10, 10, 12, tzinfo=UTC8)
+
+    class ClockDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = fixed_now + timedelta(seconds=clock[0])
+            return (
+                current.replace(tzinfo=None) if tz is None else current.astimezone(tz)
+            )
+
+    monkeypatch.setattr(service, "Config", config)
+    monkeypatch.setattr(service, "datetime", ClockDatetime)
+    monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
+    return config, clock
+
+
+def maintenance_data():
+    return {
+        "schema_version": 1,
+        "games": {
+            "arknights": {
+                "maintenance": {
+                    "planned_start_at": "2026-10-10T11:00:00+08:00",
+                    "planned_end_at": "2026-10-10T15:00:00+08:00",
+                }
+            }
+        },
+    }
+
+
+def transport(monkeypatch, handler):
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        service.httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handler)),
+    )
 
 
 @pytest.mark.asyncio

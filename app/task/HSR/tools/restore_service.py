@@ -28,7 +28,7 @@
 mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段）：用户表
 （Info/Notify/Control）恒按用户，计划表（TaskSwitch/Stage/TaskOpt/Managed）
 按配置来源取脚本共享计划或用户计划，平铺键 ``组.键``，另带 ``_plan_owner``
-标注；Info.Mode 仅预览；不收录加密凭据、Data 运行统计、子表。恢复 = 用户表
+标注；Info.Base 仅预览；不收录加密凭据、Data 运行统计、子表。恢复 = 用户表
 回填 UserData、计划表写回当前 owner。native 池 = M7A config.yaml +
 SRA settings.json/cache.json/configs/（按 SRA appdata 根 + M7A 安装根
 组合指纹分桶）。
@@ -150,7 +150,7 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="sidecar_only",
+        mas_base="sidecar_only",
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

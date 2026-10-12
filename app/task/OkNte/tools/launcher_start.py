@@ -415,6 +415,9 @@ def wait_autoplay_game(
 
     if not IS_WINDOWS:
         raise RuntimeError("OK-NTE 启动器启动仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
     # 开工前退出屏保：屏保全屏覆盖会让后续窗口截图变成黑屏（沿用旧点击启动路径与
     # ok-nte 上游 LauncherTask 的行为）
     dismiss_screensaver()
@@ -485,6 +488,9 @@ def start_game_via_launcher(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-NTE 启动器启动仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
 
     # 挂机定时任务几乎必然带屏保运行：先退出屏保，避免截图全黑导致 OCR 全盲
     dismiss_screensaver()

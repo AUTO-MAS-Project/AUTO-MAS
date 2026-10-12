@@ -23,8 +23,8 @@
 备份时机（MAS「动手前」）：
 
 - 任务启动（manager ``prepare``）：``native`` 归档 ``ConfigPath`` 当前状态
-  （Folder 整目录 / File 单文件）——随后非直控运行会换入 MAS 配置、任务
-  结束恢复原状，直控+快速配置会直接写入，归档必须在任何写入前；
+  （Folder 整目录 / File 单文件）——随后非原生来源运行会换入 MAS 配置、任务
+  结束恢复原状，原生来源+快速配置会直接写入，归档必须在任何写入前；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_general``）：
   ``mas`` 归档该用户的 ``ConfigFile`` 目录（下发源，运行回写与会话保存会
   覆盖它）；
@@ -32,7 +32,7 @@
 - 编辑界面退出（前端 ensure）：``mas`` 归档 MAS 配置副本终态。
 
 General 的目录模型与 MAA 不同：``ConfigFile`` **恒按用户**（每个用户持有
-自己的目录，脚本态用户也不例外），三态只决定 MAS 是否读写它——因此 mas
+自己的目录，shared 来源用户也不例外），三态只决定 MAS 是否读写它——因此 mas
 池按用户分桶即恢复目标，无 owner 解耦、无侧车（MAS 编辑页字段不注入原生
 配置，不属于配置内容）。配置格式任意（透传），预览为**文件清单粒度**
 （文件名 + 大小），详细内容经「查看详细配置」在脚本 GUI 里查看。
@@ -68,7 +68,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/GeneralBackups/mas/{user_id}``。
 
     恒按用户分桶——General 的 ConfigFile 目录本来就按用户隔离（无 MAA 式
-    脚本态共享 Default），池与恢复目标一一对应。
+    shared 来源共享 Default），池与恢复目标一一对应。
     """
 
     return backup_root(script_id) / "mas" / user_id

@@ -431,7 +431,7 @@ async def update_game_sign_account(
                 return OutBase(
                     code=400,
                     status="error",
-                    message="森空岛凭据格式无效，请检查后重试",
+                    message=str(exc),
                 )
         cloud_genshin_token = flat_data.get("CloudGenshinToken")
         if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():

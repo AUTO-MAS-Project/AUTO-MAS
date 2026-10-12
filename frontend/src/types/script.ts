@@ -398,7 +398,7 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
-    Mode?: '脚本' | '用户' | '直控'
+    Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
@@ -637,12 +637,9 @@ export interface User {
     ProxyTimes: number
   }
   Info: {
-    Annihilation: string
     Id: string
-    InfrastMode: string
-    InfrastName: string
-    MedicineNumb: number
-    Mode: string
+    Base: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string
@@ -650,15 +647,20 @@ export interface User {
     Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
-    SeriesNumb: string
     Server: string
-    Stage: string
-    StageMode: string
-    Stage_1: string
-    Stage_2: string
-    Stage_3: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
+  }
+  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
+  Stage?: {
+    StageMode?: string
+    MedicineNumb?: number
+    SeriesNumb?: string
+    Stage?: string
+    Stage_1?: string
+    Stage_2?: string
+    Stage_3?: string
+    [key: string]: unknown
   }
   Notify: {
     Enabled: boolean
@@ -692,6 +694,9 @@ export interface User {
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
+    Annihilation?: string
+    InfrastMode?: string
+    InfrastName?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

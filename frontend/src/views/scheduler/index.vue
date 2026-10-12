@@ -89,6 +89,7 @@
               :resume-script-options="tab.resumeScriptOptions || []"
               :resume-script-loading="tab.resumeScriptLoading"
               :user-options="tab.userOptions || []"
+              :user-disabled-options="tab.userDisabledOptions || []"
               :user-options-loading="tab.userOptionsLoading"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"

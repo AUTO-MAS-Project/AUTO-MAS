@@ -21,6 +21,12 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    currentConfig: 'Configuration: {source}',
+    configSourceShared: 'Shared',
+    configSourceIndependent: 'Independent',
+    configSourceNative: 'Script native',
+    configOverrideEnabled: 'Overrides on',
+    configOverrideDisabled: 'Overrides off',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
@@ -269,7 +275,6 @@ export default {
     configureSrc: 'Configure SRC',
     configureOkWw: 'Configure ok-ww',
     configureWhimbox: 'Configure Whimbox',
-    configurePerUserMaaend: "Edit this account's own configuration in the MaaEnd window.",
     restartingAutoMasStops: 'Restarting AUTO-MAS stops whatever is running. Restart anyway?',
     restartBackendUpdate: 'Restart the backend to update',
     resetEverything: 'Reset everything',
@@ -2464,7 +2469,7 @@ export default {
     configRestoreUnrestorableTitle: 'This backup cannot be restored',
     configRestoreUnrestorableDesc:
       'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
     configRestoreModeDirect: 'Native',
@@ -2486,7 +2491,7 @@ export default {
       'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
     configSessionDiscardedUnknown:
       'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
@@ -4148,13 +4153,13 @@ export default {
       selectAllUsers: 'Select all',
       clearAllUsers: 'Clear all',
       runScopeTitle: 'Run scope',
-      runScopeExpand: 'Expand',
-      runScopeCollapse: 'Collapse',
       runScopeTip:
         'Unchecked managed scripts and accounts are skipped this run; the selection is kept after the run',
-      runScopeSelected: '{selected}/{total} accounts selected',
+      runScopeSelected: '{selected}/{total} runnable accounts selected',
       runScopeLoading: 'Loading accounts…',
       runScopeNoUsers: 'No account can run',
+      runScopeUserDisabled: 'Disabled',
+      runScopeUserExpired: 'Days used up',
       runScopeLoadFailed: 'Could not load accounts. Retry',
       runScopeRetry: 'Retry',
       stop: 'Stop',
@@ -4427,10 +4432,7 @@ export default {
       saveFailedRaw: 'Could not save the {label} configuration',
       maaEndUnsupported:
         'This controller does not support shared MaaEnd configuration — use the independent configuration entry instead',
-      maaEndUserStarted: 'Started the MaaEnd configuration for {script} / {user}',
       maaEndScriptStarted: 'Started the MaaEnd configuration for {script}',
-      maaEndUserTimeout: 'The configuration session for {script} / {user} timed out',
-      maaEndUserSaved: 'Configuration for {script} / {user} saved',
       okwwStarted: 'Opened the ok-ww settings for {name}',
       okwwStartFailed: 'Could not open the ok-ww settings: {error}',
       okwwSaved: 'Settings for {name} saved',

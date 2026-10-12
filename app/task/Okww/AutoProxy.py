@@ -53,7 +53,7 @@ from app.utils import (
     is_process_alive,
     is_process_running,
 )
-from app.utils.constants import UTC4
+from app.utils.constants import BASE_NATIVE, BASE_SHARED, UTC4, normalize_base_source
 from app.utils.i18n import PoTranslator
 from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
@@ -99,11 +99,18 @@ _GAME_EXIT_WAIT_SECONDS = 90
 _OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
 _OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    ("connected:False", "OK-WW 未连接游戏客户端"),
     (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
-_OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
+# 窗口丢失的日志有两条形态：hwnd>0 但 IsWindow(hwnd) 返回 0 时 exists 是 int → `connected:0`；
+# hwnd<=0 时 exists 仍是 bool → `connected:False`。两种都要认。
+# 它不进内置 fatal：ok-ww 成功后按 -e 关游戏（stop_hwnd）同样会打 connected:0，只比完成日志晚
+# 约 5s；日志监控若跨过这 5s，两行会落进同一批，故只在没有完成日志时判未连接（见 check_log）。
+_OKWW_DISCONNECT_LOG: tuple[str, ...] = ("connected:False", "connected:0")
+_OKWW_DISCONNECT_MSG = "OK-WW 未连接游戏客户端"
+# 成功只认任务级完成日志：ok-ww 的 DailyTask 正常跑完（run() 末尾）才会打印；
+# 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
+_OKWW_SUCCESS_LOG = "Daily Task Completed"
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
@@ -122,16 +129,17 @@ _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 
 
-def _okww_config_mode(raw: object) -> str:
-    mode = str(raw or "脚本")
-    return {"简洁": "脚本", "详细": "用户"}.get(mode, mode)
+def _okww_config_base(raw: object) -> str:
+    """读取 OK-WW 配置来源（base 三态），并兼容旧版字面量。"""
+
+    return normalize_base_source(raw) or BASE_SHARED
 
 
-def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
-    mode = _okww_config_mode(mode)
-    owner = owner_for_mode(mode, user_id)
+def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
+    base = _okww_config_base(base)
+    owner = owner_for_mode(base, user_id)
     if owner is None:
-        raise ValueError("直控配置不使用 MAS 全量配置目录")
+        raise ValueError("原生来源不使用 MAS 全量配置目录")
     return mas_config_dir(script_id, owner)
 
 
@@ -327,8 +335,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         f"未解析出鸣潮客户端程序，已运行检测与收尾改按进程名处理: {e}"
                     )
 
-        config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
-        if config_mode == "直控":
+        config_base = _okww_config_base(self.cur_user_config.get("Info", "Base"))
+        if config_base == BASE_NATIVE:
             config_dir = root / _OKWW_REL_CONFIG_DIR
             if not config_dir.is_dir() or not any(
                 item.is_file() for item in config_dir.rglob("*")
@@ -341,7 +349,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await ensure_user_config_dir(
                     script_id=self.script_info.script_id,
                     user_id=str(self.cur_user_uid),
-                    mode=config_mode,
+                    base=config_base,
                 )
             except FileNotFoundError as e:
                 logger.warning(f"初始化 OK-WW 用户默认配置失败: {e}")
@@ -420,12 +428,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
 
         DailyTask.json 是面板 overlay 子集，由 IfQuickConfig 守卫、与来源独立
-        ——直控+开启同样覆盖，任务结束由 manager 既有整目录快照恢复。
+        ——原生来源+开启同样覆盖，任务结束由 manager 既有整目录快照恢复。
 
         Basic Options.json 的退出行为同样属 overlay：它不是面板字段，但 MAS
         运行期需要它，且**三态一律覆盖**——覆盖发生在换入后的 working 目录，
         任务结束由同一份整目录快照还原，因此不会固化进任何来源的 base。
-        （此前直控被排除在外，是「直控=原生配置不许动」的旧口径；按 overlay
+        （此前原生来源被排除在外，是「原生来源=原生配置不许动」的旧口径；按 overlay
         语义，只要任务结束能还原，覆盖与来源无关。）
         """
 
@@ -464,10 +472,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await System.kill_process(self.script_exe_path)
         _configure_okww_launcher(self.script_root_path)
 
-        config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
-        if config_mode != "直控":
+        config_base = _okww_config_base(self.cur_user_config.get("Info", "Base"))
+        if config_base != BASE_NATIVE:
             # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
-            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（脚本态
+            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（shared 来源
             # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
             # 性归档，此处不重复
             archive_mas_runtime_backup(
@@ -476,16 +484,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 _okww_mas_config_dir(
                     self.script_info.script_id,
                     str(self.cur_user_uid),
-                    config_mode,
+                    config_base,
                 ),
                 overlay=read_overlay_values(self.cur_user_config),
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode=config_mode,
+                base=config_base,
             )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
-                config_mode,
+                config_base,
             )
             swap_in_dir(mas_config_dir, self.script_config_path)
         else:
@@ -931,6 +939,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if _OKWW_SUCCESS_LOG in log:
                 log_status = "Success!"
                 user_item_status = "完成"
+            elif any(needle in log for needle in _OKWW_DISCONNECT_LOG):
+                log_status = _OKWW_DISCONNECT_MSG
+                user_item_status = "异常"
             elif not await self.okww_process_manager.is_running():
                 log_status = "OK-WW 在完成任务前退出"
                 user_item_status = "异常"

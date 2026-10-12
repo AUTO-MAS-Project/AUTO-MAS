@@ -30,7 +30,7 @@ MAS 用户配置（MaaEnd 式字段化）：账号/区服/任务编排存于
 game_account.yml 与 one_dragon/_group.yml 写入各用户绑定槽（备份 →
 写入并清运行记录 → 恢复；保留类应用的周期进度与计划进度属运行产物，
 不参与清空，整目录还原后按快照原样回写，见
-:data:`PERSISTENT_RUN_RECORD_APPS`）；「直控」模式全程不写槽。
+:data:`PERSISTENT_RUN_RECORD_APPS`）；「原生」模式全程不写槽。
 """
 
 import shutil

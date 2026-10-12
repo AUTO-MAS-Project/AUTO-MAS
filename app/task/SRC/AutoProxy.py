@@ -39,9 +39,9 @@ from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_SCRIPT,
-    CONFIG_SOURCE_USER,
-    resolve_config_source,
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_SHARED,
+    resolve_config_base,
 )
 from app.utils import LogMonitor, ProcessManager, get_logger, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
@@ -116,8 +116,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._src_injected_config: dict | None = None
         # 配置来源三态与独立的快速配置开关：来源决定是否下发 MAS 托管配置，
         # 快速配置决定是否把面板值写进 SRC 原生配置（两段互不替代）。
-        self.config_mode, self.direct_control = resolve_config_source(
-            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        self.config_base, self.native_base = resolve_config_base(
+            self.cur_user_config, CONFIG_BASE_SHARED
         )
 
     async def check(self) -> str:
@@ -132,7 +132,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if self.cur_user_config.get("Info", "Mode") == "用户":
+        if self.cur_user_config.get("Info", "Base") == CONFIG_BASE_INDEPENDENT:
             config_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
@@ -355,7 +355,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             await asyncio.sleep(10)
             # 更新脚本配置文件
-            if self.cur_user_config.get("Info", "Mode") == "用户":
+            if self.cur_user_config.get("Info", "Base") == CONFIG_BASE_INDEPENDENT:
                 save_src_user_config(
                     self.src_set_path,
                     Path.cwd()
@@ -507,19 +507,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
         # ── 第一段：来源落盘 ──────────────────────────────────────────
-        # 用 MAS 托管配置作为本次运行的基底。直控来源不下发 overlay ——
-        # 直控的事实源就是 SRC 安装目录里现有的原生配置。
+        # 用 MAS 托管配置作为本次运行的基底。原生来源不下发 overlay ——
+        # 原生来源的事实源就是 SRC 安装目录里现有的原生配置。
         overlay_path = None
-        if self.config_mode == CONFIG_SOURCE_SCRIPT:
+        if self.config_base == CONFIG_BASE_SHARED:
             overlay_path = (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
-        elif self.config_mode == CONFIG_SOURCE_USER:
+        elif self.config_base == CONFIG_BASE_INDEPENDENT:
             overlay_path = (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
-        elif self.direct_control:
+        elif self.native_base:
             native = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             if native.is_dir():
                 overlay_path = native
@@ -527,11 +527,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             recover_src_user_config(overlay_path)
             # 下发前归档下发源到用户池（运行回写会覆盖它；带页面核心字段
             # 侧车，指纹去重，失败不阻断运行）。native 池由 manager.prepare
-            # 在任务级一次性归档。直控无 MAS 配置目录：Temp 是安装 config/
-            # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到用户态
+            # 在任务级一次性归档。原生来源无 MAS 配置目录：Temp 是安装 config/
+            # 快照、不属于 mas 池内容，跳过归档——归进 mas 池会在切到independent 来源
             # 后恢复该备份时把安装快照写进自己的 ConfigFile（对齐
-            # restore_service「直控 mas 池为空」语义）
-            if not self.direct_control:
+            # restore_service「原生来源 mas 池为空」语义）
+            if not self.native_base:
                 with suppress(Exception):
                     archive_mas_runtime_backup(
                         self.script_info.script_id,
@@ -539,7 +539,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         overlay_path,
                         overlay=read_overlay_values(self.cur_user_config),
                         # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                        mode=self.config_mode,
+                        base=self.config_base,
                     )
 
         staging_path = stage_src_config_update(
