@@ -67,16 +67,26 @@ _DIGITS_RE = re.compile(r"^\s*(\d+)$")
 _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 
 
+def _plain_file_name(name: str) -> bool:
+    """这个名字能不能当作「暂存目录里的单个文件名」用。
+
+    分卷落盘名来自远端，续传状态里的名字还可能被伪造过；两者都要挡住目录分隔符，
+    否则拼出来的路径会落到暂存目录之外。
+    """
+
+    return bool(
+        name
+        and name not in {".", ".."}
+        and not any(sep in name for sep in ("/", "\\", ":", "\x00"))
+    )
+
+
 def _file_name_from_url(url: str) -> str:
     """从下载地址取落盘文件名。并检查文件名是否可用。"""
 
     path = url.split("?", 1)[0].split("#", 1)[0]
     name = unquote(path.rsplit("/", 1)[-1]).strip()
-    if (
-        not name
-        or name in {".", ".."}
-        or any(sep in name for sep in ("/", "\\", ":", "\x00"))
-    ):
+    if not _plain_file_name(name):
         raise EndfieldUpdateError(f"下载地址里的文件名不可用: {path!r}")
     return name
 

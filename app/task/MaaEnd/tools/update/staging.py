@@ -40,7 +40,7 @@ from app.utils.io import force_rmtree
 from app.utils.update_files import file_md5, file_size, native_path, replace_file
 
 from .common import _HALF_LANDED_MESSAGE, EndfieldUpdateError, Release, logger
-from .protocol import _safe_file_name
+from .protocol import _plain_file_name, _safe_file_name
 
 _STAGING_DIR_NAME = "_mas_endfield_update"
 """差量分卷暂存目录，放在安装目录内：几 GB 的差量往常年在 C 盘的 MAS 数据目录里塞会
@@ -131,8 +131,13 @@ def read_staging_state(staging: Path) -> StagingState | None:
     )
 
 
-def write_staging_state(staging: Path, state: StagingState) -> None:
-    """原子落盘续传状态；写不进去只记一行日志，绝不让状态维护打死一轮更新。"""
+def write_staging_state(staging: Path, state: StagingState) -> bool:
+    """原子落盘续传状态；返回是否写成功。
+
+    调用方按用途取值：「顺手记一下进度」的场合写不进去只记一行日志就行，但「即将开始
+    覆盖游戏目录」那种安全标记写不进去就不能装作记下了——那会让下一轮把半新半旧的现场
+    当成没动过。要不要为此停下由调用方决定。
+    """
 
     doc = {
         "request_version": state.request_version,
@@ -154,6 +159,8 @@ def write_staging_state(staging: Path, state: StagingState) -> None:
         os.replace(native_path(temp), native_path(target))
     except OSError as error:
         logger.warning(f"未能写入续传状态 {target}：{error}")
+        return False
+    return True
 
 
 def _state_for_release(
@@ -205,6 +212,10 @@ async def _reusable_parts(
 
     recorded = {ordinal: name for ordinal, name, _size, _md5 in state.parts}
     slots: list[Path | None] = []
+    # 已经被某个槽位认领的落盘名：服务端给的两卷可能撞同一个 ordinal（有卷 URL 没带
+    # `.NNN` 后缀时会退回按下标编号），于是后一卷会把前一卷已经认领的文件改名搬走，
+    # 前一个槽位就指向一个不存在的路径，拼流一读就 FileNotFoundError
+    claimed: set[str] = set()
     reused = 0
     for index, part in enumerate(release.parts):
         name = names[index]
@@ -215,10 +226,15 @@ async def _reusable_parts(
         target = staging / name
         candidates = [target]
         other = recorded.get(part.ordinal)
-        if other and other != name:
+        if other and _plain_file_name(other) and other != name:
+            # 状态里的名字也要按「单个文件名」收口：它可能是被伪造的，而这里会拿它去
+            # `replace_file`（改名），带分隔符就能把暂存目录外的东西搬进来
             candidates.append(staging / other)
         found: Path | None = None
         for candidate in candidates:
+            if candidate.name in claimed and candidate != target:
+                # 这个文件已经归了别的槽位，不能再动它
+                continue
             if file_size(candidate) != part.size:
                 continue
             if part.md5:
@@ -250,6 +266,7 @@ async def _reusable_parts(
             found = target
         logger.info(f"复用上轮已下好的分卷: {target.name}")
         reused += part.size
+        claimed.add(found.name)
         slots.append(found)
     return tuple(slots), reused
 
@@ -350,22 +367,31 @@ class _Staging:
         return self.reused_bytes
 
     def mark_landing_started(self) -> None:
-        """第一次往游戏目录里写之前置位，幂等。
+        """第一次往游戏目录里写之前置位，幂等；记不上就拒绝动手。
 
         它只在这一刻置位是有讲究的：下载与核对阶段一个字都没写进游戏目录，那时置位会
         让下一轮把「什么都没动过」误判成「半新半旧」，白白阻断用户的任务。
+
+        写不进去时必须抛出去把这一轮拦在写入之前：这个标记的全部意义就是「本轮动过游戏
+        目录」，记不上它就开始覆盖，等于亲手把半新半旧的现场布置成一个下一轮认不出的形态。
         """
 
         if self._state is None or self._state.landing_started:
             return
-        self._state = StagingState(
+        marked = StagingState(
             request_version=self._state.request_version,
             target_version=self._state.target_version,
             parts=self._state.parts,
             landing_started=True,
             updated_at=time.time(),
         )
-        write_staging_state(self.path, self._state)
+        if not write_staging_state(self.path, marked):
+            raise EndfieldUpdateError(
+                f"无法记录「本轮已开始覆盖游戏目录」到 {_state_path(self.path)}；"
+                "为避免留下下一轮认不出的半成品，本轮不覆盖，"
+                "请检查磁盘空间与写入权限后重试"
+            )
+        self._state = marked
 
     def finish(self, *, completed: bool) -> None:
         """收尾：完成了就清干净，没完成就留着给下一轮续传。

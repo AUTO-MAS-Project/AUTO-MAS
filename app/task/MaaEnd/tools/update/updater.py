@@ -331,8 +331,8 @@ async def _ensure_game_updated(
                 if short:
                     return GameUpdateResult(
                         "NeedManualUpdate",
-                        f"{outdated}，本轮尚未开始下载，暂存卷还没占盘："
-                        f"下载差量包约 {remaining_download / 1024**3:.1f} GB，"
+                        f"{outdated}，本轮尚未开始下载："
+                        f"还需下载差量包约 {remaining_download / 1024**3:.1f} GB，"
                         f"落地还要在游戏目录净腾出约 {landing_need / 1024**3:.1f} GB，"
                         f"再加一份固定余量。{short}",
                     )

@@ -170,6 +170,13 @@ async def _download_release(
     if len(set(names)) != count:
         raise EndfieldUpdateError("服务端给出的差量分卷有重名，无法区分两卷内容")
     reporter = _Reporter(progress, release.download_size, count)
+    # 槽位只在与本轮清单等长时才算数：短了说明调用方没按状态认出来，按「没有可复用的」
+    # 处理，不要在这里按下标取到越界
+    if reusable is not None and len(reusable) != count:
+        logger.warning(
+            f"续传槽位有 {len(reusable)} 个，与本轮 {count} 卷对不上，本轮不复用暂存分卷"
+        )
+        reusable = None
     current = release
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),

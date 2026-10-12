@@ -1,4 +1,4 @@
-import { onUnmounted, reactive } from 'vue'
+import { onScopeDispose, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal, message } from 'ant-design-vue'
 import { Service, TaskCreateIn } from '@/api'
@@ -61,8 +61,16 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   // 关弹窗中止的那一轮同理：停止接口返回前完成事件就已经发出去了，不抑制就会在
   // 用户自己按了「仍要关闭」之后再补一句成功提示
   let aborted = false
+  // 组件已销毁：此后不得再登记订阅、起定时器或弹提示。启动请求在途时用户离开页面
+  // 会走到这里，那时 updateSession.taskId 还是空的，光靠 stopSession 拦不住
+  let disposed = false
+  // 会话代次：每次清会话自增。在途的异步结果（快照）据此判断自己是不是已经过期
+  let sessionGeneration = 0
+  // 日志变更次数：快照属于「发起请求那一刻」的世界，回来后日志已被更新就别再覆盖
+  let logRevision = 0
 
   const clearSession = () => {
+    sessionGeneration += 1
     for (const subscriptionId of updateSession.subscriptionIds) {
       unsubscribe(subscriptionId)
     }
@@ -78,7 +86,14 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     updateSession.retries = []
   }
 
-  const stopSession = async (): Promise<boolean> => {
+  /**
+   * 请求后端停止本轮更新。
+   *
+   * `clearOnFailure` 默认关：停不下来时后端还在写游戏目录，把会话清掉用户就再没有重试的
+   * 入口了（taskId 与订阅都没了）。只有调用方确认这一轮已经不需要收口——任务已结束、
+   * 或组件已销毁——才传 true 把会话收干净。
+   */
+  const stopSession = async (clearOnFailure = false): Promise<boolean> => {
     const taskId = updateSession.taskId
     if (!taskId) {
       clearSession()
@@ -89,13 +104,13 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       if (response.code !== 200) {
         throw new Error(response.message || t('edit.endfieldUpdateStopFailed'))
       }
-      return true
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
+      if (clearOnFailure) clearSession()
       return false
-    } finally {
-      clearSession()
     }
+    clearSession()
+    return true
   }
 
   /** 重新起「这么久没新日志就去对一次账」的表；每来一条新日志都续一次 */
@@ -124,14 +139,25 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   /** 重扫一次日志快照；返回这个任务是否还在运行列表里 */
   const resyncLog = async (): Promise<boolean> => {
     if (logResyncing || !updateSession.taskId) return true
+    // 快照属于「发起请求那一刻」的世界：把当时的口径先记下，回来对不上就整条丢弃，
+    // 否则旧快照会把新一轮判成「已结束」、或把已经收到的最终结论覆盖回去
+    const generation = sessionGeneration
+    const taskId = updateSession.taskId
+    const revision = logRevision
     logResyncing = true
     try {
       const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
-      const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
+      if (generation !== sessionGeneration || taskId !== updateSession.taskId) {
+        return true
+      }
+      const item = (snapshot.tasks ?? []).find(task => task.taskId === taskId)
       resyncRetries = 0
       if (!item) return false
-      updateModal.log = item.log ?? ''
-      logSeq = item.logSeq ?? null
+      // 期间已有更新的日志就不拿这份旧的覆盖
+      if (revision === logRevision) {
+        updateModal.log = item.log ?? ''
+        logSeq = item.logSeq ?? null
+      }
     } catch (e) {
       logger.warn(`重建终末地更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
       // 请求失败不代表任务已经结束：任务可能正在跑，只是这一眼的快照没拿到
@@ -179,6 +205,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       void settleIfFinished()
       return
     }
+    logRevision += 1
     armIdleTimer()
     if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
       updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
@@ -208,10 +235,10 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       updateModal.running = true
       updateModal.done = false
       updateSession.taskId = response.taskId
-      if (!updateModal.open) {
-        // 请求在途的那几百毫秒里用户已经把窗关了：让它隐形跑起来，等于一整轮
-        // 「看不见进度、配置又被锁住、按钮还点不动」
-        await stopSession()
+      if (disposed || !updateModal.open) {
+        // 请求在途的那几百毫秒里用户把窗关了、或直接离开了这个页面：让它隐形跑起来，等于
+        // 一整轮「看不见进度、配置又被锁住、按钮还点不动」，页面已经销毁时连进度都没了
+        await stopSession(true)
         updateModal.running = false
         return
       }
@@ -230,8 +257,8 @@ export function useMaaEndUpdate(getScriptId: () => string) {
             message.error(t('edit.endfieldUpdateFailed', { p0: data.message }))
             updateModal.running = false
             updateModal.done = true
-            // 弹窗留着：具体原因就在里面那几行日志里
-            void stopSession()
+            // 弹窗留着：具体原因就在里面那几行日志里。任务已经报错收尾，会话可以清干净
+            void stopSession(true)
           }
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
@@ -241,8 +268,8 @@ export function useMaaEndUpdate(getScriptId: () => string) {
           updateModal.running = false
           updateModal.done = true
           // 不关弹窗：后端为这次检查专门推的结论（「已是最新版本 x」/「已更新至 x」）
-          // 就在日志里，一关掉用户只剩一句「已结束」
-          void stopSession()
+          // 就在日志里，一关掉用户只剩一句「已结束」。任务已结束，会话可以清干净
+          void stopSession(true)
         }),
       ]
       armIdleTimer()
@@ -260,7 +287,10 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       }
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.endfieldUpdateStartFailed'))
+      // 页面已经销毁就别再往别处弹提示：那条错误属于一个用户已经离开的页面
+      if (!disposed) {
+        message.error(e instanceof Error ? e.message : t('edit.endfieldUpdateStartFailed'))
+      }
     } finally {
       updateModal.starting = false
     }
@@ -271,15 +301,19 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     // 先置位：停止接口要等任务真收尾才返回，而完成事件在那之前就已经发出去了
     aborted = true
     const stopped = running ? await stopSession() : true
+    if (running && !stopped) {
+      // 后端没答应停止，就还在写游戏目录。这时把弹窗收起来、会话清掉，用户就只剩一句
+      // 三秒即散的提示，连再按一次「仍要关闭」的入口都没有了——保持打开让他能重试
+      message.error(t('edit.endfieldUpdateStopFailed'))
+      return
+    }
     updateModal.running = false
     updateModal.done = false
     updateModal.open = false
-    // 后端没答应停止，就还在写游戏目录；只把窗口收起来会让人以为已经中止
-    if (running && !stopped) message.error(t('edit.endfieldUpdateStopFailed'))
   }
 
   const handleUpdateModalCancel = () => {
-    // 每轮开头都会清掉暂存目录，跨轮不复用：中止等于已下载的增量白下，先问一句
+    // 中止会白下这一轮已下载的部分（下一轮能续传，但这一轮到此为止），先问一句
     if (updateModal.running) {
       Modal.confirm({
         title: t('edit.endfieldUpdateAbortTitle'),
@@ -293,8 +327,12 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     closeAndStop()
   }
 
-  onUnmounted(() => {
-    void stopSession()
+  onScopeDispose(() => {
+    // 组件没了，任何提示都无处可落；会话也必须收干净，否则订阅与定时器会一直挂着。
+    // 置位要在停之前：启动请求在途时 taskId 还是空的，晚置位会让回来的响应又登记一批
+    disposed = true
+    aborted = true
+    void stopSession(true)
   })
 
   return { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel }
