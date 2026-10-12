@@ -5,10 +5,19 @@
  * 只有用户真正改动过某个托管时才写键，这样既能保持「默认全勾选」，
  * 又不会把整份用户名单塞进请求体。
  */
+/** 托管里存在、但本次跑不了的账号（未启用 / 代理天数已耗尽），只用于展示。 */
+export interface QueueScopeDisabledUser {
+  label: string
+  value: string
+  reason: 'disabled' | 'expired'
+}
+
 export interface QueueScopeGroup {
   scriptId: string
   scriptName: string
   users: Array<{ label: string; value: string }>
+  /** 只展示、不参与勾选与请求体：后端会拒绝运行未启用或天数已耗尽的账号。 */
+  disabledUsers?: QueueScopeDisabledUser[]
 }
 
 /** 脚本ID → 本次要运行的账号；空数组表示该托管本次整项跳过。 */
