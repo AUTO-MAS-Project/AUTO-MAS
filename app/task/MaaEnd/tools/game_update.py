@@ -18,36 +18,19 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""终末地 PC 客户端增量更新。
+"""终末地 Win32 客户端差量更新，仅服务 MaaEnd 专项。
 
-只服务 `Game.ControllerType` 协议为 Win32 的终末地脚本，其他专项与 MaaFW 的 PC 线都不
-复用本模块。更新对象是游戏本体（`Game.Path` 所在目录）。
+流程：读取客户端身份 → 获取官方差量清单 → 核对本地基线 → 退出客户端 → 下载并校验
+分卷 → 解包、打补丁并逐文件校验覆盖 → 清理删除表 → 最后提交包内 config.ini。
+分卷拼成可 seek 的流交给 pyzipper，不物理合包；AES 口令取自服务端 cd_key。
 
-流程：从客户端自己的 `config.ini` 读出版本号与服务器三元组 → 用这份原文向 `batch_proxy`
-接口换回差量包与差量清单 → 先按清单核对本地基线文件，核对不过就一个字都不写 → 需要时退出
-正在运行的客户端 → 逐卷下载
-差量分卷并按 MD5 校验 → 把分卷拼成连续流交给 `pyzipper`（差量包是 WinZip AES-256，口令
-来自服务端给的 `cd_key`）→ 逐条用 `hpatchz` 把差量打在基线文件上（整文件成员直接取包内
-字节）→ 每条落盘前比 MD5，全部就位后才提交 `config.ini`，最后按服务端的删除表清理。
+约束：
+- 本地版本号原样上报，不补段或加后缀，否则服务端精确匹配不到差量。
+- 用 config.ini 的服务器三元组匹配 ENDFIELD_SERVER_PRESETS；请求参数整套取自同一预设。
+- 不自行生成或修改 config.ini，只用包内原件在最后覆盖，作为更新完成的判据。
+- 只做差量，不做整包或回滚；未知版本、服务器、基线不符或没有差量时不接管。
 
-只做差量，**不做整包**：整包与差量同时挂在服务端时也只走差量那一支。判不出本地版本、
-服务端没给这条基线的差量、或本地基线文件与清单不符，一律走 `NeedManualUpdate` 停下并提示
-手动更新——停下来不比刷错客户端更糟。
-
-四条不可动摇的约束：
-
-- **版本号原文上报**：本地版本必须原样发给服务端。服务端按它做精确匹配，补段（在末尾多
-  写一个 `.0`）或加后缀都不会报错，只会当成没有差量；终末地发布出去的第三段本来就是跳号
-  的，造出来的版本号问不到东西。
-- **服务器参数整套取自同一套登记值**：先用 `config.ini` 登记的 `appcode`/`channel`/
-  `sub_channel` 匹配 `app.utils.constants.ENDFIELD_SERVER_PRESETS` 里的一套，请求体的每
-  一项（含 `seq` 与 `launcher_appcode`）都取自这一套；四套之间这些值并不相同，混用参数
-  会让国际服客户端拿到错的清单。匹配不到就不碰客户端。
-- **绝不自写 `config.ini`**：它是游戏自有的加密配置，MAS 只读；新版本号只用包内自带
-  的那份覆盖进来。
-- **`config.ini` 最后提交**：顺序不能动，判据与后果见 `_apply_delta`；差量落地不做
-  回滚（旧版留底等于再放一整份客户端）。
-"""
+直接写游戏目录的先行补位与移除条件见 ../AGENTS.md。"""
 
 from __future__ import annotations
 
@@ -63,7 +46,7 @@ import subprocess
 import threading
 import time
 import zipfile
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,6 +65,13 @@ from app.utils.constants import ENDFIELD_SERVER_PRESETS
 from app.utils.game_apk import GameUpdateResult, is_client_outdated
 from app.utils.hpatchz import ensure_hpatchz
 from app.utils.io import force_rmtree
+from app.utils.update_files import (
+    directory_lock,
+    file_md5,
+    file_size,
+    native_path,
+    replace_file,
+)
 
 from . import package_index
 
@@ -163,7 +153,6 @@ _CONFIG_IV = bytes.fromhex("33467861192750649501937264608400")
 _VOLUME_SUFFIX_RE = re.compile(r"\.(\d+)$")
 _DIGITS_RE = re.compile(r"^\s*(\d+)$")
 _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
-_LONG_PATH_THRESHOLD = 259
 
 
 class EndfieldUpdateError(RuntimeError):
@@ -212,12 +201,6 @@ class Release:
     patch_info_url: str = ""
     """差量清单 `patch.json` 的地址。开始下载之前就要拿到它。"""
     patch_info_md5: str = ""
-    request_version: str = ""
-    """换回这份清单时上报的本地版本原文。
-
-    服务端按这个值决定给不给差量：报目标版本会被当成「已是最新」而回空差量，所以中途
-    刷新清单必须重发它，不能拿 `version` 顶替。
-    """
     fetched_at: float = field(default_factory=time.monotonic)
     """取到这份清单的时刻；分卷地址带签名，超过 _MANIFEST_MAX_AGE 就换新清单。"""
 
@@ -302,7 +285,7 @@ def _parse_int(raw: object) -> int:
     return int(match.group(1)) if match else 0
 
 
-def _parse_release(payload: object, request_version: str) -> Release:
+def _parse_release(payload: object) -> Release:
     if not isinstance(payload, dict):
         raise EndfieldUpdateError("启动器响应不是 JSON 对象")
     rsps = payload.get("proxy_rsps") or []
@@ -319,14 +302,14 @@ def _parse_release(payload: object, request_version: str) -> Release:
             continue
         body = item.get("get_latest_game_rsp")
         if isinstance(body, dict):
-            return _parse_latest_game(body, request_version)
+            return _parse_latest_game(body)
     logger.warning(
         f"启动器响应里没有 get_latest_game 条目，响应片段: {str(payload)[:200]}"
     )
     raise EndfieldUpdateError("启动器响应里缺终末地的版本信息条目")
 
 
-def _parse_latest_game(body: dict, request_version: str) -> Release:
+def _parse_latest_game(body: dict) -> Release:
     # 目标版本只取 `version`：`pre_patch` 是预下载那条独立安装路径的版本，跟着它写会把
     # 没发布出去的版本号盖进客户端。
     version = str(body.get("version") or "").strip()
@@ -335,9 +318,9 @@ def _parse_latest_game(body: dict, request_version: str) -> Release:
 
     patch = body.get("patch")
     if not isinstance(patch, dict):
-        # 空差量段有两种意思：已是最新，或这条基线没有差量。谁也不许拿整包兜底，
+        # 空差量两个情况：已是最新，或这条基线没有差量。谁也不许拿整包兜底，
         # 交给上层用版本号原文判。
-        return Release(version=version, parts=(), request_version=request_version)
+        return Release(version=version, parts=())
 
     parts: list[PackagePart] = []
     patches = patch.get("patches") or []
@@ -377,16 +360,11 @@ def _parse_latest_game(body: dict, request_version: str) -> Release:
         cd_key=str(patch.get("cd_key") or "").strip(),
         patch_info_url=str(patch.get("v2_patch_info_url") or "").strip(),
         patch_info_md5=str(patch.get("v2_patch_info_md5") or "").strip().lower(),
-        request_version=request_version,
     )
 
 
 def _match_preset(identity: InstallIdentity) -> dict[str, str] | None:
-    """按客户端登记的三元组选出对应的一套服务器参数；选不出就交给调用方中止。
-
-    MAS 没有替用户选服务器的入口，所以只认 `config.ini` 里登记的值。匹配不到时不能拿
-    别的一套兜底：那样问回来的清单压根不是这个客户端的。
-    """
+    """按客户端三元组匹配服务器；未知组合不得猜测或混用其他服务器参数。"""
 
     return ENDFIELD_SERVER_PRESETS.get(
         (identity.appcode, identity.channel, identity.sub_channel)
@@ -441,7 +419,7 @@ async def _fetch_release(identity: InstallIdentity) -> Release:
     ) as client:
         response = await client.post(preset["api_url"], json=body)
     response.raise_for_status()
-    return _parse_release(response.json(), identity.version)
+    return _parse_release(response.json())
 
 
 def _strip_padding(plain: bytes) -> bytes:
@@ -504,44 +482,6 @@ def read_installed_version(install_dir: Path) -> str:
     return read_install_identity(install_dir).version
 
 
-def _native_path(path: Path) -> str:
-    """Windows 长路径开关。
-
-    包内路径不深，但安装目录由用户放在任意深层位置，拼起来就可能超过 Win32 的长度
-    上限；Python 只在路径带 `\\\\?\\` 前缀时才绕过自身对长度的额外处理。
-    """
-
-    text = str(path)
-    if os.name != "nt" or len(text) < _LONG_PATH_THRESHOLD:
-        return text
-    absolute = os.path.abspath(text)
-    if absolute.startswith("\\\\"):
-        # UNC 必须走 `\\?\UNC\server\share`；直接拼 `\\?\` 会被当成本机相对路径解析
-        return "\\\\?\\UNC\\" + absolute.lstrip("\\\\")
-    return "\\\\?\\" + absolute
-
-
-def _size_of(path: Path) -> int:
-    try:
-        return path.stat().st_size
-    except OSError:
-        return -1
-
-
-def _replace(source: Path, target: Path) -> None:
-    if target.exists():
-        try:
-            # 游戏资源里满是只读文件，带着只读位改名会 PermissionError
-            os.chmod(_native_path(target), stat.S_IWRITE)
-        except OSError:
-            pass
-    try:
-        os.replace(_native_path(source), _native_path(target))
-    except FileNotFoundError:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(_native_path(source), _native_path(target))
-
-
 def _is_link(stat_result: os.stat_result) -> bool:
     """认符号链接与 NTFS 联接点：联接点在 Windows 上只有重解析点属性认得出来。"""
 
@@ -578,7 +518,7 @@ def _resolve_within(root: Path, name: str) -> Path:
     for depth in range(1, len(parts) + 1):
         try:
             info = os.stat(
-                _native_path(root.joinpath(*parts[:depth])), follow_symlinks=False
+                native_path(root.joinpath(*parts[:depth])), follow_symlinks=False
             )
         except OSError:
             break
@@ -645,39 +585,30 @@ async def _busy_processes(root: Path) -> list[str]:
 
 
 def _landing_need(
-    patches: Sequence[PatchJob | _PatchSpec],
+    patches: Sequence[PatchJob],
     moves: Sequence[MoveJob | MoveEntry],
     install_dir: Path,
     expanded: int = 0,
 ) -> int:
-    """落地期间最多要额外腾出多少空闲：按落地顺序逐条累，取全程最大。
+    """按写入顺序计算额外空闲峰值，下载前后共用此算法。
 
-    新文件先落在目标旁边的临时文件里，目标位置上那份要等改名才让出来——它本来就在盘上，
-    所以要新腾出的空闲只有新文件这一份。释放量只看被改名的那个位置原本有多大，读不到算 0：
-    基线在别处的那份腾不出任何东西，新增文件则整条体积都是净增。删除表的清理排在所有写入
-    之后，这里不替它提前记释放，于是这个数只会偏大。
-
-    `expanded` 是落地中途还要额外展开在暂存目录里的最大那一份差量：它从总表问得到，
-    却不在任何清单里，漏掉它等于把三笔同时占盘只算两笔。问不到就留 0，由固定余量兜。
-
-    下载前的预估与下载后的判定共用这一套算法，两道门不会各算各的账。
+    新文件先占临时空间，改名后才释放目标原有体积；不提前计入删除表的释放量。
+    expanded 另计暂存中最大差量的展开体积，未知时由固定余量兜底。
     """
 
     peak = 0
     net_growth = 0
     for job in (*patches, *moves):
-        old = max(_size_of(_resolve_within(install_dir, job.path)), 0)
+        old = max(file_size(_resolve_within(install_dir, job.path)), 0)
         peak = max(peak, net_growth + job.size)
         net_growth += job.size - old
     return peak + expanded
 
 
 def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
-    """问一次磁盘余量：放行时把那一刻的数留在日志里，拦住时只给调用方那一句。
+    """核对磁盘余量，失败返回说明，放行时记录需要量与可用量。
 
-    放行也要留痕——收尾会把暂存卷整个清掉，日志报的 free 与用户事后去看的 free 天生差
-    一卷；记下核对当时的需要量与可用量，事后才对得上账。
-    """
+    暂存卷收尾会删除，日志保留核对时占用，便于与用户事后查看的余量对账。"""
 
     probe = directory
     while not probe.exists() and probe.parent != probe:
@@ -700,11 +631,7 @@ def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
 
 
 def _write_probe(directory: Path) -> str | None:
-    """探针文件试探可写。
-
-    不按路径猜「Program Files」、也不提权：无人值守时 UAC 弹窗会把调度卡死，而正式
-    包本身已以管理员运行，探针失败就是真失败。
-    """
+    """用临时文件探测目录可写，不猜路径权限或触发无人值守的 UAC 弹窗。"""
 
     probe = directory / f".mas_write_probe.{os.getpid()}"
     try:
@@ -720,12 +647,9 @@ def _write_probe(directory: Path) -> str | None:
 
 
 class _SplicedStream(io.RawIOBase):
-    """把已下载的分卷拼成一条可 seek 的连续流，直接交给 `zipfile` 读。
+    """把已下载分卷拼成可 seek 的连续流，避免物理合包再占一份体积。
 
-    整包就是单条 zip 的纯字节切片，所以不需要物理合并 —— 合并会再多占一份包体积。任意
-    时刻只保持一个卷句柄；分卷一律留到收尾统一清，磁盘余量预估也按「整包全程留在盘上」
-    算。
-    """
+    任意时刻只开一个卷句柄；所有分卷留到收尾，磁盘预估也按全程占盘计算。"""
 
     def __init__(self, files: Sequence[Path], sizes: Sequence[int]) -> None:
         self._files = list(files)
@@ -795,7 +719,7 @@ class _SplicedStream(io.RawIOBase):
     def _read_volume(self, index: int, local: int, length: int) -> bytes:
         if self._handle is None or self._handle_index != index:
             self._close_handle()
-            self._handle = open(_native_path(self._files[index]), "rb")
+            self._handle = open(native_path(self._files[index]), "rb")
             self._handle_index = index
         self._handle.seek(local)
         data = self._handle.read(length)
@@ -814,12 +738,9 @@ class _SplicedStream(io.RawIOBase):
 
 
 def _canonical_relative(name: str) -> str:
-    """把清单与包内的相对路径规范化成 `a/b/c`。
+    """规范化清单路径，拒绝上级目录与非法字符。
 
-    同一个规范化值既用来比对成员名，也用来落盘，所以判废必须在这里做完。
-    `_resolve_within` 单独用不够：它丢掉空段与 `.`，于是 `/etc/passwd` 会被解析进安装
-    目录之内、`Endfield_Data/../config.ini` 会静默折叠成一个合法路径。
-    """
+    规范化结果同时用于匹配包内成员与落盘；不能只靠会折叠 .. 的 _resolve_within。"""
 
     parts: list[str] = []
     for part in re.split(r"[\\/]+", name):
@@ -833,23 +754,9 @@ def _canonical_relative(name: str) -> str:
     return "/".join(parts)
 
 
-@dataclass(frozen=True)
-class _PatchSpec:
-    """差量清单里的一条「在哪个基线上打哪个成员」。"""
-
-    path: str
-    """新文件在安装目录里的相对路径。"""
-    md5: str
-    size: int
-    base_path: str
-    base_md5: str
-    base_size: int
-    member: str
-
-
 async def _fetch_patch_manifest(
     client: httpx.AsyncClient, url: str, digest: str
-) -> tuple[_PatchSpec, ...]:
+) -> tuple[PatchJob, ...]:
     """取差量清单 `patch.json`：明文 JSON，按服务端给的 MD5 钉死。
 
     Returns:
@@ -885,7 +792,7 @@ async def _fetch_patch_manifest(
             f"差量清单条目 {len(entries)} 超过上限 {_MAX_ENTRIES}"
         )
 
-    specs: list[_PatchSpec] = []
+    specs: list[PatchJob] = []
     for item in entries:
         if not isinstance(item, dict):
             raise EndfieldUpdateError(f"差量清单条目不是对象: {item!r}")
@@ -901,7 +808,7 @@ async def _fetch_patch_manifest(
         if not isinstance(node, dict):
             raise EndfieldUpdateError(f"差量条目不是对象: {node!r}")
         specs.append(
-            _PatchSpec(
+            PatchJob(
                 path=f"{vfs}/{_canonical_relative(str(item.get('name') or ''))}",
                 md5=str(item.get("md5") or "").strip().lower(),
                 size=_parse_int(item.get("size")),
@@ -918,17 +825,14 @@ async def _fetch_patch_manifest(
 
 
 async def _check_baselines(
-    specs: Sequence[_PatchSpec],
+    specs: Sequence[PatchJob],
     install_dir: Path,
     progress: ProgressFn | None,
     abort: threading.Event,
 ) -> list[str]:
-    """按清单核对本地基线文件，返回核对不过的那些路径。
+    """核对本地基线，先比体积再算 MD5，返回不符的路径。
 
-    先比体积再算 MD5：体积就不对的文件打不了差量，没必要读内容。这一步跑完之前一个字
-    都不写进游戏目录——差量打在错基线上产出的是「长度对得上、内容坏了」的文件，只有
-    落盘前那次 MD5 能发现，而那时游戏目录已经被写了一半。
-    """
+    必须在覆盖游戏文件之前完成，避免落地校验才发现基线错误而留下部分更新。"""
 
     bad: list[str] = []
     total = len(specs)
@@ -936,11 +840,11 @@ async def _check_baselines(
         if abort.is_set():
             break
         base = _resolve_within(install_dir, spec.base_path)
-        if _size_of(base) != spec.base_size:
+        if file_size(base) != spec.base_size:
             bad.append(spec.base_path)
             continue
         try:
-            digest = await asyncio.to_thread(_md5_of, base)
+            digest = await asyncio.to_thread(file_md5, base)
         except OSError:
             digest = ""
         if digest != spec.base_md5:
@@ -970,13 +874,10 @@ def _move_entries(doc: dict[str, Any]) -> tuple[MoveEntry, ...]:
 def _read_package_manifests(
     archive: pyzipper.AESZipFile, members: set[str]
 ) -> tuple[tuple[MoveJob, ...], tuple[str, ...]]:
-    """读包内的落地核对表与删除表。
+    """读包内落地核对表与删除表，限制正文体积并核对每个整文件成员。
 
-    `verify_files.json` 是明文 JSON，`move` 段给的就是要搬进安装目录的整文件清单，每条
-    带安装目录相对路径 + 新文件的 MD5 与体积；VFS 的挂在 `vfs_files/files/` 下，非 VFS
-    的按相对路径直接躺在包根上。成员名按这两种摆法在包内找，找不到就判废——宁可不更新，
-    也不能少搬一个文件还把版本号写成新版。
-    """
+    verify_files.json 的 move 段给出路径、MD5 与体积；VFS 成员在 vfs_files/files/
+    下，其余在包根。缺少成员就停止，避免漏写文件后仍提交新版配置。"""
 
     # 整块读进内存之前先卡一次体积，与 CDN 上那份差量清单同一条上限
     for name in (_VERIFY_MANIFEST_MEMBER, _DELETE_LIST_MEMBER):
@@ -1018,28 +919,16 @@ def _read_package_manifests(
 
 
 def _build_delta_plan(
-    specs: Sequence[_PatchSpec],
+    specs: Sequence[PatchJob],
     members: set[str],
     moves: Sequence[MoveJob],
     deletes: Sequence[str],
 ) -> DeltaPlan:
     """把两份清单并成一次落地计划；成员对不上就判废。"""
 
-    patches: list[PatchJob] = []
     for spec in specs:
         if spec.member not in members:
             raise EndfieldUpdateError(f"清单要的差量成员在包里找不到: {spec.member}")
-        patches.append(
-            PatchJob(
-                path=spec.path,
-                md5=spec.md5,
-                size=spec.size,
-                base_path=spec.base_path,
-                base_md5=spec.base_md5,
-                base_size=spec.base_size,
-                member=spec.member,
-            )
-        )
     if _CONFIG_MEMBER not in members:
         # 缺了它 MAS 无法确认更新是否生效，只会每轮静默重下差量，宁可拒绝接管
         raise EndfieldUpdateError(
@@ -1047,14 +936,14 @@ def _build_delta_plan(
         )
     # 先写后删：与本轮要写的文件同名的删除项跳过，否则刚写好就自我删除；
     # 大小写按文件系统口径忽略。
-    written = {os.path.normcase(job.path) for job in (*patches, *moves)}
+    written = {os.path.normcase(job.path) for job in (*specs, *moves)}
     kept = [path for path in deletes if os.path.normcase(path) not in written]
     if len(kept) != len(deletes):
         logger.info(
             f"删除表有 {len(deletes) - len(kept)} 项与本轮要写的文件同名，跳过这些删除"
         )
     return DeltaPlan(
-        patches=tuple(patches),
+        patches=tuple(specs),
         moves=tuple(moves),
         deletes=tuple(kept),
         config_member=_CONFIG_MEMBER,
@@ -1067,18 +956,15 @@ def _write_member(
     temp: Path,
     abort: threading.Event,
 ) -> None:
-    """把单个成员读到临时文件。
+    """逐块解包到临时文件并检查 abort，由调用方放在线程中执行。
 
-    成员是 WinZip AES-256 加密的，`pyzipper` 在读满时自己校验包内 HMAC，坏数据到不了
-    改名那一步；这里只核对长度。中止标志逐块检查：整文件的成员比差量卷本身还大，只在
-    成员之间检查会让中止后的线程继续写很久。调用方负责把它放工作线程里跑。
-    """
+    pyzipper 读满时验证 AES HMAC，这里另核对长度；逐块检查防止中止后继续长时间写盘。"""
 
     written = 0
     try:
         # 包里的目录条目不进成员表，父目录得自己建出来
         temp.parent.mkdir(parents=True, exist_ok=True)
-        with archive.open(info) as source, open(_native_path(temp), "wb") as sink:
+        with archive.open(info) as source, open(native_path(temp), "wb") as sink:
             while chunk := source.read(4 * _DOWNLOAD_CHUNK):
                 if abort.is_set():
                     raise EndfieldUpdateError(
@@ -1161,13 +1047,13 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
     是原子改名，不存在写一半的中间态。
     """
 
-    actual = _size_of(temp)
+    actual = file_size(temp)
     if actual != size:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
         logger.warning(f"{target} 落地体积不符：期望 {size} 实际 {actual}")
         raise EndfieldUpdateError(f"{target.name} 落地后的体积不对，已停止覆盖")
-    digest = await asyncio.to_thread(_md5_of, temp)
+    digest = await asyncio.to_thread(file_md5, temp)
     if digest != md5:
         with suppress(OSError):
             temp.unlink(missing_ok=True)
@@ -1175,7 +1061,7 @@ async def _commit(temp: Path, target: Path, md5: str, size: int) -> None:
         raise EndfieldUpdateError(f"{target.name} 落地校验未通过，已停止覆盖")
     # 改名是单次系统调用，不走线程池：进了线程池，被判定「已中止」之后仍可能在后台
     # 把游戏文件换掉，回报的状态就和磁盘上的实情不一致
-    _replace(temp, target)
+    replace_file(temp, target, clear_readonly=True)
 
 
 def _collect_temp_files(root: Path) -> list[Path]:
@@ -1193,13 +1079,10 @@ async def _apply_delta(
     progress: ProgressFn | None,
     abort: threading.Event,
 ) -> int:
-    """按差量计划落地：打差量 → 搬整文件 → 清理删除表 → 最后提交 `config.ini`。
+    """依次打补丁、搬整文件、清理删除表，最后提交包内 config.ini。
 
-    每条都先写进目标旁边的临时文件，比过 MD5 才改名；`config.ini` 单独暂存到收尾才
-    提交，于是「安装目录里的版本号已是新版」等价于「本次其余文件都已落盘」，中途崩溃
-    只留下旧版本号，下一轮按同一份清单重新判定。清单里没有而本地多出来的文件不删——
-    删错了不可逆，而留着只是占地方。
-    """
+    每条先写目标旁的临时文件，通过 MD5 后原子改名；新版配置表示其余文件已就位。
+    中断不回滚，保留旧版本号供下轮重新核对；不删除清单外的用户文件。"""
 
     total = len(plan.patches) + len(plan.moves)
     done = 0
@@ -1218,11 +1101,7 @@ async def _apply_delta(
     next_busy_check = time.monotonic() + _APPLY_BUSY_RECHECK_SECONDS
 
     async def recheck() -> None:
-        """到点问一次游戏有没有被重新打开，开着就停在下一刀之前。
-
-        一轮落地要跑几十分钟，用户随时可能把客户端开回来；开着的 UE 客户端锁着
-        `.ucas`/`.pak`，那时改名就是 `PermissionError`，不如先停下来给一句看得懂的话。
-        """
+        """定期检查游戏是否重新启动，在下一条覆盖前停止，避免客户端占用资源文件。"""
 
         nonlocal next_busy_check
         now = time.monotonic()
@@ -1236,28 +1115,23 @@ async def _apply_delta(
                 "请退出游戏后重试"
             )
 
-    async def _unpack(info: zipfile.ZipInfo, temp: Path) -> None:
-        """在工作线程里解出一个成员，别把拷贝压在事件循环上。
+    async def run_worker(work: Coroutine[Any, Any, None]) -> None:
+        """取消时通知写盘线程停下，并限时等待它释放句柄。"""
 
-        整文件的成员比差量卷本身还大，同步拷贝会卡住整个 MAS（其它专项、界面、接口都
-        停），而 `asyncio.timeout` 只在 await 点生效，这段时间的超时上限形同虚设。挪进
-        线程之后，`abort` 的逐块检查第一次真正起作用：中止后线程最多再写一块就自停。
-        """
-
-        task = asyncio.create_task(
-            asyncio.to_thread(_write_member, archive, info, temp, abort)
-        )
-        # 线程里的异常在这里取回，不留「exception was never retrieved」
+        task = asyncio.create_task(work)
+        # 取消后线程仍可能报错，取回异常以免留下未处理的任务异常。
         task.add_done_callback(lambda done: done.cancelled() or done.exception())
         try:
             await asyncio.shield(task)
         except (TimeoutError, asyncio.CancelledError):
             abort.set()
-            # 等它真的松手：这条线程还攥着暂存卷的读句柄，收尾删暂存就会删不动。
-            # 线程最多再写一块就会自停，所以这个等待有上限，不等它把成员拷完。
             with suppress(BaseException):
                 await asyncio.wait({task}, timeout=_DRAIN_SECONDS)
             raise
+
+    async def _unpack(info: zipfile.ZipInfo, temp: Path) -> None:
+        # 大成员解包放在线程里，保持事件循环响应；中止由逐块检查 abort 实现。
+        await run_worker(asyncio.to_thread(_write_member, archive, info, temp, abort))
 
     for index, job in enumerate(plan.patches, start=1):
         await recheck()
@@ -1272,7 +1146,7 @@ async def _apply_delta(
         diff_file = staging / f"diff-{index:04d}{_TEMP_SUFFIX}"
         await _unpack(archive.getinfo(job.member), diff_file)
         try:
-            patch = asyncio.create_task(
+            await run_worker(
                 asyncio.to_thread(
                     _run_hpatchz,
                     hpatchz,
@@ -1283,15 +1157,6 @@ async def _apply_delta(
                     abort,
                 )
             )
-            # 线程里的异常在这里取回，不留「exception was never retrieved」
-            patch.add_done_callback(lambda done: done.cancelled() or done.exception())
-            try:
-                await asyncio.shield(patch)
-            except (TimeoutError, asyncio.CancelledError):
-                abort.set()
-                with suppress(BaseException):
-                    await asyncio.wait({patch}, timeout=_DRAIN_SECONDS)
-                raise
         finally:
             # 清残骸不能顶掉真正的失败原因（或取消）：限时到点与用户手停时，hpatchz
             # 还攥着这个差量文件，Windows 上删不动，删失败必须咽在这里
@@ -1320,22 +1185,14 @@ async def _apply_delta(
     pending = staging / _PENDING_CONFIG_NAME
     await _unpack(archive.getinfo(plan.config_member), pending)
     # 携带新版本号的这份配置是本轮最后一次写入：单次原子改名，不进线程池
-    _replace(pending, install_dir / _CONFIG_MEMBER)
+    replace_file(pending, install_dir / _CONFIG_MEMBER, clear_readonly=True)
     return done
-
-
-def _md5_of(path: Path) -> str:
-    digest = hashlib.md5()
-    with open(_native_path(path), "rb") as handle:
-        for block in iter(lambda: handle.read(_MD5_CHUNK), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _hash_prefix(digest: Any, path: Path, limit: int) -> None:
     """续传前把已落盘的字节补进摘要。"""
 
-    with open(_native_path(path), "rb") as handle:
+    with open(native_path(path), "rb") as handle:
         read = 0
         while read < limit:
             block = handle.read(min(_MD5_CHUNK, limit - read))
@@ -1353,7 +1210,6 @@ class _Reporter:
         self._total = total
         self._count = count
         self._downloaded = 0
-        self._part = 0
         self._next_bytes = 0
         self._next_at = 0.0
         self._sent_bytes = 0
@@ -1375,7 +1231,6 @@ class _Reporter:
 
     async def add(self, size: int, part: int) -> None:
         self._downloaded += size
-        self._part = part
         now = time.monotonic()
         if self._progress is None:
             return
@@ -1400,7 +1255,7 @@ class _Reporter:
         await self._progress(
             f"正在下载游戏更新包 {shown / 1024**3:.2f}/"
             f"{self._total / 1024**3:.2f} GB"
-            f"（{percent:.1f}%，第 {self._part}/{self._count} 卷{speed}）"
+            f"（{percent:.1f}%，第 {part}/{self._count} 卷{speed}）"
         )
 
 
@@ -1412,14 +1267,11 @@ async def _download_part(
     reporter: _Reporter,
     part: int,
 ) -> str:
-    """下载单卷，返回落盘内容的 MD5。
+    """顺序下载单卷并返回 MD5，支持 Range 续传。
 
-    单会话顺序读，绝不分片并发：CDN 若忽略 `Range` 会给回整份正文，多会话各自写回
-    自己那一段，结果文件长度对得上、内容却是若干份重复正文 —— 静默损坏，只有末尾那
-    次 MD5 能发现。
-    """
+    不分片并发：CDN 忽略 Range 时多会话可能拼出长度正确但内容重复的坏文件。"""
 
-    resume_from = max(_size_of(temp), 0)
+    resume_from = max(file_size(temp), 0)
     if resume_from > size:
         temp.unlink(missing_ok=True)
         resume_from = 0
@@ -1437,7 +1289,7 @@ async def _download_part(
         response.raise_for_status()
         if mode == "ab":
             await asyncio.to_thread(_hash_prefix, digest, temp, resume_from)
-        async with aiofiles.open(_native_path(temp), mode) as sink:
+        async with aiofiles.open(native_path(temp), mode) as sink:
             async for chunk in response.aiter_bytes(_DOWNLOAD_CHUNK):
                 if not chunk:
                     continue
@@ -1453,15 +1305,10 @@ async def _download_release(
     progress: ProgressFn | None,
     identity: InstallIdentity,
 ) -> list[Path]:
-    """下载全部差量分卷，逐卷校验后改名就位。
+    """下载差量分卷，逐卷校验后改名；残留完整卷校验后可复用。
 
-    体积相符的既有分卷先比 MD5 决定复用：每轮开头会清暂存目录，但被句柄扣住的那卷删不
-    动、会留到下一轮，认出指纹就接着用，不重下。中途换新签名地址或某一卷重下时同样兜住。
-
-    Raises:
-        EndfieldUpdateError: 某一卷反复下载或校验不过，或换新清单后发现版本与指纹
-            都变了（混用两个构建的分卷会静默毁掉游戏目录）。
-    """
+    暂存每轮尝试清理，但 Windows 句柄占用可能留下残卷。刷新地址时必须保持同一构建，
+    各卷试满仍不完整则停止，不能将缺卷结果交给落地流程。"""
 
     files: list[Path] = []
     count = len(release.parts)
@@ -1478,9 +1325,9 @@ async def _download_release(
     ) as client:
         for index, planned in enumerate(release.parts, start=1):
             target = staging / names[index - 1]
-            if _size_of(target) == planned.size and (
+            if file_size(target) == planned.size and (
                 not planned.md5
-                or await asyncio.to_thread(_md5_of, target) == planned.md5
+                or await asyncio.to_thread(file_md5, target) == planned.md5
             ):
                 logger.info(f"复用已下载的分卷: {target.name}")
                 await reporter.add(planned.size, index)
@@ -1496,29 +1343,24 @@ async def _download_release(
                     digest = await _download_part(
                         client, part.url, planned.size, temp, reporter, index
                     )
-                except httpx.HTTPStatusError as error:
-                    if error.response.status_code not in (401, 403, 404, 410):
-                        raise
-                    # 签名地址过期是常态，换新地址再来一轮，不占用一次判失败
-                    logger.warning(
-                        f"{target.name} 返回 {error.response.status_code}，换签名地址重试"
-                    )
+                except (httpx.HTTPStatusError, httpx.TransportError) as error:
+                    if isinstance(error, httpx.HTTPStatusError):
+                        status = error.response.status_code
+                        if status not in (401, 403, 404, 410):
+                            raise
+                        logger.warning(f"{target.name} 返回 {status}，换签名地址重试")
+                    else:
+                        logger.warning(
+                            f"{target.name} 传输中断（{type(error).__name__}: {error}），"
+                            "换签名地址续传"
+                        )
+                    # 签名失效或断流时换新地址，保留已落盘字节供续传。
                     current = await _refresh_plan(identity, current)
                     part = current.parts[index - 1]
                     continue
-                except httpx.TransportError as error:
-                    # 中途断流、连接重置与读超时都到不了状态码，只会以传输层异常收场。
-                    # 已落盘的字节留着，换一把地址从断点接着下；试满才判废。
+                if file_size(temp) != planned.size:
                     logger.warning(
-                        f"{target.name} 传输中断（{type(error).__name__}: {error}），"
-                        "换签名地址续传"
-                    )
-                    current = await _refresh_plan(identity, current)
-                    part = current.parts[index - 1]
-                    continue
-                if _size_of(temp) != planned.size:
-                    logger.warning(
-                        f"{target.name} 体积不符（{_size_of(temp)} != {planned.size}），重下"
+                        f"{target.name} 体积不符（{file_size(temp)} != {planned.size}），重下"
                     )
                 elif planned.md5 and digest != planned.md5:
                     logger.warning(
@@ -1527,7 +1369,7 @@ async def _download_release(
                     # 坏文件必须删掉：留着它下一轮会从错的位置续传，越修越坏
                     temp.unlink(missing_ok=True)
                 else:
-                    _replace(temp, target)
+                    replace_file(temp, target, clear_readonly=True)
                     files.append(target)
                     break
             else:
@@ -1600,7 +1442,7 @@ async def _prefetch_moves(
 async def _prefetch_expanded(
     client: httpx.AsyncClient,
     release: Release,
-    specs: Sequence[_PatchSpec],
+    specs: Sequence[PatchJob],
 ) -> int:
     """下载前问一次「落地中途会展开多大的差量」：它只在包内总表里，清单不给。
 
@@ -1618,21 +1460,6 @@ async def _prefetch_expanded(
         members=[spec.member for spec in specs],
     )
     return max(sizes.values(), default=0)
-
-
-_install_dir_locks: dict[str, asyncio.Lock] = {}
-
-
-def _lock_for_install_dir(install_dir: Path) -> asyncio.Lock:
-    """按安装目录取进程内更新锁，串行化并行任务对同一个客户端目录的更新。
-
-    不同脚本可以指向同一个游戏目录，而两轮的暂存目录名与分卷文件名完全相同，并发
-    就会删掉对方正在读的那些。规范化后当键：同一个目录的不同写法要落到同一把锁。
-    """
-
-    return _install_dir_locks.setdefault(
-        os.path.normcase(os.path.abspath(install_dir)), asyncio.Lock()
-    )
 
 
 async def ensure_game_updated(
@@ -1653,7 +1480,7 @@ async def ensure_game_updated(
         f"（限时 {time_limit_minutes} 分钟）"
     )
     outcome = ("已取消", "本轮更新被取消（用户点了停止，或看门狗下发了中止）")
-    lock = _lock_for_install_dir(game_exe.parent)
+    lock = directory_lock(game_exe.parent)
     try:
         if lock.locked():
             # 同一目录上的第二轮只会跟第一轮互删暂存与分卷，这一轮不发起，也不排队等：

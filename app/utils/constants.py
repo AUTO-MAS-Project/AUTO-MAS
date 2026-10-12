@@ -444,14 +444,11 @@ ENDFIELD_SERVER_PRESETS: dict[tuple[str, str, str], dict[str, str]] = {
 }
 """终末地 PC 客户端的四套服务器参数，按渠道区分。
 
-键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`，用来选出官服、
-B服、国际服与国际服（Google Play）中的一种；请求体的每一项都取自选中的这一套，不混用
-（国际服的 `launcher_appcode` 等于它自己的 appcode，序号也是 3 而不是 5）。MAS 没有选服
-入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`, 用来选出官服、B服、国际服与国际服
 
-`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判
-`400 CODEC invalid value for string field`，版本串带首尾空格会被判 `500 get latest game
-fail`（服务端不做 trim）。
+MAS 没有选服入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+
+`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判400，版本串带首尾空格会被判 500。
 """
 
 EMULATOR_PATH_BOOK = {
