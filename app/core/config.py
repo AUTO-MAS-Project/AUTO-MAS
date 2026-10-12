@@ -192,7 +192,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.7.0-beta.1"
+    VERSION = "v5.7.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -235,6 +235,8 @@ class AppConfig(GlobalConfig):
         # 正在循环运行的队列，供配置改动前的安全检查使用
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
+        # 上次活动关卡刷新失败的时间: 冷却期内不再重复请求远端
+        self._stage_refresh_failed_at: Optional[datetime] = None
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
@@ -792,7 +794,14 @@ class AppConfig(GlobalConfig):
 
             # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
             if isinstance(new_config, MaaFWConfig):
-                await self._clone_embedded_copy_for_script(str(script_id), str(new_uid))
+                # 开发者模式（跟随来源目录）不随复制带过去：复制出来的是普通脚本，挂源脚本原
+                # 渠道组的版本（见 _clone_embedded_copy_for_script）。
+                await new_config.set("Embedded", "FollowSource", False)
+                await self._clone_embedded_copy_for_script(
+                    str(script_id),
+                    str(new_uid),
+                    source_config=self.ScriptConfig[script_uid],
+                )
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -813,19 +822,29 @@ class AppConfig(GlobalConfig):
             return new_uid, new_config
 
     async def _clone_embedded_copy_for_script(
-        self, source_script_id: str, target_script_id: str
+        self, source_script_id: str, target_script_id: str, *, source_config: Any
     ) -> None:
         """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
-        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。"""
+        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。
+
+        源开着开发者模式时取它原渠道（源的 ``Update.Channel``）组的 latest；组里还没有载荷
+        （或源是源码形态）就先不建视图，复制出来的脚本第一次运行前按来源目录导入（来源也不在时
+        按同来源兄弟 / 已登记的版本重建，与视图丢了是同一条路）。
+        """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
+            FollowSourceCloneUnavailable,
             clone_embedded_copy,
             embedded_project_dir,
+            is_source_form,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
             try_reserve_project_path,
         )
+
+        group_channel = str(source_config.get("Update", "Channel") or "stable")
+        source_form = is_source_form(source_config)
 
         target_key = await try_reserve_project_path(
             embedded_project_dir(target_script_id)
@@ -834,8 +853,15 @@ class AppConfig(GlobalConfig):
             return
         try:
             await asyncio.to_thread(
-                clone_embedded_copy, source_script_id, target_script_id
+                lambda: clone_embedded_copy(
+                    source_script_id,
+                    target_script_id,
+                    group_channel=group_channel,
+                    source_form=source_form,
+                )
             )
+        except FollowSourceCloneUnavailable as exc:
+            logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
         except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
             logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
         finally:
@@ -2153,10 +2179,27 @@ class AppConfig(GlobalConfig):
             normalize_app_group_entries,
             read_app_group,
             read_game_account,
+            read_native_registry,
         )
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        # 来源校验必须先于存底物化：自身槽不能既作母版又被页面字段覆盖。
+        if slot > 0 and int(instance_idx) == slot:
+            raise ValueError("不能从当前用户绑定的 MAS 槽导入配置")
+        instance = next(
+            (
+                item
+                for item in read_native_registry(root).get("instance_list", [])
+                if int(item["idx"]) == int(instance_idx)
+            ),
+            None,
+        )
+        if instance is None:
+            raise ValueError(
+                f"原生实例 {int(instance_idx):02d} 不存在，请重新选择导入来源"
+            )
+        source_dir = instance_dir(root, int(instance_idx))
         if slot > 0:
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
@@ -2173,8 +2216,6 @@ class AppConfig(GlobalConfig):
                     fail_on_snapshot_error=True,
                 )
 
-        native_root, instance = self._zzzod_native_instance(script_id, instance_idx)
-        source_dir = instance_dir(native_root, int(instance_idx))
         game_account = read_game_account(source_dir)
         # 任务编排整表导入（含未启用项原位保留顺序，运行侧只消费启用项）
         all_apps = normalize_app_group_entries(read_app_group(source_dir))
@@ -2232,40 +2273,49 @@ class AppConfig(GlobalConfig):
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        def _align_yml(rel_parts: list[str]) -> None:
-            source_yml = source_dir.joinpath(*rel_parts)
-            target_yml = target_dir.joinpath(*rel_parts)
-            target_yml.parent.mkdir(parents=True, exist_ok=True)
-            if source_yml.is_file():
-                shutil.copyfile(source_yml, target_yml)
-            else:
-                target_yml.unlink(missing_ok=True)
+        # 底层防御：路径别名也可能指向同一目录，整段同步均应跳过自复制。
+        same_dir = source_dir.resolve() == target_dir.resolve()
+        if not same_dir:
 
-        _align_yml(("notify.yml",))
-        _align_yml(("team.yml",))
-        _align_yml(("game.yml",))
-
-        source_one_dragon = source_dir / "one_dragon"
-        target_one_dragon = target_dir / "one_dragon"
-        if target_one_dragon.is_dir():
-            for target_yml in target_one_dragon.glob("*.yml"):
-                if (
-                    target_yml.name != "_group.yml"
-                    and not (source_one_dragon / target_yml.name).is_file()
-                ):
+            def _align_yml(rel_parts: list[str]) -> None:
+                source_yml = source_dir.joinpath(*rel_parts)
+                target_yml = target_dir.joinpath(*rel_parts)
+                target_yml.parent.mkdir(parents=True, exist_ok=True)
+                if source_yml.is_file():
+                    shutil.copyfile(source_yml, target_yml)
+                else:
                     target_yml.unlink(missing_ok=True)
-        if source_one_dragon.is_dir():
-            target_one_dragon.mkdir(parents=True, exist_ok=True)
-            for source_yml in source_one_dragon.glob("*.yml"):
-                if source_yml.name == "_group.yml":
-                    continue
-                shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
+
+            _align_yml(("notify.yml",))
+            _align_yml(("team.yml",))
+            _align_yml(("game.yml",))
+
+            source_one_dragon = source_dir / "one_dragon"
+            target_one_dragon = target_dir / "one_dragon"
+            if target_one_dragon.is_dir():
+                for target_yml in target_one_dragon.glob("*.yml"):
+                    if (
+                        target_yml.name != "_group.yml"
+                        and not (source_one_dragon / target_yml.name).is_file()
+                    ):
+                        target_yml.unlink(missing_ok=True)
+            if source_one_dragon.is_dir():
+                target_one_dragon.mkdir(parents=True, exist_ok=True)
+                for source_yml in source_one_dragon.glob("*.yml"):
+                    if source_yml.name == "_group.yml":
+                        continue
+                    shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
 
         await self.ScriptConfig.save()
+        align_note = (
+            f"来源与槽 {slot:02d} 为同一目录，已跳过实例级对齐"
+            if same_dir
+            else f"应用通知/按键配置/体力计划已对齐槽 {slot:02d}"
+        )
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"应用通知/按键配置/体力计划已对齐槽 {slot:02d})"
+            f"{align_note})"
         )
         return {
             "instanceIdx": int(instance_idx),
@@ -2987,7 +3037,8 @@ class AppConfig(GlobalConfig):
                 )
 
         # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。
+        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
+        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
         task_data = data.get("Task")
         if (
             isinstance(script_config, MaaFWConfig)
@@ -2996,7 +3047,7 @@ class AppConfig(GlobalConfig):
         ):
             from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
             from app.task.MaaFW.tools.embedded.option_secrets import (
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
             )
 
             # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
@@ -3005,7 +3056,7 @@ class AppConfig(GlobalConfig):
             )
 
             task_data["TaskSnapshot"] = await asyncio.to_thread(
-                seal_user_task_snapshot,
+                prepare_user_task_snapshot,
                 script_id,
                 script_config,
                 task_data["TaskSnapshot"],
@@ -3618,18 +3669,39 @@ class AppConfig(GlobalConfig):
 
         await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 
+    def obs_replay_options(self):
+        """读取 OBS 连接与保留策略，服务层不依赖全局配置。"""
+        from app.services.obs_replay import ObsReplayOptions
+
+        return ObsReplayOptions(
+            port=self.get("Replay", "Port"),
+            password=self.get("Replay", "Password"),
+            max_replay_count=self.get("Replay", "MaxReplayCount"),
+        )
+
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
         logger.info("获取全局设置")
 
-        return await self.toDict()
+        data = await self.toDict()
+        replay = data.get("Replay", {})
+        replay["PasswordConfigured"] = bool(replay.pop("Password", ""))
+        return data
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 
         logger.info("更新全局设置")
 
+        replay = data.get("Replay")
+        if replay is not None:
+            replay = {
+                key: value
+                for key, value in replay.items()
+                if value is not None and key != "PasswordConfigured"
+            }
+            data = {**data, "Replay": replay}
         await self.update(data)
 
         logger.success("全局设置更新成功")
@@ -3874,18 +3946,38 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self, refresh: bool = False) -> Dict[str, Any]:
-        """更新活动关卡信息；需要最新数据时等待刷新，否则立即返回缓存。"""
+    async def get_stage(
+        self, *, refresh: bool = False, wait_stale: bool = True
+    ) -> Dict[str, Any]:
+        """更新活动关卡信息。
+
+        refresh=True 强制远端检查；wait_stale=True 时缓存过期也等本次刷新完成，
+        调用方拿到的是本次请求触发的那次刷新的结果（刷新失败则仍是旧缓存）。
+        wait_stale=False 只把刷新丢到后台并立即返回缓存，供启动预热使用。
+        """
 
         raw_stage_data = json.loads(self.get("Data", "StageData"))
         has_server_data = isinstance(raw_stage_data.get("Official"), dict) and (
             "sideStoryStage" in raw_stage_data["Official"]
         )
-        refresh = refresh or not has_server_data
-        if not refresh and datetime.now() - timedelta(hours=1) < datetime.strptime(
-            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+        # 缺官方缓存也必须抓一次, 但这不等于调用方要求等待本次刷新
+        if (
+            not refresh
+            and has_server_data
+            and datetime.now() - timedelta(hours=1)
+            < datetime.strptime(
+                self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+            )
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
+            return json.loads(self.get("Data", "Stage"))
+
+        if (
+            self._stage_refresh_failed_at is not None
+            and datetime.now() - self._stage_refresh_failed_at < timedelta(seconds=60)
+        ):
+            # 刚失败过就先不再抓: 断网时总览与注入流程会串行重复等超时
+            logger.info("活动关卡信息刷新刚失败过, 直接使用缓存")
             return json.loads(self.get("Data", "Stage"))
 
         if self._stage_refresh_task is None:
@@ -3904,7 +3996,7 @@ class AppConfig(GlobalConfig):
             logger.info("活动关卡信息更新任务已在进行中")
 
         refresh_task = self._stage_refresh_task
-        if refresh and refresh_task is not None:
+        if refresh_task is not None and (refresh or wait_stale):
             await asyncio.shield(refresh_task)
 
         return json.loads(self.get("Data", "Stage"))
@@ -3940,10 +4032,12 @@ class AppConfig(GlobalConfig):
                     )
                 elif response.status_code == 200:
                     logger.success("成功获取远端活动关卡信息")
+                    # 时间戳最后写: 并发调用按它判断缓存新鲜度, 先写会在
+                    # 两次写入之间把旧关卡当成刚更新过的缓存返回
                     await self.set(
                         "Data",
-                        "LastStageUpdated",
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "StageData",
+                        json.dumps(response.json(), ensure_ascii=False),
                     )
                     await self.set(
                         "Data",
@@ -3954,13 +4048,15 @@ class AppConfig(GlobalConfig):
                     )
                     await self.set(
                         "Data",
-                        "StageData",
-                        json.dumps(response.json(), ensure_ascii=False),
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+                    self._stage_refresh_failed_at = datetime.now()
         except Exception as e:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
+            self._stage_refresh_failed_at = datetime.now()
+            logger.warning(f"无法从MAA服务器获取活动关卡信息: {type(e).__name__}: {e}")
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -4875,6 +4971,7 @@ class AppConfig(GlobalConfig):
         # 回收据此保住对应的谱系。
         from app.task.MaaFW.tools.embedded.embedded_project import (
             embedded_project_dir,
+            follow_source_enabled,
             imported_source_path,
             read_view_marker,
         )
@@ -4885,16 +4982,28 @@ class AppConfig(GlobalConfig):
             if isinstance(config, MaaFWConfig)
             and read_view_marker(embedded_project_dir(str(uid))) is None
         ]
-        await asyncio.to_thread(self._collect_unreferenced_payloads, live_sources)
+        # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
+        # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
+        follow_views = [
+            embedded_copy_dir_name(str(uid))
+            for uid, config in self.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig) and follow_source_enabled(config)
+        ]
+        await asyncio.to_thread(
+            self._collect_unreferenced_payloads, live_sources, follow_views
+        )
 
     @staticmethod
-    def _collect_unreferenced_payloads(live_sources: list[str]) -> None:
+    def _collect_unreferenced_payloads(
+        live_sources: list[str], follow_views: list[str]
+    ) -> None:
         """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
         （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
 
         引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
-        谱系还有视图时算引用。本进程起来之后才建的不收。载荷删掉之后，它独有的 blob 只剩
-        库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
+        谱系还有视图时算引用（开发者模式的私有渠道只在脚本还开着开关时算）。本进程起来
+        之后才建的不收。载荷删掉之后，它独有的 blob 只剩库里一个链接，紧接着的
+        ``clean_maafw_runtime_blobs`` 收走。
         """
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -4903,7 +5012,9 @@ class AppConfig(GlobalConfig):
 
         try:
             report = collect_payload_garbage(
-                started_at=_PROCESS_STARTED_AT, live_sources=live_sources
+                started_at=_PROCESS_STARTED_AT,
+                live_sources=live_sources,
+                follow_source_views=follow_views,
             )
         except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
             logger.warning(f"MFW 载荷回收失败: {exc}")
@@ -4952,6 +5063,7 @@ class AppConfig(GlobalConfig):
             GroupMember,
             adopt_view,
             copy_is_healthy,
+            effective_channel,
             embedded_project_dir,
             imported_source_path,
             read_view_marker,
@@ -4977,7 +5089,8 @@ class AppConfig(GlobalConfig):
             entries.append(
                 (
                     str(uid),
-                    str(config.get("Update", "Channel") or "stable"),
+                    # 所在的组：开发者模式下是它的私有渠道，统一到组版本时不被切到正式版
+                    effective_channel(str(uid), config),
                     imported_source_path(config)
                     or str(config.get("Info", "Path") or ""),
                     str(config.get("Info", "Name") or str(uid)[:8]),

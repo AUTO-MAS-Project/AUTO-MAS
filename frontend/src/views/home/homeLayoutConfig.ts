@@ -17,13 +17,20 @@ export const CAROUSEL_ERA_MODULE_KEYS: HomeModuleKey[] = [
   'wutheringwaves',
   'nte',
   'reverse1999',
-  'bluearchive',
   'arknights',
 ]
 
 /** 进入轮播的游戏活动卡；这里的相对顺序就是轮播的切换顺序 */
 export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
-  ...CAROUSEL_ERA_MODULE_KEYS,
+  'endfield',
+  'starrail',
+  'genshin',
+  'zenless',
+  'wutheringwaves',
+  'nte',
+  'reverse1999',
+  'bluearchive',
+  'arknights',
   'stellasora',
 ]
 

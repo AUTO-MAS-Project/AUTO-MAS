@@ -53,6 +53,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Awaitable, Callable
 from urllib import parse
 
@@ -61,14 +62,17 @@ from Crypto.Cipher import AES, DES, PKCS1_v1_5
 from Crypto.PublicKey import RSA
 from Crypto.Util.Padding import pad
 
+from app.services.community_http import create_community_client
 from app.utils.constants import BROWSER_ENV, DES_RULE, SKLAND_SM_CONFIG, UTC8
 from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from app.utils.security import format_exception_reason, looks_like_dpapi_blob
 
 _skland_sign_lock = asyncio.Lock()
 _device_id_lock = asyncio.Lock()
 _cached_device_id: str | None = None
 _cache_time: datetime | None = None
+_server_clock: tuple[float, float] | None = None
+_SERVER_CLOCK_TTL = 300.0
 
 SKLAND_APP_CODE = "4ca99fa6b56cc2ba"
 SKLAND_GRANT_CODE_URL = "https://as.hypergryph.com/user/oauth2/v2/grant"
@@ -156,34 +160,157 @@ def _format_skland_endfield_awards(payload: object) -> str:
 def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
     """创建不继承本地环境代理的森空岛 HTTP 客户端。"""
 
-    return httpx.AsyncClient(proxy=proxy, trust_env=False)
+    return create_community_client(proxy)
+
+
+def _response_server_time(
+    response: httpx.Response, payload: dict[str, object] | None = None
+) -> float | None:
+    """优先读取接口返回的秒级 timestamp，缺失时兼容 Date 响应头。"""
+
+    try:
+        if int(response.headers.get("Age", "0")) > 0:
+            return None
+    except (ValueError, TypeError):
+        return None
+    if payload is not None:
+        timestamp = payload.get("timestamp")
+        if isinstance(timestamp, (str, int, float)) and not isinstance(timestamp, bool):
+            try:
+                server_time = float(timestamp)
+                # 上游字段是秒级时间，拒绝非有限值和误传的毫秒时间。
+                if 0 < server_time < 10_000_000_000:
+                    return server_time
+            except (ValueError, OverflowError):
+                pass
+    try:
+        value = parsedate_to_datetime(response.headers["Date"])
+        return value.timestamp() if value.tzinfo is not None else None
+    except (KeyError, ValueError, TypeError, OverflowError):
+        return None
+
+
+def _update_skland_time(
+    response: httpx.Response, payload: dict[str, object] | None = None
+) -> None:
+    """记录 cred 获取或刷新响应的服务器时间，后续签名由单调时钟推进。"""
+
+    global _server_clock
+    server_time = _response_server_time(response, payload)
+    if server_time is None:
+        return
+    # 采样点取收到响应之后，不能把连接失败或 DNS 回退耗时算入偏移。
+    _server_clock = (server_time, time.monotonic())
+    offset = abs(server_time - time.time())
+    if offset > 30:
+        logger.warning(
+            f"系统时间与森空岛服务器偏差约 {offset:.0f} 秒，本次请求已使用服务器时间"
+        )
+
+
+def _skland_time() -> float:
+    """以单调时钟推进服务器时间，兼容签到中途调整系统时钟。"""
+
+    if _server_clock is not None:
+        server_time, sampled_at = _server_clock
+        elapsed = time.monotonic() - sampled_at
+        if 0 <= elapsed < _SERVER_CLOCK_TTL:
+            return server_time + elapsed
+    return time.time()
+
+
+async def _sync_skland_time(client: httpx.AsyncClient) -> None:
+    """仅在没有新鲜 cred 响应时间时补充取时，兼容已保存的 cred/token。"""
+
+    started = time.monotonic()
+    if (
+        _server_clock is not None
+        and 0 <= started - _server_clock[1] < _SERVER_CLOCK_TTL
+    ):
+        return
+    try:
+        response = await client.head(
+            "https://zonai.skland.com/",
+            headers={"Cache-Control": "no-cache"},
+            timeout=5.0,
+        )
+        _update_skland_time(response)
+    except httpx.HTTPError:
+        logger.debug("森空岛服务器取时暂不可用，继续签到并由请求结果报告原因")
 
 
 def _parse_json_object(response: httpx.Response) -> dict[str, object]:
     """解析森空岛响应，并拒绝空值或非对象 JSON。"""
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError(
+            "森空岛接口响应解码失败，请检查系统代理/TUN、DNS 设置或稍后重试"
+        ) from exc
     if not isinstance(payload, dict):
-        raise ValueError("森空岛接口返回格式无效")
+        raise ValueError("森空岛接口响应格式异常，请检查代理/DNS 设置或稍后重试")
+    code = payload.get("code", payload.get("status"))
+    if code is None:
+        raise ValueError("森空岛接口响应缺少状态信息，请检查代理/DNS 设置或稍后重试")
+    if not response.is_success or (code != 0 and not is_skland_already_signed(payload)):
+        message = str(payload.get("message") or payload.get("msg") or "")
+        if "grantv2req.token" in message.lower() and "'max'" in message.lower():
+            raise ValueError("森空岛凭据解码失败，请重新复制 Token 或完整凭据")
+        server_time = _response_server_time(response, payload)
+        try:
+            signed_at = float(response.request.headers.get("timestamp", "nan"))
+        except (RuntimeError, ValueError):
+            signed_at = float("nan")
+        if server_time is not None and abs(server_time - signed_at) > 30:
+            raise ValueError(
+                f"森空岛请求时间与服务器偏差约 {abs(server_time - signed_at):.0f} 秒，请同步系统时间后重试"
+            )
+        if any(
+            marker in message.lower() for marker in ("时间戳", "时间偏差", "timestamp")
+        ):
+            raise ValueError("森空岛请求时间校验失败，请同步系统时间后重试")
+        if any(
+            marker in message for marker in ("登录已过期", "登录失效", "凭据已失效")
+        ):
+            raise SklandCredentialExpiredError("森空岛凭据已失效，请重新获取凭据")
+        if response.status_code == 401 or "未登录" in message:
+            raise SklandAuthenticationError(
+                "森空岛请求认证未通过，请检查系统时间及代理/DNS 设置后重试"
+            )
+        if not response.is_success:
+            raise ValueError(
+                f"森空岛接口请求失败（HTTP {response.status_code}），请检查代理/DNS 设置或稍后重试"
+            )
+    return payload
+
+
+def _decode_skland_credential(raw: str | dict[str, object]) -> dict[str, object]:
+    """纯 Token 原样使用，只对实际的结构化凭据解码。"""
+
+    if isinstance(raw, dict):
+        return raw
+    value = str(raw or "").strip()
+    if looks_like_dpapi_blob(value) or value == "数据损坏, 请重新设置":
+        raise ValueError("森空岛凭据解码失败，请重新获取并填写凭据")
+    if value[:1] not in {"{", "[", '"'}:
+        return {"oauthToken": value}
+    try:
+        payload = json.loads(value)
+    except (ValueError, RecursionError) as exc:
+        # 损坏的整段凭据不能再当作 OAuth Token 发出，否则会误报 Token 过长。
+        raise ValueError("森空岛凭据解码失败，请检查复制的内容是否完整") from exc
+    if isinstance(payload, str):
+        return {"oauthToken": payload.strip()}
+    if not isinstance(payload, dict):
+        raise ValueError("森空岛凭据解码失败，请填写 Token 或完整凭据")
     return payload
 
 
 def parse_skland_credential(raw: str | dict[str, object]) -> dict[str, str]:
     """解析森空岛旧 Token 或统一凭据 JSON。"""
 
-    payload: dict[str, object] = {}
-    raw_value = raw if isinstance(raw, dict) else str(raw or "").strip()
-    if isinstance(raw_value, dict):
-        payload = raw_value
-    elif raw_value:
-        try:
-            parsed = json.loads(raw_value)
-            if isinstance(parsed, dict):
-                payload = parsed
-            else:
-                payload = {"oauthToken": raw_value}
-        except (TypeError, json.JSONDecodeError):
-            payload = {"oauthToken": raw_value}
+    payload = _decode_skland_credential(raw)
 
     data = payload.get("data")
     if isinstance(data, dict) and isinstance(data.get("content"), str):
@@ -202,7 +329,6 @@ def parse_skland_credential(raw: str | dict[str, object]) -> dict[str, str]:
         or payload.get("accessToken")
         or payload.get("access_token")
         or (payload.get("token") if not cred else "")
-        or sign_token
         or ""
     ).strip()
     user_id = str(payload.get("userId") or payload.get("uid") or "").strip()
@@ -217,24 +343,9 @@ def parse_skland_credential(raw: str | dict[str, object]) -> dict[str, str]:
 def validate_skland_credential(raw: str | dict[str, object]) -> dict[str, str]:
     """校验旧纯 Token 或统一凭据 JSON 的明显格式错误。"""
 
-    if isinstance(raw, dict):
-        payload = raw
-    else:
-        raw_value = str(raw or "").strip()
-        if not raw_value:
-            raise ValueError("森空岛凭据不能为空")
-        if raw_value[:1] in {"{", "[", '"'}:
-            try:
-                parsed = json.loads(raw_value)
-            except json.JSONDecodeError as exc:
-                raise ValueError("森空岛凭据 JSON 格式无效") from exc
-            if not isinstance(parsed, dict):
-                raise ValueError("森空岛凭据必须是 JSON 对象或旧版纯 Token")
-            payload = parsed
-        else:
-            if any(character.isspace() for character in raw_value):
-                raise ValueError("森空岛 Token 不应包含空格或换行")
-            payload = {"oauthToken": raw_value}
+    if not raw:
+        raise ValueError("森空岛凭据不能为空")
+    payload = _decode_skland_credential(raw)
 
     for key in (
         "oauthToken",
@@ -496,7 +607,11 @@ async def get_cached_device_id(
     return _cached_device_id
 
 
-class SklandCredentialExpiredError(RuntimeError):
+class SklandAuthenticationError(RuntimeError):
+    """森空岛明确返回认证失败，但不据此断言凭据已失效。"""
+
+
+class SklandCredentialExpiredError(SklandAuthenticationError):
     """森空岛当前 cred 已失效，需要刷新或重新授权。"""
 
 
@@ -506,7 +621,7 @@ def _is_expected_skland_exception(error: Exception) -> bool:
     return isinstance(
         error,
         (
-            SklandCredentialExpiredError,
+            SklandAuthenticationError,
             ValueError,
             httpx.HTTPError,
             TimeoutError,
@@ -563,8 +678,6 @@ async def _get_grant_code(
         message = str(
             response_data.get("msg") or response_data.get("message") or ""
         ).strip()
-        if "grantv2req.token" in message.lower() and "'max'" in message.lower():
-            message = "OAuth Token 格式或长度无效，请重新登录获取"
         raise ValueError(f"获得森空岛认证代码失败: {message or '上游拒绝请求'}")
     data = response_data.get("data")
     if not isinstance(data, dict) or not data.get("code"):
@@ -589,7 +702,7 @@ async def _get_cred_by_code(
         "origin": "https://www.skland.com",
         "dId": device_id,
         "platform": "3",
-        "timestamp": str(int(time.time())),
+        "timestamp": str(int(_skland_time())),
         "vName": "1.0.0",
     }
     response = await client.post(
@@ -605,6 +718,7 @@ async def _get_cred_by_code(
     data = response_data.get("data")
     if not isinstance(data, dict) or not data.get("token") or not data.get("cred"):
         raise ValueError("森空岛 cred 响应格式无效")
+    _update_skland_time(response, response_data)
     return data
 
 
@@ -620,7 +734,7 @@ def build_skland_signed_headers(
 ) -> dict[str, str]:
     """为森空岛 API 请求生成统一签名头，不修改输入字典。"""
 
-    timestamp = str(int(time.time() * 1000 - 2000))[:-3]
+    timestamp = str(int(_skland_time()) - 2)
     signature_headers = {
         "platform": platform,
         "timestamp": timestamp,
@@ -681,6 +795,7 @@ async def prepare_skland_session_credential(
     # 此时丢弃缓存并重新授权。活动入口仍会在调用本函数前执行严格校验。
     credential = parse_skland_credential(raw_credential)
     if credential["cred"] and credential["token"]:
+        await _sync_skland_time(client)
         return credential
     if not credential["oauthToken"]:
         raise ValueError("森空岛登录凭据为空")
@@ -711,6 +826,7 @@ async def refresh_skland_session_credential(
 
     if not credential["cred"] or not credential["token"]:
         raise ValueError("森空岛缺少可刷新的 cred")
+    await _sync_skland_time(client)
     headers = build_skland_signed_headers(
         credential["token"],
         path="/web/v1/auth/refresh",
@@ -737,6 +853,7 @@ async def refresh_skland_session_credential(
     data = response_data.get("data")
     if not isinstance(data, dict) or not data.get("token"):
         raise ValueError("森空岛凭据刷新响应格式无效")
+    _update_skland_time(response, response_data)
     return parse_skland_credential({**credential, "token": data["token"]})
 
 
@@ -749,6 +866,7 @@ def _skland_sign_header_builder(
 
     async def get_sign_header(url: str, method, body, old_header, sign_token):
         p = parse.urlparse(url)
+        await _sync_skland_time(client)
         current_device_id = device_id or await get_cached_device_id(
             proxy, client=client
         )
@@ -790,13 +908,9 @@ async def fetch_skland_binding_payload(
             sign_token,
         ),
     )
-    if response.status_code == 401:
-        raise SklandCredentialExpiredError("森空岛凭据已失效")
     rsp = _parse_json_object(response)
     if not response.is_success or rsp.get("code") != 0:
         message = str(rsp.get("message") or "")
-        if "未登录" in message:
-            raise SklandCredentialExpiredError("森空岛凭据已失效")
         reason = message or f"HTTP {response.status_code}"
         raise ValueError(f"森空岛角色列表请求失败: {reason}")
     return rsp
@@ -813,8 +927,8 @@ async def fetch_skland_bindings(
 ) -> list[dict[str, object]]:
     """查询指定游戏下已绑定的角色列表（签到与养成共用，方案 T4.1）。
 
-    返回按 appCode 过滤后的绑定条目；401/未登录抛
-    SklandCredentialExpiredError，其余失败抛 ValueError。
+    返回按 appCode 过滤后的绑定条目；认证失败与明确凭据过期分别抛
+    SklandAuthenticationError / SklandCredentialExpiredError，其余失败抛 ValueError。
     """
 
     rsp = await fetch_skland_binding_payload(
@@ -885,13 +999,9 @@ async def fetch_skland_player_info(
             sign_token,
         ),
     )
-    if response.status_code == 401:
-        raise SklandCredentialExpiredError("森空岛凭据已失效")
     rsp = _parse_json_object(response)
     if not response.is_success or rsp.get("code") != 0:
         message = str(rsp.get("message") or "")
-        if "未登录" in message:
-            raise SklandCredentialExpiredError("森空岛凭据已失效")
         reason = message or f"HTTP {response.status_code}"
         raise ValueError(f"森空岛玩家数据请求失败: {reason}")
     data = rsp.get("data")
@@ -1118,7 +1228,7 @@ async def _run_skland_sign_in(
 
             data = rsp.get("data") or {}
             records = data.get("records", []) if isinstance(data, dict) else []
-            now = datetime.now(tz=UTC8)
+            now = datetime.fromtimestamp(_skland_time(), tz=UTC8)
             today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
             record_list = records if isinstance(records, list) else []
@@ -1140,12 +1250,14 @@ async def _run_skland_sign_in(
             cred, sign_token, app_code_override="arknights"
         )
         reward_map: dict[str, str] = {}
+        failure_reasons: dict[str, str] = {}
         result = {
             "成功": [],
             "重复": [],
             "失败": [],
             "总计": len(characters),
             "奖励": reward_map,
+            "失败原因": failure_reasons,
         }
 
         attendance_states = await asyncio.gather(
@@ -1204,6 +1316,9 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 重复签到")
                     else:
                         result["失败"].append(character_name)
+                        failure_reasons[character_name] = str(
+                            rsp.get("message") or "森空岛拒绝签到请求"
+                        )
                         logger.warning(
                             f"{character_name} 签到失败: {rsp.get('message')}"
                         )
@@ -1218,7 +1333,9 @@ async def _run_skland_sign_in(
 
             except Exception as e:
                 result["失败"].append(character_name)
-                _log_skland_exception("明日方舟签到失败", e)
+                failure_reasons[character_name] = _log_skland_exception(
+                    "明日方舟签到失败", e
+                )
 
             if index < len(characters) - 1:
                 await asyncio.sleep(SKLAND_SIGN_INTERVAL)
@@ -1273,12 +1390,14 @@ async def _run_skland_sign_in(
                 role_items.append((character, role, character_name, game_name))
 
         reward_map: dict[str, str] = {}
+        failure_reasons: dict[str, str] = {}
         result = {
             "成功": [],
             "重复": [],
             "失败": [],
             "总计": len(role_items),
             "奖励": reward_map,
+            "失败原因": failure_reasons,
         }
 
         for index, (_character, role, character_name, game_name) in enumerate(
@@ -1292,6 +1411,9 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 重复签到")
                     else:
                         result["失败"].append(character_name)
+                        failure_reasons[character_name] = str(
+                            rsp.get("message") or "森空岛拒绝签到请求"
+                        )
                         logger.warning(
                             f"{character_name} 签到失败: {rsp.get('message')}"
                         )
@@ -1310,7 +1432,9 @@ async def _run_skland_sign_in(
                         logger.info(f"{character_name} 签到成功")
             except Exception as e:
                 result["失败"].append(character_name)
-                _log_skland_exception("终末地签到失败", e)
+                failure_reasons[character_name] = _log_skland_exception(
+                    "终末地签到失败", e
+                )
 
             if index < len(role_items) - 1:
                 await asyncio.sleep(SKLAND_SIGN_INTERVAL)
@@ -1326,14 +1450,14 @@ async def _run_skland_sign_in(
             # 两个游戏的角色绑定彼此独立；单个游戏接口异常时保留另一侧结果。
             try:
                 ar = await sign_for_arknights(cred, sign_token)
-            except SklandCredentialExpiredError:
+            except SklandAuthenticationError:
                 raise
             except Exception as exc:
                 reason = _log_skland_exception("明日方舟角色列表/签到失败", exc)
                 ar = {"成功": [], "重复": [], "失败": [reason], "总计": 0}
             try:
                 ef = await sign_for_endfield(cred, sign_token)
-            except SklandCredentialExpiredError:
+            except SklandAuthenticationError:
                 raise
             except Exception as exc:
                 reason = _log_skland_exception("终末地角色列表/签到失败", exc)
@@ -1344,26 +1468,25 @@ async def _run_skland_sign_in(
         return await sign_for_arknights(cred, sign_token)
 
     try:
+        credential = parse_skland_credential(token)
         async with _create_skland_client(proxy) as shared_client:
             client = shared_client
             device_id = await get_cached_device_id(proxy, client=client)
             credential = await prepare_skland_session_credential(
                 client,
-                token,
+                credential,
                 device_id,
             )
             try:
                 result = await run_sign(credential)
-            except SklandCredentialExpiredError:
+            except SklandAuthenticationError:
                 try:
                     credential = await refresh_skland_session_credential(
                         client,
                         credential,
                         device_id,
                     )
-                except Exception as exc:
-                    if not _is_expected_skland_exception(exc):
-                        raise
+                except SklandAuthenticationError:
                     if not credential["oauthToken"]:
                         raise
                     credential = await prepare_skland_session_credential(

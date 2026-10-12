@@ -160,10 +160,15 @@ def build_task_result_text(scripts: Iterable) -> str:
         indented = "\n".join(
             f"    {line}" if line else line for line in user_text.split("\n")
         )
+        if all(
+            getattr(user, "maintenance_skipped", False) for user in script.user_list
+        ):
+            blocks.append(f"{script.name}：\n\n{indented}")
+            continue
         blocks.append(
             f"{script.name}：\n\n"
             f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}"
-            f"；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
+            f"；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成' and not getattr(user, 'maintenance_skipped', False))}\n\n"
             f"{indented}"
         )
     return "\n\n\n".join(blocks)

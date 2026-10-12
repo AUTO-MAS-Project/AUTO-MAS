@@ -14,6 +14,8 @@ import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWMirrorCdkIn } from '../models/MaaFWMirrorCdkIn';
+import type { MaaFWMirrorCdkOut } from '../models/MaaFWMirrorCdkOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
@@ -62,6 +64,29 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 立即从来源目录同步（跟随来源目录 / 源码形态）
+     * 脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     *
+     * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
+     * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sync',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -262,6 +287,29 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 MFW 项目的 Mirror 酱 CDK 状态
+     * 脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     *
+     * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
+     * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
+     * @param requestBody
+     * @returns MaaFWMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost(
+        requestBody: MaaFWMirrorCdkIn,
+    ): CancelablePromise<MaaFWMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

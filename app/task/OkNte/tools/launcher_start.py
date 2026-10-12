@@ -22,19 +22,19 @@
 NTEGame.exe / NTEGlobalGame.exe / NTETWGame.exe）启动。两种启动方式都经由
 启动器，区别只在是否操作启动器界面：
 
-- 直接启动（Autoplay，默认）：启动器带 /autoplay 参数自行拉起游戏并完成
+- 静默启动（Autoplay，默认）：启动器带 /autoplay 参数自行拉起游戏并完成
   登录，无需任何 OCR 交互（不操作启动器界面）
   → wait_autoplay_game / async_wait_autoplay_game；
-- 使用启动器启动（LauncherUi）：只打开启动器界面，再由本模块 OCR 找到并点击
+- 启动器界面启动（LauncherUi）：只打开启动器界面，再由本模块 OCR 找到并点击
   「开始游戏」（交互与截图沿用与账号切换一致的前台 pyautogui + DPI 适配模式，
   OCR 复用通用工具集 app.tools.ocr）
   → start_game_via_launcher / async_start_game_via_launcher。
 
-流程（直接启动）::
+流程（静默启动）::
 
     带 /autoplay 拉起启动器 → 轮询 HTGame.exe 可见窗口出现（游戏就绪，停在标题界面）
 
-流程（使用启动器启动）::
+流程（启动器界面启动）::
 
     退出屏保 → 拉起启动器 → 等启动器窗口 → OCR 找「开始游戏」/「更新」按钮
     并点击（点「更新」后等更新完成按钮变回「开始游戏」再点；点击被吞时按
@@ -76,7 +76,7 @@ logger = get_logger("OK-NTE 启动器启动")
 _GAME_PROCESS = "HTGame.exe"
 LAUNCHER_EXES = ("NTEGame.exe", "NTEGlobalGame.exe", "NTETWGame.exe")
 
-# 直接启动（Game.LaunchMode == "Autoplay"）用的启动器参数：带 /autoplay 时启动器
+# 静默启动（Game.LaunchMode == "Autoplay"）用的启动器参数：带 /autoplay 时启动器
 # 自行拉起游戏并完成登录，无需点击「开始游戏」，也就无需 OCR 交互
 AUTOPLAY_ARG = "/autoplay"
 # 静默启动后等游戏窗口出现的上限（本机实测 36-40s 出窗，留足余量）

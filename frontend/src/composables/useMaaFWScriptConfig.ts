@@ -103,6 +103,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     SourceVersion: '',
     ImportedAt: '',
     Report: '{ }',
+    FollowSource: false,
   },
   Run: {
     ProxyTimesLimit: 0,

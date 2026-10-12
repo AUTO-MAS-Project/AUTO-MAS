@@ -4,8 +4,10 @@ import {
   selectPresetQueueEntries,
   type MaaFWPresetQueueEntry,
 } from '../maafwPresetQueue'
+import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import { maafwMissingTaskName } from '../maafwTaskChanges'
 import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
+import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
 import {
   buildMaaFWQueueReplacement,
   countMaaFWQueueReplacementImports,
@@ -21,7 +23,13 @@ import type {
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
 } from '@/types/script'
-import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
+import {
+  duplicateMaaFWQueuedTask,
+  maafwQueueEntryBaseName,
+  normalizeTaskSnapshot,
+  pickMaaFWTaskLabels,
+  withMaaFWTaskLabel,
+} from './maafwTaskSnapshot'
 import type { MaaFWUserFormState } from './useMaaFWUserForm'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
 
@@ -35,8 +43,8 @@ interface MaaFWTaskQueueOptions {
 }
 
 type QueueEntryDraft =
-  | { id: string; task: MaaFWTaskInfo; missing?: false }
-  | { id: string; missing: true; name: string }
+  | { id: string; task: MaaFWTaskInfo; missing?: false; customLabel?: string }
+  | { id: string; missing: true; name: string; customLabel?: string }
 
 /**
  * 用户页任务队列：显示顺序（含 interface 已没有的虚影）、选中项、预设模板、
@@ -64,26 +72,33 @@ export function useMaaFWTaskQueue({
   const selectedTaskId = ref('')
   const showPresetModal = ref(false)
 
-  const queueEntryName = (item: QueueEntryDraft) => (item.missing ? item.name : item.task.name)
+  // 副本序号按队列里显示出来的「基础名」文字分组编（maafwQueueEntryBaseName）：改过显示名的用
+  // 显示名，否则用 interface 的 label（没有 label 用 name），虚影没改过名时用原任务名。显示一样的
+  // 几行就一起编号——不同任务改成同名、或两个任务原 label 相同，也都编号，用户才分得清。
   const orderedTasks = computed<MaaFWQueueEntry[]>(() => {
     const hasInterface = Boolean(previewData.value)
+    const labels = taskSnapshot.value.taskLabels
     const queuedItems = taskSnapshot.value.taskOrder.flatMap((taskId): QueueEntryDraft[] => {
+      const customLabel = labels?.[taskId]
+      const named = customLabel ? { customLabel } : {}
       const task = getTaskInfoById(taskId)
-      if (task) return isTaskActiveForCurrentContext(task) ? [{ id: taskId, task }] : []
-      // interface 已经没有这个任务（项目更新改了 name）：留成虚影，由用户自己删
-      return hasInterface ? [{ id: taskId, missing: true, name: maafwMissingTaskName(taskId) }] : []
+      if (task) return isTaskActiveForCurrentContext(task) ? [{ id: taskId, task, ...named }] : []
+      // interface 已经没有这个任务（项目更新改了 name）：留成虚影，由用户自己删；改过的显示名照样显示
+      return hasInterface
+        ? [{ id: taskId, missing: true, name: maafwMissingTaskName(taskId), ...named }]
+        : []
     })
     const copyTotals = new Map<string, number>()
     for (const item of queuedItems) {
-      const name = queueEntryName(item)
-      copyTotals.set(name, (copyTotals.get(name) || 0) + 1)
+      const key = maafwQueueEntryBaseName(item)
+      copyTotals.set(key, (copyTotals.get(key) || 0) + 1)
     }
     const copyCounters = new Map<string, number>()
-    return queuedItems.map(item => {
-      const name = queueEntryName(item)
-      const copyIndex = (copyCounters.get(name) || 0) + 1
-      copyCounters.set(name, copyIndex)
-      return { ...item, copyIndex, copyTotal: copyTotals.get(name) || 1 }
+    return queuedItems.map((item): MaaFWQueueEntry => {
+      const key = maafwQueueEntryBaseName(item)
+      const copyIndex = (copyCounters.get(key) || 0) + 1
+      copyCounters.set(key, copyIndex)
+      return { ...item, copyIndex, copyTotal: copyTotals.get(key) || 1 }
     })
   })
   const presentQueuedTasks = computed(() =>
@@ -100,8 +115,11 @@ export function useMaaFWTaskQueue({
     (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
   )
   // 已在队列里的任务仍然留在候选中：同一个任务可以再加一份，各自带独立的选项。
+  // 受管任务与特调声明不可选的任务不进候选（预设模板与配置导入也按这张表判可用）。
   const availableTasks = computed(() =>
-    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value)
+    withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value).filter(
+      task => !isUnselectableMaaFWTask(task)
+    )
   )
   const availableTaskByName = computed(
     () => new Map(availableTasks.value.map(task => [task.name, task] as const))
@@ -118,10 +136,14 @@ export function useMaaFWTaskQueue({
       passwordFields: passwordFields.value,
       displayName: task => task.label || task.name,
     })
-  /** 「存为模板」要存的项：当前队列里去掉虚影与受管任务 */
+  /** 「存为模板」要存的项：当前队列里去掉虚影、受管任务与不可选任务 */
   const templateDraftEntries = computed<MaaFWPresetQueueEntry[]>(() =>
     presentQueuedTasks.value
-      .filter(item => !isManagedMaaFWTask(item.task, managedTaskEntries.value))
+      .filter(
+        item =>
+          !isManagedMaaFWTask(item.task, managedTaskEntries.value) &&
+          !isUnselectableMaaFWTask(item.task)
+      )
       .map(item => ({ id: item.id, task: item.task }))
   )
   const presetTemplates = computed(() => {
@@ -136,7 +158,12 @@ export function useMaaFWTaskQueue({
           activeTaskByName,
           validTaskNames.value
         )
-        return { preset, entries, taskOptions: snapshot.taskOptions }
+        return {
+          preset,
+          entries,
+          taskOptions: snapshot.taskOptions,
+          globalOptions: snapshot.globalOptions || {},
+        }
       })
       .filter(template => template.entries.length > 0)
   })
@@ -180,8 +207,18 @@ export function useMaaFWTaskQueue({
         queuedTaskIdSet.has(taskId)
       )
     )
+    setTaskLabels(pickMaaFWTaskLabels(taskSnapshot.value.taskLabels, queuedTaskIdSet))
     formData.Task.SelectedPreset = ''
     await savePresetAndSnapshot()
+  }
+
+  /** 显示名表为空时连键一起去掉：没改过名的用户快照与以前逐字节相同 */
+  const setTaskLabels = (labels: Record<string, string>) => {
+    if (Object.keys(labels).length > 0) {
+      taskSnapshot.value.taskLabels = labels
+    } else {
+      delete taskSnapshot.value.taskLabels
+    }
   }
 
   const pruneQueuedTasksForCurrentContext = async (persist = true) => {
@@ -212,15 +249,28 @@ export function useMaaFWTaskQueue({
     const template = presetTemplates.value.find(item => item.preset.name === presetName)
     if (!template) return
 
+    // 项目预设不带显示名；保留下来的前置任务留着自己的
     const nextSnapshot = buildPresetAppliedSnapshot(
       template.entries,
       template.taskOptions,
       taskSnapshot.value.taskOrder,
-      isPretaskId
+      isPretaskId,
+      pickMaaFWTaskLabels(
+        taskSnapshot.value.taskLabels,
+        taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
+      )
     )
     taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+    setTaskLabels(nextSnapshot.taskLabels || {})
+    // 预设里写了的全局选项值并进用户的全局表；没写的保持用户自己的设置
+    if (Object.keys(template.globalOptions).length > 0) {
+      taskSnapshot.value.globalOptions = {
+        ...taskSnapshot.value.globalOptions,
+        ...JSON.parse(JSON.stringify(template.globalOptions)),
+      }
+    }
     selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
     formData.Task.SelectedPreset = presetName
     showPresetModal.value = false
@@ -233,7 +283,7 @@ export function useMaaFWTaskQueue({
    * `SelectedPreset` 必须写空：快照为空时运行器会按它的名字去找项目 preset。
    */
   const replaceQueueWith = async (
-    source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions'>
+    source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels'>
   ): Promise<number | null> => {
     const importedCount = countMaaFWQueueReplacementImports(source, taskSnapshot.value, isPretaskId)
     const nextSnapshot = buildMaaFWQueueReplacement(
@@ -245,6 +295,7 @@ export function useMaaFWTaskQueue({
     taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+    setTaskLabels(nextSnapshot.taskLabels || {})
     selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
     formData.Task.SelectedPreset = ''
     showPresetModal.value = false
@@ -269,6 +320,45 @@ export function useMaaFWTaskQueue({
     await persistQueuedSnapshot()
   }
 
+  /**
+   * 右键「复制任务」：在原任务正下方插一份新实例，勾选、选项与显示名一起复制，并选中新副本。
+   * 受管任务、不可选任务与 interface 已没有的任务不复制（「添加任务」也加不了它们）。
+   */
+  const duplicateTask = async (taskId: string) => {
+    const task = getTaskInfoById(taskId)
+    if (!task || !availableTaskByName.value.has(task.name)) return
+    const copyCount = taskSnapshot.value.taskOrder.filter(
+      item => resolveTaskName(item) === task.name
+    ).length
+    if (copyCount >= MAAFW_MAX_TASK_REPEAT_COUNT) return
+    const result = duplicateMaaFWQueuedTask(taskSnapshot.value, taskId, task.name)
+    if (!result) return
+    taskSnapshot.value.taskOrder = result.snapshot.taskOrder
+    taskSnapshot.value.taskChecked = result.snapshot.taskChecked
+    taskSnapshot.value.taskOptions = result.snapshot.taskOptions
+    setTaskLabels(result.snapshot.taskLabels || {})
+    selectedTaskId.value = result.taskId
+    await persistQueuedSnapshot()
+  }
+
+  /**
+   * 右键「重命名」：给这一份实例改显示名，只存在这份实例上，不改任务 name。
+   * 清空或改回任务原本的显示名就删掉这一条，视为没改名。
+   */
+  const renameTask = async (taskId: string, name: string) => {
+    const task = getTaskInfoById(taskId)
+    if (!task || !taskSnapshot.value.taskOrder.includes(taskId)) return
+    const nextLabels = withMaaFWTaskLabel(
+      taskSnapshot.value.taskLabels,
+      taskId,
+      name,
+      task.label || task.name
+    )
+    if ((taskSnapshot.value.taskLabels?.[taskId] || '') === (nextLabels[taskId] || '')) return
+    setTaskLabels(nextLabels)
+    await persistQueuedSnapshot()
+  }
+
   const ensureTaskOptionMap = (taskId: string) => {
     const existing = taskSnapshot.value.taskOptions[taskId]
     if (existing) return existing
@@ -283,6 +373,19 @@ export function useMaaFWTaskQueue({
   ) => {
     const options = ensureTaskOptionMap(taskId)
     options[payload.optionName] = payload.value
+    formData.Task.SelectedPreset = ''
+    await savePresetAndSnapshot()
+  }
+
+  /** 全局选项：每个用户一份，所有任务共用 */
+  const handleGlobalOptionUpdate = async (payload: {
+    optionName: string
+    value: MaaFWTaskOptionValue
+  }) => {
+    taskSnapshot.value.globalOptions = {
+      ...taskSnapshot.value.globalOptions,
+      [payload.optionName]: payload.value,
+    }
     formData.Task.SelectedPreset = ''
     await savePresetAndSnapshot()
   }
@@ -333,8 +436,11 @@ export function useMaaFWTaskQueue({
     replaceQueueWith,
     deleteSelectedTask,
     deleteTask,
+    duplicateTask,
+    renameTask,
     ensureTaskOptionMap,
     handleTaskOptionUpdate,
+    handleGlobalOptionUpdate,
     moveTask,
     handleTaskDragEnd,
   }

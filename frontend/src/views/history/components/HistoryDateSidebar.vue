@@ -11,7 +11,7 @@
         accordion
         @change="handleCollapseChange"
       >
-        <a-collapse-panel v-for="dateGroup in historyData" :key="dateGroup.date" class="date-panel">
+        <a-collapse-panel v-for="dateGroup in dateGroups" :key="dateGroup.date" class="date-panel">
           <template #header>
             <div class="date-header">
               <span class="date-text">{{ formatDateGroup(dateGroup.date) }}</span>
@@ -20,7 +20,7 @@
 
           <div class="user-list">
             <div
-              v-for="(userData, username) in dateGroup.users"
+              v-for="{ username, userData, successCount, failureCount } in dateGroup.users"
               :key="username"
               class="user-item"
               :class="{ active: selectedUser === `${dateGroup.date}-${username}` }"
@@ -28,6 +28,26 @@
             >
               <UserOutlined class="user-icon" />
               <span class="username">{{ username }}</span>
+              <span class="result-counts">
+                <span
+                  class="result-count success-count"
+                  role="img"
+                  :aria-label="t('history.successCount', { count: successCount })"
+                  :title="t('history.successCount', { count: successCount })"
+                >
+                  <CheckCircleOutlined aria-hidden="true" />
+                  <span aria-hidden="true">{{ successCount }}</span>
+                </span>
+                <span
+                  class="result-count failure-count"
+                  role="img"
+                  :aria-label="t('history.failureCount', { count: failureCount })"
+                  :title="t('history.failureCount', { count: failureCount })"
+                >
+                  <CloseCircleOutlined aria-hidden="true" />
+                  <span aria-hidden="true">{{ failureCount }}</span>
+                </span>
+              </span>
               <RightOutlined class="arrow-icon" />
             </div>
           </div>
@@ -44,9 +64,15 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { HistoryData } from '@/api'
-import { CalendarOutlined, RightOutlined, UserOutlined } from '@ant-design/icons-vue'
-import { ref, watch } from 'vue'
+import { type HistoryData, HistoryIndexItem } from '@/api'
+import {
+  CalendarOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  RightOutlined,
+  UserOutlined,
+} from '@ant-design/icons-vue'
+import { computed, ref, watch } from 'vue'
 import { formatHistoryGroupLabel } from '@/utils/dateDisplay'
 import type { HistoryDateGroup } from '../useHistoryLogic.ts'
 
@@ -66,6 +92,21 @@ const emit = defineEmits<{
 }>()
 
 const localActiveKeys = ref(props.activeKeys)
+
+const dateGroups = computed(() =>
+  props.historyData.map(dateGroup => ({
+    date: dateGroup.date,
+    users: Object.entries(dateGroup.users).map(([username, userData]) => {
+      let successCount = 0
+      let failureCount = 0
+      for (const record of userData.index ?? []) {
+        if (record.status === HistoryIndexItem.status.DONE) successCount++
+        else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
+      }
+      return { username, userData, successCount, failureCount }
+    }),
+  }))
+)
 
 watch(
   () => props.activeKeys,
@@ -200,12 +241,37 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
 
 .username {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
   color: var(--ant-color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.result-counts {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.success-count {
+  color: var(--ant-color-success);
+}
+
+.failure-count {
+  color: var(--ant-color-error);
 }
 
 .arrow-icon {

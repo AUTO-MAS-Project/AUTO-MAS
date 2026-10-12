@@ -30,6 +30,7 @@ import type {
   ScriptType,
 } from '@/types/script'
 import { managedMaaFWQueueState } from '../maafwManagedTasks'
+import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
 import { useMaaFWUserForm } from './useMaaFWUserForm'
@@ -107,7 +108,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { formData, rules, applyUserData } = useMaaFWUserForm()
 
   /** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
-  const queueHintLines = computed(() =>
+  const flavorQueueHintLines = computed(() =>
     t(flavor.value.userPage.text.queueHintKey ?? '')
       .split('\n')
       .map(line => line.trim())
@@ -169,6 +170,17 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     }
     return null
   })
+
+  // 队列里的不可选任务（特调声明，如 M9A 的小游戏）照常显示：同一原因并成一句「运行时会跳过」，
+  // 接在特调的队列提示后面，一句一个框
+  const queueHintLines = computed(() => [
+    ...flavorQueueHintLines.value,
+    ...unselectableMaaFWQueueNotices(
+      presentQueuedTasks.value,
+      task => getDisplayName(task),
+      t('edit.maafwUnselectableTaskSeparator')
+    ).map(notice => t('edit.maafwUnselectableTaskNotice', notice)),
+  ])
 
   // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
   const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({

@@ -22,8 +22,6 @@ export const getActivityAccent = (key: HomeModuleKey): string => {
 /** 从各游戏数据源里抽出 banner 需要的几项，屏蔽字段命名差异 */
 export interface ActivityBannerSource {
   cover: string
-  /** 主封面 404 时依次尝试的备用图（见 ActivityBannerItem.coverCandidates） */
-  coverCandidates?: string[]
   /** 版本号，徽章用；取不到时轮播退回游戏名 */
   version?: string
   subtitle: string
@@ -32,8 +30,6 @@ export interface ActivityBannerSource {
   endTime: string
   available: boolean
   stale: boolean
-  /** 展示的是刚结束的那场活动；轮播据此补一句「后续活动即将开始」 */
-  ended?: boolean
 }
 
 const toTimestamp = (value: string) => {

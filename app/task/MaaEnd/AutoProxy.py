@@ -72,7 +72,11 @@ from .resource_loader import (
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
-from .update_takeover import snapshot_mxu_logs, update_maaend_after_stage
+from .update_takeover import (
+    read_new_mxu_logs,
+    snapshot_mxu_logs,
+    update_maaend_after_stage,
+)
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -81,6 +85,9 @@ _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
 _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
 _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
+_MXU_TASKS_COMPLETED = re.compile(
+    r"收到 state-changed，已刷新运行时状态,\s*kind:\s*tasks-completed\s*$"
+)
 
 
 def _load_json_dict(value: object) -> dict[str, object]:
@@ -778,8 +785,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         return self._quick_config_mode_skip_reason(mode)
 
-    async def _wait_maaend_stage(self) -> None:
-        """同时等待日志结果与进程退出，避免子进程持有 stdout 导致阶段卡住。"""
+    async def _wait_maaend_stage(self, log_offsets: dict[Path, int]) -> None:
+        """等待日志结果、进程退出或 MXU 队列结束，兜底完成后未退出的进程。"""
         process = self.maaend_process_manager.process
         if not isinstance(process, asyncio.subprocess.Process):
             self.cur_user_log.status = "MaaEnd 未启动可监控的进程"
@@ -790,37 +797,72 @@ class AutoProxyTask(ScriptAutoProxyBase):
             while process.returncode is None:
                 await asyncio.sleep(0.2)
 
+        async def wait_completed() -> None:
+            # 与更新接管独立消费偏移，不能吃掉首阶段的下载记录。
+            offsets = log_offsets.copy()
+            while True:
+                lines = await asyncio.to_thread(
+                    read_new_mxu_logs, self.maaend_root_path, offsets
+                )
+                if any(_MXU_TASKS_COMPLETED.search(line) for line in lines):
+                    return
+                await asyncio.sleep(0.5)
+
         await self.maaend_log_monitor.start_monitor_process(process, "stdout")
         monitor = self.maaend_log_monitor.task
         exit_task = asyncio.create_task(wait_exit())
         result_task = asyncio.create_task(self.wait_event.wait())
+        completed_task = asyncio.create_task(wait_completed())
         try:
-            done, _ = await asyncio.wait(
-                {monitor, exit_task, result_task}, return_when=asyncio.FIRST_COMPLETED
-            )
-            if exit_task in done and not monitor.done():
-                logger.info(f"MaaEnd 主进程已退出，退出码: {process.returncode}")
+            waiting = {monitor, exit_task, result_task, completed_task}
+            while True:
+                done, _ = await asyncio.wait(
+                    waiting, return_when=asyncio.FIRST_COMPLETED
+                )
+                if completed_task in done and completed_task.exception():
+                    logger.warning(
+                        f"MXU 队列结束日志读取失败，继续等待进程或超时: "
+                        f"{completed_task.exception()}"
+                    )
+                    waiting.remove(completed_task)
+                    done.remove(completed_task)
+                if done:
+                    break
+            queue_completed = completed_task in done
+            if exit_task in done or queue_completed:
+                if queue_completed:
+                    logger.info("MXU 已报告本轮队列结束，正在收齐任务日志")
+                else:
+                    logger.info(f"MaaEnd 主进程已退出，退出码: {process.returncode}")
                 # 消费已经写入管道的尾部日志，但不无限等待继承管道的子进程。
-                try:
-                    await asyncio.wait_for(asyncio.shield(monitor), timeout=2)
-                except asyncio.TimeoutError:
-                    pass
-                except Exception as error:
-                    logger.warning(f"MaaEnd 日志读取失败: {error}")
+                if not monitor.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(monitor), timeout=2)
+                    except asyncio.TimeoutError:
+                        pass
+                    except Exception as error:
+                        logger.warning(f"MaaEnd 日志读取失败: {error}")
             if monitor.done() and not monitor.cancelled() and monitor.exception():
                 logger.warning(f"MaaEnd 日志读取失败: {monitor.exception()}")
                 self.cur_user_log.status = "MaaEnd 日志读取失败"
-            elif exit_task in done or monitor.done():
+            elif exit_task in done or monitor.done() or queue_completed:
                 await self.maaend_log_monitor.stop()
                 await self.check_log(
                     self.maaend_log_monitor.log_contents,
                     self.maaend_log_monitor.latest_time,
                     if_stream_end=True,
                 )
+            if queue_completed and process.returncode is None:
+                # 队列结束不代表成功；先解析结果，再关掉挂起进程，避免更新接管继续等它。
+                logger.warning("MaaEnd 队列已结束但进程未退出，正在中止脚本进程")
+                await self.maaend_process_manager.kill()
         finally:
             exit_task.cancel()
             result_task.cancel()
-            await asyncio.gather(exit_task, result_task, return_exceptions=True)
+            completed_task.cancel()
+            await asyncio.gather(
+                exit_task, result_task, completed_task, return_exceptions=True
+            )
             await self.maaend_log_monitor.stop()
 
     async def _update_after_first_stage(self, log_offsets: dict[Path, int]) -> None:
@@ -1028,11 +1070,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             # 下载与首阶段任务并行，阶段结束后才按需插入更新。
-            update_log_offsets = None
-            if self.mode == self.first_run_mode:
-                update_log_offsets = await asyncio.to_thread(
-                    snapshot_mxu_logs, self.maaend_exe_path.parent
-                )
+            stage_log_offsets = await asyncio.to_thread(
+                snapshot_mxu_logs, self.maaend_root_path
+            )
+            update_log_offsets = (
+                stage_log_offsets if self.mode == self.first_run_mode else None
+            )
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path,
@@ -1050,7 +1093,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 else:
                     logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
             await asyncio.sleep(1)
-            await self._wait_maaend_stage()
+            await self._wait_maaend_stage(stage_log_offsets)
 
             # 先保存首阶段结果，更新失败或取消不能抹掉已经完成的任务。
             if self.cur_user_log.status == "Success!":

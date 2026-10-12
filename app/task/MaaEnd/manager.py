@@ -30,8 +30,9 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.manager_base import ScriptManagerBase
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -57,8 +58,10 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class MaaEndManager(TaskExecuteBase):
+class MaaEndManager(ScriptManagerBase):
     """MaaEnd 控制器"""
+
+    wait_for_finalizer_on_cancel = True
 
     def __init__(
         self,
@@ -182,15 +185,9 @@ class MaaEndManager(TaskExecuteBase):
                     self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
                 )
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
@@ -265,6 +262,11 @@ class MaaEndManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
+            if self.task_info.mode == "AutoProxy":
+                if not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                ):
+                    continue
             if self.task_info.mode != "ScriptConfig":
                 current_config = self.user_config[uuid.UUID(current_user.user_id)]
                 config_mode = maaend_config_mode(current_config.get("Info", "Mode"))
@@ -283,7 +285,7 @@ class MaaEndManager(TaskExecuteBase):
                 kwargs["view_only"] = self.task_info.view_only
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
-                await self.spawn(task)
+                await self.run_user_task(current_user, task)
             finally:
                 if self.task_info.mode != "ScriptConfig":
                     await self._restore_script_config_from_temp()
@@ -292,6 +294,9 @@ class MaaEndManager(TaskExecuteBase):
                 return
 
     async def final_task(self):
+
+        if self.maintenance_only:
+            return
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
@@ -308,29 +313,24 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await close_emulator(
-                self,
-                index=self.script_config.get("Game", "EmulatorIndex"),
-            )
+            # 准备期间才开始维护时，未实际代理任何账号，不关闭原有模拟器。
+            if self.has_proxy_run:
+                await close_emulator(
+                    self,
+                    index=self.script_config.get("Game", "EmulatorIndex"),
+                )
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_count = sum(
-                1 for u in self.script_info.user_list if u.status == "异常"
-            )
-            over_count = sum(
-                1 for u in self.script_info.user_list if u.status == "完成"
-            )
-            wait_count = sum(
-                1 for u in self.script_info.user_list if u.status == "等待"
-            )
+            summary = self.collect_user_results()
+            error_count = len(summary.failed)
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             # 按用户交错组装「用户结果行 + 该用户节点详情」：
             # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
-            has_uncompleted = error_count + wait_count > 0
+            has_uncompleted = summary.uncompleted_count > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
@@ -341,25 +341,20 @@ class MaaEndManager(TaskExecuteBase):
                 if error_count
                 else ()
             )
-            result = {
-                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                "script_name": self.script_info.name or "空白",
-                "start_time": self.begin_time,
-                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": over_count,
-                "uncompleted_count": error_count + wait_count,
-                "result": user_result_text,
-            }
+            result = self.build_proxy_report(result_text=user_result_text)
 
             try:
-                await push_notification(
-                    mode="代理结果",
-                    title=title,
-                    message=result,
-                    user_config=None,
-                    task_info=self.task_info,
-                    images=error_images,
-                )
+                if self.all_users_maintenance_skipped:
+                    await self.notify_maintenance()
+                else:
+                    await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                        images=error_images,
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                 await Publisher.send(
@@ -374,6 +369,8 @@ class MaaEndManager(TaskExecuteBase):
             user.status == "异常" for user in self.script_info.user_list
         ):
             self.script_info.status = "异常"
+        elif self.all_users_maintenance_skipped:
+            self.script_info.status = "跳过"
         else:
             self.script_info.status = "完成"
 

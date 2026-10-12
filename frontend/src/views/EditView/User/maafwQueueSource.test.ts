@@ -194,3 +194,60 @@ describe('buildMaaFWQueueReplacement：用来源替换当前队列', () => {
     expect(source.taskOptions.战斗).toEqual({ 备注: { 内容: '来源' } })
   })
 })
+
+describe('实例显示名随导入 / 模板按实例带过去', () => {
+  it('来源的显示名只留可导入项；替换后保留的当前前置任务只认自己的显示名', () => {
+    const source = {
+      ...snapshot(['日常', '战斗__MAS_DUP__ab12', '官服专属', '__MXU_PRETASK__启动']),
+      taskLabels: { 日常: '早班', 官服专属: '失效项', __MXU_PRETASK__启动: '来源前置' },
+    }
+    const described = describeMaaFWQueueSource(source, context)
+    expect(described.taskLabels).toEqual({ 日常: '早班', __MXU_PRETASK__启动: '来源前置' })
+
+    const current = { ...snapshot(['__MXU_PRETASK__启动', '战斗']), taskLabels: { 战斗: '旧名' } }
+    const next = buildMaaFWQueueReplacement(
+      described,
+      current,
+      id => id.startsWith('__MXU_PRETASK__'),
+      passwordFields
+    )
+    expect(next.taskOrder).toEqual(['__MXU_PRETASK__启动', '日常', '战斗__MAS_DUP__ab12'])
+    expect(next.taskLabels).toEqual({ 日常: '早班' })
+  })
+
+  it('保留下来的当前前置任务带着自己的显示名，来源里同 id 的显示名盖不过它', () => {
+    const source = {
+      ...snapshot(['__MXU_PRETASK__启动', '日常']),
+      taskLabels: { __MXU_PRETASK__启动: '来源前置' },
+    }
+    const described = describeMaaFWQueueSource(source, context)
+    const current = {
+      ...snapshot(['__MXU_PRETASK__启动', '战斗']),
+      taskLabels: { __MXU_PRETASK__启动: '我的前置', 战斗: '旧名' },
+    }
+    const next = buildMaaFWQueueReplacement(
+      described,
+      current,
+      id => id.startsWith('__MXU_PRETASK__'),
+      passwordFields
+    )
+    expect(next.taskOrder).toEqual(['__MXU_PRETASK__启动', '日常'])
+    expect(next.taskLabels).toEqual({ __MXU_PRETASK__启动: '我的前置' })
+  })
+
+  it('预览标签：来源里改过显示名的显示它（失效项也是），没改过的用原显示名', () => {
+    const described = describeMaaFWQueueSource(
+      {
+        ...snapshot(['日常', '战斗', '官服专属', '已删除任务']),
+        taskLabels: { 日常: '早班', 官服专属: '官服那份', 已删除任务: '旧任务' },
+      },
+      context
+    )
+    expect(described.chips.map(chip => [chip.label, chip.invalid])).toEqual([
+      ['早班', false],
+      ['战斗-显示名', false],
+      ['官服那份', true],
+      ['旧任务', true],
+    ])
+  })
+})

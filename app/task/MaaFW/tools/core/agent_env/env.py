@@ -16,6 +16,7 @@ from typing import Callable
 
 from packaging.version import InvalidVersion, Version
 
+from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import mask_home_path
 from ..runtime_pool import runtime_managed_uv_executable
 from ..runtime_pool._shared import output_tail, remove_tree_best_effort
@@ -63,7 +64,16 @@ def prepare_agent_envs(
     bootstrap_python: str | None = None,
     install_dependencies: bool = True,
     progress: Callable[[dict[str, object]], None] | None = None,
+    runner_maafw_version: str | None = None,
 ) -> MaaFWAgentEnvPrepareResult:
+    """备好各 agent 的运行环境。
+
+    ``runner_maafw_version``：runner 这次实际用的 maafw 版本（宿主备完 runner 环境后、worker
+    从 job 的 ``PI_CLIENT_MAAFW_VERSION`` 取）。项目没自带原生库时隔离 venv 里的 maafw 钉成它
+    （见 ``runner.environment.resolve_project_maafw_requirement``），两侧才不会落到协议不同的
+    版本上；自带原生库的项目钉的本来就是确切版本，不受影响。
+    """
+
     resolved_project_path = Path(project_path).resolve()
     messages: list[str] = []
     prepared_venvs: list[str] = []
@@ -99,6 +109,9 @@ def prepare_agent_envs(
         )
 
     for index, plan in enumerate(plans):
+        if is_uv_launcher(plan.childExec):
+            # 导入时已经拒绝；这里兜住导入早于这条规则的老副本，别等到连接超时。
+            raise MaaFWAgentEnvError(describe_uv_agent(f"Agent {plan.childExec}"))
         _report_agent_progress(
             progress,
             status="running",
@@ -133,6 +146,7 @@ def prepare_agent_envs(
                     log,
                     bootstrap_python=bootstrap_python,
                     install_dependencies=install_dependencies,
+                    runner_maafw_version=runner_maafw_version,
                 )
             prepared_venvs.append(str(prepared_path))
             checked_python.add(resolved_python)
@@ -178,14 +192,20 @@ def prepare_agent_envs(
     )
 
 
-def build_agent_env_manifest(project_path: str | Path) -> dict[str, object]:
+def build_agent_env_manifest(
+    project_path: str | Path, *, runner_maafw_version: str | None = None
+) -> dict[str, object]:
     resolved_project_path = Path(project_path).resolve()
     return {
         "schemaVersion": 1,
         "projectPath": str(resolved_project_path),
         "interfaceHash": _project_interface_hash(resolved_project_path),
-        "requirementsHash": _project_agent_requirements_hash(resolved_project_path),
-        "requirements": _load_project_agent_requirements(resolved_project_path),
+        "requirementsHash": _project_agent_requirements_hash(
+            resolved_project_path, runner_maafw_version=runner_maafw_version
+        ),
+        "requirements": _load_project_agent_requirements(
+            resolved_project_path, runner_maafw_version=runner_maafw_version
+        ),
     }
 
 
@@ -504,6 +524,7 @@ def _prepare_isolated_venv_env(
     *,
     bootstrap_python: str | None,
     install_dependencies: bool,
+    runner_maafw_version: str | None = None,
 ) -> Path:
     if not agent_plan.isolatedVenvPath:
         raise MaaFWAgentEnvError("隔离 venv 路径未提供，无法创建隔离环境")
@@ -515,7 +536,9 @@ def _prepare_isolated_venv_env(
 
     log(f"[Python环境] 准备隔离 venv: {venv_path}")
     had_valid_venv = _is_valid_venv_path(venv_path)
-    if _should_rebuild_isolated_venv(venv_path, project_path, log):
+    if _should_rebuild_isolated_venv(
+        venv_path, project_path, log, runner_maafw_version=runner_maafw_version
+    ):
         _reset_isolated_venv(venv_path, log)
         had_valid_venv = False
     _ensure_isolated_venv(venv_path, log, bootstrap_python=bootstrap_python)
@@ -529,12 +552,16 @@ def _prepare_isolated_venv_env(
         if not _try_ensurepip(python_exe, cwd=str(project_path), env=test_env, log=log):
             raise MaaFWAgentEnvError(f"隔离 venv pip 无法自动修复: {python_exe}")
 
-    if had_valid_venv and _is_isolated_venv_manifest_current(venv_path, project_path):
+    if had_valid_venv and _is_isolated_venv_manifest_current(
+        venv_path, project_path, runner_maafw_version=runner_maafw_version
+    ):
         log("[Python环境] 隔离 venv 依赖清单未变化，跳过 pip install")
         return venv_path
 
     if install_dependencies:
-        packages = _load_project_agent_requirements(project_path)
+        packages = _load_project_agent_requirements(
+            project_path, runner_maafw_version=runner_maafw_version
+        )
         log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
         installed, failure_detail = _pip_install(
             python_exe, packages, cwd=str(project_path), env=test_env, log=log
@@ -548,7 +575,9 @@ def _prepare_isolated_venv_env(
     else:
         log("[Python环境] 当前调用禁用依赖安装，仅写入隔离 venv manifest")
 
-    _write_isolated_venv_manifest(venv_path, project_path)
+    _write_isolated_venv_manifest(
+        venv_path, project_path, runner_maafw_version=runner_maafw_version
+    )
     return venv_path
 
 
@@ -648,6 +677,8 @@ def _should_rebuild_isolated_venv(
     venv_path: Path,
     project_path: Path,
     log: Callable[[str], None],
+    *,
+    runner_maafw_version: str | None = None,
 ) -> bool:
     if venv_path.exists() and venv_base_python_missing(venv_path):
         log(
@@ -671,7 +702,9 @@ def _should_rebuild_isolated_venv(
         log(f"[Python环境] 隔离 venv 依赖清单异常，将重建: {exc}")
         return True
 
-    expected = build_agent_env_manifest(project_path)
+    expected = build_agent_env_manifest(
+        project_path, runner_maafw_version=runner_maafw_version
+    )
     if manifest.get("projectPath") != expected["projectPath"]:
         log("[Python环境] 隔离 venv 项目路径已变化，将重建")
         return True
@@ -693,13 +726,17 @@ def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
     log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
 
 
-def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> bool:
+def _is_isolated_venv_manifest_current(
+    venv_path: Path, project_path: Path, *, runner_maafw_version: str | None = None
+) -> bool:
     manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception:
         return False
-    expected = build_agent_env_manifest(project_path)
+    expected = build_agent_env_manifest(
+        project_path, runner_maafw_version=runner_maafw_version
+    )
     return (
         manifest.get("projectPath") == expected["projectPath"]
         and manifest.get("interfaceHash") == expected["interfaceHash"]
@@ -707,17 +744,25 @@ def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> b
     )
 
 
-def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
+def _write_isolated_venv_manifest(
+    venv_path: Path, project_path: Path, *, runner_maafw_version: str | None = None
+) -> None:
     manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
     manifest_path.write_text(
         json.dumps(
-            build_agent_env_manifest(project_path), ensure_ascii=False, indent=2
+            build_agent_env_manifest(
+                project_path, runner_maafw_version=runner_maafw_version
+            ),
+            ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
 
 
-def _load_project_agent_requirements(project_path: Path) -> list[str]:
+def _load_project_agent_requirements(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> list[str]:
     requirements_path = project_path / "requirements.txt"
     packages: list[str] = []
     declared = True
@@ -743,22 +788,30 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
         resolve_project_maafw_requirement,
     )
 
-    pinned = pin_agent_maafw_requirement(project_path, packages)
+    pinned = pin_agent_maafw_requirement(
+        project_path, packages, runner_maafw_version=runner_maafw_version
+    )
     if not declared:
         # 压根没有 requirements.txt 的 Python agent：MFW-PyQt6 的「嵌入式 Agent」
         # 模式（FOS 这类，CFA_setting.json 里 embedded=true）把 maa 与 numpy 冻进了
         # 外壳自己的程序里，发行包不写依赖。这份 venv 只会给 Python agent 用，里面
         # 至少得有跟项目自带原生库同版本的 binding，否则 agent import maa 当场退出。
-        # 项目没自带原生库时拿不到版本，就还是原样。
-        requirement = resolve_project_maafw_requirement(project_path)
+        # 项目没自带原生库时用 runner 这次实际用的版本；两样都拿不到才原样。
+        requirement = resolve_project_maafw_requirement(
+            project_path, runner_maafw_version=runner_maafw_version
+        )
         if requirement is not None:
             pinned.append(requirement)
     return pinned
 
 
-def _project_agent_requirements_hash(project_path: Path) -> str:
+def _project_agent_requirements_hash(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> str:
     payload = json.dumps(
-        _load_project_agent_requirements(project_path),
+        _load_project_agent_requirements(
+            project_path, runner_maafw_version=runner_maafw_version
+        ),
         ensure_ascii=False,
         separators=(",", ":"),
     )

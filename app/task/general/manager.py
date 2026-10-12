@@ -32,7 +32,8 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
@@ -56,7 +57,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class GeneralManager(TaskExecuteBase):
+class GeneralManager(ScriptManagerBase):
     """通用脚本控制器"""
 
     def __init__(
@@ -290,15 +291,9 @@ class GeneralManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
@@ -338,6 +333,14 @@ class GeneralManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是通用脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             use_mas_config = self._user_uses_mas_config()
             user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
@@ -363,7 +366,7 @@ class GeneralManager(TaskExecuteBase):
             )
 
             try:
-                await self.spawn(task)
+                await self.run_user_task(current_user, task)
             finally:
                 # 查看会话（viewOnly）不重拍快照：用户级查看会把该用户
                 # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
@@ -393,34 +396,18 @@ class GeneralManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_count = sum(
-                1 for u in self.script_info.user_list if u.status == "异常"
-            )
-            over_count = sum(
-                1 for u in self.script_info.user_list if u.status == "完成"
-            )
-            wait_count = sum(
-                1 for u in self.script_info.user_list if u.status == "等待"
-            )
+            summary = self.collect_user_results()
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             # 按用户交错组装「用户结果行 + 该用户进程信息」：
             # 多账号任务时各用户信息归属清晰，不再全部平铺。
             # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
             # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
-            has_uncompleted = error_count + wait_count > 0
+            has_uncompleted = summary.uncompleted_count > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
-            result = {
-                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                "script_name": self.script_info.name or "空白",
-                "start_time": self.begin_time,
-                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": over_count,
-                "uncompleted_count": error_count + wait_count,
-                "result": user_result_text,
-            }
+            result = self.build_proxy_report(result_text=user_result_text)
 
             try:
                 await push_notification(

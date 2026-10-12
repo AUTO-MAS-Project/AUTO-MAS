@@ -1,5 +1,9 @@
-import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
-import type { MaaFWInterfacePreviewData, MaaFWTaskSnapshot } from '@/types/script'
+import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import type { MaaFWInterfacePreviewData, MaaFWTaskInfo, MaaFWTaskSnapshot } from '@/types/script'
+import { migrateMaaFWGlobalOptions, withoutMaaFWGlobalOnlyOptions } from './maafwGlobalOptions'
+
+/** 实例显示名的最大长度（重命名输入框的上限） */
+export const MAAFW_TASK_LABEL_MAX_LENGTH = 40
 
 export const parseTaskSnapshot = (
   raw: string | MaaFWTaskSnapshot | Record<string, unknown> | null | undefined
@@ -14,8 +18,114 @@ export const parseTaskSnapshot = (
 }
 
 /**
+ * 快照里的实例显示名：只留 `taskIds` 里的实例、键值都是字符串、去首尾空白后非空的。
+ * 显示名跟着实例走，实例不在队列里了名字也不留。
+ */
+export const pickMaaFWTaskLabels = (
+  raw: unknown,
+  taskIds: Iterable<string>
+): Record<string, string> => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const taskIdSet = new Set(taskIds)
+  const labels: Record<string, string> = {}
+  for (const [taskId, label] of Object.entries(raw as Record<string, unknown>)) {
+    if (!taskIdSet.has(taskId) || typeof label !== 'string') continue
+    const trimmed = label.trim()
+    if (trimmed) labels[taskId] = trimmed
+  }
+  return labels
+}
+
+/** 没有显示名时不写 `taskLabels` 这个键：没改过名的用户快照与以前逐字节相同 */
+export const taskLabelsField = (labels: Record<string, string>) =>
+  Object.keys(labels).length > 0 ? { taskLabels: labels } : {}
+
+type QueueEntryNameSource =
+  | { missing: true; name: string; customLabel?: string }
+  | { missing?: false; task: Pick<MaaFWTaskInfo, 'name' | 'label'>; customLabel?: string }
+
+/**
+ * 队列里一份实例的基础名：改过显示名就用它，否则是任务的 label（没有 label 用 name），
+ * 虚影是它的原任务名。副本序号按这段文字分组编。
+ */
+export const maafwQueueEntryBaseName = (item: QueueEntryNameSource) =>
+  item.customLabel || (item.missing ? item.name : item.task.label || item.task.name)
+
+/**
+ * 队列行与右栏标题显示的文字：基础名 + 同一基础名 ≥ 2 份时的序号（`index`，否则为 null）。
+ * 序号分开给，模板里单独用 `.task-copy-index` 的样式渲染成「#N」。
+ */
+export const maafwQueueEntryTitle = (
+  item: QueueEntryNameSource & { copyIndex: number; copyTotal: number }
+): { name: string; index: number | null } => ({
+  name: maafwQueueEntryBaseName(item),
+  index: item.copyTotal > 1 ? item.copyIndex : null,
+})
+
+/**
+ * 改一份实例的显示名，返回新的显示名表（不改入参）。去首尾空白后为空、或与任务原本的显示名
+ * （interface 的 label，没有就是 name）相同时删掉这一条，视为没改名；其余截到上限后存下。
+ * 先比原名再截断：原名本身超过上限时，不改直接确定不能存下一份截断后的名字。
+ */
+export const withMaaFWTaskLabel = (
+  labels: Record<string, string> | undefined,
+  taskId: string,
+  name: string,
+  defaultName: string
+): Record<string, string> => {
+  const next = { ...(labels || {}) }
+  const trimmed = name.trim()
+  if (!trimmed || trimmed === defaultName) {
+    delete next[taskId]
+  } else {
+    next[taskId] = trimmed.slice(0, MAAFW_TASK_LABEL_MAX_LENGTH)
+  }
+  return next
+}
+
+/**
+ * 在 `taskId` 正下方插一份同任务的新实例：勾选、选项（深拷贝）与显示名一起复制。
+ * 新实例 id 走重复实例体系（`<任务名>__MAS_DUP__<随机后缀>`）。原实例不在队列里时返回 null。
+ */
+export const duplicateMaaFWQueuedTask = (
+  snapshot: MaaFWTaskSnapshot,
+  taskId: string,
+  taskName: string
+): { snapshot: MaaFWTaskSnapshot; taskId: string } | null => {
+  const index = snapshot.taskOrder.indexOf(taskId)
+  if (index < 0) return null
+  const newTaskId = buildMaaFWTaskInstanceId(taskName, new Set(snapshot.taskOrder))
+  const taskOrder = [...snapshot.taskOrder]
+  taskOrder.splice(index + 1, 0, newTaskId)
+  const taskOptions = { ...snapshot.taskOptions }
+  if (snapshot.taskOptions[taskId]) {
+    taskOptions[newTaskId] = JSON.parse(JSON.stringify(snapshot.taskOptions[taskId]))
+  }
+  const label = snapshot.taskLabels?.[taskId]
+  return {
+    taskId: newTaskId,
+    snapshot: {
+      // 其余键（用户的全局选项 globalOptions、其他实例的显示名）原样带着
+      ...snapshot,
+      taskOrder,
+      taskChecked: {
+        ...snapshot.taskChecked,
+        [newTaskId]: snapshot.taskChecked[taskId] !== false,
+      },
+      taskOptions,
+      ...(label ? { taskLabels: { ...snapshot.taskLabels, [newTaskId]: label } } : {}),
+    },
+  }
+}
+
+/**
  * `keepMissing`：用户自己的队列要保留 interface 已没有的任务（项目更新改了 name），
  * 它们在队列里显示成虚影，删不删由用户定；预设模板照旧只要认得的任务。
+ *
+ * 全局选项（见 maafwGlobalOptions.ts）：旧配置里散在各任务上的、只属于全局的值迁进
+ * `globalOptions`，任务选项里的这些值（含后端为降级兼容双写的副本）去掉，不显示、不生效；
+ * 任务 / 资源 / 控制器自己也引用的选项是任务自己的值，留着。没有任何全局选项值时不带这个键。
+ * 没有 interface 时认不出哪些是全局选项，原样保留。
  */
 export const normalizeTaskSnapshot = (
   raw: string | MaaFWTaskSnapshot | Record<string, unknown> | null | undefined,
@@ -38,13 +148,19 @@ export const normalizeTaskSnapshot = (
   const queuedOrder = order.filter(taskId => taskChecked[taskId])
   const queuedTaskIds = new Set(queuedOrder)
 
-  const taskOptions = Object.fromEntries(
-    Object.entries(parsed.taskOptions || {}).filter(([taskId]) => queuedTaskIds.has(taskId))
+  const globalOptions = migrateMaaFWGlobalOptions(parsed, preview)
+  const taskOptions = withoutMaaFWGlobalOnlyOptions(
+    Object.fromEntries(
+      Object.entries(parsed.taskOptions || {}).filter(([taskId]) => queuedTaskIds.has(taskId))
+    ),
+    preview
   )
 
   return {
     taskOrder: queuedOrder,
     taskChecked,
     taskOptions,
+    ...(Object.keys(globalOptions).length > 0 ? { globalOptions } : {}),
+    ...taskLabelsField(pickMaaFWTaskLabels(parsed.taskLabels, queuedTaskIds)),
   }
 }

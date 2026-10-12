@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
+import { useMaaIssueReport } from '@/composables/useMaaIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
@@ -30,6 +31,7 @@ const logger = window.electronAPI.getLogger('日志管理')
 const exportingLogs = ref(false)
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+const { exporting: exportingMaaLogs, exportMaaIssueReport } = useMaaIssueReport(logger)
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
@@ -230,6 +232,12 @@ const exportDataBackup = async () => {
       <a-row :gutter="24">
         <a-col :span="24">
           <a-space size="large" wrap>
+            <a-button type="primary" :loading="exportingMaaLogs" @click="exportMaaIssueReport">
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportMaa') }}
+            </a-button>
             <a-button
               type="primary"
               :loading="exportingMaaEndLogs"

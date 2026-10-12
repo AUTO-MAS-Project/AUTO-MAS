@@ -346,6 +346,10 @@ def main():
 
                 await DesktopGuard.start()
 
+            async def init_stage_info() -> None:
+                # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
+                await Config.get_stage(wait_stale=False)
+
             async def start_openclaw_qq() -> None:
                 from app.services.openclaw_qq import openclaw_qq_manager
 
@@ -366,7 +370,7 @@ def main():
             app.state.background_status = "running"
             try:
                 await run_optional_step("MCP 服务挂载", mount_mcp)
-                await run_optional_step("活动关卡信息获取", Config.get_stage)
+                await run_optional_step("活动关卡信息获取", init_stage_info)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -490,6 +494,9 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
             await Updater.cancel_download(notify=False)
+            from app.services.obs_replay import ObsReplay
+
+            await ObsReplay.stop()
             await RuntimeTasks.shutdown()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")

@@ -1,6 +1,8 @@
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { message } from 'ant-design-vue'
 import { BlueArchiveActivityIn, GetService, OpenAPI } from '@/api'
+import { getConfig, saveConfig } from '@/utils/config'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -256,6 +258,36 @@ export const useBlueArchiveActivitySource = () => {
     cn: false,
   })
   const selectedServer = ref<BlueArchiveServerKey>(readSelectedServer())
+  const logger = window.electronAPI.getLogger('碧蓝档案活动')
+  let selectionChanged = false
+
+  const saveSelectedServer = async (server: BlueArchiveServerKey, { reportError = false } = {}) => {
+    try {
+      await saveConfig({ homeBlueArchiveServer: server })
+      return true
+    } catch (error) {
+      logger.warn(`保存碧蓝档案服务器选择失败: ${String(error)}`)
+      if (reportError) message.error(t('edit.couldNotSaveConfiguration'))
+      return false
+    }
+  }
+
+  // 迁移浏览器偏好到现有配置文件，让后台日历按首页所选服务器提醒。
+  void getConfig()
+    .then(async config => {
+      if (selectionChanged) return
+      const server = config.homeBlueArchiveServer
+      if (server && SERVER_KEYS.includes(server)) {
+        selectedServer.value = server
+      } else if (!(await saveSelectedServer(selectedServer.value))) {
+        return
+      }
+      // 浏览器旧键只用于迁移，成功落盘后删除；后续选择只保存到配置文件。
+      localStorage.removeItem(SELECTED_SERVER_STORAGE_KEY)
+    })
+    .catch(error => {
+      logger.warn(`初始化碧蓝档案服务器选择失败: ${String(error)}`)
+    })
 
   // 每个服各跑一份完整调度：请求、重试、快照、加载态互相不打扰，
   // 一个服取不到时另外两个照常显示，卡片只切显示、不必重新请求
@@ -391,12 +423,9 @@ export const useBlueArchiveActivitySource = () => {
     loadingByServer,
     selectServer: (server: BlueArchiveServerKey) => {
       if (!SERVER_KEYS.includes(server)) return
+      selectionChanged = true
       selectedServer.value = server
-      try {
-        localStorage.setItem(SELECTED_SERVER_STORAGE_KEY, server)
-      } catch {
-        // 存储不可用时仍允许切换，保留当前会话的选择。
-      }
+      void saveSelectedServer(server, { reportError: true })
     },
     start,
     stop,

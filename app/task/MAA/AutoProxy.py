@@ -68,6 +68,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
+from app.utils.game_apk import GameUpdateResult
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api
@@ -79,12 +80,15 @@ from .base_preset import (
 )
 from .tools import (
     agree_bilibili,
-    ensure_game_updated,
     log_statistics,
     push_notification,
     update_maa,
 )
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    read_overlay_values,
+    task_type_of,
+)
 from .tools.cultivate import (
     CultivatePlan,
     ProviderContext,
@@ -101,6 +105,11 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.software_update import (
+    prepare_maa_software_update,
+    start_maa_software_update_precheck,
+)
+from .tools.update_credentials import resolve_takeover_credentials
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -132,7 +141,10 @@ _MAA_SANITY_COMPLETION_MARKERS = (
 # 养成注入的任务名（语言无关，日志锚定与来源查找都用它，方案决策 27/30）
 _MAA_CULTIVATE_TASK_NAME = "养成计划"
 _MAA_DATA_UPDATE_TASK_NAME = "更新数据"
-# 识别数据档案文件名（MAA 原生格式透传，MAS 绝不回写 MAA，方案决策 31）
+# 识别数据档案文件名（MAA 原生格式透传）。方案决策 31 管的是归属：档案按写入时的
+# cur_user_uid 归属，安装目录那份 DepotData 是 MAA 自己的工作缓存，不属于查询链——
+# 查询、缺口判定与养成注入只读档案。只有 overlay 层（开启覆写常规配置）才在启动前
+# 把档案覆写进安装目录，且覆写前键级存底、任务结束还原（见 depot_cache_snapshot_dir）。
 _MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
 _MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
 # 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
@@ -812,6 +824,79 @@ def _build_activity_priority_fight(
     return activity_fight
 
 
+def depot_cache_snapshot_dir(script_id: str) -> Path:
+    """库存缓存存底目录（键级存底，覆盖 overlay 对该文件的覆写）。
+
+    安装目录的 data/DepotData.json 不在原生配置整目录快照（config）范围内，
+    overlay 覆写它是不可还原写入；不在整目录快照范围内的目标必须自带键级快照。
+    目录存在即为「已存底」；目录里没有 DepotData.json 表示覆写前安装目录本来
+    就没有该文件。
+
+    Args:
+        script_id: 脚本标识，决定 data/<script_id>/TempDepot 的归属。
+
+    Returns:
+        存底目录路径。
+    """
+
+    return Path.cwd() / f"data/{script_id}/TempDepot"
+
+
+def snapshot_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> bool:
+    """覆写安装目录库存缓存前存底；已存底时保持第一次的现场。
+
+    Args:
+        maa_root_path: MAA 安装根目录，工作缓存在其 data/DepotData.json。
+        snapshot_dir: 存底目录；已存在即视为已存底并直接放行。
+
+    Returns:
+        可以覆写时为 True；存底失败为 False（调用方不得覆写）。
+    """
+
+    if snapshot_dir.is_dir():
+        return True
+    live = maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
+    try:
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        if live.is_file():
+            shutil.copy2(live, snapshot_dir / _MAA_DEPOT_ARCHIVE_NAME)
+    except OSError:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        logger.opt(exception=True).warning(
+            "MAA 库存缓存存底失败, 本轮不覆写安装目录缓存"
+        )
+        return False
+    return True
+
+
+def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> None:
+    """按存底还原安装目录库存缓存（结束还原与崩溃恢复共用）。
+
+    存底目录存在才算覆写过；还原失败保留存底，交给下一次 prepare 重试。
+
+    Args:
+        maa_root_path: MAA 安装根目录，工作缓存在其 data/DepotData.json。
+        snapshot_dir: 存底目录；不存在表示没覆写过，直接放行。
+    """
+
+    if not snapshot_dir.is_dir():
+        return
+    live = maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
+    saved = snapshot_dir / _MAA_DEPOT_ARCHIVE_NAME
+    try:
+        if saved.is_file():
+            live.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(saved, live)
+        else:
+            live.unlink(missing_ok=True)
+    except OSError:
+        logger.opt(exception=True).warning(
+            f"MAA 库存缓存还原失败, 保留存底: {snapshot_dir}"
+        )
+        return
+    shutil.rmtree(snapshot_dir, ignore_errors=True)
+
+
 class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
@@ -827,6 +912,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
         emulator_manager: DeviceBase,
+        *,
+        game_update_result: GameUpdateResult | None = None,
     ):
         super().__init__()
 
@@ -838,6 +925,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -897,6 +985,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.log_start_time = datetime.now()
         self.if_game_hot_update = False
         self.pending_res_version = ""
+        # 更新阶段只提供资源版本信号；资源热更新仍由 MAA 原生开始唤醒执行。
+        if (
+            self.game_update_result is not None
+            and self.game_update_result.resource_version
+        ):
+            self.pending_res_version = self.game_update_result.resource_version
+            self.if_game_hot_update = (
+                self.pending_res_version
+                != self.cur_user_config.get("Data", "LastResVersion")
+            )
         self._maa_config_baseline: dict[str, dict] | None = None
         # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
         # 见 _collect_cultivate_archive）；
@@ -952,6 +1050,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     f"开始日={start_weekday}，本周记录="
                     f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
                 )
+
+        # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
+        # 缓存，收尾在 update_maa() 前由 prepare_maa_software_update 消费；
+        # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
+        # 只写日志。通道偏好读任务前的原生配置快照——会话期间安装目录 config
+        # 是 MAS 托管副本，且预检查发生在快照提交之后、本轮下发之前
+        start_maa_software_update_precheck(
+            self.maa_root_path,
+            config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            config=self.script_config,
+        )
 
     def _resolve_log_file_path(self) -> Path:
         return self.maa_log_path
@@ -1077,12 +1186,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     except Exception as e:
                         logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
 
-                # 需要用户手动更新游戏时重试无意义，直接结束本模式的重试
-                if self.script_config.get(
-                    "Run", "IfCheckGameUpdate"
-                ) and not await self.handle_game_update(emulator_info):
-                    break
-
                 await self.set_maa(emulator_info)
 
                 # 本轮 MAA 的日志从启动前的文件末尾开始读：gui.log 追加写且跨
@@ -1156,14 +1259,91 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
+                # 本体更新登记：把 MAS 共享缓存中的完整包复制进安装目录并写入
+                # 上游待更新字段；安装仍由下方未改动的 update_maa() 拉起 MAA
+                # 官方更新链完成。准备内部吞掉一切失败只写日志（主动取消除外），
+                # 不改变 update_maa() 的既有行为（含消费 MAA 原生自有的待更新包）。
+                await prepare_maa_software_update(
+                    self.maa_root_path,
+                    config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    config=self.script_config,
+                )
+
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
-        cur_user_uid 为准，查询与注入判定只读档案，绝不回写 MAA）。"""
+        cur_user_uid 为准；查询、缺口判定与养成注入只读档案。安装目录那份
+        DepotData 是 MAA 的工作缓存，只有 overlay 层才按账号覆写它，见
+        _apply_depot_context）。"""
 
         return Path.cwd() / f"data/{self.script_info.script_id}/{self.cur_user_uid}"
+
+    def _apply_depot_context(self, gui_new_set: dict) -> None:
+        """overlay 层：把当前用户档案的库存缓存覆写进 MAA 安装目录。
+
+        安装目录那份 DepotData 是 MAA 的工作缓存，物理上跨账号共用；开启覆写
+        常规配置时按本账号档案覆写，覆写前键级存底，任务结束在 _finalize_task
+        里还原。覆写失败宁可关掉本轮库存保持任务，也不让 MAA 读到别的账号
+        留下的库存。
+        """
+
+        queue = gui_new_set["Configurations"]["Default"].get("TaskQueue") or []
+        depot_tasks = [
+            task
+            for task in queue
+            if isinstance(task, dict)
+            and task.get("IsEnable")
+            and task_type_of(task) == "DepotMaintain"
+        ]
+        if not depot_tasks:
+            return
+
+        snapshot_dir = depot_cache_snapshot_dir(self.script_info.script_id)
+        archive = self._cultivate_archive_dir() / _MAA_DEPOT_ARCHIVE_NAME
+        target = self.maa_root_path / "data" / _MAA_DEPOT_ARCHIVE_NAME
+        if snapshot_depot_cache(self.maa_root_path, snapshot_dir):
+            try:
+                if archive.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(archive, target)
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 的库存缓存已覆写进 MAA 安装目录"
+                    )
+                else:
+                    # 本账号还没有档案：清掉安装目录里的旧缓存让 MAA 重新识别，
+                    # 不拿上一个账号的库存充当本账号的
+                    target.unlink(missing_ok=True)
+                return
+            except OSError:
+                logger.opt(exception=True).warning(
+                    f"用户 {self.cur_user_item.name} 覆写 MAA 库存缓存失败"
+                )
+
+        for task in depot_tasks:
+            task["IsEnable"] = False
+        self.task_dict["DepotMaintain"] = False
+        logger.warning(
+            f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
+            "请检查 MAA 数据目录的写入权限"
+        )
+
+    async def _finalize_task(self) -> None:
+        """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。
+
+        挂在 _finalize_task（收尾主体，由 _run_final_task 放进屏蔽取消的
+        独立任务里执行）上，而不是 final_task：收尾被取消或异常中断时它仍会
+        执行（wait_for_finalizer_on_cancel）；super() 已跑完后置脚本。
+        """
+
+        try:
+            await super()._finalize_task()
+        finally:
+            restore_depot_cache(
+                self.maa_root_path,
+                depot_cache_snapshot_dir(self.script_info.script_id),
+            )
 
     def _archive_recognition_file(
         self, name: str, *, require_fresh_sync_time: bool = False
@@ -1495,6 +1675,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             "Info", "IfQuickConfig"
         ):
             await self._apply_maa_quick_config(gui_new_set)
+
+        # 库存缓存按账号隔离属 overlay 层行为，与上方面板覆写同一个开关：
+        # 关闭覆写常规配置时不读不写安装目录那份缓存，原样留给 MAA。
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            self._apply_depot_context(gui_new_set)
+
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
         write_file(self.maa_set_path / "gui.json", gui_set)
@@ -1848,6 +2034,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "AutoInstallUpdatePackage": False,
             }
         )
+        # MAS 已接管本体更新时（脚本开启「更新接管」且有生效 CDK），压制 MAA
+        # 会话内自下载，避免两个更新器同时取包；只写托管会话配置，任务结束
+        # 换回原生快照，不影响用户单独运行 MAA 时的更新偏好
+        takeover, _ = resolve_takeover_credentials(self.script_config)
+        if takeover:
+            global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
+            gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         if Config.get("Function", "IfSilence"):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
@@ -1968,73 +2161,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(
                 f"用户 {self.cur_user_item.name} 的 MAA 配置变更已回写存档: {name}"
             )
-
-    async def handle_game_update(self, emulator_info: DeviceInfo) -> bool:
-        """启动 MAA 前接管游戏更新。
-
-        Returns:
-            bool: 是否可以继续本次代理；``False`` 表示需要用户手动更新游戏。
-        """
-
-        self.script_info.log = "正在检查游戏更新"
-
-        async def report(text: str) -> None:
-            self.script_info.log = text
-
-        try:
-            result = await ensure_game_updated(
-                adb_path=self.emulator_manager.get_adb_path(),
-                adb_address=emulator_info.adb_address,
-                server=self.cur_user_config.get("Info", "Server"),
-                package_name=ARKNIGHTS_PACKAGE_NAME[
-                    self.cur_user_config.get("Info", "Server")
-                ],
-                apk_dir=Path.cwd() / "data/GameApk",
-                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
-                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
-                progress=report,
-            )
-        except Exception as e:
-            # 检查本身异常不应阻断代理，交回 MAA 原有流程判定
-            logger.opt(exception=True).warning(f"游戏更新检查异常: {e}")
-            return True
-
-        logger.info(f"游戏更新检查结果: {result.status} - {result.message}")
-
-        # 服务端资源版本与上次成功代理时不一致，说明本次开始唤醒会触发资源热更新
-        if result.resource_version:
-            self.pending_res_version = result.resource_version
-            self.if_game_hot_update = (
-                result.resource_version
-                != self.cur_user_config.get("Data", "LastResVersion")
-            )
-            if self.if_game_hot_update:
-                logger.info(
-                    f"检测到待下载的游戏资源热更新: {result.resource_version}，"
-                    f"本次超时限制放宽至 {self.script_config.get('Run', 'GameUpdateTimeLimit')} 分钟"
-                )
-
-        if result.status != "NeedManualUpdate":
-            return True
-
-        self.cur_user_log.content = [result.message]
-        self.cur_user_log.status = "游戏需要手动更新"
-        self.script_info.log = result.message
-
-        await Publisher.send(
-            id=self.task_info.task_id,
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=result.message),
-        )
-        await close_emulator(self)
-
-        await Notify.push_plyer(
-            "游戏需要手动更新！",
-            result.message,
-            f"{self.cur_user_item.name}的游戏需要手动更新",
-            3,
-        )
-        return False
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""

@@ -45,6 +45,9 @@ class MaaFWTaskRunPlan(BaseModel):
     # 特调声明的关键任务（如 M9A 的切换账号）：失败或超时就结束本轮、报这句，由宿主照常
     # 重试；None 是普通任务，失败后继续后面的任务。
     abortRoundMessage: str | None = None
+    # 特调声明的收尾任务（如 M9A 的关闭游戏）：失败、超时或原地打转都照常截图并写一行日志
+    # （接上这句说明），但不计入本轮失败、不触发重试；None 是普通任务。
+    nonFatalMessage: str | None = None
 
 
 class MaaFWSkippedTaskPlan(BaseModel):
@@ -81,6 +84,9 @@ class MaaFWRunPlan(BaseModel):
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
+    # 用户的全局选项表（已解密、叠过脚本级键位），各任务覆盖里全局那一层的取值。任务的
+    # options 是给人看的合并结果，同一选项任务自己也有值时看不到这一层，宿主给日志打码时两处都收。
+    globalOptions: dict[str, Any] = Field(default_factory=dict)
     # 建计划时降级处理的项（例如没设的快捷键被跳过），宿主写进用户可见的运行日志。
     warnings: list[str] = Field(default_factory=list)
     # 项目 zh_cn 语言文件的内容，worker 用它翻译 pipeline focus 文案里的 ``$key``。

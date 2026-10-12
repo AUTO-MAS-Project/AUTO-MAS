@@ -69,6 +69,7 @@
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
+            @sync-source="syncFromSource"
           />
           <MaaFWFlavorSlot
             part="scriptPage"
@@ -137,6 +138,7 @@
         <div v-show="!isWizard || currentStep === 2">
           <component
             :is="sections.update"
+            :script-id="scriptId"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :is-auto-update-disabled="isAutoUpdateDisabled"
@@ -294,6 +296,7 @@ const {
   importPercent,
   importMessage,
   selectMaaFWPath,
+  syncFromSource,
   isAutoUpdateDisabled,
   updateChecking,
   updateApplying,

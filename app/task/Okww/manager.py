@@ -26,7 +26,8 @@ from app.core.ws import Publisher, protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -53,7 +54,7 @@ from .Update import WuwaUpdateTask
 logger = get_logger("OK-WW 调度器")
 
 
-class OkwwManager(TaskExecuteBase):
+class OkwwManager(ScriptManagerBase):
     """OK-WW 控制器（ok-script 线）"""
 
     def __init__(self, script_info: ScriptItem):
@@ -70,7 +71,6 @@ class OkwwManager(TaskExecuteBase):
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
         self.script_config_mode = "脚本"
-        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
@@ -110,15 +110,9 @@ class OkwwManager(TaskExecuteBase):
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
             if not self.script_info.user_list:
-                self.script_info.user_list = [
-                    UserItem(
-                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                    )
-                    for uid, config in Config.ScriptConfig[script_uid].UserData.items()
-                    if config.get("Info", "Status")
-                    and config.get("Info", "RemainedDay") != 0
-                    and self.task_info.is_target_user(str(uid))
-                ]
+                self.script_info.user_list = self.build_proxy_user_list(
+                    Config.ScriptConfig[script_uid].UserData.items()
+                )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
 
@@ -173,17 +167,9 @@ class OkwwManager(TaskExecuteBase):
                     self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
                 )
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid),
-                    name=config.get("Info", "Name"),
-                    status="等待",
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
 
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
@@ -292,6 +278,13 @@ class OkwwManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             current_config = self.user_config[uuid.UUID(current_user.user_id)]
             config_mode = _okww_config_mode(current_config.get("Info", "Mode"))
             logger.info(f"用户 {current_user.user_id} 配置来源: {config_mode}")
@@ -311,18 +304,12 @@ class OkwwManager(TaskExecuteBase):
                 current_user = self.script_info.user_list[
                     self.script_info.current_index
                 ]
-                if current_user.status == "等待":
-                    current_user.status = "异常"
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=sub_check),
-                )
+                await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
             # OK-WW 的工作目录、脚本进程和日志文件属于安装级共享资源，用户必须串行执行。
             try:
-                await self.spawn(method)
+                await self.run_user_task(current_user, method)
             finally:
                 # 每个用户任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
                 await self._restore_script_config_from_temp()
@@ -361,15 +348,7 @@ class OkwwManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "异常"
-                )
-                over_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "完成"
-                )
-                wait_count = sum(
-                    1 for user in self.script_info.user_list if user.status == "等待"
-                )
+                summary = self.collect_user_results()
                 task_mode = TASK_MODE_ZH[self.task_info.mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
@@ -381,21 +360,13 @@ class OkwwManager(TaskExecuteBase):
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，
                 # push_log 为空，自然只有结果行。
-                has_uncompleted = error_count + wait_count > 0
+                has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 mirror_report_to_dispatch(self.script_info, user_result_text)
-                result = {
-                    "title": f"{task_mode}任务报告",
-                    "script_name": self.script_info.name or "空白",
-                    "start_time": self.begin_time,
-                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": over_count,
-                    "uncompleted_count": error_count + wait_count,
-                    "result": user_result_text,
-                }
+                result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
                     await push_notification(

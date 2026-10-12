@@ -27,7 +27,8 @@ from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import ProcessManager, get_logger
@@ -53,7 +54,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class OkNteManager(TaskExecuteBase):
+class OkNteManager(ScriptManagerBase):
     """OK-NTE 控制器（ok-script 线）"""
 
     def __init__(self, script_info: ScriptItem):
@@ -72,7 +73,6 @@ class OkNteManager(TaskExecuteBase):
         self.game_manager: ProcessManager | None = None
         self.had_original_script_config = False
         self.crashed = False
-        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -101,15 +101,9 @@ class OkNteManager(TaskExecuteBase):
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             if not self.script_info.user_list:
-                self.script_info.user_list = [
-                    UserItem(
-                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                    )
-                    for uid, config in Config.ScriptConfig[script_uid].UserData.items()
-                    if config.get("Info", "Status")
-                    and config.get("Info", "RemainedDay") != 0
-                    and self.task_info.is_target_user(str(uid))
-                ]
+                self.script_info.user_list = self.build_proxy_user_list(
+                    Config.ScriptConfig[script_uid].UserData.items()
+                )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
 
@@ -145,15 +139,9 @@ class OkNteManager(TaskExecuteBase):
         else:
             # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的；
             # 单独运行指定了用户时只保留该用户
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
         self.game_manager = None
@@ -269,6 +257,14 @@ class OkNteManager(TaskExecuteBase):
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,  # type: ignore[arg-type]
@@ -285,16 +281,10 @@ class OkNteManager(TaskExecuteBase):
                 current_user = self.script_info.user_list[
                     self.script_info.current_index
                 ]
-                if current_user.status == "等待":
-                    current_user.status = "异常"
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=sub_check),
-                )
+                await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
-            await self.spawn(method)
+            await self.run_user_task(current_user, method)
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
@@ -327,15 +317,7 @@ class OkNteManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_count = sum(
-                    1 for u in self.script_info.user_list if u.status == "异常"
-                )
-                over_count = sum(
-                    1 for u in self.script_info.user_list if u.status == "完成"
-                )
-                wait_count = sum(
-                    1 for u in self.script_info.user_list if u.status == "等待"
-                )
+                summary = self.collect_user_results()
 
                 title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
                 # 按用户交错组装「用户结果行 + 该用户节点详情」：
@@ -344,21 +326,13 @@ class OkNteManager(TaskExecuteBase):
                 # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合（对齐 ok-ww/通用脚本）。
                 # 关闭「是否采集节点详情」的用户在 AutoProxy 侧未启 log_box，push_log
                 # 为空，自然只有结果行。
-                has_uncompleted = error_count + wait_count > 0
+                has_uncompleted = summary.uncompleted_count > 0
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 mirror_report_to_dispatch(self.script_info, user_result_text)
-                result = {
-                    "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                    "script_name": self.script_info.name or "空白",
-                    "start_time": self.begin_time,
-                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": over_count,
-                    "uncompleted_count": error_count + wait_count,
-                    "result": user_result_text,
-                }
+                result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
                     await push_notification(

@@ -112,6 +112,33 @@ def adb_runner_scope(runner: Callable[..., Awaitable[tuple[int, str]]] | None):
         _ADB_RUNNER.reset(token)
 
 
+_apk_update_locks: dict[str, asyncio.Lock] = {}
+
+
+def get_apk_update_lock(package_name: str) -> asyncio.Lock:
+    """按游戏包名取进程内更新锁，串行化并行任务对同一游戏客户端的下载与安装。
+
+    按包名而不是按安装包路径加锁：路径含版本号，两个任务前后脚取到不同版本时
+    会拿到不同的锁，指向同一模拟器的两次安装就可能并发。按包名加锁同时保住
+    跨设备的下载互斥（同一个 ``.downloading`` 只有一个写者）与同设备的安装互斥。
+    """
+    return _apk_update_locks.setdefault(package_name, asyncio.Lock())
+
+
+def cleanup_apk_leftovers(apk_dir: Path, stem: str) -> None:
+    """清理某游戏残留的安装包与下载临时文件，句柄被占删不掉的留给下次。
+
+    在更新锁内调用：更新被取消或清理失败时，多 GB 的残留包不能无限期占盘，
+    趁下次持锁把本游戏所有版本的残留一并清掉。
+    """
+    for leftover in apk_dir.glob(f"{stem}*.apk*"):
+        try:
+            leftover.unlink(missing_ok=True)
+        except OSError as e:
+            # 一个被占的文件不能挡住其余残留的清理
+            logger.warning(f"清理残留安装包失败，留给下次覆盖: {leftover} ({e})")
+
+
 async def _run_adb(
     adb_path: Path | None,
     adb_address: str,
@@ -595,7 +622,11 @@ async def download_apk(
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = target_path.with_name(f"{target_path.name}.downloading")
-    temp_path.unlink(missing_ok=True)
+    try:
+        temp_path.unlink(missing_ok=True)
+    except OSError as e:
+        # 上次任务或杀软可能还占着残留文件：删不掉不碍事，open("wb") 会截断重写
+        logger.warning(f"清理残留下载临时文件失败，尝试直接覆盖: {e}")
 
     try:
         async with asyncio.timeout(timeout):
@@ -647,12 +678,20 @@ async def download_apk(
     except TimeoutError:
         # asyncio.timeout 在总时长耗尽时抛出内置 TimeoutError；
         # httpx 自身的单次操作超时是 httpx.TimeoutException，不会被这里误捕
-        temp_path.unlink(missing_ok=True)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise RuntimeError(
             f"下载安装包超时（超过 {timeout / 60:.0f} 分钟），请检查网络后重试"
         ) from None
     except BaseException:
-        temp_path.unlink(missing_ok=True)
+        # 取消时残留文件可能还被别的进程占着：删不掉就留给下次覆盖，
+        # 不能让清理异常替换正在传播的 CancelledError
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise
 
 

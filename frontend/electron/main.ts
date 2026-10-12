@@ -42,6 +42,7 @@ import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
   createMSSIssueReport,
@@ -1452,18 +1453,30 @@ function registerIssueReportExporter(
     scriptId: string
   ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
-  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown) => {
+  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
     try {
       if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
       const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
       const appRoot = getAppRoot()
       const prefix =
         typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
       const result = await dialog.showSaveDialog(mainWindow, {
-        title,
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
         defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
       })
 
       if (result.canceled || !result.filePath) {
@@ -1481,6 +1494,12 @@ function registerIssueReportExporter(
   })
 }
 
+registerIssueReportExporter(
+  'maa:exportIssueReport',
+  '导出 MAA 问题包',
+  'MAA-logs',
+  createMaaIssueReport
+)
 registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',

@@ -15,7 +15,7 @@ export type OkNteConfig_Game = {
      */
     Type?: ('Client' | 'URL' | null);
     /**
-     * 启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）
+     * 启动方式: 静默启动 / 启动器界面启动
      */
     LaunchMode?: ('Autoplay' | 'LauncherUi' | null);
     /**

@@ -96,8 +96,8 @@ _NTE_LAUNCHER_EXES_CASEFOLD = {exe.casefold() for exe in _NTE_LAUNCHER_EXES}
 
 # 启动方式（Game.LaunchMode）在调度台摘要里的展示文案；未知值按默认的 Autoplay 显示
 _LAUNCH_MODE_LABELS = {
-    "Autoplay": "直接启动（启动器静默）",
-    "LauncherUi": "使用启动器启动（启动器界面）",
+    "Autoplay": "静默启动",
+    "LauncherUi": "启动器界面启动",
 }
 
 # 多用户切换时等待旧游戏完全退出的上限（秒）：
@@ -695,8 +695,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 raise RuntimeError(
                     "未找到异环启动器路径，请重新选择游戏目录以定位 NTELauncher 启动器"
                 )
-            # 启动方式（Game.LaunchMode）：Autoplay = 直接启动（启动器带 /autoplay
-            # 静默拉起，无需点击「开始游戏」）；LauncherUi = 使用启动器启动（打开启动器
+            # 启动方式（Game.LaunchMode）：Autoplay = 静默启动（启动器带 /autoplay
+            # 后台拉起，无需点击「开始游戏」）；LauncherUi = 启动器界面启动（打开启动器
             # 界面，由 launcher_start 的 OCR 交互点击「开始游戏」）。空值与非法值都按
             # Autoplay 处理，即保持现状行为。
             launch_mode = str(
@@ -715,12 +715,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             window_ready = False
 
             if launch_mode == "LauncherUi":
-                # 「使用启动器启动」保持旧现状：只打开启动器界面（常驻启动器已持有
+                # 「启动器界面启动」保持旧现状：只打开启动器界面（常驻启动器已持有
                 # OneSDK/登录管道，这里只是再拉起或把已有窗口调出来），随后由 launcher_start
                 # 等启动器窗口、OCR 找并点击「开始游戏」（含更新/下载/弹窗分支）。
                 # 不结束启动器：旧流程本就依赖它常驻；两支也绝不互相回退。
                 message = (
-                    "启动方式为「使用启动器启动」：将打开启动器界面并点击「开始游戏」"
+                    "启动方式为「启动器界面启动」：将打开启动器界面并点击「开始游戏」"
                 )
                 logger.info(message)
                 await self._push_dispatch_log(message)
@@ -769,10 +769,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     logger.info(f"{AUTOPLAY_ARG} 未等到游戏窗口，但客户端进程已在运行")
                     await self._push_dispatch_log("客户端进程已在运行，按已启动处理")
                 else:
-                    # 直接启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
-                    # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「使用启动器
-                    # 启动」的方式），直接抛错，交由调用方的失败处理（调度台日志 + 桌面
-                    # 通知 + 进程结束与重试）
+                    # 静默启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
+                    # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「启动器
+                    # 界面启动」的方式），直接抛错，交由调用方的失败处理（调度台日志 +
+                    # 桌面通知 + 进程结束与重试）
                     raise RuntimeError(
                         f"{AUTOPLAY_ARG} 静默启动未出现游戏窗口（超时），"
                         "请人工确认启动器状态"

@@ -36,6 +36,9 @@ MFW 脚本一律在视图上跑，没有开关：用户选一次项目目录，A
 没有标记的老副本由启动期一次性迁移采纳（:func:`adopt_view`，附录 B）；采纳失败的在运行
 前自愈里再试一次，仍失败就报错、本次不运行。
 
+唯一的开关是「跟随来源目录（开发者模式）」（``Embedded.FollowSource``）：仍在视图上跑，只是
+脚本的组换成它自己的私有渠道，运行前来源目录变了就重新导入（见「跟随来源目录」一节）。
+
 副本放在 ``data/mfw/<…>`` 而不是 ``data/<uuid>/``：后者会被配置备份整目录快照。删脚本时
 ``remove_script`` 连带删视图（载荷与共用库只少一个链接）。
 
@@ -44,6 +47,7 @@ MFW 脚本一律在视图上跑，没有开关：用户选一次项目目录，A
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -284,6 +288,158 @@ def _script_channel(script_config: Any) -> str:
 
 
 # --------------------------------------------------------------------------
+# 跟随来源目录（开发者模式，``Embedded.FollowSource``）
+# --------------------------------------------------------------------------
+#
+# 开着时脚本的组是它自己的私有渠道 ``dev:<视图名>``（谱系 + 私有渠道，组里只有它）：运行前
+# 按投影白名单给来源目录算签名（投影会带走的文件的相对路径 + 大小 + mtime_ns，≤ 1 MB 的再加
+# 内容哈希），与视图标记里 ``followSource.signature``（视图挂的这份载荷是从哪个来源状态导入的）
+# 比，不同就重新导入、登记进私有渠道（``register(always_advance=True)``，不比版本，版本号带
+# ``+dev``），视图切过去。读不了来源就沿用上次同步的视图并告警（:func:`_sync_follow_source`）。
+# 同项目的其它脚本、官方更新都在普通渠道，碰不到它，它也碰不到它们。关掉后回到
+# ``Update.Channel`` 的组（:func:`_leave_follow_source`）；复制 / 克隆都不继承开发者载荷。
+
+# 视图标记里记「这份载荷是从哪个来源状态导入的」的字段：{path, signature, files, syncedAt}。
+FOLLOW_SOURCE_FIELD = "followSource"
+# 运行日志里列出的变化文件个数上限
+_FOLLOW_SOURCE_PREVIEW = 5
+
+
+def _embedded_report(script_config: Any) -> dict[str, Any]:
+    """``Embedded.Report``（JSON 文本或 dict）；读不出为空。"""
+
+    try:
+        raw = script_config.get("Embedded", "Report")
+    except Exception:  # noqa: BLE001 - 配置桩 / 老配置
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def is_source_form(script_config: Any) -> bool:
+    """脚本当前的项目是按**源码形态**导入的（导入报告的 ``sourceForm``）：interface 在
+    ``assets/``、agent 在它外面的源码仓，没有发行包可更新（``projection.ProjectionRules.source_layout``）。"""
+
+    return bool(_embedded_report(script_config).get("sourceForm"))
+
+
+def follow_source_switch_on(script_config: Any) -> bool:
+    """只看开发者模式开关 ``Embedded.FollowSource``，不并上导入报告的 ``sourceForm``。
+
+    决定**这次导入**走不走私有渠道时用它（:func:`import_channel`）：报告是上一次导入的结果，
+    源码形态的脚本刚改选成发行包目录时报告还写着 ``sourceForm``，按它判会把发行包登记成
+    开发者载荷。源码形态不靠这里放行——:func:`import_embedded_project` 按这次投影认出源码布局
+    就强制进私有渠道。
+    """
+
+    try:
+        return bool(script_config.get("Embedded", "FollowSource"))
+    except Exception:  # noqa: BLE001 - 配置桩 / 老配置没有这一项就是没开
+        return False
+
+
+def follow_source_enabled(script_config: Any) -> bool:
+    """脚本是否跟随来源目录：开着开发者模式，或项目是源码形态（源码形态始终跟随、不能关）。"""
+
+    return follow_source_switch_on(script_config) or is_source_form(script_config)
+
+
+def follow_source_channel(script_id: str) -> str:
+    """开发者模式下脚本的私有渠道：``dev:<视图名>``。"""
+
+    return f"{payloads.PRIVATE_CHANNEL_PREFIX}{embedded_copy_dir_name(script_id)}"
+
+
+def import_channel(script_id: str, script_config: Any) -> str:
+    """这次导入登记进哪个渠道：开关开着是私有渠道，否则 ``Update.Channel``。
+
+    与 :func:`effective_channel` 的区别只在不看旧报告的 ``sourceForm``（见
+    :func:`follow_source_switch_on`）；导入完成、报告写回之后，组同步与传播仍按
+    :func:`effective_channel`。
+    """
+
+    if follow_source_switch_on(script_config):
+        return follow_source_channel(script_id)
+    return _script_channel(script_config)
+
+
+def effective_channel(script_id: str, script_config: Any) -> str:
+    """脚本此刻所在的组的渠道：开发者模式下是私有渠道，否则是 ``Update.Channel``。
+
+    组同步、同组传播、导入登记都按它；更新的下载渠道仍是 ``Update.Channel``（开发者模式下
+    根本不更新）。
+    """
+
+    if follow_source_enabled(script_config):
+        return follow_source_channel(script_id)
+    return _script_channel(script_config)
+
+
+# 签名里按内容算哈希的文件大小上限：json / py / interface 这类小文件改了数值、长度和修改时间都
+# 没变（同长度改写后还原 mtime、按时间戳解压）也查得出来；更大的（模型、图片、库）只比大小与
+# 修改时间，免得每次运行前把几百 MB 读一遍。
+FOLLOW_SOURCE_HASH_LIMIT = 1024 * 1024
+# 签名格式的版本：格式改了，旧标记记的签名必然对不上，第一次检查按「有变化」重导一次。
+_FOLLOW_SOURCE_SIGNATURE_FORMAT = 2
+
+
+def follow_source_signature(plan: ProjectionPlan) -> tuple[str, int]:
+    """来源目录的签名：投影会带走的文件的（源相对路径, 大小, mtime_ns），≤ 1 MB 的再加内容
+    的 blake2b，外加投影规则版本（规则改了也要重导）。返回（sha256 十六进制, 文件数）。
+
+    读不了的文件（被独占锁住、扫描后被删掉）不吞掉，原样抛给调用方：那一轮按「读来源失败」
+    沿用上次同步的视图（:func:`_sync_follow_source`）。
+    """
+
+    root = plan.rules.source_root
+    digest = hashlib.sha256(
+        f"signature:{_FOLLOW_SOURCE_SIGNATURE_FORMAT}\0"
+        f"projection:{PROJECTION_REVISION}\n".encode()
+    )
+    files = sorted(plan.copied_files, key=lambda path: path.as_posix())
+    for relative in files:
+        path = root / relative
+        info = path.stat()
+        content = ""
+        if info.st_size <= FOLLOW_SOURCE_HASH_LIMIT:
+            content = hashlib.blake2b(path.read_bytes(), digest_size=16).hexdigest()
+        digest.update(
+            f"{relative.as_posix()}\0{info.st_size}\0{info.st_mtime_ns}\0{content}\n".encode()
+        )
+    return digest.hexdigest(), len(files)
+
+
+# 开发者导入登记的版本号带上本地后缀（PEP 440 local version / semver build metadata），载荷清单、
+# latest 与视图标记里都是它：同版本挑 latest、同版本合并留档这些按版本号相等判断的地方（包括
+# 降级回去的旧代码）都不会把开发者载荷当成正式版的同版本副本，界面上也看得出是本地版本。
+FOLLOW_SOURCE_VERSION_LOCAL = "dev"
+
+
+def follow_source_payload_version(version: str) -> str:
+    """开发者载荷登记用的版本号：``1.5.0`` → ``1.5.0+dev``（已有本地段的接成 ``+x.dev``）。"""
+
+    text = str(version or "").strip() or "0"
+    if "+" in text:
+        local = text.split("+", 1)[1]
+        if local == FOLLOW_SOURCE_VERSION_LOCAL or local.endswith(
+            f".{FOLLOW_SOURCE_VERSION_LOCAL}"
+        ):
+            return text
+        return f"{text}.{FOLLOW_SOURCE_VERSION_LOCAL}"
+    return f"{text}+{FOLLOW_SOURCE_VERSION_LOCAL}"
+
+
+def is_follow_source_manifest(manifest: Mapping[str, Any] | None) -> bool:
+    """载荷是不是开发者模式导入建出来的（清单记的登记渠道是私有渠道）。"""
+
+    return payloads.is_private_channel(str((manifest or {}).get("channel") or ""))
+
+
+# --------------------------------------------------------------------------
 # 视图标记与 journal
 # --------------------------------------------------------------------------
 
@@ -418,6 +574,35 @@ def clear_switched_by(view_dir: Path) -> bool:
     marker.pop("switchedBy", None)
     payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
     return True
+
+
+def _set_follow_source_record(view_dir: Path, record: Mapping[str, Any] | None) -> bool:
+    """原地改标记里的 ``followSource``（``None`` = 删掉），其余字段原样。
+
+    只在载荷没换的时候用：开发者模式下来源只改了修改时间、内容没变（登记出的还是视图挂的
+    这一份），或关掉开关时视图已经挂在组的 latest 上——两种情况视图内容都不用动，只是「这份
+    载荷是从哪个来源状态导入的」变了。与 ``envConfirmedFor`` 一样临时文件 + ``os.replace``。
+    调用方持有该视图的项目预约。
+    """
+
+    marker = read_view_marker(view_dir)
+    if marker is None:
+        return False
+    if record is None:
+        if FOLLOW_SOURCE_FIELD not in marker:
+            return False
+        marker.pop(FOLLOW_SOURCE_FIELD, None)
+    else:
+        marker[FOLLOW_SOURCE_FIELD] = dict(record)
+    payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
+    return True
+
+
+def follow_source_record(marker: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """标记里的 ``followSource``（开发者模式下这份载荷是从哪个来源状态导入的）；没有为 None。"""
+
+    record = (marker or {}).get(FOLLOW_SOURCE_FIELD)
+    return dict(record) if isinstance(record, Mapping) else None
 
 
 def resolve_view_payload(
@@ -752,11 +937,19 @@ def _realize_view(
     switched_by: Mapping[str, Any] | None = None,
     assume_marker: Mapping[str, Any] | None = None,
     seed_private: Mapping[str, Path] | None = None,
+    follow_source: Mapping[str, Any] | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
     否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
     用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。``seed_private``（导入用，
-    项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。"""
+    项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。
+
+    ``follow_source``（开发者模式的导入用）：写进新标记的 ``followSource``。
+
+    新旧载荷有一份是开发者载荷（:func:`is_follow_source_manifest`）时，不管是哪条路径切的（开发者
+    导入、关掉开关回到组、克隆后的组同步、被兄弟的导入 / 同组传播切走），都不按「同版本合并两份
+    副本」留档被替换 / 去掉的文件，也不按「补齐」保留视图里的旧内容：差别就是开发者自己的改动，
+    来源目录里都有。视图里被本地改过的受管文件照常留档。"""
 
     started = time.monotonic()
     root = payloads_root(base)
@@ -792,10 +985,14 @@ def _realize_view(
             old_payload_path = candidate
             old_manifest_version = str(old_manifest.get("version") or "")
         else:
+            old_manifest = None
             logger.warning(
                 f"[MFW 内嵌] 视图 {view.name} 记的载荷 {from_id} 已不在，"
                 "按全部受管文件都可能被改过处理"
             )
+    involves_follow_source = is_follow_source_manifest(
+        new_manifest
+    ) or is_follow_source_manifest(old_manifest if old_marker is not None else None)
 
     result = ViewResult(
         view=view,
@@ -813,6 +1010,7 @@ def _realize_view(
     fills_only = (
         not same_payload
         and old_payload_path is not None
+        and not involves_follow_source
         and _same_version(str(old_manifest_version or ""), str(version or ""))
         and _is_content_superset(old_files, new_files)
     )
@@ -854,6 +1052,7 @@ def _realize_view(
                 old_payload_path is not None
                 and from_id != payload_id
                 and not fills_only
+                and not involves_follow_source
                 and _same_version(str(old_manifest_version or ""), str(version or ""))
             ),
         )
@@ -866,6 +1065,8 @@ def _realize_view(
             "version": version,
             "materializedAt": _now_text(),
         }
+        if follow_source is not None:
+            marker[FOLLOW_SOURCE_FIELD] = dict(follow_source)
         if old_marker is not None and old_marker.get(ENV_CONFIRMED_FIELD):
             # 同谱系换版本：带上旧的确认记录。它 ≠ 新载荷，下次运行前据此补一次确认；
             # 同载荷重建则仍然相等，不必再确认。
@@ -1162,33 +1363,40 @@ def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
     不是日志（``.log`` 与轮转出的 ``*.log.*``）、不是截图 / 临时文件、单个不超过 1 MB 的。
     """
 
-    debug_dir = plan.rules.interface_base / "debug"
-    if not debug_dir.is_dir():
-        return {}
+    # 源码形态的 agent 以来源根为项目根（``agent/main.py`` 的上一级），它的 ``debug/`` 在那里；
+    # 平铺后两处都对应视图的 ``debug/``，interface 所在目录的优先。
+    anchors = [plan.rules.interface_base]
+    if plan.rules.source_layout:
+        anchors.append(plan.rules.source_root)
     seed: dict[str, Path] = {}
 
     def _error(exc: OSError) -> None:
         logger.debug(f"[MFW 内嵌] 读取来源 debug/ 失败，跳过: {exc.filename}: {exc}")
 
-    for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
-        dir_names[:] = [
-            name for name in dir_names if name.casefold() not in _SEED_SKIP_DIR_NAMES
-        ]
-        base = Path(current)
-        for name in file_names:
-            folded = name.casefold()
-            if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
-                continue
-            path = base / name
-            try:
-                if not path.is_file() or path.is_symlink():
+    for anchor in anchors:
+        debug_dir = anchor / "debug"
+        if not debug_dir.is_dir():
+            continue
+        for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
+            dir_names[:] = [
+                name
+                for name in dir_names
+                if name.casefold() not in _SEED_SKIP_DIR_NAMES
+            ]
+            base = Path(current)
+            for name in file_names:
+                folded = name.casefold()
+                if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
                     continue
-                if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                path = base / name
+                try:
+                    if not path.is_file() or path.is_symlink():
+                        continue
+                    if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
-            rel = path.relative_to(plan.rules.interface_base).as_posix()
-            seed[rel] = path
+                seed.setdefault(path.relative_to(anchor).as_posix(), path)
     return seed
 
 
@@ -1199,6 +1407,8 @@ def import_embedded_project(
     base: Path | None = None,
     progress: Callable[[int, int], None] | None = None,
     channel: str = DEFAULT_CHANNEL,
+    follow_source: bool = False,
+    plan: ProjectionPlan | None = None,
 ) -> dict[str, Any]:
     """来源目录 → 载荷（登记进脚本所在渠道的组）→ 视图切到组的 latest。
 
@@ -1206,6 +1416,13 @@ def import_embedded_project(
     ``copyPath``（``sourceVersion`` 是用户选的那个目录的版本，不是切换后的组版本）。
     导入的版本不比组新时视图上的是组既有的载荷（§3.5「本地导入并组」）。
     失败时 staging 被清掉、视图原样不动——重新导入失败不会把旧副本弄没。
+
+    ``follow_source``（开发者模式）：``channel`` 不看，登记进脚本私有渠道
+    （:func:`follow_source_channel`）并且不比版本、这份就是 latest；新标记记下导入前算的来源
+    签名。登记出的还是视图正挂着的那份（只改了修改时间）就不重建视图、只原地改签名。返回值
+    多一个 ``followSource``：``{"changed": 与视图原来那份相比内容变了的文件（没法比时为
+    None）, "files": 签名覆盖的文件数, "rebuilt": 视图换没换, "first": 视图之前没从来源同步
+    过}``。``plan`` 是调用方为算签名已经建好的投影计划，给了就不再扫一遍来源。
     """
 
     source = Path(str(source_path or "").strip())
@@ -1220,7 +1437,8 @@ def import_embedded_project(
         raise EmbeddedProjectError("来源目录不能是内嵌副本自己")
 
     try:
-        plan = build_projection_plan(source)
+        if plan is None:
+            plan = build_projection_plan(source)
         interface = read_json_object(
             plan.rules.interface_base / "interface.json"
             if (plan.rules.interface_base / "interface.json").is_file()
@@ -1232,6 +1450,11 @@ def import_embedded_project(
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+    if plan.rules.source_layout:
+        # 源码形态没有发行包可更新，一律跟随来源目录：进本脚本的私有渠道，不推普通渠道的组。
+        follow_source = True
+    if follow_source:
+        channel = follow_source_channel(script_id)
     for resource_name in plan.rules.unavailable_resources:
         logger.warning(
             f"[MFW 内嵌] {source} 声明的资源 {resource_name} 在发行包里没有目录，"
@@ -1241,6 +1464,18 @@ def import_embedded_project(
     store_root = payloads_root(base)
     blob_store = RuntimeBlobStore.default(base)
     private = payloads.private_paths(store_root, lineage)
+    follow_record: dict[str, Any] | None = None
+    previous_marker: dict[str, Any] | None = None
+    if follow_source:
+        # 签名在复制之前算：复制期间又改了的文件，下次比对时一定对不上、会再导一次。
+        signature, signed_files = follow_source_signature(plan)
+        follow_record = {
+            "path": str(source),
+            "signature": signature,
+            "files": signed_files,
+            "syncedAt": _now_text(),
+        }
+        previous_marker = read_view_marker(final_dir)
     staging = _staging_root(base) / f"payload-{lineage}-{uuid.uuid4().hex[:8]}"
     try:
         built = payloads.build_from_source(
@@ -1264,7 +1499,11 @@ def import_embedded_project(
             channel=channel or DEFAULT_CHANNEL,
             source={"kind": "import", "ref": str(source)},
             by=str(script_id),
-            version=source_version,
+            version=(
+                follow_source_payload_version(source_version)
+                if follow_source
+                else source_version
+            ),
             lineage_info=info,
             known_hashes=finalized.hashes,
             bundled={
@@ -1272,6 +1511,7 @@ def import_embedded_project(
                 "python": plan.bundled_python_version or "",
             },
             projection_revision=PROJECTION_REVISION,
+            always_advance=follow_source,
         )
         payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:
@@ -1281,14 +1521,43 @@ def import_embedded_project(
         _remove_quietly(staging, "导入半成品")
         raise
 
-    view_result = _realize_view(
-        final_dir,
-        lineage,
-        registered.target_id,
-        base=base,
-        carry=True,
-        seed_private=_runtime_state_seed(plan),
-    )
+    follow_result: dict[str, Any] | None = None
+    if follow_record is not None:
+        same_payload = (
+            previous_marker is not None
+            and str(previous_marker.get("lineage") or "") == lineage
+            and str(previous_marker.get("payload") or "") == registered.target_id
+        )
+        follow_result = {
+            "changed": _changed_payload_files(
+                store_root, previous_marker, lineage, registered.manifest
+            ),
+            "files": int(follow_record["files"]),
+            "rebuilt": not same_payload,
+            # 视图之前没从来源同步过（刚打开开发者模式）：没有「上次的来源状态」可比
+            "first": follow_source_record(previous_marker) is None,
+        }
+    if follow_result is not None and not follow_result["rebuilt"]:
+        # 内容一个字节没变（只改了修改时间）：视图不重建，只记下新的来源状态。
+        assert follow_record is not None
+        _set_follow_source_record(final_dir, follow_record)
+        view_result = ViewResult(
+            view=final_dir,
+            lineage=lineage,
+            payload_id=registered.target_id,
+            version=str(registered.manifest.get("version") or ""),
+            from_payload=registered.target_id,
+        )
+    else:
+        view_result = _realize_view(
+            final_dir,
+            lineage,
+            registered.target_id,
+            base=base,
+            carry=True,
+            seed_private=_runtime_state_seed(plan),
+            follow_source=follow_record,
+        )
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
         more = " ..." if len(view_result.seeded) > 10 else ""
@@ -1343,12 +1612,89 @@ def import_embedded_project(
         logger.warning(
             mask_home_path(f"[MFW 内嵌] 导入 {source} 的投影警告：{warning}")
         )
-    return {
+    imported: dict[str, Any] = {
         "report": report,
         "sourceVersion": source_version,
         "importedAt": _now_text(),
         "copyPath": str(final_dir),
     }
+    if follow_result is not None:
+        imported["followSource"] = follow_result
+        logger.info(
+            "[MFW 内嵌] "
+            + describe_follow_source_sync(
+                follow_result, source_form=bool(report.get("sourceForm"))
+            )
+        )
+    return imported
+
+
+def _changed_payload_files(
+    root: Path,
+    previous_marker: Mapping[str, Any] | None,
+    lineage: str,
+    manifest: Mapping[str, Any],
+) -> list[str] | None:
+    """新载荷与视图原来挂的那份相比，内容变了（新增、删掉、哈希不同）的文件，按路径排序。
+
+    按载荷清单比（导入时每个文件都算过 sha256），不比修改时间：只「另存了一下」的文件不算。
+    视图原来没有标记、换了项目、或原来那份载荷清单不在了时没法比，返回 None。
+    """
+
+    if previous_marker is None or str(previous_marker.get("lineage") or "") != lineage:
+        return None
+    try:
+        old_manifest = payloads.read_manifest(
+            root, lineage, str(previous_marker.get("payload") or "")
+        )
+    except payloads.PayloadError:
+        old_manifest = None
+    if old_manifest is None:
+        return None
+    old = {
+        rel.casefold(): (rel, entry["sha256"].lower())
+        for rel, entry in payloads.manifest_files(old_manifest).items()
+    }
+    new = {
+        rel.casefold(): (rel, entry["sha256"].lower())
+        for rel, entry in payloads.manifest_files(manifest).items()
+    }
+    changed = [
+        rel for key, (rel, digest) in new.items() if old.get(key, ("", ""))[1] != digest
+    ]
+    changed += [rel for key, (rel, _digest) in old.items() if key not in new]
+    return sorted(changed, key=str.casefold)
+
+
+def _follow_source_label(source_form: bool) -> str:
+    """跟随来源目录那几行日志的开头：源码形态的脚本界面上叫「源码形态」，不叫开发者模式。"""
+
+    return "源码形态" if source_form else "开发者模式"
+
+
+def describe_follow_source_sync(
+    result: Mapping[str, Any], *, manual: bool = False, source_form: bool = False
+) -> str:
+    """开发者模式重新导入后给运行日志（``manual``：脚本页「立即同步」）的那一行。"""
+
+    label = _follow_source_label(source_form)
+    changed = result.get("changed")
+    files = int(result.get("files") or 0)
+    if changed is None:
+        return f"{label}：已从来源目录导入（{files} 个文件）"
+    if not changed and result.get("first"):
+        return f"{label}：开始跟随来源目录，内容与当前视图相同（{files} 个文件）"
+    if not changed and manual:
+        return f"{label}：来源目录内容未变化（{files} 个文件），已更新同步时间"
+    if not changed:
+        return (
+            f"{label}：来源目录里的文件只改了修改时间、内容与当前视图相同，"
+            "已记下新的来源状态"
+        )
+    preview = "、".join(changed[:_FOLLOW_SOURCE_PREVIEW])
+    if len(changed) > _FOLLOW_SOURCE_PREVIEW:
+        preview += " 等"
+    return f"{label}：来源目录有 {len(changed)} 个文件变化（{preview}），已重新导入"
 
 
 # 克隆没有标记的老副本时不带的运行期产物：MaaFW 原生日志目录、Python 字节码缓存、导入半成品。
@@ -1367,19 +1713,51 @@ def _payload_available(lineage: str, payload_id: str, base: Path | None) -> bool
         return False
 
 
+class FollowSourceCloneUnavailable(EmbeddedProjectError):
+    """源脚本挂的是开发者载荷，而它原渠道的组在本机还没有载荷可复用。"""
+
+
 def clone_embedded_copy(
-    source_script_id: str, target_script_id: str, base: Path | None = None
+    source_script_id: str,
+    target_script_id: str,
+    base: Path | None = None,
+    *,
+    group_channel: str | None = None,
+    source_form: bool = False,
 ) -> bool:
     """同一项目再建一个脚本：从源脚本挂着的载荷物化目标视图；返回是否克隆了。
 
     源有标记（或正在切换）→ 直接从载荷物化，不读源视图，源运行期的私有状态不带过去。
     源是还没采纳的老副本 → 退回按目录克隆（已共用的再挂链接、共用候选经共用库放、其余复制，
     ``debug/`` 与字节码不带）。目标原有的视图只在新树建好后才被换掉，失败时原样不动。
+
+    源挂的是开发者载荷（开着开发者模式 / 源码形态）时不复用它（那是开发者本地改过的内容），改用
+    源脚本原渠道（``group_channel``，源的 ``Update.Channel``）组的 latest；组里没有载荷就抛
+    :class:`FollowSourceCloneUnavailable`，由调用方决定退路。``source_form``（源脚本是源码形态）：
+    没有「原渠道」可言（同谱系普通渠道里的是发行包形态的版本），一律抛，由调用方按来源目录导入。
     """
 
     resolved = resolve_view_payload(source_script_id, base)
     if resolved is not None and _payload_available(*resolved, base):
         lineage, payload_id = resolved
+        try:
+            source_manifest = payloads.read_manifest(
+                payloads_root(base), lineage, payload_id
+            )
+        except payloads.PayloadError:
+            source_manifest = None
+        if is_follow_source_manifest(source_manifest):
+            if source_form:
+                raise FollowSourceCloneUnavailable(
+                    "源脚本是源码形态（始终跟随来源目录），没有可复用的正式版本"
+                )
+            channel = group_channel or DEFAULT_CHANNEL
+            payload_id = _group_target(lineage, channel, "", base)
+            if not payload_id:
+                raise FollowSourceCloneUnavailable(
+                    "源脚本开着开发者模式，挂的是从来源目录同步的本地版本，不复用；"
+                    f"同项目「{channel}」渠道在本机还没有可复用的版本"
+                )
         _realize_view(
             embedded_project_dir(target_script_id, base),
             lineage,
@@ -1537,11 +1915,82 @@ def _candidate_lineage(root: Path, path: Path) -> str:
     return path.name if path.parent == root else path.parent.name
 
 
+def _latest_entry_time(entry: Any) -> float:
+    """``latest`` 条目记的登记时刻（``at``，带时区的 ISO 文本）；读不出当作很早。"""
+
+    try:
+        return datetime.fromisoformat(str(entry.get("at") or "")).timestamp()
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+
+
+def _prune_follow_source_latest(
+    root: Path,
+    lineages: Iterable[str],
+    follow_views: set[str],
+    started_at: float,
+    base: Path | None,
+) -> list[str]:
+    """从 ``lineage.json`` 摘掉不再算数的私有渠道（开发者模式）``latest``；返回摘掉的。
+
+    ``latest["dev:<视图名>"]`` 只在那个脚本还开着开发者模式（``follow_views``）、它的视图还挂在
+    这个谱系上时算数；关了开关、删了脚本、换了项目的那些摘掉，它们的载荷随后按普通规则回收
+    （还有视图挂着的照样留）。本进程起来之后登记的不碰；谱系锁被占（正在登记）的这轮跳过。
+    """
+
+    markers = _view_markers(base)
+    existing = set(payloads.list_lineages(root))
+    dropped: list[str] = []
+    for key in sorted(set(lineages) & existing):
+        try:
+            if not any(
+                payloads.is_private_channel(channel)
+                for channel in payloads.read_lineage(root, key)["latest"]
+            ):
+                continue
+            with payloads.lineage_lock(root, key, timeout=0):
+                data = payloads.read_lineage(root, key)
+                stale = []
+                for channel, entry in data["latest"].items():
+                    if not payloads.is_private_channel(channel):
+                        continue
+                    view_name = channel[len(payloads.PRIVATE_CHANNEL_PREFIX) :]
+                    marker = markers.get(view_name)
+                    if (
+                        view_name in follow_views
+                        and marker is not None
+                        and str(marker.get("lineage") or "") == key
+                    ):
+                        continue
+                    if _latest_entry_time(entry) >= started_at:
+                        continue
+                    stale.append(channel)
+                if not stale:
+                    continue
+                for channel in stale:
+                    data["latest"].pop(channel, None)
+                payloads.write_lineage(root, key, data)
+        except TimeoutError:
+            logger.debug(f"[MFW 内嵌] 谱系 {key} 正在登记，本轮不摘私有渠道")
+            continue
+        except OSError as exc:
+            logger.warning(f"[MFW 内嵌] 摘除谱系 {key} 的私有渠道失败: {exc}")
+            continue
+        dropped.extend(f"{key}/{channel}" for channel in stale)
+    if dropped:
+        logger.info(
+            "[MFW 内嵌] 开发者模式已关闭或脚本已删除，摘掉私有渠道："
+            + ", ".join(dropped)
+        )
+    return dropped
+
+
 def collect_payload_garbage(
     *,
     started_at: float,
     live_sources: Iterable[str] = (),
     base: Path | None = None,
+    follow_source_views: Iterable[str] | None = None,
 ) -> PayloadGarbageReport:
     """§3.1 第 10 步：删掉没人引用的载荷；谱系里一个视图都不剩时整个谱系一起删。
 
@@ -1551,6 +2000,10 @@ def collect_payload_garbage(
     活着的谱系里 ``latest[*]`` 照旧算引用；不活的谱系（最后一个脚本已删）整个目录收走。
     本进程起来之后才建 / 才登记过的一律不收。载荷删掉后它独有的 blob 只剩库里一个链接，
     由紧接着的共用库回收收走。
+
+    ``follow_source_views``：开着开发者模式的脚本的视图名。给了的话先摘掉不再算数的私有
+    渠道 ``latest``（:func:`_prune_follow_source_latest`），被顶掉 / 关掉开关 / 删掉脚本留下的
+    开发者载荷因此变成可回收；正被视图挂着的照样留。不给（``None``）不摘。
 
     回收跑在后台、API 已在服务：先粗判出有候选的谱系，**删之前在该谱系的锁内按盘上最新
     状态再判一次**（登记、推进 latest 都在同一把锁里做）。否则判定与删除之间登记进来的
@@ -1573,6 +2026,10 @@ def collect_payload_garbage(
             found = None
         if found is not None:
             source_live.add(found[0])
+    if follow_source_views is not None:
+        _prune_follow_source_latest(
+            root, live | source_live, set(follow_source_views), started_at, base
+        )
     candidates = payloads.collect_unreferenced(
         root, referenced, started_at, live_lineages=live | source_live
     )
@@ -1699,6 +2156,12 @@ def embedded_status(
         "version": str((marker or {}).get("version") or "")
         or read_interface_version(copy_dir),
         "siblingCount": sibling_count,
+        # 开发者模式下视图上次从来源目录同步的时间（标记里的 followSource）；没同步过为空。
+        "followSourceSyncedAt": str(
+            (follow_source_record(marker) or {}).get("syncedAt") or ""
+        ),
+        # 源码形态（导入报告的 sourceForm）：始终跟随来源目录、不做项目更新。
+        "sourceForm": bool(report.get("sourceForm")),
     }
 
 
@@ -1770,6 +2233,31 @@ def _group_target(lineage: str, channel: str, fallback: str, base: Path | None) 
     return fallback
 
 
+def _formal_group_target(
+    lineage: str, channel: str, fallback: str, base: Path | None
+) -> str:
+    """缺视图重建用的 :func:`_group_target`：普通渠道的脚本不落到开发者载荷上。
+
+    普通渠道组里还没有载荷时会退到 ``fallback``（兄弟视图挂的、或按导入来源反查到的那份），
+    它可能是别的脚本开发者模式导入的本地版本——复制 / 克隆不继承开发者模式，这条重建路径也
+    一样。返回空串表示没有可用的正式版本，调用方按重建失败处理。
+    """
+
+    target = _group_target(lineage, channel, fallback, base)
+    if not target or payloads.is_private_channel(channel):
+        return target
+    try:
+        manifest = payloads.read_manifest(payloads_root(base), lineage, target)
+    except payloads.PayloadError:
+        manifest = None
+    if is_follow_source_manifest(manifest):
+        logger.warning(
+            f"[MFW 内嵌] 「{channel}」渠道还没有正式版本，不用开发者载荷 {target} 重建视图"
+        )
+        return ""
+    return target
+
+
 def _rebuild_from_group(
     script_id: str,
     script_config: Any,
@@ -1786,7 +2274,7 @@ def _rebuild_from_group(
     老副本兄弟 → 照旧按目录克隆（持兄弟预约）。
     """
 
-    channel = _script_channel(script_config)
+    channel = effective_channel(script_id, script_config)
     for other_id, other_config in siblings:
         other_id = str(other_id)
         if other_id == script_id:
@@ -1799,7 +2287,9 @@ def _rebuild_from_group(
         resolved = resolve_view_payload(other_id, base)
         if resolved is not None and _payload_available(*resolved, base):
             lineage, fallback = resolved
-            target = _group_target(lineage, channel, fallback, base)
+            target = _formal_group_target(lineage, channel, fallback, base)
+            if not target:
+                continue
             _realize_view(
                 embedded_project_dir(script_id, base),
                 lineage,
@@ -1828,9 +2318,9 @@ def _rebuild_from_group(
         return inherit_embedded_record(other_config, script_id, base)
     # 没有同来源的兄弟：按载荷清单记的导入来源反查谱系（兄弟都删了、只剩载荷的情形）。
     found = _lineage_by_import_source(source, base)
-    if found is not None:
-        lineage, fallback = found
-        target = _group_target(lineage, channel, fallback, base)
+    target = _formal_group_target(found[0], channel, found[1], base) if found else ""
+    if found is not None and target:
+        lineage = found[0]
         _realize_view(
             embedded_project_dir(script_id, base),
             lineage,
@@ -1902,7 +2392,7 @@ def _adopt_or_raise(
     try:
         adopted = adopt_view(
             script_id,
-            channel=_script_channel(script_config),
+            channel=effective_channel(script_id, script_config),
             source=imported_source_path(script_config)
             or str(script_config.get("Info", "Path") or ""),
             base=base,
@@ -1915,6 +2405,155 @@ def _adopt_or_raise(
         raise EmbeddedProjectError(f"副本登记项目版本失败：{exc}") from exc
 
 
+def _say(
+    send_log: Callable[[str], None] | None, message: str, *, warning: bool = False
+) -> None:
+    """一行既进后端日志、又进运行日志（``send_log``）的话。"""
+
+    (logger.warning if warning else logger.info)(
+        mask_home_path(f"[MFW 内嵌] {message}")
+    )
+    if send_log is not None:
+        send_log(message)
+
+
+def _sync_follow_source(
+    script_id: str,
+    source: str,
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+    source_form: bool = False,
+) -> dict[str, Any] | None:
+    """开发者模式的运行前检查：来源目录的签名与视图标记记的不同就重新导入；返回新记录。
+
+    签名看投影会带走的文件（:func:`follow_source_signature`）；来源换了目录（标记记的
+    ``path`` 不是它）也算变了。**读或投影来源的任何失败**（文件被独占锁住、构建脚本先删后拷时
+    interface 暂时不在、interface 解析失败、junction / 符号链接被投影拒绝……）都不挡这一轮：
+    沿用上次同步好的视图运行，运行日志里一条醒目的警告写明原因和用的是哪次同步的版本
+    （:func:`_keep_last_follow_source_sync`）。视图本身健康是调用方的前提；整个来源目录不在也
+    走同一条。
+    """
+
+    view = embedded_project_dir(script_id, base)
+    try:
+        plan = build_projection_plan(Path(source).resolve())
+        signature, files = follow_source_signature(plan)
+        record = follow_source_record(read_view_marker(view))
+        if (
+            record is not None
+            and _same_directory(str(record.get("path") or ""), source)
+            and str(record.get("signature") or "") == signature
+        ):
+            _say(
+                send_log,
+                f"{_follow_source_label(source_form)}：来源目录未变化"
+                f"（{files} 个文件），沿用当前视图",
+            )
+            return None
+        imported = import_embedded_project(
+            script_id, source, base=base, follow_source=True, plan=plan
+        )
+    except Exception as exc:  # noqa: BLE001 - 读来源失败一律沿用上次同步的视图，原因写进日志
+        _keep_last_follow_source_sync(
+            view, _describe_source_failure(exc), send_log, source_form=source_form
+        )
+        return None
+    if send_log is not None:
+        send_log(
+            describe_follow_source_sync(
+                imported["followSource"],
+                source_form=bool(imported["report"].get("sourceForm")),
+            )
+        )
+    return imported
+
+
+def _describe_source_failure(exc: BaseException) -> str:
+    text = str(exc).strip()
+    for prefix in ("导入失败：", "开发者模式：来源目录导入失败："):
+        text = text.removeprefix(prefix)
+    if isinstance(exc, (ProjectionError, EmbeddedProjectError, payloads.PayloadError)):
+        return text or type(exc).__name__
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _keep_last_follow_source_sync(
+    view: Path,
+    reason: str,
+    send_log: Callable[[str], None] | None,
+    *,
+    source_form: bool = False,
+) -> None:
+    """开发者模式读来源失败（或来源目录不在）：这一轮照常用视图（上次同步好的版本）运行，
+    运行日志里打一条醒目的警告，写明原因与版本。"""
+
+    marker = read_view_marker(view) or {}
+    record = follow_source_record(marker) or {}
+    version = str(marker.get("version") or "") or "未知版本"
+    synced = str(record.get("syncedAt") or marker.get("materializedAt") or "")
+    when = f"（同步于 {synced[:19].replace('T', ' ')}）" if synced else ""
+    _say(
+        send_log,
+        f"【警告】{_follow_source_label(source_form)}读取来源目录失败：{reason}；"
+        "本轮沿用上次同步的版本 "
+        f"{version}{when}运行，来源目录里的改动这次没有生效",
+        warning=True,
+    )
+
+
+def _leave_follow_source(
+    script_id: str,
+    script_config: Any,
+    source: str,
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+) -> dict[str, Any] | None:
+    """开发者模式刚关掉（标记还带着 ``followSource``）：回到 ``Update.Channel`` 的组。
+
+    组里有本机可用的 latest → 切过去（私有文件照常带，新标记不再带 ``followSource``）；视图
+    已经挂在它上面就只把 ``followSource`` 摘掉。组里还没有载荷 → 按来源目录正常导入一次
+    （返回新记录，调用方写回配置）；来源也不在 → 留在当前版本、摘掉 ``followSource``。
+    """
+
+    view = embedded_project_dir(script_id, base)
+    marker = read_view_marker(view)
+    if follow_source_record(marker) is None:
+        return None
+    assert marker is not None
+    channel = _script_channel(script_config)
+    lineage = str(marker["lineage"])
+    target = _group_target(lineage, channel, "", base)
+    if target and target != str(marker["payload"]):
+        # 开发者载荷与组版本不同的那些文件就是开发者的改动，来源目录里都有，不留档（_realize_view
+        # 按载荷是不是开发者载荷判断）
+        result = _realize_view(view, lineage, target, base=base, carry=True)
+        _say(
+            send_log,
+            f"开发者模式已关闭：已回到「{channel}」渠道的版本 {result.version or target}",
+        )
+        return None
+    if target:
+        _set_follow_source_record(view, None)
+        _say(send_log, f"开发者模式已关闭：视图已是「{channel}」渠道的当前版本")
+        return None
+    if source and Path(source).is_dir():
+        _say(
+            send_log,
+            f"开发者模式已关闭：本机还没有「{channel}」渠道的版本，按来源目录正常导入一次",
+        )
+        return import_embedded_project(script_id, source, base=base, channel=channel)
+    _set_follow_source_record(view, None)
+    _say(
+        send_log,
+        f"开发者模式已关闭，但本机还没有「{channel}」渠道的版本、来源目录也不在，"
+        "继续用当前版本",
+        warning=True,
+    )
+    return None
+
+
 def ensure_embedded_copy(
     script_id: str,
     script_config: Any,
@@ -1922,6 +2561,7 @@ def ensure_embedded_copy(
     base: Path | None = None,
     send_log: Callable[[str], None] | None = None,
     siblings: Iterable[tuple[str, Any]] | None = None,
+    follow_source_check: bool = False,
 ) -> dict[str, Any] | None:
     """视图不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
 
@@ -1930,11 +2570,43 @@ def ensure_embedded_copy(
     「无标记的视图照常跑」。来源目录不在：视图还健康就什么都不做——导入完成后来源本来
     就可以删；视图也没了就从同项目的载荷 / 同来源的老副本重建，实在没有才抛错让用户
     重新选目录。
+
+    ``follow_source_check``（运行前检查传）：开着开发者模式时比一次来源目录、变了就重新导入
+    到私有渠道（:func:`_sync_follow_source`），来源不在或读不了就沿用上次同步的视图并醒目告警
+    （视图也不在时才按导入失败处理，走下面的普通路径）；刚关掉时回到
+    ``Update.Channel`` 的组（:func:`_leave_follow_source`）。其它入口（预览、准备环境、更新）
+    不扫来源目录；它们碰上视图不在而要导入时，开发者模式下同样导入到私有渠道。
     """
 
     copy_dir = embedded_project_dir(script_id, base)
     healthy = copy_is_healthy(copy_dir)
     source = str(script_config.get("Info", "Path") or "").strip()
+    follow = follow_source_enabled(script_config)
+    if follow_source_check and healthy:
+        if follow:
+            if read_view_marker(copy_dir) is None:
+                _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
+            source_form = is_source_form(script_config)
+            if not source or not Path(source).is_dir():
+                _keep_last_follow_source_sync(
+                    copy_dir,
+                    f"来源目录 {source or '（未设置）'} 不在",
+                    send_log,
+                    source_form=source_form,
+                )
+                return None
+            return _sync_follow_source(
+                script_id,
+                source,
+                base=base,
+                send_log=send_log,
+                source_form=source_form,
+            )
+        left = _leave_follow_source(
+            script_id, script_config, source, base=base, send_log=send_log
+        )
+        if left is not None:
+            return left
     keep = healthy and (
         not source
         or _same_directory(source, imported_source_path(script_config))
@@ -1952,10 +2624,13 @@ def ensure_embedded_copy(
         if marker is not None:
             # 视图目录还在、interface 没了：按自己的谱系重建到组版本。
             lineage = str(marker["lineage"])
-            target = _group_target(
-                lineage, _script_channel(script_config), str(marker["payload"]), base
+            target = _formal_group_target(
+                lineage,
+                effective_channel(script_id, script_config),
+                str(marker["payload"]),
+                base,
             )
-            if _payload_available(lineage, target, base):
+            if target and _payload_available(lineage, target, base):
                 if send_log is not None:
                     send_log("[MFW 内嵌] 视图不完整，正在按已登记的项目版本重建")
                 _realize_view(copy_dir, lineage, target, base=base, carry=True)
@@ -1971,7 +2646,8 @@ def ensure_embedded_copy(
         if rebuilt is not None:
             return rebuilt
         raise EmbeddedProjectError(
-            "副本不在了，来源目录也已不存在；请重新选择一个解压好的 MFW 项目目录"
+            "副本不在了，来源目录也已不存在，本机也没有这个渠道可用来重建的正式版本；"
+            "请重新选择一个解压好的 MFW 项目目录"
         )
     if send_log is not None:
         send_log(
@@ -1979,8 +2655,14 @@ def ensure_embedded_copy(
             if not healthy
             else "[MFW 内嵌] 来源目录已更换，正在重新导入副本"
         )
+    # 走不走私有渠道只看开关：源码形态由导入自己按这次的布局认，旧报告的 sourceForm 不作数
+    # （源码形态的脚本改选成了发行包目录时，它还是上一次的结果）
     return import_embedded_project(
-        script_id, source, base=base, channel=_script_channel(script_config)
+        script_id,
+        source,
+        base=base,
+        channel=_script_channel(script_config),
+        follow_source=follow_source_switch_on(script_config),
     )
 
 
@@ -2292,6 +2974,18 @@ def propagate_payload(
 
     result = PropagationResult()
     excluded = {str(item) for item in exclude}
+    if not payloads.is_private_channel(channel):
+        # 开发者载荷只属于它自己的私有渠道：调用方拿错了渠道（例如导入前缓存的普通渠道，
+        # 导入时才认出是源码形态）也不能把它摆进普通渠道兄弟的视图
+        try:
+            manifest = payloads.read_manifest(payloads_root(base), lineage, payload_id)
+        except payloads.PayloadError:
+            manifest = None
+        if is_follow_source_manifest(manifest):
+            logger.warning(
+                f"[MFW 内嵌] 载荷 {payload_id} 是开发者载荷，不传播到「{channel}」渠道的兄弟脚本"
+            )
+            return result
     try:
         for raw in members:
             member = raw if isinstance(raw, GroupMember) else GroupMember(*raw)
@@ -2376,12 +3070,14 @@ def shell_hint_from_report(script_config: Any) -> str:
 
 __all__ = [
     "EMBEDDED_PROJECTS_DIR",
+    "FOLLOW_SOURCE_FIELD",
     "MIGRATION_SWITCHED_BY",
     "ENV_CONFIRMED_FIELD",
     "PYCACHE_DIR_NAME",
     "STAGING_DIR_NAME",
     "VIEW_MARKER_NAME",
     "EmbeddedProjectError",
+    "FollowSourceCloneUnavailable",
     "GroupMember",
     "PayloadGarbageReport",
     "PropagationResult",
@@ -2390,7 +3086,15 @@ __all__ = [
     "clone_embedded_copy",
     "collect_payload_garbage",
     "copy_is_healthy",
+    "describe_follow_source_sync",
+    "effective_channel",
     "env_confirm_pending",
+    "follow_source_channel",
+    "follow_source_enabled",
+    "follow_source_record",
+    "follow_source_signature",
+    "follow_source_switch_on",
+    "import_channel",
     "mark_env_confirmed",
     "release_held_reservations",
     "switch_or_confirm_in_progress",
@@ -2404,6 +3108,7 @@ __all__ = [
     "imported_source_path",
     "inherit_embedded_record",
     "is_embedded_copy_dir_name",
+    "is_source_form",
     "materialize_view",
     "payloads_root",
     "propagate_payload",
