@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""按首页显示设置推送游戏活动开始与结束提醒。"""
+"""按已启用托管账号与首页显示设置推送游戏活动提醒。"""
 
 import asyncio
 import hashlib
@@ -15,6 +15,7 @@ from pydantic import AwareDatetime, TypeAdapter
 
 from app.core.config import Config
 from app.core.notify import dispatch, global_target
+from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
 from app.tools.game_calendar import (
     BLUEARCHIVE_SERVERS,
@@ -28,6 +29,23 @@ from app.utils.io import write_file
 logger = get_logger("游戏日历")
 CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
 CALENDAR_RETRY_INTERVAL_SECONDS = 10 * 60
+SCRIPT_CALENDAR_GAMES = {
+    CLASS_BOOK[script]: game
+    for script, game in {
+        "MAA": "arknights",
+        "MaaEnd": "endfield",
+        "SRC": "starrail",
+        "HSR": "starrail",
+        "BetterGI": "genshin",
+        "ZzzOd": "zenless",
+        "Okww": "wutheringwaves",
+        "OkNte": "nte",
+        "M9A": "reverse1999",
+        "BAAH": "bluearchive",
+        "MSS": "stellasora",
+    }.items()
+}
+BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}
 
 
 @dataclass
@@ -152,21 +170,36 @@ class _GameCalendar:
         self._loaded = True
 
     @staticmethod
-    def _visible_games() -> dict[str, tuple[str, str]]:
+    def _notification_games() -> dict[tuple[str, str], str]:
         path = Config.config_path / "frontend_config.json"
         config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         games = visible_calendar_games(config)
         # 老版本的服务器偏好在浏览器里，先等首页迁移，不能猜成国服发送。
         if "homeBlueArchiveServer" not in config:
             games.pop("bluearchive", None)
-        return games
+        # 同一游戏的不同服分别登记，首页与多个托管账号命中同一服时只提醒一次。
+        targets = {(game, source): label for game, (source, label) in games.items()}
+        for script in Config.ScriptConfig.values():
+            game = SCRIPT_CALENDAR_GAMES.get(type(script))
+            if game is None:
+                continue
+            for user in script.UserData.values():
+                if not user.get("Info", "Status"):
+                    continue
+                source, label = CALENDAR_GAMES[game]
+                if game == "bluearchive":
+                    server = BAAH_CALENDAR_SERVERS[user.get("Info", "ActivityLineType")]
+                    source, server_label = BLUEARCHIVE_SERVERS[server]
+                    label = f"碧蓝档案（{server_label}）"
+                targets[(game, source)] = label
+        return targets
 
     async def refresh_schedule(self) -> None:
         """定期获取活动并登记新日程，已登记日程保持不变。"""
 
         self._load_schedule()
-        games = self._visible_games()
-        for game, (source, label) in games.items():
+        games = self._notification_games()
+        for (game, source), label in games.items():
             try:
                 # 取数在日程锁外，到点的已登记日程不受慢请求或断网影响。
                 activities = await fetch_calendar_activities(source)
@@ -215,7 +248,7 @@ class _GameCalendar:
         async with self._lock:
             if self._dirty:
                 self._save_schedule()
-            games = self._visible_games()
+            games = self._notification_games()
             target = global_target(include_system=True, empty_policy="skip")
             target_ids = {channel_target.id for _, channel_target in target.channels}
             now = datetime.now(tz=UTC8)
@@ -227,12 +260,7 @@ class _GameCalendar:
                     < reminder.expires_at
                 ):
                     continue
-                current_game = games.get(reminder.game)
-                if (
-                    current_game is None
-                    or current_game[0] != reminder.source
-                    or not target_ids
-                ):
+                if (reminder.game, reminder.source) not in games or not target_ids:
                     reminder.next_attempt_at = now + timedelta(
                         seconds=CALENDAR_RETRY_INTERVAL_SECONDS
                     )
@@ -257,16 +285,16 @@ class _GameCalendar:
                     channel_groups.setdefault(pending, set()).add(channel_id)
             for keys, channel_ids in channel_groups.items():
                 batch = [reminders_by_key[key] for key in keys]
-                game_sections: dict[str, list[str]] = {}
+                game_sections: dict[tuple[str, str], list[str]] = {}
                 for reminder in batch:
                     # 兼容已保存的旧提醒，正文只保留活动名称与提醒原因。
-                    game_sections.setdefault(reminder.game, []).append(
-                        reminder.payload.text.split("\n开始时间：", 1)[0]
-                    )
+                    game_sections.setdefault(
+                        (reminder.game, reminder.source), []
+                    ).append(reminder.payload.text.split("\n开始时间：", 1)[0])
                 payload = NotifyPayload(
                     title="游戏活动提醒",
                     text="\n\n".join(
-                        f"【{games[game][1]}】\n" + "\n".join(activities)
+                        f"【{games[game]}】\n" + "\n".join(activities)
                         for game, activities in game_sections.items()
                     ),
                 )
