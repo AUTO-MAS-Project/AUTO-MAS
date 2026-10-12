@@ -302,6 +302,8 @@ class MaaEndManager(ScriptManagerBase):
             return None
         game_exe = Path(str(script_config.get("Game", "Path") or "").strip())
         if not game_exe.is_file():
+            # 路径填错或客户端被移走时留一行可查的说明，别让这道门静默消失
+            logger.info(f"未找到终末地客户端，本轮不检查更新: {game_exe}")
             return None
 
         async def report(line: str) -> None:
