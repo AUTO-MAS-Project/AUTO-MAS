@@ -40,15 +40,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-import aiofiles
 import httpx
 
+from app.services.update_transport import download_resumable
 from app.services.wuthering_waves import (
     get_official_index_url,
     write_wuthering_waves_local_version,
 )
 from app.utils import get_logger
 from app.utils.hpatchz import ensure_hpatchz
+from app.utils.update_files import file_matches
+from app.utils.update_files import resolve_within as resolve_update_path
 
 logger = get_logger("鸣潮更新")
 
@@ -152,12 +154,8 @@ def safe_relative_path(dest: str) -> Path:
 
 
 def resolve_within(root: Path, dest: str) -> Path:
-    """在 root 下解析 dest，并复查结果没有逃出 root。"""
-
-    resolved = (root / safe_relative_path(dest)).resolve()
-    if not resolved.is_relative_to(root.resolve()):
-        raise ValueError(f"清单条目 dest 逃出目标目录: {dest}")
-    return resolved
+    """按鸣潮清单规则解析相对路径，并核对实际路径没有越出根目录。"""
+    return resolve_update_path(root, safe_relative_path(dest))
 
 
 def _file_md5(path: Path) -> str:
@@ -443,23 +441,9 @@ async def _stream_to_file(
     if done and done >= expected_size:
         # 长度已够，交给外层 md5 判定是留用还是重下。
         return
-    headers = {"Range": f"bytes={done}-"} if done else {}
-    async with client.stream("GET", url, headers=headers) as response:
-        response.raise_for_status()
-        # 请求了 Range 但服务端回 200，说明它整体重发了：必须覆盖而不是追加，
-        # 否则会把新内容接在旧字节后面，静默写出坏文件。
-        mode = "ab" if (done and response.status_code == 206) else "wb"
-        if done and response.status_code != 206 and on_bytes is not None:
-            # 这截暂存前缀已被丢弃，但调用方早把它算进了进度基线（见 download_plan），
-            # 扣回去，否则百分比会提前跑到 100%。负数只表示更正，不是收到的字节。
-            await on_bytes(-done)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(target, mode) as handle:
-            async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
-                if block:
-                    await handle.write(block)
-                    if on_bytes is not None:
-                        await on_bytes(len(block))
+    await download_resumable(
+        client, url, target, expected_size=expected_size, on_bytes=on_bytes
+    )
 
 
 async def _download_entry(
@@ -474,9 +458,8 @@ async def _download_entry(
     """下载单个条目到暂存区，md5 校验通过才算成功。"""
 
     target = resolve_within(staging, entry.dest)
-    if target.is_file() and target.stat().st_size == entry.size:
-        if await file_md5(target) == entry.md5:
-            return target
+    if target.is_file() and await file_matches(target, size=entry.size, md5=entry.md5):
+        return target
 
     last_error: Exception | None = None
     for cdn in plan.cdn_urls:
@@ -484,10 +467,11 @@ async def _download_entry(
         for attempt in range(attempts):
             try:
                 await _stream_to_file(client, url, target, entry.size, on_bytes)
-                actual = await file_md5(target)
-                if actual == entry.md5:
+                if await file_matches(target, size=entry.size, md5=entry.md5):
                     return target
-                last_error = ValueError(f"md5 不符: 期望 {entry.md5} 实际 {actual}")
+                last_error = ValueError(
+                    f"文件校验未通过: 期望大小 {entry.size}、MD5 {entry.md5}"
+                )
                 # 校验失败的残留必须删掉，否则下一轮续传会接在坏字节后面。
                 target.unlink(missing_ok=True)
             except (httpx.HTTPError, OSError) as exc:

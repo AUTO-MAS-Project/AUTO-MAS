@@ -24,9 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
-import stat
 import threading
 import time
 from collections.abc import Sequence
@@ -38,7 +36,7 @@ from app.services import System
 from app.utils.update_files import (
     file_md5,
     file_size,
-    native_path,
+    resolve_within,
 )
 
 from .common import (
@@ -53,53 +51,12 @@ from .common import (
 _KILL_WAIT_SECONDS = 30.0
 
 
-def _is_link(stat_result: os.stat_result) -> bool:
-    """认符号链接与 NTFS 联接点：联接点在 Windows 上只有重解析点属性认得出来。"""
-
-    return bool(
-        stat.S_ISLNK(stat_result.st_mode)
-        or getattr(stat_result, "st_reparse_tag", 0)
-        or (
-            getattr(stat_result, "st_file_attributes", 0)
-            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        )
-    )
-
-
 def _resolve_within(root: Path, name: str) -> Path:
-    """把包内路径解析到安装目录之内。
-
-    成员名来自下载的包，属于不可信输入：目录穿越会把文件写到安装目录外面去。
-    """
-
-    parts = tuple(part for part in re.split(r"[\\/]+", name) if part not in ("", "."))
-    if not parts:
-        # 空路径会归一成安装目录本身，放过就等于把整棵目录树冲掉
-        raise EndfieldUpdateError(f"包内路径为空: {name!r}")
-    if any(":" in part for part in parts):
-        # 盘符与交替数据流都靠冒号表达，NTFS 也不允许文件名带它
-        raise EndfieldUpdateError(f"包内路径含非法冒号: {name!r}")
-    target = root.joinpath(*parts)
-    anchor = os.path.normcase(os.path.abspath(root))
-    absolute = os.path.normcase(os.path.abspath(target))
-    if absolute != anchor and not absolute.startswith(anchor + os.sep):
-        raise EndfieldUpdateError(f"包内路径越出安装目录: {name!r}")
-    # 词法检查只管得住 `..`：目录里躺着一条指向别处的链接时，拼出来的路径仍在安装目录
-    # 之内，顺着它写就写到外面去了。逐段看一眼是不是重解析点，段不存在就不必再看更深
-    for depth in range(1, len(parts) + 1):
-        try:
-            info = os.stat(
-                native_path(root.joinpath(*parts[:depth])), follow_symlinks=False
-            )
-        except OSError:
-            break
-        if _is_link(info):
-            raise EndfieldUpdateError(
-                f"包内路径 {name!r} 经过一个指向别处的链接，MAS 不顺着它写"
-            )
-    # 返回规范化后的绝对路径：`\\\\?\\` 前缀是把字符串直接交给 Win32，内核不做
-    # `..` 折叠，留着 `..` 段会让写入莫名失败
-    return Path(os.path.normpath(os.path.abspath(target)))
+    """解析已规范化的清单路径，保留终末地不经过链接的落地约束。"""
+    try:
+        return resolve_within(root, name, resolve_links=False, reject_links=True)
+    except ValueError as error:
+        raise EndfieldUpdateError(str(error)) from error
 
 
 def _processes_under(root: Path) -> list[str]:

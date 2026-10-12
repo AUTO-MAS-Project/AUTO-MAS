@@ -52,7 +52,7 @@ from .common import (
 _DIFF_MEMBER_PREFIX = "vfs_files/vfs_patch/"
 _MAX_PARTS = 512
 _MAX_ENTRIES = 20_000
-"""分卷数与清单条目数上限：超出就当包不认识，绝不动手。"""
+"""分卷数与清单条目数上限：超出时停止解析。"""
 _CONFIG_KEY = bytes.fromhex(
     "c0f30e1ce763bbc21cc355a34303ac50399444bff68c4a22af398c0a166ee143"
 )
@@ -68,7 +68,7 @@ _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://")
 
 
 def _file_name_from_url(url: str) -> str:
-    """从下载地址取落盘文件名。名字来自远端，清洗过才准用。"""
+    """从下载地址取落盘文件名。并检查文件名是否可用。"""
 
     path = url.split("?", 1)[0].split("#", 1)[0]
     name = unquote(path.rsplit("/", 1)[-1]).strip()
@@ -82,7 +82,7 @@ def _file_name_from_url(url: str) -> str:
 
 
 def _parse_int(raw: object) -> int:
-    """服务端把体积给成字符串；解析不出来就当作不可信，绝不盲下。"""
+    """服务端把体积给成字符串；解析失败时返回 0，由调用方检查是否有效。"""
 
     if raw is None:
         return 0
@@ -95,7 +95,6 @@ def _parse_release(payload: object) -> Release:
         raise EndfieldUpdateError("启动器响应不是 JSON 对象")
     rsps = payload.get("proxy_rsps") or []
     if not isinstance(rsps, list):
-        # 服务端口径变了就停下来问：往下 iterate 会抛 TypeError，那是打死任务的错法
         raise EndfieldUpdateError(
             f"启动器响应的 proxy_rsps 不是列表: {type(rsps).__name__}"
         )
@@ -123,8 +122,7 @@ def _parse_latest_game(body: dict) -> Release:
 
     patch = body.get("patch")
     if not isinstance(patch, dict):
-        # 空差量两个情况：已是最新，或这条基线没有差量。谁也不许拿整包兜底，
-        # 交给上层用版本号原文判。
+        # 没有差量时，由入口根据版本号决定是否需要手动更新。
         return Release(version=version, parts=())
 
     parts: list[PackagePart] = []
@@ -141,8 +139,7 @@ def _parse_latest_game(body: dict) -> Release:
             raise EndfieldUpdateError(f"服务端未给出第 {index + 1} 卷的差量卷体积")
         url = str(pack["url"])
         if not _SCHEME_RE.match(url):
-            # 差量卷地址是带 auth_key 签名的绝对地址；给成相对地址说明服务端改了口径，
-            # 宁可报错也不拿别的基准去拼一个错地址。签名地址只进日志，不进给用户看的那句
+            # 下载地址必须完整，详细地址只记入日志。
             logger.warning(f"第 {index + 1} 卷的差量卷地址不是绝对地址: {url!r}")
             raise EndfieldUpdateError(f"服务端给的第 {index + 1} 卷下载地址不完整")
         match = _VOLUME_SUFFIX_RE.search(url.split("?", 1)[0])
@@ -184,16 +181,19 @@ def _log_unknown_server(identity: InstallIdentity) -> None:
     )
 
 
-async def _fetch_release(identity: InstallIdentity) -> Release:
+async def _fetch_release(
+    identity: InstallIdentity, *, preset: dict[str, str] | None = None
+) -> Release:
     """上报本地版本原文，换回差量计划。
 
-    请求体的每一项都取自 `_match_preset` 选中的那一套参数，`version` 才是本地读到的原文。
+    请求参数使用调用方已匹配的预设；未传入时按客户端身份匹配。版本号使用本地原文。
 
     Raises:
         EndfieldUpdateError: 三元组匹配不到已知服务器参数。
     """
 
-    preset = _match_preset(identity)
+    if preset is None:
+        preset = _match_preset(identity)
     if preset is None:
         _log_unknown_server(identity)
         raise EndfieldUpdateError(UNKNOWN_SERVER_MESSAGE)
@@ -251,7 +251,7 @@ def read_install_identity(install_dir: Path) -> InstallIdentity:
     try:
         cipher = AES.new(_CONFIG_KEY, AES.MODE_CBC, _CONFIG_IV)
         text = _strip_padding(cipher.decrypt(raw)).decode("utf-8", "replace")
-    except (ValueError, KeyError, UnicodeDecodeError) as error:
+    except (ValueError, KeyError) as error:
         logger.warning(f"终末地 config.ini 解密失败，按版本未知处理: {error}")
         return InstallIdentity(version="")
 
@@ -301,7 +301,7 @@ def _canonical_relative(name: str) -> str:
 async def _fetch_patch_manifest(
     client: httpx.AsyncClient, url: str, digest: str
 ) -> tuple[PatchJob, ...]:
-    """取差量清单 `patch.json`：明文 JSON，按服务端给的 MD5 钉死。
+    """取差量清单 `patch.json`：明文 JSON，限制读取大小并核对服务端提供的 MD5。
 
     Returns:
         要打差量的条目，路径已并上清单给的 VFS 根。整文件不在这里——它们连同落地核对表
@@ -311,13 +311,15 @@ async def _fetch_patch_manifest(
         EndfieldUpdateError: 清单读不懂、MD5 不符、或给出 MAS 不认的多跳差量。
     """
 
-    response = await client.get(url)
-    response.raise_for_status()
-    raw = response.content
-    if len(raw) > _MANIFEST_MAX_BYTES:
-        raise EndfieldUpdateError(
-            f"差量清单正文 {len(raw)} 字节超过上限 {_MANIFEST_MAX_BYTES}，判为异常"
-        )
+    raw = bytearray()
+    async with client.stream("GET", url) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes(64 * 1024):
+            if len(raw) + len(chunk) > _MANIFEST_MAX_BYTES:
+                raise EndfieldUpdateError(
+                    f"差量清单超过 {_MANIFEST_MAX_BYTES} 字节上限"
+                )
+            raw.extend(chunk)
     if digest and hashlib.md5(raw).hexdigest() != digest:
         raise EndfieldUpdateError("差量清单的 MD5 与服务端声明不符")
     try:
@@ -344,8 +346,7 @@ async def _fetch_patch_manifest(
         if not nodes:
             continue
         if not isinstance(nodes, list) or len(nodes) != 1:
-            # 多跳意味着还要留下中间版本逐轮打，这里不做——宁可判不接管，
-            # 也不猜该按哪一跳落地。
+            # 当前只支持从本地基线直接更新到目标版本。
             count = len(nodes) if isinstance(nodes, list) else 0
             raise EndfieldUpdateError(f"清单给出 {count} 跳差量，MAS 只认单跳")
         node = nodes[0]

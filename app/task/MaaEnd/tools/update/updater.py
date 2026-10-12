@@ -63,7 +63,7 @@ from .common import (
     ProgressFn,
     logger,
 )
-from .download import _download_release, _prefetch_expanded, _prefetch_moves
+from .download import _download_release, _prefetch_package
 from .install import (
     _apply_delta,
     _build_delta_plan,
@@ -160,7 +160,7 @@ async def _ensure_game_updated(
         return GameUpdateResult("Skipped", UNKNOWN_SERVER_MESSAGE)
 
     try:
-        release = await _fetch_release(identity)
+        release = await _fetch_release(identity, preset=preset)
     except (httpx.HTTPError, EndfieldUpdateError, ValueError) as error:
         logger.warning(f"检查终末地客户端更新失败，跳过检查: {error}")
         return GameUpdateResult(
@@ -242,13 +242,10 @@ async def _ensure_game_updated(
                 specs = await _fetch_patch_manifest(
                     client, release.patch_info_url, release.patch_info_md5
                 )
-                prefetched = await _prefetch_moves(client, release, report)
-                expanded = (
-                    await _prefetch_expanded(client, release, specs)
-                    if prefetched is not None
-                    else 0
+                prefetched, expanded = await _prefetch_package(
+                    client, release, specs, report
                 )
-            if prefetched is not None:
+            if prefetched is not None and expanded is not None:
                 # 下载与落地共用一个盘，两笔体积必须在这一刻一起算：卷要读到最后一刻
                 # 才清，落地那一刻暂存卷还压在同一个目录里
                 landing_need = _landing_need(specs, prefetched, install_dir, expanded)

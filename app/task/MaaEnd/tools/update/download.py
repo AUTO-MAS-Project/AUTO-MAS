@@ -22,27 +22,23 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
-import aiofiles
 import httpx
 
+from app.services.update_transport import download_resumable
 from app.utils.update_files import (
-    file_md5,
+    file_matches,
     file_size,
-    native_path,
     replace_file,
 )
 
 from . import package_index
 from .common import (
     _CONNECT_TIMEOUT,
-    _DOWNLOAD_CHUNK,
     _MANIFEST_MAX_BYTES,
     _READ_TIMEOUT,
     _TEMP_SUFFIX,
@@ -61,25 +57,11 @@ _PROGRESS_STEP = 512 * 1024**2
 _PROGRESS_INTERVAL = 10.0
 """进度按「每 `_PROGRESS_STEP` 或每 `_PROGRESS_INTERVAL`」两者先到者播报一次：一轮下载
 只出十几行，也给调度台日志留足余量，不让它撞上前端的截断线。"""
-_MD5_CHUNK = 16 * 1024**2
 _PART_ATTEMPTS = 3
 """单卷尝试次数：CDN 抖动与签名地址失效都在这里消化。"""
 _MANIFEST_MAX_AGE = 60.0
 """清单最长复用时长（秒）。分卷地址带 `auth_key` 签名，按地址里的时间戳观测有效窗口约
 2 分钟；这里取一半留余量，跨分钟的下载一定在新地址上做，不去赌边界。"""
-
-
-def _hash_prefix(digest: Any, path: Path, limit: int) -> None:
-    """续传前把已落盘的字节补进摘要。"""
-
-    with open(native_path(path), "rb") as handle:
-        read = 0
-        while read < limit:
-            block = handle.read(min(_MD5_CHUNK, limit - read))
-            if not block:
-                break
-            digest.update(block)
-            read += len(block)
 
 
 class _Reporter:
@@ -114,14 +96,12 @@ class _Reporter:
         now = time.monotonic()
         if self._progress is None:
             return
-        # 两条门槛任一到了就播一行。要两条都过才出声，慢链路上能十几分钟一行不出，
-        # 前端那套「多久没新日志就算连接断了」的看门狗会把正常推进的更新判死并中止
+        # 按两次播报之间的下载量计算平均速度，不足一秒时不显示。
         if self._downloaded < self._next_bytes and now < self._next_at:
             return
         self._next_bytes = self._downloaded + _PROGRESS_STEP
         self._next_at = now + _PROGRESS_INTERVAL
-        # 速度取相邻两行之间的平均，不是相邻两个分块之间的抖动；窗口不足一秒就不报，
-        # 那种样本只会给出一个几百 MB/s 的假数
+        # 按两次播报之间的下载量计算平均速度，不足一秒时不显示。
         elapsed = now - self._sent_at
         speed = (
             f"，{(self._downloaded - self._sent_bytes) / elapsed / 1024**2:.1f} MB/s"
@@ -129,7 +109,7 @@ class _Reporter:
             else ""
         )
         self._sent_bytes, self._sent_at = self._downloaded, now
-        # 百分比按真实字节封顶显示：MD5 不符删掉重下那截确实流过网络，速度照全量算
+        # 显示进度最多为 100%，重复字节不算
         shown = min(self._downloaded, self._total)
         percent = shown / self._total * 100 if self._total else 0.0
         await self._progress(
@@ -151,31 +131,18 @@ async def _download_part(
 
     不分片并发：CDN 忽略 Range 时多会话可能拼出长度正确但内容重复的坏文件。"""
 
-    resume_from = max(file_size(temp), 0)
-    if resume_from > size:
-        temp.unlink(missing_ok=True)
-        resume_from = 0
     digest = hashlib.md5()
-    mode = "ab" if resume_from else "wb"
-    headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
-    # 服务端忽略 Range 时给回 200 与整份正文，这时必须从头覆盖写：追加会把新内容
-    # 接在旧字节后面，静默写出坏文件
-    async with client.stream("GET", url, headers=headers) as response:
-        if response.status_code == 200 and resume_from:
+
+    async def report(size: int) -> None:
+        if size < 0:
             logger.warning("CDN 忽略了 Range，本卷从头重写")
-            reporter.rewind(resume_from)
-            resume_from = 0
-            mode = "wb"
-        response.raise_for_status()
-        if mode == "ab":
-            await asyncio.to_thread(_hash_prefix, digest, temp, resume_from)
-        async with aiofiles.open(native_path(temp), mode) as sink:
-            async for chunk in response.aiter_bytes(_DOWNLOAD_CHUNK):
-                if not chunk:
-                    continue
-                await sink.write(chunk)
-                digest.update(chunk)
-                await reporter.add(len(chunk), part)
+            reporter.rewind(-size)
+        else:
+            await reporter.add(size, part)
+
+    await download_resumable(
+        client, url, temp, expected_size=size, on_bytes=report, digest=digest
+    )
     return digest.hexdigest()
 
 
@@ -205,10 +172,7 @@ async def _download_release(
     ) as client:
         for index, planned in enumerate(release.parts, start=1):
             target = staging / names[index - 1]
-            if file_size(target) == planned.size and (
-                not planned.md5
-                or await asyncio.to_thread(file_md5, target) == planned.md5
-            ):
+            if await file_matches(target, size=planned.size, md5=planned.md5 or None):
                 logger.info(f"复用已下载的分卷: {target.name}")
                 await reporter.add(planned.size, index)
                 files.append(target)
@@ -238,20 +202,20 @@ async def _download_release(
                     current = await _refresh_plan(identity, current)
                     part = current.parts[index - 1]
                     continue
-                if file_size(temp) != planned.size:
-                    logger.warning(
-                        f"{target.name} 体积不符（{file_size(temp)} != {planned.size}），重下"
-                    )
-                elif planned.md5 and digest != planned.md5:
-                    logger.warning(
-                        f"{target.name} 校验未通过（期望 {planned.md5} 实际 {digest}），重下"
-                    )
-                    # 坏文件必须删掉：留着它下一轮会从错的位置续传，越修越坏
-                    temp.unlink(missing_ok=True)
-                else:
+                if await file_matches(
+                    temp, size=planned.size, md5=planned.md5 or None, actual_md5=digest
+                ):
                     replace_file(temp, target, clear_readonly=True)
                     files.append(target)
                     break
+                actual_size = file_size(temp)
+                logger.warning(
+                    f"{target.name} 校验未通过：体积 {actual_size}/{planned.size}，"
+                    f"MD5 {digest}/{planned.md5 or '未提供'}，重试"
+                )
+                # 不完整的文件留给续传，大小正确但内容错误的文件必须重下。
+                if actual_size == planned.size:
+                    temp.unlink(missing_ok=True)
             else:
                 # 含「每次都是签名无效/过期」这条路：`continue` 也会走到这里，绝不放过
                 # 少一卷的静默结果——拼流少一卷会写成半新半旧的包，比不更新更坏
@@ -267,76 +231,45 @@ async def _download_release(
 
 
 async def _refresh_plan(identity: InstallIdentity, current: Release) -> Release:
-    """取一份新清单换回签名地址，并确认它描述的还是同一轮差量。
-
-    必须用同一份身份重问：报目标版本会被服务端当成「已是最新」而回空差量，那样每次
-    刷新都会误判成清单变了，整轮下载必然中止。
-    """
+    """保证下载期间，没有服务端版本号变化"""
 
     fresh = await _fetch_release(identity)
     if fresh.version != current.version:
         raise EndfieldUpdateError(
             f"下载期间服务端把最新版本换成了 {fresh.version}"
-            f"（本轮目标 {current.version}）；混用两个构建的分卷会毁掉游戏目录，"
+            f"（本轮目标 {current.version}）；版本不一致，"
             "本轮更新中止，请重新发起"
         )
     if [part.md5 for part in fresh.parts] != [part.md5 for part in current.parts]:
         raise EndfieldUpdateError(
             f"下载期间服务端差量指纹发生变化（{len(current.parts)} 卷 → "
-            f"{len(fresh.parts)} 卷），本轮更新中止，请重新发起"
+            f"{len(fresh.parts)} 卷），本轮更新中止"
         )
     return fresh
 
 
-async def _prefetch_moves(
+async def _prefetch_package(
     client: httpx.AsyncClient,
     release: Release,
+    specs: Sequence[PatchJob],
     report: ProgressFn,
-) -> tuple[MoveJob, ...] | None:
-    """在下载之前从远端读出包内的整文件清单，好把下载与落地的体积合成一次判定。
-
-    只发几次小请求，不落下任何正文；读不到就返回 `None`，落地前那道门仍是权威判据。
-    分卷地址带签名、有效窗口两分钟上下，这一步要在读盘核对基线之前做完。
-    """
-
-    await report("正在预取包内清单，先核对磁盘余量")
-    doc = await package_index.fetch_member_json(
+) -> tuple[tuple[MoveJob, ...] | None, int | None]:
+    """预读整文件清单和最大差量展开大小；未知结果保留为 None。"""
+    await report("正在预读包内清单，估算磁盘空间")
+    doc, sizes = await package_index.fetch_package_metadata(
         client=client,
         volumes=[
             package_index.RemoteVolume(part.url, part.size) for part in release.parts
         ],
         cd_key=release.cd_key,
         member=_VERIFY_MANIFEST_MEMBER,
+        members=[spec.member for spec in specs],
         max_plain_bytes=_MANIFEST_MAX_BYTES,
     )
-    if doc is None:
-        await report("未能预取到包内清单，本轮改为下载后再核对磁盘余量")
-        return None
-    entries = _move_entries(doc)
-    await report(
-        f"预取到包内整文件清单 {len(entries)} 条，按下载与落地的总量核对磁盘余量"
-    )
-    return entries
-
-
-async def _prefetch_expanded(
-    client: httpx.AsyncClient,
-    release: Release,
-    specs: Sequence[PatchJob],
-) -> int:
-    """下载前问一次「落地中途会展开多大的差量」：它只在包内总表里，清单不给。
-
-    差量成员必须先整份解到暂存目录，hpatchz 才有输入文件可读；这一份与卷、与新临时文件
-    是同时占盘的。只读总表，不取正文；问不到就返回 0，由固定余量兜。
-    """
-
-    if not specs:
-        return 0
-    sizes = await package_index.fetch_expanded_sizes(
-        client=client,
-        volumes=[
-            package_index.RemoteVolume(part.url, part.size) for part in release.parts
-        ],
-        members=[spec.member for spec in specs],
-    )
-    return max(sizes.values(), default=0)
+    moves = _move_entries(doc) if doc is not None else None
+    expanded = max(sizes.values(), default=0) if sizes is not None else None
+    if moves is None or expanded is None:
+        await report("未能完整预估更新空间，下载后再核对实际大小")
+    else:
+        await report(f"预读到整文件清单 {len(moves)} 条，核对下载与更新所需空间")
+    return moves, expanded
