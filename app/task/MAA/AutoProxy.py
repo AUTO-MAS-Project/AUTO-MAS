@@ -1029,9 +1029,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if not self.run_book["Annihilation"]:
             now = game_now(self.cur_user_config.get("Info", "Server"))
-            start_weekday = self.cur_user_config.get(
-                "Task", "AnnihilationStartWeekday"
-            )
+            start_weekday = self.cur_user_config.get("Task", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
                 start_weekday,

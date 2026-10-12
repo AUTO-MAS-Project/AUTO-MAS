@@ -289,7 +289,9 @@ const handleAddCustomStage3 = (stageName: string) => emit('handle-add-custom-sta
 // 跳转到计划表
 const handleGoToPlans = () => {
   const planId =
-    props.isPlanMode && formData.value?.Stage?.StageMode && formData.value.Stage.StageMode !== 'Fixed'
+    props.isPlanMode &&
+    formData.value?.Stage?.StageMode &&
+    formData.value.Stage.StageMode !== 'Fixed'
       ? formData.value.Stage.StageMode
       : undefined
   navigateTo('/plans', { query: { from: 'stage-config', ...(planId ? { planId } : {}) } })

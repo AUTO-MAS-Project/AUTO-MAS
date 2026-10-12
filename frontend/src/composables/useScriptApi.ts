@@ -223,11 +223,17 @@ export function useScriptApi() {
                         Stage:
                           maaUserData.Stage?.Stage !== undefined ? maaUserData.Stage.Stage : '-',
                         Stage_1:
-                          maaUserData.Stage?.Stage_1 !== undefined ? maaUserData.Stage.Stage_1 : '-',
+                          maaUserData.Stage?.Stage_1 !== undefined
+                            ? maaUserData.Stage.Stage_1
+                            : '-',
                         Stage_2:
-                          maaUserData.Stage?.Stage_2 !== undefined ? maaUserData.Stage.Stage_2 : '-',
+                          maaUserData.Stage?.Stage_2 !== undefined
+                            ? maaUserData.Stage.Stage_2
+                            : '-',
                         Stage_3:
-                          maaUserData.Stage?.Stage_3 !== undefined ? maaUserData.Stage.Stage_3 : '-',
+                          maaUserData.Stage?.Stage_3 !== undefined
+                            ? maaUserData.Stage.Stage_3
+                            : '-',
                       },
                       Task: {
                         IfStartUp:
