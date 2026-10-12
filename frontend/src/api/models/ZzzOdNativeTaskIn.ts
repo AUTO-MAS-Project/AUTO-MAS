@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 直控任务编排条目（保存用：app_id + 启用状态）。
+ * 原生来源任务编排条目（保存用：app_id + 启用状态）。
  */
 export type ZzzOdNativeTaskIn = {
     /**

@@ -345,11 +345,11 @@
 
             <a-row :gutter="24">
               <a-col :span="24">
-                <!-- 快速配置开关已隐藏：按配置来源派生（直控 = 关，脚本 / 用户 = 开），
+                <!-- 快速配置开关已隐藏：按配置来源派生（原生来源 = 关，共享 / 独立 = 开），
                      见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。
                      派生值仍交给选择器只读展示，让「本次任务生效的配置」与实际运行一致。 -->
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
+                  :model-value="formData.Info.Base"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
@@ -429,7 +429,7 @@
             </a-flex>
 
             <a-alert
-              v-if="formData.Info.Mode === '直控'"
+              v-if="formData.Info.Base === 'native'"
               type="info"
               show-icon
               class="mode-guide-alert"
@@ -500,7 +500,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <!-- 独立配置模式：领取奖励队伍；脚本直控模式：配置 BetterGI（打开 BGI 原生界面） -->
+              <!-- 独立配置模式：领取奖励队伍；原生来源模式：配置 BetterGI（打开 BGI 原生界面） -->
               <a-col :span="12">
                 <a-form-item v-if="masConfigEnabled">
                   <template #label>
@@ -1400,28 +1400,28 @@ const bettergiConfigModeOptions: Array<{
   {
     title: t('edit.script'),
     description: t('edit.useSharedScriptLevel'),
-    value: '脚本',
+    value: 'shared',
     icon: 'file',
-    // 「脚本」运行时与「用户」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
+    // 「共享」运行时与「独立」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
     disabled: true,
     disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     title: t('edit.perUserConfiguration'),
     description: t('edit.perUserConfiguration'),
-    value: '用户',
+    value: 'independent',
     icon: 'database',
   },
   {
     title: t('edit.scriptDirectControl'),
     description: t('edit.useScriptSCurrent'),
-    value: '直控',
+    value: 'native',
     icon: 'setting',
   },
 ]
-// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：直控 = 用 BGI
+// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：原生来源 = 用 BGI
 // 所选原生配置（显示原生「一条龙名称」与「配置 BetterGI」，MAS 不接管）；脚本/用户 = MAS 面板。
-const masConfigEnabled = computed(() => formData.Info.Mode !== '直控')
+const masConfigEnabled = computed(() => formData.Info.Base !== 'native')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1463,7 +1463,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     RemainedDay: -1,
-    Mode: '用户',
+    Base: 'independent',
     IfQuickConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -1742,7 +1742,7 @@ const handleResourceChange = async (value: string) => {
 }
 
 // 快速配置开关已隐藏（按配置来源派生），原先「关闭前先落盘一条龙组设置」的处理
-// 移到了 handleConfigModeChange：切到直控时 MAS 面板会隐藏，效果等同。
+// 移到了 handleConfigModeChange：切到原生来源时 MAS 面板会隐藏，效果等同。
 const toggleGroup = (value: string) => {
   if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
@@ -1952,7 +1952,7 @@ const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
   if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
   if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
-  // JS 脚本与现有自定义组同属「脚本」来源（按需求：JS 的 tag 改为脚本）
+  // JS 脚本与现有自定义组同属「共享」来源（按需求：JS 的 tag 改为脚本）
   return t('edit.bettergiGroupKindCustom')
 }
 
@@ -4657,20 +4657,20 @@ watch(
 )
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   if (
     isInitializing.value ||
     configModeSaving.value ||
     !userId.value ||
-    formData.Info.Mode === value
+    formData.Info.Base === value
   )
     return
-  const previousValue = formData.Info.Mode
+  const previousValue = formData.Info.Base
   const previousQuickConfig = formData.Info.IfQuickConfig
-  // 快速配置按来源派生（开关已隐藏）：直控 = 关，脚本 / 用户 = 开
-  const nextQuickConfig = value !== '直控'
+  // 快速配置按来源派生（开关已隐藏）：原生来源 = 关，共享 / 独立 = 开
+  const nextQuickConfig = value !== 'native'
   if (!nextQuickConfig) {
-    // 切到直控后 MAS 面板会隐藏：先把未落盘的一条龙组设置刷下去，避免改动丢失
+    // 切到原生来源后 MAS 面板会隐藏：先把未落盘的一条龙组设置刷下去，避免改动丢失
     // （原「关闭快速配置」开关的同款处理）
     if (dragonGroupAutoSaveTimer) {
       clearTimeout(dragonGroupAutoSaveTimer)
@@ -4680,15 +4680,15 @@ const handleConfigModeChange = async (value: boolean | string) => {
       if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
     }
   }
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
   formData.Info.IfQuickConfig = nextQuickConfig
   configModeSaving.value = true
   try {
     const saved = await updateUser(scriptId, userId.value, {
-      Info: { Mode: formData.Info.Mode, IfQuickConfig: nextQuickConfig },
+      Info: { Base: formData.Info.Base, IfQuickConfig: nextQuickConfig },
     })
     if (!saved) {
-      formData.Info.Mode = previousValue
+      formData.Info.Base = previousValue
       formData.Info.IfQuickConfig = previousQuickConfig
     }
   } finally {
@@ -4905,9 +4905,9 @@ const loadUser = async () => {
       OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
-    // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「直控 + 开」），
+    // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「原生来源 + 开」），
     // 以 Mode 为准归一，与保存路径（handleConfigModeChange）及后端 BetterGIUserConfig.load 一致。
-    formData.Info.IfQuickConfig = formData.Info.Mode !== '直控'
+    formData.Info.IfQuickConfig = formData.Info.Base !== 'native'
     // 一条龙名称为必填：历史空值归一为「默认配置」
     if (!formData.Task.OneDragonConfigName) {
       formData.Task.OneDragonConfigName = '默认配置'

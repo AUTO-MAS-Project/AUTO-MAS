@@ -92,10 +92,18 @@
             size="large"
             class="modern-input"
             autocomplete="off"
-            @blur="emit('change', 'Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)"
+            @blur="handleCdkBlur"
           />
           <div v-if="isCdkMissingForMirror" class="form-hint form-hint--warning">
             {{ t('edit.cdkMissingForMirror') }}
+          </div>
+          <!-- CDK 还剩多久到期，或者 CDK 有什么问题；查询中、查不到、没有到期时间时整行不显示 -->
+          <div
+            v-if="cdkHintText"
+            class="form-hint"
+            :class="{ 'form-hint--warning': cdkHint?.warning }"
+          >
+            {{ cdkHintText }}
           </div>
           <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
         </a-form-item>
@@ -124,22 +132,13 @@
 
     <!-- 检查 / 更新的结果不再单独弹一条绿色 alert：过程面板的状态行已经用强调色写了同一句；
          只有 CDK 有问题时才额外提示，那是面板里没有的信息 -->
-    <template v-if="updateResult && !updateError">
-      <a-alert
-        v-if="cdkWarningMessage"
-        class="update-alert"
-        type="warning"
-        show-icon
-        :message="cdkWarningMessage"
-      />
-      <a-alert
-        v-else-if="cdkExpiryMessage"
-        class="update-alert"
-        type="info"
-        show-icon
-        :message="cdkExpiryMessage"
-      />
-    </template>
+    <a-alert
+      v-if="updateResult && !updateError && cdkWarningMessage"
+      class="update-alert"
+      type="warning"
+      show-icon
+      :message="cdkWarningMessage"
+    />
 
     <!-- 左边「当前版本」「GitHub」上下两个小框，右边一个更新过程面板；日志框定高、内部滚动 -->
     <div v-if="previewData" class="update-info-grid">
@@ -226,10 +225,11 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import {
-  resolveCdkExpiry,
+  resolveCdkHint,
   resolveCdkWarning,
   type MaaFWAutoUpdateMode,
 } from '@/composables/useMaaFWProjectUpdate'
+import { useMaaFWUpdateApi, type MaaFWMirrorCdkState } from '@/composables/useMaaFWUpdateApi'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   formatAppliedFiles,
@@ -295,10 +295,85 @@ const cdkWarningMessage = computed(() => {
   return t('edit.cdkStatusIssue', { status: warning.status })
 })
 
-const cdkExpiryMessage = computed(() => {
-  const expiry = resolveCdkExpiry(props.updateResult)
-  if (!expiry) return ''
-  return t('edit.cdkExpiresSoon', { date: expiry.dateText })
+// ---- CDK 输入框下的剩余时间 / CDK 状态 ----
+// 更新检查查版本从不带 CDK（不占下载额度），填错了平时看不出来；这里单独查一次：页面读完配置
+// 后、从 MAS 设置预填之后、失焦且值变了时各查一次。结果只对查询时的那个值有效，输入框的值
+// 改了（含清空）就先不显示，失焦再查；旧请求晚回来按序号丢掉。不管下载源选的是哪个都查。
+
+const { queryMaaFWMirrorCdk } = useMaaFWUpdateApi()
+const cdkState = ref<(MaaFWMirrorCdkState & { cdk: string }) | null>(null)
+let cdkQuerySeq = 0
+let lastQueriedCdk = ''
+
+const currentCdk = () => (props.maafwConfig.Update.MirrorChyanCDK ?? '').trim()
+
+const refreshCdkState = async () => {
+  const cdk = currentCdk()
+  if (!cdk) {
+    cdkQuerySeq += 1
+    lastQueriedCdk = ''
+    cdkState.value = null
+    return
+  }
+  if (!props.scriptId || cdk === lastQueriedCdk) return
+  lastQueriedCdk = cdk
+  const seq = ++cdkQuerySeq
+  const state = await queryMaaFWMirrorCdk(props.scriptId, cdk)
+  if (seq !== cdkQuerySeq) return
+  cdkState.value = state ? { ...state, cdk } : null
+  // 没查成（网络 / 服务端异常）的下次失焦再试
+  if (!state || state.status === 'error') lastQueriedCdk = ''
+}
+
+const handleCdkBlur = () => {
+  emit('change', 'Update', 'MirrorChyanCDK', props.maafwConfig.Update.MirrorChyanCDK)
+  void refreshCdkState()
+}
+
+watch(
+  () => props.scriptId,
+  () => void refreshCdkState(),
+  { immediate: true }
+)
+// 预填发生在页面读完配置之后，那时本分节已经挂上了
+watch(
+  () => props.cdkPrefilled,
+  prefilled => {
+    if (prefilled) void refreshCdkState()
+  }
+)
+
+const cdkHint = computed(() => {
+  const state = cdkState.value
+  if (!state || state.cdk !== currentCdk()) return null
+  return resolveCdkHint(state.status, state.expiredTime)
+})
+
+const cdkHintText = computed(() => {
+  const hint = cdkHint.value
+  if (!hint) return ''
+  const date = hint.dateText ?? ''
+  const remaining =
+    hint.daysLeft === null || !date
+      ? ''
+      : hint.daysLeft < 1
+        ? t('edit.cdkHintLessThanDay', { date })
+        : t('edit.cdkHintRemaining', { days: hint.daysLeft, date })
+  switch (hint.kind) {
+    case 'remaining':
+      return remaining
+    case 'expired':
+      return date ? t('edit.cdkHintExpiredOn', { date }) : t('edit.cdkHintExpired')
+    case 'invalid':
+      return t('edit.cdkHintInvalid')
+    case 'quota':
+      return remaining ? t('edit.cdkHintQuotaRemaining', { remaining }) : t('edit.cdkHintQuota')
+    case 'mismatched':
+      return t('edit.cdkHintMismatched')
+    case 'blocked':
+      return t('edit.cdkHintBlocked')
+  }
+  return ''
 })
 
 // ---- 更新过程面板 ----

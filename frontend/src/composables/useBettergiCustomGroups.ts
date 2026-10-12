@@ -24,7 +24,7 @@ interface BettergiCustomGroupOptions {
   configName: () => string
   /** 用户独立配置（Info.IfUseMasConfig）：为 true 时读取该用户 per-user 副本（固定槽位名） */
   masConfig: () => boolean
-  /** 是否处于「脚本直控配置」之外（可编辑）。为 true 时允许交互 */
+  /** 是否处于「原生来源配置」之外（可编辑）。为 true 时允许交互 */
   editable: () => boolean
   /** 保存某字段到后端（形如 'OneDragon.CustomGroups'），返回是否保存成功 */
   saveField: (key: string, value: unknown) => Promise<boolean>

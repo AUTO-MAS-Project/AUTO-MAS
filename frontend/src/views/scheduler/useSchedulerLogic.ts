@@ -29,7 +29,7 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
-import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
+import { reconcileSelectedUserIds, splitUserOptions } from './schedulerUserOptions'
 import {
   countQueueSelectedUsers,
   countQueueUsers,
@@ -140,6 +140,8 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   // 刷新后要恢复队列任务的勾选，否则界面上显示的默认全选会和用户上次的选择不一致
   queueUserScope: { ...(tab.queueUserScope || {}) },
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
+  // 面板用的展示数据，随账号列表重新拉取，不持久化
+  userDisabledOptions: [],
   userOptionsLoading: false,
   userOptionsLoaded: false,
   taskId: tab.taskId,
@@ -165,6 +167,7 @@ const normalizePersistedTab = (
       ? [tab.selectedUserId]
       : undefined,
   userOptions: tab.userOptions || [],
+  userDisabledOptions: [],
   userOptionsLoading: false,
   userOptionsLoaded: false,
   queueUserScope: normalizePersistedQueueScope(tab.queueUserScope),
@@ -206,6 +209,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeScriptLoading: false,
       selectedUserIds: undefined,
       userOptions: [],
+      userDisabledOptions: [],
       userOptionsLoading: false,
       userOptionsLoaded: false,
       taskId: null,
@@ -397,6 +401,7 @@ export function useSchedulerLogic() {
       resumeScriptLoading: false,
       selectedUserIds: undefined,
       userOptions: [],
+      userDisabledOptions: [],
       userOptionsLoading: false,
       userOptionsLoaded: false,
       taskId: options?.taskId || null,
@@ -717,10 +722,12 @@ export function useSchedulerLogic() {
           tab.queueScopeFailed = true
           return
         }
+        const { runnable, disabled } = splitUserOptions(response)
         groups.push({
           scriptId: script.scriptId,
           scriptName: script.scriptName,
-          users: toRunnableUserOptions(response),
+          users: runnable,
+          disabledUsers: disabled,
         })
       }
 
@@ -747,6 +754,7 @@ export function useSchedulerLogic() {
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
       latestUserOptionsRequest.delete(tab)
       tab.userOptions = []
+      tab.userDisabledOptions = []
       tab.selectedUserIds = undefined
       tab.userOptionsLoading = false
       tab.userOptionsLoaded = false
@@ -773,9 +781,10 @@ export function useSchedulerLogic() {
         return
       }
 
-      const options = toRunnableUserOptions(response)
-      tab.userOptions = options
-      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, options)
+      const { runnable, disabled } = splitUserOptions(response)
+      tab.userOptions = runnable
+      tab.userDisabledOptions = disabled
+      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, runnable)
       tab.userOptionsLoaded = true
     } catch (error) {
       if (isStale()) return
@@ -794,6 +803,7 @@ export function useSchedulerLogic() {
     tab.resumeFromScriptId = null
     tab.selectedUserIds = undefined
     tab.userOptions = []
+    tab.userDisabledOptions = []
     tab.userOptionsLoaded = false
     // 换了任务就重新开始选，上一个队列的勾选不能带到新队列上
     tab.queueUserScope = {}

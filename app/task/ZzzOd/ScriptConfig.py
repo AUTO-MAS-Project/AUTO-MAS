@@ -73,7 +73,7 @@ class ScriptConfigTask(TaskExecuteBase):
     view_only=True 时为查看会话：只读预览（槽内即恢复的历史备份），
     不注入基线、不回读字段，用于「查看配置」等预览场景。
 
-    instance_idx 仅脚本级会话（直控）生效：会话窗口把原生注册表的活跃
+    instance_idx 仅脚本级会话（原生来源）生效：会话窗口把原生注册表的活跃
     实例临时切到正在编辑的实例（GUI 打开即所见实例），结束还原原活跃，
     全程只动 one_dragon.yml 的 active 标志（纯配置操作）。
     """

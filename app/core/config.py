@@ -102,6 +102,9 @@ from app.task.M9A.migration import (
 from app.utils import get_logger, is_supervised, resource_path
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
     RESOURCE_STAGE_DATE_TEXT,
     RESOURCE_STAGE_DROP_INFO,
     RESOURCE_STAGE_INFO,
@@ -109,6 +112,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
     game_now,
+    normalize_base_source,
 )
 from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
@@ -1259,7 +1263,7 @@ class AppConfig(GlobalConfig):
                 await ensure_user_config_dir(
                     script_id=script_id,
                     user_id=str(uid),
-                    mode=str(config.get("Info", "Mode") or "脚本"),
+                    base=str(config.get("Info", "Base") or BASE_SHARED),
                 )
             except Exception:
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
@@ -1302,7 +1306,7 @@ class AppConfig(GlobalConfig):
 
         三层防线（与 FolderValidator 非空分支、自动发现/check() 同一组哨兵）：
         1. 拒绝空串——``FolderValidator`` 对空串放行，``Path("").is_dir()``
-           在 cwd 下为真，用户态保存会把 ``config/01/`` 建进 MAS 工作目录；
+           在 cwd 下为真，independent 来源保存会把 ``config/01/`` 建进 MAS 工作目录；
         2. 拒绝非绝对路径 / 不存在的目录 / ``Path.cwd()``；
         3. ``validate_install`` 安装哨兵（``src`` 目录）——任意随机目录
            （如 D:\\）只要 is_dir 就放行会在其下建出 config/01。不要求
@@ -1363,7 +1367,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         idx = add_instance(root, name, collect_used_slot_idxs(root))
-        logger.info(f"ZZZ-OD 直控新建实例: 槽 {idx:02d} (名称 {name})")
+        logger.info(f"ZZZ-OD 原生来源新建实例: 槽 {idx:02d} (名称 {name})")
         return self.get_zzzod_instances(script_id)
 
     def rename_zzzod_instance(
@@ -1378,7 +1382,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         rename_instance(root, instance_idx, name)
-        logger.info(f"ZZZ-OD 直控重命名实例: {instance_idx:02d} → {name}")
+        logger.info(f"ZZZ-OD 原生来源重命名实例: {instance_idx:02d} → {name}")
         return self.get_zzzod_instances(script_id)
 
     def set_zzzod_instance_active_in_od(
@@ -1424,7 +1428,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         save_native_instance_run(root, instance_run)
-        logger.info(f"ZZZ-OD 直控运行实例 → {instance_run}")
+        logger.info(f"ZZZ-OD 原生来源运行实例 → {instance_run}")
 
     def set_zzzod_instance_force_login(
         self, script_id: str, instance_idx: int, value: bool
@@ -1509,7 +1513,7 @@ class AppConfig(GlobalConfig):
         被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
         不受「只收归属用户已不存在的号」的台账限制（来路不明的残留正是用户要清的
         对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
-        直控用户显式发起即可，不受「直控零写入」约束——那条约束管的是 MAS
+        原生来源用户显式发起即可，不受「原生来源零写入」约束——那条约束管的是 MAS
         在运行期间自行写安装目录。
 
         Raises:
@@ -1665,7 +1669,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """任务级配置（字段元数据 + 当前值）。
 
-        instance_idx 给定时（直控模式）读取该原生实例的 per-app YAML；
+        instance_idx 给定时（原生来源模式）读取该原生实例的 per-app YAML；
         否则读取用户绑定槽（未分配槽时取元数据默认值）。
         """
 
@@ -1769,7 +1773,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """保存任务级配置到目标位置（字段白名单校验后写入）。
 
-        instance_idx 给定时（直控模式）直接写该原生实例的 per-app YAML；
+        instance_idx 给定时（原生来源模式）直接写该原生实例的 per-app YAML；
         否则写用户绑定槽（首次编辑会自动分配绑定槽）。值按字段类型转换
         （select→str / bool→bool / number→int），plan_list 整表合并写入并
         按 plan_id 保留既有 run_times。
@@ -1899,7 +1903,7 @@ class AppConfig(GlobalConfig):
 
         team.yml：名称 + 绑定配队方案 + 成员（agent_id → 代理人下拉可选）。
         缺失项按上游规则补「编队N」默认编队。
-        instance_idx 给定时（直控模式）读该原生实例；否则读用户绑定槽。
+        instance_idx 给定时（原生来源模式）读该原生实例；否则读用户绑定槽。
         附带配队方案与代理人选项（静态数据，不含识别能力）供前端渲染。
         """
 
@@ -2061,6 +2065,9 @@ class AppConfig(GlobalConfig):
             backup_info = read_dict_file(
                 backup_dir / MAS_USER_INFO_FILE, allow_empty=True
             )
+            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
+            if "Mode" in backup_info and "Base" not in backup_info:
+                backup_info["Base"] = normalize_base_source(backup_info.pop("Mode"))
         except ConfigCorruptedError as exc:
             raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
@@ -2128,12 +2135,12 @@ class AppConfig(GlobalConfig):
         await user_cfg.set(
             "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
         )
-        # 信息字段回填（用户名/启用/模式/启动器/剩余天数/备注/节点详情推送）：
+        # 信息字段回填（用户名/启用/base 来源/启动器/剩余天数/备注/节点详情推送）：
         # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
         for field in (
             "Name",
             "Status",
-            "Mode",
+            "Base",
             "LauncherMode",
             "RemainedDay",
             "Notes",
@@ -2512,7 +2519,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
 
-        - target="mas"：基本信息卡信息字段（用户名/启用/模式/启动器/剩余天数/
+        - target="mas"：基本信息卡信息字段（用户名/启用/base 来源/启动器/剩余天数/
           备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
           密码掩码）+ 任务编排（应用目录并入中文名）；
         - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
@@ -2620,6 +2627,9 @@ class AppConfig(GlobalConfig):
         info: dict = {}
         try:
             info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
+            if "Mode" in info and "Base" not in info:
+                info["Base"] = normalize_base_source(info.pop("Mode"))
         except ConfigCorruptedError as exc:
             warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
         account: dict = {}
@@ -2640,7 +2650,7 @@ class AppConfig(GlobalConfig):
         for key, field in (
             ("name", "Name"),
             ("status", "Status"),
-            ("mode", "Mode"),
+            ("base", "Base"),
             ("launcher_mode", "LauncherMode"),
             ("remained_day", "RemainedDay"),
             ("notes", "Notes"),
@@ -2926,9 +2936,9 @@ class AppConfig(GlobalConfig):
     async def list_config_backups(
         self, script_id: str, user_id: str, target: str
     ) -> dict:
-        """列出配置备份（时间倒序，每项带配置来源标注）与当前来源。
+        """列出配置备份（时间倒序，每项带 base 来源标注）与当前 base 来源。
 
-        返回 ``{"items": [{"time", "mode"}], "mode": 当前来源或 None}``；
+        返回 ``{"items": [{"time", "base"}], "base": 当前来源或 None}``；
         当前来源只在三态池返回（前端据此比对是否需要跨来源提示）。
         target 取值由专项池定义。
         """
@@ -2936,7 +2946,7 @@ class AppConfig(GlobalConfig):
         service = self.restore_service(script_id, user_id)
         return {
             "items": await service.list(target),
-            "mode": await service.current_mode(target),
+            "base": await service.current_base(target),
         }
 
     async def ensure_config_backup(
@@ -3006,31 +3016,35 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # 直控守卫：每脚本仅允许一个直控用户——直控共享脚本级原生配置（MAA/SRC
-        # 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多直控用户共享
-        # 同一份状态互相干扰。
-        # ZzzOd 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
-        # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）。
+        # 原生来源守卫：每脚本仅允许一个原生来源用户——原生来源共享脚本级原生
+        # 配置（MAA/SRC 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多
+        # 个原生来源用户共享同一份状态互相干扰。
+        # ZzzOd 切到原生来源时同步清空任务编排残留：原生来源不消费 AppList，残留
+        # 会让注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）。
         if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
-            new_mode = str(data.get("Info", {}).get("Mode", "") or "")
-            # 仅 ZzzOd 需要清空任务编排残留: 直控不消费 AppList, 残留会让
-            # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
-            if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
+            new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
+            # 仅 ZzzOd 需要清空任务编排残留: 原生来源不消费 AppList, 残留会让
+            # 注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）
+            if new_base == BASE_NATIVE and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
-                # 快速配置已封锁（覆盖写槽与直控零写入相悖，维护者决策）：
-                # 切直控时同步归关，免得界面隐藏的开关残留旧值
+                # 快速配置已封锁（覆盖写槽与原生来源零写入相悖，维护者决策）：
+                # 切到原生来源时同步归关，免得界面隐藏的开关残留旧值
                 data.setdefault("Info", {})["IfQuickConfig"] = False
             if (
-                new_mode == "直控"
-                and str(user_config.get("Info", "Mode") or "用户") != "直控"
+                new_base == BASE_NATIVE
+                and normalize_base_source(
+                    user_config.get("Info", "Base") or BASE_INDEPENDENT
+                )
+                != BASE_NATIVE
                 and any(
-                    str(cfg.get("Info", "Mode") or "用户") == "直控"
+                    normalize_base_source(cfg.get("Info", "Base") or BASE_INDEPENDENT)
+                    == BASE_NATIVE
                     for uid, cfg in script_config.UserData.items()
                     if uid != user_uid
                 )
             ):
                 raise ValueError(
-                    "每个脚本仅允许一个直控用户, 多账号请在该用户的实例管理中配置"
+                    "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
                 )
 
         # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
@@ -4494,6 +4508,9 @@ class AppConfig(GlobalConfig):
             "HSR 用户任务完成",
             "HSR 失败任务补跑完成",
             "HSR 本轮无需执行，已跳过",
+            "HSR 脚本原生来源完成",
+            # 「HSR 脚本直控完成」= 来源术语迁移前的历史存量文案, 运行时已改写为
+            # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
             "HSR 脚本直控完成",
         }
 
@@ -4503,7 +4520,7 @@ class AppConfig(GlobalConfig):
                 return False
             value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
             if value in ("Success!", "今日任务均已完成"):
-                # 「今日任务均已完成」= zzz-od 直控/按记录跳过场景的历史存量文案,
+                # 「今日任务均已完成」= zzz-od 原生来源/按记录跳过场景的历史存量文案,
                 # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:

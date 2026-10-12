@@ -398,7 +398,7 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
-    Mode?: '脚本' | '用户' | '直控'
+    Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
@@ -642,7 +642,8 @@ export interface User {
     InfrastMode: string
     InfrastName: string
     MedicineNumb: number
-    Mode: string
+    Base: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string

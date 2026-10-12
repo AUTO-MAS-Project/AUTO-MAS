@@ -1,7 +1,7 @@
 # `app/task/MaaFW` 说明
 
 MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFramework 项目都由它运行。
-专项适配那一套（原生编辑器会话、脚本/用户/直控三态、配置备份恢复）不适用，见末节。
+专项适配那一套（原生编辑器会话、base 三态（shared/independent/native）、配置备份恢复）不适用，见末节。
 本文件只记录代码里读不出来、但改错了会出事的约束。
 
 ## 布局与边界
@@ -523,12 +523,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
   过某版本失败，组里谁也不再为它下包；只有运行前 / 运行后自动更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
+- 所以更新检查从不验证 CDK。编辑页 CDK 输入框下的小字（剩余天数 / CDK 有问题）走单独的
+  `/maafw/mirror-cdk` → `updater.query_mirrorchyan_cdk_status`：先不带 CDK 拿最新版本，再带 CDK、
+  `current_version` 写成这个最新版本查一次——已是最新时服务端不签发下载地址、不扣额度，但照样校验
+  CDK（2026-10-11 实测错 CDK 一律 HTTP 403 + 7002）。别把第二次的 `current_version` 改回项目版本。
 
 ## 与专项的区别（别照搬）
 
 - 没有 `ScriptConfig.py`，没有原生编辑器会话；已接入通用配置备份恢复
   （mas 池为纯字段侧车 + native 项目池，见 `tools/restore_service.py`）。
-- 用户配置上的 `Info.Mode`（脚本/用户/直控）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
+- 用户配置上的 `Info.Base`（shared/independent/native）和 `Info.IfQuickConfig` **都没有 MaaFW 运行代码消费**：
   用户页上的任务队列就是唯一的任务来源（`runner_task.py` 建计划处有说明），这两个字段只在
   配置备份恢复里原样带着。不要在 MaaFW 上按三态写逻辑。
 - 新的 `interface.json` 项目默认用 MaaFW 类型即可运行；需要更精细的控制时（原生编辑器会话、

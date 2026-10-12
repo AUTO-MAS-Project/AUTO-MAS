@@ -45,6 +45,13 @@ from pydantic import (
     model_validator,
 )
 
+from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    normalize_base_source,
+)
+
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
 
@@ -266,7 +273,7 @@ class BetterGIGlobalDomainSettingsOut(OutBase):
 
 
 class BetterGIGlobalDomainSettingsIn(BaseModel):
-    """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
+    """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: Optional[str] = Field(
@@ -296,7 +303,7 @@ class BetterGIGlobalStygianSettingsOut(OutBase):
 
 
 class BetterGIGlobalStygianSettingsIn(BaseModel):
-    """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
+    """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: Optional[str] = Field(
@@ -496,7 +503,9 @@ class ZzzOdSlotOwnerOut(BaseModel):
     userId: str = Field(..., description="用户ID（恢复槽时用它指认目标用户）")
     scriptName: str = Field(..., description="所属脚本名称")
     userName: str = Field(..., description="用户名称")
-    mode: str = Field(..., description="该用户的配置来源（脚本/用户/直控）")
+    base: str = Field(
+        ..., description="该用户的 base 来源（shared/independent/native）"
+    )
 
 
 class ZzzOdSlotOut(BaseModel):
@@ -724,17 +733,17 @@ class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
     time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
-    mode: Optional[str] = Field(
+    base: Optional[str] = Field(
         default=None,
-        description="备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null",
+        description="备份时点的 base 来源（shared/independent/native）；无标注（旧版备份或未声明来源）为 null",
     )
 
 
 class ConfigBackupListOut(OutBase):
     data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
-    mode: Optional[str] = Field(
+    base: Optional[str] = Field(
         default=None,
-        description="当前配置来源三态（脚本/用户/直控）；非三态专项为 null",
+        description="当前 base 来源（shared/independent/native）；无来源概念（非 base 专项）为 null",
     )
 
 
@@ -829,7 +838,7 @@ class ZzzOdNativeLaunchArgs(BaseModel):
 
 
 class ZzzOdNativeTaskOut(BaseModel):
-    """直控任务编排条目（原生 app_list 与目录合并后的可选项）。"""
+    """原生来源任务编排条目（原生 app_list 与目录合并后的可选项）。"""
 
     app_id: str = Field(..., description="应用ID")
     app_name: str = Field(..., description="应用中文名")
@@ -870,7 +879,7 @@ class ZzzOdNativeConfigOut(OutBase):
 
 
 class ZzzOdNativeTaskIn(BaseModel):
-    """直控任务编排条目（保存用：app_id + 启用状态）。"""
+    """原生来源任务编排条目（保存用：app_id + 启用状态）。"""
 
     app_id: str = Field(..., description="应用ID")
     enabled: bool = Field(..., description="是否启用")
@@ -1685,11 +1694,33 @@ class UserIndexItem(BaseModel):
     ] = Field(..., description="配置类型")
 
 
-class MaaUserConfig_Info(BaseModel):
+class UserConfigInfoBase(BaseModel):
+    """用户配置 Info 的公共基类：兼容旧请求的 ``Mode`` 来源字段。
+
+    旧「脚本/用户/直控」来源已迁移为 ``Base``（shared/independent/native），
+    存量调用方仍可能提交 ``Info.Mode``；在解析前归一，避免字段被静默丢弃、
+    接口返回成功但来源实际未变。
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_base(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("Base") is not None:
+            return data
+        base = normalize_base_source(data.get("Mode"))
+        if not base:
+            return data
+        if base not in (BASE_SHARED, BASE_INDEPENDENT, BASE_NATIVE):
+            raise ValueError(f"未知的配置来源: {data.get('Mode')!r}")
+        return {**data, "Base": base}
+
+
+class MaaUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Id: Optional[str] = Field(default=None, description="用户ID")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=使用脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -1890,12 +1921,13 @@ class MaaConfig(BaseModel):
     Update: Optional[MaaConfig_Update] = Field(default=None, description="更新接管配置")
 
 
-class GeneralUserConfig_Info(BaseModel):
+class GeneralUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本/用户/直控）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfUseMasConfig: Optional[bool] = Field(
         default=None, description="兼容旧版用户独立配置开关"
@@ -1959,9 +1991,9 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
     """OK-WW 用户信息（复用通用字段）"""
 
     Id: Optional[str] = Field(default=None, description="账号")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
         default=None,
-        description="配置来源（脚本/用户/直控）",
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置覆盖 OK-WW 高频任务字段"
@@ -2014,8 +2046,9 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本/用户/直控）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -2080,7 +2113,7 @@ class BetterGIUserConfig_Switch(BaseModel):
 
 
 class BetterGIUserConfig_Info(GeneralUserConfig_Info):
-    """BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）"""
+    """BetterGI 用户信息（原生 GUI 原生来源，账号由 BetterGI 原生管理）"""
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
@@ -2223,7 +2256,7 @@ class BetterGIUserConfig(BaseModel):
     )
 
 
-class ZzzOdUserConfig_Info(BaseModel):
+class ZzzOdUserConfig_Info(UserConfigInfoBase):
     """ZZZ-OD 用户信息
 
     配置主体是本模型的 Game / OneDragon 字段（MAS ConfigItem 体系，web
@@ -2232,9 +2265,9 @@ class ZzzOdUserConfig_Info(BaseModel):
 
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
         default=None,
-        description="配置来源（脚本/用户/直控）",
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -2245,7 +2278,7 @@ class ZzzOdUserConfig_Info(BaseModel):
     )
     LauncherMode: Optional[Literal["自动", "原始", "集成"]] = Field(
         default=None,
-        description="一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）",
+        description="一条龙启动器（原生/独立两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）",
     )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     IfScriptBeforeTask: Optional[bool] = Field(
@@ -2360,12 +2393,13 @@ class ZzzOdUserConfig(BaseModel):
     )
 
 
-class BAAHUserConfig_Info(BaseModel):
+class BAAHUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本/用户/直控）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -2784,19 +2818,20 @@ class WhimboxConfig(BaseModel):
     Run: Optional[WhimboxConfig_Run] = Field(default=None, description="运行配置")
 
 
-class WhimboxUserConfig_Info(BaseModel):
+class WhimboxUserConfig_Info(UserConfigInfoBase):
     """奇想盒用户信息
 
-    base 来源三态（#879 语义）：「脚本/用户」=共享/独立 base（MAS 面板值，当前
-    运行行为一致、为后续特殊功能预留），「直控」=原生 base（奇想盒自带配置）；
+    base 来源三态（#879 语义）：shared/independent=共享/独立 base（MAS 面板值，
+    当前运行行为一致、为后续特殊功能预留），native=原生 base（奇想盒自带配置）；
     覆写层（IfQuickConfig）为账号级独立开关，开启时原生态任务前也会物化面板覆盖集。
     """
 
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="base 来源（脚本=共享/用户=独立/直控=原生）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None,
@@ -2903,14 +2938,14 @@ class WhimboxTaskCatalogOut(OutBase):
     data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
 
 
-class MaaEndUserConfig_Info(BaseModel):
+class MaaEndUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
         default=None,
-        description="配置来源（脚本共享、用户独立、脚本直控）",
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -3102,13 +3137,14 @@ class MaaEndConfig(BaseModel):
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
 
 
-class SrcUserConfig_Info(BaseModel):
+class SrcUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=使用脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -3472,10 +3508,10 @@ class HSRConfig(BaseModel):
         default=None, description="模块脚本分配"
     )
     TaskSwitch: Optional[HSRConfig_TaskSwitch] = Field(
-        default=None, description="共享计划：模块执行开关（脚本来源用户共用）"
+        default=None, description="共享计划：模块执行开关（shared 来源用户共用）"
     )
     Stage: Optional[HSRConfig_Stage] = Field(
-        default=None, description="共享计划：关卡配置（脚本来源用户共用）"
+        default=None, description="共享计划：关卡配置（shared 来源用户共用）"
     )
     TaskOpt: Optional[HSRConfig_TaskOpt] = Field(
         default=None, description="共享计划：模块执行参数（脚本来源用户共用）"
@@ -3485,13 +3521,14 @@ class HSRConfig(BaseModel):
     )
 
 
-class HSRUserConfig_Info(BaseModel):
+class HSRUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     Id: Optional[str] = Field(default=None, description="用户ID（账号）")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（脚本/用户/直控）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（shared=共享、independent=独立、native=脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -3574,8 +3611,8 @@ class HSRUserConfig_TaskOpt(BaseModel):
 
 
 class HSRUserConfig_Control(BaseModel):
-    SRA: Optional[bool] = Field(default=None, description="直控时是否运行 SRA")
-    M7A: Optional[bool] = Field(default=None, description="直控时是否运行三月七")
+    SRA: Optional[bool] = Field(default=None, description="原生来源时是否运行 SRA")
+    M7A: Optional[bool] = Field(default=None, description="原生来源时是否运行三月七")
 
 
 class HSRUserConfig_Managed(BaseModel):
@@ -3877,12 +3914,13 @@ class HSRSRAProfilesOut(OutBase):
     )
 
 
-class MaaFWUserConfig_Info(BaseModel):
+class MaaFWUserConfig_Info(UserConfigInfoBase):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
+    Base: Optional[Literal["shared", "independent", "native"]] = Field(
+        default=None,
+        description="base 来源（independent=独立、native=使用脚本原生配置）",
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
@@ -4690,6 +4728,34 @@ class MaaFWProjectUpdateData(BaseModel):
 class MaaFWProjectUpdateOut(OutBase):
     data: Optional[MaaFWProjectUpdateData] = Field(
         default=None, description="MaaFW 项目更新结果"
+    )
+
+
+class MaaFWMirrorCdkIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    cdk: str = Field(
+        default="",
+        description="要查询的 Mirror 酱 CDK（编辑页输入框当前值，可能还没落盘）；只走请求体，不进日志",
+    )
+
+
+class MaaFWMirrorCdkData(BaseModel):
+    status: str = Field(
+        ...,
+        description=(
+            "CDK 状态：ok / absent（没填）/ unsupported（项目没声明 mirrorchyan_rid 或读不了）/ "
+            "error（查询失败）/ expired / invalid / quota / mismatched / blocked"
+        ),
+    )
+    expiredTime: Optional[int] = Field(
+        default=None,
+        description="Mirror 酱返回的 CDK 到期时间（unix 秒）；没返回时为空",
+    )
+
+
+class MaaFWMirrorCdkOut(OutBase):
+    data: Optional[MaaFWMirrorCdkData] = Field(
+        default=None, description="Mirror 酱 CDK 状态"
     )
 
 

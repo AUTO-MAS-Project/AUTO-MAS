@@ -21,6 +21,12 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    currentConfig: 'Configuration: {source}',
+    configSourceShared: 'Shared',
+    configSourceIndependent: 'Independent',
+    configSourceNative: 'Script native',
+    configOverrideEnabled: 'Overrides on',
+    configOverrideDisabled: 'Overrides off',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
@@ -728,7 +734,6 @@ export default {
     executables: 'Executables',
     enabled3: 'Enabled',
     jsonFiles: 'JSON files',
-    unspecified: 'Unspecified',
     keyword2: 'Keyword',
     include: 'Include',
     on2: 'On',
@@ -1669,7 +1674,15 @@ export default {
     sourceGithub: 'GitHub',
     cdkStatusIssue:
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
-    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
+    cdkHintRemaining: '{days} day(s) left (expires on {date})',
+    cdkHintLessThanDay: 'Less than 1 day left (expires on {date})',
+    cdkHintExpired: 'The CDK has expired',
+    cdkHintExpiredOn: 'The CDK expired on {date}',
+    cdkHintInvalid: 'Invalid CDK; check that it was entered correctly',
+    cdkHintQuota: "The CDK's download quota for today is used up",
+    cdkHintQuotaRemaining: "The CDK's download quota for today is used up; {remaining}",
+    cdkHintMismatched: 'This CDK type does not match this project',
+    cdkHintBlocked: 'The CDK has been blocked',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',
@@ -2418,7 +2431,7 @@ export default {
     configRestoreUnrestorableTitle: 'This backup cannot be restored',
     configRestoreUnrestorableDesc:
       'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
     configRestoreModeDirect: 'Native',
@@ -2440,7 +2453,7 @@ export default {
       'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
     configSessionDiscardedUnknown:
       'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
@@ -4102,13 +4115,13 @@ export default {
       selectAllUsers: 'Select all',
       clearAllUsers: 'Clear all',
       runScopeTitle: 'Run scope',
-      runScopeExpand: 'Expand',
-      runScopeCollapse: 'Collapse',
       runScopeTip:
         'Unchecked managed scripts and accounts are skipped this run; the selection is kept after the run',
-      runScopeSelected: '{selected}/{total} accounts selected',
+      runScopeSelected: '{selected}/{total} runnable accounts selected',
       runScopeLoading: 'Loading accounts…',
       runScopeNoUsers: 'No account can run',
+      runScopeUserDisabled: 'Disabled',
+      runScopeUserExpired: 'Days used up',
       runScopeLoadFailed: 'Could not load accounts. Retry',
       runScopeRetry: 'Retry',
       stop: 'Stop',
@@ -4116,6 +4129,9 @@ export default {
     },
     log: {
       title: 'Log',
+      theme: 'Log theme',
+      followTheme: 'Follow theme color',
+      saveThemeFailed: 'Could not save the log theme preference',
       follow: 'Follow',
       browse: 'Browse',
       empty: 'No data',

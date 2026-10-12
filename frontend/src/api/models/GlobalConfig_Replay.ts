@@ -24,3 +24,4 @@ export type GlobalConfig_Replay = {
      */
     MaxReplayCount?: (number | null);
 };
+
