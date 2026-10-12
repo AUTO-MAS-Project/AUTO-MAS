@@ -275,7 +275,6 @@ export default {
     configureSrc: 'Configure SRC',
     configureOkWw: 'Configure ok-ww',
     configureWhimbox: 'Configure Whimbox',
-    configurePerUserMaaend: "Edit this account's own configuration in the MaaEnd window.",
     restartingAutoMasStops: 'Restarting AUTO-MAS stops whatever is running. Restart anyway?',
     restartBackendUpdate: 'Restart the backend to update',
     resetEverything: 'Reset everything',
@@ -4394,10 +4393,7 @@ export default {
       saveFailedRaw: 'Could not save the {label} configuration',
       maaEndUnsupported:
         'This controller does not support shared MaaEnd configuration — use the independent configuration entry instead',
-      maaEndUserStarted: 'Started the MaaEnd configuration for {script} / {user}',
       maaEndScriptStarted: 'Started the MaaEnd configuration for {script}',
-      maaEndUserTimeout: 'The configuration session for {script} / {user} timed out',
-      maaEndUserSaved: 'Configuration for {script} / {user} saved',
       okwwStarted: 'Opened the ok-ww settings for {name}',
       okwwStartFailed: 'Could not open the ok-ww settings: {error}',
       okwwSaved: 'Settings for {name} saved',

@@ -278,7 +278,6 @@ export default {
     configureSrc: 'SRC を設定',
     configureOkWw: 'ok-ww を設定',
     configureWhimbox: 'Whimbox を設定',
-    configurePerUserMaaend: 'MaaEnd の設定画面で、このアカウント専用の独立設定を編集します。',
     restartingAutoMasStops: 'AUTO-MAS を再起動すると実行中のタスクが停止します。再起動しますか？',
     restartBackendUpdate: 'バックエンドを再起動して更新',
     resetEverything: 'すべてリセット',
@@ -3762,10 +3761,7 @@ export default {
       saveFailedRaw: '{label} の設定を保存できませんでした',
       maaEndUnsupported:
         'このコントローラーは共有 MaaEnd 設定に対応していません。独立設定の入口をご利用ください',
-      maaEndUserStarted: '{script} / {user} の MaaEnd 設定を開始しました',
       maaEndScriptStarted: '{script} の MaaEnd 設定を開始しました',
-      maaEndUserTimeout: '{script} / {user} の設定セッションがタイムアウトしました',
-      maaEndUserSaved: '{script} / {user} の設定を保存しました',
       okwwStarted: '{name} の ok-ww 設定を開きました',
       okwwStartFailed: 'ok-ww の設定を開けませんでした: {error}',
       okwwSaved: '{name} の設定を保存しました',
