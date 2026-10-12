@@ -23,10 +23,12 @@
 
 import asyncio
 import os
+import re
+import time
 from contextlib import suppress
 from typing import Optional
 
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, HTTPException, Request, Response, WebSocket
 from pydantic import BaseModel, Field
 
 from app.api.ws_command import ws_command
@@ -36,6 +38,15 @@ from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import *
 from app.services import System
 from app.utils import get_logger, is_backend_dev_mode, is_supervised
+from app.utils.supervision_auth import (
+    CHALLENGE_HEADER,
+    PROOF_HEADER,
+    SECRET_ENVIRONMENT,
+    TIMESTAMP_HEADER,
+    CloseVerifier,
+    health_proof,
+    valid_secret,
+)
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -85,14 +96,14 @@ def _resolve_injected_identity(env_name: str) -> str | None:
     response_model=BackendHealthOut,
     status_code=200,
 )
-async def get_health(request: Request) -> BackendHealthOut:
+async def get_health(request: Request) -> BackendHealthOut | Response:
     """返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
 
     version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
     与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
     """
 
-    return BackendHealthOut(
+    result = BackendHealthOut(
         ready=True,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
         backgroundError=getattr(request.app.state, "background_error", None),
@@ -104,6 +115,23 @@ async def get_health(request: Request) -> BackendHealthOut:
         or Config.VERSION,
         commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
     )
+
+    challenge = request.headers.get(CHALLENGE_HEADER, "")
+    if isinstance(challenge, str) and challenge:
+        secret = os.getenv(SECRET_ENVIRONMENT, "")
+        if (
+            not is_supervised()
+            or not valid_secret(secret)
+            or re.fullmatch(r"[0-9a-f]{32}", challenge) is None
+        ):
+            raise HTTPException(status_code=403, detail="监督身份验证失败")
+        body = result.model_dump_json().encode("utf-8")
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={PROOF_HEADER: health_proof(secret, challenge, body)},
+        )
+    return result
 
 
 @router.get(
@@ -175,14 +203,42 @@ async def _shutdown_backend() -> None:
         Config.server.should_exit = True
 
 
-@ws_command("core.close")
+_close_verifier = CloseVerifier()
+
+
 @router.post(
     "/close",
+    name="close",
     summary="关闭后端程序",
     response_model=OutBase,
     status_code=200,
 )
+async def close_http(request: Request) -> OutBase:
+    """受监督模式只接受监督器签名关闭请求。"""
+    if is_supervised():
+        port_text = os.getenv("AUTO_MAS_SUPERVISED_PORT", "")
+        port = int(port_text) if port_text.isdecimal() and len(port_text) <= 5 else 0
+        if not _close_verifier.verify(
+            os.getenv(SECRET_ENVIRONMENT, ""),
+            request.headers.get(CHALLENGE_HEADER, ""),
+            request.headers.get(TIMESTAMP_HEADER, ""),
+            request.headers.get(PROOF_HEADER, ""),
+            port,
+            int(time.time()),
+        ):
+            raise HTTPException(status_code=403, detail="监督关闭鉴权失败")
+    return await _request_shutdown()
+
+
+@ws_command("core.close")
 async def close() -> OutBase:
+    """受监督后端的关闭由 Runtime 控制通道统一负责。"""
+    if is_supervised():
+        raise HTTPException(status_code=403, detail="请通过 Runtime 关闭受监督后端")
+    return await _request_shutdown()
+
+
+async def _request_shutdown() -> OutBase:
     """关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready"""
 
     global _shutdown_task
