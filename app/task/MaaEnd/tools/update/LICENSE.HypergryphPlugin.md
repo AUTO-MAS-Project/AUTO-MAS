@@ -1,13 +1,13 @@
 # 第三方许可与来源声明
 
-本目录的 `game_update.py`（连同它的两个入口 `MaaEndManager._ensure_game_client_updated`
+本目录的更新实现（不含 `package_index.py`）（连同它的两个入口 `MaaEndManager._ensure_game_client_updated`
 与 `MaaEnd/Update.py`，以及 `app/utils/constants.py` 里的 `ENDFIELD_SERVER_PRESETS`）按
 下列项目的公开源码所描述的流程与协议用 Python **重新实现**：差量落地的顺序与编排、更新
 接口的响应与清单字段语义、渠道参数取自它的公开源码，代码与文档中不包含该项目的源文件
 副本，也不使用它的任何二进制。本模块与后续改动由 AUTO-MAS 按 AGPL-3.0-or-later 发布。
 
 下列项目采用 MIT 许可。MIT 要求在所有副本或实质部分中保留版权声明与许可原文，故在此收录
-原文；同一声明也注释在本包入口 `__init__.py` 里，保证任何打包形态下声明都随代码一起分发。
+原文；同一声明也注释在上级目录的 `__init__.py` 里，保证任何打包形态下声明都随代码一起分发。
 同目录的 `package_index.py` 不在上面这份覆盖范围内：它按 ZIP 文件自身的总表布局向远端发
 `Range` 请求取成员，取自公开的 archives 格式规范，不引用下列项目的实现。
 

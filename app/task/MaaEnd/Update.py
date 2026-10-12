@@ -18,7 +18,7 @@
 
 """脚本配置页「检查更新」的手动入口：一次终末地 PC 客户端差量更新。
 
-走 `tools/game_update.ensure_game_updated` 这条判定链；与自动前置门的区别只在怎么用
+走 `tools/update.ensure_game_updated` 这条判定链；与自动前置门的区别只在怎么用
 那四个状态——自动流程对「判不了」放行 `Skipped`，这里要如实告诉用户没查出结论。
 
 这里说的是**游戏客户端**。`update_takeover.py` 接管的是 MaaEnd 程序自身的更新。
@@ -35,7 +35,7 @@ from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
 
-from .tools.game_update import ensure_game_updated
+from .tools.update import ensure_game_updated
 
 logger = get_logger("终末地客户端更新")
 

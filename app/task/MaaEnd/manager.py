@@ -49,8 +49,8 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
 from .tools.backup_archive import archive_native_backup
-from .tools.game_update import ensure_game_updated
 from .tools.notify import collect_recent_error_images, push_notification
+from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
 logger = get_logger("MaaEnd 调度器")

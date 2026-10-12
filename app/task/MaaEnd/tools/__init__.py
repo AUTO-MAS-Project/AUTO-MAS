@@ -18,12 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-#   第三方许可与来源声明：本目录的 `game_update.py`（连同它的两个入口
+#   第三方许可与来源声明：本目录的 `update/` 中的更新实现（不含 `package_index.py`）（连同它的两个入口
 #   `MaaEndManager._ensure_game_client_updated` 与 `MaaEnd/Update.py`，以及
 #   `app/utils/constants.py` 的 `ENDFIELD_SERVER_PRESETS`）按下列项目公开源码所描述的
 #   流程与协议用 Python 重新实现，代码与文档中不含其源文件副本，也不使用它的任何二进制。
 #   该项目为 MIT 许可；按该许可要求保留版权声明与许可原文如下，全文另见本目录的
-#   LICENSE.HypergryphPlugin.md。
+#   update/LICENSE.HypergryphPlugin.md。
 #
 #   - Hi3Helper.Plugin.Hypergryph  https://github.com/misaka10843/Hi3Helper.Plugin.Hypergryph
 #     依据版本 9d893eba669cb01bb667e16095e6e28bf1ce546b（main，2026-09-12）
