@@ -51,7 +51,6 @@ from .checks import (
     _disk_shortfall,
     _landing_need,
     _release_install_dir,
-    _write_probe,
 )
 from .common import (
     _CONFIG_MEMBER,
@@ -337,10 +336,7 @@ async def _ensure_game_updated(
                         f"再加一份固定余量。{short}",
                     )
 
-            # 核对通过才动游戏目录：先探可写，再退出正在运行的客户端
-            unwritable = _write_probe(install_dir)
-            if unwritable:
-                return GameUpdateResult("NeedManualUpdate", f"{outdated}，{unwritable}")
+            # 核对通过才动游戏目录：先退出正在运行的客户端
             blocked = await _release_install_dir(game_exe)
             if blocked:
                 return GameUpdateResult("NeedManualUpdate", f"{outdated}，{blocked}")

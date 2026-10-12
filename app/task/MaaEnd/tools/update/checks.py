@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import threading
 from collections.abc import Sequence
@@ -110,22 +109,6 @@ def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
         f"{label}所在磁盘余量不足：需要约 {need / 1024**3:.1f} GB，"
         f"当前可用 {free / 1024**3:.1f} GB"
     )
-
-
-def _write_probe(directory: Path) -> str | None:
-    """用临时文件探测目录可写，不猜路径权限或触发无人值守的 UAC 弹窗。"""
-
-    probe = directory / f".mas_write_probe.{os.getpid()}"
-    try:
-        probe.write_bytes(b"")
-    except OSError as error:
-        return f"游戏目录不可写入（{error}），请给当前用户授予该目录写权限后重试"
-    finally:
-        try:
-            probe.unlink()
-        except OSError:
-            pass
-    return None
 
 
 async def _check_baselines(
