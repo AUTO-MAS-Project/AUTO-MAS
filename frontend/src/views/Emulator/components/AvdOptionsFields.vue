@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 魔改 AVD 实例的两个选项：内存、气球。显示固定 720p、不带声卡，不是选项；有没有窗口也不是实例选项：
- * 手动启动带窗口，任务拉起跟静默模式走。新建实例与修改已有实例共用这一组表单项，外层负责提交。
+ * 新建魔改 AVD 实例时的选项：只有内存。显示固定 720p、不带声卡、气球固定开，不是选项；有没有窗口
+ * 也不是实例选项：手动启动带窗口，任务拉起跟静默模式走。已有实例的内存在齿轮「实例设置」里改。
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -32,12 +32,6 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
         :options="memoryOptions"
         style="width: 200px"
         @update:value="(value: number) => update('memoryMb', value)"
-      />
-    </a-form-item>
-    <a-form-item :label="t('emulator2.avd.fieldBalloon')" :extra="t('emulator2.avd.balloonHint')">
-      <a-switch
-        :checked="model.balloon"
-        @update:checked="(value: boolean) => update('balloon', value)"
       />
     </a-form-item>
   </div>

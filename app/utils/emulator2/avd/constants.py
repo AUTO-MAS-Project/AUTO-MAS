@@ -205,8 +205,10 @@ DATA_PARTITION_RANGE_GB = (16, 512)
 #: 显示固定 720p（用户 10-04 定），开机前写进 ``config.ini`` 的 ``hw.lcd.*``，不用 ``wm size``
 #: （运行时覆盖出过小毛病）。即雷电 / MuMu 的默认值，脚本都认。
 SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = 1280, 720, 240
+#: 帧率跟着客体 60 Hz 走，没有可设的项；批量设置里选 60 帧当作没改。
+SCREEN_FPS = 60
 
-#: 空闲页上报（气球）开着时，开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
+#: 空闲页上报（气球，固定开启），开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
 BALLOON_PAGE_REPORTING_ORDER = 9
 #: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
