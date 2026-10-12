@@ -71,6 +71,8 @@ export function useMaaEndUpdate(getScriptId: () => string) {
 
   const clearSession = () => {
     sessionGeneration += 1
+    // 对账预算跟着会话走：上一轮把快照接口连挂三次，不该让后面每一轮都失去失步恢复
+    resyncRetries = 0
     for (const subscriptionId of updateSession.subscriptionIds) {
       unsubscribe(subscriptionId)
     }
@@ -238,8 +240,11 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       if (disposed || !updateModal.open) {
         // 请求在途的那几百毫秒里用户把窗关了、或直接离开了这个页面：让它隐形跑起来，等于
         // 一整轮「看不见进度、配置又被锁住、按钮还点不动」，页面已经销毁时连进度都没了
-        await stopSession(true)
+        // 只有组件已经没了才把会话收干净：停不下来的话这一轮还在写游戏目录，页面还在就该
+        // 留着 taskId，让他离开这一页时那条 stopSession 还能追上这一轮
+        const stopped = await stopSession(disposed)
         updateModal.running = false
+        if (!disposed && !stopped) message.error(t('edit.endfieldUpdateStopFailed'))
         return
       }
       errored = false
