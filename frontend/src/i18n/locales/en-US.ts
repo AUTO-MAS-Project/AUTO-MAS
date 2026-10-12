@@ -21,6 +21,12 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    currentConfig: 'Configuration: {source}',
+    configSourceShared: 'Shared',
+    configSourceIndependent: 'Independent',
+    configSourceNative: 'Script native',
+    configOverrideEnabled: 'Overrides on',
+    configOverrideDisabled: 'Overrides off',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
