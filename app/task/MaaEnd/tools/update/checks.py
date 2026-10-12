@@ -96,12 +96,8 @@ def _disk_shortfall(directory: Path, need: int, label: str) -> str | None:
 
     暂存卷收尾会删除，日志保留核对时占用，便于与用户事后查看的余量对账。"""
 
-    probe = directory
-    while not probe.exists() and probe.parent != probe:
-        # 目录还没建出来时向上找到挂载点，否则 disk_usage 直接抛错
-        probe = probe.parent
     try:
-        free = shutil.disk_usage(probe).free
+        free = shutil.disk_usage(directory).free
     except OSError as error:
         return f"无法确认{label}所在磁盘的余量：{error}"
     if free >= need:

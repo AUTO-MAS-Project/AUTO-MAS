@@ -100,14 +100,16 @@ def volume_spans(
     """把拼接流上的一个区间拆成「第几卷、卷内偏移、这段多长」。
 
     整包是单条 zip 的纯字节切片，逻辑坐标因此会跨卷；跨卷就得按卷各取一次。
+
+    体积为 0 的卷不需要单独拦：`bisect_right` 在同值起点里取最后一个，落点必定是有长度
+    的那一卷，而 `at < cursor` 保证末尾的空卷选不中，每次 `take` 至少为 1。清单里出现 0
+    体积卷也只会在上面那道越界检查里判掉，不会走到这里少算一整卷。
     """
     if offset < 0 or length < 0:
         raise ValueError(f"区间不可用: offset={offset} length={length}")
     starts: list[int] = []
     cursor = 0
     for size in sizes:
-        if size <= 0:
-            raise ValueError(f"分卷体积必须为正，实际是 {size}")
         starts.append(cursor)
         cursor += size
     if offset + length > cursor:
