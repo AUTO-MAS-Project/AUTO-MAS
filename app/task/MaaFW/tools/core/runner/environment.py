@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import locale
 import logging
 import os
 import re
@@ -48,6 +47,7 @@ from app.task.MaaFW.tools.core.runtime_pool.binding import (
     binding_index_candidates,
     ensure_binding,
     exact_version_of,
+    mask_url_credentials,
     release_binding,
     resolve_binding_version,
     retain_binding,
@@ -64,6 +64,9 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
     install_cancel_scope,
     is_package_index_offline,
     raise_if_install_cancelled,
+)
+from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
+    read_requirements_file,
 )
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -427,7 +430,8 @@ def prepare_runner_environment(
 def _describe_binding_source(binding: BindingInfo) -> str:
     source = binding.source
     if source.startswith("pypi:"):
-        return f"PyPI/镜像 {source[len('pypi:') :]}"
+        # 已装好的 binding 清单里可能还记着带 user:pw@ 的索引地址（打码之前装的）
+        return f"PyPI/镜像 {mask_url_credentials(source[len('pypi:') :])}"
     if source.startswith("github-source:"):
         return f"GitHub 源码 {source[len('github-source:') :]}"
     if source.startswith("harvest"):
@@ -1415,42 +1419,10 @@ def prefer_active_venv_site_packages(
 
 
 def _load_requirements(project_path: Path) -> list[str]:
-    return read_requirement_lines(project_path / "requirements.txt") or []
-
-
-_REQUIREMENT_INLINE_COMMENT_RE = re.compile(r"(^|\s)#.*$")
-
-
-def read_requirement_lines(requirements_path: Path) -> list[str] | None:
-    """读 requirements.txt 里的依赖行；文件不在时返回 None。
-
-    按 pip 的写法容错：去掉 UTF-8 BOM、空白之后的 `` #`` 行内注释；``-r`` / ``--index-url``
-    这类选项行不是依赖，跳过（原样当依赖传给 pip 只会报 Invalid requirement）。
-    不是 UTF-8 时按系统编码再读一次，还读不出就报清楚是哪个文件。
-    """
-
-    try:
-        data = requirements_path.read_bytes()
-    except FileNotFoundError:
-        return None
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        fallback = locale.getpreferredencoding(False) or "utf-8"
-        try:
-            text = data.decode(fallback)
-        except (UnicodeDecodeError, LookupError) as exc:
-            raise RuntimeError(
-                f"项目 requirements.txt 的编码无法识别（不是 UTF-8，也不是系统编码 "
-                f"{fallback}），请转成 UTF-8: {requirements_path}"
-            ) from exc
-    packages: list[str] = []
-    for raw_line in text.splitlines():
-        line = _REQUIREMENT_INLINE_COMMENT_RE.sub("", raw_line).strip()
-        if not line or line.startswith("-"):
-            continue
-        packages.append(line)
-    return packages
+    # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
+    # 「  # via ...」时也认得出来。
+    parsed = read_requirements_file(project_path / "requirements.txt")
+    return list(parsed.requirements) if parsed is not None else []
 
 
 def _normalized_sys_path(path: str) -> str:

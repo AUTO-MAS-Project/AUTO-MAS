@@ -1398,8 +1398,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         agent_env_root: Path | None = None,
         store_cache: bool = True,
         proxy_url: str | None = None,
+        lenient_health_check: bool = False,
+        health_warnings_out: list[str] | None = None,
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
+
+        ``health_warnings_out``：给了就把「报错照跑」放行的原因追加进去，调用方据此决定收尾
+        那句日志怎么写（返回值的含义不变，其它调用方不受影响）。
 
         先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
         几个 stat，直接跳过。
@@ -1411,6 +1416,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         ``proxy_url`` 是脚本级解析出来的代理（``None`` 表示没解析过，沿用
         全局），给池里的 uv / pip 与 agent venv 的安装用。
+
+        ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只有运行前 / 运行后的
+        环境确认（``_ensure_project_environment``）传；预检、手动更新、同组传播后的确认都不传
+        （缺省严格，见 ``agent_env.prepare_agent_envs``）。放行过的这次不写环境缓存、不记
+        ``envConfirmedFor``：下次照样重查，编辑页也不会因此显示「已就绪」。
         """
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
@@ -1474,7 +1484,20 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 import_paths=[SOURCE_ROOT],
                 send_log=send_log,
                 cancel_event=cancel_event,
+                lenient_health_check=lenient_health_check,
             )
+        agents = result.get("agents")
+        health_warnings = (
+            agents.get("healthWarnings") if isinstance(agents, dict) else None
+        )
+        if health_warnings:
+            if health_warnings_out is not None:
+                health_warnings_out.extend(str(item) for item in health_warnings)
+            send_log(
+                "运行环境检查没通过、按「报错照跑」放行，这次不记为「运行环境已就绪」，"
+                "下次运行前再查"
+            )
+            return True
         if store_cache:
             store_prepared_environment(
                 project_path,
@@ -1513,6 +1536,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         cancel_event = threading.Event()
         # 装依赖走的代理与更新下载同一份：脚本级优先，留空跟随全局。
         proxy_url, _proxy = self._resolve_update_proxy()
+        health_warnings: list[str] = []
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
                 self._prepare_project_environment_sync,
@@ -1520,6 +1544,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 cancel_event,
                 self._threadsafe_update_log(),
                 proxy_url=proxy_url,
+                # 运行时口径：自带 Python 检查没通过也照常跑（报错照跑），见上面的函数说明
+                lenient_health_check=True,
+                health_warnings_out=health_warnings,
             )
         )
 
@@ -1562,11 +1589,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 没变化时只留一行日志，别为「什么都没做」弹通知。刚提交过更新时这里
         # 必然是「重新准备」：预检不写环境缓存（D6），提交后指纹必 miss，再走
         # 一遍 prepare 只是池命中 + 解释器 ABI 探针，几秒。
-        self._append_update_log(
-            f"{phase_zh}运行环境已重新准备完成"
-            if prepared
-            else "项目文件没有变化，运行环境沿用上次的准备结果"
-        )
+        if prepared and health_warnings:
+            # 与准备里那行「检查没通过、按报错照跑放行」一致，不说「准备完成」
+            message = f"{phase_zh}运行环境已重新准备（检查没通过，照常启动）"
+        elif prepared:
+            message = f"{phase_zh}运行环境已重新准备完成"
+        else:
+            message = "项目文件没有变化，运行环境沿用上次的准备结果"
+        self._append_update_log(message)
 
     async def main_task(self) -> None:
         self.check_result = await self.check()
