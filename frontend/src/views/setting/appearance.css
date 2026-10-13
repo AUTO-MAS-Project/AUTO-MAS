@@ -14,8 +14,8 @@
   background: var(--ant-color-bg-layout);
 }
 
-.appearance-modal {
-  top: 32px;
+.appearance-modal .ant-modal {
+  padding-bottom: 0;
 }
 
 .appearance-modal .ant-modal-content {
