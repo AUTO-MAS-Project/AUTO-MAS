@@ -69,7 +69,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     switch_or_confirm_in_progress,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    is_project_updating,
     release_project_path,
+    release_project_path_sync,
     try_reserve_project_path,
 )
 from app.task.MaaFW.tools.embedded.signal_notice import (
@@ -133,6 +135,21 @@ _CDK_STATUS_FALLBACK_ZH = {
     "blocked": "Mirror 酱 CDK 已被封禁",
 }
 
+# 运行前检查拿不到本视图预约时的整脚本跳过：项目被同项目的更新 / 编辑页操作暂时占着，
+# 不是故障，脚本记「跳过」、发 warning（与调度层「已被其他任务调度器锁定」同一口径）。
+SKIP_SWITCHING = (
+    "同项目的另一个脚本刚更新了项目，本脚本正在切换到新版本，已跳过本次启动，"
+    "稍后重新开始即可"
+)
+SKIP_UPDATING = (
+    "这个脚本的项目正在更新（可能是编辑页里的操作），已跳过本次启动，完成后重新开始即可"
+)
+SKIP_OCCUPIED = (
+    "这个脚本的项目正在更新或准备运行环境（可能是编辑页里的操作），已跳过本次启动，"
+    "完成后重新开始即可"
+)
+_BENIGN_SKIPS = frozenset({SKIP_SWITCHING, SKIP_UPDATING, SKIP_OCCUPIED})
+
 NoticeLevel = Literal["info", "warning"]
 
 
@@ -162,6 +179,14 @@ def _optional_byte_count(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number >= 0 else None
+
+
+def _release_after_work(key: str, task: asyncio.Task[Any]) -> None:
+    """停止后交出去的预约：工作线程收完再放；顺手取走异常，免得报「never retrieved」。"""
+
+    if not task.cancelled():
+        task.exception()
+    release_project_path_sync(key)
 
 
 def describe_update_result(
@@ -387,6 +412,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 本轮开始时刻：收尾时只清在它之前轮转出来的原生日志备份。
         self._round_started_at = time.time()
         self._view_maintained = False
+        # 收尾组同步切了版本、还欠一次运行环境确认：放到代理结果推送之后再做。
+        self._post_run_env_confirm = False
+        # 收尾（final_task）受保护：外层取消被基类挡住、一直等收尾跑完。运行后更新与
+        # 环境确认都在收尾里，用户这时点停止只能靠这个事件让它们提前停下
+        # （``_on_finalize_cancel_requested`` 置位）。
+        self._stop_requested = asyncio.Event()
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。
@@ -436,56 +467,40 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 视图正在换版本，或刚被兄弟脚本的更新切过去、后台还在确认运行环境
                 # （预约在确认线程手里）：整个脚本一句话跳过，别让每个用户在
                 # runner_task 里各报一遍「同一路径正在运行或更新」。
-                return "正在切换版本，已跳过本次启动"
+                return SKIP_SWITCHING
+            if is_project_updating(embedded_project_dir(script_id)):
+                # 编辑页的「执行更新」整段持本视图预约（下载可能几十分钟）：放行的话每个
+                # 用户都拿不到预约、各自跳过，脚本却记成「完成」。
+                return SKIP_UPDATING
             if not resolve_maafw_project_root(script_id, script_config).is_dir():
-                return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
+                return SKIP_OCCUPIED
             rebuilt = None
         else:
+            # 导入 / 组同步 / 投影补齐都在工作线程里改视图：用户这时点停止，
+            # ``await asyncio.to_thread`` 会立刻抛出，线程却还在写 staging、换入视图。
+            # 预约必须等线程收完再放，否则马上重开、编辑页准备环境或手动更新都能拿到
+            # 预约，同时动同一棵视图。与 ``_ensure_project_environment`` 同一套：shield +
+            # 有限宽限，等不到就把释放交给任务完成回调；令牌让后面的步骤不再开始。
+            stop = threading.Event()
+            work = asyncio.create_task(
+                self._prepare_view_for_run(script_id, script_config, stop)
+            )
+            handed_off = False
             try:
-                # 在工作线程里回调：必须走线程安全的转发，直接给 _append_update_log
-                # 会在写 script_info.log 时撞上「no running event loop」。
-                rebuilt = await asyncio.to_thread(
-                    ensure_embedded_copy,
-                    script_id,
-                    script_config,
-                    send_log=self._threadsafe_update_log(),
-                    # 来源目录已删、副本又没了：可以从同来源的其它脚本克隆
-                    siblings=[
-                        (str(uid), config)
-                        for uid, config in Config.ScriptConfig.items()
-                        if isinstance(config, MaaFWConfig)
-                    ],
-                    # 开发者模式：比一次来源目录，变了就重新导入（日志一行说清）；
-                    # 刚关掉时回到 Update.Channel 的组。
-                    follow_source_check=True,
-                )
-                # 组同步（§3.1 第 9 步）：组里已是别的版本（兄弟更新了、改了渠道）就在
-                # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
-                # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
-                await self._sync_view_to_group("运行前", reservation_held=True)
-                # 旧投影规则建的载荷按当前规则补齐（同组只查一次，从不抛）：补齐后本视图
-                # 与同组空闲脚本切过去，下面的 envConfirmedFor 据此补一次运行环境确认。
-                # 同项目正在更新时不等锁，这次不查。开发者模式下视图按当前规则从来源导入，
-                # 也不做项目更新，不查。
-                if not follow_source_enabled(script_config):
-                    proxy_url, proxy = self._resolve_update_proxy()
-                    await heal_projection(
-                        script_id,
-                        channel=resolve_update_credentials(script_config).channel,
-                        members=self._group_members,
-                        reservation_held=True,
-                        send_log=self._threadsafe_update_log(),
-                        proxy=proxy,
-                        proxy_url=proxy_url,
-                        shell_hint=shell_hint_from_report(script_config),
-                        script_name=str(self.script_info.name or ""),
-                        lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
+                rebuilt = await asyncio.shield(work)
+            except asyncio.CancelledError:
+                stop.set()
+                with suppress(BaseException):
+                    await asyncio.wait_for(
+                        asyncio.shield(work),
+                        timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
                     )
-                self._env_confirm_needed = await asyncio.to_thread(
-                    lambda: env_confirm_pending(
-                        read_view_marker(embedded_project_dir(script_id))
+                if not work.done():
+                    handed_off = True
+                    work.add_done_callback(
+                        functools.partial(_release_after_work, import_key)
                     )
-                )
+                raise
             except EmbeddedProjectError as exc:
                 return str(exc)
             except Exception as exc:  # noqa: BLE001 - OSError 之类也要给用户一句话
@@ -494,7 +509,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 )
                 return f"MFW 项目导入失败：{exc}"
             finally:
-                await release_project_path(import_key)
+                if not handed_off:
+                    await release_project_path(import_key)
         if rebuilt is not None:
             await Config.update_script(
                 script_id,
@@ -545,6 +561,69 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return "Pass"
 
+    async def _prepare_view_for_run(
+        self,
+        script_id: str,
+        script_config: MaaFWConfig,
+        stop: threading.Event,
+    ) -> dict[str, Any] | None:
+        """运行前检查里持预约的那一段：缺视图就导入、组同步、投影补齐、读确认标记。
+
+        返回 ``ensure_embedded_copy`` 的导入结果（没导入为 None）。``stop`` 是用户停止
+        时置位的令牌：正在跑的那一步做完，后面的步骤不再开始。
+        """
+
+        # 在工作线程里回调：必须走线程安全的转发，直接给 _append_update_log
+        # 会在写 script_info.log 时撞上「no running event loop」。
+        rebuilt = await asyncio.to_thread(
+            ensure_embedded_copy,
+            script_id,
+            script_config,
+            send_log=self._threadsafe_update_log(),
+            # 来源目录已删、副本又没了：可以从同来源的其它脚本克隆
+            siblings=[
+                (str(uid), config)
+                for uid, config in Config.ScriptConfig.items()
+                if isinstance(config, MaaFWConfig)
+            ],
+            # 开发者模式：比一次来源目录，变了就重新导入（日志一行说清）；
+            # 刚关掉时回到 Update.Channel 的组。
+            follow_source_check=True,
+        )
+        if stop.is_set():
+            return rebuilt
+        # 组同步（§3.1 第 9 步）：组里已是别的版本（兄弟更新了、改了渠道）就在
+        # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
+        # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
+        await self._sync_view_to_group("运行前", reservation_held=True)
+        if stop.is_set():
+            return rebuilt
+        # 旧投影规则建的载荷按当前规则补齐（同组只查一次，从不抛）：补齐后本视图
+        # 与同组空闲脚本切过去，下面的 envConfirmedFor 据此补一次运行环境确认。
+        # 同项目正在更新时不等锁，这次不查。开发者模式下视图按当前规则从来源导入，
+        # 也不做项目更新，不查。
+        if not follow_source_enabled(script_config):
+            proxy_url, proxy = self._resolve_update_proxy()
+            await heal_projection(
+                script_id,
+                channel=resolve_update_credentials(script_config).channel,
+                members=self._group_members,
+                reservation_held=True,
+                send_log=self._threadsafe_update_log(),
+                proxy=proxy,
+                proxy_url=proxy_url,
+                shell_hint=shell_hint_from_report(script_config),
+                script_name=str(self.script_info.name or ""),
+                lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
+                cancel_event=stop,
+            )
+        self._env_confirm_needed = await asyncio.to_thread(
+            lambda: env_confirm_pending(
+                read_view_marker(embedded_project_dir(script_id))
+            )
+        )
+        return rebuilt
+
     async def _resolve_emulator_manager(
         self,
         script_config: MaaFWConfig,
@@ -575,6 +654,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         插件形态下这一步由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后
         注入；树内没有服务注册表，直接实例化服务再走同一个解析函数。
         `_run_maafw` 缺这两个值会直接拒绝运行。
+
+        **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
+        别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
+        循环上整个后端都跟着停住。
         """
 
         from app.task.MaaFW.tools.core.runtime_pool import (
@@ -586,7 +669,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return runtime_pool_route_from_service(MaaFWRuntimePoolService())
 
-    def _build_inner_task(self) -> "MaaFWPluginAutoProxyTask":
+    def _build_inner_task(self, route: Any) -> "MaaFWPluginAutoProxyTask":
+        """``route`` 是 :meth:`_resolve_runtime_pool_route` 的结果，调用方在工作线程里取。"""
+
         # 延迟导入：runner_task 经 runner 包 import maa，导入即打开 DLL。
         from app.task.MaaFW.tools.embedded.runner_task import (
             MaaFWPluginAutoProxyTask,
@@ -603,7 +688,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             project_update_logs=self._take_project_update_logs(),
             signal_tracker=self.signal_tracker,
         )
-        route = self._resolve_runtime_pool_route()
         task.maafw_runtime_pool_root = route.root
         task.maafw_runtime_pool_id = route.pool_id
         return task
@@ -734,6 +818,35 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return report
 
+    def _on_finalize_cancel_requested(self) -> None:
+        """收尾期间用户点了停止：让运行后更新 / 环境确认按停止处理（见 ``_await_or_stop``）。"""
+
+        self._stop_requested.set()
+
+    def _stop_seen(self) -> bool:
+        """用户已经要求停止（停在主任务里，或收尾进行中又点了停止）。"""
+
+        return self.stopped_manually or self._stop_requested.is_set()
+
+    async def _await_or_stop(self, task: asyncio.Future[Any]) -> bool:
+        """等 ``task`` 完成，返回 True；收尾期用户点了停止就提前返回 False。
+
+        与 ``asyncio.shield`` 一样不取消 ``task``；外层取消照常从这里抛
+        ``CancelledError``。收尾里外层取消到不了（基类把它挡在 finalizer 外面），
+        只能靠 ``_stop_requested``。
+        """
+
+        if task.done():
+            return True
+        if self._stop_requested.is_set():
+            return False
+        stop_wait = asyncio.ensure_future(self._stop_requested.wait())
+        try:
+            await asyncio.wait({task, stop_wait}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stop_wait.cancel()
+        return task.done()
+
     def _describe_update_cancel(self) -> tuple[str, float]:
         """按最近的更新阶段给「已中止」的文案和等收尾的上限。
 
@@ -760,7 +873,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
         if stage in ("committed", "completed"):
             # 新版本已登记：不再响应取消，切换约 2 s，做完再返回。
-            return "新版本已登记，正在切换脚本，请稍候", _UPDATE_CANCEL_GRACE_SECONDS
+            return "新版本已就绪，正在切换，请稍候", _UPDATE_CANCEL_GRACE_SECONDS
         # 下载完成之后到登记之前（解压 extracting / 构建 / 预检 / 入库）都在 staging 上，
         # 取消 = 丢掉 staging，没有回滚。解压（条目检查每 500 条、写盘每个条目与每 1 MB 块）
         # 与并入共用库（每个文件）都查令牌，下一个检查点就停；之后删半截目录的耗时随已写出
@@ -822,7 +935,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 否则受限网络下「手动能更、自动不能」。脚本级优先，留空跟随全局；
         # 下载与预检都用触发脚本的这一份。
         proxy_url, proxy = self._resolve_update_proxy()
-        route = self._resolve_runtime_pool_route()
+        route = await asyncio.to_thread(self._resolve_runtime_pool_route)
         failure = precheck_failure if precheck_failure is not None else {}
         script_id = str(self.script_info.script_id)
 
@@ -884,6 +997,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             send_log=send_log,
             core_call=core_call,
             script_name=str(self.script_info.name or ""),
+            # 等谱系锁时也能被停止打断；拿到锁后、联网之前再看一次，停过就不再检查。
+            cancel_event=update_cancel,
         )
 
     def _script_display_name(self, script_id: str) -> str:
@@ -930,7 +1045,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 version = (marker or {}).get("version") or "新版本"
                 if str(switched_by.get("scriptId") or "") == "迁移":
                     self._append_update_log(
-                        f"本视图已于 {at} 在启动期迁移时统一到同组版本 {version}"
+                        f"已于 {at} 在升级迁移时与同项目其他脚本统一到 {version}"
                     )
                 else:
                     name = str(
@@ -939,7 +1054,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                         str(switched_by.get("scriptId") or "")
                     )
                     self._append_update_log(
-                        f"本视图已于 {at} 由脚本「{name}」的更新切到 {version}"
+                        f"已于 {at} 随脚本「{name}」的更新切换到 {version}"
                     )
                 await asyncio.to_thread(clear_switched_by, view)
             # 开发者模式下组是本脚本的私有渠道（latest 就是上次从来源导入的那份）。
@@ -989,10 +1104,17 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 logger.warning(f"MFW 组同步后的运行池对账未能启动：{exc}")
         entry = await asyncio.to_thread(latest_entry, result.lineage, channel)
         by = str((entry or {}).get("by") or "")
-        self._append_update_log(
-            f"{phase_zh}已切到 {result.version}（由脚本「{self._script_display_name(by)}」"
-            f"于 {self._format_at((entry or {}).get('at'))} 更新）"
-        )
+        if by == "迁移":
+            origin = "升级迁移时统一"
+        else:
+            # 这个版本是谁怎么来的：更新得来的说「更新」，选目录导入的说「导入」。
+            kind = str(((entry or {}).get("source") or {}).get("kind") or "")
+            verb = "导入" if kind == "import" else "更新"
+            origin = (
+                f"由脚本「{self._script_display_name(by)}」"
+                f"于 {self._format_at((entry or {}).get('at'))} {verb}"
+            )
+        self._append_update_log(f"{phase_zh}已切到 {result.version}（{origin}）")
         with suppress(Exception):
             await asyncio.to_thread(self._load_interface_model, view, force_reload=True)
         return True
@@ -1010,11 +1132,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         script_id = str(self.script_info.script_id)
         view = embedded_project_dir(script_id)
-        if self._users_completed:
+        if self._users_completed and not self._stop_seen():
             switched = await self._sync_view_to_group("运行后", reservation_held=False)
-            if switched and self._auto_update_mode != "AfterRun":
-                # AfterRun 模式下紧随其后的那次确认已经有了，不重复。
-                await self._ensure_project_environment("AfterRun")
+            # 切了版本要确认一次运行环境（isolated_venv 可能整个重建，分钟级），放到代理
+            # 结果推送之后由 final_task 做，别让它耽误报告；AfterRun 模式下紧随运行后更新
+            # 的那次确认已经有了，不重复。没做成的，标记里 envConfirmedFor 仍欠着，下次
+            # 运行前检查会补。
+            self._post_run_env_confirm = (
+                switched and self._auto_update_mode != "AfterRun"
+            )
         try:
             from app.task.MaaFW.tools.embedded.view_audit import audit_view
 
@@ -1156,21 +1282,33 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 precheck_failure=precheck_failure,
             )
         )
-        try:
-            outcome = await asyncio.shield(update_task)
-            result = outcome.result
-        except asyncio.CancelledError:
+
+        async def abort_update() -> None:
             update_cancel.set()
             text, grace = self._describe_update_cancel()
             self._append_update_log(text)
             # 宽限内没等到也不再拖着关机；线程随子进程结束，其异常在这里
             # 主动取走，免得事件循环报「Task exception was never retrieved」。
+            # 宽限之后还没停下的（比如还在等同项目另一次更新的谱系锁），令牌已置位，
+            # ``run_view_update`` 拿到锁前后都会先看它，不会再去联网检查、取下载地址。
             update_task.add_done_callback(
                 lambda task: None if task.cancelled() else task.exception()
             )
             with suppress(BaseException):
                 await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
+
+        try:
+            finished = await self._await_or_stop(update_task)
+        except asyncio.CancelledError:
+            await abort_update()
             raise
+        if not finished:
+            # 收尾里的运行后更新：外层取消被基类挡住，停止经 _stop_requested 传进来。
+            await abort_update()
+            return
+        try:
+            outcome = update_task.result()
+            result = outcome.result
         except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
             if getattr(exc, "cancelled", False):
@@ -1384,17 +1522,29 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 proxy_url=proxy_url,
             )
         )
-        try:
-            prepared = await asyncio.shield(prepare_task)
-        except asyncio.CancelledError:
+
+        async def abort_prepare() -> None:
             # 置位后正在跑的 uv 子进程会被终止。只等有限时间：等到了就在放开
             # 项目锁之前收干净，等不到也不再拖着关机，线程随子进程结束。
             cancel_event.set()
+            prepare_task.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
             with suppress(BaseException):
                 await asyncio.wait_for(
                     asyncio.shield(prepare_task),
                     timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
                 )
+
+        try:
+            if not await self._await_or_stop(prepare_task):
+                # 收尾里的确认：外层取消被基类挡住，停止经 _stop_requested 传进来。
+                await abort_prepare()
+                self._append_update_log("已中止运行环境确认，下次运行前再确认")
+                return
+            prepared = prepare_task.result()
+        except asyncio.CancelledError:
+            await abort_prepare()
             raise
         except Exception as exc:  # noqa: BLE001 - 准备失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
@@ -1421,11 +1571,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     async def main_task(self) -> None:
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.script_info.status = "异常"
+            benign = self.check_result in _BENIGN_SKIPS
+            self.script_info.status = "跳过" if benign else "异常"
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=self.check_result),
+                data=WSTaskNoticeData(
+                    level="warning" if benign else "error", message=self.check_result
+                ),
             )
             return
 
@@ -1494,7 +1647,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
                 )
-            self.inner_task = self._build_inner_task()
+            route = await asyncio.to_thread(self._resolve_runtime_pool_route)
+            self.inner_task = self._build_inner_task(route)
             self._inner_finalized = False
             try:
                 await self.inner_task.main_task()
@@ -1504,7 +1658,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 await self.inner_task.on_crash(exc)
             finally:
                 await self._finalize_inner_task()
+                self._reclaim_unused_update_logs()
         self._users_completed = True
+
+    def _reclaim_unused_update_logs(self) -> None:
+        """运行前更新的日志交给第一位用户、在它开始运行时并入它的日志落盘；这位用户没进入
+        运行（检查没过、次数用完被跳过……）时那份日志没人写，拿回来交给下一位用户。"""
+
+        inner = self.inner_task
+        if inner is None:
+            return
+        logs = list(getattr(inner, "project_update_logs", None) or [])
+        user_item = getattr(inner, "cur_user_item", None)
+        if not logs or user_item is None or getattr(user_item, "log_record", None):
+            return
+        self.project_update_logs = logs + self.project_update_logs
 
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
@@ -1584,9 +1752,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         finally:
             # 最后一位用户收尾完，副本上的数据才齐；取消与崩溃路径也从这里写回。
             await self._commit_user_data()
+        # 手动停止时还没轮到的用户保留「等待」（与其他专项一致），汇总里算未完成；
+        # 只有正在跑的那位按中断记「异常」。崩溃路径照旧全记「异常」。
         for user in self.script_info.user_list:
-            if user.status in ("等待", "运行"):
+            if user.status == "运行" or (
+                user.status == "等待" and not self.stopped_manually
+            ):
                 user.status = "异常"
+        waiting_users = [
+            user for user in self.script_info.user_list if user.status == "等待"
+        ]
 
         # 脚本终态必须在这里落定：main_task 里只置过「运行」，不置终态的话
         # 任务结束后脚本行会一直停在「运行」（与第一层 manager.py 同一套口径）。
@@ -1603,7 +1778,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             for user in self.script_info.user_list
             if user.status == "跳过" and user.user_id in maintenance_ids
         ]
-        if self.check_result == "Pass" and not error_users:
+        if self.check_result in _BENIGN_SKIPS:
+            # 项目被暂时占着、整脚本跳过：不是故障（main_task 已按「跳过」发过提示）。
+            self.script_info.status = "跳过"
+        elif self.check_result == "Pass" and not error_users and not waiting_users:
             # 全员因维护跳过时不能显示成「完成」
             self.script_info.status = (
                 "跳过" if maintenance_users and not completed_users else "完成"
@@ -1641,13 +1819,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 error_users=error_users,
                 completed_users=completed_users,
                 maintenance_users=maintenance_users,
+                waiting_users=waiting_users,
             )
 
         # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
-        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
-        if self._users_completed and self._auto_update_mode == "AfterRun":
+        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。收尾受保护、外层
+        # 取消到不了这里：推送期间或更新途中用户点了停止，靠 _stop_requested 停下。
+        if not self._users_completed or self._stop_seen():
+            return
+        if self._auto_update_mode == "AfterRun":
             await self._run_project_update("AfterRun")
+            if self._stop_seen():
+                return
             # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+            await self._ensure_project_environment("AfterRun")
+        elif self._post_run_env_confirm:
+            # 收尾组同步切了版本（兄弟脚本在本轮期间更新了）：报告已经发出，再确认环境。
             await self._ensure_project_environment("AfterRun")
 
     async def _push_proxy_report(
@@ -1656,8 +1843,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         error_users: list[UserItem],
         completed_users: list[UserItem],
         maintenance_users: list[UserItem],
+        waiting_users: list[UserItem] | None = None,
     ) -> None:
-        """推送本轮的「代理结果」汇总。"""
+        """推送本轮的「代理结果」汇总。``waiting_users``：手动停止时还没轮到的用户。"""
 
         # 跑完了但队列里有失效任务的用户：状态照常是完成，汇总里算未完成，
         # 这样「仅失败时」推送也会发出来，用户能看到要去处理
@@ -1680,7 +1868,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(completed_users),
             "uncompleted_count": (
-                len(error_users) + len(maintenance_users) + len(attention_users)
+                len(error_users)
+                + len(maintenance_users)
+                + len(attention_users)
+                + len(waiting_users or [])
             ),
             # 失效任务每个用户一行跟在结果后面：通用模板没有单独的块，结果框按原样换行
             "result": "\n\n".join(
