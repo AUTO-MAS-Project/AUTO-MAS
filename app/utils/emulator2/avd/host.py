@@ -504,6 +504,25 @@ async def run_adb(
     return code, output
 
 
+async def run_adb_bytes(
+    root: str | Path,
+    *args: str,
+    serial: str | None = None,
+    timeout: float = ADB_TIMEOUT,
+) -> tuple[int, bytes, str]:
+    """同 :func:`run_adb`，但标准输出按原始字节返回（``exec-out screencap -p`` 这类二进制输出），
+    标准错误单独解码返回：``(返回码, 输出字节, 错误文本)``。**不抛异常。**"""
+    code, stdout, stderr = await _run_adb_raw(
+        root, *args, serial=serial, timeout=timeout
+    )
+    if code != 0 and serial and device_missing(serial, stderr):
+        if await reregister_emulator(root, serial):
+            code, stdout, stderr = await _run_adb_raw(
+                root, *args, serial=serial, timeout=timeout
+            )
+    return code, stdout, stderr
+
+
 async def _run_adb_once(
     root: str | Path,
     *args: str,

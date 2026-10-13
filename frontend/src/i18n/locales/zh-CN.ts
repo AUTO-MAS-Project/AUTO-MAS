@@ -3034,7 +3034,7 @@ export default {
       root: '根目录',
       rootPlaceholder: '选择或输入模拟器内测包解压后的文件夹，实例也放在这里',
       check: '检查',
-      m9aOnly: '魔改 AVD 目前只支持 M9A',
+      unsupportedScript: '魔改 AVD 目前只支持 M9A 和 MAA',
       prechecks: '电脑检查',
       precheck: {
         ok: '通过',

@@ -48,7 +48,13 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator
+from app.task.emulator_core import (
+    close_emulator,
+    mod_avd_open_kwargs,
+    resolve_device_ref,
+    resolve_host_adb,
+    script_process_env,
+)
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
@@ -69,6 +75,13 @@ from app.utils.constants import (
     MAA_TASKS_ZH,
     UTC4,
     game_now,
+)
+from app.utils.emulator2.avd.components import root_from_manager_exe
+from app.utils.emulator2.avd.constants import console_port as avd_console_port
+from app.utils.emulator2.avd.maa_shim import (
+    apply_maa_avd_settings,
+    ensure_mumu_shim,
+    screencap_fallback_status,
 )
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import mark_native_config_injected, read_file, write_file
@@ -1268,6 +1281,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         ARKNIGHTS_PACKAGE_NAME[
                             self.cur_user_config.get("Info", "Server")
                         ],
+                        # MAA 能用魔改 AVD（截图走假 MuMu 通道，见 _configure_maa_runtime）
+                        **mod_avd_open_kwargs(self.emulator_manager, allowed=True),
                     )
                     self.emulator_info = emulator_info
                 except Exception as e:
@@ -1325,7 +1340,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
-                await self.maa_process_manager.open_process(self.maa_exe_path)
+                await self.maa_process_manager.open_process(
+                    self.maa_exe_path, env=await self._maa_process_env()
+                )
                 logger.info(
                     f"MAA 进程已创建: {self.maa_exe_path} - "
                     f"PID: {self.maa_process_manager.main_pid}"
@@ -2286,6 +2303,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 生息演算、用户自定义任务等)不透传带回——用户自定义任务队列只在原生
         # 来源存在(MAS 零写入, 安装目录原生配置即现场)。
 
+    def _resolve_avd_device(self) -> tuple[Path, int] | None:
+        """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。"""
+        device_ref = resolve_device_ref(
+            self.emulator_manager, self.script_config.get("Emulator", "Index")
+        )
+        if device_ref is None or device_ref.emulator_type != "avd":
+            return None
+        return (
+            root_from_manager_exe(device_ref.manager_path),
+            avd_console_port(device_ref.native_index),
+        )
+
+    async def _maa_process_env(self) -> dict[str, str] | None:
+        """MAA 进程的环境变量。魔改 AVD 实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
+        server（``scriptAdbServerPort``，默认 20049），不落到 5037；其余模拟器返回 ``None``，
+        照旧继承 MAS 的环境。"""
+        return await script_process_env(
+            self.emulator_manager, self.script_config.get("Emulator", "Index")
+        )
+
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
     ) -> None:
@@ -2306,6 +2343,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
             default_set["Connect.Address"] = emulator_info.adb_address
             current_gui.setdefault("ConnectSettings", {})["Address"] = (
                 emulator_info.adb_address
+            )
+
+        # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
+        # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
+        avd = self._resolve_avd_device()
+        self._avd_screencap_guard = avd is not None
+        if avd is not None:
+            avd_root, avd_console = avd
+            ensure_mumu_shim(avd_root)
+            current_gui["ConnectSettings"] = apply_maa_avd_settings(
+                avd_root, avd_console, default_set, current_gui.get("ConnectSettings")
+            )
+            logger.info(
+                f"魔改 AVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
             )
 
         post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
@@ -2524,7 +2575,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             await self._collect_cultivate_archive(log)
 
-        if "未选择任务" in log:
+        # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，用户 09-26 定「不如不做」）
+        avd_fallback = (
+            screencap_fallback_status(log)
+            if getattr(self, "_avd_screencap_guard", False)
+            else None
+        )
+        if avd_fallback is not None:
+            self.cur_user_log.status = avd_fallback
+        elif "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
@@ -2630,12 +2689,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 not_before=self.log_start_time,
             )
             if shot is None:
+                # 魔改 AVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）
+                host_adb = await resolve_host_adb(self)
                 shot = await asyncio.wait_for(
                     capture_current_screen(
                         adb_path=self.emulator_manager.get_adb_path(),
                         adb_address=self.emulator_info.adb_address
                         if self.emulator_info is not None
                         else "",
+                        png_reader=host_adb.screencap_png
+                        if host_adb is not None
+                        else None,
                     ),
                     timeout=60,
                 )

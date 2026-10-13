@@ -25,9 +25,9 @@
 
 from dataclasses import dataclass
 
-#: 魔改 AVD 目前只给 M9A 用（特调声明 ``supports_mod_avd``，见 MaaFW ``flavor.py``）：其它脚本选了
-#: 魔改 AVD 设备时，保存与运行时都用这句话拒绝，不走没测过的路。
-MOD_AVD_M9A_ONLY_MESSAGE = "魔改 AVD 目前只支持 M9A"
+#: 魔改 AVD 目前只给 M9A（特调声明 ``supports_mod_avd``，见 MaaFW ``flavor.py``）和 MAA 用：其它脚本
+#: 选了魔改 AVD 设备时，保存与运行时都用这句话拒绝，不走没测过的路。
+MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 M9A 和 MAA"
 
 #: 端口段：原生索引 i → 控制台 ``20000 + 10*i``，adb ``+1``，gRPC ``+2``。
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
@@ -56,6 +56,8 @@ AVD_NAME_PREFIX = "mas_"
 SDK_DIR = "sdk"
 AVD_DIR = "avd"
 COMPONENTS_DIR = "components"
+#: MAA 截图用的假 MuMu 目录（``<根>\mumu-shim\shell\sdk\external_renderer_ipc.dll``，见 ``maa_shim.py``）。
+MUMU_SHIM_DIR = "mumu-shim"
 METADATA_FILE = "mas-avd.json"
 #: 模拟器日志、客体 logcat。
 LOGS_DIR = "logs"
@@ -194,7 +196,7 @@ CPU_CHOICES = (2, 4, 6)
 DEFAULT_MEMORY_MB = 6144
 DEFAULT_CPU = 6
 #: 游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
-#: 魔改 AVD 目前只支持 M9A，只列 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
+#: 只列实测过内存的 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
 RECOMMENDED_MEMORY_MB: dict[str, int] = {
     "com.shenlan.m.reverse1999": 4096,
 }
