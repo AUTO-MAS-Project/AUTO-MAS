@@ -996,7 +996,6 @@ export default {
     couldNotPickFile: '选择文件失败',
     addNoteAboutThis: '为账号添加备注信息',
     taskConfiguration: '任务配置',
-    readInterfaceFirstThen: '选择要跳过的任务（可多选）',
     enabled: '启用状态',
     whetherThisUserEnabled: '是否启用该账号',
     noActiveConfigurationSession: '未找到活动的配置会话',

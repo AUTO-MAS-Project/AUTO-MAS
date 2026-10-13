@@ -954,7 +954,6 @@ export default {
     couldNotPickFile: 'ファイルを選択できませんでした',
     addNoteAboutThis: 'このアカウントにメモを付けます',
     taskConfiguration: 'タスク設定',
-    readInterfaceFirstThen: 'スキップするタスクを選択（複数可）',
     enabled: '有効状態',
     whetherThisUserEnabled: 'このアカウントを有効にするかどうか',
     noActiveConfigurationSession: '有効な設定セッションがありません',

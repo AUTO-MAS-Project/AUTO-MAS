@@ -1021,7 +1021,6 @@ export default {
     couldNotPickFile: 'Could not pick the file',
     addNoteAboutThis: 'Add a note about this account',
     taskConfiguration: 'Task configuration',
-    readInterfaceFirstThen: 'Pick tasks to skip (multiple allowed)',
     enabled: 'Enabled',
     whetherThisUserEnabled: 'Whether this account is enabled',
     noActiveConfigurationSession: 'No active configuration session',
