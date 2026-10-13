@@ -48,17 +48,24 @@
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
+          :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
+          :disabled="planOperationPending"
           @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event"
+          @update:current-mode="onModeChange"
           @update:rotate-days="handleRotateDaysChange"
           @update:view-mode="viewMode = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange"
         >
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"
+            ref="planTable"
+            v-bind="
+              currentPlan?.type === PLAN_CONFIG_TYPES.BAAH
+                ? { interactionDisabled: planOperationPending }
+                : {}
+            "
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
@@ -74,7 +81,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
@@ -86,6 +93,7 @@ import {
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
+  PLAN_CONFIG_TYPES,
   isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
@@ -126,6 +134,15 @@ const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
+const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
+const planOperationPending = ref(false)
+const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+
+onBeforeRouteLeave(() => canLeaveTable())
+onBeforeRouteUpdate(
+  (to, from) =>
+    to.query.planId === from.query.planId || (!planOperationPending.value && canLeaveTable())
+)
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -193,6 +210,8 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 }
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -229,10 +248,14 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 const handleRemovePlan = async (planId: string) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -255,11 +278,17 @@ const handleRemovePlan = async (planId: string) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (planId: string, changes: Record<string, any>): Promise<boolean> => {
+const savePlanField = async (
+  planId: string,
+  changes: Record<string, any>,
+  onError?: PlanChangeOptions['onError']
+): Promise<boolean> => {
   if (!planId) {
     return false
   }
@@ -271,6 +300,7 @@ const savePlanField = async (planId: string, changes: Record<string, any>): Prom
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存计划字段失败: ${errorMsg}`)
+    onError?.(errorMsg)
     return false
   }
 }
@@ -308,7 +338,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes)
+  const success = await savePlanField(planId, changes, options?.onError)
 
   if (!success) {
     return false
@@ -350,6 +380,7 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
+  if (planOperationPending.value || !canLeaveTable()) return
 
   try {
     // 立即切换到新计划
@@ -453,19 +484,31 @@ const finishEditPlanName = async () => {
   }
 }
 
-const onModeChange = async () => {
-  // 只发送修改的字段
-  await handlePlanChange('Info.Mode', currentMode.value)
+const onModeChange = async (mode: PlanMode) => {
+  if (mode === currentMode.value || planOperationPending.value || !canLeaveTable()) return
+  const previous = currentMode.value
+  planOperationPending.value = true
+  currentMode.value = mode
+  try {
+    const saved = await handlePlanChange('Info.Mode', mode)
+    if (!saved) currentMode.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
 }
 
 /** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
 const handleRotateDaysChange = async (days: number) => {
+  if (days === currentRotateDays.value || planOperationPending.value || !canLeaveTable()) return
   const previous = currentRotateDays.value
+  planOperationPending.value = true
   currentRotateDays.value = days
 
-  const saved = await handlePlanChange('Info.RotateDays', days)
-  if (!saved) {
-    currentRotateDays.value = previous
+  try {
+    const saved = await handlePlanChange('Info.RotateDays', days)
+    if (!saved) currentRotateDays.value = previous
+  } finally {
+    planOperationPending.value = false
   }
 }
 
@@ -575,8 +618,7 @@ watch(
     if (!newPlanId) return
     const target = planList.value.find(p => p.id === newPlanId)
     if (target && target.id !== activePlanId.value) {
-      activePlanId.value = target.id
-      await loadPlanData(activePlanId.value)
+      await onPlanChange(target.id)
     }
   }
 )
