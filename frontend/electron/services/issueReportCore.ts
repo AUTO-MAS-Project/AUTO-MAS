@@ -457,6 +457,57 @@ export function addDiagnosticFile(
   }
 }
 
+/**
+ * 按原文收一个文本文件，只把用户主目录换成 <HOME>、给推送地址里的密钥打码，不按键名打码。
+ * 给项目自带的声明文件用（MFW 的 interface.json）：里面的 path 是项目内的相对路径，是排查资源
+ * 加载的关键，按键名规则会被整段换成 ***；带注释的 JSONC 走文本规则还会被改坏。
+ * 放不下时退回 addDiagnosticFile 的截断与脱敏。
+ */
+export function addVerbatimTextFile(
+  state: CollectorState,
+  sourcePath: string,
+  archivePath: string
+): void {
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(sourcePath)
+  } catch (error) {
+    logger.debug(`读取诊断文件失败: ${sourcePath}, ${String(error)}`)
+    return
+  }
+  if (!stat.isFile()) {
+    return
+  }
+
+  const storedLimit = Math.min(entryLimit(state), archiveLimit(state) - state.archiveBytes)
+  if (stat.size > storedLimit) {
+    addDiagnosticFile(state, sourcePath, archivePath)
+    return
+  }
+  let content: Buffer
+  try {
+    let text = maskUrlSecrets(fs.readFileSync(sourcePath, 'utf-8'))
+    const homePath = os.homedir()
+    if (homePath) {
+      // 原文是 JSON：Windows 路径写成反斜杠加倍的转义形式，也可能写成正斜杠，三种都换。
+      // 先换最长的转义形式，免得原样形式先吃掉其中一段
+      const variants = [homePath.replace(/\\/g, '\\\\'), homePath, homePath.replace(/\\/g, '/')]
+      for (const variant of [...new Set(variants)]) {
+        text = text.split(variant).join('<HOME>')
+      }
+    }
+    content = Buffer.from(text, 'utf-8')
+  } catch (error) {
+    addSkippedEntry(state, archivePath, stat.size, `读取文本文件失败: ${String(error)}`)
+    return
+  }
+  if (content.byteLength > storedLimit) {
+    addDiagnosticFile(state, sourcePath, archivePath)
+    return
+  }
+  addEntry(state, archivePath, stat.size, content, 'included')
+}
+
 export function addDirectory(
   state: CollectorState,
   sourceDir: string,

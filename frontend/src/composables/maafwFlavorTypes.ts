@@ -254,7 +254,7 @@ export interface MaaFWFlavorCreate {
 
 /** 脚本页文案（t() 用的 key；为空表示沿用通用写法或不显示） */
 export interface MaaFWScriptPageText {
-  /** 脚本页标题；为空表示沿用 MaaFW 的「<项目名> 项目配置 / 项目引导」 */
+  /** 脚本编辑页标题；为空表示沿用 MaaFW 的「<项目名> 项目配置」。引导形态一律是「<项目名> 项目引导」 */
   titleKey: string | null
   /** 项目目录字段：标签 / 问号提示 / 输入框占位（导入后字段锁死，提示换成统一的「已导入」那句） */
   sourceDirectoryKey: string

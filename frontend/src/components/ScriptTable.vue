@@ -785,9 +785,13 @@ const getScriptTypeLabel = (script: Script) => {
   const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
-  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示
+  // 类型标签（MFW / M9A …，不是内部类型名 MaaFW）
   if (isMaaFWFamily(type)) {
-    return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
+    return (
+      (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() ||
+      resolveMaaFWFlavor(type).typeTagLabel
+    )
   }
   return type
 }
