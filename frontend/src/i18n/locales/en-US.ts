@@ -1335,7 +1335,8 @@ export default {
     notWiredIntoRun:
       'Not wired into the run flow yet: in this version, turning it on does not check for updates before a run — use the manual update on the right',
     noOkWwSettings: 'No ok-ww settings have been generated yet',
-    interfaceJsonHasNot: 'interface.json has not been read yet',
+    interfaceJsonHasNot:
+      'No project loaded: the script has not imported a project yet, or reading it failed (reopen this page later)',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
     invalidManagedOverridesCleared: 'Removed {n} invalid settings',
     scriptLevelMaaendConfiguration: 'Shared MaaEnd configuration started',
@@ -2914,6 +2915,9 @@ export default {
     maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
+    maafwInputVerifyFailed: 'The input does not meet the script requirements',
+    maafwQueueTaskCheckboxCountInvalid:
+      'A multi-select setting has too few or too many choices; this user will fail to run until it is fixed',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',

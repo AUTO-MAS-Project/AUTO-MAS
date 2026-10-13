@@ -1269,7 +1269,8 @@ export default {
     notWiredIntoRun:
       '現在のバージョンではオンにしても実行前の自動更新は行われません。右側の手動更新をお使いください',
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
-    interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
+    interfaceJsonHasNot:
+      'プロジェクトを読み込めていません：まだインポートされていないか、読み込みに失敗しました（後でこのページを開き直してください）',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     invalidManagedOverridesCleared: '無効な設定 {n} 件を削除しました',
     scriptLevelMaaendConfiguration: '共有 MaaEnd 設定を開始しました',
@@ -2320,6 +2321,9 @@ export default {
     maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
+    maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
+    maafwQueueTaskCheckboxCountInvalid:
+      '選択数が要件を満たしていない複数選択項目があります。修正しないとこのユーザーは実行に失敗します',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',
