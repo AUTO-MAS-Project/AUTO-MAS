@@ -71,7 +71,13 @@ from app.utils.constants import (
     game_now,
 )
 from app.utils.game_update import GameUpdateResult
-from app.utils.io import mark_native_config_injected, read_file, write_file
+from app.utils.io import (
+    ConfigCorruptedError,
+    mark_native_config_injected,
+    read_dict_file,
+    read_file,
+    write_file,
+)
 
 from . import api_service as maa_api
 from .base_preset import (
@@ -1083,6 +1089,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_index: int | None = None
         self._infrast_plan_count = 0
         self._infrast_plan_advanced = False
+        self._cultivate_archive_positions: dict[str, int] = {}
+        self._cultivate_archive_versions: dict[str, tuple[int, int, int]] = {}
 
     async def check(self) -> str:
 
@@ -1257,6 +1265,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
                 self.log_start_time = datetime.now()
+                self._cultivate_archive_positions.clear()
+                self._cultivate_archive_versions.clear()
                 self.cur_user_item.log_record[self.log_start_time] = (
                     self.cur_user_log
                 ) = LogRecord()
@@ -1382,6 +1392,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         )
 
                 if self.cur_user_config.get("Info", "IfQuickConfig"):
+                    self._collect_cultivate_archive(
+                        "".join(self.cur_user_log.content), finalizing=True
+                    )
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
@@ -1478,8 +1491,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     ) -> bool:
         """把 MAA 安装目录的识别结果只读复制进当前用户档案（T1.17）。
 
-        整份原子覆盖：识别数据是全量快照且档案可由下一轮重跑再生，
-        无 diff、无回滚（方案决策 31）。
+        整份原子覆盖；已归档且源文件未变化时跳过，读取期间仍在写入时
+        留待收尾补存，保留此前有效档案。
 
         Args:
             name: 识别数据文件名（DepotData.json / OperBoxData.json）。
@@ -1487,14 +1500,33 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 （DepotData 有该字段；OperBoxData 无时间字段，靠会话归因）。
 
         Returns:
-            是否成功落档；失败不阻断运行，下一轮重新采集。
+            是否更新档案；跳过或失败时返回 False，不撤销此前成功采集。
         """
 
         source = self.maa_root_path / "data" / name
         try:
-            payload = json.loads(source.read_text(encoding="utf-8"))
+            source_stat = source.stat()
+            version = (
+                source_stat.st_ino,
+                source_stat.st_mtime_ns,
+                source_stat.st_size,
+            )
+            if self._cultivate_archive_versions.get(name) == version:
+                return False
+            payload = read_dict_file(source)
+            source_stat = source.stat()
+            if version != (
+                source_stat.st_ino,
+                source_stat.st_mtime_ns,
+                source_stat.st_size,
+            ):
+                logger.warning(f"识别数据仍在更新, 留待收尾采集: {name}")
+                return False
             if require_fresh_sync_time:
-                _, sync_time = parse_depot_payload(payload)
+                try:
+                    _, sync_time = parse_depot_payload(payload)
+                except AttributeError as e:
+                    raise ConfigCorruptedError(source) from e
                 if sync_time < int(self.log_start_time.timestamp()):
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的 {name} syncTime 早于本轮开始, 弃用本次采集"
@@ -1503,6 +1535,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             archive_dir = self._cultivate_archive_dir()
             archive_dir.mkdir(parents=True, exist_ok=True)
             write_file(archive_dir / name, payload)
+            self._cultivate_archive_versions[name] = version
             logger.info(f"用户 {self.cur_user_item.name} 的识别数据已落档案: {name}")
             return True
         except (OSError, ValueError, TypeError):
@@ -1511,23 +1544,39 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             return False
 
-    async def _collect_cultivate_archive(self, log: str) -> None:
-        """识别链完成标记 → 立即读安装目录识别数据落用户档案（方案 §4.2）。
+    def _collect_cultivate_archive(self, log: str, *, finalizing: bool = False) -> None:
+        """新的识别完成标记采集一次完整快照，后续缓存变化在收尾归档。
 
         归因依据"该链运行在当前用户的 MAA 会话内"（串行调度 + StartUp 已
         切号）；每类数据每轮以最后一次识别标记为准并覆盖档案——队列里养成
         计划（刷取前）与更新数据（刷取后）各有一条仓库识别，取后者下一轮
         缺口判定才用得上刷取后的库存，否则补齐材料后仍会多接管一轮。
+
+        Args:
+            log: 当前这次 MAA 运行的累计日志。
+            finalizing: 是否在收尾检查已识别文件的变化并补存失败采集。
         """
 
-        if any(marker in log for marker in _MAA_DEPOT_CHAIN_COMPLETION_MARKERS):
-            self._cultivate_collected_depot = self._archive_recognition_file(
-                _MAA_DEPOT_ARCHIVE_NAME, require_fresh_sync_time=True
-            )
-        if any(marker in log for marker in _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS):
-            self._cultivate_collected_oper_box = self._archive_recognition_file(
-                _MAA_OPER_BOX_ARCHIVE_NAME
-            )
+        for name, markers in (
+            (_MAA_DEPOT_ARCHIVE_NAME, _MAA_DEPOT_CHAIN_COMPLETION_MARKERS),
+            (_MAA_OPER_BOX_ARCHIVE_NAME, _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS),
+        ):
+            position = max(log.rfind(marker) for marker in markers)
+            if position < 0:
+                continue
+            if not finalizing and position <= self._cultivate_archive_positions.get(
+                name, -1
+            ):
+                continue
+            # 失败也消费本次标记，普通日志更新不反复尝试，收尾统一补存。
+            self._cultivate_archive_positions[name] = position
+            if self._archive_recognition_file(
+                name, require_fresh_sync_time=name == _MAA_DEPOT_ARCHIVE_NAME
+            ):
+                if name == _MAA_DEPOT_ARCHIVE_NAME:
+                    self._cultivate_collected_depot = True
+                else:
+                    self._cultivate_collected_oper_box = True
 
     async def _finish_cultivate_round(self) -> None:
         """采集识别数据或注入自动培养后，刷新达成状态并持久化。
@@ -2522,7 +2571,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
         # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
         if self.cur_user_config.get("Info", "IfQuickConfig"):
-            await self._collect_cultivate_archive(log)
+            self._collect_cultivate_archive(log)
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
@@ -2661,6 +2710,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
         # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
+        current_log = self.cur_user_item.log_record.get(self.log_start_time)
+        if current_log is not None and self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
+            self._collect_cultivate_archive(
+                "".join(current_log.content), finalizing=True
+            )
         await self._finish_cultivate_round()
 
         logger.info("MAA 收尾: 回写 MAA 配置")
@@ -2692,12 +2748,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 user_name=self.cur_user_item.name,
                 log_time=dt,
             )
+            try:
+                if await log_statistics.save_maa_log(
+                    log_path=log_path,
+                    logs=log_item.content,
+                    maa_result=log_item.status,
+                ):
+                    if_six_star = True
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"保存 MAA 历史记录失败: {log_path}: {e}"
+                )
+                continue
             user_logs_list.append(log_path.with_suffix(".json"))
-
-            if await log_statistics.save_maa_log(
-                log_path, log_item.content, log_item.status
-            ):
-                if_six_star = True
 
         statistics = await Config.merge_statistic_info(user_logs_list)
         statistics["user_info"] = self.cur_user_item.name
