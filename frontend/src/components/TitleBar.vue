@@ -68,7 +68,8 @@
           :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
-          <BorderOutlined />
+          <SwitcherOutlined v-if="isMaximized" />
+          <BorderOutlined v-else />
         </button>
         <button
           v-if="!hideCloseButton"
@@ -175,6 +176,7 @@ import {
   CloseOutlined,
   LoadingOutlined,
   MinusOutlined,
+  SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -191,6 +193,7 @@ const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
+let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -399,7 +402,6 @@ const minimizeWindow = async () => {
 const toggleMaximize = async () => {
   try {
     await window.electronAPI?.windowMaximize()
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`切换最大化状态失败: ${errorMsg}`)
@@ -503,6 +505,18 @@ onMounted(async () => {
   // 监听托盘动作请求（启动任务 / 退出 / 重启）
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
+  // 双击标题栏或系统快捷键也会改变窗口状态。
+  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
+    isMaximized.value = maximized
+  })
+
+  try {
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
+  }
+
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
 
@@ -513,18 +527,13 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取界面设置失败: ${errorMsg}`)
   }
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
+  removeWindowMaximizedListener?.()
+  removeWindowMaximizedListener = undefined
 })
 </script>
 

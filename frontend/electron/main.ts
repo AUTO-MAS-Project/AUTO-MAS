@@ -836,9 +836,11 @@ function createWindow() {
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
     restoreToMaximized = true
+    win.webContents.send('window-maximized-changed', true)
   })
   win.on('unmaximize', () => {
     restoreToMaximized = false
+    win.webContents.send('window-maximized-changed', false)
   })
   win.on('restore', () => {
     notifyWindowActivity('visible')
