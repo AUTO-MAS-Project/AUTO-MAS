@@ -648,6 +648,8 @@ async def _download_image(url: str, cache_file: Path) -> None:
         response.raise_for_status()
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+    ## 真写了新文件才需要回收；两条路径共用这里，也就只扫一次目录
+    await asyncio.to_thread(_prune_image_cache)
 
 
 def _drop_download_task(task: asyncio.Task[None], url: str) -> None:
@@ -742,8 +744,6 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
         try:
             ## 预热可能正在下同一张图，等它就好；请求被取消时别把那个任务一起带走
             await asyncio.shield(_ensure_image_downloaded(url, cache_file))
-            ## 只在新增文件时回收一次，别让每次请求都去扫一遍目录
-            await asyncio.to_thread(_prune_image_cache)
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"获取终末地活动图片失败: {type(e).__name__}: {e}"
