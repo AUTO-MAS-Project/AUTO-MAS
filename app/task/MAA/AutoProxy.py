@@ -2227,8 +2227,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             "Task", "IfEventDepotMaintain"
         ):
             event_depot_source = _find_task_source(
-                source_queue, "活动库存保持", "DepotMaintain"
-            ) or _find_task_source(preset_queue, "活动库存保持", "DepotMaintain")
+                task_queue=source_queue,
+                name="活动库存保持",
+                task_type="DepotMaintain",
+            ) or _find_task_source(
+                task_queue=preset_queue,
+                name="活动库存保持",
+                task_type="DepotMaintain",
+            )
             event_depot_task = _build_event_depot_maintain_task(
                 self.cur_user_config.get("Task", "EventDepotMaintainPlans"),
                 activity_stages,
