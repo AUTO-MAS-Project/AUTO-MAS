@@ -248,7 +248,7 @@ import {
   isMaaFWIntegerInput,
   isMaaFWOptionActiveFor,
   isMaaFWTruthyInputText,
-  maafwInputFallbackDefault,
+  checkMaaFWInputValue,
   resolveMaaFWCheckboxValue,
   resolveMaaFWChoiceValue,
   storedMaaFWInputFieldValue,
@@ -436,41 +436,19 @@ const emitOptionValue = (optionName: string, value: MaaFWTaskOptionValue) => {
   emit('update', { optionName, value })
 }
 
+// 判定在 checkMaaFWInputValue（字符串只有空串算没填，纯空白照常过 verify），这里只负责报错
 const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
-  const trimmedValue = value.trim()
-  if (!trimmedValue) {
-    // 空值：字符串字段存空串，运行时按项目默认值跑；数字字段没有默认值才算没填
-    const hasFallback = maafwInputFallbackDefault(inputItem) !== null
-    if (isIntegerInput(inputItem) && !hasFallback) {
-      message.error(t('edit.enterWholeNumber'))
-      return false
-    }
-    if (isDecimalInput(inputItem) && !hasFallback) {
-      message.error(t('edit.enterNumber'))
-      return false
-    }
-    return true
-  }
-  if (isIntegerInput(inputItem) && !/^-?\d+$/.test(trimmedValue)) {
+  const problem = checkMaaFWInputValue(inputItem, value)
+  if (problem === null) return true
+  if (problem === 'wholeNumber') {
     message.error(t('edit.enterWholeNumber'))
-    return false
-  }
-  if (isDecimalInput(inputItem) && !Number.isFinite(Number(trimmedValue))) {
+  } else if (problem === 'number') {
     message.error(t('edit.enterNumber'))
-    return false
-  }
-
-  if (!inputItem.verify) return true
-
-  try {
-    const regexp = new RegExp(inputItem.verify)
-    if (regexp.test(value)) return true
-  } catch {
+  } else if (problem === 'patternInvalid') {
     message.error(t('edit.validationPatternInvalidP0', { p0: inputItem.name }))
-    return false
+  } else {
+    message.error(inputItem.verifyError || inputItem.patternMsg || t('edit.maafwInputVerifyFailed'))
   }
-
-  message.error(inputItem.verifyError || inputItem.patternMsg || t('edit.maafwInputVerifyFailed'))
   return false
 }
 

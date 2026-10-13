@@ -102,6 +102,38 @@ export const effectiveMaaFWInputFieldValue = (
   return maafwInputFallbackDefault(inputItem) ?? raw
 }
 
+/** input 值的问题：整数 / 数字格式不对、verify 正则本身写错、不符合 verify；null 为合规 */
+export type MaaFWInputValueProblem = 'wholeNumber' | 'number' | 'patternInvalid' | 'verify' | null
+
+/**
+ * 提交前校验 input 值。「没填」与运行器同一口径：字符串字段只有正好是空串才算没填
+ * （回落 default，不过 verify）；纯空白串是用户填的值，原样下发，照常过 verify。
+ * 数字字段去掉首尾空白后为空才算没填，没有 default 时不允许留空。
+ */
+export const checkMaaFWInputValue = (
+  inputItem: MaaFWOptionInputInfo,
+  value: string
+): MaaFWInputValueProblem => {
+  const isInteger = isMaaFWIntegerInput(inputItem)
+  const isDecimal = isMaaFWDecimalInput(inputItem)
+  if (isMaaFWInputUnfilled(inputItem, value)) {
+    if (isMaaFWStringInput(inputItem)) return null
+    const hasFallback = maafwInputFallbackDefault(inputItem) !== null
+    if (isInteger && !hasFallback) return 'wholeNumber'
+    if (isDecimal && !hasFallback) return 'number'
+    return null
+  }
+  const trimmed = value.trim()
+  if (isInteger && !/^-?\d+$/.test(trimmed)) return 'wholeNumber'
+  if (isDecimal && !Number.isFinite(Number(trimmed))) return 'number'
+  if (!inputItem.verify) return null
+  try {
+    return new RegExp(inputItem.verify).test(value) ? null : 'verify'
+  } catch {
+    return 'patternInvalid'
+  }
+}
+
 export const isMaaFWTruthyInputText = (value: string) =>
   ['true', '1', 'yes', 'y', 'on'].includes(value.trim().toLowerCase())
 
