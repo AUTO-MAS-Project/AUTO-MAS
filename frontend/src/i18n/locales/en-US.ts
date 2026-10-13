@@ -4631,6 +4631,12 @@ export default {
       gold: 'Gold',
     },
     cursor: { none: 'Off', sleekLine: 'Sleek line', fluid: 'Fluid (flashy RGB!)' },
+    pressSound: {
+      duck: 'Rubber duck',
+      fx1: 'Sound 1',
+      custom: 'Custom audio',
+      customNamed: 'Custom ({name})',
+    },
 
     basic: {
       appearance: 'Appearance',
@@ -4651,6 +4657,18 @@ export default {
       replaceAppearance: 'Replace',
       removeAppearanceTitle: 'Remove custom appearance',
       removeAppearanceContent: 'Remove “{name}”?',
+      pressSoundSection: 'Press sound',
+      pressSoundEnabled: 'Play sound',
+      pressSoundEnabledTip:
+        'Plays a sound when you click the home centre icon (the star core). With it off there is no sound; the easter eggs themselves are unaffected.',
+      pressSoundPreset: 'Sound',
+      pressSoundPresetTip:
+        'Two built-in sounds, or import your own audio file with the button on the right',
+      pressSoundImport: 'Import audio',
+      pressSoundVolume: 'Volume',
+      pressSoundVolumeTip: 'Playback volume of the press sound',
+      pressSoundPreview: 'Preview',
+      pressSoundPreviewAction: 'Preview',
       cursorSection: 'Cursor effect',
       cursorAnim: 'Cursor animation',
       cursorTip:
@@ -5006,6 +5024,11 @@ export default {
       lowPerfSaveFailed: 'Could not save low performance mode',
       pauseHomeEffectsSaveFailed: 'Could not save the home effects pause setting',
       homeSatelliteSaveFailed: 'Could not save the home satellite style',
+      pressSoundSaveFailed: 'Could not save the press sound settings',
+      pressSoundCustomMissing: 'No audio imported yet — click “Import audio” to pick a file',
+      pressSoundTooLarge: 'That audio file is too large; pick one under 1 MB',
+      pressSoundReadFailed: 'Could not read the audio file — try another one',
+      pressSoundImported: 'Audio imported and enabled',
       testUnknown: 'The test notification returned an unknown result',
       testSent: 'Test notification sent',
       testFailed: 'Could not send the test notification',

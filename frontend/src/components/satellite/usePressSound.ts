@@ -1,4 +1,5 @@
-import { playPressSound } from '@/components/satellite/pressSound'
+import { watch } from 'vue'
+import { dropPendingRelease, playPressSound } from '@/components/satellite/pressSound'
 import { usePerformanceStore } from '@/stores/performance'
 import { usePressSoundStore } from '@/stores/pressSound'
 import type { PressSoundPhase } from '@/types/pressSound'
@@ -28,6 +29,16 @@ export function usePressSound() {
       () => pressSoundStore.enabled && !performanceStore.isLowPower
     )
   }
+
+  // 松开音排在按压音后面播：等待期间关了开关、切了后台或开了低性能，就把它作废
+  watch(
+    () => pressSoundStore.enabled && !performanceStore.isLowPower,
+    allowed => {
+      if (!allowed) {
+        dropPendingRelease()
+      }
+    }
+  )
 
   return {
     playPress: () => play('press'),

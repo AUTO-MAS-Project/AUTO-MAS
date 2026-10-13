@@ -104,8 +104,8 @@ function playFromStart(element: HTMLAudioElement, volume: number): void {
   }
 }
 
-/** 丢掉排队中的松开音（重新按下、或按压音已被打断时用） */
-function dropPendingRelease(): void {
+/** 丢掉排队中的松开音（重新按下、按压音被打断，或状态不再允许播放时用） */
+export function dropPendingRelease(): void {
   if (pressElement && pendingRelease) {
     pressElement.removeEventListener('ended', pendingRelease)
   }
@@ -153,6 +153,10 @@ export async function playPressSound(
       const element = releaseElement
       const fire = (): void => {
         pendingRelease = null
+        // 排队这一小会儿里可能切了后台或开了低性能，真播之前再看一眼
+        if (!shouldPlay()) {
+          return
+        }
         playFromStart(element, volume)
       }
       pendingRelease = fire
