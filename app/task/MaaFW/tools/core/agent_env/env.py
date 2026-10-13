@@ -287,6 +287,21 @@ def _prepare_project_python_env(
     # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
     # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
     reason = _project_relative_text(reason, project_path)
+    if _is_missing_module_failure(reason) and _repin_project_python_binding(
+        python_exe, project_path, test_env, log, install_missing=True
+    ):
+        # 缺的正是 binding（换版本后视图不带它，见 _repin_project_python_binding）：按原生库
+        # 版本补装上了，再检查一次。补装没做成（不是副本、没有原生库、装不上）与钉回失败
+        # 一样只记日志，接着走下面「缺模块且有自装材料就放行」。
+        healthy, reason = _check_project_python_health(
+            python_exe,
+            cwd=str(project_path),
+            env=test_env,
+            log=log,
+        )
+        if healthy:
+            return
+        reason = _project_relative_text(reason, project_path)
     materials = (
         describe_self_install_materials(project_path)
         if _is_missing_module_failure(reason)
@@ -423,7 +438,9 @@ def _repin_project_python_binding(
     project_path: Path,
     env: dict[str, str],
     log: Callable[[str], None],
-) -> None:
+    *,
+    install_missing: bool = False,
+) -> bool:
     """自带解释器里的 maafw binding 与自带原生库版本不一致时，在副本里把它钉回去。
 
     runner 加载的是项目自带的原生库（``project_maafw_runtime_path``），agent 侧的 binding
@@ -431,6 +448,14 @@ def _repin_project_python_binding(
     部署脚本会把 binding ``pip install --upgrade`` 到 PyPI 最新（Maa_bbb v1.12.8 实测升到
     5.13.1/协议 8，原生库还是 5.11.1/协议 7）。**只动内嵌副本**：那是 AUTO-MAS 自己铺的；
     用户手上的项目目录仍然一个字节不碰，只把原因说清。任何一步失败只记日志，不拦准备。
+
+    ``install_missing``：自带解释器里压根没装 binding 时也按原生库版本补装（目标版本只看
+    原生库，与已装版本无关）。换版本时视图不带 site-packages 里的 binding（见
+    ``embedded_project._is_maafw_binding_path``），而「首次启动自己装依赖」的项目常有自己的
+    「已装过」标记（MaaTOT 的 ``config/pip_config.json``），不会再装，agent 一 import maa 就退出。
+    只由健康检查报缺模块的那条路传：健康时 maa 导得进来，没有 dist-info 也不去动它。
+
+    返回装完之后 binding 是否与原生库同版本（没动手、动手失败都是 False）。
     """
 
     from app.task.MaaFW.tools.core.runner.environment import (
@@ -439,22 +464,33 @@ def _repin_project_python_binding(
 
     installed = project_python_maafw_version(python_exe)
     native = probe_bundled_maafw_version(project_path)
-    if not installed or not native:
-        return
-    try:
-        same = Version(installed) == Version(native)
-    except InvalidVersion:
-        same = installed == native
-    if same:
-        return
-    mismatch = f"项目自带 Python 里的 maafw 是 {installed}，项目自带的 MaaFramework 原生库是 {native}"
-    if not _is_embedded_copy(Path(project_path)):
-        log(
-            f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
-            "请更新项目或自行把 binding 版本对齐"
+    if not native or (not installed and not install_missing):
+        return False
+    if installed:
+        try:
+            same = Version(installed) == Version(native)
+        except InvalidVersion:
+            same = installed == native
+        if same:
+            return False
+        mismatch = (
+            f"项目自带 Python 里的 maafw 是 {installed}，"
+            f"项目自带的 MaaFramework 原生库是 {native}"
         )
-        return
-    log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+        action = f"把副本里的 binding 钉回 {native}"
+    else:
+        mismatch = f"项目自带 Python 里没有装 maafw binding，项目自带的 MaaFramework 原生库是 {native}"
+        action = f"在副本里按原生库版本补装 binding {native}"
+    if not _is_embedded_copy(Path(project_path)):
+        if installed:
+            log(
+                f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
+                "请更新项目或自行把 binding 版本对齐"
+            )
+        else:
+            log(f"[Python环境] {mismatch}；这是项目目录，AUTO-MAS 不往里装")
+        return False
+    log(f"[Python环境] {mismatch}，{action}")
     # 残留的旧安装记录先挪开（不删）：钉回成功才丢，失败就原样放回。dist-info 集合是
     # 环境指纹的输入，失败时若集合变了、版本又没对上，准备会被当成并发改动拒绝缓存——
     # 离线时本来能过的项目（M9A v4.9.0 出厂形态）会因此每次都失败。
@@ -476,7 +512,7 @@ def _repin_project_python_binding(
     if ok and pinned_ok:
         if stash is not None and not remove_tree_best_effort(stash):
             log(f"[Python环境] 挪开的旧 maafw 安装记录没删干净，留在 {stash}")
-        return
+        return True
     if moved:
         _restore_stashed_dist_infos(moved, log)
     if stash is not None and not remove_tree_best_effort(stash):
@@ -490,6 +526,7 @@ def _repin_project_python_binding(
             f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
             "不一致，agent 可能连不上"
         )
+    return False
 
 
 #: 钉回期间暂放旧 maafw 安装记录的目录（副本根下，钉回结束即删）
