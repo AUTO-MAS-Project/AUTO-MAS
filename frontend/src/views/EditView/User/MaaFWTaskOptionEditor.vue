@@ -133,7 +133,7 @@
               </a-button>
             </div>
             <!-- 数字与文本字段都先改草稿，失焦 / 回车时校验通过才提交（不是每敲一个字存一次）；
-                 数字字段空着时按项目默认值显示，与运行器的回落一致 -->
+                 没填的字段（含字符串）按项目默认值显示，与运行器的回落一致 -->
             <a-input-number
               v-else-if="isIntegerInput(inputItem)"
               :value="getNumberInputValue(option, inputItem)"
@@ -427,9 +427,10 @@ const getNumberInputValue = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInpu
 const getBooleanInputValue = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) =>
   isMaaFWTruthyInputText(effectiveMaaFWInputFieldValue(inputItem, getStoredValue(option)))
 
+// 没填（存的是空串或没存）时显示项目 default，与运行器回落一致；清空提交存空串，下次仍显示 default
 const getTextInputValue = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) =>
   inputDrafts.value[inputDraftKey(option.name, inputItem.name)] ??
-  getStoredInputText(option, inputItem.name)
+  effectiveMaaFWInputFieldValue(inputItem, getStoredValue(option))
 
 const emitOptionValue = (optionName: string, value: MaaFWTaskOptionValue) => {
   emit('update', { optionName, value })
@@ -532,6 +533,14 @@ const dropInputDraft = (key: string) => {
   inputDrafts.value = next
 }
 
+// 草稿和已存值相同、或和没填时显示的项目默认值相同，都算没改（没填的字段不因此被钉成 default）
+const isInputDraftUnchanged = (option: MaaFWOptionInfo, inputName: string, draft: string) => {
+  if (draft === getStoredInputText(option, inputName)) return true
+  const inputItem = option.inputs.find(item => item.name === inputName)
+  if (!inputItem) return false
+  return draft === effectiveMaaFWInputFieldValue(inputItem, getStoredValue(option))
+}
+
 // 失焦 / 回车时提交：没改就不存；校验不过弹提示、草稿留在框里等用户改，不把不合规的值存进去
 const commitInputDraft = (optionName: string, inputItem: MaaFWOptionInputInfo) => {
   const key = inputDraftKey(optionName, inputItem.name)
@@ -539,7 +548,7 @@ const commitInputDraft = (optionName: string, inputItem: MaaFWOptionInputInfo) =
   if (draft === undefined) return
   const option = optionMap.value.get(optionName)
   if (!option) return
-  if (draft === getStoredInputText(option, inputItem.name)) {
+  if (isInputDraftUnchanged(option, inputItem.name, draft)) {
     dropInputDraft(key)
     return
   }
@@ -596,7 +605,7 @@ const hasPendingDrafts = () => {
     const { optionName, inputName } = parseMaaFWOptionDraftKey(key)
     const option = optionMap.value.get(optionName)
     if (!option) return false
-    return draft !== getStoredInputText(option, inputName)
+    return !isInputDraftUnchanged(option, inputName, draft)
   })
   return inputPending || Object.values(passwordDrafts.value).some(Boolean)
 }

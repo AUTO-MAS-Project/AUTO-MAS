@@ -69,23 +69,36 @@ export const storedMaaFWInputFieldValue = (
   return typeof value === 'string' ? value : ''
 }
 
+const isMaaFWStringInput = (inputItem: MaaFWOptionInputInfo) =>
+  ['string', 'str'].includes(pipelineTypeOf(inputItem))
+
 /**
- * 数字 / 布尔字段的「项目默认」：这类字段没填时运行器按 interface 的 default 下发。
- * 字符串字段没有这条回落（空串本身就是合法取值，M9A 的兑换码没填就该是空），返回 null。
+ * input 字段的「项目默认」：字段没填时运行器按 interface 的 default 下发（PI v2 把 default 当初值，
+ * MaaPiCli / MFAA / MXU 同口径）。没有 default 或 default 为空时返回 null，行为不变。
+ * 密码字段不回落（协议不允许它声明 default）。
  */
 export const maafwInputFallbackDefault = (inputItem: MaaFWOptionInputInfo): string | null => {
-  if (pipelineTypeOf(inputItem) === 'string' || pipelineTypeOf(inputItem) === 'str') return null
-  const fallback = (inputItem.default ?? '').trim()
+  if (inputItem.password === true) return null
+  const value = inputItem.default ?? ''
+  if (isMaaFWStringInput(inputItem)) return value === '' ? null : value
+  const fallback = value.trim()
   return fallback || null
 }
 
-/** input 字段实际生效的值：数字 / 布尔字段空着时就是项目默认值 */
+/** 字段算不算没填：字符串字段是空串（或没存），数字 / 布尔字段是空白 */
+const isMaaFWInputUnfilled = (inputItem: MaaFWOptionInputInfo, raw: string) =>
+  isMaaFWStringInput(inputItem) ? raw === '' : !raw.trim()
+
+/**
+ * input 字段实际生效的值：没填时就是项目默认值。字符串字段清空后存的是空串，
+ * 下次打开照样显示 default（空串视为未填）。
+ */
 export const effectiveMaaFWInputFieldValue = (
   inputItem: MaaFWOptionInputInfo,
   stored: MaaFWTaskOptionValue | undefined
 ): string => {
   const raw = storedMaaFWInputFieldValue(stored, inputItem.name)
-  if (raw.trim()) return raw
+  if (!isMaaFWInputUnfilled(inputItem, raw)) return raw
   return maafwInputFallbackDefault(inputItem) ?? raw
 }
 
