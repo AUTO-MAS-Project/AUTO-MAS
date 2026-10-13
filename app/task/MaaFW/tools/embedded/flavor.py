@@ -118,10 +118,10 @@
 可选属性 ``supports_mod_avd``（能不能用魔改 AVD）的契约：
 
 - **形状**：``bool``，按 ``getattr`` 探测，不进协议；没声明当 ``False``。
-- **效果**：魔改 AVD（Emulator 2.0 的 ``avd`` 后端）目前只对声明了它的特调放行（M9A）。
-  ``runner_task`` 据此给门面 ``open`` 传 ``m9a_flavor``、决定能不能构造 AVDExtras 截图配置；
-  脚本保存时 ``app.utils.emulator2.service.mod_avd_binding_error`` 用它拦下其它脚本绑定魔改 AVD
-  设备。通用 MaaFW 与没声明的特调一律拒绝（「魔改 AVD 目前只支持 M9A」）。
+- **效果**：魔改 AVD（Emulator 2.0 的 ``avd`` 后端）在 MaaFW 这一侧只对声明了它的特调放行（M9A；
+  MaaFW 之外另有 MAA 专项）。``runner_task`` 据此给门面 ``open`` 传 ``allow_mod_avd``、决定能不能构造
+  AVDExtras 截图配置；脚本保存时 ``app.utils.emulator2.service.mod_avd_binding_error`` 用它拦下其它
+  脚本绑定魔改 AVD 设备。通用 MaaFW 与没声明的特调一律拒绝（「魔改 AVD 目前只支持 M9A 和 MAA」）。
 """
 
 from __future__ import annotations

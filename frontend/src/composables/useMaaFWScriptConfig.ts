@@ -276,13 +276,13 @@ export function useMaaFWControlConfig(
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
 
-  // 魔改 AVD 目前只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
+  // MaaFW 里魔改 AVD 只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
   const emulatorDeviceSelectOptions = computed(() =>
     markModAvdOptions(
       emulatorDeviceOptions.value,
       value => value !== null && emulator2DeviceTypeBySlot.value[value] === 'avd',
       allowModAvd(),
-      t('emulator2.avd.m9aOnly')
+      t('emulator2.avd.unsupportedScript')
     )
   )
 

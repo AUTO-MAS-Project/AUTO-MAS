@@ -144,6 +144,7 @@ class MaaManager(ScriptManagerBase):
                     server=server,
                     package_name=ARKNIGHTS_PACKAGE_NAME[server],
                     checker=ensure_game_updated,
+                    allow_mod_avd=True,
                 )
                 # 先登记，取消落在启动设备期间时收尾也能找到对应任务。
                 self._game_update_tasks.append(update_task)

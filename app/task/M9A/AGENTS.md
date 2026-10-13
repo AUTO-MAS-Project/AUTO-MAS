@@ -35,7 +35,7 @@
   4. `ensure_game_updated(...)`：引擎的**可选**游戏更新钩子（契约写在 MaaFW `flavor.py` 的模块
      说明里，不在协议里），转给 `game_update.py`。
   5. `supports_mod_avd = True`：引擎的**可选**声明（契约同样在 MaaFW `flavor.py` 的模块说明里）。
-     魔改 AVD 目前只对声明了它的特调放行，其它脚本选魔改 AVD 设备在保存与运行时都被拒绝。
+     MaaFW 里魔改 AVD 只对声明了它的特调放行（MaaFW 之外另有 MAA 专项），其它脚本选魔改 AVD 设备在保存与运行时都被拒绝。
   6. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就结束
      本轮、照常重试；关闭游戏（`Close1999`）失败、超时或打转只截图记一行，不算本轮失败、不重试。
   7. `skip_on_retry_entries`：引擎的**可选**声明（契约同上）。列的是 v4.11.3 全部非受管任务的 entry，

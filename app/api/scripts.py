@@ -297,7 +297,7 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
         data = script.data.model_dump(exclude_unset=True)
-        # 魔改 AVD 目前只支持 M9A：别的脚本选魔改 AVD 设备，保存时就拦下
+        # 魔改 AVD 目前只支持 M9A 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
         refusal = await emulator2_service.mod_avd_binding_error(script.scriptId, data)
         if refusal:
             return OutBase(code=500, status="error", message=refusal)

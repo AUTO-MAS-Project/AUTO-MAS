@@ -75,7 +75,7 @@ from app.task.notify_core import (
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
-from app.utils.emulator2.avd.constants import MOD_AVD_M9A_ONLY_MESSAGE
+from app.utils.emulator2.avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
 from app.utils.game_apk import adb_runner_scope
 from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
@@ -1341,7 +1341,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             avd_ref = resolve_device(emulator_index) if resolve_device else None
         if avd_ref is not None and avd_ref.emulator_type == "avd":
             if not self._supports_mod_avd():
-                raise RuntimeError(MOD_AVD_M9A_ONLY_MESSAGE)
+                raise RuntimeError(MOD_AVD_UNSUPPORTED_MESSAGE)
             self._cached_adb_profile = self._build_avd_adb_profile(avd_ref)
             return self._cached_adb_profile
 
@@ -1408,18 +1408,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self._cached_adb_profile
 
     def _supports_mod_avd(self) -> bool:
-        """这个脚本的特调声明了 ``supports_mod_avd``（目前只有 M9A）：魔改 AVD 只对它放行。"""
+        """这个脚本的特调声明了 ``supports_mod_avd``（目前只有 M9A）：MaaFW 里魔改 AVD 只对它放行。"""
         return bool(
             getattr(resolve_flavor(self.script_config), "supports_mod_avd", False)
         )
 
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        """Emulator 2.0 门面的 ``open`` 要知道调用方是不是 M9A 特调（魔改 AVD 只对它放行）；
+        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用魔改 AVD（MaaFW 里只对 M9A 特调放行）；
         旧式模拟器管理器不收这个参数。"""
         from app.utils.emulator2.facade import Emulator2Manager
 
         if isinstance(self.emulator_manager, Emulator2Manager):
-            return {"m9a_flavor": self._supports_mod_avd()}
+            return {"allow_mod_avd": self._supports_mod_avd()}
         return {}
 
     def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:

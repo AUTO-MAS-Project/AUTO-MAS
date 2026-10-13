@@ -73,7 +73,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     }
   }
 
-  // 魔改 AVD 目前只支持 M9A（后端看特调的 supports_mod_avd，这里按脚本类型）
+  // MaaFW 里魔改 AVD 只支持 M9A（后端看特调的 supports_mod_avd，这里按脚本类型）
   const control = useMaaFWControlConfig(
     maafwConfig,
     previewData,
