@@ -366,7 +366,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   同一选项任务自己也有值时任务 `options` 里看不到它，打码收集两处都看。旧配置迁移
   （`normalize_snapshot`，前端 `maafwGlobalOptions.ts` 同一口径）：全局表里缺或坏的项，取队列里
   第一个勾选的、带合法值、且对它只属于全局的实例，再没有取未勾选的。预设写在任务上的只属于全局的
-  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准。
+  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 的全局表为准（现行版本存在
+  `Resource.task_option.setting_options`、根层 `global_options` 写空，老版本存在根层；两边合并，同名以
+  `setting_options` 为准）。
   **降级兼容双写**：保存时（`option_secrets.prepare_user_task_snapshot` →
   `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
   读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端

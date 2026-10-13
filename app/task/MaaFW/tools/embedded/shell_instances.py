@@ -42,10 +42,13 @@
   ``config/configs/<id>.json``：``{name, item_id, tasks[], global_options}``，任务是
   ``{name, item_id, is_checked, task_option}``。``item_id`` 为 ``PreTask`` / ``Controller`` /
   ``Resource`` / ``Post-Action`` 的四条不是任务：控制方式在 ``Controller`` 的
-  ``task_option.controller_type``，资源在 ``Resource`` 的 ``task_option.resource``，资源级选项在
-  它的 ``setting_options``。选项是 ``{选项名: {value, branches?: {case 名: {子选项…}}, hidden?}}``：
-  select / switch 的 ``value`` 是 case 名，input 是 ``{输入名: 值}``（值可能是数字），
-  ``hidden`` 表示所在分支此刻不生效；``_`` 开头的键（``_speedrun_config``）是外壳自己的设置。
+  ``task_option.controller_type``，资源在 ``Resource`` 的 ``task_option.resource``。全局选项
+  （外壳叫 setting 选项）现行版本存在 ``Resource`` 的 ``task_option.setting_options``、根层
+  ``global_options`` 写空，老版本存在根层：两边并成外壳全局表，同名时以 ``setting_options`` 为准。
+  选项是 ``{选项名: {value, branches?: {case 名: {子选项…}}, hidden?}}``：select / switch 的
+  ``value`` 是 case 名，input 是 ``{输入名: 值}``（值可能是数字），``hidden`` 表示所在分支此刻
+  不生效；分支里**生效的** input 子选项现行版本不带包装，直接写成 ``{输入名: 值}``（或裸值），
+  不生效的才是 ``{value, hidden: true}``。``_`` 开头的键（``_speedrun_config``）是外壳自己的设置。
 
 这是在外壳私有格式上做的一次性映射（黑箱规范里的「私有格式」条目）：外壳改了格式，表现是
 扫不到实例（只记日志）或导入时跳过项变多（结果里逐项列出），不会写坏任何东西。
@@ -117,10 +120,11 @@ class ShellInstance:
     controller: str = ""
     resource: str = ""
     tasks: list[ShellTask] = field(default_factory=list)
-    #: 全局选项：MXU 的 ``globalOptionValues``（所有实例共用）、MFW-PyQt6 的 ``global_options``
+    #: 全局选项：MXU 的 ``globalOptionValues``（所有实例共用）、MFW-PyQt6 的 ``setting_options``
+    #: 并上根层 ``global_options``
     global_options: Mapping[str, Any] = field(default_factory=dict)
-    #: 资源级选项原样保留：MFAAvalonia 的 ``ResourceOptionItems``、MFW-PyQt6 的
-    #: ``setting_options``；None 表示没有这个字段
+    #: 资源级选项原样保留：MFAAvalonia 的 ``ResourceOptionItems``；MFW-PyQt6 只在
+    #: ``setting_options`` 不是对象时留着它（报「格式无法识别」）。None 表示没有
     resource_options: Any = None
 
 
@@ -371,7 +375,13 @@ def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
             if not name or not _truthy(task.get("is_checked")):
                 continue
             tasks.append(ShellTask(name=name, raw_options=options))
-        global_options = payload.get("global_options")
+        # 现行版本把全局选项存在 Resource 的 setting_options（根层 global_options 写空），老版本
+        # 存在根层：两边并成外壳全局表，同名时以 setting_options 为准（它是现行版本写的）
+        root_global = payload.get("global_options")
+        global_options = {
+            **(root_global if isinstance(root_global, dict) else {}),
+            **(resource_options if isinstance(resource_options, dict) else {}),
+        }
         instances.append(
             ShellInstance(
                 id=f"mfw:{config_id}",
@@ -381,10 +391,11 @@ def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
                 controller=controller,
                 resource=resource,
                 tasks=tasks,
-                global_options=global_options
-                if isinstance(global_options, dict)
-                else {},
-                resource_options=resource_options,
+                global_options=global_options,
+                # 不是对象的 setting_options 留着，换算时记一条「格式无法识别」
+                resource_options=None
+                if resource_options is None or isinstance(resource_options, dict)
+                else resource_options,
             )
         )
     return instances
@@ -526,7 +537,7 @@ def plan_instance_import(
         names_by_entry.setdefault(task.entry, []).append(task.name)
 
     # 全局 / 资源级选项换算一次。外壳全局表（MXU 的 globalOptionValues、MFW-PyQt6 的
-    # global_options）里、项目也声明为全局选项的值进用户的全局表；其余（资源级，以及外壳记在
+    # setting_options 并上根层 global_options）里、项目也声明为全局选项的值进用户的全局表；其余（资源级，以及外壳记在
     # 全局表里、项目却没声明为全局的）分给选项表里有它们的任务（见 build_task_option_maps）。
     # 只属于全局的选项外壳全局表没记时，再取队列里第一条记着它的任务的值
     global_shared, resource_shared = _global_and_resource_option_values(
@@ -693,7 +704,7 @@ def collect_instance_hotkeys(
 
     选项换算与 ``plan_instance_import`` 同一套：MXU 读 ``globalOptionValues`` 与各任务的
     ``optionValues``，MFAAvalonia 读当前资源的 ``ResourceOptionItems`` 与各任务的选项，MFW-PyQt6
-    读 ``global_options``、资源级 ``setting_options`` 与各任务的 ``task_option``（含嵌套分支）。
+    读全局表（``setting_options`` 并上根层 ``global_options``）与各任务的 ``task_option``（含嵌套分支）。
     先全局 / 资源级、再按队列顺序逐个任务覆盖（同一字段后出现的为准）。只留 interface 里
     ``type == "hotkey"`` 的选项、其 ``hotkeys`` 里声明过的字段、非空的值；不与默认值比较，
     对不上的项也不记跳过（这里不是导入，跳过项由导入用户那条路报）。
@@ -755,8 +766,8 @@ def _global_and_resource_option_values(
     skipped: list[str],
 ) -> tuple[dict[str, MaaFWTaskOptionValue], dict[str, MaaFWTaskOptionValue]]:
     """``(外壳全局表, 资源级)``：前者是 MXU 的 ``globalOptionValues``、MFW-PyQt6 的
-    ``global_options``；后者是 MFAAvalonia 当前资源的 ``ResourceOptionItems``、MFW-PyQt6 的
-    资源级 ``setting_options``。"""
+    ``setting_options`` 并上根层 ``global_options``；后者是 MFAAvalonia 当前资源的
+    ``ResourceOptionItems``。"""
 
     global_values: dict[str, MaaFWTaskOptionValue] = {}
     resource_values: dict[str, MaaFWTaskOptionValue] = {}
