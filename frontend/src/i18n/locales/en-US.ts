@@ -355,6 +355,9 @@ export default {
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
     maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivateAutoRaiseOn: 'Auto training: On',
+    maaCultivateAutoRaiseOff: 'Auto training: Off',
+    maaCultivateOperatorCount: 'Operators: {count}',
     maaCultivateAutoRaiseUnsupported:
       'Automatic training was skipped. Use MAA v6.19.0-beta.1 or later and confirm that Operator Progression is available in MAA. Material farming continues.',
     maaCultivateAutoRaiseDataUnavailable:
@@ -363,6 +366,8 @@ export default {
       'Skland progression sync failed, so cultivation is paused for this run. Check your network or bind Skland again. Daily tasks and depot maintenance continue as usual.',
     maaCultivateAutoRaiseHint:
       'Requires MAA v6.19.0-beta.1 or later. Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+    maaCultivateMasterySkillHint:
+      'Mastery requires skill rank 7. Selecting a mastery target automatically sets the skill rank target to 7; clearing the mastery target leaves the skill rank target unchanged.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:

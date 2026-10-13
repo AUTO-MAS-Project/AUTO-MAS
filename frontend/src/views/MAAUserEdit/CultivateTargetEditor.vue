@@ -46,8 +46,11 @@
         {{ t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
     </div>
-    <div v-if="formData.Task?.CultivateAutoRaise" class="skland-feedback skland-hint">
+    <div class="skland-feedback skland-hint">
       {{ t('edit.maaCultivateAutoRaiseHint') }}
+    </div>
+    <div class="skland-feedback skland-hint">
+      {{ t('edit.maaCultivateMasterySkillHint') }}
     </div>
 
     <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
@@ -1093,7 +1096,7 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 8px 16px;
 }
 
 /* 左：干员与目标列表；右：预计需要材料预览（窄屏自动换行堆叠）。

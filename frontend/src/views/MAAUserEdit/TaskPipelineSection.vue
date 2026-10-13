@@ -547,7 +547,14 @@ const infrastSummary = computed(() => {
 })
 
 const cultivateSummary = computed(() =>
-  summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
+  summarizeCultivate(
+    {
+      enabled: formData.value.Task.IfCultivate,
+      targetsJson: formData.value.Task.CultivateTargets,
+      autoRaise: formData.value.Task.CultivateAutoRaise ?? false,
+    },
+    t
+  )
 )
 
 const depotSummary = computed(() =>

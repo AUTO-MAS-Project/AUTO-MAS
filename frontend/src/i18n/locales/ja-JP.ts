@@ -359,6 +359,9 @@ export default {
     maaCultivateRemove: '削除',
     maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
     maaCultivateAutoRaise: 'オペレーターを自動育成',
+    maaCultivateAutoRaiseOn: '自動育成：オン',
+    maaCultivateAutoRaiseOff: '自動育成：オフ',
+    maaCultivateOperatorCount: '{count} 名のオペレーター',
     maaCultivateAutoRaiseUnsupported:
       '自動育成をスキップしました。MAA v6.19.0-beta.1 以降を使用し、MAA に「オペレーター育成」タスクがあることを確認してください。素材周回は継続します。',
     maaCultivateAutoRaiseDataUnavailable:
@@ -367,6 +370,8 @@ export default {
       '森空島の練度同期に失敗したため、今回の育成は一時停止しました。ネットワークを確認するか、森空島を再連携してください。日課と在庫維持は通常どおり実行します。',
     maaCultivateAutoRaiseHint:
       'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+    maaCultivateMasterySkillHint:
+      '特化にはスキルレベル7が必要です。特化目標を選ぶとスキルレベルの目標が自動で7になり、特化目標を解除してもスキルレベルの目標は残ります。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
