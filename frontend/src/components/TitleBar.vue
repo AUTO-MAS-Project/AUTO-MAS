@@ -68,7 +68,8 @@
           :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
-          <BorderOutlined />
+          <SwitcherOutlined v-if="isMaximized" />
+          <BorderOutlined v-else />
         </button>
         <button
           v-if="!hideCloseButton"
@@ -175,6 +176,7 @@ import {
   CloseOutlined,
   LoadingOutlined,
   MinusOutlined,
+  SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -191,6 +193,7 @@ const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
+let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -399,7 +402,6 @@ const minimizeWindow = async () => {
 const toggleMaximize = async () => {
   try {
     await window.electronAPI?.windowMaximize()
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`切换最大化状态失败: ${errorMsg}`)
@@ -503,6 +505,18 @@ onMounted(async () => {
   // 监听托盘动作请求（启动任务 / 退出 / 重启）
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
+  // 双击标题栏或系统快捷键也会改变窗口状态。
+  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
+    isMaximized.value = maximized
+  })
+
+  try {
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
+  }
+
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
 
@@ -513,26 +527,21 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取界面设置失败: ${errorMsg}`)
   }
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
+  removeWindowMaximizedListener?.()
+  removeWindowMaximizedListener = undefined
 })
 </script>
 
 <style scoped>
 .title-bar {
   height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -544,8 +553,8 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark {
-  background: #1f1f1f;
-  border-bottom: 1px solid #333;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .title-bar-left {
@@ -600,7 +609,7 @@ onBeforeUnmount(() => {
 .title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--ant-color-text);
   position: relative;
   z-index: 1;
 }
@@ -615,7 +624,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .title-text {
-  color: #fff;
+  color: var(--ant-color-text);
 }
 
 .startup-status {
@@ -627,7 +636,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .version-text {
-  color: #ffffff;
+  color: var(--ant-color-text);
 }
 
 .title-bar-center {
@@ -660,13 +669,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: #666;
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
 
 .title-bar-dark .control-button {
-  color: #ccc;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-button:hover {

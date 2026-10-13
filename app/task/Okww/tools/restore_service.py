@@ -27,9 +27,9 @@ mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 
 （Info.Id 账号 + 快速配置覆盖层字段）。页面任务配置卡片的字段存在 MAS
 用户配置里、运行时才覆盖进 DailyTask.json——备份/恢复两端都带上侧车字段
 （恢复后按段回填表单，对齐 ZzzOd / MAA 字段回填模式），预览与页面认知
-才一致。**池恒按用户分桶**（侧车是用户级的，脚本态多用户若共享一个
-Default 池会互相污染）；三态 owner（脚本=Default 共享目录、用户=独立
-目录、直控=无）只决定归档/恢复目标路径，与运行下发
+才一致。**池恒按用户分桶**（侧车是用户级的，shared 来源多用户若共享一个
+Default 池会互相污染）；owner（shared=Default 共享目录、independent=独立
+目录、native=无）只决定归档/恢复目标路径，与运行下发
 （``_okww_mas_config_dir``）同一套来源规则。
 """
 
@@ -38,7 +38,7 @@ from pathlib import Path
 
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
-from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_mode
+from ..AutoProxy import _OKWW_REL_CONFIG_DIR, _okww_config_base
 from .backup_archive import (
     build_backup_file_summary,
     build_overlay_summary,
@@ -65,37 +65,37 @@ def _user_guard(ctx: RestoreContext) -> None:
         raise ValueError("OK-WW 用户不存在，请刷新后重试")
 
 
-async def _set_mode(ctx: RestoreContext, mode: str) -> None:
-    """跨来源恢复确认后把 ``Info.Mode`` 写回备份时点（tri_state 必须）。
+async def _set_base(ctx: RestoreContext, base: str) -> None:
+    """跨来源恢复确认后把 ``Info.Base`` 写回备份时点（tri_state 必须）。
 
-    基座校验到备份 Mode ≠ 当前 Mode 时回调；写回后 restore 按当前 Mode
-    解析 owner，恢复目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
+    基座校验到备份 Base ≠ 当前 Base 时回调；写回后 restore 按当前 Base
+    解析 owner，恢复目标自然就是备份 Base 的目录（跨来源恢复 = 目录
     重定向 + 状态切回）。
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Mode": mode}})
+    await user.update({"Info": {"Base": base}})
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
-    脚本态共享 ``Default``、用户态用当前用户目录，与
+    shared 来源共享 ``Default``、independent 来源用当前用户目录，与
     ``_okww_mas_config_dir``（运行下发）同一套来源规则；用户不存在时
     无法判态，返回 ``None`` 让列表/预览为空（恢复/归档另有用户守卫）。
 
-    注意：owner 只决定**归档/恢复目标路径**（脚本态=Default 共享目录、
-    用户态=独立目录）；mas 池本身恒按 ``ctx.user_id`` 分桶——侧车字段是
-    用户级的，脚本态多用户若共享同一个 Default 池会把各自的覆盖层字段
+    注意：owner 只决定**归档/恢复目标路径**（shared=Default 共享目录、
+    independent=独立目录）；mas 池本身恒按 ``ctx.user_id`` 分桶——侧车字段是
+    用户级的，shared 来源多用户若共享同一个 Default 池会把各自的覆盖层字段
     混在一起、互相污染，见 :func:`~app.task.Okww.tools.backup_archive.mas_backup_root`。
     """
 
     try:
         uid = uuid.UUID(ctx.user_id)
-        mode = _okww_config_mode(ctx.script_config.UserData[uid].get("Info", "Mode"))
+        base = _okww_config_base(ctx.script_config.UserData[uid].get("Info", "Base"))
     except (ValueError, KeyError, TypeError):
         return None
-    return owner_for_mode(mode, ctx.user_id)
+    return owner_for_mode(base, ctx.user_id)
 
 
 def _native_config_path(ctx: RestoreContext) -> Path | None:
@@ -117,7 +117,7 @@ def _mas_dir_for_owner(ctx: RestoreContext, owner: str) -> Path:
 async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
     """归档内容 = owner 目录 ConfigFile 副本 + 覆盖层字段侧车（内存 JSON）。
 
-    直控/无法判态（owner 为 ``None``）或目录缺失/为空时返回 ``None``
+    原生来源/无法判态（owner 为 ``None``）或目录缺失/为空时返回 ``None``
     （无可归档内容）。
     """
 
@@ -176,7 +176,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("直控用户不使用 MAS 独立配置，无可恢复内容")
+        raise ValueError("原生来源用户不使用 MAS 独立配置，无可恢复内容")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,
@@ -184,8 +184,8 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
-        # force 存底标注恢复时点来源（跨来源时 set_mode 已切回备份来源）
-        mode=str(user.get("Info", "Mode") or "").strip() or None,
+        # force 存底标注恢复时点来源（跨来源时 set_base 已切回备份来源）
+        base=str(user.get("Info", "Base") or "").strip() or None,
     )
     if restored_overlay:
         # 侧车字段按段分组回填（Info 账号 / Task 覆盖层，对齐 MAA 分组回填）：
@@ -245,8 +245,8 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="tri_state",
-        set_mode=_set_mode,
+        mas_base="tri_state",
+        set_base=_set_base,
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

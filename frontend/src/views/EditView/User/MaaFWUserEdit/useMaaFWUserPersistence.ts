@@ -75,8 +75,9 @@ export function useMaaFWUserPersistence({
       })
   }
 
-  const savePresetAndSnapshot = async () => {
-    if (isInitializing.value || !userIdHolder.value) return
+  /** 返回这次是否真的写进了后端（失败的提示由 updateUser 与页头保存状态给出） */
+  const savePresetAndSnapshot = async (): Promise<boolean> => {
+    if (isInitializing.value || !userIdHolder.value) return false
 
     const taskSnapshotValue = JSON.stringify(taskSnapshot.value)
     const selectedPreset = formData.Task.SelectedPreset || ''
@@ -84,7 +85,7 @@ export function useMaaFWUserPersistence({
     // 存完把后端的结果拉回来，别让页面上还显示着已经不在的任务
     const hasManagedTasks = taskSnapshot.value.taskOrder.some(isManagedTaskId)
     formData.Task.TaskSnapshot = taskSnapshotValue
-    await enqueueSave(async () => {
+    return await enqueueSave(async () => {
       const success = await updateUser(scriptId, userIdHolder.value, {
         Task: {
           SelectedPreset: selectedPreset,
@@ -94,10 +95,13 @@ export function useMaaFWUserPersistence({
       if (!success) throw new Error('任务预设保存失败')
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
-    }).catch(error => {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存任务预设失败: ${errorMsg}`)
     })
+      .then(() => true)
+      .catch(error => {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`保存任务预设失败: ${errorMsg}`)
+        return false
+      })
   }
 
   /** 保存后按后端结果刷新受管任务会动到的字段：账号、备注与任务队列 */

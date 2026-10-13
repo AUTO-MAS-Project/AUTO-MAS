@@ -45,6 +45,7 @@ const normalizeTaskSnapshot = (
   taskOrder: snapshot?.taskOrder ?? [],
   taskChecked: snapshot?.taskChecked ?? {},
   taskOptions: snapshot?.taskOptions ?? {},
+  globalOptions: snapshot?.globalOptions ?? {},
 })
 
 const normalizeOption = (option: MaaFWOptionInfo): MaaFWOptionInfo => ({

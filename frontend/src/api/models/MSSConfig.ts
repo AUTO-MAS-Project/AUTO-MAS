@@ -9,6 +9,7 @@ import type { MaaFWConfig_Game } from './MaaFWConfig_Game';
 import type { MaaFWConfig_Info } from './MaaFWConfig_Info';
 import type { MaaFWConfig_Run } from './MaaFWConfig_Run';
 import type { MaaFWConfig_Selection } from './MaaFWConfig_Selection';
+import type { MaaFWConfig_Task } from './MaaFWConfig_Task';
 import type { MaaFWConfig_Update } from './MaaFWConfig_Update';
 /**
  * MSS 脚本配置：与 MaaFW 脚本配置同形（MSS 是 MaaFW 的特调类型）。
@@ -46,5 +47,9 @@ export type MSSConfig = {
      * controller、resource 与 task 选择
      */
     Selection?: (MaaFWConfig_Selection | null);
+    /**
+     * 任务队列模板
+     */
+    Task?: (MaaFWConfig_Task | null);
 };
 

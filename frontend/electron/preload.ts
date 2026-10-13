@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
+    ipcRenderer.on('window-maximized-changed', listener)
+    return () => ipcRenderer.removeListener('window-maximized-changed', listener)
+  },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
   // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
@@ -116,6 +121,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
+  exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) =>
+    ipcRenderer.invoke('maa:exportIssueReport', undefined, dialogLabels),
   exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
   exportOkwwIssueReport: () => ipcRenderer.invoke('okww:exportIssueReport'),
   exportOkNteIssueReport: () => ipcRenderer.invoke('oknte:exportIssueReport'),
@@ -167,6 +174,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
 
   getAppPath: (name: string) => ipcRenderer.invoke('get-app-path', name),
+
+  // 自定义外观包：主进程完成 ZIP 校验后只返回已声明素材的 data URL。
+  listAppearances: () => ipcRenderer.invoke('appearance:list'),
+  getAppearance: (id: string) => ipcRenderer.invoke('appearance:get', id),
+  importAppearance: (zipPath: string, replace = false) =>
+    ipcRenderer.invoke('appearance:import', zipPath, replace),
+  removeAppearance: (id: string) => ipcRenderer.invoke('appearance:remove', id),
+  clearInvalidAppearance: (expectedId: string) =>
+    ipcRenderer.invoke('appearance:clear-invalid', expectedId),
+  // 在线外观：下载、校验与安装都在主进程完成，渲染进程只拿 token。
+  listOnlineAppearances: (query?: { page?: number; pageSize?: number; keyword?: string }) =>
+    ipcRenderer.invoke('appearance:online-list', query),
+  getOnlineAppearance: (fileKey: string) => ipcRenderer.invoke('appearance:online-detail', fileKey),
+  prepareOnlineAppearance: (fileKey: string, versionNo: number) =>
+    ipcRenderer.invoke('appearance:online-prepare', fileKey, versionNo),
+  installOnlineAppearance: (token: string, replace = false) =>
+    ipcRenderer.invoke('appearance:online-install', token, replace),
+  discardOnlineAppearance: (token: string) =>
+    ipcRenderer.invoke('appearance:online-discard', token),
+  getOnlineAppearanceCover: (fileKey: string, versionNo?: number) =>
+    ipcRenderer.invoke('appearance:online-cover', fileKey, versionNo),
+  inspectLocalAppearance: (zipPath: string) =>
+    ipcRenderer.invoke('appearance:inspect-local', zipPath),
+  inspectAppearanceCover: (imagePath: string) =>
+    ipcRenderer.invoke('appearance:inspect-cover', imagePath),
+  onAppearanceChanged: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('appearance-changed', listener)
+    return () => ipcRenderer.removeListener('appearance-changed', listener)
+  },
+  onThemeConfigChanged: (callback: (config: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, config: unknown) => callback(config)
+    ipcRenderer.on('theme-config-changed', listener)
+    return () => ipcRenderer.removeListener('theme-config-changed', listener)
+  },
 
   // ==================== 初始化 API ====================
 

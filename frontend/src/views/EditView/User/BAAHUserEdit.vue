@@ -276,7 +276,7 @@
           <a-row :gutter="24">
             <a-col :span="24">
               <GeneralConfigModeSelector
-                :model-value="formData.Info.Mode"
+                :model-value="formData.Info.Base"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
                 :alert-message="t('edit.configSourceHintBase')"
@@ -437,7 +437,7 @@ const getDefaultBAAHUserData = () => ({
   Info: {
     Name: '',
     Status: true,
-    Mode: '用户',
+    Base: 'independent',
     RemainedDay: -1,
     ConfigName: '',
     // Fixed 表示按 BAAH 自己的关卡配置运行，其余取值是关卡计划表 uid
@@ -543,12 +543,12 @@ watch(
   }
 )
 
-// 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 「脚本」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Mode），
+// 配置来源两态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+// 「共享」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Base），
 // 选了也不生效——禁用并悬停说明原因
 const baahConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'database' | 'setting'
@@ -557,7 +557,7 @@ const baahConfigModeOptions: Array<{
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
@@ -566,25 +566,25 @@ const baahConfigModeOptions: Array<{
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
 
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await handleFieldSave('Info.Base', formData.Info.Base)
 }
 
 // 直接跳到当前选中的关卡计划表，省去在计划管理里再找一遍

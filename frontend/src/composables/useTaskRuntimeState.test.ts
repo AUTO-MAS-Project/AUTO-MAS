@@ -154,3 +154,88 @@ describe('useTaskRuntimeState 快照对账', () => {
     expect(getRuntimeTasks).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('collectScriptStatuses 按键汇总', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => logger } })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const task = (
+    taskId: string,
+    scripts: Array<[string, string]>,
+    info: Array<[string, string]>
+  ) => ({
+    taskId,
+    mode: 'AutoProxy',
+    phase: 'active',
+    scripts: scripts.map(([scriptId, scriptType]) => ({ scriptId, scriptType })),
+    taskInfo: info.map(([script_id, status]) => ({ script_id, status, userList: [] })),
+  })
+
+  it('同一类型的两个脚本可以按项目分开汇总，没登记的脚本按类型算', async () => {
+    const { collectScriptStatuses } = await import('./useTaskRuntimeState')
+    const projectOf: Record<string, string> = { f1: 'MaaFW:project:A', f2: 'MaaFW:project:B' }
+    const statuses = collectScriptStatuses(
+      {
+        tasks: [
+          task(
+            't1',
+            [
+              ['f1', 'MaaFW'],
+              ['f2', 'MaaFW'],
+              ['m1', 'MAA'],
+            ],
+            [
+              ['f1', '运行'],
+              ['f2', '等待'],
+              ['m1', '等待'],
+            ]
+          ),
+        ] as never,
+        scheduled: [{ scriptId: 'f3', scriptType: 'MaaFW' }],
+        failures: new Map(),
+      },
+      identity => projectOf[identity.scriptId] ?? identity.scriptType
+    )
+
+    expect(statuses.get('MaaFW:project:A')).toEqual({
+      queued: false,
+      running: true,
+      lastFailed: false,
+    })
+    expect(statuses.get('MaaFW:project:B')).toEqual({
+      queued: true,
+      running: false,
+      lastFailed: false,
+    })
+    expect(statuses.get('MaaFW')?.queued).toBe(true)
+    expect(statuses.get('MAA')?.queued).toBe(true)
+  })
+
+  it('上次失败看每组最近结束的那个任务：更新的成功盖掉更早的失败', async () => {
+    const { collectScriptStatuses } = await import('./useTaskRuntimeState')
+    const failures = new Map([
+      ['a', { scriptType: 'MAA', failed: true, seq: 1 }],
+      ['b', { scriptType: 'MAA', failed: false, seq: 2 }],
+      ['c', { scriptType: 'HSR', failed: false, seq: 3 }],
+      ['d', { scriptType: 'HSR', failed: true, seq: 3 }],
+    ])
+    const byType = collectScriptStatuses(
+      { tasks: [], scheduled: [], failures },
+      identity => identity.scriptType
+    )
+    expect(byType.get('MAA')?.lastFailed).toBe(false)
+    expect(byType.get('HSR')?.lastFailed).toBe(true)
+
+    const byScript = collectScriptStatuses(
+      { tasks: [], scheduled: [], failures },
+      identity => identity.scriptId
+    )
+    expect(byScript.get('a')?.lastFailed).toBe(true)
+    expect(byScript.get('c')?.lastFailed).toBe(false)
+  })
+})

@@ -9,6 +9,7 @@ import type { MaaFWConfig_Game } from './MaaFWConfig_Game';
 import type { MaaFWConfig_Info } from './MaaFWConfig_Info';
 import type { MaaFWConfig_Run } from './MaaFWConfig_Run';
 import type { MaaFWConfig_Selection } from './MaaFWConfig_Selection';
+import type { MaaFWConfig_Task } from './MaaFWConfig_Task';
 import type { MaaFWConfig_Update } from './MaaFWConfig_Update';
 /**
  * M9A 脚本配置：与 MaaFW 脚本配置同形（M9A 是 MaaFW 的特调类型）。
@@ -46,5 +47,9 @@ export type M9AConfig = {
      * controller、resource 与 task 选择
      */
     Selection?: (MaaFWConfig_Selection | null);
+    /**
+     * 任务队列模板
+     */
+    Task?: (MaaFWConfig_Task | null);
 };
 

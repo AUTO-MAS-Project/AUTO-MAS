@@ -4,8 +4,8 @@
     :title="null"
     :footer="null"
     :width="'90vw'"
-    :style="{ top: '5vh', maxWidth: '1400px' }"
-    :body-style="{ padding: 0, height: '85vh' }"
+    :style="{ maxWidth: '1400px' }"
+    :body-style="{ padding: 0, height: 'calc(100vh - 104px)' }"
     :destroy-on-close="true"
     @cancel="$emit('close')"
   >
@@ -112,6 +112,7 @@
                 }}
               </a-button>
             </a-popover>
+            <HistoryLogReplayPopover v-if="replays.length > 0" :replays="replays" />
           </div>
         </div>
 
@@ -201,6 +202,8 @@ import {
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
+import type { ReplayRecord } from '@/types/replay'
+import HistoryLogReplayPopover from './HistoryLogReplayPopover.vue'
 
 const { t } = useI18n()
 
@@ -216,6 +219,7 @@ interface Props {
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
   pullCountStatistics: PullCountStatistics | null
+  replays: ReplayRecord[]
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string
@@ -253,7 +257,7 @@ const displayLogContent = computed(() => {
 .log-modal-content {
   display: flex;
   flex-direction: column;
-  height: 85vh;
+  height: 100%;
   background: var(--ant-color-bg-container);
   border-radius: 8px;
   overflow: hidden;

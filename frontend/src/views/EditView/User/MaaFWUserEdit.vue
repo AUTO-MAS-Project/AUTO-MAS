@@ -58,7 +58,11 @@
             :is="sections.queueHeader"
             :queue-hint-lines="queueHintLines"
             :managed-queue-alert="managedQueueAlert"
+            :user-import-candidates="userImportCandidates"
+            :user-import-loading="userImportLoading"
             @open-restore="restoreOpen = true"
+            @load-user-import="loadUserImportCandidates"
+            @import-from-user="importQueueFromUser"
             @imported="handleShellImported"
           />
           <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
@@ -81,6 +85,8 @@
             :add-task-cascader-options="addTaskCascaderOptions"
             :has-new-tasks="hasNewTasks"
             :preset-templates="presetTemplates"
+            :queue-templates="queueTemplates"
+            :queue-template-draft="queueTemplateDraft"
             :task-by-name="taskByName"
             :selected-task="selectedTask"
             :selected-task-id="selectedQueuedTask?.id || ''"
@@ -90,12 +96,19 @@
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
+            @save-queue-template="saveQueueTemplate"
+            @apply-queue-template="applyQueueTemplate"
+            @rename-queue-template="renameQueueTemplate"
+            @delete-queue-template="deleteQueueTemplate"
             @select-task="selectTask"
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
             @task-option-update="handleTaskOptionUpdate"
+            @global-option-update="handleGlobalOptionUpdate"
             @delete-selected-task="deleteSelectedTask"
             @delete-task="deleteTask"
+            @duplicate-task="duplicateTask"
+            @rename-task="renameTask"
           />
           <MaaFWFlavorSlot
             part="userPage"
@@ -220,13 +233,26 @@ const {
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
+  duplicateTask,
+  renameTask,
   handleTaskOptionUpdate,
+  handleGlobalOptionUpdate,
   moveTask,
   handleTaskDragEnd,
   addTaskCascaderValue,
   addTaskCascaderOptions,
   hasNewTasks,
   handleAddTaskCascaderChange,
+  userImportCandidates,
+  userImportLoading,
+  loadUserImportCandidates,
+  importQueueFromUser,
+  queueTemplates,
+  queueTemplateDraft,
+  saveQueueTemplate,
+  applyQueueTemplate,
+  renameQueueTemplate,
+  deleteQueueTemplate,
   MAAFW_DISPLAY_NAME,
   restoreOpen,
   restoreTargets,

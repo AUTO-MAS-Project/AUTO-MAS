@@ -16,7 +16,8 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""``/maafw/update`` 背后的业务：手动检查 / 应用 MFW 项目更新。
+"""``/maafw/update`` 背后的业务：手动检查 / 应用 MFW 项目更新；另有 ``/maafw/mirror-cdk``
+查 Mirror 酱 CDK 状态（编辑页 CDK 输入框下的小字）。
 
 应用走与运行前 / 运行后自动更新同一条 ``view_update.run_view_update``（一个组只更新
 一次），区别只在：整段持本视图预约、拿谱系锁限时、不读预检备忘（手动即强制重试）。
@@ -29,7 +30,11 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
-from app.models.schema import MaaFWProjectUpdateData, WSMaaFWProjectUpdateProgressData
+from app.models.schema import (
+    MaaFWMirrorCdkData,
+    MaaFWProjectUpdateData,
+    WSMaaFWProjectUpdateProgressData,
+)
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
@@ -45,6 +50,7 @@ from app.task.MaaFW.tools.core.interface.loader import (
 from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
+    query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.project_update.updater import (
@@ -52,6 +58,9 @@ from app.task.MaaFW.tools.core.project_update.updater import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    follow_source_enabled,
+    is_source_form,
+    resolve_maafw_project_root,
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -76,6 +85,14 @@ UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"
 # 预约被占、又不是在更新：编辑页准备运行环境、兄弟脚本的更新切过来后确认环境、导入 / 克隆、
 # 启动期迁移都会短暂持有。分不清是哪一个，只说被占用，不说「正在运行」误导用户。
 UPDATE_PROJECT_OCCUPIED = "项目正被占用（在准备运行环境或切换版本），请稍后再试"
+UPDATE_FOLLOW_SOURCE = (
+    "已开启「跟随来源目录（开发者模式）」，以来源目录为准、不做项目更新："
+    "要换版本请直接更新来源目录（下次运行前自动重新导入），或先关掉开发者模式"
+)
+UPDATE_SOURCE_FORM = (
+    "这是按源码形态导入的项目（interface 在 assets/、Agent 在源码目录），始终跟随来源目录、"
+    "不做项目更新：直接改来源目录即可（下次运行前或点「立即同步」重新导入）；要用发行版请导入发行包"
+)
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
@@ -259,6 +276,15 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+    if follow_source_enabled(script_config):
+        # 开发者模式以来源目录为准：检查与应用都不做，别把开发者的改动换成发行版；源码形态
+        # 本来就没有发行包可更新。
+        return MaaFWApiReply.error(
+            400,
+            UPDATE_SOURCE_FORM
+            if is_source_form(script_config)
+            else UPDATE_FOLLOW_SOURCE,
+        )
 
     root_path, error = await maafw_effective_root(script_id, "")
     if root_path is None:
@@ -601,4 +627,51 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             source=getattr(result, "source", None),
             **extra,
         ),
+    )
+
+
+async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
+    """``/maafw/mirror-cdk``：编辑页 CDK 输入框下那行小字要的 CDK 状态与到期时间。
+
+    CDK 用请求里的值（输入框当前值，失焦后保存可能还没落盘）；渠道与代理按脚本级
+    ``Update.*``，与手动更新同一口径。项目根按脚本取视图，但**不**像 ``/maafw/update``
+    那样先补建视图——这只是一行提示，不该在打开页面时触发导入；视图不在、interface 读不了
+    都按 ``unsupported`` 返回，界面上什么都不显示。查不到（网络等）同样按成功返回
+    ``error``，不报红字。
+    """
+
+    try:
+        script_config = maafw_script_config(script_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+
+    rid = ""
+    status = "unsupported"
+    expired_time: int | None = None
+    root_path = resolve_maafw_project_root(script_id, script_config)
+    try:
+        interface = (
+            await asyncio.to_thread(load_interface_model_cached, root_path)
+            if root_path.is_dir()
+            else None
+        )
+    except Exception:  # noqa: BLE001 - 读不了就是不支持，不让这行提示报错
+        interface = None
+    if interface is not None:
+        rid = str(interface.mirrorchyan_rid or "").strip()
+        result = await query_mirrorchyan_cdk_status(
+            interface,
+            mirror_cdk=cdk,
+            channel=resolve_update_credentials(script_config).channel,
+            # 代理地址可能带 user:pw，不进日志，也不走 ``Config.proxy``
+            proxy=_maafw_httpx_proxy(resolve_update_proxy_url(script_config)),
+        )
+        status = result.status
+        expired_time = result.expired_time
+    # CDK 一个字符都不进日志
+    _maafw_update_logger.info(
+        f"MFW CDK 状态查询: script={script_id} rid={rid or '无'} status={status}"
+    )
+    return MaaFWApiReply(
+        data=MaaFWMirrorCdkData(status=status, expiredTime=expired_time)
     )

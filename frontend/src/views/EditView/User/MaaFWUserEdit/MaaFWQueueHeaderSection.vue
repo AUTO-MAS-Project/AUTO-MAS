@@ -4,9 +4,15 @@
   <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
     <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
     <a-space>
-      <!-- 从外壳（MFAAvalonia / MXU / MFW-PyQt6）把配好的队列搬过来：引导最后一步只在新建
-           脚本时走一次，脚本建好之后再同步就走这里 -->
-      <ShellQueueImportSection @imported="(snapshot, info) => emit('imported', snapshot, info)" />
+      <!-- 从本脚本的其他用户、或外壳（MFAAvalonia / MXU / MFW-PyQt6）把配好的队列搬过来：
+           引导最后一步只在新建脚本时走一次，脚本建好之后再同步就走这里 -->
+      <ShellQueueImportSection
+        :user-candidates="userImportCandidates"
+        :user-loading="userImportLoading"
+        @load-users="emit('load-user-import')"
+        @import-from-user="userId => emit('import-from-user', userId)"
+        @imported="(snapshot, info) => emit('imported', snapshot, info)"
+      />
       <a-button size="small" @click="emit('open-restore')">
         <template #icon>
           <HistoryOutlined />

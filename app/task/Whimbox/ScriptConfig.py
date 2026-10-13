@@ -16,9 +16,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""奇想盒直控配置：无参数拉起 whimbox_app.exe，用户在原生 GUI 修改设置。
+"""奇想盒原生来源配置：无参数拉起 whimbox_app.exe，用户在原生 GUI 修改设置。
 
-MAS 不预置不回读（BetterGI「GUI 直控只打开本体」同款先例）；会话进入/退出
+MAS 不预置不回读（BetterGI「GUI 原生来源只打开本体」同款先例）；会话进入/退出
 各归档一次 config.json（通用恢复池 snapshot，指纹去重），捕捉用户经 app 的
 原生修改前后态，作为跨会话恢复锚点。
 """
@@ -44,7 +44,7 @@ logger = get_logger("奇想盒 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """无参数启动奇想盒 app，供用户修改程序设置（原生 GUI 直控）。"""
+    """无参数启动奇想盒 app，供用户修改程序设置（原生 GUI 原生来源）。"""
 
     def __init__(
         self,
@@ -73,7 +73,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 会话进入时归档（捕捉「用户在 app 内修改前」的原生配置态）
         with suppress(Exception):
             self.config_surface.snapshot_entry()
-        await push_dispatch_log(self.script_info, "启动奇想盒 app（直控配置）")
+        await push_dispatch_log(self.script_info, "启动奇想盒 app（原生来源配置）")
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
         await self.process_manager.open_process(
             self.exe_path,
@@ -90,7 +90,7 @@ class ScriptConfigTask(TaskExecuteBase):
         with suppress(Exception):
             self.config_surface.snapshot_entry()
         if not self.crashed:
-            logger.success("奇想盒直控配置会话已结束")
+            logger.success("奇想盒原生来源配置会话已结束")
             self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception) -> None:

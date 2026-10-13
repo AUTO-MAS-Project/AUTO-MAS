@@ -7,6 +7,10 @@
     @cancel="emit('update:open', false)"
   >
     <div class="task-limit-modal">
+      <div class="task-limit-row loop-guard-row">
+        <span class="task-limit-label">{{ t('edit.loopGuard') }}</span>
+        <a-switch v-model:checked="loopGuardDraft" />
+      </div>
       <div class="task-limit-modal-sub">{{ t('edit.taskTimeLimitModalSub') }}</div>
       <!-- 列表定高、内部滚动：任务多的项目也不会把弹窗撑出屏幕 -->
       <div class="task-limit-modal-list">
@@ -57,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   taskLimitDraftToOverrides,
@@ -71,26 +75,30 @@ const props = defineProps<{
   tasks: Array<{ label: string; value: string }>
   /** 打开时已存的单独设置（任务名 → 分钟） */
   values: TaskTimeLimitOverrides
+  /** 打开时已存的原地打转检测开关（Run.LoopGuard） */
+  loopGuard: boolean
   /** 全局默认的单任务时限（分钟），0 表示不限 */
   defaultMinutes: number
 }>()
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  /** 点了保存：交回全部单独设置（留空的行不在里面） */
-  save: [values: TaskTimeLimitOverrides]
+  /** 点了保存：交回全部单独设置（留空的行不在里面）与原地打转检测开关 */
+  save: [values: TaskTimeLimitOverrides, loopGuard: boolean]
 }>()
 
 const { t } = useI18n()
 
 /** 弹窗内的草稿：取消即丢弃 */
 const draft = reactive<TaskTimeLimitDraft>({})
+const loopGuardDraft = ref(false)
 
 const resetDraft = () => {
   for (const key of Object.keys(draft)) delete draft[key]
   for (const task of props.tasks) {
     draft[task.value] = props.values[task.value] ?? null
   }
+  loopGuardDraft.value = props.loopGuard
 }
 
 watch(
@@ -121,12 +129,18 @@ const resetAll = () => {
 }
 
 const handleSave = () => {
-  emit('save', taskLimitDraftToOverrides(draft))
+  emit('save', taskLimitDraftToOverrides(draft), loopGuardDraft.value)
   emit('update:open', false)
 }
 </script>
 
 <style scoped>
+.loop-guard-row {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
 .task-limit-modal-sub {
   padding: 0 0 8px;
   color: var(--ant-color-text-secondary);

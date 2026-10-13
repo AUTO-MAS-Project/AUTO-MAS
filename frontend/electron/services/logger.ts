@@ -7,6 +7,8 @@ import { isDevelopmentEnvironment } from './instanceConfig'
  * 模块颜色映射
  */
 const moduleColors = new Map<string, string>()
+let consoleOutputGuardInstalled = false
+let consolePipeBroken = false
 
 /**
  * 文件日志格式化函数
@@ -87,6 +89,37 @@ function getLevelColor(level: string): string {
   }
 }
 
+/** 控制台断管后停用输出，文件日志继续记录。 */
+function handleConsoleError(error: unknown): void {
+  if ((error as NodeJS.ErrnoException)?.code !== 'EPIPE') {
+    throw error
+  }
+
+  consolePipeBroken = true
+  log.transports.console.level = false
+}
+
+function configureConsoleOutput(isDevelopment: boolean): void {
+  log.transports.console.level = isDevelopment && !consolePipeBroken ? 'debug' : false
+  if (consoleOutputGuardInstalled) return
+
+  // Windows 的同步写入可能直接抛错；electron-log 的内部报错也会绕过 level 调用 writeFn。
+  const writeConsole = log.transports.console.writeFn
+  log.transports.console.writeFn = options => {
+    if (consolePipeBroken) return
+    try {
+      writeConsole.call(log.transports.console, options)
+    } catch (error) {
+      handleConsoleError(error)
+    }
+  }
+
+  // 异步写入失败通过流的 error 事件通知，必须在第一条日志之前监听。
+  process.stdout.on('error', handleConsoleError)
+  process.stderr.on('error', handleConsoleError)
+  consoleOutputGuardInstalled = true
+}
+
 /**
  * 初始化日志系统
  */
@@ -97,13 +130,12 @@ export function initializeLogger(): void {
   }
   // 必须和 environmentService 的 getAppRoot() 同口径：日志窗读的是 `<appRoot>/debug`，
   // 开发环境下 exe 是 node_modules 里的 electron.exe，写到那儿日志页永远读不到。
-  const appPath = isDevelopmentEnvironment()
-    ? path.dirname(app.getAppPath())
-    : path.dirname(app.getPath('exe'))
+  const isDevelopment = isDevelopmentEnvironment()
+  const appPath = isDevelopment ? path.dirname(app.getAppPath()) : path.dirname(app.getPath('exe'))
 
   // 设置日志级别
   log.transports.file.level = 'info'
-  log.transports.console.level = 'debug'
+  configureConsoleOutput(isDevelopment)
 
   log.transports.file.resolvePathFn = () => path.join(appPath, 'debug', 'frontend.log')
 

@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * BetterGI 用户信息（原生 GUI 直控，账号由 BetterGI 原生管理）
+ * BetterGI 用户信息（原生 GUI 原生来源，账号由 BetterGI 原生管理）
  */
 export type BetterGIUserConfig_Info = {
     /**
@@ -19,9 +19,9 @@ export type BetterGIUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * 配置来源（脚本/用户/直控）
+     * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | '直控' | null);
+    Base?: ('shared' | 'independent' | 'native' | null);
     /**
      * 兼容旧版用户独立配置开关
      */

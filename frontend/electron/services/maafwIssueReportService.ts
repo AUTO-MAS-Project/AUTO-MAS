@@ -472,24 +472,27 @@ function maskStringLeaves(value: unknown): unknown {
     : value
 }
 
-// taskOptions 是 {任务实例: {option: 值}}，input 类型 option 的值是 {字段: 值}。旧版本存下的
-// 密码是明文（下次保存才加密），项目有 password 输入框时 input 的值一律打码
+// {option: 值}，input 类型 option 的值是 {字段: 值}。旧版本存下的密码是明文（下次保存才加密），
+// 项目有 password 输入框时 input 的值一律打码。用户快照里有两处：taskOptions 是
+// {任务实例: {option: 值}}，globalOptions（全局选项，每个用户一份）就是 {option: 值}
+function maskInputOptionMap(options: unknown): unknown {
+  if (!isRecord(options)) {
+    return options
+  }
+  return Object.fromEntries(
+    Object.entries(options).map(([name, item]) => [
+      name,
+      isRecord(item) ? maskStringLeaves(item) : item,
+    ])
+  )
+}
+
 function maskInputOptionValues(taskOptions: unknown): unknown {
   if (!isRecord(taskOptions)) {
     return taskOptions
   }
   return Object.fromEntries(
-    Object.entries(taskOptions).map(([task, options]) => [
-      task,
-      isRecord(options)
-        ? Object.fromEntries(
-            Object.entries(options).map(([name, item]) => [
-              name,
-              isRecord(item) ? maskStringLeaves(item) : item,
-            ])
-          )
-        : options,
-    ])
+    Object.entries(taskOptions).map(([task, options]) => [task, maskInputOptionMap(options)])
   )
 }
 
@@ -521,10 +524,13 @@ function redactScriptConfig(value: unknown, maskInputOptions: boolean): unknown 
           return [key, '***']
         }
         const redacted = redactScriptConfig(item, maskInputOptions)
-        return [
-          key,
-          maskInputOptions && key === 'taskOptions' ? maskInputOptionValues(redacted) : redacted,
-        ]
+        if (!maskInputOptions) {
+          return [key, redacted]
+        }
+        if (key === 'taskOptions') {
+          return [key, maskInputOptionValues(redacted)]
+        }
+        return [key, key === 'globalOptions' ? maskInputOptionMap(redacted) : redacted]
       })
   )
 }

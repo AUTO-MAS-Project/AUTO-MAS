@@ -176,6 +176,7 @@ class MaaFWRunnerService:
         task_snapshot: dict[str, Any] | None = None,
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
+        global_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
         script_hotkeys: dict[str, dict[str, str]] | None = None,
     ) -> MaaFWRunPlan:
@@ -188,6 +189,7 @@ class MaaFWRunnerService:
             task_snapshot=task_snapshot,
             task_ids=task_ids,
             task_options=task_options,
+            global_options=global_options,
             managed_env_root=managed_env_root,
             script_hotkeys=script_hotkeys,
         )
@@ -203,6 +205,7 @@ class MaaFWRunnerService:
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -230,6 +233,7 @@ class MaaFWRunnerService:
             runDeadlineAt=run_deadline_at,
             taskTimeLimitSeconds=task_time_limit_seconds,
             taskTimeLimitOverrides=task_time_limit_overrides,
+            loopGuard=bool(loop_guard),
         )
 
     def prepare_environment(
@@ -366,6 +370,8 @@ class MaaFWRunnerService:
                 bootstrap_python=bootstrap_python,
                 install_dependencies=install_agent_dependencies,
                 progress=report_agent_progress,
+                # 项目没自带原生库时，agent 的 maafw 钉成 runner 刚解析出的确切版本。
+                runner_maafw_version=environment.maafw_version,
             )
             output_fingerprint = project_environment_fingerprint(project_path)
             if (

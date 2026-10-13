@@ -300,6 +300,38 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     return pids
 
 
+def find_game_pids(launcher_path: Path) -> list[int]:
+    """按「客户端进程名 + exe 位于启动器安装根目录树内」找游戏 pid。
+
+    口径与 find_launcher_pids 一致：``Client-Win64-Shipping.exe`` 是虚幻通用进程
+    名，只在「启动器记录解不出客户端路径」时使用，单按名匹配会误伤同机其它虚幻
+    游戏；exe 不可读（多为提权进程）无法确认归属，跳过并警告，宁可不杀。
+
+    代价是游戏装在启动器安装根目录之外时找不到——那种情况只能由用户手动指定
+    客户端路径（``Game.ClientPath``），本函数不猜。
+    """
+
+    root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
+    pids: list[int] = []
+    for process in psutil.process_iter(["name", "exe"]):
+        try:
+            name = (process.info["name"] or "").casefold()
+            if name != _GAME_PROCESS.casefold():
+                continue
+            exe = process.info["exe"]
+            if exe is None:
+                logger.warning(
+                    f"同名游戏进程 exe 不可读，跳过清理以免误杀: pid={process.pid}"
+                )
+                continue
+            if not exe.casefold().startswith(root_prefix):
+                continue
+            pids.append(process.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return pids
+
+
 def has_launcher_window(launcher_path: Path) -> bool:
     """清理后复核启动器窗口是否仍存在。
 
@@ -555,6 +587,9 @@ def start_game_via_launcher(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-WW 启动器启动仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
 
     # 开启诊断记录：窗口定位结果与各轮 OCR 全量条目写入 debug/okww-launcher-start/，
     # 供按钮未被点击时排查窗口错抓、截图偏移与 OCR 文本漂移

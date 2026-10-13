@@ -65,10 +65,10 @@
           <a-col :xs="24" :md="12">
             <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
               <a-select
-                :value="formData.Info.Annihilation"
+                :value="formData.Task.Annihilation"
                 :options="annihilationStageOptions"
                 :disabled="loading"
-                @change="emitSave('Info.Annihilation', $event)"
+                @change="emitSave('Task.Annihilation', $event)"
               />
             </a-form-item>
           </a-col>
@@ -81,10 +81,10 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.AnnihilationStartWeekday || 'Monday'"
+                :value="formData.Task.AnnihilationStartWeekday || 'Monday'"
                 :options="annihilationWeekdayOptions"
                 :disabled="loading"
-                @change="emitSave('Info.AnnihilationStartWeekday', $event)"
+                @change="emitSave('Task.AnnihilationStartWeekday', $event)"
               />
             </a-form-item>
           </a-col>
@@ -114,6 +114,31 @@
       </PipelineRow>
 
       <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
+      <PipelineRow
+        :name="t('eventDepotPreview.name')"
+        :summary="eventDepotSummary"
+        :checked="formData.Task.IfEventDepotMaintain"
+        :disabled="loading"
+        :hint="t('eventDepotPreview.hint')"
+        @change="emitSave('Task.IfEventDepotMaintain', $event)"
+      >
+        <DepotMaintainPlanEditor
+          :editor="eventDepotPlanEditor"
+          :form-data="formData"
+          :loading="loading"
+          :stage-options="stageOptions"
+          :item-options="depotItemOptions"
+          :item-options-loading="depotItemOptionsLoading"
+          :item-options-error="depotItemOptionsError"
+          :stage-candidates="{}"
+          :stage-candidates-loading="[]"
+          :inventory="depotInventory"
+          :depot-inventory-time="depotInventoryTime"
+          :activity-stages="activityStages"
+          :activity-loading="activityStageLoading"
+          :activity-error="activityStageError"
+        />
+      </PipelineRow>
       <PipelineRow
         :name="t('edit.maaEventFirst')"
         :summary="activitySummary"
@@ -193,6 +218,7 @@
           :cultivate-preview-loading="cultivatePreviewLoading"
           :cultivate-preview-error="cultivatePreviewError"
           :load-cultivate-preview="loadCultivatePreview"
+          :import-cultivate-targets="importCultivateTargets"
           @save="emitSave"
         />
       </PipelineRow>
@@ -249,15 +275,15 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.InfrastMode"
+                :value="formData.Task.InfrastMode"
                 :options="INFRAST_MODE_OPTIONS"
                 :disabled="loading"
-                @change="emitSave('Info.InfrastMode', $event)"
+                @change="emitSave('Task.InfrastMode', $event)"
               />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="16">
+        <a-row v-if="formData.Task.InfrastMode === 'Custom'" :gutter="16">
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
@@ -268,7 +294,7 @@
               </template>
               <div class="detail-inline">
                 <a-input
-                  :value="formData.Info.InfrastName"
+                  :value="formData.Task.InfrastName"
                   :placeholder="t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
@@ -349,8 +375,10 @@ import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
   CultivateGoalOption as GoalOption,
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
+  CultivateImportResult,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
+import type { ActivityItem } from '@/types/home'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
@@ -375,11 +403,13 @@ const props = defineProps<{
   loading: boolean
   stageOptions: any[]
   activityStageOptions: Array<{ label: string; value: number }>
+  activityStages: ActivityItem[]
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIndex?: number
   depotItemOptions: SelectOption[]
   depotPlanEditor: DepotMaintainPlanEditorState
+  eventDepotPlanEditor: DepotMaintainPlanEditorState
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
   /** 按物品缓存的关卡候选（含每理智效率，来自一图流数据层；[] 表示已加载但无候选） */
@@ -406,6 +436,7 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
+  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
@@ -430,7 +461,7 @@ const dailyTasks = [
   { key: 'IfAward', label: t('edit.claimRewards') },
 ] as const
 
-const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')
+const annihilationEnabled = computed(() => formData.value.Task.Annihilation !== 'Close')
 
 // 剿灭周 / 绿票月标记按用户区服的游戏日换日，与后端 AutoProxy 一致
 const gameDayOffset = () => getGameDayOffset(formData.value.Info.Server)
@@ -445,17 +476,17 @@ const annihilationCompletedThisWeek = computed(
 let lastAnnihilationStage = 'Annihilation'
 const handleAnnihilationToggle = (checked: boolean) => {
   if (checked) {
-    emitSave('Info.Annihilation', lastAnnihilationStage)
+    emitSave('Task.Annihilation', lastAnnihilationStage)
   } else {
-    lastAnnihilationStage = formData.value.Info.Annihilation || 'Annihilation'
-    emitSave('Info.Annihilation', 'Close')
+    lastAnnihilationStage = formData.value.Task.Annihilation || 'Annihilation'
+    emitSave('Task.Annihilation', 'Close')
   }
 }
 
 const annihilationSummary = computed(() =>
   summarizeAnnihilation(
-    formData.value.Info.Annihilation,
-    formData.value.Info.AnnihilationStartWeekday || 'Monday',
+    formData.value.Task.Annihilation,
+    formData.value.Task.AnnihilationStartWeekday || 'Monday',
     annihilationCompletedThisWeek.value
   )
 )
@@ -533,22 +564,36 @@ const infrastHint = computed(() => {
 })
 
 const infrastSummary = computed(() => {
-  const customLabel = [formData.value.Info.InfrastName, infrastSelectLabel.value]
+  const customLabel = [formData.value.Task.InfrastName, infrastSelectLabel.value]
     .filter(Boolean)
     .join(' · ')
   return summarizeInfrast(
     formData.value.Task.IfInfrast,
-    formData.value.Info.InfrastMode,
+    formData.value.Task.InfrastMode,
     customLabel
   )
 })
 
 const cultivateSummary = computed(() =>
-  summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
+  summarizeCultivate(
+    {
+      enabled: formData.value.Task.IfCultivate,
+      targetsJson: formData.value.Task.CultivateTargets,
+      autoRaise: formData.value.Task.CultivateAutoRaise ?? false,
+    },
+    t
+  )
 )
 
 const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans, t)
+)
+const eventDepotSummary = computed(() =>
+  summarizeDepot(
+    formData.value.Task.IfEventDepotMaintain,
+    formData.value.Task.EventDepotMaintainPlans,
+    t
+  )
 )
 
 const greenTicketStoreDoneThisMonth = computed(

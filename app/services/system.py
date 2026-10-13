@@ -128,6 +128,12 @@ class _SystemHandler:
             logger.info("不执行系统电源操作")
             return
 
+        # 回放在后台复制；真正执行电源动作前给它有限的收尾窗口。
+        from app.services.obs_replay import ObsReplay
+
+        if not await ObsReplay.drain():
+            logger.warning("失败回放尚未保存完成，继续执行电源操作")
+
         if mode == "KillSelf" and Config.server is not None:
             logger.info("执行退出主程序操作")
             if not from_frontend:
@@ -142,6 +148,10 @@ class _SystemHandler:
 
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
+        # 强制关机（shutdown /f）不等程序退出，魔改 AVD 实例同样要先 sync 再关；
+        # 其余模拟器的进程清理仍只在原来三种操作上做
+        if mode in {"Shutdown", "ShutdownForce", "Reboot", "Logoff"}:
+            await self.close_avd_instances()
         if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")
@@ -277,6 +287,19 @@ class _SystemHandler:
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
 
+    async def close_avd_instances(self) -> None:
+        """按进程名强杀之前，先把在跑的魔改 AVD 实例正常关掉（先 sync）。
+
+        强杀不走客体关机流程，客体页缓存里没写回的数据会丢。整体限时（30 秒），出错只记日志，
+        不拦住电源操作。
+        """
+        try:
+            from app.utils.emulator2.avd import service as avd_service
+
+            await avd_service.close_running_instances()
+        except Exception as e:  # noqa: BLE001 - 关不掉也要继续关机
+            logger.warning(f"关闭魔改 AVD 实例失败，继续电源操作: {e}")
+
     async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""
 
@@ -296,6 +319,19 @@ class _SystemHandler:
 
         await asyncio.to_thread(_kill_all)
         logger.success("模拟器进程清除完成")
+
+    async def is_process_running(self, path: Path | str) -> bool:
+        """按镜像路径判断该进程是否还在跑。
+
+        Args:
+            path (Path | str): 目标进程路径。
+
+        Returns:
+            bool: 有该路径的进程在跑时返回 True。读不出镜像路径的同名候选不算——
+                那些进程无法归到这个路径上，与 `kill_process` 用同一套判据。
+        """
+
+        return bool((await self._scan_processes_by_path(path)).pids)
 
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。

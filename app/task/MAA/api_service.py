@@ -46,6 +46,11 @@ from app.models.config import (
     maa_task_queue,
     read_maa_config,
 )
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import get_logger
 from app.utils.constants import MAA_DEPOT_EXCLUDED_ITEM_IDS, game_now
 from app.utils.io import write_file
@@ -117,9 +122,9 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
 
 
 def _infrast_config_dir(script_id: str, user_id: str) -> Path:
-    """基建班次的事实源目录: 托管=配置来源存档, 直控=MAA 当前生效配置。
+    """基建班次的事实源目录: 托管=配置来源存档, 原生来源=MAA 当前生效配置。
 
-    与 AutoProxy._config_archive_dir 的来源判定对称; 直控不落存档,
+    与 AutoProxy._config_archive_dir 的来源判定对称; 原生来源不落存档,
     MAA 安装目录的现有配置即持久存储。
     """
 
@@ -127,10 +132,10 @@ def _infrast_config_dir(script_id: str, user_id: str) -> Path:
     user_uid = uuid.UUID(user_id)
     script_config = Config.ScriptConfig[script_uid]
     if isinstance(script_config, MaaConfig) and user_uid in script_config.UserData:
-        mode = script_config.UserData[user_uid].get("Info", "Mode")
-        if mode == "脚本":
+        base = read_config_base(script_config.UserData[user_uid])
+        if base == CONFIG_BASE_SHARED:
             return Path.cwd() / f"data/{script_id}/Default/ConfigFile"
-        if mode == "直控":
+        if base == CONFIG_BASE_NATIVE:
             return Path(script_config.get("Info", "Path")) / "config"
     return Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile"
 
@@ -138,16 +143,16 @@ def _infrast_config_dir(script_id: str, user_id: str) -> Path:
 def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None, str]:
     """生效排班表 (plans, problem, state), 与运行时使用的那份同源。
 
-    直控且关闭快速配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
+    原生来源且关闭快速配置时 set_maa 跳过注入, 运行时直接用 MAA 原生配置,
     排班表只存在原生的 Infrast 任务里(InfrastPlan 不落盘, 事实源是
-    Filename 指向的排班文件); 其余组合(托管 / 直控+快速配置)都由 MAS
-    注入存档排班表。若不加区分地对直控读 MAS 存档, 直控用户的班次会被
-    空存档误拒; 反过来在直控+快速配置下读原生配置, 又会与运行时不一致。
+    Filename 指向的排班文件); 其余组合(托管 / 原生来源+快速配置)都由 MAS
+    注入存档排班表。若不加区分地对原生来源读 MAS 存档, 原生来源用户的班次会被
+    空存档误拒; 反过来在原生来源+快速配置下读原生配置, 又会与运行时不一致。
     """
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    if user_config.get("Info", "Mode") != "直控" or user_config.get(
+    if read_config_base(user_config) != CONFIG_BASE_NATIVE or user_config.get(
         "Info", "IfQuickConfig"
     ):
         raw = user_config.get("Data", "CustomInfrast")
@@ -200,7 +205,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
 
     index 与 MAA 原生语义一致: -1=自动, 0..n-1=从该班开始顺序轮换。MAS 注入
     的组合下事实源是用户配置的 ``Data.InfrastPlanIndex``(每用户一份, 推进由
-    MAS 在基建换班完成后做), 带时段表只接受 -1; 直控且关快速配置时写 MAA
+    MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关快速配置时写 MAA
     原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
     """
 
@@ -266,7 +271,7 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     """读取当前基建班次索引; 带时段表 / 未设置过时返回 -1(自动)。
 
     MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
-    直控且关快速配置时读 MAA 原生配置。
+    原生来源且关快速配置时读 MAA 原生配置。
     """
 
     script_uid = uuid.UUID(script_id)
@@ -316,7 +321,7 @@ async def get_user_combox_infrastructure(script_id: str, user_id: str) -> dict:
     user_config = script_config.UserData[user_uid]
     plans, problem, state = _infrast_plans(script_id, user_id)
     # 仅自定义模式下不可用才值得提醒; 普通模式空排班表是正常状态
-    if problem is not None and user_config.get("Info", "InfrastMode") == "Custom":
+    if problem is not None and user_config.get("Task", "InfrastMode") == "Custom":
         logger.warning(f"自定义基建排班不可用, 下拉选项按空返回: {problem}")
     data = []
     for i, plan in enumerate(plans):
@@ -416,8 +421,8 @@ async def get_cultivate_operators(
 ) -> list[dict[str, object]]:
     """获取干员养成选择器目录（一图流全量表兜底，方案决策 11/38）。
 
-    goal-aware 过滤：无森空岛快照时退化"剔已精 2"，绑定后按
-    "精2 ∧ 专精全满 ∧ 模组全满"剔除；skills/modules 为目标编辑行
+    goal-aware 过滤：技能等级未观测或未满时保留，绑定后按
+    "精英化、技能等级、专精与模组均已满"剔除；skills/modules 为目标编辑行
     展示用名称目录（仅 UI 消费，不进内核契约）。
     """
 
@@ -448,6 +453,27 @@ async def get_cultivate_operators(
         keep_ids=keep_ids,
     )
     return [item for item in catalog if item.get("label") and item.get("value")]
+
+
+async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]:
+    """转换剪贴板目标，不写用户配置；完整目录避免过滤掉已满级干员。"""
+
+    from app.task.MAA.tools.cultivate import (
+        depot_cultivate_service,
+        dump_cultivate_targets,
+        parse_clipboard_targets,
+    )
+
+    _maa_script_config(script_id)
+    catalog = await depot_cultivate_service.operator_catalog(
+        config_path=Config.config_path, proxy=Config.proxy
+    )
+    targets = parse_clipboard_targets(content, catalog)
+    imported_ids = {target.operator_id for target in targets}
+    return {
+        "targets": json.dumps(dump_cultivate_targets(targets), ensure_ascii=False),
+        "data": [entry for entry in catalog if entry["value"] in imported_ids],
+    }
 
 
 async def _item_names(script_id: str) -> dict[str, str]:
@@ -623,6 +649,7 @@ async def get_cultivate_preview(
             "source": snapshot.source,
             "elite": snapshot.data.elite,
             "level": snapshot.data.level,
+            "skillLevel": snapshot.data.skill_level,
             "masteries": dict(snapshot.data.masteries),
             "modules": dict(snapshot.data.modules),
         }

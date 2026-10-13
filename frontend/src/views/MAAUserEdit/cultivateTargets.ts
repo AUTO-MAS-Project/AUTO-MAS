@@ -1,11 +1,18 @@
-// 养成目标 JSON 的解析与序列化（R4 起支持精英化/专精/模组三类 goal 编辑）
+// 养成目标 JSON 的解析与序列化
+import type { MaaCultivateOperatorOptionItem } from '@/api'
 
-export type CultivateGoalKind = 'elite' | 'mastery' | 'module'
+export type CultivateGoalKind = 'elite' | 'skill' | 'mastery' | 'module'
 
 export interface CultivateTargetRow {
   operatorId: string
-  /** 原始 goals（含 state），精英化/专精/模组均按 kind 过滤展示与编辑 */
+  /** 原始 goals（含 state），各目标按 kind 过滤展示与编辑 */
   rawGoals: unknown[]
+}
+
+export interface CultivateImportResult {
+  added: number
+  updated: number
+  operatorIds: string[]
 }
 
 export interface CultivateGoalView {
@@ -30,6 +37,8 @@ export interface CultivateOperatorCatalogEntry {
   profession: string
   /** 精英化可达档位上限；0 = 该干员无精英化消耗数据（决策 40） */
   maxElite: number
+  /** 普通技能等级上限；0 = 无普通技能升级消耗数据 */
+  maxSkillLevel: number
   /** maxElite=0 时为真表示上游数据缺失（区别于 1/2/3★ 结构上不适用） */
   dataMissing: boolean
   skills: CultivateGoalOption[]
@@ -51,10 +60,15 @@ export const parseCultivateTargets = (
       // 在编辑器里不可见却在保存时原样带回（与后端 parse_cultivate_targets 同口径）
       const seen = new Set<string>()
       const goals = item.goals.filter((goal: any) => {
-        if (goal?.kind !== 'elite' && goal?.kind !== 'mastery' && goal?.kind !== 'module') {
+        if (
+          goal?.kind !== 'elite' &&
+          goal?.kind !== 'skill' &&
+          goal?.kind !== 'mastery' &&
+          goal?.kind !== 'module'
+        ) {
           return true
         }
-        const key = `${goal.kind}|${String(goal.target_id ?? '')}`
+        const key = `${goal.kind}|${goal.kind === 'elite' || goal.kind === 'skill' ? '' : String(goal.target_id ?? '')}`
         if (seen.has(key)) return false
         seen.add(key)
         return true
@@ -71,14 +85,14 @@ export const parseCultivateTargets = (
 export const serializeCultivateTargets = (rows: CultivateTargetRow[]): string =>
   JSON.stringify(rows.map(row => ({ operator_id: row.operatorId, goals: row.rawGoals })))
 
-/** 按 kind 取目标视图（elite 的 targetId 恒为空串） */
+/** 按 kind 取目标视图（elite/skill 的 targetId 恒为空串） */
 export const listGoals = (rawGoals: unknown[], kind: CultivateGoalKind): CultivateGoalView[] =>
   rawGoals
     .map((goal: any) =>
       goal?.kind === kind
         ? {
             kind,
-            targetId: String(goal.target_id ?? ''),
+            targetId: kind === 'elite' || kind === 'skill' ? '' : String(goal.target_id ?? ''),
             toLevel: Number(goal.to_level) || 0,
             state: String(goal.state ?? 'not_started'),
           }
@@ -89,15 +103,21 @@ export const listGoals = (rawGoals: unknown[], kind: CultivateGoalKind): Cultiva
 /** 新增或更新目标；已存在时只改档位并保留 state（避免把刷取中重置掉） */
 export const upsertGoal = (
   rawGoals: unknown[],
-  goal: { kind: CultivateGoalKind; targetId: string; toLevel: number }
+  goal: { kind: CultivateGoalKind; targetId: string; toLevel: number; state?: string }
 ): unknown[] => {
-  const targetId = goal.kind === 'elite' ? '' : goal.targetId
+  const shared = goal.kind === 'elite' || goal.kind === 'skill'
+  const targetId = shared ? '' : goal.targetId
   let replaced = false
   const goals = rawGoals.map(existing => {
     const g = existing as any
-    if (g?.kind === goal.kind && String(g.target_id ?? '') === targetId) {
+    if (g?.kind === goal.kind && (shared || String(g.target_id ?? '') === targetId)) {
       replaced = true
-      return { ...g, to_level: goal.toLevel }
+      return {
+        ...g,
+        target_id: targetId,
+        to_level: goal.toLevel,
+        ...(goal.state ? { state: goal.state } : {}),
+      }
     }
     return existing
   })
@@ -106,29 +126,41 @@ export const upsertGoal = (
       kind: goal.kind,
       target_id: targetId,
       to_level: goal.toLevel,
-      state: 'not_started',
+      state: goal.state ?? 'not_started',
     })
   }
   return goals
 }
 
-/** 移除目标（kind+targetId 定位；elite 的 targetId 恒为空串） */
+/** 移除目标（kind+targetId 定位；elite/skill 的 targetId 恒为空串） */
 export const removeGoal = (
   rawGoals: unknown[],
   kind: CultivateGoalKind,
   targetId: string
 ): unknown[] => {
-  const id = kind === 'elite' ? '' : targetId
+  const shared = kind === 'elite' || kind === 'skill'
+  const id = shared ? '' : targetId
   return rawGoals.filter(
-    (goal: any) => !(goal?.kind === kind && String(goal.target_id ?? '') === id)
+    (goal: any) => !(goal?.kind === kind && (shared || String(goal.target_id ?? '') === id))
   )
 }
 
-/** 设置精英化目标档位；null = 不设精英化目标（仅专精/模组） */
+/** 设置精英化目标档位；null = 不设精英化目标 */
 export const setEliteLevel = (rawGoals: unknown[], toLevel: number | null): unknown[] =>
   toLevel == null
     ? removeGoal(rawGoals, 'elite', '')
     : upsertGoal(rawGoals, { kind: 'elite', targetId: '', toLevel })
+
+/** 选择专精时同步普通技能目标为 7 级；清除专精不移除技能目标。 */
+export const setMasteryLevel = (
+  rawGoals: unknown[],
+  targetId: string,
+  toLevel: number | null
+): unknown[] => {
+  if (toLevel == null) return removeGoal(rawGoals, 'mastery', targetId)
+  const goals = upsertGoal(rawGoals, { kind: 'mastery', targetId, toLevel })
+  return upsertGoal(goals, { kind: 'skill', targetId: '', toLevel: 7 })
+}
 
 /** 可达档位列表 1..maxLevel；maxLevel<=0（无消耗数据）时为空（决策 40） */
 export const tierValues = (maxLevel: number): number[] => {
@@ -166,3 +198,55 @@ export const removeOperator = (
   rows: CultivateTargetRow[],
   operatorId: string
 ): CultivateTargetRow[] => rows.filter(row => row.operatorId !== operatorId)
+
+/** 导入仅追加或提高目标，保留未知字段、模组与原顺序；提高档位重新判定达成。 */
+export const mergeCultivateTargets = (
+  rows: CultivateTargetRow[],
+  imported: CultivateTargetRow[]
+): { rows: CultivateTargetRow[]; result: CultivateImportResult } => {
+  const merged = new Map(rows.map(row => [row.operatorId, row]))
+  const originalIds = new Set(merged.keys())
+  const affected = new Set<string>()
+  for (const incoming of imported) {
+    const current = merged.get(incoming.operatorId)
+    let rawGoals = current?.rawGoals ?? []
+    let changed = false
+    for (const kind of ['elite', 'skill', 'mastery', 'module'] as const) {
+      for (const goal of listGoals(incoming.rawGoals, kind)) {
+        const saved = listGoals(rawGoals, kind).find(item => item.targetId === goal.targetId)
+        if (saved && saved.toLevel >= goal.toLevel) continue
+        rawGoals = upsertGoal(rawGoals, { ...goal, state: 'not_started' })
+        changed = true
+      }
+    }
+    if (!changed) continue
+    merged.set(incoming.operatorId, { operatorId: incoming.operatorId, rawGoals })
+    affected.add(incoming.operatorId)
+  }
+  return {
+    rows: [...merged.values()],
+    result: {
+      added: [...affected].filter(id => !originalIds.has(id)).length,
+      updated: [...affected].filter(id => originalIds.has(id)).length,
+      operatorIds: [...affected],
+    },
+  }
+}
+
+/** 选择器与剪贴板导入共用 API 目录归一化。 */
+export const normalizeCultivateCatalog = (
+  options: MaaCultivateOperatorOptionItem[]
+): CultivateOperatorCatalogEntry[] =>
+  options
+    .filter(option => option.value)
+    .map(option => ({
+      value: option.value,
+      label: option.label,
+      rarity: option.rarity ?? 0,
+      profession: option.profession ?? '',
+      maxElite: option.maxElite ?? 2,
+      maxSkillLevel: option.maxSkillLevel ?? 0,
+      dataMissing: option.dataMissing ?? false,
+      skills: (option.skills ?? []).map(item => ({ ...item, maxLevel: item.maxLevel ?? 0 })),
+      modules: (option.modules ?? []).map(item => ({ ...item, maxLevel: item.maxLevel ?? 0 })),
+    }))

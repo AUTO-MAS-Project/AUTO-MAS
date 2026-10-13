@@ -5,9 +5,32 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
 from app.utils.logger import get_logger
 
 logger = get_logger("进程管理")
+
+
+def _terminate_process_tree(pid: int) -> None:
+    """同步终止进程及其当前子进程，用于取消异步命令时的兜底清理。"""
+
+    try:
+        root = psutil.Process(pid)
+        processes = [*root.children(recursive=True), root]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+
+    for process in reversed(processes):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            process.terminate()
+
+    _, alive = psutil.wait_procs(processes, timeout=3)
+    for process in alive:
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            process.kill()
+    if alive:
+        psutil.wait_procs(alive, timeout=3)
 
 
 @dataclass
@@ -107,6 +130,7 @@ class ProcessRunner:
         timeout: float = 60,
         if_merge_std: bool = False,
         breakaway: bool = False,
+        kill_tree_on_cancel: bool = False,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -132,9 +156,23 @@ class ProcessRunner:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
+        except asyncio.CancelledError:
+            # 取消运行脚本的任务时，communicate() 不会替调用方回收子进程；
+            # 先结束进程并等待句柄释放，避免停止队列后留下孤儿脚本进程。
+            if kill_tree_on_cancel and process.pid is not None:
+                await asyncio.to_thread(_terminate_process_tree, process.pid)
+            else:
+                with suppress(ProcessLookupError):
+                    process.kill()
+            with suppress(asyncio.CancelledError):
+                await process.wait()
+            raise
         except asyncio.TimeoutError:
-            with suppress(ProcessLookupError):
-                process.kill()
+            if kill_tree_on_cancel and process.pid is not None:
+                await asyncio.to_thread(_terminate_process_tree, process.pid)
+            else:
+                with suppress(ProcessLookupError):
+                    process.kill()
             await process.wait()
             logger.warning(
                 f"子进程执行超时，已结束进程: {command} - 用时: "

@@ -43,6 +43,8 @@ class MaaFWInterfaceValidationReport(BaseModel):
 _EMULATOR_EXTRA_RELATION: dict[str, dict[str, bool]] = {
     "mumu": {"screencap": True, "input": True},
     "ldplayer": {"screencap": True, "input": False},
+    # 魔改 AVD：AVDExtras 只有截图（MaaFramework v5.7.0 起），输入走默认（Maatouch）
+    "avd": {"screencap": True, "input": False},
 }
 
 
@@ -153,7 +155,8 @@ def build_interface_preview_data(
                 "description": tr_description(preset.description),
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
-                "snapshot": snapshot.model_dump(mode="json"),
+                # 实例显示名只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它
+                "snapshot": snapshot.model_dump(mode="json", exclude={"taskLabels"}),
             }
         )
 

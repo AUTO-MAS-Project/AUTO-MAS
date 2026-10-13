@@ -25,14 +25,21 @@ import shutil
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from typing import Literal
 
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import (
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
@@ -168,8 +175,8 @@ def _restore_session_startup_overrides(
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式
 
-    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（脚本态共享
-    Default、用户态独立目录），见 :meth:`_mas_owner`。view_only=True 时为
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（shared 来源共享
+    Default、independent 来源独立目录），见 :meth:`_mas_owner`。view_only=True 时为
     查看会话：只读预览（如「查看历史备份」）——用户级会话下发的 owner 目录
     即刚恢复的备份（所见即备份），脚本级会话跳过下发（原生目录即备份）；
     结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
@@ -225,23 +232,23 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     def _mas_owner(self) -> str | None:
-        """本会话的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+        """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
         与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
-        回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。直控用户没有
-        MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），返回 ``None``。
+        回写此前硬编码用户目录，共享来源用户的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
+        MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），返回 ``None``。
         """
 
         user_id = self.cur_user_item.user_id
         if user_id == "Default":
             return "Default"
-        mode = str(
-            self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
-        ).strip()
-        if mode == "直控":
+        base = read_config_base(
+            self.user_config[uuid.UUID(user_id)], CONFIG_BASE_SHARED
+        )
+        if base == CONFIG_BASE_NATIVE:
             return None
-        return user_id if mode == "用户" else "Default"
+        return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
     async def set_maa(self):
         """配置MAA运行参数"""
@@ -256,10 +263,10 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        # 直控会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
+        # 原生来源会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
         # 内的编辑由本体落盘并保留
         if self._mas_owner() is None:
-            logger.info("MAA 直控会话: 直接使用安装目录原生配置, MAS 零写入")
+            logger.info("MAA 原生来源会话: 直接使用安装目录原生配置, MAS 零写入")
             return
 
         # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
@@ -301,7 +308,11 @@ class ScriptConfigTask(TaskExecuteBase):
             mas_dir,
             overlay=overlay,
             # 备份标注来源：tri_state 池跨来源恢复靠它切回
-            mode="用户" if owner == target_user_id else "脚本",
+            base=(
+                CONFIG_BASE_INDEPENDENT
+                if owner == target_user_id
+                else CONFIG_BASE_SHARED
+            ),
         )
 
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
@@ -326,6 +337,14 @@ class ScriptConfigTask(TaskExecuteBase):
             if not isinstance(source_queue, list) or not source_queue:
                 source_queue = preset_queue
             source_queue, _ = restore_maa_default_task_queue(source_queue, preset_queue)
+            # 活动预设在配置会话里默认勾选；查看备份时保留历史状态。
+            if not self.view_only:
+                for task in source_queue:
+                    if (
+                        task.get("TaskType") == "DepotMaintain"
+                        and task.get("Name") == "活动库存保持"
+                    ):
+                        task["IsEnable"] = True
             configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
 
         # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；
@@ -372,6 +391,21 @@ class ScriptConfigTask(TaskExecuteBase):
         }
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
+    async def _notify_config_discarded(
+        self, reason: Literal["structure", "unreadable", "not_written"]
+    ) -> None:
+        """本次会话的改动被丢弃时显式通知前端弹窗。
+
+        回写失败过去只留在日志里，用户界面上却提示「已保存」，改动其实没进
+        存档。原因用机器可读值下发，提示正文由前端本地化。
+        """
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_CONFIG_DISCARDED,
+            data=WSTaskConfigDiscardedData(reason=reason),
+        )
+
     async def final_task(self):
 
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
@@ -386,9 +420,9 @@ class ScriptConfigTask(TaskExecuteBase):
             self.cur_user_item.status = "完成"
             return
 
-        # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
-            logger.success("MAA 直控配置已由脚本原生 GUI 保存")
+            logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
             return
 
@@ -404,10 +438,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
                 )
+                await self._notify_config_discarded("unreadable")
                 return
             if not isinstance(current, dict) or not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 logger.info("MAA 配置回写: 无完整落盘内容, 存档保持不变")
+                await self._notify_config_discarded("not_written")
                 return
             current_docs[name] = current
 
@@ -417,6 +453,7 @@ class ScriptConfigTask(TaskExecuteBase):
             current_docs["gui.new.json"].get("Configurations"),
         ):
             logger.warning("MAA 队列结构或配置方案发生变化, 本次 GUI 配置修改全部丢弃")
+            await self._notify_config_discarded("structure")
             return
 
         for name, current in current_docs.items():

@@ -38,7 +38,7 @@ export function useMaaFWEmbeddedImport({
 }: MaaFWEmbeddedImportOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-  const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
+  const { getEmbeddedStatus, reimportEmbedded, syncEmbedded } = useMaaFWEmbeddedApi()
   const { ensureEnvSubscription } = channel
 
   // ---- 内嵌副本 ----
@@ -113,6 +113,20 @@ export function useMaaFWEmbeddedImport({
     }
   }
 
+  /**
+   * 「立即同步」：跟随来源目录时按当前来源目录强制重导。结果（变了哪些文件 / 内容未变化）是后端
+   * 那句话，失败原因（运行中、被占用、来源不在、投影失败）同样原样提示；成功后状态行的同步时间
+   * 随返回的状态刷新，interface 可能变了，重新读一遍。
+   */
+  const syncFromSource = async () => {
+    ensureEnvSubscription()
+    importPercent.value = 0
+    importMessage.value = ''
+    const ok = await runEmbeddedAction(() => syncEmbedded(scriptId))
+    if (!ok || isPageUnmounted()) return
+    await runPreviewOnNewRoot()
+  }
+
   return {
     embeddedStatus,
     embeddedBusy,
@@ -120,5 +134,6 @@ export function useMaaFWEmbeddedImport({
     importMessage,
     refreshEmbeddedStatus,
     selectMaaFWPath,
+    syncFromSource,
   }
 }

@@ -67,15 +67,16 @@ from app.utils.config_archive import (
     list_times,
     read_overlay_sidecar,
 )
+from app.utils.constants import BASE_SOURCE_LABELS
 
 logger = get_logger("BAAH 配置备份")
 
 # ══════════════════ MAS 用户字段侧车 ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "ConfigName")
+_OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "ConfigName")
 """MAS 编辑页字段（UserData.Info；当前均为元字段，预留未来扩展）"""
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode", "IfQuickConfig"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base", "IfQuickConfig"}
 """仅预览不回填的字段：来源与快速配置决定 MAS 是否写入 BAAH，恢复以当前值为准"""
 
 
@@ -299,8 +300,9 @@ def build_overlay_preview(overlay: dict) -> dict:
     sections: list[dict] = []
 
     mas_rows: list[dict] = []
-    if "Mode" in overlay:
-        mas_rows.append(_row("配置文件来源", overlay["Mode"]))
+    if "Base" in overlay:
+        base = str(overlay["Base"])
+        mas_rows.append(_row("配置文件来源", BASE_SOURCE_LABELS.get(base, base)))
     if mas_rows:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 

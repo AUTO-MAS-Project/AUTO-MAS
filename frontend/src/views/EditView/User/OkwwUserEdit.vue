@@ -98,7 +98,7 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
+                  :model-value="formData.Info.Base"
                   :options="okwwConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="isSaving"
@@ -427,28 +427,28 @@ const pushLogModeOptions = [
 
 const okwwConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.useExistingOkwwConfiguration'),
     icon: 'setting',
@@ -492,7 +492,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     IfUseMasConfig: true,
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
@@ -537,9 +537,9 @@ const formData = reactive<OkwwUserFormData>({
 const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await saveField('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await saveField('Info.Base', formData.Info.Base)
 }
 
 const handleCancel = async () => {
@@ -753,7 +753,7 @@ const handleRestored = async (target: string) => {
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -765,7 +765,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useTheme } from './useTheme'
 
 const logger = window.electronAPI.getLogger('日志高亮')
@@ -58,6 +58,12 @@ interface LogHighlightStyles {
 interface LogEditorConfig {
   fontSize: number
   lineHeight: number
+}
+
+interface LogEditorThemeOptions {
+  name: string
+  isDark: Readonly<Ref<boolean>>
+  colors: Readonly<Ref<Record<string, string>>>
 }
 
 // 默认浅色主题颜色
@@ -226,14 +232,16 @@ const saveEditorConfig = () => {
 // 初始化加载
 loadConfig()
 
-export function useLogHighlight() {
-  const { isDark } = useTheme()
+export function useLogHighlight(themeOptions?: LogEditorThemeOptions) {
+  const { isDark: appIsDark } = useTheme()
+  const isDark = themeOptions?.isDark ?? appIsDark
+  const themeName = themeOptions?.name ?? 'log'
 
   // 当前使用的颜色（根据主题）
   const currentColors = computed(() => (isDark.value ? darkColors.value : lightColors.value))
 
   // 计算当前使用的主题名称
-  const editorTheme = computed(() => (isDark.value ? 'log-dark' : 'log-light'))
+  const editorTheme = computed(() => `${themeName}-${isDark.value ? 'dark' : 'light'}`)
 
   // 生成字体样式字符串
   const getFontStyle = (isBold: boolean, isUnderline: boolean = false) => {
@@ -352,7 +360,7 @@ export function useLogHighlight() {
       const s = styles.value
 
       // 每次都重新定义主题（以应用最新的颜色配置）
-      monaco.editor.defineTheme('log-light', {
+      monaco.editor.defineTheme(`${themeName}-light`, {
         base: 'vs',
         inherit: true,
         rules: [
@@ -409,10 +417,10 @@ export function useLogHighlight() {
           { token: 'variable', foreground: lightColors.value.variable },
           { token: 'operator', foreground: lightColors.value.operator },
         ],
-        colors: {},
+        colors: themeOptions?.colors.value ?? {},
       })
 
-      monaco.editor.defineTheme('log-dark', {
+      monaco.editor.defineTheme(`${themeName}-dark`, {
         base: 'vs-dark',
         inherit: true,
         rules: [
@@ -469,7 +477,7 @@ export function useLogHighlight() {
           { token: 'variable', foreground: darkColors.value.variable },
           { token: 'operator', foreground: darkColors.value.operator },
         ],
-        colors: {},
+        colors: themeOptions?.colors.value ?? {},
       })
     } catch (error) {
       logger.error(`Failed to register log language: ${String(error)}`)

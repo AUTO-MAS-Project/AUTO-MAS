@@ -9,6 +9,7 @@ import type { VNode } from 'vue'
 import type { ComboBoxItem, MaaFWShellInstanceItem } from '@/api'
 import type { MaaFWFlavorType, MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
 import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
+import type { EmulatorDeviceOption } from '@/composables/useEmulatorDeviceOptions'
 import type { EmulatorType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import type {
@@ -26,6 +27,7 @@ import type {
 import type { MfwReuseChoice } from '@/views/scripts/components/scriptCreateFlow'
 import type { MaaFWUpdateProgressState } from '../Script/MaaFWScriptEdit/updateProgress'
 import type { MaaFWPresetQueueEntry } from '../User/maafwPresetQueue'
+import type { MaaFWQueueSource, MaaFWQueueSourceChip } from '../User/maafwQueueSource'
 
 // ════════════════════════════ 脚本页 ════════════════════════════
 
@@ -71,6 +73,8 @@ export interface MaaFWScriptBasicInfoSectionEmits {
   change: MaaFWScriptChangeEmit
   'select-path': []
   'preview-interface': []
+  /** 跟随来源目录时点了「立即同步」：页面按当前来源目录强制重导 */
+  'sync-source': []
 }
 
 /**
@@ -87,7 +91,8 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
+  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（魔改 AVD 目前只支持 M9A） */
+  emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
   effectiveControllerName: string
@@ -112,6 +117,8 @@ export interface MaaFWScriptControlSectionEmits {
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */
 export interface MaaFWScriptUpdateSectionProps {
+  /** 脚本 ID：CDK 输入框下那行剩余时间 / CDK 状态按它查 */
+  scriptId: string
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   isAutoUpdateDisabled: boolean
@@ -205,17 +212,27 @@ export interface MaaFWUserBasicInfoSectionEmits {
   save: [key: string, value: unknown]
 }
 
+/** 「配置导入」里「本脚本其他用户」的一项：同脚本的另一个用户，与它的队列在当前项目下的样子 */
+export type MaaFWUserQueueImportCandidate = { userId: string; name: string } & MaaFWQueueSource
+
 /** 用户页 `queueHeader`：「任务队列配置」标题与配置导入 / 配置恢复入口、队列提示、受管任务提示 */
 export interface MaaFWUserQueueHeaderSectionProps {
   /** 特调的队列提示，一行一个框（没有就是空数组） */
   queueHintLines: string[]
   /** 队列里残留受管任务时的提示；没有为 null */
   managedQueueAlert: { type: 'warning' | 'info'; message: string } | null
+  /** 「配置导入」→「本脚本其他用户」：队列不为空的其他用户（打开弹窗时页面现取，见 load-user-import） */
+  userImportCandidates: MaaFWUserQueueImportCandidate[]
+  userImportLoading: boolean
 }
 
 export interface MaaFWUserQueueHeaderSectionEmits {
   /** 点了「配置恢复」：页面打开恢复弹窗 */
   'open-restore': []
+  /** 打开了「配置导入」：页面取一次本脚本的用户列表 */
+  'load-user-import': []
+  /** 「配置导入」选了本脚本的另一个用户：页面用它的队列覆盖当前队列（只换任务队列） */
+  'import-from-user': [userId: string]
   /**
    * 「配置导入」把一份外壳配置写进了用户：页面把实际落盘的任务快照与特调一并改掉的用户信息字段
    * （如 M9A 的账号）换进本地状态
@@ -239,7 +256,13 @@ export type PresetTemplate = {
   entries: MaaFWPresetQueueEntry[]
 }
 
-/** 用户页 `taskQueue`：任务队列两栏（左：队列与添加；右：选中任务的选项） */
+/** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
+export type MaaFWQueueTemplateView = { name: string } & MaaFWQueueSource
+
+/**
+ * 用户页 `taskQueue`：上方是全局选项（项目声明了才有，每个用户一份、所有任务共用，值在
+ * `taskSnapshot.globalOptions`），下面是任务队列两栏（左：队列与添加；右：选中任务的选项）
+ */
 export interface MaaFWUserTaskQueueSectionProps {
   interfaceLoading: boolean
   previewData: MaaFWInterfacePreviewData | null
@@ -251,6 +274,11 @@ export interface MaaFWUserTaskQueueSectionProps {
   /** 「添加任务」里有用户没见过的任务：输入框后缀显示 NEW 而不是加号 */
   hasNewTasks: boolean
   presetTemplates: PresetTemplate[]
+  /** 「模板」→「我的模板」：本脚本的自定义模板 */
+  queueTemplates: MaaFWQueueTemplateView[]
+  /** 「存为模板」要存的任务：当前队列去掉虚影与受管任务 */
+  queueTemplateDraft: MaaFWQueueSourceChip[]
+  /** 「模板」弹窗是否打开 */
   showPresetModal: boolean
   taskByName: Map<string, MaaFWTaskInfo>
   selectedTask: MaaFWTaskInfo | null
@@ -265,13 +293,25 @@ export interface MaaFWUserTaskQueueSectionEmits {
   'update:showPresetModal': [value: boolean]
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]
+  /** 把当前队列存成模板（名称已去首尾空格、不与已有模板同名） */
+  saveQueueTemplate: [name: string]
+  /** 套用模板：直接替换队列，失效任务跳过 */
+  applyQueueTemplate: [name: string]
+  renameQueueTemplate: [name: string, nextName: string]
+  deleteQueueTemplate: [name: string]
   reorderTasks: [taskIds: string[]]
   selectTask: [taskId: string]
   moveTask: [taskId: string, direction: -1 | 1]
   taskDragEnd: []
   taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
+  /** 改了一项全局选项：页面写进 `taskSnapshot.globalOptions` 并保存 */
+  globalOptionUpdate: [payload: { optionName: string; value: MaaFWTaskOptionValue }]
   deleteSelectedTask: []
   deleteTask: [taskId: string]
+  /** 队列行右键「复制任务」：在它正下方插一份，勾选、选项与显示名一起复制 */
+  duplicateTask: [taskId: string]
+  /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
+  renameTask: [taskId: string, name: string]
 }
 
 /** 用户页分节键 → props 契约 */

@@ -87,8 +87,8 @@ class _ArknightWin32Toolkit:
         self.tasker = Tasker()
         self.listener = keyboard.Listener()
 
+        # 启用开关由 app.MaaFW.arknights_pc 统一绑定后转发过来，这里不再自己绑
         Config.ToolsConfig.arknights_pc_get_connected = self.get_connect_status
-        Config.ToolsConfig.bind("ArknightsPC", "Enabled", self.on_enabled_change)
 
         self.p = psutil.Process(os.getpid())
         self.original_nice = self.p.nice()

@@ -9,6 +9,11 @@ const BACKEND_WS_ENDPOINT = getDefaultWebSocketEndpoint()
 // 不能叫 app-config：utils/config.ts 把它当旧版 localStorage 配置，读一次就迁移并删除
 const CONFIG_KEY = 'auto-mas.browser-dev.config'
 const INITIALIZED_VERSION_KEY = 'app-initialized-version'
+const ONLINE_APPEARANCE_UNSUPPORTED = {
+  success: false,
+  code: 'UNSUPPORTED' as const,
+  error: '浏览器预览不支持在线外观',
+}
 
 const readJsonStorage = <T>(key: string): T | null => {
   const raw = localStorage.getItem(key)
@@ -63,6 +68,32 @@ const browserDevElectronAPI = {
   fileExists: async () => false,
   readFile: async () => '',
   getAppPath: async () => '',
+  listAppearances: async () => [],
+  getAppearance: async () => null,
+  importAppearance: async () => ({
+    success: false,
+    code: 'UNSUPPORTED' as const,
+    error: '浏览器预览不支持导入外观包，请在桌面应用中操作',
+  }),
+  removeAppearance: async () => ({ success: false, error: '浏览器预览不支持移除外观包' }),
+  clearInvalidAppearance: async () => ({ success: false, error: '浏览器预览不支持清理外观包' }),
+  listOnlineAppearances: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  getOnlineAppearance: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  prepareOnlineAppearance: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  installOnlineAppearance: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  discardOnlineAppearance: async () => ({ success: true }),
+  getOnlineAppearanceCover: async () => ONLINE_APPEARANCE_UNSUPPORTED,
+  inspectLocalAppearance: async () => ({
+    success: false,
+    code: 'UNSUPPORTED' as const,
+    error: '浏览器预览不支持读取外观包',
+  }),
+  inspectAppearanceCover: async () => ({
+    success: false,
+    error: '浏览器预览不支持读取封面图片',
+  }),
+  onAppearanceChanged: () => () => undefined,
+  onThemeConfigChanged: () => () => undefined,
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 

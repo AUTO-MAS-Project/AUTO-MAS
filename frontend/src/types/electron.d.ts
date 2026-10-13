@@ -1,4 +1,16 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type {
+  AppearanceCleanupResult,
+  AppearanceImportResult,
+  InstalledAppearance,
+  LocalAppearanceInspectResult,
+  OnlineAppearanceCoverResult,
+  OnlineAppearanceDetailResult,
+  OnlineAppearanceInstallResult,
+  OnlineAppearanceListResult,
+  OnlineAppearancePrepareResult,
+  OnlineAppearanceQuery,
+} from '@/types/appearance'
 
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
@@ -199,6 +211,7 @@ export interface ElectronAPI {
   windowClose: () => Promise<void>
   appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
@@ -269,6 +282,15 @@ export interface ElectronAPI {
     message?: string
     zipPath?: string
     error?: string
+  }>
+  exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+    errorCode?: 'no-installation' | 'no-files' | 'export-failed'
+    collectedCount?: number
+    incompleteCount?: number
   }>
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
@@ -376,6 +398,34 @@ export interface ElectronAPI {
   readFile: (filePath: string) => Promise<string>
 
   getAppPath: (name: string) => Promise<string>
+
+  // 自定义外观包
+  listAppearances?: () => Promise<InstalledAppearance[]>
+  getAppearance?: (id: string) => Promise<InstalledAppearance | null>
+  importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
+  removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
+  clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
+  listOnlineAppearances?: (query?: OnlineAppearanceQuery) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (fileKey: string) => Promise<OnlineAppearanceDetailResult>
+  prepareOnlineAppearance?: (
+    fileKey: string,
+    versionNo: number
+  ) => Promise<OnlineAppearancePrepareResult>
+  installOnlineAppearance?: (
+    token: string,
+    replace?: boolean
+  ) => Promise<OnlineAppearanceInstallResult>
+  discardOnlineAppearance?: (token: string) => Promise<{ success: boolean }>
+  getOnlineAppearanceCover?: (
+    fileKey: string,
+    versionNo?: number
+  ) => Promise<OnlineAppearanceCoverResult>
+  inspectLocalAppearance?: (zipPath: string) => Promise<LocalAppearanceInspectResult>
+  inspectAppearanceCover?: (
+    imagePath: string
+  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  onAppearanceChanged?: (callback: () => void) => () => void
+  onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
   // ==================== 初始化 API ====================
 

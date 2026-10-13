@@ -1,7 +1,8 @@
 """MFW 任务选项里密码字段（PI v2.10.0 ``password: true``）的加密存储。
 
 用户配置 ``Task.TaskSnapshot`` 是一整份 JSON，密码字段的值在
-``taskOptions[任务实例][option][字段]``。写入用户配置前加密（``seal_user_task_snapshot``，
+``taskOptions[任务实例][option][字段]``，全局选项的在 ``globalOptions[option][字段]``（两处
+一起处理，``_SECRET_SECTIONS``）。写入用户配置前加密（``prepare_user_task_snapshot``，
 ``Config.update_user`` 调），建运行计划前在内存里解密（``open_task_snapshot``，
 ``runner_task`` 调）；前端读到的永远是密文，只据此显示「已设置」，不回显原文。
 
@@ -20,6 +21,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,9 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     map_password_values,
     password_input_names,
+)
+from app.task.MaaFW.tools.core.interface.task_config import (
+    mirror_global_options_to_tasks,
 )
 from app.utils import dpapi_decrypt, dpapi_encrypt, get_logger
 
@@ -78,6 +83,44 @@ def _has_plaintext_secret(task_options: Any, fields: dict[str, frozenset[str]]) 
     return found
 
 
+#: 快照里存选项值的两处：``taskOptions`` 是 ``{任务实例: {option: 值}}``，``globalOptions``
+#: 是 ``{option: 值}``（全局选项每个用户一份）；后者套一层 ``{"_": …}`` 后与前者同形。
+_SECRET_SECTIONS = ("taskOptions", "globalOptions")
+
+
+def _section_as_task_options(snapshot: dict[str, Any], key: str) -> Any:
+    value = snapshot.get(key)
+    if key == "globalOptions":
+        return {"_": value} if isinstance(value, dict) else None
+    return value
+
+
+def _map_snapshot_secrets(
+    snapshot: dict[str, Any],
+    fields: dict[str, frozenset[str]],
+    transform: Callable[[str, str, str], str],
+) -> dict[str, Any]:
+    """对快照两处选项值里的密码字段套 ``transform``，返回新快照（不改入参）。"""
+
+    mapped = dict(snapshot)
+    for key in _SECRET_SECTIONS:
+        section = _section_as_task_options(snapshot, key)
+        if not isinstance(section, dict):
+            continue
+        result = map_password_values(section, fields, transform)
+        mapped[key] = result["_"] if key == "globalOptions" else result
+    return mapped
+
+
+def _snapshot_has_plaintext_secret(
+    snapshot: dict[str, Any], fields: dict[str, frozenset[str]]
+) -> bool:
+    return any(
+        _has_plaintext_secret(_section_as_task_options(snapshot, key), fields)
+        for key in _SECRET_SECTIONS
+    )
+
+
 def seal_task_snapshot(snapshot: Any, interface: MaaFWInterface) -> Any:
     """把快照里明文的密码字段加密；已是密文的、非密码字段原样不动。
 
@@ -96,14 +139,10 @@ def seal_task_snapshot(snapshot: Any, interface: MaaFWInterface) -> Any:
             return snapshot
     if not isinstance(parsed, dict):
         return snapshot
-    task_options = parsed.get("taskOptions")
-    if not _has_plaintext_secret(task_options, fields):
+    if not _snapshot_has_plaintext_secret(parsed, fields):
         return snapshot
 
-    sealed = {
-        **parsed,
-        "taskOptions": map_password_values(task_options, fields, _seal_value),
-    }
+    sealed = _map_snapshot_secrets(parsed, fields, _seal_value)
     if isinstance(snapshot, str):
         return json.dumps(sealed, ensure_ascii=False)
     return sealed
@@ -118,18 +157,14 @@ def open_task_snapshot(
     """
 
     fields = password_input_names(interface)
-    task_options = snapshot.get("taskOptions") if isinstance(snapshot, dict) else None
-    if not fields or not isinstance(task_options, dict):
+    if not fields or not isinstance(snapshot, dict):
         return snapshot
-    if _has_plaintext_secret(task_options, fields):
+    if _snapshot_has_plaintext_secret(snapshot, fields):
         logger.info(
             "该用户的任务配置里有旧版本存下的未加密密码字段，本次照常使用；"
             "下次保存任务配置时会自动加密"
         )
-    return {
-        **snapshot,
-        "taskOptions": map_password_values(task_options, fields, _open_value),
-    }
+    return _map_snapshot_secrets(snapshot, fields, _open_value)
 
 
 #: 日志里替换密码原文用的占位。
@@ -146,7 +181,9 @@ LOG_REDACTION_MARKER = "[MAS 日志打码]"
 def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[str]:
     """运行计划里所有 password 字段（PI v2.10.0）的实际值（已解密），去重。
 
-    任务与前置任务的 ``options`` 都看：``{option 名: {字段: 值}}``。
+    任务与前置任务的 ``options`` 都看：``{option 名: {字段: 值}}``；再加计划的
+    ``globalOptions``（用户的全局表）——同一选项任务自己也有值时，任务 ``options`` 里只有
+    任务那一层，全局那一层的密码只在这里。
     """
 
     fields = password_input_names(interface)
@@ -163,6 +200,9 @@ def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[s
         options = getattr(item, "options", None)
         if isinstance(options, dict):
             map_password_values({"_": options}, fields, collect)
+    global_options = getattr(plan, "globalOptions", None)
+    if isinstance(global_options, dict):
+        map_password_values({"_": global_options}, fields, collect)
     return values
 
 
@@ -211,15 +251,17 @@ def collect_script_password_values(
             snapshot = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:  # noqa: BLE001 - 坏快照跳过
             continue
-        task_options = (
-            snapshot.get("taskOptions") if isinstance(snapshot, dict) else None
-        )
-        if not isinstance(task_options, dict):
+        if not isinstance(snapshot, dict):
             continue
-        if fields:
-            map_password_values(task_options, fields, collect)
-        for sealed in _sealed_leaves(task_options):
-            collect(sealed, "", "")
+        # 任务选项与全局选项表两处都收（全局选项的密码只存在后者里）
+        for key in _SECRET_SECTIONS:
+            section = _section_as_task_options(snapshot, key)
+            if not isinstance(section, dict):
+                continue
+            if fields:
+                map_password_values(section, fields, collect)
+            for sealed in _sealed_leaves(section):
+                collect(sealed, "", "")
     return values
 
 
@@ -299,11 +341,17 @@ def log_redaction_notice(interface: MaaFWInterface, values: list[str]) -> str | 
     return notice
 
 
-def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -> Any:
-    """``Config.update_user`` 写 ``Task.TaskSnapshot`` 前调：按脚本当前的 interface 加密密码字段。
+def prepare_user_task_snapshot(
+    script_id: str, script_config: Any, snapshot: Any
+) -> Any:
+    """``Config.update_user`` 写 ``Task.TaskSnapshot`` 前调，按脚本当前的 interface 做两步：
+
+    1. 只属于全局的选项把全局表的值双写到各任务实例上（``mirror_global_options_to_tasks``，
+       降级兼容：旧版本按任务读这些值）；
+    2. 加密密码字段（任务上的副本与全局表一并加密）。
 
     视图不在或 interface 读不出来时原样放行——那时前端也打不开任务选项编辑器，
-    快照里不会有新填的密码；视图恢复后下一次保存照常加密。
+    快照里不会有新填的密码；视图恢复后下一次保存照常处理。
     """
 
     root = Path(resolve_maafw_project_root(script_id, script_config))
@@ -312,9 +360,11 @@ def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -
     try:
         interface = load_interface_model_cached(root)
     except Exception as exc:  # noqa: BLE001 - 读不出 interface 不该挡住保存其它配置
-        logger.debug(f"保存任务配置时读取 interface 失败，密码字段未处理：{exc}")
+        logger.debug(f"保存任务配置时读取 interface 失败，任务快照未处理：{exc}")
         return snapshot
-    return seal_task_snapshot(snapshot, interface)
+    return seal_task_snapshot(
+        mirror_global_options_to_tasks(snapshot, interface), interface
+    )
 
 
 __all__ = [
@@ -330,7 +380,7 @@ __all__ = [
     "redact_secret_bytes",
     "redact_secret_text",
     "secret_byte_pairs",
+    "prepare_user_task_snapshot",
     "seal_task_snapshot",
-    "seal_user_task_snapshot",
     "secret_log_variants",
 ]

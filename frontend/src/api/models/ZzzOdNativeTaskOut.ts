@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 直控任务编排条目（原生 app_list 与目录合并后的可选项）。
+ * 原生来源任务编排条目（原生 app_list 与目录合并后的可选项）。
  */
 export type ZzzOdNativeTaskOut = {
     /**

@@ -62,6 +62,10 @@ export interface MAAScriptConfig {
     Id: string
     Index: string
   }
+  Update: {
+    TakeoverEnabled: boolean
+    MirrorChyanCDK: string
+  }
   SubConfigsInfo: {
     UserData: {
       instances: unknown[]
@@ -194,6 +198,8 @@ export interface MaaEndScriptConfig {
     RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
+    IfAutoUpdate: boolean
+    UpdateTimeLimit: number
   }
 }
 
@@ -282,7 +288,7 @@ export interface MaaFWScriptConfig {
     IfAutoUpdate?: boolean
   }
   /**
-   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上，没有开关。
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
    * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
    */
   Embedded: {
@@ -292,6 +298,11 @@ export interface MaaFWScriptConfig {
     ImportedAt: string
     /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
     Report: string
+    /**
+     * 跟随来源目录（开发者模式）：开着时每次运行前来源目录有变化就重新导入，不做项目更新，
+     * 不与同项目其它脚本共用版本。唯一的开关。
+     */
+    FollowSource: boolean
   }
   Run: {
     ProxyTimesLimit: number
@@ -304,6 +315,8 @@ export interface MaaFWScriptConfig {
     TaskTimeLimit: number
     /** 按任务名覆盖的单任务时限（分钟）的 JSON 文本，值 0 表示该任务不限。 */
     TaskTimeLimitOverrides: string | Record<string, number>
+    /** 原地打转检测（实验性，默认关）：同一串节点短周期反复执行、识别结果不变时停掉该任务。 */
+    LoopGuard: boolean
     /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
     GameUpdateMode: MaaFWGameUpdateMode
   }
@@ -316,18 +329,32 @@ export interface MaaFWScriptConfig {
     Resource?: string | string[] | null
     Tasks?: string | string[] | null
   }
+  /**
+   * 用户页任务队列的自定义模板（同一脚本的用户共用），JSON 文本；
+   * 读写见 views/EditView/User/maafwQueueSource.ts。脚本页不读不写。
+   */
+  Task?: {
+    Templates?: string
+  }
 }
 
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
 
 /**
- * 三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
+ * 前三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
  * 首份的 id 就是裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
  */
 export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /**
+   * 全局选项（interface 的 global_option 及其子选项）的值：每个用户一份、所有任务共用，
+   * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。
+   */
+  globalOptions?: Record<string, MaaFWTaskOptionValue>
+  /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
+  taskLabels?: Record<string, string>
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
@@ -335,7 +362,12 @@ export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
   missing?: false
-  /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  /** 用户给这一份起的显示名；没有时显示任务的 label / name */
+  customLabel?: string
+  /**
+   * 同一基础名（显示名，没有就是任务的 label / name）的副本中的序号，从 1 起；
+   * 仅在 `copyTotal > 1` 时需要显示
+   */
   copyIndex: number
   copyTotal: number
 }
@@ -346,6 +378,8 @@ export interface MaaFWMissingQueuedTask {
   missing: true
   /** 实例 id 去掉副本后缀后的原任务名 */
   name: string
+  /** 成为虚影前用户给这一份起的显示名；有就优先显示它 */
+  customLabel?: string
   copyIndex: number
   copyTotal: number
 }
@@ -366,7 +400,7 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
-    Mode?: '脚本' | '用户' | '直控'
+    Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
@@ -462,6 +496,11 @@ export interface MaaFWTaskInfo {
   defaultCheck: boolean
   /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
   repeatCount?: number
+  /**
+   * 特调声明不可选时的原因（后端 `unselectable_entries`）：不进「添加任务」与预设模板，
+   * 已在队列里的照常显示，运行时跳过。可选任务为空
+   */
+  unselectableReason?: string | null
 }
 
 export interface MaaFWOptionCaseInfo {
@@ -600,12 +639,9 @@ export interface User {
     ProxyTimes: number
   }
   Info: {
-    Annihilation: string
     Id: string
-    InfrastMode: string
-    InfrastName: string
-    MedicineNumb: number
-    Mode: string
+    Base: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string
@@ -613,15 +649,20 @@ export interface User {
     Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
-    SeriesNumb: string
     Server: string
-    Stage: string
-    StageMode: string
-    Stage_1: string
-    Stage_2: string
-    Stage_3: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
+  }
+  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
+  Stage?: {
+    StageMode?: string
+    MedicineNumb?: number
+    SeriesNumb?: string
+    Stage?: string
+    Stage_1?: string
+    Stage_2?: string
+    Stage_3?: string
+    [key: string]: unknown
   }
   Notify: {
     Enabled: boolean
@@ -654,7 +695,12 @@ export interface User {
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string
+    IfEventDepotMaintain?: boolean
+    EventDepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
+    Annihilation?: string
+    InfrastMode?: string
+    InfrastName?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

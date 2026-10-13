@@ -24,6 +24,10 @@ export type MaaFWConfig_Run = {
      */
     TaskTimeLimitOverrides?: (string | Record<string, any> | null);
     /**
+     * 原地打转检测（实验性，默认关）
+     */
+    LoopGuard?: (boolean | null);
+    /**
      * 每日正常完成一次后当天跳过的 MaaFW 任务名列表
      */
     DailyOnceTasks?: (string | Array<string> | null);

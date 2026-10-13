@@ -106,7 +106,12 @@ export const useHomeLayout = () => {
     try {
       const config = await getConfig()
       if (config.homeLayout) {
-        applyLayout(normalizeHomeLayoutConfig(config.homeLayout))
+        const layout = normalizeHomeLayoutConfig(config.homeLayout)
+        applyLayout(layout)
+        // 文件里的旧布局也要落盘，后续读取才能沿用迁移后的排序与隐藏设置。
+        if (JSON.stringify(layout) !== JSON.stringify(config.homeLayout)) {
+          await queueLayoutSave(layout)
+        }
         return
       }
 
