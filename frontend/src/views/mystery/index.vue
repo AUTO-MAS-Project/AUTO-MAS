@@ -7,6 +7,7 @@ import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design
 import { GetService, UpdateService } from '@/api'
 import { navigateTo } from '@/router'
 import { useMysteryStore } from '@/stores/mystery'
+import BilibiliAgreement from './BilibiliAgreement.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -167,6 +168,9 @@ const lock = async () => {
       <!-- 子页面共用解锁门槛，锁定或跨日后卸载正在运行的功能。 -->
       <router-view v-else-if="isFeaturePage" />
       <a-row v-else :gutter="[16, 16]">
+        <a-col :xs="24" :sm="12" :lg="8">
+          <BilibiliAgreement />
+        </a-col>
         <a-col :xs="24" :sm="12" :lg="8">
           <a-card
             hoverable

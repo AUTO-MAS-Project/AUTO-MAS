@@ -9,7 +9,7 @@ import {
 import { message } from 'ant-design-vue'
 import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
 import { ActionService, GetService } from '@/api'
-import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
+import { openExternalUrl } from '@/utils/openExternal'
 import { navigateTo } from '@/router'
 import FailureReplaySettings from './components/FailureReplaySettings.vue'
 
@@ -235,7 +235,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </a-col>
       </a-row>
       <a-row :gutter="24">
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.func.telemetry') }}</span>
@@ -256,59 +256,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
             </a-select>
           </div>
         </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.biliPolicy') }}</span>
-              <a-tooltip>
-                <template #title>
-                  <div style="max-width: 300px">
-                    <p>{{ t('setting.func.biliIntro') }}</p>
-                    <ul style="margin: 8px 0; padding-left: 16px">
-                      <li>
-                        <a
-                          href="https://www.bilibili.com/protocal/licence.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliTerms') }}</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliPrivacy') }}</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          href="https://game.bilibili.com/yhxy"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliGame') }}</a
-                        >
-                      </li>
-                    </ul>
-                  </div>
-                </template>
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfAgreeBilibili"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.func.blockAds') }}</span>
