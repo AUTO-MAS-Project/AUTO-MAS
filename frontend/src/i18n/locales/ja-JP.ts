@@ -2297,6 +2297,9 @@ export default {
     bettergiRewardDefault: 'デフォルト',
     bettergiDomainPickerClearAll: 'すべてクリア',
     bettergiDomainPickerClearAllConfirm: '選択した秘境をすべてクリアしますか？',
+    bettergiDomainPickerGuide: '育成ガイドに従って秘境を選択',
+    bettergiDomainPickerGuideTip:
+      'BetterGI がゲーム内の育成ガイドから育成目標を読み取り、対応する秘境と最高難度を自動的に選択します（BetterGI 0.66 以降が必要）',
     bettergiDomainPickerNone: '選択可能な秘境はありません',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: '秘境選択',

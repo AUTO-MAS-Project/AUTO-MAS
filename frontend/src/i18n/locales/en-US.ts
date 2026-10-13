@@ -2908,6 +2908,9 @@ export default {
     bettergiRewardDefault: 'Default',
     bettergiDomainPickerClearAll: 'Clear all',
     bettergiDomainPickerClearAllConfirm: 'Clear all selected domains?',
+    bettergiDomainPickerGuide: 'Select by Training Guide',
+    bettergiDomainPickerGuideTip:
+      'BetterGI reads the in-game Training Guide and automatically picks the matching domain at the highest difficulty (requires BetterGI 0.66 or later)',
     bettergiDomainPickerNone: 'No domains available',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: 'Domain picker',
