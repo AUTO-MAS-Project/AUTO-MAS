@@ -72,6 +72,7 @@ from ..interface.agent_entry import (
     is_relative_entry_path,
     is_uv_launcher,
 )
+from ..offline_dependencies import is_offline_dependency_file
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -85,9 +86,9 @@ PROJECTION_REVISION = 2
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
-# 超过上面上限的顶层目录，只有在这个深度以内（0 = 直接放在目录里）有 wheel / get-pip.py
-# 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
-OFFLINE_DEPENDENCY_MAX_DEPTH = 1
+# 超过上面上限的顶层目录，只有在 ``OFFLINE_DEPENDENCY_MAX_DEPTH`` 以内（0 = 直接放在目录里）
+# 有 wheel / get-pip.py 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
+# 判据与准备运行环境共用（``tools/core/offline_dependencies``）。
 # 根目录上没声明的这些后缀只可能是外壳或外壳的运行时（m9a.exe、MaaEnd.exe、qt6core.dll…）。
 UNDECLARED_BINARY_SUFFIXES = {
     ".exe",
@@ -1969,38 +1970,17 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
 def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
     """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。
 
-    只数直接放在目录里、或往下一层子目录里的（深度 ≤ 1）：语料里真正的离线依赖目录
-    wheel 都在这两层（MHXY、MaaGumballs 等是 ``deps/*.whl``，MaaStarResonance 另有
-    ``deps/<子目录>/*.whl``）；更深处的是别的东西顺带解压出来的——M9A 自更新留下的
-    ``temp_res/resource_v3.22.0_extracted/deps/*.whl`` 曾让整个 185 MB 的 ``temp_res/``
-    绕过 64 MB 上限进了副本。
-
-    CPython 自带的 wheel 不算：``ensurepip/_bundled``（venv / 安装器附带 pip），以及
-    python.org 安装器默认装上的测试套件 ``Lib/test/**``（``wheeldata``、
-    ``test_importlib/data`` 里都有 .whl）。目录本身就是一个 Python 解释器
-    （``_is_python_interpreter_dir``）时也不算——那是没声明的运行时，不是依赖包；
-    否则一个没声明、超过 64 MB 的解释器目录会被整棵带走。
+    深度上限与「CPython 自带的 wheel 不算」见 ``offline_dependencies.is_offline_dependency_file``
+    （与准备运行环境共用）。目录本身就是一个 Python 解释器（``_is_python_interpreter_dir``）
+    时也不算——那是没声明的运行时，不是依赖包；否则一个没声明、超过 64 MB 的解释器目录会
+    被整棵带走。
     """
 
     if _is_python_interpreter_dir(view, directory):
         return False
     return any(
-        (path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py")
-        and len(path.relative_to(directory).parts) <= OFFLINE_DEPENDENCY_MAX_DEPTH + 1
-        and not _is_cpython_bundled_file(path)
+        is_offline_dependency_file(path, depth=len(path.relative_to(directory).parts))
         for path in view.walk_files(directory)
-    )
-
-
-def _is_cpython_bundled_file(path: Path) -> bool:
-    """路径在 CPython 自带的 ``ensurepip/`` 或标准库测试套件 ``Lib/test/`` 之下。"""
-
-    parts = [part.casefold() for part in path.parts]
-    if "ensurepip" in parts:
-        return True
-    return any(
-        part == "lib" and following == "test"
-        for part, following in zip(parts, parts[1:])
     )
 
 

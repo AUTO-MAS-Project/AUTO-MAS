@@ -18,6 +18,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import mask_home_path
+from ..offline_dependencies import describe_self_install_materials
 from ..runtime_pool import runtime_managed_uv_executable
 from ..runtime_pool._shared import output_tail, remove_tree_best_effort
 from ..runtime_pool.host_environment import (
@@ -286,6 +287,32 @@ def _prepare_project_python_env(
     # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
     # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
     reason = _project_relative_text(reason, project_path)
+    materials = (
+        describe_self_install_materials(project_path)
+        if _is_missing_module_failure(reason)
+        else None
+    )
+    if materials is not None:
+        # 「agent 第一次启动时自己装依赖」的项目（MaaDuDuL、MaaTOT 的 pip install -r
+        # requirements.txt，MaaStarResonance 的 get-pip.py + deps/*.whl）：依赖还没装，探针
+        # 必然导入失败，拦下来 agent 就永远没机会装。照常起 agent，由已有的连接预算兜底；
+        # MFAA / MXU 对这类项目也是这样。只放行「缺模块」这一种失败（依赖没装的样子）：
+        # 原生库加载失败、协议对不上之类照旧拦，别让它们拖到连接超时才暴露。
+        #
+        # 装包不写穿共用载荷（2026-10-13 用 import_embedded_project / audit_view 在合成项目上
+        # 核实）：视图里的目录都是真目录，≥ 64 KB 的出厂文件才是载荷 / 共用库的硬链接。新建
+        # 文件是新 inode；先写临时文件再改名替换（pip 写 RECORD、编 pyc）只换视图里的目录项；
+        # pip 装 wheel 时 File.save() 对已存在的目标先 unlink 再写、卸载是改名挪走再删，同样
+        # 碰不到载荷。只有不先 unlink 的原地覆盖会写穿，pip 不这么做，运行收尾的写穿巡检
+        # 照旧兜底。换版本后：agent 新装的包作为视图私有文件带过去，被它替换过的出厂文件以
+        # 新版本为准；site-packages 里的 maa / maafw-*.dist-info 按既有规则不带，下次准备若又
+        # 缺模块，这里照样放行，agent 自己按它的判据重装。
+        log(
+            "[Python环境] 项目自带 Python 现在还导入不了 MaaFW Agent 模块"
+            f"（{reason}）；项目带着自己的依赖安装材料（{materials}），按项目的写法由 "
+            "Agent 第一次启动时自己安装依赖，照常启动 Agent"
+        )
+        return
     # 排障说明只进详情日志：面板与 toast 整段显示报错（pre-wrap），用户照着做不了的
     # 步骤与写给开发者的说明会把失败原因挤掉。
     log(
@@ -298,6 +325,12 @@ def _prepare_project_python_env(
         f"  Python 路径: {python_exe}\n"
         "  处理建议: 重新下载并解压完整 MaaFW 项目包"
     )
+
+
+def _is_missing_module_failure(reason: str) -> bool:
+    """健康检查失败的那一行是不是「缺模块」（依赖还没装的样子）。"""
+
+    return reason.startswith("ModuleNotFoundError") or "No module named" in reason
 
 
 def project_python_maafw_version(python_exe: str | Path) -> str | None:
