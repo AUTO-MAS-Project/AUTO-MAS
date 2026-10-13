@@ -2196,11 +2196,11 @@ export default {
     bettergiViewClose: '关闭查看',
     bettergiViewOpened: '已打开 BetterGI 查看',
     bettergiViewStartFailed: '打开 BetterGI 查看失败',
-    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
       'MAS 配置的备份（任务快照与设备覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
     maafwConfigRestoreScriptDesc:
-      'MaaFW 项目配置（config 文件夹与 interface.json）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+      'MaaFW 项目配置（config 文件夹）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
     hsrConfigRestoreUserDesc:
       'MAS 配置的备份（任务映射与托管覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
