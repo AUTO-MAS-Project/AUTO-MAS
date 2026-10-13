@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type TimeSetDeleteIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 时间设置ID
+     * 定时项 ID
      */
     timeSetId: string;
 };

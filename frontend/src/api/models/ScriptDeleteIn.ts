@@ -3,9 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export type ScriptDeleteIn = {
-    /**
-     * 脚本ID
-     */
     scriptId: string;
 };
 

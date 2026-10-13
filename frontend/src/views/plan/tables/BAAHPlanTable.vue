@@ -48,9 +48,8 @@
 
         <!-- 多类混打：每类头上先一行开关，关了就是这一天不跑这一类 -->
         <template v-else-if="record.rowKind === 'enabled'">
-          <a-switch
-            size="small"
-            :checked="record[column.key]"
+          <SettingToggleButton
+            :model-value="record[column.key]"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
             :aria-label="cellLabel(record.fieldName, column.key)"
             @change="handlePartEnabledChange(asTimeKey(column.key), record.field, $event)"
@@ -79,6 +78,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'

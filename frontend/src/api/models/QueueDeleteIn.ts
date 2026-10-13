@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type QueueDeleteIn = {
     /**
-     * 队列ID
+     * 队列 ID
      */
     queueId: string;
 };

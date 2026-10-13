@@ -26,6 +26,10 @@ export type HistoryData = {
      */
     pull_count_statistics?: (PullCountStatistics | null);
     /**
+     * 合并后的统计数据（2/3 层数字树）
+     */
+    data?: Record<string, any>;
+    /**
      * 报错信息, key为时间戳, value为错误描述
      */
     error_info?: (Record<string, string> | null);
@@ -33,5 +37,21 @@ export type HistoryData = {
      * 日志内容, 仅在提取单条历史记录数据时返回
      */
     log_content?: (string | null);
+    /**
+     * 单条记录状态
+     */
+    status?: (string | null);
+    /**
+     * 单条记录消息
+     */
+    message?: (string | null);
+    /**
+     * 脚本类型键
+     */
+    type_key?: (string | null);
+    /**
+     * 用户名
+     */
+    username?: (string | null);
 };
 

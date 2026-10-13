@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskCreateIn } from '@/compat/taskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
 

@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook } from './Webhook';
-import type { WebhookIndexItem } from './WebhookIndexItem';
+import type { CollectionOrderItem } from './CollectionOrderItem';
+import type { Webhook_Output } from './Webhook_Output';
 export type WebhookGetOut = {
     /**
      * 状态码
@@ -18,12 +18,12 @@ export type WebhookGetOut = {
      */
     message?: string;
     /**
-     * Webhook索引列表
+     * Webhook 顺序
      */
-    index: Array<WebhookIndexItem>;
+    order?: Array<CollectionOrderItem>;
     /**
-     * Webhook数据字典, key来自于index列表的uid
+     * Webhook 数据，key 为 uid
      */
-    data: Record<string, Webhook>;
+    data?: Record<string, Webhook_Output>;
 };
 

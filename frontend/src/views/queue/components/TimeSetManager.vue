@@ -160,7 +160,11 @@ const isDraggingTimeSet = ref(false)
 const parseTimeString = (timeStr: string) => {
   if (!timeStr) return undefined
   try {
-    const [hours, minutes] = timeStr.split(':').map(Number)
+    const rawTime = String(timeStr)
+    const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+    const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
+    const hours = Number(rawHours)
+    const minutes = Number(rawMinutes)
     if (isNaN(hours) || isNaN(minutes)) return undefined
     return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
   } catch {
@@ -262,8 +266,8 @@ const updateTimeSetTime = async (timeSet: any) => {
       queueId: props.queueId,
       timeSetId: timeSet.id,
       data: {
-        Info: {
-          Time: timeString,
+        info: {
+          time: timeString,
         },
       },
     })
@@ -296,8 +300,8 @@ const updateTimeSetStatus = async (timeSet: any) => {
       queueId: props.queueId,
       timeSetId: timeSet.id,
       data: {
-        Info: {
-          Enabled: timeSet.enabled,
+        info: {
+          enabled: timeSet.enabled,
         },
       },
     })
@@ -333,8 +337,8 @@ const updateTimeSetDays = async (timeSet: any) => {
       queueId: props.queueId,
       timeSetId: timeSet.id,
       data: {
-        Info: {
-          Days: sortedDays,
+        info: {
+          days: sortedDays,
         },
       },
     })

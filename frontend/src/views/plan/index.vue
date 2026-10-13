@@ -79,7 +79,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import type { PlanIndexItem } from '@/api'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
@@ -198,6 +197,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
+    if (!response.planId) throw new Error(t('plan.toast.fetchFailed'))
     const newPlan: PlanListItem = { id: response.planId, name: uniqueName, type: planType }
     planDataMap.value = {
       ...planDataMap.value,
@@ -208,7 +208,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     const saved = await handlePlanChange('Info.Name', uniqueName, false)
     if (!saved) {
       logger.error(`新计划名称持久化失败: ${newPlan.id} -> ${uniqueName}`)
-      newPlan.name = response.data.Info?.Name || uniqueName
+      newPlan.name = (response.data as PlanConfigData | undefined)?.Info?.Name || uniqueName
     }
     syncCurrentPlan(newPlan.id)
     // 如果生成的名称包含数字，说明有重名，提示用户
@@ -279,7 +279,7 @@ const savePlanField = async (planId: string, changes: Record<string, any>): Prom
 
 const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => {
   const response = await getPlans(planId)
-  const planData = response.data[planId] as PlanConfigData | undefined
+  const planData = response.data?.[planId] as PlanConfigData | undefined
 
   if (!planData) {
     return null
@@ -499,9 +499,9 @@ const initPlans = async () => {
     const nextPlanList: PlanListItem[] = []
     const allPlanNames: string[] = []
 
-    response.index.forEach((item: PlanIndexItem) => {
+    ;(response.order ?? []).forEach(item => {
       const planId = item.uid
-      const planData = response.data[planId] as PlanConfigData | undefined
+      const planData = response.data?.[planId] as PlanConfigData | undefined
       const planType = item.type as string
 
       if (!isKnownPlanType(planType)) {

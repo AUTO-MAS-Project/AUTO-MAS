@@ -53,10 +53,9 @@
               "
             />
 
-            <a-switch
+            <SettingToggleButton
               v-else-if="record.rowKey === 'SkipDifficulty' || record.rowKey === 'ConsumeAllEnergy'"
-              :checked="record[column.key]"
-              size="small"
+              :model-value="record[column.key]"
               :disabled="isColumnDisabled(asTimeKey(column.key))"
               @change="
                 (checked: boolean) =>
@@ -132,10 +131,9 @@
             "
           />
 
-          <a-switch
+          <SettingToggleButton
             v-else-if="column.key === 'SkipDifficulty' || column.key === 'ConsumeAllEnergy'"
-            :checked="record[column.key]"
-            size="small"
+            :model-value="record[column.key]"
             :disabled="isColumnDisabled(record.timeKey)"
             @change="
               (checked: boolean) => handleFieldChange(record.timeKey, { [column.key]: checked })
@@ -164,6 +162,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { TIME_KEYS, type TimeKey } from '@/composables/usePlanDataCoordinator'

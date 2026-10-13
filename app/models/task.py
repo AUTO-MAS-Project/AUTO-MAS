@@ -18,430 +18,242 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""任务运行态：配置树与查询字段定义。
+
+配置树（``TaskItem`` / ``TaskScriptItem`` / ``TaskUserItem`` / ``LogRecordEntry``）
+是任务状态的**唯一事实源**；字段变更经本模块类级 ``connect`` 推前端。
+
+怎么跑归 ``app.task``（四层嵌套任务与执行契约），本模块只管状态长什么样 ——
+两边分开，故任务类换实现不动持久化结构。
+
+本模块**不得在模块级 import ``app.core``**：``app.core.task_dispatcher`` 在模块级
+import 它（``TaskItem`` 是在跑任务的载荷），反向再引就成环。故推送回调内再懒加载
+``Publisher``。
+运行态与 HTTP/WS 返回值共用 ``TaskItem`` 自身（``model_dump``），不再另造快照 DTO。
+
+``info.result`` 对齐非插件版分层摘要：用户看 ``log_record``，脚本汇总用户，
+任务再汇总脚本。``current.log`` 不是落盘字段 —— 经 ``current`` 指针逐级落到
+当前用户最新一条 ``log_record`` 的正文；任务侧只写用户日志，不往各级抄一份。
+"""
 
 from __future__ import annotations
 
-import asyncio
-import time
-import weakref
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Literal, Optional
+from enum import Enum
+from typing import Any, Literal
+from uuid import UUID
 
-from app.runtime_tasks import RuntimeTasks
-from app.utils.logger import get_logger
+from pydantic import BaseModel, Field
 
-logger = get_logger("任务执行")
-
-TaskTriggerSource = Literal[
-    "scheduled_task",
-    "manual_task",
-    "startup_task",
-]
+from app.config import ConfigCollection, ConfigEntry, ConfigGroup, Virtual
+from app.config.shortcuts import collection, virtual_field
+from app.config.signals import FieldChangeEvent
+from app.utils.constants import UTC8
 
 
-@dataclass
-class LogRecord:
-    content: list[str] = field(default_factory=list)
-    status: str = "未开始监看日志"
-    # 所属运行阶段（如 MaaEnd 的送货/日常/自动采集），用于历史记录结果前缀
-    phase: str = ""
+class TaskMode(str, Enum):
+    """任务执行模式（配置树 / API / WS 共用同一枚举值）。"""
+
+    AUTO_PROXY = "AutoProxy"
+    MANUAL_REVIEW = "ManualReview"
+    SCRIPT_CONFIG = "ScriptConfig"
 
 
-@dataclass
-class UserItem:
-    user_id: str  # 用户ID
-    name: str  # 用户名称
-    status: str  # 用户执行状态
-    log_record: dict[datetime, LogRecord] = field(
-        default_factory=dict
-    )  # 用户本次代理的全部日志记录
-    push_log: list[tuple[str, str, float]] = field(
-        default_factory=list
-    )  # 用户本次代理采集的推送日志，元素为 (日志类型, 格式化文本, 采集时间戳)
-    push_log_mode: str = field(
-        default="汇总"
-    )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
-    _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
+class TaskTriggerSource(str, Enum):
+    """任务触发来源（入口点写入，不进 HTTP 契约）。"""
 
-    def __setattr__(self, name, value):
-        super().__setattr__(name, value)
-        # 监听所有字段变化
-        if name in ("user_id", "name", "status") and self._task_item_ref is not None:
-            ti = self._task_item_ref()
-            if ti is not None:
-                ti.schedule_on_change()
+    MANUAL_TASK = "manual_task"
+    SCHEDULED_TASK = "scheduled_task"
+    STARTUP_TASK = "startup_task"
 
-    @property
-    def result(self) -> str:
-        """用户代理情况的简要结果"""
+
+class HistoryRecordData(BaseModel):
+    """单条运行日志的历史落盘数据（由模式执行器在任务中止后判定）。"""
+
+    status: Literal["success", "error"] = Field(description="最终状态")
+    message: str = Field(default="", description="结果说明，异常时为报错原因")
+    data: dict[str, Any] = Field(default_factory=dict, description="统计数据")
+
+
+class LogRecordEntry(ConfigEntry):
+    """单条日志监看记录（真实日志正文只落在这里）。"""
+
+    class Info(ConfigGroup):
+        start_time: datetime = Field(
+            default_factory=lambda: datetime(2000, 1, 1, 0, 0, tzinfo=UTC8),
+            description="任务起始时间",
+        )
+        content: list[str] = Field(default_factory=list, description="日志内容")
+        status: str = Field(default="未开始监看日志", description="最终状态")
+
+    info: Info = Field(default_factory=Info, description="日志记录")
+
+
+class TaskUserItem(ConfigEntry):
+    """任务内用户项。"""
+
+    class Info(ConfigGroup):
+        name: str = Field(default="", description="用户名")
+        status: str = Field(default="", description="执行状态")
+        result: Virtual[str] = None
+
+    info: Info = Field(default_factory=Info, description="用户任务信息")
+    log_record: ConfigCollection[LogRecordEntry] = collection(LogRecordEntry)
+
+    @virtual_field("info.result")
+    def compute_result(self) -> str:
+        # 对齐非插件版 UserItem.result：按监看记录起止时间拼简要结果
         if not self.log_record:
             return "未开始运行"
         return " | ".join(
-            [
-                f"{t.strftime('%H:%M')} - {log.status}"
-                for t, log in self.log_record.items()
-            ]
+            f"{rec.info.start_time.strftime('%H:%M')} - {rec.info.status}"
+            for rec in sorted(
+                self.log_record.values(), key=lambda item: item.info.start_time
+            )
         )
 
 
-@dataclass
-class ScriptItem:
-    script_id: str  # 脚本ID
-    name: str  # 脚本名称
-    status: str  # 脚本执行状态
-    user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
-    current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
-    log: str = ""  # 脚本执行日志
-    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
-    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
-    log_first_line: int = 1
-    _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
+class TaskScriptItem(ConfigEntry):
+    """任务内脚本项。"""
 
-    def __setattr__(self, name, value):
-        super().__setattr__(name, value)
+    class Info(ConfigGroup):
+        name: str = Field(default="", description="脚本名")
+        status: str = Field(default="", description="执行状态")
+        result: Virtual[str] = None
 
-        # 如果 user_list 被整体替换，重新绑定
-        if name == "user_list" and self.task_info is not None:
-            for user in self.user_list:
-                object.__setattr__(user, "_task_item_ref", self._task_item_ref)
+    class Current(ConfigGroup):
+        index: UUID | None = Field(default=None, description="当前用户；None=未开始")
+        log: Virtual[str] = None
 
-        if name not in ("_task_item_ref",) and self.task_info is not None:
-            self.task_info.schedule_on_change()
+    info: Info = Field(default_factory=Info, description="脚本任务信息")
+    current: Current = Field(default_factory=Current, description="当前进度")
+    users: ConfigCollection[TaskUserItem] = collection(TaskUserItem)
 
-    @property
-    def task_info(self) -> Optional[TaskItem]:
-        """返回绑定到此 ScriptItem 的父 TaskItem"""
-        if self._task_item_ref is None:
-            return None
-        return self._task_item_ref()
-
-    @property
-    def result(self) -> str:
-        """脚本代理情况的简要结果"""
-
-        if not self.user_list:
+    @virtual_field("info.result")
+    def compute_result(self) -> str:
+        if not self.users:
             return "用户未加载"
-        return "\n".join([f"{user.name}: {user.result}" for user in self.user_list])
-
-
-@dataclass
-class TaskItem(ABC):
-    """任务信息基类，管理任务的信息和脚本列表"""
-
-    # 脚本执行模式。循环运行不占用这个字段：各脚本适配器都按 mode 分派任务类
-    # （METHOD_BOOK）并有近百处 == "AutoProxy" 的分支，循环里的每一轮本就是自动
-    # 代理，写成 "CycleRun" 会让所有适配器 KeyError 或走错分支。循环与否见 is_cycle。
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"]  # 任务模式
-    task_id: str  # 任务唯一标识符
-    queue_id: str | None  # 执行的队列ID
-    script_id: str | None  # 执行的脚本ID
-    user_id: str | None  # 执行的用户ID
-    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
-    # 队列任务按脚本限定的本次运行用户；未列出的脚本不限，空集合表示该脚本本次整项跳过
-    user_ids_by_script: dict[str, frozenset[str]] | None = None
-    script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
-    current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
-    resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
-    is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
-    view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
-    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
-    cycle_next_list: List[dict] = field(
-        default_factory=list, repr=False
-    )  # 循环运行的待运行条目预览
-    trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
-    game_sign_summary_consumed: bool = field(default=False, repr=False)
-    _change_task: asyncio.Task[None] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
-    _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
-    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
-    _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
-    _last_pushed_log_first_line: int = field(
-        default=1, init=False, repr=False, compare=False
-    )
-    _log_seq: int = field(default=0, init=False, repr=False, compare=False)
-
-    @property
-    def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，底层继续使用历史任务字段。"""
-
-        return self.game_sign_results
-
-    @community_results.setter
-    def community_results(self, value: list[dict[str, object]]) -> None:
-        self.game_sign_results = value
-
-    @property
-    def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
-
-        return self.game_sign_summary_consumed
-
-    @community_summary_consumed.setter
-    def community_summary_consumed(self, value: bool) -> None:
-        self.game_sign_summary_consumed = value
-
-    def __setattr__(self, name, value):
-        super().__setattr__(name, value)
-
-        # 如果 script_list 被整体替换，重新绑定
-        if name == "script_list":
-            for item in self.script_list:
-                self._bind_task_item(item)
-
-    def _bind_task_item(self, item: ScriptItem):
-        """绑定 TaskItem 及其内部所有 UserItem 到当前 TaskItem"""
-        ti_ref = weakref.ref(self)
-        object.__setattr__(item, "_task_item_ref", ti_ref)
-        # 绑定 user_list 中的每个 UserItem
-        for user in item.user_list:
-            object.__setattr__(user, "_task_item_ref", ti_ref)
-
-    @abstractmethod
-    async def on_change(self):
-        """统一回调入口"""
-        raise NotImplementedError("子类必须实现 on_change")
-
-    def schedule_on_change(self) -> None:
-        """合并高频字段变化，并由应用任务注册表持有异步通知。"""
-
-        self._change_dirty = True
-        if self._change_task is not None and not self._change_task.done():
-            return
-
-        async def _flush_changes() -> None:
-            try:
-                while self._change_dirty:
-                    self._change_dirty = False
-                    await self.on_change()
-            finally:
-                self._change_task = None
-
-        self._change_task = RuntimeTasks.spawn(
-            _flush_changes(), name=f"task-state-change:{self.task_id}"
+        return "\n".join(
+            f"{user.info.name or uid}: {user.info.result}"
+            for uid, user in self.users.items()
         )
-        if self._change_task is None:
-            # teardown 已开始时不再发布状态；RuntimeTasks 已关闭协程对象。
-            self._change_dirty = False
 
-    @property
-    def is_queue_task(self) -> bool:
-        """任务是否由计划队列发起；否则为用户单独运行的脚本任务"""
-        return self.queue_id is not None
-
-    @property
-    def current_script_id(self) -> str | None:
-        """当前正在执行的脚本ID；未开始或下标越界时为 None"""
-        if 0 <= self.current_index < len(self.script_list):
-            return self.script_list[self.current_index].script_id
-        return None
-
-    def script_user_scope(self, script_id: str) -> frozenset[str] | None:
-        """队列任务中该脚本本次要运行的用户；None 表示该脚本不限"""
-        if self.user_ids_by_script is None:
-            return None
-        return self.user_ids_by_script.get(script_id)
-
-    @property
-    def target_user_id(self) -> str | None:
-        """单独运行时指定的用户ID；未指定或非自动代理时为 None。
-
-        必须带上模式判断：ScriptConfig 与 Update 模式会把 user_id 写成
-        "Default" 或被编辑的用户，那是「配置谁」而不是「只代理谁」。
-        """
-        return self.user_id if self.mode == "AutoProxy" else None
-
-    def is_target_user(self, user_id: str) -> bool:
-        """用户是否属于本次运行范围。
-
-        只用于收窄展示与执行用的 user_list，各脚本适配器持有的用户配置副本必须
-        保持完整——它们在收尾时会整表写回，裁剪副本会抹掉同脚本其它用户的配置。
-
-        Args:
-            user_id (str): 待判定的用户ID。
-
-        Returns:
-            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，队列任务指定了本次
-            运行范围时仅匹配当前脚本范围内的用户，指定 user_id 时仅匹配该用户；
-            均未指定或非 AutoProxy 模式时恒为 True。
-        """
-
-        if self.mode == "AutoProxy":
-            scope = self.user_ids
-            if self.user_ids_by_script is not None:
-                # 队列任务按当前脚本取范围；未列入的脚本不受本次勾选影响
-                scope = self.script_user_scope(self.current_script_id or "")
-            if scope is not None:
-                return user_id in scope
-
-        target = self.target_user_id
-        return target is None or user_id == target
-
-    @property
-    def asdict(self) -> list:
-        """将 TaskItem 转换为字典形式"""
-        return [
-            {
-                "script_id": script_item.script_id,
-                "name": script_item.name,
-                "status": script_item.status,
-                "userList": [
-                    {
-                        "user_id": user_item.user_id,
-                        "name": user_item.name,
-                        "status": user_item.status,
-                    }
-                    for user_item in script_item.user_list
-                ],
-            }
-            for script_item in self.script_list
-        ]
+    @virtual_field("current.log")
+    def compute_log(self) -> str:
+        uid = self.current.index
+        if uid is None or uid not in self.users:
+            return ""
+        records = self.users[uid].log_record
+        if not records:
+            return ""
+        latest = max(records.values(), key=lambda item: item.info.start_time)
+        return "".join(latest.info.content)
 
 
-@dataclass
-class TaskExecuteBase(ABC):
-    wait_for_finalizer_on_cancel = False
+class TaskItem(ConfigEntry):
+    """一条调度任务（uid = 任务 uid）。
 
-    # 外部手动停止（TaskManager 中止）时置位，供收尾逻辑区分自然结束与手动中止
-    stopped_manually: bool = False
+    同时是运行态事实源与 HTTP/WS 任务信息载荷（``/get``、``task.info.updated``、
+    ``task.completed.task``）。
+    """
 
-    task: asyncio.Task | None = None
-    _task_group: asyncio.TaskGroup | None = None
-    accomplish: asyncio.Event = field(default_factory=asyncio.Event)
+    class Info(ConfigGroup):
+        mode: TaskMode = Field(default=TaskMode.AUTO_PROXY, description="任务模式")
+        queue_id: str | None = Field(default=None, description="请求队列 uid")
+        queue_item_id: str | None = Field(
+            default=None, description="计时器触发的队列项 uid"
+        )
+        script_id: str | None = Field(default=None, description="请求脚本 uid")
+        user_id: str | None = Field(default=None, description="请求用户 uid")
+        trigger_source: TaskTriggerSource = Field(
+            default=TaskTriggerSource.MANUAL_TASK, description="触发来源"
+        )
+        # 全流程状态唯一真相源（进行中 / 终态都写这里）；报错细节进 result
+        status: str = Field(default="pending", description="任务状态")
+        result: Virtual[str] = None
 
-    # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
-    # 不加类型注解，避免被 @dataclass 收作字段。
-    _log_progress = None
+    class Current(ConfigGroup):
+        index: UUID | None = Field(default=None, description="当前脚本；None=未开始")
+        log: Virtual[str] = None
 
-    def is_log_stalled(
-        self, latest_time: datetime, minutes: float, key: str = "default"
-    ) -> bool:
-        """日志是否已停滞超过给定分钟数。
+    info: Info = Field(default_factory=Info, description="任务参数")
+    current: Current = Field(default_factory=Current, description="当前进度")
+    scripts: ConfigCollection[TaskScriptItem] = collection(TaskScriptItem)
 
-        不能直接用 ``datetime.now() - latest_time``：两端都是墙钟，系统时钟
-        跳变（夏令时切换、NTP 校时）会让差值凭空增加一小时，把正常运行的
-        任务误判为超时。这里只用 ``latest_time`` 判断“是否有推进”，实际计时
-        交给单调时钟。
+    @virtual_field("info.result")
+    def compute_result(self) -> str:
+        if not self.scripts:
+            return "任务未加载"
+        blocks: list[str] = []
+        for uid, script in self.scripts.items():
+            users = list(script.users.values())
+            done = sum(1 for user in users if user.info.status == "完成")
+            pending = sum(1 for user in users if user.info.status != "完成")
+            name = script.info.name or str(uid)
+            body = (script.info.result or "").replace("\n", "\n    ")
+            blocks.append(
+                f"{name}：\n\n"
+                f"    已完成用户数：{done}；未完成用户数：{pending}\n\n"
+                f"    {body}"
+            )
+        return "\n\n\n".join(blocks)
 
-        Args:
-            latest_time (datetime): 最近一条日志的时间戳。
-            minutes (float): 允许的最长无新日志时间，单位分钟。
-            key (str): 阶段标识。同一任务的不同阶段（如资源下载与正式运行）
-                各自独立计时，避免阶段切换时互相干扰。
+    @virtual_field("current.log")
+    def compute_log(self) -> str:
+        # 当前脚本的 current.log（其本身再落到用户 log_record）
+        if self.current.index is None or self.current.index not in self.scripts:
+            return ""
+        return self.scripts[self.current.index].current.log or ""
 
-        Returns:
-            bool: 超过阈值返回 True。
-        """
 
-        if self._log_progress is None:
-            self._log_progress = {}
+# ── 类级订阅：模块 import 即生效，无需启动后手动 bind（设计 §5.2）──
 
-        now = time.monotonic()
-        previous = self._log_progress.get(key)
-        if previous is None or previous[0] != latest_time:
-            self._log_progress[key] = (latest_time, now)
-            return False
-        return now - previous[1] > minutes * 60
 
-    @abstractmethod
-    async def main_task(self): ...
-    @abstractmethod
-    async def final_task(self): ...
-    @abstractmethod
-    async def on_crash(self, e): ...
+@TaskItem.connect(phase="runtime")
+@TaskScriptItem.connect(phase="runtime")
+@TaskUserItem.connect(phase="runtime")
+@LogRecordEntry.connect(phase="runtime")
+async def _publish_task_ws(sender: object, event: FieldChangeEvent) -> None:
+    """运行态树任一节点字段变更 → 推 TaskItem 载荷与当前日志。"""
+    from app.core.ws import Publisher, protocol
+    from app.core.ws.protocol import WSTaskLogUpdatedData
 
-    async def _run_main_task(self) -> None:
-        await self.main_task()
+    # 沿 parent 上溯到 TaskItem
+    node: object | None = sender
+    task: TaskItem | None = None
+    while node is not None:
+        if isinstance(node, TaskItem):
+            task = node
+            break
+        node = getattr(node, "parent", None)
+    if task is None:
+        return
 
-    async def _execute_task(self, parent_tg: asyncio.TaskGroup):
-        self._task_group = parent_tg
-        try:
-            await self._run_main_task()
-        except asyncio.CancelledError:
-            self.stopped_manually = True
-            raise
-        except Exception as e:
-            await self.on_crash(e)
-        finally:
-            self._task_group = None
-            try:
-                started_at = time.monotonic()
-                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
-                if self.wait_for_finalizer_on_cancel:
-                    await self._run_final_task()
-                else:
-                    try:
-                        await asyncio.shield(self.final_task())
-                    except Exception as e:
-                        await self.on_crash(e)
-            finally:
-                logger.info(
-                    f"任务收尾完成: {type(self).__name__} - 用时: "
-                    f"{time.monotonic() - started_at:.3f}秒"
-                )
-                self.accomplish.set()
+    # task.info.updated 的 data 段即 TaskItem API dump（与 /get 同形）
+    payload = task.model_dump(mode="json")
+    # current.log 已是 Virtual：经脚本 → 用户 log_record 转接
+    log = task.current.log or ""
+    if len(log) > 200_000:
+        log = log[-200_000:]
+        # dump 里同步截断，避免单条 WS 爆内存；完整正文仍在用户 log_record
+        current = payload.get("current")
+        if isinstance(current, dict):
+            current["log"] = log
+        sid = task.current.index
+        scripts = payload.get("scripts")
+        if sid is not None and isinstance(scripts, dict) and str(sid) in scripts:
+            script_current = scripts[str(sid)].get("current")
+            if isinstance(script_current, dict):
+                script_current["log"] = log
 
-    async def _run_final_task(self) -> None:
-        """推迟外层取消，直到收尾协程真正结束。"""
-
-        finalizer = asyncio.create_task(self.final_task())
-        current_task = asyncio.current_task()
-        if current_task is None:
-            raise RuntimeError("无法获取当前任务")
-
-        # main_task 的取消正在当前 finally 中传播；先清除计数，避免它反复
-        # 打断对独立 finalizer 的等待。原 CancelledError 会在 finally 后继续传播。
-        while current_task.cancelling():
-            current_task.uncancel()
-
-        cancellation: asyncio.CancelledError | None = None
-
-        while not finalizer.done():
-            try:
-                await asyncio.shield(finalizer)
-            except asyncio.CancelledError as e:
-                if finalizer.cancelled():
-                    raise
-                cancellation = e
-                while current_task.cancelling():
-                    current_task.uncancel()
-            except Exception:
-                break
-
-        try:
-            finalizer.result()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            await self.on_crash(e)
-
-        if cancellation is not None:
-            raise cancellation
-
-    def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
-        if self._task_group is None:
-            raise RuntimeError("子任务必须在主任务中启动")
-        return self._task_group.create_task(child._execute_task(self._task_group))
-
-    def execute(self):
-        if self.task is not None and not self.task.done():
-            raise RuntimeError("任务已在运行")
-
-        if self._task_group is not None:
-            raise RuntimeError("execute() 仅可由顶层任务调用，子任务请使用 spawn()")
-
-        async def _root_coro():
-            async with asyncio.TaskGroup() as tg:
-                self.task = tg.create_task(self._execute_task(tg))
-
-        root_task = asyncio.create_task(_root_coro())
-        root_task.add_done_callback(lambda _: self.accomplish.set())
-        self.task = root_task
-
-    def cancel(self) -> bool:
-        if self.task is None or self.task.done():
-            return False
-        return self.task.cancel()
+    await Publisher.send(
+        id=str(task.uid),
+        type=protocol.TASK_INFO_UPDATED,
+        data=payload,
+    )
+    if log:
+        await Publisher.send(
+            id=str(task.uid),
+            type=protocol.TASK_LOG_UPDATED,
+            data=WSTaskLogUpdatedData(log=log),
+        )

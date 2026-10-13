@@ -58,6 +58,70 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class PluginComponentOut(BaseModel):
+    key: str = Field(..., description="组件标识")
+    kind: Literal[
+        "button", "checkbox", "input", "number", "path", "select", "switch"
+    ] = Field(..., description="组件类型")
+    label: str = Field(..., description="组件标签")
+    width: int = Field(..., ge=1, le=24, description="24 格布局宽度")
+    required: bool = Field(default=False, description="是否必填")
+    config_group: str | None = Field(default=None, description="对应配置分组")
+    config_name: str | None = Field(default=None, description="对应配置项")
+    options: List[Dict[str, Any]] = Field(default_factory=list, description="选择项")
+    props: Dict[str, Any] = Field(default_factory=dict, description="组件属性")
+
+
+class PluginPageOut(BaseModel):
+    page_id: str = Field(..., description="页面标识")
+    title: str = Field(..., description="页面标题")
+    components: List[PluginComponentOut] = Field(
+        default_factory=list, description="页面组件声明"
+    )
+
+
+class PluginGameTypeOut(BaseModel):
+    value: str = Field(..., description="游戏类型标识")
+    label: str = Field(..., description="游戏类型名称")
+
+
+class PluginInfoItem(BaseModel):
+    plugin_id: str = Field(..., description="插件标识")
+    name: str = Field(..., description="插件名称")
+    version: str = Field(..., description="插件版本")
+    description: str = Field(default="", description="插件说明")
+    pages: List[PluginPageOut] = Field(default_factory=list, description="插件页面")
+    game_types: List[PluginGameTypeOut] = Field(
+        default_factory=list, description="插件声明的游戏类型"
+    )
+    author: str = Field(default="", description="插件作者")
+    license: str = Field(default="", description="插件许可证")
+    homepage: str = Field(default="", description="插件主页")
+    repository: str = Field(default="", description="插件代码仓库")
+    api_version: str = Field(default="1", description="插件 API 版本")
+    source: str = Field(default="bundled", description="插件来源")
+    status: Literal["running", "degraded"] = Field(
+        default="running", description="插件运行状态"
+    )
+    capabilities: List[str] = Field(default_factory=list, description="插件能力")
+
+
+class PluginListOut(OutBase):
+    data: List[PluginInfoItem] = Field(..., description="已发现的插件")
+
+
+class PluginPageDataOut(OutBase):
+    values: Dict[str, Any] = Field(default_factory=dict, description="页面配置值")
+
+
+class PluginPageUpdateIn(BaseModel):
+    values: Dict[str, Any] = Field(default_factory=dict, description="待更新配置值")
+
+
+class PluginActionIn(BaseModel):
+    action_id: str = Field(..., min_length=1, max_length=64, description="鎻掍欢鍔ㄤ綔鏍囪瘑")
+
+
 class VersionOut(OutBase):
     if_need_update: bool = Field(..., description="后端代码是否需要更新")
     current_time: str = Field(..., description="后端代码当前时间戳")
@@ -5099,12 +5163,19 @@ class HistoryData(BaseModel):
     pull_count_statistics: Optional[PullCountStatistics] = Field(
         default=None, description="MaaEnd 抽数计算统计"
     )
+    data: Dict[str, Any] = Field(
+        default_factory=dict, description="合并后的统计数据（2/3 层数字树）"
+    )
     error_info: Optional[Dict[str, str]] = Field(
         default=None, description="报错信息, key为时间戳, value为错误描述"
     )
     log_content: Optional[str] = Field(
         default=None, description="日志内容, 仅在提取单条历史记录数据时返回"
     )
+    status: Optional[str] = Field(default=None, description="单条记录状态")
+    message: Optional[str] = Field(default=None, description="单条记录消息")
+    type_key: Optional[str] = Field(default=None, description="脚本类型键")
+    username: Optional[str] = Field(default=None, description="用户名")
 
 
 class ScriptCreateIn(BaseModel):
@@ -6459,3 +6530,65 @@ class PatternDebugOut(OutBase):
     results: List[PatternDebugResultItem] = Field(
         default_factory=list, description="逐行/逐窗口调试结果"
     )
+
+
+# Plugin registry/catalog contracts use the config entries themselves.
+from app.config import CollectionOrderItem
+from app.models.config.plugin import PluginMeta, PluginRecord
+
+class PluginRegistryGetIn(BaseModel):
+    recordId: Optional[str] = Field(default=None, description="PluginRecord.uid；缺省全部")
+
+class PluginRegistryGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    # 插件注册表条目包含运行时子类和后端 UI 声明，响应按 wire 数据透传。
+    data: dict[str, Any] = Field(default_factory=dict)
+
+class PluginRegistryUpdateIn(BaseModel):
+    recordId: str = Field(..., description="PluginRecord.uid")
+    data: PluginRecord = Field(..., description="补丁；服务端剔除非 Trigger")
+
+class PluginCatalogGetIn(BaseModel):
+    metaId: Optional[str] = Field(default=None, description="PluginMeta.uid；缺省全部")
+
+class PluginCatalogGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+class PluginCatalogUpdateIn(BaseModel):
+    metaId: str = Field(..., description="PluginMeta.uid")
+    data: PluginMeta = Field(..., description="补丁；透传全部字段，不做白名单过滤")
+
+class PluginCatalogRefreshIn(BaseModel):
+    """全量刷新；无 TAG 筛选（前端本地过滤）。"""
+
+class PluginConfigGetIn(BaseModel):
+    recordId: str = Field(
+        ..., description="PluginRecord.uid（与 /api/plugin_registry 相同；靠端点区分）"
+    )
+
+class PluginConfigGetOut(OutBase):
+    data: Any = Field(default=None, description="配置实例；未启用或无配置则为 null")
+
+class PluginConfigUpdateIn(BaseModel):
+    recordId: str = Field(..., description="PluginRecord.uid")
+    data: dict[str, Any] = Field(
+        default_factory=dict, description="热补丁；走 entry.update"
+    )
+
+class PluginListItem(BaseModel):
+    name: str
+    state: str
+    enabled: bool
+    is_core: bool = False
+    is_local: bool = False
+    version: Optional[str] = None
+    distribution: Optional[str] = None
+    source: Optional[str] = None
+    description: str = ""
+    requires: list[str] = Field(default_factory=list)
+    wants: list[str] = Field(default_factory=list)
+    last_error: Optional[str] = None
+
+class PluginRuntimeListOut(OutBase):
+    data: list[PluginListItem] = Field(default_factory=list)

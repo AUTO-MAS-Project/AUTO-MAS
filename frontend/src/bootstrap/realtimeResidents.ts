@@ -10,10 +10,6 @@ import {
   bootstrapTaskRuntimeState,
   disposeTaskRuntimeState,
 } from '@/composables/useTaskRuntimeState'
-import {
-  bootstrapSchedulerSubscriptions,
-  disposeSchedulerSubscriptions,
-} from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 import {
   bootstrapVirtualDisplayPrompt,
@@ -32,10 +28,6 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('task-runtime', {
       bootstrap: bootstrapTaskRuntimeState,
       dispose: disposeTaskRuntimeState,
-    })
-    registerResidentResource('scheduler', {
-      bootstrap: bootstrapSchedulerSubscriptions,
-      dispose: disposeSchedulerSubscriptions,
     })
     registerResidentResource('update-download', {
       bootstrap: bootstrapUpdateDownloadSubscriptions,

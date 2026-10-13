@@ -15,11 +15,9 @@
               {{ cloud && engine === 'SRA' ? t('edit.hsrCloudNoSra') : engineDescription(engine) }}
             </div>
           </div>
-          <a-switch
-            :checked="Boolean(control[engine])"
+          <SettingToggleButton
+            :model-value="Boolean(control[engine])"
             :disabled="saving"
-            :checked-children="t('edit.run')"
-            :un-checked-children="t('edit.skip2')"
             @change="emit('toggle', engine, Boolean($event))"
           />
         </div>
@@ -29,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import type { HSREngine } from '@/composables/useHSRPluginApi'
 import type { HSRUserConfigData } from './types'

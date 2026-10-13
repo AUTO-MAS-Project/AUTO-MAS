@@ -400,12 +400,19 @@ COMMUNITY_TOKEN_FIELDS = tuple(
 
 
 def read_community_token(account: object, field: str) -> str:
-    """读取凭据字段，兼容旧版本尚未包含新增字段的账号对象。"""
+    """从新配置账号 Entry 读取平台凭据。"""
 
-    try:
-        value = account.get("GameSignAccount", field)  # type: ignore[attr-defined]
-    except (AttributeError, KeyError):
+    field_name = {
+        "MiyousheToken": "miyoushe_token",
+        "KuroToken": "kuro_token",
+        "SklandToken": "skland_token",
+        "TaygedoToken": "taygedo_token",
+        "CloudGenshinToken": "cloud_genshin_token",
+    }.get(field)
+    info = getattr(account, "info", None)
+    if field_name is None or info is None:
         return ""
+    value = getattr(info, field_name, "")
     return value.strip() if isinstance(value, str) else str(value or "").strip()
 
 

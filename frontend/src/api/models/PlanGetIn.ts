@@ -3,9 +3,10 @@
 /* tslint:disable */
 /* eslint-disable */
 export type PlanGetIn = {
-    /**
-     * 计划ID, 未携带时表示获取所有计划数据
-     */
     planId?: (string | null);
+    /**
+     * 按脚本 Entry 类型名筛选；缺省全部
+     */
+    scriptType?: (string | null);
 };
 

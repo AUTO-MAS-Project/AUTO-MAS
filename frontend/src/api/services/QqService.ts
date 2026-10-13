@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { app__models__schema__OutBase } from '../models/app__models__schema__OutBase';
 import type { OpenClawQQQrCheckIn } from '../models/OpenClawQQQrCheckIn';
 import type { OpenClawQQQrCheckOut } from '../models/OpenClawQQQrCheckOut';
 import type { OpenClawQQQrStartOut } from '../models/OpenClawQQQrStartOut';
 import type { OpenClawQQStatusOut } from '../models/OpenClawQQStatusOut';
-import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -64,10 +64,10 @@ export class QqService {
     /**
      * 解除 QQ 官方机器人绑定
      * 解除绑定并清理本地保存的 QQ 协议状态。
-     * @returns OutBase Successful Response
+     * @returns app__models__schema__OutBase Successful Response
      * @throws ApiError
      */
-    public static unbindApiSettingOpenclawQqUnbindPost(): CancelablePromise<OutBase> {
+    public static unbindApiSettingOpenclawQqUnbindPost(): CancelablePromise<app__models__schema__OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/openclaw-qq/unbind',

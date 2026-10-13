@@ -1,7 +1,7 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskCreateIn } from '@/compat/taskCreateIn'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getConfig, saveConfig } from '@/utils/config'
@@ -14,12 +14,10 @@ import {
   type HomeTaskOption,
 } from '@/views/home/homeQuickStartTasks'
 import { pickHomeGreeting } from '@/views/home/homeGreeting'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
   const { playSound } = useAudioPlayer()
-  const { trackStartedTask } = useSchedulerLogic()
 
   const homeGreeting = pickHomeGreeting()
   const commandTitle = ref(homeGreeting.text)
@@ -155,15 +153,7 @@ export const useHomeQuickStart = () => {
             taskId,
             mode: selectedHomeMode.value,
           }),
-        onTaskStarted: result => {
-          trackStartedTask({
-            taskId: result.taskId,
-            selectedTaskId: result.selectedTaskId,
-            selectedMode: selectedHomeMode.value,
-            taskLabel: result.taskLabel,
-            modeLabel: '自动代理',
-          })
-        },
+        onTaskStarted: () => undefined,
       })
 
       for (const failure of outcome.failed) {

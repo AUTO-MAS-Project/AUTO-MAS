@@ -43,6 +43,9 @@ dependencies = [
     "tomli_w==1.2.0",
     "tzdata==2026.3",
     "zstandard==0.25.0",
+    "blinker>=1.9.0",
+    "pyproject-metadata>=0.12.1",
+    "watchdog>=6.0.0",
 ]
 
 [project.urls]
@@ -78,3 +81,7 @@ known-first-party = ["app"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+# 旧专项测试保留在 deferred 目录作为迁移参考，不进入当前新框架回归入口。
+norecursedirs = ["deferred"]

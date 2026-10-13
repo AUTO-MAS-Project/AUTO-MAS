@@ -23,13 +23,23 @@ Apply these project rules directly when they overlap with a task:
 
 1. Cherry-picks to an already released `release/{version}` branch must be small **pure-backend** fixes that touch no frontend code, because released apps hot-update only backend code from that branch while the frontend ships inside the installer. Cherry-picking a commit that carries frontend logic is a violation: close the related PR and revert the related commit. Judge by the files the commit actually touches, not by the `type` / `scope` in its message. Never help prepare or push such a cherry-pick.
 2. API work follows the schema-first route flow: define `app/models/schema.py`, wire the matching `app/api/` module, then regenerate frontend API clients.
-3. Config work follows `ConfigBase` and `ConfigItem` ownership: declare fields before `super().__init__()`, use validators as auto-correction behavior, and register multi-config classes in the owning collection.
+3. Outside an approved framework migration, config work follows `ConfigBase` and `ConfigItem` ownership: declare fields before `super().__init__()`, use validators as auto-correction behavior, and register multi-config classes in the owning collection. During an approved migration, follow the user-approved target architecture; do not retain or revive a deprecated base class merely to satisfy legacy guidance in a sub-skill.
 4. Script adaptation must be complete across config, schema, API, task dispatch, task folder, and frontend entry points, and must respect the black-box boundary: lower the configuration barrier before filling any gap, then decide capability ownership: work the script owns (in-game actions, task execution and verdicts, script config semantics) may only be reused through upstream entry points; when upstream lacks such work, consider contributing it upstream first and only fill in inside MAS as a temporary measure (marked for removal once upstream ships it) when that is not viable; MAS-owned domains (accounts, scheduling, plans, notifications, statistics, emulator lifecycle, cross-script orchestration) may be implemented in MAS but must not read or infer upstream internal state; upstream private formats may only be passed through, never modeled on, and no self-invented verdicts for upstream-executed tasks. Once upstream ships an entry point for such work, existing implementations become violations and must be replaced by reuse. After this skill is loaded, self-check the task and, on a hit, report "This may violate the MAS development norms" with file:line evidence and an alternative; the warning does not block work. Read `.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md` before designing.
 5. Frontend work follows the dedicated frontend skills in this directory.
 6. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
 7. CI must pin every external reference to immutable content: GitHub Actions `uses` entries use a full 40-character commit SHA with a `# <tag>` version comment (resolve annotated tags to the peeled commit), and container images use `@sha256:<digest>`. Apply this across GitHub workflows, composite actions, and CNB pipelines; local actions such as `./.github/actions/...` are the only exception. Never leave a mutable tag, branch, or short hash. When changing CI, scan every `uses:` and `image:` reference and verify that all external references remain pinned.
 
 8. Start every branch from the latest upstream `dev` (`git fetch` first; in a fork, branch off upstream `dev`), never from a stale local `dev`: a branch built on an old baseline silently overwrites other people's merged work when it is synced, with no conflict and green type checks. Branch rules: <https://doc.auto-mas.top/developer/development-specifications.html>.
+
+## 底层迁移决策
+
+涉及配置基类与持久化、启动生命周期、插件宿主、任务调度、服务职责或共享 API 契约等底层迁移时，先执行以下规则：
+
+1. 先只读梳理现状和依赖，向用户提交具体方案：哪些模块/能力要迁移，哪些保留不改，哪些废除或暂缓，以及各项理由；同时说明实现思路、依赖顺序、现有功能与数据的影响、验证方式。
+2. **迁移范围和具体实现思路必须先由用户判定，再修改相关运行代码。** 将已确认决策与待定项记录到迁移计划，不能把建议或已经写出的草案标为用户已批准。
+3. 遇到未迁移服务、旧接口或启动错误，先诊断并说明缺口；若修复需要扩大迁移范围或改变已确认机制，提交补充方案，等待用户判定，不能借“修复报错”自动整片替换旧分支实现。
+4. 已明确批准的范围和方案可继续实施，无需逐项重复确认；只有新增范围或实质改变实现思路时才重新提交判定。一般性的“继续”“完整迁移”或自动执行授权，不代替尚未判定的底层范围与方案决策。
+5. 判定前可继续只读调查、方案与文档整理，以及不依赖待定决策的已批准工作。若已有相关运行代码改动，明确标为待审草案，说明影响，不擅自回滚或继续扩大。
 
 ## Sub-Skills
 Use these skills as needed:
@@ -111,7 +121,7 @@ When using this hub:
 1. State which sub-skills are selected.
 2. Explain why each selected sub-skill is needed.
 3. Apply only the minimum set required by the task.
-4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
+4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly; for underlying migrations, apply **底层迁移决策** first and follow the approved target architecture.
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
 6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
 7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.

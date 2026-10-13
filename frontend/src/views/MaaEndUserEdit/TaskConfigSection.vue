@@ -22,8 +22,8 @@
           }}</span>
           <label v-if="activeGroup.tasks.length > 1" class="task-group-toggle">
             <span>{{ t('edit.maaEndEnableGroup') }}</span>
-            <a-switch
-              :checked="isGroupEnabled(activeGroup)"
+            <SettingToggleButton
+              :model-value="isGroupEnabled(activeGroup)"
               :disabled="controlsDisabled"
               :aria-label="t('edit.maaEndEnableGroup')"
               @change="handleGroupSwitchChange(activeGroup, $event)"
@@ -34,8 +34,8 @@
         <div class="task-switch-list">
           <div v-for="task in activeGroup.tasks" :key="task.name" class="task-switch-row">
             <span class="task-switch-label">{{ task.label }}</span>
-            <a-switch
-              v-model:checked="formData.Task[taskSwitchKey(task.name)]"
+            <SettingToggleButton
+              v-model="formData.Task[taskSwitchKey(task.name)]"
               :disabled="controlsDisabled"
               :aria-label="task.label"
               @change="handleTaskSwitchChange(task.name)"
@@ -48,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { MAAEND_TASK_GROUPS, type MaaEndTaskSwitch } from '@/utils/maaEndProtocolSpace'

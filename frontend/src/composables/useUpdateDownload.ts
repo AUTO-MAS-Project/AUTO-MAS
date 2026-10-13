@@ -59,7 +59,7 @@ const sourceLabel = computed(() => {
     GitHub: 'GitHub 源',
     CNB: 'CNB 源',
     MirrorChyan: 'Mirror 酱源',
-    AutoSite: '自建源',
+    AutoSite: t('setting.source.AutoSite'),
   }
   return labels[source.value] || source.value
 })

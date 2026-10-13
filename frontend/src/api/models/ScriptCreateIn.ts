@@ -4,33 +4,8 @@
 /* eslint-disable */
 export type ScriptCreateIn = {
     /**
-     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
+     * Entry 类名；仅一种可选类型时可省略
      */
-    type: ScriptCreateIn.type;
-    /**
-     * 直接从该脚本ID复制创建, 仅在复制创建时使用
-     */
-    scriptId?: (string | null);
+    type?: string;
 };
-export namespace ScriptCreateIn {
-    /**
-     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
-     */
-    export enum type {
-        MAA = 'MAA',
-        SRC = 'SRC',
-        GENERAL = 'General',
-        OKWW = 'Okww',
-        OK_NTE = 'OkNte',
-        MAA_END = 'MaaEnd',
-        M9A = 'M9A',
-        MAA_FW = 'MaaFW',
-        HSR = 'HSR',
-        BETTER_GI = 'BetterGI',
-        ZZZ_OD = 'ZzzOd',
-        BAAH = 'BAAH',
-        WHIMBOX = 'Whimbox',
-        MSS = 'MSS',
-    }
-}
 

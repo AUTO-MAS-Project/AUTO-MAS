@@ -21,18 +21,17 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import json
+import asyncio
 from contextlib import suppress
-from typing import Awaitable, Callable, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, Set, cast
 
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import JsonValue
 
-from app.utils.logger import get_logger
-
 from .dispatcher import Dispatcher
-from .protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED, parse_envelope
+from .protocol import parse_envelope
+from app.utils.logger import get_logger
 
 logger = get_logger("WS连接管理器")
 
@@ -46,10 +45,6 @@ class _MainConnectionManager:
     - 接收循环运行在 FastAPI 路由协程内，断开清理按连接实例判定，仅执行一次
     - 底层心跳依赖 WebSocket 协议层 ping/pong（uvicorn ws_ping_interval/ws_ping_timeout）
     """
-
-    # 单条消息（含排队等发送锁）的最长等待时间。对端僵死时发送方最多被拖这么久，
-    # 连接本身不在这里关闭，交给协议层 ping 超时判定，避免前端卡顿时被反复踢下线重连。
-    send_timeout: float = 5.0
 
     def __init__(self) -> None:
         self._websocket: Optional[WebSocket] = None
@@ -106,12 +101,8 @@ class _MainConnectionManager:
 
         if old_websocket is not None:
             logger.warning("已存在主连接，旧连接将被新连接替换")
-            # 专用关闭码告诉旧前端"你被接管了"：它应停止自动重连，
-            # 而不是当成异常断开 3 秒后又把新连接踢掉，两边无限互踢。
             with suppress(Exception):
-                await old_websocket.close(
-                    code=CLOSE_CODE_REPLACED, reason=CLOSE_REASON_REPLACED
-                )
+                await old_websocket.close(code=1000, reason="被新连接替换")
 
         logger.info(f"主 WebSocket 已连接: {websocket.client}")
         async with self._connection_lock:
@@ -136,30 +127,18 @@ class _MainConnectionManager:
             message (Dict[str, JsonValue]): 消息体。
 
         Returns:
-            bool: 发送是否成功；未连接、发送超时或发送异常时返回 False。
+            bool: 发送是否成功；未连接或发送异常时返回 False。
         """
         websocket = self._websocket
         if websocket is None:
             return False
         send_lock = self._send_lock
-
-        async def _send() -> bool:
+        try:
             async with send_lock:
                 if self._websocket is not websocket or self._send_lock is not send_lock:
                     return False
                 await websocket.send_json(message)
                 return self._websocket is websocket and self._send_lock is send_lock
-
-        try:
-            return await asyncio.wait_for(_send(), timeout=self.send_timeout)
-        except asyncio.TimeoutError:
-            # 超时可能发生在等锁期间（未发出），也可能发生在 drain 期间（帧已进缓冲区、
-            # 之后仍可能送达），这里无法区分，只能记为未确认送达
-            logger.warning(
-                f"主 WebSocket 发送超时({self.send_timeout:g}秒)，消息未确认送达: "
-                f"type={message.get('type')}"
-            )
-            return False
         except Exception as e:
             logger.warning(f"主 WebSocket 发送失败: {type(e).__name__}: {e}")
             return False
@@ -200,7 +179,7 @@ class _MainConnectionManager:
     async def cancel_hook_tasks(self) -> None:
         """取消并等待所有在途连接建立回调任务。
 
-        关闭流程中在业务 teardown 前调用，确保 start_startup_queue 等回调
+        关闭流程中在插件 teardown 前调用，确保 start_startup_queue 等回调
         不会与后端清理并发执行。
         """
         await self.begin_shutdown()
@@ -212,7 +191,8 @@ class _MainConnectionManager:
         tasks = [
             task
             for task in self._hook_tasks
-            if generation is None or self._hook_task_owners.get(task) == generation
+            if generation is None
+            or self._hook_task_owners.get(task) == generation
         ]
         for task in tasks:
             if not task.done():
@@ -230,16 +210,8 @@ class _MainConnectionManager:
                 raw = await websocket.receive_json()
             except WebSocketDisconnect:
                 break
-            except KeyError:
-                logger.warning("收到非文本 WebSocket 帧，已丢弃")
-                continue
             except json.JSONDecodeError as e:
                 logger.warning(f"入站消息解析失败: {e}")
-                continue
-            except (KeyError, TypeError):
-                # receive_json(mode="text") 读二进制帧时取不到 text 字段；
-                # 该帧已被消费，丢弃即可，不能因此断开主连接。
-                logger.warning("主 WebSocket 收到非文本帧，已丢弃")
                 continue
             except Exception as e:
                 logger.warning(f"主 WebSocket 接收异常: {type(e).__name__}: {e}")
@@ -259,7 +231,8 @@ class _MainConnectionManager:
             return
 
         for hook in self._connect_hooks:
-            task = asyncio.create_task(hook())
+            # 连接回调均为 async 函数，调用结果必然是可等待协程
+            task = asyncio.create_task(cast(Coroutine[Any, Any, None], hook()))
             self._hook_tasks.add(task)
             self._hook_task_owners[task] = generation
 

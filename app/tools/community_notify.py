@@ -451,7 +451,7 @@ def append_task_community_summary(
 ) -> str:
     """将尚未发送的社区签到汇总附加到任务报告。"""
 
-    if not Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+    if not Config.tools.game_sign.notify_enabled:
         return result
 
     summary = get_task_community_summary(task_info, output_format=output_format)

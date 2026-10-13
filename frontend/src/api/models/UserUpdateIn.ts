@@ -2,32 +2,12 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BAAHUserConfig } from './BAAHUserConfig';
-import type { BetterGIUserConfig } from './BetterGIUserConfig';
-import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { HSRUserConfig } from './HSRUserConfig';
-import type { M9AUserConfig } from './M9AUserConfig';
-import type { MaaEndUserConfig } from './MaaEndUserConfig';
-import type { MaaFWUserConfig } from './MaaFWUserConfig';
-import type { MaaUserConfig } from './MaaUserConfig';
-import type { MSSUserConfig } from './MSSUserConfig';
-import type { OkNteUserConfig } from './OkNteUserConfig';
-import type { OkwwUserConfig } from './OkwwUserConfig';
-import type { SrcUserConfig } from './SrcUserConfig';
-import type { WhimboxUserConfig } from './WhimboxUserConfig';
-import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
 export type UserUpdateIn = {
-    /**
-     * 所属脚本ID
-     */
     scriptId: string;
-    /**
-     * 用户ID
-     */
     userId: string;
     /**
-     * 用户更新数据
+     * 补丁：只传要改的字段
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig);
+    data: Record<string, any>;
 };
 

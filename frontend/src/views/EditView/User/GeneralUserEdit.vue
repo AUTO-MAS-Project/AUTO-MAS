@@ -267,7 +267,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
+import { TaskCreateIn } from '@/compat/taskCreateIn'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'

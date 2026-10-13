@@ -250,7 +250,6 @@ import {
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -610,7 +609,7 @@ const loadMaaEndOptions = async () => {
 const loadSanityModeOptions = async () => {
   try {
     const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAAEND,
+      consumer: 'maaend',
     })
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data

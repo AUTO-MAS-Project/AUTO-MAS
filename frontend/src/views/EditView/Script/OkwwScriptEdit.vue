@@ -525,7 +525,8 @@ import {
   QuestionCircleOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
+import { TaskCreateIn } from '@/compat/taskCreateIn'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'

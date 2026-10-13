@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type QueueItemReorderIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 队列项ID列表, 按新顺序排列
+     * 按新顺序排列的队列项 UID 列表
      */
     indexList: Array<string>;
 };

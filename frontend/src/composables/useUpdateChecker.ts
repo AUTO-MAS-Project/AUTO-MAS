@@ -1,7 +1,7 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { Service } from '@/api'
-import type { GlobalConfig_Update } from '@/api'
+import type { SettingsViewModel } from '@/types/settings'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import type { ChangelogData } from '@/utils/changelog'
@@ -47,19 +47,32 @@ export const requestUpdateCheck = (forceCheck = false): UpdateCheckPromise => {
   return request
 }
 
-const showUpdateModal = (data: ChangelogData, version: string) => {
-  updateData.value = data
+const showUpdateModal = (data: ChangelogData | Record<string, string[]>, version: string) => {
+  updateData.value = data as ChangelogData
   latestVersion.value = version
   updateVisible.value = true
   lastShownVersion = version
 }
 
 // 拉取 Update 配置段（自动更新开关与暂停截止日期一次读完）；返回 null 表示读取失败
-const fetchUpdateSettings = async (): Promise<GlobalConfig_Update | null> => {
+type UpdateSettings = NonNullable<SettingsViewModel['Update']>
+
+const fetchUpdateSettings = async (): Promise<UpdateSettings | null> => {
   try {
-    const response = await Service.getScriptsApiSettingGetPost()
+    const response = await Service.getSettingApiSettingGetPost()
     if (response.code === 200 && response.data) {
-      return response.data.Update ?? {}
+      const data = response.data as Record<string, unknown>
+      const read = (value: unknown): Record<string, unknown> =>
+        value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+      const updates = read(data.updates ?? data.Update)
+      return {
+        IfAutoUpdate: Boolean(updates.if_auto_update ?? updates.IfAutoUpdate),
+        Source: String(updates.source ?? updates.Source ?? 'GitHub') as UpdateSettings['Source'],
+        Channel: String(updates.channel ?? updates.Channel ?? 'stable') as UpdateSettings['Channel'],
+        ProxyAddress: String(updates.proxy_address ?? updates.ProxyAddress ?? ''),
+        MirrorChyanCDK: String(updates.mirror_chyan_cdk ?? updates.MirrorChyanCDK ?? ''),
+        PauseUntil: String(updates.pause_until ?? updates.PauseUntil ?? ''),
+      }
     }
     logger.warn(`获取更新设置失败: code=${response.code}`)
   } catch (error) {

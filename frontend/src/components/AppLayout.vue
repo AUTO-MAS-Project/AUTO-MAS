@@ -62,6 +62,7 @@
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
 import {
+  AppstoreOutlined,
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
@@ -113,7 +114,7 @@ const mainMenuItems = computed(() => [
   { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
   { key: '/scripts', label: t('comp.scripts'), icon: icon('scripts', FileTextOutlined) },
   { key: '/plans', label: t('comp.plans'), icon: icon('plans', CalendarOutlined) },
-  { key: '/emulators', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
+  { key: '/games', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
   { key: '/queue', label: t('comp.queue'), icon: icon('queue', UnorderedListOutlined) },
   { key: '/scheduler', label: t('comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
 ])
@@ -139,6 +140,7 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
+  { key: '/plugins', label: t('comp.plugins'), icon: icon('plugins', AppstoreOutlined) },
   { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
   { key: '/tools', label: t('comp.tools'), icon: icon('tools', ToolOutlined) },

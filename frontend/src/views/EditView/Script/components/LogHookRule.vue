@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import {
   DeleteOutlined,
@@ -114,7 +115,7 @@ const typeOptions = [
       </div>
 
       <div class="rule-header-right">
-        <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
+        <SettingToggleButton :model-value="local.enabled !== false" @change="onEnabledChange" />
 
         <a-tooltip :title="t('edit.delete')">
           <a-button size="small" danger class="rule-op-btn" @click="emit('remove')">

@@ -107,9 +107,7 @@ async def execute_ws_command(
         else:
             try:
                 param_instance = command.params_model(**(params or {}))
-            except (TypeError, ValidationError) as e:
-                # params 不是对象时 **(params or {}) 直接抛 TypeError；对外统一按参数错误
-                # 回 400，别让它落到外层变成 500（issue #443）
+            except ValidationError as e:
                 logger.error(f"命令 {endpoint} 参数校验失败: {e}")
                 return {
                     "success": False,
@@ -134,11 +132,16 @@ async def execute_ws_command(
         }
 
     except Exception as e:
-        logger.opt(exception=True).error(
-            f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}"
+        logger.error(
+            f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True
         )
         return {
             "success": False,
             "message": f"执行失败: {type(e).__name__}: {str(e)}",
             "code": 500,
         }
+
+
+def list_ws_commands() -> list[str]:
+    """列出所有已注册的命令名称"""
+    return list(_ws_command_registry.keys())

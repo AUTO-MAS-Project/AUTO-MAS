@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -24,7 +24,7 @@
 import asyncio
 from typing import Awaitable, Callable, Dict, List, Set, Tuple, Union
 
-from app.models.schema import WSEnvelope
+from .protocol import WSEnvelope
 from app.utils.logger import get_logger
 
 logger = get_logger("WS分发器")
@@ -80,15 +80,11 @@ class _WSDispatcher:
     def dispatch(self, envelope: WSEnvelope, *, owner: int | None = None) -> None:
         """分发一条入站消息给所有匹配处理器。"""
         if self._closed:
-            logger.debug(
-                f"分发器已关闭，丢弃入站消息: id={envelope.id}, type={envelope.type}"
-            )
+            logger.debug(f"分发器已关闭，丢弃入站消息: id={envelope.id}, type={envelope.type}")
             return
         handlers = list(self._handlers.get((envelope.id, envelope.type), ()))
         if not handlers:
-            logger.debug(
-                f"无处理器，丢弃入站消息: id={envelope.id}, type={envelope.type}"
-            )
+            logger.debug(f"无处理器，丢弃入站消息: id={envelope.id}, type={envelope.type}")
             return
         for handler in handlers:
             self._invoke(handler, envelope, owner=owner)
@@ -96,7 +92,11 @@ class _WSDispatcher:
     async def cancel_owner(self, owner: int) -> None:
         """取消并等待指定连接代次创建的全部处理器任务。"""
 
-        tasks = [task for task in self._tasks if self._task_owners.get(task) == owner]
+        tasks = [
+            task
+            for task in self._tasks
+            if self._task_owners.get(task) == owner
+        ]
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -109,7 +109,7 @@ class _WSDispatcher:
     async def shutdown(self) -> None:
         """停止接收新消息，并取消、等待所有在途处理器任务。
 
-        供关闭 teardown 在业务清理前调用，保证清理期间不再有
+        供关闭 teardown 在插件清理前调用，保证清理期间不再有
         入站消息触发的处理器与其并发执行。
         """
         self._closed = True
@@ -129,9 +129,7 @@ class _WSDispatcher:
         try:
             result = handler(envelope)
         except Exception as e:
-            logger.error(
-                f"处理器执行异常({envelope.id}/{envelope.type}): {type(e).__name__}: {e}"
-            )
+            logger.error(f"处理器执行异常({envelope.id}/{envelope.type}): {type(e).__name__}: {e}")
             return
 
         if not asyncio.iscoroutine(result):

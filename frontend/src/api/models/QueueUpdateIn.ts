@@ -2,15 +2,15 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig } from './QueueConfig';
+import type { QueueEntry_Input } from './QueueEntry_Input';
 export type QueueUpdateIn = {
     /**
-     * 队列ID
+     * 队列 ID
      */
     queueId: string;
     /**
-     * 队列更新数据
+     * 队列补丁（文档形状）
      */
-    data: QueueConfig;
+    data: QueueEntry_Input;
 };
 

@@ -1,0 +1,210 @@
+<!--
+  Uptime Kuma 邮件通知模板（套用 AUTO-MAS res/html 邮件模板风格）
+
+  用法：
+  1. Uptime Kuma → 通知 → 添加/编辑通知 → 类型选 "Email"（需 V2 邮件通知，支持 Liquid）
+  2. 「邮件主题」填：
+     【{% if status == 'down' %}故障{% else %}正常{% endif %}】{{ name }}
+     （留空则使用默认主题）
+  3. 「自定义正文」粘贴本文件 <html> 起的全部内容。
+
+  可用变量：
+    {{ msg }}              通知的消息
+    {{ name }}             服务名
+    {{ status }}           状态（up / down）
+    {{ hostnameOrURL }}    主机名或 URL
+    {{ heartbeatJSON }}    心跳信息对象（正常/故障类通知）
+    {{ monitorJSON }}      监控项信息对象（正常/故障/证书到期类通知）
+-->
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            position: relative;
+            max-width: 600px;
+            margin: auto;
+            border: 1px solid #ddd;
+            padding: 0;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            padding: 25px 30px;
+            background-color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            position: relative;
+            z-index: 1;
+        }
+
+        .logo {
+            margin-right: 18px;
+            flex-shrink: 0;
+        }
+
+        .logo img {
+            width: 48px;
+            height: 48px;
+            display: block;
+        }
+
+        h2 {
+            font-size: 24px;
+            color: #009faa;
+            margin: 0;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .content p {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+
+        .redhighlight {
+            font-weight: bold;
+            color: red;
+        }
+
+        .greenhighlight {
+            font-weight: bold;
+            color: green;
+        }
+
+        .button {
+            display: inline-block;
+            margin: 5px;
+            padding: 10px 15px;
+            background-color: #009faa;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .button:hover {
+            background-color: #007f8c;
+        }
+
+        .result-box {
+            background-color: #f0f8f0;
+            border: none;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 12px;
+            margin-bottom: 10px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #1a5c3a;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .result-label {
+            margin-bottom: 0px;
+            margin-top: 30px;
+            padding-bottom: 12px;
+            font-weight: bold;
+            font-size: 18px;
+            color: #009faa;
+            text-align: center;
+        }
+
+        .signature {
+            margin: 10px 30px 0 30px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .signature::before,
+        .signature::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background-color: #bbb;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-around;
+            margin: 10px 30px 30px 30px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="https://www.auto-mas.top/" class="logo">
+                <img src="https://www.auto-mas.top/favicon.ico" alt="AUTO-MAS">
+            </a>
+            <h2>{{ name }}</h2>
+        </div>
+
+        <div class="content">
+            <p><strong>通知消息：</strong>{{ msg }}</p>
+            <p><strong>服务名称：</strong>{{ name }}</p>
+            <p><strong>当前状态：</strong>
+                {% if status == 'down' %}
+                <span class="redhighlight">▼ 故障（down）</span>
+                {% else %}
+                <span class="greenhighlight">▲ 正常（{{ status }}）</span>
+                {% endif %}
+            </p>
+            <p><strong>主机名或 URL：</strong>{{ hostnameOrURL }}</p>
+
+            {% if heartbeatJSON %}
+            <p class="result-label">本次心跳信息</p>
+            <div class="result-box">时间：{{ heartbeatJSON.localDateTime }}（{{ heartbeatJSON.timezone }}）
+{% if heartbeatJSON.ping %}延迟：{{ heartbeatJSON.ping }} ms
+{% endif %}{% if heartbeatJSON.uptimePercentage %}可用率：{{ heartbeatJSON.uptimePercentage }}%
+{% endif %}{% if heartbeatJSON.monitorNumber %}第 {{ heartbeatJSON.monitorNumber }} 次检查{% endif %}</div>
+            {% endif %}
+
+            {% if monitorJSON %}
+            <p class="result-label">监控项信息</p>
+            <div class="result-box">类型：{{ monitorJSON.type }}
+目标：{{ monitorJSON.url | default: monitorJSON.hostname }}
+检查间隔：{{ monitorJSON.interval }} 秒
+最大重试：{{ monitorJSON.maxretries }} 次{% if monitorJSON.retryInterval %}（间隔 {{ monitorJSON.retryInterval }} 秒）{% endif %}</div>
+            {% endif %}
+        </div>
+
+        <p class="signature">AUTO-MAS 敬上</p>
+
+        <div class="footer">
+            <div>
+                <p><strong>软件仓库：</strong></p>
+                <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" class="button">AUTO-MAS GitHub</a>
+            </div>
+            <div>
+                <p><strong>文档站：</strong></p>
+                <a href="https://doc.auto-mas.top/" class="button">AUTO-MAS 文档站</a>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

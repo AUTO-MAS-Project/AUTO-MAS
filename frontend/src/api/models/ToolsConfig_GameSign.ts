@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ToolsConfig_GameSign = {
     /**
-     * 是否启用游戏社区
+     * 是否启用游戏签到
      */
     Enabled?: (boolean | null);
     /**
@@ -12,13 +12,21 @@ export type ToolsConfig_GameSign = {
      */
     NotifyEnabled?: (boolean | null);
     /**
-     * 是否启用日常便笺
+     * 签到窗口起点 HH:mm
      */
-    ActivityEnabled?: (boolean | null);
+    WindowStart?: (string | null);
+    /**
+     * 签到窗口终点 HH:mm
+     */
+    WindowEnd?: (string | null);
     /**
      * 启动时运行
      */
     RunOnStartup?: (boolean | null);
+    /**
+     * 定时运行
+     */
+    ScheduledRun?: (boolean | null);
     /**
      * 是否立即开始
      */
@@ -27,6 +35,10 @@ export type ToolsConfig_GameSign = {
      * 上次签到日期
      */
     LastSignDate?: (string | null);
+    /**
+     * 今日计划签到时间
+     */
+    ScheduledTime?: (string | null);
     /**
      * 签到状态标签
      */

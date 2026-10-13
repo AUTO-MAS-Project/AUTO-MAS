@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 // 挂载和卸载键盘监听
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -57,16 +58,29 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
 const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
 
+const pluginGameTypeOptions = ref<{ value: string; label: string }[]>([])
+
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('emulator.type.general') },
-  { value: 'mumu', label: t('emulator.type.mumu') },
   { value: 'ldplayer', label: t('emulator.type.ldplayer') },
   // Emulator 2.0: 一条配置纳管多条模拟器路径, 实例合并成一张设备表
   { value: 'emulator2', label: t('emulator.type.emulator2') },
   // { value: 'nox', label: '夜神模拟器' },
   // { value: 'memu', label: '逍遥模拟器' },
   // { value: 'blueStacks', label: 'BlueStacks' },
+  ...pluginGameTypeOptions.value,
 ])
+
+const loadPluginGameTypes = async () => {
+  try {
+    const response = await Service.listPluginsApiPluginListPost()
+    if (response.code === 200) {
+      pluginGameTypeOptions.value = []
+    }
+  } catch (error) {
+    logger.warn(`加载插件游戏类型失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 // 数据状态
 const loading = ref(false)
@@ -791,7 +805,7 @@ useEventListener(document, 'keyup', handleKeyUp)
 watch(
   () => route.path,
   newPath => {
-    if (newPath === '/emulators') {
+    if (newPath === '/games') {
       // 进入模拟器页面，启动轮询
       logger.info('进入模拟器页面，启动轮询')
       startPolling()
@@ -808,7 +822,7 @@ watch(
 watch(
   () => performanceStore.isBackgrounded,
   backgrounded => {
-    if (route.path !== '/emulators') {
+    if (route.path !== '/games') {
       return
     }
     if (backgrounded) {
@@ -821,6 +835,7 @@ watch(
 )
 
 onMounted(async () => {
+  await loadPluginGameTypes()
   await loadEmulators()
   await onEmulatorsLoaded()
   // 轮询的启动由路由监听器控制，这里不需要手动启动
@@ -1077,10 +1092,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-switch
-                        :checked="getEditingData(element.uid).stable_mode"
+                      <SettingToggleButton
+                        :model-value="getEditingData(element.uid).stable_mode"
                         :loading="stableSwitching.has(element.uid)"
-                        size="small"
                         @change="(checked: any) => toggleStableMode(element.uid, !!checked)"
                       />
                     </a-descriptions-item>
@@ -1091,10 +1105,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-switch
-                        :checked="getEditingData(element.uid).config_guard"
+                      <SettingToggleButton
+                        :model-value="getEditingData(element.uid).config_guard"
                         :loading="guardSwitching.has(element.uid)"
-                        size="small"
                         @change="(checked: any) => toggleConfigGuard(element.uid, !!checked)"
                       />
                     </a-descriptions-item>
@@ -1151,10 +1164,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-switch
-                        v-model:checked="getEditingData(element.uid).force_kill_on_close"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                      <SettingToggleButton
+                        v-model="getEditingData(element.uid).force_kill_on_close"
                         @change="handleSaveChange(element.uid, 'force_kill_on_close', $event)"
                       />
                     </a-descriptions-item>
@@ -1165,10 +1176,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-switch
-                        v-model:checked="getEditingData(element.uid).force_kill_before_launch"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                      <SettingToggleButton
+                        v-model="getEditingData(element.uid).force_kill_before_launch"
                         @change="handleSaveChange(element.uid, 'force_kill_before_launch', $event)"
                       />
                     </a-descriptions-item>

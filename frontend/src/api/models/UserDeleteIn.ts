@@ -3,13 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type UserDeleteIn = {
-    /**
-     * 所属脚本ID
-     */
     scriptId: string;
-    /**
-     * 用户ID
-     */
     userId: string;
 };
 

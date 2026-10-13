@@ -5,7 +5,7 @@
       <a-table
         :key="`config-table-${currentMode}`"
         :columns="configColumns"
-        :data-source="coordinator.configViewData.value"
+        :data-source="declaredConfigViewData"
         :pagination="false"
         :class="['config-table', `mode-${currentMode}`]"
         size="middle"
@@ -107,9 +107,9 @@
           </template>
 
           <template v-else>
-            <a-switch
+            <SettingToggleButton
               v-if="isStageAvailable(record.key, column.key as string)"
-              :checked="record[column.key]"
+              :model-value="record[column.key]"
               :disabled="isSwitchDisabled(column.key as string, record)"
               @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
             />
@@ -149,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
@@ -207,48 +208,55 @@ const currentCustomStages = computed(() => {
   )
 })
 
-// 配置视图列定义
+const declaredPlanTable = computed(() =>
+  (props.tableData?.ui?.tables ?? []).find((table: { key?: string }) => table.key === 'maaPlan')
+)
+
+const declaredTimeKeys = computed<TimeKey[]>(() => {
+  const names: Record<string, TimeKey> = {
+    all: 'ALL',
+    monday: 'Monday',
+    tuesday: 'Tuesday',
+    wednesday: 'Wednesday',
+    thursday: 'Thursday',
+    friday: 'Friday',
+    saturday: 'Saturday',
+    sunday: 'Sunday',
+  }
+  return (declaredPlanTable.value?.columns ?? [])
+    .map((name: string) => names[name])
+    .filter((name: TimeKey | undefined): name is TimeKey => name !== undefined)
+})
+
+const declaredConfigViewData = computed(() => {
+  const fieldNames = (declaredPlanTable.value?.rows ?? []).map((field: string) =>
+    field
+      .replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
+      .replace(/^./, (letter: string) => letter.toUpperCase())
+  )
+  return fieldNames.flatMap((field: string) => {
+    const row = coordinator.configViewData.value.find(item => item.key === field)
+    return row ? [row] : []
+  })
+})
+
+// 表头与行顺序由计划条目的 ui.tables 声明提供。
 const configColumns = computed(() => [
   {
     title: t('plan.table.field'),
     dataIndex: 'taskName',
     key: 'taskName',
     width: 120,
-    fixed: 'left',
-    align: 'center',
+    fixed: 'left' as const,
+    align: 'center' as const,
   },
-  { title: t('plan.week.ALL'), dataIndex: 'ALL', key: 'ALL', width: 120, align: 'center' },
-  { title: t('plan.week.Monday'), dataIndex: 'Monday', key: 'Monday', width: 120, align: 'center' },
-  {
-    title: t('plan.week.Tuesday'),
-    dataIndex: 'Tuesday',
-    key: 'Tuesday',
+  ...declaredTimeKeys.value.map(timeKey => ({
+    title: t(`plan.week.${timeKey}`),
+    dataIndex: timeKey,
+    key: timeKey,
     width: 120,
-    align: 'center',
-  },
-  {
-    title: t('plan.week.Wednesday'),
-    dataIndex: 'Wednesday',
-    key: 'Wednesday',
-    width: 120,
-    align: 'center',
-  },
-  {
-    title: t('plan.week.Thursday'),
-    dataIndex: 'Thursday',
-    key: 'Thursday',
-    width: 120,
-    align: 'center',
-  },
-  { title: t('plan.week.Friday'), dataIndex: 'Friday', key: 'Friday', width: 120, align: 'center' },
-  {
-    title: t('plan.week.Saturday'),
-    dataIndex: 'Saturday',
-    key: 'Saturday',
-    width: 120,
-    align: 'center',
-  },
-  { title: t('plan.week.Sunday'), dataIndex: 'Sunday', key: 'Sunday', width: 120, align: 'center' },
+    align: 'center' as const,
+  })),
 ])
 
 // 简化视图列定义
@@ -300,16 +308,7 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   const planConfig = coordinator.toApiData()
 
   // 找出哪些时间配置使用了旧的自定义关卡，更新为新值
-  const timeKeys: TimeKey[] = [
-    'ALL',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ]
+  const timeKeys = declaredTimeKeys.value
   let allSaved = true
   for (let i = 0; i < timeKeys.length; i++) {
     const timeKey = timeKeys[i]
@@ -353,16 +352,24 @@ const onCustomStageBlurOrEnter = (index: 1 | 2 | 3 | 4) => {
 }
 
 // 连战次数选项。label 里的“不切换”随语言变，所以整表是 computed
-const SERIES_OPTIONS = computed<SelectOption[]>(() => [
-  { label: 'AUTO', value: '0' },
-  { label: '1', value: '1' },
-  { label: '2', value: '2' },
-  { label: '3', value: '3' },
-  { label: '4', value: '4' },
-  { label: '5', value: '5' },
-  { label: '6', value: '6' },
-  { label: t('plan.table.noSwitch'), value: '-1' },
-])
+const SERIES_OPTIONS = computed<SelectOption[]>(() => {
+  const hints = props.tableData?.ui?.hints
+  if (!hints || typeof hints !== 'object') return []
+  const hint = Object.values(hints)
+    .flatMap(value => (Array.isArray(value) ? value : []))
+    .find((value: { field?: string }) => value?.field === 'series_numb') as
+    | { options?: Array<{ value: string }> }
+    | undefined
+  return (hint?.options ?? []).map(({ value }) => ({
+    value,
+    label:
+      value === '0'
+        ? 'AUTO'
+        : value === '-1'
+          ? t('plan.table.noSwitch')
+          : value,
+  }))
+})
 
 // 选项类型定义
 interface SelectOption {
@@ -481,19 +488,8 @@ const getStageTagColor = (taskName: string, isCustom?: boolean) => {
 }
 
 // TIME_KEYS 常量用于简化视图批量操作
-const TIME_KEYS: TimeKey[] = [
-  'ALL',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-]
-
 const enableAllStages = async (stageKey: string) => {
-  for (const timeKey of TIME_KEYS) {
+  for (const timeKey of declaredTimeKeys.value) {
     if (isStageAvailable(stageKey, timeKey)) {
       const enabledCount = getEnabledStageCount(timeKey)
       if (enabledCount < 4) {
@@ -505,7 +501,7 @@ const enableAllStages = async (stageKey: string) => {
 }
 
 const disableAllStages = async (stageKey: string) => {
-  for (const timeKey of TIME_KEYS) {
+  for (const timeKey of declaredTimeKeys.value) {
     coordinator.toggleStage(stageKey, timeKey, false)
   }
   await saveAllTimeConfigs()
@@ -514,7 +510,7 @@ const disableAllStages = async (stageKey: string) => {
 // 逐个时间键保存整份时间配置，只在最后一次回读，避免 8 次 update 各带一次 get
 const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
-  const timeKeys = TIME_KEYS.filter(timeKey => planConfig[timeKey])
+  const timeKeys = declaredTimeKeys.value.filter(timeKey => planConfig[timeKey])
   for (const [i, timeKey] of timeKeys.entries()) {
     await props.handlePlanChange(timeKey, planConfig[timeKey], {
       refresh: i === timeKeys.length - 1,

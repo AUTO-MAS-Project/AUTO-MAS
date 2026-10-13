@@ -2,11 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BAAHPlanConfig_Output } from './BAAHPlanConfig_Output';
-import type { MaaEndPlanConfig_Output } from './MaaEndPlanConfig_Output';
-import type { MaaPlanConfig } from './MaaPlanConfig';
-import type { MSSPlanConfig_Output } from './MSSPlanConfig_Output';
-import type { PlanIndexItem } from './PlanIndexItem';
+import type { CollectionOrderItem } from './CollectionOrderItem';
 export type PlanGetOut = {
     /**
      * 状态码
@@ -20,13 +16,7 @@ export type PlanGetOut = {
      * 操作消息
      */
     message?: string;
-    /**
-     * 计划索引列表
-     */
-    index: Array<PlanIndexItem>;
-    /**
-     * 计划列表或单个计划数据
-     */
-    data: Record<string, (MaaPlanConfig | MaaEndPlanConfig_Output | BAAHPlanConfig_Output | MSSPlanConfig_Output)>;
+    order?: Array<CollectionOrderItem>;
+    data?: Record<string, any>;
 };
 

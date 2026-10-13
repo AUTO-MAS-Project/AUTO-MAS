@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig } from './QueueConfig';
-import type { QueueIndexItem } from './QueueIndexItem';
+import type { CollectionOrderItem } from './CollectionOrderItem';
+import type { QueueEntry_Output } from './QueueEntry_Output';
 export type QueueGetOut = {
     /**
      * 状态码
@@ -18,12 +18,12 @@ export type QueueGetOut = {
      */
     message?: string;
     /**
-     * 队列索引列表
+     * 队列顺序
      */
-    index: Array<QueueIndexItem>;
+    order?: Array<CollectionOrderItem>;
     /**
-     * 队列数据字典, key来自于index列表的uid
+     * 队列数据，key 为 uid
      */
-    data: Record<string, QueueConfig>;
+    data?: Record<string, QueueEntry_Output>;
 };
 

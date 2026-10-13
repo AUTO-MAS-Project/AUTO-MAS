@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook } from './Webhook';
+import type { Webhook_Output } from './Webhook_Output';
 export type WebhookCreateOut = {
     /**
      * 状态码
@@ -17,12 +17,12 @@ export type WebhookCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的Webhook ID
+     * 新 Webhook ID
      */
-    webhookId: string;
+    webhookId?: string;
     /**
-     * Webhook配置数据
+     * Webhook 配置
      */
-    data: Webhook;
+    data?: Webhook_Output;
 };
 

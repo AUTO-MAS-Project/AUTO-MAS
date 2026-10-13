@@ -1,19 +1,19 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import { PlanCreateIn } from '@/api/models/PlanCreateIn'
-import { PlanIndexItem } from '@/api/models/PlanIndexItem'
-import type { PlanGetOut } from '@/api'
 
 // ==================== 类型定义 ====================
 
-export type PlanConfigType = PlanIndexItem.type
-type PlanCreateType = PlanCreateIn.type
-export type PlanConfigData = PlanGetOut['data'][string]
+export type PlanConfigType = string
+type PlanCreateType = string
+/** API plan rows are plugin-defined, so their concrete shape is resolved at runtime. */
+export interface PlanConfigData extends Record<string, unknown> {
+  Info?: { Name?: string; Mode?: 'ALL' | 'Weekly'; [key: string]: unknown }
+}
 
 export const PLAN_CONFIG_TYPES = {
-  MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
-  MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
-  BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
-  MSS: PlanIndexItem.type.MSSPLAN_CONFIG,
+  MAA: 'MaaPlan',
+  MAA_END: 'MaaEndPlan',
+  BAAH: 'BAAHPlan',
+  MSS: 'MSSPlan',
 } as const
 
 export interface PlanChangeOptions {
@@ -47,7 +47,7 @@ interface PlanTypeDescriptor {
 export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   [PLAN_CONFIG_TYPES.MAA]: {
     configType: PLAN_CONFIG_TYPES.MAA,
-    createType: PlanCreateIn.type.MAA_PLAN,
+    createType: 'MaaScript',
     displayNameKey: 'plan.type.maa',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MAA 计划表',
@@ -59,7 +59,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   },
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
-    createType: PlanCreateIn.type.MAA_END_PLAN,
+    createType: 'MaaEndScript',
     displayNameKey: 'plan.type.maaEnd',
     defaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
@@ -70,7 +70,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   },
   [PLAN_CONFIG_TYPES.BAAH]: {
     configType: PLAN_CONFIG_TYPES.BAAH,
-    createType: PlanCreateIn.type.BAAHPLAN,
+    createType: 'BAAHScript',
     displayNameKey: 'plan.type.baah',
     // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 BAAH 计划表',
@@ -84,7 +84,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
   },
   [PLAN_CONFIG_TYPES.MSS]: {
     configType: PLAN_CONFIG_TYPES.MSS,
-    createType: PlanCreateIn.type.MSSPLAN,
+    createType: 'MSSScript',
     displayNameKey: 'plan.type.mss',
     // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
     defaultName: '新 MSS 计划表',

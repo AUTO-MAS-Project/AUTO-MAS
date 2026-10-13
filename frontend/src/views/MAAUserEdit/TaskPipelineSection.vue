@@ -310,16 +310,12 @@
         :has-detail="false"
       >
         <template #summary>
-          <span class="daily-checks">
-            <a-checkbox
-              v-for="task in dailyTasks"
-              :key="task.key"
-              :checked="formData.Task[task.key]"
+          <div class="daily-checks">
+            <div class="boolean-field" v-for="task in dailyTasks" :key="task.key"><span>{{ task.label }}</span><SettingToggleButton
+              :model-value="formData.Task[task.key]"
               :disabled="loading"
-              @change="emitSave(`Task.${task.key}`, $event.target.checked)"
-            >
-              {{ task.label }}
-            </a-checkbox>
+              @change="emitSave(`Task.${task.key}`, $event)"
+             /></div>
           </span>
         </template>
       </PipelineRow>
@@ -338,6 +334,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'

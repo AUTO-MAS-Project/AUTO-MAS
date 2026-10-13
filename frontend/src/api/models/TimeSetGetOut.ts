@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet } from './TimeSet';
-import type { TimeSetIndexItem } from './TimeSetIndexItem';
+import type { CollectionOrderItem } from './CollectionOrderItem';
+import type { TimeSetEntry_Output } from './TimeSetEntry_Output';
 export type TimeSetGetOut = {
     /**
      * 状态码
@@ -18,12 +18,12 @@ export type TimeSetGetOut = {
      */
     message?: string;
     /**
-     * 时间设置索引列表
+     * 定时项顺序
      */
-    index: Array<TimeSetIndexItem>;
+    order?: Array<CollectionOrderItem>;
     /**
-     * 时间设置数据字典, key来自于index列表的uid
+     * 定时项数据，key 为 uid
      */
-    data: Record<string, TimeSet>;
+    data?: Record<string, TimeSetEntry_Output>;
 };
 

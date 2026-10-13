@@ -6,13 +6,16 @@ import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
-import type { GlobalConfig } from '@/api'
+import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
+import SettingGroupRenderer from './components/SettingGroupRenderer.vue'
+import { settingFieldLabels, settingFieldTips } from './components/settingUiText'
 
 interface TabBasicProps {
-  settings: GlobalConfig
+  settings: SettingsViewModel
   themeMode: ThemeMode | 'system'
   appearanceValue: string
   appearanceOptions: { label: string; value: string }[]
@@ -32,7 +35,7 @@ interface TabBasicProps {
   handleThemeColorChange(value: SelectValue): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
-  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
+  handleSettingChange(category: SettingsCategory, key: string, value: unknown): Promise<boolean>
 }
 
 const {
@@ -156,6 +159,15 @@ const handleLocaleChange = (value: unknown): void => {
           </div>
         </a-col>
       </a-row>
+      <SettingGroupRenderer
+        group="appearance"
+        category="UI"
+        :settings="settings"
+        :hints="settings.uiHints"
+        :label-keys="settingFieldLabels.appearance"
+        :tip-keys="settingFieldTips.appearance"
+        :handle-setting-change="handleSettingChange"
+      />
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
@@ -213,17 +225,12 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="lowPerformanceMode"
+            <SettingToggleButton
+              :model-value="lowPerformanceMode"
               :disabled="lowPerformanceModeSaving"
               :loading="lowPerformanceModeSaving"
-              size="large"
-              style="width: 100%"
-              @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
+              @change="handleLowPerformanceModeChange"
+            />
           </div>
         </a-col>
       </a-row>
@@ -233,7 +240,7 @@ const handleLocaleChange = (value: unknown): void => {
       <div class="section-header">
         <h3>{{ t('setting.basic.traySection') }}</h3>
       </div>
-      <a-row :gutter="24">
+      <a-row v-if="false" :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
@@ -242,15 +249,10 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfShowTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            <SettingToggleButton
+              :model-value="settings.UI?.IfShowTray === true"
+              @change="checked => handleSettingChange('UI', 'IfShowTray', checked)"
+            />
           </div>
         </a-col>
         <a-col :span="12">
@@ -261,21 +263,16 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfToTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            <SettingToggleButton
+              :model-value="settings.UI?.IfToTray === true"
+              @change="checked => handleSettingChange('UI', 'IfToTray', checked)"
+            />
           </div>
         </a-col>
       </a-row>
       <TrayMenuEditor />
     </div>
-    <div class="form-section">
+    <div v-if="false" class="form-section">
       <div class="section-header">
         <h3>{{ t('setting.basic.windowSection') }}</h3>
       </div>
@@ -288,15 +285,10 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfHideCloseButton"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            <SettingToggleButton
+              :model-value="settings.UI?.IfHideCloseButton === true"
+              @change="checked => handleSettingChange('UI', 'IfHideCloseButton', checked)"
+            />
           </div>
         </a-col>
       </a-row>

@@ -135,7 +135,7 @@ def should_send_result(message: dict, *, task_info: object | None = None) -> boo
         if append_task_community_summary(task_info, ""):
             return True
 
-    result_time = Config.get("Notify", "SendTaskResultTime")
+    result_time = Config.setting.notify.send_task_result_time
     if result_time == "任何时刻":
         return True
 
@@ -163,7 +163,7 @@ def statistic_targets(
     """返回全局与用户级统计通知目标。"""
 
     targets = []
-    if Config.get("Notify", "IfSendStatistic"):
+    if Config.setting.notify.if_send_statistic:
         targets.append(global_target(empty_policy=global_empty_policy))
     targets.extend(user_statistic_targets(user_config))
     if compact_summary:

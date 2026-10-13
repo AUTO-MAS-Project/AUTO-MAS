@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import {
   BookOutlined,
@@ -124,10 +125,8 @@ const toggleCollapsed = () => {
       </h3>
       <div class="push-config-actions">
         <a-tooltip :title="t('edit.progressCollectedOnlyWhen')">
-          <a-switch
-            :checked="enabled"
-            :checked-children="'启用'"
-            :un-checked-children="'停用'"
+          <SettingToggleButton
+            :model-value="enabled"
             @change="onEnabledChange"
           />
         </a-tooltip>

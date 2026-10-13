@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { DownOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
@@ -98,10 +99,8 @@ const onDragEnd = () => {
           {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
         <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
-          <a-switch
-            :checked="enabled"
-            :checked-children="'启用'"
-            :un-checked-children="'停用'"
+          <SettingToggleButton
+            :model-value="enabled"
             @change="onEnabledChange"
           />
         </a-tooltip>

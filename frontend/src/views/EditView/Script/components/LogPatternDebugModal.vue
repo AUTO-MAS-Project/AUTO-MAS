@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { BugOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, watch } from 'vue'
@@ -130,9 +131,9 @@ const configPreview = computed(() => {
           <span class="debug-section-label">
             结果（{{ debug.hitCount }}/{{ debug.results.length }}）
           </span>
-          <a-checkbox v-model:checked="debug.onlyHit" size="small">{{
+          <div class="boolean-field"><span>{{
             t('edit.matchesOnly')
-          }}</a-checkbox>
+          }}</span><SettingToggleButton v-model="debug.onlyHit" /></div>
         </div>
 
         <a-alert

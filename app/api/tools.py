@@ -12,135 +12,230 @@
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#   GNU Affero General Public License for more details.
 
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
+"""工具设置 API：请求/响应字段基于 ``Tools`` / ``GameSignAccount``，直接操作 ``Config.tools``。"""
 
-import asyncio
-import traceback
-from datetime import datetime
-from inspect import isawaitable
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body
+from pydantic import BaseModel, Field
 
+from app.api import OutBase
+from app.config.errors import ConfigAggregateError
 from app.core import Config
-from app.core.community_scheduler import (
-    CommunityActivityInProgressError,
-    community_activity_flow,
-)
-from app.core.community_sign import (
-    CommunitySignInProgressError,
-    community_sign_flow,
-    run_community_sign_in,
-)
-from app.models.schema import (
-    CommunityActivityOut,
-    CommunityActivityQueryIn,
-    CommunityActivityResourceOut,
-    CommunityActivitySnapshotOut,
-    CommunityActivityTaskOut,
-    GameSignAccountCreateOut,
-    GameSignAccountDeleteIn,
-    GameSignAccountGroupConfig,
-    GameSignAccountReorderIn,
-    GameSignAccountsListOut,
-    GameSignAccountUpdateIn,
-    OutBase,
-    TaygedoLoginIn,
-    ToolsConfig,
-    ToolsGetOut,
-    ToolsUpdateIn,
+from app.models.config import GameSignAccount, Tools
+from app.tools.game_sign import (
+    GameSignInProgressError,
+    format_sign_results,
+    run_all_sign_in,
 )
 from app.utils.constants import UTC8
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
-logger = get_logger("游戏社区 API")
-_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
-_MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
 
 
-def _log_community_api_error(stage: str, error: Exception) -> None:
-    """记录脱敏诊断，社区 API 不把异常细节直接返回给前端。"""
-
-    logger.warning(format_exception_reason(error, stage=stage, include_message=False))
-    if error.__traceback__ is not None:
-        # 保留定位信息，不记录局部变量、源码行或可能含凭据的异常原文。
-        frames = traceback.extract_tb(error.__traceback__)
-        logger.warning(
-            "社区调用位置: "
-            + " -> ".join(
-                f"{frame.filename}:{frame.lineno} in {frame.name}" for frame in frames
-            )
-        )
+# ==================== 前端契约（PascalCase，与 Tools 模型逐字段互转） ====================
 
 
-def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
-    """规范历史设备字段；残缺旧值由 provider 自动设备链路接管。"""
-
-    for field in _MIYOUSHE_DEVICE_FIELDS:
-        if field not in data:
-            continue
-        value = data.get(field)
-        data[field] = value.strip() if isinstance(value, str) else ""
-
-
-def _track_community_notification(
-    task: asyncio.Task[list[str] | None],
-) -> None:
-    """保留后台通知任务引用，并消费完成后的异常。"""
-
-    _PENDING_COMMUNITY_NOTIFICATIONS.discard(task)
-    if task.cancelled():
-        return
-    try:
-        failed_channels = task.result()
-    except Exception as exc:
-        _log_community_api_error("后台游戏社区通知发送失败", exc)
-        return
-    if failed_channels:
-        logger.warning(f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}")
+class ToolsConfig_ArknightsPC(BaseModel):
+    Enabled: bool | None = Field(default=None, description="是否启用 ArknightsPC 工具")
+    PauseKey: str | None = Field(default=None, description="暂停键位")
+    SelectDeployedKey: str | None = Field(
+        default=None, description="选中已部署干员键位"
+    )
+    UseSkillKey: str | None = Field(default=None, description="释放技能键位")
+    RetreatKey: str | None = Field(default=None, description="撤退键位")
+    NextFrameKey: str | None = Field(default=None, description="下一帧键位")
+    AnotherQuitKey: str | None = Field(default=None, description="自定义退出、暂停键位")
+    Status: str | None = Field(default=None, description="工具状态 Tag")
 
 
-async def _dispatch_community_notification(
-    results: list[dict[str, object]],
-) -> list[str] | None:
-    """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
+class ToolsConfig_GameSign(BaseModel):
+    Enabled: bool | None = Field(default=None, description="是否启用游戏签到")
+    NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
+    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
+    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
+    RunOnStartup: bool | None = Field(default=None, description="启动时运行")
+    ScheduledRun: bool | None = Field(default=None, description="定时运行")
+    AutoStart: bool | None = Field(default=None, description="是否立即开始")
+    LastSignDate: str | None = Field(default=None, description="上次签到日期")
+    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
+    Status: str | None = Field(default=None, description="签到状态标签")
+    Result: str | None = Field(default=None, description="签到结果 JSON")
 
-    from app.tools.community_notify import (
-        NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-        push_community_notification,
+
+class ToolsConfig(BaseModel):
+    ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
+        default=None, description="明日方舟PC工具配置"
+    )
+    GameSign: ToolsConfig_GameSign | None = Field(
+        default=None, description="游戏社区签到配置"
     )
 
-    task = asyncio.create_task(push_community_notification(results))
-    _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
-    task.add_done_callback(_track_community_notification)
-    try:
-        return await asyncio.wait_for(
-            asyncio.shield(task), timeout=NOTIFICATION_FAST_PATH_WAIT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        logger.info("等待窗口内未返回，通知渠道仍在后台发送")
-        return None
-    except Exception as exc:
-        _log_community_api_error("游戏社区通知服务异常", exc)
-        return ["通知服务"]
+
+class ToolsGetOut(OutBase):
+    data: ToolsConfig = Field(..., description="工具配置数据")
 
 
-def _get_community_account_field(account: object, field: str, default=None):
-    """读取社区账号字段时兼容未包含新增字段的旧账号对象。"""
+class ToolsUpdateIn(BaseModel):
+    data: ToolsConfig = Field(..., description="工具配置需要更新的数据")
 
-    try:
-        return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
-    except (AttributeError, KeyError):
-        return default
+
+class GameSignAccountGroupConfig(BaseModel):
+    """游戏签到账号组配置"""
+
+    Name: str | None = Field(default=None, description="账号组名称")
+    Enabled: bool | None = Field(default=None, description="是否启用")
+    MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    KuroToken: str | None = Field(default=None, description="库街区登录凭证")
+    SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
+
+
+class GameSignAccountCreateOut(OutBase):
+    """游戏签到账号组创建响应"""
+
+    accountId: str = Field(default="", description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(
+        default_factory=GameSignAccountGroupConfig, description="账号组配置"
+    )
+
+
+class GameSignAccountsListOut(OutBase):
+    """游戏签到账号组列表响应"""
+
+    data: dict[str, Any] = Field(default_factory=dict, description="账号组列表")
+
+
+class GameSignAccountGetIn(BaseModel):
+    """游戏签到账号组查询请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountUpdateIn(BaseModel):
+    """游戏签到账号组更新请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(..., description="账号组配置")
+
+
+class GameSignAccountDeleteIn(BaseModel):
+    """游戏签到账号组删除请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountReorderIn(BaseModel):
+    """游戏签到账号组排序请求"""
+
+    order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
+def _parse_hm(value: str) -> datetime:
+    """解析前端 ``HH:mm`` → UTC8 datetime（锚定 2000-01-01）。"""
+    return datetime.strptime(f"2000-01-01 {value}", "%Y-%m-%d %H:%M").replace(tzinfo=UTC8)
+
+
+def _tools_config(tools: Tools) -> ToolsConfig:
+    """工具模型（snake_case）→ 前端契约（PascalCase；Status/Result 为虚拟字段实时计算）。"""
+    pc = tools.arknights_pc
+    gs = tools.game_sign
+    return ToolsConfig(
+        ArknightsPC=ToolsConfig_ArknightsPC(
+            Enabled=pc.enabled,
+            PauseKey=pc.pause_key,
+            SelectDeployedKey=pc.select_deployed_key,
+            UseSkillKey=pc.use_skill_key,
+            RetreatKey=pc.retreat_key,
+            NextFrameKey=pc.next_frame_key,
+            AnotherQuitKey=pc.another_quit_key,
+            Status=pc.status,
+        ),
+        GameSign=ToolsConfig_GameSign(
+            Enabled=gs.enabled,
+            NotifyEnabled=gs.notify_enabled,
+            WindowStart=gs.window_start.strftime("%H:%M"),
+            WindowEnd=gs.window_end.strftime("%H:%M"),
+            RunOnStartup=gs.run_on_startup,
+            ScheduledRun=gs.scheduled_run,
+            AutoStart=gs.auto_start,
+            LastSignDate=gs.last_sign_date.isoformat(),
+            ScheduledTime=gs.scheduled_time,
+            Status=gs.status,
+            Result=gs.result,
+        ),
+    )
+
+
+def _tools_from_config(cfg: ToolsConfig) -> Tools:
+    """前端契约（PascalCase）→ 工具模型；仅含前端给定字段（``update`` 只同步它们）。"""
+    kwargs: dict[str, Any] = {}
+    if cfg.ArknightsPC is not None:
+        pc = cfg.ArknightsPC
+        pc_kwargs: dict[str, Any] = {}
+        if pc.Enabled is not None:
+            pc_kwargs["enabled"] = pc.Enabled
+        if pc.PauseKey is not None:
+            pc_kwargs["pause_key"] = pc.PauseKey
+        if pc.SelectDeployedKey is not None:
+            pc_kwargs["select_deployed_key"] = pc.SelectDeployedKey
+        if pc.UseSkillKey is not None:
+            pc_kwargs["use_skill_key"] = pc.UseSkillKey
+        if pc.RetreatKey is not None:
+            pc_kwargs["retreat_key"] = pc.RetreatKey
+        if pc.NextFrameKey is not None:
+            pc_kwargs["next_frame_key"] = pc.NextFrameKey
+        if pc.AnotherQuitKey is not None:
+            pc_kwargs["another_quit_key"] = pc.AnotherQuitKey
+        if pc_kwargs:
+            kwargs["arknights_pc"] = Tools.ArknightsPc(**pc_kwargs)
+    if cfg.GameSign is not None:
+        gs = cfg.GameSign
+        gs_kwargs: dict[str, Any] = {}
+        if gs.Enabled is not None:
+            gs_kwargs["enabled"] = gs.Enabled
+        if gs.NotifyEnabled is not None:
+            gs_kwargs["notify_enabled"] = gs.NotifyEnabled
+        if gs.WindowStart is not None:
+            gs_kwargs["window_start"] = _parse_hm(gs.WindowStart)
+        if gs.WindowEnd is not None:
+            gs_kwargs["window_end"] = _parse_hm(gs.WindowEnd)
+        if gs.RunOnStartup is not None:
+            gs_kwargs["run_on_startup"] = gs.RunOnStartup
+        if gs.ScheduledRun is not None:
+            gs_kwargs["scheduled_run"] = gs.ScheduledRun
+        if gs.AutoStart is not None:
+            gs_kwargs["auto_start"] = gs.AutoStart
+        if gs.LastSignDate is not None:
+            gs_kwargs["last_sign_date"] = date.fromisoformat(gs.LastSignDate)
+        if gs.ScheduledTime is not None:
+            gs_kwargs["scheduled_time"] = gs.ScheduledTime
+        if gs_kwargs:
+            kwargs["game_sign"] = Tools.GameSign(**gs_kwargs)
+    return Tools.build(**kwargs)
+
+
+def _account_group(account: GameSignAccount) -> GameSignAccountGroupConfig:
+    """账号模型（info, snake_case）→ 前端契约（PascalCase；凭据明文）。"""
+    info = account.info
+    return GameSignAccountGroupConfig(
+        Name=info.name,
+        Enabled=info.enabled,
+        MiyousheToken=info.miyoushe_token,
+        KuroToken=info.kuro_token,
+        SklandToken=info.skland_token,
+    )
 
 
 @router.post(
@@ -151,19 +246,16 @@ def _get_community_account_field(account: object, field: str, default=None):
     status_code=200,
 )
 async def get_tools() -> ToolsGetOut:
-    """获取工具设置"""
-
+    """获取工具设置。"""
     try:
-        data = await Config.get_tools()
+        return ToolsGetOut(data=_tools_config(Config.tools))
     except Exception as e:
-        _log_community_api_error("读取工具配置失败", e)
         return ToolsGetOut(
             code=500,
             status="error",
-            message="读取工具配置失败，请稍后重试",
-            data=ToolsConfig(**{}),
+            message=f"{type(e).__name__}: {str(e)}",
+            data=ToolsConfig(),
         )
-    return ToolsGetOut(data=ToolsConfig(**data))
 
 
 @router.post(
@@ -173,19 +265,15 @@ async def get_tools() -> ToolsGetOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
-    """更新工具配置"""
-
+async def update_tools(body: ToolsUpdateIn = Body(...)) -> OutBase:
+    """更新工具配置（仅 Group 字段；账号组走独立端点）。"""
     try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_tools(data)
-
+        await Config.tools.update(_tools_from_config(body.data))
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
-        _log_community_api_error("更新工具配置失败", e)
         return OutBase(
-            code=500,
-            status="error",
-            message="更新工具配置失败，请稍后重试",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -198,178 +286,67 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def manual_game_sign() -> OutBase:
-    """手动触发游戏社区签到"""
-
+    """手动触发游戏社区签到。"""
     try:
-        from app.tools.community import (
-            format_community_sign_results,
-            has_community_credentials,
-        )
+        results = await run_all_sign_in(force=True)
+        formatted = format_sign_results(results)
+        # 合并结果（手动签到按 account_uid 替换旧数据）
+        await Config.update_game_sign_results(formatted, replace=True)
 
-        # 流程锁覆盖签到和结果落盘，通知在锁外发送，避免慢渠道阻塞后续操作。
-        async with community_sign_flow():
-            results = await run_community_sign_in(force=True)
+        today = datetime.now(tz=UTC8).date()
+        all_signed = True
+        for account in Config.tools.accounts.values():
+            if account.info.enabled and account.info.last_sign_date != today:
+                all_signed = False
+                break
+        if all_signed:
+            Config.tools.game_sign.last_sign_date = today
+        Config.tools.game_sign.scheduled_time = ""
+        await Config.tools.commit()
 
-            # 格式化并存储结果
-            formatted = format_community_sign_results(results)
-            # 合并结果（手动签到按 account_uid 替换旧数据）
-            result_update = Config.update_community_results(formatted, replace=True)
-            if isawaitable(result_update):
-                await result_update
+        if results and Config.tools.game_sign.notify_enabled:
+            from app.tools.game_sign_notify import push_game_sign_notification
 
-            # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
-            today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-            all_signed = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-                has_credentials = has_community_credentials(account)
-                if _get_community_account_field(account, "Enabled") and has_credentials:
-                    if _get_community_account_field(account, "LastSignDate") != today:
-                        all_signed = False
-                        break
-            if all_signed:
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
-        warning_messages = []
-        if any(
-            result.get("status") not in ("成功", "已签到")
-            and not result.get("_completed")
-            for result in results
-        ):
-            warning_messages.append("签到未全部完成，请查看签到结果")
-        if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-            failed_channels = await _dispatch_community_notification(results)
+            failed_channels = await push_game_sign_notification(results)
             if failed_channels:
-                warning_messages.append(
-                    f"部分通知发送失败：{'、'.join(failed_channels)}"
+                return OutBase(
+                    status="warning",
+                    message=f"签到完成，但部分通知发送失败：{'、'.join(failed_channels)}",
                 )
-        if warning_messages:
-            return OutBase(status="warning", message="；".join(warning_messages))
 
-    except CommunitySignInProgressError as e:
-        _log_community_api_error("游戏社区签到并发冲突", e)
-        return OutBase(
-            code=409,
-            status="error",
-            message="游戏社区签到正在执行，请稍后重试",
-        )
+    except GameSignInProgressError as e:
+        return OutBase(code=409, status="error", message=str(e))
     except Exception as e:
-        _log_community_api_error("游戏社区签到失败", e)
         return OutBase(
-            code=500,
-            status="error",
-            message="游戏社区签到失败，请稍后重试",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase(message="签到完成")
 
 
-@router.post(
-    "/community/activity/query",
-    tags=["Community"],
-    summary="查询游戏社区日常活跃度",
-    response_model=CommunityActivityOut,
-    status_code=200,
-)
-async def query_community_activity(
-    query: CommunityActivityQueryIn = Body(...),
-) -> CommunityActivityOut:
-    """查询游戏社区日常活动，不占用签到流程锁。"""
-
-    if Config.ToolsConfig.get("GameSign", "ActivityEnabled") is False:
-        return CommunityActivityOut(status="success", data=[])
-
-    snapshots = ()
-    try:
-        from app.core.community_activity import (
-            build_configured_community_activity_failures,
-            collect_configured_community_activity,
-        )
-
-        async with community_activity_flow():
-            snapshots = await collect_configured_community_activity(
-                query.accountIds,
-                proxy=Config.proxy,
-            )
-    except CommunityActivityInProgressError as exc:
-        _log_community_api_error("游戏社区日常查询并发冲突", exc)
-        return CommunityActivityOut(
-            code=409,
-            status="error",
-            message="游戏社区日常查询正在执行，请稍后重试",
-        )
-    except ValueError as exc:
-        _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
-        return CommunityActivityOut(
-            code=400,
-            status="error",
-            message="游戏社区日常查询参数或凭据无效",
-        )
-    except Exception as exc:
-        _log_community_api_error("游戏社区日常查询失败", exc)
-        snapshots = build_configured_community_activity_failures(
-            query.accountIds,
-        )
-        if not snapshots:
-            return CommunityActivityOut(
-                code=500,
-                status="error",
-                message="游戏社区日常查询失败，请稍后重试",
-            )
-
-    return CommunityActivityOut(
-        status="warning"
-        if any(snapshot.status != "success" for snapshot in snapshots)
-        else "success",
-        message="部分游戏日常查询失败"
-        if any(snapshot.status == "failed" for snapshot in snapshots)
-        else "",
-        data=[
-            CommunityActivitySnapshotOut(
-                account=snapshot.account,
-                accountUid=snapshot.account_uid,
-                game=snapshot.game,
-                platform=snapshot.platform,
-                status=snapshot.status,
-                completed=snapshot.completed,
-                target=snapshot.target,
-                tasks=[
-                    CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks
-                ],
-                resources=[
-                    CommunityActivityResourceOut(**dict(resource))
-                    for resource in snapshot.resources
-                ],
-                reason=snapshot.reason,
-                updatedAt=snapshot.updated_at,
-                roleName=snapshot.role_name,
-                roleUid=snapshot.role_uid,
-                server=snapshot.server,
-                source=snapshot.source,
-            )
-            for snapshot in snapshots
-        ],
-    )
-
-
-# ==================== 游戏社区账号组 CRUD ====================
+# ==================== 游戏签到账号组 ====================
 
 
 @router.post(
     "/sign/account/list",
     tags=["GameSign"],
-    summary="获取所有游戏社区账号组",
+    summary="获取所有游戏签到账号组",
     response_model=GameSignAccountsListOut,
     status_code=200,
 )
 async def list_game_sign_accounts() -> GameSignAccountsListOut:
-    """获取所有游戏社区账号组"""
+    """获取所有游戏签到账号组（PascalCase 形状）。"""
 
     try:
-        data = await Config.get_game_sign_accounts()
+        col = Config.tools.accounts
+        data: dict[str, Any] = {"instances": []}
+        for uid in col.keys():
+            data["instances"].append({"uid": str(uid), "type": "GameSignAccount"})
+            data[str(uid)] = {"GameSignAccount": _account_group(col[uid]).model_dump()}
     except Exception as e:
-        _log_community_api_error("获取游戏社区账号组失败", e)
         return GameSignAccountsListOut(
             code=500,
             status="error",
-            message="获取游戏社区账号组失败，请稍后重试",
+            message=f"{type(e).__name__}: {str(e)}",
             data={},
         )
     return GameSignAccountsListOut(data=data)
@@ -378,84 +355,93 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
 @router.post(
     "/sign/account/add",
     tags=["GameSign"],
-    summary="添加游戏社区账号组",
+    summary="添加游戏签到账号组",
     response_model=GameSignAccountCreateOut,
     status_code=200,
 )
 async def add_game_sign_account() -> GameSignAccountCreateOut:
-    """添加游戏社区账号组"""
-
+    """添加游戏签到账号组（新账号无历史结果，无需清空）。"""
     try:
-        uid, config = await Config.add_game_sign_account()
-        # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
-        raw = await config.toDict()
-        flat = raw.get("GameSignAccount", raw)
-        data = GameSignAccountGroupConfig(**flat)
-        # 新增账号无需清空结果，因为新账号没有历史结果
+        col = Config.tools.accounts
+        uid = col.add(GameSignAccount)
+        await col.commit()
+        data = _account_group(col[uid])
     except Exception as e:
-        _log_community_api_error("添加游戏社区账号组失败", e)
         return GameSignAccountCreateOut(
             code=500,
             status="error",
-            message="添加游戏社区账号组失败，请稍后重试",
+            message=f"{type(e).__name__}: {str(e)}",
             accountId="",
-            data=GameSignAccountGroupConfig(**{}),
+            data=GameSignAccountGroupConfig(),
         )
     return GameSignAccountCreateOut(accountId=str(uid), data=data)
 
 
 @router.post(
+    "/sign/account/get",
+    tags=["GameSign"],
+    summary="获取游戏签到账号组详情",
+    response_model=GameSignAccountCreateOut,
+    status_code=200,
+)
+async def get_game_sign_account(
+    body: GameSignAccountGetIn = Body(...),
+) -> GameSignAccountCreateOut:
+    """获取游戏签到账号组详情（凭据明文，供编辑回显）。"""
+    try:
+        account = Config.tools.accounts[UUID(body.accountId)]
+        account_data = _account_group(account)
+    except Exception as e:
+        return GameSignAccountCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            accountId=body.accountId,
+            data=GameSignAccountGroupConfig(),
+        )
+    return GameSignAccountCreateOut(accountId=body.accountId, data=account_data)
+
+
+@router.post(
     "/sign/account/update",
     tags=["GameSign"],
-    summary="更新游戏社区账号组配置",
+    summary="更新游戏签到账号组配置",
     response_model=OutBase,
     status_code=200,
 )
 async def update_game_sign_account(
-    account: GameSignAccountUpdateIn = Body(...),
+    body: GameSignAccountUpdateIn = Body(...),
 ) -> OutBase:
-    """更新游戏社区账号组配置"""
-
+    """更新游戏签到账号组；空凭据占位不写入；凭据变更时重置签到日。"""
     try:
-        # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
-        flat_data = account.data.model_dump(exclude_unset=True)
-        _normalize_miyoushe_device_fields(flat_data)
-        skland_token = flat_data.get("SklandToken")
-        if isinstance(skland_token, str) and skland_token.strip():
-            from app.tools.skland import validate_skland_credential
-
-            try:
-                validate_skland_credential(skland_token)
-            except ValueError as exc:
-                _log_community_api_error("森空岛凭据校验失败", exc)
-                return OutBase(
-                    code=400,
-                    status="error",
-                    message="森空岛凭据格式无效，请检查后重试",
-                )
-        cloud_genshin_token = flat_data.get("CloudGenshinToken")
-        if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():
-            from app.tools.cloud_genshin import validate_cloud_genshin_token
-
-            try:
-                flat_data["CloudGenshinToken"] = validate_cloud_genshin_token(
-                    cloud_genshin_token
-                )
-            except ValueError as exc:
-                _log_community_api_error("云原神凭据校验失败", exc)
-                return OutBase(
-                    code=400,
-                    status="error",
-                    message="云原神 combo token 格式无效，请检查后重试",
-                )
-        data = {"GameSignAccount": flat_data}
-        await Config.update_game_sign_account(account.accountId, data)
+        account = Config.tools.accounts[UUID(body.accountId)]
+        # 扁平 PascalCase 契约 → info 组字段（只含前端给定的键）
+        info: dict[str, Any] = {}
+        if body.data.Name is not None:
+            info["name"] = body.data.Name
+        if body.data.Enabled is not None:
+            info["enabled"] = body.data.Enabled
+        changed = False
+        for pascal, snake in (
+            ("MiyousheToken", "miyoushe_token"),
+            ("KuroToken", "kuro_token"),
+            ("SklandToken", "skland_token"),
+        ):
+            value = getattr(body.data, pascal)
+            if not value:  # 空 / None：占位符不写入
+                continue
+            if getattr(account.info, snake) == value:
+                continue
+            info[snake] = value
+            changed = True
+        if changed:
+            info["last_sign_date"] = date(2000, 1, 1)
+        await account.update(GameSignAccount.model_validate({"info": info}))
+        if changed:
+            Config._clear_game_sign_account_results(body.accountId)
     except Exception as e:
-        _log_community_api_error("更新游戏社区账号组失败", e)
         return OutBase(
-            code=500,
-            status="error",
-            message="更新游戏社区账号组失败，请稍后重试",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -463,23 +449,22 @@ async def update_game_sign_account(
 @router.post(
     "/sign/account/delete",
     tags=["GameSign"],
-    summary="删除游戏社区账号组",
+    summary="删除游戏签到账号组",
     response_model=OutBase,
     status_code=200,
 )
 async def delete_game_sign_account(
-    account: GameSignAccountDeleteIn = Body(...),
+    body: GameSignAccountDeleteIn = Body(...),
 ) -> OutBase:
-    """删除游戏社区账号组"""
-
+    """删除游戏签到账号组（一并清除当天结果）。"""
     try:
-        await Config.delete_game_sign_account(account.accountId)
+        col = Config.tools.accounts
+        col.remove(body.accountId)
+        await col.commit()
+        Config._clear_game_sign_account_results(body.accountId)
     except Exception as e:
-        _log_community_api_error("删除游戏社区账号组失败", e)
         return OutBase(
-            code=500,
-            status="error",
-            message="删除游戏社区账号组失败，请稍后重试",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -487,84 +472,20 @@ async def delete_game_sign_account(
 @router.post(
     "/sign/account/reorder",
     tags=["GameSign"],
-    summary="调整游戏社区账号组顺序",
+    summary="调整游戏签到账号组顺序",
     response_model=OutBase,
     status_code=200,
 )
 async def reorder_game_sign_accounts(
-    account: GameSignAccountReorderIn = Body(...),
+    body: GameSignAccountReorderIn = Body(...),
 ) -> OutBase:
-    """调整游戏社区账号组顺序"""
-
+    """调整游戏签到账号组顺序。"""
     try:
-        await Config.reorder_game_sign_accounts(account.order)
+        col = Config.tools.accounts
+        col.set_order(list(map(UUID, body.order)))
+        await col.commit()
     except Exception as e:
-        _log_community_api_error("调整游戏社区账号组顺序失败", e)
         return OutBase(
-            code=500,
-            status="error",
-            message="调整游戏社区账号组顺序失败，请稍后重试",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
-
-
-@router.post(
-    "/sign/account/taygedo/login",
-    tags=["GameSign"],
-    summary="塔吉多账号密码登录",
-    response_model=OutBase,
-    status_code=200,
-)
-async def login_taygedo(
-    credential: TaygedoLoginIn = Body(...),
-) -> OutBase:
-    """一次性使用账号密码换取并保存塔吉多 Token，不保存密码。"""
-
-    try:
-        from app.tools.taygedo import (
-            login_taygedo_with_password,
-            parse_taygedo_credential,
-            serialize_taygedo_credential,
-        )
-
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
-        existing_token = str(
-            account.get("GameSignAccount", "TaygedoToken") or ""
-        ).strip()
-        refreshed = await login_taygedo_with_password(
-            credential.phone.strip(),
-            credential.password.get_secret_value(),
-            existing_raw=existing_token,
-            proxy=Config.proxy,
-        )
-        serialized = serialize_taygedo_credential(refreshed)
-        persisted = parse_taygedo_credential(serialized)
-        if any(
-            not str(persisted.get(field) or "").strip()
-            for field in ("accessToken", "refreshToken", "uid")
-        ):
-            raise ValueError("塔吉多登录未返回完整 Token")
-        await Config.update_game_sign_account(
-            credential.accountId,
-            {
-                "GameSignAccount": {
-                    "TaygedoToken": serialized,
-                }
-            },
-        )
-    except ValueError as e:
-        _log_community_api_error("塔吉多登录校验失败", e)
-        return OutBase(
-            code=400,
-            status="error",
-            message="塔吉多登录失败，请检查账号、密码或凭据格式",
-        )
-    except Exception as e:
-        _log_community_api_error("塔吉多登录失败", e)
-        return OutBase(
-            code=500,
-            status="error",
-            message="塔吉多登录失败，请检查账号、密码、网络或风控状态",
-        )
-
-    return OutBase(message="塔吉多登录成功，Token 已保存")

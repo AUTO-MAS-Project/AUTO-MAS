@@ -47,10 +47,9 @@
                 <div class="module-summary" :title="taskSummary(task)">{{ taskSummary(task) }}</div>
               </div>
               <span class="module-switch" @click.stop @keydown.stop>
-                <a-switch
-                  :checked="isEnabled(task)"
+                <SettingToggleButton
+                  :model-value="isEnabled(task)"
                   :disabled="saving"
-                  size="small"
                   :aria-label="task.name"
                   @change="emit('taskToggle', task.key, Boolean($event))"
                 />
@@ -96,6 +95,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import {

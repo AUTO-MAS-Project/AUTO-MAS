@@ -468,10 +468,8 @@
 
                     <div class="user-controls">
                       <div class="user-status">
-                        <a-switch
-                          :checked="user.Info.Status"
-                          :checked-children="t('comp.enabled')"
-                          :un-checked-children="t('comp.disabled')"
+                        <SettingToggleButton
+                          :model-value="user.Info.Status"
                           class="status-switch"
                           @click="handleToggleUserStatus(user)"
                         />
@@ -558,6 +556,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import type { MaaEndConfig } from '@/api'

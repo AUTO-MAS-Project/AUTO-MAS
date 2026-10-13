@@ -1,4 +1,4 @@
-import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { SettingsViewModel } from '@/types/settings'
 import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
@@ -27,11 +27,11 @@ export interface RelatedProcess {
 }
 
 export interface ElectronConfig {
-  UI?: GlobalConfig_UI & {
+  UI?: SettingsViewModel['UI'] & {
     TrayItems?: unknown[]
     [key: string]: unknown
   }
-  Update?: GlobalConfig_Update & {
+  Update?: SettingsViewModel['Update'] & {
     [key: string]: unknown
   }
   [key: string]: unknown

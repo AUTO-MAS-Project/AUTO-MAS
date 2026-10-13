@@ -24,20 +24,16 @@
 
     <!-- 跳过开关：作用于整个养成计划，置顶展示（绑定面板上方） -->
     <div class="cultivate-skips">
-      <a-checkbox
-        :checked="formData.Task?.CultivateSkipDuringActivity"
+      <div class="boolean-field"><span>{{ t('edit.maaCultivateSkipActivity') }}</span><SettingToggleButton
+        :model-value="formData.Task?.CultivateSkipDuringActivity"
         :disabled="loading"
-        @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
-      >
-        {{ t('edit.maaCultivateSkipActivity') }}
-      </a-checkbox>
-      <a-checkbox
-        :checked="formData.Task?.CultivateSkipDuringResourceCollection"
+        @change="emit('save', 'Task.CultivateSkipDuringActivity', $event)"
+       /></div>
+      <div class="boolean-field"><span>{{ t('edit.maaCultivateSkipResource') }}</span><SettingToggleButton
+        :model-value="formData.Task?.CultivateSkipDuringResourceCollection"
         :disabled="loading"
-        @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)"
-      >
-        {{ t('edit.maaCultivateSkipResource') }}
-      </a-checkbox>
+        @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event)"
+       /></div>
     </div>
 
     <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
@@ -295,6 +291,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'

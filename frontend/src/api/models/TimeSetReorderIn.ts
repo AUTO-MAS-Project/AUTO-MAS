@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type TimeSetReorderIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 时间设置ID列表, 按新顺序排列
+     * 按新顺序排列的定时项 UID 列表
      */
     indexList: Array<string>;
 };

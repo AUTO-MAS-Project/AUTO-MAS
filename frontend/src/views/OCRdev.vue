@@ -50,10 +50,8 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="预处理模式">
-                  <a-switch
-                    v-model:checked="screenshotForm.should_preprocess"
-                    checked-children="启用"
-                    un-checked-children="禁用"
+                  <SettingToggleButton
+                    v-model="screenshotForm.should_preprocess"
                   />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     启用时将排除窗口边框和标题栏
@@ -149,10 +147,8 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="截图方法">
-                  <a-switch
-                    v-model:checked="adbScreenshotForm.use_screencap"
-                    checked-children="PNG"
-                    un-checked-children="RAW"
+                  <SettingToggleButton
+                    v-model="adbScreenshotForm.use_screencap"
                   />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     PNG 方法速度更快（推荐），RAW 方法兼容性更好
@@ -473,6 +469,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { ref, reactive } from 'vue'
 import { message } from 'ant-design-vue'
 import {

@@ -14,7 +14,7 @@
       :value="modelValue"
       :disabled="disabled || saving"
       class="config-mode-options"
-      :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
+      :style="{ '--mode-columns': Math.min(options.length, 3) }"
       :aria-label="t('edit.configurationManagement')"
       @change="handleChange"
     >
@@ -79,7 +79,7 @@
         :value="quickConfig"
         :disabled="overlayDisabled"
         class="config-mode-options"
-        :style="{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }"
+        :style="{ '--mode-columns': 2 }"
         :aria-label="t('edit.enableQuickConfiguration')"
         @change="handleOverlayChange"
       >
@@ -267,7 +267,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
 
 .config-mode-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--mode-columns, 2), minmax(0, 1fr));
   gap: 12px;
   width: 100%;
 }

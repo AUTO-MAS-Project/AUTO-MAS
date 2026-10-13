@@ -2,19 +2,19 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueItem } from './QueueItem';
+import type { QueueItemEntry_Input } from './QueueItemEntry_Input';
 export type QueueItemUpdateIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 队列项ID
+     * 队列项 ID
      */
     queueItemId: string;
     /**
-     * 队列项更新数据
+     * 队列项补丁（文档形状）
      */
-    data: QueueItem;
+    data: QueueItemEntry_Input;
 };
 

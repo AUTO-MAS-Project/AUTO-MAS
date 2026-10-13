@@ -26,17 +26,20 @@
 - MainConnection: 唯一主连接的持有与收发
 - Dispatcher: 按 id + type 分发前端消息
 - Publisher: 业务模块统一出站接口
+- Dialogs: 应用内弹窗请求-响应关联
 - protocol: 消息类别常量与信封解析
 """
 
 from . import protocol
-from .dispatcher import Dispatcher
 from .manager import MainConnection
+from .dispatcher import Dispatcher
 from .publisher import Publisher
+from .dialogs import Dialogs
 
 __all__ = [
     "protocol",
     "MainConnection",
     "Dispatcher",
     "Publisher",
+    "Dialogs",
 ]

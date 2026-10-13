@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
@@ -132,9 +133,8 @@ onMounted(() => {
             <div class="activity-edit-list">
               <div v-for="game in availableGames" :key="game" class="activity-edit-item">
                 <span class="activity-edit-name">{{ game }}</span>
-                <a-switch
-                  size="small"
-                  :checked="!isGameHidden(game)"
+                <SettingToggleButton
+                  :model-value="!isGameHidden(game)"
                   :aria-label="t('gamesign.activity.editGame', { game })"
                   @change="toggleGame(game)"
                 />

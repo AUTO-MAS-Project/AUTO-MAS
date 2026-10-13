@@ -98,8 +98,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  :checked="Boolean(hsrConfig.Game.Enabled)"
+                <SettingToggleButton
+                  :model-value="Boolean(hsrConfig.Game.Enabled)"
                   @change="handleGameEnabledChange"
                 />
               </a-form-item>
@@ -193,8 +193,8 @@
                   <span class="form-label">{{ t('edit.hsrCloudUsePaidTime') }}</span>
                 </template>
                 <div class="game-toggle-option">
-                  <a-switch
-                    :checked="hsrConfig.Cloud.UsePaidTime"
+                  <SettingToggleButton
+                    :model-value="hsrConfig.Cloud.UsePaidTime"
                     data-testid="hsr-cloud-use-paid-time"
                     @change="handleCloudConfigChange('UsePaidTime', Boolean($event))"
                   />
@@ -357,8 +357,8 @@
                   </a-tooltip>
                 </template>
                 <div class="game-toggle-option">
-                  <a-switch
-                    :checked="hsrConfig.Game.ForceResolution1920x1080"
+                  <SettingToggleButton
+                    :model-value="hsrConfig.Game.ForceResolution1920x1080"
                     @change="handleGameResolutionChange"
                   />
                   <a-typography-text type="secondary">{{
@@ -379,8 +379,8 @@
                   </a-tooltip>
                 </template>
                 <div class="game-toggle-option">
-                  <a-switch
-                    :checked="hsrConfig.Game.RedeemCodesOnlyWhenChanged"
+                  <SettingToggleButton
+                    :model-value="hsrConfig.Game.RedeemCodesOnlyWhenChanged"
                     @change="handleRedeemCodePolicyChange"
                   />
                   <a-typography-text type="secondary">{{
@@ -441,8 +441,8 @@
           <a-row v-if="hsrConfig.Info.M7APath" :gutter="16">
             <a-col :span="12">
               <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
-                <a-switch
-                  v-model:checked="hsrConfig.Run.LowPerformanceMode"
+                <SettingToggleButton
+                  v-model="hsrConfig.Run.LowPerformanceMode"
                   @change="handleRunConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
@@ -649,6 +649,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'

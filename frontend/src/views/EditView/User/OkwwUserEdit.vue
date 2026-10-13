@@ -286,8 +286,8 @@
             </a-row>
 
             <a-form-item :label="t('edit.useNightmareNestDaily')">
-              <a-switch
-                v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
+              <SettingToggleButton
+                v-model="formData.Task.FarmNightmareNestForDailyEcho"
                 @change="saveTaskConfig"
               />
             </a-form-item>
@@ -359,6 +359,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'

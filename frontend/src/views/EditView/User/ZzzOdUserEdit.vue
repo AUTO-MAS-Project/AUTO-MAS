@@ -311,9 +311,8 @@
                         {{ t('edit.zzzodInstanceRunAllSwitch') }}
                       </span>
                       <a-tooltip :title="t('edit.zzzodInstanceActiveInOd')">
-                        <a-switch
-                          size="small"
-                          :checked="inst.active_in_od"
+                        <SettingToggleButton
+                          :model-value="inst.active_in_od"
                           @change="(checked: boolean) => toggleInstanceActiveInOd(inst, checked)"
                         />
                       </a-tooltip>
@@ -321,9 +320,8 @@
                         {{ t('edit.zzzodInstanceForceLoginSwitch') }}
                       </span>
                       <a-tooltip :title="t('edit.zzzodInstanceForceLoginHint')">
-                        <a-switch
-                          size="small"
-                          :checked="inst.force_login_before_run"
+                        <SettingToggleButton
+                          :model-value="inst.force_login_before_run"
                           @change="(checked: boolean) => toggleInstanceForceLogin(inst, checked)"
                         />
                       </a-tooltip>
@@ -762,16 +760,14 @@
                 </a-tooltip>
               </h3>
               <div class="section-header-actions">
-                <a-switch
+                <SettingToggleButton
                   v-if="formData.Info.Mode === '直控'"
-                  v-model:checked="nativeLaunchArgs.launch_argument"
-                  size="large"
+                  v-model="nativeLaunchArgs.launch_argument"
                   @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
                 />
-                <a-switch
+                <SettingToggleButton
                   v-else
-                  v-model:checked="formData.Game.LaunchArgument"
-                  size="large"
+                  v-model="formData.Game.LaunchArgument"
                   @change="(v: any) => saveField('Game.LaunchArgument', v === true)"
                 />
               </div>
@@ -837,9 +833,8 @@
                             <template #label>
                               <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
                             </template>
-                            <a-switch
-                              v-model:checked="nativeLaunchArgs.popup_window"
-                              size="large"
+                            <SettingToggleButton
+                              v-model="nativeLaunchArgs.popup_window"
                               :disabled="!nativeLaunchArgs.launch_argument"
                               @change="
                                 (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
@@ -857,9 +852,8 @@
                                 </a-tooltip>
                               </span>
                             </template>
-                            <a-switch
-                              v-model:checked="nativeLaunchArgs.dx12"
-                              size="large"
+                            <SettingToggleButton
+                              v-model="nativeLaunchArgs.dx12"
                               :disabled="!nativeLaunchArgs.launch_argument"
                               @change="(v: any) => saveNativeLaunchArgsField('dx12', v === true)"
                             />
@@ -951,9 +945,8 @@
                         <template #label>
                           <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
                         </template>
-                        <a-switch
-                          v-model:checked="formData.Game.PopupWindow"
-                          size="large"
+                        <SettingToggleButton
+                          v-model="formData.Game.PopupWindow"
                           :disabled="!formData.Game.LaunchArgument"
                           @change="(v: any) => saveField('Game.PopupWindow', v === true)"
                         />
@@ -969,9 +962,8 @@
                             </a-tooltip>
                           </span>
                         </template>
-                        <a-switch
-                          v-model:checked="formData.Game.Dx12"
-                          size="large"
+                        <SettingToggleButton
+                          v-model="formData.Game.Dx12"
                           :disabled="!formData.Game.LaunchArgument"
                           @change="(v: any) => saveField('Game.Dx12', v === true)"
                         />
@@ -1110,10 +1102,9 @@
                                 {{ o.label }}
                               </a-select-option>
                             </a-select>
-                            <a-switch
+                            <SettingToggleButton
                               v-else-if="f.type === 'bool'"
-                              :checked="f.value === true"
-                              size="small"
+                              :model-value="f.value === true"
                               @change="(v: any) => saveTaskConfigField(card, f, v)"
                             />
                             <a-input-number
@@ -1234,9 +1225,9 @@
             />
             <div v-for="f in planModalOtherFields" :key="f.field" class="plan-modal-field">
               <span class="plan-modal-field-title">{{ f.title }}</span>
-              <a-switch
+              <SettingToggleButton
                 v-if="f.type === 'bool'"
-                :checked="f.value === true"
+                :model-value="f.value === true"
                 @change="(v: any) => (f.value = v)"
               />
               <a-input-number
@@ -1261,6 +1252,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'

@@ -57,21 +57,21 @@
     </div>
 
     <!-- 选中的实例里有带键位的才出现：完成引导时把键位写进脚本的「键位映射」 -->
-    <a-checkbox
-      v-if="selectedHasHotkeys"
-      class="shell-import-hotkeys"
-      :checked="importHotkeys"
-      :disabled="disabled"
-      @change="emit('update:importHotkeys', !importHotkeys)"
-    >
-      {{ t('edit.mfwHotkeyImportToScript') }}
-    </a-checkbox>
+    <div v-if="selectedHasHotkeys" class="shell-import-hotkeys">
+      <span>{{ t('edit.mfwHotkeyImportToScript') }}</span>
+      <SettingToggleButton
+        :model-value="importHotkeys"
+        :disabled="disabled"
+        @change="emit('update:importHotkeys', $event)"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { describeShellSources } from './shellInstanceImport'
 import { hasShellInstanceHotkeys } from './hotkeyImport'

@@ -75,8 +75,8 @@
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
               <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
+              <SettingToggleButton
+                :model-value="formData.Info.IfQuickConfig"
                 :disabled="loading || isInitializing"
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
@@ -212,6 +212,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -226,7 +227,6 @@ import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import type { HomeOverviewResponse } from '@/types/home.ts'
 
@@ -1141,7 +1141,7 @@ const loadCultivatePreview = async (targetsJson: string) => {
 const loadStageModeOptions = async () => {
   try {
     const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAA,
+      consumer: 'maa',
     })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data

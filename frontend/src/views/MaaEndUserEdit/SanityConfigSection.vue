@@ -2,8 +2,8 @@
   <div>
     <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showSanityDetail }">
       <span>{{ t('edit.maaEndEnableSanity') }}</span>
-      <a-switch
-        v-model:checked="formData.Task.IfSanity"
+      <SettingToggleButton
+        v-model="formData.Task.IfSanity"
         :disabled="controlsDisabled"
         :aria-label="t('edit.maaEndEnableSanity')"
         @change="emitSave('Task.IfSanity', formData.Task.IfSanity)"
@@ -120,6 +120,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'

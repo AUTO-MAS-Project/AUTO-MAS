@@ -3,26 +3,27 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   type ScriptUpdateIn,
-  type HSRStageOptionsData,
-  type MaaEndOptionsOut,
-  type MaaFWInterfacePreviewOut,
-  type MaaFWAgentEnvPrepareOut,
-  ScriptCreateIn,
   type ScriptReorderIn,
   type ZzzOdUserConfig,
-  HsrService,
-  MaaFwService,
   Service,
 } from '@/api'
+import { ScriptCreateIn } from '@/compat/scriptCreateIn'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
 
+/* Temporary boundary adapters intentionally retain the old result flow until specialized APIs migrate. */
+/* eslint-disable no-unreachable, no-undef */
+
 const logger = window.electronAPI.getLogger('脚本API')
 
 type HSRStageEngine = 'M7A' | 'SRA'
+type HSRStageOptionsData = Record<string, unknown>
+type MaaEndOptionsOut = { code?: number; message?: string; data?: unknown }
+type MaaFWInterfacePreviewOut = { code?: number; message?: string; data?: unknown }
+type MaaFWAgentEnvPrepareOut = { code?: number; message?: string; data?: unknown }
 type ScriptWithUsers = ScriptDetail & { users: User[] }
 type LooseSection = Record<string, unknown>
 type LooseUserConfig = Record<string, unknown> & {
@@ -1410,14 +1411,12 @@ export function useScriptApi() {
   }
 
   const getHsrStageOptions = async (
-    scriptId: string,
-    engine: HSRStageEngine
+    _scriptId: string,
+    _engine: HSRStageEngine
   ): Promise<HSRStageOptionsData | null> => {
     try {
-      const payload = await HsrService.getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
-        scriptId,
-        engine
-      )
+      const payload = { code: 200, data: null as HSRStageOptionsData | null }
+      throw new Error('HSR 专项接口尚未迁移')
       if (payload?.code !== 200) {
         throw new Error(payload?.message || '接口返回异常')
       }
@@ -1432,12 +1431,12 @@ export function useScriptApi() {
 
   // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
   const previewMaaFWInterface = async (
-    path: string,
-    scriptId?: string
+    _path: string,
+    _scriptId?: string
   ): Promise<MaaFWInterfacePreviewOut | null> => {
     try {
       // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
+      throw new Error('MaaFW interface 接口尚未迁移')
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
@@ -1446,16 +1445,12 @@ export function useScriptApi() {
   }
 
   const prepareMaaFWAgentEnv = async (
-    path: string,
-    scriptId?: string,
-    force = false
+    _path: string,
+    _scriptId?: string,
+    _force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
     try {
-      return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
-        path,
-        scriptId,
-        force,
-      })
+      throw new Error('MaaFW 运行环境接口尚未迁移')
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
@@ -1463,9 +1458,10 @@ export function useScriptApi() {
     }
   }
 
-  const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
+  const getMaaEndOptions = async (_scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
-      const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
+      const response: MaaEndOptionsOut = { code: 200, data: null }
+      throw new Error('MaaEnd 选项接口尚未迁移')
       if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
       return response
     } catch (err) {
@@ -1583,8 +1579,11 @@ export function useScriptApi() {
     }
   }
 
-  const importScriptConfigFile = (scriptId: string, userId: string | null) =>
-    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+  const importScriptConfigFile = async (scriptId: string, userId: string | null) => {
+    void scriptId
+    void userId
+    return { code: 503, message: '脚本配置导入接口尚未迁移' }
+  }
 
   return {
     loading,

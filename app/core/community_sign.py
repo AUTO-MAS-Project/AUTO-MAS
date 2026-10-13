@@ -176,12 +176,12 @@ async def _run_configured_community_sign_in(
     """
 
     results: list[dict[str, object]] = []
-    today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+    today = datetime.now(tz=UTC8).date()
 
     providers = get_community_sign_providers()
-    for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        account_name = account.get("GameSignAccount", "Name") or "默认账号"
-        account_enabled = account.get("GameSignAccount", "Enabled")
+    for uid, account in Config.tools.accounts.items():
+        account_name = account.info.name or "默认账号"
+        account_enabled = account.info.enabled
         account_uid = str(uid)
 
         # 跳过已禁用的用户。
@@ -190,7 +190,7 @@ async def _run_configured_community_sign_in(
 
         # 非强制模式：跳过今日已签到的用户。
         if not force:
-            user_last_sign = account.get("GameSignAccount", "LastSignDate")
+            user_last_sign = account.info.last_sign_date
             if user_last_sign == today:
                 logger.debug(f"[{account_name}] 今日已签到，跳过")
                 continue
@@ -236,10 +236,17 @@ async def _run_configured_community_sign_in(
             for attempt in range(attempts):
                 try:
                     # 直接 set 不重置 LastSignDate；刷新凭据不应改变签到去重语义。
-                    changed = await account.set("GameSignAccount", field, updated_token)
-                    if changed is False and field in credential_update_failures:
-                        # ConfigBase 先改内存再提交；前次提交失败后同值 set 不会重写磁盘。
-                        await account._commit_changes()
+                    field_name = {
+                        "MiyousheToken": "miyoushe_token",
+                        "KuroToken": "kuro_token",
+                        "SklandToken": "skland_token",
+                        "TaygedoToken": "taygedo_token",
+                        "CloudGenshinToken": "cloud_genshin_token",
+                    }.get(field)
+                    if field_name is None:
+                        raise ValueError(f"不支持的社区凭据字段: {field}")
+                    setattr(account.info, field_name, updated_token)
+                    await account.commit()
                 except Exception as error:
                     if attempt + 1 < attempts:
                         logger.warning(
@@ -339,8 +346,9 @@ async def _run_configured_community_sign_in(
             try:
                 # 多账号串行签到可能跨越 0 点，写入时重新取当前日期，
                 # 避免把新一天的签到记成旧日期导致次日误判。
-                sign_date = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-                await account.set("GameSignAccount", "LastSignDate", sign_date)
+                sign_date = datetime.now(tz=UTC8).date()
+                account.info.last_sign_date = sign_date
+                await account.commit()
             except Exception as error:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {error}")
 

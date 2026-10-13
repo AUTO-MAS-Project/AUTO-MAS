@@ -48,7 +48,8 @@ class _EmulatorManager:
         config = EmulatorConfig()
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
-        if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
+        emulator_type = config.get("Info", "Type")
+        if emulator_type in EMULATOR_TYPE_BOOK:
             # 设置模拟器广告, 失败不影响模拟器实例创建, 但要留下原因
             try:
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
@@ -68,7 +69,8 @@ class _EmulatorManager:
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
 
-            return EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
+            # 旧模拟器配置继续走兼容控制器；新游戏域按插件声明注册。
+            return EMULATOR_TYPE_BOOK[emulator_type](config)
         else:
             raise ValueError(f"不支持的模拟器类型: {config.get('Info', 'Type')}")
 

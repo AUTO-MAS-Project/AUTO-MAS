@@ -52,10 +52,16 @@ logger = get_logger("游戏社区活动")
 
 
 def _account_value(account: object, name: str, default: object = "") -> object:
-    try:
-        return account.get("GameSignAccount", name)  # type: ignore[attr-defined]
-    except (AttributeError, KeyError):
+    field_name = {
+        "Name": "name",
+        "Enabled": "enabled",
+        "MiyousheDeviceId": "miyoushe_device_id",
+        "MiyousheDeviceFp": "miyoushe_device_fp",
+    }.get(name)
+    info = getattr(account, "info", None)
+    if field_name is None or info is None:
         return default
+    return getattr(info, field_name, default)
 
 
 def _failure_state(error: Exception) -> tuple[ActivityState, str]:
@@ -130,7 +136,7 @@ def _selected_accounts(
     }
     selected: list[tuple[str, object]] = []
     matched_ids: set[str] = set()
-    for raw_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+    for raw_uid, account in Config.tools.accounts.items():
         account_uid = str(raw_uid)
         if requested_ids and account_uid not in requested_ids:
             continue

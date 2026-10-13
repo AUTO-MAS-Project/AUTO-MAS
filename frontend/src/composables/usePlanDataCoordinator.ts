@@ -9,7 +9,7 @@
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
+import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
@@ -203,7 +203,7 @@ export function usePlanDataCoordinator() {
 
   // 从API数据转换为内部数据结构
   const fromApiData = (
-    apiData: MaaPlanConfig,
+    apiData: Record<string, any>,
     forceUpdateCustomStages = false,
     inferCustomStages = true
   ) => {
@@ -218,7 +218,7 @@ export function usePlanDataCoordinator() {
 
     // 更新时间配置
     TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+      const timeData = apiData[timeKey] as Record<string, any>
       if (timeData) {
         planData.value.timeConfigs[timeKey] = {
           medicineNumb: timeData.MedicineNumb || 0,
@@ -241,12 +241,12 @@ export function usePlanDataCoordinator() {
     const inferredStages = new Set<string>()
 
     TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+      const timeData = apiData[timeKey] as Record<string, any>
       if (timeData) {
         // 检查所有关卡字段
         const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
         stageFields.forEach(field => {
-          const stageValue = timeData[field as keyof MaaPlanConfig_Item] as string
+          const stageValue = timeData[field] as string
           if (stageValue && stageValue !== '-') {
             // 如果不是标准关卡，则认为是自定义关卡
             const cachedOptions = getCachedStageOptions(timeKey)
@@ -307,8 +307,8 @@ export function usePlanDataCoordinator() {
   }
 
   // 转换为API数据格式
-  const toApiData = (): MaaPlanConfig => {
-    const result: MaaPlanConfig = {
+  const toApiData = (): Record<string, any> => {
+    const result: Record<string, any> = {
       Info: {
         Name: planData.value.info.name,
         Mode: planData.value.info.mode,

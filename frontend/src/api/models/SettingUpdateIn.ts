@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig } from './GlobalConfig';
+import type { Setting_Input } from './Setting_Input';
 export type SettingUpdateIn = {
     /**
-     * 全局设置需要更新的数据
+     * 全局设置补丁（文档形状）
      */
-    data: GlobalConfig;
+    data: Setting_Input;
 };
 

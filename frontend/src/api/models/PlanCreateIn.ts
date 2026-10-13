@@ -3,14 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 export type PlanCreateIn = {
-    type: PlanCreateIn.type;
+    /**
+     * 脚本 Entry 类型名；按其声明的计划表类新建
+     */
+    scriptType: string;
 };
-export namespace PlanCreateIn {
-    export enum type {
-        MAA_PLAN = 'MaaPlan',
-        MAA_END_PLAN = 'MaaEndPlan',
-        BAAHPLAN = 'BAAHPlan',
-        MSSPLAN = 'MSSPlan',
-    }
-}
 

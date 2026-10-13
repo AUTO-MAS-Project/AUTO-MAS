@@ -2,19 +2,19 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet } from './TimeSet';
+import type { TimeSetEntry_Input } from './TimeSetEntry_Input';
 export type TimeSetUpdateIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 时间设置ID
+     * 定时项 ID
      */
     timeSetId: string;
     /**
-     * 时间设置更新数据
+     * 定时项补丁（文档形状）
      */
-    data: TimeSet;
+    data: TimeSetEntry_Input;
 };
 

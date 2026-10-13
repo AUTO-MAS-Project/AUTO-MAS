@@ -116,9 +116,7 @@
         </div>
 
         <div class="header-actions">
-          <a-checkbox v-model:checked="removeEmptyLines" class="empty-lines-checkbox">
-            {{ t('history.log.stripBlank') }}
-          </a-checkbox>
+          <div class="boolean-field"><span>{{ t('history.log.stripBlank') }}</span><SettingToggleButton v-model="removeEmptyLines" class="empty-lines-checkbox" /></div>
           <a-divider type="vertical" />
           <a-tooltip :title="t('history.log.openFile')">
             <a-button size="small" type="text" :disabled="!hasFile" @click="$emit('open-file')">
@@ -187,6 +185,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import {
   FileExclamationOutlined,

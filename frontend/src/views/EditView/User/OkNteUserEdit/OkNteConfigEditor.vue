@@ -64,9 +64,9 @@
                         {{ child.description }}
                       </template>
 
-                      <a-switch
+                      <SettingToggleButton
                         v-if="child.type === 'bool'"
-                        :checked="getNestedFieldValue(selectedConfigFilename, field.name, child)"
+                        :model-value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
                         @change="
                           (val: boolean) =>
                             setNestedFieldValue(selectedConfigFilename, field.name, child, val)
@@ -158,15 +158,15 @@
                       :key="item.id"
                       class="routine-item"
                     >
-                      <a-checkbox
-                        :checked="item.enabled"
+                      <SettingToggleButton
+                        :model-value="item.enabled"
                         @change="
                           (event: any) =>
                             setRoutineItemEnabled(
                               selectedConfigFilename,
                               field,
                               item.id,
-                              Boolean(event.target.checked)
+                              Boolean(event)
                             )
                         "
                       />
@@ -205,9 +205,9 @@
                 </template>
 
                 <!-- bool 类型：开关 -->
-                <a-switch
+                <SettingToggleButton
                   v-else-if="field.type === 'bool'"
-                  :checked="getFieldValue(selectedConfigFilename, field.name, field.value)"
+                  :model-value="getFieldValue(selectedConfigFilename, field.name, field.value)"
                   @change="(val: boolean) => setFieldValue(selectedConfigFilename, field.name, val)"
                 />
 
@@ -315,12 +315,13 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
-import { OknteService } from '@/api/services/OknteService'
+import { Service as OknteService } from '@/api'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()

@@ -4,10 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
-import type { GlobalConfig } from '@/api'
+import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
@@ -48,7 +49,7 @@ const {
   handleAppearanceImport,
   handleAppearanceRemove,
 } = useAppearanceSettings()
-const { loading, getSettings, updateSettings } = useSettingsApi()
+const { loading, loadError, error: settingsError, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
@@ -67,37 +68,9 @@ const version = computed(() => import.meta.env.VITE_APP_VERSION || t('setting.ve
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
-const settings = reactive<GlobalConfig>({})
+const settings = reactive<SettingsViewModel>({})
 
 // 下拉选项
-const historyRetentionOptions = computed(() => [
-  { label: t('setting.retention.d7'), value: 7 },
-  { label: t('setting.retention.d15'), value: 15 },
-  { label: t('setting.retention.d30'), value: 30 },
-  { label: t('setting.retention.d60'), value: 60 },
-  { label: t('setting.retention.d90'), value: 90 },
-  { label: t('setting.retention.d180'), value: 180 },
-  { label: t('setting.retention.d365'), value: 365 },
-  { label: t('setting.retention.forever'), value: 0 },
-])
-
-const updateSourceOptions = computed(() => [
-  { label: 'GitHub', value: 'GitHub' },
-  { label: t('setting.source.MirrorChyan'), value: 'MirrorChyan' },
-  { label: t('setting.source.AutoSite'), value: 'AutoSite' },
-  { label: t('setting.source.CNB'), value: 'CNB' },
-])
-
-const updateChannelOptions = computed(() => [
-  { label: t('setting.channel.stable'), value: 'stable' },
-  { label: t('setting.channel.beta'), value: 'beta' },
-])
-
-const voiceTypeOptions = computed(() => [
-  { label: t('setting.voice.simple'), value: 'simple' },
-  { label: t('setting.voice.noisy'), value: 'noisy' },
-])
-
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
   { label: t('setting.cursor.none'), value: 'none' },
   { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
@@ -105,7 +78,7 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
-const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
+const ELECTRON_SYNCED_CATEGORIES = new Set<SettingsCategory>([
   'UI',
   'Start',
   'Update',
@@ -117,19 +90,21 @@ const NORMALIZED_SETTING_KEYS = new Set([
   'Notify.KoishiServerAddress',
   'Notify.OpenClawQQClientSecret',
   'Notify.AuthorizationCode',
+  'Update.GithubToken',
   'Update.MirrorChyanCDK',
+  'Notify.Test',
 ])
 
-const syncConfigToElectron = async (data: GlobalConfig) => {
+const syncConfigToElectron = async (data: SettingsViewModel) => {
   try {
     if (window.electronAPI?.syncBackendConfig) {
       // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
       // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
       await window.electronAPI.syncBackendConfig({
-        UI: toRaw(data.UI),
-        Start: toRaw(data.Start),
-        Update: toRaw(data.Update),
-        Function: toRaw(data.Function),
+        appearance: toRaw(data.UI),
+        start: toRaw(data.Start),
+        updates: toRaw(data.Update),
+        function: toRaw(data.Function),
       })
       logger.info('配置已同步到 Electron')
     }
@@ -150,12 +125,14 @@ const loadSettings = async () => {
 }
 
 // 保存设置 - 只发送修改的字段（遵循最小原则）
-const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise<boolean> => {
+const saveSettings = async (category: SettingsCategory, changes: Record<string, unknown>): Promise<boolean> => {
   try {
-    const updateData: GlobalConfig = { [category]: changes }
+    const updateData = { [category]: changes } as SettingsViewModel
     const result = await updateSettings(updateData)
     if (!result) {
-      message.error(t('setting.toast.saveFailed'))
+      const reason = settingsError.value || t('setting.toast.saveFailed')
+      logger.error(`设置保存失败 (${category}.${Object.keys(changes).join(',')}): ${reason}`)
+      message.error(`${t('setting.toast.saveFailed')}: ${reason}`)
       return false
     }
     return true
@@ -178,7 +155,7 @@ const refreshSettings = async () => {
 }
 
 // 保存成功后本地应用这次变更，不再整份回读
-const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+const applyLocalSettingChange = async (category: SettingsCategory, key: string, value: unknown) => {
   const section = settings[category] as Record<string, unknown> | undefined
   if (!section) {
     await refreshSettings()
@@ -189,13 +166,13 @@ const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string
   if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
 }
 
-const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+const handleSettingChange = async (category: SettingsCategory, key: string, value: unknown): Promise<boolean> => {
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
 
   if (!success) {
-    return
+    return false
   }
 
   if (NORMALIZED_SETTING_KEYS.has(`${category}.${key}`)) {
@@ -238,6 +215,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   if (category === 'Update' && key === 'PauseUntil') {
     updateInfo.value = null
   }
+  return true
 }
 
 const confirmFluidCursor = () =>
@@ -293,10 +271,6 @@ const checkUpdate = async () => {
   logger.info('使用全局更新检查器进行手动检查')
 
   // 手动检查立即恢复：先终止暂停、清空截止日期，再做完整检查
-  if (settings.Update?.PauseUntil) {
-    await handleSettingChange('Update', 'PauseUntil', '')
-  }
-
   logger.info(`检查前状态:{
     updateVisible: ${updateVisible.value},
     updateData: ${updateData.value},
@@ -330,24 +304,6 @@ const getBackendVersion = async () => {
   }
 }
 
-// 通知测试
-const testingNotify = ref(false)
-const testNotify = async () => {
-  testingNotify.value = true
-  try {
-    const res = await Service.testNotifyApiSettingTestNotifyPost()
-    if (res?.code && res.code !== 200)
-      message.warning(res?.message || t('setting.toast.testUnknown'))
-    else message.success(res?.message || t('setting.toast.testSent'))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`测试通知发送失败: ${errorMsg}`)
-    message.error(t('setting.toast.testFailed'))
-  } finally {
-    testingNotify.value = false
-  }
-}
-
 onMounted(() => {
   void cursorEffectStore.load()
   void performanceStore.initialize()
@@ -363,6 +319,7 @@ onMounted(() => {
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
     <div class="settings-content">
+      <ApiRetryAlert :error="loadError" :loading="loading" @retry="loadSettings" />
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" :tab="t('setting.tab.basic')">
           <TabBasic
@@ -392,8 +349,6 @@ onMounted(() => {
         <a-tab-pane key="function" :tab="t('setting.tab.function')">
           <TabFunction
             :settings="settings"
-            :history-retention-options="historyRetentionOptions"
-            :voice-type-options="voiceTypeOptions"
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
@@ -401,8 +356,6 @@ onMounted(() => {
           <TabNotify
             :settings="settings"
             :handle-setting-change="handleSettingChange"
-            :test-notify="testNotify"
-            :testing-notify="testingNotify"
           />
         </a-tab-pane>
         <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
@@ -413,8 +366,6 @@ onMounted(() => {
             :version="version"
             :backend-update-info="backendUpdateInfo"
             :settings="settings"
-            :update-source-options="updateSourceOptions"
-            :update-channel-options="updateChannelOptions"
             :handle-setting-change="handleSettingChange"
             :check-update="checkUpdate"
           />

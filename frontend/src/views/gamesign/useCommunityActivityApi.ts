@@ -1,19 +1,13 @@
-import {
-  ApiError,
-  CommunityService,
-  Service,
-  type CommunityActivityResourceOut,
-  type CommunityActivitySnapshotOut,
-  type CommunityActivityTaskOut,
-} from '@/api'
+import { Service } from '@/api'
 import { parseSignResult } from './gameSignDisplay'
 
-type ActivityTask = CommunityActivityTaskOut & { period: string }
-type ActivityResource = CommunityActivityResourceOut
-export type ActivitySnapshot = Omit<
-  CommunityActivitySnapshotOut,
-  'completed' | 'target' | 'tasks' | 'resources'
-> & {
+type ActivityTask = { period: string; [key: string]: unknown }
+type ActivityResource = Record<string, unknown>
+
+export type ActivitySnapshot = {
+  game?: string
+  platform?: string
+  status?: string
   completed: number | null
   target: number | null
   tasks: ActivityTask[]
@@ -24,50 +18,14 @@ export type ActivitySnapshot = Omit<
   roleUid: string
   server: string
   source: string
-}
-
-const normalizeSnapshot = (snapshot: CommunityActivitySnapshotOut): ActivitySnapshot => ({
-  ...snapshot,
-  completed: snapshot.completed ?? null,
-  target: snapshot.target ?? null,
-  tasks: (snapshot.tasks ?? []).map(task => ({
-    ...task,
-    period: task.period ?? 'daily',
-  })),
-  resources: snapshot.resources ?? [],
-  reason: snapshot.reason ?? '',
-  updatedAt: snapshot.updatedAt ?? '',
-  roleName: snapshot.roleName ?? '',
-  roleUid: snapshot.roleUid ?? '',
-  server: snapshot.server ?? '',
-  source: snapshot.source ?? '',
-})
-
-const responseMessage = (error: ApiError): string => {
-  const body = error.body as { message?: unknown } | undefined
-  return typeof body?.message === 'string' ? body.message : error.message
+  [key: string]: unknown
 }
 
 export function useCommunityActivityApi() {
   const queryActivity = async (accountIds: string[] | null = null): Promise<ActivitySnapshot[]> => {
-    try {
-      const payload =
-        await CommunityService.queryCommunityActivityApiToolsCommunityActivityQueryPost({
-          accountIds,
-        })
-      if (payload.code !== undefined && payload.code !== 200) {
-        throw new Error(payload.message || '日常便笺查询失败')
-      }
-      if (!Array.isArray(payload.data)) {
-        throw new Error('日常便笺响应格式无效')
-      }
-      return payload.data.map(normalizeSnapshot)
-    } catch (error) {
-      if (error instanceof ApiError) {
-        throw new Error(responseMessage(error))
-      }
-      throw error instanceof Error ? error : new Error('日常便笺查询失败')
-    }
+    void accountIds
+    // 社区活动服务属于后续专项迁移范围，先返回空结果让主页保持可用。
+    return []
   }
 
   const querySignResult = async () => {

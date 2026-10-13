@@ -27,8 +27,8 @@
             <!-- 每周秘境：周表（默认 + 周一~周日）表格渲染 -->
             <div v-if="section.kind === 'weekly-table'" class="bettergi-weekly-table-wrap">
               <div class="bettergi-weekly-table-top">
-                <a-switch
-                  :checked="weeklySectionEnabled(section)"
+                <SettingToggleButton
+                  :model-value="weeklySectionEnabled(section)"
                   @change="
                     (checked: boolean | string | number) =>
                       weeklySectionToggle(section, Boolean(checked))
@@ -144,9 +144,9 @@
                   <!-- 执行：MAS 扩展列（default 行无此列）。开启才执行；全关=默认不执行。
                        胶囊开关；default 行 runKey 为空，不渲染任何控件（列留空）。 -->
                   <template v-else-if="column.key === 'run'">
-                    <a-switch
+                    <SettingToggleButton
                       v-if="record.runKey"
-                      :checked="!!tableCellValue(record, 'run')"
+                      :model-value="!!tableCellValue(record, 'run')"
                       :disabled="!weeklySectionEnabled(section)"
                       @change="
                         (checked: boolean | string | number) =>
@@ -165,8 +165,8 @@
               class="bettergi-weekly-section-wrap"
             >
               <div class="bettergi-weekly-table-top">
-                <a-switch
-                  :checked="weeklySectionEnabled(section)"
+                <SettingToggleButton
+                  :model-value="weeklySectionEnabled(section)"
                   @change="
                     (checked: boolean | string | number) =>
                       weeklySectionToggle(section, Boolean(checked))
@@ -230,9 +230,9 @@
                     <span v-if="column.key === 'label'">{{ record.label }}</span>
                     <!-- 各字段列：复用字段类型渲染（队伍/地区/任务类型为文本或下拉，执行为开关，策略弹出战斗策略弹窗） -->
                     <template v-else>
-                      <a-switch
+                      <SettingToggleButton
                         v-if="weeklyFieldCell(record, column.key)?.type === 'bool'"
-                        :checked="Boolean(fieldValue(weeklyFieldCell(record, column.key)!))"
+                        :model-value="Boolean(fieldValue(weeklyFieldCell(record, column.key)!))"
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
                           (checked: boolean | string | number) =>
@@ -295,8 +295,8 @@
             <!-- 每日地脉花：顶部开关（与每周刷取互斥）+ 好感队输入框 + 单行表格（队伍/策略/地区/类型/执行） -->
             <div v-else-if="section.kind === 'daily-leyline'" class="bettergi-weekly-section-wrap">
               <div class="bettergi-weekly-table-top">
-                <a-switch
-                  :checked="weeklySectionEnabled(section)"
+                <SettingToggleButton
+                  :model-value="weeklySectionEnabled(section)"
                   @change="
                     (checked: boolean | string | number) =>
                       weeklySectionToggle(section, Boolean(checked))
@@ -345,9 +345,9 @@
                   <template #bodyCell="{ column, record }">
                     <span v-if="column.key === 'label'">{{ record.label }}</span>
                     <template v-else>
-                      <a-switch
+                      <SettingToggleButton
                         v-if="dailyCell(record, column.key)?.type === 'bool'"
-                        :checked="Boolean(fieldValue(dailyCell(record, column.key)!))"
+                        :model-value="Boolean(fieldValue(dailyCell(record, column.key)!))"
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
                           (checked: boolean | string | number) =>
@@ -424,8 +424,8 @@
                       <QuestionCircleOutlined class="bettergi-setting-help-icon" />
                     </a-tooltip>
                   </span>
-                  <a-switch
-                    :checked="
+                  <SettingToggleButton
+                    :model-value="
                       field.invert ? !Boolean(fieldValue(field)) : Boolean(fieldValue(field))
                     "
                     :disabled="fieldLocked(field)"
@@ -776,6 +776,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {

@@ -48,8 +48,8 @@
             :records="selectedUserData?.index || []"
             :selected-record-index="selectedRecordIndex"
             :error-info="selectedUserData?.error_info || null"
-            :recruit-statistics="selectedUserData?.recruit_statistics || null"
-            :drop-statistics="selectedUserData?.drop_statistics || null"
+            :recruit-statistics="getRecruitStatistics(selectedUserData)"
+            :drop-statistics="getDropStatistics(selectedUserData)"
             :matrix-statistics="getMatrixStatistics(selectedUserData)"
             :pull-count-statistics="getPullCountStatistics(selectedUserData)"
             @select-record="handleSelectRecord"
@@ -67,8 +67,8 @@
       :record-date="currentRecordDate"
       :record-status="currentRecordStatus"
       :error-message="currentErrorMessage"
-      :recruit-statistics="currentDetail?.recruit_statistics || null"
-      :drop-statistics="currentDetail?.drop_statistics || null"
+      :recruit-statistics="getRecruitStatistics(currentDetail)"
+      :drop-statistics="getDropStatistics(currentDetail)"
       :matrix-statistics="getMatrixStatistics(currentDetail)"
       :pull-count-statistics="getPullCountStatistics(currentDetail)"
       :font-size="editorConfig.fontSize"
@@ -88,13 +88,13 @@
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import type { HistoryData } from '@/api'
+import type { PullCountStatistics } from '@/types/history'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
 import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
-import type { PullCountStatistics } from '@/types/history'
 
 const { t } = useI18n()
 
@@ -141,17 +141,42 @@ const currentRecordDate = ref('')
 const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
 
-type HistoryDataWithMatrix = HistoryData & {
-  matrix_statistics?: Record<string, string> | null
-  pull_count_statistics?: PullCountStatistics | null
-}
-
 const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
-  return (data as HistoryDataWithMatrix | null)?.matrix_statistics ?? null
+  const typed = data as (HistoryData & {
+    matrix_statistics?: Record<string, string> | null
+  }) | null
+  return typed?.matrix_statistics ?? readHistoryDataValue<Record<string, string>>(data, 'matrix_statistics')
 }
 
-const getPullCountStatistics = (data: HistoryData | null): PullCountStatistics | null => {
-  return (data as HistoryDataWithMatrix | null)?.pull_count_statistics ?? null
+const getPullCountStatistics = (data: HistoryData | null) => {
+  const typed = data as (HistoryData & {
+    pull_count_statistics?: PullCountStatistics | null
+  }) | null
+  return (
+    typed?.pull_count_statistics ??
+    readHistoryDataValue<PullCountStatistics>(data, 'pull_count_statistics')
+  )
+}
+
+const readHistoryDataValue = <T>(data: HistoryData | null, key: string): T | null => {
+  const value = data?.data?.[key]
+  return value === undefined ? null : (value as T)
+}
+
+const getRecruitStatistics = (data: HistoryData | null): Record<string, number> | null => {
+  const typed = data as (HistoryData & {
+    recruit_statistics?: Record<string, number> | null
+  }) | null
+  return typed?.recruit_statistics ?? readHistoryDataValue<Record<string, number>>(data, 'recruit_statistics')
+}
+
+const getDropStatistics = (
+  data: HistoryData | null,
+): Record<string, Record<string, number>> | null => {
+  const typed = data as (HistoryData & {
+    drop_statistics?: Record<string, Record<string, number>> | null
+  }) | null
+  return typed?.drop_statistics ?? readHistoryDataValue<Record<string, Record<string, number>>>(data, 'drop_statistics')
 }
 
 const handleModeUpdate = (mode: string) => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted } from 'vue'
 import { EditOutlined, DeleteOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons-vue'
@@ -404,8 +405,8 @@ onMounted(() => {
             <span class="setting-title">{{ t('gamesign.section.enable') }}</span>
             <span class="setting-desc">{{ t('gamesign.section.enableDesc') }}</span>
           </div>
-          <a-switch
-            :checked="config.Enabled"
+          <SettingToggleButton
+            :model-value="config.Enabled === true"
             :disabled="disabled"
             @change="handleChange('Enabled', $event)"
           />
@@ -415,8 +416,8 @@ onMounted(() => {
             <span class="setting-title">{{ t('gamesign.section.activityEnable') }}</span>
             <span class="setting-desc">{{ t('gamesign.section.activityEnableDesc') }}</span>
           </div>
-          <a-switch
-            :checked="config.ActivityEnabled !== false"
+          <SettingToggleButton
+            :model-value="config.ActivityEnabled !== false"
             :disabled="disabled"
             @change="handleChange('ActivityEnabled', $event)"
           />
@@ -426,8 +427,8 @@ onMounted(() => {
             <span class="setting-title">{{ t('gamesign.section.homeActivityEnable') }}</span>
             <span class="setting-desc">{{ t('gamesign.section.homeActivityEnableDesc') }}</span>
           </div>
-          <a-switch
-            :checked="homeActivityNotesVisible"
+          <SettingToggleButton
+            :model-value="homeActivityNotesVisible"
             :disabled="disabled"
             :loading="homeActivityNotesSaving"
             @change="handleHomeActivityNotesChange"
@@ -438,8 +439,8 @@ onMounted(() => {
             <span class="setting-title">{{ t('gamesign.section.notify') }}</span>
             <span class="setting-desc">{{ t('gamesign.section.notifyDesc') }}</span>
           </div>
-          <a-switch
-            :checked="config.NotifyEnabled"
+          <SettingToggleButton
+            :model-value="config.NotifyEnabled === true"
             :disabled="disabled"
             :loading="notifySaving"
             @change="handleNotifyEnabledChange"
@@ -450,8 +451,8 @@ onMounted(() => {
             <span class="setting-title">{{ t('gamesign.section.runOnStartup') }}</span>
             <span class="setting-desc">{{ t('gamesign.section.runOnStartupDesc') }}</span>
           </div>
-          <a-switch
-            :checked="config.RunOnStartup"
+          <SettingToggleButton
+            :model-value="config.RunOnStartup === true"
             :disabled="disabled"
             @change="handleChange('RunOnStartup', $event)"
           />
@@ -524,8 +525,8 @@ onMounted(() => {
               </div>
               <!-- 启用开关 -->
               <div class="row-cell status-cell">
-                <a-switch
-                  :checked="account.Enabled"
+                <SettingToggleButton
+                  :model-value="account.Enabled === true"
                   :disabled="disabled"
                   @change="handleAccountEnabledChange(account, $event)"
                 />

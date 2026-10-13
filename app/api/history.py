@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -20,18 +20,38 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""历史记录 API：直接调用 ``history_store``。"""
 
-from datetime import datetime
-from pathlib import Path
+from __future__ import annotations
 
 from fastapi import APIRouter, Body
 
-from app.core import Config
-from app.models.schema import *
-from app.utils import get_logger
+from app.core.history import history_store
+from app.models.schema import (
+    HistoryData,
+    HistoryDataGetIn,
+    HistoryDataGetOut,
+    HistorySearchIn,
+    HistorySearchOut,
+)
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
-logger = get_logger("历史记录 API")
+
+
+def _history_data(raw: dict[str, object]) -> HistoryData:
+    """Normalize persisted history while exposing known plugin statistics."""
+    payload = dict(raw)
+    statistics = payload.get("data")
+    if isinstance(statistics, dict):
+        for key in (
+            "recruit_statistics",
+            "drop_statistics",
+            "matrix_statistics",
+            "pull_count_statistics",
+        ):
+            if key in statistics:
+                payload[key] = statistics[key]
+    return HistoryData.model_validate(payload)
 
 
 @router.post(
@@ -42,26 +62,20 @@ logger = get_logger("历史记录 API")
     status_code=200,
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
-
     try:
-        data = await Config.search_history(
-            history.mode,
-            datetime.strptime(history.start_date, "%Y-%m-%d").date(),
-            datetime.strptime(history.end_date, "%Y-%m-%d").date(),
+        raw = history_store.search(
+            start_date=history.start_date,
+            end_date=history.end_date,
+            mode=history.mode,
         )
-        for date, users in data.items():
-            for user, records in users.items():
-                record = await Config.merge_statistic_info(records)
-                # 安全检查：确保 index 字段存在
-                if "index" not in record:
-                    record["index"] = []
-                record["index"] = [HistoryIndexItem(**_) for _ in record["index"]]
-                record = HistoryData(**record)
-                data[date][user] = record
+        data = {
+            date_key: {
+                username: _history_data(info)
+                for username, info in users.items()
+            }
+            for date_key, users in raw.items()
+        }
     except Exception as e:
-        logger.opt(exception=True).warning(
-            f"search_history失败: {type(e).__name__}: {e}"
-        )
         return HistorySearchOut(
             code=500,
             status="error",
@@ -79,21 +93,14 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     status_code=200,
 )
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
-
     try:
-        path = Path(history.jsonPath)
-        data = await Config.merge_statistic_info([path])
-        data.pop("index", None)
-        data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
-        data = HistoryData(**data)
+        detail = history_store.get_detail(history.jsonPath)
+        data = _history_data(detail)
     except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_history_data失败: {type(e).__name__}: {e}"
-        )
         return HistoryDataGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data=HistoryData(**{}),
+            data=HistoryData(),
         )
     return HistoryDataGetOut(data=data)

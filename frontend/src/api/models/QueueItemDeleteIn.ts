@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type QueueItemDeleteIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 队列项ID
+     * 队列项 ID
      */
     queueItemId: string;
 };

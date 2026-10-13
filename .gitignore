@@ -62,6 +62,8 @@ list/
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
+!/plugins/mumu_adapter/
+!/plugins/mumu_adapter/**
 !/plugins/okww_adapter/
 !/plugins/okww_adapter/**
 !/plugins/ok_script_adapter/

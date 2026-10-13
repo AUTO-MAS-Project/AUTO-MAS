@@ -964,9 +964,10 @@
               <code>{{ risk.field }}</code> — {{ risk.reason }}
             </li>
           </ul>
-          <a-checkbox v-model:checked="riskAcknowledged">{{
-            t('edit.share.riskConfirm')
-          }}</a-checkbox>
+          <div class="boolean-field">
+            <span>{{ t('edit.share.riskConfirm') }}</span>
+            <SettingToggleButton v-model="riskAcknowledged" />
+          </div>
         </template>
       </a-alert>
 
@@ -980,6 +981,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'

@@ -18,6 +18,240 @@
   margin-bottom: 32px;
 }
 
+/* Shared vertical fields used by settings and declaration-driven forms. */
+.form-item-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+
+.form-label-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.form-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+  font-size: 14px;
+}
+
+/* Backend-declared configuration fields are packed into a 24-column grid.
+   This class is intentionally limited to declaration-driven option groups;
+   page shells, tabs, tables, and headers keep their existing layout. */
+.form-grid-24 {
+  --field-gutter: 24px;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  margin-inline: calc(var(--field-gutter) / -2);
+  align-items: start;
+}
+
+.form-grid-24__item {
+  --field-span: 12;
+  grid-column: span var(--field-span, 12);
+  padding-inline: calc(var(--field-gutter) / 2);
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.form-grid-24__item .declarative-control,
+.form-grid-24__item .declarative-control > .ant-input,
+.form-grid-24__item .declarative-control > .ant-input-number,
+.form-grid-24__item .declarative-control > .ant-select,
+.form-grid-24__item .declarative-control > .ant-btn {
+  width: 100%;
+}
+
+.form-grid-24__item .setting-toggle-button {
+  min-width: 0;
+}
+
+.declarative-control {
+  min-width: 0;
+}
+
+.declarative-control .ant-input,
+.declarative-control .ant-input-number,
+.declarative-control .ant-select-selector,
+.declarative-control .ant-btn {
+  min-height: 40px;
+  border-radius: 6px;
+}
+
+.declarative-control .ant-input-number,
+.declarative-control .ant-select {
+  width: 100%;
+}
+
+.declarative-control .ant-picker {
+  width: 100%;
+}
+
+.declarative-control .ant-input-affix-wrapper {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+/* Password inputs render an affix wrapper around the actual input. Keep the
+   wrapper at the same control height as a regular large input and let Ant
+   Design handle the inner line height. */
+.declarative-control .ant-input-affix-wrapper > .ant-input {
+  height: auto;
+  min-height: 0;
+}
+
+.declarative-control .ant-input-number-input-wrap,
+.declarative-control .ant-input-number-input {
+  min-height: inherit;
+}
+
+.declarative-control .ant-btn {
+  height: 40px;
+  box-shadow: none;
+}
+
+/* All declaration-driven controls use one focus treatment, so Path does not
+   look heavier than the neighboring input, select, and button fields. */
+.declarative-control:not(.declarative-control--path):focus-within {
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
+}
+
+.declarative-control:not(.declarative-control--path) .ant-input:focus,
+.declarative-control:not(.declarative-control--path) .ant-input-affix-wrapper:focus-within,
+.declarative-control:not(.declarative-control--path) .ant-input-number-focused,
+.declarative-control:not(.declarative-control--path) .ant-input-number:focus-within,
+.declarative-control:not(.declarative-control--path) .ant-select-focused .ant-select-selector,
+.declarative-control:not(.declarative-control--path) .ant-btn:focus-visible {
+  box-shadow: none;
+}
+
+/* 路径沿用常见设置的输入框与选择按钮；普通容器避免 compact 样式叠加外框。 */
+.declarative-control--path .path-input-group {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: none;
+  transition: all 0.3s ease;
+}
+
+.declarative-control--path .path-input-group:hover {
+  border-color: var(--ant-color-primary-hover);
+  box-shadow: none;
+}
+
+.declarative-control--path .path-input-group:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: none;
+}
+
+.declarative-control--path .path-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-bg-container);
+  box-shadow: none;
+}
+
+.declarative-control--path .path-input:focus {
+  box-shadow: none;
+}
+
+.declarative-control--path .path-button {
+  flex: 0 0 auto;
+  height: 38px;
+  min-height: 38px;
+  border: none;
+  border-left: 1px solid var(--ant-color-border-secondary);
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  box-shadow: none;
+  transition: all 0.3s ease;
+}
+
+.declarative-control--path .path-button:hover:not(:disabled) {
+  background: var(--ant-color-primary);
+  color: #fff;
+}
+
+.declarative-control--path.declarative-control--disabled .path-input-group {
+  cursor: not-allowed;
+  background: var(--ant-color-fill-tertiary);
+}
+
+.declarative-control--path .path-input:disabled {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.declarative-control__dropdown {
+  display: flex;
+  width: 100%;
+}
+
+.declarative-control__dropdown > .ant-btn:first-child {
+  flex: 1;
+  min-width: 0;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.declarative-control__dropdown > .ant-btn:last-child {
+  flex: 0 0 auto;
+  width: auto;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+@media (max-width: 900px) {
+  .form-grid-24 {
+    --field-gutter: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .form-grid-24 {
+    --field-gutter: 8px;
+  }
+
+  .form-grid-24__item .path-button {
+    padding-inline: 12px;
+  }
+
+  .form-grid-24__item .path-button-label {
+    display: none;
+  }
+}
+
+/* 窄竖屏才将配置项铺满一行；页面框架不参与此规则。 */
+@media (max-width: 768px) and (max-aspect-ratio: 1/1) {
+  .form-grid-24__item {
+    grid-column: span 24;
+  }
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -76,4 +310,11 @@
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
+}
+
+/* 单个布尔项与外部标签同行展示。 */
+.boolean-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }

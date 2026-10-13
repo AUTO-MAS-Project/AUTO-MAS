@@ -10,18 +10,17 @@
       }"
     >
       <div v-if="field.type === 'boolean'" class="boolean-control">
-        <a-checkbox
-          :checked="Boolean(field.value)"
+        <div class="option-label">
+          <span>{{ field.label }}</span>
+          <a-tooltip v-if="field.description" :title="field.description">
+            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+          </a-tooltip>
+        </div>
+        <SettingToggleButton
+          :model-value="Boolean(field.value)"
           :disabled="disabled || field.readonly"
-          @change="handleBooleanChange(field, $event)"
-        >
-          <span class="option-label">
-            <span>{{ field.label }}</span>
-            <a-tooltip v-if="field.description" :title="field.description">
-              <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-            </a-tooltip>
-          </span>
-        </a-checkbox>
+          @change="emitValue(field, $event)"
+        />
         <!-- 标记与恢复放在复选框外面，点它们不会顺带切换勾选 -->
         <span v-if="isFieldOverridden(field)" class="override-actions">
           <a-tooltip :title="overrideTooltip(field)">
@@ -116,6 +115,7 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { HSRManagedField } from '@/composables/useHSRPluginApi'
 import ManagedListField from './ManagedListField.vue'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import {
   canResetField,
   formatManagedValue,
@@ -165,10 +165,6 @@ const clearDraft = (field: HSRManagedField) => {
 const emitValue = (field: HSRManagedField, value: unknown) => {
   if (value === null || value === undefined) return
   emit('change', field.key, value)
-}
-
-const handleBooleanChange = (field: HSRManagedField, event: { target?: { checked?: boolean } }) => {
-  emitValue(field, Boolean(event.target?.checked))
 }
 
 const numberValue = (value: unknown) => {

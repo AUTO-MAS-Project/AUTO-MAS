@@ -31,9 +31,8 @@
               <MenuOutlined />
             </span>
             <span class="home-layout-title">{{ module.title }}</span>
-            <a-switch
-              size="small"
-              :checked="module.visible"
+            <SettingToggleButton
+              :model-value="module.visible"
               :aria-label="t('home.layout.visibility', { name: module.title })"
               @change="onVisibilityChange(module.key, $event)"
             />
@@ -69,9 +68,8 @@
                     <MenuOutlined />
                   </span>
                   <span class="home-layout-title">{{ game.title }}</span>
-                  <a-switch
-                    size="small"
-                    :checked="game.visible"
+                  <SettingToggleButton
+                    :model-value="game.visible"
                     :aria-label="t('home.layout.visibility', { name: game.title })"
                     @change="onVisibilityChange(game.key, $event)"
                   />
@@ -81,9 +79,8 @@
 
             <div class="home-layout-extra is-sub">
               <span class="home-layout-title">{{ t('home.layout.carouselAutoplay') }}</span>
-              <a-switch
-                size="small"
-                :checked="carouselAutoplay"
+              <SettingToggleButton
+                :model-value="carouselAutoplay"
                 :aria-label="t('home.layout.carouselAutoplayVisibility')"
                 @change="emit('autoplay-change', Boolean($event))"
               />
@@ -100,9 +97,8 @@
                 <!-- 与上方游戏开关行一致：第一个 28px 列放占位，标题在中间列、开关贴右 -->
                 <span class="home-layout-spacer" aria-hidden="true"></span>
                 <span class="home-layout-title">{{ t(`home.game.${key}`) }}</span>
-                <a-switch
-                  size="small"
-                  :checked="!hiddenActivityNotes.includes(key)"
+                <SettingToggleButton
+                  :model-value="!hiddenActivityNotes.includes(key)"
                   :aria-label="
                     t('home.layout.activityNoteVisibility', {
                       name: t(`home.game.${key}`),
@@ -124,9 +120,8 @@
 
     <div class="home-layout-extra">
       <span class="home-layout-title">{{ t('home.layout.scrollHint') }}</span>
-      <a-switch
-        size="small"
-        :checked="!scrollHintHidden"
+      <SettingToggleButton
+        :model-value="!scrollHintHidden"
         :aria-label="t('home.layout.scrollHintVisibility')"
         @change="emit('scroll-hint-change', !$event)"
       />
@@ -135,6 +130,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import type { CSSProperties } from 'vue'
 import { MenuOutlined } from '@ant-design/icons-vue'

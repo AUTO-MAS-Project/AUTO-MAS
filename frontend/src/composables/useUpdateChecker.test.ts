@@ -9,7 +9,7 @@ const getSettingsMock = vi.fn()
 vi.mock('@/api', () => ({
   Service: {
     checkUpdateApiUpdateCheckPost: vi.fn(),
-    getScriptsApiSettingGetPost: (...args: unknown[]) => getSettingsMock(...args),
+    getSettingApiSettingGetPost: (...args: unknown[]) => getSettingsMock(...args),
   },
 }))
 vi.mock('ant-design-vue', () => ({
@@ -24,13 +24,13 @@ const { useUpdateChecker } = await import('./useUpdateChecker')
 const { Service } = await import('@/api')
 
 const autoUpdate = (enabled: boolean) =>
-  getSettingsMock.mockResolvedValue({ code: 200, data: { Update: { IfAutoUpdate: enabled } } })
+  getSettingsMock.mockResolvedValue({ code: 200, data: { updates: { if_auto_update: enabled } } })
 
 // 暂停中：自动更新开着，但截止日期在未来（用远期日期避免依赖墙钟）
 const pausedUpdate = (pauseUntil: string) =>
   getSettingsMock.mockResolvedValue({
     code: 200,
-    data: { Update: { IfAutoUpdate: true, PauseUntil: pauseUntil } },
+    data: { updates: { if_auto_update: true, pause_until: pauseUntil } },
   })
 
 const checkUpdateMock = vi.mocked(Service.checkUpdateApiUpdateCheckPost)

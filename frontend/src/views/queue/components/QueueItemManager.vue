@@ -68,7 +68,7 @@
             </div>
             <div v-if="!showCycleConfig" class="row-cell days-cell">
               <a-select
-                v-model:value="record.schedule.Days"
+                v-model:value="record.schedule.days"
                 mode="multiple"
                 size="small"
                 style="width: 100%"
@@ -91,17 +91,16 @@
             <div v-if="showCycleConfig" class="row-cell cycle-cell">
               <div class="cycle-panel">
                 <div class="cycle-line">
-                  <a-switch
-                    v-model:checked="record.schedule.Enabled"
-                    size="small"
-                    @change="saveSchedule(record, { Enabled: record.schedule.Enabled })"
+                  <SettingToggleButton
+                    v-model="record.schedule.enabled"
+                    @change="saveSchedule(record, { enabled: record.schedule.enabled })"
                   />
                   <a-select
-                    v-model:value="record.schedule.Mode"
+                    v-model:value="record.schedule.mode"
                     size="small"
                     style="width: 104px"
-                    :disabled="!record.schedule.Enabled"
-                    @change="saveSchedule(record, { Mode: record.schedule.Mode })"
+                    :disabled="!record.schedule.enabled"
+                    @change="saveSchedule(record, { mode: record.schedule.mode })"
                   >
                     <a-select-option value="fixed_time">
                       {{ t('queue.cycle.modeFixed') }}
@@ -111,25 +110,25 @@
                     </a-select-option>
                   </a-select>
 
-                  <template v-if="record.schedule.Mode === 'interval'">
+                  <template v-if="record.schedule.mode === 'interval'">
                     <a-input-number
-                      v-model:value="record.schedule.IntervalMinutes"
+                      v-model:value="record.schedule.interval_minutes"
                       size="small"
                       style="width: 104px"
                       :min="1"
                       :max="10080"
-                      :disabled="!record.schedule.Enabled"
+                      :disabled="!record.schedule.enabled"
                       :addon-after="t('queue.cycle.minuteUnit')"
                       @blur="saveInterval(record)"
                       @press-enter="saveInterval(record)"
                     />
                     <a-select
-                      v-model:value="record.schedule.IntervalAnchor"
+                      v-model:value="record.schedule.interval_anchor"
                       size="small"
                       style="width: 150px"
-                      :disabled="!record.schedule.Enabled"
+                      :disabled="!record.schedule.enabled"
                       @change="
-                        saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })
+                        saveSchedule(record, { interval_anchor: record.schedule.interval_anchor })
                       "
                     >
                       <a-select-option value="start">
@@ -147,17 +146,17 @@
                       size="small"
                       style="width: 104px"
                       :placeholder="t('queue.time.selectTime')"
-                      :disabled="!record.schedule.Enabled"
+                      :disabled="!record.schedule.enabled"
                       :allow-clear="false"
                       @change="saveScheduleTime(record)"
                     />
                     <a-select
-                      v-model:value="record.schedule.Days"
+                      v-model:value="record.schedule.days"
                       mode="multiple"
                       size="small"
                       style="min-width: 168px"
                       :placeholder="t('queue.time.selectDays')"
-                      :disabled="!record.schedule.Enabled"
+                      :disabled="!record.schedule.enabled"
                       :max-tag-count="3"
                       @change="saveDays(record)"
                     >
@@ -183,12 +182,12 @@
                 <div class="cycle-line cycle-next-line">
                   <span class="cycle-next-text">
                     {{ t('queue.cycle.nextRun') }}
-                    {{ formatNextRun(record.schedule.NextRunAt) }}
+                    {{ formatNextRun(record.schedule.next_run_at) }}
                   </span>
                   <a-button
                     type="link"
                     size="small"
-                    :disabled="!record.schedule.Enabled"
+                    :disabled="!record.schedule.enabled"
                     @click="runOnce(record)"
                   >
                     {{ t('queue.cycle.runOnce') }}
@@ -226,6 +225,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -268,13 +268,23 @@ const CYCLE_EMPTY_TIME = '2000-01-01 00:00:00'
 
 // 循环调度的默认值，与后端 QueueItem 的配置项保持一致
 const CYCLE_SCHEDULE_DEFAULTS = {
-  Enabled: true,
-  Mode: 'fixed_time',
-  Days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-  Time: '00:00',
-  IntervalMinutes: 480,
-  IntervalAnchor: 'start',
-  NextRunAt: CYCLE_EMPTY_TIME,
+  enabled: true,
+  mode: 'fixed_time',
+  days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  time: '00:00',
+  interval_minutes: 480,
+  interval_anchor: 'start',
+  next_run_at: CYCLE_EMPTY_TIME,
+}
+
+// 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
+const parseTimeString = (timeString: string) => {
+  const rawTime = String(timeString || '00:00')
+  const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+  const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
+  const hours = Number(rawHours)
+  const minutes = Number(rawMinutes)
+  return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
 }
 
 // 补齐循环配置并派生时间选择器需要的 dayjs 值。
@@ -286,8 +296,8 @@ const withCycleSchedule = (items: any[]) =>
     return {
       ...item,
       schedule,
-      scheduleTimeValue: parseTimeString(schedule.Time),
-      savedIntervalMinutes: schedule.IntervalMinutes,
+      scheduleTimeValue: parseTimeString(schedule.time),
+      savedIntervalMinutes: schedule.interval_minutes,
     }
   })
 
@@ -304,14 +314,6 @@ watch(
   },
   { deep: true }
 )
-
-// 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
-const parseTimeString = (timeString: string) => {
-  const [hours = 0, minutes = 0] = String(timeString || '00:00')
-    .split(':')
-    .map(Number)
-  return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
-}
 
 const formatTimeValue = (timeValue: any) => {
   if (!timeValue) return '00:00'
@@ -330,7 +332,17 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
     const response = await Service.updateItemApiQueueItemUpdatePost({
       queueId: props.queueId,
       queueItemId: record.id,
-      data: { Schedule: data },
+      data: {
+        schedule: {
+          enabled: data.enabled,
+          mode: data.mode,
+          days: data.days,
+          time: data.time,
+          interval_minutes: data.interval_minutes,
+          interval_anchor: data.interval_anchor,
+          next_run_at: data.next_run_at,
+        },
+      },
     })
 
     if (response.code !== 200) {
@@ -356,21 +368,21 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
 // 校验失败（非 1..10080 的整数，含清空后的 null）时回填上次成功保存的值，不发请求；
 // 值未变化时同样不发请求。
 const saveInterval = async (record: any) => {
-  const minutes = Number(record.schedule.IntervalMinutes)
+  const minutes = Number(record.schedule.interval_minutes)
   const isValid = Number.isInteger(minutes) && minutes >= 1 && minutes <= 10080
 
   if (!isValid) {
-    record.schedule.IntervalMinutes = record.savedIntervalMinutes
+    record.schedule.interval_minutes = record.savedIntervalMinutes
     return
   }
 
   if (minutes === record.savedIntervalMinutes) {
-    record.schedule.IntervalMinutes = minutes
+    record.schedule.interval_minutes = minutes
     return
   }
 
-  record.schedule.IntervalMinutes = minutes
-  const success = await saveSchedule(record, { IntervalMinutes: minutes })
+  record.schedule.interval_minutes = minutes
+  const success = await saveSchedule(record, { interval_minutes: minutes })
   if (success) {
     record.savedIntervalMinutes = minutes
   }
@@ -380,24 +392,24 @@ const saveInterval = async (record: any) => {
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 const saveDays = async (record: any) => {
-  const days = [...(record.schedule.Days || [])].sort(
+  const days = [...(record.schedule.days || [])].sort(
     (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
   )
-  record.schedule.Days = days
-  await saveSchedule(record, { Days: days })
+  record.schedule.days = days
+  await saveSchedule(record, { days })
 }
 
 const saveScheduleTime = async (record: any) => {
   const timeString = formatTimeValue(record.scheduleTimeValue)
-  record.schedule.Time = timeString
-  await saveSchedule(record, { Time: timeString })
+  record.schedule.time = timeString
+  await saveSchedule(record, { time: timeString })
 }
 
 // 把下次运行时间提到当前，循环下一轮就会挑中它
 const runOnce = async (record: any) => {
   const nextRunAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
-  record.schedule.NextRunAt = nextRunAt
-  await saveSchedule(record, { NextRunAt: nextRunAt })
+  record.schedule.next_run_at = nextRunAt
+  await saveSchedule(record, { next_run_at: nextRunAt })
 }
 
 // 加载脚本选项
@@ -431,8 +443,8 @@ const updateQueueItemScript = async (record: any) => {
       queueId: props.queueId,
       queueItemId: record.id,
       data: {
-        Info: {
-          ScriptId: record.script,
+        info: {
+          script_id: record.script,
         },
       },
     })

@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig } from './QueueConfig';
+import type { QueueEntry_Output } from './QueueEntry_Output';
 export type QueueCreateOut = {
     /**
      * 状态码
@@ -17,12 +17,12 @@ export type QueueCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的队列ID
+     * 新队列 ID
      */
-    queueId: string;
+    queueId?: string;
     /**
-     * 队列配置数据
+     * 队列配置
      */
-    data: QueueConfig;
+    data?: QueueEntry_Output;
 };
 

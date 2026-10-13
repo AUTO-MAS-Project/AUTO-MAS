@@ -194,42 +194,8 @@
                 />
               </div>
             </a-col>
-            <a-col :xs="24" :md="8">
-              <div class="form-item-vertical">
-                <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.afterDoneDelay') }}</span>
-                  <a-tooltip :title="t('queue.afterDoneDelayTip')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </div>
-                <a-input-number
-                  v-model:value="currentAfterAccomplishDelay"
-                  :min="0"
-                  :max="1440"
-                  :precision="0"
-                  :disabled="currentAfterAccomplish === 'NoAction'"
-                  :addon-after="t('queue.afterDoneDelayUnit')"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleAfterAccomplishDelayBlur"
-                />
-              </div>
-            </a-col>
           </a-row>
         </div>
-        <a-divider />
-
-        <a-form layout="vertical">
-          <ExtraScriptSection
-            :key="activeQueueId"
-            v-model:form-data="extraScriptFormData"
-            :loading="
-              queueConfigLoading || extraScriptSaving || extraScriptConfigQueueId !== activeQueueId
-            "
-            scope="queue"
-            @save="handleExtraScriptSave"
-          />
-        </a-form>
         <a-divider />
 
         <!-- 定时项管理 -->
@@ -262,10 +228,9 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Service, type QueueConfig_Info } from '@/api'
+import { Service } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
-import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -291,7 +256,6 @@ const currentQueueData = ref<Record<string, any> | null>(null)
 
 // 当前队列的名称和状态
 const currentQueueName = ref<string>('')
-const currentQueueEnabled = ref<boolean>(true)
 // 新增：将启动时运行的状态从 boolen 类型修改为 枚举 类型
 const currentStartUpMode = ref<'Never' | 'Always' | 'DailyFirst'>('Never')
 // 定时运行的开关状态
@@ -308,18 +272,6 @@ const cycleRunning = computed(() =>
 )
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
-const currentAfterAccomplishDelay = ref<number>(0)
-const extraScriptFormData = ref({
-  Info: {
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-  },
-})
-const queueConfigLoading = ref(false)
-const extraScriptSaving = ref(false)
-const extraScriptConfigQueueId = ref('')
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
 
@@ -351,11 +303,11 @@ const fetchQueues = async () => {
       // 处理队列数据
       logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
 
-      if (response.index && response.index.length > 0) {
+      if (response.order && response.order.length > 0) {
         // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
-        queueList.value = response.index.map((item: any) => ({
+        queueList.value = response.order.map((item: any) => ({
           id: item.uid,
-          name: response.data[item.uid]?.Info?.Name || t('queue.newQueueName'),
+          name: response.data?.[item.uid]?.info?.name || t('queue.newQueueName'),
         }))
 
         // 如果有队列且没有选中的队列，默认选中第一个
@@ -394,11 +346,10 @@ const fetchQueues = async () => {
 const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) => {
   if (!queueId) return
 
-  queueConfigLoading.value = true
   try {
     const data = queuesData ?? (await Service.getQueuesApiQueueGetPost({})).data
     if (!isMounted || queueId !== activeQueueId.value) return
-    currentQueueData.value = data
+    currentQueueData.value = data ?? {}
 
     // 根据API响应数据更新队列信息
     if (data && data[queueId]) {
@@ -415,13 +366,12 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
       if (!isMounted || queueId !== activeQueueId.value) return
 
       // 更新开关状态 - 从API响应中获取
-      currentStartUpMode.value = queueData.Info?.StartUpMode ?? 'Never'
-      currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
-      currentCycleEnabled.value = queueData.Info?.CycleEnabled ?? false
+      const info = queueData.info ?? {}
+      currentStartUpMode.value = info.start_up_mode ?? 'Never'
+      currentTimeEnabled.value = info.time_enabled ?? false
+      currentCycleEnabled.value = info.schedule_mode === 'cycle'
       // 更新完成后操作状态 - 从API响应中获取
-      currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
-      currentAfterAccomplishDelay.value = queueData.Info?.AfterAccomplishDelay ?? 0
-      loadExtraScriptConfig(queueData.Info)
+      currentAfterAccomplish.value = info.after_accomplish ?? 'NoAction'
 
       // 定时项和队列项互不依赖，并行拉取
       await Promise.all([
@@ -439,8 +389,6 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载队列数据失败: ${errorMsg}`)
     if (isMounted) message.error(t('queue.toast.loadQueueFailed'))
-  } finally {
-    if (queueId === activeQueueId.value) queueConfigLoading.value = false
   }
 }
 
@@ -466,17 +414,21 @@ const refreshTimeSets = async () => {
     const timeSets: any[] = []
 
     // 处理定时项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
+    if (response.order && Array.isArray(response.order)) {
+      response.order.forEach((item: any) => {
         try {
           const timeSetId = item.uid
           if (!timeSetId || !response.data || !response.data[timeSetId]) return
 
           const timeSetData = response.data[timeSetId]
-          if (timeSetData?.Info) {
-            // 解析时间字符串 "HH:mm"
-            const originalTimeString = timeSetData.Info.Time || '00:00'
-            const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
+          if (timeSetData?.info) {
+            // 后端时间字段可能是 HH:mm，也可能是带日期和时区的 ISO 时间。
+            const originalTimeString = timeSetData.info.time || '00:00'
+            const rawTime = String(originalTimeString)
+            const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+            const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
+            const hours = Number(rawHours)
+            const minutes = Number(rawMinutes)
 
             // 创建标准化的时间字符串
             const validHours = Math.max(0, Math.min(23, hours))
@@ -486,8 +438,8 @@ const refreshTimeSets = async () => {
             timeSets.push({
               id: timeSetId,
               time: timeString,
-              enabled: Boolean(timeSetData.Info.Enabled),
-              days: timeSetData.Info.Days || [],
+              enabled: Boolean(timeSetData.info.enabled),
+              days: timeSetData.info.days || [],
             })
           }
         } catch (itemError) {
@@ -532,18 +484,26 @@ const refreshQueueItems = async () => {
     const queueItems: any[] = []
 
     // 处理队列项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
+    if (response.order && Array.isArray(response.order)) {
+      response.order.forEach((item: any) => {
         try {
           const queueItemId = item.uid
           if (!queueItemId || !response.data || !response.data[queueItemId]) return
 
           const queueItemData = response.data[queueItemId]
-          if (queueItemData?.Info) {
+          if (queueItemData?.info) {
             queueItems.push({
               id: queueItemId,
-              script: queueItemData.Info.ScriptId || '',
-              schedule: { ...(queueItemData.Schedule || {}) },
+              script: queueItemData.info.script_id || '',
+              schedule: {
+                enabled: queueItemData.schedule?.enabled ?? true,
+                mode: queueItemData.schedule?.mode ?? 'fixed_time',
+                days: [...(queueItemData.schedule?.days || [])],
+                time: queueItemData.schedule?.time || '00:00',
+                interval_minutes: queueItemData.schedule?.interval_minutes ?? 480,
+                interval_anchor: queueItemData.schedule?.interval_anchor ?? 'start',
+                next_run_at: queueItemData.schedule?.next_run_at ?? null,
+              },
             })
           }
         } catch (itemError) {
@@ -605,34 +565,6 @@ const handleConfigChange = async (key: string, value: any) => {
   await handleSaveChange(key, value)
 }
 
-const loadExtraScriptConfig = (info?: QueueConfig_Info) => {
-  extraScriptConfigQueueId.value = activeQueueId.value
-  extraScriptFormData.value = {
-    Info: {
-      IfScriptBeforeTask: info?.IfScriptBeforeTask ?? false,
-      ScriptBeforeTask: info?.ScriptBeforeTask ?? '',
-      IfScriptAfterTask: info?.IfScriptAfterTask ?? false,
-      ScriptAfterTask: info?.ScriptAfterTask ?? '',
-    },
-  }
-}
-
-const handleExtraScriptSave = async (key: string, value: boolean | string) => {
-  extraScriptSaving.value = true
-  try {
-    await handleSaveChange(key.replace(/^Info\./, ''), value)
-  } finally {
-    extraScriptSaving.value = false
-  }
-}
-
-// 延时输入框失焦时保存，清空输入得到的 null 按 0 处理
-const handleAfterAccomplishDelayBlur = async () => {
-  const delay = currentAfterAccomplishDelay.value ?? 0
-  currentAfterAccomplishDelay.value = delay
-  await handleConfigChange('AfterAccomplishDelay', delay)
-}
-
 // 添加队列
 const handleAddQueue = async () => {
   try {
@@ -654,7 +586,6 @@ const handleAddQueue = async () => {
 
       // 设置默认名称到输入框中
       currentQueueName.value = defaultName
-      currentQueueEnabled.value = true
 
       await loadQueueData(newQueue.id)
 
@@ -738,18 +669,18 @@ const refreshQueueConfig = async (queueId = activeQueueId.value) => {
       const queueData = response.data[activeQueueId.value]
 
       // 更新本地状态
-      if (queueData.Info) {
-        currentQueueName.value = queueData.Info.Name || ''
-        currentStartUpMode.value = queueData.Info.StartUpMode ?? 'Never'
-        currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
-        currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
-        currentAfterAccomplishDelay.value = queueData.Info.AfterAccomplishDelay ?? 0
-        loadExtraScriptConfig(queueData.Info)
+      if (queueData.info) {
+        const info = queueData.info
+        currentQueueName.value = info.name || ''
+        currentStartUpMode.value = info.start_up_mode ?? 'Never'
+        currentTimeEnabled.value = info.time_enabled ?? false
+        currentCycleEnabled.value = info.schedule_mode === 'cycle'
+        currentAfterAccomplish.value = info.after_accomplish ?? 'NoAction'
 
         // 更新队列列表中的名称
         const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
         if (currentQueue) {
-          currentQueue.name = queueData.Info.Name || currentQueue.name
+          currentQueue.name = info.name || currentQueue.name
         }
       }
     }
@@ -763,7 +694,16 @@ const refreshQueueConfig = async (queueId = activeQueueId.value) => {
 const applyLocalQueueChange = (queueId: string, key: string, value: any) => {
   const queueData = currentQueueData.value?.[queueId]
   if (queueData) {
-    queueData.Info = { ...(queueData.Info ?? {}), [key]: value }
+    const infoKeyMap: Record<string, string> = {
+      Name: 'name',
+      StartUpMode: 'start_up_mode',
+      TimeEnabled: 'time_enabled',
+      CycleEnabled: 'schedule_mode',
+      AfterAccomplish: 'after_accomplish',
+    }
+    const infoKey = infoKeyMap[key] ?? key
+    const infoValue = key === 'CycleEnabled' ? (value ? 'cycle' : 'timed') : value
+    queueData.info = { ...(queueData.info ?? {}), [infoKey]: infoValue }
   }
   if (key === 'Name') {
     const currentQueue = queueList.value.find(queue => queue.id === queueId)
@@ -778,8 +718,16 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
 
   try {
     // 构建只包含变更字段的数据
+    const infoKeyMap: Record<string, string> = {
+      Name: 'name',
+      StartUpMode: 'start_up_mode',
+      TimeEnabled: 'time_enabled',
+      CycleEnabled: 'schedule_mode',
+      AfterAccomplish: 'after_accomplish',
+    }
+    const backendValue = key === 'CycleEnabled' ? (value ? 'cycle' : 'timed') : value
     const queueData: Record<string, any> = {
-      Info: { [key]: value },
+      info: { [infoKeyMap[key] ?? key]: backendValue },
     }
 
     const response = await Service.updateQueueApiQueueUpdatePost({

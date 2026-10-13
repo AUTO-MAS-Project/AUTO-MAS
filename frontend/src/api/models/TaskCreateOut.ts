@@ -18,6 +18,6 @@ export type TaskCreateOut = {
     /**
      * 新创建的任务ID
      */
-    taskId: string;
+    taskId?: string;
 };
 

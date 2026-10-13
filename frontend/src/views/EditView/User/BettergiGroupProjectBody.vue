@@ -170,8 +170,8 @@
                     class="bgi-project-setting-row"
                   >
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
-                    <a-switch
-                      :checked="isTruthy(fieldValue(item.name))"
+                    <SettingToggleButton
+                      :model-value="isTruthy(fieldValue(item.name))"
                       @change="(v: boolean | string | number) => setField(item.name, Boolean(v))"
                     />
                   </div>
@@ -240,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'

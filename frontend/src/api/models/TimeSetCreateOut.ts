@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet } from './TimeSet';
+import type { TimeSetEntry_Output } from './TimeSetEntry_Output';
 export type TimeSetCreateOut = {
     /**
      * 状态码
@@ -17,12 +17,12 @@ export type TimeSetCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的时间设置ID
+     * 新定时项 ID
      */
-    timeSetId: string;
+    timeSetId?: string;
     /**
-     * 时间设置配置数据
+     * 定时项配置
      */
-    data: TimeSet;
+    data?: TimeSetEntry_Output;
 };
 

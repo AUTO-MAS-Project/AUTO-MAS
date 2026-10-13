@@ -198,10 +198,10 @@ def _task_running() -> bool:
     """
 
     try:
-        from app.core import TaskManager
+        from app.core.task_dispatcher import TaskDispatcher
 
         return any(
-            info.mode != "ScriptConfig" for info in TaskManager.task_info.values()
+            info.info.mode != "ScriptConfig" for _, info in TaskDispatcher.running_items()
         )
     except Exception as exc:
         _warn_once(f"查询任务状态失败，按有任务在跑处理: {exc}")
@@ -401,7 +401,7 @@ class _DesktopGuard:
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _tick(self, *, confirm: bool) -> None:
-        enabled = bool(Config.get("Display", "IfEnableVirtualDisplay"))
+        enabled = Config.setting.display.if_enable_virtual_display
         holding = self.device
 
         has_real = True
@@ -568,10 +568,10 @@ class _DesktopGuard:
             f"{reason}，当前只有系统占位的幻影屏: {await asyncio.to_thread(_describe)}"
         )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
+        mode = parse_mode(Config.setting.display.virtual_display_mode)
         # 挂屏跑在守卫自己的任务里，用 shield 隔开调用方的取消。
         #
-        # 任务开跑前的强制巡检是从 `TaskManager` 里 await 的，用户点「停止」会 cancel 掉
+        # 任务开跑前由 ScriptExpander 等待强制巡检，用户点「停止」会 cancel 掉
         # 那条任务；而 `asyncio.to_thread` 被取消**不会**打断已经跑起来的线程——
         # `__enter__` 照常把屏插上（光是 settle 就要 1.5 秒）。若让取消把 `_attach` 打断，
         # `self._display` 永远赋不上、记账也不写，桌面上就留下一块守卫不认、下次启动的
@@ -783,7 +783,7 @@ async def check_virtual_display_driver():
                 results=results,
             )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
+        mode = parse_mode(Config.setting.display.virtual_display_mode)
         display = VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)

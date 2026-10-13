@@ -3,9 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export type PlanDeleteIn = {
-    /**
-     * 计划ID
-     */
     planId: string;
 };
 

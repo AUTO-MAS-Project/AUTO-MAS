@@ -169,7 +169,6 @@ import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
@@ -189,7 +188,6 @@ const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
-const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
 
 const {
@@ -475,13 +473,13 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
+// 调度中心迁移完成后恢复托盘启动；当前保留入口避免旧调度逻辑阻断前端。
 const handleTrayStartTask = (taskId?: string, label?: string) => {
   if (!taskId) {
     logger.warn('托盘启动任务缺少任务 ID，忽略')
     return
   }
-  void startTaskById(taskId, label)
+  logger.info(`暂缓启动托盘任务: ${taskId} ${label || ''}`)
 }
 
 // 托盘动作请求统一入口：启动任务 / 退出 / 重启

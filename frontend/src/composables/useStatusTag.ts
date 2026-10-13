@@ -3,7 +3,7 @@ import { computed, type ComputedRef } from 'vue'
 /**
  * 状态标签接口定义
  */
-interface StatusTag {
+export interface StatusTag {
   text: string
   color: string
 }
@@ -76,10 +76,14 @@ interface StatusTag {
  * @returns StatusTag对象或null
  */
 export function parseStatusTag(
-  status: string | null | undefined,
+  status: string | StatusTag | null | undefined,
   defaultTag: StatusTag | null = null
 ): StatusTag | null {
   if (!status) return defaultTag
+
+  if (typeof status === 'object') {
+    return typeof status.text === 'string' && status.text ? status : defaultTag
+  }
 
   if (status === '-') {
     return defaultTag
@@ -106,7 +110,7 @@ export function parseStatusTag(
  * @returns StatusTag对象数组
  */
 export function parseStatusTagList(
-  statusList: string | string[] | null | undefined,
+  statusList: unknown,
   defaultTags: StatusTag[] = []
 ): StatusTag[] {
   if (!statusList) {
@@ -140,7 +144,13 @@ export function parseStatusTagList(
     // 如果已经是数组，处理每个元素
     if (Array.isArray(statusList)) {
       return statusList
-        .map(item => parseStatusTag(item, null))
+        .map(item => {
+          if (typeof item === 'string') return parseStatusTag(item, null)
+          if (item && typeof item.text === 'string' && typeof item.color === 'string') {
+            return { text: item.text, color: item.color }
+          }
+          return null
+        })
         .filter((tag): tag is StatusTag => tag !== null)
     }
 

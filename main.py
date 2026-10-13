@@ -25,6 +25,7 @@ import ctypes
 import logging
 import os
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -236,6 +237,7 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
+# ? init_config / ConfigBase ??????????????? .git/codex-backups?
 @logger.catch
 def main():
     development_environment = is_development_environment()
@@ -256,192 +258,148 @@ def main():
             "受监督模式下不自行提权，当前非管理员，依赖模拟器/窗口操作的功能可能受限"
         )
 
-    from app.core import Config
-    from app.services.telemetry import (
-        init_sentry,
-        is_telemetry_enabled,
-        resolve_sentry_dist,
-    )
-
-    # 开发环境不上报遥测数据
-    init_sentry(
-        release=Config.VERSION,
-        development=development_environment,
-        enabled=is_telemetry_enabled(Path.cwd() / "config" / "Config.json"),
-        dist=resolve_sentry_dist(current_dir),
-    )
-
     import asyncio
-    from contextlib import asynccontextmanager, suppress
-
     import uvicorn
     from fastapi import FastAPI
-    from fastapi.staticfiles import StaticFiles
+    from fastapi.middleware.cors import CORSMiddleware
+    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
-        import ssl
+        """在 lifespan 内完成路由注册与核心初始化，确保 server.startup()
+        能在极短时间内打印 "Uvicorn running"。
+        """
+        from fastapi.staticfiles import StaticFiles
+        from pathlib import Path as _Path
 
-        from app.core import Config, MainTimer, TaskManager
+        from app.core import Config
+        from app.core.plugin_manager import Plugin
+        from app.api import (
+            core_router,
+            info_router,
+            dispatch_router,
+            history_router,
+            tools_router,
+            setting_router,
+            update_router,
+            ocr_router,
+            plugin_router,
+            i18n_router,
+            openclaw_qq_router,
+            queue_router,
+            plan_router,
+            scripts_router,
+            games_router,
+            qr_login_router,
+        )
+        from app.plugin import uv as uv_tool
 
-        asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
+        background_task = None
+        _start_t = time.perf_counter()
 
-        await Config.init_config()
+        # ---- 路由注册（系统插件 API 须先于网关，避免 path 抢匹配）----
+        app.include_router(core_router)
+        app.include_router(info_router)
+        app.include_router(dispatch_router)
+        app.include_router(history_router)
+        app.include_router(tools_router)
+        app.include_router(setting_router)
+        app.include_router(update_router)
+        app.include_router(ocr_router)
+        app.include_router(queue_router)
+        app.include_router(plan_router)
+        app.include_router(scripts_router)
+        app.include_router(games_router)
+        # 新插件系统：注册表/目录/自有配置/list/网关均在 plugin_router（网关最后挂）
+        app.include_router(plugin_router)
+        app.include_router(i18n_router)
+        app.include_router(openclaw_qq_router)
+        if qr_login_router is not None:
+            app.include_router(qr_login_router)
 
-        background_task: asyncio.Task | None = None
+        app.mount(
+            "/api/res/materials",
+            StaticFiles(directory=str(_Path.cwd() / "res/images/materials")),
+            name="materials",
+        )
+        app.mount(
+            "/api/res/sounds",
+            StaticFiles(directory=str(_Path.cwd() / "res/sounds")),
+            name="sounds",
+        )
+
+        # ---- 核心初始化：引导配置 → 插件系统 → 领域配置 ----
+        await Config.init_bootstrap_configs()
+
+        if os.getenv("AUTO_MAS_DEV") == "1":
+            import shutil
+            plugins_dir = _Path.cwd() / "plugins"
+            for pycache in plugins_dir.rglob("__pycache__"):
+                if pycache.is_dir():
+                    shutil.rmtree(pycache, ignore_errors=True)
+            logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
+
+        try:
+            uv_tool.ensure()
+        except Exception as exc:
+            logger.error(
+                f"uv 不可用: {exc}；请使用 AUTO-MAS-Runtime，或安装系统 uv: "
+                "https://docs.astral.sh/uv/getting-started/installation/"
+            )
+            raise
+        await Plugin.initialize()
+        await Config.init_domain_configs()
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
-
-            lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
-            让前端等待就绪的耗时只包含核心配置初始化。
-            各步骤互不连带：主定时器失败时 background_status 为 failed 并写 background_error；
-            其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
-            """
-
-            # 各步骤各自容错：任一步抛异常只记日志，不连带跳过后面的步骤，
-            # 尤其不能跳过主定时器（队列定时按分钟精确匹配，没起来就整夜不触发）。
-            warnings: list[str] = []
-
-            async def run_step(
-                name: str, step: Callable[[], Awaitable[Any]]
-            ) -> str | None:
-                """执行一个初始化步骤，失败时返回「步骤名（异常）」，成功返回 None。"""
-
-                try:
-                    await step()
-                except asyncio.CancelledError:
-                    raise
-                except Exception as error:
-                    logger.exception(f"后台初始化步骤失败: {name}")
-                    # 完整堆栈已进日志；health 里只放截断后的摘要，正文有上限
-                    message = str(error)
-                    if len(message) > BACKGROUND_ERROR_MESSAGE_MAX:
-                        message = message[:BACKGROUND_ERROR_MESSAGE_MAX] + "…"
-                    return f"{name}（{type(error).__name__}: {message}）"
-                return None
-
-            async def run_optional_step(
-                name: str, step: Callable[[], Awaitable[Any]]
-            ) -> None:
-                failure = await run_step(name, step)
-                if failure is not None:
-                    warnings.append(failure)
-
-            async def mount_mcp() -> None:
-                from app.api.mcp import mount_mcp as mount_mcp_server
-
-                await mount_mcp_server(app)
-
-            async def init_arknight_win32() -> None:
-                import importlib
-
-                for adapter in ("app.MaaFW.ArknightWin32",):
-                    await asyncio.to_thread(importlib.import_module, adapter)
-
-                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
-
-                await ArknightWin32Toolkit.init()
-
-            async def start_desktop_guard() -> None:
-                from app.core.desktop_guard import DesktopGuard
-
-                await DesktopGuard.start()
-
-            async def start_openclaw_qq() -> None:
-                from app.services.openclaw_qq import openclaw_qq_manager
-
-                await openclaw_qq_manager.start()
-
-            async def start_koishi() -> None:
-                # 初始化 Koishi 系统客户端（如果已启用）
-                if not Config.get("Notify", "IfKoishiSupport"):
-                    return
-
-                from app.api.ws_command import execute_ws_command
-                from app.utils.websocket import ws_client_manager
-
-                # 出站客户端不再反射导入 API，命令执行器需显式注入
-                ws_client_manager.set_command_executor(execute_ws_command)
-                await ws_client_manager.init_system_client_koishi()
-
             app.state.background_status = "running"
             try:
-                await run_optional_step("MCP 服务挂载", mount_mcp)
-                await run_optional_step("活动关卡信息获取", Config.get_stage)
-                await run_optional_step("历史记录清理", Config.clean_old_history)
+                import importlib
 
-                async def _maafw_startup_maintenance() -> None:
-                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
-                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
-                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
-                    try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
-                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("MFW 启动期维护失败，下次启动再试")
-
-                app.state.maafw_startup_maintenance = asyncio.create_task(
-                    _maafw_startup_maintenance()
-                )
-                await run_optional_step("诊断文件清理", Config.clean_debug_diagnostics)
-                await run_optional_step(
-                    "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
-                )
-
-                if IS_WINDOWS:
-                    await run_optional_step(
-                        "明日方舟 PC 工具初始化", init_arknight_win32
+                # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
+                # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
+                # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
+                if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
+                    fastapi_mcp = await asyncio.to_thread(
+                        importlib.import_module, "fastapi_mcp"
                     )
 
-                # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
-                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
-                # 空转一次巡检远比定时任务整夜不触发轻。
-                await run_optional_step("桌面显示输出守卫", start_desktop_guard)
-                timer_error = await run_step("主业务定时器", MainTimer.start)
-
-                # QQ 维持官方网关连接以完成扫码绑定。
-                await run_optional_step("QQ 通知通道", start_openclaw_qq)
-                await run_optional_step("Koishi 客户端", start_koishi)
-
-                if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
-                    try:
-                        (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
-                    except Exception as e:
-                        logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
-                if (Path.cwd() / "AUTO_MAA.exe").exists():
-                    try:
-                        (Path.cwd() / "AUTO_MAA.exe").unlink()
-                    except Exception as e:
-                        logger.error(f"删除AUTO_MAA.exe失败: {e}")
-
-                # AUTO-MAS-Runtime 把 backgroundError 非空或 failed 判为启动失败并收掉进程，
-                # 所以可选步骤的失败只进 background_warnings（前端据此提示），状态仍是 ready；
-                # 只有主定时器没起来才是 failed。
-                if len(warnings) > BACKGROUND_WARNINGS_MAX:
-                    omitted = len(warnings) - (BACKGROUND_WARNINGS_MAX - 1)
-                    warnings[BACKGROUND_WARNINGS_MAX - 1 :] = [
-                        f"另有 {omitted} 项失败，详见日志"
-                    ]
-                app.state.background_warnings = warnings
-                if warnings:
-                    logger.warning(f"部分后台服务启动失败: {'；'.join(warnings)}")
-                if timer_error is not None:
-                    app.state.background_error = timer_error
-                    app.state.background_status = "failed"
-                    logger.error(f"后台初始化失败: {timer_error}")
+                    mcp = await asyncio.to_thread(
+                        fastapi_mcp.FastApiMCP,
+                        app,
+                        name="AUTO-MAS MCP",
+                        description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
+                        describe_full_response_schema=True,
+                        describe_all_responses=True,
+                        exclude_tags=["Delete"],
+                    )
+                    mcp.mount_http()
+                    logger.info("MCP 服务已挂载")
                 else:
-                    app.state.background_status = "ready"
-                    if not warnings:
-                        logger.info("后端后台初始化完成")
+                    logger.info("MCP 服务未启用，跳过路由挂载")
+
+                await Config.get_stage()
+                from app.core.history import history_store
+
+                history_store.clean()
+
+                from app.core.timer import MainTimer
+                from app.core.desktop_guard import DesktopGuard
+
+                # ArknightWin32 暂不接入新配置系统；保留源码供后续迁移参考。
+                await MainTimer.start()
+                await DesktopGuard.start()
+
+                if Config.setting.notify.if_koishi_support:
+                    from app.api.ws_command import execute_ws_command
+                    from app.utils.websocket import ws_client_manager
+
+                    ws_client_manager.set_command_executor(execute_ws_command)
+                    await ws_client_manager.init_system_client_koishi()
+
+                app.state.background_status = "ready"
+                logger.info(
+                    f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
+                )
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
@@ -452,30 +410,32 @@ def main():
 
         app.state.background_status = "starting"
         app.state.background_error = None
-        app.state.background_warnings = []
+        logger.info(
+            f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
+        )
         background_task = asyncio.create_task(initialize_background_services())
 
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
+            from contextlib import suppress
+
+            from app.core.plugin_manager import Plugin as PluginRuntime
+            from app.core.task_dispatcher import TaskDispatcher
+            from app.core.desktop_guard import DesktopGuard
+            from app.core.timer import MainTimer
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
             from app.services import Matomo, System, Updater
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
-            if background_task is not None and not background_task.done():
+            # （yield 前已必然创建 background_task，无需判空）
+            if not background_task.done():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
-            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
-            # 被打断的切换有 journal，下次启动收尾。
-            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
-            if maintenance is not None and not maintenance.done():
-                maintenance.cancel()
-                with suppress(asyncio.CancelledError):
-                    await maintenance
 
-            # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
+            # 停止 WS 分发与连接后台任务，避免插件 teardown 期间仍处理入站消息
             await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()
             await MainConnection.cancel_hook_tasks()
@@ -485,20 +445,18 @@ def main():
                 await System.cancel_power_task()
 
             await MainTimer.stop()
-            from app.services.openclaw_qq import openclaw_qq_manager
-
-            await openclaw_qq_manager.stop()
-            await TaskManager.stop_task("ALL")
-            # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
-            # 会再来收尾这块屏，所以这一步不能省。
-            from app.core.desktop_guard import DesktopGuard
-
+            await TaskDispatcher.stop("ALL")
             await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()
             await Updater.cancel_download(notify=False)
             await RuntimeTasks.shutdown()
+            await PluginRuntime.shutdown()
+            # 插件 on_teardown 可能已 commit；跳过防抖，全量落盘全部 file= 根
+            from app.config import config_manager
+
+            await config_manager.flush()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 
@@ -512,28 +470,7 @@ def main():
             await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
-    from fastapi.middleware.cors import CORSMiddleware
-
-    from app.api import (
-        core_router,
-        dispatch_router,
-        emulator2_router,
-        emulator_router,
-        history_router,
-        info_router,
-        ocr_router,
-        openclaw_qq_router,
-        plan_router,
-        qr_login_router,
-        queue_router,
-        scripts_router,
-        setting_router,
-        share_router,
-        skland_qr_router,
-        tools_router,
-        update_router,
-    )
-
+    # ---- 极简 app 创建：无路由、无 MCP、无静态挂载 ----
     app = FastAPI(
         title="AUTO-MAS",
         description="API for managing automation scripts, plans, and tasks",
@@ -543,52 +480,18 @@ def main():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 允许所有域名跨域访问
+        allow_origins=["*"],
         allow_credentials=True,
-        allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
-        allow_headers=["*"],  # 允许所有请求头
-    )
-
-    app.include_router(core_router)
-    app.include_router(info_router)
-    app.include_router(scripts_router)
-    app.include_router(plan_router)
-    app.include_router(emulator_router)
-    app.include_router(emulator2_router)
-    app.include_router(queue_router)
-    app.include_router(dispatch_router)
-    app.include_router(history_router)
-    app.include_router(tools_router)
-    app.include_router(setting_router)
-    app.include_router(share_router)
-    app.include_router(update_router)
-    app.include_router(ocr_router)
-    app.include_router(openclaw_qq_router)
-    app.include_router(qr_login_router)
-
-    # 可选补丁：森空岛扫码登录
-    if skland_qr_router is not None:
-        app.include_router(skland_qr_router)
-
-    app.mount(
-        "/api/res/materials",
-        StaticFiles(directory=str(resource_path("images", "materials"))),
-        name="materials",
-    )
-    app.mount(
-        "/api/res/sounds",
-        StaticFiles(directory=str(resource_path("sounds"))),
-        name="sounds",
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     async def run_server():
-        http_port = resolve_http_port(development_environment)
-        logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
             app,
             host="0.0.0.0",
-            port=http_port,
+            port=resolve_http_port(development_environment),
             log_level="info",
             log_config=None,
             ws_ping_interval=20.0,

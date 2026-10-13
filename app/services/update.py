@@ -36,7 +36,7 @@ import httpx
 from packaging import version
 
 from app.core.ws import Publisher, protocol
-from app.models.schema import (
+from app.core.ws.protocol import (
     UpdateDownloadSnapshot,
     WSUpdateCompletedData,
     WSUpdateFailedData,
@@ -281,7 +281,8 @@ class _UpdateHandler:
                 return False
 
             try:
-                await Config.set("Update", "Source", "CNB")
+                Config.setting.updates.source = "CNB"
+                await Config.setting.commit()
             except Exception as error:
                 await self._publish_failed(
                     f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
@@ -338,7 +339,7 @@ class _UpdateHandler:
         )
 
     def _get_download_source(self) -> str:
-        return Config.get("Update", "Source")
+        return Config.setting.updates.source
 
     def _get_download_url(
         self,
@@ -354,7 +355,7 @@ class _UpdateHandler:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
         if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
 
         if source == "MirrorChyan":
             mirror_url = (
@@ -364,14 +365,14 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
+                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
+            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
 
         if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
@@ -416,11 +417,12 @@ class _UpdateHandler:
         """
 
         # 使用 httpx 异步请求
+        updates = Config.setting.updates
         async with httpx.AsyncClient(
             proxy=Config.proxy, follow_redirects=True
         ) as client:
             response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={updates.mirror_chyan_cdk if updates.source == 'MirrorChyan' else ''}&channel={updates.channel}"
             )
 
         if response.status_code == 200:
@@ -640,7 +642,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data=WSUpdateFailedData(message="已有更新任务在进行中, 请勿重复操作"),
+                data={"message": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -658,7 +660,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data=WSUpdateFailedData(message="未检测到更新包, 请先下载更新"),
+                data={"message": "未检测到更新包, 请先下载更新"},
             )
             self.is_locked = False
             return None
@@ -675,7 +677,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data=WSUpdateFailedData(message=f"解压失败, {type(e).__name__}: {e}"),
+                data={"message": f"解压失败, {type(e).__name__}: {e}"},
             )
             self.is_locked = False
             return None

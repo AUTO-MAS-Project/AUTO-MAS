@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type EmulatorDeleteIn = {
     /**
-     * 模拟器 ID
+     * 游戏配置 uid
      */
     emulatorId: string;
 };

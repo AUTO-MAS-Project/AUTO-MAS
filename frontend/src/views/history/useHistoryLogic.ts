@@ -1,6 +1,7 @@
 import { type HistoryData, HistorySearchIn } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api/services/Service'
+import { requestApi } from '@/utils/apiResult'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -111,29 +112,29 @@ export function useHistoryLogic() {
 
     try {
       searchLoading.value = true
-      const response = await Service.searchHistoryApiHistorySearchPost({
-        mode: searchForm.mode,
-        start_date: searchForm.startDate,
-        end_date: searchForm.endDate,
-      })
+      const response = await requestApi(
+        () =>
+          Service.searchHistoryApiHistorySearchPost({
+            mode: searchForm.mode,
+            start_date: searchForm.startDate,
+            end_date: searchForm.endDate,
+          }),
+        t('history.toast.searchFailed'),
+      )
 
       if (!isMounted) return
 
-      if (response.code === 200) {
-        historyData.value = Object.entries(response.data)
-          .map(([date, users]) => ({ date, users }))
-          .sort((a, b) => b.date.localeCompare(a.date))
+      historyData.value = Object.entries(response.data ?? {})
+        .map(([date, users]) => ({ date, users }))
+        .sort((a, b) => b.date.localeCompare(a.date))
 
-        const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
-        const { playSound } = useAudioPlayer()
-        // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
-        void playSound('history_query')
+      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
+      const { playSound } = useAudioPlayer()
+      // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
+      void playSound('history_query')
 
-        if (!isMounted) return
-        message.success(t('history.toast.searchDone'))
-      } else {
-        message.error(response.message || t('history.toast.searchFailed'))
-      }
+      if (!isMounted) return
+      message.success(t('history.toast.searchDone'))
     } catch (error) {
       if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -193,16 +194,14 @@ export function useHistoryLogic() {
   const loadUserLog = async (jsonFile: string) => {
     try {
       detailLoading.value = true
-      const response = await Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile })
+      const response = await requestApi(
+        () => Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile }),
+        t('history.toast.fetchLogFailed'),
+      )
 
       if (!isMounted) return
 
-      if (response.code === 200) {
-        currentDetail.value = response.data
-      } else {
-        message.error(response.message || t('history.toast.fetchLogFailed'))
-        currentDetail.value = null
-      }
+      currentDetail.value = response.data ?? null
     } catch (error) {
       if (!isMounted) return
       const errorMsg = error instanceof Error ? error.message : String(error)

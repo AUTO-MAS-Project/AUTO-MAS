@@ -3,7 +3,7 @@
 // 不会先闪一下计划表 id。页面同一时刻只有一个，模块级状态足够，每次进页面重取。
 
 import { shallowRef } from 'vue'
-import { PlanComboxIn, Service, type ComboBoxItem } from '@/api'
+import { Service, type ComboBoxItem } from '@/api'
 
 export const PLAN_MODE_FIXED = 'Fixed'
 
@@ -19,7 +19,7 @@ export const loadMSSPlanComboxItems = async (): Promise<void> => {
   mssPlanComboxItems.value = null
   try {
     const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MSS,
+      consumer: 'mss',
     })
     if (response?.code !== 200 || !response.data) return
     mssPlanComboxItems.value = response.data

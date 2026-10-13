@@ -8,6 +8,8 @@ description: Define and enforce backend module boundaries for Python services. U
 ## Objective
 Keep backend code maintainable by enforcing clear ownership, dependency direction, and placement rules across modules.
 
+底层框架或模块职责迁移前，必须先按 [mas-skills 的底层迁移决策](../mas-skills/SKILL.md#底层迁移决策) 提交迁移/保留范围与具体实现思路，由用户判定后再改运行代码；下文的现有架构映射不能覆盖用户已确认的迁移目标。
+
 ## Layer Model
 1. `models/schema`: external API contract and typed data structure.
 2. `api`: request parsing, response shaping, transport concerns.

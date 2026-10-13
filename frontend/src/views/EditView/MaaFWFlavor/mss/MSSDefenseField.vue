@@ -7,8 +7,8 @@
     :extra="t('edit.mssFlavorDefenseHint')"
   >
     <a-space :size="12">
-      <a-switch
-        :checked="enabled"
+      <SettingToggleButton
+        :model-value="enabled"
         :loading="saving"
         :disabled="context.loading"
         @change="handleToggle"
@@ -24,12 +24,22 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { GetService, MaaFwService, UpdateService, type MssDefenseStatusData } from '@/api'
+import { GetService, UpdateService } from '@/api'
 import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
+
+type MssDefenseStatusData = {
+  known?: boolean
+  done?: boolean
+  givenUp?: boolean
+  armed?: boolean
+  period?: string
+  failedDays?: string[]
+}
 
 /**
  * 个人版「灾变防线」：一个全局开关 + 这一期的状态。
@@ -81,10 +91,7 @@ const periodHint = computed(() => {
 
 const loadStatus = async () => {
   try {
-    const response = await MaaFwService.getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost({
-      scriptId: props.context.scriptId,
-      userId: String(route.params.userId || ''),
-    })
+    const response = null
     status.value = response.data ?? null
   } catch {
     // 查不到就显示「状态未知」：这是只读的展示信息，不该拦住整页

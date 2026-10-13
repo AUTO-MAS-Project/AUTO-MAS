@@ -21,8 +21,8 @@
         <div class="task-list">
           <div class="task-row" :class="{ 'is-off': !runAllAccounts }">
             <span class="task-toggle">
-              <a-switch
-                :checked="runAllAccounts"
+              <SettingToggleButton
+                :model-value="runAllAccounts"
                 :disabled="loading"
                 :aria-label="t('edit.whimboxRunAllAccounts')"
                 @change="(v: unknown) => emit('save', 'OneDragon.IfRunAllAccounts', v === true)"
@@ -61,8 +61,8 @@
                 :class="{ 'is-off': !(tasks[step.key] ?? true) }"
               >
                 <span class="task-toggle">
-                  <a-switch
-                    :checked="tasks[step.key] ?? true"
+                  <SettingToggleButton
+                    :model-value="tasks[step.key] ?? true"
                     :disabled="loading"
                     :aria-label="step.display"
                     @change="(v: unknown) => toggleTask(step.key, v === true)"
@@ -109,9 +109,9 @@
                     </span>
                   </template>
 
-                  <a-switch
+                  <SettingToggleButton
                     v-if="opt.field_type === 'bool'"
-                    :checked="optionState[opt.key] ?? opt.default === true"
+                    :model-value="Boolean(optionState[opt.key] ?? opt.default === true)"
                     :disabled="loading"
                     @change="(v: unknown) => changeOption(opt.key, v === true)"
                   />
@@ -190,6 +190,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'

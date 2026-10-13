@@ -1,7 +1,6 @@
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskMode } from '@/api/models/TaskMode'
 import { PowerIn } from '@/api/models/PowerIn'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
-import type { QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -30,14 +29,8 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
 
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
-  { labelKey: 'scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
+  { labelKey: 'scheduler.mode.autoProxy', value: TaskMode.AUTO_PROXY },
 ]
-
-export const getTaskModeOptions = (supportedModes?: string[] | null) => {
-  if (!supportedModes) return TASK_MODE_OPTIONS
-  return TASK_MODE_OPTIONS.filter(option => supportedModes.includes(option.value))
-}
 
 // 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
 export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
@@ -56,15 +49,15 @@ export interface SchedulerTab {
   closable: boolean
   status: SchedulerStatus
   selectedTaskId: string | null
-  selectedMode: TaskCreateIn.mode | null
+  selectedMode: TaskMode | null
+  /** 队列运行的脚本起点；为空时从队列首项开始。 */
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
-  selectedUserIds?: string[]
+  /** 队列运行的用户起点；仅与 resumeFromScriptId 同时使用。 */
+  startUserId?: string | null
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
-  userOptionsLoaded?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts
@@ -86,14 +79,6 @@ export interface SchedulerTab {
   runningModeLabel?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
-  // 所选任务是否为循环队列，决定是否给出「循环运行」模式
-  isCycleQueue?: boolean
   // 循环运行的待运行条目预览
   cycleNextList?: WSTaskCyclePreviewData[]
-  // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts（缺键为默认全选）
-  queueUserScope?: QueueUserScope
-  // 该队列的托管及其可运行账号，供「本次运行范围」面板渲染
-  queueScopeGroups?: QueueScopeGroup[]
-  queueScopeLoading?: boolean
-  queueScopeFailed?: boolean
 }

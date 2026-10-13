@@ -2,10 +2,11 @@ import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { OpenAPI, type GlobalConfig } from '@/api'
+import { OpenAPI } from '@/api'
+import type { SettingsViewModel } from '@/types/settings'
 const logger = window.electronAPI.getLogger('音频播放器')
 
-type VoiceSettings = NonNullable<GlobalConfig['Voice']>
+type VoiceSettings = NonNullable<SettingsViewModel['Voice']>
 
 // 语音设置整个会话基本不变，缓存起来；设置页保存 Voice 后调用 invalidateVoiceSettingsCache 失效
 let cachedVoiceSettings: VoiceSettings | null | undefined

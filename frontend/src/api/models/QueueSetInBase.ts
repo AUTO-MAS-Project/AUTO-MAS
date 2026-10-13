@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type QueueSetInBase = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
 };

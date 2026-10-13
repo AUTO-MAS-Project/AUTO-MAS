@@ -8,10 +8,10 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.enableNotifications') }}</span>
-          <a-switch
-            v-model:checked="notify.Enabled"
+          <SettingToggleButton
+            :model-value="notify.Enabled === true"
             :disabled="loading"
-            @change="emitSave('Notify.Enabled', notify.Enabled)"
+            @change="value => { notify.Enabled = value; emitSave('Notify.Enabled', value) }"
           />
         </div>
       </div>
@@ -19,10 +19,10 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.statistics') }}</span>
-          <a-switch
-            v-model:checked="notify.IfSendStatistic"
+          <SettingToggleButton
+            :model-value="notify.IfSendStatistic === true"
             :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfSendStatistic', notify.IfSendStatistic)"
+            @change="value => { notify.IfSendStatistic = value; emitSave('Notify.IfSendStatistic', value) }"
           />
         </div>
       </div>
@@ -30,10 +30,10 @@
       <div v-if="showSixStar" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.notifyRecruit') }}</span>
-          <a-switch
-            v-model:checked="notify.IfSendSixStar"
+          <SettingToggleButton
+            :model-value="notify.IfSendSixStar === true"
             :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfSendSixStar', notify.IfSendSixStar)"
+            @change="value => { notify.IfSendSixStar = value; emitSave('Notify.IfSendSixStar', value) }"
           />
         </div>
       </div>
@@ -41,10 +41,10 @@
       <div v-if="showDropStatistics" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.notifyDropStatistics') }}</span>
-          <a-switch
-            v-model:checked="notify.IfSendDropStatistics"
+          <SettingToggleButton
+            :model-value="notify.IfSendDropStatistics === true"
             :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfSendDropStatistics', notify.IfSendDropStatistics)"
+            @change="value => { notify.IfSendDropStatistics = value; emitSave('Notify.IfSendDropStatistics', value) }"
           />
         </div>
       </div>
@@ -52,10 +52,10 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
-          <a-switch
-            v-model:checked="notify.IfSendMail"
+          <SettingToggleButton
+            :model-value="notify.IfSendMail === true"
             :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfSendMail', notify.IfSendMail)"
+            @change="value => { notify.IfSendMail = value; emitSave('Notify.IfSendMail', value) }"
           />
         </div>
         <div v-if="notify.IfSendMail" class="notify-channel-config">
@@ -77,10 +77,10 @@
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.serverchan') }}</span>
-          <a-switch
-            v-model:checked="notify.IfServerChan"
+          <SettingToggleButton
+            :model-value="notify.IfServerChan === true"
             :disabled="loading || !notify.Enabled"
-            @change="emitSave('Notify.IfServerChan', notify.IfServerChan)"
+            @change="value => { notify.IfServerChan = value; emitSave('Notify.IfServerChan', value) }"
           />
         </div>
         <div v-if="notify.IfServerChan" class="notify-channel-config">
@@ -111,6 +111,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
 type UserNotifyConfigData = {
   Enabled?: boolean | null

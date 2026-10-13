@@ -242,13 +242,23 @@ class OpenClawQQManager:
         self._gateway_ready = asyncio.Event()
         self._gateway_online = False
         self._gateway_seen_ready = False
+        self._on_enabled_change_callback: Callable[..., Any] | None = None
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
 
         if self._hooks_bound:
             return
-        Config.bind("Notify", "IfOpenClawQQ", self._on_enabled_changed)
+        async def on_change(*args: object) -> None:
+            await self._on_enabled_changed(*args)
+
+        self._on_enabled_change_callback = on_change
+        Config.setting.connect(
+            on_change,
+            phase="runtime",
+            group="notify",
+            field="if_openclaw_qq",
+        )
         self._hooks_bound = True
 
     async def start(self) -> None:
@@ -270,25 +280,46 @@ class OpenClawQQManager:
             await self._stop_gateway()
             self._invalidate_access_token()
 
-    async def _on_enabled_changed(self, enabled: Any) -> None:
+    async def _on_enabled_changed(self, *args: object) -> None:
+        event = args[-1] if args else None
+        enabled = getattr(event, "value", event)
         if not bool(enabled):
             self._invalidate_access_token()
 
     def _enabled(self) -> bool:
         try:
-            return bool(Config.get("Notify", "IfOpenClawQQ"))
+            return bool(Config.setting.notify.if_openclaw_qq)
         except (AttributeError, RuntimeError):
             return False
 
     def _config_value(self, name: str, default: Any = "") -> Any:
         """读取内部配置；平台不支持密文时按未保存处理。"""
 
+        fields = {
+            "OpenClawQQAppId": "openclaw_qq_app_id",
+            "OpenClawQQClientSecret": "openclaw_qq_client_secret",
+            "OpenClawQQTargetOpenId": "openclaw_qq_target_open_id",
+        }
         try:
-            return Config.get("Notify", name)
+            return getattr(Config.setting.notify, fields[name])
         except Exception as exc:
             if platform_secret.is_secret_storage_error(exc):
                 return default
             raise
+
+    async def _update_notify(self, values: dict[str, Any]) -> None:
+        """更新通知设置并通过新配置节点提交。"""
+
+        field_names = {
+            "IfOpenClawQQ": "if_openclaw_qq",
+            "OpenClawQQAppId": "openclaw_qq_app_id",
+            "OpenClawQQClientSecret": "openclaw_qq_client_secret",
+            "OpenClawQQTargetOpenId": "openclaw_qq_target_open_id",
+        }
+        notify = Config.setting.notify
+        for name, value in values.items():
+            setattr(notify, field_names[name], value)
+        await Config.setting.commit()
 
     def _can_persist_secrets(self) -> bool:
         """确认是否可以使用配置层的 Windows DPAPI 密文存储。"""
@@ -584,7 +615,7 @@ class OpenClawQQManager:
             if self._can_persist_secrets():
                 values["OpenClawQQClientSecret"] = ""
             async with self._config_lock:
-                await Config.update({"Notify": values})
+                await self._update_notify(values)
 
     async def _start_gateway(self, app_id: str, client_secret: str) -> None:
         """使用当前凭据启动唯一的 QQ 网关连接任务。"""
@@ -980,12 +1011,10 @@ class OpenClawQQManager:
         async with self._config_lock:
             if self._can_persist_secrets():
                 try:
-                    await Config.update(
+                    await self._update_notify(
                         {
-                            "Notify": {
-                                **values,
-                                "OpenClawQQClientSecret": normalized.client_secret,
-                            }
+                            **values,
+                            "OpenClawQQClientSecret": normalized.client_secret,
                         }
                     )
                 except Exception as exc:
@@ -993,7 +1022,7 @@ class OpenClawQQManager:
                         raise
                     self._secret_storage_available = False
             if not self._can_persist_secrets():
-                await Config.update({"Notify": values})
+                await self._update_notify(values)
                 logger.warning(
                     "当前平台不支持 Windows DPAPI，QQ 凭据仅保存在本次运行内；"
                     "应用重启后需要重新扫码"

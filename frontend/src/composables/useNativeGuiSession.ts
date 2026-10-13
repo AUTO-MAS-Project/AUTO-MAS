@@ -2,8 +2,9 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { Service, TaskMode } from '@/api'
+import { requestApi } from '@/utils/apiResult'
+import { useManagedScriptsApi } from '@/composables/useManagedScriptsApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
@@ -41,7 +42,8 @@ export function useNativeGuiSession(options: {
   const { subscribe, unsubscribe } = useWebSocket()
   const keys = options.keys
 
-  const logger = window.electronAPI.getLogger(options.loggerName)
+  const logger = window.electronAPI?.getLogger(options.loggerName)
+  const scriptsApi = useManagedScriptsApi()
 
   const configLoading = ref(false)
   const subscriptionIds = ref<string[]>([])
@@ -98,14 +100,11 @@ export function useNativeGuiSession(options: {
     stopping.value = true
     stoppingPromise = Promise.resolve().then(async () => {
       try {
-        const response = await Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId })
-        if (response.code !== 200) {
-          throw new Error(response.message || t(keys.stopFailed))
-        }
+        await requestApi(() => Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId }), t(keys.stopFailed))
         clearSession(keepSubscriptions)
         return true
       } catch (e) {
-        logger.error(e instanceof Error ? e.message : String(e))
+        logger?.error(e instanceof Error ? e.message : String(e))
         // 任一等待者要求保留失败会话，就保留现场供重试，不能由另一调用者清空。
         if (!keepFailedSession) clearSession()
         return false
@@ -117,15 +116,24 @@ export function useNativeGuiSession(options: {
     return stoppingPromise
   }
 
-  const startSession = async (startTaskId: string, viewOnly = false): Promise<boolean> => {
+  const startSession = async (target: string | { scriptId: string; userId?: string }, viewOnly = false): Promise<boolean> => {
+    if (configLoading.value || taskId.value) return false
     try {
       configLoading.value = true
       discardedReason = null
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: startTaskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      if (viewOnly) throw new Error(t('scripts.viewSessionUnavailable'))
+      let selection = typeof target === 'string' ? { scriptId: target, userId: undefined as string | undefined } : target
+      // 尚保留源码的旧编辑器只传单个 uid；通过真实集合确认其所属脚本。
+      if (typeof target === 'string') {
+        const scripts = await scriptsApi.getScripts()
+        for (const [scriptId, script] of Object.entries(scripts.data ?? {})) {
+          if (script.users?.data?.[target]) { selection = { scriptId, userId: target }; break }
+        }
+      }
+      const response = await requestApi(() => Service.addTaskApiDispatchStartPost({
+        ...selection,
+        mode: TaskMode.SCRIPT_CONFIG,
+      }), t(keys.startFailed))
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t(keys.startFailed))
       }
@@ -160,7 +168,7 @@ export function useNativeGuiSession(options: {
       configTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
       return true
     } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
+      logger?.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t(keys.startFailed))
       clearSession()
       return false

@@ -5,6 +5,7 @@ import { QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useLogHighlight, type LogHighlightColors } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
 import { message } from 'ant-design-vue'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
 const { t } = useI18n()
 
@@ -197,31 +198,23 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
           <div class="form-label-wrapper">
             <span class="form-label">{{ t('comp.boldText') }}</span>
           </div>
-          <div class="checkbox-row">
-            <a-checkbox
-              :checked="styles.timestampBold"
-              @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
-            >
-              {{ t('comp.boldTimestamps') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.levelBold"
-              @change="(e: any) => setStyles({ levelBold: e.target.checked })"
-            >
-              {{ t('comp.boldLogLevels') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.keywordBold"
-              @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
-            >
-              {{ t('comp.boldKeywords') }}
-            </a-checkbox>
-            <a-checkbox
-              :checked="styles.urlUnderline"
-              @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
-            >
-              {{ t('comp.urlUnderline') }}
-            </a-checkbox>
+          <div class="form-grid-24">
+            <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
+              <span class="form-label">{{ t('comp.boldTimestamps') }}</span>
+              <SettingToggleButton :model-value="styles.timestampBold" @change="setStyles({ timestampBold: $event })" />
+            </div>
+            <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
+              <span class="form-label">{{ t('comp.boldLogLevels') }}</span>
+              <SettingToggleButton :model-value="styles.levelBold" @change="setStyles({ levelBold: $event })" />
+            </div>
+            <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
+              <span class="form-label">{{ t('comp.boldKeywords') }}</span>
+              <SettingToggleButton :model-value="styles.keywordBold" @change="setStyles({ keywordBold: $event })" />
+            </div>
+            <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
+              <span class="form-label">{{ t('comp.urlUnderline') }}</span>
+              <SettingToggleButton :model-value="styles.urlUnderline" @change="setStyles({ urlUnderline: $event })" />
+            </div>
           </div>
         </div>
       </a-col>
@@ -523,17 +516,8 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
   color: var(--ant-color-text-secondary);
 }
 
-.checkbox-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  min-height: 40px;
-  gap: 8px 24px;
-}
-
-.checkbox-row :deep(.ant-checkbox-wrapper) {
-  font-size: 14px;
-  margin-inline-start: 0;
+.form-grid-24 :deep(.setting-toggle-button) {
+  width: 100%;
 }
 
 /* 原有颜色配置样式 */

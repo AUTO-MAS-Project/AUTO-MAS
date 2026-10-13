@@ -161,12 +161,10 @@
               class="option-control"
               @change="handleInputNumberChange(option.name, inputItem, $event)"
             />
-            <a-switch
+            <SettingToggleButton
               v-else-if="isBooleanInput(inputItem)"
-              :checked="getBooleanInputValue(option, inputItem.name)"
+              :model-value="getBooleanInputValue(option, inputItem.name)"
               :disabled="props.disabled"
-              :checked-children="t('edit.yes')"
-              :un-checked-children="t('edit.no')"
               @change="handleInputBooleanChange(option.name, inputItem, $event)"
             />
             <a-input
@@ -235,6 +233,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'

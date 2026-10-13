@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
@@ -155,7 +156,7 @@ const logTypeOptions = [
           </a-radio-button>
         </a-radio-group>
 
-        <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
+        <SettingToggleButton :model-value="local.enabled !== false" @change="onEnabledChange" />
 
         <a-tooltip :title="t('edit.debug')">
           <a-button size="small" class="rule-op-btn" @click="emit('debug')">
@@ -215,9 +216,9 @@ const logTypeOptions = [
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.headInclude" @change="commit">{{
+                <div class="boolean-field"><span>{{
                   t('edit.include')
-                }}</a-checkbox>
+                }}</span><SettingToggleButton v-model="local.headInclude" @change="commit" /></div>
               </div>
             </a-form-item>
           </a-col>
@@ -238,9 +239,9 @@ const logTypeOptions = [
                   size="middle"
                   @blur="commit"
                 />
-                <a-checkbox v-model:checked="local.tailInclude" @change="commit">{{
+                <div class="boolean-field"><span>{{
                   t('edit.include')
-                }}</a-checkbox>
+                }}</span><SettingToggleButton v-model="local.tailInclude" @change="commit" /></div>
               </div>
             </a-form-item>
           </a-col>

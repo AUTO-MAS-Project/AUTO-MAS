@@ -11,8 +11,8 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch
-            v-model:checked="formData.Task.IfSeizeDeliveryJobs"
+          <SettingToggleButton
+            v-model="formData.Task.IfSeizeDeliveryJobs"
             :disabled="loading"
             @change="handleEnabledChange"
           />
@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {

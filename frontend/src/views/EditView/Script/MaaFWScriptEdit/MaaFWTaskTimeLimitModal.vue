@@ -9,7 +9,7 @@
     <div class="task-limit-modal">
       <div class="task-limit-row loop-guard-row">
         <span class="task-limit-label">{{ t('edit.loopGuard') }}</span>
-        <a-switch v-model:checked="loopGuardDraft" />
+        <SettingToggleButton v-model="loopGuardDraft" />
       </div>
       <div class="task-limit-modal-sub">{{ t('edit.taskTimeLimitModalSub') }}</div>
       <!-- 列表定高、内部滚动：任务多的项目也不会把弹窗撑出屏幕 -->
@@ -61,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {

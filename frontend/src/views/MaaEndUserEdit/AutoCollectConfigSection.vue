@@ -11,7 +11,7 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch :checked="enabled" :disabled="loading" @change="handleEnabledChange" />
+          <SettingToggleButton :model-value="enabled" :disabled="loading" @change="handleEnabledChange" />
         </a-form-item>
       </a-col>
       <a-col v-if="enabled" :span="8">
@@ -101,6 +101,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'

@@ -18,10 +18,9 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch
-            v-model:checked="formData.Info.IfScriptBeforeTask"
+          <SettingToggleButton
+            v-model="formData.Info.IfScriptBeforeTask"
             :disabled="loading"
-            size="default"
             @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)"
           />
         </a-col>
@@ -63,10 +62,9 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch
-            v-model:checked="formData.Info.IfScriptAfterTask"
+          <SettingToggleButton
+            v-model="formData.Info.IfScriptAfterTask"
             :disabled="loading"
-            size="default"
             @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)"
           />
         </a-col>
@@ -99,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'

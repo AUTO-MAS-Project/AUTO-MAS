@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -20,87 +20,74 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""全局设置 API：请求/响应字段基于 ``Setting`` / ``Webhook``，直接操作 ``Config.setting``。"""
 
-import asyncio
-from datetime import datetime
+from __future__ import annotations
+
+from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Body
-from fastapi.responses import FileResponse, JSONResponse
-from starlette.background import BackgroundTask
+from pydantic import BaseModel, Field
 
-from app.core import Config, notify_channels
-from app.core.notify import send_test_notification
-from app.models.config import Webhook as WebhookConfig
-from app.models.schema import (
-    GlobalConfig,
-    NotifyChannelFieldOut,
-    NotifyChannelOptionOut,
-    NotifyChannelOut,
-    NotifyChannelsOut,
-    OutBase,
-    PatternDebugIn,
-    PatternDebugOut,
-    PatternDebugResultItem,
-    SettingGetOut,
-    SettingUpdateIn,
-    VirtualDisplayCheckOut,
-    VirtualDisplayCheckResultItem,
-    VirtualDisplayDetachOut,
-    Webhook,
-    WebhookCreateOut,
-    WebhookDeleteIn,
-    WebhookGetIn,
-    WebhookGetOut,
-    WebhookIndexItem,
-    WebhookTestIn,
-    WebhookUpdateIn,
-)
-from app.services import Notify
-from app.services.data_backup import create_data_backup
-from app.utils import debug_pattern, get_logger
+from app.config import CollectionOrderItem
+from app.config.errors import ConfigAggregateError
+from app.core import Config
+from app.models.config import Setting, Webhook
+from app.api import OutBase
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
-logger = get_logger("全局设置")
-backup_lock = asyncio.Lock()
 
 
-@router.get(
-    "/backup",
-    tags=["Get"],
-    summary="导出数据备份",
-    response_model=None,
-    status_code=200,
-)
-async def backup_data() -> FileResponse | JSONResponse:
-    """导出数据、配置与历史记录。"""
+# ==================== 字段（基于 ConfigEntry） ====================
 
-    if backup_lock.locked():
-        return JSONResponse(
-            status_code=409,
-            content={"code": 409, "status": "error", "message": "数据备份正在生成"},
-        )
 
-    async with backup_lock:
-        try:
-            backup_path = await asyncio.to_thread(create_data_backup)
-        except Exception as error:
-            logger.exception(f"生成数据备份失败: {error}")
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "code": 500,
-                    "status": "error",
-                    "message": "生成数据备份失败",
-                },
-            )
+class SettingGetOut(OutBase):
+    data: Setting = Field(default_factory=Setting, description="全局设置")
 
-    filename = f"AUTO-MAS-backup-{datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
-    return FileResponse(
-        backup_path,
-        media_type="application/zip",
-        filename=filename,
-        background=BackgroundTask(backup_path.unlink, missing_ok=True),
+
+class SettingUpdateIn(BaseModel):
+    data: Setting = Field(..., description="全局设置补丁（文档形状）")
+
+
+class WebhookGetIn(BaseModel):
+    webhookId: Optional[str] = Field(
+        default=None, description="Webhook ID；缺省返回全部"
     )
+
+
+class WebhookGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(
+        default_factory=list, description="Webhook 顺序"
+    )
+    data: dict[str, Webhook] = Field(
+        default_factory=dict, description="Webhook 数据，key 为 uid"
+    )
+
+
+class WebhookCreateOut(OutBase):
+    webhookId: str = Field(default="", description="新 Webhook ID")
+    data: Webhook = Field(default_factory=Webhook, description="Webhook 配置")
+
+
+class WebhookUpdateIn(BaseModel):
+    webhookId: str = Field(..., description="Webhook ID")
+    data: Webhook = Field(..., description="Webhook 补丁（文档形状）")
+
+
+class WebhookDeleteIn(BaseModel):
+    webhookId: str = Field(..., description="Webhook ID")
+
+
+class WebhookReorderIn(BaseModel):
+    indexList: list[str] = Field(..., description="按新顺序排列的 Webhook UID 列表")
+
+
+class WebhookTestIn(BaseModel):
+    data: Webhook = Field(..., description="待测试的 Webhook 配置")
+
+
+# ==================== 全局设置 ====================
 
 
 @router.post(
@@ -110,20 +97,17 @@ async def backup_data() -> FileResponse | JSONResponse:
     response_model=SettingGetOut,
     status_code=200,
 )
-async def get_scripts() -> SettingGetOut:
-    """查询配置"""
-
+async def get_setting() -> SettingGetOut:
+    """查询全局设置。"""
     try:
-        data = await Config.get_setting()
+        return SettingGetOut(data=Config.setting)
     except Exception as e:
-        logger.opt(exception=True).warning(f"get_scripts失败: {type(e).__name__}: {e}")
         return SettingGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data=GlobalConfig(**{}),
+            data=Setting(),
         )
-    return SettingGetOut(data=GlobalConfig(**data))
 
 
 @router.post(
@@ -133,17 +117,13 @@ async def get_scripts() -> SettingGetOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
-    """更新配置"""
-
+async def update_setting(body: SettingUpdateIn = Body(...)) -> OutBase:
+    """更新全局设置（仅 Group 字段；``custom_webhooks`` 走独立端点）。"""
     try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_setting(data)
-
+        await Config.setting.update(body.data)
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
-        logger.opt(exception=True).warning(
-            f"update_script失败: {type(e).__name__}: {e}"
-        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -158,126 +138,17 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def test_notify() -> OutBase:
-    """测试通知"""
-
+    """测试通知：置位 ``Setting.notify.test`` 触发器。"""
     try:
-        result = await send_test_notification()
+        Config.setting.notify.test = True
     except Exception as e:
-        logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    if result.failed:
-        return OutBase(
-            code=500,
-            status="error",
-            message=f"部分通知发送失败: {'、'.join(result.failed)}",
-        )
-    if result.attempted == 0:
-        return OutBase(
-            code=400,
-            status="error",
-            message="没有已启用的通知渠道，请先完成绑定并开启通知",
-        )
-    return OutBase(message=f"测试通知已提交至：{'、'.join(result.succeeded)}")
+    return OutBase()
 
 
-@router.get(
-    "/notify/channels",
-    tags=["Get"],
-    summary="查询通知渠道描述",
-    response_model=NotifyChannelsOut,
-    status_code=200,
-)
-async def get_notify_channels() -> NotifyChannelsOut:
-    """返回通知渠道描述表，仅展示元数据，不含任何配置值。"""
-
-    try:
-        channels = [
-            NotifyChannelOut(
-                key=channel.key,
-                nameKey=channel.name_key,
-                descKey=channel.desc_key,
-                icon=channel.icon,
-                group=channel.group,
-                order=channel.order,
-                docUrl=channel.doc_url,
-                scopes=sorted(channel.scopes),
-                kind=channel.kind,
-                customBlock=channel.custom_block,
-                enableField=list(channel.enable_field)
-                if channel.enable_field
-                else None,
-                summaryKey=channel.summary_key,
-                summaryFields=list(channel.summary_fields),
-                fields={
-                    scope: [
-                        NotifyChannelFieldOut(
-                            group=item.group,
-                            name=item.name,
-                            labelKey=item.label_key,
-                            control=item.control,
-                            options=[
-                                NotifyChannelOptionOut(value=value, labelKey=label_key)
-                                for value, label_key in item.options
-                            ],
-                            placeholderKey=item.placeholder_key,
-                            tipKey=item.tip_key,
-                        )
-                        for item in items
-                    ]
-                    for scope, items in channel.fields.items()
-                },
-            )
-            for channel in notify_channels.get_notify_channels()
-        ]
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_notify_channels失败: {type(e).__name__}: {e}"
-        )
-        return NotifyChannelsOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            channels=[],
-        )
-    return NotifyChannelsOut(channels=channels)
-
-
-@router.post(
-    "/debug_pattern",
-    tags=["Action"],
-    summary="调试日志模式",
-    response_model=PatternDebugOut,
-    status_code=200,
-)
-async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
-    """调试单条日志模式配置，返回逐行/逐窗口匹配结果
-
-    前端调试弹窗调用此接口，由后端统一执行模式匹配，
-    确保调试结果与实际推送日志采集逻辑完全一致。
-    """
-    try:
-        error, is_multiline, results = debug_pattern(
-            req.pattern.model_dump(exclude_none=True), req.logText
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"debug_pattern_api失败: {type(e).__name__}: {e}"
-        )
-        return PatternDebugOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            configError=f"{type(e).__name__}: {str(e)}",
-            isMultiline=False,
-            results=[],
-        )
-    return PatternDebugOut(
-        configError=error,
-        isMultiline=is_multiline,
-        results=[PatternDebugResultItem(**r) for r in results],
-    )
+# ==================== 自定义 Webhook ====================
 
 
 @router.post(
@@ -287,21 +158,25 @@ async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
     response_model=WebhookGetOut,
     status_code=200,
 )
-async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
+async def get_webhook(body: WebhookGetIn = Body(...)) -> WebhookGetOut:
     try:
-        index, data = await Config.get_webhook(None, None, webhook.webhookId)
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
+        col = Config.setting.custom_webhooks
+        uids = [UUID(body.webhookId)] if body.webhookId else list(col.keys())
+        return WebhookGetOut(
+            order=[
+                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
+                for uid in uids
+            ],
+            data={str(uid): col[uid] for uid in uids},
+        )
     except Exception as e:
-        logger.opt(exception=True).warning(f"get_webhook失败: {type(e).__name__}: {e}")
         return WebhookGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            index=[],
+            order=[],
             data={},
         )
-    return WebhookGetOut(index=index, data=data)
 
 
 @router.post(
@@ -313,18 +188,18 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 )
 async def add_webhook() -> WebhookCreateOut:
     try:
-        uid, config = await Config.add_webhook(None, None)
-        data = Webhook(**(await config.toDict()))
+        col = Config.setting.custom_webhooks
+        uid = col.add(Webhook)
+        await col.commit()
+        return WebhookCreateOut(webhookId=str(uid), data=col[uid])
     except Exception as e:
-        logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             webhookId="",
-            data=Webhook(**{}),
+            data=Webhook(),
         )
-    return WebhookCreateOut(webhookId=str(uid), data=data)
 
 
 @router.post(
@@ -334,15 +209,12 @@ async def add_webhook() -> WebhookCreateOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
+async def update_webhook(body: WebhookUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_webhook(
-            None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
-        )
+        await Config.setting.custom_webhooks[UUID(body.webhookId)].update(body.data)
+    except ConfigAggregateError as e:
+        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
-        logger.opt(exception=True).warning(
-            f"update_webhook失败: {type(e).__name__}: {e}"
-        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -356,13 +228,31 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
+async def delete_webhook(body: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_webhook(None, None, webhook.webhookId)
+        col = Config.setting.custom_webhooks
+        col.remove(body.webhookId)
+        await col.commit()
     except Exception as e:
-        logger.opt(exception=True).warning(
-            f"delete_webhook失败: {type(e).__name__}: {e}"
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
+    return OutBase()
+
+
+@router.post(
+    "/webhook/order",
+    tags=["Update"],
+    summary="重新排序webhook项",
+    response_model=OutBase,
+    status_code=200,
+)
+async def reorder_webhook(body: WebhookReorderIn = Body(...)) -> OutBase:
+    try:
+        col = Config.setting.custom_webhooks
+        col.set_order(list(map(UUID, body.indexList)))
+        await col.commit()
+    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -376,117 +266,12 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
-    """测试自定义Webhook"""
-
+async def test_webhook(body: WebhookTestIn = Body(...)) -> OutBase:
+    """测试自定义 Webhook：激活 Body 冷态并置位 ``info.test`` 触发器。"""
     try:
-        webhook_config = WebhookConfig()
-        await webhook_config.load(webhook.data.model_dump())
-        await Notify.WebhookPush(
-            "AUTO-MAS Webhook测试",
-            "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
-            webhook_config,
-        )
+        webhook = body.data
+        await webhook.activate()
+        webhook.info.test = True
     except Exception as e:
-        logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
-
-
-@router.post(
-    "/virtual-display/check",
-    tags=["Get"],
-    summary="检测虚拟显示驱动",
-    response_model=VirtualDisplayCheckOut,
-    status_code=200,
-)
-async def check_virtual_display() -> VirtualDisplayCheckOut:
-    """三段式检测虚拟显示驱动。
-
-    前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
-    会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
-    拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
-    """
-
-    from app.core.desktop_guard import check_virtual_display_driver
-
-    try:
-        return await check_virtual_display_driver()
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"check_virtual_display失败: {type(e).__name__}: {e}"
-        )
-        return VirtualDisplayCheckOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            results=[
-                VirtualDisplayCheckResultItem(
-                    stage="installed", passed=False, message="检测过程异常"
-                )
-            ],
-        )
-
-
-@router.post(
-    "/virtual-display/detach",
-    tags=["Action"],
-    summary="立即拆除虚拟显示器",
-    response_model=VirtualDisplayDetachOut,
-    status_code=200,
-)
-async def detach_virtual_display() -> VirtualDisplayDetachOut:
-    """用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
-
-    任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
-    的话下一轮会重新挂上——要彻底停用得关开关。
-    """
-
-    from app.core.desktop_guard import DesktopGuard
-
-    try:
-        detached = await DesktopGuard.detach_now("用户手动拆除")
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"detach_virtual_display失败: {type(e).__name__}: {e}"
-        )
-        return VirtualDisplayDetachOut(
-            code=500, status="error", message=f"拆除失败: {str(e)}"
-        )
-    if not detached:
-        return VirtualDisplayDetachOut(message="当前没有挂载虚拟显示器")
-    return VirtualDisplayDetachOut(detached=True, message="已拆除虚拟显示器")
-
-
-@router.post(
-    "/virtual-display/status",
-    tags=["Get"],
-    summary="查询虚拟显示驱动状态",
-    response_model=VirtualDisplayCheckOut,
-    status_code=200,
-)
-async def virtual_display_status() -> VirtualDisplayCheckOut:
-    """只查驱动装没装、能不能调，不改变桌面拓扑。
-
-    设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
-    而存下来的状态只会变陈旧。
-    """
-
-    from app.core.desktop_guard import probe_virtual_display_driver
-
-    try:
-        return await probe_virtual_display_driver()
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"virtual_display_status失败: {type(e).__name__}: {e}"
-        )
-        return VirtualDisplayCheckOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            results=[
-                VirtualDisplayCheckResultItem(
-                    stage="installed", passed=False, message="探测过程异常"
-                )
-            ],
-        )

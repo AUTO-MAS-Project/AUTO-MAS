@@ -38,3 +38,10 @@ def busy_wait(ms: float) -> None:
     end = time.perf_counter() + ms / 1000.0
     while time.perf_counter() < end:
         pass
+
+
+def to_pep440(version: str) -> str:
+    """Convert the application version to a package version."""
+    from packaging.version import Version
+
+    return str(Version(version.removeprefix("v")))

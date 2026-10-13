@@ -175,7 +175,7 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
+import { TaskCreateIn } from '@/compat/taskCreateIn'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'

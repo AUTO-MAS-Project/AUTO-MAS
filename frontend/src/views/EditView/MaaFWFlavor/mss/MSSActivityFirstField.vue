@@ -7,8 +7,8 @@
     :label="t('edit.mssFlavorActivityFirst')"
     :extra="t('edit.mssFlavorActivityFirstHint')"
   >
-    <a-switch
-      :checked="context.formData.Info.IfActivityFirst !== false"
+    <SettingToggleButton
+      :model-value="context.formData.Info.IfActivityFirst !== false"
       :disabled="context.loading"
       @change="handleActivityFirstChange"
     />
@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
 

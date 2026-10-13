@@ -394,7 +394,6 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { BaahService, type ComboBoxItem } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
 
 const { t } = useI18n()
@@ -495,7 +494,7 @@ const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
 const loadStageModeOptions = async () => {
   try {
     const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.BAAH,
+      consumer: 'baah',
     })
     if (response?.code === 200 && response.data) {
       const planOptions = response.data

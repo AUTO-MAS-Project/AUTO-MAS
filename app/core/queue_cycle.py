@@ -183,9 +183,8 @@ def next_after_finish(queue_item, finished_at: datetime) -> datetime | None:
 def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntry]:
     """收集队列中已启用循环的条目。
 
-    ``index`` 必须与任务脚本列表对齐，所以过滤条件要和建任务时完全一致：
-    先按 ``_TaskManager._queue_script_ids`` 去掉未选脚本，再按 ``Task.prepare``
-    去掉已被删除的脚本；两步都会推进下标，之后才轮到「是否启用循环」。
+    ``index`` 必须与任务脚本列表对齐，所以过滤条件要和调度器展开保持一致：
+    先去掉未选脚本，再去掉已被删除的脚本；两步都会推进下标，之后才轮到「是否启用循环」。
     """
 
     entries: list[CycleEntry] = []

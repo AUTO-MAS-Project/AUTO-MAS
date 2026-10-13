@@ -50,7 +50,8 @@ withDefaults(
 <style scoped>
 .gui-session-mask {
   position: fixed;
-  inset: 0;
+  /* 为 Electron 顶部窗口控制保留 32px；会话中仍可移动、最小化和关闭窗口。 */
+  inset: 32px 0 0;
   z-index: 1000;
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);

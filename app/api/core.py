@@ -24,18 +24,18 @@
 import asyncio
 import os
 from contextlib import suppress
-from typing import Optional
 
 from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
+from app.api import OutBase
 from app.api.ws_command import ws_command
-from app.core import Config, TaskManager
+from app.core import Config, TaskDispatcher
 from app.core.lifecycle import ShutdownCoordinator
-from app.core.ws import MainConnection, Publisher, protocol
-from app.models.schema import *
+from app.core.ws import Dialogs, MainConnection, Publisher, protocol
+from app.core.ws.protocol import WSDialogRequestData
 from app.services import System
-from app.utils import get_logger, is_backend_dev_mode, is_supervised
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -48,35 +48,12 @@ class WebSocketMetaOut(BaseModel):
     wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
 
 
-# AUTO-MAS-Runtime 健康检查协议版本：固定返回后端自身支持的版本，不回显监督器注入值，
-# 协议升级后只有如此监督器才能检出版本不兼容。
-HEALTH_PROTOCOL_VERSION = 1
-
-
 class BackendHealthOut(BaseModel):
     """后端核心服务与后台初始化状态。"""
 
     ready: bool = Field(description="核心 API 是否可用")
     backgroundStatus: str = Field(description="后台初始化状态")
     backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
-    backgroundWarnings: list[str] = Field(
-        default_factory=list,
-        description="后台初始化中失败但不影响就绪的可选步骤，每项为「步骤名（异常）」",
-    )
-    protocol: int = Field(description="后端自身支持的健康检查协议版本")
-    version: str = Field(description="后端版本号")
-    commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
-
-
-def _resolve_injected_identity(env_name: str) -> str | None:
-    """受监督时读取监督器注入的期望身份值。
-
-    未受监督、或对应环境变量缺失/为空字符串时返回 None，交由调用方回退默认值。
-    """
-
-    if not is_supervised():
-        return None
-    return os.getenv(env_name, "") or None
 
 
 @router.get(
@@ -86,24 +63,20 @@ def _resolve_injected_identity(env_name: str) -> str | None:
     status_code=200,
 )
 async def get_health(request: Request) -> BackendHealthOut:
-    """返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
-
-    version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
-    与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
-    """
+    """返回核心 API 与后台初始化状态。"""
 
     return BackendHealthOut(
         ready=True,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
         backgroundError=getattr(request.app.state, "background_error", None),
-        backgroundWarnings=list(
-            getattr(request.app.state, "background_warnings", None) or []
-        ),
-        protocol=HEALTH_PROTOCOL_VERSION,
-        version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
-        or Config.VERSION,
-        commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
     )
+
+
+def is_backend_dev_mode() -> bool:
+    """判断后端是否处于开发模式。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 @router.get(
@@ -121,10 +94,20 @@ async def get_ws_meta() -> WebSocketMetaOut:
     )
 
 
+@router.get(
+    "/dialogs/pending",
+    summary="获取待处理弹窗初始快照",
+    response_model=list[WSDialogRequestData],
+    status_code=200,
+)
+async def get_pending_dialogs() -> list[WSDialogRequestData]:
+    """返回当前未完成弹窗；WS 只承载后续请求与响应事件。"""
+
+    return Dialogs.pending_requests()
+
+
 # 主连接建立后触发启动时调度队列
-MainConnection.on_connect(TaskManager.start_startup_queue)
-# 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
-MainConnection.on_connect(Config.flush_startup_notices)
+MainConnection.on_connect(TaskDispatcher.start_startup_queue)
 
 
 @router.websocket("/ws")
@@ -135,37 +118,36 @@ async def connect_websocket(websocket: WebSocket):
 
 
 # 关闭流程任务由模块持有，重复 /close 请求不重复触发
-_shutdown_task: Optional[asyncio.Task] = None
+_shutdown_task: asyncio.Task[None] | None = None
 
 
 async def _shutdown_backend() -> None:
     """后端正常关闭收尾：完成完整清理后再通知前端可退出，最后置退出标志。"""
 
-    # 开发模式：后端保持存活以复用（定时器等服务不拆除），
+    # 开发模式：后端保持存活以复用（插件/定时器等服务不拆除），
     # 只做轻量任务清理后即通知前端可退出
     if is_backend_dev_mode():
         try:
-            await TaskManager.stop_task("ALL")
+            await TaskDispatcher.stop("ALL")
             with suppress(RuntimeError):
                 await System.cancel_power_task()
         except Exception as error:
-            logger.opt(exception=True).error(
+            logger.error(
                 "开发模式轻量清理失败，取消发送退出信号: "
-                f"{type(error).__name__}: {error}"
+                f"{type(error).__name__}: {error}",
+                exc_info=True,
             )
             return
         await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
         logger.warning("后端开发模式下忽略退出请求，仅完成任务清理")
         return
 
-    # 执行完整 teardown（任务/定时器/遥测等），失败则不发送完成信号，
+    # 执行完整 teardown（任务/插件/定时器/遥测等），失败则不发送完成信号，
     # 避免前端在清理未完成时就认为可以退出
     try:
         await ShutdownCoordinator.run_teardown()
     except Exception as e:
-        logger.opt(exception=True).error(
-            f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}"
-        )
+        logger.error(f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True)
         return
 
     # 清理完成后通过主 WS 通知前端可以退出
@@ -192,7 +174,7 @@ async def close() -> OutBase:
 
     _shutdown_task = asyncio.create_task(_shutdown_backend())
 
-    def _on_done(task: asyncio.Task) -> None:
+    def _on_done(task: asyncio.Task[None]) -> None:
         if task.cancelled():
             return
         exc = task.exception()

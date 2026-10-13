@@ -5,9 +5,9 @@
            同时符合 HIG「立即生效的设置用 switch、组内选项用 checkbox」。
            任务名在同级的展开按钮内，无法用 <label> 包裹，故用 aria-label 给读屏同一串文字 -->
       <span class="toggle-slot">
-        <a-switch
+        <SettingToggleButton
           v-if="toggleable"
-          :checked="checked"
+          :model-value="checked"
           :disabled="disabled"
           :aria-label="name"
           @change="emit('change', $event as boolean)"
@@ -37,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { ref } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 

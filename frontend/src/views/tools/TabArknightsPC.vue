@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined, WarningOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import type { ToolsConfig_ArknightsPC } from '@/api'
@@ -106,8 +107,8 @@ const isRecording = (fieldName: string) => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="config.Enabled"
+            <SettingToggleButton
+              :model-value="config.Enabled === true"
               :disabled="disabled"
               @change="handleChange('Enabled', $event)"
             />

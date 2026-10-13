@@ -99,9 +99,6 @@ export async function enterApp(
     // 标记应用已初始化完成
     markAsInitialized()
 
-    // 预加载调度中心
-    preloadSchedulerView(reason)
-
     // 跳转到主页
     if (router.currentRoute.value.path !== '/home') {
       router.push('/home')
@@ -155,28 +152,4 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   // 启动版本检查服务
   startVersionServices()
 
-  // 预加载调度中心
-  preloadSchedulerView(reason)
-}
-
-/**
- * 预加载调度中心
- * 静默加载调度中心逻辑
- */
-async function preloadSchedulerView(reason: string) {
-  logger.info(`${reason}：调度中心初始化...`)
-
-  try {
-    // 动态导入并初始化调度中心逻辑
-    const { useSchedulerLogic } = await import('../views/scheduler/useSchedulerLogic')
-    const { initialize } = useSchedulerLogic()
-
-    if (initialize) {
-      initialize()
-      logger.info(`${reason}：调度中心就绪`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：调度中心初始化失败: ${errorMsg}`)
-  }
 }

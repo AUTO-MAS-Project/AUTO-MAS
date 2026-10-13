@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type TimeSetGetIn = {
     /**
-     * 所属队列ID
+     * 所属队列 ID
      */
     queueId: string;
     /**
-     * 时间设置ID, 未携带时表示获取所有时间设置数据
+     * 定时项 ID；缺省返回全部
      */
     timeSetId?: (string | null);
 };
