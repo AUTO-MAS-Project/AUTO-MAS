@@ -127,8 +127,70 @@ def prune_update_cache(
     return report
 
 
+def discard_cached_package(
+    package_path: Path, *, cache_root: Path | None = None
+) -> bool:
+    """把一个已下完、却解不开的缓存包作废：删完整包、``artifact.json`` 记成未完成。
+
+    没有 sha256 的资产下到一个截断却长度对得上的包时，缓存命中后建载荷报「不是有效的
+    zip」；不作废的话之后每次都命中同一个坏包（每次命中还重写 ``artifact.json``，7 天
+    回收也轮不到它）。只认缓存根下的条目，别处的路径不碰；返回是否真作废了什么。
+    """
+
+    root = (cache_root or DEFAULT_CACHE_ROOT).resolve(strict=False)
+    path = Path(package_path).resolve(strict=False)
+    directory = path.parent
+    if directory.parent != root or not re.fullmatch(r"[0-9a-f]{24}", directory.name):
+        return False
+    metadata_path = directory / "artifact.json"
+    with artifact_lock(root, directory.name):
+        removed = False
+        if path.is_file():
+            path.unlink()
+            removed = True
+        metadata = _read_json(metadata_path)
+        if metadata:
+            metadata.update(
+                {
+                    "complete": False,
+                    "completePath": None,
+                    "downloadedBytes": 0,
+                    "resumedFromBytes": 0,
+                    "etag": None,
+                    "lastModified": None,
+                }
+            )
+            _atomic_json_write(metadata_path, metadata)
+            removed = True
+    return removed
+
+
 class _RestartFromZero(RuntimeError):
     pass
+
+
+class _ChecksumMismatch(RuntimeError):
+    """整包下完、sha256 对不上：断点已删、验证器已清（见 :func:`_finalize_partial`）。
+
+    ``resumed`` 说这次是不是续传拼出来的：续传拼坏的（前半截来自回错误页的镜像）从 0
+    重下一次多半就好；从 0 下的整包也对不上，多半是发布方摘要与包不符，再下几遍也一样。
+    """
+
+    def __init__(self, message: str, *, resumed: bool) -> None:
+        super().__init__(message)
+        self.resumed = resumed
+
+
+class _PermanentHttpError(RuntimeError):
+    """直连拿到的是重试也不会变的 HTTP 状态（地址失效、无权限、资源不在）。
+
+    Mirror 酱的下载地址是一次性签名地址，失效后再要还是 403 / 404 / 410；GitHub 资产
+    不在也一样。重试只是白白退避约 40 秒。
+    """
+
+
+# 直连遇到这些状态码不再重试：同一地址再要一遍结果不会变。429 / 5xx / 408 仍按瞬时故障重试。
+PERMANENT_HTTP_STATUSES = frozenset({400, 401, 403, 404, 410})
 
 
 def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
@@ -533,7 +595,9 @@ async def download_resumable(
             send_update_log("全部镜像不可用，改为直连 GitHub")
 
         last_error: Exception | None = None
+        attempts_made = 0
         for attempt in range(1, RETRY_COUNT + 1):
+            attempts_made = attempt
             if cancelled():
                 record_cancelled()
                 raise UpdateDownloadCancelled(CANCELLED_MESSAGE)
@@ -559,6 +623,37 @@ async def download_resumable(
                 # 当成网络错误重试就是「点了停止还在下」。
                 record_cancelled()
                 raise
+            except _ChecksumMismatch as exc:
+                # 断点已删、元数据里的验证器已清（就地改的就是这份 metadata）：续传拼坏的
+                # 从 0 重下一次；从 0 下的也对不上就不再重试——发布方的摘要与包对不上，
+                # 再下几遍整包结果一样。
+                last_error = exc
+                store.update(
+                    "downloading",
+                    downloadedBytes=0,
+                    attempt=attempt,
+                    lastError=redact_text(exc)[:500],
+                )
+                send_update_log(
+                    f"更新包校验不符（{_reason(exc)}），已删除下载到一半的文件"
+                    + ("，从头重新下载" if exc.resumed else "")
+                )
+                if not exc.resumed or attempt >= RETRY_COUNT:
+                    break
+                continue
+            except _PermanentHttpError as exc:
+                last_error = exc
+                existing = partial_path.stat().st_size if partial_path.is_file() else 0
+                store.update(
+                    "downloading",
+                    downloadedBytes=existing,
+                    attempt=attempt,
+                    lastError=redact_text(exc)[:500],
+                )
+                send_update_log(
+                    f"下载地址不可用（{_reason(exc)}），重试也不会变，不再重试"
+                )
+                break
             except Exception as exc:
                 last_error = exc
                 existing = partial_path.stat().st_size if partial_path.is_file() else 0
@@ -578,7 +673,7 @@ async def download_resumable(
         kept = partial_path.stat().st_size if partial_path.is_file() else 0
         store.update("failed", downloadedBytes=kept, error=message[:500])
         detail = (
-            f"MaaFW update package download failed after {RETRY_COUNT} attempts: "
+            f"MaaFW update package download failed after {attempts_made} attempts: "
             f"{message}"
         )
         if kept > 0:
@@ -679,7 +774,12 @@ async def _download_attempt(
                 if response.status_code not in {200, 206}:
                     content = (await response.aread())[:4096]
                     hint = content.decode("utf-8", errors="replace").strip()
-                    raise RuntimeError(f"HTTP {response.status_code}: {hint[:300]}")
+                    error_type = (
+                        _PermanentHttpError
+                        if response.status_code in PERMANENT_HTTP_STATUSES
+                        else RuntimeError
+                    )
+                    raise error_type(f"HTTP {response.status_code}: {hint[:300]}")
 
                 # 大小不对就在这里认输，**必须排在下面的验证器比对之前**：
                 # 断点是带 etag 的，而回错误页的镜像通常根本不发 etag，先走到
@@ -841,8 +941,27 @@ async def _finalize_partial(
         raise RuntimeError("update package is empty")
     actual = await asyncio.to_thread(_calculate_sha256, partial_path)
     if expected_sha256 and actual != expected_sha256:
-        raise RuntimeError(
-            f"update package sha256 mismatch: expected {expected_sha256[:12]}..., actual {actual[:12]}..."
+        # 坏断点必须删：留着的话下一次请求带 ``Range: bytes=<全长>-``，服务端回 416，
+        # 上面的 416 分支又把同一个坏文件交回来校验，之后每次运行都失败（缓存的 7 天回收
+        # 也永远轮不到它，每次尝试都会重写 artifact.json）。验证器一并清掉：坏字节可能
+        # 来自回错误页的镜像，etag 不能再拿来要 If-Range。
+        resumed = int(metadata.get("resumedFromBytes") or 0) > 0
+        partial_path.unlink(missing_ok=True)
+        metadata.update(
+            {
+                "downloadedBytes": 0,
+                "resumedFromBytes": 0,
+                "totalBytes": None,
+                "etag": None,
+                "lastModified": None,
+                "complete": False,
+                "completePath": None,
+            }
+        )
+        _atomic_json_write(metadata_path, metadata)
+        raise _ChecksumMismatch(
+            f"update package sha256 mismatch: expected {expected_sha256[:12]}..., actual {actual[:12]}...",
+            resumed=resumed,
         )
     directory = partial_path.parent
     final_path = _complete_path(directory, actual)
@@ -952,6 +1071,7 @@ __all__ = [
     "CachePruneReport",
     "DownloadOutcome",
     "UpdateDownloadCancelled",
+    "discard_cached_package",
     "download_resumable",
     "prune_update_cache",
 ]
