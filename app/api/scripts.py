@@ -956,6 +956,41 @@ async def get_maa_cultivate_operators(
 
 
 @router.post(
+    "/maa/cultivate/import",
+    tags=["Get"],
+    summary="校验并转换 MAA 剪贴板养成目标（不落库）",
+    response_model=MaaCultivateImportOut,
+    status_code=200,
+)
+async def parse_maa_cultivate_import(
+    request: MaaCultivateImportIn = Body(...),
+) -> MaaCultivateImportOut:
+    from app.task.MAA import api_service as maa_api
+    from app.task.MAA.tools.cultivate import CultivateImportError
+
+    try:
+        result = await maa_api.parse_cultivate_import(request.scriptId, request.content)
+    except CultivateImportError as exc:
+        return MaaCultivateImportOut(
+            code=400,
+            status="error",
+            message="养成目标导入校验失败",
+            error=exc.reason,
+            index=exc.index,
+            name=exc.name,
+        )
+    except Exception as exc:
+        logger.opt(exception=True).warning(f"parse_maa_cultivate_import失败: {exc}")
+        return MaaCultivateImportOut(
+            code=500, status="error", message="养成导入数据不可用", error="catalog"
+        )
+    return MaaCultivateImportOut(
+        targets=result["targets"],
+        data=[MaaCultivateOperatorOptionItem(**item) for item in result["data"]],
+    )
+
+
+@router.post(
     "/maa/cultivate/preview",
     tags=["Get"],
     summary="MAA 养成计划预览（纯计算不落库）",

@@ -38,6 +38,8 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
+import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
@@ -576,6 +578,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 校验并转换 MAA 剪贴板养成目标（不落库）
+     * @param requestBody
+     * @returns MaaCultivateImportOut Successful Response
+     * @throws ApiError
+     */
+    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
+        requestBody: MaaCultivateImportIn,
+    ): CancelablePromise<MaaCultivateImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

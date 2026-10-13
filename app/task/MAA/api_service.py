@@ -421,8 +421,8 @@ async def get_cultivate_operators(
 ) -> list[dict[str, object]]:
     """获取干员养成选择器目录（一图流全量表兜底，方案决策 11/38）。
 
-    goal-aware 过滤：无森空岛快照时退化"剔已精 2"，绑定后按
-    "精2 ∧ 专精全满 ∧ 模组全满"剔除；skills/modules 为目标编辑行
+    goal-aware 过滤：技能等级未观测或未满时保留，绑定后按
+    "精英化、技能等级、专精与模组均已满"剔除；skills/modules 为目标编辑行
     展示用名称目录（仅 UI 消费，不进内核契约）。
     """
 
@@ -453,6 +453,27 @@ async def get_cultivate_operators(
         keep_ids=keep_ids,
     )
     return [item for item in catalog if item.get("label") and item.get("value")]
+
+
+async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]:
+    """转换剪贴板目标，不写用户配置；完整目录避免过滤掉已满级干员。"""
+
+    from app.task.MAA.tools.cultivate import (
+        depot_cultivate_service,
+        dump_cultivate_targets,
+        parse_clipboard_targets,
+    )
+
+    _maa_script_config(script_id)
+    catalog = await depot_cultivate_service.operator_catalog(
+        config_path=Config.config_path, proxy=Config.proxy
+    )
+    targets = parse_clipboard_targets(content, catalog)
+    imported_ids = {target.operator_id for target in targets}
+    return {
+        "targets": json.dumps(dump_cultivate_targets(targets), ensure_ascii=False),
+        "data": [entry for entry in catalog if entry["value"] in imported_ids],
+    }
 
 
 async def _item_names(script_id: str) -> dict[str, str]:
@@ -628,6 +649,7 @@ async def get_cultivate_preview(
             "source": snapshot.source,
             "elite": snapshot.data.elite,
             "level": snapshot.data.level,
+            "skillLevel": snapshot.data.skill_level,
             "masteries": dict(snapshot.data.masteries),
             "modules": dict(snapshot.data.modules),
         }

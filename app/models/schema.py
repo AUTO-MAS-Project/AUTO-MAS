@@ -130,6 +130,9 @@ class MaaCultivateOperatorOptionItem(BaseModel):
     maxElite: int = Field(
         default=0, description="精英化可达档位上限（1/2/3★ 与上游缺数据者恒 0）"
     )
+    maxSkillLevel: int = Field(
+        default=0, description="普通技能可达等级上限；0 表示无消耗数据"
+    )
     dataMissing: bool = Field(
         default=False,
         description="有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）",
@@ -148,6 +151,18 @@ class MaaCultivateOperatorsOut(OutBase):
     data: List[MaaCultivateOperatorOptionItem] = Field(
         default_factory=list, description="干员目录（含目标编辑用名称目录）"
     )
+
+
+class MaaCultivateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
+
+
+class MaaCultivateImportOut(MaaCultivateOperatorsOut):
+    targets: str = Field(default="[]", description="转换后的现有养成目标 JSON，不落库")
+    error: Optional[str] = Field(default=None, description="可本地化的导入错误类型")
+    index: Optional[int] = Field(default=None, description="出错条目的序号，从 1 开始")
+    name: str = Field(default="", description="出错条目的干员名称")
 
 
 class CultivatePreviewIn(BaseModel):
@@ -180,6 +195,9 @@ class CultivateOperatorProgression(BaseModel):
     )
     elite: int = Field(..., description="当前精英化阶段 0-2")
     level: int = Field(..., description="当前干员等级")
+    skillLevel: Optional[int] = Field(
+        default=None, description="当前普通技能等级 1-7；未观测时为空"
+    )
     masteries: Dict[str, int] = Field(
         default_factory=dict, description="当前专精等级（skillId → 0-3）"
     )
@@ -1819,6 +1837,9 @@ class MaaUserConfig_Task(BaseModel):
     IfCultivate: Optional[bool] = Field(default=None, description="干员养成")
     CultivateTargets: Optional[str] = Field(
         default=None, description="干员养成目标 JSON"
+    )
+    CultivateAutoRaise: Optional[bool] = Field(
+        default=None, description="自动培养干员（注入 MAA 原生培养任务）"
     )
     CultivateSkipDuringActivity: Optional[bool] = Field(
         default=None, description="活动期间跳过养成计划"
@@ -6413,6 +6434,9 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+    messageKey: Optional[str] = Field(
+        default=None, description="可选的前端翻译键；旧客户端仍使用 message"
+    )
 
 
 class WSTaskConfigDiscardedData(BaseModel):

@@ -320,16 +320,58 @@ export default {
       'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
     maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
+    maaCultivateImportClipboard: 'Import from clipboard',
+    maaCultivateImporting: 'Importing',
+    maaCultivateImportSubmit: 'Import',
+    maaCultivateImportPasteHint:
+      'Cannot read the clipboard. Paste the training targets from Arknights Toolbox’s “Export to MAA”.',
+    maaCultivateImportPlaceholder: 'Paste training targets as JSON',
+    maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
+    maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
+    maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
+    maaCultivateImportEmpty: 'No training targets to import',
+    maaCultivateImportFormatError:
+      'Invalid format. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportOperatorError:
+      'Cannot match the operator name and class. Use the Chinese names exported by the toolbox',
+    maaCultivateImportAmbiguous:
+      'Multiple operators share this name. Specify the class to identify the operator',
+    maaCultivateImportEliteError:
+      'Invalid promotion target or missing training data for this operator',
+    maaCultivateImportSkillError:
+      'Invalid skill level target or missing training data for this operator',
+    maaCultivateImportMasteryError: 'Invalid mastery target or missing mastery data for this skill',
+    maaCultivateImportUnsupported:
+      'Unsupported targets. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportCatalogError: 'Operator training data is unavailable. Try again later',
+    maaCultivateImportRowError: 'Entry {index} ({name}): {reason}',
+    maaCultivateImportUnnamed: 'Operator name missing',
+    maaCultivateImportUnavailable:
+      'Save the user and finish any ongoing configuration operation before importing',
     maaCultivateNoOperators: 'Operator catalog unavailable',
     maaCultivateElite0: 'Elite 0',
     maaCultivateElite1: 'Elite 1',
     maaCultivateElite2: 'Elite 2',
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
+    maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivateAutoRaiseOn: 'Auto training: On',
+    maaCultivateAutoRaiseOff: 'Auto training: Off',
+    maaCultivateOperatorCount: 'Operators: {count}',
+    maaCultivateAutoRaiseUnsupported:
+      'Automatic training was skipped. Use MAA v6.19.0-beta.1 or later and confirm that Operator Progression is available in MAA. Material farming continues.',
+    maaCultivateAutoRaiseDataUnavailable:
+      'Automatic training was skipped because training data is unavailable. Refresh the operator catalog and try again. Material farming continues.',
+    maaCultivateSklandSyncFailed:
+      'Skland progression sync failed, so cultivation is paused for this run. Check your network or bind Skland again. Daily tasks and depot maintenance continue as usual.',
+    maaCultivateAutoRaiseHint:
+      'Requires MAA v6.19.0-beta.1 or later. Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+    maaCultivateMasterySkillHint:
+      'Mastery requires skill rank 7. Selecting a mastery target automatically sets the skill rank target to 7; clearing the mastery target leaves the skill rank target unchanged.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
-      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set mastery/module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
+      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
@@ -348,26 +390,28 @@ export default {
       '; the above is a conservative estimate assuming Elite 0 and empty inventory. Finish recognition in MAA and check again',
     maaCultivateSklandTitle: 'Bind Skland',
     maaCultivateSklandHint:
-      'After binding, mastery/module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
+      'After binding, skill rank, mastery, and module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
     maaCultivateSklandRole: 'Select game role',
     maaCultivateSklandBoundRole: 'Bound role',
     maaCultivateSklandUnboundHint: 'Only Elite goals are available before binding Skland',
-    maaCultivateSklandLockedHint: 'Bind Skland to set mastery/module goals',
+    maaCultivateSklandLockedHint: 'Bind Skland to set skill rank, mastery, and module goals',
     maaCultivateSklandDegradedHint:
-      'Skland progression is temporarily unavailable; mastery/module goals are paused and will resume automatically',
+      'Some Skland progression data is temporarily unavailable; affected skill rank, mastery, and module goals are paused and will resume automatically',
     maaCultivateGoalElite: 'Elite',
+    maaCultivateGoalSkill: 'Skill rank',
+    maaCultivateSkillLevel: 'Rank {level}',
     maaCultivateGoalNone: 'No goal',
     maaCultivateCurrent: 'Current',
     maaCultivateCurrentUnknown: 'Current ?',
     maaCultivateCurrentUnknownHint:
-      'No progression data: elite is estimated as Elite 0; mastery/module without Skland data are paused',
+      'No progression data: elite is estimated as Elite 0; skill rank, mastery, and module goals without Skland data are paused',
     maaCultivateGoalLevel1: 'Level 1',
     maaCultivateGoalLevel2: 'Level 2',
     maaCultivateGoalLevel3: 'Level 3',
     maaCultivateOverLimit: 'Beyond the reachable tier; will not be farmed automatically',
     maaCultivateOverLimitShort: 'Over limit',
     maaCultivateToggleGoals: 'Expand/collapse goals',
-    maaCultivateNoGoalTier: 'No Elite goal',
+    maaCultivateNoGoalTier: 'No available cultivation goals',
     maaCultivateNoGoalDataMissing: 'Cultivation data missing',
     maaCultivateStateInProgress: 'Farming',
     maaCultivateStateAchieved: 'Achieved',
