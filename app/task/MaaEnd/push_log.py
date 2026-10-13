@@ -36,12 +36,28 @@ MAS 在 AutoProxy.final_task 已把 stdout 全文按阶段落盘为历史日志
   「未见完成而退出视为异常」一致；区别于 ok-ww「裸节点名默认成功」。
 - ``[时间戳] 任务完成: <任务名>``：明确成功。
 - ``[时间戳] 任务失败: <任务名>``：明确失败（含账号切换失败等）。
+- 失败明细行（出现在任务「开始」与「终态」之间，产出 ``DETAIL:`` 中间标记）：
+  - ``[时间戳] 线路/路线N：<采集物>采集失败``：采集任务的路线失败明细
+    （前缀有「线路/路线」两种，实测混用）；
+  - ``[时间戳] 🚨发生严重错误，已停止任务（原因）``：自动囤货致命中断
+    （原因枚举见上游 ``locales/go-service/zh_cn.json`` 的 abort 表）；
+  - ``[时间戳] ⚠️ 寻路或寻找干员失败``：送礼任务寻路失败（上游固定文案）。
+  明细归因到当前开始标记的任务，仅在该任务最终「任务失败」时折叠进失败
+  行——``❌ 失败: 任务名（明细1、明细2）``；任务最终成功时明细丢弃（判态
+  只取上游结果面，不在成功节点上自造警告），无前置开始标记的明细行丢弃
+  （宁缺勿错）。
+- ``[时间戳] 现在游戏时间是周X，根据执行周期跳过任务``：上游执行周期跳过
+  （``schedule.skip_today``），任务随后仍打印「任务完成」。产出 ``SKIP:``
+  中间标记归因到当前任务，终态为「任务完成」时节点行改输出 ``⏭ 跳过:``，
+  正常成功与「没到执行周期」在报告中可区分；终态为失败或缺失（崩溃）时
+  忽略该标记。
 - 预任务（``__MXU_PRETASK__`` 等）走「正在执行预任务」行，不产出节点；
   MaaFW 框架镜像行（英文）天然不命中规则。
 - 节点名中的 emoji 与装饰符号在 ``maaend_resolve`` 统一去除（状态标记
   ✅/❌ 是聚合渲染的功能性前缀，保留；重开原生图标见 ``_strip_emoji``）。
-- 规则同时捕获行内时间戳，``maaend_resolve`` 解析为节点真实发生时刻——
-  全文回扫的采集时刻与节点发生时刻无关，「逐条」推送模式的时间前缀依赖它。
+- 任务级三行规则同时捕获行内时间戳，``maaend_resolve`` 解析为节点真实
+  发生时刻——全文回扫的采集时刻与节点发生时刻无关，「逐条」推送模式的
+  时间前缀依赖它；明细/跳过标记行不提取时间戳，随归属终态行即可。
 - 匹配空白用 ``\\s*``，与判态侧 ``check_log`` 的容差同源，避免上游格式
   微调时节点详情与结果行静默分叉。
 
@@ -79,12 +95,38 @@ MAAEND_PUSH_RULES: list[tuple[str, str]] = [
         r"^\[([^\]]+)\]\s*任务失败:\s*(.+)",
         r'"❌ 失败: " + $((?:^\[)([^\]]+)(?:\]\s*任务失败:\s*)(.+))',
     ),
+    # ── 失败明细行（DETAIL 标记）：归因到当前开始标记的任务，仅任务最终
+    # 失败时折叠进失败行；行内时间戳随终态行即可，不单独提取 ──
+    # 采集路线失败（前缀「线路/路线」实测混用）：仅采集物名
+    (
+        r"^\[([^\]]+)\]\s*(?:线路|路线)\s*\d+\s*：\s*.+?采集失败",
+        r'"DETAIL:" + $((?:^\[)(?:[^\]]+)(?:\]\s*(?:线路|路线)\s*\d+\s*：\s*)(.+?)(?:采集失败))',
+    ),
+    # 自动囤货致命中断：仅中断原因（🚨 行后必跟「任务失败」）
+    (
+        r"^\[([^\]]+)\]\s*🚨发生严重错误，已停止任务（(.+?)）",
+        r'"DETAIL:" + $((?:^\[)(?:[^\]]+)(?:\]\s*🚨发生严重错误，已停止任务（)(.+?)(?:）))',
+    ),
+    # 送礼任务寻路失败：上游固定文案，无可变部分
+    (
+        r"^\[([^\]]+)\]\s*⚠️ 寻路或寻找干员失败",
+        r'"DETAIL:" + $((?:^\[)(?:[^\]]+)(?:\]\s*⚠️ )(寻路或寻找干员失败))',
+    ),
+    # ── 执行周期跳过（SKIP 标记）：上游 schedule.skip_today，随后仍打印
+    # 「任务完成」；终态成功时节点行改输出「⏭ 跳过:」──
+    (
+        r"^\[([^\]]+)\]\s*现在游戏时间是.+?，根据执行周期跳过任务",
+        r'"SKIP:" + $((?:^\[)(?:[^\]]+)(?:\]\s*现在游戏时间是)(.+?)(?:，根据执行周期跳过任务))',
+    ),
 ]
 
 # 规则产出文本形态：<可选「状态: 」前缀><行内时间戳>\n<任务名>
 _ENTRY_RE = re.compile(r"^(?:(✅ 成功|❌ 失败): )?(.*)\n(.*)$", re.DOTALL)
 # 兜底：不含行内时间戳的旧式「状态: 节点」文本（如直接调用 resolve 的测试）
 _STATUS_RE = re.compile(r"^(✅ 成功|❌ 失败): (.*)$")
+# 失败明细 / 执行周期跳过的中间标记前缀（规则产出，归因逻辑见 maaend_resolve）
+_DETAIL_MARK = "DETAIL:"
+_SKIP_MARK = "SKIP:"
 
 # 行内时间戳格式（MaaEnd stdout 前缀，本机本地时间）
 _LINE_TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
@@ -137,12 +179,36 @@ def maaend_resolve(
     - 终态（✅/❌）与开始标记都按「最后一次出现」生效：重试轮的终态覆盖
       上一轮结果，与 AutoProxy 判态的 task_dict 收束一致；
     - 只有开始标记没有终态的任务（进程中途退出/崩溃）输出「❌ 失败:」；
-    - 未匹配任何标记的结果文本不会出现（规则只产出上述三类标记）。
+    - 失败明细（DETAIL 标记）归因到当前开始标记的任务：任务最终失败时折叠
+      进失败行（按出现顺序去重、以「、」连接），任务最终成功时丢弃——判态
+      只取上游结果面，不在成功节点上自造警告；
+    - 执行周期跳过（SKIP 标记）归因到当前任务：终态为成功时节点行改输出
+      「⏭ 跳过:」（正常成功与「没到执行周期」可区分）；终态为失败或缺失
+      时忽略；
+    - 未匹配任何标记的结果文本不会出现（规则只产出上述几类标记）。
     """
 
     order: list[str] = []
     states: dict[str, tuple[int, str, float]] = {}
+    # 明细/跳过归因：当前开始标记的任务节点。标记行出现在任务「开始」与
+    # 「终态」之间：同名任务新一轮开始时重置（跨重试/跨阶段以最后一轮为准），
+    # 终态时消费（失败行折叠明细、成功行按 SKIP 改判跳过）并清空
+    current_node: str | None = None
+    details: dict[str, list[str]] = {}
+    skipped: set[str] = set()
     for _, text, ts in results:
+        if text.startswith(_DETAIL_MARK):
+            raw_item = text[len(_DETAIL_MARK) :]
+            item = _strip_emoji(raw_item) or raw_item
+            if current_node is not None and item:
+                bucket = details.setdefault(current_node, [])
+                if item not in bucket:
+                    bucket.append(item)
+            continue
+        if text.startswith(_SKIP_MARK):
+            if current_node is not None:
+                skipped.add(current_node)
+            continue
         m = _ENTRY_RE.fullmatch(text)
         if m is not None:
             status, raw_name = m.group(1), m.group(3)
@@ -158,9 +224,20 @@ def maaend_resolve(
         node = _strip_emoji(raw_name) or raw_name
         if status is None:
             rank, display = _START_RANK, ""
+            current_node = node
+            details.pop(node, None)
+            skipped.discard(node)
         else:
             rank = _FAIL_RANK if status == "❌ 失败" else _SUCCESS_RANK
-            display = f"{status}: {node}"
+            if rank == _SUCCESS_RANK and node in skipped:
+                # 上游执行周期跳过后仍打印「任务完成」，节点行如实改判跳过
+                display = f"⏭ 跳过: {node}"
+            else:
+                display = f"{status}: {node}"
+            if rank == _FAIL_RANK:
+                folded = details.pop(node, None)
+                if folded:
+                    display = f"{display}（{'、'.join(folded)}）"
         if node in states:
             order.remove(node)  # 移至末尾：保留最后一次出现顺序
         order.append(node)
