@@ -77,6 +77,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     saveErrorMessage,
     enqueueSave,
     waitForSaves,
+    resetSaveFailures,
     pendingCount,
   } = useMaaFWUserSaveStatus()
 
@@ -300,7 +301,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           formData.Task.TaskSnapshot = JSON.stringify(taskSnapshot.value)
           await nextTick()
           formData.userName = formData.Info.Name || ''
-          hasUnsavedChanges.value = false
+          // 页面上的值换成了后端这一份：之前没存上的改动已不在，失败账一并清掉
+          resetSaveFailures()
           isInitializing.value = false
         } else {
           message.error(t('edit.userDoesNotExist'))

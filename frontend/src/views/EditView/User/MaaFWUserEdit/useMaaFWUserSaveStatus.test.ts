@@ -114,6 +114,71 @@ describe('useMaaFWUserSaveStatus', () => {
     scope.stop()
   })
 
+  it('一项失败不会被另一项的成功掩盖，同一项重试成功才清掉', async () => {
+    const { scope, status } = setup()
+    await expect(
+      status.enqueueSave(async () => {
+        throw new Error('备注没存上')
+      }, 'Info.Notes')
+    ).rejects.toThrow('备注没存上')
+    expect(status.saveStatus.value).toBe('error')
+    expect(status.hasUnsavedChanges.value).toBe(true)
+
+    // 无关字段存成功：备注的失败还在
+    await status.enqueueSave(async () => undefined, 'Info.Account')
+    expect(status.saveStatus.value).toBe('error')
+    expect(status.saveErrorMessage.value).toBe('备注没存上')
+    expect(status.hasUnsavedChanges.value).toBe(true)
+
+    // 备注重试成功：补上了
+    await status.enqueueSave(async () => undefined, 'Info.Notes')
+    expect(status.saveStatus.value).toBe('saved')
+    expect(status.saveErrorMessage.value).toBe('')
+    expect(status.hasUnsavedChanges.value).toBe(false)
+    scope.stop()
+  })
+
+  it('两项都失败：补上一项后提示换成另一项的原因，两项都补上才算存完', async () => {
+    const { scope, status } = setup()
+    await expect(
+      status.enqueueSave(async () => {
+        throw new Error('队列没存上')
+      }, 'Task')
+    ).rejects.toThrow()
+    await expect(
+      status.enqueueSave(async () => {
+        throw new Error('备注没存上')
+      }, 'Info.Notes')
+    ).rejects.toThrow()
+    expect(status.saveErrorMessage.value).toBe('备注没存上')
+
+    await status.enqueueSave(async () => undefined, 'Info.Notes')
+    expect(status.saveStatus.value).toBe('error')
+    expect(status.saveErrorMessage.value).toBe('队列没存上')
+    expect(status.hasUnsavedChanges.value).toBe(true)
+
+    await status.enqueueSave(async () => undefined, 'Task')
+    expect(status.saveStatus.value).toBe('saved')
+    expect(status.hasUnsavedChanges.value).toBe(false)
+    scope.stop()
+  })
+
+  it('重新加载用户数据时清掉失败账', async () => {
+    const { scope, status } = setup()
+    await expect(
+      status.enqueueSave(async () => {
+        throw new Error('x')
+      }, 'Info.Notes')
+    ).rejects.toThrow('x')
+    status.resetSaveFailures()
+    expect(status.saveStatus.value).toBe('idle')
+    expect(status.saveErrorMessage.value).toBe('')
+    expect(status.hasUnsavedChanges.value).toBe(false)
+    await status.enqueueSave(async () => undefined, 'Info.Account')
+    expect(status.hasUnsavedChanges.value).toBe(false)
+    scope.stop()
+  })
+
   it('作用域销毁时清掉回到空闲的定时器', async () => {
     const { scope, status } = setup()
     await status.enqueueSave(async () => undefined)
