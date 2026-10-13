@@ -30,6 +30,18 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 变更
+
+- 【MAA】同意哔哩哔哩用户协议的开关移至神秘入口 by @ClozyA
+
+### 修复
+
+- 【MAA】修复自动培养成功后统计报告缺少培养进展的问题（仅公测） (#1356) by @jinghero
+- 【设置】修复多个页面的弹窗遮挡标题栏及低窗口高度下内容超出窗口的问题 by @ClozyA
+- 【设置】修复外观预览和确认弹窗被标题栏遮挡的问题（仅公测） by @ClozyA
+
 ## [v5.7.0-beta.3] - 2026-10-13
 
 ### 新增
@@ -519,6 +531,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.3...dev
 [v5.7.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...v5.7.0-beta.3
 [v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2
 [v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
