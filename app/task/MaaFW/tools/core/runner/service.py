@@ -294,8 +294,13 @@ class MaaFWRunnerService:
         install_agent_dependencies: bool = True,
         progress: ProjectEnvironmentProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
+        lenient_health_check: bool = False,
     ) -> dict[str, Any]:
         """Prewarm the exact Runner pool identity and project Agent runtimes.
+
+        ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只有宿主运行前 / 运行后
+        的环境确认传；缺省严格（更新预检、编辑页手动准备等），见 ``agent_env.prepare_agent_envs``。
+        放行的原因在结果的 ``agents.healthWarnings``。
 
         The preflight lease is always released before returning. A later run
         resolves the same canonical requirements, reuses the prepared runtime,
@@ -372,6 +377,7 @@ class MaaFWRunnerService:
                 progress=report_agent_progress,
                 # 项目没自带原生库时，agent 的 maafw 钉成 runner 刚解析出的确切版本。
                 runner_maafw_version=environment.maafw_version,
+                lenient_health_check=lenient_health_check,
             )
             output_fingerprint = project_environment_fingerprint(project_path)
             if (

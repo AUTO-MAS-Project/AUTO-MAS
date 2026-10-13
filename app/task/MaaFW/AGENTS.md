@@ -268,7 +268,19 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   才照常起 agent、让它自己装：失败是缺模块；项目带自装材料（requirements.txt / pyproject.toml、
   `*.whl`、`get-pip.py`）；**补装之前** site-packages 里根本没有 binding（没有 `maafw-*.dist-info`
   也没有 `maa/`，补装失败后的半装状态不算）。出厂就带 binding 的项目（M9A、MaaStellaSora、MaaFgo、
-  MaaNTE 也都有 requirements.txt）缺别的模块照旧拦，更新预检走同一个函数，也照旧拦坏版本。
+  MaaNTE 也都有 requirements.txt）缺别的模块照旧拦。
+  **三个调用方三种口径**（`_prepare_project_python_env` 的 `lenient`，经 `prepare_agent_envs` /
+  `prepare_project_environment` / `_prepare_project_environment_sync` 的 `lenient_health_check`
+  传下来，**缺省严格**，漏改的调用点不会被放宽）：
+  - **运行时宽松（报错照跑）**：worker 起 agent 前（`runner.prepare_agent_python_envs`）与宿主
+    运行前 / 运行后的环境确认（`_ensure_project_environment`）。检查不管因为什么失败都先试补装，
+    复检仍失败就写一行醒目的【警告】（原因照原文）、照常起 agent。原因记进结果的
+    `agents.healthWarnings`：这次不写环境缓存、不记 `envConfirmedFor`（下次照样重查，编辑页
+    不会因此显示「已就绪」）；agent 很快退出时「Agent 进程已退出」的报错后面带
+    「运行前检查发现：<原因>」。
+  - **更新预检严格**（上面的三条件规则）：预检决定新版本换不换上来，放宽的话缺模块的坏版本会
+    顶掉能用的旧版本、之后每次运行都失败，只能等项目出新版。
+  - **编辑页手动准备严格**：失败照旧报出来。手动更新、同组传播后的确认、投影补齐也走缺省严格。
   site-packages 里残留多份 `maafw-*.dist-info`（M9A v4.9.0 出厂就带 5.12.3 + 5.13.0）时，钉回前
   先把版本不是最高的那些记录目录**挪进**副本根下的 `.maafw-repin-stash-*`：pip 按目录顺序取第一份
   记录、我们取最高版本，不挪的话 pip 要么说「已满足」什么都不做，要么只卸掉旧记录，两种结果下次

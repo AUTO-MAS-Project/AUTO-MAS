@@ -819,6 +819,8 @@ class MaaFWRunner:
         self.agent_output_threads: list[threading.Thread] = []
         # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
         self._agent_handshake_errors: dict[int, str] = {}
+        # 运行前项目自带 Python 检查没通过、按「报错照跑」放行的原因（prepare_agent_python_envs 写）
+        self._agent_health_warnings: list[str] = []
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -2333,13 +2335,17 @@ class MaaFWRunner:
         # 项目没自带原生库时 agent 的 maafw 钉成本 worker 实际加载的 binding 版本（宿主备 runner
         # 环境时解析出的同一个，也在 job 的 PI_CLIENT_MAAFW_VERSION 里）。
         _loaded, binding_version = describe_loaded_maafw()
-        prepare_agent_envs(
+        result = prepare_agent_envs(
             Path(self.plan.path),
             process_agents,
             send_log=self.send_log,
             runner_maafw_version=binding_version
             or (self.plan.piEnv or {}).get("PI_CLIENT_MAAFW_VERSION"),
+            # 运行时口径「报错照跑」：项目自带 Python 检查没通过也照常起 agent，原因留着，
+            # agent 很快退出时带进「Agent 进程已退出」的报错（_connect_agent_client）。
+            lenient_health_check=True,
         )
+        self._agent_health_warnings = list(result.healthWarnings)
         self.send_log("[Python环境] Agent 环境准备完成")
 
     def _load_embedded_agents(self) -> None:
@@ -2448,8 +2454,14 @@ class MaaFWRunner:
             attempt += 1
             exit_code = process.poll()
             if exit_code is not None:
+                # 运行前检查「报错照跑」放过去的原因带上：agent 很快退出多半就是它，
+                # 用户看最后这句报错就知道根因，不用翻前面的日志。
                 raise RuntimeError(
                     f"Agent 进程已退出，无法连接: {label}, exit={exit_code}"
+                    + "".join(
+                        f"；运行前检查发现：{reason}"
+                        for reason in self._agent_health_warnings
+                    )
                 )
             if self._stop_requested.is_set():
                 raise RuntimeError(f"已停止，不再等待 Agent 连接: {label}")

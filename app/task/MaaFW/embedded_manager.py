@@ -1260,6 +1260,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         agent_env_root: Path | None = None,
         store_cache: bool = True,
         proxy_url: str | None = None,
+        lenient_health_check: bool = False,
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
 
@@ -1273,6 +1274,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         ``proxy_url`` 是脚本级解析出来的代理（``None`` 表示没解析过，沿用
         全局），给池里的 uv / pip 与 agent venv 的安装用。
+
+        ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只有运行前 / 运行后的
+        环境确认（``_ensure_project_environment``）传；预检、手动更新、同组传播后的确认都不传
+        （缺省严格，见 ``agent_env.prepare_agent_envs``）。放行过的这次不写环境缓存、不记
+        ``envConfirmedFor``：下次照样重查，编辑页也不会因此显示「已就绪」。
         """
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
@@ -1336,7 +1342,18 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 import_paths=[SOURCE_ROOT],
                 send_log=send_log,
                 cancel_event=cancel_event,
+                lenient_health_check=lenient_health_check,
             )
+        agents = result.get("agents")
+        health_warnings = (
+            agents.get("healthWarnings") if isinstance(agents, dict) else None
+        )
+        if health_warnings:
+            send_log(
+                "运行环境检查没通过、按「报错照跑」放行，这次不记为「运行环境已就绪」，"
+                "下次运行前再查"
+            )
+            return True
         if store_cache:
             store_prepared_environment(
                 project_path,
@@ -1382,6 +1399,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 cancel_event,
                 self._threadsafe_update_log(),
                 proxy_url=proxy_url,
+                # 运行时口径：自带 Python 检查没通过也照常跑（报错照跑），见上面的函数说明
+                lenient_health_check=True,
             )
         )
         try:

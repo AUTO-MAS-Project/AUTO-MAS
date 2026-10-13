@@ -74,6 +74,7 @@ def prepare_agent_envs(
     install_dependencies: bool = True,
     progress: Callable[[dict[str, object]], None] | None = None,
     runner_maafw_version: str | None = None,
+    lenient_health_check: bool = False,
 ) -> MaaFWAgentEnvPrepareResult:
     """备好各 agent 的运行环境。
 
@@ -81,12 +82,18 @@ def prepare_agent_envs(
     从 job 的 ``PI_CLIENT_MAAFW_VERSION`` 取）。项目没自带原生库时隔离 venv 里的 maafw 钉成它
     （见 ``runner.environment.resolve_project_maafw_requirement``），两侧才不会落到协议不同的
     版本上；自带原生库的项目钉的本来就是确切版本，不受影响。
+
+    ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只给运行时传（worker 起
+    agent 前、宿主运行前 / 运行后的环境确认），见 :func:`_prepare_project_python_env`。缺省严格：
+    更新预检、编辑页手动准备、手动更新与同组传播后的确认都不传，漏改的调用点也不会被放宽。
+    放行的原因记在结果的 ``healthWarnings``。
     """
 
     resolved_project_path = Path(project_path).resolve()
     messages: list[str] = []
     prepared_venvs: list[str] = []
     skipped: list[str] = []
+    health_warnings: list[str] = []
 
     def log(message: str) -> None:
         messages.append(message)
@@ -163,7 +170,14 @@ def prepare_agent_envs(
             continue
 
         if runtime_kind == "project_python":
-            _prepare_project_python_env(python_exe, resolved_project_path, log)
+            warning = _prepare_project_python_env(
+                python_exe,
+                resolved_project_path,
+                log,
+                lenient=lenient_health_check,
+            )
+            if warning:
+                health_warnings.append(warning)
             checked_python.add(resolved_python)
             report_plan_complete(index, plan)
             continue
@@ -212,6 +226,7 @@ def prepare_agent_envs(
         preparedVenvs=prepared_venvs,
         skipped=skipped,
         messages=messages,
+        healthWarnings=health_warnings,
     )
 
 
@@ -271,7 +286,24 @@ def _prepare_project_python_env(
     python_exe: str,
     project_path: Path,
     log: Callable[[str], None],
-) -> None:
+    *,
+    lenient: bool = False,
+) -> str | None:
+    """检查项目自带 Python 能不能起 MaaFW Agent；返回宽松放行时的原因，其余返回 None。
+
+    三个调用方三种口径（``lenient`` 缺省严格，漏改的调用点不会被放宽）：
+
+    - **运行时**（worker 起 agent 前、宿主运行前 / 运行后的环境确认）传 ``lenient=True``：
+      「报错照跑」。检查不管因为什么失败（缺模块、超时、DLL 加载失败、解释器坏了），先照常
+      尝试补装 binding，复检仍失败就写一行醒目的警告（原因照原文）、照常起 agent。原因记进
+      ``healthWarnings``：这次结果不当「运行环境已就绪」写缓存；agent 随后退出时 worker 把它
+      带进最终报错，用户不用翻前面的日志。
+    - **更新预检**严格：它决定新版本换不换上来，放宽就会让缺模块的坏版本顶掉能用的旧版本、
+      之后每次运行都失败。只有「缺模块、项目带自装材料、补装前完全没有 binding」三条同时满足
+      才放行（首次启动自己装依赖的项目），其余照旧拦。
+    - **编辑页手动准备**严格（同一套规则）：失败照旧报出来。
+    """
+
     log(f"[Python环境] 检测项目 Python: {python_exe}")
     test_env = _build_project_python_probe_env(python_exe, project_path)
     healthy, reason = _check_project_python_health(
@@ -282,7 +314,7 @@ def _prepare_project_python_env(
     )
     if healthy:
         _repin_project_python_binding(python_exe, project_path, test_env, log)
-        return
+        return None
 
     # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
     # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
@@ -290,12 +322,14 @@ def _prepare_project_python_env(
     # 放行判据之一：补装之前 site-packages 里根本没有 binding。补装失败后可能留下半装的
     # 东西，不能拿那时的状态判。
     binding_absent = _project_python_binding_absent(python_exe)
-    if _is_missing_module_failure(reason) and _repin_project_python_binding(
-        python_exe, project_path, test_env, log, install_missing=True
+    if (lenient or _is_missing_module_failure(reason)) and (
+        _repin_project_python_binding(
+            python_exe, project_path, test_env, log, install_missing=True
+        )
     ):
         # 缺的正是 binding（换版本后视图不带它，见 _repin_project_python_binding）：按原生库
         # 版本补装上了，再检查一次。补装没做成（不是副本、没有原生库、装不上）与钉回失败
-        # 一样只记日志，接着走下面「缺模块且有自装材料就放行」。
+        # 一样只记日志，接着走下面的放行判据。宽松模式不管失败原因都先试这一步。
         healthy, reason = _check_project_python_health(
             python_exe,
             cwd=str(project_path),
@@ -303,7 +337,7 @@ def _prepare_project_python_env(
             log=log,
         )
         if healthy:
-            return
+            return None
         reason = _project_relative_text(reason, project_path)
     materials = (
         describe_self_install_materials(project_path)
@@ -336,7 +370,14 @@ def _prepare_project_python_env(
             f"（{reason}）；项目带着自己的依赖安装材料（{materials}），按项目的写法由 "
             "Agent 第一次启动时自己安装依赖，照常启动 Agent"
         )
-        return
+        return reason if lenient else None
+    if lenient:
+        # 运行时「报错照跑」（见函数说明）：原因照原文，只加一行醒目的警告，不拦。
+        log(
+            "[Python环境] 【警告】项目自带 Python 运行前检查没通过："
+            f"{reason}；照常启动 Agent，如果 Agent 随后退出，多半就是这个原因"
+        )
+        return reason
     # 排障说明只进详情日志：面板与 toast 整段显示报错（pre-wrap），用户照着做不了的
     # 步骤与写给开发者的说明会把失败原因挤掉。
     log(
