@@ -42,7 +42,10 @@ from app.task.MaaFW.tools.core.interface.loader import (
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
-from app.task.MaaFW.tools.core.interface.task_config import normalize_global_options
+from app.task.MaaFW.tools.core.interface.task_config import (
+    normalize_global_options,
+    normalize_snapshot,
+)
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_project_dir,
     view_imported_from,
@@ -428,7 +431,10 @@ async def apply_shell_instance_to_user(
     # 叠在用户现有的全局表上，外壳没记的（账号、密码之类）留着，与同一弹窗里「从其他用户
     # 导入」不动全局值同一口径。现有值里的密码密文原样留着（不解开、写入时也不会再加密一次）
     plan.snapshot["globalOptions"] = normalize_global_options(
-        {**_user_global_options(user), **plan.recorded_global_options},
+        _merge_global_options(
+            _user_global_options(user, context.interface),
+            plan.recorded_global_options,
+        ),
         context.interface,
     )
     update: dict[str, dict[str, Any]] = {"Task": _task_update(plan)}
@@ -454,16 +460,44 @@ async def apply_shell_instance_to_user(
     return MaaFWApiReply(data={"result": result, "snapshot": snapshot, "info": info})
 
 
-def _user_global_options(user: Any) -> dict[str, Any]:
-    """用户现有任务快照里的全局表；读不出就当空（交给归一按默认值补）。"""
+def _user_global_options(user: Any, interface: MaaFWInterface) -> dict[str, Any]:
+    """用户现有的全局表，按 MAS 读快照的同一口径（``normalize_snapshot``）取。
+
+    老格式快照没有 ``globalOptions``、全局值还存在任务实例上（升级后没再保存过用户页，或旧版
+    用户页保存丢了它）：归一会按迁移口径把它们取回全局表。覆盖时任务队列整份换掉、迁移的来源
+    就没了，所以要在换之前取。坏 JSON、空串快照当空表（交给归一按默认值补）。归一与迁移只挑
+    值、不改写字符串，``mas-dpapi:`` 密文原样留着。
+    """
 
     try:
         raw = user.get("Task", "TaskSnapshot")
         snapshot = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:  # noqa: BLE001 - 坏快照就当没有
         return {}
-    values = snapshot.get("globalOptions") if isinstance(snapshot, dict) else None
-    return dict(values) if isinstance(values, dict) else {}
+    if not isinstance(snapshot, dict):
+        return {}
+    try:
+        return dict(normalize_snapshot(snapshot, interface).globalOptions)
+    except Exception as exc:  # noqa: BLE001 - 归一失败就退回只读全局表
+        logger.warning(f"读取用户现有全局选项失败，只按快照里的全局表合并：{exc}")
+        values = snapshot.get("globalOptions")
+        return dict(values) if isinstance(values, dict) else {}
+
+
+def _merge_global_options(
+    existing: dict[str, Any], recorded: dict[str, Any]
+) -> dict[str, Any]:
+    """外壳记着的全局值叠在用户现有的上面。input / hotkey 这类 ``{字段: 值}`` 按字段叠：外壳没带
+    的字段（不从外壳导入的密码字段就是这样）留用户现有的。"""
+
+    merged = dict(existing)
+    for name, value in recorded.items():
+        current = merged.get(name)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merged[name] = {**current, **value}
+        else:
+            merged[name] = value
+    return merged
 
 
 def _user_of(script_config: Any, user_id: str) -> Any | None:
