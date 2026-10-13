@@ -498,6 +498,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
         # skip_on_retry_entries；剔了什么每次重试开头按当前计划的 skippedTasks 写一行
         self._completed_this_run: list[str] = []
+        # 已完成过、但在队列里有多份同名的任务名：重试时不剔、全部重跑，开头写一行说明
+        self._retry_rerun_duplicates: list[str] = []
 
     async def check(self) -> str:
         proxy_times = (
@@ -2334,7 +2336,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _skip_tasks_completed_this_run(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
         """剔掉特调声明的 ``skip_on_retry_entries`` 里、本次运行已完成过的任务。
 
-        按 entry 认任务、按任务名计份数：同一任务重复入队只完成了一份时只剔一份。
+        按 entry 认任务、按任务名计份数；同名任务在队列里有多份时全部重跑（见下面注释）。
         没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，每次重试开头
         据此写一行（``_log_retry_skipped_tasks``）。
         """
@@ -2344,10 +2346,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not entries:
             return plan
         remaining = Counter(self._completed_this_run)
+        # runner 只回报任务名，同名的几份（比如关卡不同的两份「作战」）分不清完成的是
+        # 哪一份：按队列顺序剔会剔掉失败的那份、把完成的再跑一遍。所以名字在计划里
+        # 不止一份时一份都不剔，全部重跑（#1296 之前的行为）；只有一份的照常剔。
+        occurrences = Counter(task.name for task in plan.tasks)
+        self._retry_rerun_duplicates = [
+            task.name
+            for task in plan.tasks
+            if task.entry in entries
+            and occurrences[task.name] > 1
+            and remaining[task.name] > 0
+        ]
         tasks = []
         skipped: list[MaaFWSkippedTaskPlan] = []
         for task in plan.tasks:
-            if task.entry in entries and remaining[task.name] > 0:
+            if (
+                task.entry in entries
+                and occurrences[task.name] == 1
+                and remaining[task.name] > 0
+            ):
                 remaining[task.name] -= 1
                 skipped.append(
                     MaaFWSkippedTaskPlan(
@@ -2378,6 +2395,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(
                 f"{_RETRY_SKIP_REASON}，不再补跑: "
                 + "、".join(_task_display_name(task) for task in skipped)
+            )
+        duplicates = list(dict.fromkeys(self._retry_rerun_duplicates))
+        if duplicates:
+            labels = _format_completed_task_labels(self.run_plan, duplicates)
+            self._append_log(
+                f"{'、'.join(labels)} 在队列里有多份，分不清完成的是哪一份，重试时全部重跑"
             )
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
