@@ -1261,8 +1261,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         store_cache: bool = True,
         proxy_url: str | None = None,
         lenient_health_check: bool = False,
+        health_warnings_out: list[str] | None = None,
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
+
+        ``health_warnings_out``：给了就把「报错照跑」放行的原因追加进去，调用方据此决定收尾
+        那句日志怎么写（返回值的含义不变，其它调用方不受影响）。
 
         先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
         几个 stat，直接跳过。
@@ -1349,6 +1353,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             agents.get("healthWarnings") if isinstance(agents, dict) else None
         )
         if health_warnings:
+            if health_warnings_out is not None:
+                health_warnings_out.extend(str(item) for item in health_warnings)
             send_log(
                 "运行环境检查没通过、按「报错照跑」放行，这次不记为「运行环境已就绪」，"
                 "下次运行前再查"
@@ -1392,6 +1398,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         cancel_event = threading.Event()
         # 装依赖走的代理与更新下载同一份：脚本级优先，留空跟随全局。
         proxy_url, _proxy = self._resolve_update_proxy()
+        health_warnings: list[str] = []
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
                 self._prepare_project_environment_sync,
@@ -1401,6 +1408,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 proxy_url=proxy_url,
                 # 运行时口径：自带 Python 检查没通过也照常跑（报错照跑），见上面的函数说明
                 lenient_health_check=True,
+                health_warnings_out=health_warnings,
             )
         )
         try:
@@ -1431,11 +1439,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 没变化时只留一行日志，别为「什么都没做」弹通知。刚提交过更新时这里
         # 必然是「重新准备」：预检不写环境缓存（D6），提交后指纹必 miss，再走
         # 一遍 prepare 只是池命中 + 解释器 ABI 探针，几秒。
-        self._append_update_log(
-            f"{phase_zh}运行环境已重新准备完成"
-            if prepared
-            else "项目文件没有变化，运行环境沿用上次的准备结果"
-        )
+        if prepared and health_warnings:
+            # 与准备里那行「检查没通过、按报错照跑放行」一致，不说「准备完成」
+            message = f"{phase_zh}运行环境已重新准备（检查没通过，照常启动）"
+        elif prepared:
+            message = f"{phase_zh}运行环境已重新准备完成"
+        else:
+            message = "项目文件没有变化，运行环境沿用上次的准备结果"
+        self._append_update_log(message)
 
     async def main_task(self) -> None:
         self.check_result = await self.check()
