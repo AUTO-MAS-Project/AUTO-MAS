@@ -370,8 +370,9 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   // 守卫只能在组件 setup 里挂（单测在 effectScope 里跑这个组合式函数，没有组件实例）
   if (getCurrentInstance()) {
     onBeforeRouteLeave(() => guardLeave())
-    // 放行后这次导航没走成（被别的守卫拦下）、页面还在：下次离开照常检查
+    // 放行后这次导航没走成（被别的守卫拦下，或中途抛错）、页面还在：下次离开照常检查
     onUnmounted(router.afterEach(() => resetLeaveApproval()))
+    onUnmounted(router.onError(() => resetLeaveApproval()))
   }
 
   // 「返回」只负责发起导航，检查都在离开守卫里
