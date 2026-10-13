@@ -2,13 +2,11 @@ import { ref } from 'vue'
 
 import { ApiError, Emulator20Service } from '@/api'
 import type {
-  Emulator2AvdApkInstallOut,
   Emulator2AvdInstanceOptionsOut,
   Emulator2AvdStatusOut,
   Emulator2PathAddOut,
 } from '@/api'
 import { t } from '@/i18n'
-import type { AvdOptionsForm } from '@/views/Emulator/avdLogic'
 
 /**
  * 生成客户端在非 2xx 时抛 ``ApiError``，后端的说明在 ``error.body.message``；取不到就用兜底文案。
@@ -32,7 +30,7 @@ const errorMessage = (error: unknown, fallback: string): string => {
 }
 
 /**
- * 魔改 AVD 客户端：根目录的组件状态与开机前检查、添加根目录，实例选项与安装 APK。
+ * 魔改 AVD 客户端：根目录的组件状态与开机前检查、添加根目录、读实例选项。
  * 组件随模拟器内测包提供，MAS 不下载。
  *
  * 业务失败走 ``code !== 200`` + ``message``（HTTP 仍是 200），HTTP 失败走 ``ApiError``；两种都抛带
@@ -97,44 +95,11 @@ export function useAvdApi() {
       'emulator2.avd.toast.optionsLoadFailed'
     )
 
-  const setInstanceOptions = (
-    emulatorId: string,
-    slot: string,
-    changes: Partial<AvdOptionsForm>
-  ): Promise<Emulator2AvdInstanceOptionsOut> =>
-    call(
-      () =>
-        Emulator20Service.avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost({
-          emulatorId,
-          slot,
-          ...changes,
-        }),
-      'emulator2.avd.toast.optionsFailed'
-    )
-
-  /** 在开着的实例里装一个本地 .apk，装完才返回（大安装包要几分钟） */
-  const installApk = (
-    emulatorId: string,
-    slot: string,
-    apkPath: string
-  ): Promise<Emulator2AvdApkInstallOut> =>
-    call(
-      () =>
-        Emulator20Service.avdInstallApkApiEmulator2AvdInstanceApkInstallPost({
-          emulatorId,
-          slot,
-          apkPath,
-        }),
-      'emulator2.avd.toast.apkFailed'
-    )
-
   return {
     loading,
     error,
     getStatus,
     addRoot,
     getInstanceOptions,
-    setInstanceOptions,
-    installApk,
   }
 }

@@ -19,7 +19,7 @@ import './appearance.css'
 export function useAppearanceSettings() {
   const { t } = useI18n()
   const [modal, modalContextHolder] = Modal.useModal()
-  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal', style: { top: '16px' } }
+  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal' }
   const logger = window.electronAPI.getLogger('外观设置')
   const {
     themeMode,

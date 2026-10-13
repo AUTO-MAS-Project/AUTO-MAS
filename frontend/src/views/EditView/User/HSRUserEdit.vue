@@ -164,7 +164,7 @@
             </a-form-item>
             <!-- 页面上唯一的模式控件；三张卡片自带描述，不再另挂来源提示 -->
             <GeneralConfigModeSelector
-              :model-value="formData.Info.Mode ?? '脚本'"
+              :model-value="formData.Info.Base ?? 'shared'"
               :options="hsrConfigModeOptions"
               :disabled="isSaving"
               :saving="isSaving"
@@ -173,7 +173,7 @@
             />
           </div>
 
-          <!-- 任务配置：「脚本」来源编辑脚本共享计划，「用户」来源编辑该用户自己的计划；
+          <!-- 任务配置：「共享」来源编辑共享计划，「独立」来源编辑该用户自己的计划；
                模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
           <div v-if="controlMode === 'managed'" class="control-mode-content">
             <ManagedTaskSection
@@ -218,8 +218,8 @@
             />
           </div>
 
-          <!-- 进度（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力模块设置里） -->
-          <div v-if="formData.Info.Mode !== '直控'" class="form-section">
+          <!-- 进度（完成态恒按用户记，共享 / 独立来源都显示；历战余响开始日在体力模块设置里） -->
+          <div v-if="formData.Info.Base !== 'native'" class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.progressReset') }}</h3>
             </div>
@@ -442,7 +442,7 @@ const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
 
-// 一份计划的初始值（加载前的占位）。用户自己的计划与脚本共享计划形状相同。
+// 一份计划的初始值（加载前的占位）。用户自己的计划与共享计划形状相同。
 const createDefaultPlan = (): HSRPlanData => ({
   Stage: {
     Channel: 'CalyxGolden',
@@ -472,8 +472,8 @@ const formData = reactive<HSRUserConfigData>({
     Status: true,
     Id: '',
     Password: '',
-    // 配置来源三态（脚本/用户/直控）是页面上唯一的模式轴；新建用户默认「脚本」，与后端一致
-    Mode: '脚本',
+    // 配置来源三态（shared/independent/native）是页面上唯一的模式轴；新建用户默认「共享」，与后端一致
+    Base: 'shared',
     // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
     // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
     Server: 'CN-Official',
@@ -507,7 +507,7 @@ const formData = reactive<HSRUserConfigData>({
   },
 })
 
-// 脚本共享计划：脚本配置上与用户计划同名的几组，本脚本下所有「脚本」来源用户共用
+// 共享计划：脚本配置上与用户计划同名的几组，本脚本下所有「共享」来源用户共用
 const sharedPlan = reactive<HSRPlanData>(createDefaultPlan())
 
 const scriptId = route.params.scriptId as string
@@ -532,14 +532,14 @@ const engineDisplayName = (engine: HSREngine) =>
   engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
-// 云·星穹铁道只用三月七：直控只剩三月七可选，引擎分配恒为三月七
+// 云·星穹铁道只用三月七：原生来源只剩三月七可选，引擎分配恒为三月七
 const isCloud = computed(() => scriptConfig.value?.Game?.Platform === 'Cloud')
 const directEngines = computed<HSREngine[]>(() =>
   isCloud.value
     ? effectiveEngines.value.filter(engine => engine === 'M7A')
     : [...effectiveEngines.value]
 )
-// 直控区块的开关：可选引擎之外，已勾选的也要给开关，否则后端因它拒绝运行时无从关掉
+// 原生来源区块的开关：可选引擎之外，已勾选的也要给开关，否则后端因它拒绝运行时无从关掉
 const directEngineCards = computed<HSREngine[]>(() =>
   resolveDirectEngineCards(directEngines.value, formData.Control)
 )
@@ -588,33 +588,33 @@ const statusValue = computed({
   },
 })
 
-// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 脚本 = 本脚本下选了「脚本」的用户共用一份任务配置；用户 = 该用户自己一份；
-// 直控 = 直接运行三月七 / SRA 里保存的设置
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+// 共享 = 本脚本下选了「共享」的用户共用一份任务配置；独立 = 该用户自己一份；
+// 原生来源 = 直接运行三月七 / SRA 里保存的设置
 const hsrConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'database' | 'setting'
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.hsrUseScriptShared'),
     icon: 'database',
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.hsrUseUserOwn'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.hsrUseDirect'),
     icon: 'setting',
@@ -649,17 +649,17 @@ const hasValidCompletionDate = (value?: string | null): boolean => {
   return date !== '' && date !== DEFAULT_COMPLETION_DATE
 }
 
-// 任务计划挂在谁身上，与后端 resolve_plan_owner 同一口径：直控没有 MAS 计划，
-// 「用户」读写该用户自己的计划，其余（含空值）按「脚本」读写脚本共享计划。
+// 任务计划挂在谁身上，与后端 resolve_plan_owner 同一口径：原生来源没有 MAS 计划，
+// 「独立」读写该用户自己的计划，其余（含空值）按「共享」读写共享计划。
 const planOwner = computed<HSRPlanOwner | null>(() => {
-  if (formData.Info.Mode === '直控') return null
-  return formData.Info.Mode === '用户' ? 'user' : 'script'
+  if (formData.Info.Base === 'native') return null
+  return formData.Info.Base === 'independent' ? 'user' : 'script'
 })
 
 // 体力配置 / 托管任务两个区块的数据源随 owner 切换
 const planForm = computed<HSRPlanData>(() => (planOwner.value === 'script' ? sharedPlan : formData))
 
-// 计划字段分组：脚本态下这些组（外加脚本级 TaskMapping）保存到脚本配置
+// 计划字段分组：共享来源下这些组（外加脚本级 TaskMapping）保存到脚本配置
 const PLAN_GROUPS = new Set(['TaskSwitch', 'Stage', 'TaskOpt', 'Managed', 'TaskMapping'])
 
 const applySharedPlan = (config: HSRScriptConfig | null) => {
@@ -667,11 +667,11 @@ const applySharedPlan = (config: HSRScriptConfig | null) => {
   sharedPlan.Stage = { ...defaults.Stage, ...(config?.Stage ?? {}) } as HSRPlanData['Stage']
   sharedPlan.TaskSwitch = { ...defaults.TaskSwitch, ...(config?.TaskSwitch ?? {}) }
   sharedPlan.TaskOpt = { ...defaults.TaskOpt, ...(config?.TaskOpt ?? {}) }
-  // 脚本级没有 Managed.TaskMapping：脚本态的引擎分配直接读写脚本 TaskMapping 组
+  // 脚本级没有 Managed.TaskMapping：共享来源的引擎分配直接读写脚本 TaskMapping 组
   sharedPlan.Managed = { TaskMapping: {}, Options: parseJsonRecord(config?.Managed?.Options) }
 }
 
-// 切到「脚本」或恢复后重拉脚本配置，拿到其他用户可能刚改过的共享计划
+// 切到「共享」或恢复后重拉脚本配置，拿到其他用户可能刚改过的共享计划
 const refreshSharedPlan = async () => {
   const script = await getScript(scriptId)
   if (!script) return
@@ -679,8 +679,8 @@ const refreshSharedPlan = async () => {
   applySharedPlan(scriptConfig.value)
 }
 
-// 返回体力模块的执行引擎（SRA 或 M7A）：脚本态只看脚本 TaskMapping（不允许用户级覆盖），
-// 用户态再叠上该用户的 Managed.TaskMapping。
+// 返回体力模块的执行引擎（SRA 或 M7A）：共享来源只看脚本 TaskMapping（不允许用户级覆盖），
+// 独立来源再叠上该用户的 Managed.TaskMapping。
 const getTaskMapping = (moduleKey: 'Daily'): HSREngine | undefined => {
   if (isCloud.value) return effectiveEngines.value.includes('M7A') ? 'M7A' : undefined
   const mapping: HSRConfig_TaskMapping = {
@@ -767,9 +767,9 @@ const handleTaskSwitchToggle = async (moduleKey: string, enabled: boolean) => {
   await handleFieldSave(`TaskSwitch.${moduleKey}`, enabled)
 }
 
-// 运行形态只由配置来源派生：直控跑原生配置，其余由 MAS 按计划托管
+// 运行形态只由配置来源派生：原生来源跑原生配置，其余由 MAS 按计划托管
 const controlMode = computed<'managed' | 'direct'>(() =>
-  formData.Info.Mode === '直控' ? 'direct' : 'managed'
+  formData.Info.Base === 'native' ? 'direct' : 'managed'
 )
 const dailyStageEngine = computed(() => getTaskMapping('Daily'))
 
@@ -805,8 +805,8 @@ const loadManagedConfig = async () => {
     if (snapshot.plan_owner && planOwner.value && snapshot.plan_owner !== planOwner.value) {
       logger.warn(`托管配置的计划归属与配置来源不一致: ${snapshot.plan_owner} / ${planOwner.value}`)
     }
-    // 用户态沿用旧口径：把解析后的引擎分配并进该用户的 Managed.TaskMapping 本地副本；
-    // 脚本态的引擎分配只在脚本 TaskMapping 组，不碰用户字段
+    // 独立来源沿用旧口径：把解析后的引擎分配并进该用户的 Managed.TaskMapping 本地副本；
+    // 共享来源的引擎分配只在脚本 TaskMapping 组，不碰用户字段
     if (planOwner.value === 'user') {
       formData.Managed = {
         TaskMapping: {
@@ -897,35 +897,35 @@ const handleManagedInvalidOverridesClear = async (
   message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
 }
 
-// 直控下没勾任何引擎时，按已配路径的引擎全开（后端的同名回落保留兜底）
+// 原生来源下没勾任何引擎时，按已配路径的引擎全开（后端的同名回落保留兜底）
 const ensureDirectEnginesEnabled = async () => {
   const engines = directEngines.value
   if (!engines.length || engines.some(engine => Boolean(formData.Control?.[engine]))) return
   for (const engine of engines) await handleDirectEngineToggle(engine, true)
 }
 
-// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存 → 按新来源重拉数据。
+// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存 → 按新来源重拉数据。
 // 脚本 ↔ 用户意味着计划 owner 变了，托管表单与副本下拉都要换到新 owner 的值。
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  const previousMode = formData.Info.Mode
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  const previousMode = formData.Info.Base
   if (previousMode === value) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  const saved = await handleFieldSave('Info.Mode', formData.Info.Mode)
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  const saved = await handleFieldSave('Info.Base', formData.Info.Base)
   if (!saved) {
-    formData.Info.Mode = previousMode
+    formData.Info.Base = previousMode
     return
   }
-  if (value === '直控') {
+  if (value === 'native') {
     await ensureDirectEnginesEnabled()
     return
   }
-  if (value === '脚本') await refreshSharedPlan()
+  if (value === 'shared') await refreshSharedPlan()
   await loadManagedConfig()
 }
 
-// 引擎分配：脚本态写脚本级 TaskMapping.<模块>（共享计划的一部分，不允许用户级覆盖），
-// 用户态照旧写该用户的 Managed.TaskMapping。
+// 引擎分配：共享来源写脚本级 TaskMapping.<模块>（共享计划的一部分，不允许用户级覆盖），
+// 独立来源照旧写该用户的 Managed.TaskMapping。
 const handleManagedMappingChange = async (task: string, engine: HSREngine) => {
   if (managedConfigSnapshot.value) {
     managedConfigSnapshot.value.task_mapping = {
@@ -1075,18 +1075,18 @@ const resetWeeklyProgress = async () => {
   )
 }
 
-// 按计划 owner 分流保存：脚本态的计划字段（TaskSwitch / Stage / TaskOpt / Managed.Options /
-// 脚本级 TaskMapping）写脚本配置，其余（Info / Data / Notify / Control）以及用户态的一切写用户配置。
+// 按计划 owner 分流保存：共享来源的计划字段（TaskSwitch / Stage / TaskOpt / Managed.Options /
+// 脚本级 TaskMapping）写脚本配置，其余（Info / Data / Notify / Control）以及独立来源的一切写用户配置。
 const handleFieldSave = async (key: string, value: unknown): Promise<boolean> => {
   const parts = key.split('.')
   const toScript = planOwner.value === 'script' && PLAN_GROUPS.has(parts[0])
   if (toScript && key === 'Managed.TaskMapping') {
-    // 脚本态不允许用户级引擎覆盖，脚本级这一项也不开放写入
-    logger.warn('脚本来源下忽略 Managed.TaskMapping 的保存')
+    // 共享来源不允许用户级引擎覆盖，脚本级这一项也不开放写入
+    logger.warn('共享来源下忽略 Managed.TaskMapping 的保存')
     return false
   }
   if (!toScript && parts[0] === 'TaskMapping') {
-    logger.warn(`用户来源下 ${key} 不属于用户配置，已忽略`)
+    logger.warn(`独立来源下 ${key} 不属于用户配置，已忽略`)
     return false
   }
   let localTarget = (!toScript
@@ -1127,7 +1127,7 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
       const saved = toScript
         ? await updateScript(scriptId, patch)
         : await updateUser(scriptId, userId, patch)
-      const target = toScript ? '脚本共享计划' : '用户配置'
+      const target = toScript ? '共享计划' : '独立配置'
       if (saved) {
         logger.info(`${target}已保存: ${key}`)
         return true

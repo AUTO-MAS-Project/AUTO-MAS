@@ -28,8 +28,7 @@
 
 **路径**：要落盘哪些文件、叫什么名字，全部来自服务端下发的清单字符串——Sophon
 主清单里每个 asset 的本地路径、差分清单里的目标文件名与待删除文件名。任何一条写成
-绝对路径或带 ``..``，就会写到游戏目录外面。收口只有一处：先按分量校验，再用
-:func:`os.path.commonpath` 判是否仍在根内，越界即拒。
+绝对路径或带 ``..``，就会写到游戏目录外面。收口只有一处：先按分量校验，再用公共路径工具判是否仍在根内，越界即拒。
 
 **ini**：磁盘上有两份。Profile ini 在 ``<AppGameFolder>/<ProfileName>/config.ini``，
 段 ``[launcher]``，关键键 ``game_install_path`` 指向真正的游戏目录；Version ini 在
@@ -49,6 +48,8 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+
+from app.utils.update_files import resolve_within
 
 __all__ = [
     "IniFormatError",
@@ -201,29 +202,13 @@ def split_rel_path(rel_path: str) -> list[str]:
 
 
 def safe_join(root: str, rel_path: str) -> str:
-    """把不可信的相对路径拼到可信根目录下，越界即抛。
-    Returns:
-        位于 ``root`` 内部的绝对路径。
-
-    Raises:
-        UnsafePathError: 路径形态非法，或拼接结果落在 ``root`` 之外。
-
-    Note:
-        最后一道防线是 :func:`os.path.commonpath` 而不是 ``startswith`` ——
-        ``root`` 为 ``...\\Games`` 时，``...\\GamesEvil\\x.exe`` 会被
-        字符串前缀判定放行，commonpath 不会。比较前统一过
-        :func:`os.path.normcase`，因此在 Windows 上大小写不敏感。
-    """
+    """按 Sophon 清单规则解析相对路径，并核对路径没有越出根目录。"""
     parts = split_rel_path(rel_path)
     joined = os.path.join(root, *parts)
-    root_abs = os.path.normcase(os.path.abspath(root))
-    joined_abs = os.path.normcase(os.path.abspath(joined))
     try:
-        common = os.path.commonpath([root_abs, joined_abs])
-    except ValueError as exc:  # 不同盘符、绝对与相对混用等
-        raise UnsafePathError(f"无法判定路径归属: {rel_path!r} ({exc})") from exc
-    if common != root_abs:
-        raise UnsafePathError(f"越出根目录 {root!r}: {rel_path!r}")
+        resolve_within(root, os.path.join(*parts), resolve_links=False)
+    except ValueError as error:
+        raise UnsafePathError(str(error)) from error
     return joined
 
 

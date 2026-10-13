@@ -25,7 +25,7 @@
   任务级归档一次；下发处按用户归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maa``）：
-  ``mas`` 归档本轮下发源（脚本态共享 Default 目录、用户态当前用户目录，
+  ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
   按 owner 各归各的；运行回写与会话保存会覆盖它）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    META_FILE_NAMES,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
@@ -56,9 +56,9 @@ from app.utils.config_archive import (
     mask_account,
     read_overlay_sidecar,
     restore_dir,
-    write_backup_mode,
+    write_backup_base,
 )
-from app.utils.constants import MAA_TASKS, MAA_TASKS_ZH
+from app.utils.constants import BASE_SOURCE_LABELS, MAA_TASKS, MAA_TASKS_ZH
 
 logger = get_logger("MAA 配置备份")
 
@@ -86,9 +86,9 @@ def project_backup_root() -> Path:
 def mas_backup_root(script_id: str, user_id: str) -> Path:
     """MAS 池归档根：``data/{script_id}/MaaBackups/mas/{user_id}``。
 
-    **恒按用户分桶**——脚本态多用户共享 Default 下发源，但每个用户要
+    **恒按用户分桶**——shared 来源多用户共享 Default 下发源，但每个用户要
     看到、恢复自己的备份；池与恢复目标解耦（目标路径见
-    :func:`mas_config_dir`，由 Info.Mode 决定 Default 或用户目录）。
+    :func:`mas_config_dir`，由 Info.Base 决定 Default 或用户目录）。
     """
 
     return backup_root(script_id) / "mas" / user_id
@@ -115,8 +115,12 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 _OVERLAY_INFO_KEYS = (
     "Server",
     "Id",
-    "Mode",
+    "Base",
     "IfQuickConfig",
+)
+"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.json）"""
+
+_OVERLAY_STAGE_KEYS = (
     "StageMode",
     "MedicineNumb",
     "SeriesNumb",
@@ -124,12 +128,8 @@ _OVERLAY_INFO_KEYS = (
     "Stage_1",
     "Stage_2",
     "Stage_3",
-    "Annihilation",
-    "AnnihilationStartWeekday",
-    "InfrastMode",
-    "InfrastName",
 )
-"""MAS 页面基础/战斗/基建字段（UserData.Info，运行时注入 gui.json）"""
+"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -141,25 +141,36 @@ _OVERLAY_TASK_KEYS = (
     "IfSwitchTheme",
     "IfDepotMaintain",
     "DepotMaintainPlans",
+    "IfEventDepotMaintain",
+    "EventDepotMaintainPlans",
     "IfGreenTicketStore",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
+    "Annihilation",
+    "AnnihilationStartWeekday",
+    "InfrastMode",
+    "InfrastName",
 )
 """MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
 
-_OVERLAY_KEY_GROUPS = {"Info": _OVERLAY_INFO_KEYS, "Task": _OVERLAY_TASK_KEYS}
-"""侧车字段的配置段归属（两组键名无交集，侧车内平铺存储）"""
+_OVERLAY_KEY_GROUPS = {
+    "Info": _OVERLAY_INFO_KEYS,
+    "Stage": _OVERLAY_STAGE_KEYS,
+    "Task": _OVERLAY_TASK_KEYS,
+}
+"""侧车字段的配置段归属（各段键名无交集，侧车内平铺存储）"""
 
 _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 """仅预览不回填的字段：配置文件来源决定恢复目标目录，恢复时以当前值为准"""
 
 # 预览分区一：与 MAA GUI 概念对应的字段（恢复后可在 MAA GUI 对照）
@@ -184,14 +195,17 @@ _OVERLAY_MAA_ORDER = (
 # 预览分区二：MAS 独有字段（MAA GUI 无对应概念，「查看详细配置」看不到，
 # 必须全量进预览）
 _OVERLAY_MAS_ONLY_ORDER = (
-    "Mode",
+    "Base",
     "StageMode",
     "AnnihilationStartWeekday",
+    "IfEventDepotMaintain",
+    "EventDepotMaintainPlans",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
     "IfCultivate",
     "CultivateTargets",
+    "CultivateAutoRaise",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
     "DepotMaintainPlans",
@@ -201,7 +215,7 @@ _OVERLAY_MAS_ONLY_ORDER = (
 _OVERLAY_FIELD_LABELS = {
     "Server": "服务器",
     "Id": "账号",
-    "Mode": "配置文件来源",
+    "Base": "配置文件来源",
     "StageMode": "关卡配置模式",
     "IfStartUp": "自动唤醒",
     "IfFight": "理智作战",
@@ -212,12 +226,15 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfDepotMaintain": "库存保持",
     "DepotMaintainPlans": "库存保持计划",
+    "IfEventDepotMaintain": "活动库存保持",
+    "EventDepotMaintainPlans": "活动库存保持计划",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
     "ActivityMedicineNumb": "活动理智药",
     "IfCultivate": "干员养成",
     "CultivateTargets": "养成目标",
+    "CultivateAutoRaise": "自动培养干员",
     "CultivateSkipDuringActivity": "活动期间跳过",
     "CultivateSkipDuringResourceCollection": "资源收集期间跳过",
     "MedicineNumb": "吃理智药",
@@ -261,7 +278,7 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 def read_overlay_values(config) -> dict:
     """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    覆盖 Info / Task 两段的全部 MAS 可配置核心内容；值为 ``None``（配置项
+    覆盖 Info / Stage / Task 三段的全部 MAS 可配置核心内容；值为 ``None``（配置项
     不存在）的键不纳入侧车。
     """
 
@@ -277,7 +294,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。
 
     仅预览字段（配置文件来源等）不回填：恢复目标目录由当前模式决定，
-    回填旧值会静默改变用户态/脚本态。不在侧车字段表里的键（旧版侧车中
+    回填旧值会静默改变 shared/independent 来源。不在侧车字段表里的键（旧版侧车中
     已删除的配置项，如 ``Stage_Remain``、``IfReclamation``）同样不回填：
     当前配置里没有这些项，``update`` 会抛错让整次恢复失败。
     """
@@ -320,16 +337,16 @@ def archive_mas_backup(
     mas_dir: Path,
     overlay: dict | None = None,
     force: bool = False,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> Path | None:
     """归档 MAS 配置整份 + 页面核心字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
-    ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（脚本态
-    共享 Default 目录、用户态独立目录）——池与目标解耦。
+    ``mas_dir`` 是归档/恢复目标路径，由调用方按两态 owner 解析（共享来源
+    共享 Default 目录、独立来源独立目录）——池与目标解耦。
     侧车参与指纹：只改页面配置、未动 ConfigFile 时同样新建归档（内存
     JSON 直接入档，免临时文件）。
-    ``mode`` 为归档时点的配置来源（当前 ``Info.Mode``）：tri_state 池靠
+    ``base`` 为归档时点的 base 来源（当前 ``Info.Base``）：tri_state 池靠
     备份标注做跨来源恢复的来源切换，运行前/恢复前 force 归档同样必须
     带上，否则该备份会被当成旧版无标注条目、恢复时不切来源。
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
@@ -344,8 +361,8 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    if mode:
-        write_backup_mode(dest, mode)
+    if base:
+        write_backup_base(dest, base)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
@@ -368,13 +385,13 @@ def restore_mas_backup(
     ts: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> dict | None:
     """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
     ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
-    路径，由调用方按两态 owner 解析（脚本态共享 Default 目录、用户态独立
-    目录）。``overlay`` 为当前用户的页面核心字段，随恢复前存底一起归档。
+    路径，由调用方按两态 owner 解析（共享来源共享 Default 目录、独立来源
+    独立目录）。``overlay`` 为当前用户的页面核心字段，随恢复前存底一起归档。
     返回该备份的侧车（供调用方回填 MAS 用户配置；旧版备份无侧车返回
     ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
     """
@@ -385,17 +402,17 @@ def restore_mas_backup(
     mas_dir = Path(mas_dir)
     # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
     # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判。
-    # mode 标注恢复时点的配置来源（跨来源恢复时 set_mode 已切回备份来源，
+    # base 标注恢复时点的配置来源（跨来源恢复时 set_base 已切回备份来源，
     # 与存底目录 owner 一致），保证该存底自身可跨来源找回
     archive_mas_backup(
-        script_id, user_id, mas_dir, overlay=overlay, force=True, mode=mode
+        script_id, user_id, mas_dir, overlay=overlay, force=True, base=base
     )
     # 备份只有侧车（目录缺失/为空时归档的纯字段备份）时跳过目录写回：
     # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
         restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
@@ -413,21 +430,21 @@ def archive_mas_runtime_backup(
     user_id: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
     ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    两态解析（脚本态=Default 共享目录、用户态=独立目录）。``overlay``
+    两态解析（共享来源=Default 共享目录、独立来源=独立目录）。``overlay``
     为当前用户的页面核心字段。native 池与此处无关：原生配置跨用户共享，
     由 manager ``prepare`` 在任务级一次性归档（见
     :func:`archive_native_backup`）。
     """
 
     try:
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, mode=mode)
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, base=base)
     except Exception:
         logger.opt(exception=True).warning(
             "MAA 运行前 MAS 配置归档失败，已跳过（不阻断任务）"
@@ -744,6 +761,7 @@ def _overlay_value(key: str, value) -> str:
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {
+        "Base": BASE_SOURCE_LABELS,
         "Server": _SERVER_LABELS,
         "Annihilation": _ANNIHILATION_LABELS,
         "AnnihilationStartWeekday": _WEEKDAY_LABELS,
@@ -759,7 +777,7 @@ def _overlay_value(key: str, value) -> str:
         # 关卡哨兵值（与配置界面同口径）：- = 禁用（下拉原始标签），
         # * = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
         text = {"-": "禁用", "*": "当前/上次", "": "不选择"}.get(str(value), str(value))
-    elif key == "DepotMaintainPlans":
+    elif key in ("DepotMaintainPlans", "EventDepotMaintainPlans"):
         # JSON 串存库存保持计划列表，预览只给数量（恢复仍整串写回）
         try:
             plans = json.loads(value) if isinstance(value, str) else value

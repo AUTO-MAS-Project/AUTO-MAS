@@ -28,11 +28,38 @@ MAA 日志的格式（理智、公招、关卡掉落行）与统计产物都是 
 import json
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.utils import get_logger
 
 logger = get_logger("MAA 日志统计")
+
+
+def parse_cultivate_progress(logs: Iterable[str]) -> list[str]:
+    """收集 MAA 明确输出成功的培养步骤，保留阶段结果而不判定目标达成。"""
+
+    progress: dict[str, list[str]] = {}
+    operator_name: str | None = None
+    for log in logs:
+        for line in log.splitlines():
+            match = re.search(r"干员培养\s+\d+[:：](.+?)\s+成功\s*$", line)
+            if match is not None:
+                operator_name = match.group(1).strip()
+                continue
+
+            step = line.strip()
+            if operator_name is not None and re.fullmatch(
+                r"精英化\s+[12]|技能等级\s+[2-7]|技能\s+[1-3]\s+专精\s+[1-3]",
+                step,
+            ):
+                steps = progress.setdefault(operator_name, [])
+                if step not in steps:
+                    steps.append(step)
+            else:
+                operator_name = None
+
+    return [f"{name}：{'、'.join(steps)}（成功）" for name, steps in progress.items()]
 
 
 def _parse_drop_count(text: str) -> int:
@@ -71,6 +98,7 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "Fight",
         "理智作战",
         "活动关优先",
+        "活动库存保持",
         "库存保持",
         "养成计划",
     }
@@ -97,7 +125,8 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
             return None
-        return match.group(1).strip() or None
+        name = multi_chain_suffix.sub("", match.group(1).strip())
+        return name or None
 
     task_ranges: list[tuple[int, int]] = []
     for end_index, line in enumerate(logs):

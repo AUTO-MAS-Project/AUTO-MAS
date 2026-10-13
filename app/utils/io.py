@@ -338,7 +338,7 @@ def mark_native_config_injected(
     """
     记录 MAS 注入后的原生配置指纹, 供崩溃恢复区分污染与用户改动
 
-    MAS 把配置写进原生目录后调用; 未注入(直控)时不调用, 快照保持 injected
+    MAS 把配置写进原生目录后调用; 未注入(原生来源)时不调用, 快照保持 injected
     为 None, 恢复时现场与基线一致即视为无污染。
 
     Args:

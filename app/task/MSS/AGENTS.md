@@ -1,9 +1,9 @@
 # app/task/MSS — MSS 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：MSS（MaaStellaSora / 星塔旅人）的运行、更新、内嵌副本、
-通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有
-`flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
-它做的事穷举如下，多一件都没有：
+通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有两个
+文件：`flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
+协议）与 `api_service.py`（用户页要的那点只读信息）。`flavor.py` 做的事穷举如下，多一件都没有：
 
 1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
    `name` 命中，任一即认领；后两条**同一口径**——等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头
@@ -18,17 +18,28 @@
    - 队列里有 entry `活动快速战斗_入口` 时查一次 `app/tools/stella_official.py`（只认会开活动关的「版本活动」）：
      有活动就挪到悬赏试炼前，确实没有就摘掉，取不到数据就原样跑。
    - entry `星塔_入口_agent`（新版爬塔）挪到队尾。每周一次靠 MaaFW 通用的 `Run.WeeklyOnceTasks`，这里不记周。
+   - **个人版专属**（`Function.IfPersonalMss` 打开时才做）：按 `app/tools/stella_official.py` 的常驻活动
+     「灾变防线」算当期，队列里没有就往爬塔之前插一条 entry `灾变防线_入口`，结果记进该用户的
+     `Data.PersonalMssDefense`（`armed` / `done` / 失败日）。同一期打过了就不再插；记账**只在确认跑过
+     一轮之后**才结算，失败按天累计、攒够就放弃本期，口径见 `_arrange_defense` 的 docstring。
    按 entry 找不到就写一行用户日志跳过。**不**碰重试 / 周期 / 超时 / 更新 / 游戏启停。
+
+`api_service.py` 只有一个只读函数 `defense_status()`：把 `Data.PersonalMssDefense` 摊开给用户页看。
+「这一期」与 `flavor.py` 里那份**同一处**（`permanent_activity_window("灾变防线")`），前端不复刻一套；
+个人版总开关也跟着它一起返回，免得用户页为一个布尔去读整份全局配置。
 
 配置类在 `app/models/config.py`：`MSSConfig(MaaFWConfig)` 同形，只改 `DEFAULT_SCRIPT_NAME`、
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
-`mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）。`_MANAGER_BOOK` 里 `MSSConfig` 单独登记到 `MaaFWEmbeddedManager`。
+`mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与一项 `Data.PersonalMssDefense`（上面那份记账）。全局的
+`Function.IfPersonalMss` 是个人版总开关——设置页那个「并非神秘入口」与用户页那一块共用它。
+`_MANAGER_BOOK` 里 `MSSConfig` 单独登记到 `MaaFWEmbeddedManager`。
 
 前端没有 MSS 专用脚本页 / 用户页：用 MaaFW 的两个页面，按脚本实际类型取特调注册表里 MSS 的描述对象
 （`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`，写法见 `frontend/src/composables/useMaaFWFlavor.ts`
 文件头）；脚本页控制方式一步顶部「只支持桌面端」的提示挂在 `scriptPage.slots.beforeControl`，用户页的
-计划表下拉与活动优先开关挂在 `userPage.slots.beforeTaskQueue`，都是同目录下按需加载的独有区块。
-计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
+计划表下拉、活动优先开关与「灾变防线」那一块挂在 `userPage.slots.beforeTaskQueue`，都是同目录下按需加载
+的独有区块。**「灾变防线」整块只在个人版开关打开后才渲染**（`v-if`，普通用户连一个灰着的开关都看不到），
+开关值由 `defense-status` 响应一起带回。计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
 
 只适配桌面端：模拟器端的星塔旅人启动不了游戏，脚本页在控制方式一步写明原因；引擎不拦 Adb。
 

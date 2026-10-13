@@ -72,11 +72,11 @@ export function useZzzOdSlotManage(scriptId: () => string) {
   const slotNativeConflict = (slot: ZzzOdSlotOut) =>
     slot.kind === 'native' && Boolean(slot.owners?.length)
 
-  /** 用户的配置来源（Info.Mode：脚本/用户/直控）→ 展示文案 */
+  /** 用户的配置来源（Info.Base：shared/independent/native）→ 展示文案 */
   const slotOwnerModeLabel = (mode: string) =>
-    mode === '脚本'
+    mode === 'shared'
       ? t('edit.zzzodSlotOwnerModeScript')
-      : mode === '直控'
+      : mode === 'native'
         ? t('edit.zzzodSlotOwnerModeDirect')
         : t('edit.zzzodSlotOwnerModeUser')
 
@@ -87,7 +87,7 @@ export function useZzzOdSlotManage(scriptId: () => string) {
             t('edit.zzzodSlotOwnerItem', {
               user: item.userName,
               script: item.scriptName,
-              mode: slotOwnerModeLabel(item.mode),
+              mode: slotOwnerModeLabel(item.base),
             })
           )
           .join(t('edit.zzzodSlotOwnerJoiner'))

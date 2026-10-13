@@ -13,7 +13,7 @@ from app.models.emulator import DeviceBase, DeviceStatus
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.emulator_core import close_emulator
 from app.utils import get_logger
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("游戏更新任务")
 

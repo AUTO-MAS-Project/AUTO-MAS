@@ -359,7 +359,7 @@ const getDefaultMaaEndUserData = () => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     SanityMode: 'Fixed',
     Resource: '官服',
@@ -452,16 +452,16 @@ const formData = reactive({
   ...getDefaultMaaEndUserData(),
 })
 
-// 遮罩文案按配置来源区分：脚本=脚本级共享配置、用户=当前用户独立配置。
-// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
+// 遮罩文案按配置来源区分：shared=脚本级共享配置、independent=当前用户独立配置。
+// 原生来源直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
 const maaEndConfigMaskTitle = computed(() =>
-  formData.Info.Mode === '用户'
+  formData.Info.Base === 'independent'
     ? t('scripts.mask.maaEndUserTitle')
     : t('scripts.mask.maaEndScriptTitle')
 )
 
 const maaEndConfigMaskDesc = computed(() =>
-  formData.Info.Mode === '用户'
+  formData.Info.Base === 'independent'
     ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
     : t('scripts.mask.maaEndScriptDesc')
 )
@@ -560,9 +560,9 @@ const handleQuickConfigChange = async (value: boolean) => {
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value
-  await handleFieldSave('Info.Mode', value)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value
+  await handleFieldSave('Info.Base', value)
 }
 
 const handleFieldsSave = async (changes: FieldChange[]) => {
@@ -659,13 +659,6 @@ const normalizeQuickConfig = async () => {
   if (!userId) return
 
   const infoPayload: Record<string, unknown> = {}
-  if (formData.Info.Mode === '自定义') {
-    formData.Info.Mode = '用户'
-    formData.Info.IfQuickConfig = false
-    infoPayload.Mode = formData.Info.Mode
-    infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
-  }
-
   if (maaEndOptionsLoaded.value && !presetSupported.value && formData.Info.IfQuickConfig) {
     infoPayload.IfQuickConfig = false
   }
@@ -727,17 +720,17 @@ const handleImportMaaEndConfig = async () => {
   if (configLocked.value) return
   try {
     maaEndImportLoading.value = true
-    if (formData.Info.Mode === '直控') {
-      throw new Error('脚本直控直接使用 MaaEnd 原有配置，无需导入')
+    if (formData.Info.Base === 'native') {
+      throw new Error('原生来源直接使用 MaaEnd 原有配置，无需导入')
     }
     const response = await importScriptConfigFile(
       scriptId,
-      formData.Info.Mode === '脚本' ? null : userId
+      formData.Info.Base === 'shared' ? null : userId
     )
     if (response.code !== 200) {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
-    const importTarget = formData.Info.Mode === '脚本' ? '脚本共享' : '用户独立'
+    const importTarget = formData.Info.Base === 'shared' ? '共享配置' : '独立配置'
     message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
@@ -810,7 +803,7 @@ const handleRestored = async (target: string) => {
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -822,7 +815,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({

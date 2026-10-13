@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { MSSPlanConfig_Info } from './MSSPlanConfig_Info';
 import type { MSSPlanConfig_Item } from './MSSPlanConfig_Item';
-export type MSSPlanConfig_Output = {
+export type MSSPlanConfig = {
     /**
      * 基础信息
      */

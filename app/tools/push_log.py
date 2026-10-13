@@ -30,10 +30,15 @@ PUSH_LOG_MODE_OFF = "关闭"
 PUSH_LOG_MODE_SCATTER = "逐条"
 PUSH_LOG_MODE_AGGREGATE = "汇总"
 
-# 节点状态行：可选「【账号】」前缀（多账号归属，见 ZZZ-OD） + 状态标记 + ": " + 节点名
+# 节点状态行：可选「【账号】」前缀（多账号归属，见 ZZZ-OD） + 状态标记 + ": " + 节点名；
+# 「⚠ 异常」是 ZZZ-OD 的警告行（成功收尾但内部存在失败，见 app/task/ZzzOd/push_log.py）
 _PUSH_STATUS_RE = re.compile(
-    r"^(?:【(?P<acc>[^】]+)】)?(✅ 成功|⏭ 跳过|❌ 失败): (.*)$"
+    r"^(?:【(?P<acc>[^】]+)】)?(✅ 成功|⏭ 跳过|❌ 失败|⚠ 异常): (.*)$"
 )
+
+# 汇总渲染的状态组顺序：成功/跳过/失败在前（重要性高、内容短）；不在表内的
+# 状态组（⚠ 异常及未来新增）固定垫底
+_STATUS_RENDER_ORDER = {"✅ 成功": 0, "⏭ 跳过": 1, "❌ 失败": 2}
 
 
 def _render_scatter(entries: list[tuple]) -> list[str]:
@@ -60,8 +65,9 @@ def _render_scatter(entries: list[tuple]) -> list[str]:
 def _render_aggregate(entries: list[tuple]) -> list[str]:
     """汇总式渲染：按（账号, 状态前缀）分组合并节点名，同组合并为一行
 
-    不具状态前缀的条目（如「⚡ 剩余体力: 30」）原样独占一行；分组顺序按状态
-    首次出现排列，带「【账号】」前缀的条目按账号各自成组。
+    账号按组首次出现排列，同账号内成功/跳过/失败固定在前；不具状态前缀的
+    条目（如「🔋 剩余体力: 30」）原样独占一行；「⚠ 异常」及未知状态组内容长
+    且重要性低，固定垫底。
     """
     groups: dict[tuple[str | None, str], list[str]] = {}
     order: list[tuple[str | None, str]] = []
@@ -77,11 +83,25 @@ def _render_aggregate(entries: list[tuple]) -> list[str]:
             groups[key].append(m.group(3))
         else:
             plain.append(text)
-    lines = []
-    for acc, status in order:
+    # 账号首次出现顺序（多账号前缀保留时按账号分块，不跨账号交错）
+    first_acc: dict[str | None, int] = {}
+    for idx, (acc, _status) in enumerate(order):
+        first_acc.setdefault(acc, idx)
+
+    def _render_group(key: tuple[str | None, str]) -> str:
+        acc, status = key
         prefix = f"【{acc}】" if acc else ""
-        lines.append(f"{prefix}{status}: {', '.join(groups[(acc, status)])}")
-    return lines + plain
+        return f"{prefix}{status}: {', '.join(groups[key])}"
+
+    normal_keys = sorted(
+        (key for key in order if key[1] in _STATUS_RENDER_ORDER),
+        key=lambda key: (first_acc[key[0]], _STATUS_RENDER_ORDER[key[1]]),
+    )
+    tail_keys = [key for key in order if key[1] not in _STATUS_RENDER_ORDER]
+    lines = [_render_group(key) for key in normal_keys]
+    lines += plain
+    lines += [_render_group(key) for key in tail_keys]
+    return lines
 
 
 def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:

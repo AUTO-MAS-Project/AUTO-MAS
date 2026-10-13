@@ -31,9 +31,10 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
-    CONFIG_SOURCE_SCRIPT,
-    read_config_source,
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
 )
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
@@ -93,23 +94,23 @@ class ScriptConfigTask(TaskExecuteBase):
         self.prepared = False
 
     def _mas_owner(self) -> str | None:
-        """本会话的 MAS 配置目录 owner；直控时返回 ``None``。
+        """本会话的 MAS 配置目录 owner；原生来源时返回 ``None``。
 
         与运行下发（AutoProxy ``set_src``）同一套来源规则。会话的下发与
-        回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。直控用户没有
+        回写此前硬编码用户目录，shared 来源用户的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
         MAS 托管配置目录，返回 ``None``。
         """
 
         user_id = self.cur_user_item.user_id
         if user_id == "Default":
             return "Default"
-        mode = read_config_source(
-            self.user_config[uuid.UUID(user_id)], CONFIG_SOURCE_SCRIPT
+        base = read_config_base(
+            self.user_config[uuid.UUID(user_id)], CONFIG_BASE_SHARED
         )
-        if mode == CONFIG_SOURCE_DIRECT:
+        if base == CONFIG_BASE_NATIVE:
             return None
-        return user_id if mode == "用户" else "Default"
+        return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
     async def prepare(self):
 
@@ -199,18 +200,18 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("SRC 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        # 直控会话：安装目录原生配置即现场，MAS 零写入（含归档）；SRC
+        # 原生来源会话：安装目录原生配置即现场，MAS 零写入（含归档）；SRC
         # webui 内的编辑由本体落盘并保留
         owner = self._mas_owner()
         if owner is None:
-            logger.info("SRC 直控会话: 直接使用安装目录原生配置, MAS 零写入")
+            logger.info("SRC 原生来源会话: 直接使用安装目录原生配置, MAS 零写入")
             return
 
         config_path = mas_config_dir(self.script_info.script_id, owner)
         recover_src_user_config(config_path)
 
         # 下发前归档下发源到用户池（会话保存会覆盖它；带页面核心字段侧车，
-        # 指纹去重，失败不阻断会话）。池归属是当前真实用户（脚本态多用户
+        # 指纹去重，失败不阻断会话）。池归属是当前真实用户（shared 来源多用户
         # 各自持有共享 Default 目录的快照），目标路径才按 owner 解析。
         # native 池由 manager.prepare 在任务级一次性归档
         overlay = (
@@ -225,7 +226,11 @@ class ScriptConfigTask(TaskExecuteBase):
                 config_path,
                 overlay=overlay,
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode="用户" if owner == self.cur_user_item.user_id else "脚本",
+                base=(
+                    CONFIG_BASE_INDEPENDENT
+                    if owner == self.cur_user_item.user_id
+                    else CONFIG_BASE_SHARED
+                ),
             )
 
         staging_path = stage_src_config_update(
@@ -304,10 +309,10 @@ class ScriptConfigTask(TaskExecuteBase):
             self.cur_user_item.status = "完成"
             return
 
-        # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         owner = self._mas_owner()
         if owner is None:
-            logger.success("SRC 直控会话: 配置由脚本原生 GUI 保存")
+            logger.success("SRC 原生来源会话: 配置由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
             return
 

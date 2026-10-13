@@ -38,9 +38,9 @@ from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
-    CONFIG_SOURCE_SCRIPT,
-    read_config_source,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
 )
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -154,7 +154,7 @@ class SrcManager(ScriptManagerBase):
         )
         if not src_config_available and not temp_config_available:
             return "SRC配置文件不存在或已损坏, 请检查SRC路径设置或检查配置文件情况！"
-        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 SRC 安装目录的原生配置
+        # 脚本级存档仅在存在非原生来源用户时需要: 原生来源直接使用 SRC 安装目录的原生配置
         if (
             self.task_info.mode != "ScriptConfig"
             and self._has_mas_config_user()
@@ -166,7 +166,7 @@ class SrcManager(ScriptManagerBase):
         return "Pass"
 
     def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+        """目标用户里是否存在非原生来源（shared/independent）配置来源的用户。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
         还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
@@ -174,7 +174,7 @@ class SrcManager(ScriptManagerBase):
         """
 
         return any(
-            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            read_config_base(config, CONFIG_BASE_SHARED) != CONFIG_BASE_NATIVE
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
@@ -507,12 +507,12 @@ class SrcManager(ScriptManagerBase):
         )
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+        """原生来源配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
 
-        直控会话 MAS 零写入（ScriptConfig 直控分支直接 return），安装
+        原生来源会话 MAS 零写入（ScriptConfig 原生来源分支直接 return），安装
         config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
         用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
-        用户脚本态会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
+        用户shared 来源会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
         MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
         任何现场改动，结束后也还原任务前快照。
         """
@@ -528,12 +528,12 @@ class SrcManager(ScriptManagerBase):
         if user_id == "Default":
             return False
         try:
-            mode = str(
-                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            base = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Base") or ""
             ).strip()
         except (KeyError, ValueError, TypeError):
             return False
-        return mode == "直控"
+        return base == CONFIG_BASE_NATIVE
 
     def _backup_src_config_to_temp(self) -> None:
         """完整复制配置后，再提交为可恢复的 Temp 快照。"""
@@ -866,7 +866,7 @@ class SrcManager(ScriptManagerBase):
                     raise RuntimeError(
                         f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
                     )
-                # 直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                # 原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
                 if not self._keep_script_config_changes():
                     self._restore_src_config_from_temp(
                         expected_installation_id=self.src_installation_id,

@@ -55,12 +55,13 @@ from app.utils.config_archive import (
     read_overlay_sidecar,
     restore_files,
 )
+from app.utils.constants import BASE_SOURCE_LABELS
 
 logger = get_logger("MaaFW 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "Account", "Controller", "Resource")
+_OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "Account", "Controller", "Resource")
 """MAS 编辑页核心字段（UserData.Info，运行时物化进项目配置）"""
 
 _OVERLAY_TASK_KEYS = ("SelectedPreset", "TaskSnapshot")
@@ -85,11 +86,11 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 """仅预览不回填的字段：配置来源决定运行下发方式，恢复时以当前值为准"""
 
 _OVERLAY_FIELD_LABELS = {
-    "Mode": "配置来源",
+    "Base": "配置来源",
     "IfQuickConfig": "启用快速配置",
     "Account": "账号",
     "Controller": "Controller",
@@ -121,7 +122,7 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 MaaFWUserConfig 用）。
 
-    仅预览字段（配置来源）不回填：回填旧来源会静默翻转脚本态/用户态/直控。
+    仅预览字段（配置来源）不回填：回填旧来源会静默翻转 shared/independent/native。
     """
 
     grouped: dict[str, dict] = {}
@@ -321,12 +322,13 @@ def build_overlay_preview(overlay: dict) -> dict:
     sections: list[dict] = []
 
     mas_rows: list[dict] = []
-    for key in ("Mode", "IfQuickConfig"):
+    for key in ("Base", "IfQuickConfig"):
         if key in overlay:
+            raw = overlay[key]
             value = (
-                _format_bool(overlay[key])
-                if isinstance(overlay[key], bool)
-                else _summary_text(overlay[key])
+                _format_bool(raw)
+                if isinstance(raw, bool)
+                else BASE_SOURCE_LABELS.get(str(raw), _summary_text(raw))
             )
             mas_rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": value})
     if mas_rows:

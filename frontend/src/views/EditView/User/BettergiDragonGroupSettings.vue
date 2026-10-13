@@ -647,10 +647,17 @@
       @cancel="closeDomainPicker"
     >
       <div class="bettergi-domain-picker-cols">
-        <!-- 第一级：地区 -->
+        <!-- 第一级：地区（顶部固定「按提升指南选择」哨兵项，见 GUIDE_DOMAIN_SENTINEL） -->
         <div class="bettergi-domain-picker-col">
           <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiColRegion') }}</div>
           <div class="bettergi-domain-picker-list">
+            <div
+              class="bettergi-domain-picker-item"
+              :class="{ active: pickGuide }"
+              @click="onPickGuideClick"
+            >
+              {{ t('edit.bettergiDomainPickerGuide') }}
+            </div>
             <div
               v-for="region in domainRegions"
               :key="region"
@@ -662,28 +669,38 @@
             </div>
           </div>
         </div>
-        <!-- 第二级：该地区的秘境（地点-秘境类型） -->
+        <!-- 第二级：该地区的秘境（地点-秘境类型）；提升指南模式下显示说明 -->
         <div class="bettergi-domain-picker-col">
           <div class="bettergi-domain-picker-col-title">
             {{ t('edit.bettergiPickerDomainType') }}
           </div>
           <div class="bettergi-domain-picker-list">
-            <div
-              v-for="item in pickRegionDomains"
-              :key="item.name"
-              class="bettergi-domain-picker-item"
-              :class="{ active: item.name === pickDomain }"
-              @click="onPickDomainClick(item)"
-            >
-              {{ pickDomainItemLabel(item) }}
+            <div v-if="pickGuide" class="bettergi-domain-picker-note">
+              {{ t('edit.bettergiDomainPickerGuideTip') }}
             </div>
+            <template v-else>
+              <div
+                v-for="item in pickRegionDomains"
+                :key="item.name"
+                class="bettergi-domain-picker-item"
+                :class="{ active: item.name === pickDomain }"
+                @click="onPickDomainClick(item)"
+              >
+                {{ pickDomainItemLabel(item) }}
+              </div>
+            </template>
           </div>
         </div>
-        <!-- 第三级：奖励物品（圣遗物本无档位，不可选） -->
+        <!-- 第三级：奖励物品（圣遗物本无档位，不可选）；提升指南模式下显示说明 -->
         <div class="bettergi-domain-picker-col">
           <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerReward') }}</div>
           <div class="bettergi-domain-picker-list">
-            <template v-if="pickIsArtifact">
+            <template v-if="pickGuide">
+              <div class="bettergi-domain-picker-note">
+                {{ t('edit.bettergiDomainPickerGuideTip') }}
+              </div>
+            </template>
+            <template v-else-if="pickIsArtifact">
               <div class="bettergi-domain-picker-empty">
                 {{ t('edit.bettergiDomainPickerNone') }}
               </div>
@@ -710,13 +727,17 @@
         <a-button class="bettergi-domain-picker-clear" @click="onClearDomainPicker">
           {{ t('edit.bettergiDomainPickerClear') }}
         </a-button>
-        <a-button type="primary" :disabled="!pickDomain" @click="onConfirmDomainPicker">
+        <a-button
+          type="primary"
+          :disabled="!pickDomain && !pickGuide"
+          @click="onConfirmDomainPicker"
+        >
           {{ t('edit.bettergiDomainPickerOk') }}
         </a-button>
       </template>
     </a-modal>
 
-    <!-- 讨伐首领二级连列弹窗：地区 → 首领名称-地点（BGI AutoBoss 按国家分组，无至冬） -->
+    <!-- 讨伐首领二级连列弹窗：地区 → 首领名称-地点（BGI AutoBoss 按国家分组，含至冬） -->
     <a-modal
       v-if="bossPickerOpen"
       :open="bossPickerOpen"
@@ -1023,9 +1044,11 @@ const weeklyDomainOptions = computed<SettingFieldOption[]>(() =>
     }
   })
 )
-// 当前行秘境在按钮上的展示文本（已选秘境显示“名称（地区-类型）”，未选为空）
+// 当前行秘境在按钮上的展示文本（已选秘境显示“名称（地区-类型）”，未选为空；
+// 提升指南哨兵显示为固定文案——存储值是上游匹配常量，不随语言变化）
 const weeklyDomainText = (row: WeeklyDomainTableRow): string => {
   const name = String(props.dragonSettings[row.domainKey] ?? '')
+  if (name === GUIDE_DOMAIN_SENTINEL) return t('edit.bettergiDomainPickerGuide')
   if (!name) return ''
   const hit = props.domainCatalog.find(item => item.name === name)
   if (!hit) return name
@@ -1058,17 +1081,25 @@ const weeklyRewardDisplayValue = (row: WeeklyDomainTableRow): string => {
   const raw = String(props.dragonSettings[row.rewardKey] ?? '')
   return raw === '' ? '0' : raw
 }
-// 奖励列依赖该行秘境：未选秘境或选了圣遗物本（BlessDomain）都不可选
+// 奖励列依赖该行秘境：未选秘境、提升指南模式（档位由 BetterGI 自动决定）或选了
+// 圣遗物本（BlessDomain）都不可选
 const weeklyRewardEnabled = (row: WeeklyDomainTableRow): boolean => {
-  if (!String(props.dragonSettings[row.domainKey] ?? '').trim()) return false
+  const name = String(props.dragonSettings[row.domainKey] ?? '').trim()
+  if (!name || name === GUIDE_DOMAIN_SENTINEL) return false
   return !weeklyIsArtifactDomain(row)
 }
 // ---- 秘境三级级联弹窗（地区 → 地点-类型 → 奖励物品）----
+// 「根据提升指南选择秘境」哨兵值：须与 BetterGI AutoDomainTask 的匹配常量逐字一致
+// （BetterGI 0.66+：选中后由 BetterGI 读取游戏内提升指南的培养目标，自动选择对应
+// 秘境与最高难度关卡；上游改此字符串即失效，升级 BetterGI 时需同步核对）。
+const GUIDE_DOMAIN_SENTINEL = '根据提升指南选择秘境'
 const domainPickerOpen = ref(false)
 // 正在编辑的周表行（点击秘境列时记录）
 const domainPickerRow = ref<WeeklyDomainTableRow | null>(null)
 const pickRegion = ref('')
 const pickDomain = ref('')
+// 已选择「按提升指南」模式（第一级固定哨兵项；确认后写入哨兵值，奖励回默认）
+const pickGuide = ref(false)
 // 第三级已选档位（rewards 下标，0-based）；null=未选奖励
 const pickRewardIndex = ref<number | null>(null)
 // 地区列表（按目录出现顺序去重，保证与 BGI 传送点顺序接近）
@@ -1094,10 +1125,19 @@ const pickDomainItemLabel = (item: BetterGIDomainCatalogItem): string => {
   const typeLabel = domainCategoryLabel(item.category)
   return typeLabel ? `${item.name}-${typeLabel}` : item.name
 }
-// 弹窗打开：以该行已存秘境/奖励预置高亮
+// 弹窗打开：以该行已存秘境/奖励预置高亮（提升指南哨兵预置为指南模式）
 const openDomainPicker = (row: WeeklyDomainTableRow): void => {
   domainPickerRow.value = row
   const domain = String(props.dragonSettings[row.domainKey] ?? '')
+  if (domain === GUIDE_DOMAIN_SENTINEL) {
+    pickGuide.value = true
+    pickRegion.value = ''
+    pickDomain.value = ''
+    pickRewardIndex.value = null
+    domainPickerOpen.value = true
+    return
+  }
+  pickGuide.value = false
   const hit = props.domainCatalog.find(item => item.name === domain)
   pickRegion.value = hit?.region || ''
   pickDomain.value = hit?.name || ''
@@ -1106,12 +1146,20 @@ const openDomainPicker = (row: WeeklyDomainTableRow): void => {
   pickRewardIndex.value = idx != null && idx >= 0 && idx < (hit?.rewards?.length || 0) ? idx : null
   domainPickerOpen.value = true
 }
+// 点击第一级「按提升指南」：进入指南模式并清空下级选择
+const onPickGuideClick = (): void => {
+  pickGuide.value = true
+  pickRegion.value = ''
+  pickDomain.value = ''
+  pickRewardIndex.value = null
+}
 const closeDomainPicker = (): void => {
   domainPickerOpen.value = false
   domainPickerRow.value = null
 }
-// 点击地区（第一级）：切换地区并重置下级选择
+// 点击地区（第一级）：切换地区并重置下级选择（同时退出提升指南模式）
 const onPickRegionClick = (region: string): void => {
+  pickGuide.value = false
   pickRegion.value = region
   pickDomain.value = ''
   pickRewardIndex.value = null
@@ -1126,10 +1174,18 @@ const onPickRewardClick = (index: number): void => {
   if (!pickDomain.value) return
   pickRewardIndex.value = index
 }
-// 底部确认：回填秘境名 + 奖励档位（选了第三级 → index+1；圣遗物/未选 → "0"）
+// 底部确认：回填秘境名 + 奖励档位（提升指南模式 → 写入哨兵值、奖励回默认；
+// 普通模式选了第三级 → index+1；圣遗物/未选 → "0"）
 const onConfirmDomainPicker = (): void => {
   const row = domainPickerRow.value
-  if (!row || !pickDomain.value) return
+  if (!row) return
+  if (pickGuide.value) {
+    emit('update', tableCellField(row, 'domain'), GUIDE_DOMAIN_SENTINEL)
+    emit('update', tableCellField(row, 'reward'), '0')
+    closeDomainPicker()
+    return
+  }
+  if (!pickDomain.value) return
   const reward =
     pickRewardIndex.value != null && !pickIsArtifact.value ? pickRewardIndex.value + 1 : 0
   emit('update', tableCellField(row, 'domain'), pickDomain.value)
@@ -1421,9 +1477,10 @@ const onConfirmBossPicker = (): void => {
   color: var(--ant-color-primary);
 }
 
-/* 放大弹窗内（embedded 自引用实例）字段列表可更高，充分利用弹窗空间 */
+/* 放大弹窗内由弹窗体滚动，字段列表不再产生第二条滚动条。 */
 .bettergi-groups-settings-panel-embedded .bettergi-groups-settings-fields {
-  max-height: 60vh;
+  max-height: none;
+  overflow-y: visible;
 }
 
 /* ---- 每周秘境周表 ---- */

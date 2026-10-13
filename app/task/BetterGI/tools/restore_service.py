@@ -27,8 +27,8 @@
 
 mas 池 = 「MAS 为该用户维护的全部配置」：per-user 副本目录（OneDragon /
 ScriptGroup / GlobalDomain，前端端点直接读写）+ 页面字段侧车（OneDragon
-段 + Task.OneDragonConfigName + Switch.Resource + Info.Mode 仅预览）。池
-恒按用户分桶（per-user 副本与来源无关、直控同样编辑落盘），恢复目标就是
+段 + Task.OneDragonConfigName + Switch.Resource + Info.Base 仅预览）。池
+恒按用户分桶（per-user 副本与来源无关、原生来源同样编辑落盘），恢复目标就是
 per-user 副本目录，无 owner 解耦（对齐 General）。
 
 native 池 = BetterGI 全局主配置 ``{RootPath}/User/config.json``（单文件，
@@ -153,7 +153,7 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="user_only",
+        mas_base="user_only",
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

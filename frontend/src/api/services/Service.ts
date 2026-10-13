@@ -63,6 +63,8 @@ import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { HSRUpdateIn } from '../models/HSRUpdateIn';
 import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
+import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
@@ -78,6 +80,8 @@ import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWMirrorCdkIn } from '../models/MaaFWMirrorCdkIn';
+import type { MaaFWMirrorCdkOut } from '../models/MaaFWMirrorCdkOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
@@ -1013,6 +1017,25 @@ export class Service {
         });
     }
     /**
+     * 校验并转换 MAA 剪贴板养成目标（不落库）
+     * @param requestBody
+     * @returns MaaCultivateImportOut Successful Response
+     * @throws ApiError
+     */
+    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
+        requestBody: MaaCultivateImportIn,
+    ): CancelablePromise<MaaCultivateImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * MAA 养成计划预览（纯计算不落库）
      * @param requestBody
      * @returns CultivatePreviewOut Successful Response
@@ -1372,6 +1395,29 @@ export class Service {
         });
     }
     /**
+     * 查询 MFW 项目的 Mirror 酱 CDK 状态
+     * 脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     *
+     * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
+     * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
+     * @param requestBody
+     * @returns MaaFWMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost(
+        requestBody: MaaFWMirrorCdkIn,
+    ): CancelablePromise<MaaFWMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 预备 MFW 运行环境
      * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
      *
@@ -1459,7 +1505,7 @@ export class Service {
      *
      * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
      * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+     * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
      * @param configName
@@ -1836,7 +1882,7 @@ export class Service {
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -1864,7 +1910,7 @@ export class Service {
     }
     /**
      * 保存 BetterGI 全局 config.json 的秘境刷取配置段
-     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1887,7 +1933,7 @@ export class Service {
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -1915,7 +1961,7 @@ export class Service {
     }
     /**
      * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
-     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2105,7 +2151,7 @@ export class Service {
         });
     }
     /**
-     * 设置运行实例（直控；one_dragon.yml 全局 instance_run）
+     * 设置运行实例（原生来源；one_dragon.yml 全局 instance_run）
      * 白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。
      * @param requestBody
      * @returns OutBase Successful Response
@@ -2375,7 +2421,7 @@ export class Service {
     }
     /**
      * 保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）
-     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。
+     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。
      * @param requestBody
      * @returns ZzzOdAppConfigOut Successful Response
      * @throws ApiError
@@ -2445,7 +2491,7 @@ export class Service {
         });
     }
     /**
-     * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
+     * 保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）
      * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
@@ -2466,7 +2512,7 @@ export class Service {
     }
     /**
      * 获取一条龙两种启动器的安装情况与默认项
-     * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
+     * 渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。
      * @param scriptId
      * @returns ZzzOdLauncherOut Successful Response
      * @throws ApiError

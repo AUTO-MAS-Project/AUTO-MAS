@@ -52,6 +52,8 @@ from app.services.gi_updater.sophon import (
     decompress,
     inflate_file,
 )
+from app.utils.update_files import file_md5 as md5_file
+from app.utils.update_files import file_size, replace_file
 
 __all__ = [
     "METHOD_COPYOVER",
@@ -268,14 +270,6 @@ class AssetSummary:
     voice_download: int = 0
 
 
-def _stat_size(path: str) -> int:
-    """读一个文件的大小；不存在时返回 ``-1``。"""
-    try:
-        return os.path.getsize(path)
-    except OSError:
-        return -1
-
-
 #: 一个文件本轮的预判结论
 _VERDICT_READY = "ready"  #: 目标尺寸已对上，本轮会被复核跳过
 _VERDICT_FULL = "full"  #: 基线打不出补丁，预计按整文件重建
@@ -301,10 +295,10 @@ async def summarize_assets(
 
     def inspect(asset: PatchAsset) -> Tuple[str, int]:
         """给出这一个文件的结论与要从网络取的字节数。"""
-        if _stat_size(safe_join(game_path, asset.name)) == asset.target_size:
+        if file_size(safe_join(game_path, asset.name)) == asset.target_size:
             return _VERDICT_READY, 0
         if asset.is_patch and (
-            _stat_size(safe_join(game_path, asset.original_name)) != asset.original_size
+            file_size(safe_join(game_path, asset.original_name)) != asset.original_size
         ):
             return _VERDICT_FULL, asset.target_size
         return _VERDICT_DIFF, asset.patch_length
@@ -332,15 +326,6 @@ async def summarize_assets(
 # --------------------------------------------------------------------------- #
 
 
-def md5_file(path: str) -> str:
-    """算文件 MD5，返回 32 位小写十六进制串。"""
-    digest = hashlib.md5()
-    with open(path, "rb") as handle:
-        while block := handle.read(4 * 1024 * 1024):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _same_md5(wanted: str, actual: str) -> bool:
     """清单里的 MD5 与算出来的是否一致；清单没给 MD5 时按一致处理。"""
     return not wanted or actual == wanted.casefold()
@@ -352,7 +337,7 @@ async def _target_is_current(target: str, asset: PatchAsset) -> bool:
     先比体积（近乎免费），一致才算整文件 MD5。这是中断后接着更新的依据：上次已落盘的文件
     本轮不必重做——不查就重做，原位补丁会拿新内容当旧文件打补丁，产物校验必败。
     """
-    if await asyncio.to_thread(_stat_size, target) != asset.target_size:
+    if await asyncio.to_thread(file_size, target) != asset.target_size:
         return False
     return await asyncio.to_thread(md5_file, target) == asset.target_md5.casefold()
 
@@ -439,7 +424,7 @@ async def _old_file_usable(game_path: str, asset: PatchAsset) -> bool:
     都该降级整文件重下。
     """
     old = safe_join(game_path, asset.original_name)
-    if await asyncio.to_thread(_stat_size, old) != asset.original_size:
+    if await asyncio.to_thread(file_size, old) != asset.original_size:
         return False
     if not asset.original_md5:
         return True
@@ -456,7 +441,7 @@ def _staging_name(target: str) -> str:
 async def _replace_from(staging: str, target: str) -> None:
     """把已校验的临时文件原子换成目标文件。"""
     await asyncio.to_thread(os.makedirs, os.path.dirname(target) or ".", exist_ok=True)
-    await asyncio.to_thread(os.replace, staging, target)
+    await asyncio.to_thread(replace_file, staging, target)
 
 
 def _inflate_place(

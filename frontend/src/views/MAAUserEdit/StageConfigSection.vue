@@ -10,10 +10,10 @@
             />
           </template>
           <a-select
-            v-model:value="formData.Info.StageMode"
+            v-model:value="formData.Stage.StageMode"
             :options="stageModeOptions"
             :disabled="loading"
-            @change="emitSave('Info.StageMode', formData.Info.StageMode)"
+            @change="emitSave('Stage.StageMode', formData.Stage.StageMode)"
           />
         </a-form-item>
       </a-col>
@@ -289,8 +289,10 @@ const handleAddCustomStage3 = (stageName: string) => emit('handle-add-custom-sta
 // 跳转到计划表
 const handleGoToPlans = () => {
   const planId =
-    props.isPlanMode && formData.value?.Info?.StageMode && formData.value.Info.StageMode !== 'Fixed'
-      ? formData.value.Info.StageMode
+    props.isPlanMode &&
+    formData.value?.Stage?.StageMode &&
+    formData.value.Stage.StageMode !== 'Fixed'
+      ? formData.value.Stage.StageMode
       : undefined
   navigateTo('/plans', { query: { from: 'stage-config', ...(planId ? { planId } : {}) } })
 }

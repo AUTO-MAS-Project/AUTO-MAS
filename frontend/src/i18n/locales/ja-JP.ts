@@ -8,6 +8,23 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  eventDepotPreview: {
+    name: 'イベント在庫維持',
+    hint: 'イベント素材を目標在庫まで補充してから、下のイベントステージ優先へ進みます。',
+    scopeHint:
+      'イベント素材ステージの番号で在庫を維持します。実行時に現在のイベントを使用し、合成玉効率とドロップのない項目は除外します。',
+    stageColumn: 'イベント素材ステージ',
+    stageIndex: '{n} 番目の素材ステージ',
+    fallbackStage: '現在は {stage} を使用',
+    addPresets: 'イベントプリセットを追加',
+    mergeHint:
+      '目標は初期値 200。番号と目標だけを保存し、素材はイベントごとに更新します。再追加は不足分だけで既存の目標を維持。範囲外の番号は最初の素材ステージを使用し、ドラッグで実行順を変更できます。',
+    added: 'イベントプリセットを {n} 件追加しました',
+    alreadyAdded: 'イベントプリセットはすべて追加済みです。既存の目標は変更されません。',
+    noActivity: '現在利用可能なイベントステージはありません',
+    expiredHint:
+      '現在はイベント素材ステージがないため、今回の実行はスキップします。番号と目標は保持し、次のイベントでは新しいステージを自動で使用します。',
+  },
   common: {
     viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
@@ -23,6 +40,12 @@ export default {
     unknown: '不明',
   },
   comp: {
+    currentConfig: '使用設定：{source}',
+    configSourceShared: '共有設定',
+    configSourceIndependent: '独立設定',
+    configSourceNative: 'スクリプト標準設定',
+    configOverrideEnabled: '上書き有効',
+    configOverrideDisabled: '上書き無効',
     changelog: {
       empty: 'このバージョンの更新履歴はまだありません',
       loadFailed: '更新履歴の読み込みに失敗しました。更新のダウンロードは可能です',
@@ -272,7 +295,6 @@ export default {
     configureSrc: 'SRC を設定',
     configureOkWw: 'ok-ww を設定',
     configureWhimbox: 'Whimbox を設定',
-    configurePerUserMaaend: 'MaaEnd の設定画面で、このアカウント専用の独立設定を編集します。',
     restartingAutoMasStops: 'AUTO-MAS を再起動すると実行中のタスクが停止します。再起動しますか？',
     restartBackendUpdate: 'バックエンドを再起動して更新',
     resetEverything: 'すべてリセット',
@@ -320,16 +342,57 @@ export default {
       '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
     maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
+    maaCultivateImportClipboard: 'クリップボードからインポート',
+    maaCultivateImporting: 'インポート中',
+    maaCultivateImportSubmit: 'インポート',
+    maaCultivateImportPasteHint:
+      'クリップボードを読み取れません。明日方舟ツールボックスの「MAA にエクスポート」でコピーした育成目標を貼り付けてください。',
+    maaCultivateImportPlaceholder: '育成目標の JSON を貼り付け',
+    maaCultivateImportSuccess: '{added} 人を追加し、{updated} 人の目標を更新しました',
+    maaCultivateImportUnchanged: '目標は登録済みのため、更新は不要です',
+    maaCultivateImportFailed:
+      'インポートに失敗しました。バックエンドの接続を確認して再試行してください',
+    maaCultivateImportEmpty: 'インポートできる育成目標がありません',
+    maaCultivateImportFormatError:
+      '形式が正しくありません。ツールボックスの「MAA にエクスポート」で育成目標をコピーしてください',
+    maaCultivateImportOperatorError:
+      '名前と職業を照合できません。ツールボックスが出力した中国語名を使用してください',
+    maaCultivateImportAmbiguous: '同名のオペレーターが複数います。職業を指定してください',
+    maaCultivateImportEliteError: '昇進目標が無効、または対象の育成データがありません',
+    maaCultivateImportSkillError: 'スキルレベル目標が無効、または対象の育成データがありません',
+    maaCultivateImportMasteryError: '特化目標が無効、または対象スキルの特化データがありません',
+    maaCultivateImportUnsupported:
+      '未対応の目標が含まれています。ツールボックスの「MAA にエクスポート」で育成目標をコピーしてください',
+    maaCultivateImportCatalogError:
+      'オペレーターの育成データを取得できません。後でもう一度お試しください',
+    maaCultivateImportRowError: '{index} 件目（{name}）：{reason}',
+    maaCultivateImportUnnamed: '名前未入力',
+    maaCultivateImportUnavailable:
+      'ユーザーを保存し、進行中の設定操作を終了してからインポートしてください',
     maaCultivateNoOperators: 'オペレーターカタログを利用できません',
     maaCultivateElite0: '昇進 0',
     maaCultivateElite1: '昇進 1',
     maaCultivateElite2: '昇進 2',
     maaCultivateRemove: '削除',
     maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
+    maaCultivateAutoRaise: 'オペレーターを自動育成',
+    maaCultivateAutoRaiseOn: '自動育成：オン',
+    maaCultivateAutoRaiseOff: '自動育成：オフ',
+    maaCultivateOperatorCount: '{count} 名のオペレーター',
+    maaCultivateAutoRaiseUnsupported:
+      '自動育成をスキップしました。MAA v6.19.0-beta.1 以降を使用し、MAA に「オペレーター育成」タスクがあることを確認してください。素材周回は継続します。',
+    maaCultivateAutoRaiseDataUnavailable:
+      '育成データを取得できないため、自動育成をスキップしました。オペレーター一覧を更新して再試行してください。素材周回は継続します。',
+    maaCultivateSklandSyncFailed:
+      '森空島の練度同期に失敗したため、今回の育成は一時停止しました。ネットワークを確認するか、森空島を再連携してください。日課と在庫維持は通常どおり実行します。',
+    maaCultivateAutoRaiseHint:
+      'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+    maaCultivateMasterySkillHint:
+      '特化にはスキルレベル7が必要です。特化目標を選ぶとスキルレベルの目標が自動で7になり、特化目標を解除してもスキルレベルの目標は残ります。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
-      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドすると特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
+      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
@@ -349,32 +412,37 @@ export default {
       '。以上は昇進 0 / 在庫 0 の控えめの見積もりです。MAAで認識を完了してから再度ご確認ください',
     maaCultivateSklandTitle: '森空島をバインド',
     maaCultivateSklandHint:
-      'バインド後、特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
+      'バインド後、スキルレベル/特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
     maaCultivateSklandRole: 'ゲームロールを選択',
     maaCultivateSklandBoundRole: 'バインド済みロール',
     maaCultivateSklandUnboundHint: '森空島未バインドでは昇進目標のみ設定できます',
-    maaCultivateSklandLockedHint: '森空島をバインドすると特化/モジュール目標を設定できます',
+    maaCultivateSklandLockedHint:
+      '森空島をバインドするとスキルレベル/特化/モジュール目標を設定できます',
     maaCultivateSklandDegradedHint:
-      '森空島の練度が一時的に取得できません。特化/モジュール目標は一時停止中で、回復後に自動的に再開します',
+      '森空島の練度を一部取得できません。該当するスキルレベル/特化/モジュール目標の周回は一時停止中で、回復後に自動的に再開します',
     maaCultivateGoalElite: '昇進',
+    maaCultivateGoalSkill: 'スキルレベル',
+    maaCultivateSkillLevel: 'レベル {level}',
     maaCultivateGoalNone: '目標を設定しない',
     maaCultivateCurrent: '現在',
     maaCultivateCurrentUnknown: '現在 ？',
     maaCultivateCurrentUnknownHint:
-      '練度データなし：昇進は昇進 0 として見積もり。森空島データのない特化/モジュールは一時停止',
+      '練度データなし：昇進は昇進 0 として見積もり。森空島データのないスキルレベル/特化/モジュールは一時停止',
     maaCultivateGoalLevel1: 'レベル 1',
     maaCultivateGoalLevel2: 'レベル 2',
     maaCultivateGoalLevel3: 'レベル 3',
     maaCultivateOverLimit: '到達可能な段階を超えており、自動周回されません',
     maaCultivateOverLimitShort: '上限超え',
     maaCultivateToggleGoals: '目標の展開/折りたたみ',
-    maaCultivateNoGoalTier: '昇進目標なし',
+    maaCultivateNoGoalTier: '設定可能な育成目標なし',
     maaCultivateNoGoalDataMissing: '育成データなし',
     maaCultivateStateInProgress: '周回中',
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
     maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
+    maaDepotPlanCount: '{count} 件の計画',
+    maaDepotEmpty: '計画はまだ追加されていません',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
@@ -682,7 +750,6 @@ export default {
     executables: '実行ファイル',
     enabled3: '有効',
     jsonFiles: 'JSON ファイル',
-    unspecified: '指定しない',
     keyword2: 'キーワード',
     include: '含める',
     on2: 'オン',
@@ -1513,6 +1580,15 @@ export default {
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このマネージドスクリプト専用のものに置き換えてください',
+    cdkHintRemaining: '残り {days} 日（{date} 期限）',
+    cdkHintLessThanDay: '残り 1 日未満（{date} 期限）',
+    cdkHintExpired: 'CDK の有効期限が切れています',
+    cdkHintExpiredOn: 'CDK の有効期限は {date} に切れました',
+    cdkHintInvalid: 'CDK が無効です。正しく入力されているか確認してください',
+    cdkHintQuota: 'CDK の本日のダウンロード回数を使い切りました',
+    cdkHintQuotaRemaining: 'CDK の本日のダウンロード回数を使い切りました。{remaining}',
+    cdkHintMismatched: 'CDK の種類がこのプロジェクトと一致しません',
+    cdkHintBlocked: 'CDK は利用停止されています',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
       'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
@@ -1740,6 +1816,27 @@ export default {
     trackChildProcesses: 'スクリプトが起動した子プロセスも追跡する',
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
+    endfieldAutoUpdate: '実行前に Endfield クライアントを更新',
+    endfieldAutoUpdateHint:
+      'タスク開始前に PC クライアントのバージョンを確認し、古い場合は公式の差分パックで補完します。まずローカルファイルを検証し、通ってから実行中のクライアントを終了して、変わった分だけをダウンロードします。このベースライン向けの差分がない場合はクライアントに触れず、手動更新を案内します',
+    endfieldUpdateTimeoutHint:
+      'ローカル検証・ゲーム終了・差分ダウンロード・上書きにかける最長時間。超過すると中断しますが、ダウンロード済みの差分と書き込み済みのファイルはディスクに残り、次回はそこから続きます。1 回の更新は通常数十分以上かかるため、小さすぎると毎回中断します',
+    endfieldManualUpdate: '手動更新',
+    endfieldCheckUpdateTitle: 'Endfield クライアントの更新を確認',
+    endfieldUpdateProgressTitle: 'Endfield クライアントの更新状況',
+    endfieldWillBeUpdated:
+      'AUTO-MAS が公式の差分パックで Endfield PC クライアントを更新します。まずローカルファイルを読み込んでベースラインを検証し、変わった分だけダウンロードします（バージョンをまたぐとダウンロードは数 GB、検証で数十 GB 読みます）。検証が通ると起動中のゲームを終了し、このスクリプトの設定をロックします。このベースライン向けの差分が公式にない場合は更新せず、手動更新を案内します',
+    endfieldUpdateCloseConfirm:
+      'ダイアログを閉じると今回の更新は中断されます。ダウンロード済みの差分と書き込み済みのゲームファイルはディスクに残るため、次回は最初からではなく続きから再開します。閉じますか？',
+    endfieldUpdateAbortTitle: 'この更新を中断しますか？',
+    endfieldUpdateAbortConfirm: 'それでも閉じる',
+    endfieldUpdateAlreadyFinished:
+      'この更新はすでに終了しました。結論はスクリプトの実行ログにあります',
+    endfieldUpdateFailed: 'Endfield 更新に失敗しました: {p0}',
+    endfieldUpdateTask: 'Endfield 更新タスクが終了しました',
+    endfieldUpdateConnecting: '更新タスクに接続中...',
+    endfieldUpdateStartFailed: 'Endfield 更新を開始できませんでした',
+    endfieldUpdateStopFailed: 'Endfield 更新を停止できませんでした',
     pickMfwResourceLeave:
       'リソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
     pickMfwProject: 'プロジェクトを選択',
@@ -1804,8 +1901,7 @@ export default {
       'タスクキューが空で、プランも「固定」のままです。この実行にはタスクがないので、少なくとも 1 つ追加するかプランを選んでください',
     mssFlavorDefense: '災変防衛線',
     mssFlavorDefenseHint:
-      'オンにすると、個人版 MaaStellaSora が毎期一度だけ「災変防衛線」を自動で行います（一期に一度しか挑めないため、実行済みの期はスキップします）。右側は今期の状態です',
-    mssFlavorDefenseOff: '無効',
+      '個人版 MaaStellaSora が毎期一度だけ「災変防衛線」を自動で行います（一期に一度しか挑めないため、実行済みの期はスキップします）。右側は今期の状態で、このスイッチを切ると丸ごとスキップします',
     mssFlavorDefenseDone: '今期は実行済み',
     mssFlavorDefensePending: '今期は未実行',
     mssFlavorDefenseArmed: '今回のキューに追加済み',
@@ -2219,6 +2315,9 @@ export default {
     bettergiRewardDefault: 'デフォルト',
     bettergiDomainPickerClearAll: 'すべてクリア',
     bettergiDomainPickerClearAllConfirm: '選択した秘境をすべてクリアしますか？',
+    bettergiDomainPickerGuide: '育成ガイドに従って秘境を選択',
+    bettergiDomainPickerGuideTip:
+      'BetterGI がゲーム内の育成ガイドから育成目標を読み取り、対応する秘境と最高難度を自動的に選択します（BetterGI 0.66 以降が必要）',
     bettergiDomainPickerNone: '選択可能な秘境はありません',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: '秘境選択',
@@ -2378,21 +2477,18 @@ export default {
     openStore: 'ゲームセンターを開く',
     settings: '設定',
     settingsTitle: 'インスタンス設定',
-    settingsHint:
-      '次回起動時に反映されます。実行中のインスタンスは現在の構成のままです。空欄の項目は変更されません。',
+    settingsHint: '次回起動時に反映されます',
     save: '保存',
     keepCurrent: '変更しない',
-    fieldWidth: '幅',
-    fieldHeight: '高さ',
-    fieldDpi: 'DPI',
+    fieldResolution: '解像度',
     fieldCpu: 'CPU コア数',
-    fieldMemory: 'メモリ (MB)',
+    fieldMemory: 'メモリ',
     fieldFps: 'フレームレート',
+    tierActual: '現在 {value}',
     batchSettings: '一括設定',
     batchTitle: '全インスタンスに一括設定',
     batchApply: 'すべてに適用',
-    batchWarning: '入力した項目が全 {count} 台に書き込まれます。空欄の項目は変更されません。',
-    batchHint: '次回起動時に反映されます。実行中のインスタンスは現在の構成のままです。',
+    batchWarning: '選んだ項目が全 {count} 台に書き込まれます。選んでいない項目は変更されません。',
     batchFailures: '適用できなかったデバイス',
     field: {
       width: '幅',
@@ -2766,6 +2862,7 @@ export default {
   home: {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
+    satelliteEffectsPaused: 'エフェクト一時停止中 · クリックで再開',
     satelliteEgg: {
       star: 'star！',
       overclock: 'オーバークロック！',
@@ -3455,13 +3552,13 @@ export default {
       selectAllUsers: 'すべて選択',
       clearAllUsers: 'すべて解除',
       runScopeTitle: '今回の実行範囲',
-      runScopeExpand: '展開',
-      runScopeCollapse: '折りたたむ',
       runScopeTip:
         'チェックを外したマネージドスクリプトとアカウントは今回実行しません。実行後も選択は保持されます',
-      runScopeSelected: '{total} 件中 {selected} 件を選択',
+      runScopeSelected: '実行可能 {total} 件中 {selected} 件を選択',
       runScopeLoading: 'アカウントを読み込み中…',
       runScopeNoUsers: '実行可能なアカウントがありません',
+      runScopeUserDisabled: '無効',
+      runScopeUserExpired: '日数終了',
       runScopeLoadFailed: 'アカウントの読み込みに失敗しました。再試行してください',
       runScopeRetry: '再試行',
       stop: '停止',
@@ -3735,10 +3832,7 @@ export default {
       saveFailedRaw: '{label} の設定を保存できませんでした',
       maaEndUnsupported:
         'このコントローラーは共有 MaaEnd 設定に対応していません。独立設定の入口をご利用ください',
-      maaEndUserStarted: '{script} / {user} の MaaEnd 設定を開始しました',
       maaEndScriptStarted: '{script} の MaaEnd 設定を開始しました',
-      maaEndUserTimeout: '{script} / {user} の設定セッションがタイムアウトしました',
-      maaEndUserSaved: '{script} / {user} の設定を保存しました',
       okwwStarted: '{name} の ok-ww 設定を開きました',
       okwwStartFailed: 'ok-ww の設定を開けませんでした: {error}',
       okwwSaved: '{name} の設定を保存しました',
@@ -3948,6 +4042,9 @@ export default {
       lowPerf: '低負荷モード',
       lowPerfTip:
         '装飾的なアニメーションとバックグラウンド描画を抑えます。スクリプトの実行やタスクのスケジュールには影響しません。ウィンドウを最小化すると装飾アニメーションは自動的に停止します。',
+      pauseHomeEffects: 'スクリプト実行中はホームのエフェクトを一時停止',
+      pauseHomeEffectsTip:
+        'スクリプトタスクの実行中はホームの衛星アニメーションを自動的に一時停止し、GPU の占有を抑えます。衛星の状態色は通常どおり更新され、一時停止中は衛星エリア左上の表示をクリックすると一時的に再開できます。',
       traySection: 'システムトレイ',
       showTray: 'トレイアイコンを常に表示',
       showTrayTip: 'ウィンドウが最小化されていなくてもトレイアイコンを表示します',
@@ -4266,6 +4363,8 @@ export default {
       fluidOk: '有効にする',
       cursorSaveFailed: 'カーソル効果を保存できませんでした',
       lowPerfSaveFailed: '低負荷モードを保存できませんでした',
+      pauseHomeEffectsSaveFailed:
+        'スクリプト実行中のホームエフェクト一時停止設定を保存できませんでした',
       homeSatelliteSaveFailed: 'ホームの衛星スタイルを保存できませんでした',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',

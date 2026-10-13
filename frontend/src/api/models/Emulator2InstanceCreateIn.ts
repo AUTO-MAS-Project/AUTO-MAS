@@ -27,9 +27,5 @@ export type Emulator2InstanceCreateIn = {
      * 仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
      */
     dataPartitionGb?: (number | null);
-    /**
-     * 仅魔改 AVD: 空闲页上报 (气球), 留空为 true
-     */
-    balloon?: (boolean | null);
 };
 

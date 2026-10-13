@@ -1,20 +1,15 @@
 /**
- * 魔改 AVD 面板的纯逻辑：实例选项表单、开机前检查的分级、组件状态、只给 M9A 用的设备标记。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 M9A 用的设备标记。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
-import type {
-  Emulator2AvdComponentItem,
-  Emulator2AvdInstanceOptionsOut,
-  Emulator2AvdPrecheckItem,
-} from '@/api'
+import type { Emulator2AvdComponentItem, Emulator2AvdPrecheckItem } from '@/api'
 
 // ---- 实例选项 ----
 
-/** 实例选项表单。显示固定 720p、不带声卡，不在这里。 */
+/** 新建实例时的选项。显示固定 720p、不带声卡、气球固定开，不在这里；核数用后端默认。 */
 export interface AvdOptionsForm {
   memoryMb: number
-  balloon: boolean
 }
 
 /** 内存只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
@@ -29,33 +24,11 @@ export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   memoryMb: DEFAULT_MEMORY_MB,
-  balloon: true,
 })
-
-/** 后端返回的实例选项 → 表单。 */
-export const optionsFromOut = (out: Emulator2AvdInstanceOptionsOut): AvdOptionsForm => ({
-  memoryMb: out.memoryMb || DEFAULT_MEMORY_MB,
-  balloon: out.balloon ?? true,
-})
-
-/** 只提交改过的项；后端对没传的项不做改动。 */
-export const optionsChanges = (
-  baseline: AvdOptionsForm,
-  form: AvdOptionsForm
-): Partial<AvdOptionsForm> => {
-  const changes: Partial<AvdOptionsForm> = {}
-  for (const key of Object.keys(form) as (keyof AvdOptionsForm)[]) {
-    if (form[key] !== baseline[key]) {
-      ;(changes as Record<string, unknown>)[key] = form[key]
-    }
-  }
-  return changes
-}
 
 /** 新建实例时随请求带上的魔改 AVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   memoryMb: form.memoryMb,
-  balloon: form.balloon,
 })
 
 // ---- 开机前检查 ----
