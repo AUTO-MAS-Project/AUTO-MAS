@@ -351,6 +351,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比较任务数时要减掉。
 - 选项 `type` 支持 `select / scan_select / switch / checkbox / input / hotkey`，后端下发与
   前端 `MaaFWTaskOptionEditor.vue` 两侧都有；未知 type 前端有兜底提示。
+- **input 的 `default` 是字段初值**（PI v2 规范；MaaPiCli、MFAAvalonia 的 `TaskLoader` 把
+  `input.Default` 写进配置、MXU、MFW-PyQt6 都这样用）。快照里没填的字段存空串（不写 default、
+  不迁移），建覆盖时回落：字符串字段没存或存的正好是 `""` 才算没填（纯空白串算有值、原样下发），
+  default 原样用、不 strip，default 为空串或没写就不回落（`pipeline_override._string_input_fallback`）；
+  数字 / 布尔 strip 后为空才算没填（`_coerce_input_value`）。password 字段不回落。特调可以声明例外
+  （`flavor.no_default_fallback_inputs`，两条建计划的路都传）：M9A 的自定义兑换码 default 是字面量
+  「占位」，旧版迁移专门把预填的它清成空串，agent 遇到交不过去的码会中断整个兑换。以前「default 只当
+  占位提示、没填就下发空串」的取舍（#478）已撤销：语料里 11 个项目因此拿到坏 override（MaaEnd 表达式缺
+  右操作数、MRA 的 `expected: [""]`、MaaStellaSora agent 里的 `float("")`）。
 - **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
   （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`。覆盖顺序
   照 PI / MXU / MaaPiCli：全局组按全局表，资源 / 控制器 / 任务组按任务自己的值，后叠的盖前面

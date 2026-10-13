@@ -136,7 +136,8 @@ NO_RUNNABLE_TASKS_MESSAGE = "当前 controller/resource 下没有可执行任务
 
 
 def _secret_input_pairs(raw: Any) -> list[tuple[str, str]]:
-    """``secret_inputs`` 的宽松解析：只收两个字符串的对，形状不对的项丢掉。"""
+    """``[(option 名, 字段名), …]`` 的宽松解析（``secret_inputs`` / ``no_default_fallback_inputs``
+    共用）：只收两个字符串的对，形状不对的项丢掉。"""
 
     if not isinstance(raw, (list, tuple, set, frozenset)):
         return []
@@ -164,12 +165,16 @@ def build_maafw_run_plan(
     managed_env_root: str | Path | None = None,
     script_hotkeys: dict[str, dict[str, str]] | None = None,
     secret_inputs: Any = None,
+    no_default_fallback_inputs: Any = None,
 ) -> MaaFWRunPlan:
     """``script_hotkeys``：脚本级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
     ``SECRET_INPUTS_SNAPSHOT_KEY``（走 ``task_ids`` 的调用方要自己传）。
+
+    ``no_default_fallback_inputs``：字符串字段没填时不回落 default 的 input 字段
+    ``[(option 名, 字段名), …]``，特调声明的例外（宿主按脚本的特调传；不传就没有例外）。
 
     只在生效控制器是 Win32 时叠加到每个任务实际生效的 hotkey 选项上，盖过快照 / 预设里
     的值；叠加的是副本，``selected_task_options`` 不动。interface 未声明的 option / 字段
@@ -216,6 +221,7 @@ def build_maafw_run_plan(
         controller_names=controller_names,
         resource_name=resource.name,
         secret_inputs=_secret_input_pairs(secret_inputs),
+        no_default_fallback_inputs=_secret_input_pairs(no_default_fallback_inputs),
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
     option_defaults, _ = _build_option_defaults(interface.option)

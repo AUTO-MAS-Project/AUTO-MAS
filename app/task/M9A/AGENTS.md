@@ -45,7 +45,11 @@
      `MusesBoxStartParty`、`PreStormProtocolStart`、`CompleteInduction`）要用户先手动停在对应页面，
      M9A 没有导航：用户页不让选（已在队列里的照常显示、给一句提示），运行时剔掉并记一行。
      优先于上面三项声明，`skip_on_retry_entries` 里的同名 entry 留着不动。
-  9. `retype_notice_lines(...)`：引擎的**可选**钩子（契约同上）。导入项目后脚本换成 / 换出 M9A 时，
+  9. `no_default_fallback_inputs`：引擎的**可选**声明（契约同上）。只列「自定义兑换码」的
+     「兑换码」字段：引擎对没填的字符串字段回落 interface 的 default，而它的 default 是字面量
+     「占位」，旧版迁移专门把预填的它清成空串（`migration._clean_input_values`），agent 遇到交不过去
+     的码会中断整个兑换、后面真正的兑换码也不交。其余字段照常回落。
+  10. `retype_notice_lines(...)`：引擎的**可选**钩子（契约同上）。导入项目后脚本换成 / 换出 M9A 时，
      系统通知里说明启停与切号；「账号栏改掉或清空」只在脚本已有用户时说。
 - `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
@@ -64,7 +68,7 @@
   `Update.AutoUpdateMode` 必须显式写 `AfterRun` / `Off`（引擎对缺省回落 `BeforeRun`）、
   用户级服务器 → 脚本级资源（不一致的用户停用 + 备注）、CDK 按 MFAA `config.json` 的 `DownloadCDK`
   → MAS 全局 CDK → GitHub 推导一次。input 值只清兑换码「占位」这一个预填哨兵（别的 default 是能跑的
-  真值，引擎对 string 空值不回落 default）；快速配置来源的队列里三类受管任务是陈旧数据，直接剔；实例文件
+  真值，保留；兑换码清成空串后靠 `no_default_fallback_inputs` 不被引擎回落成「占位」）；快速配置来源的队列里三类受管任务是陈旧数据，直接剔；实例文件
   来源的「切换账号」先带着选项翻译出来，再按 `managed.py` 落地（1 个进 `Info.Account`，多个照搬进队列并
   在备注与通知里提示拆分）。v5.6.0-beta.1 的迁移清了输入值、丢了实例文件里的切号，
   `repair_m9a_migration_losses` 在迁移之后按 `.m9a-legacy-*.bak` 补回一次（切号同样按 `managed.py`：

@@ -28,10 +28,10 @@ input 选项；关闭放队尾。用户排的顺序不影响这三项。队列�
 另实现了引擎的三个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）、
 ``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
 下载安装，``game_update.py``）与 ``retype_notice_lines``（按项目换成 / 换出 M9A 时通知里说明
-启停与切号）；并给了引擎的五项可选声明：``supports_mod_avd``（魔改 AVD）、
+启停与切号）；并给了引擎的六项可选声明：``supports_mod_avd``（魔改 AVD）、
 ``abort_round_entries``（切号失败结束本轮）、``nonfatal_entries``（关闭游戏失败不算失败）、
 ``skip_on_retry_entries``（完成过的重试不补跑）、``unselectable_entries``（五个小游戏不可选、
-运行时跳过），契约都在 MaaFW ``tools/embedded/flavor.py`` 的模块说明里。除这些之外 M9A 与
+运行时跳过）、``no_default_fallback_inputs``（自定义兑换码没填不回落「占位」），契约都在 MaaFW ``tools/embedded/flavor.py`` 的模块说明里。除这些之外 M9A 与
 通用 MaaFW 没有运行期差别。
 """
 
@@ -171,6 +171,11 @@ class M9AFlavor:
         ),
         "需手动进入对应页面（M9A 没有自动导航）",
     )
+
+    # 自定义兑换码没填时不回落 default：它的 default 是字面量「占位」，旧版迁移专门把预填的它清成
+    # 空串（migration._clean_input_values）；交给 agent 的话，交不过去的码会中断整个兑换，后面
+    # 真正的兑换码也不交。其余 input 的 default 是能跑的真值，照常回落
+    no_default_fallback_inputs = frozenset({("自定义兑换码", "兑换码")})
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
         return is_m9a_project(interface_model)

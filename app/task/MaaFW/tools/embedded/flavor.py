@@ -115,6 +115,17 @@
 - **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
   ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
 
+可选属性 ``no_default_fallback_inputs``（字符串字段不回落 default 的例外）的契约：
+
+- **形状**：``frozenset[tuple[str, str]]``，元素是 ``(选项名, 字段名)``。同样按 ``getattr`` 探测，
+  不进协议；没声明等于空集，行为完全不变。
+- **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
+  （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
+  ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
+  没有例外。
+- **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
+  「占位」）。能跑的 default 别列。
+
 可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
 
 - **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
@@ -217,6 +228,23 @@ def unselectable_entries(flavor: Any) -> dict[str, str]:
         for entry, reason in declared.items()
         if str(entry or "").strip()
     }
+
+
+def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
+    """特调声明的不回落 default 的字符串字段，契约见模块说明。没声明（或不是特调）返回空集。"""
+
+    declared = (
+        getattr(flavor, "no_default_fallback_inputs", None)
+        if flavor is not None
+        else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(
+        (str(item[0]), str(item[1]))
+        for item in declared
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
 
 
 def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
@@ -438,6 +466,7 @@ __all__ = [
     "GameUpdateHook",
     "MaaFWFlavor",
     "SnapshotSanitizer",
+    "no_default_fallback_inputs",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",

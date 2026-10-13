@@ -88,8 +88,8 @@ _RUNTIME_MANAGED_ENTRIES = {STARTUP_ENTRY, CLOSE_ENTRY, SWITCH_ACCOUNT_ENTRY}
 # 实例文件来源先只剔首尾：旧版原样照跑实例文件，里面勾选的「切换账号」是用户自己配的，要先
 # 带着选项翻译出来，再按 managed.py 的规则落地（1 个进「账号」，多个照搬并提示拆分）。
 _INSTANCE_FILE_MANAGED_ENTRIES = {STARTUP_ENTRY, CLOSE_ENTRY}
-# 旧前端把 input 的 default 预填进输入框、旧引擎照抄提交。只有兑换码的「占位」是哨兵（真提交会让
-# 任务卡死），其余 default 都是能跑的真值（自定义作战关卡的章节号 2、关卡号 6），不能清。
+# 旧前端把 input 的 default 预填进输入框、旧引擎照抄提交。只有兑换码的「占位」是哨兵（真提交会中断
+# 兑换；特调声明了它不回落 default），其余 default 都是能跑的真值（自定义作战关卡的章节号 2、关卡号 6），不清。
 _PREFILL_SENTINELS = frozenset({"占位"})
 # 迁移通知与补救通知共用的一句：关了快速配置时旧版直接跑实例文件、不读「账号」。
 _ACCOUNT_NOW_SWITCHES = (
@@ -1102,10 +1102,10 @@ def _clean_input_values(
 ) -> dict[str, str]:
     """input 选项的值转成字符串，只清掉预填进来的哨兵 default（兑换码的「占位」）。
 
-    旧前端把 ``default`` 预填进输入框，旧引擎也照抄提交；MaaFW 引擎把 default 只当占位提示、
-    不进执行值，真提交「占位」会让任务卡死，迁移是把它清掉的最后机会。别的 default 是能跑的
-    真值（自定义作战关卡的章节号 2、关卡号 6），引擎对 string 空值又不回落 default，清掉就会
-    下发 ``-12`` 这样的关卡。
+    旧前端把 ``default`` 预填进输入框，旧引擎也照抄提交；真提交「占位」会中断兑换，所以清成
+    空串——M9A 特调把这个字段声明为不回落 default（``flavor.no_default_fallback_inputs``），
+    空串就原样下发、不会回落成「占位」。别的 default 是能跑的真值（自定义作战关卡的章节号 2、
+    关卡号 6），保留原值（清掉也会被引擎回落成同一个 default）。
     """
 
     defaults = _input_defaults(definition)

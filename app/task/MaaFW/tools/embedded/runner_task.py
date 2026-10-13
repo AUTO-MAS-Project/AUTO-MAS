@@ -86,7 +86,12 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .embedded_project import resolve_maafw_project_root
-from .flavor import resolve_flavor, resolve_game_update_hook, unselectable_entries
+from .flavor import (
+    no_default_fallback_inputs,
+    resolve_flavor,
+    resolve_game_update_hook,
+    unselectable_entries,
+)
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .history_paths import maafw_history_log_path
@@ -1040,6 +1045,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 script_hotkeys=script_hotkeys,
                 # 走 task_ids 时快照不进建计划：从密文解出来的字段要单独交过去
                 secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
+                # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
+                no_default_fallback_inputs=no_default_fallback_inputs(flavor),
             )
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(
