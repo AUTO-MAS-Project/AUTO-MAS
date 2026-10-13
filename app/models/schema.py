@@ -33,6 +33,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -1088,6 +1089,39 @@ class ToolsConfig_GameSign(BaseModel):
     Result: str | None = Field(default=None, description="签到结果 JSON")
 
 
+class MiyousheGenshinAccountOut(BaseModel):
+    uid: str = Field(..., description="社区账号组 UUID")
+    name: str = Field(..., description="社区账号组名称")
+    has_credentials: bool = Field(..., description="是否配置米游社凭据")
+
+
+class MiyousheGenshinAccountsOut(OutBase):
+    data: list[MiyousheGenshinAccountOut] = Field(
+        default_factory=list, description="社区账号组名称与凭据配置状态"
+    )
+    reason: str = Field(default="", description="脱敏失败原因标识")
+
+
+class MiyousheGenshinRolesIn(BaseModel):
+    """查询社区账号绑定的原神官服角色。"""
+
+    account_uid: UUID = Field(..., description="米游社社区账号组 UUID")
+
+
+class MiyousheGenshinRoleOut(BaseModel):
+    uid: str = Field(..., description="原神角色 UID")
+    region: Literal["cn_gf01"] = Field(..., description="原神官服区服")
+    nickname: str = Field(default="", description="角色昵称")
+    region_name: str = Field(default="", description="区服名称")
+
+
+class MiyousheGenshinRolesOut(OutBase):
+    data: list[MiyousheGenshinRoleOut] = Field(
+        default_factory=list, description="账号绑定的原神官服角色"
+    )
+    reason: str = Field(default="", description="脱敏失败原因标识")
+
+
 class GameSignAccountGroupConfig(BaseModel):
     """游戏社区账号组配置"""
 
@@ -2125,6 +2159,18 @@ class BetterGIUserConfig_Switch(BaseModel):
     Uid: Optional[str] = Field(
         default=None,
         description="账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）",
+    )
+    MiyousheLogin: Optional[bool] = Field(
+        default=None, description="使用已有米游社会话启动官服原神，替代账号密码切换"
+    )
+    MiyousheAccountUid: Optional[str] = Field(
+        default=None, description="已有米游社社区账号组 ID，不保存凭据副本"
+    )
+    MiyousheRoleUid: Optional[str] = Field(
+        default=None, description="原神角色 UID，启动后须核对一致才能执行任务"
+    )
+    MiyousheRoleRegion: Optional[str] = Field(
+        default=None, description="原神角色服务器，首期仅支持 cn_gf01"
     )
     GamePath: Optional[str] = Field(
         default=None,

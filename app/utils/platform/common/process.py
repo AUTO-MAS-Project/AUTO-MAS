@@ -366,9 +366,11 @@ class ProcessManager:
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
-            for proc in psutil.process_iter(
-                ["pid", "name", "exe", "cmdline", "create_time"]
-            ):
+            # 仅按命令行匹配时才读取它，避免把游戏启动票据留在 psutil 缓存。
+            attrs = ["pid", "name", "exe", "create_time"]
+            if target_process.cmdline is not None:
+                attrs.append("cmdline")
+            for proc in psutil.process_iter(attrs):
                 if not match_process(proc, target_process):
                     continue
                 create_time = proc.info["create_time"]

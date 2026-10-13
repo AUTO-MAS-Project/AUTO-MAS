@@ -185,8 +185,18 @@
               </a-col>
             </a-row>
 
-            <!-- 账户:密码 = 1:1 -->
-            <a-row :gutter="24">
+            <BettergiMiyousheLogin
+              v-if="!pageLoading"
+              :config="formData.Switch"
+              :resource="formData.Switch.Resource"
+              :client-channel="gameClientInfo?.channel || ''"
+              :disabled="isInitializing || configLocked"
+              :on-save="saveMiyousheSettings"
+              @enabled-change="enabled => (formData.Switch.MiyousheLogin = enabled)"
+            />
+
+            <!-- 账户:密码 = 1:1；米游社登录方式优先，保留旧切号配置供关闭后使用 -->
+            <a-row v-if="!formData.Switch.MiyousheLogin" :gutter="24">
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
@@ -229,7 +239,7 @@
 
             <!-- 账号 UID:游戏服务器 = 1:1 -->
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col v-if="!formData.Switch.MiyousheLogin" :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -248,7 +258,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :span="formData.Switch.MiyousheLogin ? 24 : 12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -1350,6 +1360,7 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import BettergiMiyousheLogin from '@/views/EditView/User/components/BettergiMiyousheLogin.vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import BettergiDragonGroupSettings from './BettergiDragonGroupSettings.vue'
@@ -1480,6 +1491,10 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Resource: '官服',
     Uid: '',
     GamePath: '',
+    MiyousheLogin: false,
+    MiyousheAccountUid: '',
+    MiyousheRoleUid: '',
+    MiyousheRoleRegion: '',
   },
   OneDragon: {
     Groups: ONE_DRAGON_GROUPS.map(group => group.value),
@@ -1568,6 +1583,16 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   }
 
   return enqueue(persist)
+}
+
+// 社区账号与角色一次保存，角色查询失败时不清空原有绑定。
+const saveMiyousheSettings = (data: Partial<BetterGIUserFormData['Switch']>): Promise<boolean> => {
+  if (isInitializing.value || !userId.value || configLocked.value) return Promise.resolve(false)
+  return enqueue(async () => {
+    const ok = await updateUser(scriptId, userId.value, { Switch: data })
+    if (ok) Object.assign(formData.Switch, data)
+    return ok
+  })
 }
 
 // ══ 游戏客户端（用户级覆盖）：透传 BetterGI 配置 + config.ini 渠道识别 ══

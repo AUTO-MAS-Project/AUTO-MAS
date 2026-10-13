@@ -16,9 +16,25 @@ export type MaaUserConfig_Task = {
      */
     IfInfrast?: (boolean | null);
     /**
+     * 基建模式
+     */
+    InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
+    /**
+     * 基建方案名称
+     */
+    InfrastName?: (string | null);
+    /**
      * 理智作战
      */
     IfFight?: (boolean | null);
+    /**
+     * 剿灭模式
+     */
+    Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
+    /**
+     * 剿灭开始星期
+     */
+    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
     /**
      * 信用收支
      */

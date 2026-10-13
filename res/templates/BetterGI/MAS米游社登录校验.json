@@ -1,0 +1,27 @@
+{
+  "index": 997,
+  "name": "MAS米游社登录校验",
+  "config": {
+    "pathingConfig": {
+      "enabled": false
+    },
+    "enableShellConfig": false
+  },
+  "projects": [
+    {
+      "name": "米游社启动角色校验",
+      "folderName": "MASMiyousheLoginCheck",
+      "jsScriptSettingsObject": {
+        "expectedUid": "",
+        "runId": ""
+      },
+      "index": 1,
+      "type": "Javascript",
+      "status": "Enabled",
+      "schedule": "Daily",
+      "runNum": 1,
+      "allowJsNotification": false,
+      "allowJsHTTPHash": ""
+    }
+  ]
+}

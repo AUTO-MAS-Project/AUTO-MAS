@@ -63,6 +63,11 @@ from .tools import (
 )
 from .tools.drop_statistics import parse_drop_lines
 from .tools.game_update import ensure_game_updated, task_stopped
+from .tools.miyoushe_login import (
+    read_game_arguments,
+    remove_login_check_group,
+    write_login_check_group,
+)
 from .tools.one_dragon_plan import (
     build_combat_steps,
     parse_one_dragon_plan,
@@ -440,7 +445,32 @@ class AutoProxyTask(ScriptAutoProxyBase):
         method = self._account_switch_method()
         resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
         account = str(self.cur_user_config.get("Info", "Id") or "").strip()
-        if method == "MAS" and account:
+        miyoushe_login = bool(self.cur_user_config.get("Switch", "MiyousheLogin"))
+        if miyoushe_login:
+            if not IS_ELEVATED:
+                return "米游社账号启动需要以管理员权限运行 AUTO-MAS，以确保登录失败时能关闭本次游戏"
+            if resource != "官服":
+                return "米游社账号启动仅支持国服官服，请调整该用户的服务器"
+            if not all(
+                self.cur_user_config.get("Switch", key)
+                for key in (
+                    "MiyousheAccountUid",
+                    "MiyousheRoleUid",
+                    "MiyousheRoleRegion",
+                )
+            ):
+                return "请先选择已登录的米游社账号及其原神角色"
+            if self.cur_user_config.get("Switch", "MiyousheRoleRegion") != "cn_gf01":
+                return "米游社账号启动仅支持国服官服角色"
+            try:
+                game_exe = game_info.resolve_game_exe(
+                    root, str(self.cur_user_config.get("Switch", "GamePath") or "")
+                )
+            except RuntimeError as error:
+                return str(error)
+            if game_info.detect_channel(game_exe) != game_info.CHANNEL_OFFICIAL:
+                return "米游社账号启动需要可确认的国服官服客户端，请检查游戏路径与渠道"
+        if not miyoushe_login and method == "MAS" and account:
             if resource == "官服":
                 if not str(self.cur_user_config.get("Info", "Password") or ""):
                     # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
@@ -464,7 +494,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 互相隔离的客户端（B站账号无法登录官服客户端），客户端渠道与用户服务器
         # 不符时整条任务链都不成立，提前给出可操作错误而非运行期莫名失败。
         # 不切号的用户不校验——其 Switch.Resource 可能只是未改动的默认值。
-        if account:
+        if not miyoushe_login and account:
             expected = _RESOURCE_EXPECTED_CHANNEL.get(resource)
             if expected:
                 info = game_info.read_game_info(
@@ -1415,6 +1445,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_config.get("Switch", "GamePath") or ""
         ).strip()
 
+        if self.cur_user_config.get("Switch", "MiyousheLogin"):
+            return await self._launch_with_miyoushe(user_game_path)
+
         if self._account_switch_method() == "MAS":
             return await self._switch_account_mas(user_game_path)
 
@@ -1606,6 +1639,193 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务"
             )
         return switch_result["success"]
+
+    async def _launch_with_miyoushe(self, user_game_path: str) -> bool:
+        """用一次性票据拉起官服，角色核对成功后才交给后续任务。"""
+        from app.core.miyoushe_game_login import request_configured_genshin_login_ticket
+        from app.services.miyoushe_game_login import MiyousheGameLoginError
+        from app.services.telemetry import private_operation
+
+        group_path: Path | None = None
+        verified = False
+        bgi_cleanup = False
+        monitor: LogMonitor | None = None
+        try:
+            if not IS_ELEVATED:
+                await self._push_dispatch_log(
+                    "请以管理员权限运行 AUTO-MAS 后使用米游社账号启动"
+                )
+                return False
+            game_exe = game_info.resolve_game_exe(self.script_root_path, user_game_path)
+            if (
+                self.cur_user_config.get("Switch", "Resource") != "官服"
+                or game_info.detect_channel(game_exe) != game_info.CHANNEL_OFFICIAL
+            ):
+                await self._push_dispatch_log("米游社账号启动仅支持国服官服客户端")
+                return False
+            # 已有客户端可能停在另一个账号；不复用，也不关闭用户的运行现场。
+            if any(find_pids_by_name(name) for name in _BGI_LOCAL_GAME_PROCESS_NAMES):
+                await self._push_dispatch_log(
+                    "原神已在运行，无法确认登录账号；请先关闭游戏后重试米游社账号启动"
+                )
+                return False
+            if not await self.kill_managed_process():
+                await self._push_dispatch_log(_BGI_UNKILLABLE_HINT)
+                return False
+            bgi_cleanup = True
+
+            arguments = read_game_arguments(self.script_root_path)
+            role_uid = str(self.cur_user_config.get("Switch", "MiyousheRoleUid") or "")
+            await self._push_dispatch_log("正在校验米游社会话与原神角色...")
+            ticket = await request_configured_genshin_login_ticket(
+                str(self.cur_user_config.get("Switch", "MiyousheAccountUid") or ""),
+                role_uid=role_uid,
+                role_region=str(
+                    self.cur_user_config.get("Switch", "MiyousheRoleRegion") or ""
+                ),
+            )
+            try:
+                # 换票期间若用户自行打开游戏，同样拒绝复用旧客户端。
+                if any(
+                    find_pids_by_name(name) for name in _BGI_LOCAL_GAME_PROCESS_NAMES
+                ):
+                    await self._push_dispatch_log("原神已在运行，请关闭游戏后重试")
+                    return False
+                self.switch_game_manager = ProcessManager(reseek_target=True)
+                # 使用 ShellExecute 公开启动入口，不保留 Popen.args 中的票据副本。
+                # MAS 已提权，游戏继承同等权限；追踪只按 exe，不读取命令行。
+                with private_operation():
+                    await self.switch_game_manager.open_process(
+                        game_exe,
+                        *arguments,
+                        f"login_auth_ticket={ticket.get_secret_value()}",
+                        target_process=ProcessInfo(
+                            name=game_exe.name, exe=str(game_exe)
+                        ),
+                        elevated=True,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self._push_dispatch_log("原神启动失败，请检查游戏路径和运行权限")
+                return False
+            finally:
+                del ticket
+
+            await self._push_dispatch_log("原神已拉起，等待窗口与角色校验...")
+            # 使用进程管理器的公开窗口定位，不读取命令行或游戏内部状态。
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                if not await self.switch_game_manager.is_running():
+                    break
+                if self.switch_game_manager.main_hwnd is not None:
+                    break
+                await asyncio.sleep(0.5)
+            else:
+                await self._push_dispatch_log("原神窗口未就绪，已中止任务")
+                return False
+            if self.switch_game_manager.main_hwnd is None:
+                await self._push_dispatch_log("原神启动后退出或窗口未就绪，已中止任务")
+                return False
+
+            # 票据只绑定账号，客户端可能静默回退旧账号。校验组单独运行，
+            # 只复用 BetterGI 文档化 genshin.uid()；没有匹配结果就不运行一条龙。
+            run_id = uuid.uuid4().hex
+            group_path = write_login_check_group(
+                self.script_root_path, expected_uid=role_uid, run_id=run_id
+            )
+            prefix = f"MAS_MIYOUSHE_LOGIN:{run_id}:"
+            finished = asyncio.Event()
+            result = {"matched": False, "completed": False, "failed": False}
+
+            async def on_login_log(
+                log_content: list[str], latest_time: datetime
+            ) -> None:
+                log = "".join(log_content)
+                result["matched"] = prefix + "SUCCESS" in log
+                result["completed"] = f'配置组 "{group_path.stem}" 执行结束' in log
+                result["failed"] = any(
+                    marker in log
+                    for marker in (
+                        prefix + "MISMATCH",
+                        prefix + "UNAVAILABLE",
+                        "执行配置组任务时失败",
+                        "任务启动失败",
+                        "[FTL]",
+                    )
+                )
+                if (
+                    result["failed"]
+                    or result["completed"]
+                    or not await self._bgi_alive()
+                ):
+                    finished.set()
+
+            monitor = LogMonitor(
+                self.log_time_range, self.log_time_format, on_login_log
+            )
+            log_start = datetime.now()
+            await self.bettergi_process_manager.open_process(
+                self.script_exe_path,
+                "--startGroups",
+                group_path.stem,
+                target_process=self.script_target_process_info,
+                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+            )
+            await monitor.start_monitor_file(self._resolve_log_file_path, log_start)
+            try:
+                await asyncio.wait_for(finished.wait(), timeout=180)
+            except asyncio.TimeoutError:
+                await self._push_dispatch_log("原神登录或角色校验超时，已中止任务")
+                return False
+            verified = (
+                result["matched"] and result["completed"] and not result["failed"]
+            )
+            if not verified:
+                await self._push_dispatch_log(
+                    "当前原神角色与所选角色不一致或无法识别，已中止任务；请刷新米游社会话后重试"
+                )
+        except MiyousheGameLoginError as error:
+            await self._push_dispatch_log(str(error))
+            return False
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # 凭据流程不打印异常对象、堆栈、上游响应或请求。
+            await self._push_dispatch_log(
+                "米游社账号启动失败，请检查配置或重新登录米游社"
+            )
+            return False
+        finally:
+            if monitor is not None:
+                try:
+                    await monitor.stop()
+                except Exception:
+                    verified = False
+                    logger.warning("米游社角色校验监控清理失败，已中止任务")
+            if bgi_cleanup:
+                try:
+                    if not await self.kill_managed_process():
+                        verified = False
+                except Exception:
+                    verified = False
+                    logger.warning("米游社角色校验进程清理失败，已中止任务")
+            if group_path is not None:
+                try:
+                    remove_login_check_group(self.script_root_path, group_path)
+                except Exception:
+                    verified = False
+                    logger.warning("米游社角色校验配置清理失败，已中止任务")
+            if not verified and self.switch_game_manager is not None:
+                with suppress(Exception):
+                    await self.switch_game_manager.kill()
+                if any(
+                    find_pids_by_name(name) for name in _BGI_LOCAL_GAME_PROCESS_NAMES
+                ):
+                    logger.warning(
+                        "本次原神未能关闭，请手动关闭游戏后重试米游社账号启动"
+                    )
+        return verified
 
     async def _switch_account_mas(self, user_game_path: str = "") -> bool:
         """MAS 侧强制切换账号（官服/B服）：托管启动游戏 + 前台 OCR 操控登录界面。

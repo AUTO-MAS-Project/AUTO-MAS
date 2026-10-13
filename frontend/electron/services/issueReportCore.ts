@@ -24,11 +24,11 @@ const TEXT_EXTENSIONS = new Set([
   '.yml',
 ])
 const SENSITIVE_KEY_PATTERN =
-  /(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)/i
+  /(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|login_auth_ticket|serverchan|cdk|path)/i
 const SENSITIVE_BEARER_PATTERN =
-  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?(?:Bearer|Basic)\s+))[^"'\s,;&}\]]+/gi
+  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|login_auth_ticket|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?(?:Bearer|Basic)\s+))[^"'\s,;&}\]]+/gi
 const SENSITIVE_ASSIGNMENT_PATTERN =
-  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
+  /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|login_auth_ticket|serverchan|cdk|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
 const ACCOUNT_ASSIGNMENT_PATTERN =
   /((?:["']?(?:[\w.-]+\.)?(?:account(?:[_-]?name)?|user[_-]?name)["']?\s*[:=]\s*))(?:"[^"]*"|'[^']*'|"[^"]*|'[^']*|[^"'\s,;&}\]]+)/gi
 // 上面两条正则在大文件上每 MB 各要十几毫秒；第一条命中的必要条件是出现「: Bearer 」这种形状，

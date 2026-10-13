@@ -90,6 +90,9 @@ import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImp
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
+import type { MiyousheGenshinAccountsOut } from '../models/MiyousheGenshinAccountsOut';
+import type { MiyousheGenshinRolesIn } from '../models/MiyousheGenshinRolesIn';
+import type { MiyousheGenshinRolesOut } from '../models/MiyousheGenshinRolesOut';
 import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
 import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
@@ -2755,8 +2758,8 @@ export class Service {
     }
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
-     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
+     * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target
@@ -3554,6 +3557,36 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/history/data',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询原神登录可选社区账号
+     * @returns MiyousheGenshinAccountsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMiyousheGenshinAccountsApiToolsMiyousheGenshinAccountsPost(): CancelablePromise<MiyousheGenshinAccountsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/miyoushe/genshin/accounts',
+        });
+    }
+    /**
+     * 查询米游社绑定的原神官服角色
+     * @param requestBody
+     * @returns MiyousheGenshinRolesOut Successful Response
+     * @throws ApiError
+     */
+    public static getMiyousheGenshinRolesApiToolsMiyousheGenshinRolesPost(
+        requestBody: MiyousheGenshinRolesIn,
+    ): CancelablePromise<MiyousheGenshinRolesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/miyoushe/genshin/roles',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

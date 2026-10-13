@@ -104,7 +104,9 @@ def sanitize_log_message(message: str) -> str:
     # 定义需要过滤的敏感参数模式，兼容 URL、表单和 JSON 日志格式。
     sensitive_key = (
         r"(?:cdk|password|passwd|pwd|token|access[_-]?token|"
-        r"refresh[_-]?token|authorization|cookies?[_-]?str|cookie|"
+        r"refresh[_-]?token|stoken(?:_v2)?|cookie_token(?:_v2)?|mid(?:_v2)?|"
+        r"login_auth_ticket|"
+        r"authorization|cookies?[_-]?str|cookie|"
         r"secret|api[_-]?key|username|phone|cellphone|useridentity)"
     )
     sensitive_patterns = [
