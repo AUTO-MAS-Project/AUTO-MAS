@@ -2200,11 +2200,11 @@ export default {
     bettergiViewClose: 'Close viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
-    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
       'Backups of the MAS config (task snapshot and device overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     maafwConfigRestoreScriptDesc:
-      'Backups of the MaaFW project config (config folder and interface.json); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+      'Backups of the MaaFW project config (the config folder); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
     hsrConfigRestoreUserDesc:
       'Backups of the MAS config (task mapping and managed overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',

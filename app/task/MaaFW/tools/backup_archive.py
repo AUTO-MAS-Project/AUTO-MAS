@@ -44,7 +44,7 @@ MaaFW 特有的侧车、恢复语义（恢复前强制归档当前）与预览�
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from app.task.MaaFW.tools.core.interface.loader import parse_json_text
@@ -275,6 +275,22 @@ def get_native_backup_dir(
     return get_backup_dir(native_backup_root(script_id, project_path), ts)
 
 
+_NO_CONFIG_REASON = (
+    "这份备份里没有项目配置（config/），只有备份时的 interface.json，仅供参考、不能恢复"
+)
+
+
+def native_restore_scope(files: Mapping[str, Path]) -> tuple[list[str], str]:
+    """一份 native 备份恢复时会写回哪些文件（``config/*``），以及不能恢复的原因（能恢复为空串）。
+
+    预览与恢复共用这一份判断：预览据此返回 ``restoreAllowed`` / ``warnings``，界面禁用「一键
+    恢复」并说明原因，与真点下去时的拒绝一致。早先只收了 interface.json 的备份就是不能恢复的。
+    """
+
+    managed = sorted(rel for rel in files if rel.startswith(_CONFIG_PREFIX))
+    return managed, "" if managed else _NO_CONFIG_REASON
+
+
 def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> None:
     """把归档恢复到 MaaFW 项目（恢复前自动归档当前，误恢复可找回）。
 
@@ -286,9 +302,9 @@ def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> 
     backup_dir = get_native_backup_dir(script_id, project_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    managed = [rel for rel in dir_files(backup_dir) if rel.startswith(_CONFIG_PREFIX)]
-    if not managed:
-        raise ValueError("这份备份里没有项目配置（config/）可以恢复")
+    managed, reason = native_restore_scope(dir_files(backup_dir))
+    if reason:
+        raise ValueError(reason)
     project_path = Path(project_path)
     archive_native_backup(script_id, project_path, force=True)
     restore_files(backup_dir, project_path, managed)
@@ -446,4 +462,10 @@ def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> d
             "value": _summary_text("、".join(config_files)) if config_files else "无",
         }
     )
-    return {"sections": [{"name": "maafw", "label": "MaaFW 项目配置", "rows": rows}]}
+    _, reason = native_restore_scope(files)
+    return {
+        "sections": [{"name": "maafw", "label": "MaaFW 项目配置", "rows": rows}],
+        # 通用恢复组件认这两个键：不能恢复时禁用「一键恢复」并显示原因
+        "restoreAllowed": not reason,
+        "warnings": [reason] if reason else [],
+    }
