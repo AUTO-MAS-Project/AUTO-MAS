@@ -2708,6 +2708,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if (self.run_book["Annihilation"] and self.run_book["Routine"])
             else self.cur_user_item.result
         )
+        # 培养步骤以 MAA 成功日志为准，练度刷新延迟也不漏掉本轮的阶段结果。
+        cultivate_progress = log_statistics.parse_cultivate_progress(
+            line
+            for log_item in self.cur_user_item.log_record.values()
+            for line in log_item.content
+        )
+        if cultivate_progress:
+            statistics["cultivate_progress"] = "；".join(cultivate_progress)
         # 本轮有干员达成养成目标时随统计报告告知用户（目标消失可查）
         if self._cultivate_achievement_summary:
             statistics["cultivate_achievement"] = "、".join(
@@ -2740,6 +2748,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         should_send_statistics = (
             if_success
             or bool(images)
+            or bool(cultivate_progress)
             or _has_completed_sanity_task(list(self.cur_user_item.log_record.values()))
         )
         if should_send_statistics:
