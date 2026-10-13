@@ -16,7 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, AsyncIterator, Callable, Mapping
 
 import psutil
 
@@ -95,7 +95,11 @@ from .option_secrets import (
     secret_log_variants,
 )
 from .project_logs import copy_project_log_delta, snapshot_project_logs
-from .project_path import release_project_path, try_reserve_project_path
+from .project_path import (
+    is_project_updating,
+    release_project_path,
+    try_reserve_project_path,
+)
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -173,8 +177,12 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 # worker 输出转发每处理这么多行就让出一次事件循环。取 50 是因为原生诊断
 # 的洪峰约每秒几十行，这个粒度下让出频率约每秒一次，开销可忽略。
 _RELAY_YIELD_EVERY_LINES = 50
+# worker stdout / stderr 单行上限（字节）。更长的一行丢掉、记一句，读取继续。
+_WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+# Game.WaitTime 填 0 时等游戏窗口出现的上限（秒），与 WaitTime 的默认值相同
+_WINDOW_READY_FALLBACK_SECONDS = 60
 # 脚本页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
     "该项目的这个 Win32 控制器没有声明窗口匹配规则（interface 里的 class_regex / "
@@ -483,11 +491,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_signal: str | None = None
         # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
         self.maintenance_skipped = False
+        # 运行前检查时项目预约被占（手动更新、编辑页准备环境 / 导入），本用户没跑成。
+        self.project_busy_skipped = False
         # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
         self.missing_task_names: list[str] = []
         # 本次运行里各次尝试已完成的任务名（累计，按份数）：重试时剔掉特调声明的
         # skip_on_retry_entries；剔了什么每次重试开头按当前计划的 skippedTasks 写一行
         self._completed_this_run: list[str] = []
+        # 已完成过、但在队列里有多份同名的任务名：重试时不剔、全部重跑，开头写一行说明
+        self._retry_rerun_duplicates: list[str] = []
 
     async def check(self) -> str:
         proxy_times = (
@@ -502,8 +514,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return "今日代理次数已达上限，跳过该用户"
 
         if not await self._try_enter_project_path():
-            self.cur_user_item.status = "跳过"
-            return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
+            # 项目被占着没跑成：记「异常」而不是「跳过」。「跳过」不进异常用户，
+            # 脚本会记「完成」、汇总是 0 完成 / 0 未完成，「仅失败时」也不推送。
+            # 与 manager 层「正在切换版本，已跳过」同一口径。
+            self.cur_user_item.status = "异常"
+            self.project_busy_skipped = True
+            if is_project_updating(self.project_path):
+                return "项目正在更新，本次未运行该用户"
+            return (
+                "项目正被编辑页的准备运行环境、导入或另一次运行占用，本次未运行该用户"
+            )
 
         keep_reservation = False
         try:
@@ -530,7 +550,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
             if not self.run_plan.tasks:
                 self.cur_user_item.status = "跳过"
-                return "MaaFW 周期任务已在本周或本月完成，跳过本次运行"
+                return _period_all_done_message(self.run_plan)
 
             # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
             # 并进那条维护通知的用户列表。代理次数、上次状态都不动。
@@ -600,7 +620,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             (logger.warning if self.cur_user_item.status == "异常" else logger.info)(
                 f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
             )
-            if self.cur_user_item.status == "异常":
+            # 项目被占用不逐个弹窗：所有用户撞的是同一件事，10 个用户就弹 10 次、响 10 次
+            # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个用户在
+            # runner_task 里各报一遍」同一用意；「异常」状态、本用户日志、history 与统计
+            # 照常记（见下面与 final_task），汇总与「仅失败时」推送照常带上它。
+            if self.cur_user_item.status == "异常" and not self.project_busy_skipped:
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
@@ -612,9 +636,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         ),
                     ),
                 )
-            if self.maintenance_skipped:
-                # 同一资源已确认在维护：记一份本用户的日志，让代理结果汇总、统计信息与
-                # history 都写明原因（其他跳过原因照旧不记）。
+            if self.maintenance_skipped or self.project_busy_skipped:
+                # 同一资源已确认在维护、或项目被占用没跑成：记一份本用户的日志，让代理
+                # 结果汇总、统计信息与 history 都写明原因（其他跳过原因照旧不记）。
+                # 前面拿到的运行前更新日志也随这份日志进 history，不丢。
                 # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
                 # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
@@ -827,6 +852,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
                 statistic_paths = await self._save_user_logs()
                 await self._push_user_statistics(statistic_paths)
+            elif self.project_busy_skipped:
+                # 没跑成：history 与统计信息写明原因；代理次数与上次状态不动。
+                statistic_paths = await self._save_user_logs()
+                await self._push_user_statistics(statistic_paths)
             await self._release_project_path()
             return
 
@@ -867,9 +896,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
-        logger.exception(f"MaaFW 插件自动代理任务出现异常: {e}")
+        logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
         if self.cur_user_log is not None:
-            self.cur_user_log.status = f"MaaFW 插件自动代理任务出现异常: {e}"
+            self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
         try:
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -1840,6 +1869,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 env=worker_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
+                # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
+                limit=_WORKER_STREAM_LINE_LIMIT,
             )
             worker_id = service.register_worker(process)
         except BaseException:
@@ -1890,7 +1922,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if process.stdout is None:
                 return
             processed = 0
-            async for raw_line in process.stdout:
+            async for raw_line in _iter_stream_lines(
+                process.stdout,
+                lambda: write_framework_log("worker-stdout", _STREAM_OVERRUN_NOTE),
+            ):
                 # StreamReader 缓冲里有数据时 `async for` 不会挂起，会一路取到
                 # 缓冲耗尽为止。MaaFramework 的原生诊断动辄每秒几十行、单次运行
                 # 几千行，这个循环于是能连续独占事件循环数十秒——真机上表现为
@@ -1943,7 +1978,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if process.stderr is None:
                 return
             processed = 0
-            async for raw_line in process.stderr:
+            async for raw_line in _iter_stream_lines(
+                process.stderr,
+                lambda: write_framework_log("worker-stderr", _STREAM_OVERRUN_NOTE),
+            ):
                 processed += 1
                 if processed % _RELAY_YIELD_EVERY_LINES == 0:
                     await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
@@ -2040,7 +2078,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # Native stderr is already preserved in the per-run framework log.
             # Do not copy parser/backtrace blobs into the normal task log when
             # the worker exits without a protocol result.
-            message += ": MaaFW worker 未返回任务结果，完整原生日志已保存到本次运行的 .maafw.log"
+            message += (
+                ": MaaFW worker 未返回任务结果，完整输出已保存到本次运行的 .worker.log"
+            )
         raise RuntimeError(message)
 
     def _secret_log_variants(self) -> list[str]:
@@ -2296,7 +2336,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _skip_tasks_completed_this_run(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
         """剔掉特调声明的 ``skip_on_retry_entries`` 里、本次运行已完成过的任务。
 
-        按 entry 认任务、按任务名计份数：同一任务重复入队只完成了一份时只剔一份。
+        按 entry 认任务、按任务名计份数；同名任务在队列里有多份时全部重跑（见下面注释）。
         没有声明的特调与通用 MaaFW 原样返回。剔掉的记进 ``skippedTasks``，每次重试开头
         据此写一行（``_log_retry_skipped_tasks``）。
         """
@@ -2306,10 +2346,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not entries:
             return plan
         remaining = Counter(self._completed_this_run)
+        # runner 只回报任务名，同名的几份（比如关卡不同的两份「作战」）分不清完成的是
+        # 哪一份：按队列顺序剔会剔掉失败的那份、把完成的再跑一遍。所以名字在计划里
+        # 不止一份时一份都不剔，全部重跑（#1296 之前的行为）；只有一份的照常剔。
+        occurrences = Counter(task.name for task in plan.tasks)
+        self._retry_rerun_duplicates = [
+            task.name
+            for task in plan.tasks
+            if task.entry in entries
+            and occurrences[task.name] > 1
+            and remaining[task.name] > 0
+        ]
         tasks = []
         skipped: list[MaaFWSkippedTaskPlan] = []
         for task in plan.tasks:
-            if task.entry in entries and remaining[task.name] > 0:
+            if (
+                task.entry in entries
+                and occurrences[task.name] == 1
+                and remaining[task.name] > 0
+            ):
                 remaining[task.name] -= 1
                 skipped.append(
                     MaaFWSkippedTaskPlan(
@@ -2340,6 +2395,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(
                 f"{_RETRY_SKIP_REASON}，不再补跑: "
                 + "、".join(_task_display_name(task) for task in skipped)
+            )
+        duplicates = list(dict.fromkeys(self._retry_rerun_duplicates))
+        if duplicates:
+            labels = _format_completed_task_labels(self.run_plan, duplicates)
+            self._append_log(
+                f"{'、'.join(labels)} 在队列里有多份，分不清完成的是哪一份，重试时全部重跑"
             )
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
@@ -2405,7 +2466,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not self.opened_emulator:
             return True
         try:
-            return await close_emulator(self, log_failure=False)
+            # 失败原因（含超时）记 warning 进 app.log：#708 设成静默的理由「插件清理属
+            # 预期路径」已经不成立（没有插件这一层了）。用户日志不写：重试路径下一轮
+            # MAS 会自己重开模拟器，「请手动关闭」会误导。
+            return await close_emulator(self)
         finally:
             self.opened_emulator = False
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
@@ -2452,11 +2516,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return
 
         if await asyncio.to_thread(_is_process_path_running, game_path):
-            message = (
+            # 走 _append_log（它同样写 app.log）：直接改 script_info.log 会整块替换日志
+            # 窗口，这一行也不进用户日志与 history，下一条日志一来就没了。
+            self._append_log(
                 f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_path.name}"
             )
-            logger.info(message)
-            self.script_info.log = message
             self._note_resolution_override_skipped()
             self._note_launch_arguments_skipped()
             if await self._wait_for_desktop_game_ready(game_path):
@@ -2480,15 +2544,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 cwd=game_path.parent,
                 breakaway=True,
             )
+            # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
+            # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
+            self.opened_game = True
             await self._wait_for_desktop_game_ready(game_path)
             self.game_window_ready_at = time.monotonic()
         except Exception:
+            self.opened_game = False
             with suppress(Exception):
                 await self.game_process_manager.kill()
             await self._restore_game_resolution_override()
             raise
 
-        self.opened_game = True
         await self._activate_desktop_game_window(game_path)
 
     def _unity_resolution_target(self) -> tuple[int, int] | None:
@@ -2528,13 +2595,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 "跳过临时固定分辨率（只有 Unity 引擎的游戏支持）"
             )
             return
+        # 先记下再写：写注册表在工作线程里，等它时被停止（取消）的话，收尾的
+        # _close_game 仍要能把它恢复回去
+        self.game_resolution_override = override
         try:
             await asyncio.to_thread(override.apply)
         except Exception as exc:
+            self.game_resolution_override = None
             logger.warning(f"MaaFW 临时固定游戏分辨率失败: {exc}")
             self._append_log(f"临时固定游戏分辨率失败，按当前分辨率启动: {exc}")
             return
-        self.game_resolution_override = override
         self._append_log(
             f"已尝试把 HKCU\\{override.registry_path} 的分辨率临时设为 "
             f"{override.label} 窗口模式，游戏关闭后恢复原值"
@@ -2566,6 +2636,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """
 
         wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
+        if wait_time <= 0:
+            # 「等待时间」填 0 只表示不等画面稳定；窗口还是要等出来，否则刚拉起的游戏
+            # 当场判「窗口未就绪」、被关掉重试，次次如此
+            wait_time = _WINDOW_READY_FALLBACK_SECONDS
         if self.run_plan is None or self.interface_model is None:
             raise RuntimeError("MaaFW 运行计划未完成初始化")
 
@@ -2578,15 +2652,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._append_log(
             f"正在等待游戏客户端窗口就绪，最大等待时间 {wait_time}s: {game_path.name}"
         )
-        if wait_time <= 0:
-            if not await asyncio.to_thread(_is_process_path_running, game_path):
-                raise RuntimeError(f"游戏进程未启动: {game_path.name}")
-            if explicit_hwnd:
-                self._append_log(f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}")
-                return False
-            if not await asyncio.to_thread(_match_controller_windows, controller):
-                raise RuntimeError(f"游戏窗口未就绪: {game_path.name}")
-            return False
 
         waited = 0.0
         process_detected = False
@@ -3107,7 +3172,31 @@ def _maafw_runner_jobs_dir() -> Path:
 
     new_dir = Path.cwd() / "data" / "maafw_runner_jobs"
     migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
+    _sweep_stale_runner_jobs(new_dir)
     return new_dir
+
+
+# worker 读完 job 就删，正常情况下 job 文件只在盘上待几秒；超过这么久还在的，
+# 是宿主与 worker 一起被硬杀（断电、蓝屏、结束进程树）留下的。
+_STALE_RUNNER_JOB_SECONDS = 3600.0
+
+
+def _sweep_stale_runner_jobs(directory: Path) -> None:
+    """删掉上次异常退出残留的 job 文件：里面可能有解密后的密码选项。"""
+
+    try:
+        candidates = list(directory.glob("maafw-runner-job-*.json"))
+    except OSError:
+        return
+    now = time.time()
+    for path in candidates:
+        try:
+            if now - path.stat().st_mtime < _STALE_RUNNER_JOB_SECONDS:
+                continue
+            path.unlink()
+        except OSError:
+            continue
+        logger.info(f"已清理残留的 MaaFW job 文件: {path.name}")
 
 
 def _find_controller(
@@ -3314,12 +3403,37 @@ def _clean_framework_output(message: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", str(message or ""))
 
 
+_STREAM_OVERRUN_NOTE = f"（worker 输出有一行超过 {_WORKER_STREAM_LINE_LIMIT // (1024 * 1024)} MB，已丢弃该行）"
+
+
+async def _iter_stream_lines(
+    stream: asyncio.StreamReader, on_overrun: Callable[[], None]
+) -> AsyncIterator[bytes]:
+    """逐行读子进程输出；单行超过 StreamReader 上限时丢掉这一行、记一句，接着读。
+
+    ``async for line in stream`` 碰到超长行直接抛 ValueError，读取任务随之结束，之后没人
+    读管道，worker 写满管道就挂住。StreamReader 抛错前已经把那一行（或缓冲）丢掉，
+    接着读是安全的。
+    """
+
+    while True:
+        try:
+            line = await stream.readline()
+        except ValueError:
+            on_overrun()
+            continue
+        if not line:
+            return
+        yield line
+
+
 def _framework_ui_message(message: str) -> str:
     """Bound worker diagnostics copied to the user-facing task log.
 
-    Complete native output is already retained in ``*.maafw.log``. A malformed
-    task/encoding error can otherwise contain megabytes of JSON or a parser
-    trace and make the normal task page unusable.
+    Complete worker output (runner events, worker stdout/stderr) is already
+    retained in ``*.worker.log``. A malformed task/encoding error can otherwise
+    contain megabytes of JSON or a parser trace and make the normal task page
+    unusable.
     """
 
     cleaned = _clean_framework_output(message).strip()
@@ -3330,7 +3444,7 @@ def _framework_ui_message(message: str) -> str:
     omitted = max(0, len(cleaned) - len(compact))
     summary = (
         f"{compact}\n… 上述内容已省略 {omitted} 个字符，"
-        "完整内容请查看本次运行的 .maafw.log"
+        "完整内容请查看本次运行的 .worker.log"
     )
     return summary[:_FRAMEWORK_UI_LOG_MAX_CHARS]
 
@@ -3671,6 +3785,10 @@ def _failure_reason_for_user(result: Any) -> str:
 def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
     failed_task = str(getattr(result, "failedTask", "") or "").strip()
     reason = _failure_reason_for_user(result)
+    if not failed_task:
+        # 还没投递任何任务就失败了（ADB 未就绪、Agent 连接超时、资源加载失败……）：
+        # 不把原因挂到第一个任务头上，用户会去查错任务
+        return f"MaaFW 运行失败{'：' + reason if reason else ''}"
     suffix = f"：任务执行失败{'：' + reason if reason else ''}"
     tasks = tuple(getattr(plan, "tasks", ()) or ()) if plan is not None else ()
     if tasks:
@@ -3749,6 +3867,27 @@ _RETRY_SKIP_REASON = "前面的尝试已完成"
 
 def _retry_skipped_tasks(plan: MaaFWRunPlan) -> list[MaaFWSkippedTaskPlan]:
     return [task for task in plan.skippedTasks if task.reason == _RETRY_SKIP_REASON]
+
+
+_PERIOD_DONE_LABELS = {
+    "今日已正常完成": "今日",
+    "本周已正常完成": "本周",
+    "本月已正常完成": "本月",
+}
+
+
+def _period_all_done_message(plan: MaaFWRunPlan) -> str:
+    """队列里的任务都因周期限制被跳过时的提示，按实际跳过原因说今日 / 本周 / 本月。"""
+
+    periods: list[str] = []
+    for task in plan.skippedTasks:
+        label = _PERIOD_DONE_LABELS.get(task.reason or "")
+        if label and label not in periods:
+            periods.append(label)
+    if not periods:
+        return "MaaFW 队列里的周期任务都已在本周期内完成，跳过本次运行"
+    ordered = [label for label in ("今日", "本周", "本月") if label in periods]
+    return f"MaaFW 队列里的周期任务都已在{' / '.join(ordered)}完成，跳过本次运行"
 
 
 def _drop_unselectable_tasks(

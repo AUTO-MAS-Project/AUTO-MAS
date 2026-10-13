@@ -207,6 +207,8 @@ SIGNAL_SCREENSHOT_KINDS = {
 SIGNAL_UNMATCHED_LOG_LIMIT = 20
 # 回调线程里发起的停止，主线程收尾时最多等它这么久。
 SIGNAL_STOP_JOIN_SECONDS = 10.0
+# agent 输出读到结尾后等它退出、取退出码的上限（秒）。
+AGENT_EXIT_CODE_WAIT_SECONDS = 2.0
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -821,6 +823,8 @@ class MaaFWRunner:
         self.agent_output_threads: list[threading.Thread] = []
         # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
         self._agent_handshake_errors: dict[int, str] = {}
+        # agent 进程 pid -> 日志里用的名字；运行中判「agent 已退出」时报给用户。
+        self._agent_labels: dict[int, str] = {}
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -869,6 +873,9 @@ class MaaFWRunner:
         # 单任务时限到点后发起停止的定时器线程（它在里面等停止 job）。
         self._task_deadline_stop_thread: threading.Thread | None = None
         self._completed_tasks: list[str] = []
+        # 本轮正在处理的任务名（每个任务开始时设）：异常收尾时据此报 failedTask。
+        # 没进入任务循环（初始化、启动画面等待失败）时为 None，不把原因挂到某个任务上。
+        self._current_task_name: str | None = None
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
         self._signal_specs: dict[str, MaaFWSignalSpec] = {}
@@ -1034,6 +1041,7 @@ class MaaFWRunner:
         self._task_deadline_stop_thread = None
         self._failure_screenshots = []
         self._completed_tasks = []
+        self._current_task_name = None
         with self._signal_lock:
             self._signal_hit = None
             self._signal_task = None
@@ -1094,11 +1102,10 @@ class MaaFWRunner:
                 completedTasks=completed_tasks,
             )
         except Exception as exc:
-            failed_task = (
-                self.plan.tasks[len(self._completed_task_names())].name
-                if (len(self._completed_task_names()) < len(self.plan.tasks))
-                else None
-            )
+            # 用「正在处理的任务」而不是「已完成数」当下标：前面有任务失败后继续过、
+            # 或收尾任务被放过时，已完成数会比实际位置少，指到前面的任务上。
+            # 初始化阶段失败时还没有任务，为 None。
+            failed_task = self._current_task_name
             self.send_log(f"MaaFW 任务执行失败: {exc}")
             return MaaFWRunResult(
                 success=False,
@@ -1148,6 +1155,10 @@ class MaaFWRunner:
         # 定时器线程里只做两件事：置位、让正在跑的任务停下。截图与收尾都在主线程，
         # 那里 controller 的使用方式和普通任务失败完全一样。
         with self._post_lock:
+            # 单任务定时器被截到整轮截止时刻时，两个定时器同一时刻各转来一次；
+            # 只认第一次，否则超时日志打两遍、post_stop 也发两次。
+            if self._deadline_hit.is_set():
+                return
             self._deadline_hit.set()
             in_flight = self._task_in_flight
         if self._stop_requested.is_set():
@@ -1366,10 +1377,21 @@ class MaaFWRunner:
         等的时候整轮时限到点就直接按整轮超时收尾，不再说「继续后续任务」。
         """
 
+        return self._wait_self_stop_settled(lambda: self._task_deadline_stop_thread)
+
+    def _wait_self_stop_settled(
+        self, stop_thread: Callable[[], threading.Thread | None]
+    ) -> bool:
+        """等我们自己发起的停止（单任务时限、原地打转）真正生效，tasker 空闲下来。
+
+        先等发起停止的线程结束（它在里面等停止 job），再看 ``tasker.running``；最多等
+        ``TASK_STOP_SETTLE_SECONDS``，返回 False 表示等满也没停下。
+        """
+
         give_up_at = time.monotonic() + TASK_STOP_SETTLE_SECONDS
         while True:
             self._raise_if_deadline_hit()
-            thread = self._task_deadline_stop_thread
+            thread = stop_thread()
             busy = thread is not None and thread.is_alive()
             if not busy and self.tasker is not None:
                 try:
@@ -1405,9 +1427,20 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
         reason = _format_loop_guard_reason(verdict)
         display_name = _task_display_name(task)
+        has_next = index + 1 < len(self.plan.tasks)
+        # 与单任务时限同一口径：要接着投下一个任务时先等停止真正生效，tasker 没空闲
+        # 会以 task_id=0 拒掉下一个任务，再被当成脚本侧强停跳过本轮剩余任务。
+        # 结束本轮或排在队尾时不等。
+        not_settled = RuntimeError(
+            f"{reason}，停止后 {TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，"
+            f"本轮剩余任务已跳过: {display_name}"
+        )
         if task.nonFatalMessage:
             self._raise_if_game_launch_failed(display_name, reason)
-            has_next = index + 1 < len(self.plan.tasks)
+            if has_next and not self._wait_self_stop_settled(
+                lambda: self._loop_guard_stop_thread
+            ):
+                raise not_settled
             if has_next and self._nonfatal_script_stopped(task, reason):
                 return "skip_rest"
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
@@ -1420,8 +1453,12 @@ class MaaFWRunner:
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        if has_next and not self._wait_self_stop_settled(
+            lambda: self._loop_guard_stop_thread
+        ):
+            raise not_settled
         self._failed_task_errors.append((task.name, reason))
-        if index + 1 < len(self.plan.tasks):
+        if has_next:
             self.send_log(f"{reason}，已停止并继续后续任务: {display_name}")
         else:
             self.send_log(f"{reason}，已停止: {display_name}")
@@ -1444,6 +1481,41 @@ class MaaFWRunner:
             return
         error = RuntimeError(
             f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
+            f"{display_name}: {message}"
+        )
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _exited_agent(self) -> tuple[str, int] | None:
+        """运行中退出了的 agent 子进程（名字, 退出码）；都还活着时返回 None。"""
+
+        for process in self.agent_processes:
+            try:
+                exit_code = process.poll()
+            except Exception:
+                continue
+            if exit_code is not None:
+                label = self._agent_labels.get(process.pid, str(process.pid))
+                return label, exit_code
+        return None
+
+    def _raise_if_agent_exited(
+        self, display_name: str, message: str, cause: BaseException | None = None
+    ) -> None:
+        """任务失败时 agent 子进程已经退出：结束本轮，交给宿主重试。
+
+        连上之后 agent 崩溃（Python 异常退出、Go agent panic、被杀软拦掉），后面用到
+        自定义识别 / 动作的节点全部会失败，接着跑只是逐个白等、报一串节点名；宿主重试
+        会换新 worker 起新 agent。
+        """
+
+        exited = self._exited_agent()
+        if exited is None:
+            return
+        label, exit_code = exited
+        error = RuntimeError(
+            f"Agent 进程已退出（{label}, exit={exit_code}），本轮剩余任务已跳过: "
             f"{display_name}: {message}"
         )
         if cause is not None:
@@ -1707,7 +1779,10 @@ class MaaFWRunner:
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
             raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
-        self._wait_job(self.resource.post_bundle(path_info.resolved))
+        self._wait_job(
+            self.resource.post_bundle(path_info.resolved),
+            failure=f"加载资源失败: {path_info.resolved}",
+        )
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:
@@ -1779,7 +1854,10 @@ class MaaFWRunner:
         self.controller = self._create_controller(device_config)
         self._apply_screenshot_target(self.controller)
         self._install_controller_sink(self.controller)
-        self._wait_job(self.controller.post_connection())
+        self._wait_job(
+            self.controller.post_connection(),
+            failure=f"连接控制器失败: {self.plan.controllerName}",
+        )
         if not self.tasker.bind(self.resource, self.controller):
             raise RuntimeError("无法绑定 MaaFW resource/controller/tasker")
         self._install_tasker_sink()
@@ -2258,6 +2336,7 @@ class MaaFWRunner:
                 ) from exc
             self.agent_clients.append(agent_client)
             self.agent_processes.append(process)
+            self._agent_labels[process.pid] = Path(command[0]).name
             self._start_agent_output_reader(process, Path(command[0]).name)
             try:
                 self._connect_agent_client(
@@ -2555,6 +2634,7 @@ class MaaFWRunner:
         thread = threading.Thread(
             target=self._read_agent_output,
             args=(process.stdout, label, process.pid),
+            kwargs={"process": process},
             name=f"maafw-agent-log-{process.pid}",
             daemon=True,
         )
@@ -2562,12 +2642,18 @@ class MaaFWRunner:
         self.agent_output_threads.append(thread)
 
     def _read_agent_output(
-        self, stream: BinaryIO | TextIO, label: str, pid: int | None = None
+        self,
+        stream: BinaryIO | TextIO,
+        label: str,
+        pid: int | None = None,
+        *,
+        process: subprocess.Popen | None = None,
     ) -> None:
         try:
             while True:
                 line = stream.readline()
                 if line in ("", b""):
+                    self._log_agent_output_closed(label, process)
                     break
                 message = self._decode_agent_output_line(line).rstrip()
                 if message:
@@ -2584,6 +2670,31 @@ class MaaFWRunner:
             return
         except Exception as exc:
             self.send_log(f"读取 agent 输出失败: {exc}")
+
+    def _log_agent_output_closed(
+        self, label: str, process: subprocess.Popen | None
+    ) -> None:
+        """agent 输出读到结尾时记一行退出码：运行中崩溃时这是唯一能直接看出根因的一行。"""
+
+        if process is None:
+            return
+        exit_code: int | None = None
+        try:
+            exit_code = process.wait(timeout=AGENT_EXIT_CODE_WAIT_SECONDS)
+        except Exception:
+            with suppress(Exception):
+                exit_code = process.poll()
+        if exit_code is None:
+            # 输出关了但进程还活着（agent 自己关了 stdout）：不能说成已退出
+            self.send_log(f"{DETAIL_LOG_PREFIX}Agent 输出已关闭，进程仍在运行: {label}")
+            return
+        if self._stop_requested.is_set() or not self._initialized:
+            # 收尾时是我们自己结束的 agent；连接阶段退出由连接循环报错。只进 .worker.log
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_code}"
+            )
+            return
+        self.send_log(f"Agent 进程已退出: {label}, exit={exit_code}")
 
     @staticmethod
     def _decode_agent_output_line(line: bytes | str) -> str:
@@ -2832,6 +2943,8 @@ class MaaFWRunner:
         stable_seconds = 0
         content_seconds = 0
         capture_error_logged = False
+        # 最后一帧的状态，等满上限时按它说明为什么没提前放行。
+        last_state: str | None = None
         while True:
             if self._stop_requested.wait(
                 timeout=STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS
@@ -2840,7 +2953,13 @@ class MaaFWRunner:
             self._raise_if_deadline_hit()
             left = gate_ends_at - time.monotonic()
             if left <= 0:
-                self.send_log(f"等满 {remaining:.0f}s，画面仍在变化，按上限下发任务")
+                state_text = {
+                    "no_frame": "截不到画面",
+                    "blank": "画面仍是黑屏或纯色",
+                    "changing": "画面仍在变化",
+                }.get(last_state or "")
+                state_part = f"{state_text}，" if state_text else ""
+                self.send_log(f"等满 {remaining:.0f}s，{state_part}按上限下发任务")
                 return
             try:
                 frame = _sample_startup_screen(self.controller)
@@ -2849,7 +2968,13 @@ class MaaFWRunner:
                     capture_error_logged = True
                     self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
                 frame = None
-            if frame is None or _startup_screen_is_blank(frame):
+            if frame is None:
+                last_state = "no_frame"
+            elif _startup_screen_is_blank(frame):
+                last_state = "blank"
+            else:
+                last_state = "changing"
+            if last_state != "changing":
                 # 截不到、黑屏、纯色：都还在加载，两个计数都重来
                 previous = None
                 stable_seconds = 0
@@ -2880,6 +3005,9 @@ class MaaFWRunner:
         self._failed_task_errors = []
         total_tasks = len(self.plan.tasks)
         for index, task in enumerate(self.plan.tasks):
+            # 先于停止检查设：两个任务之间点停止时，记的是接下来要跑的这个，
+            # 不是上一个已完成的
+            self._current_task_name = task.name
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
             tasker = self.tasker
@@ -2960,6 +3088,8 @@ class MaaFWRunner:
                     self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
                 self._raise_if_game_launch_failed(display_name, message, cause=exc)
+                if not task.nonFatalMessage:
+                    self._raise_if_agent_exited(display_name, message, cause=exc)
                 if task.nonFatalMessage:
                     # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
                     # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
@@ -3197,19 +3327,43 @@ class MaaFWRunner:
         completed_tasks = getattr(self, "_completed_tasks", [])
         return list(completed_tasks)
 
-    def _wait_job(self, job: Job | JobWithResult) -> None:
+    def _wait_job(
+        self, job: Job | JobWithResult, *, failure: str | None = None
+    ) -> None:
+        """等 job 结束，失败时抛带原因的 RuntimeError。
+
+        ``failure``：资源加载、控制器连接这类不是任务的 job 用的说明（如「加载资源失败:
+        <路径>」）。它们是普通 Job，取不到节点与失败事件，不给说明就会抛出空串，
+        宿主那边只剩「任务执行失败」。
+        """
+
         # MaaFW returns a Job wrapper even when the native Tasker rejects a
         # task (for example, an invalid pipeline override); in that case the
         # native task id is 0 and ``job.failed`` is not reliable.  Treat it as
         # a submission failure instead of reporting an instant success.
         if getattr(job, "job_id", 1) == 0:
-            raise RuntimeError("MaaFW tasker 未接受任务（task_id=0）")
+            if failure is not None:
+                self.send_log(f"{DETAIL_LOG_PREFIX}{failure}: MaaFW job id=0")
+                raise RuntimeError(
+                    f"{failure}：MaaFramework 未接受这个请求，原因见本次运行的 .maafw.log"
+                )
+            self.send_log(f"{DETAIL_LOG_PREFIX}MaaFW tasker 未接受任务（task_id=0）")
+            raise RuntimeError(
+                "MaaFramework 拒绝了这个任务（多半是任务选项生成的覆盖无效），"
+                "原因见本次运行的 .maafw.log"
+            )
         job.wait()
         if job.failed:
             detail = None
             if isinstance(job, JobWithResult):
                 detail = job.get()
-            raise RuntimeError(self._build_job_failure_message(detail))
+            message = self._build_job_failure_message(detail)
+            if not message:
+                lead = failure or "MaaFramework 未给出失败原因"
+                message = f"{lead}，详见本次运行的 .maafw.log"
+            elif failure is not None:
+                message = f"{failure}：{message}"
+            raise RuntimeError(message)
 
     def _on_node_notification(self, message: str, details: dict[str, Any]) -> None:
         """框架每条原始通知都进这里：先打 focus 文案，再记失败摘要。

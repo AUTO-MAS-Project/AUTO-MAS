@@ -535,10 +535,19 @@ class MaaFWPipelineOverrideBuilder:
                 for key, nested_value in value.items()
             }
             attach_value = copied.get("attach")
-            if isinstance(attach_value, dict) and option_name in attach_value:
+            if isinstance(attach_value, dict):
+                # 两种写法：键名就是选项名（按键赋值）；或者某个值整个写成
+                # "{选项名}"（MaaFgo 的 bbc_source_config: "{BBC转换来源配置}"），整值换成
+                # 选中的值。只认整值，不做子串替换。
+                placeholder = f"{{{option_name}}}"
                 updated_attach = copy.deepcopy(attach_value)
-                updated_attach[option_name] = selected_value
-                copied["attach"] = updated_attach
+                changed = False
+                for key, item in attach_value.items():
+                    if key == option_name or item == placeholder:
+                        updated_attach[key] = selected_value
+                        changed = True
+                if changed:
+                    copied["attach"] = updated_attach
             return copied
         if isinstance(value, list):
             return [

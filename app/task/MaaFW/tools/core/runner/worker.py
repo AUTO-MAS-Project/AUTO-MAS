@@ -147,6 +147,10 @@ def main() -> int:
     runner: MaaFWRunner | None = None
     try:
         payload = json.loads(job_path.read_text(encoding="utf-8"))
+        # 计划里可能有解密后的密码选项：读完就删，不让明文在盘上留一整轮。
+        # 看门狗、finally 与宿主收尾里的删除照旧保留作兜底。
+        with suppress(OSError):
+            job_path.unlink()
         _start_owner_watchdog(job_path, payload)
         plan = MaaFWRunPlan.model_validate(payload["plan"])
         device_config = MaaFWDeviceConfig.model_validate(payload["deviceConfig"])

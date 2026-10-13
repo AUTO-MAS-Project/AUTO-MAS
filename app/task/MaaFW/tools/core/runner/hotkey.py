@@ -154,6 +154,23 @@ _ADB_KEYS = {
     "NUMPADSUBTRACT": 156,
     "NUMPADADD": 157,
     "NUMPADDECIMAL": 158,
+    "COMMA": 55,
+    "PERIOD": 56,
+}
+
+# 单个标点字符 → 键名，与前端 maafwHotkey.ts 的 PUNCTUATION_ALIASES 同一张表。
+_PUNCTUATION_ALIASES = {
+    "-": "MINUS",
+    "=": "EQUALS",
+    ",": "COMMA",
+    ".": "PERIOD",
+    "/": "SLASH",
+    "\\": "BACKSLASH",
+    ";": "SEMICOLON",
+    "'": "QUOTE",
+    "`": "GRAVE",
+    "[": "BRACKETLEFT",
+    "]": "BRACKETRIGHT",
 }
 
 
@@ -181,6 +198,10 @@ def _canonical_key(value: str) -> str:
     if value == " ":
         return "SPACE"
     normalized = value.strip()
+    # 标点要在去掉 `-` / `_` / 空白之前查（与前端 canonicalKeyName 同一顺序）：
+    # 否则单独一个 "-" 会被删成空串，判成格式无效。
+    if normalized in _PUNCTUATION_ALIASES:
+        return _PUNCTUATION_ALIASES[normalized]
 
     normalized = re.sub(r"[\s_-]+", "", normalized).upper()
     if (
@@ -196,19 +217,7 @@ def _canonical_key(value: str) -> str:
     ):
         normalized = normalized[-1]
 
-    punctuation_aliases = {
-        ",": "COMMA",
-        ".": "PERIOD",
-        "/": "SLASH",
-        "\\": "BACKSLASH",
-        ";": "SEMICOLON",
-        "'": "QUOTE",
-        "`": "GRAVE",
-        "[": "BRACKETLEFT",
-        "]": "BRACKETRIGHT",
-        "=": "EQUALS",
-    }
-    return _ALIASES.get(normalized, punctuation_aliases.get(normalized, normalized))
+    return _ALIASES.get(normalized, _PUNCTUATION_ALIASES.get(normalized, normalized))
 
 
 def _keycode(key: str, controller_type: str) -> int:

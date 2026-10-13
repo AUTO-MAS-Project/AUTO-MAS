@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import logging
 import os
 import re
@@ -1414,16 +1415,41 @@ def prefer_active_venv_site_packages(
 
 
 def _load_requirements(project_path: Path) -> list[str]:
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
+    return read_requirement_lines(project_path / "requirements.txt") or []
+
+
+_REQUIREMENT_INLINE_COMMENT_RE = re.compile(r"(^|\s)#.*$")
+
+
+def read_requirement_lines(requirements_path: Path) -> list[str] | None:
+    """读 requirements.txt 里的依赖行；文件不在时返回 None。
+
+    按 pip 的写法容错：去掉 UTF-8 BOM、空白之后的 `` #`` 行内注释；``-r`` / ``--index-url``
+    这类选项行不是依赖，跳过（原样当依赖传给 pip 只会报 Invalid requirement）。
+    不是 UTF-8 时按系统编码再读一次，还读不出就报清楚是哪个文件。
+    """
+
     try:
-        for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            packages.append(line)
+        data = requirements_path.read_bytes()
     except FileNotFoundError:
-        pass
+        return None
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        fallback = locale.getpreferredencoding(False) or "utf-8"
+        try:
+            text = data.decode(fallback)
+        except (UnicodeDecodeError, LookupError) as exc:
+            raise RuntimeError(
+                f"项目 requirements.txt 的编码无法识别（不是 UTF-8，也不是系统编码 "
+                f"{fallback}），请转成 UTF-8: {requirements_path}"
+            ) from exc
+    packages: list[str] = []
+    for raw_line in text.splitlines():
+        line = _REQUIREMENT_INLINE_COMMENT_RE.sub("", raw_line).strip()
+        if not line or line.startswith("-"):
+            continue
+        packages.append(line)
     return packages
 
 

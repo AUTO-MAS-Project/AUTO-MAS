@@ -763,30 +763,24 @@ def _write_isolated_venv_manifest(
 def _load_project_agent_requirements(
     project_path: Path, *, runner_maafw_version: str | None = None
 ) -> list[str]:
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
-    declared = True
-    try:
-        with requirements_path.open("r", encoding="utf-8") as file:
-            for raw_line in file:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                packages.append(line)
-    except FileNotFoundError:
-        declared = False
+    # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
+    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
+    from app.task.MaaFW.tools.core.runner.environment import (
+        pin_agent_maafw_requirement,
+        read_requirement_lines,
+        resolve_project_maafw_requirement,
+    )
+
+    # 与 runner 读声明版本同一个解析（BOM、行内注释、选项行、非 UTF-8）。
+    read = read_requirement_lines(project_path / "requirements.txt")
+    declared = read is not None
+    packages: list[str] = read if read is not None else []
 
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
         packages.append(AGENT_BOOTSTRAP_PACKAGE)
     # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
     # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
-    # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
-    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
-    from app.task.MaaFW.tools.core.runner.environment import (
-        pin_agent_maafw_requirement,
-        resolve_project_maafw_requirement,
-    )
 
     pinned = pin_agent_maafw_requirement(
         project_path, packages, runner_maafw_version=runner_maafw_version

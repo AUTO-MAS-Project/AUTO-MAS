@@ -1210,7 +1210,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             requirement = str(failure.get("requirement") or "maafw").strip()
             return (
                 f"MFW 项目{phase_zh}更新：{name} {target} 需要 "
-                f"{requirement.replace('==', ' ')}，PyPI/GitHub 都拿不到，"
+                f"{requirement.replace('==', ' ')}，无法从 PyPI / GitHub 获取，"
                 f"本次不升级，继续 {previous}"
             )
         reason = str(failure.get("reason") or "").strip()
