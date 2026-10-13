@@ -14,6 +14,8 @@ export interface FrontendConfig {
   appearanceId?: string | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
+  /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
+  pauseHomeEffectsWhenRunning?: boolean
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -47,6 +49,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeColor: 'blue',
   cursorEffect: 'none',
   lowPerformanceMode: false,
+  pauseHomeEffectsWhenRunning: true,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

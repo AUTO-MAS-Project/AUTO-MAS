@@ -3456,6 +3456,7 @@ export default {
   home: {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
+    satelliteEffectsPaused: 'Effects paused · click to resume',
     satelliteEgg: {
       star: 'star!',
       overclock: 'Overclock!',
@@ -4642,6 +4643,9 @@ export default {
       lowPerf: 'Low performance mode',
       lowPerfTip:
         'Reduces decorative animations and background rendering. Script execution and task scheduling are unaffected; decorative animations pause automatically while the window is minimized.',
+      pauseHomeEffects: 'Pause home effects while scripts run',
+      pauseHomeEffectsTip:
+        'Pauses the home satellite animation while any script task is running to save GPU; satellite status colors keep updating, and the hint at the top-left of the satellite area resumes it temporarily.',
       traySection: 'System tray',
       showTray: 'Always show tray icon',
       showTrayTip: 'Keep the tray icon visible even when the window is not minimized',
@@ -4979,6 +4983,7 @@ export default {
       fluidOk: 'Turn it on',
       cursorSaveFailed: 'Could not save the cursor effect',
       lowPerfSaveFailed: 'Could not save low performance mode',
+      pauseHomeEffectsSaveFailed: 'Could not save the home effects pause setting',
       homeSatelliteSaveFailed: 'Could not save the home satellite style',
       testUnknown: 'The test notification returned an unknown result',
       testSent: 'Test notification sent',
