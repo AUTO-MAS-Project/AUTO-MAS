@@ -1,6 +1,6 @@
 // MFW 选项在界面上显示的值：存了什么、没存或存的值已失效时按什么显示。口径与后端运行器
 // app/task/MaaFW/tools/core/runner/pipeline_override.py 的 _normalize_choice_value /
-// _normalize_checkbox_values / _coerce_input_value 一致——界面显示的就是运行时下发的，改一边要
+// _normalize_checkbox_values / _coerce_input_value / _string_input_fallback 一致——界面显示的就是运行时下发的，改一边要
 // 同步另一边。编辑器（MaaFWTaskOptionEditor）与队列行上的勾选数检查共用这一份。
 
 import type { MaaFWOptionInfo, MaaFWOptionInputInfo, MaaFWTaskOptionValue } from '@/types/script'

@@ -392,7 +392,7 @@ const getDisplayCases = (option: MaaFWOptionInfo) => {
 }
 
 // 显示的值与运行器同一口径（maafwOptionValues）：单选存的 case 已失效时按默认 case，
-// 数字 / 布尔字段空着时按项目默认值
+// 输入字段没填时按项目默认值（字符串只认没存或空串，password 和特调声明的例外不回落）
 const getStoredValue = (option: MaaFWOptionInfo): MaaFWTaskOptionValue | undefined =>
   props.taskOptions[option.name]
 
@@ -439,7 +439,7 @@ const emitOptionValue = (optionName: string, value: MaaFWTaskOptionValue) => {
 const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
   const trimmedValue = value.trim()
   if (!trimmedValue) {
-    // 空值：字符串字段就是空；数字字段运行时按项目默认值跑，没有默认值才算没填
+    // 空值：字符串字段存空串，运行时按项目默认值跑；数字字段没有默认值才算没填
     const hasFallback = maafwInputFallbackDefault(inputItem) !== null
     if (isIntegerInput(inputItem) && !hasFallback) {
       message.error(t('edit.enterWholeNumber'))
