@@ -801,7 +801,53 @@ def _global_and_resource_option_values(
             _mfw_collect_options(
                 raw_shared, interface.option, prefix, labels, target, skipped
             )
+    _drop_password_fields(global_values, interface.option, "全局选项", labels, skipped)
+    _drop_password_fields(
+        resource_values, interface.option, "资源选项", labels, skipped
+    )
     return global_values, resource_values
+
+
+_PASSWORD_SKIP_NOTE = "密码字段不从外壳配置导入，请在 AUTO-MAS 里重新填写"
+
+
+def _drop_password_fields(
+    values: dict[str, MaaFWTaskOptionValue],
+    all_options: Mapping[str, MaaFWOption],
+    owner_prefix: str,
+    labels: _Labels,
+    skipped: list[str],
+) -> None:
+    """interface 声明为 password 的 input 字段不从外壳导入（原地去掉），有值的记一条跳过。
+
+    外壳存密码各有各的办法（MFW-PyQt6 用自己的 Fernet 密钥加密），MAS 解不了也不该解：照抄进来
+    就是把外壳的密文当明文用，覆盖到已有用户时还会盖掉用户在 MAS 里存好的密码。字段整个不带，
+    新建用户留空，覆盖时保留用户现有的值。
+    """
+
+    for name in list(values):
+        definition = all_options.get(name)
+        value = values[name]
+        if (
+            definition is None
+            or definition.type != "input"
+            or not isinstance(value, dict)
+        ):
+            continue
+        secret = {item.name for item in definition.inputs or [] if item.password}
+        if not secret or not secret & value.keys():
+            continue
+        for field_name in secret & value.keys():
+            if str(value[field_name] or "").strip():
+                skipped.append(
+                    f"{owner_prefix}「{labels.option(name)}」的"
+                    f"「{labels.field(definition, field_name)}」（{_PASSWORD_SKIP_NOTE}）"
+                )
+        kept = {key: item for key, item in value.items() if key not in secret}
+        if kept:
+            values[name] = kept
+        else:
+            del values[name]
 
 
 def _task_own_option_values(
@@ -834,6 +880,7 @@ def _task_own_option_values(
         values.update(
             _mxu_option_values(raw_options or {}, option_map, prefix, labels, skipped)
         )
+    _drop_password_fields(values, all_options, prefix, labels, skipped)
     return values
 
 
