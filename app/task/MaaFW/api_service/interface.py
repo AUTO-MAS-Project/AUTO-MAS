@@ -45,6 +45,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
 )
 from app.task.MaaFW.tools.embedded.flavor import (
     flavor_for_project,
+    no_default_fallback_inputs,
     resolve_flavor,
     unselectable_entries,
 )
@@ -101,8 +102,10 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
             interface,
         )
         payload = preview.model_dump(mode="json")
-        _mark_unselectable_tasks(
-            payload["tasks"], _preview_unselectable_entries(script_id, interface)
+        flavor = _preview_flavor(script_id, interface)
+        _mark_unselectable_tasks(payload["tasks"], unselectable_entries(flavor))
+        _clear_no_fallback_defaults(
+            payload["options"], no_default_fallback_inputs(flavor)
         )
         data = MaaFWInterfacePreviewData.model_validate(payload)
     except MaaFWInterfaceLoadError as exc:
@@ -119,20 +122,18 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
     )
 
 
-def _preview_unselectable_entries(
-    script_id: str | None, interface: MaaFWInterface
-) -> dict[str, str]:
-    """预览要标不可选的 entry → 原因：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
+def _preview_flavor(script_id: str | None, interface: MaaFWInterface) -> Any:
+    """预览按哪个特调补标记：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
 
     核心包的预览不认识特调，标记在这一层补上（契约见 ``tools/embedded/flavor.py``）。
     """
 
     if script_id:
         try:
-            return unselectable_entries(resolve_flavor(maafw_script_config(script_id)))
+            return resolve_flavor(maafw_script_config(script_id))
         except (KeyError, ValueError, TypeError):
-            return {}
-    return unselectable_entries(flavor_for_project(interface))
+            return None
+    return flavor_for_project(interface)
 
 
 def _mark_unselectable_tasks(
@@ -140,6 +141,25 @@ def _mark_unselectable_tasks(
 ) -> None:
     for task in tasks:
         task["unselectableReason"] = entries.get(str(task.get("entry") or ""))
+
+
+def _clear_no_fallback_defaults(
+    options: list[dict[str, Any]], fields: frozenset[tuple[str, str]]
+) -> None:
+    """特调声明不回落的字符串字段（``no_default_fallback_inputs``），预览里的 ``default`` 置空。
+
+    运行器对它们没填时下发空串、不回落 default；用户页把没填的字段显示成 default（与运行器回落
+    同口径），不置空的话 M9A 的自定义兑换码框里会显示「占位」，运行时实际却是空串。default 在
+    前端只用于显示与数字字段的空值校验，这几个都是字符串字段，置空只影响显示。
+    """
+
+    if not fields:
+        return
+    for option in options:
+        option_name = str(option.get("name") or "")
+        for input_item in option.get("inputs") or []:
+            if (option_name, str(input_item.get("name") or "")) in fields:
+                input_item["default"] = None
 
 
 _MAAFW_IMAGE_SUFFIXES = {

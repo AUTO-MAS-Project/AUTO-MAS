@@ -122,7 +122,9 @@
 - **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
   （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
   ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
-  没有例外。
+  没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
+  ``unselectableReason`` 同一处）：用户页把没填的字段显示成 default，不置空就会显示一个运行时
+  并不下发的值。
 - **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
   「占位」）。能跑的 default 别列。
 
