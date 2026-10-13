@@ -1821,6 +1821,12 @@ class MaaUserConfig_Task(BaseModel):
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
+    IfEventDepotMaintain: Optional[bool] = Field(
+        default=None, description="活动库存保持"
+    )
+    EventDepotMaintainPlans: Optional[str] = Field(
+        default=None, description="活动库存保持计划 JSON"
+    )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"
     )

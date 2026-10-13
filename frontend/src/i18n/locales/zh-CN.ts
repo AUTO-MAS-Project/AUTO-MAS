@@ -8,6 +8,21 @@
  * en-US.ts 缺失的 key 会自动回退到这里。
  */
 export default {
+  eventDepotPreview: {
+    name: '活动库存保持',
+    hint: '优先补齐活动材料目标库存；达到目标后，继续下方活动关优先。',
+    scopeHint: '按活动材料关序号保持库存，运行时自动跟随当前活动，排除搓玉效率及无掉落项。',
+    stageColumn: '活动材料关',
+    stageIndex: '第 {n} 个材料关',
+    fallbackStage: '当前回退到 {stage}',
+    addPresets: '添加活动预设',
+    mergeHint:
+      '目标默认 200，仅保存序号和目标；材料随活动更新。重复添加只补缺项，保留已有目标。序号超出范围时回退首个材料关，拖动调整执行顺序。',
+    added: '已添加 {n} 项活动预设',
+    alreadyAdded: '活动预设已全部添加，已有目标保持不变',
+    noActivity: '当前没有可用的活动关卡',
+    expiredHint: '当前没有活动材料关，本轮跳过；序号和目标会保留，下次活动时自动使用新关卡。',
+  },
   common: {
     viewPageDocs: '查看本页文档',
     language: '语言',
@@ -404,6 +419,8 @@ export default {
     maaCultivateStatePending: '待确认',
     maaDepot: '库存保持',
     maaDepotHint: '按材料设定保有量，不足时自动刷取补足',
+    maaDepotPlanCount: '{count} 项计划',
+    maaDepotEmpty: '尚未添加计划',
     maaCombat: '理智作战',
     maaInfrast: '基建换班',
     maaInfrastMode: '基建模式',

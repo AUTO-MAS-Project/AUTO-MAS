@@ -8,6 +8,23 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  eventDepotPreview: {
+    name: 'イベント在庫維持',
+    hint: 'イベント素材を目標在庫まで補充してから、下のイベントステージ優先へ進みます。',
+    scopeHint:
+      'イベント素材ステージの番号で在庫を維持します。実行時に現在のイベントを使用し、合成玉効率とドロップのない項目は除外します。',
+    stageColumn: 'イベント素材ステージ',
+    stageIndex: '{n} 番目の素材ステージ',
+    fallbackStage: '現在は {stage} を使用',
+    addPresets: 'イベントプリセットを追加',
+    mergeHint:
+      '目標は初期値 200。番号と目標だけを保存し、素材はイベントごとに更新します。再追加は不足分だけで既存の目標を維持。範囲外の番号は最初の素材ステージを使用し、ドラッグで実行順を変更できます。',
+    added: 'イベントプリセットを {n} 件追加しました',
+    alreadyAdded: 'イベントプリセットはすべて追加済みです。既存の目標は変更されません。',
+    noActivity: '現在利用可能なイベントステージはありません',
+    expiredHint:
+      '現在はイベント素材ステージがないため、今回の実行はスキップします。番号と目標は保持し、次のイベントでは新しいステージを自動で使用します。',
+  },
   common: {
     viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
@@ -424,6 +441,8 @@ export default {
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
     maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
+    maaDepotPlanCount: '{count} 件の計画',
+    maaDepotEmpty: '計画はまだ追加されていません',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',

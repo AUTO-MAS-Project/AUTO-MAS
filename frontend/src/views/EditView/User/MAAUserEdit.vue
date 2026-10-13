@@ -93,6 +93,7 @@
             :loading="loading"
             :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
+            :activity-stages="activityStages"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-index="displayActivityStageIndex"
@@ -108,6 +109,7 @@
             :skland-role-loading="sklandRoleLoading"
             :skland-role-error="sklandRoleError"
             :depot-plan-editor="depotPlanEditor"
+            :event-depot-plan-editor="eventDepotPlanEditor"
             :cultivate-operator-catalog="cultivateOperatorCatalog"
             :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
             :cultivate-operator-options-error="cultivateOperatorOptionsError"
@@ -241,6 +243,7 @@ import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
+import { resolveActivityStage } from '@/views/MAAUserEdit/activityStages'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -352,6 +355,10 @@ const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
+const activityStages = computed(() => {
+  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
+  return stageOverviewByServer.value[server]?.Activity ?? []
+})
 
 // 判断值是否为自定义关卡
 const isCustomStage = (value: string) => {
@@ -595,6 +602,8 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfDepotMaintain: true,
     DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
+    IfEventDepotMaintain: false,
+    EventDepotMaintainPlans: '[]',
     IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: true,
@@ -634,12 +643,9 @@ const formData = reactive({
   ...getDefaultMAAUserData(),
 })
 
-const displayActivityStageIndex = computed(() => {
-  const configuredIndex = formData.Task.ActivityStageIndex
-  return activityStageOptions.value.some(option => option.value === configuredIndex)
-    ? configuredIndex
-    : activityStageOptions.value[0]?.value
-})
+const displayActivityStageIndex = computed(
+  () => resolveActivityStage(activityStageOptions.value, formData.Task.ActivityStageIndex)?.value
+)
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
@@ -718,7 +724,9 @@ const fieldSave = useMAAFieldSave({
     const response = await getUsers(scriptId, userId)
     return response?.code === 200 ? (response.data[userId] ?? null) : null
   },
-  hasDraft: key => key === 'Task.DepotMaintainPlans' && depotPlanEditor.hasPendingEdits(),
+  hasDraft: key =>
+    (key === 'Task.DepotMaintainPlans' && depotPlanEditor.hasPendingEdits()) ||
+    (key === 'Task.EventDepotMaintainPlans' && eventDepotPlanEditor.hasPendingEdits()),
   onFailure: () => {
     const errorMsg = userError.value
     if (!errorMsg || errorMsg.includes('HTTP error')) message.error(t('edit.couldNotSaveUser'))
@@ -904,6 +912,8 @@ const applyServerStageOptions = () => {
   const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
   const stageOverview = stageOverviewByServer.value[server]
   if (!stageOverview) {
+    stageOptions.value = []
+    activityStageOptions.value = []
     return
   }
 
@@ -1299,6 +1309,17 @@ const depotPlanEditor = useDepotMaintainPlanEditor({
   isLoading: () => loading.value,
 })
 
+const eventDepotPlanEditor = useDepotMaintainPlanEditor({
+  eventMode: true,
+  getSavedPlans: () => formData.Task.EventDepotMaintainPlans,
+  savePlans: value => {
+    void handleFieldSave('Task.EventDepotMaintainPlans', value)
+  },
+  loadStageCandidates: async () => {},
+  getBestStage: () => undefined,
+  isLoading: () => loading.value,
+})
+
 const {
   preparingSession,
   leavingPage,
@@ -1312,14 +1333,24 @@ const {
   flushEdits: async () => {
     if (isInitializing.value) return fieldSave.waitForPending()
     await depotPlanEditor.flushPendingEdits()
+    await eventDepotPlanEditor.flushPendingEdits()
     await nextTick()
     return fieldSave.flush()
   },
   waitForSaves: fieldSave.waitForPending,
-  flushImmediateEdits: depotPlanEditor.savePlans,
+  flushImmediateEdits: () => {
+    depotPlanEditor.savePlans()
+    eventDepotPlanEditor.savePlans()
+  },
   hasPendingEdits: () =>
-    fieldSave.hasPendingEdits() || depotPlanEditor.hasPendingEdits() || !!maaTaskId.value,
-  disposeEdits: depotPlanEditor.dispose,
+    fieldSave.hasPendingEdits() ||
+    depotPlanEditor.hasPendingEdits() ||
+    eventDepotPlanEditor.hasPendingEdits() ||
+    !!maaTaskId.value,
+  disposeEdits: () => {
+    depotPlanEditor.dispose()
+    eventDepotPlanEditor.dispose()
+  },
   startSession,
   stopSession,
   backup: () => ensureMaaBackup('mas'),

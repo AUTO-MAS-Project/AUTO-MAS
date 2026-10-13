@@ -6,6 +6,23 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  eventDepotPreview: {
+    name: 'Event stock keeping',
+    hint: 'Replenish event materials to their target stock first, then continue with Event stage priority below.',
+    scopeHint:
+      'Keep stock by event material stage position. Stages follow the current event at runtime; Orundum efficiency and entries without drops are excluded.',
+    stageColumn: 'Event material stage',
+    stageIndex: 'Material stage {n}',
+    fallbackStage: 'Currently falls back to {stage}',
+    addPresets: 'Add event presets',
+    mergeHint:
+      'Targets default to 200. Only positions and targets are saved; materials follow each event. Adding again fills missing entries and keeps targets. Out-of-range positions use the first material stage. Drag to reorder execution.',
+    added: 'Added {n} event presets',
+    alreadyAdded: 'All event presets are already added. Existing targets are unchanged.',
+    noActivity: 'No event stages are currently available',
+    expiredHint:
+      'No event material stages are available, so this run is skipped. Positions and targets are kept and automatically use new stages in the next event.',
+  },
   common: {
     viewPageDocs: 'View documentation for this page',
     language: 'Language',
@@ -418,6 +435,8 @@ export default {
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
     maaDepotHint: 'Set target stock per material; farmed automatically when short',
+    maaDepotPlanCount: '{count} plans',
+    maaDepotEmpty: 'No plans added',
     maaCombat: 'Sanity combat',
     maaInfrast: 'Infrastructure shift',
     maaInfrastMode: 'Infrastructure mode',

@@ -2,16 +2,33 @@
   <div class="depot-plan-editor">
     <!-- 养成接管提示：接管发生时本任务整条不注入（方案决策 20/28），与养成编辑器共用后端写入的提示字段 -->
     <a-alert
-      v-if="formData.Data?.CultivateNotice"
+      v-if="!eventMode && formData.Data?.CultivateNotice"
       :message="formData.Data.CultivateNotice"
       type="warning"
       show-icon
       class="takeover-alert"
     />
     <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
+    <a-alert
+      v-if="eventMode"
+      :message="t('eventDepotPreview.scopeHint')"
+      type="info"
+      show-icon
+      class="takeover-alert"
+    />
     <div class="plan-actions">
       <a-space wrap>
-        <a-dropdown :disabled="loading" :trigger="['click']">
+        <a-button
+          v-if="eventMode"
+          type="dashed"
+          size="small"
+          :disabled="loading || activityUnavailable || eligibleStages.length === 0"
+          @click="importEventPresets"
+        >
+          <template #icon><AppstoreAddOutlined /></template>
+          {{ t('eventDepotPreview.addPresets') }}
+        </a-button>
+        <a-dropdown v-else :disabled="loading" :trigger="['click']">
           <a-button type="dashed" size="small" :disabled="loading">
             <template #icon><AppstoreAddOutlined /></template>
             {{ t('edit.addPreset') }}
@@ -33,7 +50,12 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button type="dashed" size="small" :disabled="loading" @click="addPlan">
+        <a-button
+          type="dashed"
+          size="small"
+          :disabled="loading || (eventMode && (activityUnavailable || eligibleStages.length === 0))"
+          @click="addPlan"
+        >
           <template #icon><PlusOutlined /></template>
           {{ t('edit.addItem') }}
         </a-button>
@@ -65,7 +87,7 @@
             @change="toggleAll($event.target.checked)"
           />
         </span>
-        <span>{{ t('edit.stage') }}</span>
+        <span>{{ eventMode ? t('eventDepotPreview.stageColumn') : t('edit.stage') }}</span>
         <span>{{ t('edit.item') }}</span>
         <span>{{ t('edit.targetStock') }}</span>
         <span>
@@ -102,33 +124,44 @@
                 @change="toggleRow(record.key, $event.target.checked)"
               />
             </span>
-            <a-select
-              v-model:value="record.Stage"
-              :options="stageOptionsFor(record)"
-              :loading="isStageLoading(record)"
-              :disabled="loading"
-              allow-clear
-              show-search
-              option-filter-prop="label"
-              :virtual="false"
+            <EventDepotPlanFields
+              v-if="eventMode"
+              :stage-index="record.StageIndex"
+              :stages="eligibleStages"
+              :loading="loading || activityUnavailable"
+              :item-options="itemOptions"
               :get-popup-container="getPopupContainer"
-              :popup-match-select-width="false"
-              :placeholder="t('edit.pickStage')"
-              @change="onStageChange(record)"
+              @change="onEventStageChange(record, $event)"
             />
-            <a-select
-              v-model:value="record.DropId"
-              :options="itemOptions"
-              :disabled="loading || itemOptionsLoading"
-              :loading="itemOptionsLoading"
-              allow-clear
-              show-search
-              option-filter-prop="label"
-              :virtual="false"
-              :get-popup-container="getPopupContainer"
-              :placeholder="t('edit.pickItem')"
-              @change="onItemChange(record)"
-            />
+            <template v-else>
+              <a-select
+                v-model:value="record.Stage"
+                :options="stageOptionsFor(record)"
+                :loading="isStageLoading(record)"
+                :disabled="loading"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                :virtual="false"
+                :get-popup-container="getPopupContainer"
+                :popup-match-select-width="false"
+                :placeholder="t('edit.pickStage')"
+                @change="onStageChange(record)"
+              />
+              <a-select
+                v-model:value="record.DropId"
+                :options="itemOptions"
+                :disabled="loading || itemOptionsLoading"
+                :loading="itemOptionsLoading"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                :virtual="false"
+                :get-popup-container="getPopupContainer"
+                :placeholder="t('edit.pickItem')"
+                @change="onItemChange(record)"
+              />
+            </template>
             <a-input-number
               v-model:value="record.DropCount"
               :disabled="loading"
@@ -173,10 +206,22 @@
     </div>
     <a-empty
       v-else
-      :description="t('edit.noStockKeepingPlans')"
+      :description="
+        eventMode && !eligibleStages.length
+          ? t('eventDepotPreview.noActivity')
+          : t('edit.noStockKeepingPlans')
+      "
       :image-style="{ height: '48px' }"
     />
+    <p v-if="eventMode" class="data-source-note">{{ t('eventDepotPreview.mergeHint') }}</p>
+    <a-alert
+      v-if="eventMode && !activityUnavailable && eligibleStages.length === 0 && plans.length"
+      :message="t('eventDepotPreview.expiredHint')"
+      type="warning"
+      show-icon
+    />
     <a-typography-link
+      v-if="!eventMode"
       class="data-source-note"
       href="https://ark.yituliu.cn"
       target="_blank"
@@ -192,6 +237,7 @@
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
 import { computed } from 'vue'
+import { message } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
@@ -202,6 +248,10 @@ import {
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
+import EventDepotPlanFields from './EventDepotPlanFields.vue'
+import { getEventDepotStages, getEventDepotPresets } from './eventDepotMaintainPresets'
+import { resolveActivityStage } from './activityStages'
+import type { ActivityItem } from '@/types/home'
 import type {
   DepotMaintainPlanEditorState,
   DepotMaintainPlanRow as DepotMaintainPlan,
@@ -225,15 +275,29 @@ const props = defineProps<{
   inventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
+  /** 提供活动列表时，编辑范围限制为其中的材料掉落关卡。 */
+  activityStages?: ActivityItem[]
+  activityLoading?: boolean
+  activityError?: string
 }>()
 
-type SelectOption = { label: string; value: string }
+type SelectOption = { label: string; value: string; disabled?: boolean }
 
 const stockColumnTitle = computed(() =>
   props.depotInventoryTime
     ? t('edit.stockRecognizedAt', { time: props.depotInventoryTime })
     : t('edit.stock')
 )
+
+const eventMode = computed(() => props.activityStages !== undefined)
+const eligibleStages = computed(() => getEventDepotStages(props.activityStages ?? []))
+const activityUnavailable = computed(() => !!props.activityLoading || !!props.activityError)
+const importEventPresets = () => {
+  const added = props.editor.appendPlans(getEventDepotPresets(props.activityStages ?? []))
+  message.info(
+    added ? t('eventDepotPreview.added', { n: added }) : t('eventDepotPreview.alreadyAdded')
+  )
+}
 
 const {
   plans,
@@ -249,6 +313,10 @@ const {
   removeSelectedPlans,
 } = props.editor
 const selectedKeys = computed(() => new Set(selectedRowKeys.value))
+const onEventStageChange = (record: DepotMaintainPlan, index: number) => {
+  record.StageIndex = index
+  onStageChange(record)
+}
 const allSelected = computed(
   () => plans.value.length > 0 && selectedRowKeys.value.length === plans.value.length
 )
@@ -295,8 +363,12 @@ const stageOptionsFor = (record: DepotMaintainPlan): SelectOption[] => {
 const isStageLoading = (record: DepotMaintainPlan): boolean =>
   !!record.DropId && (props.stageCandidatesLoading ?? []).includes(record.DropId)
 
-const stockOf = (record: DepotMaintainPlan): number | string =>
-  props.inventory?.[record.DropId] ?? '—'
+const stockOf = (record: DepotMaintainPlan): number | string => {
+  const itemId = eventMode.value
+    ? resolveActivityStage(eligibleStages.value, record.StageIndex)?.Drop
+    : record.DropId
+  return itemId ? (props.inventory?.[itemId] ?? '—') : '—'
+}
 
 // 下拉浮层挂到编辑器根容器：既不被表格滚动容器裁剪（挂 td 会被 overflow
 // 裁掉显示不全），又随页面滚动移动（挂 body 会驻留原地）

@@ -71,7 +71,11 @@ export const summarizeCultivate = (
   ].join(' · ')
 }
 
-export const summarizeDepot = (enabled: boolean, plansJson: string) => {
+export const summarizeDepot = (
+  enabled: boolean,
+  plansJson: string,
+  t: (key: string, values?: { count: number }) => string
+) => {
   if (!enabled) return ''
   let count = 0
   try {
@@ -80,7 +84,7 @@ export const summarizeDepot = (enabled: boolean, plansJson: string) => {
   } catch {
     count = 0
   }
-  return count ? `${count} 项计划` : '尚未添加计划'
+  return count ? t('edit.maaDepotPlanCount', { count }) : t('edit.maaDepotEmpty')
 }
 
 export const INFRAST_MODE_OPTIONS = [

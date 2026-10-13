@@ -141,6 +141,7 @@ _MAA_SANITY_RECOGNITION_RE = re.compile(r"理智\s*[:：]\s*\d+\s*/\s*\d+")
 _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 理智作战",
     "完成任务: 活动关优先",
+    "完成任务: 活动库存保持",
     "完成任务: 库存保持",
     "完成任务: 养成计划",
 )
@@ -155,6 +156,7 @@ _MAA_DEPOT_ARCHIVE_NAME = "DepotData.json"
 _MAA_OPER_BOX_ARCHIVE_NAME = "OperBoxData.json"
 # 识别链完成标记：锚定注入的任务名 + 链后缀（MAS 强制 zh-cn，方案 §4.2/T0.3）
 _MAA_DEPOT_CHAIN_COMPLETION_MARKERS = (
+    "完成任务: 活动库存保持 (仓库识别)",
     "完成任务: 库存保持 (仓库识别)",
     f"完成任务: {_MAA_CULTIVATE_TASK_NAME} (仓库识别)",
     f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (仓库识别)",
@@ -255,8 +257,9 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
     for log_record in log_records:
         lines = log_record.content
+        # 只认刷关完成行，仓库识别等括号后缀不表示已经刷过关卡。
         if any(
-            marker in line
+            re.search(rf"{re.escape(marker)}(?:\s+#\d+)?\s*$", line)
             for line in lines
             for marker in _MAA_SANITY_COMPLETION_MARKERS
         ):
@@ -580,12 +583,13 @@ def _find_task_source(
     name: str,
     task_type: str,
 ) -> dict | None:
-    """按 TaskType + Name 匹配原生任务，必要时按同类型唯一项兜底。
+    """按 TaskType + Name 匹配原生任务，兼容空名库存保持预设与唯一项。
 
     MAA 原生任务允许使用空名称；多个同类型任务不能仅按类型区分，避免配置串用。
     """
 
     identity = (task_type, name)
+    unnamed_depots = []
     fallback = None
     fallback_count = 0
     for task in task_queue:
@@ -593,8 +597,16 @@ def _find_task_source(
         if task_identity == identity:
             return deepcopy(task)
         if task_identity is not None and task_identity[0] == task_type:
+            # 普通预设沿用空名称；活动库存保持与它同类型，不能串用高级配置。
+            if task_type == "DepotMaintain":
+                if task_identity[1] == "活动库存保持" or name == "活动库存保持":
+                    continue
+                if name == "库存保持" and not task_identity[1]:
+                    unnamed_depots.append(task)
             fallback = task
             fallback_count += 1
+    if len(unnamed_depots) == 1:
+        return deepcopy(unnamed_depots[0])
     if fallback_count == 1:
         return deepcopy(fallback)
     return None
@@ -628,9 +640,31 @@ def _repair_maa_task_queue(source_queue: list[dict]) -> list[dict]:
     ]
 
 
+def _copy_matching_depot_plan(source_task: dict, *, stage: str, drop_id: str) -> dict:
+    """按关卡与材料匹配来源计划，复制其高级参数供各类库存任务透传。"""
+
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        return {}
+    return deepcopy(
+        next(
+            (
+                item
+                for item in source_plans
+                if isinstance(item, dict)
+                and item.get("Stage") == stage
+                and item.get("DropId") == drop_id
+            ),
+            {},
+        )
+    )
+
+
 def _build_depot_maintain_task(
     plans_json: str,
     source_task: dict | None = None,
+    *,
+    name: str = "库存保持",
 ) -> dict:
     """生成 MAA 库存保持任务配置。
 
@@ -640,9 +674,6 @@ def _build_depot_maintain_task(
     """
 
     source_task = source_task or {}
-    source_plans = source_task.get("PlanList") or []
-    if not isinstance(source_plans, list):
-        source_plans = []
 
     plans = []
     for plan in json.loads(plans_json):
@@ -656,19 +687,12 @@ def _build_depot_maintain_task(
             and not isinstance(plan.get("DropCount"), bool)
             and plan["DropCount"] > 0
         ):
-            source_plan = next(
-                (
-                    item
-                    for item in source_plans
-                    if isinstance(item, dict)
-                    and item.get("Stage") == plan["Stage"]
-                    and item.get("DropId") == plan["DropId"]
-                ),
-                {},
+            source_plan = _copy_matching_depot_plan(
+                source_task, stage=plan["Stage"], drop_id=plan["DropId"]
             )
             plans.append(
                 {
-                    **deepcopy(source_plan),
+                    **source_plan,
                     "Stage": plan["Stage"],
                     "DropId": plan["DropId"],
                     "DropCount": plan["DropCount"],
@@ -681,7 +705,7 @@ def _build_depot_maintain_task(
     return _with_type_first(
         {
             **deepcopy(source_task),
-            "Name": "库存保持",
+            "Name": name,
             "IsEnable": True,
             "TaskType": "DepotMaintain",
             "PlanList": plans,
@@ -754,6 +778,59 @@ def _build_auto_cultivate_task(
     )
 
 
+def _select_activity_stage(stages: list[dict], configured_index: int) -> dict:
+    """从非空活动列表按序号选关，序号越界时回退到第一项。"""
+
+    return (
+        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
+    )
+
+
+def _build_event_depot_maintain_task(
+    plans_json: str, activity_stages: list[dict], source_task: dict | None
+) -> dict | None:
+    """按序号解析当前活动材料关，再交给 MAA 库存保持。"""
+
+    stages = [
+        stage
+        for stage in activity_stages
+        if isinstance(stage.get("Value"), str)
+        and stage["Value"]
+        and isinstance(stage.get("Drop"), str)
+        and stage["Drop"].isdigit()
+        and "玉" not in stage.get("DropName", "")
+    ]
+    if not stages:
+        return None
+
+    plans = []
+    for index, plan in enumerate(json.loads(plans_json), start=1):
+        if not isinstance(plan, dict):
+            continue
+        # 兼容本功能旧版的具体关卡计划，按原列表顺序转换为材料关序号。
+        stage_index = plan.get("StageIndex")
+        if stage_index is None and isinstance(plan.get("Stage"), str):
+            stage_index = index
+        if (
+            not isinstance(stage_index, int)
+            or isinstance(stage_index, bool)
+            or stage_index < 1
+        ):
+            continue
+        stage = _select_activity_stage(stages, configured_index=stage_index)
+        plans.append(
+            {
+                "Stage": stage["Value"],
+                "DropId": stage["Drop"],
+                "DropCount": plan.get("DropCount"),
+            }
+        )
+    task = _build_depot_maintain_task(
+        json.dumps(plans), source_task=source_task, name="活动库存保持"
+    )
+    return task if task["PlanList"] else None
+
+
 def _build_cultivate_task(
     plan: "CultivatePlan",
     source_task: dict | None,
@@ -769,24 +846,14 @@ def _build_cultivate_task(
     """
 
     source_task = source_task or {}
-    source_plans = source_task.get("PlanList") or []
-    if not isinstance(source_plans, list):
-        source_plans = []
     plans = []
     for entry in plan.entries:
-        source_plan = next(
-            (
-                item
-                for item in source_plans
-                if isinstance(item, dict)
-                and item.get("Stage") == entry.stage_code
-                and item.get("DropId") == entry.item_id
-            ),
-            {},
+        source_plan = _copy_matching_depot_plan(
+            source_task, stage=entry.stage_code, drop_id=entry.item_id
         )
         plans.append(
             {
-                **deepcopy(source_plan),
+                **source_plan,
                 "UseMedicine": False,
                 "MedicineCount": 0,
                 "UseStone": False,
@@ -845,7 +912,7 @@ def _resolve_activity_stage(
     """按序号选择当前活动材料关卡，序号失效时回退到第一项。"""
 
     stages = [
-        stage["Value"]
+        stage
         for stage in activity_stages
         if isinstance(stage, dict)
         and isinstance(stage.get("Value"), str)
@@ -853,9 +920,7 @@ def _resolve_activity_stage(
     ]
     if not stages:
         return None
-    return (
-        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
-    )
+    return _select_activity_stage(stages, configured_index=configured_index)["Value"]
 
 
 def _build_activity_priority_fight(
@@ -1385,6 +1450,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         for task in depot_tasks:
             task["IsEnable"] = False
         self.task_dict["DepotMaintain"] = False
+        self.task_dict["EventDepotMaintain"] = False
         logger.warning(
             f"用户 {self.cur_user_item.name} 本轮跳过库存保持/养成执行, "
             "请检查 MAA 数据目录的写入权限"
@@ -1905,20 +1971,25 @@ class AutoProxyTask(ScriptAutoProxyBase):
         preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
             "TaskQueue"
         ]
-        # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
+        # 两个活动任务各自由自己的开关控制，共用同一份当前区服活动列表。
+        self.task_dict["EventDepotMaintain"] = False
+        activity_stages = []
         activity_stage = None
-        if self.mode == "Routine" and self.cur_user_config.get(
-            "Task", "IfActivityFirst"
+        if self.mode == "Routine" and (
+            self.cur_user_config.get("Task", "IfActivityFirst")
+            or self.cur_user_config.get("Task", "IfEventDepotMaintain")
         ):
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
             )
-            activity_stage = _resolve_activity_stage(
-                stage_info.get("Activity", []),
-                self.cur_user_config.get("Task", "ActivityStageIndex"),
-            )
+            activity_stages = stage_info.get("Activity", [])
+            if self.cur_user_config.get("Task", "IfActivityFirst"):
+                activity_stage = _resolve_activity_stage(
+                    activity_stages,
+                    self.cur_user_config.get("Task", "ActivityStageIndex"),
+                )
 
         # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
         # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
@@ -2151,6 +2222,28 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     "Task", "InfrastMode"
                 )
 
+        event_depot_task = None
+        if self.mode == "Routine" and self.cur_user_config.get(
+            "Task", "IfEventDepotMaintain"
+        ):
+            event_depot_source = _find_task_source(
+                task_queue=source_queue,
+                name="活动库存保持",
+                task_type="DepotMaintain",
+            ) or _find_task_source(
+                task_queue=preset_queue,
+                name="活动库存保持",
+                task_type="DepotMaintain",
+            )
+            event_depot_task = _build_event_depot_maintain_task(
+                self.cur_user_config.get("Task", "EventDepotMaintainPlans"),
+                activity_stages,
+                source_task=event_depot_source,
+            )
+            self.task_dict["EventDepotMaintain"] = event_depot_task is not None
+            if event_depot_task is None:
+                logger.info("活动库存保持没有当前活动的有效材料计划，本轮跳过")
+
         activity_fight = None
         if self.mode == "Routine" and activity_stage:
             activity_medicine_numb = self.cur_user_config.get(
@@ -2177,6 +2270,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     task_queue.append(update_task)
             task_queue.append(task_set[task_type])
 
+            if task_type == "StartUp" and event_depot_task is not None:
+                task_queue.append(event_depot_task)
             if task_type == "StartUp" and activity_fight:
                 task_queue.append(activity_fight)
             if task_type == "StartUp" and cultivate_task is not None:
@@ -2451,6 +2546,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 ):
                     self.task_dict[en_task] = False
 
+            if self.task_dict.get("EventDepotMaintain") and (
+                # 库存已充足时 MAA 只执行仓库识别；收尾成功仍算任务完成，
+                # 但 _has_completed_sanity_task 不会把它计作刷关。
+                re.search(
+                    r"完成任务: 活动库存保持(?:\s+#\d+| \(仓库识别\))?\s*$",
+                    log,
+                    re.M,
+                )
+                or "活动库存保持 任务跳过" in log
+            ):
+                self.task_dict["EventDepotMaintain"] = False
+
             # MAA v6.19.0-beta.1 培养计划失败仍会报任务链完成，须读取其培养汇总。
             # 只使用 MAA 的失败计数；训练室忙等跳过结果不算失败。
             cultivate_failed = any(
@@ -2459,8 +2566,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     r"干员培养完成：成功 \d+，失败 (\d+)，跳过 \d+", log
                 )
             )
+            # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
-                any(self.task_dict.values())
+                "任务已完成，但出现错误！" in log
+                or "任务已结束，以下任务出现错误" in log
+                or any(self.task_dict.values())
                 or cultivate_failed
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")

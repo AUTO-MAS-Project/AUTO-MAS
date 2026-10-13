@@ -262,6 +262,8 @@ export function useScriptApi() {
                           maaUserData.Task?.IfDepotMaintain !== undefined
                             ? maaUserData.Task.IfDepotMaintain
                             : false,
+                        IfEventDepotMaintain: maaUserData.Task?.IfEventDepotMaintain ?? false,
+                        EventDepotMaintainPlans: maaUserData.Task?.EventDepotMaintainPlans ?? '[]',
                         IfActivityFirst:
                           maaUserData.Task?.IfActivityFirst !== undefined
                             ? maaUserData.Task.IfActivityFirst

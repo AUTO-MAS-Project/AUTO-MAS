@@ -1072,6 +1072,14 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
+        ## 是否优先保持活动材料库存
+        self.Task_IfEventDepotMaintain = ConfigItem(
+            "Task", "IfEventDepotMaintain", False, BoolValidator()
+        )
+        ## 活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动
+        self.Task_EventDepotMaintainPlans = ConfigItem(
+            "Task", "EventDepotMaintainPlans", "[]", JSONValidator(list)
+        )
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", True, BoolValidator()

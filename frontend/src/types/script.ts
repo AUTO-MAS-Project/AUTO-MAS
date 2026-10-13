@@ -695,6 +695,8 @@ export interface User {
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string
+    IfEventDepotMaintain?: boolean
+    EventDepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
     Annihilation?: string
     InfrastMode?: string
