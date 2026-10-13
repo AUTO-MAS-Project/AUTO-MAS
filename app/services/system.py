@@ -320,6 +320,19 @@ class _SystemHandler:
         await asyncio.to_thread(_kill_all)
         logger.success("模拟器进程清除完成")
 
+    async def is_process_running(self, path: Path | str) -> bool:
+        """按镜像路径判断该进程是否还在跑。
+
+        Args:
+            path (Path | str): 目标进程路径。
+
+        Returns:
+            bool: 有该路径的进程在跑时返回 True。读不出镜像路径的同名候选不算——
+                那些进程无法归到这个路径上，与 `kill_process` 用同一套判据。
+        """
+
+        return bool((await self._scan_processes_by_path(path)).pids)
+
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。
 

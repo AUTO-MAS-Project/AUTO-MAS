@@ -587,6 +587,9 @@ def start_game_via_launcher(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-WW 启动器启动仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
 
     # 开启诊断记录：窗口定位结果与各轮 OCR 全量条目写入 debug/okww-launcher-start/，
     # 供按钮未被点击时排查窗口错抓、截图偏移与 OCR 文本漂移

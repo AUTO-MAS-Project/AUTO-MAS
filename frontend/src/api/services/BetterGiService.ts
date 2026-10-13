@@ -50,7 +50,7 @@ export class BetterGiService {
      *
      * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
      * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+     * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
      * @param configName
@@ -406,7 +406,7 @@ export class BetterGiService {
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -434,7 +434,7 @@ export class BetterGiService {
     }
     /**
      * 保存 BetterGI 全局 config.json 的秘境刷取配置段
-     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -457,7 +457,7 @@ export class BetterGiService {
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -485,7 +485,7 @@ export class BetterGiService {
     }
     /**
      * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
-     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

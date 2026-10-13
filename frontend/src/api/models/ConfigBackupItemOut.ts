@@ -11,8 +11,8 @@ export type ConfigBackupItemOut = {
      */
     time: string;
     /**
-     * 备份时点的配置来源三态（脚本/用户/直控）；无标注（旧版备份或未声明三态）为 null
+     * 备份时点的 base 来源（shared/independent/native）；无标注（旧版备份或未声明来源）为 null
      */
-    mode?: (string | null);
+    base?: (string | null);
 };
 

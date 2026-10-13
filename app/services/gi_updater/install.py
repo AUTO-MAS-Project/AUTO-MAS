@@ -46,7 +46,7 @@ import shutil
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from app.services.gi_updater.api import (
     fetch_branches,
@@ -81,6 +81,7 @@ from app.services.gi_updater.versioning import (
     GameVersion,
     GameVersionBase,
 )
+from app.utils.update_files import directory_lock as game_dir_lock
 
 __all__ = ["UpdateKind", "UpdatePlan", "InstallResult", "InstallManagerBase"]
 
@@ -193,18 +194,6 @@ class InstallResult:
             f"{self.kind.value}: {'成功' if self.success else '失败'} "
             f"({self.file_done}/{self.file_total} 文件，失败 {self.file_failed})"
         )
-
-
-_game_dir_locks: Dict[str, asyncio.Lock] = {}
-
-
-def game_dir_lock(game_path: str) -> asyncio.Lock:
-    """取该游戏目录的串行锁（同一目录的多个任务不并发写盘）。"""
-    key = os.path.normcase(os.path.abspath(game_path))
-    lock = _game_dir_locks.get(key)
-    if lock is None:
-        lock = _game_dir_locks[key] = asyncio.Lock()
-    return lock
 
 
 class InstallManagerBase:

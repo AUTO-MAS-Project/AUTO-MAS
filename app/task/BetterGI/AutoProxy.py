@@ -34,11 +34,11 @@ from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
+    CONFIG_BASE_NATIVE,
     append_push_log,
     find_pids_by_name,
     push_dispatch_log,
-    read_config_source,
+    read_config_base,
 )
 from app.utils import (
     ProcessInfo,
@@ -366,27 +366,27 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: BetterGIUserConfig = self.user_config[self.cur_user_uid]
-        # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管
+        # 配置来源决定「谁拥有本次运行的配置」：原生来源 = 用 BGI 所选原生配置，MAS 不接管
         # （一条龙配置名回到 Task.OneDragonConfigName，前端也据此显示原生控件）；
-        # 脚本/用户 = MAS 侧配置（脚本级共享 / per-user 独立）。
-        # 注：快速配置不参与这里的判定——它在直控下的语义是「要不要把面板值写入
-        # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让直控被锁回 MAS 槽位。
+        # shared/independent = MAS 侧配置（脚本级共享 / per-user 独立）。
+        # 注：快速配置不参与这里的判定——它在原生来源下的语义是「要不要把面板值写入
+        # 原生配置」，与「用哪份配置启动」是两件事，混在一起会让原生来源被锁回 MAS 槽位。
         # （合并 dev #781「全专项快速配置开关语义」时保留本分支这一语义：见下 writes_native_config。）
-        self.config_mode = read_config_source(self.cur_user_config)
-        # 配置来源决定「谁拥有本次运行的配置」：直控 = 用 BGI 所选原生配置，MAS 不接管；
+        self.config_base = read_config_base(self.cur_user_config)
+        # 配置来源决定「谁拥有本次运行的配置」：原生来源 = 用 BGI 所选原生配置，MAS 不接管；
         # 脚本/用户 = MAS 侧配置。**快速配置不参与这个判定**（维护者决策：放弃把快速配置
-        # 当作配置来源开关）——它在直控下只表示「要不要把面板值写进那份原生配置」，
+        # 当作配置来源开关）——它在原生来源下只表示「要不要把面板值写进那份原生配置」，
         # 见下方 writes_native_config。
         # 注：此处与 dev #781 的 use_mas_config = IfQuickConfig 相左，PR 内已同步调整 dev 的
         # test_quick_config_sources 相应断言，评审时请一并确认。
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
-        # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
+        self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
+        # 原生来源 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
         # ⚠️ 该开关已从 BetterGI 用户页隐藏，改由配置来源派生（BetterGIUserConfig.load：
-        # 直控 = 关，脚本 / 用户 = 开），故此处对直控恒为假 —— 整条 _write_native_one_dragon
+        # 原生来源 = 关，脚本 / 用户 = 开），故此处对原生来源恒为假 —— 整条 _write_native_one_dragon
         # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
         # 将来若恢复开关可直接复用。
-        self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
+        self.writes_native_config = self.config_base == CONFIG_BASE_NATIVE and bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
         # 原生配置的运行前快照与本次写入内容（还原前比对，保护运行期间的外部修改）
@@ -508,7 +508,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 「用户独立配置」开启时：一条龙配置名固定为 MAS 专属槽位「MAS独立配置」，
         # 忽略用户旧所选名（Task.OneDragonConfigName 冻结不用），BGI 同名实配全程零接触；
-        # 关闭时维持现状：直控 BGI 所选实配、MAS 不干预。
+        # 关闭时维持现状：原生来源 BGI 所选实配、MAS 不干预。
         self.one_dragon_config = (
             one_dragon.launch_slot_name()
             if self.use_mas_config
@@ -552,9 +552,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if self.use_mas_config
             else []
         )
-        # 直控模式（非用户独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
+        # 原生来源模式（非用户独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
         # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
-        # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背直控设计初衷。
+        # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背原生来源设计初衷。
         self.use_execution_layer = bool(self.use_mas_config) and bool(
             self.cur_user_config.get("OneDragon", "UseExecutionLayer")
         )
@@ -574,7 +574,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
         # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
-        # 条件比 dev #781 宽一档：直控 + 快速配置时**要**算 Plan——那一路由
+        # 条件比 dev #781 宽一档：原生来源 + 快速配置时**要**算 Plan——那一路由
         # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
         _plan_steps = (
             parse_one_dragon_plan(self.cur_user_config.get("OneDragon", "Plan") or "")
@@ -695,7 +695,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ``exclude_task_names`` 用于路径 B：把已改由执行层直连的战斗 4 项从一条龙副本过滤掉。
         """
         if not self.use_mas_config:
-            # 直控来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
+            # 原生来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
             self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
@@ -811,11 +811,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _write_native_one_dragon(
         self, exclude_task_names: list[str] | None = None
     ) -> None:
-        """直控 + 快速配置开启：把面板值写入 BGI **那份原生一条龙配置**。
+        """原生来源 + 快速配置开启：把面板值写入 BGI **那份原生一条龙配置**。
 
         不建 MAS 槽位、不物化 ``MAS-`` 前缀配置组（原生配置引用的是用户自己的组）。
         写入内容留档给 ``_restore_one_dragon_config`` 比对，用于保护运行期间的外部修改。
-        直控下执行层被禁用（见 ``use_execution_layer``），故不需要路径 B 的剔除参数。
+        原生来源下执行层被禁用（见 ``use_execution_layer``），故不需要路径 B 的剔除参数。
         """
         if self._native_one_dragon_snapshot is None:
             # 快照阶段没读到原生配置（文件缺失/非法）：本次不接管，避免写出一份空配置
@@ -837,7 +837,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             queue=self.one_dragon_queue,
             exclude_task_names=exclude_task_names,
             # 四项战斗组的 per-任务设置（树脂/奖励识别/秘境界/首领名…）：
-            # 直控下执行层不跑，Plan 只有这里会落到原生配置
+            # 原生来源下执行层不跑，Plan 只有这里会落到原生配置
             native_step_settings=plan_steps_to_native_settings(self.plan_combat_steps),
         )
         if written is None:
@@ -862,7 +862,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         logger.info(
             f"已把用户 {self.cur_user_item.name} 的面板值写入一条龙配置"
-            f"「{self.one_dragon_config}」（直控 + 快速配置）"
+            f"「{self.one_dragon_config}」（原生来源 + 快速配置）"
         )
 
     def _backup_one_dragon_config(self) -> None:
@@ -873,7 +873,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         仍需运行时临时补写、结束还原，故这里先快照。同时清理上一轮强杀可能残留的
         前缀物化组（只命中 MAS-{短id}-自定义配置组*，不碰 BGI 本体）。
 
-        直控来源且快速配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
+        原生来源且快速配置开启时改为接管 **BGI 那份原生一条龙配置**：先整份快照，
         再连同全局叶子一起补写，运行/异常结束由 ``_restore_one_dragon_config`` 还原。
         """
         if not self.use_mas_config:
@@ -884,7 +884,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             if self._native_one_dragon_snapshot is None:
                 logger.warning(
-                    f"用户 {self.cur_user_item.name} 直控快速配置：未找到一条龙配置"
+                    f"用户 {self.cur_user_item.name} 原生来源快速配置：未找到一条龙配置"
                     f"「{self.one_dragon_config}」，本次不写入面板值"
                 )
             self._reseed_global_config = one_dragon.snapshot_global_battle_config(
@@ -913,7 +913,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         各步置空后再次调用即安全，避免 final_task 与 on_crash 相继触发时重复操作。
         """
         if not self.use_mas_config:
-            # 直控 + 快速配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
+            # 原生来源 + 快速配置：只还原本次真正写过的那份原生配置；先在写前比对——运行期间
             # 被外部改过的配置保留外部改动（与各专项「发现外侧新修改时保护该修改」同口径）
             if self.writes_native_config:
                 if self._native_one_dragon_written is not None:

@@ -6,7 +6,6 @@ import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallI
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
 import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
@@ -355,26 +354,6 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/instance/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 修改魔改 AVD 实例选项
-     * 内存、气球，只改传了的项，下次启动生效。
-     * @param requestBody
-     * @returns Emulator2AvdInstanceOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
-        requestBody: Emulator2AvdInstanceOptionsSetIn,
-    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/instance/options/set',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

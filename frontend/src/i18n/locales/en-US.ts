@@ -6,6 +6,23 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  eventDepotPreview: {
+    name: 'Event stock keeping',
+    hint: 'Replenish event materials to their target stock first, then continue with Event stage priority below.',
+    scopeHint:
+      'Keep stock by event material stage position. Stages follow the current event at runtime; Orundum efficiency and entries without drops are excluded.',
+    stageColumn: 'Event material stage',
+    stageIndex: 'Material stage {n}',
+    fallbackStage: 'Currently falls back to {stage}',
+    addPresets: 'Add event presets',
+    mergeHint:
+      'Targets default to 200. Only positions and targets are saved; materials follow each event. Adding again fills missing entries and keeps targets. Out-of-range positions use the first material stage. Drag to reorder execution.',
+    added: 'Added {n} event presets',
+    alreadyAdded: 'All event presets are already added. Existing targets are unchanged.',
+    noActivity: 'No event stages are currently available',
+    expiredHint:
+      'No event material stages are available, so this run is skipped. Positions and targets are kept and automatically use new stages in the next event.',
+  },
   common: {
     viewPageDocs: 'View documentation for this page',
     language: 'Language',
@@ -21,6 +38,12 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    currentConfig: 'Configuration: {source}',
+    configSourceShared: 'Shared',
+    configSourceIndependent: 'Independent',
+    configSourceNative: 'Script native',
+    configOverrideEnabled: 'Overrides on',
+    configOverrideDisabled: 'Overrides off',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
@@ -269,7 +292,6 @@ export default {
     configureSrc: 'Configure SRC',
     configureOkWw: 'Configure ok-ww',
     configureWhimbox: 'Configure Whimbox',
-    configurePerUserMaaend: "Edit this account's own configuration in the MaaEnd window.",
     restartingAutoMasStops: 'Restarting AUTO-MAS stops whatever is running. Restart anyway?',
     restartBackendUpdate: 'Restart the backend to update',
     resetEverything: 'Reset everything',
@@ -315,16 +337,58 @@ export default {
       'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
     maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
+    maaCultivateImportClipboard: 'Import from clipboard',
+    maaCultivateImporting: 'Importing',
+    maaCultivateImportSubmit: 'Import',
+    maaCultivateImportPasteHint:
+      'Cannot read the clipboard. Paste the training targets from Arknights Toolbox’s “Export to MAA”.',
+    maaCultivateImportPlaceholder: 'Paste training targets as JSON',
+    maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
+    maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
+    maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
+    maaCultivateImportEmpty: 'No training targets to import',
+    maaCultivateImportFormatError:
+      'Invalid format. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportOperatorError:
+      'Cannot match the operator name and class. Use the Chinese names exported by the toolbox',
+    maaCultivateImportAmbiguous:
+      'Multiple operators share this name. Specify the class to identify the operator',
+    maaCultivateImportEliteError:
+      'Invalid promotion target or missing training data for this operator',
+    maaCultivateImportSkillError:
+      'Invalid skill level target or missing training data for this operator',
+    maaCultivateImportMasteryError: 'Invalid mastery target or missing mastery data for this skill',
+    maaCultivateImportUnsupported:
+      'Unsupported targets. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportCatalogError: 'Operator training data is unavailable. Try again later',
+    maaCultivateImportRowError: 'Entry {index} ({name}): {reason}',
+    maaCultivateImportUnnamed: 'Operator name missing',
+    maaCultivateImportUnavailable:
+      'Save the user and finish any ongoing configuration operation before importing',
     maaCultivateNoOperators: 'Operator catalog unavailable',
     maaCultivateElite0: 'Elite 0',
     maaCultivateElite1: 'Elite 1',
     maaCultivateElite2: 'Elite 2',
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
+    maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivateAutoRaiseOn: 'Auto training: On',
+    maaCultivateAutoRaiseOff: 'Auto training: Off',
+    maaCultivateOperatorCount: 'Operators: {count}',
+    maaCultivateAutoRaiseUnsupported:
+      'Automatic training was skipped. Use MAA v6.19.0-beta.1 or later and confirm that Operator Progression is available in MAA. Material farming continues.',
+    maaCultivateAutoRaiseDataUnavailable:
+      'Automatic training was skipped because training data is unavailable. Refresh the operator catalog and try again. Material farming continues.',
+    maaCultivateSklandSyncFailed:
+      'Skland progression sync failed, so cultivation is paused for this run. Check your network or bind Skland again. Daily tasks and depot maintenance continue as usual.',
+    maaCultivateAutoRaiseHint:
+      'Requires MAA v6.19.0-beta.1 or later. Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+    maaCultivateMasterySkillHint:
+      'Mastery requires skill rank 7. Selecting a mastery target automatically sets the skill rank target to 7; clearing the mastery target leaves the skill rank target unchanged.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
-      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set mastery/module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
+      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
@@ -343,32 +407,36 @@ export default {
       '; the above is a conservative estimate assuming Elite 0 and empty inventory. Finish recognition in MAA and check again',
     maaCultivateSklandTitle: 'Bind Skland',
     maaCultivateSklandHint:
-      'After binding, mastery/module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
+      'After binding, skill rank, mastery, and module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
     maaCultivateSklandRole: 'Select game role',
     maaCultivateSklandBoundRole: 'Bound role',
     maaCultivateSklandUnboundHint: 'Only Elite goals are available before binding Skland',
-    maaCultivateSklandLockedHint: 'Bind Skland to set mastery/module goals',
+    maaCultivateSklandLockedHint: 'Bind Skland to set skill rank, mastery, and module goals',
     maaCultivateSklandDegradedHint:
-      'Skland progression is temporarily unavailable; mastery/module goals are paused and will resume automatically',
+      'Some Skland progression data is temporarily unavailable; affected skill rank, mastery, and module goals are paused and will resume automatically',
     maaCultivateGoalElite: 'Elite',
+    maaCultivateGoalSkill: 'Skill rank',
+    maaCultivateSkillLevel: 'Rank {level}',
     maaCultivateGoalNone: 'No goal',
     maaCultivateCurrent: 'Current',
     maaCultivateCurrentUnknown: 'Current ?',
     maaCultivateCurrentUnknownHint:
-      'No progression data: elite is estimated as Elite 0; mastery/module without Skland data are paused',
+      'No progression data: elite is estimated as Elite 0; skill rank, mastery, and module goals without Skland data are paused',
     maaCultivateGoalLevel1: 'Level 1',
     maaCultivateGoalLevel2: 'Level 2',
     maaCultivateGoalLevel3: 'Level 3',
     maaCultivateOverLimit: 'Beyond the reachable tier; will not be farmed automatically',
     maaCultivateOverLimitShort: 'Over limit',
     maaCultivateToggleGoals: 'Expand/collapse goals',
-    maaCultivateNoGoalTier: 'No Elite goal',
+    maaCultivateNoGoalTier: 'No available cultivation goals',
     maaCultivateNoGoalDataMissing: 'Cultivation data missing',
     maaCultivateStateInProgress: 'Farming',
     maaCultivateStateAchieved: 'Achieved',
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
     maaDepotHint: 'Set target stock per material; farmed automatically when short',
+    maaDepotPlanCount: '{count} plans',
+    maaDepotEmpty: 'No plans added',
     maaCombat: 'Sanity combat',
     maaInfrast: 'Infrastructure shift',
     maaInfrastMode: 'Infrastructure mode',
@@ -1883,6 +1951,27 @@ export default {
     trackChildProcesses: 'Also track the child processes the script starts',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
+    endfieldAutoUpdate: 'Update the Endfield client before running',
+    endfieldAutoUpdateHint:
+      'Checks the PC client version before each run and, when it is behind, applies the official delta pack: it verifies local files first and only closes a running client once they match, then downloads only what changed. When no delta exists for this baseline the client is left alone and you are asked to update manually',
+    endfieldUpdateTimeoutHint:
+      'How long AUTO-MAS may take to verify local files, close the running client, download the delta and apply it; once it passes the run is aborted but the downloaded delta and the files already written stay on disk, and the next run continues from there. A full run usually needs tens of minutes or more, so a small value aborts it every time',
+    endfieldManualUpdate: 'Manual update',
+    endfieldCheckUpdateTitle: 'Check the Endfield client for updates',
+    endfieldUpdateProgressTitle: 'Endfield client update progress',
+    endfieldWillBeUpdated:
+      'AUTO-MAS updates the Endfield PC client with the official delta pack: it reads local files to verify the baseline, then downloads only what changed (a cross-version run downloads a few GB and reads tens of GB to verify). Once the baseline verifies it closes the running game and locks this script config. When the official pack has no delta for this baseline nothing is downloaded and you are asked to update manually',
+    endfieldUpdateCloseConfirm:
+      'Closing the dialog aborts this run. The downloaded delta and the game files already written stay on disk, so the next run resumes instead of starting over. Close anyway?',
+    endfieldUpdateAbortTitle: 'Abort this update run?',
+    endfieldUpdateAbortConfirm: 'Close anyway',
+    endfieldUpdateAlreadyFinished:
+      'This update run has already finished; the outcome is in the script run log',
+    endfieldUpdateFailed: 'Endfield update failed: {p0}',
+    endfieldUpdateTask: 'Endfield update task finished',
+    endfieldUpdateConnecting: 'Connecting to the update task...',
+    endfieldUpdateStartFailed: 'Failed to start the Endfield update',
+    endfieldUpdateStopFailed: 'Failed to stop the Endfield update',
     pickMfwResourceLeave:
       'Pick the resource; leave empty to auto-pick the first resource matching the control method',
     pickMfwProject: 'Pick the project',
@@ -1946,8 +2035,7 @@ export default {
       'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
     mssFlavorDefense: 'Catastrophe Defense',
     mssFlavorDefenseHint:
-      "When on, the personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's",
-    mssFlavorDefenseOff: 'Disabled',
+      "The personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's, and turning the switch off skips it entirely",
     mssFlavorDefenseDone: 'Played this period',
     mssFlavorDefensePending: 'Not played this period',
     mssFlavorDefenseArmed: 'Queued for this run',
@@ -2425,7 +2513,7 @@ export default {
     configRestoreUnrestorableTitle: 'This backup cannot be restored',
     configRestoreUnrestorableDesc:
       'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
     configRestoreModeDirect: 'Native',
@@ -2447,7 +2535,7 @@ export default {
       'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
     configSessionDiscardedUnknown:
       'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
@@ -2838,6 +2926,9 @@ export default {
     bettergiRewardDefault: 'Default',
     bettergiDomainPickerClearAll: 'Clear all',
     bettergiDomainPickerClearAllConfirm: 'Clear all selected domains?',
+    bettergiDomainPickerGuide: 'Select by Training Guide',
+    bettergiDomainPickerGuideTip:
+      'BetterGI reads the in-game Training Guide and automatically picks the matching domain at the highest difficulty (requires BetterGI 0.66 or later)',
     bettergiDomainPickerNone: 'No domains available',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: 'Domain picker',
@@ -2997,22 +3088,18 @@ export default {
     openStore: 'Open game center',
     settings: 'Settings',
     settingsTitle: 'Instance settings',
-    settingsHint:
-      'Applied on next start; a running instance keeps its current configuration. Fields left empty are not changed.',
+    settingsHint: 'Applied on next start',
     save: 'Save',
     keepCurrent: 'Unchanged',
-    fieldWidth: 'Width',
-    fieldHeight: 'Height',
-    fieldDpi: 'DPI',
+    fieldResolution: 'Resolution',
     fieldCpu: 'CPU cores',
-    fieldMemory: 'Memory (MB)',
+    fieldMemory: 'Memory',
     fieldFps: 'Frame rate',
+    tierActual: 'Currently {value}',
     batchSettings: 'Batch settings',
     batchTitle: 'Apply settings to all instances',
     batchApply: 'Apply to all',
-    batchWarning:
-      'Fields you fill in are written to all {count} devices; empty fields are left alone.',
-    batchHint: 'Applied on next start; running instances keep their current configuration.',
+    batchWarning: 'Fields you pick are written to all {count} devices; the rest are left alone.',
     batchFailures: 'Devices that were not updated',
     field: {
       width: 'Width',
@@ -3390,6 +3477,7 @@ export default {
   home: {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
+    satelliteEffectsPaused: 'Effects paused · click to resume',
     satelliteEgg: {
       star: 'star!',
       overclock: 'Overclock!',
@@ -4109,13 +4197,13 @@ export default {
       selectAllUsers: 'Select all',
       clearAllUsers: 'Clear all',
       runScopeTitle: 'Run scope',
-      runScopeExpand: 'Expand',
-      runScopeCollapse: 'Collapse',
       runScopeTip:
         'Unchecked managed scripts and accounts are skipped this run; the selection is kept after the run',
-      runScopeSelected: '{selected}/{total} accounts selected',
+      runScopeSelected: '{selected}/{total} runnable accounts selected',
       runScopeLoading: 'Loading accounts…',
       runScopeNoUsers: 'No account can run',
+      runScopeUserDisabled: 'Disabled',
+      runScopeUserExpired: 'Days used up',
       runScopeLoadFailed: 'Could not load accounts. Retry',
       runScopeRetry: 'Retry',
       stop: 'Stop',
@@ -4123,6 +4211,9 @@ export default {
     },
     log: {
       title: 'Log',
+      theme: 'Log theme',
+      followTheme: 'Follow theme color',
+      saveThemeFailed: 'Could not save the log theme preference',
       follow: 'Follow',
       browse: 'Browse',
       empty: 'No data',
@@ -4385,10 +4476,7 @@ export default {
       saveFailedRaw: 'Could not save the {label} configuration',
       maaEndUnsupported:
         'This controller does not support shared MaaEnd configuration — use the independent configuration entry instead',
-      maaEndUserStarted: 'Started the MaaEnd configuration for {script} / {user}',
       maaEndScriptStarted: 'Started the MaaEnd configuration for {script}',
-      maaEndUserTimeout: 'The configuration session for {script} / {user} timed out',
-      maaEndUserSaved: 'Configuration for {script} / {user} saved',
       okwwStarted: 'Opened the ok-ww settings for {name}',
       okwwStartFailed: 'Could not open the ok-ww settings: {error}',
       okwwSaved: 'Settings for {name} saved',
@@ -4576,6 +4664,9 @@ export default {
       lowPerf: 'Low performance mode',
       lowPerfTip:
         'Reduces decorative animations and background rendering. Script execution and task scheduling are unaffected; decorative animations pause automatically while the window is minimized.',
+      pauseHomeEffects: 'Pause home effects while scripts run',
+      pauseHomeEffectsTip:
+        'Pauses the home satellite animation while any script task is running to save GPU; satellite status colors keep updating, and the hint at the top-left of the satellite area resumes it temporarily.',
       traySection: 'System tray',
       showTray: 'Always show tray icon',
       showTrayTip: 'Keep the tray icon visible even when the window is not minimized',
@@ -4913,6 +5004,7 @@ export default {
       fluidOk: 'Turn it on',
       cursorSaveFailed: 'Could not save the cursor effect',
       lowPerfSaveFailed: 'Could not save low performance mode',
+      pauseHomeEffectsSaveFailed: 'Could not save the home effects pause setting',
       homeSatelliteSaveFailed: 'Could not save the home satellite style',
       testUnknown: 'The test notification returned an unknown result',
       testSent: 'Test notification sent',

@@ -30,7 +30,7 @@ from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
@@ -151,24 +151,26 @@ class ZzzOdManager(ScriptManagerBase):
             )
             return
 
-        # 按配置来源分派：用户模式 → 注入运行；直控模式 → 原生裸跑。
-        # 直控用户绝不进入注入名单（直控=MAS 零注入零干涉）
+        # 按 base 来源分派：shared/independent → 注入运行；native → 原生裸跑。
+        # 原生来源用户绝不进入注入名单（原生来源=MAS 零注入零干涉）
         inject_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") != "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
+            != BASE_NATIVE
         ]
         direct_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") == "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
+            == BASE_NATIVE
         ]
         account_switch = str(
             self.script_config.get("Game", "AccountSwitch") or "单实例切换"
         )
 
-        # 「多实例切换」（不推荐）：用户模式用户合并为一轮多账号注入运行
-        # （一条龙内部切换账号），直控用户在其后逐个原生裸跑。
+        # 「多实例切换」（不推荐）：注入模式用户合并为一轮多账号注入运行
+        # （一条龙内部切换账号），原生来源用户在其后逐个原生裸跑。
         # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
         # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
         if self.script_config.get("Game", "AccountSwitch") == "多实例切换":

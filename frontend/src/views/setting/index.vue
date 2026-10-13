@@ -308,6 +308,16 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
   }
 }
 
+const handlePauseHomeEffectsWhenRunningChange = async (enabled: boolean) => {
+  try {
+    await performanceStore.setPauseHomeEffectsWhenRunning(enabled)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存脚本运行暂停主页动效失败: ${errorMsg}`)
+    message.error(t('setting.toast.pauseHomeEffectsSaveFailed'))
+  }
+}
+
 const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
   try {
     await homeSatelliteStore.setStyle(style)
@@ -495,6 +505,8 @@ onMounted(() => {
             :cursor-effect-options="cursorEffectOptions"
             :low-performance-mode="performanceStore.lowPerformanceMode"
             :low-performance-mode-saving="performanceStore.saving"
+            :pause-home-effects-when-running="performanceStore.pauseHomeEffectsWhenRunning"
+            :pause-home-effects-when-running-saving="performanceStore.saving"
             :home-satellite-style="homeSatelliteStore.style"
             :home-satellite-style-saving="homeSatelliteStore.saving"
             :press-sound-enabled="pressSoundStore.enabled"
@@ -515,6 +527,7 @@ onMounted(() => {
             :handle-theme-color-change="handleThemeColorChange"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+            :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>

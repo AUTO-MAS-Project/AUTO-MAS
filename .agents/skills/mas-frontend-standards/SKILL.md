@@ -93,7 +93,7 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 7. Do not use `console.log` in business code; use `window.electronAPI.getLogger('module')`.
 8. Extract magic values such as intervals, timeouts, status codes, and route names into constants when they repeat or carry meaning.
 9. Keep Ant Design Vue default CSS unless a local layout or readability need requires scoped customization.
-10. Keep project-wide browser UI rules such as scrollbar styling in one renderer-global stylesheet, imported once from the application entry and driven by light/dark theme variables.
+10. Keep project-wide browser UI rules such as scrollbar styling in one renderer-global stylesheet, imported once from the application entry and driven by light/dark theme variables. Shared Electron modal chrome reservation belongs in `src/styles/appOverlays.css`, imported once by `src/main.ts`; module dialogs should reuse it instead of duplicating title-bar offsets. Portal overrides must target the rendered DOM; see the companion UI skill's [overlay layout reference](../mas-frontend-ui/references/electron-overlays.md).
 11. Derived filters and searches must preserve the source data order. A reduced search result must not be passed to persistence or reorder APIs as if it were the complete collection.
 
 ## Verification Gate

@@ -7,6 +7,10 @@
  */
 export type MssDefenseStatusData = {
     /**
+     * 个人版总开关（Function.IfPersonalMss）开着吗；没开时用户页连这一块都不渲染
+     */
+    enabled?: boolean;
+    /**
      * 当前这一期的开始时刻；取不到官网公告时为空
      */
     period?: string;

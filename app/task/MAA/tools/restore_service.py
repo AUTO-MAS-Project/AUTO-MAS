@@ -27,7 +27,7 @@ mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 
 字段侧车（Info/Task 两段，覆盖 MAS 编辑页全部可配置核心内容）。这些字段
 运行时注入 gui.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
 后按段分组回填表单，对齐 ZzzOd / ok-ww 字段回填模式），预览与页面认知才
-一致。池恒按用户分桶（侧车是用户级的，脚本态多用户共享 Default 目录时
+一致。池恒按用户分桶（侧车是用户级的，shared 来源多用户共享 Default 目录时
 各自快照仍需隔离）；两态 owner（脚本=Default 共享目录、用户=独立目录）
 只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_maa``）同一套来源
 规则。
@@ -37,6 +37,12 @@ import shutil
 import uuid
 from pathlib import Path
 
+from app.task.proxy_helpers import (
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
@@ -67,35 +73,35 @@ def _user_guard(ctx: RestoreContext) -> None:
         raise ValueError("MAA 用户不存在，请刷新后重试")
 
 
-async def _set_mode(ctx: RestoreContext, mode: str) -> None:
-    """跨来源恢复确认后把 ``Info.Mode`` 写回备份时点（tri_state 必须）。
+async def _set_base(ctx: RestoreContext, base: str) -> None:
+    """跨来源恢复确认后把 ``Info.Base`` 写回备份时点（tri_state 必须）。
 
-    基座校验到备份 Mode ≠ 当前 Mode 时回调；写回后 restore 按当前 Mode
-    解析 owner，恢复目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
+    基座校验到备份 base ≠ 当前 base 时回调；写回后 restore 按当前 base
+    解析 owner，恢复目标自然就是备份 base 的目录（跨来源恢复 = 目录
     重定向 + 状态切回）。
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Mode": mode}})
+    await user.update({"Info": {"Base": base}})
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
-    脚本态共享 ``Default``、用户态用当前用户目录，与 AutoProxy ``set_maa``
-    的下发源同一套来源规则；直控用户没有 MAS 托管配置目录（对齐 MaaEnd
-    的「直控无 mas 池」），mas 池列表/预览为空；用户不存在时无法判态，
+    共享来源共享 ``Default``、独立来源用当前用户目录，与 AutoProxy ``set_maa``
+    的下发源同一套来源规则；原生来源用户没有 MAS 托管配置目录（对齐 MaaEnd
+    的「原生来源无 mas 池」），mas 池列表/预览为空；用户不存在时无法判态，
     同样返回 ``None``（恢复/归档另有用户守卫）。
     """
 
     try:
         uid = uuid.UUID(ctx.user_id)
-        mode = str(ctx.script_config.UserData[uid].get("Info", "Mode") or "").strip()
+        base = read_config_base(ctx.script_config.UserData[uid], CONFIG_BASE_SHARED)
     except (ValueError, KeyError, TypeError):
         return None
-    if mode == "直控":
+    if base == CONFIG_BASE_NATIVE:
         return None
-    return ctx.user_id if mode == "用户" else "Default"
+    return ctx.user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
 
 def _native_config_path(ctx: RestoreContext) -> Path | None:
@@ -140,7 +146,7 @@ def _seed_mas_dir(ctx: RestoreContext, mas_dir: Path) -> None:
 async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
     """归档内容 = owner 目录 ConfigFile 副本 + 页面核心字段侧车（内存 JSON）。
 
-    归档前播种 owner 目录（缺失时从 MAA 本体 config/ 回灌）；直控/无法
+    归档前播种 owner 目录（缺失时从 MAA 本体 config/ 回灌）；原生来源/无法
     判态（owner 为 ``None``）或目录仍缺失/为空时返回 ``None``（无可归档
     内容）。
     """
@@ -202,8 +208,8 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
-        # force 存底标注恢复时点来源（跨来源时 set_mode 已切回备份来源）
-        mode=str(user.get("Info", "Mode") or "").strip() or None,
+        # force 存底标注恢复时点来源（跨来源时 set_base 已切回备份来源）
+        base=read_config_base(user),
     )
     if restored_overlay:
         # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：按配置段分组写回
@@ -263,8 +269,8 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="tri_state",
-        set_mode=_set_mode,
+        mas_base="tri_state",
+        set_base=_set_base,
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

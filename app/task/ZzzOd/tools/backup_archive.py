@@ -87,7 +87,7 @@ MAS_USER_INFO_FILE = "mas_user_info.yml"
 _MAS_INFO_FIELDS: tuple[str, ...] = (
     "Name",
     "Status",
-    "Mode",
+    "Base",
     "LauncherMode",
     "RemainedDay",
     "Notes",
@@ -95,7 +95,7 @@ _MAS_INFO_FIELDS: tuple[str, ...] = (
 
 
 def collect_mas_user_info(user_config) -> dict:
-    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Mode/.../PushLogMode）。
+    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Base/.../PushLogMode）。
 
     槽备份只落盘账号与任务编排；用户名、启用状态、配置模式、启动器、剩余
     天数、备注与节点详情推送存在 UserData 中，恢复/预览需要与槽快照同批

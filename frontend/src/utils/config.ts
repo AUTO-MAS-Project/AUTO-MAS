@@ -15,6 +15,8 @@ export interface FrontendConfig {
   appearanceId?: string | null
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
+  /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
+  pauseHomeEffectsWhenRunning?: boolean
 
   // 主页中心图标（星核）按压音效
   pressSoundEnabled?: boolean
@@ -57,6 +59,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeColor: 'blue',
   cursorEffect: 'none',
   lowPerformanceMode: false,
+  pauseHomeEffectsWhenRunning: true,
   pressSoundEnabled: false,
   pressSoundPreset: 'duck',
   pressSoundVolume: 0.6,

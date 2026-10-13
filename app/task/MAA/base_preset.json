@@ -127,6 +127,22 @@
           "TaskType": "Infrast"
         },
         {
+          "$type": "DepotMaintainTask",
+          "UpdateDepot": true,
+          "IsStageManually": true,
+          "SkipDuringActivity": false,
+          "SkipDuringResourceCollection": false,
+          "OnlyFirstInsufficientPlan": true,
+          "UseAutoSeries": true,
+          "UseMedicine": true,
+          "UseStone": true,
+          "UseExpiringMedicine": true,
+          "PlanList": [],
+          "Name": "活动库存保持",
+          "IsEnable": true,
+          "TaskType": "DepotMaintain"
+        },
+        {
           "$type": "FightTask",
           "UseMedicine": true,
           "MedicineCount": 0,

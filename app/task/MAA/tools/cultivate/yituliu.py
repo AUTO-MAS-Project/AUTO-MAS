@@ -164,7 +164,8 @@ def _positive_items(raw: Any) -> dict[str, int]:
 def parse_demand_table(raw: Mapping[str, Any]) -> dict[str, tuple[DemandEntry, ...]]:
     """解析干员养成需求表（character_table_simple.v2.json）。
 
-    elite 按相位下标即目标等级；skills 的 skillLevelUpCost 为专精 1..3 档
+    elite 按相位下标即目标等级；allSkill 为普通技能 2..7 级消耗；
+    skills 的 skillLevelUpCost 为专精 1..3 档
     （可能为 null，表示该技能无专精）；equip 的 itemCost 为模组 1..3 档。
     """
 
@@ -179,6 +180,15 @@ def parse_demand_table(raw: Mapping[str, Any]) -> dict[str, tuple[DemandEntry, .
             items = _positive_items(cost)
             if level > 0 and items:
                 entries.append(DemandEntry("elite", "", level, items))
+
+        # 普通技能等级为干员共用档位；首项是从 1 升至 2 的消耗。
+        skill_costs = entry.get("allSkill")
+        for level, cost in enumerate(
+            skill_costs[:6] if isinstance(skill_costs, list) else [], start=2
+        ):
+            items = _positive_items(cost)
+            if items:
+                entries.append(DemandEntry("skill", "", level, items))
 
         # 专精：每个技能 1..3 档，skillLevelUpCost 可为 null
         for skill in entry.get("skills") or []:
@@ -580,6 +590,7 @@ def dataset_to_json(dataset: CultivateDataSet) -> dict[str, Any]:
     """契约数据集 → JSON 可序列化结构（快照存储用）。"""
 
     return {
+        "schema_version": 2,
         "data_version": dataset.data_version,
         "demands": {
             char_id: [
@@ -758,7 +769,8 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
 
     同时给出各维度可达档位上限（决策 40）：``maxElite`` 为该干员表中非空
     消耗的最高精英化档（1/2/3★ 与上游缺数据者恒 0，另用 ``dataMissing``
-    区分"本就没有精英化"与"上游数据缺失"）；``skills``/``modules`` 每个选项
+    区分"本就没有精英化"与"上游数据缺失"）；``maxSkillLevel`` 为普通技能等级
+    上限；``skills``/``modules`` 每个选项
     带 ``maxLevel``，无可达档位的项不进入目录——选择器不给出刷不到的档位。
     """
 
@@ -773,8 +785,13 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
         rarity = rarity if isinstance(rarity, int) else 0
         profession = entry.get("profession")
         max_elite = _max_cost_level(entry.get("elite"), start=0)
+        skill_costs = entry.get("allSkill")
+        max_skill_level = _max_cost_level(
+            skill_costs[:6] if isinstance(skill_costs, list) else [], start=2
+        )
         skills: list[dict[str, Any]] = []
-        for skill in entry.get("skills") or []:
+        # 培养任务按技能序号指定专精，过滤无专精消耗的技能时保留原始序号。
+        for skill_index, skill in enumerate(entry.get("skills") or [], start=1):
             if (
                 not isinstance(skill, dict)
                 or not skill.get("skillId")
@@ -789,6 +806,7 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "value": str(skill["skillId"]),
                     "label": str(skill["skillName"]),
                     "maxLevel": max_level,
+                    "skillIndex": skill_index,
                 }
             )
         modules: list[dict[str, Any]] = []
@@ -820,6 +838,7 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "rarity": rarity,
                 "profession": profession if isinstance(profession, str) else "",
                 "maxElite": max_elite,
+                "maxSkillLevel": max_skill_level,
                 "dataMissing": max_elite == 0 and rarity >= 4,
                 "skills": skills,
                 "modules": modules,
@@ -850,11 +869,15 @@ async def load_operator_catalog(
         and isinstance(operators[0], dict)
         and "skills" in operators[0]
         and "maxElite" in operators[0]
+        and "maxSkillLevel" in operators[0]
+        and all(
+            "skillIndex" in skill
+            for operator in operators
+            for skill in operator.get("skills", [])
+        )
     ):
         return operators
-    # 旧版目录条目无技能/模组名称（R4 起）或无可达档位上限（决策 40 起），
-    # 视为过期走重拉自愈——缺 maxElite 会让选择器整体禁用，不能靠 schema
-    # 默认值兜底
+    # 旧目录缺少维度或可达上限时重拉，避免新目标因缓存缺字段而不可选。
 
     try:
         async with httpx.AsyncClient(
@@ -926,7 +949,7 @@ async def load_dataset(
     max_age_hours: float = 24.0,
     now: float | None = None,
 ) -> CultivateDataSet:
-    """加载数据集：新鲜快照直读，过期/缺失则下载，失败回退旧快照。
+    """加载数据集：新鲜快照直读，过期/缺失则下载，失败仅回退兼容快照。
 
     Args:
         cache_dir: 快照缓存目录（MAS 配置目录）。
@@ -938,24 +961,29 @@ async def load_dataset(
         内核契约数据集。
 
     Raises:
-        YituliuDataError: 下载失败且没有可回退的快照。
+        YituliuDataError: 下载失败且没有兼容的快照可回退。
     """
 
     current = time.time() if now is None else now
     snapshot = read_snapshot(cache_dir)
-    if snapshot is not None and _is_fresh(snapshot, max_age_hours, current):
-        raw = snapshot.get("dataset")
-        if isinstance(raw, Mapping):
-            try:
-                return dataset_from_json(raw)
-            except (KeyError, TypeError, ValueError):
-                pass  # 快照结构损坏：当作无快照处理，走下载路径
+    raw = snapshot.get("dataset") if snapshot is not None else None
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 2:
+        raw = None
+    if (
+        snapshot is not None
+        and raw is not None
+        and _is_fresh(snapshot, max_age_hours, current)
+    ):
+        try:
+            return dataset_from_json(raw)
+        except (KeyError, TypeError, ValueError):
+            pass  # 快照结构损坏：当作无快照处理，走下载路径
     try:
         dataset = await download_dataset(proxy)
     except Exception as e:
-        if snapshot is not None and isinstance(snapshot.get("dataset"), Mapping):
+        if raw is not None:
             try:
-                return dataset_from_json(snapshot["dataset"])
+                return dataset_from_json(raw)
             except (KeyError, TypeError, ValueError):
                 pass  # 回退快照同样损坏：只能报错
         raise YituliuDataError(f"一图流数据不可用且无快照可回退: {e}") from e

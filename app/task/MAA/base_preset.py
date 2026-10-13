@@ -130,7 +130,8 @@ def restore_maa_default_task_queue(
             if identity is not None:
                 existing_tasks.setdefault(identity, task)
 
-    structural_keys = {"$type", "Name", "IsEnable", "TaskType"}
+    # 补齐新预设时保留已有任务的勾选；只有新增任务使用预设的默认开关。
+    structural_keys = {"$type", "Name", "TaskType"}
     restored_queue = []
     for default_task in default_queue:
         task = deepcopy(default_task)

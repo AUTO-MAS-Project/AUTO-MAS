@@ -38,7 +38,7 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.proxy_helpers import append_push_log
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, append_push_log
 from app.utils import (
     LogMonitor,
     ProcessManager,
@@ -69,7 +69,7 @@ from .resource_loader import (
     maaend_task_option_supported,
     maaend_task_supported,
 )
-from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
+from .ScriptConfig import maaend_config_base, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .update_takeover import (
@@ -380,8 +380,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ):
                 return "当前 MaaEnd 版本不支持内置账号切换，请更新 MaaEnd 后重试"
 
-        config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
-        if config_mode == "直控":
+        config_base = maaend_config_base(self.cur_user_config.get("Info", "Base"))
+        if config_base == CONFIG_BASE_NATIVE:
             config_file = (
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp/mxu-MaaEnd.json"
             )
@@ -390,7 +390,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 maaend_mas_config_dir(
                     self.script_info.script_id,
                     str(self.cur_user_uid),
-                    config_mode,
+                    config_base,
                 )
                 / "mxu-MaaEnd.json"
             )
@@ -670,7 +670,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             or self._maaend_task_supported(str(task.get("taskName", ""))) is not False
         ]
 
-    def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
+    def _quick_config_base_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
         if mode == "Delivery":
@@ -783,7 +783,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 以及是否因阶段任务在 MaaEnd 配置中不存在导致跳过。
         """
 
-        return self._quick_config_mode_skip_reason(mode)
+        return self._quick_config_base_skip_reason(mode)
 
     async def _wait_maaend_stage(self, log_offsets: dict[Path, int]) -> None:
         """等待日志结果、进程退出或 MXU 队列结束，兜底完成后未退出的进程。"""
@@ -1567,14 +1567,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
             maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
 
-        config_mode = maaend_config_mode(self.cur_user_config.get("Info", "Mode"))
+        config_base = maaend_config_base(self.cur_user_config.get("Info", "Base"))
         maaend_config_path = (
             Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            if config_mode == "直控"
+            if config_base == CONFIG_BASE_NATIVE
             else maaend_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
-                config_mode,
+                config_base,
             )
         )
         maaend_config_file = maaend_config_path / "mxu-MaaEnd.json"
@@ -1584,16 +1584,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         # 下发前归档 MAS 配置到用户池（下发源；带快速配置覆盖层字段侧车，
-        # 指纹去重，失败不阻断运行）。直控无 MAS 配置目录，不归档；native
+        # 指纹去重，失败不阻断运行）。原生来源无 MAS 配置目录，不归档；native
         # 池由 manager.prepare 在任务级一次性归档
-        if config_mode != "直控":
+        if config_base != CONFIG_BASE_NATIVE:
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 maaend_config_path,
                 overlay=read_overlay_values(self.cur_user_config),
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode=config_mode,
+                base=config_base,
             )
 
         swap_in_dir(maaend_config_path, self.maaend_set_path)

@@ -224,9 +224,9 @@ class TestUnwritableInstall:
         msg = str(err.value)
         assert "不可写" in msg
         assert str(surface.config_path.parent) in msg
-        # 两条出路都要给：提权运行 MAS；或切直控（「以管理员运行」只提权脚本进程）
+        # 两条出路都要给：提权运行 MAS；或切原生来源（「以管理员运行」只提权脚本进程）
         assert "以管理员身份运行 AUTO-MAS" in msg
-        assert "直控" in msg
+        assert "原生" in msg
 
     def test_restore_hint(self, surface: WheelAssetsConfigSurface, monkeypatch):
         (surface.root_path / "configs").mkdir(exist_ok=True)
@@ -311,10 +311,10 @@ class TestRestorePools:
 
         assert [p.key for p in RESTORE_POOLS] == ["mas", "native"]
         mas, native = RESTORE_POOLS
-        assert (mas.kind, mas.mas_mode) == ("user", "sidecar_only")
+        assert (mas.kind, mas.mas_base) == ("user", "sidecar_only")
         assert mas.files is not None and mas.backup_root is not None
         assert mas.preview is not None and mas.restore is not None
-        assert (native.kind, native.mas_mode) == ("script", None)
+        assert (native.kind, native.mas_base) == ("script", None)
         assert native.files is not None and native.backup_root is not None
 
     def test_native_pool_is_declarative(self, surface: WheelAssetsConfigSurface):
@@ -363,7 +363,7 @@ class TestRestorePools:
         class User:
             def get(self, section, key):
                 return {
-                    ("Info", "Mode"): "脚本",
+                    ("Info", "Base"): "shared",
                     ("OneDragon", "IfRunAllAccounts"): False,
                     ("Task", "Tasks"): '{"step_dig": false}',
                     ("Task", "Options"): '{"jihua_cost": "纽扣松果"}',
@@ -375,7 +375,7 @@ class TestRestorePools:
             script_config = type("C", (), {"UserData": {uid: User()}})()
 
         overlay = rs._read_overlay(Ctx())
-        assert overlay["Info"] == {"Mode": "脚本"}
+        assert overlay["Info"] == {"Base": "shared"}
         # 关游戏已改为恒强制，不再是侧车字段（只剩循环全部游戏账号一个流程开关）
         assert overlay["OneDragon"] == {"IfRunAllAccounts": False}
         assert overlay["Task"]["Tasks"] == '{"step_dig": false}'

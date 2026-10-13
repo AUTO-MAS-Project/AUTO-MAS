@@ -24,21 +24,23 @@
 from pathlib import Path
 
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    BASE_FILE_NAME,
+    OVERLAY_SIDECAR_NAME,
     archive_files,
     file_set_hash,
     list_times,
-    read_backup_mode,
+    read_backup_base,
+    read_overlay_sidecar,
     restore_dir,
     restore_files,
-    write_backup_mode,
+    write_backup_base,
 )
 
 
 def test_archive_files_memory_content(tmp_path: Path) -> None:
     """str 按 UTF-8、bytes 原样写入；与同内容磁盘文件指纹一致（去重互通）。"""
 
-    text = '{"Mode": "用户"}'  # 非 ASCII，验证 UTF-8 编码而非隐式 latin-1
+    text = '{"Name": "测试用户"}'  # 非 ASCII，验证 UTF-8 编码而非隐式 latin-1
     disk = tmp_path / "same.json"
     disk.write_text(text, encoding="utf-8")
 
@@ -62,14 +64,14 @@ def test_archive_files_memory_content(tmp_path: Path) -> None:
     )
 
 
-def test_restore_dir_excludes_mode_metadata(tmp_path: Path) -> None:
-    """归档含 _mas_mode 元数据时 restore_dir 不把它落回目标目录（整目录替换）。"""
+def test_restore_dir_excludes_base_metadata(tmp_path: Path) -> None:
+    """归档含 _mas_base 元数据时 restore_dir 不把它落回目标目录（整目录替换）。"""
 
     root = tmp_path / "pool"
     dest = archive_files({"a.json": '{"x": 1}'}, root)
     assert dest is not None
-    write_backup_mode(dest, "脚本")
-    assert read_backup_mode(dest) == "脚本"
+    write_backup_base(dest, "shared")
+    assert read_backup_base(dest) == "shared"
 
     target = tmp_path / "target"
     target.mkdir()
@@ -77,23 +79,23 @@ def test_restore_dir_excludes_mode_metadata(tmp_path: Path) -> None:
     (target / "leftover.txt").write_text("old", encoding="utf-8")
     restore_dir(root, dest.name, target)
     assert (target / "a.json").read_text("utf-8") == '{"x": 1}'  # 内容找回
-    assert not (target / MODE_FILE_NAME).exists()  # 元数据不落配置目录
+    assert not (target / BASE_FILE_NAME).exists()  # 元数据不落配置目录
     assert not (target / "leftover.txt").exists()  # 整目录替换语义不变
 
 
-def test_restore_files_excludes_mode_metadata(tmp_path: Path) -> None:
-    """restore_files 默认受管键排除顶级 _ 前缀元数据（_mas_mode 不落目标）。"""
+def test_restore_files_excludes_base_metadata(tmp_path: Path) -> None:
+    """restore_files 默认受管键排除顶级 _ 前缀元数据（_mas_base 不落目标）。"""
 
     root = tmp_path / "pool"
     dest = archive_files({"a.json": '{"x": 1}'}, root)
     assert dest is not None
-    write_backup_mode(dest, "脚本")
+    write_backup_base(dest, "shared")
 
     target = tmp_path / "target"
     target.mkdir()
     restore_files(dest, target)
     assert (target / "a.json").read_text("utf-8") == '{"x": 1}'
-    assert not (target / MODE_FILE_NAME).exists()
+    assert not (target / BASE_FILE_NAME).exists()
 
 
 def test_list_times_only_accepts_timestamp_dirs(tmp_path: Path) -> None:

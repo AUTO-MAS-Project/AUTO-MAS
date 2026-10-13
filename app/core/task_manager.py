@@ -295,7 +295,7 @@ def _emulator_key(script_config: object) -> str | None:
         index = script_config.get("Emulator", "Index")
     elif isinstance(script_config, MaaEndConfig):
         # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
-        # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
+        # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
         # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
         emulator_id = script_config.get("Game", "EmulatorId")
         index = script_config.get("Game", "EmulatorIndex")
@@ -382,7 +382,7 @@ class TaskInfo(TaskItem):
             elif self._replay_active.get(script.script_id, 0):
                 candidates[item.user_id] = item
             else:
-                # 账号预检、HSR 直控、MFW inner task 不经过 spawn，异常即其终态。
+                # 账号预检、HSR 原生来源、MFW inner task 不经过 spawn，异常即其终态。
                 self._request_replay(script, item)
         elif status == "异常" and not self._replay_active.get(script.script_id, 0):
             self._request_replay(script)

@@ -24,7 +24,7 @@
         {{ t('comp.openConfigFolder') }}
       </a-button>
       <a-button
-        v-if="userMode === '用户' && !showSrcConfigMask"
+        v-if="userMode === 'independent' && !showSrcConfigMask"
         type="primary"
         ghost
         size="large"
@@ -38,7 +38,7 @@
         {{ t('edit.srcConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode === '用户' && showSrcConfigMask"
+        v-if="userMode === 'independent' && showSrcConfigMask"
         type="default"
         size="large"
         disabled

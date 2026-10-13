@@ -11,11 +11,16 @@
     @pointercancel="releaseCenter"
   >
     <div v-if="loading" class="loading-spinner"></div>
+    <!-- 低性能模式下动效本来就停着，恢复按钮恢复不了它 -->
+    <SatelliteEffectsPausedChip
+      v-if="effectsPaused && !performanceStore.lowPerformanceMode"
+      @resume="performanceStore.homeEffectsManuallyResumed = true"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -32,6 +37,7 @@ import { createCenterPokeCounter } from './satellite/centerPoke'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
 import { usePressSound } from './satellite/usePressSound'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
+import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
@@ -56,6 +62,10 @@ const container = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
+/** 脚本运行期间动效自动暂停；手动恢复状态在 performance store 里（随本轮任务生效），任务清零后由 store 复位 */
+const effectsPaused = computed(
+  () => performanceStore.homeEffectsPaused && !performanceStore.homeEffectsManuallyResumed
+)
 
 let scene: SatelliteScene | null = null
 let isUnmounted = false
@@ -133,6 +143,13 @@ watch(
     })
   }
 )
+
+// 脚本运行暂停不用硬停：帧循环画完闲置帧后在 drawFrame 里自然停；
+// 恢复（任务清零或点了继续）时补一帧重新拉起循环
+watch(effectsPaused, paused => {
+  if (paused) return
+  requestRender()
+})
 
 // ==================== 生命周期 ====================
 
@@ -226,19 +243,19 @@ async function initScene(): Promise<void> {
   scene.setDark(isDark.value)
   scene.setLowPerformance(performanceStore.lowPerformanceMode)
   scene.setStatuses(satelliteStatuses.value)
-  if (performanceStore.isLowPower) {
+  if (performanceStore.isLowPower || effectsPaused.value) {
     scene.skipAppear()
   } else {
     scene.startAppear(Date.now())
   }
 }
 
-/** 画一帧。平时逐帧连续画；低性能模式只在有变化时补一帧，碎裂特效放完之前例外 */
+/** 画一帧。平时逐帧连续画；低性能模式与脚本运行暂停只在有变化时补一帧，碎裂特效放完之前例外 */
 function drawFrame(): void {
   if (isUnmounted || !scene || performanceStore.isBackgrounded) return
 
   const exploding = scene.renderFrame(Date.now())
-  if (!performanceStore.isLowPower || exploding) {
+  if ((!performanceStore.isLowPower && !effectsPaused.value) || exploding) {
     frameScheduler.request(drawFrame)
   }
 }

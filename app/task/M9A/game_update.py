@@ -38,15 +38,14 @@ import httpx
 
 from app.utils import get_logger
 from app.utils.game_apk import (
-    GameUpdateResult,
     cleanup_apk_leftovers,
     download_apk,
     fetch_remote_apk_version,
     get_apk_update_lock,
     get_installed_client_info,
     install_apk,
-    is_client_outdated,
 )
+from app.utils.game_update import GameUpdateResult, is_client_outdated
 
 logger = get_logger("M9A 游戏更新")
 

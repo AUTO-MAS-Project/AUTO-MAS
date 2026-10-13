@@ -95,6 +95,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
   （启动器没起来 / 登录失败 / 配置错误）**仍由 `check_log` 致命日志关键词 +
   超时态折算 `run_book=False` 走 main_task 既有「用户运行失败 → 重试」分支。
 - **「通知」应用是汇总信号**：上游 NotifyApp 在本轮存在失败任务时会把自己 round_fail（消息本身 fire-and-forget 已发出），MAS 侧在 `_failed_apps`（diff 判定）与 push_log resolve（节点行）两处剔除，避免「通知（失败）」误导。
+- **吞失败警告（⚠ 异常，2026-10 维护者决策）**：体力刷本/恶名狩猎把计划级失败吞成成功收尾，log_box 后置处理器在应用成功收尾时按「辅助指令失败原因白名单」（`app/task/ZzzOd/push_log.py` 的 `_WARNING_FAIL_REASONS`，fail-closed，仅注册的有价值异常才透出）追加 `⚠ 异常: 应用（原因）` 行；`⚠ 异常` 是通用渲染 `app/tools/push_log.py` 状态正则认可的第四种前缀（汇总模式归组且固定垫底，普通行如「🔋 剩余体力」在其前）。恶名狩猎领奖失败是应用内节点失败，不落「执行失败」终态行，当前采集口径不可见（上游盲点，修在上游）。
 - 直控任务编排保存保留完整顺序（`save_native_tasks` 含未启用项原位写回，对齐原生队列「灰色可任意位置」语义）；「启用在前」只由前端一键整理按钮触发。用户模式 AppList 同为整表语义（含未启用项，运行侧 `parse_user_apps` 只消费启用项）；开关/拖拽/一键整理为两模式共用封装 `useZzzOdTaskBoard`，仅落盘方式不同。
 - 恢复在 `main_task` finally、`final_task`、`on_crash` 三处幂等执行：先还原合成视图，再逐槽备份恢复（目录一律保留）。
 

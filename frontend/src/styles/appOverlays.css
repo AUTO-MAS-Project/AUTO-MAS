@@ -1,0 +1,36 @@
+/* 只在标题栏实际存在时预留窗口控制区；独立窗口沿用组件布局。
+   弹窗上下各留 16px，嵌套弹窗的层级只影响内容区内的覆盖顺序。 */
+body:has(.title-bar) .ant-modal-root .ant-modal-wrap {
+  top: 32px;
+  box-sizing: border-box;
+  padding-block: 16px;
+  overflow: hidden;
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-mask {
+  top: 32px;
+  height: calc(100% - 32px);
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal {
+  top: 0;
+  margin-block: 0;
+  padding-bottom: 0;
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-header,
+body:has(.title-bar) .ant-modal-root .ant-modal-footer {
+  flex-shrink: 0;
+}
+
+/* 默认由弹窗体滚动，模块自己的独立滚动区域可以覆盖此规则。 */
+:where(body:has(.title-bar)) .ant-modal-root :where(.ant-modal-body) {
+  min-height: 0;
+  overflow-y: auto;
+}

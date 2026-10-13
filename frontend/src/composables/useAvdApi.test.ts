@@ -35,9 +35,7 @@ describe('useAvdApi', () => {
       'error',
       'getInstanceOptions',
       'getStatus',
-      'installApk',
       'loading',
-      'setInstanceOptions',
     ])
   })
 

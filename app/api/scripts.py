@@ -956,6 +956,41 @@ async def get_maa_cultivate_operators(
 
 
 @router.post(
+    "/maa/cultivate/import",
+    tags=["Get"],
+    summary="校验并转换 MAA 剪贴板养成目标（不落库）",
+    response_model=MaaCultivateImportOut,
+    status_code=200,
+)
+async def parse_maa_cultivate_import(
+    request: MaaCultivateImportIn = Body(...),
+) -> MaaCultivateImportOut:
+    from app.task.MAA import api_service as maa_api
+    from app.task.MAA.tools.cultivate import CultivateImportError
+
+    try:
+        result = await maa_api.parse_cultivate_import(request.scriptId, request.content)
+    except CultivateImportError as exc:
+        return MaaCultivateImportOut(
+            code=400,
+            status="error",
+            message="养成目标导入校验失败",
+            error=exc.reason,
+            index=exc.index,
+            name=exc.name,
+        )
+    except Exception as exc:
+        logger.opt(exception=True).warning(f"parse_maa_cultivate_import失败: {exc}")
+        return MaaCultivateImportOut(
+            code=500, status="error", message="养成导入数据不可用", error="catalog"
+        )
+    return MaaCultivateImportOut(
+        targets=result["targets"],
+        data=[MaaCultivateOperatorOptionItem(**item) for item in result["data"]],
+    )
+
+
+@router.post(
     "/maa/cultivate/preview",
     tags=["Get"],
     summary="MAA 养成计划预览（纯计算不落库）",
@@ -1458,7 +1493,7 @@ async def get_bettergi_custom_groups_api(
 
     ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
     槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-    否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+    否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
     """
 
     try:
@@ -2109,7 +2144,7 @@ async def get_bettergi_global_domain_settings_api(
     """返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
 
     ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
     """
 
@@ -2160,7 +2195,7 @@ async def get_bettergi_global_domain_settings_api(
 async def save_bettergi_global_domain_settings_api(
     req: BetterGIGlobalDomainSettingsIn = Body(...),
 ) -> OutBase:
-    """把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+    """把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。"""
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
@@ -2213,7 +2248,7 @@ async def get_bettergi_global_stygian_settings_api(
     """返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
 
     ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
     BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
     """
 
@@ -2264,7 +2299,7 @@ async def get_bettergi_global_stygian_settings_api(
 async def save_bettergi_global_stygian_settings_api(
     req: BetterGIGlobalStygianSettingsIn = Body(...),
 ) -> OutBase:
-    """把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+    """把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。"""
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
@@ -2593,7 +2628,7 @@ async def set_zzzod_instance_force_login_api(
 @router.post(
     "/zzzod/instances/run-mode",
     tags=["ZZZ-OD"],
-    summary="设置运行实例（直控；one_dragon.yml 全局 instance_run）",
+    summary="设置运行实例（原生来源；one_dragon.yml 全局 instance_run）",
     response_model=OutBase,
     status_code=200,
 )
@@ -3022,7 +3057,7 @@ async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOpti
 async def save_zzzod_app_config_api(
     script: ZzzOdAppConfigSaveIn = Body(...),
 ) -> ZzzOdAppConfigOut:
-    """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。"""
+    """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。"""
 
     try:
         data = await Config.save_zzzod_app_config(
@@ -3147,7 +3182,7 @@ async def get_zzzod_native_config_api(
 @router.post(
     "/zzzod/native-config/save",
     tags=["ZZZ-OD"],
-    summary="保存实例原生配置（直控模式直接写回一条龙原始 YAML）",
+    summary="保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）",
     response_model=ZzzOdNativeConfigOut,
     status_code=200,
 )
@@ -3206,7 +3241,7 @@ async def save_zzzod_native_config_api(
     status_code=200,
 )
 async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
-    """渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。"""
+    """渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。"""
 
     try:
         data = Config.get_zzzod_launchers(scriptId)
@@ -3583,8 +3618,8 @@ async def batch_update_oknte_configs(
 async def list_config_backups_api(
     scriptId: str, userId: str, target: str
 ) -> ConfigBackupListOut:
-    """返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
-    来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
+    """返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
+    来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
 
     try:
         data = await Config.list_config_backups(scriptId, userId, target)
@@ -3592,7 +3627,7 @@ async def list_config_backups_api(
             code=200,
             status="success",
             message=f"共 {len(data['items'])} 份备份",
-            mode=data["mode"],
+            base=data["base"],
             data=[ConfigBackupItemOut(**item) for item in data["items"]],
         )
     except Exception as e:

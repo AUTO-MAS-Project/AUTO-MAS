@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
+    ipcRenderer.on('window-maximized-changed', listener)
+    return () => ipcRenderer.removeListener('window-maximized-changed', listener)
+  },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
   // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),

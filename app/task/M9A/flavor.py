@@ -60,7 +60,7 @@ from app.task.MaaFW.tools.core.interface.models import (
 )
 
 if TYPE_CHECKING:
-    from app.utils.game_apk import GameUpdateResult
+    from app.utils.game_update import GameUpdateResult
 
 TYPE_KEY = "M9A"
 

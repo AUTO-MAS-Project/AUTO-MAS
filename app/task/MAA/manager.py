@@ -41,12 +41,13 @@ from app.task.notify_core import (
     screenshot_entries,
 )
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_SCRIPT,
-    read_config_source,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
 )
 from app.utils import get_logger
-from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH
-from app.utils.game_apk import GameUpdateResult
+from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
+from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
@@ -200,8 +201,8 @@ class MaaManager(ScriptManagerBase):
             ).exists()
         ):
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
-        # 脚本级存档仅在确实有用户选择“脚本”来源时需要；“用户”来源使用各自
-        # 的用户目录，直控则直接使用 MAA 安装目录的原生配置。
+        # 脚本级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
+        # 用户目录，原生来源则直接使用 MAA 安装目录的原生配置。
         if (
             self.task_info.mode != "ScriptConfig"
             and self._has_script_config_user()
@@ -221,7 +222,7 @@ class MaaManager(ScriptManagerBase):
         """
 
         return any(
-            read_config_source(config, CONFIG_SOURCE_SCRIPT) == CONFIG_SOURCE_SCRIPT
+            read_config_base(config, CONFIG_BASE_SHARED) == CONFIG_BASE_SHARED
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
@@ -325,12 +326,12 @@ class MaaManager(ScriptManagerBase):
             )
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功时保留 MAA 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+        """原生来源配置会话成功时保留 MAA 原生 GUI 的写回（对齐 MaaEnd 豁免）。
 
-        直控会话 MAS 零写入（ScriptConfig ``set_maa`` 直控分支直接 return），
+        原生来源会话 MAS 零写入（ScriptConfig ``set_maa`` 原生分支直接 return），
         安装 config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
-        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与用户
-        脚本态会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与独立
+        来源会话不豁免——它们的 GUI 改动已由 ``set_maa`` 收尾回写 MAS 目
         录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留任何现
         场改动，结束后也还原任务前快照。
         """
@@ -346,12 +347,12 @@ class MaaManager(ScriptManagerBase):
         if user_id == "Default":
             return False
         try:
-            mode = str(
-                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
-            ).strip()
+            base = read_config_base(
+                self.user_config[uuid.UUID(user_id)], CONFIG_BASE_SHARED
+            )
         except (KeyError, ValueError, TypeError):
             return False
-        return mode == "直控"
+        return base == CONFIG_BASE_NATIVE
 
     async def main_task(self):
 
@@ -388,6 +389,23 @@ class MaaManager(ScriptManagerBase):
                 if not await self.check_user_before_run(
                     current_user, current_config, game_update_result=update_result
                 ):
+                    continue
+                # 单独运行是用户主动指定的一次性运行；上限为 0 时不限次数。
+                curdate = game_now(current_config.get("Info", "Server")).strftime(
+                    "%Y-%m-%d"
+                )
+                if current_config.get("Data", "LastProxyDate") != curdate:
+                    await current_config.set("Data", "LastProxyDate", curdate)
+                    await current_config.set("Data", "ProxyTimes", 0)
+                limit = self.script_config.get("Run", "ProxyTimesLimit")
+                if (
+                    self.task_info.is_queue_task
+                    and limit != 0
+                    and current_config.get("Data", "ProxyTimes") >= limit
+                ):
+                    await self.skip_user(
+                        current_user, "今日代理次数已达上限, 跳过该用户"
+                    )
                     continue
             kwargs: dict = dict(
                 script_info=self.script_info,
@@ -484,7 +502,7 @@ class MaaManager(ScriptManagerBase):
                     ),
                 )
 
-        # 还原配置：直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
+        # 还原配置：原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
         # 其余按任务前快照还原
         if (self.temp_path).exists() and not self._keep_script_config_changes():
             swap_in_dir(self.temp_path, self.maa_set_path)
