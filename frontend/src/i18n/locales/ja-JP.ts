@@ -1738,7 +1738,6 @@ export default {
       '更新の取得元に MirrorChyan を選んでいますが CDK が未入力のため、MirrorChyan から更新をダウンロードできません',
     cdkStatusIssue:
       'MirrorChyan CDK が使えません（{status}）。MirrorChyan から更新をダウンロードできないため、CDK を確認してから再試行してください',
-    cdkExpiresSoon: 'MirrorChyan CDK は {date} に期限切れになります',
     updateResultVersion: '最新バージョン',
     updateResultSource: 'ダウンロード元',
     mfwUnityResolutionOff: '変更しない',
