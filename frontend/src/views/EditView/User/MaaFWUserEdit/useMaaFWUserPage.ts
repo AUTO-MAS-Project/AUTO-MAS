@@ -11,7 +11,7 @@ import {
   shallowRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
@@ -36,6 +36,7 @@ import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
 import { createMaaFWOptionDraftRegistry, MAAFW_OPTION_DRAFTS_KEY } from '../maafwOptionDrafts'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
+import { createMaaFWLeaveGuard } from './maafwLeaveGuard'
 import { useMaaFWUserForm } from './useMaaFWUserForm'
 import { useMaaFWUserTaskContext } from './useMaaFWUserTaskContext'
 import { useMaaFWUserPersistence, type MaaFWUserIdHolder } from './useMaaFWUserPersistence'
@@ -337,38 +338,46 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     }
   }
 
-  // 「返回」：先提交选项编辑器里没提交的草稿；还在保存（改完输入框直接点返回，失焦刚触发了
-  // 保存）就先等它存完；只有存失败、或有校验不过的草稿时才拦下来问。
-  // 从点下到跳走（含确认框开着）期间 leaving 为真：按钮转圈，重复点击直接忽略
-  const leaving = ref(false)
-  const handleCancel = async () => {
+  // 离开本页（「返回」、面包屑、侧栏、浏览器后退……）都走同一个路由离开守卫：
+  // 先提交选项编辑器里没提交的草稿；还在保存（改完输入框直接点走，失焦刚触发了保存）就先等它
+  // 存完；只有存失败、或有校验不过的草稿时才弹确认，选「继续编辑」就留在本页。
+  // 转圈、连点只算一次、放行后不再拦见 createMaaFWLeaveGuard。
+  const confirmLeave = () =>
+    new Promise<boolean>(resolve => {
+      Modal.confirm({
+        title: t('edit.youHaveUnsavedChanges'),
+        content: t('edit.leaveWithoutSavingUnsaved'),
+        okText: t('edit.leave'),
+        cancelText: t('edit.keepEditing'),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      })
+    })
+
+  const prepareLeave = async () => {
+    const draftsCommitted = optionDrafts.flush()
+    if (isSaving.value) await waitForSaves()
+    if (draftsCommitted && !hasUnsavedChanges.value) return true
+    return await confirmLeave()
+  }
+
+  const {
+    leaving,
+    guard: guardLeave,
+    reset: resetLeaveApproval,
+  } = createMaaFWLeaveGuard(prepareLeave)
+
+  // 守卫只能在组件 setup 里挂（单测在 effectScope 里跑这个组合式函数，没有组件实例）
+  if (getCurrentInstance()) {
+    onBeforeRouteLeave(() => guardLeave())
+    // 放行后这次导航没走成（被别的守卫拦下）、页面还在：下次离开照常检查
+    onUnmounted(router.afterEach(() => resetLeaveApproval()))
+  }
+
+  // 「返回」只负责发起导航，检查都在离开守卫里
+  const handleCancel = () => {
     if (leaving.value) return
-    leaving.value = true
-    let keepLeaving = false
-    try {
-      const draftsCommitted = optionDrafts.flush()
-      if (isSaving.value) await waitForSaves()
-      if (!draftsCommitted || hasUnsavedChanges.value) {
-        keepLeaving = true
-        Modal.confirm({
-          title: t('edit.youHaveUnsavedChanges'),
-          content: t('edit.leaveWithoutSavingUnsaved'),
-          okText: t('edit.leave'),
-          cancelText: t('edit.keepEditing'),
-          onOk: async () => {
-            await router.push('/scripts')
-            leaving.value = false
-          },
-          onCancel: () => {
-            leaving.value = false
-          },
-        })
-        return
-      }
-      await router.push('/scripts')
-    } finally {
-      if (!keepLeaving) leaving.value = false
-    }
+    void router.push('/scripts')
   }
 
   // 关窗口 / 刷新：同步提交草稿（提交会立刻排进保存队列，isSaving 随之为真），
