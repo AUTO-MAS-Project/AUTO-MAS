@@ -124,6 +124,14 @@ const typeLabel = (type: string | undefined) => {
   return text === key ? type : text
 }
 
+/** 来源类型固定配色，路径、设备和弹窗保持一致。 */
+const typeColors: Record<string, string> = {
+  ldplayer: 'blue',
+  mumu: 'cyan',
+  avd: 'purple',
+}
+const typeColor = (type: string | undefined) => typeColors[type ?? ''] ?? 'default'
+
 /** 判定原因枚举 → 用户文案。后端只给枚举，措辞在这里定。 */
 const reasonLabel = (reason: string) => {
   const key = `emulator2.reason.${reason}`
@@ -1066,7 +1074,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         <a-card v-for="path in paths" :key="path.pathId" size="small" class="path-card">
           <template #title>
             <a-space :size="6">
-              <a-tag color="purple">{{ typeLabel(path.type) }}</a-tag>
+              <a-tag :color="typeColor(path.type)">{{ typeLabel(path.type) }}</a-tag>
               <span class="path-alias">{{ path.alias }}</span>
               <span class="path-version">{{ path.version }}</span>
             </a-space>
@@ -1144,7 +1152,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'source'">
               <div class="source-cell">
-                <a-tag color="purple">{{ typeLabel(record.realType) }}</a-tag>
+                <a-tag :color="typeColor(record.realType)">{{ typeLabel(record.realType) }}</a-tag>
                 <span class="source-sub">
                   {{ record.alias }} ·
                   {{ t('emulator2.nativeIndex', { index: record.nativeIndex }) }}
@@ -1438,7 +1446,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
             <a-checkbox :value="item.installPath" :disabled="!item.supported" />
             <div class="search-main">
               <div>
-                <a-tag :color="item.supported ? 'purple' : 'default'">{{
+                <a-tag :color="item.supported ? typeColor(item.type) : 'default'">{{
                   typeLabel(item.type)
                 }}</a-tag>
                 <span class="search-alias">{{ item.alias }}</span>
@@ -1472,7 +1480,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       @ok="confirmRemove"
     >
       <p v-if="removeTarget">
-        <a-tag color="purple">{{ typeLabel(removeTarget.type) }}</a-tag>
+        <a-tag :color="typeColor(removeTarget.type)">{{ typeLabel(removeTarget.type) }}</a-tag>
         {{ removeTarget.alias }} — {{ removeTarget.installPath }}
       </p>
       <a-alert
