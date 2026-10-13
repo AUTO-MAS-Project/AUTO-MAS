@@ -5,12 +5,17 @@
 import type { MaaUserConfig_Data } from './MaaUserConfig_Data';
 import type { MaaUserConfig_Info } from './MaaUserConfig_Info';
 import type { MaaUserConfig_Notify } from './MaaUserConfig_Notify';
+import type { MaaUserConfig_Stage } from './MaaUserConfig_Stage';
 import type { MaaUserConfig_Task } from './MaaUserConfig_Task';
 export type MaaUserConfig = {
     /**
      * 基础信息
      */
     Info?: (MaaUserConfig_Info | null);
+    /**
+     * 关卡配置
+     */
+    Stage?: (MaaUserConfig_Stage | null);
     /**
      * 用户数据
      */

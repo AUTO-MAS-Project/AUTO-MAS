@@ -141,6 +141,8 @@ _OVERLAY_TASK_KEYS = (
     "IfSwitchTheme",
     "IfDepotMaintain",
     "DepotMaintainPlans",
+    "IfEventDepotMaintain",
+    "EventDepotMaintainPlans",
     "IfGreenTicketStore",
     "IfActivityFirst",
     "ActivityStageIndex",
@@ -196,6 +198,8 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "Base",
     "StageMode",
     "AnnihilationStartWeekday",
+    "IfEventDepotMaintain",
+    "EventDepotMaintainPlans",
     "IfActivityFirst",
     "ActivityStageIndex",
     "ActivityMedicineNumb",
@@ -222,6 +226,8 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfDepotMaintain": "库存保持",
     "DepotMaintainPlans": "库存保持计划",
+    "IfEventDepotMaintain": "活动库存保持",
+    "EventDepotMaintainPlans": "活动库存保持计划",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
@@ -771,7 +777,7 @@ def _overlay_value(key: str, value) -> str:
         # 关卡哨兵值（与配置界面同口径）：- = 禁用（下拉原始标签），
         # * = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
         text = {"-": "禁用", "*": "当前/上次", "": "不选择"}.get(str(value), str(value))
-    elif key == "DepotMaintainPlans":
+    elif key in ("DepotMaintainPlans", "EventDepotMaintainPlans"):
         # JSON 串存库存保持计划列表，预览只给数量（恢复仍整串写回）
         try:
             plans = json.loads(value) if isinstance(value, str) else value

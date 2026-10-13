@@ -20,10 +20,6 @@ export type MaaUserConfig_Info = {
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 关卡配置模式
-     */
-    StageMode?: (string | null);
-    /**
      * 服务器
      */
     Server?: ('Official' | 'Bilibili' | 'YoStarEN' | 'YoStarJP' | 'YoStarKR' | 'txwy' | null);
@@ -35,22 +31,6 @@ export type MaaUserConfig_Info = {
      * 剩余天数
      */
     RemainedDay?: (number | null);
-    /**
-     * 剿灭模式
-     */
-    Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
-    /**
-     * 剿灭开始星期
-     */
-    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
-    /**
-     * 基建模式
-     */
-    InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
-    /**
-     * 基建方案名称
-     */
-    InfrastName?: (string | null);
     /**
      * 密码
      */
@@ -75,30 +55,6 @@ export type MaaUserConfig_Info = {
      * 备注
      */
     Notes?: (string | null);
-    /**
-     * 吃理智药数量
-     */
-    MedicineNumb?: (number | null);
-    /**
-     * 连战次数
-     */
-    SeriesNumb?: ('0' | '6' | '5' | '4' | '3' | '2' | '1' | '-1' | null);
-    /**
-     * 关卡选择
-     */
-    Stage?: (string | null);
-    /**
-     * 备选关卡 - 1
-     */
-    Stage_1?: (string | null);
-    /**
-     * 备选关卡 - 2
-     */
-    Stage_2?: (string | null);
-    /**
-     * 备选关卡 - 3
-     */
-    Stage_3?: (string | null);
     /**
      * 状态标签列表
      */

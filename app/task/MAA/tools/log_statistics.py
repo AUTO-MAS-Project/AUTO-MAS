@@ -71,6 +71,7 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         "Fight",
         "理智作战",
         "活动关优先",
+        "活动库存保持",
         "库存保持",
         "养成计划",
     }
@@ -97,7 +98,8 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
             return None
-        return match.group(1).strip() or None
+        name = multi_chain_suffix.sub("", match.group(1).strip())
+        return name or None
 
     task_ranges: list[tuple[int, int]] = []
     for end_index, line in enumerate(logs):

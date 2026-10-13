@@ -115,6 +115,31 @@
 
       <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
       <PipelineRow
+        :name="t('eventDepotPreview.name')"
+        :summary="eventDepotSummary"
+        :checked="formData.Task.IfEventDepotMaintain"
+        :disabled="loading"
+        :hint="t('eventDepotPreview.hint')"
+        @change="emitSave('Task.IfEventDepotMaintain', $event)"
+      >
+        <DepotMaintainPlanEditor
+          :editor="eventDepotPlanEditor"
+          :form-data="formData"
+          :loading="loading"
+          :stage-options="stageOptions"
+          :item-options="depotItemOptions"
+          :item-options-loading="depotItemOptionsLoading"
+          :item-options-error="depotItemOptionsError"
+          :stage-candidates="{}"
+          :stage-candidates-loading="[]"
+          :inventory="depotInventory"
+          :depot-inventory-time="depotInventoryTime"
+          :activity-stages="activityStages"
+          :activity-loading="activityStageLoading"
+          :activity-error="activityStageError"
+        />
+      </PipelineRow>
+      <PipelineRow
         :name="t('edit.maaEventFirst')"
         :summary="activitySummary"
         :checked="activityFirst"
@@ -353,6 +378,7 @@ import type {
   CultivateImportResult,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
+import type { ActivityItem } from '@/types/home'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
@@ -377,11 +403,13 @@ const props = defineProps<{
   loading: boolean
   stageOptions: any[]
   activityStageOptions: Array<{ label: string; value: number }>
+  activityStages: ActivityItem[]
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIndex?: number
   depotItemOptions: SelectOption[]
   depotPlanEditor: DepotMaintainPlanEditorState
+  eventDepotPlanEditor: DepotMaintainPlanEditorState
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
   /** 按物品缓存的关卡候选（含每理智效率，来自一图流数据层；[] 表示已加载但无候选） */
@@ -558,7 +586,14 @@ const cultivateSummary = computed(() =>
 )
 
 const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans, t)
+)
+const eventDepotSummary = computed(() =>
+  summarizeDepot(
+    formData.value.Task.IfEventDepotMaintain,
+    formData.value.Task.EventDepotMaintainPlans,
+    t
+  )
 )
 
 const greenTicketStoreDoneThisMonth = computed(
