@@ -471,7 +471,9 @@ class MaaFWPipelineOverrideBuilder:
                 )
             raw_value = fallback
         if normalized_type in {"bool", "boolean"}:
-            typed_value = raw_value.lower() in {"true", "1", "yes", "y", "on"}
+            # 先 strip 再比，与用户页的开关显示（maafwOptionValues 的 isMaaFWTruthyInputText）同口径：
+            # 存量或外壳导入的「 true 」页面上显示「是」，运行时也得是 true
+            typed_value = raw_value.strip().lower() in {"true", "1", "yes", "y", "on"}
             return typed_value, "true" if typed_value else "false"
         if normalized_type in {"int", "integer"}:
             # 整数形态的小数（「99.0」「1e20」，preset / 默认值里写成数字时常见）规范成整数；
