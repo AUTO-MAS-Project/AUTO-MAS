@@ -32,6 +32,8 @@ interface TabBasicProps {
   cursorEffectOptions: { label: string; value: CursorEffect }[]
   lowPerformanceMode: boolean
   lowPerformanceModeSaving: boolean
+  pauseHomeEffectsWhenRunning: boolean
+  pauseHomeEffectsWhenRunningSaving: boolean
   homeSatelliteStyle: HomeSatelliteStyle
   homeSatelliteStyleSaving: boolean
   handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
@@ -42,6 +44,7 @@ interface TabBasicProps {
   handleThemeColorChange(value: SelectValue): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
+  handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
   handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
 }
 
@@ -59,6 +62,8 @@ const {
   cursorEffectOptions,
   lowPerformanceMode,
   lowPerformanceModeSaving,
+  pauseHomeEffectsWhenRunning,
+  pauseHomeEffectsWhenRunningSaving,
   homeSatelliteStyle,
   homeSatelliteStyleSaving,
   handleHomeSatelliteStyleChange,
@@ -69,6 +74,7 @@ const {
   handleThemeColorChange,
   handleCursorEffectChange,
   handleLowPerformanceModeChange,
+  handlePauseHomeEffectsWhenRunningChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
 
@@ -265,6 +271,29 @@ const handleLocaleChange = (value: unknown): void => {
               <a-select-option value="galaxy">
                 {{ t('setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pauseHomeEffects') }}</span>
+              <a-tooltip :title="t('setting.basic.pauseHomeEffectsTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="pauseHomeEffectsWhenRunning"
+              :disabled="pauseHomeEffectsWhenRunningSaving"
+              :loading="pauseHomeEffectsWhenRunningSaving"
+              size="large"
+              style="width: 100%"
+              @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
+            >
+              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
             </a-select>
           </div>
         </a-col>

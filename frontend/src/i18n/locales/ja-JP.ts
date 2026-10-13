@@ -2350,6 +2350,9 @@ export default {
     bettergiRewardDefault: 'デフォルト',
     bettergiDomainPickerClearAll: 'すべてクリア',
     bettergiDomainPickerClearAllConfirm: '選択した秘境をすべてクリアしますか？',
+    bettergiDomainPickerGuide: '育成ガイドに従って秘境を選択',
+    bettergiDomainPickerGuideTip:
+      'BetterGI がゲーム内の育成ガイドから育成目標を読み取り、対応する秘境と最高難度を自動的に選択します（BetterGI 0.66 以降が必要）',
     bettergiDomainPickerNone: '選択可能な秘境はありません',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: '秘境選択',
@@ -2894,6 +2897,7 @@ export default {
   home: {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
+    satelliteEffectsPaused: 'エフェクト一時停止中 · クリックで再開',
     satelliteEgg: {
       star: 'star！',
       overclock: 'オーバークロック！',
@@ -4086,6 +4090,9 @@ export default {
       lowPerf: '低負荷モード',
       lowPerfTip:
         '装飾的なアニメーションとバックグラウンド描画を抑えます。スクリプトの実行やタスクのスケジュールには影響しません。ウィンドウを最小化すると装飾アニメーションは自動的に停止します。',
+      pauseHomeEffects: 'スクリプト実行中はホームのエフェクトを一時停止',
+      pauseHomeEffectsTip:
+        'スクリプトタスクの実行中はホームの衛星アニメーションを自動的に一時停止し、GPU の占有を抑えます。衛星の状態色は通常どおり更新され、一時停止中は衛星エリア左上の表示をクリックすると一時的に再開できます。',
       traySection: 'システムトレイ',
       showTray: 'トレイアイコンを常に表示',
       showTrayTip: 'ウィンドウが最小化されていなくてもトレイアイコンを表示します',
@@ -4404,6 +4411,8 @@ export default {
       fluidOk: '有効にする',
       cursorSaveFailed: 'カーソル効果を保存できませんでした',
       lowPerfSaveFailed: '低負荷モードを保存できませんでした',
+      pauseHomeEffectsSaveFailed:
+        'スクリプト実行中のホームエフェクト一時停止設定を保存できませんでした',
       homeSatelliteSaveFailed: 'ホームの衛星スタイルを保存できませんでした',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',

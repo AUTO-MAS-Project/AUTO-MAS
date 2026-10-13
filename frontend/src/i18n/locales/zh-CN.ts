@@ -2804,6 +2804,9 @@ export default {
     bettergiRewardDefault: '默认',
     bettergiDomainPickerClearAll: '清除全部',
     bettergiDomainPickerClearAllConfirm: '确认清除全部已选秘境？',
+    bettergiDomainPickerGuide: '根据提升指南选择秘境',
+    bettergiDomainPickerGuideTip:
+      '由 BetterGI 读取游戏内提升指南的培养目标，自动选择对应秘境与最高难度关卡（需 BetterGI 0.66 或更高版本）',
     bettergiDomainPickerNone: '暂无可选秘境',
     bettergiDomainPickerOk: '确定',
     bettergiDomainPickerTitle: '秘境选择器',
@@ -3388,6 +3391,7 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    satelliteEffectsPaused: '动效已暂停 · 点击继续',
     satelliteEgg: {
       star: 'star！',
       overclock: '超频！',
@@ -4586,6 +4590,9 @@ export default {
       lowPerf: '低性能模式',
       lowPerfTip:
         '降低装饰性动画和后台渲染占用，不影响脚本执行和任务调度；窗口最小化时会自动暂停装饰性动画',
+      pauseHomeEffects: '脚本运行时暂停主页动效',
+      pauseHomeEffectsTip:
+        '有脚本任务运行时自动暂停主页卫星动画，降低显卡占用；卫星的运行状态颜色照常更新，暂停时点卫星区左上角的提示可临时恢复',
       traySection: '系统托盘',
       showTray: '常态显示托盘图标',
       showTrayTip: '即使界面未最小化仍显示系统托盘图标',
@@ -4941,6 +4948,7 @@ export default {
       fluidOk: '确认开启',
       cursorSaveFailed: '光标效果保存失败',
       lowPerfSaveFailed: '低性能模式保存失败',
+      pauseHomeEffectsSaveFailed: '脚本运行暂停主页动效保存失败',
       homeSatelliteSaveFailed: '主页卫星样式保存失败',
       testUnknown: '测试通知发送结果未知',
       testSent: '测试通知已发送',

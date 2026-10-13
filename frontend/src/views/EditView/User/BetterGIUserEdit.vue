@@ -2663,7 +2663,8 @@ const STYGIAN_BOSS_NUM_OPTIONS = [
 ]
 
 // 讨伐首领候选（按地区分组事实源）：BGI AutoBossData.CountryToBosses
-// （蒙德/璃月/稻妻/须弥/枫丹/纳塔/挪德卡莱 共 41 个，无至冬分组）。
+// （蒙德/璃月/稻妻/须弥/枫丹/纳塔/挪德卡莱/至冬 共 44 个；至冬组为 2026-10 上游新增）。
+// 上游目录是 C# 硬编码字典（无磁盘名录可扫描），新增首领需手动同步此处。
 // 二级弹窗（地区 → 首领）由此目录驱动；value 存首领名（BGI AutoBossName 语义，
 // 留空=不指定，由 BGI 按配置决定默认），显示「首领名称-地区」便于区分同名首领。
 const AUTO_BOSS_CATALOG: { region: string; name: string; label: string }[] = [
@@ -2715,6 +2716,10 @@ const AUTO_BOSS_CATALOG: { region: string; name: string; label: string }[] = [
   { region: '挪德卡莱', name: '霜夜巡天灵主', label: '霜夜巡天灵主-挪德卡莱' },
   { region: '挪德卡莱', name: '蕴光月幻蝶', label: '蕴光月幻蝶-挪德卡莱' },
   { region: '挪德卡莱', name: '重拳出击鸭', label: '重拳出击鸭-挪德卡莱' },
+  // 至冬
+  { region: '至冬', name: '不灭衍生造物', label: '不灭衍生造物-至冬' },
+  { region: '至冬', name: '嵌合翼骏狮', label: '嵌合翼骏狮-至冬' },
+  { region: '至冬', name: '游雪的护刃', label: '游雪的护刃-至冬' },
 ]
 
 // 周日/限时奖励序号候选：与 BGI 原生下拉（SundaySelectedValueList = ["", "1", "2", "3"]）一致。

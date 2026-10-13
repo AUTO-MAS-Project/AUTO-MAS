@@ -88,8 +88,10 @@ export function getCenterFloat(time: number): number {
 }
 
 /** 冲击波把卫星往外推：先冲出去，再阻尼振荡回原轨道；返回半径的放大比例 */
+export const KNOCKBACK_MS = 2200
+
 export function getKnockback(elapsed: number): number {
-  if (elapsed < 0 || elapsed > 2200) {
+  if (elapsed < 0 || elapsed > KNOCKBACK_MS) {
     return 0
   }
   return 0.42 * Math.exp(-elapsed / 420) * Math.sin(elapsed / 110)
