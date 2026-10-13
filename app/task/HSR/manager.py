@@ -981,8 +981,9 @@ class HSRManager(TaskExecuteBase):
                             user_config,
                         )
                     else:
-                        # 单日代理次数上限只约束 MAS 托管的调度运行：单独运行脚本与
-                        # 直控用户都是用户当场发起的一次性运行，不受这个上限限制。
+                        # 单日代理次数上限只约束 MAS 托管的调度运行。单独运行脚本是
+                        # 用户当场发起的一次性运行；直控用户虽然也走定时队列，但它的
+                        # 代理次数不由 _run_direct_user 写回，所以同样不该被这个上限挡住。
                         if (
                             self.task_info.is_queue_task
                             and self._proxy_times_limit_reached(user_config)
@@ -1356,6 +1357,10 @@ class HSRManager(TaskExecuteBase):
         """将 HSR 用户日志写入历史记录。"""
 
         for user_item in self.script_info.user_list:
+            # 被跳过的用户这一轮没有真正跑过，不写历史：否则每次跳过都会在历史
+            # 页多出一条没有内容的失败记录。其它专项同样不为跳过的用户写历史。
+            if user_item.status == "跳过":
+                continue
             for start_time, log_item in user_item.log_record.items():
                 if log_item.status == "HSR 正常运行中":
                     log_item.status = (
@@ -1409,8 +1414,11 @@ class HSRManager(TaskExecuteBase):
             return
 
         over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
+        # 「跳过」不算未完成，与公共口径 UserRunSummary.uncompleted_count（只算
+        # 异常 + 等待）一致；否则被上限挡住的用户会把报告标题变成「存在异常」，
+        # 「仅失败时」也会照推。
         uncompleted_count = sum(
-            1 for u in self.script_info.user_list if u.status != "完成"
+            1 for u in self.script_info.user_list if u.status not in ("完成", "跳过")
         )
         task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         title = (
