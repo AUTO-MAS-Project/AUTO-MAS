@@ -47,7 +47,7 @@ from app.task.proxy_helpers import (
 )
 from app.utils import get_logger
 from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,

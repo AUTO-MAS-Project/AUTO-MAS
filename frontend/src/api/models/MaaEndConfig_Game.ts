@@ -51,5 +51,13 @@ export type MaaEndConfig_Game = {
      * 自定义恢复分辨率高度
      */
     RestoreResolutionHeight?: (number | null);
+    /**
+     * 任务启动前是否由 MAS 检查并接管更新终末地客户端
+     */
+    IfAutoUpdate?: (boolean | null);
+    /**
+     * 游戏客户端更新时长限制（分钟）
+     */
+    UpdateTimeLimit?: (number | null);
 };
 

@@ -1888,6 +1888,27 @@ export default {
     trackChildProcesses: 'Also track the child processes the script starts',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
+    endfieldAutoUpdate: 'Update the Endfield client before running',
+    endfieldAutoUpdateHint:
+      'Checks the PC client version before each run and, when it is behind, applies the official delta pack: it verifies local files first and only closes a running client once they match, then downloads only what changed. When no delta exists for this baseline the client is left alone and you are asked to update manually',
+    endfieldUpdateTimeoutHint:
+      'How long AUTO-MAS may take to verify local files, close the running client, download the delta and apply it; once it passes the run is aborted but the downloaded delta and the files already written stay on disk, and the next run continues from there. A full run usually needs tens of minutes or more, so a small value aborts it every time',
+    endfieldManualUpdate: 'Manual update',
+    endfieldCheckUpdateTitle: 'Check the Endfield client for updates',
+    endfieldUpdateProgressTitle: 'Endfield client update progress',
+    endfieldWillBeUpdated:
+      'AUTO-MAS updates the Endfield PC client with the official delta pack: it reads local files to verify the baseline, then downloads only what changed (a cross-version run downloads a few GB and reads tens of GB to verify). Once the baseline verifies it closes the running game and locks this script config. When the official pack has no delta for this baseline nothing is downloaded and you are asked to update manually',
+    endfieldUpdateCloseConfirm:
+      'Closing the dialog aborts this run. The downloaded delta and the game files already written stay on disk, so the next run resumes instead of starting over. Close anyway?',
+    endfieldUpdateAbortTitle: 'Abort this update run?',
+    endfieldUpdateAbortConfirm: 'Close anyway',
+    endfieldUpdateAlreadyFinished:
+      'This update run has already finished; the outcome is in the script run log',
+    endfieldUpdateFailed: 'Endfield update failed: {p0}',
+    endfieldUpdateTask: 'Endfield update task finished',
+    endfieldUpdateConnecting: 'Connecting to the update task...',
+    endfieldUpdateStartFailed: 'Failed to start the Endfield update',
+    endfieldUpdateStopFailed: 'Failed to stop the Endfield update',
     pickMfwResourceLeave:
       'Pick the resource; leave empty to auto-pick the first resource matching the control method',
     pickMfwProject: 'Pick the project',
