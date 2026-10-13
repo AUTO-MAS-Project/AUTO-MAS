@@ -264,8 +264,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
   **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
   MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
-  按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志，接着按「缺模块且项目
-  带自装材料（requirements.txt / pyproject.toml、`*.whl`、`get-pip.py`）就照常起 agent」处理。
+  按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志。之后**三个条件同时满足**
+  才照常起 agent、让它自己装：失败是缺模块；项目带自装材料（requirements.txt / pyproject.toml、
+  `*.whl`、`get-pip.py`）；**补装之前** site-packages 里根本没有 binding（没有 `maafw-*.dist-info`
+  也没有 `maa/`，补装失败后的半装状态不算）。出厂就带 binding 的项目（M9A、MaaStellaSora、MaaFgo、
+  MaaNTE 也都有 requirements.txt）缺别的模块照旧拦，更新预检走同一个函数，也照旧拦坏版本。
   site-packages 里残留多份 `maafw-*.dist-info`（M9A v4.9.0 出厂就带 5.12.3 + 5.13.0）时，钉回前
   先把版本不是最高的那些记录目录**挪进**副本根下的 `.maafw-repin-stash-*`：pip 按目录顺序取第一份
   记录、我们取最高版本，不挪的话 pip 要么说「已满足」什么都不做，要么只卸掉旧记录，两种结果下次
