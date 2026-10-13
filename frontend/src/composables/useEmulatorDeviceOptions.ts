@@ -98,7 +98,8 @@ export const useEmulatorDeviceOptions = () => {
     const requestId = ++requestSequence
     emulatorDeviceOptions.value = []
 
-    if (!emulatorId) {
+    // 「未选择」存的是 '-'，不是模拟器 ID，拿去查配置类型后端会解析失败
+    if (!emulatorId || emulatorId === '-') {
       emulatorDeviceLoading.value = false
       return
     }

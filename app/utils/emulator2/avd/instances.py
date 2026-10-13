@@ -24,7 +24,7 @@
 数字，端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。配置只在停机时由我们写，模拟器
 自己不回写（不像雷电），所以没有回写冲突。
 
-实例的 MAS 侧设置（内存、气球、首次初始化做没做、渲染器）不放进 ``config.ini``——
+实例的 MAS 侧设置（内存、首次初始化做没做、渲染器）不放进 ``config.ini``——
 模拟器不认识的键会被它自己的工具当成垃圾——而是放在根目录的 ``mas-avd.json`` 里。
 """
 
@@ -259,17 +259,6 @@ def apply_display(root: str | Path, native_index: int | str) -> bool:
     return True
 
 
-def validate_memory(memory_mb: int) -> int:
-    """内存只收固定档位，不做静默吸附。"""
-    memory = int(memory_mb)
-    if memory not in MEMORY_CHOICES_MB:
-        raise ValueError(
-            "魔改 AVD 的内存只能选 "
-            + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
-        )
-    return memory
-
-
 def memory_for(meta: dict[str, Any]) -> int:
     """实例的内存，每次开机原样传 ``-memory``。
 
@@ -315,7 +304,6 @@ def create_instance_files(
     memory_mb: int,
     cpu: int,
     data_partition_gb: int,
-    balloon: bool = True,
 ) -> AvdInstance:
     """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
 
@@ -358,7 +346,6 @@ def create_instance_files(
         root,
         native_index,
         memoryMb=memory_mb,
-        balloon=balloon,
         initialized=False,
         createdAt=datetime.now().isoformat(timespec="seconds"),
     )

@@ -174,22 +174,6 @@ async def instance_options(emulator_id: str, slot: str) -> dict[str, Any]:
     return backend.instance_options(native_index)
 
 
-async def set_instance_options(
-    emulator_id: str,
-    slot: str,
-    *,
-    memory_mb: int | None = None,
-    balloon: bool | None = None,
-) -> dict[str, Any]:
-    """只改传了的项（``None`` = 不改）。"""
-    backend, native_index = await _backend(emulator_id, slot)
-    return backend.set_instance_options(
-        native_index,
-        memory_mb=memory_mb,
-        balloon=balloon,
-    )
-
-
 async def install_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, Any]:
     """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。
 

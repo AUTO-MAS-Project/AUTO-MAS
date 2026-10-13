@@ -93,6 +93,7 @@ from .constants import (
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     SCREEN_DENSITY,
+    SCREEN_FPS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
@@ -115,7 +116,6 @@ from .instances import (
     list_instances,
     memory_for,
     update_instance_meta,
-    validate_memory,
     validate_options,
     write_instance_config,
 )
@@ -230,29 +230,18 @@ def _set_emulator_windows_visible(pid: int, name_port: str, visible: bool) -> in
 # ---- 启动参数 -------------------------------------------------------------
 
 
-def launch_options(meta: dict[str, Any]) -> dict[str, Any]:
-    """实例的 MAS 侧选项（``mas-avd.json``）→ 本次开机用的值，缺省值都在这里。
-
-    有没有窗口不是实例选项（用户 10-04 定），开机那一刻按启动入口定，见 :meth:`AvdManager.open`。
-    旧 ``mas-avd.json`` 里留下的 ``headless`` / ``resolution`` / ``guestAngle`` / ``audio`` 一律不读：
-    显示固定 720p、不带声卡、不开 GuestAngle。"""
-    return {
-        "flags": {
-            # 空闲页上报默认开（10-04 定）；要自编 qemu（sdk-mas19 起）
-            "balloon": bool(meta.get("balloon", True)),
-        },
-    }
-
-
 def build_launch_args(
     avd: str,
     console: int,
     *,
     memory_mb: int,
     headless: bool,
-    balloon: bool,
 ) -> list[str]:
     """``emulator.exe`` 的参数，逐项照启动器 ``avd-p0.ps1``（每个开关都真机验证过）。
+
+    有没有窗口不是实例选项（用户 10-04 定），开机那一刻按启动入口定，见 :meth:`AvdManager.open`。
+    旧 ``mas-avd.json`` 里留下的 ``headless`` / ``resolution`` / ``guestAngle`` / ``audio`` /
+    ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
     - ``-audio none``：宿主不出声（用户 09-27 定）；
@@ -261,7 +250,8 @@ def build_launch_args(
       只能关掉这个特性；关掉后 ``/proc/asound/cards`` 为空。1999 主界面上 qemu CPU 中位数 147% → 104%
       （单核百分比，各测一轮）；
     - ``-memory``：实例设的客体内存（:func:`~.instances.memory_for`），不改 ``hw.ramSize``；
-    - 气球：``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
+    - 气球（空闲页上报）固定开，不是实例选项（用户 10-12 定）；要自编 qemu（sdk-mas19 起）。
+      ``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
       文件映射的页，空闲页上报就不生效（10-03 首测），所以关掉它；设备挂在 ``-qemu`` 最后，
       占下一个空闲 PCI 槽、不挪现有设备；
     - 磁盘 write-through：客体不再发 flush（和以前客体侧 ``nobarrier`` 一样快），但 QEMU 每次写
@@ -287,8 +277,7 @@ def build_launch_args(
     ]
     if headless:
         args.append("-no-window")
-    if balloon:
-        args += ["-feature", "-QuickbootFileBacked"]
+    args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
     args += [
         "-qemu",
@@ -296,9 +285,9 @@ def build_launch_args(
         "virtio-blk-device.write-cache=off",
         "-global",
         "virtio-blk-device.config-wce=off",
+        "-device",
+        "virtio-balloon-pci,free-page-reporting=on",
     ]
-    if balloon:
-        args += ["-device", "virtio-balloon-pci,free-page-reporting=on"]
     return args
 
 
@@ -784,7 +773,7 @@ class _AvdCore(DeviceBase):
         if recommended and memory_mb < recommended:
             logger.warning(
                 f"魔改 AVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
-                f"{recommended} MB，可在魔改 AVD 选项里调大"
+                f"{recommended} MB，可在实例设置里调大"
             )
         await precheck.check_before_launch(self.root, memory_mb)
 
@@ -798,8 +787,6 @@ class _AvdCore(DeviceBase):
             )
 
         await host.ensure_adb_server(self.root)
-        meta = instance_meta(self.root, idx)
-        options = launch_options(meta)
         if await asyncio.to_thread(apply_display, self.root, idx):
             logger.info(f"实例 {idx} 显示改回 720p（已写入 config.ini）")
         headless = not self._open_window
@@ -808,7 +795,6 @@ class _AvdCore(DeviceBase):
             port,
             memory_mb=memory_mb,
             headless=headless,
-            **options["flags"],
         )
         await prune_logs(self.root, idx)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -816,7 +802,7 @@ class _AvdCore(DeviceBase):
         logger.info(
             f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
             f"720p，{memory_mb} MB / {instance.cpu} 核，"
-            f"气球{'开' if options['flags']['balloon'] else '关'}，不带声卡）: "
+            "气球开，不带声卡）: "
             f"emulator {' '.join(args)}"
         )
         self._launcher = await asyncio.to_thread(
@@ -867,8 +853,6 @@ class _AvdCore(DeviceBase):
         ``/data`` 的 ``nobarrier``——改由启动参数让磁盘 write-through（见 :func:`build_launch_args`）。
         """
         port = console_port(idx)
-        options = launch_options(instance_meta(self.root, idx))
-        flags = options["flags"]
 
         # 1) 宿主调度：优先级、X3D 绑核
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
@@ -897,8 +881,7 @@ class _AvdCore(DeviceBase):
         await self._setup_guest_writeback(idx)
 
         # 5) 空闲页上报：驱动绑定时把 order 重置成 pageblock_order，绑定之后再设
-        if flags["balloon"]:
-            await self._setup_balloon(idx)
+        await self._setup_balloon(idx)
 
         # 6) ARM 转译层的 cpuinfo：每个 vCPU 一条，Unity 才不按单核选最低画质
         if await self._push(
@@ -1304,8 +1287,13 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。"""
+        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。
+
+        帧率给的正是固定的 60 时当作没改（混放配置批量选 60 帧不该把 CPU / 内存一起拒掉），
+        其他帧率照样拒绝。"""
         cleaned = validate_setting_changes(changes)
+        if cleaned.get("fps") == SCREEN_FPS:
+            del cleaned["fps"]
         if "fps" in cleaned:
             raise ValueError("魔改 AVD 没有可设置的帧率")
         instance = self._instance(idx)
@@ -1359,7 +1347,6 @@ class _AvdCore(DeviceBase):
         cpu: int | None = None,
         data_partition_gb: int | None = None,
         native_index: int | None = None,
-        balloon: bool = True,
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
@@ -1378,7 +1365,6 @@ class _AvdCore(DeviceBase):
             memory_mb=memory,
             cpu=cores,
             data_partition_gb=data_gb,
-            balloon=balloon,
         )
         logger.info(
             f"已新建魔改 AVD 实例 {native_index}（内存 "
@@ -1416,9 +1402,7 @@ class _AvdCore(DeviceBase):
     def instance_options(self, idx: str) -> dict[str, Any]:
         instance = self._instance(idx)
         meta = instance_meta(self.root, idx)
-        options = launch_options(meta)
         return {
-            "balloon": options["flags"]["balloon"],
             "memoryMb": memory_for(meta),
             "cpu": instance.cpu,
             "dataPartitionGb": instance.data_partition_gb,
@@ -1455,25 +1439,6 @@ class _AvdCore(DeviceBase):
             raise RuntimeError(f"安装 {apk.name} 失败：{last or f'adb 返回 {code}'}")
         logger.info(f"魔改 AVD 实例 {idx} 已安装 {apk.name}")
         return last
-
-    def set_instance_options(
-        self,
-        idx: str,
-        *,
-        memory_mb: int | None = None,
-        balloon: bool | None = None,
-    ) -> dict[str, Any]:
-        """改实例的 MAS 侧选项（内存、气球），下次启动生效。``None`` = 不改。"""
-        self._instance(idx)
-        changes: dict[str, Any] = {}
-        if memory_mb is not None:
-            changes["memoryMb"] = validate_memory(memory_mb)
-        if balloon is not None:
-            changes["balloon"] = bool(balloon)
-        if changes:
-            update_instance_meta(self.root, idx, **changes)
-            logger.info(f"已修改魔改 AVD 实例 {idx} 的选项（下次启动生效）: {changes}")
-        return self.instance_options(idx)
 
 
 def _int(raw: object) -> int | None:

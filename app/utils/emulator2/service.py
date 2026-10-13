@@ -446,7 +446,7 @@ async def create_instance(
     """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
     ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
-    ``balloon`` / ``native_index``）：
+    ``native_index``）：
     雷电 / MuMu 新建时用的是模拟器自己的默认配置。
     """
     manager = await build_manager(emulator_id)

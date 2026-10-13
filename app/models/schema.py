@@ -5900,10 +5900,6 @@ class Emulator2InstanceCreateIn(BaseModel):
         default=None,
         description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
     )
-    balloon: Optional[bool] = Field(
-        default=None,
-        description="仅魔改 AVD: 空闲页上报 (气球), 留空为 true",
-    )
 
 
 class Emulator2InstanceCreateOut(OutBase):
@@ -6154,20 +6150,7 @@ class Emulator2AvdInstanceIn(BaseModel):
     slot: str = Field(..., description="设备号")
 
 
-class Emulator2AvdInstanceOptionsSetIn(BaseModel):
-    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
-    slot: str = Field(..., description="设备号")
-    memoryMb: Optional[int] = Field(
-        default=None,
-        description="内存 MB (3072/4096/5120/6144); 不传不改",
-    )
-    balloon: Optional[bool] = Field(
-        default=None, description="空闲页上报 (气球) 开关; 不传不改"
-    )
-
-
 class Emulator2AvdInstanceOptionsOut(OutBase):
-    balloon: bool = Field(default=True, description="空闲页上报 (气球) 是否开启")
     memoryMb: Optional[int] = Field(
         default=None, description="内存 MB, 每次开机用 -memory 传"
     )
