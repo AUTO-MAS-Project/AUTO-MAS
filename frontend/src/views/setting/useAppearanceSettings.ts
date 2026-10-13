@@ -19,8 +19,7 @@ import './appearance.css'
 export function useAppearanceSettings() {
   const { t } = useI18n()
   const [modal, modalContextHolder] = Modal.useModal()
-  // 标题栏 32px，加上 16px 间距；直接定位弹窗，避免外层样式被组件覆盖。
-  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal', style: { top: '48px' } }
+  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal' }
   const logger = window.electronAPI.getLogger('外观设置')
   const {
     themeMode,

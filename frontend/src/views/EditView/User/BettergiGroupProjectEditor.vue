@@ -132,9 +132,9 @@ defineExpose({
 .bgi-project-zoom-btn:hover {
   color: var(--ant-color-primary);
 }
-/* 放大弹窗内充分利用空间 */
-.bgi-project-zoom-modal :deep(.bgi-project-list),
-.bgi-project-zoom-modal :deep(.bgi-project-settings-fields) {
-  max-height: 62vh;
+/* 放大弹窗由弹窗体滚动，项目列表不再产生第二条滚动条。 */
+:global(.bgi-project-zoom-modal .bgi-project-list) {
+  max-height: none;
+  overflow-y: visible;
 }
 </style>

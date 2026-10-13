@@ -1026,8 +1026,7 @@ defineExpose({ reload, addProjects, removeSelectedProjects, clearProjects })
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 55vh;
-  overflow-y: auto;
+  /* 设置弹窗的字段随弹窗体滚动。 */
   padding: 4px 2px;
 }
 .bgi-project-separator {

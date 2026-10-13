@@ -13,12 +13,3 @@
   border-radius: 8px;
   background: var(--ant-color-bg-layout);
 }
-
-.appearance-modal .ant-modal {
-  padding-bottom: 0;
-}
-
-.appearance-modal .ant-modal-content {
-  max-height: calc(100vh - 64px);
-  overflow-y: auto;
-}

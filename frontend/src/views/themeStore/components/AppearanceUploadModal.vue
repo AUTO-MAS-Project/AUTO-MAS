@@ -345,7 +345,6 @@ watch(authorized, isAuthorized => {
     :open="open"
     :width="640"
     :z-index="90"
-    :style="{ top: '48px' }"
     :title="t('themeStore.upload.title')"
     :closable="!submitting"
     :keyboard="!submitting"

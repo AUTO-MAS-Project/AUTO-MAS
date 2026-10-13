@@ -19,6 +19,7 @@ import '@/styles/scrollbar.css'
 import '@/styles/formSection.css'
 import '@/styles/appearanceCursor.css'
 import '@/styles/appearanceSurfaces.css'
+import '@/styles/appOverlays.css'
 
 const TITLE_BAR_HEIGHT = 32
 const MESSAGE_TOP_GAP = 8

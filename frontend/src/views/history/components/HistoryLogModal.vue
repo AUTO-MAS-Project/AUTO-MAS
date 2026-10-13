@@ -4,8 +4,8 @@
     :title="null"
     :footer="null"
     :width="'90vw'"
-    :style="{ top: '5vh', maxWidth: '1400px' }"
-    :body-style="{ padding: 0, height: '85vh' }"
+    :style="{ maxWidth: '1400px' }"
+    :body-style="{ padding: 0, height: 'calc(100vh - 104px)' }"
     :destroy-on-close="true"
     @cancel="$emit('close')"
   >
@@ -257,7 +257,7 @@ const displayLogContent = computed(() => {
 .log-modal-content {
   display: flex;
   flex-direction: column;
-  height: 85vh;
+  height: 100%;
   background: var(--ant-color-bg-container);
   border-radius: 8px;
   overflow: hidden;

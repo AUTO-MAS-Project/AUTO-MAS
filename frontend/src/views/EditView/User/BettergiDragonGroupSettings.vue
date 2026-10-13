@@ -1477,9 +1477,10 @@ const onConfirmBossPicker = (): void => {
   color: var(--ant-color-primary);
 }
 
-/* 放大弹窗内（embedded 自引用实例）字段列表可更高，充分利用弹窗空间 */
+/* 放大弹窗内由弹窗体滚动，字段列表不再产生第二条滚动条。 */
 .bettergi-groups-settings-panel-embedded .bettergi-groups-settings-fields {
-  max-height: 60vh;
+  max-height: none;
+  overflow-y: visible;
 }
 
 /* ---- 每周秘境周表 ---- */
