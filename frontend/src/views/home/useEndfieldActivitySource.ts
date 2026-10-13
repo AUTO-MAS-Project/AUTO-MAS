@@ -130,7 +130,7 @@ export const useEndfieldActivitySource = () => {
     }
   }
 
-  /** 版本图（官网当期宣传图）：取到就用它当横幅封面，取不到退回活动大图 */
+  /** 版本图（官网当期宣传图）：取到就用它当横幅封面，取不到就空着，由轮播用主题色底纹顶上 */
   const loadVersionArt = async () => {
     try {
       const result = await GetService.getEndfieldVersionArtApiInfoEndfieldVersionArtGet()

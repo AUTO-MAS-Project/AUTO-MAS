@@ -35,6 +35,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse, Response
+from PIL import Image
 
 from app.core import Config
 from app.models.schema import *
@@ -612,8 +613,6 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
     中途失败不会留下半截图片被当成有效缓存，并发请求也不会互相覆盖。
     """
 
-    from PIL import Image
-
     with Image.open(io.BytesIO(payload)) as image:
         picture = image.convert("RGB")
         if picture.width > ENDFIELD_IMAGE_WIDTH:
@@ -630,6 +629,44 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
         except BaseException:
             Path(temp_path).unlink(missing_ok=True)
             raise
+
+
+## 同一张图正在下载时就复用那个任务：预热与图片接口只隔几毫秒，各下一份纯属浪费流量
+_image_download_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+async def _download_image(url: str, cache_file: Path) -> None:
+    """下载 url、缩到横幅宽度再原子落盘。
+
+    整段流程套一个总期限：httpx 的 timeout 只管各阶段，持续慢速传输能一直拖下去，
+    到点就断，前端才好立刻降级。
+    """
+
+    async with asyncio.timeout(ENDFIELD_IMAGE_FETCH_TIMEOUT):
+        async with httpx.AsyncClient(timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT) as client:
+            response = await client.get(url)
+        response.raise_for_status()
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+
+
+def _drop_download_task(task: asyncio.Task[None], url: str) -> None:
+    """下载结束后把表项摘掉；期间已被新任务顶替的就别动。"""
+
+    if _image_download_tasks.get(url) is task:
+        _image_download_tasks.pop(url, None)
+
+
+def _ensure_image_downloaded(url: str, cache_file: Path) -> asyncio.Task[None]:
+    """拿到该地址正在跑的下载任务，没有就起一个。"""
+
+    task = _image_download_tasks.get(url)
+    if task is not None and not task.done():
+        return task
+    task = asyncio.get_running_loop().create_task(_download_image(url, cache_file))
+    _image_download_tasks[url] = task
+    task.add_done_callback(lambda done: _drop_download_task(done, url))
+    return task
 
 
 ## 后台任务要留住引用，否则可能被 GC 掉（asyncio 的已知行为）
@@ -656,11 +693,10 @@ async def _warm_version_art_cache() -> None:
     if _cache_is_fresh(cache_file):
         return
     try:
-        async with httpx.AsyncClient(timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT) as client:
-            response = await client.get(ENDFIELD_VERSION_ART_URL)
-        response.raise_for_status()
-        ENDFIELD_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+        ## 前端这会儿正好来取同一张图的话，等的就是同一个任务
+        await asyncio.shield(
+            _ensure_image_downloaded(ENDFIELD_VERSION_ART_URL, cache_file)
+        )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"预热终末地版本图失败: {type(e).__name__}: {e}"
@@ -704,13 +740,8 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
     cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
     if not _cache_is_fresh(cache_file):
         try:
-            async with httpx.AsyncClient(
-                timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT
-            ) as client:
-                response = await client.get(url)
-            response.raise_for_status()
-            ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
-            await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+            ## 预热可能正在下同一张图，等它就好；请求被取消时别把那个任务一起带走
+            await asyncio.shield(_ensure_image_downloaded(url, cache_file))
             ## 只在新增文件时回收一次，别让每次请求都去扫一遍目录
             await asyncio.to_thread(_prune_image_cache)
         except Exception as e:
