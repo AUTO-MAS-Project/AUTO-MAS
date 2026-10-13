@@ -275,9 +275,10 @@ def get_native_backup_dir(
     return get_backup_dir(native_backup_root(script_id, project_path), ts)
 
 
-_NO_CONFIG_REASON = (
+_NO_CONFIG_REASON_INTERFACE_ONLY = (
     "这份备份里没有项目配置（config/），只有备份时的 interface.json，仅供参考、不能恢复"
 )
+_NO_CONFIG_REASON = "这份备份里没有项目配置（config/），不能恢复"
 
 
 def native_restore_scope(files: Mapping[str, Path]) -> tuple[list[str], str]:
@@ -288,7 +289,11 @@ def native_restore_scope(files: Mapping[str, Path]) -> tuple[list[str], str]:
     """
 
     managed = sorted(rel for rel in files if rel.startswith(_CONFIG_PREFIX))
-    return managed, "" if managed else _NO_CONFIG_REASON
+    if managed:
+        return managed, ""
+    if _INTERFACE_FILE in files:
+        return managed, _NO_CONFIG_REASON_INTERFACE_ONLY
+    return managed, _NO_CONFIG_REASON
 
 
 def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> None:
