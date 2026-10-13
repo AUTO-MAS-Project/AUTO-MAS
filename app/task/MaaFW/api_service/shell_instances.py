@@ -42,6 +42,7 @@ from app.task.MaaFW.tools.core.interface.loader import (
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
+from app.task.MaaFW.tools.core.interface.task_config import normalize_global_options
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_project_dir,
     view_imported_from,
@@ -422,8 +423,14 @@ async def apply_shell_instance_to_user(
     if plan is None:
         return MaaFWApiReply(data={"result": result})
 
-    # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
-    # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
+    # 整份任务队列换掉：这就是「覆盖」，用户页上的队列与任务选项都会变成外壳那份。
+    # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。全局选项不整表换：外壳记着的
+    # 叠在用户现有的全局表上，外壳没记的（账号、密码之类）留着，与同一弹窗里「从其他用户
+    # 导入」不动全局值同一口径。现有值里的密码密文原样留着（不解开、写入时也不会再加密一次）
+    plan.snapshot["globalOptions"] = normalize_global_options(
+        {**_user_global_options(user), **plan.recorded_global_options},
+        context.interface,
+    )
     update: dict[str, dict[str, Any]] = {"Task": _task_update(plan)}
     try:
         # update_user 原地改 update：特调整理（M9A 收走受管任务、切换账号并进 Info）与密码加密
@@ -445,6 +452,18 @@ async def apply_shell_instance_to_user(
     snapshot = json.loads(stored) if isinstance(stored, str) else stored
     info = dict(update.get("Info") or {})
     return MaaFWApiReply(data={"result": result, "snapshot": snapshot, "info": info})
+
+
+def _user_global_options(user: Any) -> dict[str, Any]:
+    """用户现有任务快照里的全局表；读不出就当空（交给归一按默认值补）。"""
+
+    try:
+        raw = user.get("Task", "TaskSnapshot")
+        snapshot = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:  # noqa: BLE001 - 坏快照就当没有
+        return {}
+    values = snapshot.get("globalOptions") if isinstance(snapshot, dict) else None
+    return dict(values) if isinstance(values, dict) else {}
 
 
 def _user_of(script_config: Any, user_id: str) -> Any | None:

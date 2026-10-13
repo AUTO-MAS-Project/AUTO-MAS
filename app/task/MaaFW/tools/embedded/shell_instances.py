@@ -137,6 +137,11 @@ class ShellImportPlan:
     snapshot: dict[str, Any]
     task_count: int
     skipped: list[str] = field(default_factory=list)
+    #: 外壳实际记着的全局选项值（没补默认值）。``snapshot["globalOptions"]`` 按项目默认值补齐了，
+    #: 只适合新建用户；覆盖到已有用户时拿它叠在用户现有的全局表上，外壳没记的不动
+    recorded_global_options: dict[str, MaaFWTaskOptionValue] = field(
+        default_factory=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -683,6 +688,7 @@ def plan_instance_import(
             )
         )
         queued = [*pretask_values, *queued]
+    recorded_global_options = {**global_values_from_tasks, **global_values}
     return ShellImportPlan(
         snapshot={
             "taskOrder": queued,
@@ -690,12 +696,13 @@ def plan_instance_import(
             "taskOptions": {task_id: task_options[task_id] for task_id in queued},
             # 外壳没记的全局选项按项目默认值补齐，与任务选项同一口径
             "globalOptions": normalize_global_options(
-                {**global_values_from_tasks, **global_values}, interface
+                recorded_global_options, interface
             ),
         },
         task_count=len(queued),
         # 同一个选项在嵌套分支里可能出现多次（MFW-PyQt6 的 branches），同样的跳过只记一次
         skipped=list(dict.fromkeys(skipped)),
+        recorded_global_options=recorded_global_options,
     )
 
 
