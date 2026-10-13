@@ -98,6 +98,8 @@ _SWITCH_TRUE_NAMES = frozenset({"yes", "y", "true", "on", "1", "是", "开"})
 _SWITCH_FALSE_NAMES = frozenset({"no", "n", "false", "off", "0", "否", "关"})
 _CHOICE_TYPES = frozenset({"select", "scan_select", "switch"})
 _FIELD_TYPES = frozenset({"input", "hotkey"})
+#: MFW-PyQt6 选项条目的包装键：带其中任一个的是 ``{value, branches?, hidden?}``，否则是裸值
+_MFW_WRAPPER_KEYS = frozenset({"value", "branches", "hidden"})
 
 
 @dataclass(frozen=True)
@@ -1063,6 +1065,10 @@ def _mfw_collect_options(
 
     同一个选项可能既在外层又在某个分支里（``hidden`` 的那份是不生效分支里的旧值）：
     生效的那份优先，都不生效时取先出现的。
+
+    现行版本把分支里**生效的** input 子选项直接写成值（``{输入名: 值}``，见 MFW-PyQt6 的
+    ``switch.get_option``），不带 ``{value: …}`` 包装：对象里没有 ``value`` / ``branches`` /
+    ``hidden`` 这几个键就整个当字段值、按生效处理；不是对象的按选项类型当裸值。
     """
 
     if hidden_names is None:
@@ -1072,25 +1078,22 @@ def _mfw_collect_options(
         if name.startswith("_"):
             continue  # 外壳自己的设置（_speedrun_config 速通），不是 interface 选项
         owner = f"{owner_prefix}「{labels.option(name)}」"
-        if not isinstance(raw, dict):
-            skipped.append(f"{owner}的取值")
-            continue
         definition = option_map.get(name)
         if definition is None:
             skipped.append(owner)
             continue
-        hidden = raw.get("hidden") is True
+        wrapped = isinstance(raw, dict) and bool(_MFW_WRAPPER_KEYS & raw.keys())
+        hidden = wrapped and raw.get("hidden") is True
+        raw_value = raw.get("value") if wrapped else raw
         if name not in values or (name in hidden_names and not hidden):
-            value = _mfw_option_value(
-                raw.get("value"), definition, owner, labels, skipped
-            )
+            value = _mfw_option_value(raw_value, definition, owner, labels, skipped)
             if value is not None:
                 values[name] = value
                 if hidden:
                     hidden_names.add(name)
                 else:
                     hidden_names.discard(name)
-        branches = raw.get("branches")
+        branches = raw.get("branches") if wrapped else None
         if isinstance(branches, dict):
             for nested in branches.values():
                 if isinstance(nested, dict):
@@ -1140,6 +1143,16 @@ def _mfw_option_value(
                 skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
         return chosen
     if definition.type in _FIELD_TYPES:
+        declared = [
+            item.name
+            for item in (
+                definition.inputs if definition.type == "input" else definition.hotkeys
+            )
+            or []
+        ]
+        # 只有一个字段的 input，外壳可能直接存成那个字段的值（MFW-PyQt6 InputOptionItem 无输入名时）
+        if isinstance(raw, (str, int, float, bool)) and len(declared) == 1:
+            raw = {declared[0]: raw}
         fields = _field_values(raw, definition, owner, labels, skipped)
         if fields is None:
             skipped.append(f"{owner}的取值")
