@@ -937,11 +937,10 @@ def _build_option_defaults(
             continue
 
         if option.type == "input":
-            # input 的 default 是**给用户看的预填提示**，不是「没配时该执行的值」。
-            # M9A 的 自定义兑换码 default 就是字面量「占位」，该选项又直接挂在
-            # 任务上永远生效；把它当值注入会真提交一个无效兑换码，任务卡死。
-            # MFAAvalonia 自己的实例配置里，未填写的输入存的也是空串。
-            # default 改由前端作为 placeholder 展示，不进入执行值。
+            # 快照里 input 没填就存空串，不在这里写 default：default 是字段初值，但回落在
+            # 建覆盖时做（runner/pipeline_override 的 _string_input_fallback，数字 / 布尔在
+            # _coerce_input_value），存量快照里的空串也走同一条回落、不用迁移。password 字段与
+            # 特调声明的例外（M9A 的自定义兑换码，default 是字面量「占位」）不回落。
             input_defaults: dict[str, str] = {}
             for input_case in option.inputs or []:
                 input_defaults[input_case.name] = ""

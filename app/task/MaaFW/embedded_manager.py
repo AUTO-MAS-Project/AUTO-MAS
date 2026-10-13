@@ -1600,7 +1600,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{len(self.script_info.user_list)}"
         )
 
-        # 运行前归档 MaaFW 项目配置（config/ + interface.json）——物化会写这两处，
+        # 运行前归档 MaaFW 项目配置（config/，interface.json 随项目版本走、不归档），
         # 归档必须在任何写入前（指纹去重，失败不阻断任务）。归档的是有效根：内嵌
         # 时物化写在副本里，来源目录一个字节不动，备下来源没有意义。
         try:

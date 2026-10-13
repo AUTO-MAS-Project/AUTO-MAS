@@ -56,6 +56,9 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
 )
+from app.task.MaaFW.tools.core.runner.pipeline_override import (
+    SECRET_INPUTS_SNAPSHOT_KEY,
+)
 from app.task.MaaFW.tools.core.runner.run_plan import (
     NO_RUNNABLE_TASKS_MESSAGE,
     MaaFWRunPlanError,
@@ -65,6 +68,8 @@ from app.task.MaaFW.tools.core.runner.run_plan import (
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
+    path_without_host_venv,
+    strip_host_python_environment,
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
@@ -81,12 +86,17 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .embedded_project import resolve_maafw_project_root
-from .flavor import resolve_flavor, resolve_game_update_hook, unselectable_entries
+from .flavor import (
+    no_default_fallback_inputs,
+    resolve_flavor,
+    resolve_game_update_hook,
+    unselectable_entries,
+)
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .history_paths import maafw_history_log_path
 from .option_secrets import (
-    collect_plan_password_values,
+    collect_run_password_values,
     collect_script_password_values,
     log_redaction_notice,
     open_task_snapshot,
@@ -1062,6 +1072,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options=task_options,
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
+                # 走 task_ids 时快照不进建计划：从密文解出来的字段要单独交过去
+                secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
+                # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
+                no_default_fallback_inputs=no_default_fallback_inputs(flavor),
             )
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
             return _with_skipped_tasks(
@@ -2083,14 +2097,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
         raise RuntimeError(message)
 
-    def _secret_log_variants(self) -> list[str]:
-        """本次运行计划里 password 字段的值在日志里可能出现的写法（见 option_secrets）。"""
+    def _run_password_values(self) -> list[str]:
+        """本次运行要打码的密码值：计划里 password 字段的值 + 该用户快照里全部密文解开的值
+        （项目撤掉了 password 标记的字段建计划时照样解开，见 option_secrets）。"""
 
         if self.run_plan is None or self.interface_model is None:
             return []
-        return secret_log_variants(
-            collect_plan_password_values(self.run_plan, self.interface_model)
+        return collect_run_password_values(
+            self.run_plan,
+            self.interface_model,
+            getattr(self, "cur_user_config", None),
         )
+
+    def _secret_log_variants(self) -> list[str]:
+        """本次运行要打码的密码值在日志里可能出现的写法（见 option_secrets）。"""
+
+        return secret_log_variants(self._run_password_values())
 
     def _project_log_secret_variants(self, plan_variants: list[str]) -> list[str]:
         """项目日志不一定是本次运行的用户写的（上一个用户留下的片段也可能落在本次新增里），
@@ -2110,14 +2132,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
 
     def _log_redaction_notice(self) -> str | None:
-        """项目有 password 输入框时写进 ``.worker.log`` 开头的打码说明（见 option_secrets）。"""
+        """项目有 password 输入框或本次有要打码的值时写进 ``.worker.log`` 开头的打码说明。"""
 
         if self.run_plan is None or self.interface_model is None:
             return None
-        return log_redaction_notice(
-            self.interface_model,
-            collect_plan_password_values(self.run_plan, self.interface_model),
-        )
+        return log_redaction_notice(self.interface_model, self._run_password_values())
 
     async def _wait_worker_exit(
         self,
@@ -2158,7 +2177,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
 
-        env = os.environ.copy()
+        # 宿主的 VIRTUAL_ENV、PYTHON* 等不往下传，PATH 去掉宿主 venv 的脚本目录（Runtime 经
+        # uv run 起后端时它排最前）：pretask 脚本里再起 python 不该落到 MAS 自己的环境上
+        env = strip_host_python_environment()
+        if "PATH" in env:
+            env["PATH"] = path_without_host_venv(env["PATH"]) or ""
         # 与 agent 同口径（runner._build_agent_env）：pretask 多是项目自带 Python 跑的
         # 脚本，输出与读文件都按 UTF-8；对非 Python 程序这两个变量无害。
         env["PYTHONIOENCODING"] = "utf-8"

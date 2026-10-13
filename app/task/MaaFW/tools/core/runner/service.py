@@ -179,6 +179,8 @@ class MaaFWRunnerService:
         global_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
         script_hotkeys: dict[str, dict[str, str]] | None = None,
+        secret_inputs: Any = None,
+        no_default_fallback_inputs: Any = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -192,6 +194,8 @@ class MaaFWRunnerService:
             global_options=global_options,
             managed_env_root=managed_env_root,
             script_hotkeys=script_hotkeys,
+            secret_inputs=secret_inputs,
+            no_default_fallback_inputs=no_default_fallback_inputs,
         )
 
     def create_job_payload(
