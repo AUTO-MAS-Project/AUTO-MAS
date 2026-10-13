@@ -138,6 +138,23 @@ describe('useMaaFWUserSaveStatus', () => {
     scope.stop()
   })
 
+  it('成功后两秒内另一项失败：出错提示不会被回到空闲的定时器盖掉', async () => {
+    const { scope, status } = setup()
+    await status.enqueueSave(async () => undefined, 'Info.Account')
+    expect(status.saveStatus.value).toBe('saved')
+    await vi.advanceTimersByTimeAsync(500)
+    await expect(
+      status.enqueueSave(async () => {
+        throw new Error('备注没存上')
+      }, 'Info.Notes')
+    ).rejects.toThrow('备注没存上')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(status.saveStatus.value).toBe('error')
+    expect(status.saveErrorMessage.value).toBe('备注没存上')
+    expect(status.hasUnsavedChanges.value).toBe(true)
+    scope.stop()
+  })
+
   it('两项都失败：补上一项后提示换成另一项的原因，两项都补上才算存完', async () => {
     const { scope, status } = setup()
     await expect(

@@ -51,6 +51,11 @@ export function useMaaFWUserSaveStatus() {
       const reason = error instanceof Error ? error.message : String(error)
       failedSaves.delete(key)
       failedSaves.set(key, reason)
+      // 前一笔成功留下的「两秒后回到空闲」不能把这次的出错盖掉
+      if (saveStatusTimer) {
+        clearTimeout(saveStatusTimer)
+        saveStatusTimer = null
+      }
       saveStatus.value = 'error'
       saveErrorMessage.value = reason
       throw error
