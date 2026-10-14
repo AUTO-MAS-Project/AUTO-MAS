@@ -150,6 +150,7 @@
                   <a-input
                     v-model:value="maafwConfig.Game.PackageName"
                     :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    size="large"
                     allow-clear
                     @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
                   />
@@ -241,7 +242,7 @@
         </a-row>
 
         <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="6">
+          <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
@@ -262,7 +263,7 @@
               />
             </a-form-item>
           </a-col>
-          <a-col :span="6">
+          <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
                 <span class="form-label">{{ t('edit.launchArguments') }}</span>
@@ -276,7 +277,7 @@
               />
             </a-form-item>
           </a-col>
-          <a-col :span="6">
+          <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.mfwWaitTimeTip')">
@@ -322,6 +323,7 @@ import type {
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
 import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
+import { collectHotkeyOptions } from './hotkeyOptions'
 
 const { t } = useI18n()
 
@@ -351,6 +353,18 @@ const emulatorIndexValue = computed({
     props.maafwConfig.Emulator.Index = value ?? '-'
   },
 })
+
+// 「让 MAS 启动游戏」的第二行：键位映射格只在 interface 有对当前控制器 / 资源生效的 hotkey option
+// 时才渲染（与 MaaFWHotkeyField 同一判据），没有它时其余三格各占三分之一，不在右边空出一格
+const hasHotkeyField = computed(
+  () =>
+    collectHotkeyOptions(
+      props.previewData,
+      props.effectiveControllerName,
+      props.effectiveResourceName
+    ).length > 0
+)
+const directExeColSpan = computed(() => (hasHotkeyField.value ? 6 : 8))
 
 // 键位映射弹窗保存：先改草稿再走页面的自动保存通道
 const handleHotkeysSave = (value: string) => {

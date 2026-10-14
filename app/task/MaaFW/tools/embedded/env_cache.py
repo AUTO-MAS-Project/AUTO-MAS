@@ -214,14 +214,34 @@ def store_prepared_environment(
             pass
 
 
-def has_prepared_environment(project_path: str | Path) -> bool:
-    """这个项目此前有没有准备过（不看指纹是否还匹配）。
+def has_prepared_environment(
+    project_path: str | Path, fingerprint: str | None = None
+) -> bool:
+    """这个项目此前准备过、而且这次是「更新」吗。
 
-    只用来给界面分「首次准备完成」与「运行环境更新完成」两句话，所以缓存文件
-    在就算有过，坏了、过期了都不深究——那些交给 ``load_prepared_environment``。
+    只用来给界面分「运行环境准备完成」与「运行环境更新完成」两句话。不给
+    ``fingerprint`` 时只看缓存文件在不在。给了的话，上次记下的输入（项目指纹、宿主解释器、
+    缓存格式）与这次完全相同就不算更新：强制重新准备一个没变过的项目，什么都没重装，
+    显示「更新完成」会和日志里的「依赖清单未变化，跳过 pip install」对不上。缓存读不出、
+    坏了都按「准备过」算，不深究——那些交给 ``load_prepared_environment``。
     """
 
-    return _cache_path(project_path).is_file()
+    path = _cache_path(project_path)
+    if not path.is_file():
+        return False
+    if not fingerprint:
+        return True
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 只影响一句提示
+        return True
+    if not isinstance(payload, Mapping):
+        return True
+    return not (
+        payload.get("version") == CACHE_FORMAT_VERSION
+        and payload.get("fingerprint") == fingerprint
+        and payload.get("host") == _host_python_identity()
+    )
 
 
 def discard_prepared_environment(project_path: str | Path) -> None:

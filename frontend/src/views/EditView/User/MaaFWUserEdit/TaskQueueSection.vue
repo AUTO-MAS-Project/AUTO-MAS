@@ -51,10 +51,12 @@
             >
               {{ t('edit.queueTemplate') }}
             </a-button>
+            <!-- 下拉宽度不跟输入框走（搜索时默认会跟）：每栏给够宽，任务名别被截断 -->
             <a-cascader
               v-model:value="addTaskCascaderValueModel"
               :options="addTaskCascaderOptions"
-              :show-search="{ filter: filterAddTaskOption }"
+              :show-search="{ filter: filterAddTaskOption, matchInputWidth: false }"
+              :dropdown-menu-column-style="ADD_TASK_MENU_COLUMN_STYLE"
               :placeholder="t('edit.addTask')"
               expand-trigger="hover"
               class="add-task-cascader"
@@ -208,6 +210,8 @@
                       width="28"
                       height="28"
                       class="task-icon"
+                      @error="hideBrokenMaaFWIcon"
+                      @load="showLoadedMaaFWIcon"
                     />
                     <div class="task-main">
                       <span class="task-title">
@@ -219,6 +223,13 @@
                           #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
+                      <!-- 多选项勾选数不满足 min_count / max_count：运行器会让整个用户的计划构建失败 -->
+                      <a-tooltip
+                        v-if="checkboxIssueTaskIds.has(queuedTask.id)"
+                        :title="t('edit.maafwQueueTaskCheckboxCountInvalid')"
+                      >
+                        <ExclamationCircleOutlined class="task-option-issue" />
+                      </a-tooltip>
                     </div>
                     <a-space @click.stop>
                       <a-button
@@ -279,6 +290,8 @@
               width="32"
               height="32"
               class="selected-task-icon"
+              @error="hideBrokenMaaFWIcon"
+              @load="showLoadedMaaFWIcon"
             />
             <div>
               <div class="selected-task-title">
@@ -291,7 +304,9 @@
               <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
             </div>
           </div>
+          <!-- 按选中的实例重建：搜索词与没提交的草稿不带到下一个任务 -->
           <MaaFWTaskOptionEditor
+            :key="selectedTaskId"
             :option-names="getTaskOptionNames(selectedTask)"
             :options="previewData.options"
             :task-options="taskSnapshot.taskOptions[selectedTaskId] || {}"
@@ -419,12 +434,15 @@ import {
   ArrowUpOutlined,
   CloseOutlined,
   DeleteOutlined,
+  ExclamationCircleOutlined,
   HolderOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
+import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
+import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
@@ -444,6 +462,9 @@ import type {
 } from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
+
+/** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
+const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
 
 type DisplayItem = {
   name: string
@@ -583,11 +604,15 @@ const confirmRename = () => {
 const presetChips = (template: PresetTemplate) =>
   template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
 
-// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签
+// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签。分组显示 label，与「添加任务」里的叫法一致
 const selectedTaskMeta = computed(() => {
   const task = props.selectedTask
   if (!task) return ''
-  return [task.entry || task.name, ...(task.group || [])].filter(Boolean).join(' | ')
+  const groupLabels = new Map(
+    (props.previewData?.groups || []).map(group => [group.name, getDisplayName(group)] as const)
+  )
+  const groups = (task.group || []).map(groupName => groupLabels.get(groupName) || groupName)
+  return [task.entry || task.name, ...groups].filter(Boolean).join(' | ')
 })
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
@@ -652,6 +677,28 @@ const getTaskOptionNames = (task: MaaFWTaskInfo) => {
     task.option || [],
   ])
 }
+
+// 勾选数不满足 min_count / max_count 的任务实例：与右栏编辑器列出的选项同一范围、同一取值口径
+const checkboxIssueTaskIds = computed(() => {
+  const ids = new Set<string>()
+  const optionMap = new Map((props.previewData?.options || []).map(item => [item.name, item]))
+  if (optionMap.size === 0) return ids
+  const context = {
+    controllerName: props.effectiveControllerName,
+    resourceName: props.effectiveResourceName,
+  }
+  for (const item of props.orderedTasks) {
+    if (item.missing) continue
+    const violations = findMaaFWCheckboxCountViolations(
+      getTaskOptionNames(item.task),
+      optionMap,
+      props.taskSnapshot.taskOptions[item.id],
+      context
+    )
+    if (violations.length > 0) ids.add(item.id)
+  }
+  return ids
+})
 
 const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
   const keyword = inputValue.trim().toLowerCase()
@@ -882,6 +929,11 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 .task-title {
   font-weight: 600;
+}
+
+.task-option-issue {
+  margin-left: 6px;
+  color: var(--ant-color-warning);
 }
 
 /* 同一个任务被加了多份时的副本序号 */

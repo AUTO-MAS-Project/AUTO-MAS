@@ -32,9 +32,12 @@ export function useMaaFWUpdatePanel({
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
   const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
-  const isAutoUpdateDisabled = computed(() =>
-    Boolean(previewData.value && !previewData.value.project.version)
-  )
+  // 与后端同一口径：没声明 version 判断不了新旧；没有 mirrorchyan_rid 查不到版本（版本号
+  // 统一向 Mirror 酱查），两种情况自动更新都不会发生
+  const isAutoUpdateDisabled = computed(() => {
+    const project = previewData.value?.project
+    return Boolean(project && (!project.version || !project.mirrorchyanRid?.trim()))
+  })
 
   // 手动更新过程（检查 / 下载 / 覆盖 / 校验 + 逐行日志）同样由后端推过来，
   // 折叠成一份面板状态交给「项目更新」区块显示。

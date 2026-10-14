@@ -396,12 +396,12 @@ def open_range_delta(
         if send_log is not None:
             # 与整包落地（``apply._project_package_entries``）同样的三行。
             if dropped:
-                send_log(f"内嵌投影：包内 {len(dropped)} 个条目不在白名单内，未落盘")
+                send_log(f"更新包里有 {len(dropped)} 个文件不是运行所需，已跳过")
             code_hint = describe_dropped_code_files(rules, dropped)
             if code_hint:
-                send_log(f"内嵌投影：{code_hint}")
+                send_log(f"更新包筛选：{code_hint}")
             for warning in rules.warnings:
-                send_log(f"内嵌投影：{warning}")
+                send_log(f"更新包筛选：{warning}")
         entries = {rel: candidates[rel] for rel in sorted(kept)}
         if "interface.json" not in entries and "interface.jsonc" not in entries:
             raise RangeDeltaUnavailable("白名单里没有 interface.json")
@@ -600,15 +600,27 @@ def _central_directory_bytes(reader: RangeHTTPReader) -> int | None:
 
 
 def _extract_entry(
-    archive: zipfile.ZipFile, info: zipfile.ZipInfo, rel: str, target: Path
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    rel: str,
+    target: Path,
+    *,
+    before_read: Callable[[], None] | None = None,
 ) -> None:
-    """解压一个条目到新文件（独占新建）：CRC32 由 zipfile 在读到结尾时校验。"""
+    """解压一个条目到新文件（独占新建）：CRC32 由 zipfile 在读到结尾时校验。
+
+    ``before_read`` 在每读一块之前调（大条目边读边取远端字节）。"""
 
     target.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     try:
         with archive.open(info) as source, target.open("xb") as sink:
-            while chunk := source.read(_COPY_CHUNK):
+            while True:
+                if before_read is not None:
+                    before_read()
+                chunk = source.read(_COPY_CHUNK)
+                if not chunk:
+                    break
                 sink.write(chunk)
                 written += len(chunk)
     except (RangeReadCancelled, HealSkip):
@@ -663,9 +675,29 @@ def fetch_range_delta(
         )
         for _start, end, members in groups:
             check_cancel()
-            delta.reader.prefetch(members[0][1].header_offset, end)
+            first = members[0][1].header_offset
+            # 超过 MAX_GROUP_BYTES 的组只可能是单个大条目（合并时就按这个上限截）：不整段
+            # 预读进内存，边解压边按窗口取、读过的块随手丢，内存里同时最多一个窗口。
+            # 要的还是同一批块，取回计划的字节数不变。
+            streamed = end - first >= MAX_GROUP_BYTES
+            if not streamed:
+                delta.reader.prefetch(first, end)
             for rel, info in members:
-                _extract_entry(delta.archive, info, rel, package_dir / rel)
+                _extract_entry(
+                    delta.archive,
+                    info,
+                    rel,
+                    package_dir / rel,
+                    before_read=(
+                        (
+                            lambda group_end=end: delta.reader.ensure_window(
+                                group_end, MAX_GROUP_BYTES
+                            )
+                        )
+                        if streamed
+                        else None
+                    ),
+                )
                 done += info.compress_size
                 if progress is not None:
                     progress(done, total)

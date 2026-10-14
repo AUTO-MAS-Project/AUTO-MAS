@@ -52,13 +52,18 @@ export function useMaaFWScriptDraft(scriptId: string) {
         validator: () =>
           maafwConfig.Info.Path
             ? Promise.resolve()
-            : Promise.reject(new Error('请选择 MFW 项目实际目录并读取 interface')),
+            : Promise.reject(new Error(t('edit.pickActualMfwProject'))),
         trigger: 'blur',
       },
     ],
   }
 
   const handleChange: MaaFWScriptChangeHandler = async (category, key, value) => {
+    // 脚本名输入框绑的是 formData.name，不是草稿：失焦落盘时把草稿一起改掉。否则读到
+    // interface 后同步项目名时看到的还是旧默认名，会把用户刚填的名字当成自动起的覆盖掉
+    if (category === 'Info' && key === 'Name' && typeof value === 'string') {
+      maafwConfig.Info.Name = value
+    }
     if (isInitializing.value) return
     await enqueue(
       async () => {

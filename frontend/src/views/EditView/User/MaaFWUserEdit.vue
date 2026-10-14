@@ -9,6 +9,7 @@
       :script-route="scriptRoute"
       :is-edit="isEdit"
       :user-id="userIdHolder.value"
+      :leaving="leaving"
       @cancel="handleCancel"
     />
 
@@ -259,6 +260,7 @@ const {
   restoreApi,
   previewSections,
   handleRestored,
+  leaving,
   handleCancel,
 } = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
 

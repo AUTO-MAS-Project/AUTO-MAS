@@ -996,7 +996,7 @@ export default {
     checkUpdates2: '检查更新',
     emulator2: '模拟器',
     regexGuide: '正则指南',
-    loadingMfwInterface: '正在加载项目接口',
+    loadingMfwInterface: '正在读取项目',
     loadingMaafwProjectInterface: '正在加载 MaaFW 项目接口',
     clear: '清空',
     switchAccountDirectly: '直接切换账号',
@@ -1072,7 +1072,6 @@ export default {
     couldNotPickFile: '选择文件失败',
     addNoteAboutThis: '为账号添加备注信息',
     taskConfiguration: '任务配置',
-    readInterfaceFirstThen: '先读取项目定义文件，再选择任务',
     enabled: '启用状态',
     whetherThisUserEnabled: '是否启用该账号',
     noActiveConfigurationSession: '未找到活动的配置会话',
@@ -1303,7 +1302,7 @@ export default {
     clickSaveSettingsWhen: '配置完成后，点击「保存并关闭」结束本次会话。',
     notWiredIntoRun: '尚未接入运行流程：当前版本开启后运行前也不会自动检查更新，请用右侧的手动更新',
     noOkWwSettings: '尚未生成 ok-ww 设置',
-    interfaceJsonHasNot: '尚未读取 interface.json',
+    interfaceJsonHasNot: '没有读到项目：脚本还没导入项目，或项目读取失败（稍后重新打开本页）',
     nativeTaskConfigurationHas: '尚未读取到原生任务配置',
     invalidManagedOverridesCleared: '已清除 {n} 项失效的设置',
     scriptLevelMaaendConfiguration: '已启动共享 MaaEnd 配置',
@@ -1634,7 +1633,7 @@ export default {
     autoUpdateModeAfterRun: '运行后',
     updateSource: '更新源',
     updateSourceTip:
-      'Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：无需配置，直接从项目的 GitHub Release 下载',
+      '版本号统一向 Mirror 酱查询，项目需要接入 Mirror 酱。Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK',
     updateChannel: '更新通道',
     cdkTip:
       '默认填入 MAS 更新设置里的 CDK，可单独改成本托管专用的；选择 Mirror 酱作为更新源时必须填写。点击问号前往 Mirror 酱获取：',
@@ -1643,7 +1642,7 @@ export default {
     cdkMissingForMirror: '已选择 Mirror 酱作为更新源，但未填写 CDK，无法从 Mirror 酱下载更新',
     proxyAddress: '网络代理地址',
     proxyAddressTip:
-      '只对这个项目生效的网络代理。留空跟随全局设置（设置 → 其他 → 网络代理）；填写后此项目的更新下载与运行环境安装只走这里的代理',
+      '只对这个项目生效的网络代理。留空跟随全局设置（设置 → 关于 → 网络代理地址）；填写后此项目的更新下载与运行环境安装只走这里的代理',
     proxyAddressPlaceholder: '如 127.0.0.1:7890，留空跟随全局',
     updateResultVersion: '最新版本',
     updateResultSource: '下载来源',
@@ -1745,20 +1744,42 @@ export default {
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '，',
     adbStrategyPerDevice: '运行时判定',
-    adbStrategyEmulatorExtras: '优先使用模拟器自带 ADB（EmulatorExtras）',
+    adbStrategyEmulatorExtras: '优先使用模拟器专用的截图与输入接口（EmulatorExtras）',
     adbStrategyAvdExtras: '模拟器截图加速（共享内存，EmulatorExtras）',
     adbStrategyDefault: '默认',
     prepareRuntimeEnv: '准备运行环境',
-    envPanelPlaceholder: '读取 interface 后会在这里显示运行环境的准备过程',
-    envPreparingHint: '首次需要下载 MaaFramework，可能要几分钟',
+    envPanelPlaceholder: '运行环境的准备过程会显示在这里',
+    envPreparingHint: '可能需要下载 MaaFramework，首次会久一些',
     envStatusPreparing: '正在准备运行环境',
     envStatusPrepared: '运行环境准备完成',
     envStatusUpdated: '运行环境更新完成',
     envStatusCached: '无需更新运行环境',
     envStatusFailed: '运行环境准备失败',
-    envFailedHint: '运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。',
+    envFailedHint:
+      '多半是下载没成功：需要代理时，在「设置 → 关于 → 网络代理地址」或本页「项目更新 → 网络代理地址」填好后点「重试」。具体原因见上方日志。',
     envReadyAgents: '已就绪的组件',
     envRetry: '重试',
+    maafwPreviewFailed: '读取项目失败',
+    maafwImportFiles: '引用文件',
+    maafwListSeparator: '、',
+    envRuntimeIsolatedVenv: '独立 Python 环境',
+    envRuntimeProjectPython: '项目自带 Python',
+    envRuntimeProjectBinary: '项目自带程序',
+    envRuntimeSharedRuntime: '共享 Python 环境',
+    envRuntimeExternal: '外部程序',
+    previousStep: '上一步',
+    maafwPageTitleSetup: '{name} 项目引导',
+    maafwPageTitleConfig: '{name} 项目配置',
+    maafwUpdateChannelStable: '稳定版',
+    maafwUpdateChannelBeta: '测试版',
+    maafwEmulatorTypeGeneral: '通用模拟器',
+    maafwEmulatorTypeMumu: 'MuMu 模拟器',
+    maafwEmulatorTypeLdplayer: '雷电模拟器',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: '未选择模拟器',
+    maafwEmulatorTypeLoading: '模拟器类型加载中',
+    maafwNoMirrorchyanRid:
+      '该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），MAS 无法检查它的更新',
     mfwUnityResolutionOff: '不修改',
     mfwWaitTimeTip:
       'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',
@@ -1900,7 +1921,6 @@ export default {
     pickFolderHoldingSrc2: '选择SRC.exe所在的文件夹路径',
     pickProjectDirectoryContaining: '选择包含 interface.json 的项目目录，读取控制器、资源和任务。',
     pickImportPath: '选择导入路径',
-    pickLocalDirectory: '选择本地目录',
     localProjectDirectory: '本地项目目录',
     pickMfwProjectDirectory: '选择包含 interface.json 的 MFW 项目目录',
     maafwDirectoryLockedHint:
@@ -1911,7 +1931,7 @@ export default {
       '开着时在来源目录里改的文件下次运行生效（运行前发现有变化就重新导入，也可以点「立即同步」）；不做项目更新，也不与同项目的其它脚本共用版本。关掉后回到所选更新渠道的版本',
     maafwFollowSourceStatus: '跟随 {path} · 上次同步 {time}',
     maafwFollowSourceNotSynced: '跟随 {path} · 尚未同步，下次运行前从来源目录导入',
-    maafwFollowSourceMissing: '来源目录不在，运行时照常用当前副本',
+    maafwFollowSourceMissing: '来源目录不在',
     maafwFollowSourceSyncNow: '立即同步',
     maafwSourceFormTag: '源码形态',
     maafwSourceFormHint:
@@ -1942,7 +1962,7 @@ export default {
     mssFlavorControllerHint:
       '模拟器端的《星塔旅人》存在无法启动游戏的问题，MSS 只适配桌面端，请选择「桌面端」控制方式；除非该问题被修复，否则不会适配模拟器',
     mssFlavorQueueHint:
-      '· 任务队列里有「活动快速战斗」时，活动期间自动排到最前先打，非活动期间自动跳过\n' +
+      '· 任务队列里有「活动快速战斗」时，活动期间自动排在「悬赏试炼快速战斗」之前先打（先消耗干劲），非活动期间自动跳过\n' +
       '· 任务队列为空又没选计划表时，这一轮没有可执行任务：至少勾上「悬赏试炼快速战斗」，或选一张计划表（选了之后队列里没有它也会自动加入）\n' +
       '· 新版爬塔会排到最后；想每周只跑一次，在脚本「运行配置」的「每周完成后跳过」里选上它',
     mssFlavorQueueEmpty:
@@ -1960,7 +1980,7 @@ export default {
     mssFlavorDefenseSaveFailed: '开关没保存成功，请重试',
     mssFlavorActivityFirst: '活动优先',
     mssFlavorActivityFirstHint:
-      '开启后，队列里没加「活动快速战斗」时也会在活动期间自动加入并排到最前；取不到活动数据时不补',
+      '开启后，队列里没加「活动快速战斗」时也会在活动期间自动加入，排在「悬赏试炼快速战斗」之前；取不到活动数据时不补',
     mssFlavorPlanHint:
       '选择计划表后，每次运行按当天的设置改写「悬赏试炼快速战斗」的关卡、难度与次数，队列里没有它时会自动加入；「固定」则按任务队列里配的选项执行',
     maafwFlavorPlanMode: '计划表',
@@ -2194,11 +2214,11 @@ export default {
     bettergiViewClose: '关闭查看',
     bettergiViewOpened: '已打开 BetterGI 查看',
     bettergiViewStartFailed: '打开 BetterGI 查看失败',
-    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
       'MAS 配置的备份（任务快照与设备覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
     maafwConfigRestoreScriptDesc:
-      'MaaFW 项目配置（config 文件夹与 interface.json）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
+      'MaaFW 项目配置（config 文件夹）的备份，恢复会直接覆盖项目配置；进入本编辑页或运行前会自动去重创建，保留最近 10 份',
     // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
     hsrConfigRestoreUserDesc:
       'MAS 配置的备份（任务映射与托管覆盖等页面字段），恢复会直接作用于 MAS 配置；退出本编辑页时自动去重创建，保留最近 10 份',
@@ -2758,6 +2778,9 @@ export default {
     maafwGlobalOptions: '全局选项',
     maafwGlobalOptionsHint: '对队列里的所有任务生效，只需设置一次',
     maafwUnsupportedOptionType: '不支持的配置项类型：{type}，请联系脚本作者或升级 AUTO-MAS',
+    maafwInputVerifyFailed: '输入不符合脚本要求',
+    maafwQueueTaskCheckboxCountInvalid:
+      '有多选项的勾选数量不符合要求，不改的话这个用户运行时会失败',
     unknownType: '未知',
     savingNow: '保存中…',
     autoSaved: '已自动保存',

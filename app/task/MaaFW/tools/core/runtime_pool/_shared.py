@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import threading
@@ -23,6 +24,21 @@ from typing import Any
 
 class MaaFWRuntimePoolError(RuntimeError):
     """Raised when a managed MaaFW runtime pool operation is unsafe or invalid."""
+
+
+# userinfo 取到路径前的最后一个 @：密码里没转义的 @ 也整段打掉（pip / uv / urlsplit 都按最后一个 @ 切）
+_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s]*@")
+
+
+def mask_url_credentials(text: str) -> str:
+    """把文本里 URL 的 ``user:pw@`` 换成 ``***@``，其余部分原样。
+
+    包索引地址来自 ``PIP_INDEX_URL`` / ``AUTO_MAS_UV_INDEX_URL`` / Runtime 注入的镜像列表等
+    配置，可能带凭据；写进日志、标签、报错之前一律过它（与 requirements 解析不记 ``-i``
+    取值同一口径）。binding 下载、运行池 uv 安装、agent 隔离 venv 的 pip / uv 安装共用。
+    """
+
+    return _URL_CREDENTIALS_RE.sub(r"\1***@", str(text))
 
 
 def output_tail(text: str, limit: int) -> str:
@@ -44,6 +60,33 @@ def pool_lock(root: Path) -> threading.RLock:
     key = os.path.normcase(str(Path(root).resolve()))
     with _LOCKS_GUARD:
         return _POOL_LOCKS.setdefault(key, threading.RLock())
+
+
+_ACTIVE_STAGING_GUARD = threading.Lock()
+#: 正在池锁外铺着的 ``.staging`` 条目名（binding / native 暂存目录、下载中的 wheel）。
+#: 名字带 uuid，按名字就能唯一认出。回收的 ``_sweep_staging`` 持池锁扫 ``.staging``，
+#: binding 的下载 / 铺目录 / 自检却在池锁外跑（见 ``binding.ensure_binding``），不登记的话
+#: 正铺到一半的目录会被当成遗留物删掉。
+_ACTIVE_STAGING: set[str] = set()
+
+
+def register_active_staging(path: Path) -> None:
+    """登记一个即将创建的暂存条目。必须在创建之前登记：扫描看到它时它一定已在册。"""
+
+    with _ACTIVE_STAGING_GUARD:
+        _ACTIVE_STAGING.add(path.name)
+
+
+def release_active_staging(*paths: Path | None) -> None:
+    with _ACTIVE_STAGING_GUARD:
+        for path in paths:
+            if path is not None:
+                _ACTIVE_STAGING.discard(path.name)
+
+
+def is_active_staging(path: Path) -> bool:
+    with _ACTIVE_STAGING_GUARD:
+        return path.name in _ACTIVE_STAGING
 
 
 def assert_not_reparse(path: Path) -> None:
@@ -111,6 +154,37 @@ def remove_tree_best_effort(path: Path) -> bool:
         if not path.exists() and not path.is_symlink():
             return True
     return False
+
+
+def venv_base_python_missing(venv_path: str | os.PathLike[str]) -> bool:
+    """venv 自己的文件都在，但 ``pyvenv.cfg`` 里 ``home`` 指向的基解释器已经不存在。
+
+    Windows 上 venv 的 python.exe 只是启动器，启动时靠 ``home`` 找标准库与 DLL，不是
+    自包含的——``home`` 目录被删掉、或整个安装目录被挪走之后，venv 静默失效（启动器报
+    ``No Python at '...'``，exit 103），哪怕 venv 自己的文件一个没少。agent 隔离 venv 与运行池
+    的 base venv 都会碰上：引导解释器是另一个 venv（受管模式下的监督器 venv）后来被重建，
+    或者用户把 AUTO-MAS 整个搬了家（池托管解释器 ``<pool>/python`` 跟着走了，``home`` 还是旧路径）。
+
+    ``home`` 行缺失或读不出时不判定失效，交给调用方已有的结构完整性检查处理。
+    """
+
+    try:
+        text = (Path(venv_path) / "pyvenv.cfg").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+
+    home: str | None = None
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip().casefold() == "home":
+            home = value.strip()
+    if not home:
+        return False
+
+    exe_name = "python.exe" if os.name == "nt" else "python"
+    return not (Path(home) / exe_name).is_file()
 
 
 def utc_now() -> datetime:

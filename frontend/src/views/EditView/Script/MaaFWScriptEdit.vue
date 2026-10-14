@@ -55,6 +55,8 @@
             :embedded-busy="embeddedBusy"
             :import-percent="importPercent"
             :import-message="importMessage"
+            :import-error="importError"
+            :preview-error="previewError"
             :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
             :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
             :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
@@ -202,7 +204,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          上一步
+          {{ t('edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
@@ -253,6 +255,7 @@ const {
   pageLoading,
   previewLoading,
   previewData,
+  previewError,
   maafwConfig,
   formData,
   rules,
@@ -295,6 +298,7 @@ const {
   embeddedBusy,
   importPercent,
   importMessage,
+  importError,
   selectMaaFWPath,
   syncFromSource,
   isAutoUpdateDisabled,

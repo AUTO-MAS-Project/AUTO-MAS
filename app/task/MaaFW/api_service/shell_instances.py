@@ -42,7 +42,14 @@ from app.task.MaaFW.tools.core.interface.loader import (
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
-from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
+from app.task.MaaFW.tools.core.interface.task_config import (
+    normalize_global_options,
+    normalize_snapshot,
+)
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    embedded_project_dir,
+    view_imported_from,
+)
 from app.task.MaaFW.tools.embedded.shell_instances import (
     ShellImportPlan,
     ShellInstance,
@@ -60,19 +67,23 @@ INSTANCE_NOT_FOUND = "项目目录里找不到这份配置（可能已在外壳�
 def _candidate_roots(script_id: str, script_config: Any) -> list[Path]:
     """按顺序去哪里找外壳配置：先来源目录，再内嵌副本。
 
-    外壳把实例存在它自己的目录里，也就是用户选的来源目录（``Info.Path``）；副本导入时
-    把外壳剔掉了（MFAAvalonia 的 ``appsettings.json`` 在项目根上、随外壳一起不带），
-    ``config/`` 下留下的只是运行期用得到的那几份，所以副本只在来源目录不在了、或来源
-    目录里没有外壳配置时兜底——副本若恰好保留了外壳配置，也能读出来。「复用已有脚本的
-    项目」克隆出来的脚本 ``Info.Path`` 沿用源脚本的来源目录（与 ``Embedded.*`` 成对继承），
-    走的是同一条路。
+    外壳把实例存在它自己的目录里，也就是用户选的来源目录（``Info.Path``）。投影不剔
+    ``config/``，所以副本里可能也有外壳配置实例（MFAA 的 ``config/instances``、MXU 的
+    ``config/mxu-*.json``），来源目录不在了、或来源目录里没有外壳配置时拿它兜底。但同组
+    共用一份载荷：本脚本导入的版本不比组新时，视图挂的是组里别人从**另一个目录**导入的
+    那份，``config/`` 里是别人的队列与账号。所以只在视图的载荷正是从本脚本的来源目录导入
+    时（:func:`view_imported_from`）才兜底。「复用已有脚本的项目」克隆出来的脚本
+    ``Info.Path`` 沿用源脚本的来源目录（与 ``Embedded.*`` 成对继承），走的是同一条路。
+
+    要读载荷清单，在工作线程里调。
     """
 
     roots: list[Path] = []
     source = str(script_config.get("Info", "Path") or "").strip()
     if source:
         roots.append(Path(source))
-    roots.append(embedded_project_dir(script_id))
+    if view_imported_from(script_id, source):
+        roots.append(embedded_project_dir(script_id))
     return roots
 
 
@@ -82,7 +93,8 @@ def _requested_roots(
     """列表与覆盖共用的「去哪儿找」：给了 ``path`` 就只认那个目录，否则 :func:`_candidate_roots`。
 
     两边必须同一口径：实例 ID 只是外壳里的文件名 / 配置 id，同一份外壳拷两份 ID 就一样，
-    列表从别的目录列出来、覆盖却回默认目录按 ID 找，会悄悄导进另一份配置。
+    列表从别的目录列出来、覆盖却回默认目录按 ID 找，会悄悄导进另一份配置。要碰盘，在工作
+    线程里调。
     """
 
     if path is not None and path.strip():
@@ -199,11 +211,34 @@ def _task_update(plan: ShellImportPlan) -> dict[str, Any]:
     }
 
 
-def _mark_imported(result: MaaFWShellInstanceImportItem, plan: ShellImportPlan) -> str:
-    """把换算结果填进成功的结果项；返回日志末尾的跳过说明（没有跳过为空串）。"""
+def _stored_snapshot(update: dict[str, Any]) -> dict[str, Any] | None:
+    """``update_user`` 写完之后 ``update`` 里的任务快照（特调整理、密码加密都原地改在这份字典上）。"""
 
+    stored = (update.get("Task") or {}).get("TaskSnapshot")
+    try:
+        snapshot = json.loads(stored) if isinstance(stored, str) else stored
+    except ValueError:
+        return None
+    return snapshot if isinstance(snapshot, dict) else None
+
+
+def _mark_imported(
+    result: MaaFWShellInstanceImportItem,
+    plan: ShellImportPlan,
+    update: dict[str, Any],
+) -> str:
+    """把换算结果填进成功的结果项；返回日志末尾的跳过说明（没有跳过为空串）。
+
+    任务数按实际落盘的快照数：特调保存时会收走自己管的任务（M9A 的启动 / 关闭游戏、切换
+    账号），按换算时的数报会比用户页上看到的多。
+    """
+
+    snapshot = _stored_snapshot(update)
+    order = snapshot.get("taskOrder") if snapshot is not None else None
     result.success = True
-    result.importedTaskCount = plan.task_count
+    result.importedTaskCount = (
+        len(order) if isinstance(order, list) else plan.task_count
+    )
     result.skipped = plan.skipped
     if not plan.skipped:
         return ""
@@ -223,7 +258,9 @@ async def list_shell_instances(
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
-    roots, error = _requested_roots(script_id, script_config, path)
+    roots, error = await asyncio.to_thread(
+        _requested_roots, script_id, script_config, path
+    )
     if roots is None:
         return MaaFWApiReply.error(400, error)
     try:
@@ -304,7 +341,7 @@ async def import_shell_instances(
     context = await _load_import_context(
         script_id,
         script_config,
-        _candidate_roots(script_id, script_config),
+        await asyncio.to_thread(_candidate_roots, script_id, script_config),
         action="导入外壳配置实例",
     )
     if isinstance(context, MaaFWApiReply):
@@ -361,7 +398,9 @@ async def apply_shell_instance_to_user(
     if user is None:
         return MaaFWApiReply.error(404, "这个用户已经不在这个脚本里了")
 
-    roots, error = _requested_roots(script_id, script_config, path)
+    roots, error = await asyncio.to_thread(
+        _requested_roots, script_id, script_config, path
+    )
     if roots is None:
         return MaaFWApiReply.error(400, error)
     context = await _load_import_context(
@@ -387,8 +426,17 @@ async def apply_shell_instance_to_user(
     if plan is None:
         return MaaFWApiReply(data={"result": result})
 
-    # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
-    # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
+    # 整份任务队列换掉：这就是「覆盖」，用户页上的队列与任务选项都会变成外壳那份。
+    # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。全局选项不整表换：外壳记着的
+    # 叠在用户现有的全局表上，外壳没记的（账号、密码之类）留着，与同一弹窗里「从其他用户
+    # 导入」不动全局值同一口径。现有值里的密码密文原样留着（不解开、写入时也不会再加密一次）
+    plan.snapshot["globalOptions"] = normalize_global_options(
+        _merge_global_options(
+            _user_global_options(user, context.interface),
+            plan.recorded_global_options,
+        ),
+        context.interface,
+    )
     update: dict[str, dict[str, Any]] = {"Task": _task_update(plan)}
     try:
         # update_user 原地改 update：特调整理（M9A 收走受管任务、切换账号并进 Info）与密码加密
@@ -399,10 +447,10 @@ async def apply_shell_instance_to_user(
         result.error = f"写入用户配置失败: {exc}"
         return MaaFWApiReply(data={"result": result})
 
-    skipped_note = _mark_imported(result, plan)
+    skipped_note = _mark_imported(result, plan, update)
     logger.info(
         f"已把 {instance.source} 实例「{instance.name}」的任务队列覆盖到用户"
-        f"「{result.name}」（{user_id}）：{plan.task_count} 个任务{skipped_note}"
+        f"「{result.name}」（{user_id}）：{result.importedTaskCount} 个任务{skipped_note}"
     )
     # 交回实际落盘的快照与特调改过的 Info：界面拿到就刷新本地状态，不用回头拉一次用户配置；
     # 交 plan.snapshot 的话，M9A 收走的受管任务会留在页面队列里、账号也对不上
@@ -410,6 +458,46 @@ async def apply_shell_instance_to_user(
     snapshot = json.loads(stored) if isinstance(stored, str) else stored
     info = dict(update.get("Info") or {})
     return MaaFWApiReply(data={"result": result, "snapshot": snapshot, "info": info})
+
+
+def _user_global_options(user: Any, interface: MaaFWInterface) -> dict[str, Any]:
+    """用户现有的全局表，按 MAS 读快照的同一口径（``normalize_snapshot``）取。
+
+    老格式快照没有 ``globalOptions``、全局值还存在任务实例上（升级后没再保存过用户页，或旧版
+    用户页保存丢了它）：归一会按迁移口径把它们取回全局表。覆盖时任务队列整份换掉、迁移的来源
+    就没了，所以要在换之前取。坏 JSON、空串快照当空表（交给归一按默认值补）。归一与迁移只挑
+    值、不改写字符串，``mas-dpapi:`` 密文原样留着。
+    """
+
+    try:
+        raw = user.get("Task", "TaskSnapshot")
+        snapshot = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:  # noqa: BLE001 - 坏快照就当没有
+        return {}
+    if not isinstance(snapshot, dict):
+        return {}
+    try:
+        return dict(normalize_snapshot(snapshot, interface).globalOptions)
+    except Exception as exc:  # noqa: BLE001 - 归一失败就退回只读全局表
+        logger.warning(f"读取用户现有全局选项失败，只按快照里的全局表合并：{exc}")
+        values = snapshot.get("globalOptions")
+        return dict(values) if isinstance(values, dict) else {}
+
+
+def _merge_global_options(
+    existing: dict[str, Any], recorded: dict[str, Any]
+) -> dict[str, Any]:
+    """外壳记着的全局值叠在用户现有的上面。input / hotkey 这类 ``{字段: 值}`` 按字段叠：外壳没带
+    的字段（不从外壳导入的密码字段就是这样）留用户现有的。"""
+
+    merged = dict(existing)
+    for name, value in recorded.items():
+        current = merged.get(name)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merged[name] = {**current, **value}
+        else:
+            merged[name] = value
+    return merged
 
 
 def _user_of(script_config: Any, user_id: str) -> Any | None:
@@ -441,17 +529,15 @@ async def _import_one(
         logger.warning(f"导入外壳配置实例 {instance.id} 时新增用户失败：{exc}")
         result.error = f"新增用户失败: {exc}"
         return result
+    # 只写名字：Info.Controller / Info.Resource 保持空串，与用户页保存的形状一致——
+    # 运行器与用户页都只看脚本级的这两项，写进用户配置没有作用。留着引用：update_user
+    # 原地改它，写完就是实际落盘的样子（任务数按它报）
+    update: dict[str, dict[str, Any]] = {
+        "Info": {"Name": user_name},
+        "Task": _task_update(plan),
+    }
     try:
-        await Config.update_user(
-            script_id,
-            str(uid),
-            {
-                # 只写名字：Info.Controller / Info.Resource 保持空串，与用户页保存的形状一致——
-                # 运行器与用户页都只看脚本级的这两项，写进用户配置没有作用
-                "Info": {"Name": user_name},
-                "Task": _task_update(plan),
-            },
-        )
+        await Config.update_user(script_id, str(uid), update)
     except Exception as exc:  # noqa: BLE001 - 写不进去就把刚建的空用户撤掉
         logger.warning(f"导入外壳配置实例 {instance.id} 时写入用户失败：{exc}")
         try:
@@ -462,9 +548,9 @@ async def _import_one(
         return result
 
     result.userId = str(uid)
-    skipped_note = _mark_imported(result, plan)
+    skipped_note = _mark_imported(result, plan, update)
     logger.info(
         f"已从 {instance.source} 实例「{instance.name}」建用户「{user_name}」（{uid}）："
-        f"导入 {plan.task_count} 个任务{skipped_note}"
+        f"导入 {result.importedTaskCount} 个任务{skipped_note}"
     )
     return result

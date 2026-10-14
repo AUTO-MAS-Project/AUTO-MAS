@@ -48,7 +48,10 @@ type QueueEntryDraft =
 
 /**
  * 用户页任务队列：显示顺序（含 interface 已没有的虚影）、选中项、预设模板、
- * 增删移动与选项修改，以及按当前控制器 / 资源修剪队列。改动都经 `savePresetAndSnapshot` 落盘。
+ * 增删移动与选项修改。改动都经 `savePresetAndSnapshot` 落盘。
+ *
+ * 当前控制器 / 资源下不可用的实例只在显示时藏起来（`orderedTasks`），快照里原样留着、
+ * 连同选项一起落盘：控制器 / 资源是脚本级的，切回去这些任务要还在；运行器建计划时自己会跳过。
  */
 export function useMaaFWTaskQueue({
   previewData,
@@ -105,11 +108,17 @@ export function useMaaFWTaskQueue({
     orderedTasks.value.filter((item): item is MaaFWQueuedTaskItem => !item.missing)
   )
   // 拖拽结束后子组件回传可见部分的新顺序；被 controller/resource 过滤掉的实例
-  // 不在队列里显示，要原样接回去，不能被这次重排冲掉。
+  // 不在队列里显示，要原样接回去、留在原来的位置上，不能被这次重排冲掉：
+  // 可见实例占的那些位置按新顺序依次填，隐藏实例不动。
   const applyQueuedTaskIds = (taskIds: string[]) => {
     const visibleTaskIds = new Set(orderedTasks.value.map(item => item.id))
-    const hiddenTaskIds = taskSnapshot.value.taskOrder.filter(taskId => !visibleTaskIds.has(taskId))
-    taskSnapshot.value.taskOrder = partitionTaskOrder([...taskIds, ...hiddenTaskIds])
+    const reordered = taskIds.filter(taskId => visibleTaskIds.has(taskId))
+    let next = 0
+    const merged = taskSnapshot.value.taskOrder.flatMap(taskId => {
+      if (!visibleTaskIds.has(taskId)) return [taskId]
+      return next < reordered.length ? [reordered[next++]] : []
+    })
+    taskSnapshot.value.taskOrder = partitionTaskOrder([...merged, ...reordered.slice(next)])
   }
   const activeTasks = computed(() =>
     (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
@@ -219,30 +228,6 @@ export function useMaaFWTaskQueue({
     } else {
       delete taskSnapshot.value.taskLabels
     }
-  }
-
-  const pruneQueuedTasksForCurrentContext = async (persist = true) => {
-    if (!previewData.value) return false
-
-    const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
-    const nextOrder = taskSnapshot.value.taskOrder.filter(taskId => {
-      const taskName = resolveTaskName(taskId)
-      // interface 已经没有的任务不在这里清：它们留成虚影，由用户自己删
-      return activeTaskNames.has(taskName) || !validTaskNames.value.has(taskName)
-    })
-    if (nextOrder.length === taskSnapshot.value.taskOrder.length) return false
-
-    taskSnapshot.value.taskOrder = nextOrder
-    selectedTaskId.value = nextOrder[0] || ''
-    if (persist) {
-      await persistQueuedSnapshot()
-    }
-    return true
-  }
-
-  const syncControllerResourceSelection = async () => {
-    if (!previewData.value) return
-    await pruneQueuedTasksForCurrentContext(false)
   }
 
   const applyPresetTemplate = async (presetName: string) => {
@@ -428,7 +413,6 @@ export function useMaaFWTaskQueue({
     applyQueuedTaskIds,
     selectTask,
     persistQueuedSnapshot,
-    syncControllerResourceSelection,
     applyPresetTemplate,
     passwordFields,
     templateDraftEntries,
