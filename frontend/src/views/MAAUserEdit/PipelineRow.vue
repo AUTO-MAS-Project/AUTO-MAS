@@ -25,8 +25,21 @@
         <span class="row-summary" :class="{ 'row-summary-rich': $slots.summary }">
           <slot name="summary">{{ summary }}</slot>
         </span>
-        <DownOutlined v-if="hasDetail" class="row-chevron" />
+        <DownOutlined v-if="hasDetail && !$slots.actions" class="row-chevron" />
       </component>
+      <div v-if="$slots.actions" class="row-actions">
+        <slot name="actions" />
+        <button
+          v-if="hasDetail"
+          type="button"
+          class="row-main row-expand"
+          :aria-label="name"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <DownOutlined class="row-chevron" />
+        </button>
+      </div>
     </div>
     <div v-if="hasDetail && expanded" class="row-detail">
       <!-- 常驻正文而非悬停 tooltip：键盘与触屏用户同样可读（WCAG 1.4.13） -->
@@ -95,6 +108,22 @@ const expanded = ref(false)
 
 .row-main-static {
   cursor: default;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* 齿轮与展开按钮各占 32px，无展开按钮时也保持齿轮列对齐。 */
+  min-width: 68px;
+  flex-shrink: 0;
+}
+
+.row-expand {
+  flex: 0 0 32px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
 }
 
 .row-main:not(.row-main-static):hover {

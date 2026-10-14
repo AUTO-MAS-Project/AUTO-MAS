@@ -831,6 +831,11 @@ const createUserImmediately = async () => {
 // 加载用户数据
 const loadUserData = async (): Promise<boolean> => {
   isInitializing.value = true
+  // 恢复/重载配置后，旧目标或旧绑定的预览不能再回写。
+  cultivatePreviewSeq++
+  cultivatePreview.value = null
+  cultivatePreviewLoading.value = false
+  cultivatePreviewError.value = ''
   try {
     const userResponse = await getUsers(scriptId, userId)
 
@@ -1083,7 +1088,8 @@ const importCultivateTargets = (content: string): Promise<CultivateImportResult>
       parseCultivateTargets(formData.Task.CultivateTargets),
       parseCultivateTargets(imported.targets)
     )
-    if (!merged.result.operatorIds.length) return merged.result
+    const result = { ...merged.result, skipped: imported.skippedMessages }
+    if (!result.operatorIds.length) return result
     const saved = await handleFieldSave(
       'Task.CultivateTargets',
       serializeCultivateTargets(merged.rows)
@@ -1097,7 +1103,7 @@ const importCultivateTargets = (content: string): Promise<CultivateImportResult>
       ...additions,
     ]
     await loadCultivateOperatorOptions()
-    return merged.result
+    return result
   })
 
 const loadSklandRoleOptions = async () => {

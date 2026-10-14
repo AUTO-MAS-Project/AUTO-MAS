@@ -468,11 +468,15 @@ async def parse_cultivate_import(script_id: str, content: str) -> dict[str, Any]
     catalog = await depot_cultivate_service.operator_catalog(
         config_path=Config.config_path, proxy=Config.proxy
     )
-    targets = parse_clipboard_targets(content, catalog)
+    targets, skipped = parse_clipboard_targets(content, catalog)
     imported_ids = {target.operator_id for target in targets}
     return {
         "targets": json.dumps(dump_cultivate_targets(targets), ensure_ascii=False),
         "data": [entry for entry in catalog if entry["value"] in imported_ids],
+        "skipped": [
+            {"error": item.reason, "index": item.index, "name": item.name}
+            for item in skipped
+        ],
     }
 
 

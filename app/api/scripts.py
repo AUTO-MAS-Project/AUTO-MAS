@@ -987,6 +987,7 @@ async def parse_maa_cultivate_import(
     return MaaCultivateImportOut(
         targets=result["targets"],
         data=[MaaCultivateOperatorOptionItem(**item) for item in result["data"]],
+        skipped=[MaaCultivateImportSkippedItem(**item) for item in result["skipped"]],
     )
 
 

@@ -13,6 +13,7 @@ export interface CultivateImportResult {
   added: number
   updated: number
   operatorIds: string[]
+  skipped?: string[]
 }
 
 export interface CultivateGoalView {
@@ -27,6 +28,7 @@ export interface CultivateGoalOption {
   label: string
   value: string
   maxLevel: number
+  skillIndex?: number | null
 }
 
 /** 干员目录条目（后端 MaaCultivateOperatorOptionItem 归一化形状，三处消费共用） */

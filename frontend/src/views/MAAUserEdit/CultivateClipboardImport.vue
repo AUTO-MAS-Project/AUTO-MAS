@@ -4,6 +4,8 @@
   </a-button>
   <a-modal
     v-model:open="manualOpen"
+    wrap-class-name="maa-plan-settings-modal"
+    centered
     :title="t('edit.maaCultivateImportClipboard')"
     :ok-text="t('edit.maaCultivateImportSubmit')"
     :cancel-text="t('common.cancel')"
@@ -23,6 +25,20 @@
       :auto-size="{ minRows: 5, maxRows: 10 }"
     />
   </a-modal>
+  <a-modal
+    v-model:open="reportOpen"
+    :title="t('edit.maaCultivateImportSkipped', { count: skippedMessages.length })"
+    wrap-class-name="maa-plan-settings-modal"
+    centered
+    destroy-on-close
+  >
+    <ul class="cultivate-import-skipped">
+      <li v-for="(text, index) in skippedMessages" :key="index">{{ text }}</li>
+    </ul>
+    <template #footer>
+      <a-button type="primary" @click="reportOpen = false">{{ t('common.confirm') }}</a-button>
+    </template>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
@@ -40,6 +56,8 @@ const { t } = useI18n()
 const busy = ref(false)
 const manualOpen = ref(false)
 const manualText = ref('')
+const reportOpen = ref(false)
+const skippedMessages = ref<string[]>([])
 
 const setBusy = (value: boolean) => {
   busy.value = value
@@ -54,11 +72,17 @@ const applyImport = async (content: string) => {
       t('edit.maaCultivateImportSuccess', { added: result.added, updated: result.updated })
     )
     emit('imported', result.operatorIds)
-  } else {
+  } else if (!result.skipped?.length) {
     message.info(t('edit.maaCultivateImportUnchanged'))
   }
-  manualOpen.value = false
-  manualText.value = ''
+  if (result.added || result.updated || !result.skipped?.length) {
+    manualOpen.value = false
+    manualText.value = ''
+  }
+  if (result.skipped?.length) {
+    skippedMessages.value = result.skipped
+    reportOpen.value = true
+  }
 }
 
 const importText = async (content: string) => {
@@ -92,3 +116,10 @@ const readClipboard = async () => {
   }
 }
 </script>
+
+<style scoped>
+.cultivate-import-skipped {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+</style>

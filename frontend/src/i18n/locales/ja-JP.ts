@@ -36,6 +36,7 @@ export default {
     off: 'オフ',
     confirm: 'OK',
     cancel: 'キャンセル',
+    close: '閉じる',
     doc: 'ドキュメント',
     unknown: '不明',
   },
@@ -338,6 +339,19 @@ export default {
     maaEventPotionHint:
       'イベントステージ優先タスクで使う理性回復薬の数です。通常の理性作戦には影響しません',
     maaCultivate: 'オペレーター育成',
+    maaCultivateSettings: '育成設定',
+    maaCultivateShowModules: 'モジュール目標を表示',
+    maaCultivateSelectOperator: '{name}を選択',
+    maaCultivateSelectAll: '全オペレーターを選択',
+    maaCultivateSelectMatches: '検索結果をすべて選択',
+    maaCultivateSearchOperators: 'オペレーター名またはIDで検索',
+    maaCultivateSearchEmpty: '該当するオペレーターがありません',
+    maaCultivateDeleteSelected: '選択した目標を削除（{count}）',
+    maaCultivateDeleteSelectedConfirm: '選択した{count}名の育成目標を削除しますか？',
+    maaCultivateSkill1: 'スキル1',
+    maaCultivateSkill2: 'スキル2',
+    maaCultivateSkill3: 'スキル3',
+    maaCultivateSkillName: '{name}（{skill}）',
     maaCultivateHint:
       '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
@@ -350,6 +364,7 @@ export default {
     maaCultivateImportPlaceholder: '育成目標の JSON を貼り付け',
     maaCultivateImportSuccess: '{added} 人を追加し、{updated} 人の目標を更新しました',
     maaCultivateImportUnchanged: '目標は登録済みのため、更新は不要です',
+    maaCultivateImportSkipped: 'インポートできない目標を {count} 件スキップしました',
     maaCultivateImportFailed:
       'インポートに失敗しました。バックエンドの接続を確認して再試行してください',
     maaCultivateImportEmpty: 'インポートできる育成目標がありません',
@@ -386,18 +401,22 @@ export default {
     maaCultivateSklandSyncFailed:
       '森空島の練度同期に失敗したため、今回の育成は一時停止しました。ネットワークを確認するか、森空島を再連携してください。日課と在庫維持は通常どおり実行します。',
     maaCultivateAutoRaiseHint:
-      'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+      '現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+    maaCultivateAutoRaiseVersionHint: '自動育成には MAA v6.19.0-beta.1 以降が必要です',
     maaCultivateMasterySkillHint:
       '特化にはスキルレベル7が必要です。特化目標を選ぶとスキルレベルの目標が自動で7になり、特化目標を解除してもスキルレベルの目標は残ります。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
-      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
+      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。',
+    maaCultivateTakeoverHint:
+      '素材が不足すると育成計画が今回の周回を引き継ぎ、在庫維持は一時停止します。素材が揃うと自動的に再開します。',
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
     maaCultivatePreviewStageHeading: '周回計画',
     maaCultivatePreviewDemandHeading: '素材需要',
+    maaCultivatePreviewDemandNone: '必要な素材はありません',
     maaCultivatePreviewUnobtainable:
       '以下の素材は周回では入手できず、ゲーム内で別途入手する必要があります',
     maaCultivatePreviewNone:
@@ -440,6 +459,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
+    maaDepotSettings: '在庫維持の設定',
     maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaDepotPlanCount: '{count} 件の計画',
     maaDepotEmpty: '計画はまだ追加されていません',

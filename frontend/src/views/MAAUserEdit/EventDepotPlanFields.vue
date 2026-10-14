@@ -7,6 +7,7 @@
     option-filter-prop="label"
     :virtual="false"
     :get-popup-container="getPopupContainer"
+    :list-height="listHeight"
     :popup-match-select-width="false"
     :placeholder="t('edit.pickStage')"
     @change="emit('change', Number($event))"
@@ -33,6 +34,7 @@ const props = defineProps<{
   loading: boolean
   itemOptions: { label: string; value: string }[]
   getPopupContainer: (trigger: HTMLElement) => HTMLElement
+  listHeight: number
 }>()
 const emit = defineEmits<{ change: [value: number] }>()
 const { t } = useI18n()

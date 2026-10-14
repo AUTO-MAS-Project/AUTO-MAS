@@ -15,5 +15,9 @@ export type MaaCultivateGoalOptionItem = {
      * 可达档位上限（按非空消耗档数）
      */
     maxLevel?: number;
+    /**
+     * 技能原始序号；模组为空
+     */
+    skillIndex?: (number | null);
 };
 
