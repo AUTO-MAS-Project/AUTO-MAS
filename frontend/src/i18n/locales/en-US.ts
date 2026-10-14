@@ -22,6 +22,7 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    webhookTestSubmitted: 'Test submitted; please check the delivery result',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
@@ -2832,6 +2833,21 @@ export default {
     bettergiProjectZoom: 'Zoom',
   },
   plugins: {
+    state: {
+      unloaded: 'Unloaded',
+      loaded: 'Loaded',
+      disabled: 'Disabled',
+      enabled: 'Enabled',
+      fault_load: 'Load failed',
+      fault_runtime: 'Runtime error',
+      loading: 'Loading',
+      enabling: 'Enabling',
+      reloading: 'Reloading',
+      disabling: 'Disabling',
+      unloading: 'Unloading',
+    },
+    source: { local: 'Local', installed: 'Installed', market: 'Marketplace', package: 'Package' },
+
     version: '{id} · v{version}',
     pageMissing: 'Plugin page not found',
     pageLoadFailed: 'Failed to load plugin settings',
@@ -2850,7 +2866,7 @@ export default {
     marketEyebrow: 'Discover extensions',
     marketTitle: 'Plugin market',
     marketDescription: 'Find and install extensions when a marketplace source is configured.',
-    marketEmpty: 'The plugin market is not available yet',
+    marketEmpty: 'No plugins available',
     marketUnavailable: 'The plugin market is not available yet',
     refresh: 'Refresh',
     empty: 'No plugins are currently loaded',
@@ -3357,6 +3373,7 @@ export default {
     },
   },
   history: {
+    cancelled: 'Cancelled',
     title: 'History',
     dateList: 'Dates',
     noData: 'No data',

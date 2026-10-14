@@ -24,16 +24,17 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.config import CollectionOrderItem
+from app.config import CollectionOrderItem, ConfigCollection
 from app.config.errors import ConfigAggregateError
 from app.core import Config
 from app.models.config import Setting, Webhook
+from app.models.schema import WebhookInBase
 from app.api import OutBase
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
@@ -50,7 +51,7 @@ class SettingUpdateIn(BaseModel):
     data: Setting = Field(..., description="全局设置补丁（文档形状）")
 
 
-class WebhookGetIn(BaseModel):
+class WebhookGetIn(WebhookInBase):
     webhookId: Optional[str] = Field(
         default=None, description="Webhook ID；缺省返回全部"
     )
@@ -70,21 +71,38 @@ class WebhookCreateOut(OutBase):
     data: Webhook = Field(default_factory=Webhook, description="Webhook 配置")
 
 
-class WebhookUpdateIn(BaseModel):
+class WebhookUpdateIn(WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
     data: Webhook = Field(..., description="Webhook 补丁（文档形状）")
 
 
-class WebhookDeleteIn(BaseModel):
+class WebhookDeleteIn(WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
 
 
-class WebhookReorderIn(BaseModel):
+class WebhookReorderIn(WebhookInBase):
     indexList: list[str] = Field(..., description="按新顺序排列的 Webhook UID 列表")
 
 
-class WebhookTestIn(BaseModel):
+class WebhookTestIn(WebhookInBase):
     data: Webhook = Field(..., description="待测试的 Webhook 配置")
+
+
+def _webhook_collection(body: WebhookInBase | None = None) -> ConfigCollection[Webhook]:
+    """复用既有所属脚本/账号参数，缺省选择全局集合。"""
+    if body is None or not (body.scriptId or body.userId):
+        return Config.setting.custom_webhooks
+    if not body.scriptId or not body.userId:
+        raise ValueError("账号 Webhook 须同时指定 scriptId 和 userId")
+    return Config.ScriptConfig[UUID(body.scriptId)].users[UUID(body.userId)].custom_webhooks
+
+
+def _webhook_error_code(error: Exception) -> int:
+    if isinstance(error, ValueError):
+        return 400
+    if isinstance(error, KeyError):
+        return 404
+    return 500
 
 
 # ==================== 全局设置 ====================
@@ -140,7 +158,7 @@ async def update_setting(body: SettingUpdateIn = Body(...)) -> OutBase:
 async def test_notify() -> OutBase:
     """测试通知：置位 ``Setting.notify.test`` 触发器。"""
     try:
-        Config.setting.notify.test = True
+        await Config.setting.update(Setting(notify={"test": True}))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -160,7 +178,7 @@ async def test_notify() -> OutBase:
 )
 async def get_webhook(body: WebhookGetIn = Body(...)) -> WebhookGetOut:
     try:
-        col = Config.setting.custom_webhooks
+        col = _webhook_collection(body)
         uids = [UUID(body.webhookId)] if body.webhookId else list(col.keys())
         return WebhookGetOut(
             order=[
@@ -171,7 +189,7 @@ async def get_webhook(body: WebhookGetIn = Body(...)) -> WebhookGetOut:
         )
     except Exception as e:
         return WebhookGetOut(
-            code=500,
+            code=_webhook_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             order=[],
@@ -186,15 +204,15 @@ async def get_webhook(body: WebhookGetIn = Body(...)) -> WebhookGetOut:
     response_model=WebhookCreateOut,
     status_code=200,
 )
-async def add_webhook() -> WebhookCreateOut:
+async def add_webhook(body: Annotated[WebhookInBase | None, Body()] = None) -> WebhookCreateOut:
     try:
-        col = Config.setting.custom_webhooks
+        col = _webhook_collection(body)
         uid = col.add(Webhook)
         await col.commit()
         return WebhookCreateOut(webhookId=str(uid), data=col[uid])
     except Exception as e:
         return WebhookCreateOut(
-            code=500,
+            code=_webhook_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             webhookId="",
@@ -211,12 +229,12 @@ async def add_webhook() -> WebhookCreateOut:
 )
 async def update_webhook(body: WebhookUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.setting.custom_webhooks[UUID(body.webhookId)].update(body.data)
+        await _webhook_collection(body)[UUID(body.webhookId)].update(body.data)
     except ConfigAggregateError as e:
         return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_webhook_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -230,12 +248,12 @@ async def update_webhook(body: WebhookUpdateIn = Body(...)) -> OutBase:
 )
 async def delete_webhook(body: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
-        col = Config.setting.custom_webhooks
+        col = _webhook_collection(body)
         col.remove(body.webhookId)
         await col.commit()
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_webhook_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -249,12 +267,12 @@ async def delete_webhook(body: WebhookDeleteIn = Body(...)) -> OutBase:
 )
 async def reorder_webhook(body: WebhookReorderIn = Body(...)) -> OutBase:
     try:
-        col = Config.setting.custom_webhooks
+        col = _webhook_collection(body)
         col.set_order(list(map(UUID, body.indexList)))
         await col.commit()
     except Exception as e:
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=_webhook_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
 
@@ -269,11 +287,12 @@ async def reorder_webhook(body: WebhookReorderIn = Body(...)) -> OutBase:
 async def test_webhook(body: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义 Webhook：激活 Body 冷态并置位 ``info.test`` 触发器。"""
     try:
+        _webhook_collection(body)
         webhook = body.data
         await webhook.activate()
-        webhook.info.test = True
+        await webhook.update(Webhook(info={"test": True}))
     except Exception as e:
-        return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
+        return OutBase(code=_webhook_error_code(e), status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
 
 

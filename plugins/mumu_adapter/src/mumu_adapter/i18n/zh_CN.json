@@ -1,3 +1,15 @@
 {
-  "plugins.mumu_adapter.game.display_name": "MuMu 模拟器"
+  "plugins.mumu_adapter.game.display_name": "MuMu 模拟器",
+  "plugins.mumu_adapter.config.MuMuGame.info.name.label": "模拟器名称",
+  "plugins.mumu_adapter.config.MuMuGame.info.name.tip": "用于在游戏管理和调度中识别此模拟器。",
+  "plugins.mumu_adapter.config.MuMuGame.info.path.label": "模拟器路径",
+  "plugins.mumu_adapter.config.MuMuGame.info.path.tip": "MuMuManager.exe 的完整路径，选择后会由后端校正。",
+  "plugins.mumu_adapter.config.MuMuGame.info.max_wait_time.tip": "启动或操作模拟器时允许等待的最长时间，单位为秒。",
+  "plugins.mumu_adapter.config.MuMuGame.info.force_kill.tip": "关闭时强制清理 MuMu 相关进程，可能影响其他实例。",
+  "plugins.mumu_adapter.config.MuMuDevice.info.index.label": "实例编号",
+  "plugins.mumu_adapter.display_name": "MuMu 适配",
+  "plugins.mumu_adapter.description": "MuMu 模拟器游戏适配",
+  "plugins.mumu_adapter.tags": "[\"游戏\", \"模拟器\", \"MuMu\"]",
+  "plugins.mumu_adapter.config.MuMuGame.info.max_wait_time.label": "最大等待时间",
+  "plugins.mumu_adapter.config.MuMuGame.info.force_kill.label": "强力关闭"
 }

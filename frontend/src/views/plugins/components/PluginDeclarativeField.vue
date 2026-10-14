@@ -1,109 +1,69 @@
 <script setup lang="ts">
-import SettingToggleButton from '@/components/SettingToggleButton.vue'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { message } from 'ant-design-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { ComponentHint } from '@/api'
+import DeclarativeControl from '@/components/DeclarativeControl.vue'
 import { configurationFieldSpan } from '@/utils/declarativeLayout'
+import { apiErrorMessage } from '@/utils/apiResult'
 
-export type DeclarativeHint = {
-  field?: string
-  component?: string
-  width?: number | null
-  editable?: boolean
-  secret?: boolean
-  min?: number | null
-  max?: number | null
-  options?: Array<{ value?: string }>
-  multiple?: boolean
-}
-
+export type DeclarativeHint = ComponentHint
 const props = defineProps<{
   group: string
+  namespace: string
   hint: DeclarativeHint
   value: unknown
+  options: Array<{ value: string; label: string }>
   loading?: boolean
+  disabled?: boolean
 }>()
-const emit = defineEmits<{ 'update:value': [value: unknown]; action: [] }>()
-const label = () => props.hint.field || ''
-const component = () => (props.hint.component || 'input').toLowerCase()
-const isBoolean = () =>
-  ['switch', 'checkbox', 'bool', 'boolean', 'toggle-button'].includes(component())
-const gridSpan = () => configurationFieldSpan(component(), props.hint.width)
+const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown] }>()
+const { t, te } = useI18n()
+const key = computed(() => `${props.namespace}.${props.group}.${props.hint.field}`)
+const label = computed(() =>
+  te(`${key.value}.label`) ? t(`${key.value}.label`) : props.hint.field || ''
+)
+const tip = computed(() => (te(`${key.value}.tip`) ? t(`${key.value}.tip`) : ''))
+const isAction = computed(() => ['button', 'dropdown-button'].includes(props.hint.component || ''))
+const update = (value: unknown) =>
+  isAction.value ? emit('action', value) : emit('update:value', value)
+const pick = async () => {
+  try {
+    const selected =
+      props.hint.path_kind === 'folder'
+        ? await window.electronAPI.selectFolder()
+        : (await window.electronAPI.selectFile())?.[0]
+    if (selected) emit('update:value', selected)
+  } catch (error) {
+    message.error(apiErrorMessage(error, t('emulator.toast.filePickerUnavailable')))
+  }
+}
 </script>
 
 <template>
   <div
     class="plugin-field form-grid-24__item form-item-vertical"
-    :style="{ '--field-span': gridSpan() }"
+    :style="{ '--field-span': configurationFieldSpan(hint.component) }"
   >
-    <a-button
-      v-if="component() === 'button' || component() === 'dropdown-button'"
-      :disabled="props.hint.editable === false"
+    <div class="form-label-wrapper">
+      <span class="form-label">{{ label }}</span>
+      <a-tooltip v-if="tip" :title="tip"><QuestionCircleOutlined class="help-icon" /></a-tooltip>
+    </div>
+    <DeclarativeControl
+      :component="hint.component"
+      :label="label"
+      :model-value="value"
+      :disabled="disabled || hint.editable === false || loading"
       :loading="loading"
-      @click="emit('action')"
-    >
-      {{ label() }}
-    </a-button>
-
-    <template v-else>
-      <label v-if="!isBoolean()" class="field-label">
-        {{ label() }}
-      </label>
-      <a-input
-        v-if="component() === 'input' || component() === 'path'"
-        :value="value"
-        :type="props.hint.secret ? 'password' : 'text'"
-        :disabled="props.hint.editable === false"
-        @update:value="emit('update:value', $event)"
-      />
-      <a-input-number
-        v-else-if="component() === 'number'"
-        :value="value as number | null | undefined"
-        :min="props.hint.min ?? undefined"
-        :max="props.hint.max ?? undefined"
-        :disabled="props.hint.editable === false"
-        style="width: 100%"
-        @update:value="emit('update:value', $event)"
-      />
-      <a-select
-        v-else-if="component() === 'select' || component() === 'ref-select'"
-        :value="value"
-        :options="
-          (props.hint.options || []).map(option => ({ value: option.value, label: option.value }))
-        "
-        :mode="props.hint.multiple ? 'multiple' : undefined"
-        :disabled="props.hint.editable === false"
-        @update:value="emit('update:value', $event)"
-      />
-      <div v-else-if="isBoolean()" class="toggle-field">
-        <label class="field-label">{{ label() }}</label>
-        <SettingToggleButton
-          :model-value="Boolean(value)"
-          :disabled="props.hint.editable === false || loading"
-          :loading="loading"
-          @change="emit('update:value', $event)"
-        />
-      </div>
-    </template>
+      :secret="hint.secret"
+      :path-kind="hint.path_kind"
+      :min="hint.min"
+      :max="hint.max"
+      :multiple="hint.multiple"
+      :options="options"
+      @update:model-value="update"
+      @pick="pick"
+    />
   </div>
 </template>
-
-<style scoped>
-.plugin-field {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.field-label {
-  color: var(--ant-color-text-secondary);
-}
-.toggle-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.toggle-field :deep(.setting-toggle-button) {
-  width: 100%;
-}
-.plugin-field :deep(.ant-select) {
-  width: 100%;
-}
-</style>

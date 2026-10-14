@@ -1,2 +1,2 @@
-project: emulator
-新增游戏管理入口并接入插件页面声明
+project: runtime
+迁移插件化管理与配置界面，修复调度和历史记录展示

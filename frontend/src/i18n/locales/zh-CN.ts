@@ -26,6 +26,7 @@ export default {
     unknown: '未知',
   },
   comp: {
+    webhookTestSubmitted: '测试请求已提交，请检查投递结果',
     changelog: {
       empty: '本版本暂无更新日志',
       loadFailed: '更新日志加载失败，可直接下载更新',
@@ -2689,6 +2690,21 @@ export default {
     bettergiProjectZoom: '缩放',
   },
   plugins: {
+    state: {
+      unloaded: '已卸载',
+      loaded: '已加载',
+      disabled: '已禁用',
+      enabled: '已启用',
+      fault_load: '加载失败',
+      fault_runtime: '运行异常',
+      loading: '正在加载',
+      enabling: '正在启用',
+      reloading: '正在重载',
+      disabling: '正在禁用',
+      unloading: '正在卸载',
+    },
+    source: { local: '本地', installed: '已安装', market: '插件市场', package: '软件包' },
+
     version: '{id} · 版本 {version}',
     pageMissing: '插件页面不存在',
     pageLoadFailed: '插件页面加载失败',
@@ -2707,7 +2723,7 @@ export default {
     marketEyebrow: '发现扩展',
     marketTitle: '插件市场',
     marketDescription: '配置市场源后，可以在这里查找并安装插件。',
-    marketEmpty: '插件市场暂不可用',
+    marketEmpty: '暂无可用插件',
     marketUnavailable: '插件市场暂不可用',
     refresh: '刷新',
     empty: '当前没有已加载的插件',
@@ -3209,6 +3225,7 @@ export default {
     },
   },
   history: {
+    cancelled: '已取消',
     title: '历史记录',
     dateList: '日期列表',
     noData: '无数据',

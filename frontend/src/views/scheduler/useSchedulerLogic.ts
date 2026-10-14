@@ -25,7 +25,7 @@ import {
   type WSTaskLogUpdatedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
-import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import type { SchedulerTaskOption } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
@@ -231,7 +231,7 @@ initTabCounter()
 
 // 任务选项
 const taskOptionsLoading = ref(false)
-const taskOptions = ref<ComboBoxItem[]>([])
+const taskOptions = ref<SchedulerTaskOption[]>([])
 const scriptOptionsMap = ref<Record<string, string>>({})
 
 // 电源操作状态（倒计时弹窗由全局组件 GlobalPowerCountdown.vue 处理）
@@ -530,11 +530,10 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
-  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
-  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
+  // 队列身份来自查询来源，不依赖可翻译的显示文案。
   const isQueueTask = (tab: SchedulerTab) => {
     const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
-    return Boolean(taskOption?.label.startsWith('队列 - '))
+    return taskOption?.kind === 'queue'
   }
 
   const loadScriptLabelMap = async () => {
@@ -777,7 +776,7 @@ export function useSchedulerLogic() {
         return false
       }
       const response = await Service.addTaskApiDispatchStartPost(
-        buildStartTaskRequest(taskId, selected.label.startsWith('队列 - '))
+        buildStartTaskRequest(taskId, selected.kind === 'queue')
       )
 
       if (response.code !== 200) {
@@ -1278,9 +1277,12 @@ export function useSchedulerLogic() {
       const queues = (queueResponse.order ?? []).flatMap(item => {
         const queue = queueResponse.data?.[item.uid]
         const name = queue?.info?.name
-        return typeof name === 'string' ? [{ label: `队列 - ${name}`, value: item.uid }] : []
+        return typeof name === 'string'
+          ? [{ label: `${t('comp.queue')} - ${name}`, value: item.uid, kind: 'queue' as const }]
+          : []
       })
       const scripts = (scriptResponse.data ?? []).map(item => ({
+        kind: 'script' as const,
         label: item.label,
         value: item.value,
       }))

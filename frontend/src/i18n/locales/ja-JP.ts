@@ -8,6 +8,27 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  plugins: {
+    state: {
+      unloaded: '未ロード',
+      loaded: 'ロード済み',
+      disabled: '無効',
+      enabled: '有効',
+      fault_load: 'ロード失敗',
+      fault_runtime: '実行エラー',
+      loading: 'ロード中',
+      enabling: '有効化中',
+      reloading: '再ロード中',
+      disabling: '無効化中',
+      unloading: 'アンロード中',
+    },
+    source: {
+      local: 'ローカル',
+      installed: 'インストール済み',
+      market: 'マーケット',
+      package: 'パッケージ',
+    },
+  },
   common: {
     viewPageDocs: 'このページのドキュメントを表示',
     language: '言語',
@@ -24,6 +45,7 @@ export default {
     unknown: '不明',
   },
   comp: {
+    webhookTestSubmitted: 'テストを送信しました。配信結果を確認してください',
     changelog: {
       empty: 'このバージョンの更新履歴はまだありません',
       loadFailed: '更新履歴の読み込みに失敗しました。更新のダウンロードは可能です',
@@ -2653,6 +2675,7 @@ export default {
     },
   },
   history: {
+    cancelled: 'キャンセル済み',
     title: '履歴',
     dateList: '日付一覧',
     noData: 'データなし',

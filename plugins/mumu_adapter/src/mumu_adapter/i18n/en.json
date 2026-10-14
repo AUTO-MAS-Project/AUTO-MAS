@@ -1,3 +1,15 @@
 {
-  "plugins.mumu_adapter.game.display_name": "MuMu Emulator"
+  "plugins.mumu_adapter.game.display_name": "MuMu Emulator",
+  "plugins.mumu_adapter.config.MuMuGame.info.name.label": "Name",
+  "plugins.mumu_adapter.config.MuMuGame.info.name.tip": "The name used to identify this emulator in game management and scheduling.",
+  "plugins.mumu_adapter.config.MuMuGame.info.path.label": "Path",
+  "plugins.mumu_adapter.config.MuMuGame.info.path.tip": "The full path to MuMuManager.exe. The backend may normalize the selected path.",
+  "plugins.mumu_adapter.config.MuMuGame.info.max_wait_time.tip": "The maximum time allowed for emulator operations, in seconds.",
+  "plugins.mumu_adapter.config.MuMuGame.info.force_kill.tip": "Force cleanup of MuMu processes when closing. Other instances may be affected.",
+  "plugins.mumu_adapter.config.MuMuDevice.info.index.label": "Instance index",
+  "plugins.mumu_adapter.display_name": "MuMu Adapter",
+  "plugins.mumu_adapter.description": "MuMu emulator game adapter",
+  "plugins.mumu_adapter.tags": "[\"game\", \"emulator\", \"mumu\"]",
+  "plugins.mumu_adapter.config.MuMuGame.info.max_wait_time.label": "Max wait time",
+  "plugins.mumu_adapter.config.MuMuGame.info.force_kill.label": "Force close"
 }

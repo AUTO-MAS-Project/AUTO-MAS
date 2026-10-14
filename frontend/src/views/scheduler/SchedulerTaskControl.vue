@@ -58,7 +58,7 @@
               style="width: 200px"
               :loading="userOptionsLoading"
               :options="userOptions"
-              :disabled="disabled || userOptionsLoading"
+              :disabled="disabled"
               allow-clear
               size="large"
               @change="onStartUserChange"
@@ -109,7 +109,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
-import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import type { SchedulerTaskOption } from './schedulerConstants'
 import { TaskMode } from '@/api/models/TaskMode'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 
@@ -123,7 +123,7 @@ const props = withDefaults(
     startUserId?: string | null
     userOptions?: Array<{ label: string; value: string }>
     userOptionsLoading?: boolean
-    taskOptions: ComboBoxItem[]
+    taskOptions: SchedulerTaskOption[]
     taskOptionsLoading: boolean
     status: string
     disabled?: boolean
@@ -169,7 +169,7 @@ const selectedTaskOption = computed(() =>
   props.taskOptions.find(item => item.value === localSelectedTaskId.value)
 )
 const showQueueCursor = computed(
-  () => props.status !== '运行' && Boolean(selectedTaskOption.value?.label.startsWith('队列 - '))
+  () => props.status !== '运行' && selectedTaskOption.value?.kind === 'queue'
 )
 const startDisabled = computed(
   () =>

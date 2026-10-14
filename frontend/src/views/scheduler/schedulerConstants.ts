@@ -1,9 +1,11 @@
 import { TaskMode } from '@/api/models/TaskMode'
+import type { ComboBoxItem } from '@/api'
 import { PowerIn } from '@/api/models/PowerIn'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
+export type SchedulerTaskOption = ComboBoxItem & { kind: 'queue' | 'script' }
 
 // 新增：任务总览数据类型
 export interface User {

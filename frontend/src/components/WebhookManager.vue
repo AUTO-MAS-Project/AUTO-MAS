@@ -39,6 +39,7 @@ const props = withDefaults(
     userId?: string | null
     mode?: 'global' | 'user'
     compact?: boolean
+    disabled?: boolean
     getPopupContainer?: () => HTMLElement
   }>(),
   {
@@ -47,6 +48,7 @@ const props = withDefaults(
     userId: null,
     mode: undefined,
     compact: false,
+    disabled: false,
     getPopupContainer: undefined,
   }
 )
@@ -79,18 +81,24 @@ const localWebhooks = computed({
   get: () => props.webhooks ?? [],
   set: value => emit('update:webhooks', value),
 })
+const remoteMode = computed(
+  () => props.mode === 'global' || Boolean(props.scriptId && props.userId)
+)
+const scope = computed(() =>
+  props.scriptId && props.userId ? { scriptId: props.scriptId, userId: props.userId } : {}
+)
 const displayWebhooks = computed(() =>
-  props.mode === 'global'
+  remoteMode.value
     ? apiWebhooks.value
     : localWebhooks.value.map(item => ({ ...item, uid: item.id, method: item.method ?? 'POST' }))
 )
 
-const toPayload = () => ({
+const toPayload = (): Webhook_Input => ({
   info: { name: formData.name, enabled: formData.enabled },
   data: {
     url: formData.url,
     template: formData.template,
-    method: formData.method,
+    method: formData.method as app__models__config__setting__Webhook__Data.method,
     headers: JSON.stringify(
       Object.fromEntries(
         formData.headersList.filter(item => item.key).map(item => [item.key, item.value])
@@ -125,8 +133,8 @@ const {
   execute: loadWebhooks,
 } = useApiQuery(
   async () => {
-    if (props.mode !== 'global') return
-    const response = await api.getWebhooks()
+    if (!remoteMode.value) return
+    const response = await api.getWebhooks(scope.value)
     const order = response.order ?? []
     const data = response.data ?? {}
     apiWebhooks.value = order.map(item =>
@@ -181,7 +189,7 @@ const toggle = async (item: WebhookItem, enabled: boolean) => {
   if (toggling.value[item.uid]) return
   toggling.value[item.uid] = true
   try {
-    await api.updateWebhook({ webhookId: item.uid, data: { info: { enabled } } })
+    await api.updateWebhook({ ...scope.value, webhookId: item.uid, data: { info: { enabled } } })
     item.enabled = enabled
   } catch (error) {
     message.error(apiErrorMessage(error, t('comp.couldNotSaveWebhook')))
@@ -189,25 +197,14 @@ const toggle = async (item: WebhookItem, enabled: boolean) => {
     toggling.value[item.uid] = false
   }
 }
-const asPayload = (
-  item: Pick<WebhookItem, 'name' | 'enabled' | 'url' | 'template' | 'method' | 'headers'>
-): Webhook_Input => ({
-  info: { name: item.name, enabled: item.enabled },
-  data: {
-    url: item.url,
-    template: item.template,
-    method: item.method as app__models__config__setting__Webhook__Data.method,
-    headers: JSON.stringify(item.headers ?? {}),
-  },
-})
 const deleteWebhook = (item: WebhookItem) =>
   Modal.confirm({
     title: t('comp.confirmDeletion'),
     okType: 'danger',
     onOk: async () => {
       try {
-        if (props.mode === 'global') {
-          await api.deleteWebhook(item.uid)
+        if (remoteMode.value) {
+          await api.deleteWebhook(item.uid, scope.value)
           await loadWebhooks()
         } else {
           localWebhooks.value = localWebhooks.value.filter(value => value.id !== item.uid)
@@ -223,12 +220,12 @@ const testWebhook = async (item: WebhookItem) => {
   if (testing.value[item.uid]) return
   testing.value[item.uid] = true
   try {
-    if (props.mode !== 'global') {
+    if (!remoteMode.value) {
       message.info(t('comp.test'))
       return
     }
-    await api.testWebhook({ data: asPayload(item) })
-    message.success(t('comp.webhookP0TestedSuccessfully', { p0: item.name }))
+    await api.updateWebhook({ ...scope.value, webhookId: item.uid, data: { info: { test: true } } })
+    message.success(t('comp.webhookTestSubmitted'))
   } catch (error) {
     message.error(apiErrorMessage(error, t('comp.webhookTestFailedP0')))
   } finally {
@@ -238,7 +235,7 @@ const testWebhook = async (item: WebhookItem) => {
 const submit = async () => {
   submitting.value = true
   try {
-    if (props.mode !== 'global') {
+    if (!remoteMode.value) {
       const value: CustomWebhook = {
         id: formData.uid || `webhook_${Date.now()}`,
         name: formData.name,
@@ -258,10 +255,10 @@ const submit = async () => {
       return
     }
     if (!formData.uid) {
-      const created = await api.addWebhook()
+      const created = await api.addWebhook(scope.value)
       formData.uid = created.webhookId ?? ''
     }
-    await api.updateWebhook({ webhookId: formData.uid, data: toPayload() as Webhook_Input })
+    await api.updateWebhook({ ...scope.value, webhookId: formData.uid, data: toPayload() })
     modalVisible.value = false
     await loadWebhooks()
     message.success(t(isEditing.value ? 'comp.webhookUpdated' : 'comp.webhookAdded'))
@@ -289,7 +286,7 @@ watch(
   <div class="webhook-manager" :class="{ compact }">
     <div v-if="!compact" class="webhook-header">
       <h3>{{ t('comp.customWebhooks') }}</h3>
-      <a-button type="primary" @click="showAddModal"
+      <a-button type="primary" :disabled="disabled || loading" @click="showAddModal"
         ><PlusOutlined />{{ t('comp.addWebhook') }}</a-button
       >
     </div>
@@ -308,20 +305,29 @@ watch(
         </div>
         <div class="webhook-actions">
           <SettingToggleButton
+            size="small"
             :model-value="item.enabled"
-            :disabled="toggling[item.uid]"
+            :disabled="disabled || toggling[item.uid]"
             :loading="toggling[item.uid]"
-            @change="
-              next => (props.mode === 'global' ? toggle(item, next) : saveLocalToggle(item, next))
-            "
+            @change="next => (remoteMode ? toggle(item, next) : saveLocalToggle(item, next))"
           />
-          <a-button type="text" :loading="testing[item.uid]" @click="testWebhook(item)"
+          <a-button
+            type="text"
+            size="small"
+            :loading="testing[item.uid]"
+            :disabled="disabled"
+            @click="testWebhook(item)"
             ><PlayCircleOutlined />{{ t('comp.test') }}</a-button
           >
-          <a-button type="text" @click="editWebhook(item)"
+          <a-button type="text" size="small" :disabled="disabled" @click="editWebhook(item)"
             ><EditOutlined />{{ t('comp.edit') }}</a-button
           >
-          <a-button type="text" danger @click="deleteWebhook(item)"
+          <a-button
+            type="text"
+            size="small"
+            danger
+            :disabled="disabled"
+            @click="deleteWebhook(item)"
             ><DeleteOutlined />{{ t('comp.delete') }}</a-button
           >
         </div>
@@ -330,7 +336,12 @@ watch(
     <a-empty v-else-if="!loadError" :description="t('comp.noCustomWebhooks')"
       ><template #image><ApiOutlined /></template
     ></a-empty>
-    <a-button v-if="compact" type="dashed" class="add-hook" @click="showAddModal"
+    <a-button
+      v-if="compact"
+      type="dashed"
+      class="add-hook"
+      :disabled="disabled || loading"
+      @click="showAddModal"
       ><PlusOutlined />{{ t('comp.addWebhook') }}</a-button
     >
     <a-modal

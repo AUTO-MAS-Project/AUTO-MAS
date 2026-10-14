@@ -4,6 +4,14 @@
 /* eslint-disable */
 export type WebhookReorderIn = {
     /**
+     * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
+     */
+    scriptId?: (string | null);
+    /**
+     * 所属用户ID, 获取全局设置的Webhook数据时无需携带
+     */
+    userId?: (string | null);
+    /**
      * 按新顺序排列的 Webhook UID 列表
      */
     indexList: Array<string>;

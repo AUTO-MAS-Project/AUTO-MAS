@@ -5,6 +5,14 @@
 import type { Webhook_Input } from './Webhook_Input';
 export type WebhookUpdateIn = {
     /**
+     * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
+     */
+    scriptId?: (string | null);
+    /**
+     * 所属用户ID, 获取全局设置的Webhook数据时无需携带
+     */
+    userId?: (string | null);
+    /**
      * Webhook ID
      */
     webhookId: string;

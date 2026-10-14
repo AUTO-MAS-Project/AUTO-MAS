@@ -212,7 +212,11 @@ const logo = (script: ManagedScript) =>
                 <div class="user-info">
                   <div class="user-name-section">
                     <span class="user-name">{{ user.info.name || user.type }}</span>
-                    <a-tag v-if="user.info.server" color="blue">{{ te(`scripts.option.${user.info.server}`) ? t(`scripts.option.${user.info.server}`) : user.info.server }}</a-tag>
+                    <a-tag v-if="user.info.server" color="blue">{{
+                      te(`scripts.option.${user.info.server}`)
+                        ? t(`scripts.option.${user.info.server}`)
+                        : user.info.server
+                    }}</a-tag>
                     <a-button
                       v-for="field in ['account_id', 'password'].filter(
                         field => field in user.info

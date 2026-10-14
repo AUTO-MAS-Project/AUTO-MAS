@@ -5155,7 +5155,7 @@ PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConf
 
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
-    status: Literal["DONE", "ERROR"] = Field(..., description="状态")
+    status: Literal["DONE", "ERROR", "CANCELLED"] = Field(..., description="状态")
     jsonFile: str = Field(..., description="对应JSON文件")
     result: Optional[str] = Field(
         default=None, description="运行结果文本，可能带运行阶段前缀"

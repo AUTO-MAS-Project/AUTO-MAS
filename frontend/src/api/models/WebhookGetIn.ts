@@ -4,6 +4,14 @@
 /* eslint-disable */
 export type WebhookGetIn = {
     /**
+     * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
+     */
+    scriptId?: (string | null);
+    /**
+     * 所属用户ID, 获取全局设置的Webhook数据时无需携带
+     */
+    userId?: (string | null);
+    /**
      * Webhook ID；缺省返回全部
      */
     webhookId?: (string | null);

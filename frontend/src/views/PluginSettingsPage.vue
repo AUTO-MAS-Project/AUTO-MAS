@@ -21,6 +21,7 @@ const api = usePluginApi()
 const saving = ref(false)
 const runningKey = ref<string | null>(null)
 const title = ref('')
+const pluginName = ref('')
 const values = reactive<Record<string, Record<string, unknown>>>({})
 const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
 
@@ -41,22 +42,18 @@ const {
     const record = (registry.data || {})[pluginId.value] as Record<string, unknown> | undefined
     const info = record?.info as Record<string, unknown> | undefined
     title.value = String(info?.display_name || info?.plugin_name || pluginId.value)
+    pluginName.value = String(info?.plugin_name || '')
     for (const key of Object.keys(values)) delete values[key]
     const data =
       config.data && typeof config.data === 'object' ? (config.data as Record<string, unknown>) : {}
-    const ui =
-      record?.ui && typeof record.ui === 'object' ? (record.ui as Record<string, unknown>) : {}
-    const hintsMap =
-      ui.hints && typeof ui.hints === 'object'
-        ? (ui.hints as Record<string, DeclarativeHint[]>)
-        : {}
     const configUi =
       data.ui && typeof data.ui === 'object' ? (data.ui as Record<string, unknown>) : {}
     const configHints =
       configUi.hints && typeof configUi.hints === 'object'
         ? (configUi.hints as Record<string, DeclarativeHint[]>)
         : {}
-    const resolvedHints = Object.keys(hintsMap).length ? hintsMap : configHints
+    // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
+    const resolvedHints = configHints
     groups.value = Object.entries(resolvedHints).map(([name, hints]) => ({
       name,
       hints: Array.isArray(hints) ? hints : [],
@@ -82,6 +79,7 @@ const save = async () => {
   try {
     await api.updateConfig({ recordId: pluginId.value, data: values })
     message.success(t('plugins.saved'))
+    await load()
   } catch (error) {
     message.error(errorMessage(error))
   } finally {
@@ -89,15 +87,15 @@ const save = async () => {
   }
 }
 
-const runAction = async (group: string, hint: DeclarativeHint) => {
+const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
   const field = hint.field
   if (!field || runningKey.value || saving.value) return
   runningKey.value = `${group}.${field}`
   try {
-    const result =
-      group === 'info'
-        ? await api.updateRegistry({ recordId: pluginId.value, data: { info: { [field]: true } } })
-        : await api.updateConfig({ recordId: pluginId.value, data: { [group]: { [field]: true } } })
+    const result = await api.updateConfig({
+      recordId: pluginId.value,
+      data: { [group]: { [field]: value } },
+    })
     message.success(result.message || t('plugins.actionComplete'))
     await load()
   } catch (error) {
@@ -137,6 +135,9 @@ watch(pluginId, load, { immediate: true })
         <PluginDeclarativeForm
           v-else
           :groups="groups"
+          :uid="pluginId"
+          :namespace="`plugins.${pluginName}.config`"
+          :disabled="saving || runningKey !== null"
           :values="values"
           :running-key="runningKey"
           @update:value="updateValue"

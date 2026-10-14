@@ -53,10 +53,6 @@ if (
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
-// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
-bootstrapRealtimeResidents()
-initializeAppLifecycle()
-
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {
   window.electronAPI
@@ -87,6 +83,10 @@ app.use(createPinia())
 app.use(Antd)
 app.use(router)
 app.use(i18n)
+
+// Pinia 就绪后登记常驻资源，仍早于首个主 WebSocket 连接。
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {

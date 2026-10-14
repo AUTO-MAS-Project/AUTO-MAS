@@ -11,6 +11,7 @@ import {
   disposeTaskRuntimeState,
 } from '@/composables/useTaskRuntimeState'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
+import { bootstrapBackendI18n, disposeBackendI18n } from '@/stores/backendI18n'
 import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
@@ -25,6 +26,10 @@ let registered = false
  */
 export function bootstrapRealtimeResidents(): void {
   if (!registered) {
+    registerResidentResource('backend-i18n', {
+      bootstrap: bootstrapBackendI18n,
+      dispose: disposeBackendI18n,
+    })
     registerResidentResource('task-runtime', {
       bootstrap: bootstrapTaskRuntimeState,
       dispose: disposeTaskRuntimeState,

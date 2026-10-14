@@ -20,7 +20,7 @@
     >
       <div class="sider-content">
         <a-menu
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           :items="mainMenuItems"
@@ -29,7 +29,7 @@
         <!-- 测试路由分隔区域 -->
         <a-menu
           v-if="isDevelopment"
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="dev-menu"
@@ -37,7 +37,7 @@
           @click="onMenuClick"
         />
         <a-menu
-          v-model:selected-keys="selectedKeys"
+          :selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"
@@ -49,6 +49,11 @@
 
     <a-layout style="flex: 1; min-width: 0; background: transparent">
       <a-layout-content class="content-area">
+        <ApiRetryAlert
+          :error="languageResources.error"
+          :loading="languageResources.loading"
+          @retry="languageResources.refresh"
+        />
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
             <component :is="Component" :key="currentRoute.path" />
@@ -83,8 +88,11 @@ import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
+import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
+import { useBackendI18nStore } from '@/stores/backendI18n'
 
 const { t } = useI18n()
+const languageResources = useBackendI18nStore()
 
 const SIDER_WIDTH = 160
 

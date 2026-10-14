@@ -161,6 +161,7 @@ class HistoryStore:
                         continue
                     date_label = parsed.strftime("%Y-%m-%d %H:%M:%S")
                     ok = rec.get("status") == "success"
+                    cancelled = rec.get("status") == "cancelled"
                     result_text = rec.get("message") or rec.get("result") or ""
                     if not result_text and isinstance(rec.get("data"), dict):
                         result_text = next(
@@ -174,7 +175,7 @@ class HistoryStore:
                     bucket["index"].append(
                         {
                             "date": date_label,
-                            "status": "DONE" if ok else "ERROR",
+                            "status": "DONE" if ok else "CANCELLED" if cancelled else "ERROR",
                             "jsonFile": str(json_path),
                             # Preserve the result text consumed by the history UI.
                             "result": str(result_text),
@@ -186,7 +187,7 @@ class HistoryStore:
                             if k in bucket["data"]
                             else v
                         )
-                    if not ok:
+                    if not ok and not cancelled:
                         bucket["error_info"][date_label] = str(rec.get("message") or "")
 
         return {

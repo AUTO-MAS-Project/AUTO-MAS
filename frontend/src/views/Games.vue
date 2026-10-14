@@ -23,6 +23,7 @@ import { apiErrorMessage } from '@/utils/apiResult'
 import { useApiQuery } from '@/composables/useApiQuery'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { configurationFieldSpan } from '@/utils/declarativeLayout'
+import { useConfigI18n } from '@/composables/useConfigI18n'
 
 type Dict = Record<string, unknown>
 type Hint = {
@@ -39,6 +40,7 @@ type Entry = Dict & { uid: string; type: string; info: Dict; action: Dict; devic
 type SearchRow = { uid: string; name?: string; type?: string }
 
 const { t } = useI18n()
+const { fieldText } = useConfigI18n()
 const api = useGameManagementApi()
 const saving = ref<string | null>(null)
 const deviceSaving = ref<string | null>(null)
@@ -62,7 +64,7 @@ const fieldTranslations: Record<string, () => string> = {
   create_instance: () => t('emulator.createInstance'),
 }
 
-const fieldHelp = (field: string) => {
+const fieldHelp = (field: string, entry?: Entry) => {
   const key = (
     {
       name: 'emulator.fieldHelp.name',
@@ -71,7 +73,7 @@ const fieldHelp = (field: string) => {
       force_kill: 'emulator.fieldHelp.forceKill',
     } as Record<string, string>
   )[field]
-  return key ? t(key) : null
+  return fieldText(entry?.type || '', 'info', field, 'tip', key ? t(key) : '') || null
 }
 
 const actionLabel = (field: string) => {
@@ -104,14 +106,16 @@ const actionIcon = (field: string) =>
     delete_instance: DeleteOutlined,
   })[field] || SettingOutlined
 
-const fieldLabel = (field: string) => {
+const fieldLabel = (field: string, entry?: Entry) => {
   const translated = fieldTranslations[field]?.()
-  if (translated) return translated
+  if (translated) return fieldText(entry?.type || '', 'info', field, 'label', translated)
   const key = `emulator.${field}`
   const localized = t(key)
-  return localized === key
-    ? field.replace(/_/g, ' ').replace(/(^|\s)\w/g, (char: string) => char.toUpperCase())
-    : localized
+  const fallback =
+    localized === key
+      ? field.replace(/_/g, ' ').replace(/(^|\s)\w/g, (char: string) => char.toUpperCase())
+      : localized
+  return fieldText(entry?.type || '', 'info', field, 'label', fallback)
 }
 
 const statusText = (value: unknown) => {
@@ -165,6 +169,7 @@ const setValue = async (entry: Entry, section: string, field: string, value: unk
   saving.value = `${entry.uid}:${section}:${field}`
   try {
     await api.updateGame({ gameId: entry.uid, data: { [section]: { [field]: value } } })
+    await load()
     return true
   } catch (error) {
     entry[section] = { ...(entry[section] as Dict), [field]: previous }
@@ -401,17 +406,17 @@ onMounted(load)
                   :style="{ '--field-span': fieldSpan(hint) }"
                 >
                   <div class="form-label-wrapper">
-                    <span class="form-label">{{ fieldLabel(hint.field || '') }}</span>
+                    <span class="form-label">{{ fieldLabel(hint.field || '', entry) }}</span>
                     <a-tooltip
-                      v-if="fieldHelp(hint.field || '')"
-                      :title="fieldHelp(hint.field || '')"
+                      v-if="fieldHelp(hint.field || '', entry)"
+                      :title="fieldHelp(hint.field || '', entry)"
                     >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </div>
                   <DeclarativeControl
                     :component="hint.component"
-                    :label="fieldLabel(hint.field || '')"
+                    :label="fieldLabel(hint.field || '', entry)"
                     :model-value="valueFor(entry, 'info', hint.field || '')"
                     :disabled="
                       hint.editable === false || saving === `${entry.uid}:info:${hint.field}`

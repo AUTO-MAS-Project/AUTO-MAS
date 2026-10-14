@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpenOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import SettingToggleButton from './SettingToggleButton.vue'
 
 type ControlKind =
@@ -105,15 +105,15 @@ const selectOption = (key: string | number) => {
     >
       {{ label || t('common.confirm') }}
     </a-button>
-    <a-dropdown-button
+    <a-dropdown
       v-else-if="kind === 'dropdown-button'"
       class="declarative-control__dropdown"
-      size="large"
-      :disabled="disabled"
-      :loading="loading"
-      @click="update(true)"
+      :trigger="['click']"
+      :disabled="disabled || loading || !options.length"
     >
-      {{ label || t('common.confirm') }}
+      <a-button block size="large" :disabled="disabled || !options.length" :loading="loading">
+        {{ label || t('common.confirm') }} <DownOutlined />
+      </a-button>
       <template #overlay>
         <a-menu @click="selectOption($event.key)">
           <a-menu-item v-for="option in options" :key="String(option.value)">
@@ -121,7 +121,7 @@ const selectOption = (key: string | number) => {
           </a-menu-item>
         </a-menu>
       </template>
-    </a-dropdown-button>
+    </a-dropdown>
     <a-input-password
       v-else-if="kind === 'input' && secret"
       size="large"

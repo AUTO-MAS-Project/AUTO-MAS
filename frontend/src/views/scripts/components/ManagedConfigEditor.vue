@@ -5,8 +5,10 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { ComponentHint } from '@/api'
 import DeclarativeControl from '@/components/DeclarativeControl.vue'
+import WebhookManager from '@/components/WebhookManager.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
+import { useConfigI18n } from '@/composables/useConfigI18n'
 import GeneralConfigModeSelector from '@/components/GeneralConfigModeSelector.vue'
 import { configurationFieldSpan } from '@/utils/declarativeLayout'
 import type { ConfigData, ManagedScript, ManagedUser } from '../managedScriptTypes'
@@ -28,6 +30,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ back: []; configure: [] }>()
 const { t, te } = useI18n()
+const { fieldText, text: configText } = useConfigI18n()
 const drafts = reactive<Record<string, unknown>>({})
 const target = computed(() => props.user ?? props.script)
 const { optionsFor: declaredOptions, stateFor } = useDeclarativeOptions(target)
@@ -41,8 +44,14 @@ const valueFor = (section: string, field: string) => {
   if (Object.prototype.hasOwnProperty.call(drafts, key)) return drafts[key]
   return (target.value[section] as ConfigData | undefined)?.[field]
 }
-const labelFor = (field: string) =>
-  te(`scripts.field.${field}`) ? t(`scripts.field.${field}`) : field.replace(/_/g, ' ')
+const labelFor = (field: string, section = 'info') =>
+  fieldText(
+    target.value.type,
+    section,
+    field,
+    'label',
+    te(`scripts.field.${field}`) ? t(`scripts.field.${field}`) : field.replace(/_/g, ' ')
+  )
 const sectionFor = (section: string) => {
   const keys: Record<string, string> = {
     info: 'scripts.configTitle',
@@ -90,10 +99,12 @@ const displayValue = (value: unknown) =>
 const optionsFor = (section: string, hint: ComponentHint) =>
   declaredOptions(section, hint).map(option => ({
     ...option,
-    label:
-      !hint.endpoint && te(`scripts.option.${option.value}`)
-        ? t(`scripts.option.${option.value}`)
-        : option.label,
+    label: !hint.endpoint
+      ? configText(
+          `${target.value.type}.${section}.${hint.field}.options.${option.value}`,
+          te(`scripts.option.${option.value}`) ? t(`scripts.option.${option.value}`) : option.label
+        )
+      : option.label,
   }))
 const configModeOptions = computed(() => [
   {
@@ -144,8 +155,14 @@ const editHints = (hints: ComponentHint[]) =>
       hint.field !== 'if_quick_config' &&
       hint.field !== 'tags'
   )
-const hintTip = (field: string) =>
-  te(`scripts.fieldTip.${field}`) ? t(`scripts.fieldTip.${field}`) : ''
+const hintTip = (field: string, section = 'info') =>
+  fieldText(
+    target.value.type,
+    section,
+    field,
+    'tip',
+    te(`scripts.fieldTip.${field}`) ? t(`scripts.fieldTip.${field}`) : ''
+  )
 </script>
 
 <template>
@@ -198,8 +215,10 @@ const hintTip = (field: string) =>
             :style="{ '--field-span': configurationFieldSpan(hint.component) }"
           >
             <div class="form-label-wrapper">
-              <span class="form-label">{{ labelFor(hint.field ?? '') }}</span
-              ><a-tooltip v-if="hintTip(hint.field ?? '')" :title="hintTip(hint.field ?? '')"
+              <span class="form-label">{{ labelFor(hint.field ?? '', section) }}</span
+              ><a-tooltip
+                v-if="hintTip(hint.field ?? '', section)"
+                :title="hintTip(hint.field ?? '', section)"
                 ><QuestionCircleOutlined class="help-icon"
               /></a-tooltip>
             </div>
@@ -209,7 +228,7 @@ const hintTip = (field: string) =>
             <DeclarativeControl
               v-else
               :component="hint.component"
-              :label="labelFor(hint.field ?? '')"
+              :label="labelFor(hint.field ?? '', section)"
               :model-value="valueFor(section, hint.field ?? '')"
               :disabled="busy || pending[keyFor(section, hint.field ?? '')]"
               :loading="
@@ -233,6 +252,13 @@ const hintTip = (field: string) =>
           </div>
         </div>
       </a-form>
+      <WebhookManager
+        v-if="user && section === 'notify'"
+        mode="user"
+        :script-id="script.uid"
+        :user-id="user.uid"
+        :disabled="busy || hints.every(hint => hint.editable === false)"
+      />
     </section>
   </a-card>
 </template>

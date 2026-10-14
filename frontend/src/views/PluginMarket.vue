@@ -73,14 +73,12 @@ onMounted(load)
 <template>
   <main class="plugins-page">
     <PageHeader :title="t('plugins.marketTitle')">
-      <template #leading
+      <template #actions
         ><a-button
           type="text"
           :aria-label="t('plugins.back')"
           @click="router.push({ name: 'Plugins' })"
           ><ArrowLeftOutlined /></a-button
-      ></template>
-      <template #actions
         ><a-button :loading="refreshing" @click="refresh"
           ><template #icon><ReloadOutlined /></template>{{ t('plugins.refresh') }}</a-button
         ></template
@@ -88,7 +86,13 @@ onMounted(load)
     </PageHeader>
     <PageSurface>
       <ApiRetryAlert :error="loadError" :loading="loading" @retry="load" />
-      <a-table :data-source="rows" :loading="loading" row-key="uid" :pagination="false">
+      <a-table
+        v-if="rows.length || loading"
+        :data-source="rows"
+        :loading="loading"
+        row-key="uid"
+        :pagination="false"
+      >
         <a-table-column key="name" :title="t('plugins.attribute.name')"
           ><template #default="{ record }">{{
             record.info.display_name || record.info.plugin_name || record.uid

@@ -23,7 +23,7 @@ type PluginRow = {
   info: Record<string, unknown>
   ui: Record<string, unknown>
 }
-const { t } = useI18n()
+const { t, te } = useI18n()
 const api = usePluginApi()
 const rows = ref<PluginRow[]>([])
 const expandedRowKeys = ref<string[]>([])
@@ -41,10 +41,30 @@ const normalize = (uid: string, value: PluginRecord): PluginRow => {
     ui: source.ui && typeof source.ui === 'object' ? (source.ui as Record<string, unknown>) : {},
   }
 }
+const pluginText = (row: PluginRow, field: string, fallback: string) => {
+  const key = `plugins.${row.info.plugin_name}.${field}`
+  return te(key) ? t(key) : fallback
+}
 const pluginName = (row: PluginRow) =>
-  String(row.info.display_name || row.info.plugin_name || row.uid)
+  pluginText(row, 'display_name', String(row.info.display_name || row.info.plugin_name || row.uid))
 const status = (row: PluginRow) => String(row.info.state || 'unloaded')
-const tags = (row: PluginRow) => (Array.isArray(row.info.tags) ? row.info.tags : [])
+const tags = (row: PluginRow) => {
+  const key = `plugins.${row.info.plugin_name}.tags`
+  if (te(key)) {
+    try {
+      const value: unknown = JSON.parse(t(key))
+      if (Array.isArray(value)) return value.filter(item => typeof item === 'string')
+    } catch {
+      /* 缺失或不合法的词条回退到注册信息。 */
+    }
+  }
+  return Array.isArray(row.info.tags) ? row.info.tags : []
+}
+const enumText = (kind: string, value: unknown) => {
+  const key = `plugins.${kind}.${value}`
+  const text = t(key)
+  return text === key ? String(value || '-') : text
+}
 const listValue = (value: unknown) =>
   Array.isArray(value) ? value.join(', ') : String(value || '-')
 const textValue = (value: unknown) =>
@@ -156,7 +176,11 @@ onMounted(load)
               <a class="plugin-name" @click="toggleExpanded(record.uid)">{{ pluginName(record) }}</a
               ><span class="plugin-id">{{ record.info.package_name || record.uid }}</span
               ><span class="plugin-description">{{
-                record.info.description || t('plugins.noDescription')
+                pluginText(
+                  record,
+                  'description',
+                  String(record.info.description || t('plugins.noDescription'))
+                )
               }}</span>
             </div></template
           >
@@ -171,7 +195,9 @@ onMounted(load)
         >
         <a-table-column key="state" :title="t('plugins.attribute.status')" :width="120"
           ><template #default="{ record }"
-            ><a-tag :color="statusColor(status(record))">{{ status(record) }}</a-tag></template
+            ><a-tag :color="statusColor(status(record))">{{
+              enumText('state', status(record))
+            }}</a-tag></template
           ></a-table-column
         >
         <a-table-column key="version" :title="t('plugins.attribute.version')" :width="120"
@@ -181,7 +207,7 @@ onMounted(load)
         >
         <a-table-column key="source" :title="t('plugins.attribute.source')" :width="120"
           ><template #default="{ record }">{{
-            record.info.source || '-'
+            enumText('source', record.info.source)
           }}</template></a-table-column
         >
         <a-table-column key="error" :title="t('plugins.attribute.error')"

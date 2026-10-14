@@ -116,6 +116,7 @@ import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
@@ -834,13 +835,21 @@ export class Service {
     }
     /**
      * 添加webhook项
+     * @param requestBody
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(
+        requestBody?: (WebhookInBase | null),
+    ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

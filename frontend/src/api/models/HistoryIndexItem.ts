@@ -27,6 +27,7 @@ export namespace HistoryIndexItem {
     export enum status {
         DONE = 'DONE',
         ERROR = 'ERROR',
+        CANCELLED = 'CANCELLED',
     }
 }
 

@@ -8,6 +8,7 @@ import DeclarativeControl from '@/components/DeclarativeControl.vue'
 import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
 import { settingsViewKey } from '@/types/settings'
 import { configurationFieldSpan } from '@/utils/declarativeLayout'
+import { useConfigI18n } from '@/composables/useConfigI18n'
 
 type Option = { value: string | number | boolean; label: string }
 
@@ -43,6 +44,7 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
+const { fieldText, text: configText } = useConfigI18n()
 
 const drafts = reactive<Record<string, unknown>>({})
 const pending = reactive<Record<string, boolean>>({})
@@ -79,11 +81,11 @@ const fieldValue = (field: string) =>
 
 const labelFor = (field: string) => {
   const key = props.labelKeys[field]
-  return key ? t(key) : field
+  return fieldText('Setting', props.group, field, 'label', key ? t(key) : field)
 }
 const tipFor = (field: string) => {
   const key = props.tipKeys[field]
-  return key ? t(key) : undefined
+  return fieldText('Setting', props.group, field, 'tip', key ? t(key) : '') || undefined
 }
 
 const coerceOption = (field: string, value: string | number | boolean) => {
@@ -100,7 +102,10 @@ const optionsFor = (hint: ComponentHint): Option[] => {
     const optionLabel = props.optionLabels[field]?.[value]
     return {
       value: coerceOption(field, value),
-      label: optionLabel ? t(optionLabel) : value,
+      label: configText(
+        `Setting.${props.group}.${field}.options.${value}`,
+        optionLabel ? t(optionLabel) : value
+      ),
     }
   })
 }

@@ -34,23 +34,40 @@
           }"
           @click="$emit('select', index, record)"
         >
-          <div class="record-status-bar" :class="record.status === 'DONE' ? 'success' : 'error'" />
+          <div
+            class="record-status-bar"
+            :class="
+              record.status === 'DONE'
+                ? 'success'
+                : record.status === 'CANCELLED'
+                  ? 'cancelled'
+                  : 'error'
+            "
+          />
           <div class="record-content">
             <div class="record-main">
               <span class="record-time">{{ formatRecordTime(record.date) }}</span>
               <a-tag
-                :color="record.status === 'DONE' ? 'success' : 'error'"
+                :color="
+                  record.status === 'DONE'
+                    ? 'success'
+                    : record.status === 'CANCELLED'
+                      ? 'default'
+                      : 'error'
+                "
                 size="small"
                 class="status-tag"
               >
                 <CheckCircleOutlined v-if="record.status === 'DONE'" />
-                <CloseCircleOutlined v-else />
+                <CloseCircleOutlined v-else-if="record.status !== 'CANCELLED'" />
                 {{
                   record.status === 'DONE'
                     ? record.result || t('history.done')
-                    : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
-                      ? t('history.failedWith', { error: errorInfo[record.date] })
-                      : t('history.failed')
+                    : record.status === 'CANCELLED'
+                      ? t('history.cancelled')
+                      : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
+                        ? t('history.failedWith', { error: errorInfo[record.date] })
+                        : t('history.failed')
                 }}
               </a-tag>
             </div>
@@ -244,6 +261,10 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
 
 .record-status-bar.error {
   background: var(--ant-color-error);
+}
+
+.record-status-bar.cancelled {
+  background: var(--ant-color-text-tertiary);
 }
 
 .record-content {

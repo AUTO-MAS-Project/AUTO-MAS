@@ -16,19 +16,28 @@ import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookInBase } from '../models/WebhookInBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class AddService {
     /**
      * 添加webhook项
+     * @param requestBody
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(
+        requestBody?: (WebhookInBase | null),
+    ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

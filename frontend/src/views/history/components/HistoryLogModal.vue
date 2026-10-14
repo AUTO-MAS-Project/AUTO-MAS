@@ -19,8 +19,23 @@
               <span class="header-title">{{ t('history.log.title') }}</span>
               <span class="header-subtitle">{{ recordDate }}</span>
             </div>
-            <a-tag :color="recordStatus === 'DONE' ? 'success' : 'error'" size="small">
-              {{ recordStatus === 'DONE' ? t('history.done') : t('history.failed') }}
+            <a-tag
+              :color="
+                recordStatus === 'DONE'
+                  ? 'success'
+                  : recordStatus === 'CANCELLED'
+                    ? 'default'
+                    : 'error'
+              "
+              size="small"
+            >
+              {{
+                recordStatus === 'DONE'
+                  ? t('history.done')
+                  : recordStatus === 'CANCELLED'
+                    ? t('history.cancelled')
+                    : t('history.failed')
+              }}
             </a-tag>
           </div>
 
