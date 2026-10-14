@@ -127,7 +127,7 @@ async def import_script_config_dir(script_id: str, user_id: str) -> Path:
 
     Raises:
         TypeError: 脚本不是 OK-WW 类型。
-        ValueError: 账号 ID 无效、不存在或使用原生来源。
+        ValueError: 账号 ID 无效、不存在、使用原生来源或未设置脚本路径。
         FileNotFoundError: 脚本目录下没有可用的 OK-WW 配置。
         RuntimeError: 导入失败（已尝试回滚到导入前的配置）。
     """
@@ -151,9 +151,10 @@ async def import_script_config_dir(script_id: str, user_id: str) -> Path:
     if base == BASE_NATIVE:
         raise ValueError("原生来源直接使用 OK-WW 原有配置，不支持导入")
 
-    source_config_dir = (
-        Path(script_config.get("Info", "RootPath")).expanduser() / _OKWW_REL_CONFIG_DIR
-    )
+    root_path = str(script_config.get("Info", "RootPath") or "").strip()
+    if not root_path:
+        raise ValueError("请先设置 OK-WW 脚本路径")
+    source_config_dir = Path(root_path).expanduser() / _OKWW_REL_CONFIG_DIR
     if not source_config_dir.is_dir() or not any(
         item.is_file() for item in source_config_dir.rglob("*")
     ):
