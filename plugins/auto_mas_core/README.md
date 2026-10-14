@@ -10,6 +10,7 @@ from auto_mas_core.utils import get_logger, ProcessManager
 from auto_mas_core.services import Notify  # 宿主业务服务
 from auto_mas_core.plugin import services, http  # 跨插件总线 / HTTP 挂载
 
+
 class PLUGIN(BasePlugin):  # 或顶层导出名为 PLUGIN 的子类
     async def on_enable(self) -> None:
         get_logger("demo").info("enabled, config=%s", self.config)
