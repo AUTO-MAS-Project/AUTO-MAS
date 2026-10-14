@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sys
+import weakref
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -64,11 +65,26 @@ if TYPE_CHECKING:
 logger = get_logger("插件管理")
 
 
+class _ServiceResolver:
+    """提供注册表的实时查询面，不向插件暴露登记和注销。"""
+
+    def __init__(self, registry: ServiceRegistry) -> None:
+        # 注册表持有提供者的绑定方法；弱引用避免查询面反向保活服务提供者。
+        self._registry: ServiceRegistry = weakref.proxy(registry)
+
+    def get(self, name: str, default: Any = None) -> Any:
+        return self._registry.get(name, default)
+
+    def require(self, name: str) -> Any:
+        return self._registry.require(name)
+
+
 class _PluginManager:
     """主程序插件管理器：DFS 级联、依赖字典、失败分支。"""
 
     def __init__(self) -> None:
         self.services = ServiceRegistry()
+        self._service_resolver = _ServiceResolver(self.services)
         self.http = HttpRegistry()
         # 已启用适配：注册项 uid → 类型声明（脚本 decl 含 expander_class）
         self.script_types: dict[UUID, ScriptTypeDecl] = {}
@@ -337,6 +353,13 @@ class _PluginManager:
         self._assert_allowed(record, "enable")
         if record.info.state == PluginState.ENABLED:
             return {}
+        # 本项已完成重载启用，根语义仍保持 RELOADING；恢复下游时复用就绪提供者。
+        if (
+            ctx == LifecycleContext.RELOAD_CASCADE
+            and record.info.state == PluginState.RELOADING
+            and record.info.enabled
+        ):
+            return {}
         # 按语境允许进入态：根/级联 → disabled|fault_runtime；本项 reload 另允 reloading
         allowed_in = {PluginState.DISABLED, PluginState.FAULT_RUNTIME}
         if ctx == LifecycleContext.RELOAD:
@@ -401,6 +424,7 @@ class _PluginManager:
             # activate 在进入 ×× 中之后、登记前完成（与事务同段）
 
         plugin = plugin_cls(config=config, record=record)
+        plugin.bind_services(self._service_resolver)
         record._plugin = plugin
         try:
             await plugin.pre_enable()
@@ -629,7 +653,8 @@ class _PluginManager:
             if was_enabled:
                 record.info.state = PluginState.ENABLED
                 await record.commit()
-                await self.disable(record, held=True, dep_path=path, ctx=ctx)
+                # 本项禁用不属于下游 DFS，路径不能再次包含本项 uid。
+                await self.disable(record, held=True, dep_path=path_list, ctx=ctx)
                 record.info.state = PluginState.UNLOADING
                 record.info.lifecycle_context = ctx
                 await record.commit()
@@ -758,7 +783,7 @@ class _PluginManager:
                     restore[dep_id] = await self.enable(
                         restored_record,
                         held=True,
-                        dep_path=path,
+                        dep_path=path_list,
                         ctx=LifecycleContext.RELOAD_CASCADE,
                     )
                 except Exception as exc:

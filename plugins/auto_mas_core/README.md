@@ -46,3 +46,31 @@ dependencies = [
 `PLUGIN_API_VERSION` 主版本现为 `"6"`；与框架不兼容时提升主版本，加载阶段拒绝主版本不一致的插件。
 
 包内 `py.typed` 为 PEP 561 标记，须随 wheel 发布。
+
+## 插件服务消费
+
+插件通过宿主绑定的 `self.services` 查询跨插件服务，其类型为 SDK 导出的
+`ServiceResolver`，只提供 `get(name, default=None)` 和 `require(name)`。
+查询读取宿主现有注册表，提供者启停、重载及退出密封会即时反映，不缓存服务值。
+服务仍通过 `provides_services` 声明，由宿主登记和注销。
+
+宿主在 `pre_enable()` 前调用 `bind_services()` 完成绑定；`requires` 提供者仍按
+原依赖顺序，在本插件的 `on_enable()` 前启用。`pre_enable()` 可查询现有服务，
+不能据此假定尚未启用的提供者已可用。
+
+```python
+from auto_mas_core import BasePlugin
+
+
+class PLUGIN(BasePlugin):
+    requires = ("demo.lookup",)
+
+    async def on_enable(self) -> None:
+        lookup = self.services.require("demo.lookup")
+        lookup("ready")
+```
+
+直接构造插件做隔离验证时，先 `bind_services()` 注入查询替身。
+旧 `auto_mas_core.plugin.services` 与顶层 `Plugin` 导出继续保留兼容；
+新服务消费逻辑使用实例查询接口。宿主业务服务 `auto_mas_core.services`
+（通知、更新等）仍沿用原入口，属于后续迁移范围。

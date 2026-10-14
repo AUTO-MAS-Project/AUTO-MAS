@@ -70,6 +70,7 @@ from app.plugin.base import (
 )
 from app.plugin.errors import PluginError, PluginPrecheckError
 from app.plugin.http import plugin_route
+from app.plugin.services import ServiceResolver
 from app.plugin.types import PLUGIN_API_VERSION, PluginState
 from app.task import (
     MODE_WORKERS,
@@ -217,6 +218,7 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "ServiceResolver",
     "TRIGGER_TICKET",
     "BasePlugin",
     "Config",
