@@ -293,7 +293,8 @@ export function addSkippedEntry(
 
 function readDiagnosticContent(filePath: string): Buffer {
   const rawText = fs.readFileSync(filePath, 'utf-8')
-  if (path.extname(filePath).toLowerCase() === '.json') {
+  const extension = path.extname(filePath).toLowerCase()
+  if (extension === '.json' || extension === '.jsonc') {
     const json = readJson(filePath)
     if (json !== undefined) {
       return Buffer.from(`${JSON.stringify(sanitizeJsonValue(json), null, 2)}\n`, 'utf-8')

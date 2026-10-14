@@ -201,6 +201,13 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(stored).toContain('"a": "https://api.day.app/***"')
   })
 
+  it('.jsonc 与 .json 同一套：转义写法的推送地址也打码', () => {
+    const text = ['{', '  // 注释', '  "b": "https:\\/\\/api.day.app\\/SECRET_Q"', '}'].join('\n')
+    write('debug/conf.jsonc', text)
+
+    expect(collectText('debug/conf.jsonc')).not.toContain('SECRET_Q')
+  })
+
   it('能解析的 .json 照旧按键名打码并重新排版', () => {
     write('debug/plain.json', '{"b":"https:\\/\\/api.day.app\\/SECRET_P","token":"t"}')
 
