@@ -49,6 +49,7 @@ from app.task.MaaFW.tools.core.interface.loader import (
 )
 from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
+    can_check_project_update,
     discover_maafw_project_update,
     query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
@@ -93,7 +94,8 @@ UPDATE_SOURCE_FORM = (
     "这是按源码形态导入的项目（interface 在 assets/、Agent 在源码目录），始终跟随来源目录、"
     "不做项目更新：直接改来源目录即可（下次运行前或点「立即同步」重新导入）；要用发行版请导入发行包"
 )
-# 版本号一律向 Mirror 酱查询（下载源选 GitHub 也一样），没有 rid 就没法检查。
+# 没声明 rid、又不满足「下载源选 GitHub + interface 声明了 github 仓库」（那样就只看
+# GitHub Release）时，MAS 没法检查这个项目的更新；判据见 can_check_project_update。
 UPDATE_NO_MIRRORCHYAN_RID = (
     "该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），"
     "MAS 无法检查它的更新"
@@ -218,10 +220,6 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     if shell_hint:
         config["project_shell_hint"] = shell_hint
     return config
-
-
-def _has_mirrorchyan_rid(interface: Any) -> bool:
-    return bool(str(getattr(interface, "mirrorchyan_rid", "") or "").strip())
 
 
 def _describe_group_ahead(version: str) -> str:
@@ -433,8 +431,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 ),
             )
 
-        if not _has_mirrorchyan_rid(interface):
-            # 没有 rid 时核心包只记一行「跳过更新检查」、返回 None，过去被当成「已是最新」。
+        if not can_check_project_update(interface, source_config):
+            # 查不了时核心包只记一行「跳过更新检查」、返回 None，过去被当成「已是最新」。
             if group_version:
                 return group_ahead_reply()
             _maafw_update_logger.info(f"{UPDATE_NO_MIRRORCHYAN_RID}: {script_id}")
@@ -449,6 +447,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                     skippedReason=UPDATE_NO_MIRRORCHYAN_RID,
                 ),
             )
+        skipped: list[str] = []
         try:
             discovery = await discover_maafw_project_update(
                 interface,
@@ -459,6 +458,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
                 # 而用户可能只是随手点了下「检查更新」。真更新时再取。
                 version_only=True,
+                on_skipped=skipped.append,
             )
         except MaaFWProjectUpdateError as exc:
             message = f"MFW 更新检查失败: {exc}"
@@ -475,6 +475,18 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         if discovery is None:
             if group_version:
                 return group_ahead_reply()
+            if skipped:
+                # 没查成（只看 GitHub 时连不上、没有可用的 Release）不是「已是最新」。
+                message = skipped[0]
+                publish_progress(tracker.finished(success=False, message=message))
+                return MaaFWApiReply(
+                    message=message,
+                    data=MaaFWProjectUpdateData(
+                        checked=False,
+                        currentVersion=current_version,
+                        skippedReason=message,
+                    ),
+                )
             message = f"MFW 项目已是最新版本: {current_version or '未知'}"
             publish_progress(tracker.finished(success=True, message=message))
             return MaaFWApiReply(
@@ -674,7 +686,9 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                     success=True, message=str(getattr(result, "message", "") or "")
                 )
             )
-        elif not outcome.updated and not _has_mirrorchyan_rid(interface):
+        elif not outcome.updated and not can_check_project_update(
+            interface, source_config
+        ):
             publish_progress(
                 tracker.finished(success=False, message=UPDATE_NO_MIRRORCHYAN_RID)
             )
@@ -713,7 +727,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
-    if not outcome.updated and not _has_mirrorchyan_rid(interface):
+    if not outcome.updated and not can_check_project_update(interface, source_config):
         message = UPDATE_NO_MIRRORCHYAN_RID
     return MaaFWApiReply(
         message=_maafw_update_message_with_cdk(message, extra),

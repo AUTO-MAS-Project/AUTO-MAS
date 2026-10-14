@@ -260,7 +260,8 @@ const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUp
   { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
 ])
 
-// 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱（版本号统一向 Mirror 酱查）
+// 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱、又不能只看 GitHub
+// （下载源不是 GitHub，或 interface 没声明 github 仓库）
 const autoUpdateDisabledMessage = computed(() =>
   props.previewData?.project.version
     ? t('edit.maafwNoMirrorchyanRid')
