@@ -929,16 +929,19 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .cultivate-skland .cultivate-skland-item :deep(.ant-form-item-label),
 .cultivate-editor .cultivate-picker :deep(.ant-form-item-label) {
-  flex-shrink: 0;
+  /* 标签按单行控件高度居中，避免导入按钮或提示换行后下沉 */
+  display: flex;
+  align-items: center;
+  min-height: 32px;
   padding: 0;
-  /* 统一标签宽度：两行控件左边缘对齐（取「绑定森空岛」+问号图标的最长宽度） */
-  width: 96px;
+  /* 固定标签列宽，覆盖 antd 窄屏下的整行占位，让两行控件左边缘对齐 */
+  flex: 0 0 96px;
 }
 
 .cultivate-skland .cultivate-skland-item :deep(.ant-form-item-control),
