@@ -403,7 +403,8 @@ export function addDiagnosticFile(
     const keptBytes = storedSize - header.byteLength
     try {
       // 放不下的非 JSON 文本只读要保留的末尾那段再脱敏：几十 MB 的原生日志整份脱敏要好几秒
-      const oversized = stat.size > storedSize && path.extname(sourcePath).toLowerCase() !== '.json'
+      const extension = path.extname(sourcePath).toLowerCase()
+      const oversized = stat.size > storedSize && extension !== '.json' && extension !== '.jsonc'
       const sanitized = oversized ? undefined : readDiagnosticContent(sourcePath)
       if (sanitized && sanitized.byteLength <= storedSize) {
         addEntry(state, archivePath, stat.size, sanitized, 'included')
