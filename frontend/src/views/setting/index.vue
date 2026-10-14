@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
+import type { SettingsSyncPayload } from '../../../electron/ipc/settingsSync.types'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -96,11 +97,11 @@ const syncConfigToElectron = async (data: SettingsViewModel) => {
       // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
       // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
       await window.electronAPI.syncBackendConfig({
-        appearance: toRaw(data.UI),
-        start: toRaw(data.Start),
-        updates: toRaw(data.Update),
-        function: toRaw(data.Function),
-      })
+        UI: toRaw(data.UI),
+        Start: toRaw(data.Start),
+        Update: toRaw(data.Update),
+        Function: toRaw(data.Function),
+      } satisfies SettingsSyncPayload)
       logger.info('配置已同步到 Electron')
     }
   } catch (error) {
