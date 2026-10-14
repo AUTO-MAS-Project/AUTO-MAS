@@ -532,6 +532,9 @@ export default {
     switchedPlanModeP0: 'プランモードに切り替えました：{p0}',
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
+    importScriptConfigFailed: 'スクリプト設定ファイルをインポートできませんでした',
+    nativeConfigNoImport:
+      'ネイティブモードでは既存の ok-ww 設定を直接使用するため、インポートできません',
     startedSrcSetupUser: 'アカウント {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'アカウント {p0} の汎用設定を開始しました',
     readP0: '{p0} を読み込みました',

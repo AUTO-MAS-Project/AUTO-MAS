@@ -519,6 +519,8 @@ export default {
     switchedPlanModeP0: '已切换到计划模式：{p0}',
     loadedP0P1Log: '已加载 {p0} 行日志（共 {p1} 行）',
     importedP0ConfigurationFile: '已导入{p0}配置文件',
+    importScriptConfigFailed: '导入脚本配置文件失败',
+    nativeConfigNoImport: '原生来源直接使用 ok-ww 原有配置，无需导入',
     startedSrcSetupUser: '已开始配置账号 {p0} 的SRC设置',
     startedGeneralSetupUser: '已开始配置账号 {p0} 的通用设置',
     readP0: '已读取 {p0}',

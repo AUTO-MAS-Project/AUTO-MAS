@@ -9,7 +9,7 @@
       :config-label="t('edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId || configLocked"
+      :config-disabled="configActionsDisabled"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
@@ -209,10 +209,10 @@
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Base"
                   :options="okwwConfigModeOptions"
-                  :disabled="pageLoading"
+                  :disabled="configActionsDisabled"
                   :saving="isSaving"
                   :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="pageLoading || isInitializing || isSaving"
+                  :quick-config-disabled="configActionsDisabled || isInitializing"
                   :alert-message="t('edit.configSourceHintBase')"
                   :show-gui-hint="false"
                   @change="handleConfigModeChange"
@@ -225,7 +225,7 @@
                 <ConfigActionsSection
                   :base="formData.Info.Base"
                   script-label="ok-ww"
-                  :disabled="pageLoading || showOkwwConfigMask || configLocked"
+                  :disabled="configActionsDisabled"
                   :config-loading="okwwConfigLoading"
                   :configuring="showOkwwConfigMask"
                   :import-loading="okwwImportLoading"
@@ -391,7 +391,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -443,6 +443,18 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
+const configActionsDisabled = computed(
+  () =>
+    pageLoading.value ||
+    !userId.value ||
+    isSaving.value ||
+    okwwConfigLoading.value ||
+    okwwImportLoading.value ||
+    showOkwwConfigMask.value ||
+    showOkwwViewMask.value ||
+    stoppingOkwwConfig.value ||
+    configLocked.value
+)
 
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
@@ -568,9 +580,11 @@ const formData = reactive<OkwwUserFormData>({
 const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
+  if (configActionsDisabled.value) return
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  const previous = formData.Info.Base
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  await saveField('Info.Base', formData.Info.Base)
+  if (!(await saveField('Info.Base', formData.Info.Base))) formData.Info.Base = previous
 }
 
 const handleCancel = async () => {
@@ -656,38 +670,35 @@ const saveTaskConfig = async () => {
 }
 
 const handleOkwwConfig = async () => {
-  if (configLocked.value) return
-  if (!userId.value) return
+  if (configActionsDisabled.value) return
   await startSession(userId.value)
 }
 
 const handleImportOkwwConfig = async () => {
-  if (configLocked.value) return
+  if (configActionsDisabled.value) return
   okwwImportLoading.value = true
   try {
-    if (formData.Info.Base === 'native')
-      throw new Error('原生来源直接使用 ok-ww 原有配置，无需导入')
-    const response = await importScriptConfigFile(
-      scriptId,
-      formData.Info.Base === 'shared' ? null : userId.value
-    )
-    if (response.code !== 200) throw new Error(response.message || '导入脚本配置文件失败')
+    if (formData.Info.Base === 'native') throw new Error(t('edit.nativeConfigNoImport'))
+    const response = await importScriptConfigFile(scriptId, userId.value)
+    if (response.code !== 200)
+      throw new Error(response.message || t('edit.importScriptConfigFailed'))
     const importTarget =
       formData.Info.Base === 'shared'
         ? t('comp.configSourceShared')
         : t('comp.configSourceIndependent')
     message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
+    message.error(error instanceof Error ? error.message : t('edit.importScriptConfigFailed'))
   } finally {
     okwwImportLoading.value = false
   }
 }
 
 // 编辑托管设置：ok-ww 页没有路由守卫，先显式停会话再跳转。
-const handleScriptConfig = () => {
-  void stopSession()
-  router.push(`/scripts/${scriptId}/edit/okww`)
+const handleScriptConfig = async () => {
+  if (configActionsDisabled.value) return
+  if (!(await stopSession(true))) return
+  await router.push(`/scripts/${scriptId}/edit/okww`)
 }
 
 const handleSaveOkwwConfig = () => {

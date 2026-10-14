@@ -36,14 +36,10 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Base"
-      :maa-config-loading="preparingSession || maaConfigLoading"
       :leaving="leavingPage"
-      :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       :config-locked="configLocked || editorBusy"
       :user-id="userId"
-      @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 

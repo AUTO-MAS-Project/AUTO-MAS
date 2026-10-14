@@ -48,6 +48,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
+    BASE_FILE_NAME,
     META_FILE_NAMES,
     OVERLAY_SIDECAR_NAME,
     archive_files,
@@ -57,11 +58,13 @@ from app.utils.config_archive import (
     get_backup_dir,
     list_times,
     mask_account,
+    read_backup_base,
     read_overlay_sidecar,
     restore_dir,
     write_backup_base,
 )
 from app.utils.constants import BASE_NATIVE, BASE_SHARED, BASE_SOURCE_LABELS
+from app.utils.io import force_rmtree
 
 logger = get_logger("OK-WW 配置备份")
 
@@ -248,22 +251,19 @@ def mas_rollback_point(
     user_id: str,
     mas_dir: Path,
     overlay: dict | None = None,
+    base: str | None = None,
 ) -> str | None:
     """覆盖（导入）前存底：返回内容等于当前现场、可供回滚的归档时间戳。
 
     存底与 :func:`archive_mas_backup` 同源（进用户池，可在「配置恢复」里
-    手工找回），额外保证**回滚点可定位**：内容与既有归档完全一致时指纹
-    去重会跳过归档并返回 ``None``，而覆盖失败后要按时间戳恢复，此时那份
-    内容相同的既有归档就是这个现场的回滚源，按文件集指纹回查其时间戳。
+    手工找回）。内容与来源都一致时复用既有归档，否则新建快照，
+    避免改写历史归档的来源标记。
     目录与侧车皆空时无可存底内容，返回 ``None``（同样没有可回滚的东西）。
     """
 
     files = collect_mas_files(mas_dir, overlay)
     if not files:
         return None
-    dest = archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, force=True)
-    if dest is not None:
-        return dest.name
     store_root = mas_backup_root(script_id, user_id)
     fingerprint = file_set_hash(files)
     for ts in list_times(store_root):
@@ -273,11 +273,16 @@ def mas_rollback_point(
             if rel not in META_FILE_NAMES
         }
         try:
-            if file_set_hash(entry) == fingerprint:
+            if file_set_hash(entry) == fingerprint and (
+                base is None or read_backup_base(store_root / ts) == base
+            ):
                 return ts
         except OSError:
             continue
-    return None
+    if base:
+        files[BASE_FILE_NAME] = base
+    dest = archive_files(files, store_root, force=True)
+    return dest.name if dest is not None else None
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
@@ -320,8 +325,7 @@ def restore_mas_backup(
     archive_mas_backup(
         script_id, user_id, mas_dir, overlay=overlay, force=True, base=base
     )
-    # 备份只有侧车（目录缺失/为空时归档的纯字段备份）时跳过目录写回：
-    # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
+    # 备份只有侧车时恢复空目录，避免把元数据写入配置目录。
     managed = [
         rel
         for rel in dir_files(backup_dir)
@@ -334,6 +338,12 @@ def restore_mas_backup(
             (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
+        # 只有侧车也代表一个空的 MAS 配置目录；先清掉旧文件，避免恢复后
+        # 继续沿用导入失败留下的半目录。
+        force_rmtree(mas_dir)
+        if mas_dir.exists():
+            raise OSError(f"配置目录无法清空: {mas_dir}")
+        mas_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 

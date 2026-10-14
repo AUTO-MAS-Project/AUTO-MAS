@@ -541,6 +541,9 @@ export default {
     switchedPlanModeP0: 'Switched to plan mode: {p0}',
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
+    importScriptConfigFailed: 'Failed to import the script configuration file',
+    nativeConfigNoImport:
+      'Native mode uses the existing ok-ww configuration directly; import is unavailable',
     startedSrcSetupUser: 'Started the SRC setup for account {p0}',
     startedGeneralSetupUser: 'Started the general setup for account {p0}',
     readP0: 'Read {p0}',
