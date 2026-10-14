@@ -19,6 +19,7 @@ from uuid import uuid4
 import pytest
 
 from app.config import ConfigCollection
+from app.core.game_manager import _GameRuntime
 from app.models.config.game import TRIGGER_TICKET
 from app.utils.platform.common.process_runner import ProcessResult
 
@@ -117,6 +118,7 @@ async def _make(fake: _FakeRun) -> tuple[MuMuGame, MuMuControl]:
     assert entry.info.path is not None, "path 被纠成 None 则 sync 全程跳过"
 
     ctrl = MuMuControl(config=entry)
+    ctrl.bind_runtime(_GameRuntime())
     entry._game_control = ctrl
     ctrl._run = fake  # type: ignore[method-assign]
     entry.devices.add(MuMuDevice, payload={"info": {"index": "0"}})

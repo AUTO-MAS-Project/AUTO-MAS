@@ -13,6 +13,11 @@
 
 继承宿主 `EmulatorEntry` / `EmulatorDeviceEntry` / `EmulatorControl`，并在插件内把 `_control` / `config` / `devices` 收窄到 MuMu 具体类型。
 
+宿主接线通过基类能力完成：`on_enable` 从 `self.instances()` 获取所属 MuMu
+游戏配置，控制器从 `self.runtime.silent` / `self.runtime.block_ad` 读取实时启动策略。
+插件不直接访问全局 `Config`；启动激活和重载创建控制器时均由宿主绑定策略。
+直接构造控制器做隔离验证时，须先 `bind_runtime()` 注入策略替身。
+
 - **稳定模式与配置守卫已固化默认启用**，两个游戏级开关取消，逻辑挂在实例订阅生命周期上（订阅骨架在基类 `GameControl`，这里只实现两个品牌钩子）：
   - `_on_device_subscribed`（首个引用订阅后）：`setting -aw` 原样备份全部可写键 → 落 `session.backup` 并 commit（**先落盘再写第一笔**，抗崩溃）→ 单次写入「`expect` 里非 `None` 的项 + `resolution_mode=custom`」。分辨率与稳定项同走 `constants._WRITE_KEYS` 一张表、一套逻辑，怎么写由值的形态定：标量按值直写（不比对厂商当前值），元组是容许值表（当前档在表内就不动，越界写表首，如显存策略的 `("auto", "perf")` 把 `dis` 拨回 `auto`）。读空则报错，不写、不留半份备份（登记与失败撤销由基类管）。`expect=None` 时只备份，一个键都不写。
   - `_on_device_unsubscribed`（计数归零退订时）：写临时 JSON 走 `setting -p` **整份写回**，成功才清空 `backup`；失败保留备份并记警告（那是原值的唯一记录）。

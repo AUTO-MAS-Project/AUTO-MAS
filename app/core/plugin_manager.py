@@ -401,6 +401,14 @@ class _PluginManager:
             # activate 在进入 ×× 中之后、登记前完成（与事务同段）
 
         plugin = plugin_cls(config=config, record=record)
+        if isinstance(plugin, GameAdapterPlugin):
+            from app.core.plugin_adapters import GameAdapterRuntime
+
+            plugin.bind_runtime(GameAdapterRuntime(plugin))
+        elif isinstance(plugin, ScriptAdapterPlugin):
+            from app.core.plugin_adapters import ScriptAdapterRuntime
+
+            plugin.bind_runtime(ScriptAdapterRuntime(plugin))
         record._plugin = plugin
         try:
             await plugin.pre_enable()

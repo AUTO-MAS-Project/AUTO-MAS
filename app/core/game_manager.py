@@ -18,6 +18,20 @@ from app.utils import get_logger
 logger = get_logger("游戏管理")
 
 
+class _GameRuntime:
+    @property
+    def silent(self) -> bool:
+        from app.core import Config
+
+        return Config.setting.function.if_silence
+
+    @property
+    def block_ad(self) -> bool:
+        from app.core import Config
+
+        return Config.setting.function.if_block_ad
+
+
 class _SerialGate:
     """进程内全局 FIFO 闸门：同一时刻至多一个不支持并行的游戏处于订阅中。
 
@@ -62,6 +76,16 @@ class _GameManager:
         self._gate_tokens: set[UUID] = set()
 
     @staticmethod
+    def create_control(
+        *, config: GameEntry, control_class: type[GameControl]
+    ) -> GameControl:
+        """启动激活和重载共用装配入口，策略始终读当前设置。"""
+        control = control_class(config=config)
+        control.bind_runtime(_GameRuntime())
+        config._game_control = control
+        return control
+
+    @staticmethod
     async def on_add(sender: object, event: CollectionChangeEvent) -> None:
         """GameConfig 实例级 add / init_add：按已启用声明挂管理实例。
 
@@ -76,7 +100,9 @@ class _GameManager:
 
         for decl in Plugin.game_types.values():
             if isinstance(event.entry, decl.game_class):
-                event.entry._game_control = decl.control_class(config=event.entry)
+                _GameManager.create_control(
+                    config=event.entry, control_class=decl.control_class
+                )
                 break
         else:
             raise RuntimeError(f"未找到 {type(event.entry)} 对应的 GameTypeDecl")

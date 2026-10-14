@@ -352,8 +352,6 @@ class MuMuControl(EmulatorControl):
     # ── 实现：不自己校凭据、不自己进执行器，只干活 ──
 
     async def _open(self, device_uid: UUID, package: str | None) -> None:
-        from auto_mas_core import Config
-
         dev = self.config.devices[device_uid]
         idx = dev.info.index
         pkg = (package or "").strip()
@@ -376,7 +374,7 @@ class MuMuControl(EmulatorControl):
             )
             hide_task = (
                 asyncio.create_task(self._hide_when_starting(dev, deadline))
-                if Config.setting.function.if_silence
+                if self.runtime.silent
                 else None
             )
             try:
@@ -411,7 +409,7 @@ class MuMuControl(EmulatorControl):
                 await asyncio.gather(*side, return_exceptions=True)
 
         # ── 以下与「刚拉起来」还是「本来就在跑」无关，两条路都要走 ──
-        if Config.setting.function.if_block_ad:
+        if self.runtime.block_ad:
             # 实例侧去广告：拦悬浮窗权限 + 掐掉商店进程，得等设备在线才做得了。
             # 两步都是尽力而为 —— 失败只记警告，不拦启动。
             # 宿主机侧的开屏图占位不在这里：那是启动前的文件活，见 set_block_ad。

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from auto_mas_core import Config, GameAdapterPlugin, GameTypeDecl
+from auto_mas_core import GameAdapterPlugin, GameTypeDecl
 from auto_mas_core.utils import get_logger
 
 from .config import MuMuDevice, MuMuGame
@@ -29,7 +29,7 @@ class Plugin(GameAdapterPlugin):
         退订实例时会整份写回并清空备份；进程被强杀则备份留在盘上，
         只有这里补一刀，落盘的备份才不是白存。
         """
-        for entry in Config.GameConfig.values():
+        for entry in self.instances():
             if not isinstance(entry, MuMuGame):
                 continue
             try:

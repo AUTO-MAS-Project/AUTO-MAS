@@ -14,10 +14,20 @@ from fastapi.testclient import TestClient
 
 from app.config import ConfigCollection, LockTicket, NodeState
 from app.config.shortcuts import collection
+from app.core.plugin_adapters import GameAdapterRuntime, ScriptAdapterRuntime
 from app.models.config import GameDeviceEntry, GameEntry
 from app.plugin.base.game import GameAdapterPlugin, GameControl, GameTypeDecl
+from app.plugin.base.script import ScriptAdapterPlugin
 from app.plugin.errors import PluginPrecheckError
 from app.plugin.types import LifecycleContext, PluginState
+
+
+def _bind(plugin: GameAdapterPlugin | ScriptAdapterPlugin) -> None:
+    if isinstance(plugin, GameAdapterPlugin):
+        plugin.bind_runtime(GameAdapterRuntime(plugin))
+    else:
+        plugin.bind_runtime(ScriptAdapterRuntime(plugin))
+
 
 _PLUGINS = Path(__file__).resolve().parents[3] / "plugins"
 
@@ -79,6 +89,7 @@ def _plugin(ctx: LifecycleContext, name: str = "demo") -> GameAdapterPlugin:
 
     record = _record(ctx, name)
     plugin = Demo(record=record)
+    _bind(plugin)
     plugin._test_record = record
     return plugin
 
@@ -211,6 +222,7 @@ def test_precheck_blocks_only_locked_created_instance() -> None:
 
     record = _record(LifecycleContext.NORMAL, "locked-demo")
     plugin = Demo(record=record)
+    _bind(plugin)
     plugin._test_record = record
 
     class _Games:
@@ -239,10 +251,7 @@ def test_precheck_blocks_only_locked_created_instance() -> None:
 
 def test_enable_before_activate_injects_class() -> None:
     plugin = _plugin(LifecycleContext.NORMAL, "demo-inject")
-    games = SimpleNamespace(
-        activation_state=NodeState.INACTIVE,
-        _entry_types={},
-    )
+    games = ConfigCollection[GameEntry]([])
 
     class _Plugin:
         game_types: dict = {}
@@ -259,9 +268,9 @@ def test_enable_before_activate_injects_class() -> None:
     plugin_manager.Plugin = _Plugin()  # type: ignore[misc]
     try:
         asyncio.run(plugin.system_enable())
-        assert games._entry_types["DemoGame"] is DemoGame
-        assert plugin._system_rollback is not None
-        assert plugin._system_rollback.game_type_added is True
+        assert games.entry_types["DemoGame"] is DemoGame
+        assert plugin._adapter_runtime._system_rollback is not None
+        assert plugin._adapter_runtime._system_rollback.game_type_added is True
         assert plugin_manager.Plugin.game_types[plugin._test_record.uid] is plugin.decl
     finally:
         core.Config = previous_config
@@ -300,11 +309,11 @@ def test_reload_disable_does_not_remove_type() -> None:
 
 def test_disable_removes_type_then_catalog_then_snapshot() -> None:
     """禁用顺序：类型表 → Plugin.game_types → 清 _system_rollback。"""
-    from app.plugin.base.game import _SystemRollback
+    from app.core.plugin_adapters import GameRegistrationSnapshot as _SystemRollback
 
     plugin = _plugin(LifecycleContext.NORMAL, "demo-disable-order")
     uid = plugin._test_record.uid
-    plugin._system_rollback = _SystemRollback(
+    plugin._adapter_runtime._system_rollback = _SystemRollback(
         lifecycle=LifecycleContext.NORMAL, game_type_added=True
     )
     steps: list[str] = []
@@ -340,16 +349,16 @@ def test_disable_removes_type_then_catalog_then_snapshot() -> None:
         plugin_manager.Plugin = previous_plugin
     assert steps == ["remove:DemoGame", "commit"]
     assert uid not in catalog
-    assert plugin._system_rollback is None
+    assert plugin._adapter_runtime._system_rollback is None
 
 
 def test_enabling_normal_rollback_type_then_catalog() -> None:
     """启用失败回滚：先卸类型表，再摘目录，最后清快照。"""
-    from app.plugin.base.game import _SystemRollback
+    from app.core.plugin_adapters import GameRegistrationSnapshot as _SystemRollback
 
     plugin = _plugin(LifecycleContext.NORMAL, "demo-enabling-rb")
     uid = plugin._test_record.uid
-    plugin._system_rollback = _SystemRollback(
+    plugin._adapter_runtime._system_rollback = _SystemRollback(
         lifecycle=LifecycleContext.NORMAL, game_type_added=True
     )
     steps: list[str] = []
@@ -390,16 +399,16 @@ def test_enabling_normal_rollback_type_then_catalog() -> None:
         plugin_manager.Plugin = previous_plugin
     assert steps == ["remove:DemoGame", "commit"]
     assert uid not in catalog
-    assert plugin._system_rollback is None
+    assert plugin._adapter_runtime._system_rollback is None
 
 
 def test_enabling_reload_rollback_restores_class() -> None:
-    from app.plugin.base.game import _SystemRollback
+    from app.core.plugin_adapters import GameRegistrationSnapshot as _SystemRollback
 
     plugin = _plugin(LifecycleContext.RELOAD, "demo-rollback")
     uid = plugin._test_record.uid
     previous_cls = type("OldDemoGame", (), {})
-    plugin._system_rollback = _SystemRollback(
+    plugin._adapter_runtime._system_rollback = _SystemRollback(
         lifecycle=LifecycleContext.RELOAD,
         prev_game_class=cast(type[GameEntry], previous_cls),
     )
@@ -447,7 +456,7 @@ def test_enabling_reload_rollback_restores_class() -> None:
         plugin_manager.Plugin = previous_plugin
     assert calls == [previous_cls]
     assert uid not in catalog
-    assert plugin._system_rollback is None
+    assert plugin._adapter_runtime._system_rollback is None
 
 
 def test_reload_enable_swaps_device_by_remove_add() -> None:
@@ -463,6 +472,10 @@ def test_reload_enable_swaps_device_by_remove_add() -> None:
         @property
         def effective(self) -> _Devices:
             return self
+
+        @property
+        def entry_types(self) -> dict[str, type]:
+            return self._entry_types
 
         def list_entry_types(self) -> list[dict[str, str]]:
             return [{"name": n} for n in self._entry_types]
@@ -489,7 +502,7 @@ def test_reload_enable_swaps_device_by_remove_add() -> None:
 
     class Games:
         activation_state = NodeState.ACTIVE
-        effective = SimpleNamespace(_entry_types={"DemoGame": DemoGame})
+        entry_types = {"DemoGame": DemoGame}
 
         def values(self) -> list[object]:
             return [entry]
@@ -570,9 +583,9 @@ def test_search_returns_catalog_and_keeps_instances() -> None:
 
 def test_add_found_add_then_update() -> None:
     """搜索缓存入库：add 占位 + update 同步已赋值 Group。"""
+    import app.core.plugin_manager as plugin_manager
     from app.core import Config
     from app.core.game_manager import GameManager
-    import app.core.plugin_manager as plugin_manager
 
     found = DemoGame(info=DemoGame.Info(name="MuMu", type="emulator"))
     uid = found.uid
@@ -652,7 +665,7 @@ def test_script_reload_uses_reload_type() -> None:
         def effective(self) -> "Col":
             return self
 
-        _entry_types: dict[str, type] = {}
+        entry_types: dict[str, type] = {}
 
         def reload_type(self, _entry_type: object) -> None:
             self.calls.append("reload")
@@ -691,6 +704,7 @@ def test_script_reload_uses_reload_type() -> None:
 
     record = _record(LifecycleContext.RELOAD, "demo-script")
     plugin = Demo(record=record)
+    _bind(plugin)
     plugin._test_record = record
 
     import app.core as core

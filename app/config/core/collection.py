@@ -9,19 +9,23 @@ Entry 类型表：构造时由 ``entry_types`` / ``_default_entry_types`` 灌入
 from __future__ import annotations
 
 import weakref
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, PrivateAttr, SerializationInfo, model_serializer
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
+# manager/node 须先于 signals 初始化，避免首次导入配置包时形成循环。
+# isort: off
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import config_manager
 from .node import ConfigNode, ExportContext, NodeState
 from ..signals import CollectionChangeEvent
-from .staging import StageKind, StagedOp
+from .staging import StagedOp, StageKind
+# isort: on
 
 TEntry = TypeVar("TEntry", bound=ConfigNode)
 
@@ -442,10 +446,27 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         new_uids = [item if isinstance(item, UUID) else item.uid for item in order]
         self._stage(StagedOp.collection_set_order(new_uids))
 
-    def add_type(self, entry_cls: type[TEntry]) -> None:
-        """登记新 Entry 类型；须为集合静态上界 ``TEntry`` 的子类。"""
-        if self.activation_state != NodeState.ACTIVE:
-            raise ValueError("须先 activate")
+    @property
+    def entry_types(self) -> Mapping[str, type[TEntry]]:
+        """当前类型目录的只读视图。"""
+        return MappingProxyType(self.effective._entry_types)
+
+    def register_initial_type(self, entry_cls: type[TEntry]) -> None:
+        """激活前声明类型；冷态重载允许按原类名替换声明。"""
+        if self.activation_state != NodeState.INACTIVE:
+            raise ValueError("须在 activate 前声明类型")
+        self._check_entry_type(entry_cls)
+        self._entry_types[entry_cls.__name__] = entry_cls
+
+    def remove_initial_type(self, entry_type: type[TEntry] | str) -> None:
+        """激活前撤销类型声明，不触碰配置成员。"""
+        if self.activation_state != NodeState.INACTIVE:
+            raise ValueError("须在 activate 前撤销类型声明")
+        name = entry_type if isinstance(entry_type, str) else entry_type.__name__
+        self._entry_types.pop(name, None)
+
+    def _check_entry_type(self, entry_cls: type[TEntry]) -> None:
+        """冷态声明与热态增类共用成员类型约束。"""
         from .entry import ConfigEntry
 
         if not issubclass(entry_cls, ConfigEntry):
@@ -470,6 +491,12 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             break
         if not issubclass(entry_cls, bound):
             raise TypeError(f"须为集合静态上界 {bound.__name__} 的子类: {entry_cls!r}")
+
+    def add_type(self, entry_cls: type[TEntry]) -> None:
+        """登记新 Entry 类型；须为集合静态上界 ``TEntry`` 的子类。"""
+        if self.activation_state != NodeState.ACTIVE:
+            raise ValueError("须先 activate")
+        self._check_entry_type(entry_cls)
         name = entry_cls.__name__
         cur = self.effective._entry_types.get(name)
         if cur is not None and cur is not entry_cls:

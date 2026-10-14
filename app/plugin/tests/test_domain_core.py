@@ -9,6 +9,7 @@ import pytest
 
 from app.config import ConfigCollection
 from app.config.shortcuts import collection
+from app.core.plugin_adapters import ScriptAdapterRuntime
 from app.core.plugin_manager import Plugin
 from app.models.config import (
     GameEntry,
@@ -234,6 +235,7 @@ def test_script_adapter_requires_narrowed_users(
 
         record = Rec()
         plugin = _plugin(Narrowed)(record=record)  # type: ignore[arg-type]
+        plugin.bind_runtime(ScriptAdapterRuntime(plugin))
         await plugin.system_enable()
 
         uid = scripts.add(Narrowed, payload={"info": {"name": "s"}})
@@ -294,6 +296,7 @@ def test_script_adapter_system_enable_disable(monkeypatch: pytest.MonkeyPatch) -
         # record 只弱引用；本地强引用须活到 system_disable 之后
         record = Rec()
         plugin = Demo(record=record)  # type: ignore[arg-type]
+        plugin.bind_runtime(ScriptAdapterRuntime(plugin))
         await plugin.system_enable()
         assert Plugin.script_types[record.uid] is Demo.decl
 
