@@ -937,6 +937,8 @@ async def _load_operator_catalog(
         if not isinstance(raw, Mapping):
             raise YituliuDataError("干员目录数据格式异常（根不是对象）")
         catalog = parse_operator_catalog(raw)
+        if not catalog:
+            raise YituliuDataError("干员目录数据为空")
     except Exception as e:
         if has_catalog:
             logger.warning(f"干员目录刷新失败，使用旧缓存: {e}")
@@ -998,7 +1000,10 @@ def _is_fresh(
     timestamp_key: str = "saved_at",
 ) -> bool:
     saved_at = snapshot.get(timestamp_key)
-    return isinstance(saved_at, (int, float)) and now - saved_at < max_age_hours * 3600
+    return (
+        isinstance(saved_at, (int, float))
+        and 0 <= now - saved_at < max_age_hours * 3600
+    )
 
 
 async def load_dataset(
