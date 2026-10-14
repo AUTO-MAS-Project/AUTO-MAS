@@ -198,7 +198,7 @@
       </a-card>
 
       <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / MAA 共用同一套面板 -->
-      <a-card class="config-card" :loading="pageLoading">
+      <a-card class="config-card config-source-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
@@ -221,7 +221,7 @@
               </a-col>
             </a-row>
             <a-row :gutter="24">
-              <a-col :span="24">
+              <a-col :span="24" class="config-actions-tail">
                 <ConfigActionsSection
                   :base="formData.Info.Base"
                   script-label="ok-ww"
@@ -928,6 +928,19 @@ onUnmounted(() => {
 
 .config-card :deep(.ant-card-body) {
   padding: 32px;
+}
+
+/* 配置文件来源是独立卡片，与页面其它卡片一样自带上下的 24px 卡片间距
+   （卡片默认首尾相接，该卡片上下的 基本信息卡片 / 任务配置 标题会直接贴住卡边）。 */
+.config-source-card {
+  margin: 24px 0;
+}
+
+/* 该卡片只有一个分区，且尾部是配置操作项：卡片自身的 padding 已是底部留白，
+   去掉分区与操作项的尾距，避免卡片底部多出一整块空白。 */
+.config-source-card :deep(.form-section),
+.config-actions-tail :deep(.ant-form-item) {
+  margin-bottom: 0;
 }
 
 .section-header {
