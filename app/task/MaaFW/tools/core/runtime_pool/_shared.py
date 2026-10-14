@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import stat
 import threading
@@ -23,6 +24,20 @@ from typing import Any
 
 class MaaFWRuntimePoolError(RuntimeError):
     """Raised when a managed MaaFW runtime pool operation is unsafe or invalid."""
+
+
+_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+
+
+def mask_url_credentials(text: str) -> str:
+    """把文本里 URL 的 ``user:pw@`` 换成 ``***@``，其余部分原样。
+
+    包索引地址来自 ``PIP_INDEX_URL`` / ``AUTO_MAS_UV_INDEX_URL`` / Runtime 注入的镜像列表等
+    配置，可能带凭据；写进日志、标签、报错之前一律过它（与 requirements 解析不记 ``-i``
+    取值同一口径）。binding 下载、运行池 uv 安装、agent 隔离 venv 的 pip / uv 安装共用。
+    """
+
+    return _URL_CREDENTIALS_RE.sub(r"\1***@", str(text))
 
 
 def output_tail(text: str, limit: int) -> str:
