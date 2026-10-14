@@ -37,6 +37,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -132,7 +133,8 @@ class MaaFWBindingNetworkError(MaaFWBindingError):
 
 
 class MaaFWBindingDownloadError(MaaFWBindingError):
-    """某个索引给的 wheel 下下来是坏的（空、sha256 不符、不是 zip、超大）：换下一个候选。"""
+    """某个索引给的 wheel 下下来是坏的（空、sha256 不符、不是 zip、超大、解包时 CRC 错、
+    内容不完整或版本不对）：换下一个候选。"""
 
 
 @dataclass(frozen=True)
@@ -1687,17 +1689,31 @@ def _install_from_wheel_link(
             log=log,
             label=f"maafw {version} binding",
         )
-        metadata_version, requires, dll_sha256 = _lay_out_binding_from_wheel(
-            wheel_path, binding_stage, native_stage
-        )
+        # 解包 / 内容校验失败按「这个候选给的包坏了」处理（MaaFWBindingDownloadError），换下一个
+        # 索引：没有 sha256 的索引给的包能当 zip 打开、成员 CRC 却不对时，下载那一步查不出来，
+        # 只在这里炸（BadZipFile）。磁盘写失败（OSError）是本地问题，不换。
+        try:
+            metadata_version, requires, dll_sha256 = _lay_out_binding_from_wheel(
+                wheel_path, binding_stage, native_stage
+            )
+        except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
+            raise MaaFWBindingDownloadError(
+                f"wheel 解包失败（文件损坏）: {exc}"
+            ) from exc
+        except MaaFWBindingDownloadError:
+            raise
+        except MaaFWBindingError as exc:
+            raise MaaFWBindingDownloadError(f"wheel 内容不完整: {exc}") from exc
         if normalize_version(metadata_version) != version:
-            raise MaaFWBindingError(
+            raise MaaFWBindingDownloadError(
                 f"wheel METADATA 的版本 {metadata_version!r} 与目标 {version} 不一致"
             )
         if native_stage is not None:
             for name in NATIVE_REQUIRED_LIBRARIES:
                 if not (native_stage / name).is_file():
-                    raise MaaFWBindingError(f"官方 wheel 的 maa/bin 里缺少 {name}")
+                    raise MaaFWBindingDownloadError(
+                        f"官方 wheel 的 maa/bin 里缺少 {name}"
+                    )
         if native_only:
             assert existing is not None and native_stage is not None
             if (
