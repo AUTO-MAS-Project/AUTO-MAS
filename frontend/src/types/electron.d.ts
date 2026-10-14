@@ -44,6 +44,11 @@ export interface ElectronConfig {
   [key: string]: unknown
 }
 
+export interface MysteryAccessContext {
+  deviceHash: string
+  backendHash: string
+}
+
 export interface ElectronMirrorSource {
   name: string
   url: string
@@ -398,6 +403,7 @@ export interface ElectronAPI {
   readFile: (filePath: string) => Promise<string>
 
   getAppPath: (name: string) => Promise<string>
+  verifyMysteryAccessCode: (accessCode: string, context: MysteryAccessContext) => Promise<boolean>
 
   // 自定义外观包
   listAppearances?: () => Promise<InstalledAppearance[]>

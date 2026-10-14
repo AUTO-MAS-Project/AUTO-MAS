@@ -19,6 +19,8 @@ export interface FrontendConfig {
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
+  /** 解锁时的设备与后端源码指纹；旧的仅日期记录需重新解锁。 */
+  mysteryUnlockedFingerprint?: string
 
   // 界面语言；未设置时跟随系统
   language?: AppLocale

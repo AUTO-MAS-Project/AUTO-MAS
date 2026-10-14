@@ -27,6 +27,7 @@ from .emulator import router as emulator_router
 from .emulator2 import router as emulator2_router
 from .history import router as history_router
 from .info import router as info_router
+from .mystery import router as mystery_router
 from .ocr import router as ocr_router
 from .openclaw_qq import router as openclaw_qq_router
 from .plan import router as plan_router
@@ -42,6 +43,7 @@ from .update import router as update_router
 __all__ = [
     "core_router",
     "info_router",
+    "mystery_router",
     "scripts_router",
     "plan_router",
     "emulator_router",

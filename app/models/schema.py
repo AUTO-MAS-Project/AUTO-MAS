@@ -66,6 +66,16 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class MysteryContextData(BaseModel):
+    deviceHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="设备指纹")
+    backendHash: str = Field(pattern=r"^[0-9a-f]{64}$", description="当前后端源码指纹")
+
+
+class MysteryContextOut(OutBase):
+    data: MysteryContextData | None = None
+    errorCode: Literal["DEVICE_UNAVAILABLE", "BACKEND_UNAVAILABLE"] | None = None
+
+
 class VersionOut(OutBase):
     if_need_update: bool = Field(..., description="后端代码是否需要更新")
     current_time: str = Field(..., description="后端代码当前时间戳")

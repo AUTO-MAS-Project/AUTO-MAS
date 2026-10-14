@@ -7,6 +7,8 @@ window.addEventListener('DOMContentLoaded', () => {
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
+  verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
+    ipcRenderer.invoke('mystery:verify', accessCode, context),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),

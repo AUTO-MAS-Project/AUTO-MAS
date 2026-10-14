@@ -29,6 +29,7 @@ import {
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import { registerMysteryHandlers } from './ipc/mysteryHandlers'
 import {
   canElectronExitImmediately,
   canRequestRendererClose,
@@ -2228,6 +2229,7 @@ app.whenReady().then(async () => {
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
+  registerMysteryHandlers()
   logger.info('OK-WW 路径发现处理器已注册')
 
   registerStopAllTasksShortcut()

@@ -15,7 +15,11 @@ const store = useMysteryStore()
 const logger = window.electronAPI.getLogger('神秘入口')
 const form = reactive({ accessCode: '' })
 const error = ref('')
-const loadFailed = ref(false)
+const loadErrorMessage = computed(() => {
+  if (store.loadError === 'DEVICE_UNAVAILABLE') return t('mystery.deviceUnavailable')
+  if (store.loadError === 'BACKEND_UNAVAILABLE') return t('mystery.backendUnavailable')
+  return t('mystery.loadFailed')
+})
 
 const isFeaturePage = computed(() => route.name !== 'Mystery')
 const pageTitle = computed(() =>
@@ -77,12 +81,19 @@ const handlePersonalMssToggle = async (checked: boolean | string | number) => {
 }
 
 const load = async () => {
-  loadFailed.value = false
   try {
     await store.load()
   } catch (cause) {
-    loadFailed.value = true
     logger.error(`加载失败: ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
+}
+
+const copyRequestInfo = async () => {
+  try {
+    await navigator.clipboard.writeText(store.requestInfo)
+    message.success(t('mystery.requestCopied'))
+  } catch {
+    message.error(t('mystery.copyFailed'))
   }
 }
 
@@ -134,7 +145,7 @@ const lock = async () => {
     </div>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
-      <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
+      <a-result v-if="store.loadError" status="error" :title="loadErrorMessage">
         <template #extra>
           <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
         </template>
@@ -143,6 +154,12 @@ const lock = async () => {
         <a-spin />
       </div>
       <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
+        <a-typography-paragraph>{{ t('mystery.accessCodeHint') }}</a-typography-paragraph>
+        <a-typography-paragraph>
+          <a-button :disabled="store.saving" @click="copyRequestInfo">
+            {{ t('mystery.copyRequestInfo') }}
+          </a-button>
+        </a-typography-paragraph>
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"
