@@ -66,6 +66,7 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
     raise_if_install_cancelled,
 )
 from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
+    RequirementsFileError,
     read_requirements_file,
 )
 
@@ -1421,7 +1422,15 @@ def prefer_active_venv_site_packages(
 def _load_requirements(project_path: Path) -> list[str]:
     # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
     # 「  # via ...」时也认得出来。
-    parsed = read_requirements_file(project_path / "requirements.txt")
+    # 这里只用来找 maafw 版本声明：清单读不了（-c / -e、-r 越界或找不到）时当作没有声明，
+    # 记一行告警，不拦运行环境准备；agent 隔离 venv 真要装这份清单时仍会照常报错。
+    try:
+        parsed = read_requirements_file(project_path / "requirements.txt")
+    except RequirementsFileError as exc:
+        logger.warning(
+            "读项目 requirements.txt 找 maafw 版本声明失败，按没有声明处理：%s", exc
+        )
+        return []
     return list(parsed.requirements) if parsed is not None else []
 
 
