@@ -151,6 +151,32 @@ def parse_requirements_text(text: str) -> RequirementsFile:
     return result
 
 
+def scan_top_level_requirements(path: Path) -> list[str]:
+    """只读这一份清单顶层的依赖行，跳过所有选项与 ``-r`` / ``-c`` / ``-e`` 指令，不展开、不报指令错。
+
+    给只需从清单里认出某个包声明（如 maafw 版本）的调用方兜底：:func:`read_requirements_file`
+    因为不支持的指令或读不了的 ``-r`` 报错时，顶层写着的声明仍认得出来。真要安装请用
+    :func:`read_requirements_file`。文件读不到或解码失败返回空列表。
+    """
+
+    try:
+        text = _decode(path.read_bytes(), path)
+    except (OSError, RequirementsFileError):
+        return []
+    if text.startswith("﻿"):
+        text = text[1:]
+    found: list[str] = []
+    for raw_line in _join_lines(text.splitlines()):
+        line = _COMMENT_RE.sub("", raw_line).strip()
+        if not line:
+            continue
+        requirement, _options = _break_args_options(line)
+        requirement = requirement.strip()
+        if requirement:
+            found.append(requirement)
+    return found
+
+
 def _decode(data: bytes, path: Path) -> str:
     """先按 UTF-8（带不带 BOM 都行）；不是 UTF-8 再按系统编码；都不行报带路径的错。"""
 

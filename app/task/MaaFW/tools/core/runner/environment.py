@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
 from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
     RequirementsFileError,
     read_requirements_file,
+    scan_top_level_requirements,
 )
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -1422,15 +1423,17 @@ def prefer_active_venv_site_packages(
 def _load_requirements(project_path: Path) -> list[str]:
     # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
     # 「  # via ...」时也认得出来。
-    # 这里只用来找 maafw 版本声明：清单读不了（-c / -e、-r 越界或找不到）时当作没有声明，
-    # 记一行告警，不拦运行环境准备；agent 隔离 venv 真要装这份清单时仍会照常报错。
+    # 这里只用来找 maafw 版本声明：清单展开不了（-c / -e、-r 越界或找不到）时退回只扫顶层
+    # 依赖行（跳过指令），顶层写着的声明照样认得出，记一行告警，不拦运行环境准备；
+    # agent 隔离 venv 真要装这份清单时仍会照常报错。
+    requirements_path = project_path / "requirements.txt"
     try:
-        parsed = read_requirements_file(project_path / "requirements.txt")
+        parsed = read_requirements_file(requirements_path)
     except RequirementsFileError as exc:
         logger.warning(
-            "读项目 requirements.txt 找 maafw 版本声明失败，按没有声明处理：%s", exc
+            "项目 requirements.txt 展开不了，找 maafw 版本声明时只看顶层依赖行：%s", exc
         )
-        return []
+        return scan_top_level_requirements(requirements_path)
     return list(parsed.requirements) if parsed is not None else []
 
 
