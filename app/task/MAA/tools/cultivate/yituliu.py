@@ -35,6 +35,7 @@ from typing import Any, Mapping
 
 import httpx
 
+from app.utils import get_logger
 from app.utils.io import write_file
 
 from .types import (
@@ -45,6 +46,8 @@ from .types import (
     Recipe,
     StageMeta,
 )
+
+logger = get_logger("一图流养成数据源")
 
 # 一图流现架构为"静态 COS + 前端本地计算"，旧 API（/stage/t3 等）已 404
 _DEMAND_URL = (
@@ -848,24 +851,59 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
     return catalog
 
 
+_operator_catalog_tasks: dict[Path, asyncio.Task[list[dict[str, Any]]]] = {}
+
+
 async def load_operator_catalog(
     cache_dir: Path,
     proxy: httpx.Proxy | str | None = None,
     *,
     timeout: float = 30.0,
+    max_age_hours: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """加载干员选择器目录：快照直读，缺失则拉取需求表并并回快照。
+    """加载干员目录：独立缓存一小时，过期或缺失时拉取需求表。
 
-    目录存在快照的 ``operators`` 键，与数据集共用保鲜机制；数据集刷新
-    （write_snapshot 重写快照）会丢弃该键，下次调用自动重拉自愈。拉取
-    失败抛 YituliuDataError，由调用方兜底。
+    目录与材料数据共用快照文件，各自记录更新时间。刷新失败时回退兼容
+    目录且不延长有效期；没有兼容目录时抛 YituliuDataError。在途请求共享
+    本轮结果，一个等待者取消不影响其他等待者。
     """
+
+    task = _operator_catalog_tasks.get(cache_dir)
+    if task is None:
+        task = asyncio.create_task(
+            _load_operator_catalog(
+                cache_dir=cache_dir,
+                proxy=proxy,
+                timeout=timeout,
+                max_age_hours=max_age_hours,
+            )
+        )
+        _operator_catalog_tasks[cache_dir] = task
+
+        def finish(completed: asyncio.Task[list[dict[str, Any]]]) -> None:
+            _operator_catalog_tasks.pop(cache_dir, None)
+            # 等待者全部取消时仍回收异常，避免后台任务留下未读取异常。
+            if not completed.cancelled():
+                completed.exception()
+
+        task.add_done_callback(finish)
+    return await asyncio.shield(task)
+
+
+async def _load_operator_catalog(
+    *,
+    cache_dir: Path,
+    proxy: httpx.Proxy | str | None,
+    timeout: float,
+    max_age_hours: float,
+) -> list[dict[str, Any]]:
+    """执行本轮目录加载，缓存判断、下载和写回由所有等待者共享。"""
 
     snapshot = read_snapshot(cache_dir)
     operators = snapshot.get("operators") if isinstance(snapshot, dict) else None
-    if (
+    has_catalog = (
         isinstance(operators, list)
-        and operators
+        and bool(operators)
         and isinstance(operators[0], dict)
         and "skills" in operators[0]
         and "maxElite" in operators[0]
@@ -874,6 +912,16 @@ async def load_operator_catalog(
             "skillIndex" in skill
             for operator in operators
             for skill in operator.get("skills", [])
+        )
+    )
+    if (
+        has_catalog
+        and snapshot is not None
+        and _is_fresh(
+            snapshot=snapshot,
+            max_age_hours=max_age_hours,
+            now=time.time(),
+            timestamp_key="operators_saved_at",
         )
     ):
         return operators
@@ -886,15 +934,22 @@ async def load_operator_catalog(
             response = await client.get(_DEMAND_URL)
             response.raise_for_status()
             raw = response.json()
+        if not isinstance(raw, Mapping):
+            raise YituliuDataError("干员目录数据格式异常（根不是对象）")
+        catalog = parse_operator_catalog(raw)
+        if not catalog:
+            raise YituliuDataError("干员目录数据为空")
     except Exception as e:
+        if has_catalog:
+            logger.warning(f"干员目录刷新失败，使用旧缓存: {e}")
+            return operators
         raise YituliuDataError(f"干员目录拉取失败: {e}") from e
-    if not isinstance(raw, Mapping):
-        raise YituliuDataError("干员目录数据格式异常（根不是对象）")
 
-    catalog = parse_operator_catalog(raw)
+    # 下载期间材料数据可能已刷新，写回前重读，避免覆盖新数据。
+    snapshot = read_snapshot(cache_dir)
     payload = snapshot if isinstance(snapshot, dict) else {}
     payload["operators"] = catalog
-    payload.setdefault("saved_at", time.time())
+    payload["operators_saved_at"] = time.time()
     path = snapshot_path(cache_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -923,23 +978,32 @@ def read_snapshot(cache_dir: Path) -> dict[str, Any] | None:
 
 
 def write_snapshot(cache_dir: Path, dataset: CultivateDataSet) -> None:
-    """写入快照；失败不抛出（快照只是缓存，写失败不影响本次结果）。"""
+    """写入材料快照并保留目录缓存；写失败不影响本次结果。"""
 
     path = snapshot_path(cache_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "saved_at": time.time(),
-            "dataset": dataset_to_json(dataset),
-        }
+        snapshot = read_snapshot(cache_dir)
+        payload = snapshot if isinstance(snapshot, dict) else {}
+        payload["saved_at"] = time.time()
+        payload["dataset"] = dataset_to_json(dataset)
         write_file(path, payload)
     except OSError:
         pass
 
 
-def _is_fresh(snapshot: Mapping[str, Any], max_age_hours: float, now: float) -> bool:
-    saved_at = snapshot.get("saved_at")
-    return isinstance(saved_at, (int, float)) and now - saved_at < max_age_hours * 3600
+def _is_fresh(
+    snapshot: Mapping[str, Any],
+    max_age_hours: float,
+    now: float,
+    *,
+    timestamp_key: str = "saved_at",
+) -> bool:
+    saved_at = snapshot.get(timestamp_key)
+    return (
+        isinstance(saved_at, (int, float))
+        and 0 <= now - saved_at < max_age_hours * 3600
+    )
 
 
 async def load_dataset(
