@@ -351,14 +351,7 @@ class _PluginManager:
         if record._plugin_cls is None:
             raise PluginNotFoundError(f"插件不在列表中: {name}", payload={"name": name})
         self._assert_allowed(record, "enable")
-        if record.info.state == PluginState.ENABLED:
-            return {}
-        # 本项已完成重载启用，根语义仍保持 RELOADING；恢复下游时复用就绪提供者。
-        if (
-            ctx == LifecycleContext.RELOAD_CASCADE
-            and record.info.state == PluginState.RELOADING
-            and record.info.enabled
-        ):
+        if self._is_enabled(record, ctx=ctx):
             return {}
         # 按语境允许进入态：根/级联 → disabled|fault_runtime；本项 reload 另允 reloading
         allowed_in = {PluginState.DISABLED, PluginState.FAULT_RUNTIME}
@@ -463,7 +456,7 @@ class _PluginManager:
                 for w in list(record.info.wants)
                 if (
                     (prov := self._provider(w)) is None
-                    or prov.info.state != PluginState.ENABLED
+                    or not self._is_enabled(prov, ctx=ctx)
                 )
             ]
 
@@ -963,6 +956,15 @@ class _PluginManager:
         return Config.plugin_registry.by_name(plugin_id)
 
     # ==================== 级联（requires 服务名 → 提供者 PluginRecord）====================
+
+    @staticmethod
+    def _is_enabled(record: PluginRecord, *, ctx: LifecycleContext) -> bool:
+        """级联恢复复用已完成启用的提供者，根重载语义保留到恢复结束。"""
+        return record.info.state == PluginState.ENABLED or (
+            ctx == LifecycleContext.RELOAD_CASCADE
+            and record.info.state == PluginState.RELOADING
+            and record.info.enabled
+        )
 
     def _provider(self, service: str) -> PluginRecord | None:
         """已加载插件中 ``provides_services`` 声明该服务的提供者。"""
