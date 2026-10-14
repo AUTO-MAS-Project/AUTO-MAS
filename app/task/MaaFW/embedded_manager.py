@@ -1550,18 +1550,30 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
         )
 
+        handed_off = False
+
         async def abort_prepare() -> None:
             # 置位后正在跑的 uv 子进程会被终止。只等有限时间：等到了就在放开
-            # 项目锁之前收干净，等不到也不再拖着关机，线程随子进程结束。
+            # 项目锁之前收干净，等不到也不再拖着关机。
+            nonlocal handed_off
             cancel_event.set()
-            prepare_task.add_done_callback(
-                lambda task: None if task.cancelled() else task.exception()
-            )
             with suppress(BaseException):
                 await asyncio.wait_for(
                     asyncio.shield(prepare_task),
                     timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
                 )
+            if prepare_task.done():
+                # 异常在这里取走，免得事件循环报「Task exception was never retrieved」。
+                if not prepare_task.cancelled():
+                    prepare_task.exception()
+                return
+            # 线程还没收完（agent venv 的准备有不认令牌的一段）：预约交给它的完成回调
+            # 去放，不在 finally 里放——否则马上重开、编辑页准备环境或手动更新都能拿到
+            # 预约，和这条线程同时写同一个项目。
+            handed_off = True
+            prepare_task.add_done_callback(
+                functools.partial(_release_after_work, reservation_key)
+            )
 
         try:
             if not await self._await_or_stop(prepare_task):
@@ -1584,7 +1596,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
             return
         finally:
-            await release_project_path(reservation_key)
+            if not handed_off:
+                await release_project_path(reservation_key)
 
         # 没变化时只留一行日志，别为「什么都没做」弹通知。刚提交过更新时这里
         # 必然是「重新准备」：预检不写环境缓存（D6），提交后指纹必 miss，再走
