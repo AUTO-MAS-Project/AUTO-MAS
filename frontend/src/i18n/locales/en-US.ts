@@ -34,6 +34,7 @@ export default {
     off: 'Off',
     confirm: 'OK',
     cancel: 'Cancel',
+    close: 'Close',
     doc: 'Docs',
     unknown: 'Unknown',
   },
@@ -333,6 +334,20 @@ export default {
     maaEventPotionHint:
       'How many sanity potions the event-stage task may use. Normal sanity combat is unaffected.',
     maaCultivate: 'Operator cultivation',
+    maaCultivateSettings: 'Cultivation settings',
+    maaCultivateShowModules: 'Show module targets',
+    maaCultivateSelectOperator: 'Select {name}',
+    maaCultivateSelectAll: 'Select all operators',
+    maaCultivateSelectMatches: 'Select all results',
+    maaCultivateSearchOperators: 'Search operator name or ID',
+    maaCultivateSearchEmpty: 'No matching operators',
+    maaCultivateDeleteSelected: 'Delete selected ({count})',
+    maaCultivateDeleteSelectedConfirm:
+      'Delete cultivation targets for the {count} selected operators?',
+    maaCultivateSkill1: 'Skill 1',
+    maaCultivateSkill2: 'Skill 2',
+    maaCultivateSkill3: 'Skill 3',
+    maaCultivateSkillName: '{name} ({skill})',
     maaCultivateHint:
       'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
@@ -345,6 +360,7 @@ export default {
     maaCultivateImportPlaceholder: 'Paste training targets as JSON',
     maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
     maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
+    maaCultivateImportSkipped: 'Skipped {count} entries that could not be imported',
     maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
     maaCultivateImportEmpty: 'No training targets to import',
     maaCultivateImportFormatError:
@@ -382,18 +398,22 @@ export default {
     maaCultivateSklandSyncFailed:
       'Skland progression sync failed, so cultivation is paused for this run. Check your network or bind Skland again. Daily tasks and depot maintenance continue as usual.',
     maaCultivateAutoRaiseHint:
-      'Requires MAA v6.19.0-beta.1 or later. Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+      'Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+    maaCultivateAutoRaiseVersionHint: 'Automatic training requires MAA v6.19.0-beta.1 or later',
     maaCultivateMasterySkillHint:
       'Mastery requires skill rank 7. Selecting a mastery target automatically sets the skill rank target to 7; clearing the mastery target leaves the skill rank target unchanged.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
-      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
+      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically.',
+    maaCultivateTakeoverHint:
+      'When materials are short, cultivation takes over farming for this run and pauses depot maintenance. Depot maintenance resumes once materials are complete.',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
     maaCultivatePreviewStageHeading: 'Farming plan',
     maaCultivatePreviewDemandHeading: 'Material demands',
+    maaCultivatePreviewDemandNone: 'No materials needed',
     maaCultivatePreviewUnobtainable:
       'The following materials cannot be obtained by farming and must be acquired in game',
     maaCultivatePreviewNone: 'Nothing to farm (materials are complete, or no stages are open)',
@@ -434,6 +454,7 @@ export default {
     maaCultivateStateAchieved: 'Achieved',
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
+    maaDepotSettings: 'Depot maintenance settings',
     maaDepotHint: 'Set target stock per material; farmed automatically when short',
     maaDepotPlanCount: '{count} plans',
     maaDepotEmpty: 'No plans added',

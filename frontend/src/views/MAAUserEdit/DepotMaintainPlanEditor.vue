@@ -50,12 +50,7 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button
-          type="dashed"
-          size="small"
-          :disabled="loading || (eventMode && (activityUnavailable || eligibleStages.length === 0))"
-          @click="addPlan"
-        >
+        <a-button v-if="!eventMode" type="dashed" size="small" :disabled="loading" @click="addPlan">
           <template #icon><PlusOutlined /></template>
           {{ t('edit.addItem') }}
         </a-button>
@@ -131,6 +126,7 @@
               :loading="loading || activityUnavailable"
               :item-options="itemOptions"
               :get-popup-container="getPopupContainer"
+              :list-height="popupListHeight"
               @change="onEventStageChange(record, $event)"
             />
             <template v-else>
@@ -144,6 +140,7 @@
                 option-filter-prop="label"
                 :virtual="false"
                 :get-popup-container="getPopupContainer"
+                :list-height="popupListHeight"
                 :popup-match-select-width="false"
                 :placeholder="t('edit.pickStage')"
                 @change="onStageChange(record)"
@@ -158,6 +155,7 @@
                 option-filter-prop="label"
                 :virtual="false"
                 :get-popup-container="getPopupContainer"
+                :list-height="popupListHeight"
                 :placeholder="t('edit.pickItem')"
                 @change="onItemChange(record)"
               />
@@ -251,6 +249,7 @@ import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
 import EventDepotPlanFields from './EventDepotPlanFields.vue'
 import { getEventDepotStages, getEventDepotPresets } from './eventDepotMaintainPresets'
 import { resolveActivityStage } from './activityStages'
+import { usePlanSelectPopup } from './usePlanSelectPopup'
 import type { ActivityItem } from '@/types/home'
 import type {
   DepotMaintainPlanEditorState,
@@ -370,10 +369,7 @@ const stockOf = (record: DepotMaintainPlan): number | string => {
   return itemId ? (props.inventory?.[itemId] ?? '—') : '—'
 }
 
-// 下拉浮层挂到编辑器根容器：既不被表格滚动容器裁剪（挂 td 会被 overflow
-// 裁掉显示不全），又随页面滚动移动（挂 body 会驻留原地）
-const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
-  trigger.closest<HTMLElement>('.depot-plan-editor') ?? document.body
+const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 </script>
 
 <style scoped>

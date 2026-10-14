@@ -120,6 +120,9 @@ class MaaCultivateGoalOptionItem(BaseModel):
     value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
     label: str = Field(..., description="目标名称（模组带分支码）")
     maxLevel: int = Field(default=0, description="可达档位上限（按非空消耗档数）")
+    skillIndex: Optional[int] = Field(
+        default=None, description="技能原始序号；模组为空"
+    )
 
 
 class MaaCultivateOperatorOptionItem(BaseModel):
@@ -158,8 +161,26 @@ class MaaCultivateImportIn(BaseModel):
     content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
 
 
+class MaaCultivateImportSkippedItem(BaseModel):
+    error: Literal[
+        "format",
+        "empty",
+        "operator",
+        "ambiguous",
+        "elite",
+        "skill",
+        "mastery",
+        "unsupported",
+    ] = Field(..., description="可本地化的导入错误类型")
+    index: int = Field(..., description="跳过条目的序号，从 1 开始")
+    name: str = Field(default="", description="跳过条目的干员名称")
+
+
 class MaaCultivateImportOut(MaaCultivateOperatorsOut):
     targets: str = Field(default="[]", description="转换后的现有养成目标 JSON，不落库")
+    skipped: List[MaaCultivateImportSkippedItem] = Field(
+        default_factory=list, description="无法导入而跳过的条目，不影响其余目标"
+    )
     error: Optional[str] = Field(default=None, description="可本地化的导入错误类型")
     index: Optional[int] = Field(default=None, description="出错条目的序号，从 1 开始")
     name: str = Field(default="", description="出错条目的干员名称")

@@ -195,41 +195,59 @@
       </PipelineRow>
 
       <!-- 干员养成：一次性目标（精英化 / 绑定森空岛后的专精·模组），排活动关优先之后、库存保持之前（队列 #3） -->
-      <PipelineRow
-        :name="t('edit.maaCultivate')"
+      <CultivateTargetEditor
         :summary="cultivateSummary"
-        :checked="formData.Task.IfCultivate"
-        :disabled="loading"
-        :hint="t('edit.maaCultivateHint')"
-        @change="emitSave('Task.IfCultivate', $event)"
-      >
-        <CultivateTargetEditor
-          :form-data="formData"
-          :loading="loading"
-          :operator-catalog="cultivateOperatorCatalog"
-          :operator-options-loading="cultivateOperatorOptionsLoading"
-          :operator-options-error="cultivateOperatorOptionsError"
-          :skland-role-options="sklandRoleOptions"
-          :skland-role-loading="sklandRoleLoading"
-          :skland-role-error="sklandRoleError"
-          :load-skland-role-options="loadSklandRoleOptions"
-          :item-options="depotItemOptions"
-          :cultivate-preview="cultivatePreview"
-          :cultivate-preview-loading="cultivatePreviewLoading"
-          :cultivate-preview-error="cultivatePreviewError"
-          :load-cultivate-preview="loadCultivatePreview"
-          :import-cultivate-targets="importCultivateTargets"
-          @save="emitSave"
-        />
-      </PipelineRow>
-
+        :form-data="formData"
+        :loading="loading"
+        :operator-catalog="cultivateOperatorCatalog"
+        :operator-options-loading="cultivateOperatorOptionsLoading"
+        :operator-options-error="cultivateOperatorOptionsError"
+        :skland-role-options="sklandRoleOptions"
+        :skland-role-loading="sklandRoleLoading"
+        :skland-role-error="sklandRoleError"
+        :load-skland-role-options="loadSklandRoleOptions"
+        :item-options="depotItemOptions"
+        :cultivate-preview="cultivatePreview"
+        :cultivate-preview-loading="cultivatePreviewLoading"
+        :cultivate-preview-error="cultivatePreviewError"
+        :load-cultivate-preview="loadCultivatePreview"
+        :import-cultivate-targets="importCultivateTargets"
+        @save="emitSave"
+      />
       <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
         :summary="depotSummary"
         :checked="formData.Task.IfDepotMaintain"
         :disabled="loading"
+        :has-detail="false"
         @change="emitSave('Task.IfDepotMaintain', $event)"
+      >
+        <template #actions>
+          <a-tooltip :title="t('edit.maaDepotSettings')">
+            <a-button
+              type="text"
+              shape="circle"
+              :aria-label="t('edit.maaDepotSettings')"
+              aria-haspopup="dialog"
+              :disabled="loading"
+              @click="depotSettingsOpen = true"
+            >
+              <template #icon><SettingOutlined /></template>
+            </a-button>
+          </a-tooltip>
+        </template>
+      </PipelineRow>
+      <a-modal
+        v-model:open="depotSettingsOpen"
+        :title="t('edit.maaDepotSettings')"
+        :width="1100"
+        wrap-class-name="maa-plan-settings-modal"
+        centered
+        destroy-on-close
+        :closable="!loading"
+        :mask-closable="!loading"
+        :keyboard="!loading"
       >
         <DepotMaintainPlanEditor
           :editor="depotPlanEditor"
@@ -244,7 +262,12 @@
           :inventory="depotInventory"
           :depot-inventory-time="depotInventoryTime"
         />
-      </PipelineRow>
+        <template #footer>
+          <a-button :disabled="loading" @click="depotSettingsOpen = false">
+            {{ t('common.close') }}
+          </a-button>
+        </template>
+      </a-modal>
 
       <!-- 理智作战 -->
       <PipelineRow
@@ -365,7 +388,8 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { SettingOutlined } from '@ant-design/icons-vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
@@ -392,6 +416,7 @@ import {
 } from './taskSummaries'
 
 const { t } = useI18n()
+const depotSettingsOpen = ref(false)
 
 type SelectOption = { label: string; value: string }
 // 基建班次选项：时段由后端随选项下发（前端拿不到 Data.CustomInfrast）

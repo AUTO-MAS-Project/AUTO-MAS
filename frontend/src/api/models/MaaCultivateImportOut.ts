@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaCultivateImportSkippedItem } from './MaaCultivateImportSkippedItem';
 import type { MaaCultivateOperatorOptionItem } from './MaaCultivateOperatorOptionItem';
 export type MaaCultivateImportOut = {
     /**
@@ -24,6 +25,10 @@ export type MaaCultivateImportOut = {
      * 转换后的现有养成目标 JSON，不落库
      */
     targets?: string;
+    /**
+     * 无法导入而跳过的条目，不影响其余目标
+     */
+    skipped?: Array<MaaCultivateImportSkippedItem>;
     /**
      * 可本地化的导入错误类型
      */
