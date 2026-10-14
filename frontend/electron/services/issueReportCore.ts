@@ -298,6 +298,12 @@ function readDiagnosticContent(filePath: string): Buffer {
     if (json !== undefined) {
       return Buffer.from(`${JSON.stringify(sanitizeJsonValue(json), null, 2)}\n`, 'utf-8')
     }
+    // 解析不了（带注释的 JSONC 等）走文本规则；字符串里斜杠写成转义的地址在原文上匹配
+    // 不到，再把字面量逐个解码过一遍同一套规则。先整段过文本规则，按键名的赋值规则才认得出
+    return Buffer.from(
+      maskJsonStringLiterals(sanitizeText(rawText), sanitizeText, raw => raw),
+      'utf-8'
+    )
   }
   return Buffer.from(sanitizeText(rawText), 'utf-8')
 }
@@ -483,18 +489,20 @@ const maskRawSegment = (text: string, homePath: string) =>
   maskHomeInRawText(maskUrlSecrets(text), homePath)
 
 /**
- * 给 JSON / JSONC 原文打码而不改动原文的其余部分：推送地址密钥与用户主目录。
- *
- * 字符串字面量按 JSON 解码后再打码——`https:\/\/…`、`/` 这类转义写法在原文上匹配不到
- * 地址规则，解码后才认得出；打码后有变化才用 JSON.stringify 换掉这个字面量，没变化的原样保留。
- * 字面量之外的部分（注释、结构）与解码失败的字面量按原文打码。不抛错。
+ * 按 JSONC 扫描原文里的字符串字面量（跳过 // 与 /* *\/ 注释）：能解码的字面量把解码后的值交给
+ * maskValue，有变化才用 JSON.stringify 换掉这个字面量，没变化的原样保留；字面量之外的部分
+ * （注释、结构）与解码失败的字面量交给 maskRaw。不抛错。
  */
-export function maskVerbatimJsonText(text: string, homePath: string): string {
+function maskJsonStringLiterals(
+  text: string,
+  maskValue: (value: string) => string,
+  maskRaw: (raw: string) => string
+): string {
   const parts: string[] = []
   let rawStart = 0
   let index = 0
   const flushRaw = (end: number) => {
-    if (end > rawStart) parts.push(maskRawSegment(text.slice(rawStart, end), homePath))
+    if (end > rawStart) parts.push(maskRaw(text.slice(rawStart, end)))
   }
   while (index < text.length) {
     const char = text[index]
@@ -528,16 +536,30 @@ export function maskVerbatimJsonText(text: string, homePath: string): string {
       decoded = undefined
     }
     if (typeof decoded === 'string') {
-      const masked = maskHomeInValue(maskUrlSecrets(decoded), homePath)
+      const masked = maskValue(decoded)
       parts.push(masked === decoded ? literal : JSON.stringify(masked))
     } else {
-      parts.push(maskRawSegment(literal, homePath))
+      parts.push(maskRaw(literal))
     }
     index = literalEnd
     rawStart = literalEnd
   }
   flushRaw(text.length)
   return parts.join('')
+}
+
+/**
+ * 给 JSON / JSONC 原文打码而不改动原文的其余部分：推送地址密钥与用户主目录。
+ *
+ * 字符串字面量按 JSON 解码后再打码：斜杠写成反斜杠转义或 \uXXXX 转义的地址在原文上匹配不到
+ * 地址规则，解码后才认得出。字面量之外的部分与解码失败的字面量按原文打码。不抛错。
+ */
+export function maskVerbatimJsonText(text: string, homePath: string): string {
+  return maskJsonStringLiterals(
+    text,
+    value => maskHomeInValue(maskUrlSecrets(value), homePath),
+    raw => maskRawSegment(raw, homePath)
+  )
 }
 
 /**

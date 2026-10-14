@@ -4,7 +4,12 @@ import * as path from 'path'
 import AdmZip = require('adm-zip')
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { addDebugDirectory, CollectorState, maskVerbatimJsonText } from './issueReportCore'
+import {
+  addDebugDirectory,
+  addDiagnosticFile,
+  CollectorState,
+  maskVerbatimJsonText,
+} from './issueReportCore'
 
 vi.mock('./logger', () => ({
   getLogger: () => ({
@@ -157,5 +162,50 @@ describe('maskVerbatimJsonText 原文打码', () => {
     expect(masked).not.toMatch(/SECRET_[GH]/)
     expect(mask('"')).toBe('"')
     expect(mask('"\\')).toBe('"\\')
+  })
+})
+
+describe('addDiagnosticFile 收解析不了的 .json', () => {
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-report-core-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  const collectText = (relative: string) => {
+    const state: CollectorState = { zip: new AdmZip(), entries: [], archiveBytes: 0 }
+    addDiagnosticFile(state, path.join(root, relative), 'out/file.json')
+    return state.zip.getEntry('out/file.json')!.getData().toString('utf-8')
+  }
+
+  it('带注释的 .json 里转义写法与普通写法的推送地址都打码，按键名的打码照旧', () => {
+    // 普通字符串写转义：'\\/' 与 '\\u002F' 是原文里的反斜杠转义
+    const text = [
+      '{',
+      '  // 注释 https://api.day.app/SECRET_K',
+      '  "a": "https:\\/\\/api.day.app\\/SECRET_L",',
+      '  "b": "https:\\u002F\\u002Fapi.day.app\\u002fSECRET_M",',
+      '  "c": "https://api.day.app/SECRET_N",',
+      '  "password": "SECRET_O"',
+      '}',
+    ].join('\n')
+    expect(text).toContain('\\u002F')
+    write('debug/conf.json', text)
+
+    const stored = collectText('debug/conf.json')
+
+    expect(stored).not.toMatch(/SECRET_[KLMNO]/)
+    expect(stored).toContain('// 注释 https://api.day.app/***')
+    expect(stored).toContain('"a": "https://api.day.app/***"')
+  })
+
+  it('能解析的 .json 照旧按键名打码并重新排版', () => {
+    write('debug/plain.json', '{"b":"https:\\/\\/api.day.app\\/SECRET_P","token":"t"}')
+
+    expect(collectText('debug/plain.json')).toBe(
+      `${JSON.stringify({ b: 'https://api.day.app/***', token: '***' }, null, 2)}\n`
+    )
   })
 })
