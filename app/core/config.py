@@ -4529,6 +4529,13 @@ class AppConfig(GlobalConfig):
             # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
             "HSR 脚本直控完成",
         }
+        # MaaFW 停服维护跳过的两句, 与 app/task/MaaFW/tools/embedded/signal_notice.py
+        # 的 SIGNAL_USER_MESSAGES / MAINTENANCE_SKIP_MESSAGE 一致: 维护是跳过,
+        # 既不算失败, 也不能显示成完成
+        maafw_skip_results = {
+            "游戏停服维护中，本次跳过",
+            "游戏停服维护中，本次跳过（同一资源已确认在维护）",
+        }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
             # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
@@ -4542,6 +4549,9 @@ class AppConfig(GlobalConfig):
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
             return False
+
+        def is_skip_result(result_key: str, result_value: Any) -> bool:
+            return result_key == "general_result" and result_value in maafw_skip_results
 
         for json_file in statistic_path_list:
             try:
@@ -4605,9 +4615,14 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    success = is_success_result(key, single_data[key])
+                    if is_success_result(key, single_data[key]):
+                        status = "DONE"
+                    elif is_skip_result(key, single_data[key]):
+                        status = "SKIP"
+                    else:
+                        status = "ERROR"
 
-                    if not success:
+                    if status == "ERROR":
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -4616,7 +4631,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": "DONE" if success else "ERROR",
+                        "status": status,
                         "jsonFile": str(json_file),
                         "result": single_data[key],
                     }

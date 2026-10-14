@@ -3438,6 +3438,7 @@ export default {
     recordCount: '{count} records',
     timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
     done: 'Done',
+    skipped: 'Skipped',
     failed: 'Failed',
     failedWith: 'Failed: {error}',
     search: 'Search',

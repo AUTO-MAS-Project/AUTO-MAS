@@ -100,6 +100,7 @@ const dateGroups = computed(() =>
       let successCount = 0
       let failureCount = 0
       for (const record of userData.index ?? []) {
+        // 跳过（SKIP，如停服维护）既不算成功也不算失败
         if (record.status === HistoryIndexItem.status.DONE) successCount++
         else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
       }
