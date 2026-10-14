@@ -268,4 +268,5 @@ __all__ = [
     "RequirementsFileError",
     "parse_requirements_text",
     "read_requirements_file",
+    "scan_top_level_requirements",
 ]
