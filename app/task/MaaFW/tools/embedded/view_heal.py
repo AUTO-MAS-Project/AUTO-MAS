@@ -127,13 +127,14 @@ async def heal_projection(
     base: Path | None = None,
     cache_root: Path | None = None,
     post_validate: Callable[[Path], Any] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> HealOutcome | None:
     """检查并按需补齐本脚本所在组的载荷；不用查时返回 None（不拿锁、不联网）。
 
-    ``reservation_held`` / ``lock_timeout`` 与 :func:`run_view_update` 同义；拿不到谱系锁
-    （同项目正在更新）就这次不查。返回的 ``HealOutcome.switched`` 表示本脚本的视图换了
-    载荷。**从不抛异常**（取消除外）：失败只记日志，照常用当前版本运行。
-    ``post_validate`` 给测试替换预检；缺省按更新的预检建。
+    ``reservation_held`` / ``lock_timeout`` / ``cancel_event`` 与 :func:`run_view_update`
+    同义；拿不到谱系锁（同项目正在更新）就这次不查，令牌置位（用户停止）就不再开始取回。
+    返回的 ``HealOutcome.switched`` 表示本脚本的视图换了载荷。**从不抛异常**（取消除外）：
+    失败只记日志，照常用当前版本运行。``post_validate`` 给测试替换预检；缺省按更新的预检建。
     """
 
     if not await asyncio.to_thread(projection_heal_due, script_id, channel, base):
@@ -184,12 +185,15 @@ async def heal_projection(
             lock_timeout=lock_timeout,
             base=base,
             switch_label="补齐后的版本",
+            cancel_event=cancel_event,
         )
     except MaaFWProjectUpdateError as exc:
-        if not exc.project_lock_busy:
-            logger.warning(f"MFW 投影补齐失败（{script_id[:8]}）：{exc}")
-        else:
+        if exc.project_lock_busy:
             logger.info(f"MFW 投影补齐：同项目正在更新，这次不查（{script_id[:8]}）")
+        elif exc.cancelled:
+            logger.info(f"MFW 投影补齐：已停止，这次不查（{script_id[:8]}）")
+        else:
+            logger.warning(f"MFW 投影补齐失败（{script_id[:8]}）：{exc}")
         return None
     except Exception as exc:  # noqa: BLE001 - 补齐失败不挡运行
         logger.opt(exception=True).warning(

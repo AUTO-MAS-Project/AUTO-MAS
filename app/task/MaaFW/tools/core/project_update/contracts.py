@@ -50,6 +50,8 @@ VERSION_BOUND_STATE_FILES = frozenset({"data/manifest_cache.json"})
 # 发行包自带的，必须照常算进指纹。
 NATIVE_RUNTIME_OVERLAY_DIR = "maafw"
 NATIVE_RUNTIME_OVERLAY_MARKER = ".auto_mas_maafw_native_runtime.json"
+# 项目指纹逐文件流式读的块大小。
+_FINGERPRINT_CHUNK = 1024 * 1024
 
 
 def artifact_id_for(
@@ -119,14 +121,29 @@ def project_fingerprint(project_path: str | Path) -> str | None:
         if candidate.is_file():
             files.append((relative, candidate))
     for relative, candidate in sorted(files, key=lambda item: item[0].casefold()):
+        # 流式读：几十 MB 的 DLL / 模型不整块进内存。摘要输入与整块读完全一样（路径、
+        # \0、8 字节长度、内容），长度先按打开后的 fstat 写；读到的字节数与它对不上
+        # （读的时候文件在变）就回退到整块读这一个文件，结果与以前逐字节相同。
+        checkpoint = digest.copy()
         try:
-            content = candidate.read_bytes()
+            with candidate.open("rb") as handle:
+                size = os.fstat(handle.fileno()).st_size
+                digest.update(relative.encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(size.to_bytes(8, "big"))
+                read = 0
+                for chunk in iter(lambda: handle.read(_FINGERPRINT_CHUNK), b""):
+                    digest.update(chunk)
+                    read += len(chunk)
+            if read != size:
+                content = candidate.read_bytes()
+                digest = checkpoint
+                digest.update(relative.encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(len(content).to_bytes(8, "big"))
+                digest.update(content)
         except OSError:
             return None
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
     return digest.hexdigest()
 
 

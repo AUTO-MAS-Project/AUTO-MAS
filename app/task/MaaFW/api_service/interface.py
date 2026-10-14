@@ -39,8 +39,13 @@ from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
 )
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    embedded_projects_root,
+    is_embedded_copy_dir_name,
+)
 from app.task.MaaFW.tools.embedded.flavor import (
     flavor_for_project,
+    no_default_fallback_inputs,
     resolve_flavor,
     unselectable_entries,
 )
@@ -97,8 +102,10 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
             interface,
         )
         payload = preview.model_dump(mode="json")
-        _mark_unselectable_tasks(
-            payload["tasks"], _preview_unselectable_entries(script_id, interface)
+        flavor = _preview_flavor(script_id, interface)
+        _mark_unselectable_tasks(payload["tasks"], unselectable_entries(flavor))
+        _clear_no_fallback_defaults(
+            payload["options"], no_default_fallback_inputs(flavor)
         )
         data = MaaFWInterfacePreviewData.model_validate(payload)
     except MaaFWInterfaceLoadError as exc:
@@ -115,20 +122,18 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
     )
 
 
-def _preview_unselectable_entries(
-    script_id: str | None, interface: MaaFWInterface
-) -> dict[str, str]:
-    """预览要标不可选的 entry → 原因：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
+def _preview_flavor(script_id: str | None, interface: MaaFWInterface) -> Any:
+    """预览按哪个特调补标记：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
 
     核心包的预览不认识特调，标记在这一层补上（契约见 ``tools/embedded/flavor.py``）。
     """
 
     if script_id:
         try:
-            return unselectable_entries(resolve_flavor(maafw_script_config(script_id)))
+            return resolve_flavor(maafw_script_config(script_id))
         except (KeyError, ValueError, TypeError):
-            return {}
-    return unselectable_entries(flavor_for_project(interface))
+            return None
+    return flavor_for_project(interface)
 
 
 def _mark_unselectable_tasks(
@@ -136,6 +141,25 @@ def _mark_unselectable_tasks(
 ) -> None:
     for task in tasks:
         task["unselectableReason"] = entries.get(str(task.get("entry") or ""))
+
+
+def _clear_no_fallback_defaults(
+    options: list[dict[str, Any]], fields: frozenset[tuple[str, str]]
+) -> None:
+    """特调声明不回落的字符串字段（``no_default_fallback_inputs``），预览里的 ``default`` 置空。
+
+    运行器对它们没填时下发空串、不回落 default；用户页把没填的字段显示成 default（与运行器回落
+    同口径），不置空的话 M9A 的自定义兑换码框里会显示「占位」，运行时实际却是空串。default 在
+    前端只用于显示与数字字段的空值校验，这几个都是字符串字段，置空只影响显示。
+    """
+
+    if not fields:
+        return
+    for option in options:
+        option_name = str(option.get("name") or "")
+        for input_item in option.get("inputs") or []:
+            if (option_name, str(input_item.get("name") or "")) in fields:
+                input_item["default"] = None
 
 
 _MAAFW_IMAGE_SUFFIXES = {
@@ -151,9 +175,9 @@ _MAAFW_IMAGE_SUFFIXES = {
 }
 """允许外发的图片后缀。
 
-白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，等于把「读任意目录下的
-文件」的能力暴露出去了，只能靠「必须在 root 内」+「必须是图片」两道闸门把它收窄
-成「读项目内的图片」。放开成任意后缀就变成了任意文件读取。
+白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，只能靠「root 必须是某个脚本的
+视图」+「必须在 root 内」+「必须是图片」三道闸门把它收窄成「读项目内的图片」。放开成
+任意后缀就变成了任意文件读取。
 """
 
 
@@ -161,10 +185,15 @@ def maafw_asset_file_path(root: str, asset_path: str) -> Path:
     """把 (项目根, 项目内相对路径) 解析成一个可安全外发的图片绝对路径。
 
     ``/maafw/asset`` 的安全边界就在这里：``FileNotFoundError`` 由端点映射成 404，
-    ``ValueError`` 映射成 400。
+    ``ValueError`` 映射成 400。root 只认 ``data/mfw/<12hex>`` 视图——有效项目根永远是它
+    （前端传的是带 scriptId 预览返回的 ``path``）；任意 root 加上全局 CORS，别的网页就能
+    读本机任意已知路径下的图片。
     """
 
     root_path = Path(root).resolve()
+    views_root = embedded_projects_root().resolve()
+    if root_path.parent != views_root or not is_embedded_copy_dir_name(root_path.name):
+        raise ValueError("只能读取 MFW 项目副本里的图片")
     if not root_path.is_dir():
         raise ValueError("MFW 项目目录不存在")
 

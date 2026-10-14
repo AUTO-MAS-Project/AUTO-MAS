@@ -12,8 +12,9 @@ runner venv（base）里不再装 ``maafw``：worker 靠 ``PYTHONPATH`` 里的 b
 来源顺序（方案 D3）：PyPI / 镜像官方 wheel（平台标签 ``win_amd64``，MFW 只支持 x64）
 → MaaFramework tag 源码（无 DLL，只对自带原生库的项目有意义）。每个目录都带全量
 清单（相对路径 + 大小 + sha256），命中判据是清单全量校验通过，不合即当不存在重建；
-校验结果按进程缓存。目录里从不写 pyc：worker 与自检子进程都设
-``PYTHONPYCACHEPREFIX=<pool>/.pycache``，清单才稳定。
+校验结果按进程缓存。worker 与自检子进程设 ``PYTHONPYCACHEPREFIX=<pool>/.pycache``，pyc
+不进 binding 目录；池根太长时不设（``pool_pycache_prefix``），pyc 落进源码旁的
+``__pycache__``——清单与校验本来就不算它。
 
 本模块只用标准库 + ``packaging``（方案 D12）；不读 ``Config``，代理、索引候选、离线
 标记都由调用方传入。
@@ -36,6 +37,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,8 +54,11 @@ from ._shared import (
     assert_existing_chain_has_no_reparse,
     assert_not_reparse,
     format_time,
+    mask_url_credentials,
     parse_time,
     pool_lock,
+    register_active_staging,
+    release_active_staging,
     remove_tree_best_effort,
     utc_now,
     write_json_atomic,
@@ -74,6 +79,7 @@ from .binding_fallback import (
 )
 from .host_environment import (
     LOOPBACK_NO_PROXY_HOSTS,
+    pycache_prefix_fits,
     strip_host_python_environment,
 )
 
@@ -127,6 +133,11 @@ class MaaFWBindingNetworkError(MaaFWBindingError):
     """所有索引候选都连不上：网络故障，不能当成「没有这个版本」去走源码兜底。"""
 
 
+class MaaFWBindingDownloadError(MaaFWBindingError):
+    """某个索引给的 wheel 下下来是坏的（空、sha256 不符、不是 zip、超大、解包时 CRC 错、
+    内容不完整或版本不对）：换下一个候选。"""
+
+
 @dataclass(frozen=True)
 class BindingInfo:
     """一份就绪的 binding：worker 环境与回收对账都从这里取事实。"""
@@ -175,6 +186,36 @@ def native_directory(pool_root: Path, version: str) -> Path:
 
 def pycache_directory(pool_root: Path) -> Path:
     return Path(pool_root) / PYCACHE_DIRECTORY_NAME
+
+
+#: 前缀树里最深的一支：base venv 的 site-packages（numpy、pydantic 的 pyc 都写进前缀树，
+#: 池根在路径里出现两遍）。runtime id 定长，所以按形状算长度即可。
+_BASE_SITE_PACKAGES_SHAPE = os.path.join(
+    "runtimes", "maafw-runtime-" + "0" * 24, "environment", "Lib", "site-packages"
+)
+#: site-packages 之下 pyc 相对部分（分隔符 + 包内路径 + ``.cpython-312.pyc``）的余量。base
+#: 的包集合是常量（``runner.environment.BASE_RUNTIME_PACKAGES``），按它实算：342 个源文件
+#: 里最深的一支在默认安装 ``C:\Program Files\AUTO-MAS`` 下整条 pyc 路径 256 字符，即相对
+#: 部分 69；取 72（默认安装估出 259，正好放得下，保持原来设前缀的行为；每用户安装目录
+#: ``%LOCALAPPDATA%\Programs\AUTO-MAS`` 仍估超、不设）。项目前缀那 90 是给发行包自带的
+#: 任意 site-packages 留的，这里包集合固定，不用那么宽。base 包集合换了要重算。
+_BASE_PYC_RELATIVE_BUDGET = 72
+
+
+def pool_pycache_prefix(pool_root: Path) -> Path | None:
+    """``<pool>/.pycache``；池根长到前缀树会撞 MAX_PATH、又没开长路径支持时返回 None。
+
+    超过 MAX_PATH 时解释器写 pyc 静默失败、每次起 worker 都全量重编译（每用户安装目录
+    ``%LOCALAPPDATA%\\Programs\\AUTO-MAS`` 下就会撞上），不如不设前缀。
+    """
+
+    prefix = pycache_directory(pool_root)
+    deepest = os.path.join(str(Path(pool_root)), _BASE_SITE_PACKAGES_SHAPE)
+    if not pycache_prefix_fits(
+        prefix, deepest, relative_budget=_BASE_PYC_RELATIVE_BUDGET
+    ):
+        return None
+    return prefix
 
 
 def directory_version(name: str) -> str | None:
@@ -856,7 +897,7 @@ def select_index_version(
     for index in index_candidates or (DEFAULT_PACKAGE_INDEX,):
         page = fetch_index_page(index, proxy_url=proxy_url)
         if page.status == "unreachable":
-            failures.append(f"{index}: {page.detail}")
+            failures.append(mask_url_credentials(f"{index}: {page.detail}"))
             continue
         if page.status == "missing":
             definite_missing.append(index)
@@ -868,7 +909,7 @@ def select_index_version(
     if definite_missing:
         raise MaaFWBindingUnavailableError(
             f"索引上没有满足 {requirement} 的 maafw（平台 {tag}）: "
-            + ", ".join(definite_missing)
+            + mask_url_credentials(", ".join(definite_missing))
         )
     raise MaaFWBindingNetworkError(
         "所有包索引都连不上，无法解析 maafw 版本: " + "; ".join(failures)
@@ -919,11 +960,21 @@ def _staging_root(pool_root: Path) -> Path:
 
 
 def _new_staging_dir(pool_root: Path, kind: str, version: str) -> Path:
+    """建一个暂存目录并登记为「在用」（见 ``_shared.register_active_staging``）。
+
+    调用方用完必须 ``release_active_staging``；换入后目录已不在原处，照样要放。
+    """
+
     root = _staging_root(pool_root)
     assert_existing_chain_has_no_reparse(root)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{kind}-{version}-{uuid.uuid4().hex}"
-    path.mkdir(parents=False, exist_ok=False)
+    register_active_staging(path)
+    try:
+        path.mkdir(parents=False, exist_ok=False)
+    except BaseException:
+        release_active_staging(path)
+        raise
     return path
 
 
@@ -1163,6 +1214,15 @@ def _record_digest(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: 下载进度多久报一次：官方 wheel 60 MB 上下，直连 PyPI 慢的环境要一到几分钟，期间界面
+#: 只有一句「正在准备 MaaFW Python binding」，看着像卡死。
+_DOWNLOAD_PROGRESS_STEP_BYTES = 16 * 1024 * 1024
+
+
+def _format_megabytes(value: int) -> str:
+    return f"{value / (1024 * 1024):.1f} MB"
+
+
 def _download_wheel(
     link: WheelLink,
     destination: Path,
@@ -1170,6 +1230,8 @@ def _download_wheel(
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
     timeout: float = WHEEL_DOWNLOAD_TIMEOUT_SECONDS,
+    log: Callable[[str], None] | None = None,
+    label: str = "wheel",
 ) -> None:
     request = urllib.request.Request(link.url, headers={"User-Agent": "AUTO-MAS"})
     digest = hashlib.sha256()
@@ -1178,6 +1240,12 @@ def _download_wheel(
         with _build_opener(proxy_url, link.url).open(
             request, timeout=timeout
         ) as response:
+            total: int | None = None
+            try:
+                total = int(response.headers.get("Content-Length") or 0) or None
+            except (AttributeError, TypeError, ValueError):
+                total = None
+            next_report = _DOWNLOAD_PROGRESS_STEP_BYTES
             with destination.open("wb") as stream:
                 while True:
                     if check_cancelled is not None:
@@ -1187,24 +1255,33 @@ def _download_wheel(
                         break
                     written += len(chunk)
                     if written > _MAX_WHEEL_BYTES:
-                        raise MaaFWBindingError("wheel 响应体超过大小上限")
+                        raise MaaFWBindingDownloadError("wheel 响应体超过大小上限")
                     digest.update(chunk)
                     stream.write(chunk)
+                    if log is not None and written >= next_report:
+                        next_report = written + _DOWNLOAD_PROGRESS_STEP_BYTES
+                        log(
+                            f"[MaaFW Runtime Pool] 正在下载 {label}: "
+                            f"{_format_megabytes(written)}"
+                            + (f" / {_format_megabytes(total)}" if total else "")
+                        )
     except urllib.error.HTTPError as exc:
         raise MaaFWBindingNetworkError(
-            f"下载 wheel 失败: HTTP {exc.code} {link.url}"
+            f"下载 wheel 失败: HTTP {exc.code} {mask_url_credentials(link.url)}"
         ) from exc
     except (urllib.error.URLError, OSError, ValueError) as exc:
         # 索引已经说了有这个版本，下载不下来就是网络问题，不是「没有」
-        raise MaaFWBindingNetworkError(f"下载 wheel 失败: {link.url}: {exc}") from exc
+        raise MaaFWBindingNetworkError(
+            mask_url_credentials(f"下载 wheel 失败: {link.url}: {exc}")
+        ) from exc
     if written == 0:
-        raise MaaFWBindingError("wheel 响应体为空")
+        raise MaaFWBindingDownloadError("wheel 响应体为空")
     if link.sha256 and digest.hexdigest() != link.sha256:
-        raise MaaFWBindingError(
+        raise MaaFWBindingDownloadError(
             f"wheel 校验失败: 索引声明 sha256={link.sha256[:12]}…，实际 {digest.hexdigest()[:12]}…"
         )
     if not zipfile.is_zipfile(destination):
-        raise MaaFWBindingError("wheel 响应不是 zip 文件")
+        raise MaaFWBindingDownloadError("wheel 响应不是 zip 文件")
 
 
 # ---------------------------------------------------------------------------
@@ -1233,13 +1310,16 @@ def binding_environment_variables(
 
     ``MAAFW_BINARY_PATH`` = 副本自带的 ``maafw/`` 或池里的 native 目录，皆无则不设（import 期
     退到 binding 目录里的 ``maa/bin`` 占位）。``PYTHONPYCACHEPREFIX`` 让 pyc 落到池的
-    ``.pycache``，binding 目录的清单才稳定。
+    ``.pycache``；池根太长、前缀树会撞 MAX_PATH 时不设（见 ``pool_pycache_prefix``），
+    pyc 退回源码旁的 ``__pycache__``——binding 清单与校验本来就不算 ``__pycache__``。
     """
 
     env = {
-        "PYTHONPYCACHEPREFIX": str(pycache_directory(pool_root)),
         "AUTO_MAS_MAAFW_BINDING_DIR": str(binding_dir),
     }
+    prefix = pool_pycache_prefix(pool_root)
+    if prefix is not None:
+        env["PYTHONPYCACHEPREFIX"] = str(prefix)
     binary_path = project_runtime_path or native_dir
     if binary_path is not None:
         env["MAAFW_BINARY_PATH"] = str(binary_path)
@@ -1360,7 +1440,8 @@ def ensure_binding(
     命中 → 刷新 ``lastUsedAt`` 返回（收割来的、还没自检过的 binding 在这里补一次
     自检，过了把清单标成已自检，不过就当没有重建）。未命中：离线直接报错；否则按
     索引候选找官方 wheel（任一候选给出「索引可达但没有这个版本」的确定结论就改走
-    tag 源码；全部不可达才报网络错误）。源码 binding 没有 DLL，``native_needed`` 时
+    tag 源码；全部不可达才报网络错误；列出了版本、文件却下载失败或校验不过的换下一个
+    候选，都失败报下载失败、不走源码）。源码 binding 没有 DLL，``native_needed`` 时
     拒绝。binding 已在、只缺 native 时只补 native，不动正被 worker 用着的 binding 目录。
 
     池锁只包住「命中判定」与「换入」两段；下载 / 铺目录 / 自检要几十秒到几分钟，
@@ -1468,12 +1549,16 @@ def _fetch_and_install(
     tag_platform = wheel_platform_tag()
     failures: list[str] = []
     definite_missing = False
-    for index in index_candidates or (DEFAULT_PACKAGE_INDEX,):
+    # 索引列出了这个版本、文件却没下下来（镜像「索引先到、文件 404」、断流、sha 不符）：
+    # 换下一个候选，与 uv 装 base 时的候选轮换同一口径。自检、铺目录这类本地失败不换。
+    download_errors: list[MaaFWBindingError] = []
+    candidates = list(index_candidates or (DEFAULT_PACKAGE_INDEX,))
+    for position, index in enumerate(candidates):
         if check_cancelled is not None:
             check_cancelled()
         page = fetch_index_page(index, proxy_url=proxy_url)
         if page.status == "unreachable":
-            failures.append(f"{index}: {page.detail}")
+            failures.append(mask_url_credentials(f"{index}: {page.detail}"))
             continue
         if page.status == "missing":
             definite_missing = True
@@ -1482,18 +1567,47 @@ def _fetch_and_install(
         if link is None:
             definite_missing = True
             continue
-        log(f"[MaaFW Runtime Pool] 下载 maafw {version} binding: {link.url}")
-        return _install_from_wheel_link(
-            pool_root,
-            version,
-            link,
-            source=f"pypi:{index}",
-            native_needed=native_needed,
-            base_python=base_python,
-            proxy_url=proxy_url,
-            check_cancelled=check_cancelled,
-            existing=existing,
+        log(
+            f"[MaaFW Runtime Pool] 下载 maafw {version} binding: "
+            f"{mask_url_credentials(link.url)}"
         )
+        try:
+            return _install_from_wheel_link(
+                pool_root,
+                version,
+                link,
+                source=f"pypi:{mask_url_credentials(index)}",
+                native_needed=native_needed,
+                base_python=base_python,
+                proxy_url=proxy_url,
+                check_cancelled=check_cancelled,
+                existing=existing,
+                log=log,
+            )
+        except (MaaFWBindingNetworkError, MaaFWBindingDownloadError) as exc:
+            download_errors.append(exc)
+            log(
+                f"[MaaFW Runtime Pool] 从 {mask_url_credentials(index)} 下载 maafw "
+                f"{version} binding 失败（{mask_url_credentials(str(exc))}），"
+                + (
+                    "换下一个索引"
+                    if position < len(candidates) - 1
+                    else "已是最后一个索引"
+                )
+            )
+            continue
+    if download_errors:
+        # 有索引确实列出了这个版本：结论是「下载失败」，不是「没有这个版本」，别去走源码兜底。
+        if len(download_errors) == 1:
+            raise download_errors[0]
+        detail = mask_url_credentials("; ".join(str(item) for item in download_errors))
+        if all(isinstance(item, MaaFWBindingNetworkError) for item in download_errors):
+            raise MaaFWBindingNetworkError(
+                f"所有列出 maafw {version} 的索引都下载失败: {detail}"
+            ) from download_errors[-1]
+        raise MaaFWBindingDownloadError(
+            f"所有列出 maafw {version} 的索引都下载失败: {detail}"
+        ) from download_errors[-1]
     if not definite_missing:
         raise MaaFWBindingNetworkError(
             f"所有包索引都连不上，无法下载 maafw {version}: " + "; ".join(failures)
@@ -1534,10 +1648,13 @@ def _install_from_wheel_link(
     proxy_url: str | None,
     check_cancelled: Callable[[], None] | None,
     existing: BindingInfo | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> BindingInfo:
     staging = _staging_root(pool_root)
     staging.mkdir(parents=True, exist_ok=True)
     wheel_path = staging / f"binding-{version}-{uuid.uuid4().hex}.whl"
+    # 下载中的 wheel 与下面两个暂存目录都在池锁外铺，登记成在用，回收扫 .staging 时跳过
+    register_active_staging(wheel_path)
     # binding 已经在、来源也是官方 wheel、只缺 native：只铺 native，不动可能正被 worker
     # 用着的 binding 目录（换入会把它整个换掉）。
     native_only = (
@@ -1546,27 +1663,48 @@ def _install_from_wheel_link(
         and native_needed
         and existing.native_directory is None
     )
-    binding_stage = (
-        None if native_only else _new_staging_dir(pool_root, "binding", version)
-    )
-    native_stage = (
-        _new_staging_dir(pool_root, "native", version) if native_needed else None
-    )
+    binding_stage: Path | None = None
+    native_stage: Path | None = None
     try:
+        binding_stage = (
+            None if native_only else _new_staging_dir(pool_root, "binding", version)
+        )
+        native_stage = (
+            _new_staging_dir(pool_root, "native", version) if native_needed else None
+        )
         _download_wheel(
-            link, wheel_path, proxy_url=proxy_url, check_cancelled=check_cancelled
+            link,
+            wheel_path,
+            proxy_url=proxy_url,
+            check_cancelled=check_cancelled,
+            log=log,
+            label=f"maafw {version} binding",
         )
-        metadata_version, requires, dll_sha256 = _lay_out_binding_from_wheel(
-            wheel_path, binding_stage, native_stage
-        )
+        # 解包 / 内容校验失败按「这个候选给的包坏了」处理（MaaFWBindingDownloadError），换下一个
+        # 索引：没有 sha256 的索引给的包能当 zip 打开、成员 CRC 却不对时，下载那一步查不出来，
+        # 只在这里炸（BadZipFile）。磁盘写失败（OSError）是本地问题，不换。
+        try:
+            metadata_version, requires, dll_sha256 = _lay_out_binding_from_wheel(
+                wheel_path, binding_stage, native_stage
+            )
+        except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
+            raise MaaFWBindingDownloadError(
+                f"wheel 解包失败（文件损坏）: {exc}"
+            ) from exc
+        except MaaFWBindingDownloadError:
+            raise
+        except MaaFWBindingError as exc:
+            raise MaaFWBindingDownloadError(f"wheel 内容不完整: {exc}") from exc
         if normalize_version(metadata_version) != version:
-            raise MaaFWBindingError(
+            raise MaaFWBindingDownloadError(
                 f"wheel METADATA 的版本 {metadata_version!r} 与目标 {version} 不一致"
             )
         if native_stage is not None:
             for name in NATIVE_REQUIRED_LIBRARIES:
                 if not (native_stage / name).is_file():
-                    raise MaaFWBindingError(f"官方 wheel 的 maa/bin 里缺少 {name}")
+                    raise MaaFWBindingDownloadError(
+                        f"官方 wheel 的 maa/bin 里缺少 {name}"
+                    )
         if native_only:
             assert existing is not None and native_stage is not None
             if (
@@ -1598,10 +1736,14 @@ def _install_from_wheel_link(
             base_python=base_python,
         )
     finally:
-        wheel_path.unlink(missing_ok=True)
-        for stage in (binding_stage, native_stage):
-            if stage is not None and stage.exists():
-                remove_tree_best_effort(stage)
+        try:
+            wheel_path.unlink(missing_ok=True)
+            for stage in (binding_stage, native_stage):
+                if stage is not None and stage.exists():
+                    remove_tree_best_effort(stage)
+        finally:
+            # 删 wheel 抛错（被杀软占着）也要放掉登记，否则这些条目永远在册、回收永远跳过
+            release_active_staging(wheel_path, binding_stage, native_stage)
 
 
 def _finish_native_only(
@@ -1675,6 +1817,7 @@ def _install_from_source(
     finally:
         if binding_stage.exists():
             remove_tree_best_effort(binding_stage)
+        release_active_staging(binding_stage)
 
 
 def _finish_install(
@@ -1824,12 +1967,13 @@ def harvest_binding(
                 return None
 
         binding_stage = _new_staging_dir(pool_root, "binding", version)
-        native_stage = (
-            _new_staging_dir(pool_root, "native", version)
-            if native_needed and not source_built
-            else None
-        )
+        native_stage: Path | None = None
         try:
+            native_stage = (
+                _new_staging_dir(pool_root, "native", version)
+                if native_needed and not source_built
+                else None
+            )
             requires: tuple[str, ...] = ()
             native_dll_sha256: str | None = None
             for path, _digest, _size in wanted:
@@ -1871,6 +2015,7 @@ def harvest_binding(
             for stage in (binding_stage, native_stage):
                 if stage is not None and stage.exists():
                     remove_tree_best_effort(stage)
+            release_active_staging(binding_stage, native_stage)
 
 
 def _link_or_copy(origin: Path, target: Path, *, hardlink: bool) -> None:
@@ -1891,6 +2036,7 @@ __all__ = [
     "PYCACHE_DIRECTORY_NAME",
     "BindingInfo",
     "IndexPage",
+    "MaaFWBindingDownloadError",
     "MaaFWBindingError",
     "MaaFWBindingNetworkError",
     "MaaFWBindingUnavailableError",
@@ -1907,10 +2053,12 @@ __all__ = [
     "harvest_binding",
     "list_local_bindings",
     "manifest_last_used",
+    "mask_url_credentials",
     "native_directory",
     "normalize_version",
     "parse_simple_page",
     "prune_selections",
+    "pool_pycache_prefix",
     "pycache_directory",
     "release_binding",
     "remember_selection",

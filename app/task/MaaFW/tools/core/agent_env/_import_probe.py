@@ -1,5 +1,6 @@
-"""Agent 导入静态检查的探针：由 ``import_check.py`` 以 ``python -B -c <本文件源码>``
-在**项目自己的解释器**里执行，请求（JSON）从 stdin 读，结论（一行 JSON）写到 stdout。
+"""Agent 导入静态检查的探针：由 ``import_check.py`` 以 ``python -B -c <一行引导> <本文件路径>``
+（引导读入本文件源码、以 ``__main__`` 执行）在**项目自己的解释器**里执行，请求（JSON）从
+stdin 读，结论（一行 JSON）写到 stdout。
 
 不导入、不执行项目的任何代码：
 

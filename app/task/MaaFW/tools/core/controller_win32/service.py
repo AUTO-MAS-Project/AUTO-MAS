@@ -151,9 +151,15 @@ def _matches_regex(pattern: str | None, value: str) -> bool:
 
 def _compile_safe_regex(pattern: str) -> re.Pattern[str]:
     if len(pattern) > MAX_REGEX_PATTERN_LENGTH:
-        raise RuntimeError("interface window regex is too long")
+        raise RuntimeError(
+            "interface window regex is too long"
+            f"（超过 {MAX_REGEX_PATTERN_LENGTH} 个字符，无法安全匹配，请反馈给项目作者）"
+        )
     if DANGEROUS_NESTED_QUANTIFIER_RE.search(pattern):
-        raise RuntimeError("interface window regex contains nested quantifiers")
+        raise RuntimeError(
+            "interface window regex contains nested quantifiers"
+            "（如 (x+)+，无法安全匹配，请反馈给项目作者）"
+        )
     return re.compile(pattern)
 
 

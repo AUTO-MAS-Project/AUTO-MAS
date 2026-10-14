@@ -1037,7 +1037,7 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the project interface',
+    loadingMfwInterface: 'Reading the project',
     loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
@@ -1109,7 +1109,6 @@ export default {
     couldNotPickFile: 'Could not pick the file',
     addNoteAboutThis: 'Add a note about this account',
     taskConfiguration: 'Task configuration',
-    readInterfaceFirstThen: 'Read the project definition file first, then pick tasks',
     enabled: 'Enabled',
     whetherThisUserEnabled: 'Whether this account is enabled',
     noActiveConfigurationSession: 'No active configuration session',
@@ -1357,7 +1356,8 @@ export default {
     notWiredIntoRun:
       'Not wired into the run flow yet: in this version, turning it on does not check for updates before a run — use the manual update on the right',
     noOkWwSettings: 'No ok-ww settings have been generated yet',
-    interfaceJsonHasNot: 'interface.json has not been read yet',
+    interfaceJsonHasNot:
+      'No project loaded: the script has not imported a project yet, or reading it failed (reopen this page later)',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
     invalidManagedOverridesCleared: 'Removed {n} invalid settings',
     scriptLevelMaaendConfiguration: 'Shared MaaEnd configuration started',
@@ -1720,7 +1720,7 @@ export default {
     autoUpdateModeAfterRun: 'After run',
     updateSource: 'Update source',
     updateSourceTip:
-      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
+      'Versions are always looked up on MirrorChyan, so the project must be listed on MirrorChyan. MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed',
     updateChannel: 'Update channel',
     cdkTip:
       'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
@@ -1843,22 +1843,43 @@ export default {
     missingTaskValueSeparator: ', ',
     missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',
-    adbStrategyEmulatorExtras: "Prefer the emulator's own ADB (EmulatorExtras)",
+    adbStrategyEmulatorExtras:
+      "Prefer the emulator's dedicated screenshot and input interface (EmulatorExtras)",
     adbStrategyAvdExtras: 'Emulator screenshot acceleration (shared memory, EmulatorExtras)',
     adbStrategyDefault: 'Default',
     prepareRuntimeEnv: 'Prepare runtime environment',
-    envPanelPlaceholder:
-      'The environment preparation steps show up here after the interface is read',
-    envPreparingHint: 'The first run downloads MaaFramework and may take a few minutes',
+    envPanelPlaceholder: 'The environment preparation steps show up here',
+    envPreparingHint: 'MaaFramework may need to be downloaded; the first time takes longer',
     envStatusPreparing: 'Preparing the runtime environment',
     envStatusPrepared: 'Runtime environment ready',
     envStatusUpdated: 'Runtime environment updated',
     envStatusCached: 'Runtime environment is up to date',
     envStatusFailed: 'Failed to prepare the runtime environment',
     envFailedHint:
-      'Nothing below will run until the environment is ready. Check the network and project path, then retry.',
+      'Usually a download failed. If you need a proxy, set it in "Settings → About → Network proxy" or in "Project update → Proxy address" on this page, then click "Retry". See the log above for the exact cause.',
     envReadyAgents: 'Ready components',
     envRetry: 'Retry',
+    maafwPreviewFailed: 'Could not read the project',
+    maafwImportFiles: 'Referenced files',
+    maafwListSeparator: ', ',
+    envRuntimeIsolatedVenv: 'Isolated Python environment',
+    envRuntimeProjectPython: 'Bundled Python',
+    envRuntimeProjectBinary: 'Bundled program',
+    envRuntimeSharedRuntime: 'Shared Python environment',
+    envRuntimeExternal: 'External program',
+    previousStep: 'Previous',
+    maafwPageTitleSetup: '{name} project setup',
+    maafwPageTitleConfig: '{name} project settings',
+    maafwUpdateChannelStable: 'Stable',
+    maafwUpdateChannelBeta: 'Beta',
+    maafwEmulatorTypeGeneral: 'Generic emulator',
+    maafwEmulatorTypeMumu: 'MuMu Player',
+    maafwEmulatorTypeLdplayer: 'LDPlayer',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: 'No emulator selected',
+    maafwEmulatorTypeLoading: 'Loading emulator type',
+    maafwNoMirrorchyanRid:
+      'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
@@ -2005,7 +2026,6 @@ export default {
     pickProjectDirectoryContaining:
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
-    pickLocalDirectory: 'Pick a local directory',
     localProjectDirectory: 'Local project directory',
     pickMfwProjectDirectory: 'Pick the MaaFW project directory containing interface.json',
     maafwDirectoryLockedHint:
@@ -2021,7 +2041,7 @@ export default {
     maafwFollowSourceStatus: 'Following {path} · last synced {time}',
     maafwFollowSourceNotSynced:
       'Following {path} · not synced yet, will import before the next run',
-    maafwFollowSourceMissing: 'Source directory is missing; runs keep using the current copy',
+    maafwFollowSourceMissing: 'Source directory is missing',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
@@ -2049,7 +2069,7 @@ export default {
     mssFlavorControllerHint:
       'The emulator build of Stella Sora cannot launch the game, so MSS supports the desktop build only; pick the desktop controller. Emulators will not be supported unless that problem is fixed',
     mssFlavorQueueHint:
-      '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
+      '· With "Event quick battle" in the task queue it is moved ahead of "Bounty Trial quick battle" (to spend stamina on the event first) while an event is live, and skipped when none is running\n' +
       '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
       '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
     mssFlavorQueueEmpty:
@@ -2067,7 +2087,7 @@ export default {
     mssFlavorDefenseSaveFailed: 'The switch was not saved, please try again',
     mssFlavorActivityFirst: 'Activity first',
     mssFlavorActivityFirstHint:
-      'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
+      'When on, the event task is added ahead of "Bounty Trial quick battle" while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
     mssFlavorPlanHint:
       'With a plan selected, each run rewrites the stage, difficulty and count of "Bounty Trial quick battle" from today\'s slot, adding the task if it is not queued; "Fixed" runs the options set in the task queue',
     maafwFlavorPlanMode: 'Plan',
@@ -2316,11 +2336,11 @@ export default {
     bettergiViewClose: 'Close viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
-    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
       'Backups of the MAS config (task snapshot and device overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     maafwConfigRestoreScriptDesc:
-      'Backups of the MaaFW project config (config folder and interface.json); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+      'Backups of the MaaFW project config (the config folder); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
     hsrConfigRestoreUserDesc:
       'Backups of the MAS config (task mapping and managed overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
@@ -2916,6 +2936,9 @@ export default {
     maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
+    maafwInputVerifyFailed: 'The input does not meet the script requirements',
+    maafwQueueTaskCheckboxCountInvalid:
+      'A multi-select setting has too few or too many choices; this user will fail to run until it is fixed',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',

@@ -2816,6 +2816,37 @@ def _migrate_maafw_auto_update_mode(data: dict) -> dict:
     return normalized_data
 
 
+class MaaFWSourcePathValidator(FolderValidator):
+    """MaaFW 的 ``Info.Path``：只是导入的来源，导入完成后允许删掉。
+
+    ``FolderValidator`` 对不存在的路径会去掉最后一个点号后缀（读出来的就是纠正后的值，下次
+    保存还会写回盘）。发行包解压目录名几乎都带版本号，``…-v4.11.1`` 删掉之后读到的成了
+    ``…-v4.11``：视图丢失时按来源比对同组兄弟、``knownSources`` 都对不上，重建兜底就失效了；
+    截断后的路径恰好存在时还会从那个旧目录重新导入。这里对不存在的绝对路径原样保留；存在的
+    目录照旧按 ``FolderValidator`` 校验（系统目录、AUTO-MAS 自己的目录不收）。
+    """
+
+    @staticmethod
+    def _missing_absolute(value) -> bool:
+        if not isinstance(value, str) or not value:
+            return False
+        try:
+            path = Path(value)
+            return path.is_absolute() and not path.is_dir()
+        except (OSError, ValueError):
+            return False
+
+    def validate(self, value):
+        if self._missing_absolute(value):
+            return True
+        return super().validate(value)
+
+    def correct(self, value):
+        if self._missing_absolute(value):
+            return value
+        return super().correct(value)
+
+
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置。
 
@@ -2843,8 +2874,8 @@ class MaaFWConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", self.DEFAULT_SCRIPT_NAME)
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
-        ## MaaFW 项目根目录，应包含 interface.json
-        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+        ## MaaFW 项目的导入来源目录，应包含 interface.json；导入后可删，删了也原样保留
+        self.Info_Path = ConfigItem("Info", "Path", "", MaaFWSourcePathValidator())
         ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
         self.Info_Controller = ConfigItem("Info", "Controller", "")
         ## MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
@@ -3162,7 +3193,7 @@ class MSSUserConfig(MaaFWUserConfig):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入并排到最前
+        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前
         self.Info_IfActivityFirst = ConfigItem(
             "Info", "IfActivityFirst", True, BoolValidator()
         )

@@ -61,7 +61,6 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'DailyOnceTasks', value)"
           />
         </a-form-item>
@@ -80,7 +79,6 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'WeeklyOnceTasks', value)"
           />
         </a-form-item>
@@ -99,7 +97,6 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'MonthlyOnceTasks', value)"
           />
         </a-form-item>

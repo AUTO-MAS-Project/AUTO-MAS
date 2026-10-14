@@ -50,6 +50,14 @@ IMPORT_CHECK_TIMEOUT_SECONDS = 60
 LOG_PREFIX = "[Agent 导入检查] "
 PYTHON_RUNTIME_KINDS = frozenset({"project_python", "isolated_venv"})
 _PROBE_PATH = Path(__file__).with_name("_import_probe.py")
+#: 探针经一行引导按路径读进来执行，而不是把整份源码塞进 ``-c``：源码近 30K 字符，转义后
+#: 离 Windows 命令行 32767 的上限只剩几 K，再长 CreateProcess 就失败、预检静默变成「跳过」。
+#: 仍走 ``-c``：它插进 sys.path 的是 ``''``（cwd，是空临时目录），探针按这个约定换成入口
+#: 目录；``python <探针>.py`` 插的会是探针所在的 MAS 源码目录。只用内置名字，不 import
+#: 任何会从 cwd 找的模块；探针源码照旧以 ``__main__`` 执行。
+_PROBE_BOOTSTRAP = (
+    "import sys;exec(compile(open(sys.argv[1],'rb').read(),sys.argv[1],'exec'))"
+)
 _MAX_LISTED = 6
 
 
@@ -159,10 +167,9 @@ def check_agent_script_imports(
     report = AgentImportReport(entry=_relative(entry_path, project))
     started = time.perf_counter()
     try:
-        source = _PROBE_PATH.read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory(prefix="mas-agent-import-") as neutral_cwd:
             result = subprocess.run(
-                [str(python_exe), "-B", "-c", source],
+                [str(python_exe), "-B", "-c", _PROBE_BOOTSTRAP, str(_PROBE_PATH)],
                 input=json.dumps(
                     {
                         "project": str(project),

@@ -164,7 +164,7 @@ def build_precheck_validator(
     """
 
     def validate(root: Path) -> bool:
-        send_log("正在新版本上预检运行环境（建不出来就丢弃新版本，继续当前版本）")
+        send_log("正在检查新版本的运行环境（准备不出来就放弃这次更新，继续用当前版本）")
         try:
             prepare(
                 root,
@@ -206,7 +206,7 @@ def build_precheck_validator(
             raise
         finally:
             cleanup_precheck_agent_venv(root, agent_env_root)
-        send_log("运行环境预检通过，登记新版本")
+        send_log("新版本运行环境检查通过")
         return True
 
     return validate

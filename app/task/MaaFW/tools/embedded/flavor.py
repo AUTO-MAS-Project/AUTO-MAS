@@ -23,9 +23,9 @@
 用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
 
 引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
-``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型、在模拟器启动后
-调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的快照整理钩子。这里不出现任何具体
-专项的名字；专项自己的逻辑全在它自己的包里。
+``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型（换了类型时取可选的
+换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的
+快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
 
 可选钩子 ``sanitize_task_snapshot``（写用户任务快照前整理）的契约：
 
@@ -94,8 +94,9 @@
 - **效果**：本轮有任务失败或超时、要进入下一次尝试时，``runner_task`` 在周期任务过滤重建计划
   之后，把这些 entry 里**本次运行任一次尝试已完成过**的任务剔出计划（记进 ``skippedTasks``，
   原因「前面的尝试已完成」），每次重试开头按当前计划的 ``skippedTasks`` 写一行列出跳过了哪些
-  （worker 崩溃后沿用原计划的那次也照写）。累计所有拿到结果的尝试，
-  按任务名计份数（同一任务重复入队、只完成了一份时只剔一份）。没声明的任务照旧全部补跑；
+  （worker 崩溃后沿用原计划的那次也照写）。累计所有拿到结果的尝试，按任务名判断；同名任务
+  在计划里有多份时全部重跑（runner 只回报任务名，分不清完成的是哪一份），重试开头写一行说明，
+  只有一份的照常剔。没声明的任务照旧全部补跑；
   声明了但这次没完成（失败、超时、没轮到）的照跑。worker 崩溃、拿不到结果的那次尝试不知道
   完成了什么，不据它剔。剔完计划为空时按「剩余任务都已完成」结束本轮、算作完成。
 - **该列什么**：只列重跑纯属浪费、且不依赖本轮前面步骤状态的任务（领取、收菜这类做完就没了
@@ -114,6 +115,30 @@
   剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
 - **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
   ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
+
+可选属性 ``no_default_fallback_inputs``（字符串字段不回落 default 的例外）的契约：
+
+- **形状**：``frozenset[tuple[str, str]]``，元素是 ``(选项名, 字段名)``。同样按 ``getattr`` 探测，
+  不进协议；没声明等于空集，行为完全不变。
+- **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
+  （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
+  ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
+  没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
+  ``unselectableReason`` 同一处）：用户页把没填的字段显示成 default，不置空就会显示一个运行时
+  并不下发的值。
+- **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
+  「占位」）。能跑的 default 别列。
+
+可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
+
+- **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
+- **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
+  换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
+- **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
+  ``has_users`` 是脚本此刻有没有用户——只对已有用户说的话（「把账号栏改掉」之类）没有用户时
+  不要返回。
+- **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
+  标题里的类型名取 ``type_key``。
 
 可选属性 ``supports_mod_avd``（能不能用魔改 AVD）的契约：
 
@@ -206,6 +231,37 @@ def unselectable_entries(flavor: Any) -> dict[str, str]:
         for entry, reason in declared.items()
         if str(entry or "").strip()
     }
+
+
+def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
+    """特调声明的不回落 default 的字符串字段，契约见模块说明。没声明（或不是特调）返回空集。"""
+
+    declared = (
+        getattr(flavor, "no_default_fallback_inputs", None)
+        if flavor is not None
+        else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(
+        (str(item[0]), str(item[1]))
+        for item in declared
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+
+
+def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
+    """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
+
+    hook = getattr(flavor, "retype_notice_lines", None) if flavor is not None else None
+    if not callable(hook):
+        return []
+    try:
+        lines = hook(entering=entering, has_users=has_users)
+    except Exception as exc:  # noqa: BLE001 - 通知文案出错不该挡住换类型
+        logger.warning(f"MaaFW 特调生成换类型说明失败：{exc}")
+        return []
+    return [str(line).strip() for line in lines or () if str(line or "").strip()]
 
 
 def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
@@ -413,12 +469,14 @@ __all__ = [
     "GameUpdateHook",
     "MaaFWFlavor",
     "SnapshotSanitizer",
+    "no_default_fallback_inputs",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_snapshot_sanitizer",
+    "retype_notice_lines",
     "sanitize_user_task_update",
     "unselectable_entries",
     "user_config_type_transform",

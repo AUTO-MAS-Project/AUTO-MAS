@@ -223,12 +223,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
-  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`（开发者模式开关除外）
-  沿用源（两者必须成对继承），类型随项目。「复制脚本」（`Config.add_script`）复用同一个函数。
+  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与
+  `Embedded.*`（开发者模式开关除外）沿用源（两者必须成对继承），`Update.Channel` 也沿用源——
+  复用的就是源那一版，渠道不跟着走的话第一次运行前的组同步会把它切到默认渠道的版本；类型随项目。
+  「复制脚本」（`Config.add_script`）复用同一个函数。
   源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
-  `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期 `Config.clean_maafw_update_cache`
+  `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `Config.clean_maafw_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
 - **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
@@ -262,6 +264,25 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
+  **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
+  MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
+  按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志。之后**三个条件同时满足**
+  才照常起 agent、让它自己装：失败是缺模块；项目带自装材料（requirements.txt / pyproject.toml、
+  `*.whl`、`get-pip.py`）；**补装之前** site-packages 里根本没有 binding（没有 `maafw-*.dist-info`
+  也没有 `maa/`，补装失败后的半装状态不算）。出厂就带 binding 的项目（M9A、MaaStellaSora、MaaFgo、
+  MaaNTE 也都有 requirements.txt）缺别的模块照旧拦。
+  **三个调用方三种口径**（`_prepare_project_python_env` 的 `lenient`，经 `prepare_agent_envs` /
+  `prepare_project_environment` / `_prepare_project_environment_sync` 的 `lenient_health_check`
+  传下来，**缺省严格**，漏改的调用点不会被放宽）：
+  - **运行时宽松（报错照跑）**：worker 起 agent 前（`runner.prepare_agent_python_envs`）与宿主
+    运行前 / 运行后的环境确认（`_ensure_project_environment`）。检查不管因为什么失败都先试补装，
+    复检仍失败就写一行醒目的【警告】（原因照原文）、照常起 agent。原因记进结果的
+    `agents.healthWarnings`：这次不写环境缓存、不记 `envConfirmedFor`（下次照样重查，编辑页
+    不会因此显示「已就绪」）；agent 很快退出时「Agent 进程已退出」的报错后面带
+    「运行前检查发现：<原因>」。
+  - **更新预检严格**（上面的三条件规则）：预检决定新版本换不换上来，放宽的话缺模块的坏版本会
+    顶掉能用的旧版本、之后每次运行都失败，只能等项目出新版。
+  - **编辑页手动准备严格**：失败照旧报出来。手动更新、同组传播后的确认、投影补齐也走缺省严格。
   site-packages 里残留多份 `maafw-*.dist-info`（M9A v4.9.0 出厂就带 5.12.3 + 5.13.0）时，钉回前
   先把版本不是最高的那些记录目录**挪进**副本根下的 `.maafw-repin-stash-*`：pip 按目录顺序取第一份
   记录、我们取最高版本，不挪的话 pip 要么说「已满足」什么都不做，要么只卸掉旧记录，两种结果下次
@@ -349,6 +370,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比较任务数时要减掉。
 - 选项 `type` 支持 `select / scan_select / switch / checkbox / input / hotkey`，后端下发与
   前端 `MaaFWTaskOptionEditor.vue` 两侧都有；未知 type 前端有兜底提示。
+- **input 的 `default` 是字段初值**（PI v2 规范；MaaPiCli、MFAAvalonia 的 `TaskLoader` 把
+  `input.Default` 写进配置、MXU、MFW-PyQt6 都这样用）。快照里没填的字段存空串（不写 default、
+  不迁移），建覆盖时回落：字符串字段没存或存的正好是 `""` 才算没填（纯空白串算有值、原样下发），
+  default 原样用、不 strip，default 为空串或没写就不回落（`pipeline_override._string_input_fallback`）；
+  数字 / 布尔 strip 后为空才算没填（`_coerce_input_value`）。password 字段不回落。特调可以声明例外
+  （`flavor.no_default_fallback_inputs`，两条建计划的路都传；`/maafw/preview` 把这些字段的 `default`
+  置成 null，用户页就不会把它显示成「没填时的值」）：M9A 的自定义兑换码 default 是字面量
+  「占位」，旧版迁移专门把预填的它清成空串，agent 遇到交不过去的码会中断整个兑换。以前「default 只当
+  占位提示、没填就下发空串」的取舍（#478）已撤销：语料里 11 个项目因此拿到坏 override（MaaEnd 表达式缺
+  右操作数、MRA 的 `expected: [""]`、MaaStellaSora agent 里的 `float("")`）。
 - **全局选项每个用户只存一份**：`global_option` 连同各 case 下挂的子选项
   （`task_config.build_global_option_map`）的值在 `Task.TaskSnapshot.globalOptions`。覆盖顺序
   照 PI / MXU / MaaPiCli：全局组按全局表，资源 / 控制器 / 任务组按任务自己的值，后叠的盖前面
@@ -364,7 +395,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   同一选项任务自己也有值时任务 `options` 里看不到它，打码收集两处都看。旧配置迁移
   （`normalize_snapshot`，前端 `maafwGlobalOptions.ts` 同一口径）：全局表里缺或坏的项，取队列里
   第一个勾选的、带合法值、且对它只属于全局的实例，再没有取未勾选的。预设写在任务上的只属于全局的
-  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 `global_options` 为准。
+  值进全局表（先写的为准）；外壳导入以 MXU `globalOptionValues` / MFW-PyQt6 的全局表为准（现行版本存在
+  `Resource.task_option.setting_options`、根层 `global_options` 写空，老版本存在根层；两边合并，同名以
+  `setting_options` 为准）。
   **降级兼容双写**：保存时（`option_secrets.prepare_user_task_snapshot` →
   `mirror_global_options_to_tasks`）把只属于全局的选项的全局值抄到每个任务实例上——旧版运行期按任务
   读它们，旧版用户页保存会丢掉 `globalOptions`，升级回来靠这些副本迁移找回。新版运行期与前端
@@ -389,8 +422,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
+  项目更新撤掉了 password 标记的字段，快照里留着的密文建计划前照样在内存里解开（解不开的告警、丢值，
+  不中断整轮），它们与当前仍是 password 的字段同一口径：值进打码集合
+  （`option_secrets.collect_run_password_values`），字段记进快照的 `secretInputs`，下发失败的告警同样不带原值。
   新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
-  项目有 password 输入框时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
+  项目有 password 输入框、或本次有要打码的值时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
@@ -405,7 +441,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
   interface_version（按 2）、input 的 default 写成数字、数字输入没填 / 填错（跳过该选项的
-  覆盖）都是告警，不整份拒绝。
+  覆盖）、任务或资源的 controller / resource 名写错（原样保留、只是匹配不上）都是告警，
+  不整份拒绝。没缺 import 文件时引用了没定义的选项照旧整份拒绝（与 MaaPiCli 一致）。
 - 任务表里同名任务出现多次、`repeatable` + `repeat_count`（MFAA 私有扩展）都展开成
   `__MAS_DUP__` 重复实例（`task_config.build_default_task_instances` / `build_repeat_instance_ids`，
   前端「添加任务」按 `repeatCount` 一次加 N 份），不做 runner 循环。select 的私有 `default`

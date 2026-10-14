@@ -970,7 +970,7 @@ export default {
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレーター',
     regexGuide: '正規表現のガイド',
-    loadingMfwInterface: 'プロジェクトのインターフェースを読み込んでいます',
+    loadingMfwInterface: 'プロジェクトを読み込んでいます',
     loadingMaafwProjectInterface: 'MaaFW プロジェクトのインターフェースを読み込んでいます',
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
@@ -1041,7 +1041,6 @@ export default {
     couldNotPickFile: 'ファイルを選択できませんでした',
     addNoteAboutThis: 'このアカウントにメモを付けます',
     taskConfiguration: 'タスク設定',
-    readInterfaceFirstThen: '先にプロジェクト定義ファイルを読み込んでからタスクを選択します',
     enabled: '有効状態',
     whetherThisUserEnabled: 'このアカウントを有効にするかどうか',
     noActiveConfigurationSession: '有効な設定セッションがありません',
@@ -1290,7 +1289,8 @@ export default {
     notWiredIntoRun:
       '現在のバージョンではオンにしても実行前の自動更新は行われません。右側の手動更新をお使いください',
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
-    interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
+    interfaceJsonHasNot:
+      'プロジェクトを読み込めていません：まだインポートされていないか、読み込みに失敗しました（後でこのページを開き直してください）',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     invalidManagedOverridesCleared: '無効な設定 {n} 件を削除しました',
     scriptLevelMaaendConfiguration: '共有 MaaEnd 設定を開始しました',
@@ -1611,7 +1611,7 @@ export default {
     cdkHintBlocked: 'CDK は利用停止されています',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
-      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → 情報 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未申告',
     updateProcess: '更新の進行',
@@ -1707,21 +1707,60 @@ export default {
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
-    adbStrategyEmulatorExtras: 'エミュレーター内蔵の ADB（EmulatorExtras）を優先',
+    adbStrategyEmulatorExtras:
+      'エミュレーター専用のスクリーンショット・入力インターフェース（EmulatorExtras）を優先',
     adbStrategyAvdExtras: 'エミュレーターのスクリーンショット高速化（共有メモリ、EmulatorExtras）',
     adbStrategyDefault: '既定',
     prepareRuntimeEnv: '実行環境を準備',
-    envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',
-    envPreparingHint: '初回は MaaFramework のダウンロードが必要で、数分かかることがあります',
+    envPanelPlaceholder: '実行環境の準備過程がここに表示されます',
+    envPreparingHint: 'MaaFramework のダウンロードが必要な場合があり、初回は時間がかかります',
     envStatusPreparing: '実行環境を準備中',
     envStatusPrepared: '実行環境の準備が完了しました',
     envStatusUpdated: '実行環境の更新が完了しました',
     envStatusCached: '実行環境の更新は不要です',
     envStatusFailed: '実行環境の準備に失敗しました',
     envFailedHint:
-      '実行環境が整っていないと、以降の設定をしても実行できません。ネットワークとプロジェクトのパスを確認して再試行してください。',
+      '多くはダウンロードの失敗です。プロキシが必要な場合は「設定 → 情報 → ネットワークプロキシ」またはこのページの「プロジェクトの更新 → プロキシアドレス」を設定してから「再試行」を押してください。詳しい原因は上のログを確認してください。',
     envReadyAgents: '準備完了のコンポーネント',
     envRetry: '再試行',
+    maafwPreviewFailed: 'プロジェクトを読み込めませんでした',
+    maafwImportFiles: '参照ファイル',
+    maafwListSeparator: '、',
+    envRuntimeIsolatedVenv: '独立した Python 環境',
+    envRuntimeProjectPython: 'プロジェクト同梱の Python',
+    envRuntimeProjectBinary: 'プロジェクト同梱のプログラム',
+    envRuntimeSharedRuntime: '共有 Python 環境',
+    envRuntimeExternal: '外部プログラム',
+    previousStep: '前へ',
+    maafwPageTitleSetup: '{name} プロジェクトのセットアップ',
+    maafwPageTitleConfig: '{name} プロジェクト設定',
+    maafwUpdateChannelStable: '安定版',
+    maafwUpdateChannelBeta: 'ベータ版',
+    maafwEmulatorTypeGeneral: '汎用エミュレーター',
+    maafwEmulatorTypeMumu: 'MuMu Player',
+    maafwEmulatorTypeLdplayer: 'LDPlayer',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: 'エミュレーター未選択',
+    maafwEmulatorTypeLoading: 'エミュレーターの種類を読み込み中',
+    maafwNoMirrorchyanRid:
+      'このプロジェクトは MirrorChyan に対応していないため（interface.json に mirrorchyan_rid がありません）、MAS は更新を確認できません',
+    updateSourceTip:
+      'バージョンは常に MirrorChyan で確認するため、プロジェクトが MirrorChyan に対応している必要があります。MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です',
+    autoUpdateMode: '自動更新',
+    autoUpdateModeOff: '更新しない',
+    autoUpdateModeBeforeRun: '実行前',
+    autoUpdateModeAfterRun: '実行後',
+    autoUpdateModeTip:
+      '実行前：毎回の実行前にプロジェクトを確認して更新します。実行後：今回の実行が終わってから更新します。更新に失敗してもタスクの実行は止まりません',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkGetLink: 'MirrorChyan CDK を入手',
+    cdkMissingForMirror:
+      '更新の取得元に MirrorChyan を選んでいますが CDK が未入力のため、MirrorChyan から更新をダウンロードできません',
+    cdkStatusIssue:
+      'MirrorChyan CDK が使えません（{status}）。MirrorChyan から更新をダウンロードできないため、CDK を確認してから再試行してください',
+    updateResultVersion: '最新バージョン',
+    updateResultSource: 'ダウンロード元',
     mfwUnityResolutionOff: '変更しない',
     mfwWaitTimeTip:
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
@@ -1869,7 +1908,6 @@ export default {
     pickProjectDirectoryContaining:
       'interface.json を含むプロジェクトフォルダーを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
-    pickLocalDirectory: 'ローカルフォルダーを選択',
     localProjectDirectory: 'ローカルのプロジェクトフォルダー',
     pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダーを選択',
     maafwDirectoryLockedHint:
@@ -1881,8 +1919,7 @@ export default {
     maafwFollowSourceStatus: '追従先 {path} · 最終同期 {time}',
     maafwFollowSourceNotSynced:
       '追従先 {path} · 未同期、次回の実行前にソースディレクトリから取り込みます',
-    maafwFollowSourceMissing:
-      'ソースディレクトリが見つかりません。実行時は現在のコピーをそのまま使います',
+    maafwFollowSourceMissing: 'ソースディレクトリが見つかりません',
     maafwFollowSourceSyncNow: '今すぐ同期',
     maafwSourceFormTag: 'ソース形式',
     maafwSourceFormHint:
@@ -1914,7 +1951,7 @@ export default {
     mssFlavorControllerHint:
       'エミュレーター版の『ステラソラ』はゲームを起動できない問題があるため、MSS はデスクトップ版のみに対応しています。デスクトップのコントローラーを選んでください。問題が修正されない限りエミュレーターには対応しません',
     mssFlavorQueueHint:
-      '· タスクキューに「イベントクイックバトル」があると、イベント期間中は先頭に移動して先に実行し、期間外は自動でスキップします\n' +
+      '· タスクキューに「イベントクイックバトル」があると、イベント期間中は「懸賞試練クイックバトル」の前に移動して先に実行し（スタミナを先に使う）、期間外は自動でスキップします\n' +
       '· タスクキューが空でプランも選んでいない場合は実行できるタスクがありません。少なくとも「懸賞試練クイックバトル」にチェックを入れるか、プランを選んでください（プランを選ぶと自動で追加されます）\n' +
       '· 新しい塔登りは最後に回します。週に一度だけ実行するには、スクリプトの「実行設定」の「今週完了したらスキップ」に追加してください',
     mssFlavorQueueEmpty:
@@ -1932,7 +1969,7 @@ export default {
     mssFlavorDefenseSaveFailed: 'スイッチを保存できませんでした。もう一度お試しください',
     mssFlavorActivityFirst: 'イベント優先',
     mssFlavorActivityFirstHint:
-      'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加して先頭に移動します。イベント情報が取れないときは追加しません',
+      'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加し、「懸賞試練クイックバトル」の前に置きます。イベント情報が取れないときは追加しません',
     mssFlavorPlanHint:
       'プランを選ぶと、実行のたびに当日のスロットに従って「懸賞試練クイックバトル」のステージ・難易度・回数を書き換えます。キューにない場合は自動で追加します。「固定」はタスクキューの設定どおりに実行します',
     maafwFlavorPlanMode: 'プラン',
@@ -2304,6 +2341,9 @@ export default {
     maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
+    maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
+    maafwQueueTaskCheckboxCountInvalid:
+      '選択数が要件を満たしていない複数選択項目があります。修正しないとこのユーザーは実行に失敗します',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',
