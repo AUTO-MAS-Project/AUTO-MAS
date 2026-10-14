@@ -3,6 +3,6 @@ export interface TaskTreeScriptState {
   user_list: readonly unknown[]
 }
 
-/** 空用户表只表示脚本尚未轮到，不能把它渲染成一个账号。 */
+/** 空用户表只表示脚本尚未轮到；占位行不是实际账号。 */
 export const isWaitingWithoutUsers = (script: TaskTreeScriptState): boolean =>
   script.status === '等待' && script.user_list.length === 0

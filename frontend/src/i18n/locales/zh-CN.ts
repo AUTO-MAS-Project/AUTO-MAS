@@ -4088,7 +4088,7 @@ export default {
     overview: {
       title: '任务总览',
       unknownScript: '未知托管',
-      waitingToRun: '等待运行',
+      userNotLoaded: '暂未加载',
     },
     modal: {
       cannotDeleteTitle: '无法删除调度台',

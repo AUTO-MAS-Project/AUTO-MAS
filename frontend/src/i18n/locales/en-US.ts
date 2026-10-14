@@ -4223,7 +4223,7 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
-      waitingToRun: 'Waiting to run',
+      userNotLoaded: 'Not loaded yet',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',
