@@ -30,7 +30,10 @@ from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
-from ..runtime_pool.requirements_file import read_requirements_file
+from ..runtime_pool.requirements_file import (
+    RequirementsFileError,
+    read_requirements_file,
+)
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
@@ -935,7 +938,11 @@ def _load_project_agent_requirements(
 ) -> list[str]:
     # 清单逐条当独立参数交给 pip / uv（没有 -r 那一层），所以按 pip 的规则先洗一遍：
     # BOM、行内注释、续行、整行选项与 --hash 都会让原样照抄的那一条装不上。
-    parsed = read_requirements_file(project_path / "requirements.txt")
+    try:
+        parsed = read_requirements_file(project_path / "requirements.txt")
+    except RequirementsFileError as exc:
+        # -r 引用的子清单读不了 / 越界、用了不支持的 -c / -e：报错，不能少装了依赖还报就绪
+        raise MaaFWAgentEnvError(str(exc)) from exc
     declared = parsed is not None
     packages: list[str] = list(parsed.requirements) if parsed is not None else []
 
