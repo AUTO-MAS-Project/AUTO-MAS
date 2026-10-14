@@ -1792,8 +1792,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
         await self._close_game()
-        # 多用户连跑：等游戏进程完全退出后再放行下一用户（防回收期残影误判）
-        await self._wait_game_exit_before_next_user()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
@@ -2060,23 +2058,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self._kill_game_processes(_BGI_GAME_PROCESS_NAMES)
         await self._push_dispatch_log("游戏进程已关闭")
 
-    async def _wait_game_exit_before_next_user(self) -> None:
+    async def wait_game_exit_before_next_user(self) -> None:
         """多用户切换：等上一用户的原神进程完全退出后再进下个用户。
 
-        taskkill /F 返回只代表终止请求已发出，内核回收大体积游戏进程是异步
-        的，进程快照仍会短暂看到它；不等其完全退出，下一用户的「已在运行」
-        检测会误判跳过启动，切号在窗口等待上空转满宽限期后失败。仅在还有
-        下一个用户且本次收尾确实关闭了游戏（CloseOnFinish）时等待；最后一个
-        用户与不关游戏的配置不等待——下个用户本就要复用运行中的游戏。
-        手动停止后不再切换用户，跳过等待但继续完成其余收尾。
+        调度器仅在上一用户已收尾、下一用户通过检查且将实际执行时调用。
+        关闭请求后进程仍可能短暂可见，须等其退出后再做下一用户的启动检测；
+        检查范围与收尾关闭的客户端一致，含云原神。不关游戏的配置不等待。
         """
-        if self.script_info.current_index >= len(self.script_info.user_list) - 1:
-            return
         if not self.script_config.get("Game", "CloseOnFinish"):
             return
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
-            # 收尾屏蔽取消，停止发生在等待期间时读取调度器同步置位的取消标志。
+            # 用户间等待可被取消；调度器的停止标志同步置位，不再继续切换用户。
             if self.stopped_manually or getattr(
                 self.task_info, "replay_cancelled", False
             ):
@@ -2084,7 +2077,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
             # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
             alive = False
-            for name in _BGI_LOCAL_GAME_PROCESS_NAMES:
+            for name in _BGI_GAME_PROCESS_NAMES:
                 if await asyncio.to_thread(find_pids_by_name, name):
                     alive = True
                     break
