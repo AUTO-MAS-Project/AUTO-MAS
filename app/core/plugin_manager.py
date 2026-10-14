@@ -35,6 +35,7 @@ from app.plugin.errors import (
     PluginStateError,
 )
 from app.plugin.http import HttpRegistry, collect_route_decls
+from app.plugin.notifications import NotificationService
 from app.plugin.runtime import discover, loader
 from app.plugin.runtime import market as plugin_market
 from app.plugin.runtime.watch import SourceWatcher
@@ -58,6 +59,8 @@ from app.plugin.types import (
 from app.utils import get_logger
 from app.utils.tools import to_pep440
 
+from .plugin_notifications import HostNotifications
+
 if TYPE_CHECKING:
     from app.models.config import PluginMeta, PluginRecord
 
@@ -67,9 +70,12 @@ logger = get_logger("插件管理")
 class _PluginManager:
     """主程序插件管理器：DFS 级联、依赖字典、失败分支。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, notifications: NotificationService | None = None) -> None:
         self.services = ServiceRegistry()
         self.http = HttpRegistry()
+        self._notifications = (
+            HostNotifications() if notifications is None else notifications
+        )
         # 已启用适配：注册项 uid → 类型声明（脚本 decl 含 expander_class）
         self.script_types: dict[UUID, ScriptTypeDecl] = {}
         self.game_types: dict[UUID, GameTypeDecl] = {}
@@ -403,6 +409,7 @@ class _PluginManager:
         plugin = plugin_cls(config=config, record=record)
         record._plugin = plugin
         try:
+            plugin.bind_notifications(self._notifications)
             await plugin.pre_enable()
         except Exception:
             record._plugin = None

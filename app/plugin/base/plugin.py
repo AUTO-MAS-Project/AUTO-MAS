@@ -10,6 +10,7 @@ from app.plugin.types import LifecycleContext, PluginState
 
 if TYPE_CHECKING:
     from app.models.config import PluginConfig, PluginRecord
+    from app.plugin.notifications import NotificationService
 
 
 class BasePlugin:
@@ -26,9 +27,21 @@ class BasePlugin:
         # 仅 enable 时由 Manager 构造注入；load 阶段不建实例。
         # record 只存弱引用，避免与 PluginRecord._plugin 形成不可回收环。
         self.config = config
+        self._notifications: NotificationService | None = None
         self._record_ref: weakref.ReferenceType[PluginRecord] | None = (
             weakref.ref(record) if record is not None else None
         )
+
+    def bind_notifications(self, notifications: NotificationService) -> None:
+        """宿主在启用前绑定通知能力，保持插件构造签名不变。"""
+        self._notifications = notifications
+
+    @property
+    def notifications(self) -> NotificationService:
+        """插件消费的通知入口；独立实例需由调用方显式绑定。"""
+        if self._notifications is None:
+            raise RuntimeError("插件未绑定宿主通知能力")
+        return self._notifications
 
     @property
     def record(self) -> PluginRecord:
