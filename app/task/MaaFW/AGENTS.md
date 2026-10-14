@@ -18,7 +18,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `history_paths`）。
+  `history_paths`、`default_snapshot`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -360,6 +360,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`MaaProcessor.MeasureScreencapPerformanceAsync`）。截图失败只记日志、不拦运行。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
+- **空任务队列不留着**（`tools/embedded/default_snapshot.py`）：`Task.TaskSnapshot` 为空时运行会回落到
+  预设或默认勾选（`run_plan.resolve_default_snapshot`），所以建用户、读用户（`Config.get_user`）与运行前
+  检查（上锁之前）都按这同一个函数把它写成实打实的队列，用户页上看到的就是要跑的。项目还没导入时
+  什么都不写、留给下一次；默认队列定格在写入那一刻，项目以后改了预设不再自动跟。别在前端另写一份规则。
 
 ## interface.json
 

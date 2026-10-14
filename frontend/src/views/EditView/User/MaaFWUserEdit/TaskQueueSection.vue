@@ -678,7 +678,8 @@ const getTaskOptionNames = (task: MaaFWTaskInfo) => {
   ])
 }
 
-// 勾选数不满足 min_count / max_count 的任务实例：与右栏编辑器列出的选项同一范围、同一取值口径
+// 勾选数不满足 min_count / max_count 的任务实例：与右栏编辑器列出的选项同一范围、同一取值口径。
+// 只看勾选了的实例：运行时只检查它们（run_plan 的 _select_tasks），没勾选的亮了就是误报
 const checkboxIssueTaskIds = computed(() => {
   const ids = new Set<string>()
   const optionMap = new Map((props.previewData?.options || []).map(item => [item.name, item]))
@@ -688,7 +689,7 @@ const checkboxIssueTaskIds = computed(() => {
     resourceName: props.effectiveResourceName,
   }
   for (const item of props.orderedTasks) {
-    if (item.missing) continue
+    if (item.missing || !props.taskSnapshot.taskChecked[item.id]) continue
     const violations = findMaaFWCheckboxCountViolations(
       getTaskOptionNames(item.task),
       optionMap,

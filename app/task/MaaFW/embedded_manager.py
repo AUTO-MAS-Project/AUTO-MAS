@@ -55,6 +55,9 @@ from app.task.MaaFW.tools.backup_archive import (
     archive_native_backup,
     read_overlay_values,
 )
+from app.task.MaaFW.tools.embedded.default_snapshot import (
+    fill_default_task_snapshots,
+)
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     effective_channel,
@@ -68,6 +71,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
     switch_or_confirm_in_progress,
 )
+from app.task.MaaFW.tools.embedded.history_paths import maafw_history_log_path
 from app.task.MaaFW.tools.embedded.project_path import (
     is_project_updating,
     release_project_path,
@@ -525,6 +529,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         project_root = resolve_maafw_project_root(script_id, script_config)
         if not project_root.resolve().is_dir():
             return "请设置包含 interface.json 的 MFW 项目目录"
+
+        # 任务队列还是空的用户（从没打开过用户页）先按项目默认写成实打实的队列，与用户页
+        # 读到的同一份，跑的东西不变。要在上锁之前：锁住后配置写不进去。
+        await fill_default_task_snapshots(script_id, script_config)
 
         # 与其他专项同一口径：运行期间锁住脚本配置，界面上的改动会被拒绝。
         # 先锁再建副本，两步之间不能有让出点——改动一旦落在副本之外，final_task
@@ -1717,6 +1725,36 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
         self.project_update_logs = logs + self.project_update_logs
 
+    async def _save_after_run_update_logs(self) -> None:
+        """运行后更新的日志（过程、失败原因、CDK 预警）追加进本轮最后一位留下日志的用户，
+        重写它那次的 history：与运行前更新并入用户日志同一口径，事后在历史记录里查得到。
+
+        那时各用户都已收尾、history 已写过，只能追加到最后一次尝试那份上重写。没有哪位
+        用户留下日志（全被跳过）时这批记录只在后端日志里。"""
+
+        logs = self._take_project_update_logs()
+        if not logs:
+            return
+        user_item = next(
+            (user for user in reversed(self.script_info.user_list) if user.log_record),
+            None,
+        )
+        if user_item is None:
+            return
+        started_at = max(user_item.log_record)
+        log_item = user_item.log_record[started_at]
+        log_item.content.extend(logs)
+        try:
+            await Config.save_general_log(
+                maafw_history_log_path(user_item.name, started_at),
+                log_item.content,
+                log_item.status,
+            )
+        except Exception as exc:  # noqa: BLE001 - 没写进 history 不影响收尾
+            logger.opt(exception=True).warning(
+                f"MFW 运行后更新日志写入用户 {user_item.name} 的 history 失败：{exc}"
+            )
+
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
 
@@ -1872,10 +1910,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
         if self._auto_update_mode == "AfterRun":
             await self._run_project_update("AfterRun")
-            if self._stop_seen():
-                return
-            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
-            await self._ensure_project_environment("AfterRun")
+            if not self._stop_seen():
+                # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+                await self._ensure_project_environment("AfterRun")
+            # 中途停止也照样落盘：「正在中止更新」那几行同样要查得到
+            await self._save_after_run_update_logs()
         elif self._post_run_env_confirm:
             # 收尾组同步切了版本（兄弟脚本在本轮期间更新了）：报告已经发出，再确认环境。
             await self._ensure_project_environment("AfterRun")

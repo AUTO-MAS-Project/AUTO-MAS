@@ -1217,6 +1217,18 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        script_config = self.ScriptConfig[uid]
+        if isinstance(script_config, MaaFWConfig):
+            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
+            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(
+                script_id, script_config, None if user_id is None else [user_id]
+            )
+
         if user_id is None:
             # 获取全部用户配置
             data = await self.ScriptConfig[uid].UserData.toDict()
@@ -1282,6 +1294,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
+            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):

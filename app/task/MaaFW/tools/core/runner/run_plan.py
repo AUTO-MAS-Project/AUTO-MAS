@@ -814,6 +814,23 @@ def select_snapshot_tasks(
     return selected_ids, dict(snapshot.taskOptions), dict(snapshot.globalOptions)
 
 
+def resolve_default_snapshot(
+    interface_model: MaaFWInterface,
+    *,
+    selected_preset: str | None,
+) -> MaaFWTaskPresetSnapshot:
+    """用户快照为空时运行会跑的队列：选了预设就是那个预设，否则项目第一个预设，没有预设
+    才按各任务的 default_check。
+
+    与建计划时快照为空走的是同一个函数（``_resolve_snapshot``）。宿主据此把新用户的空快照
+    写成实打实的队列，用户页上看到的就是要跑的。预设名找不到时抛 ``MaaFWRunPlanError``。
+    """
+
+    return _resolve_snapshot(
+        interface_model, selected_preset=selected_preset, task_snapshot=None
+    )
+
+
 def describe_stale_option_values(
     base_dir: str | Path,
     interface_model: MaaFWInterface | dict[str, Any],

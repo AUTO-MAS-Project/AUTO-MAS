@@ -1639,7 +1639,7 @@ export default {
     autoUpdateModeAfterRun: '运行后',
     updateSource: '更新源',
     updateSourceTip:
-      '版本号统一向 Mirror 酱查询，项目需要接入 Mirror 酱。Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK',
+      'Mirror 酱：需要填写 CDK，下载快且校验 sha256；GitHub：从项目的 GitHub Release 下载，不需要 CDK。项目没接入 Mirror 酱时，选 GitHub 也能检查更新（项目要写明 GitHub 仓库）',
     updateChannel: '更新通道',
     cdkTip:
       '默认填入 MAS 更新设置里的 CDK，可单独改成本托管专用的；选择 Mirror 酱作为更新源时必须填写。点击问号前往 Mirror 酱获取：',

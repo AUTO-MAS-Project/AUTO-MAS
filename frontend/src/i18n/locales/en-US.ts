@@ -1727,7 +1727,7 @@ export default {
     autoUpdateModeAfterRun: 'After run',
     updateSource: 'Update source',
     updateSourceTip:
-      'Versions are always looked up on MirrorChyan, so the project must be listed on MirrorChyan. MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed',
+      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed. Projects not on MirrorChyan can still be checked for updates with GitHub selected (the project must name its GitHub repository)',
     updateChannel: 'Update channel',
     cdkTip:
       'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
