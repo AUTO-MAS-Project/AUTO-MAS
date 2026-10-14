@@ -18,9 +18,14 @@
 
 """通知编排与渠道服务共用的内部消息类型。"""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from app.models.config.setting import Webhook
 
 NotificationFormat = Literal["text", "markdown", "html"]
 ImagePresentation = Literal["html", "markdown", "base64", "rich_media"]
@@ -137,18 +142,14 @@ class WebhookTargetSnapshot:
     headers: str
     method: Literal["GET", "POST"]
 
-    def get(self, group: str, name: str) -> str | bool:
-        """提供与配置对象一致的只读字段访问，供渠道服务组装请求。"""
-
-        values = {
-            ("Info", "Name"): self.name,
-            ("Info", "Enabled"): self.enabled,
-            ("Data", "Url"): self.url,
-            ("Data", "Template"): self.template,
-            ("Data", "Headers"): self.headers,
-            ("Data", "Method"): self.method,
-        }
-        try:
-            return values[(group, name)]
-        except KeyError as exc:
-            raise AttributeError(f"Webhook 配置项 '{group}.{name}' 不存在") from exc
+    @classmethod
+    def from_config(cls, webhook: Webhook) -> WebhookTargetSnapshot:
+        """固定新配置节点的当前值，投递重试期间不再读取工作区。"""
+        return cls(
+            name=webhook.info.name,
+            enabled=webhook.info.enabled,
+            url=webhook.data.url,
+            template=webhook.data.template,
+            headers=webhook.data.headers,
+            method=webhook.data.method,
+        )

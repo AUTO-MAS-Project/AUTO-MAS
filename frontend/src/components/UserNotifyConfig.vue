@@ -11,7 +11,12 @@
           <SettingToggleButton
             :model-value="notify.Enabled === true"
             :disabled="loading"
-            @change="value => { notify.Enabled = value; emitSave('Notify.Enabled', value) }"
+            @change="
+              value => {
+                notify.Enabled = value
+                emitSave('Notify.Enabled', value)
+              }
+            "
           />
         </div>
       </div>
@@ -22,7 +27,12 @@
           <SettingToggleButton
             :model-value="notify.IfSendStatistic === true"
             :disabled="loading || !notify.Enabled"
-            @change="value => { notify.IfSendStatistic = value; emitSave('Notify.IfSendStatistic', value) }"
+            @change="
+              value => {
+                notify.IfSendStatistic = value
+                emitSave('Notify.IfSendStatistic', value)
+              }
+            "
           />
         </div>
       </div>
@@ -33,7 +43,12 @@
           <SettingToggleButton
             :model-value="notify.IfSendSixStar === true"
             :disabled="loading || !notify.Enabled"
-            @change="value => { notify.IfSendSixStar = value; emitSave('Notify.IfSendSixStar', value) }"
+            @change="
+              value => {
+                notify.IfSendSixStar = value
+                emitSave('Notify.IfSendSixStar', value)
+              }
+            "
           />
         </div>
       </div>
@@ -44,7 +59,12 @@
           <SettingToggleButton
             :model-value="notify.IfSendDropStatistics === true"
             :disabled="loading || !notify.Enabled"
-            @change="value => { notify.IfSendDropStatistics = value; emitSave('Notify.IfSendDropStatistics', value) }"
+            @change="
+              value => {
+                notify.IfSendDropStatistics = value
+                emitSave('Notify.IfSendDropStatistics', value)
+              }
+            "
           />
         </div>
       </div>
@@ -55,7 +75,12 @@
           <SettingToggleButton
             :model-value="notify.IfSendMail === true"
             :disabled="loading || !notify.Enabled"
-            @change="value => { notify.IfSendMail = value; emitSave('Notify.IfSendMail', value) }"
+            @change="
+              value => {
+                notify.IfSendMail = value
+                emitSave('Notify.IfSendMail', value)
+              }
+            "
           />
         </div>
         <div v-if="notify.IfSendMail" class="notify-channel-config">
@@ -80,7 +105,12 @@
           <SettingToggleButton
             :model-value="notify.IfServerChan === true"
             :disabled="loading || !notify.Enabled"
-            @change="value => { notify.IfServerChan = value; emitSave('Notify.IfServerChan', value) }"
+            @change="
+              value => {
+                notify.IfServerChan = value
+                emitSave('Notify.IfServerChan', value)
+              }
+            "
           />
         </div>
         <div v-if="notify.IfServerChan" class="notify-channel-config">

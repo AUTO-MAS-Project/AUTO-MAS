@@ -2,67 +2,34 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
 
-from app.api import OutBase
 from app.config import CollectionOrderItem
 from app.core import Config, TaskDispatcher
-from app.models.task import TaskItem, TaskMode
+from app.models.schema import (
+    DispatchIn,
+    OutBase,
+    PowerIn,
+    PowerOut,
+    TaskCreateIn,
+    TaskCreateOut,
+    TaskGetIn,
+    TaskGetOut,
+    TaskRuntimeSnapshot,
+)
 from app.services import System
 from app.services.system import PowerCountdownSnapshot
 from app.task import ExpandError
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
-PowerSignal = Literal[
-    "NoAction",
-    "Shutdown",
-    "ShutdownForce",
-    "Reboot",
-    "Hibernate",
-    "Sleep",
-    "KillSelf",
-    "Logoff",
-]
 
-
-class TaskCreateIn(BaseModel):
-    """按设计 §5.1：mode + 可选 queue/script/user uid。"""
-
-    mode: TaskMode = Field(..., description="任务模式")
-    queueId: Optional[str] = Field(default=None, description="队列 uid")
-    scriptId: Optional[str] = Field(default=None, description="脚本 uid")
-    userId: Optional[str] = Field(default=None, description="用户 uid")
-
-
-class TaskCreateOut(OutBase):
-    taskId: str = Field(default="", description="新创建的任务ID")
-
-
-class DispatchIn(BaseModel):
-    taskId: str = Field(..., description="目标任务 ID")
-
-
-class TaskGetIn(BaseModel):
-    taskId: Optional[str] = None
-
-
-class TaskGetOut(OutBase):
-    order: list[CollectionOrderItem] = Field(default_factory=list)
-    data: dict[str, TaskItem] = Field(default_factory=dict)
-
-
-class PowerIn(BaseModel):
-    signal: PowerSignal = Field(..., description="电源操作信号")
-
-
-class PowerOut(OutBase):
-    signal: PowerSignal = Field(..., description="电源操作信号")
-
+@router.get("/runtime-snapshot", tags=["Get"], response_model=TaskRuntimeSnapshot)
+async def get_task_runtime_snapshot() -> TaskRuntimeSnapshot:
+    """读取统一派发器的运行快照，不启动任何任务。"""
+    return TaskDispatcher.get_runtime_snapshot()
 
 @router.get(
     "/power/countdown-snapshot",
@@ -111,7 +78,12 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
-        await TaskDispatcher.stop(UUID(task.taskId))
+        task_id = "ALL" if task.taskId == "ALL" else UUID(task.taskId)
+    except ValueError:
+        return OutBase(code=400, status="error", message="taskId 必须为任务 UUID 或 ALL")
+
+    try:
+        await TaskDispatcher.stop(task_id)
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
     return OutBase()

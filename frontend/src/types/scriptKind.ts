@@ -1,0 +1,16 @@
+// 主页图标的展示类型，与专项配置模型解耦。
+export type ScriptType =
+  | 'MAA'
+  | 'General'
+  | 'Okww'
+  | 'OkNte'
+  | 'SRC'
+  | 'MaaEnd'
+  | 'M9A'
+  | 'MaaFW'
+  | 'HSR'
+  | 'BetterGI'
+  | 'ZzzOd'
+  | 'BAAH'
+  | 'Whimbox'
+  | 'MSS'

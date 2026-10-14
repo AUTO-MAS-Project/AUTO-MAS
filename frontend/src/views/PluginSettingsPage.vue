@@ -27,28 +27,50 @@ const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
 const pluginId = computed(() => String(route.params.pluginId || ''))
 const errorMessage = (error: unknown) => apiErrorMessage(error, t('plugins.actionFailed'))
 
-const { loading, error: loadError, execute: load } = useApiQuery(async () => {
-  if (!pluginId.value) return
-  const [registry, config] = await Promise.all([
-    api.getRegistry(pluginId.value),
-    api.getConfig(pluginId.value),
-  ])
-  const record = (registry.data || {})[pluginId.value] as Record<string, unknown> | undefined
-  const info = record?.info as Record<string, unknown> | undefined
-  title.value = String(info?.display_name || info?.plugin_name || pluginId.value)
-  for (const key of Object.keys(values)) delete values[key]
-  const data = config.data && typeof config.data === 'object' ? config.data as Record<string, unknown> : {}
-  const ui = record?.ui && typeof record.ui === 'object' ? record.ui as Record<string, unknown> : {}
-  const hintsMap = ui.hints && typeof ui.hints === 'object' ? ui.hints as Record<string, DeclarativeHint[]> : {}
-  const configUi = data.ui && typeof data.ui === 'object' ? data.ui as Record<string, unknown> : {}
-  const configHints = configUi.hints && typeof configUi.hints === 'object' ? configUi.hints as Record<string, DeclarativeHint[]> : {}
-  const resolvedHints = Object.keys(hintsMap).length ? hintsMap : configHints
-  groups.value = Object.entries(resolvedHints).map(([name, hints]) => ({ name, hints: Array.isArray(hints) ? hints : [] }))
-  for (const group of groups.value) {
-    const source = data[group.name] && typeof data[group.name] === 'object' ? data[group.name] as Record<string, unknown> : {}
-    values[group.name] = { ...source }
-  }
-}, () => t('plugins.settingsLoadFailed'))
+const {
+  loading,
+  error: loadError,
+  execute: load,
+} = useApiQuery(
+  async () => {
+    if (!pluginId.value) return
+    const [registry, config] = await Promise.all([
+      api.getRegistry(pluginId.value),
+      api.getConfig(pluginId.value),
+    ])
+    const record = (registry.data || {})[pluginId.value] as Record<string, unknown> | undefined
+    const info = record?.info as Record<string, unknown> | undefined
+    title.value = String(info?.display_name || info?.plugin_name || pluginId.value)
+    for (const key of Object.keys(values)) delete values[key]
+    const data =
+      config.data && typeof config.data === 'object' ? (config.data as Record<string, unknown>) : {}
+    const ui =
+      record?.ui && typeof record.ui === 'object' ? (record.ui as Record<string, unknown>) : {}
+    const hintsMap =
+      ui.hints && typeof ui.hints === 'object'
+        ? (ui.hints as Record<string, DeclarativeHint[]>)
+        : {}
+    const configUi =
+      data.ui && typeof data.ui === 'object' ? (data.ui as Record<string, unknown>) : {}
+    const configHints =
+      configUi.hints && typeof configUi.hints === 'object'
+        ? (configUi.hints as Record<string, DeclarativeHint[]>)
+        : {}
+    const resolvedHints = Object.keys(hintsMap).length ? hintsMap : configHints
+    groups.value = Object.entries(resolvedHints).map(([name, hints]) => ({
+      name,
+      hints: Array.isArray(hints) ? hints : [],
+    }))
+    for (const group of groups.value) {
+      const source =
+        data[group.name] && typeof data[group.name] === 'object'
+          ? (data[group.name] as Record<string, unknown>)
+          : {}
+      values[group.name] = { ...source }
+    }
+  },
+  () => t('plugins.settingsLoadFailed')
+)
 const updateValue = (group: string, field: string, value: unknown) => {
   if (!values[group]) values[group] = {}
   values[group][field] = value
@@ -72,9 +94,10 @@ const runAction = async (group: string, hint: DeclarativeHint) => {
   if (!field || runningKey.value || saving.value) return
   runningKey.value = `${group}.${field}`
   try {
-    const result = group === 'info'
-      ? await api.updateRegistry({ recordId: pluginId.value, data: { info: { [field]: true } } })
-      : await api.updateConfig({ recordId: pluginId.value, data: { [group]: { [field]: true } } })
+    const result =
+      group === 'info'
+        ? await api.updateRegistry({ recordId: pluginId.value, data: { info: { [field]: true } } })
+        : await api.updateConfig({ recordId: pluginId.value, data: { [group]: { [field]: true } } })
     message.success(result.message || t('plugins.actionComplete'))
     await load()
   } catch (error) {
@@ -90,8 +113,22 @@ watch(pluginId, load, { immediate: true })
 <template>
   <main class="plugin-settings-page">
     <PageHeader :title="title || t('plugins.settings')">
-      <template #leading><a-button type="text" :aria-label="t('plugins.back')" @click="router.push({ name: 'Plugins' })"><ArrowLeftOutlined /></a-button></template>
-      <template #actions><a-button type="primary" :loading="saving" :disabled="loading || !groups.length" @click="save"><template #icon><SaveOutlined /></template>{{ t('plugins.save') }}</a-button></template>
+      <template #leading
+        ><a-button
+          type="text"
+          :aria-label="t('plugins.back')"
+          @click="router.push({ name: 'Plugins' })"
+          ><ArrowLeftOutlined /></a-button
+      ></template>
+      <template #actions
+        ><a-button
+          type="primary"
+          :loading="saving"
+          :disabled="loading || !groups.length"
+          @click="save"
+          ><template #icon><SaveOutlined /></template>{{ t('plugins.save') }}</a-button
+        ></template
+      >
     </PageHeader>
     <PageSurface>
       <ApiRetryAlert :error="loadError" :loading="loading" @retry="load" />
@@ -111,5 +148,11 @@ watch(pluginId, load, { immediate: true })
 </template>
 
 <style scoped>
-.plugin-settings-page { display: flex; height: 100%; min-height: 0; flex-direction: column; overflow: hidden; }
+.plugin-settings-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
 </style>

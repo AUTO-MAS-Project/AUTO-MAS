@@ -8,10 +8,10 @@
 import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { useManagedScriptsApi } from '@/composables/useManagedScriptsApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
 import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
-import type { ScriptType } from '@/types/script'
+import type { ScriptType } from '@/types/scriptKind'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
@@ -125,7 +125,7 @@ const satelliteExplosions = new Map<CardMesh, SatelliteExplosion>()
 type PointerLikeEvent = Pick<MouseEvent, 'clientX' | 'clientY'>
 
 const { isDark } = useTheme()
-const { getScripts } = useScriptApi()
+const { getScripts } = useManagedScriptsApi()
 const performanceStore = usePerformanceStore()
 
 function stopAnimation() {
@@ -1285,16 +1285,20 @@ async function initScene(): Promise<void> {
 async function initSceneInternal(): Promise<void> {
   if (!container.value || isUnmounted) return
 
-  let userScripts: Awaited<ReturnType<typeof getScripts>> = []
+  let userScriptTypes = new Set<ScriptType>()
   try {
-    userScripts = await getScripts()
+    const scripts = await getScripts()
+    userScriptTypes = new Set(
+      (scripts.order ?? []).map(
+        item => (item.type === 'MaaScript' ? 'MAA' : item.type.replace(/Script$/, '')) as ScriptType
+      )
+    )
   } catch (err) {
     logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }
 
   if (!container.value || isUnmounted) return
 
-  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
   const enabledModules = satelliteModules.filter(
     m => m.enabled && userScriptTypes.has(m.scriptType)
   )

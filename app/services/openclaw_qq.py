@@ -265,6 +265,8 @@ class OpenClawQQManager:
         """在后端启动时恢复已绑定机器人的网关连接。"""
 
         self.bind_config_hooks()
+        if not self._enabled():
+            return
         async with self._credential_lock:
             app_id, client_secret, user_openid = self._credentials()
             if app_id and client_secret and user_openid:
@@ -284,7 +286,13 @@ class OpenClawQQManager:
         event = args[-1] if args else None
         enabled = getattr(event, "value", event)
         if not bool(enabled):
+            await self._stop_gateway()
             self._invalidate_access_token()
+        else:
+            async with self._credential_lock:
+                app_id, client_secret, user_openid = self._credentials()
+                if app_id and client_secret and user_openid:
+                    await self._start_gateway(app_id, client_secret)
 
     def _enabled(self) -> bool:
         try:
@@ -316,10 +324,10 @@ class OpenClawQQManager:
             "OpenClawQQClientSecret": "openclaw_qq_client_secret",
             "OpenClawQQTargetOpenId": "openclaw_qq_target_open_id",
         }
-        notify = Config.setting.notify
-        for name, value in values.items():
-            setattr(notify, field_names[name], value)
-        await Config.setting.commit()
+        patch = type(Config.setting).model_validate(
+            {"notify": {field_names[name]: value for name, value in values.items()}}
+        )
+        await Config.setting.update(patch, check_visibility=False)
 
     def _can_persist_secrets(self) -> bool:
         """确认是否可以使用配置层的 Windows DPAPI 密文存储。"""

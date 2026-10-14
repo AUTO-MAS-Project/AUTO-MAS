@@ -30,7 +30,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import JsonValue
 
 from .dispatcher import Dispatcher
-from .protocol import parse_envelope
+from .protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED, parse_envelope
 from app.utils.logger import get_logger
 
 logger = get_logger("WS连接管理器")
@@ -102,7 +102,9 @@ class _MainConnectionManager:
         if old_websocket is not None:
             logger.warning("已存在主连接，旧连接将被新连接替换")
             with suppress(Exception):
-                await old_websocket.close(code=1000, reason="被新连接替换")
+                await old_websocket.close(
+                    code=CLOSE_CODE_REPLACED, reason=CLOSE_REASON_REPLACED
+                )
 
         logger.info(f"主 WebSocket 已连接: {websocket.client}")
         async with self._connection_lock:

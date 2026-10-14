@@ -106,7 +106,7 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
                 core_api.ShutdownCoordinator, "run_teardown", new_callable=AsyncMock
             ) as teardown,
             patch.object(
-                core_api.TaskManager, "stop_task", new_callable=AsyncMock
+                core_api.TaskDispatcher, "stop", new_callable=AsyncMock
             ) as stop_task,
             patch.object(core_api.System, "cancel_power_task", new_callable=AsyncMock),
             patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,

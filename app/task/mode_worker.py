@@ -27,11 +27,13 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
+from datetime import datetime
 from uuid import UUID
 
-from app.models.task import HistoryRecordData, TaskMode
+from app.models.task import HistoryRecordData, LogRecordEntry, TaskMode
 from app.task.base import TaskBase
 from app.utils import get_logger
+from app.utils.constants import UTC8
 
 if TYPE_CHECKING:
     from app.models.config import ScriptEntry, UserEntry
@@ -73,6 +75,7 @@ class ModeWorker(TaskBase):
         # 构造时快照：运行期 progress 仍写 script_item.current，本层不回头查 expander
         self.current_index: UUID | None = script_item.current.index
         self._check_result = "Pass"
+        self._started_at = datetime.now(tz=UTC8)
 
     async def check(self) -> str:
         """返回 ``Pass`` 或用户可读错误串。"""
@@ -103,12 +106,15 @@ class ModeWorker(TaskBase):
         await self.main_logic()
 
     async def final_task(self) -> None:
-        if self._check_result != "Pass":
-            if self.user_uid in self.script_item.users:
-                u = self.script_item.users[self.user_uid]
+        if self.user_uid in self.script_item.users:
+            u = self.script_item.users[self.user_uid]
+            if self.cancelled:
+                u.info.status = "cancelled"
+            elif self.error is not None:
+                u.info.status = f"error:{type(self.error).__name__}: {self.error}"
+            elif self._check_result != "Pass":
                 u.info.status = f"check_fail:{self._check_result}"
-                await u.commit()
-            return
+            await u.commit()
         await self.save_result()
 
     async def build_history_data(
@@ -147,6 +153,14 @@ class ModeWorker(TaskBase):
         if self.user_uid not in self.script_item.users:
             return
         user_item = self.script_item.users[self.user_uid]
+        # 准备失败或提前取消可能尚无专项日志，仍须留下框架执行记录。
+        if not user_item.log_record:
+            user_item.log_record.add(LogRecordEntry, payload={"info": {
+                "start_time": self._started_at,
+                "status": user_item.info.status or "未完成",
+                "content": [],
+            }})
+            await user_item.log_record.commit()
         username = self.user_entry.info.name or user_item.info.name or str(self.user_uid)
         type_key = (
             type(self.script_entry).__name__

@@ -1,7 +1,7 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { TaskCreateIn } from '@/compat/taskCreateIn'
+import { TaskMode } from '@/api'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getConfig, saveConfig } from '@/utils/config'
@@ -36,7 +36,7 @@ export const useHomeQuickStart = () => {
 
   const schedulerTaskOptions = ref<HomeTaskOption[]>([])
   const selectedHomeTaskIds = ref<string[]>([])
-  const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
+  const selectedHomeMode = ref<TaskMode>(TaskMode.AUTO_PROXY)
   let savedSelectedTaskIds: string[] = []
   let selectionTouched = false
   let selectionSaveQueue = Promise.resolve()
@@ -103,10 +103,17 @@ export const useHomeQuickStart = () => {
     schedulerTasksLoading.value = true
 
     try {
-      const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-      if (response.code === 200 && Array.isArray(response.data)) {
+      const response = await Service.getQueuesApiQueueGetPost({ queueId: null })
+      if (response.code === 200 && response.data) {
         schedulerTasksUnavailable.value = false
-        applyRealTaskOptions(toHomeTaskOptions(response.data))
+        applyRealTaskOptions(
+          toHomeTaskOptions(
+            (response.order ?? []).map(item => ({
+              label: response.data?.[item.uid]?.info?.name || item.uid,
+              value: item.uid,
+            }))
+          )
+        )
         return
       }
 
@@ -150,7 +157,7 @@ export const useHomeQuickStart = () => {
         failureReason: t('home.quickStart.startFailed'),
         startTask: taskId =>
           Service.addTaskApiDispatchStartPost({
-            taskId,
+            queueId: taskId,
             mode: selectedHomeMode.value,
           }),
         onTaskStarted: () => undefined,

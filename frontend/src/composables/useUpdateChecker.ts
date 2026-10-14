@@ -68,7 +68,9 @@ const fetchUpdateSettings = async (): Promise<UpdateSettings | null> => {
       return {
         IfAutoUpdate: Boolean(updates.if_auto_update ?? updates.IfAutoUpdate),
         Source: String(updates.source ?? updates.Source ?? 'GitHub') as UpdateSettings['Source'],
-        Channel: String(updates.channel ?? updates.Channel ?? 'stable') as UpdateSettings['Channel'],
+        Channel: String(
+          updates.channel ?? updates.Channel ?? 'stable'
+        ) as UpdateSettings['Channel'],
         ProxyAddress: String(updates.proxy_address ?? updates.ProxyAddress ?? ''),
         MirrorChyanCDK: String(updates.mirror_chyan_cdk ?? updates.MirrorChyanCDK ?? ''),
         PauseUntil: String(updates.pause_until ?? updates.PauseUntil ?? ''),

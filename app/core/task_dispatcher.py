@@ -245,6 +245,52 @@ class _TaskDispatcher:
         for uid, running in self._running.items():
             yield uid, running.info
 
+    def get_runtime_snapshot(self):
+        """从运行任务树及已启用队列建立连接时点的快照。"""
+        from app.core.config import Config
+        from app.models.schema import (
+            TaskRuntimeSnapshot, TaskRuntimeSnapshotItem,
+            WSTaskScriptIdentityData, WSTaskScriptInfoData, WSTaskUserInfoData,
+        )
+
+        def identity(script_id: UUID) -> WSTaskScriptIdentityData:
+            entry = Config.ScriptConfig.get(script_id)
+            return WSTaskScriptIdentityData(
+                scriptId=str(script_id),
+                scriptType=type(entry).__name__ if entry is not None else "Unknown",
+            )
+
+        tasks = []
+        for task_id, task in self.running_items():
+            queue = Config.queues.get(UUID(task.info.queue_id)) if task.info.queue_id else None
+            tasks.append(TaskRuntimeSnapshotItem(
+                taskId=str(task_id), mode=task.info.mode,
+                queueId=task.info.queue_id, scriptId=task.info.script_id,
+                userId=task.info.user_id,
+                stopping=task.info.status == "cancelled",
+                isCycle=queue is not None and queue.info.schedule_mode == "cycle",
+                scripts=[identity(uid) for uid in task.scripts.keys()],
+                task_info=[WSTaskScriptInfoData(
+                    script_id=str(uid), name=script.info.name, status=script.info.status,
+                    userList=[WSTaskUserInfoData(
+                        user_id=str(user_id), name=user.info.name, status=user.info.status,
+                    ) for user_id, user in script.users.items()],
+                ) for uid, script in task.scripts.items()],
+                log=task.current.log or "",
+            ))
+        requested_ids = {
+            item.info.script_id
+            for queue in Config.queues.values()
+            if queue.info.time_enabled or queue.info.schedule_mode == "cycle"
+            for item in queue.items.values()
+            if queue.info.schedule_mode != "cycle" or item.schedule.enabled
+        }
+        scheduled_ids = {uid for uid in Config.ScriptConfig if str(uid) in requested_ids}
+        return TaskRuntimeSnapshot(
+            tasks=tasks,
+            scheduledScripts=[identity(uid) for uid in sorted(scheduled_ids, key=str)],
+        )
+
     def queue_running(self, queue_id: str) -> bool:
         """计时器不得在队列尚未结束时重复触发。"""
         return any(

@@ -43,6 +43,7 @@ from app.config.signals import CollectionChangeEvent, FieldChangeEvent
 
 from .game import device_removed
 from .tag import TagItem
+from .setting import Webhook
 
 
 class UserEntry(ConfigEntry):
@@ -70,7 +71,22 @@ class UserEntry(ConfigEntry):
         )
         tags: Virtual[list[TagItem]] = None
 
+    class Notify(ConfigGroup):
+        """用户独立通知策略；专项继承后可补充自身报告选项。"""
+
+        enabled: bool = Field(default=False, description="是否启用用户通知")
+        if_send_statistic: bool = Field(default=False, description="是否发送统计信息")
+        if_send_six_star: bool = Field(default=False, description="是否发送六星通知")
+        if_send_mail: bool = Field(default=False, description="是否发送邮件通知")
+        to_address: str = Field(default="", description="邮件接收地址")
+        if_server_chan: bool = Field(default=False, description="是否启用 Server 酱")
+        server_chan_key: Annotated[str, ui(secret=True)] = Field(
+            default="", description="Server 酱推送密钥"
+        )
+
     info: Info = Field(default_factory=Info, description="用户信息")
+    notify: Notify = Field(default_factory=Notify, description="用户通知")
+    custom_webhooks: ConfigCollection[Webhook] = collection(Webhook)
 
     @trigger_field("info.pass_review")
     async def on_pass_review(self) -> None:

@@ -1,8 +1,4 @@
 {
-  "include": [
-    "src/main.ts",
-    "src/**/*.d.ts",
-    "vite.config.ts"
-  ],
+  "include": ["src/main.ts", "src/**/*.d.ts", "vite.config.ts"],
   "extends": "./tsconfig.app.json"
 }

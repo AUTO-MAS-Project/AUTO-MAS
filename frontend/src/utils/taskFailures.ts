@@ -1,10 +1,10 @@
 import type { WSTaskCompletedData, WSTaskScriptInfoData } from '@/services/websocket/types'
 
 /** 任务总览里算作失败的脚本 / 用户状态 */
-export const FAILED_TASK_STATUSES: ReadonlySet<string> = new Set(['异常'])
+export const FAILED_TASK_STATUSES: ReadonlySet<string> = new Set(['异常', 'error', 'check_fail'])
 
 const statusMatches = (status: string | undefined, values: ReadonlySet<string>) =>
-  Boolean(status && values.has(status))
+  Boolean(status && (values.has(status) || values.has(status.split(':')[0])))
 
 /** 脚本自身或它的任一用户处在给定状态之一 */
 export const scriptHasStatus = (script: WSTaskScriptInfoData, values: ReadonlySet<string>) =>

@@ -32,6 +32,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Literal, Optional, Dict, Any, List
 import json
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import ConfigCollection
 from app.models.config import (
@@ -52,8 +53,9 @@ from app.utils.constants import (
     RESOURCE_STAGE_DROP_INFO,
     RESOURCE_STAGE_DATE_TEXT,
 )
-from app.utils import get_logger
+from app.utils import get_logger, is_supervised, resource_path
 from app.utils.io import read_file, write_file
+from app.utils.paths import SOURCE_ROOT
 
 logger = get_logger("配置管理")
 
@@ -175,6 +177,10 @@ class AppConfig:
         self._game_sign_result_date = ""
 
         self._inject_truststore()
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(resource_path("html"))),
+            autoescape=select_autoescape(),
+        )
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -213,7 +219,8 @@ class AppConfig:
             try:
                 from git import Repo
 
-                self._repo = Repo(Path.cwd())
+                # 受监督时工作目录是用户数据根，Git 仓库仍随源码走。
+                self._repo = Repo(SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -455,7 +462,12 @@ class AppConfig:
         await asyncio.to_thread(upgrade_json_configs, self.config_path)
 
     async def get_git_version(self) -> tuple[bool, str, str]:
-        """获取Git版本信息，如果Git不可用则返回默认值"""
+        """读取本地 Git 身份；受监督时更新由 Runtime 负责，不判定需要更新。"""
+
+        supervised = is_supervised()
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if supervised and expected_commit:
+            return True, expected_commit, "unknown"
 
         def _get_git_info():
 
@@ -473,9 +485,7 @@ class AppConfig:
 
             # 检查是否为最新 commit
             try:
-                # 获取远程分支的最新 commit
-                origin = repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
+                # 查询只比较已缓存的远程引用，避免请求路径联网 fetch。
                 remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
@@ -488,7 +498,7 @@ class AppConfig:
         is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
             None, _get_git_info
         )
-        return is_latest, commit_hash, commit_time
+        return is_latest or supervised, commit_hash, commit_time
 
 
     async def update_game_sign_results(

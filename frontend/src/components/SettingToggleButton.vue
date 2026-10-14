@@ -3,7 +3,12 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = withDefaults(
-  defineProps<{ modelValue?: boolean; disabled?: boolean; loading?: boolean; size?: 'small' | 'middle' | 'large' }>(),
+  defineProps<{
+    modelValue?: boolean
+    disabled?: boolean
+    loading?: boolean
+    size?: 'small' | 'middle' | 'large'
+  }>(),
   { modelValue: false, disabled: false, loading: false, size: 'large' }
 )
 
@@ -46,7 +51,10 @@ const toggle = () => {
   min-width: 88px;
 }
 
-.setting-toggle-button.ant-btn:not(.setting-toggle-button--on):not(:disabled):is(:hover, :focus-visible) {
+.setting-toggle-button.ant-btn:not(.setting-toggle-button--on):not(:disabled):is(
+    :hover,
+    :focus-visible
+  ) {
   border-color: var(--ant-color-error);
   color: var(--ant-color-error);
 }

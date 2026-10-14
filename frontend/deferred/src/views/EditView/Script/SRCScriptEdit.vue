@@ -1,0 +1,993 @@
+<template>
+  <div class="script-edit-header">
+    <div class="header-nav">
+      <a-breadcrumb class="breadcrumb">
+        <a-breadcrumb-item>
+          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <div class="breadcrumb-current">
+            <img src="@/assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
+            {{ t('edit.editScript') }}
+          </div>
+        </a-breadcrumb-item>
+      </a-breadcrumb>
+    </div>
+
+    <a-space size="middle">
+      <DocLink :url="MAS_DOC_URLS.scriptTypes.SRC" />
+      <a-button size="large" class="cancel-button" @click="handleCancel">
+        <template #icon>
+          <ArrowLeftOutlined />
+        </template>
+        {{ t('edit.back') }}
+      </a-button>
+    </a-space>
+  </div>
+
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.srcScriptConfiguration')" :loading="pageLoading" class="config-card">
+      <template #extra>
+        <a-tag color="blue" class="type-tag"> SRC </a-tag>
+      </template>
+
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <!-- 基本信息 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.basicInfo') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item name="name">
+                <template #label>
+                  <a-tooltip :title="t('edit.giveScriptNameYou')">
+                    <span class="form-label">
+                      {{ t('edit.scriptName') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.name"
+                  :placeholder="t('edit.enterScriptName')"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="16">
+              <a-form-item name="path" :rules="rules.path">
+                <template #label>
+                  <a-tooltip :title="t('edit.pickFolderHoldingSrc2')">
+                    <span class="form-label">
+                      {{ t('edit.srcPath') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="formData.path"
+                    :placeholder="t('edit.pickFolderHoldingSrc')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button size="large" class="path-button" @click="selectSRCPath">
+                    <template #icon>
+                      <FolderOpenOutlined />
+                    </template>
+                    {{ t('edit.pickFolder') }}
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
+        <!-- 模拟器管理 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.emulators') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.pickEmulatorUse')">
+                    <span class="form-label">
+                      {{ t('edit.emulator') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Emulator.Id"
+                  size="large"
+                  :placeholder="t('edit.pickEmulator')"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    :title="
+                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                        ? t('edit.thisEmulatorCannotBe')
+                        : t('edit.pickEmulatorInstance')
+                    "
+                  >
+                    <span class="form-label">
+                      {{ t('edit.emulatorInstance') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <!-- 当API返回空列表时显示输入框 -->
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    srcConfig.Emulator.Id
+                  "
+                  v-model:value="srcConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', srcConfig.Emulator.Index)"
+                />
+                <!-- 正常情况下显示下拉框 -->
+                <a-select
+                  v-else
+                  v-model:value="srcConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!srcConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
+        <!-- 运行配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.runConfiguration') }}</h3>
+          </div>
+          <ScriptHardTimeoutField
+            v-model:value="srcConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', srcConfig.Run.HardTimeLimit)"
+          />
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.whatDoWhenSwitching')">
+                    <span class="form-label">
+                      {{ t('edit.accountSwitchingMethod') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.TaskTransitionMethod"
+                  size="large"
+                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                >
+                  <a-select-option value="ExitEmulator">{{
+                    t('edit.restartEmulator')
+                  }}</a-select-option>
+                  <a-select-option value="ExitGame">{{ t('edit.restartGame') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.skipRunOnceThis')">
+                    <span class="form-label">
+                      {{ t('edit.runsPerDayThis') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
+                    <span class="form-label">
+                      {{ t('edit.retryLimit') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.treatRunAsTimed2')">
+                    <span class="form-label">
+                      {{ t('edit.runTimeoutMinutes2') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.RunTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
+        <!-- 游戏更新 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.gameUpdate') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.checkGameUpdateBeforeLogin')">
+                    <span class="form-label">
+                      {{ t('edit.checkGameUpdateBefore') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
+                    <span class="form-label">
+                      {{ t('edit.installGamePackageAutomatically') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
+                    <span class="form-label">
+                      {{ t('edit.gameUpdateTimeoutMinutes') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+      </a-form>
+    </a-card>
+  </ConfigLockPanel>
+</template>
+
+<script setup lang="ts">
+import ScriptHardTimeoutField from '@deferred/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import DocLink from '@/components/DocLink.vue'
+import { MAS_DOC_URLS } from '@/utils/openExternal.ts'
+import { useI18n } from 'vue-i18n'
+import { onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { FormInstance } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import type { SRCScriptConfig, ScriptType } from '@deferred/types/script.ts'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
+import { useScriptApi } from '@deferred/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue.ts'
+import { Service, type ComboBoxItem } from '@/api/index.ts'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
+
+const { t } = useI18n()
+
+const logger = window.electronAPI.getLogger('SRC脚本编辑')
+
+const route = useRoute()
+const router = useRouter()
+const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
+
+const formRef = ref<FormInstance>()
+const pageLoading = ref(false)
+const scriptId = route.params.id as string
+const isInitializing = ref(true) // 标记是否正在初始化
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
+
+const formData = reactive({
+  name: '',
+  type: 'SRC' as ScriptType,
+  get path() {
+    return srcConfig.Info?.Path || '.'
+  },
+  set path(value) {
+    if (srcConfig.Info) {
+      srcConfig.Info.Path = value
+    }
+  },
+})
+
+// SRC配置
+const srcConfig = reactive<SRCScriptConfig>({
+  Info: {
+    Name: '',
+    Path: '.',
+  },
+  Run: {
+    HardTimeLimit: 120,
+    TaskTransitionMethod: 'ExitEmulator',
+    ProxyTimesLimit: 0,
+    RunTimesLimit: 3,
+    RunTimeLimit: 40,
+    IfCheckGameUpdate: false,
+    IfAutoInstallGameApk: false,
+    GameUpdateTimeLimit: 60,
+  },
+  Emulator: {
+    Id: '',
+    Index: '',
+  },
+})
+
+const rules = {
+  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
+  path: [{ required: true, message: t('edit.pickSrcPath'), trigger: 'blur' }],
+}
+
+// 模拟器相关状态
+const emulatorLoading = ref(false)
+const emulatorOptions = ref<ComboBoxItem[]>([])
+
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path'])
+
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(srcConfig as Record<string, any>)[category][key] = normalized
+  }
+}
+
+const handleChange = async (category: string, key: string, value: any) => {
+  if (isInitializing.value) return
+
+  await enqueue(async () => {
+    try {
+      // 构建只包含单个修改字段的更新数据（遵循最小原则）
+      const updateData: any = { [category]: { [key]: value } }
+
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    }
+  }, `${category}.${key}`)
+}
+
+onMounted(async () => {
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
+  // 初始化完成后允许自动保存
+  isInitializing.value = false
+})
+
+const loadScript = async () => {
+  pageLoading.value = true
+  try {
+    // 检查是否有通过路由状态传递的数据（新建脚本时）
+    const routeState = history.state as any
+    if (routeState?.scriptData) {
+      // 有路由状态数据时，先使用它快速渲染，但仍然从API重新加载以确保数据完整性
+      const scriptData = routeState.scriptData
+      const config = scriptData.config as SRCScriptConfig
+      formData.name = config.Info?.Name || '新建SRC脚本'
+      Object.assign(srcConfig, config)
+
+      // 从API重新加载完整数据（确保包含所有必要的配置）
+      const scriptDetail = await getScript(scriptId)
+      if (scriptDetail) {
+        formData.type = scriptDetail.type
+        formData.name = scriptDetail.name
+        Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
+      }
+
+      // 如果已经有选择的模拟器，加载对应的设备选项
+      if (srcConfig.Emulator?.Id) {
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+      }
+    } else {
+      // 编辑现有脚本时，从API获取数据
+      const scriptDetail = await getScript(scriptId)
+
+      if (!scriptDetail) {
+        message.error(t('edit.scriptDoesNotExist'))
+        router.push('/scripts')
+        return
+      }
+
+      formData.type = scriptDetail.type
+      formData.name = scriptDetail.name
+
+      Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
+
+      // 如果已经有选择的模拟器，加载对应的设备选项
+      if (srcConfig.Emulator?.Id) {
+        void loadEmulatorDeviceOptions(srcConfig.Emulator.Id)
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本失败: ${errorMsg}`)
+    message.error(t('edit.couldNotLoadScript'))
+    router.push('/scripts')
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+const handleCancel = () => {
+  router.push('/scripts')
+}
+
+// 模拟器相关方法
+const loadEmulatorOptions = async () => {
+  emulatorLoading.value = true
+  try {
+    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+    if (response && response.code === 200) {
+      emulatorOptions.value = response.data || []
+    } else {
+      message.error(t('edit.couldNotLoadEmulator'))
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器选项失败: ${errorMsg}`)
+    message.error(t('edit.couldNotLoadEmulator'))
+  } finally {
+    emulatorLoading.value = false
+  }
+}
+
+const handleEmulatorSelectChange = async (emulatorId: string) => {
+  // 清空模拟器实例选择
+  srcConfig.Emulator.Index = ''
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
+
+  // 保存模拟器选择和清空的实例字段
+  await enqueue(async () => {
+    try {
+      const updateData = {
+        Emulator: {
+          Id: emulatorId,
+          Index: '',
+        },
+      }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info('模拟器配置已保存')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存模拟器配置失败: ${errorMsg}`)
+    }
+  })
+}
+
+// 文件选择方法
+const selectSRCPath = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error(t('edit.filePickingUnavailableRun'))
+      return
+    }
+
+    const path = await window.electronAPI.selectFolder()
+    if (path) {
+      if (!srcConfig.Info) {
+        srcConfig.Info = { Name: '', Path: '' }
+      }
+      srcConfig.Info.Path = path
+      // 选择路径后立即保存
+      await handleChange('Info', 'Path', path)
+      message.success(t('edit.srcPathSelected'))
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择SRC路径失败: ${errorMsg}`)
+    message.error(t('edit.couldNotPickFolder'))
+  }
+}
+</script>
+
+<style scoped>
+/* 头部区域 */
+.script-edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding: 0 8px;
+}
+
+.header-nav {
+  flex: 1;
+}
+
+.breadcrumb {
+  margin: 0;
+}
+
+.breadcrumb-link {
+  align-items: center;
+  gap: 8px;
+  color: var(--ant-color-text-secondary);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.breadcrumb-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ant-color-text);
+  font-weight: 600;
+}
+
+.breadcrumb-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  transition: all 0.3s ease;
+}
+
+/* 内容区域 */
+.script-edit-content {
+  flex: 1;
+}
+
+.config-card {
+  border-radius: 16px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--ant-color-border-secondary);
+  overflow: hidden;
+}
+
+.config-card :deep(.ant-card-head) {
+  background: var(--ant-color-bg-container);
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 24px 32px;
+}
+
+.config-card :deep(.ant-card-head-title) {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.config-card :deep(.ant-card-body) {
+  padding: 32px;
+  background: var(--ant-color-bg-container);
+}
+
+.type-tag {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+}
+
+/* 表单样式 */
+.config-form {
+  max-width: none;
+}
+
+.form-section {
+  margin-bottom: 12px;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-header {
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+
+/* 表单标签 */
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+.modern-input {
+  border-radius: 8px;
+  border: 2px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-input:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-input:focus,
+.modern-input.ant-input-focused {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.modern-select :deep(.ant-select-selector) {
+  border: 2px solid var(--ant-color-border) !important;
+  border-radius: 8px !important;
+  background: var(--ant-color-bg-container) !important;
+  transition: all 0.3s ease;
+}
+
+.modern-select:hover :deep(.ant-select-selector) {
+  border-color: var(--ant-color-primary-hover) !important;
+}
+
+.modern-select.ant-select-focused :deep(.ant-select-selector) {
+  border-color: var(--ant-color-primary) !important;
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
+}
+
+.modern-number-input {
+  border-radius: 8px;
+}
+
+.modern-number-input :deep(.ant-input-number) {
+  border: 2px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-number-input :deep(.ant-input-number:hover) {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-number-input :deep(.ant-input-number-focused) {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+/* 路径输入组 */
+.path-input-group {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--ant-color-border);
+  transition: all 0.3s ease;
+}
+
+.path-input-group:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.path-input-group:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.path-input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--ant-color-bg-container) !important;
+}
+
+.path-input:focus {
+  box-shadow: none !important;
+}
+
+.path-button {
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  transition: all 0.3s ease;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+.path-button:hover {
+  background: var(--ant-color-primary);
+  color: white;
+  transform: none;
+}
+
+/* 表单项间距 */
+.config-form :deep(.ant-form-item) {
+  margin-bottom: 24px;
+}
+
+.config-form :deep(.ant-form-item-label) {
+  padding-bottom: 8px;
+}
+
+.config-form :deep(.ant-form-item-label > label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
+html.dark .config-card {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .path-input-group:focus-within {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+html.dark .modern-input:focus,
+html.dark .modern-input.ant-input-focused {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
+}
+
+html.dark .modern-number-input :deep(.ant-input-number-focused) {
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .config-card :deep(.ant-card-body) {
+    padding: 24px;
+  }
+
+  .form-section {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .script-edit-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .config-card :deep(.ant-card-head) {
+    padding: 16px 20px;
+  }
+
+  .config-card :deep(.ant-card-head-title) {
+    font-size: 20px;
+  }
+
+  .config-card :deep(.ant-card-body) {
+    padding: 20px;
+  }
+
+  .section-header h3 {
+    font-size: 18px;
+  }
+
+  .form-section {
+    margin-bottom: 12px;
+  }
+
+  .path-button {
+    padding: 0 16px;
+    font-size: 14px;
+  }
+
+  .cancel-button,
+  .save-button {
+    height: 44px;
+    font-size: 14px;
+    padding: 0 20px;
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-section {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.form-section:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.form-section:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.form-section:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+/* Tooltip样式优化 */
+:deep(.ant-tooltip-inner) {
+  background: var(--ant-color-bg-elevated);
+  color: var(--ant-color-text);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 300px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+:deep(.ant-tooltip-arrow::before) {
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border);
+}
+
+.float-button {
+  width: 60px;
+  height: 60px;
+}
+</style>

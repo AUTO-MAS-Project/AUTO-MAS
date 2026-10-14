@@ -362,12 +362,7 @@ const SERIES_OPTIONS = computed<SelectOption[]>(() => {
     | undefined
   return (hint?.options ?? []).map(({ value }) => ({
     value,
-    label:
-      value === '0'
-        ? 'AUTO'
-        : value === '-1'
-          ? t('plan.table.noSwitch')
-          : value,
+    label: value === '0' ? 'AUTO' : value === '-1' ? t('plan.table.noSwitch') : value,
   }))
 })
 

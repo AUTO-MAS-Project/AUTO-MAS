@@ -119,7 +119,7 @@ export function useHistoryLogic() {
             start_date: searchForm.startDate,
             end_date: searchForm.endDate,
           }),
-        t('history.toast.searchFailed'),
+        t('history.toast.searchFailed')
       )
 
       if (!isMounted) return
@@ -196,7 +196,7 @@ export function useHistoryLogic() {
       detailLoading.value = true
       const response = await requestApi(
         () => Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile }),
-        t('history.toast.fetchLogFailed'),
+        t('history.toast.fetchLogFailed')
       )
 
       if (!isMounted) return

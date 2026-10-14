@@ -5,7 +5,10 @@
 import type { app__api__OutBase } from '../models/app__api__OutBase';
 import type { app__models__schema__OutBase } from '../models/app__models__schema__OutBase';
 import type { BackendHealthOut } from '../models/BackendHealthOut';
+import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CommunityActivityOut } from '../models/CommunityActivityOut';
+import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { GameCreateIn } from '../models/GameCreateIn';
@@ -89,6 +92,7 @@ import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskGetIn } from '../models/TaskGetIn';
 import type { TaskGetOut } from '../models/TaskGetOut';
+import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -107,6 +111,7 @@ import type { UserGetOut } from '../models/UserGetOut';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
@@ -122,7 +127,7 @@ import { request as __request } from '../core/request';
 export class Service {
     /**
      * 获取后端就绪状态
-     * 返回核心 API 与后台初始化状态。
+     * 返回后台初始化状态与受监督身份，commit 仅来自监督器注入。
      * @returns BackendHealthOut Successful Response
      * @throws ApiError
      */
@@ -159,10 +164,10 @@ export class Service {
     /**
      * 关闭后端程序
      * 关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready
-     * @returns app__api__OutBase Successful Response
+     * @returns app__models__schema__OutBase Successful Response
      * @throws ApiError
      */
-    public static closeApiCoreClosePost(): CancelablePromise<app__api__OutBase> {
+    public static closeApiCoreClosePost(): CancelablePromise<app__models__schema__OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
@@ -314,6 +319,142 @@ export class Service {
         });
     }
     /**
+     * 获取碧蓝档案活动数据（GameKee 中转）
+     * 按服务器取回碧蓝档案的活动。
+     *
+     * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
+     *
+     * GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
+     * 的字段形状再交给前端，省得让前端认识第二套数据源。
+     * @param requestBody
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveActivityApiInfoBluearchiveActivityPost(
+        requestBody: BlueArchiveActivityIn,
+    ): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/bluearchive/activity',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取碧蓝档案活动图片（GameKee 中转）
+     * 中转 GameKee 的图片。
+     *
+     * 那个 CDN 校验 Referer：带上它自己的站点才给图，页面直连（Referer 是本软件）会被拒。
+     * 所以图片也由后端取回，前端只管引用这个地址。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveImageApiInfoBluearchiveImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/bluearchive/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取终末地版本图与版本名
+     * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldVersionArtApiInfoEndfieldVersionArtGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/version-art',
+        });
+    }
+    /**
+     * 获取终末地活动图片（缩放后转发）
+     * 把终末地的活动大图缩到横幅宽度再交给前端。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldImageApiInfoEndfieldImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取明日方舟活动数据（PRTS 中转）
+     * 取回明日方舟的活动一览。
+     *
+     * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+     * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+     * 不然前端会把「没有活动」当成接口出错反复重试。
+     *
+     * PRTS 在部分网络下会连不上、也挡浏览器直连，真取不到时改用 SRA 托管的那份活动列表
+     * 顶上：数据没有活动分类，卡片上会少一列标签，但至少不是空的。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getArknightsActivityApiInfoArknightsActivityGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/arknights/activity',
+        });
+    }
+    /**
+     * 获取星塔旅人活动数据（官网公告）
+     * 取回星塔旅人的活动一览。
+     *
+     * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
+     *
+     * 官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
+     * 对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
+     * 分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
+     *
+     * Returns:
+     * InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getStellaActivityApiInfoStellaActivityPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/stella/activity',
+        });
+    }
+    /**
+     * Get Task Runtime Snapshot
+     * 读取统一派发器的运行快照，不启动任何任务。
+     * @returns TaskRuntimeSnapshot Successful Response
+     * @throws ApiError
+     */
+    public static getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet(): CancelablePromise<TaskRuntimeSnapshot> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
      * 获取电源倒计时初始快照
      * @returns PowerCountdownSnapshot Successful Response
      * @throws ApiError
@@ -346,12 +487,12 @@ export class Service {
     /**
      * 中止任务
      * @param requestBody
-     * @returns app__api__OutBase Successful Response
+     * @returns app__models__schema__OutBase Successful Response
      * @throws ApiError
      */
     public static stopTaskApiDispatchStopPost(
         requestBody: DispatchIn,
-    ): CancelablePromise<app__api__OutBase> {
+    ): CancelablePromise<app__models__schema__OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',
@@ -395,12 +536,12 @@ export class Service {
     /**
      * 设置电源标志
      * @param requestBody
-     * @returns app__api__OutBase Successful Response
+     * @returns app__models__schema__OutBase Successful Response
      * @throws ApiError
      */
     public static setPowerApiDispatchSetPowerPost(
         requestBody: PowerIn,
-    ): CancelablePromise<app__api__OutBase> {
+    ): CancelablePromise<app__models__schema__OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/set/power',
@@ -413,10 +554,10 @@ export class Service {
     }
     /**
      * 取消电源任务
-     * @returns app__api__OutBase Successful Response
+     * @returns app__models__schema__OutBase Successful Response
      * @throws ApiError
      */
-    public static cancelPowerTaskApiDispatchCancelPowerPost(): CancelablePromise<app__api__OutBase> {
+    public static cancelPowerTaskApiDispatchCancelPowerPost(): CancelablePromise<app__models__schema__OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/cancel/power',
@@ -609,6 +750,26 @@ export class Service {
         });
     }
     /**
+     * 查询游戏社区日常活跃度
+     * 查询游戏社区日常活动，不占用签到流程锁。
+     * @param requestBody
+     * @returns CommunityActivityOut Successful Response
+     * @throws ApiError
+     */
+    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
+        requestBody: CommunityActivityQueryIn,
+    ): CancelablePromise<CommunityActivityOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/community/activity/query',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询配置
      * 查询全局设置。
      * @returns SettingGetOut Successful Response
@@ -757,6 +918,21 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns VirtualDisplayDetachOut Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
         });
     }
     /**

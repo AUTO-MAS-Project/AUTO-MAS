@@ -116,7 +116,10 @@
         </div>
 
         <div class="header-actions">
-          <div class="boolean-field"><span>{{ t('history.log.stripBlank') }}</span><SettingToggleButton v-model="removeEmptyLines" class="empty-lines-checkbox" /></div>
+          <div class="boolean-field">
+            <span>{{ t('history.log.stripBlank') }}</span
+            ><SettingToggleButton v-model="removeEmptyLines" class="empty-lines-checkbox" />
+          </div>
           <a-divider type="vertical" />
           <a-tooltip :title="t('history.log.openFile')">
             <a-button size="small" type="text" :disabled="!hasFile" @click="$emit('open-file')">

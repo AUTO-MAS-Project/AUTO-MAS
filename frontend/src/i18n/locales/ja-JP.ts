@@ -2240,7 +2240,8 @@ export default {
       name: 'ゲーム管理とスケジュールでこのエミュレーターを識別する名前です。',
       path: 'MuMuManager.exe の完全なパスです。選択後にバックエンドで補正される場合があります。',
       maxWaitTime: 'エミュレーター操作で許可する最大待機時間（秒）です。',
-      forceKill: '終了時に MuMu 関連プロセスを強制終了します。他のインスタンスに影響する場合があります。',
+      forceKill:
+        '終了時に MuMu 関連プロセスを強制終了します。他のインスタンスに影響する場合があります。',
       index: 'エミュレーターのマルチインスタンス番号です。',
       status: 'デバイスの現在の実行状態です。',
       adbAddress: 'ADB 接続に使用するデバイスアドレスです。',
@@ -2412,7 +2413,7 @@ export default {
       autoRotate: '自動回転',
       vramStrategy: 'ビデオメモリ使用方針',
     },
-    createInstance: 'インスタンスを作成',
+    createInstance: 'デバイスを作成',
     createTitle: 'エミュレーターのインスタンスを作成',
     create: '作成',
     createOnPath: '作成先',
@@ -3457,6 +3458,9 @@ export default {
     },
   },
   scripts: {
+    runUser: '実行',
+    runUserStarted: 'アカウントのタスクを開始しました',
+    runUserFailed: 'アカウントのタスクを開始できませんでした',
     title: 'マネージドスクリプト管理',
     searchPlaceholder: 'スクリプト名・アカウント名・ID で検索',
     searchAria: 'スクリプトとアカウントを検索',

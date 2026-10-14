@@ -40,7 +40,7 @@ export type Notify = {
      */
     if_openclaw_qq?: boolean;
     /**
-     * QQ 官方机器人 App ID
+     * QQ 官方机器人 App ID（由扫码绑定管理）
      */
     openclaw_qq_app_id?: string;
     /**
@@ -75,6 +75,14 @@ export type Notify = {
      * ServerChan推送密钥
      */
     server_chan_key?: string;
+    /**
+     * 是否启用中国移动新消息通知
+     */
+    if_cmcc_new_msg?: boolean;
+    /**
+     * 中国移动新消息 Channel API Key
+     */
+    cmcc_new_msg_api_key?: string;
     /**
      * 测试通知（写 True 触发一次）
      */

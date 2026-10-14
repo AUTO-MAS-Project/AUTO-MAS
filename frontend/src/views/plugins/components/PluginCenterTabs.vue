@@ -18,8 +18,20 @@ const onChange = (key: string) => {
 </template>
 
 <style scoped>
-.plugin-center-tabs { margin-bottom: 0; }
-.plugin-center-tabs :deep(.ant-tabs-nav) { margin-bottom: 24px; }
-.plugin-center-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) { background: transparent; border: 1px solid var(--ant-color-border); border-radius: 8px 8px 0 0; margin-right: 8px; }
-.plugin-center-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) { background: var(--ant-color-bg-container); border-bottom-color: var(--ant-color-bg-container); }
+.plugin-center-tabs {
+  margin-bottom: 0;
+}
+.plugin-center-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 24px;
+}
+.plugin-center-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
+  background: transparent;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px 8px 0 0;
+  margin-right: 8px;
+}
+.plugin-center-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
+  background: var(--ant-color-bg-container);
+  border-bottom-color: var(--ant-color-bg-container);
+}
 </style>

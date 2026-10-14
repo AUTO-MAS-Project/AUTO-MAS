@@ -3,6 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 export type TaskGetIn = {
+    /**
+     * 任务 ID；缺省返回全部
+     */
     taskId?: (string | null);
 };
 

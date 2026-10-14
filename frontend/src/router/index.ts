@@ -167,7 +167,9 @@ router.beforeEach(async (to, from, next) => {
           const { connectWithRetry } = await import('@/composables/useAppLifecycle')
           await connectWithRetry()
         } catch (error) {
-          logger.error(`开发模式直达内页启动失败: ${error instanceof Error ? error.message : String(error)}`)
+          logger.error(
+            `开发模式直达内页启动失败: ${error instanceof Error ? error.message : String(error)}`
+          )
         } finally {
           markAsInitialized()
           finishBootstrap()
@@ -202,7 +204,7 @@ router.beforeEach(async (to, from, next) => {
 
 export function navigateTo(
   path: string,
-  options?: { replace?: boolean; query?: LocationQueryRaw },
+  options?: { replace?: boolean; query?: LocationQueryRaw }
 ) {
   const { replace = false, query } = options || {}
   return replace ? router.replace({ path, query }) : router.push({ path, query })

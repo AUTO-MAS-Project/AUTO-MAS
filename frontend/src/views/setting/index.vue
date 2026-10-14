@@ -78,12 +78,7 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
-const ELECTRON_SYNCED_CATEGORIES = new Set<SettingsCategory>([
-  'UI',
-  'Start',
-  'Update',
-  'Function',
-])
+const ELECTRON_SYNCED_CATEGORIES = new Set<SettingsCategory>(['UI', 'Start', 'Update', 'Function'])
 
 // 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
 const NORMALIZED_SETTING_KEYS = new Set([
@@ -125,7 +120,10 @@ const loadSettings = async () => {
 }
 
 // 保存设置 - 只发送修改的字段（遵循最小原则）
-const saveSettings = async (category: SettingsCategory, changes: Record<string, unknown>): Promise<boolean> => {
+const saveSettings = async (
+  category: SettingsCategory,
+  changes: Record<string, unknown>
+): Promise<boolean> => {
   try {
     const updateData = { [category]: changes } as SettingsViewModel
     const result = await updateSettings(updateData)
@@ -166,7 +164,11 @@ const applyLocalSettingChange = async (category: SettingsCategory, key: string, 
   if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
 }
 
-const handleSettingChange = async (category: SettingsCategory, key: string, value: unknown): Promise<boolean> => {
+const handleSettingChange = async (
+  category: SettingsCategory,
+  key: string,
+  value: unknown
+): Promise<boolean> => {
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
@@ -347,16 +349,10 @@ onMounted(() => {
           />
         </a-tab-pane>
         <a-tab-pane key="function" :tab="t('setting.tab.function')">
-          <TabFunction
-            :settings="settings"
-            :handle-setting-change="handleSettingChange"
-          />
+          <TabFunction :settings="settings" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
-          <TabNotify
-            :settings="settings"
-            :handle-setting-change="handleSettingChange"
-          />
+          <TabNotify :settings="settings" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
           <TabAdvanced :open-dev-tools="openDevTools" />

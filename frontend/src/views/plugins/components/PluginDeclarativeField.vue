@@ -14,16 +14,25 @@ export type DeclarativeHint = {
   multiple?: boolean
 }
 
-const props = defineProps<{ group: string; hint: DeclarativeHint; value: unknown; loading?: boolean }>()
+const props = defineProps<{
+  group: string
+  hint: DeclarativeHint
+  value: unknown
+  loading?: boolean
+}>()
 const emit = defineEmits<{ 'update:value': [value: unknown]; action: [] }>()
 const label = () => props.hint.field || ''
 const component = () => (props.hint.component || 'input').toLowerCase()
-const isBoolean = () => ['switch', 'checkbox', 'bool', 'boolean', 'toggle-button'].includes(component())
+const isBoolean = () =>
+  ['switch', 'checkbox', 'bool', 'boolean', 'toggle-button'].includes(component())
 const gridSpan = () => configurationFieldSpan(component(), props.hint.width)
 </script>
 
 <template>
-  <div class="plugin-field form-grid-24__item form-item-vertical" :style="{ '--field-span': gridSpan() }">
+  <div
+    class="plugin-field form-grid-24__item form-item-vertical"
+    :style="{ '--field-span': gridSpan() }"
+  >
     <a-button
       v-if="component() === 'button' || component() === 'dropdown-button'"
       :disabled="props.hint.editable === false"
@@ -56,7 +65,9 @@ const gridSpan = () => configurationFieldSpan(component(), props.hint.width)
       <a-select
         v-else-if="component() === 'select' || component() === 'ref-select'"
         :value="value"
-        :options="(props.hint.options || []).map(option => ({ value: option.value, label: option.value }))"
+        :options="
+          (props.hint.options || []).map(option => ({ value: option.value, label: option.value }))
+        "
         :mode="props.hint.multiple ? 'multiple' : undefined"
         :disabled="props.hint.editable === false"
         @update:value="emit('update:value', $event)"
@@ -75,9 +86,24 @@ const gridSpan = () => configurationFieldSpan(component(), props.hint.width)
 </template>
 
 <style scoped>
-.plugin-field { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.field-label { color: var(--ant-color-text-secondary); }
-.toggle-field { display: flex; flex-direction: column; gap: 6px; }
-.toggle-field :deep(.setting-toggle-button) { width: 100%; }
-.plugin-field :deep(.ant-select) { width: 100%; }
+.plugin-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  color: var(--ant-color-text-secondary);
+}
+.toggle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.toggle-field :deep(.setting-toggle-button) {
+  width: 100%;
+}
+.plugin-field :deep(.ant-select) {
+  width: 100%;
+}
 </style>

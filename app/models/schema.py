@@ -44,6 +44,9 @@ from pydantic import (
     field_validator,
 )
 
+from app.config import CollectionOrderItem
+from app.models.task import TaskItem, TaskMode
+
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
 
@@ -52,6 +55,28 @@ class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
+
+
+class WebSocketMetaOut(BaseModel):
+    """前端协商主 WebSocket 链接时使用的元信息。"""
+
+    devMode: bool = Field(description="后端当前是否处于开发模式")
+    wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
+
+
+class BackendHealthOut(BaseModel):
+    """后端核心服务与后台初始化状态。"""
+
+    ready: bool = Field(description="核心 API 是否可用")
+    backgroundStatus: str = Field(description="后台初始化状态")
+    backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
+    backgroundWarnings: list[str] = Field(
+        default_factory=list,
+        description="后台初始化中失败但不影响就绪的可选步骤，每项为「步骤名（异常）」",
+    )
+    protocol: int = Field(description="后端自身支持的健康检查协议版本")
+    version: str = Field(description="后端版本号")
+    commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
 
 
 class InfoOut(OutBase):
@@ -5982,43 +6007,32 @@ class QueueItemReorderIn(QueueSetInBase):
 class DispatchIn(BaseModel):
     taskId: str = Field(
         ...,
-        description="目标任务ID, 设置类任务可选对应脚本ID或用户ID, 代理类任务可选对应队列ID或脚本ID",
+        description="目标任务 ID；ALL 表示取消全部运行任务",
     )
 
 
-class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
-        ...,
-        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行",
-    )
-    resumeFromScriptId: str | None = Field(
-        default=None,
-        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
-    )
+class TaskCreateIn(BaseModel):
+    """任务模式与可选队列、脚本、用户入口。"""
+
+    mode: TaskMode = Field(..., description="任务模式")
+    queueId: str | None = Field(default=None, description="队列 uid")
+    scriptId: str | None = Field(default=None, description="脚本 uid")
     userId: str | None = Field(
-        default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
-    )
-    userIds: list[str] | None = Field(
-        default=None,
-        description="可选：仅对脚本的自动代理任务生效；只运行指定的多个用户",
-    )
-    queueUserIds: dict[str, list[str]] | None = Field(
-        default=None,
-        description="可选：仅对队列任务生效；按脚本ID指定本次要运行的用户；未列出的脚本不限, 空列表表示该脚本本次整项跳过",
-    )
-    viewOnly: bool = Field(
-        default=False,
-        description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
-    )
-    instanceIdx: int | None = Field(
-        default=None,
-        description="可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）",
+        default=None, description="用户 uid；队列任务从该用户开始调度"
     )
 
 
 class TaskCreateOut(OutBase):
-    taskId: str = Field(..., description="新创建的任务ID")
+    taskId: str = Field(default="", description="新创建的任务ID")
+
+
+class TaskGetIn(BaseModel):
+    taskId: str | None = Field(default=None, description="任务 ID；缺省返回全部")
+
+
+class TaskGetOut(OutBase):
+    order: list[CollectionOrderItem] = Field(default_factory=list)
+    data: dict[str, TaskItem] = Field(default_factory=dict)
 
 
 class WSEnvelope(BaseModel):
@@ -6155,7 +6169,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
     """一个运行中任务的 HTTP 初始快照。"""
 
     taskId: str = Field(..., description="任务 ID")
-    mode: Literal["AutoProxy", "ScriptConfig", "Update"] = Field(
+    mode: TaskMode = Field(
         ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
     isCycle: bool = Field(default=False, description="是否为循环运行任务")
@@ -6533,7 +6547,6 @@ class PatternDebugOut(OutBase):
 
 
 # Plugin registry/catalog contracts use the config entries themselves.
-from app.config import CollectionOrderItem
 from app.models.config.plugin import PluginMeta, PluginRecord
 
 class PluginRegistryGetIn(BaseModel):

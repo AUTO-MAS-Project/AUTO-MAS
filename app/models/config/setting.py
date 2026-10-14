@@ -66,13 +66,9 @@ class Webhook(ConfigEntry):
     @trigger_field("info.test")
     async def on_test(self) -> None:
         """发送测试 Webhook。"""
-        from app.services import Notify
+        from app.core.notify import dispatch_webhook_test
 
-        await Notify.WebhookPush(
-            "AUTO-MAS Webhook测试",
-            "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
-            self,
-        )
+        await dispatch_webhook_test(self)
 
 
 class Setting(ConfigEntry):
@@ -141,11 +137,15 @@ class Setting(ConfigEntry):
         if_openclaw_qq: bool = Field(
             default=False, description="是否启用 QQ 官方机器人通知"
         )
-        openclaw_qq_app_id: str = Field(default="", description="QQ 官方机器人 App ID")
-        openclaw_qq_client_secret: Annotated[str, encrypted()] = Field(
+        openclaw_qq_app_id: Annotated[str, ui(visibility=UiVisibility.HIDE)] = Field(
+            default="", description="QQ 官方机器人 App ID（由扫码绑定管理）"
+        )
+        openclaw_qq_client_secret: Annotated[
+            str, encrypted(), ui(visibility=UiVisibility.HIDE)
+        ] = Field(
             default="", description="QQ 官方机器人客户端密钥"
         )
-        openclaw_qq_target_open_id: str = Field(
+        openclaw_qq_target_open_id: Annotated[str, ui(visibility=UiVisibility.HIDE)] = Field(
             default="", description="QQ 官方机器人目标用户 OpenID"
         )
         smtp_server_address: str = Field(default="", description="SMTP服务器地址")
@@ -158,6 +158,12 @@ class Setting(ConfigEntry):
             default=False, description="是否使用ServerChan推送"
         )
         server_chan_key: str = Field(default="", description="ServerChan推送密钥")
+        if_cmcc_new_msg: bool = Field(
+            default=False, description="是否启用中国移动新消息通知"
+        )
+        cmcc_new_msg_api_key: Annotated[str, encrypted()] = Field(
+            default="", description="中国移动新消息 Channel API Key"
+        )
         test: Trigger = Field(default=False, description="测试通知（写 True 触发一次）")
 
     class Updates(ConfigGroup):
@@ -295,9 +301,9 @@ class Setting(ConfigEntry):
     @trigger_field("notify.test")
     async def on_notify_test(self) -> None:
         """发送测试通知。"""
-        from app.services import Notify
+        from app.core.notify import dispatch_test_notification
 
-        await Notify.send_test_notification()
+        await dispatch_test_notification()
 
     @staticmethod
     async def _on_if_self_start(sender: object, event: object) -> None:

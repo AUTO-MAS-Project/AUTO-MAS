@@ -164,16 +164,12 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentTimeEnabled"
+                <SettingToggleButton
+                  v-model="currentTimeEnabled"
                   style="width: 100%"
-                  size="large"
                   :disabled="currentCycleEnabled"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
-                >
-                  <a-select-option :value="true">{{ t('queue.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('queue.no') }}</a-select-option>
-                </a-select>
+                  @change="value => handleConfigChange('TimeEnabled', value)"
+                />
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
@@ -229,6 +225,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import {
@@ -425,7 +422,8 @@ const refreshTimeSets = async () => {
             // 后端时间字段可能是 HH:mm，也可能是带日期和时区的 ISO 时间。
             const originalTimeString = timeSetData.info.time || '00:00'
             const rawTime = String(originalTimeString)
-            const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+            const timeMatch =
+              rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
             const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
             const hours = Number(rawHours)
             const minutes = Number(rawMinutes)

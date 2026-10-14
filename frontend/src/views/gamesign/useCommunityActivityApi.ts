@@ -1,40 +1,48 @@
-import { Service } from '@/api'
+import {
+  Service,
+  type CommunityActivitySnapshotOut,
+  type CommunityActivityTaskOut,
+  type CommunityActivityResourceOut,
+} from '@/api'
+import { requestApi } from '@/utils/apiResult'
 import { parseSignResult } from './gameSignDisplay'
 
-type ActivityTask = { period: string; [key: string]: unknown }
-type ActivityResource = Record<string, unknown>
-
-export type ActivitySnapshot = {
-  game?: string
-  platform?: string
-  status?: string
+export type ActivitySnapshot = CommunityActivitySnapshotOut & {
   completed: number | null
   target: number | null
-  tasks: ActivityTask[]
-  resources: ActivityResource[]
+  tasks: CommunityActivityTaskOut[]
+  resources: CommunityActivityResourceOut[]
   reason: string
   updatedAt: string
   roleName: string
   roleUid: string
   server: string
   source: string
-  [key: string]: unknown
 }
 
 export function useCommunityActivityApi() {
   const queryActivity = async (accountIds: string[] | null = null): Promise<ActivitySnapshot[]> => {
-    void accountIds
-    // 社区活动服务属于后续专项迁移范围，先返回空结果让主页保持可用。
-    return []
+    const response = await requestApi(
+      () => Service.queryCommunityActivityApiToolsCommunityActivityQueryPost({ accountIds }),
+      '读取社区日常失败'
+    )
+    return (response.data ?? []).map(snapshot => ({
+      ...snapshot,
+      completed: snapshot.completed ?? null,
+      target: snapshot.target ?? null,
+      tasks: snapshot.tasks ?? [],
+      resources: snapshot.resources ?? [],
+      reason: snapshot.reason ?? '',
+      updatedAt: snapshot.updatedAt ?? '',
+      roleName: snapshot.roleName ?? '',
+      roleUid: snapshot.roleUid ?? '',
+      server: snapshot.server ?? '',
+      source: snapshot.source ?? '',
+    }))
   }
-
   const querySignResult = async () => {
-    const response = await Service.getToolsApiToolsGetPost()
-    if (response.code !== 200) {
-      throw new Error(response.message || '读取签到结果失败')
-    }
+    const response = await requestApi(() => Service.getToolsApiToolsGetPost(), '读取签到结果失败')
     return parseSignResult(response.data?.GameSign?.Result)
   }
-
   return { queryActivity, querySignResult }
 }

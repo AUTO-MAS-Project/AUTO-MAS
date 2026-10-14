@@ -117,7 +117,7 @@ def test_expand_users_truth_table() -> None:
             user_id=None,
             current_script_id="s",
         ).expand_users(mode=TaskMode.SCRIPT_CONFIG, enabled_user_ids=users)
-        == []
+        == ["Default"]
     )
     # 队列 + 脚本 + 用户且正好跑到该脚本 → 自 u2 起续跑
     assert _user_expander(

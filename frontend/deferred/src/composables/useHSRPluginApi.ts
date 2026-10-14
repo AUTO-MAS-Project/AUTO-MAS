@@ -1,0 +1,379 @@
+import { ApiError, HsrService, HSRUpdateIn } from '@/api/index.ts'
+
+/** Engines exposed by the built-in HSR adapter. */
+export type HSREngine = 'SRA' | 'M7A'
+
+interface HSRBrowserCapability {
+  service: string
+  handoff_protocol?: string
+  service_available: boolean
+  backend?: 'local' | 'mas_cloud' | 'native_owned'
+  ready: boolean
+  blockers: string[]
+  adapter_bridges?: Array<{
+    engine: HSREngine
+    upstream_version: string
+    compatibility: string
+    upstream_supported: boolean
+  }>
+}
+
+interface HSRAdapterCapability {
+  engine: HSREngine
+  display_name: string
+  version?: string | null
+  capabilities: string[] | Record<string, unknown>
+  ready?: boolean | null
+  ready_reason?: string
+}
+
+export interface HSRTaskCapability {
+  key: string
+  name: string
+  phase: 'daily' | 'weekly'
+  description: string
+  engines: HSREngine[]
+  strategies?: Partial<Record<HSREngine, string[]>>
+}
+
+type HSRManagedFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'select' | 'json' | 'stage'
+
+interface HSRManagedFieldOption {
+  value: unknown
+  label: string
+}
+
+/**
+ * 字段分组：`common` 在模块弹窗里平铺，其余各成一个默认收起的折叠面板。
+ * 分组显示名由前端词表 `edit.hsrFieldGroup.<group>` 提供，后端只给 key。
+ */
+export type HSRManagedFieldGroup =
+  | 'common'
+  | 'team'
+  | 'support'
+  | 'activity'
+  | 'replenish'
+  | 'reroll'
+  | 'misc'
+
+/** 只有同模块同引擎里字段 `key` 的当前值在 `values` 中时才显示该字段。 */
+export interface HSRManagedFieldVisibleWhen {
+  key: string
+  values: unknown[]
+}
+
+export interface HSRManagedField {
+  key: string
+  label: string
+  type: HSRManagedFieldType
+  value: unknown
+  description?: string
+  options?: HSRManagedFieldOption[]
+  minimum?: number | null
+  maximum?: number | null
+  readonly?: boolean
+  // 以下四项是后续新增的契约字段，全部可选：后端没给时按 common / 未覆盖 / 无原值 / 恒显示处理
+  /** 分组；缺省视为 `common`。后端新增的未知分组照样成一个折叠面板。 */
+  group?: HSRManagedFieldGroup | string | null
+  /** 当前计划对该键有生效中的覆盖值。 */
+  overridden?: boolean | null
+  /** 引擎原生配置里的值；单项恢复后前端直接显示它，不必重拉。 */
+  native_value?: unknown
+  visible_when?: HSRManagedFieldVisibleWhen | null
+}
+
+export type HSRDroppedOverrideReason = 'unknown' | 'type'
+
+/** 一条被后端忽略的 Managed.Options 覆盖值（原生配置里没有该键，或类型对不上）。 */
+export interface HSRDroppedOverride {
+  key: string
+  reason: HSRDroppedOverrideReason
+  value: unknown
+  message: string
+}
+
+export interface HSRManagedEngineForm {
+  key?: string
+  engine: HSREngine
+  fields: HSRManagedField[]
+  source?: string | null
+  /** 表单级人类可读提示（如三月七缺少配置说明文件）。 */
+  warnings?: string[]
+  /** 在当前源配置中失效、运行时会被忽略的覆盖值；对应后端 `HSRManagedForm.dropped_overrides`。 */
+  dropped_overrides?: HSRDroppedOverride[]
+}
+
+/**
+ * 读出一个表单里被忽略的覆盖键。字段已经是结构化的，这里只做防御性归一：
+ * 缺 key 的条目丢掉，未知 reason 归为 unknown，message 缺失时补空串。
+ */
+export const getHSRDroppedOverrides = (
+  form?: Pick<HSRManagedEngineForm, 'dropped_overrides'> | null
+): HSRDroppedOverride[] => {
+  const result: HSRDroppedOverride[] = []
+  for (const item of form?.dropped_overrides ?? []) {
+    if (!item || typeof item !== 'object' || typeof item.key !== 'string') continue
+    result.push({
+      key: item.key,
+      reason: item.reason === 'type' ? 'type' : 'unknown',
+      value: item.value,
+      message: typeof item.message === 'string' ? item.message : '',
+    })
+  }
+  return result
+}
+
+export interface HSRManagedTask extends HSRTaskCapability {
+  forms: Partial<Record<HSREngine, HSRManagedEngineForm>>
+}
+
+/** 任务计划挂在谁身上：script = 脚本共享计划，user = 该用户自己的计划。 */
+export type HSRPlanOwner = 'script' | 'user'
+
+export interface HSRManagedConfigSnapshot {
+  revision: number | string
+  /** 表单值取自哪份计划；与用户的配置来源（Info.Mode）一一对应，直控按 user 返回。 */
+  plan_owner?: HSRPlanOwner
+  tasks: HSRManagedTask[]
+  task_mapping: Record<string, HSREngine>
+  warnings: string[]
+}
+
+/** 一份可选的 SRA 配置档案（%APPDATA%/SRA/configs 下的一个 json）。 */
+export interface HSRSRAProfile {
+  id: string
+  path: string
+  selected: boolean
+}
+
+/** 后端 `/hsr/sra-profiles` 的响应；`configured` 为空串表示脚本用自动选择。 */
+export interface HSRSRAProfilesSnapshot {
+  engine: 'SRA'
+  root: string
+  available: boolean
+  unavailable_reason?: string | null
+  configured: string
+  auto_id: string
+  selected: string
+  fallback: boolean
+  fallback_reason?: string | null
+  profiles: HSRSRAProfile[]
+}
+
+/** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
+export type HSRUpdateAction = 'check' | 'apply'
+
+/**
+ * 后端 `/hsr/update` 的结果。`message` 是后端给的面向用户说明，直接展示；
+ * `installable` 为假表示有新版但当前下载源装不了（多半是 Mirror 酱 CDK 问题）。
+ */
+export interface HSRUpdateResult {
+  engine: HSREngine
+  checked: boolean
+  updated: boolean
+  current_version?: string | null
+  latest_version?: string | null
+  update_available: boolean
+  installable: boolean
+  message: string
+}
+
+/** 后端 `/hsr/cloud-login` 的结果：`last_login` 为本次确认已登录的 ISO 时间。 */
+export interface HSRCloudLoginResult {
+  logged_in: boolean
+  last_login?: string | null
+  message: string
+}
+
+/** 从脚本 `Cloud.LastLogin`（user_id → ISO 时间的 JSON）里取某个用户的记录。 */
+export const getHSRCloudLastLogin = (raw: unknown, userId: string): string => {
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return ''
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const value = (parsed as Record<string, unknown>)[userId]
+  return typeof value === 'string' ? value : ''
+}
+
+export interface HSRCapabilitySnapshot {
+  revision: number | string
+  available: boolean
+  unavailable_reason?: string | null
+  candidate_engines: HSREngine[]
+  configured_engines: HSREngine[]
+  effective_engines: HSREngine[]
+  adapters: HSRAdapterCapability[] | Record<string, HSRAdapterCapability>
+  tasks: HSRTaskCapability[] | Record<string, HSRTaskCapability>
+  warnings: string[]
+  browser?: HSRBrowserCapability
+}
+
+/**
+ * Capability responses may contain diagnostics intended for developers rather
+ * than script users.  Keep those diagnostics available to callers, but avoid
+ * surfacing the built-in old-dev implementation notes in the editor banners.
+ */
+export const filterHSRCapabilityWarnings = (warnings?: readonly string[] | null): string[] =>
+  (warnings ?? []).filter(
+    warning =>
+      !warning.startsWith('old dev 使用内置 HSRConfig/HSRUserConfig；未加载插件注册表') &&
+      !warning.startsWith('能力来源为原生配置域 inspect，未读取配置正文')
+  )
+
+type HSRStageSource = Record<string, unknown>
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const firstNumber = (...values: unknown[]): number | null => {
+  const value = values.find(candidate => typeof candidate === 'number')
+  return typeof value === 'number' ? value : null
+}
+
+interface HSRStageOption {
+  id: string
+  label: string
+  detail: string
+  cost?: number | null
+  max_count?: number | null
+  native_payload: Record<string, unknown>
+}
+
+interface HSRStageCategory {
+  key: string
+  label: string
+  options: HSRStageOption[]
+}
+
+/** 生成客户端负责请求；保留旧后端的信封与直接响应兼容。 */
+const unwrap = <T>(payload: unknown): T => {
+  if (isRecord(payload) && 'code' in payload && payload.code !== undefined) {
+    if (payload.code !== 200) {
+      throw new Error(
+        typeof payload.message === 'string' && payload.message ? payload.message : 'HSR 请求失败'
+      )
+    }
+    return (payload.data === undefined ? payload : payload.data) as T
+  }
+  return payload as T
+}
+
+const requestPluginData = async <T>(request: Promise<unknown>): Promise<T> => {
+  try {
+    return unwrap<T>(await request)
+  } catch (error) {
+    if (error instanceof ApiError && isRecord(error.body) && error.body.message) {
+      throw new Error(String(error.body.message))
+    }
+    throw error
+  }
+}
+
+const normalizeStageOptions = (
+  data: { engine: HSREngine; categories?: HSRStageSource[] } | undefined,
+  engine: HSREngine
+): { engine: HSREngine; categories: HSRStageCategory[] } => ({
+  engine: data?.engine || engine,
+  categories: (data?.categories || []).map(category => ({
+    key: String(category.key ?? category.categoryKey ?? ''),
+    label: String(
+      category.label ?? category.categoryLabel ?? category.key ?? category.categoryKey ?? ''
+    ),
+    options: (Array.isArray(category.options) ? category.options.filter(isRecord) : []).map(
+      option => ({
+        id: String(option.id ?? option.value ?? ''),
+        label: String(option.label ?? option.name ?? option.value ?? ''),
+        detail: String(option.detail ?? ''),
+        cost: firstNumber(option.cost, category.cost),
+        max_count: firstNumber(
+          option.max_count,
+          option.maxCount,
+          category.max_count,
+          category.maxCount
+        ),
+        native_payload: isRecord(option.native_payload)
+          ? option.native_payload
+          : {
+              ...(option.m7a ? { m7a: option.m7a } : {}),
+              ...(option.sra ? { sra: option.sra } : {}),
+            },
+      })
+    ),
+  })),
+})
+
+export function useHSRPluginApi() {
+  const getCapabilities = async (scriptId?: string): Promise<HSRCapabilitySnapshot> => {
+    return requestPluginData<HSRCapabilitySnapshot>(
+      HsrService.getHsrCapabilitiesApiApiScriptsHsrCapabilitiesGet(scriptId)
+    )
+  }
+
+  const getStageOptions = async (
+    scriptId: string,
+    engine: HSREngine,
+    userId?: string,
+    slot: 'main' | 'eow' = 'main'
+  ): Promise<{ engine: HSREngine; categories: HSRStageCategory[] }> => {
+    const data = await requestPluginData<{
+      engine: HSREngine
+      categories?: HSRStageSource[]
+    }>(HsrService.getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(scriptId, engine, userId, slot))
+    return normalizeStageOptions(data, engine)
+  }
+
+  const getManagedConfig = async (
+    scriptId: string,
+    userId: string
+  ): Promise<HSRManagedConfigSnapshot> => {
+    return requestPluginData<HSRManagedConfigSnapshot>(
+      HsrService.getHsrManagedConfigApiApiScriptsHsrManagedConfigGet(scriptId, userId)
+    )
+  }
+
+  /** 列出脚本可选的 SRA 配置档案，并标出当前生效的那份。 */
+  const getSraProfiles = async (scriptId: string): Promise<HSRSRAProfilesSnapshot> => {
+    return requestPluginData<HSRSRAProfilesSnapshot>(
+      HsrService.getHsrSraProfilesApiApiScriptsHsrSraProfilesGet(scriptId)
+    )
+  }
+
+  /** 手动检查或安装 M7A / SRA 的更新；这是唯一不必等一轮任务跑完就能更新的入口。 */
+  const runEngineUpdate = async (
+    scriptId: string,
+    engine: HSREngine,
+    action: HSRUpdateAction
+  ): Promise<HSRUpdateResult> => {
+    return requestPluginData<HSRUpdateResult>(
+      HsrService.postHsrUpdateApiApiScriptsHsrUpdatePost({
+        scriptId,
+        engine: HSRUpdateIn.engine[engine],
+        action: action === 'check' ? HSRUpdateIn.action.CHECK : HSRUpdateIn.action.APPLY,
+      })
+    )
+  }
+
+  /**
+   * 为用户登录云·星穹铁道：后端起该用户的云浏览器并跑三月七的 game 任务，
+   * 阻塞到三月七退出（用户登录、进游戏或超时）；脚本运行中返回 409。
+   */
+  const cloudLogin = async (scriptId: string, userId: string): Promise<HSRCloudLoginResult> => {
+    return requestPluginData<HSRCloudLoginResult>(
+      HsrService.postHsrCloudLoginApiApiScriptsHsrCloudLoginPost({ scriptId, userId })
+    )
+  }
+
+  return {
+    getCapabilities,
+    getStageOptions,
+    getManagedConfig,
+    getSraProfiles,
+    runEngineUpdate,
+    cloudLogin,
+  }
+}

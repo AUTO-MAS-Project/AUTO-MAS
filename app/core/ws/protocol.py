@@ -38,6 +38,11 @@ from app.utils.logger import get_logger
 logger = get_logger("WS协议")
 
 
+# 被替换的旧主连接不应自动重连，前端据此识别会话已让位。
+CLOSE_CODE_REPLACED = 4001
+CLOSE_REASON_REPLACED = "replaced-by-new-connection"
+
+
 # ==================== 固定路由 ID ====================
 
 ID_MAIN = "Main"

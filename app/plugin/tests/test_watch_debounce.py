@@ -12,6 +12,8 @@ import contextlib
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from app.plugin.runtime.watch import SourceWatcher
 from app.plugin.signals import sources_changed
 from app.plugin.types import SourcesChangedPayload
@@ -25,6 +27,7 @@ def _ok(message: str) -> None:
     print(f"OK: {message}")
 
 
+@pytest.mark.asyncio
 async def test_local_dir_filter() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -44,6 +47,7 @@ async def test_local_dir_filter() -> None:
         _ok("路径映射与忽略过滤")
 
 
+@pytest.mark.asyncio
 async def test_debounce_merge() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

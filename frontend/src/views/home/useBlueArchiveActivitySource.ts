@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GetService, OpenAPI } from '@/api'
+import { GetService, OpenAPI, BlueArchiveActivityIn } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -32,10 +32,10 @@ const SECONDS_PER_DAY = 86_400
 const DESCRIPTION_MAX_LENGTH = 200
 
 /** 三个服与后端入参的对应关系（国际服的原文拼写就是 Globle） */
-const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, string> = {
-  jp: 'JP',
-  global: 'GLOBLE',
-  cn: 'CN',
+const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line_type> = {
+  jp: BlueArchiveActivityIn.line_type.JP,
+  global: BlueArchiveActivityIn.line_type.GLOBLE,
+  cn: BlueArchiveActivityIn.line_type.CN,
 }
 
 /** 默认展示顺序：国服优先（国服玩家最多），三个服的先后不影响各自独立取数 */
@@ -195,10 +195,6 @@ const fetchTimeline = async (
   server: BlueArchiveServerKey,
   signal: AbortSignal
 ): Promise<GameKeeActivity[]> => {
-  if (server || signal) {
-    // 明日方舟 PC 工具与活动服务暂不接入新后端，保留页面数据结构供后续迁移。
-    return []
-  }
   const items: GameKeeActivity[] = []
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const request = GetService.getBluearchiveActivityApiInfoBluearchiveActivityPost({

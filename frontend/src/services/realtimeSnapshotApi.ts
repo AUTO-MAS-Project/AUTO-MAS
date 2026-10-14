@@ -1,5 +1,4 @@
-import { OpenAPI } from '@/api/core/OpenAPI'
-import { request } from '@/api/core/request'
+import { GetService } from '@/api'
 import type {
   WSTaskCyclePreviewData,
   WSTaskMode,
@@ -37,10 +36,39 @@ export interface TaskRuntimeSnapshot {
   scheduledScripts: WSTaskScriptIdentityData[]
 }
 
-const get = <T>(url: string) => request<T>(OpenAPI, { method: 'GET', url })
-
 /** HTTP 提供连接时点的初始权威状态；主 WS 只承载之后的增量事件。 */
 export const realtimeSnapshotApi = {
-  getPowerCountdown: () => get<PowerCountdownSnapshot>('/api/dispatch/power/countdown-snapshot'),
-  getRuntimeTasks: () => get<TaskRuntimeSnapshot>('/api/dispatch/runtime-snapshot'),
+  getPowerCountdown: async (): Promise<PowerCountdownSnapshot> => {
+    const result = await GetService.getPowerCountdownSnapshotApiDispatchPowerCountdownSnapshotGet()
+    return {
+      active: result.active ?? false,
+      operation: result.operation ?? null,
+      remaining: result.remaining ?? 0,
+    }
+  },
+  getRuntimeTasks: async (): Promise<TaskRuntimeSnapshot> => {
+    const result = await GetService.getTaskRuntimeSnapshotApiDispatchRuntimeSnapshotGet()
+    return {
+      tasks: (result.tasks ?? []).map(task => ({
+        ...task,
+        queueId: task.queueId ?? null,
+        scriptId: task.scriptId ?? null,
+        userId: task.userId ?? null,
+        stopping: task.stopping ?? false,
+        isCycle: task.isCycle ?? false,
+        scripts: task.scripts ?? [],
+        task_info: (task.task_info ?? []).map(script => ({
+          ...script,
+          userList: script.userList ?? [],
+        })),
+        cycleNextList: (task.cycleNextList ?? []).map(item => ({
+          ...item,
+          isDue: item.isDue ?? false,
+          isRunning: item.isRunning ?? false,
+        })),
+        log: task.log ?? '',
+      })),
+      scheduledScripts: result.scheduledScripts ?? [],
+    }
+  },
 }

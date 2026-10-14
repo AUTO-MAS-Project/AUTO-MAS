@@ -201,19 +201,31 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
           <div class="form-grid-24">
             <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
               <span class="form-label">{{ t('comp.boldTimestamps') }}</span>
-              <SettingToggleButton :model-value="styles.timestampBold" @change="setStyles({ timestampBold: $event })" />
+              <SettingToggleButton
+                :model-value="styles.timestampBold"
+                @change="setStyles({ timestampBold: $event })"
+              />
             </div>
             <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
               <span class="form-label">{{ t('comp.boldLogLevels') }}</span>
-              <SettingToggleButton :model-value="styles.levelBold" @change="setStyles({ levelBold: $event })" />
+              <SettingToggleButton
+                :model-value="styles.levelBold"
+                @change="setStyles({ levelBold: $event })"
+              />
             </div>
             <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
               <span class="form-label">{{ t('comp.boldKeywords') }}</span>
-              <SettingToggleButton :model-value="styles.keywordBold" @change="setStyles({ keywordBold: $event })" />
+              <SettingToggleButton
+                :model-value="styles.keywordBold"
+                @change="setStyles({ keywordBold: $event })"
+              />
             </div>
             <div class="form-grid-24__item form-item-vertical" style="--field-span: 6">
               <span class="form-label">{{ t('comp.urlUnderline') }}</span>
-              <SettingToggleButton :model-value="styles.urlUnderline" @change="setStyles({ urlUnderline: $event })" />
+              <SettingToggleButton
+                :model-value="styles.urlUnderline"
+                @change="setStyles({ urlUnderline: $event })"
+              />
             </div>
           </div>
         </div>

@@ -141,8 +141,15 @@ async def update_plan(body: PlanUpdateIn = Body(...)) -> OutBase:
 @router.post("/delete", tags=["Delete"], summary="删除计划表", response_model=OutBase)
 async def delete_plan(body: PlanDeleteIn = Body(...)) -> OutBase:
     try:
+        uid = UUID(body.planId)
+        if any(
+            str(user.info.plan_id) == str(uid)
+            for script in Config.ScriptConfig.values()
+            for user in script.users.values()
+        ):
+            return OutBase(code=409, status="error", message="计划仍被用户使用，请先解除关联")
         col = Config.PlanConfig
-        col.remove(body.planId)
+        col.remove(uid)
         await col.commit()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")

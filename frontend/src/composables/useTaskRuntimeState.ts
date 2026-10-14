@@ -15,6 +15,7 @@ import {
   type WSTaskScriptInfoData,
 } from '@/services/websocket/types'
 import { FAILED_TASK_STATUSES, scriptHasStatus } from '@/utils/taskFailures'
+import { taskInfoFromTree } from '@/utils/taskTreePresentation'
 
 const logger = window.electronAPI.getLogger('任务运行状态')
 
@@ -150,7 +151,9 @@ const ensureTaskSubscriptions = (taskId: string): void => {
       const state: TaskRuntimeState = {
         ...(current ?? createUnknownTaskState(taskId)),
         phase: 'active',
-        taskInfo: cloneTaskInfo(message.data.task_info),
+        taskInfo: message.data.task_info
+          ? cloneTaskInfo(message.data.task_info)
+          : taskInfoFromTree(message.data.task ?? message.data),
         cycleNextList: message.data.cycleNextList ?? [],
       }
       setTaskState(state)
@@ -170,7 +173,8 @@ const handleTaskCreated = (data: WSTaskCreatedData): void => {
     mode: data.mode,
     isCycle: data.mode === 'CycleRun',
     queueId: data.queueId ?? null,
-    scriptId: data.scripts[0]?.scriptId ?? null,
+    scriptId: data.scriptId ?? data.scripts?.[0]?.scriptId ?? null,
+    userId: data.userId ?? null,
     scripts: cloneScripts(data.scripts),
     phase: 'created',
     taskName: data.taskName ?? null,
@@ -191,7 +195,7 @@ const handleTaskCompleted = (taskId: string, data: WSTaskCompletedData): void =>
   const state: TaskRuntimeState = {
     ...(current ?? createUnknownTaskState(taskId)),
     phase: 'completed',
-    taskInfo: cloneTaskInfo(data.task_info),
+    taskInfo: data.task_info ? cloneTaskInfo(data.task_info) : taskInfoFromTree(data.task),
     result: data.result,
     outcome: data.outcome,
     error: data.error ?? null,

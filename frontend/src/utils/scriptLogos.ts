@@ -1,4 +1,4 @@
-import type { ScriptType } from '@/types/script'
+import type { ScriptType } from '@/types/scriptKind'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'

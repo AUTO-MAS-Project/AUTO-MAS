@@ -26,7 +26,9 @@
     "format:check": "oxfmt . --check",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
     "openapi": "openapi --input http://127.0.0.1:36164/openapi.json --output ./src/api --client axios",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck:deferred": "vue-tsc -p tsconfig.deferred.json --noEmit",
+    "test:deferred": "vitest run --config vite.deferred.config.ts"
   },
   "build": {
     "asar": true,

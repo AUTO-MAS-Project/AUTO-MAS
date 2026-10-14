@@ -226,24 +226,26 @@ class ScriptExpander(TaskBase):
                 user_id=info.user_id,
             )
             try:
-                await self.spawn(
-                    decl.expander_class(
-                        task_context=ctx,
-                        script_item=script_item,
-                        script_entry=entry,
-                        game=self._game,
-                    )
+                expander = decl.expander_class(
+                    task_context=ctx,
+                    script_item=script_item,
+                    script_entry=entry,
+                    game=self._game,
                 )
+                await self.spawn(expander)
+                if expander.error is not None:
+                    info.status = "error"
+                    await item.commit()
             finally:
                 # 本脚本占用在循环内释放；取消时 final_task 再幂等兜底
                 await self._release()
 
-        # 未被 crash/stop 改写时，正常跑完记 success
-            # Propagate plugin-owned check failures to the host task status.
-            if script_item.info.status.startswith(("check_fail:", "missing", "no_expander")):
+            # 专项检查失败同样回流到宿主任务状态。
+            if script_item.info.status.startswith(("check_fail:", "missing", "no_expander", "error", "异常")):
                 info.status = "error"
                 await item.commit()
 
+        # 未被 crash/stop 改写时，正常跑完记 success。
         if info.status == "running":
             info.status = "success"
             await item.commit()

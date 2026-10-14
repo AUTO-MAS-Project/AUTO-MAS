@@ -1,34 +1,18 @@
-import type { OutBase } from '@/api/models/OutBase'
-import { OpenAPI } from '@/api/core/OpenAPI'
-import { request } from '@/api/core/request'
+import { ActionService, GetService, type UpdateDownloadSnapshot as DownloadSnapshot } from '@/api'
+import { requestApi } from '@/utils/apiResult'
 
-type UpdateDownloadSnapshotStatus =
-  | 'idle'
-  | 'downloading'
-  | 'switchingSource'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-
-export interface UpdateDownloadSnapshot {
-  status: UpdateDownloadSnapshotStatus
-  version: string | null
-  source: string | null
-  downloaded_size: number
-  file_size: number
-  speed: number
-  file: string | null
-  message: string | null
-}
-
-const postAction = (url: string) => request<OutBase>(OpenAPI, { method: 'POST', url })
+export type UpdateDownloadSnapshot = DownloadSnapshot
 
 export const updateDownloadApi = {
-  status: () =>
-    request<UpdateDownloadSnapshot>(OpenAPI, {
-      method: 'GET',
-      url: '/api/update/download/status',
-    }),
-  cancel: () => postAction('/api/update/cancel-download'),
-  switchToCnb: () => postAction('/api/update/switch-to-cnb'),
+  status: () => GetService.getUpdateDownloadStatusApiUpdateDownloadStatusGet(),
+  cancel: () =>
+    requestApi(
+      () => ActionService.cancelUpdateDownloadApiUpdateCancelDownloadPost(),
+      '取消下载失败'
+    ),
+  switchToCnb: () =>
+    requestApi(
+      () => ActionService.switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(),
+      '切换下载源失败'
+    ),
 }

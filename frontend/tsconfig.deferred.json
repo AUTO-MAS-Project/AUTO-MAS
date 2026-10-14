@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "@deferred/*": ["./deferred/src/*"]
+    }
+  },
+  "include": ["deferred/src/**/*.ts", "deferred/src/**/*.vue", "src/**/*.d.ts"]
+}

@@ -103,8 +103,9 @@ def test_list_entry_types_follows_type_table() -> None:
     asyncio.run(run())
 
 
-def test_games_types_and_add_are_siblings() -> None:
+def test_games_types_and_add_are_siblings(monkeypatch) -> None:
     from app.api import games as games_api
+    from app.core.plugin_manager import Plugin
 
     class Extra(GameEntry):
         pass
@@ -117,6 +118,18 @@ def test_games_types_and_add_are_siblings() -> None:
         await col.commit()
 
     asyncio.run(activate())
+    monkeypatch.setattr(
+        Plugin,
+        "game_types",
+        {
+            uuid4(): GameTypeDecl(
+                game_class=Extra,
+                device_class=DemoDevice,
+                control_class=_Ctrl,
+                search=_empty_search,
+            )
+        },
+    )
 
     class _Config:
         GameConfig = col
@@ -132,15 +145,17 @@ def test_games_types_and_add_are_siblings() -> None:
         body = listed.json()
         assert body["code"] == 200
         names = [row["name"] for row in body["data"]]
-        assert "GameEntry" in names
-        assert "Extra" in names
+        assert names == ["Extra"]
 
-        missing = client.post("/api/games/add", json={})
-        assert missing.json()["code"] == 400
+        default_created = client.post("/api/games/add", json={})
+        assert default_created.json()["code"] == 200
 
-        created = client.post("/api/games/add", json={"type": "GameEntry"})
+        created = client.post("/api/games/add", json={"type": "Extra"})
         assert created.json()["code"] == 200
         assert created.json()["gameId"]
+
+        base_type = client.post("/api/games/add", json={"type": "GameEntry"})
+        assert base_type.json()["code"] == 400
 
         unknown = client.post("/api/games/add", json={"type": "NotAGame"})
         assert unknown.json()["code"] == 400

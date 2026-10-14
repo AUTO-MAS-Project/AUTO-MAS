@@ -142,16 +142,23 @@ const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
 
 const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
-  const typed = data as (HistoryData & {
-    matrix_statistics?: Record<string, string> | null
-  }) | null
-  return typed?.matrix_statistics ?? readHistoryDataValue<Record<string, string>>(data, 'matrix_statistics')
+  const typed = data as
+    | (HistoryData & {
+        matrix_statistics?: Record<string, string> | null
+      })
+    | null
+  return (
+    typed?.matrix_statistics ??
+    readHistoryDataValue<Record<string, string>>(data, 'matrix_statistics')
+  )
 }
 
 const getPullCountStatistics = (data: HistoryData | null) => {
-  const typed = data as (HistoryData & {
-    pull_count_statistics?: PullCountStatistics | null
-  }) | null
+  const typed = data as
+    | (HistoryData & {
+        pull_count_statistics?: PullCountStatistics | null
+      })
+    | null
   return (
     typed?.pull_count_statistics ??
     readHistoryDataValue<PullCountStatistics>(data, 'pull_count_statistics')
@@ -164,19 +171,29 @@ const readHistoryDataValue = <T>(data: HistoryData | null, key: string): T | nul
 }
 
 const getRecruitStatistics = (data: HistoryData | null): Record<string, number> | null => {
-  const typed = data as (HistoryData & {
-    recruit_statistics?: Record<string, number> | null
-  }) | null
-  return typed?.recruit_statistics ?? readHistoryDataValue<Record<string, number>>(data, 'recruit_statistics')
+  const typed = data as
+    | (HistoryData & {
+        recruit_statistics?: Record<string, number> | null
+      })
+    | null
+  return (
+    typed?.recruit_statistics ??
+    readHistoryDataValue<Record<string, number>>(data, 'recruit_statistics')
+  )
 }
 
 const getDropStatistics = (
-  data: HistoryData | null,
+  data: HistoryData | null
 ): Record<string, Record<string, number>> | null => {
-  const typed = data as (HistoryData & {
-    drop_statistics?: Record<string, Record<string, number>> | null
-  }) | null
-  return typed?.drop_statistics ?? readHistoryDataValue<Record<string, Record<string, number>>>(data, 'drop_statistics')
+  const typed = data as
+    | (HistoryData & {
+        drop_statistics?: Record<string, Record<string, number>> | null
+      })
+    | null
+  return (
+    typed?.drop_statistics ??
+    readHistoryDataValue<Record<string, Record<string, number>>>(data, 'drop_statistics')
+  )
 }
 
 const handleModeUpdate = (mode: string) => {

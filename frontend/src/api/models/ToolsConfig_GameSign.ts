@@ -8,6 +8,10 @@ export type ToolsConfig_GameSign = {
      */
     Enabled?: (boolean | null);
     /**
+     * 是否启用社区日常便笺
+     */
+    ActivityEnabled?: (boolean | null);
+    /**
      * 签到后是否发送通知
      */
     NotifyEnabled?: (boolean | null);

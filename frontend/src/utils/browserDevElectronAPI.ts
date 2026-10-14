@@ -38,6 +38,8 @@ const getLogger = (moduleName: string): Logger => {
 
 const browserDevElectronAPI = {
   getLogger,
+  windowIsMaximized: async () => false,
+  getRuntimeLaunchMode: async () => ({ persisted: 'off', mode: 'off', source: 'default' }),
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
   openUrl: async (url: string) => {

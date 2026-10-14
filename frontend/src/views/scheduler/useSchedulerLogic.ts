@@ -126,7 +126,9 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
 })
 
-const normalizePersistedTab = (tab: SchedulerTab & { selectedUserId?: string | null }): SchedulerTab => ({
+const normalizePersistedTab = (
+  tab: SchedulerTab & { selectedUserId?: string | null }
+): SchedulerTab => ({
   ...tab,
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
@@ -681,10 +683,7 @@ export function useSchedulerLogic() {
     tab.resumeFromScriptId = null
     tab.startUserId = null
     tab.userOptions = []
-    await Promise.all([
-      loadResumeScriptOptions(tab),
-      loadUserOptions(tab),
-    ])
+    await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab)])
   }
 
   const startTask = async (tab: SchedulerTab) => {
@@ -1279,9 +1278,7 @@ export function useSchedulerLogic() {
       const queues = (queueResponse.order ?? []).flatMap(item => {
         const queue = queueResponse.data?.[item.uid]
         const name = queue?.info?.name
-        return typeof name === 'string'
-          ? [{ label: `队列 - ${name}`, value: item.uid }]
-          : []
+        return typeof name === 'string' ? [{ label: `队列 - ${name}`, value: item.uid }] : []
       })
       const scripts = (scriptResponse.data ?? []).map(item => ({
         label: item.label,

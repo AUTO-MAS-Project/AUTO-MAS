@@ -35,6 +35,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from html import escape as html_escape
 from typing import TYPE_CHECKING, Any, Literal, Mapping
+
+from app.models.config.script import UserEntry
+from app.models.config.setting import Setting, Webhook
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
@@ -64,8 +67,8 @@ _KOISHI_HTML_DOCUMENT_PATTERN = re.compile(
 class NotifyChannelField:
     """渠道在某个作用域下暴露给界面的一个配置字段。"""
 
-    group: str  # 配置组，恒为 "Notify"
-    name: str  # 配置字段名，如 "SMTPServerAddress"
+    group: str  # 配置组，恒为 "notify"
+    name: str  # 新配置字段名，如 "smtp_server_address"
     label_key: str  # 字段标签词表键
     control: Literal["bool", "text", "password", "url", "select", "json"]
     # (值, 文案键) 对；值保持后端配置字面量（含布尔），不能窄成 str。
@@ -93,13 +96,10 @@ class ChannelTarget:
     capabilities: NotificationCapabilities = NotificationCapabilities()
 
 
-def _webhook_name(uid: str, webhook: Any) -> str:
+def _webhook_name(uid: object, webhook: WebhookTargetSnapshot) -> str:
     """返回便于定位失败配置的 Webhook 名称。"""
 
-    try:
-        return str(webhook.get("Info", "Name") or uid)
-    except (AttributeError, KeyError):
-        return uid
+    return webhook.name or str(uid)
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ class NotifyChannel:
     # 键即作用域（global/user）；policy 段的键用 global。
     fields: Mapping[str, tuple[NotifyChannelField, ...]]
 
-    def targets(self, config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
+    def targets(self, config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
         """按配置构造该渠道的投递目标。
 
         渠道出现规则统一在此判定：作用域不符或开关（enable_field）关闭都产出
@@ -133,7 +133,7 @@ class NotifyChannel:
 
         if self.kind == "policy" or scope not in self.scopes:
             return ()
-        if self.enable_field and not bool(config.get(*self.enable_field)):
+        if self.enable_field and not bool(getattr(config.notify, self.enable_field[1])):
             return ()
         return _TARGET_BUILDERS[self.key](config, scope=scope)
 
@@ -149,8 +149,8 @@ class NotifyChannel:
 
 
 _MAIL_FIELD_TO = NotifyChannelField(
-    group="Notify",
-    name="ToAddress",
+    group="notify",
+    name="to_address",
     label_key="setting.notify.to",
     control="text",
     placeholder_key="setting.notify.toPlaceholder",
@@ -158,8 +158,8 @@ _MAIL_FIELD_TO = NotifyChannelField(
 )
 
 _SERVERCHAN_FIELD = NotifyChannelField(
-    group="Notify",
-    name="ServerChanKey",
+    group="notify",
+    name="server_chan_key",
     label_key="setting.notify.serverChanKey",
     control="password",
     placeholder_key="setting.notify.serverChanPlaceholder",
@@ -170,24 +170,24 @@ _SERVERCHAN_FIELD = NotifyChannelField(
 _MAIL_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
     SCOPE_GLOBAL: (
         NotifyChannelField(
-            group="Notify",
-            name="SMTPServerAddress",
+            group="notify",
+            name="smtp_server_address",
             label_key="setting.notify.smtp",
             control="text",
             placeholder_key="setting.notify.smtpPlaceholder",
             tip_key="setting.notify.smtpTip",
         ),
         NotifyChannelField(
-            group="Notify",
-            name="FromAddress",
+            group="notify",
+            name="from_address",
             label_key="setting.notify.from",
             control="text",
             placeholder_key="setting.notify.fromPlaceholder",
             tip_key="setting.notify.fromTip",
         ),
         NotifyChannelField(
-            group="Notify",
-            name="AuthorizationCode",
+            group="notify",
+            name="authorization_code",
             label_key="setting.notify.authCode",
             control="password",
             placeholder_key="setting.notify.authCodePlaceholder",
@@ -203,8 +203,8 @@ _MAIL_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
 _POLICY_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
     SCOPE_GLOBAL: (
         NotifyChannelField(
-            group="Notify",
-            name="SendTaskResultTime",
+            group="notify",
+            name="send_task_result_time",
             label_key="setting.notify.resultTime",
             control="select",
             options=(
@@ -215,15 +215,15 @@ _POLICY_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
             tip_key="setting.notify.resultTimeTip",
         ),
         NotifyChannelField(
-            group="Notify",
-            name="IfSendStatistic",
+            group="notify",
+            name="if_send_statistic",
             label_key="setting.notify.statistics",
             control="bool",
             tip_key="setting.notify.statisticsTip",
         ),
         NotifyChannelField(
-            group="Notify",
-            name="IfSendSixStar",
+            group="notify",
+            name="if_send_six_star",
             label_key="setting.notify.recruit",
             control="bool",
             tip_key="setting.notify.recruitTip",
@@ -245,7 +245,7 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL}),
         kind="fields",
         custom_block=None,
-        enable_field=("Notify", "IfPushPlyer"),
+        enable_field=("notify", "if_push_plyer"),
         summary_key="setting.notify.summary.system",
         summary_fields=(),
         fields={},
@@ -261,9 +261,9 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL, SCOPE_USER}),
         kind="fields",
         custom_block=None,
-        enable_field=("Notify", "IfSendMail"),
+        enable_field=("notify", "if_send_mail"),
         summary_key="setting.notify.summary.mail",
-        summary_fields=("SMTPServerAddress", "ToAddress"),
+        summary_fields=("smtp_server_address", "to_address"),
         fields=_MAIL_FIELDS,
     ),
     NotifyChannel(
@@ -277,9 +277,9 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL, SCOPE_USER}),
         kind="fields",
         custom_block=None,
-        enable_field=("Notify", "IfServerChan"),
+        enable_field=("notify", "if_server_chan"),
         summary_key="setting.notify.summary.serverchan",
-        summary_fields=("ServerChanKey",),
+        summary_fields=("server_chan_key",),
         fields={SCOPE_GLOBAL: (_SERVERCHAN_FIELD,), SCOPE_USER: (_SERVERCHAN_FIELD,)},
     ),
     NotifyChannel(
@@ -293,14 +293,14 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL}),
         kind="fields",
         custom_block=None,
-        enable_field=("Notify", "IfCMCCNewMsg"),
+        enable_field=("notify", "if_cmcc_new_msg"),
         summary_key="setting.notify.summary.cmcc",
-        summary_fields=("CMCCNewMsgApiKey",),
+        summary_fields=("cmcc_new_msg_api_key",),
         fields={
             SCOPE_GLOBAL: (
                 NotifyChannelField(
-                    group="Notify",
-                    name="CMCCNewMsgApiKey",
+                    group="notify",
+                    name="cmcc_new_msg_api_key",
                     label_key="setting.notify.cmccNewMsgApiKey",
                     control="password",
                     placeholder_key="setting.notify.cmccNewMsgApiKeyPlaceholder",
@@ -336,22 +336,22 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL}),
         kind="fields",
         custom_block=None,
-        enable_field=("Notify", "IfKoishiSupport"),
+        enable_field=("notify", "if_koishi_support"),
         summary_key="setting.notify.summary.koishi",
-        summary_fields=("KoishiServerAddress",),
+        summary_fields=("koishi_server_address",),
         fields={
             SCOPE_GLOBAL: (
                 NotifyChannelField(
-                    group="Notify",
-                    name="KoishiServerAddress",
+                    group="notify",
+                    name="koishi_server_address",
                     label_key="setting.notify.koishiWs",
                     control="text",
                     placeholder_key="setting.notify.koishiWsPlaceholder",
                     tip_key="setting.notify.koishiWsTip",
                 ),
                 NotifyChannelField(
-                    group="Notify",
-                    name="KoishiToken",
+                    group="notify",
+                    name="koishi_token",
                     label_key="setting.notify.koishiToken",
                     control="password",
                     placeholder_key="setting.notify.koishiTokenPlaceholder",
@@ -371,7 +371,7 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
         scopes=frozenset({SCOPE_GLOBAL}),
         kind="custom",
         custom_block="claw:qq",
-        enable_field=("Notify", "IfOpenClawQQ"),
+        enable_field=("notify", "if_openclaw_qq"),
         summary_key=None,
         summary_fields=(),
         fields={},
@@ -411,7 +411,7 @@ def _prefix(scope: str) -> str:
     return "全局" if scope == SCOPE_GLOBAL else "用户"
 
 
-def _system_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
+def _system_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)}系统"
     return (
         ChannelTarget(
@@ -441,8 +441,8 @@ async def _system_send(
     )
 
 
-def _mail_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "ToAddress")
+def _mail_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
+    value = config.notify.to_address
     if value is None:
         return ()
     name = f"{_prefix(scope)}邮件"
@@ -474,8 +474,8 @@ async def _mail_send(
     )
 
 
-def _serverchan_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "ServerChanKey")
+def _serverchan_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
+    value = config.notify.server_chan_key
     if value is None:
         return ()
     name = f"{_prefix(scope)} ServerChan"
@@ -507,8 +507,8 @@ async def _serverchan_send(
     )
 
 
-def _cmcc_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "CMCCNewMsgApiKey")
+def _cmcc_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
+    value = config.notify.cmcc_new_msg_api_key
     if value is None:
         return ()
     name = f"{_prefix(scope)} 中国移动5G短信"
@@ -537,30 +537,25 @@ async def _cmcc_send(
     )
 
 
-def _webhook_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    prefix = _prefix(scope)
+def _webhook_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
     targets = []
-    # 顺序按 MultipleConfig.order（items() 的产出顺序），不按 uid。
-    for uid, webhook in config.Notify_CustomWebhooks.items():
-        snapshot = WebhookTargetSnapshot(
-            name=_webhook_name(uid, webhook),
-            enabled=bool(webhook.get("Info", "Enabled")),
-            url=str(webhook.get("Data", "Url") or ""),
-            template=str(webhook.get("Data", "Template") or ""),
-            headers=str(webhook.get("Data", "Headers") or "{ }"),
-            method=webhook.get("Data", "Method"),
-        )
-        if not snapshot.enabled:
+    # 顺序由新配置集合维护，不按 uid 重排。
+    for uid, webhook in config.custom_webhooks.items():
+        if not webhook.info.enabled:
             continue
-        targets.append(
-            ChannelTarget(
-                id=f"{prefix} Webhook {uid}",
-                label=f"{prefix} Webhook {_webhook_name(uid, snapshot)}",
-                value=snapshot,
-                capabilities=_webhook_capabilities(snapshot),
-            )
-        )
+        targets.append(webhook_target(webhook, scope=scope))
     return tuple(targets)
+
+
+def webhook_target(webhook: Webhook, *, scope: str) -> ChannelTarget:
+    """由同一份配置快照建立普通投递与测试投递目标。"""
+    snapshot = WebhookTargetSnapshot.from_config(webhook)
+    return ChannelTarget(
+        id=f"{_prefix(scope)} Webhook {webhook.uid}",
+        label=f"{_prefix(scope)} Webhook {_webhook_name(webhook.uid, snapshot)}",
+        value=snapshot,
+        capabilities=_webhook_capabilities(snapshot),
+    )
 
 
 def _webhook_capabilities(
@@ -609,7 +604,7 @@ async def _webhook_send(
     )
 
 
-def _koishi_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
+def _koishi_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} Koishi"
     return (
         ChannelTarget(
@@ -660,7 +655,7 @@ def _koishi_html_from_text(content: str) -> str:
     return "".join(fragments)
 
 
-def _openclaw_qq_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
+def _openclaw_qq_targets(config: Setting | UserEntry, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
     return (
         ChannelTarget(

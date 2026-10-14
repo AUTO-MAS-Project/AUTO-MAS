@@ -54,6 +54,9 @@ class TaskBase(ABC):
 
     def __init__(self) -> None:
         self._task: asyncio.Task[None] | None = None
+        self._finalizer: asyncio.Task[None] | None = None
+        self.error: Exception | None = None
+        self.cancelled = False
         self.accomplish = asyncio.Event()
 
     @abstractmethod
@@ -79,6 +82,9 @@ class TaskBase(ABC):
         if self.running:
             raise RuntimeError("任务已在运行")
         self.accomplish.clear()
+        self._finalizer = None
+        self.error = None
+        self.cancelled = False
         self._task = asyncio.create_task(self.run())
 
     async def spawn(self, child: TaskBase) -> None:
@@ -94,23 +100,42 @@ class TaskBase(ABC):
         try:
             await self.main_task()
         except asyncio.CancelledError:
+            self.cancelled = True
             raise
         except Exception as exc:
+            self.error = exc
             await self.on_crash(exc)
         finally:
-            # 取消传播时 final_task 仍需跑完，用 shield 挡住二次取消
+            await self._wait_finalizer()
+
+    async def _finalize(self) -> None:
+        """收尾与结束通知只执行一次，包括尚未进入主流程就被取消的任务。"""
+        try:
             try:
-                await asyncio.shield(self.final_task())
-            except asyncio.CancelledError:
-                raise
+                await self.final_task()
             except Exception as exc:
+                self.error = exc
                 await self.on_crash(exc)
             # 先发 ended 再置 accomplish：订阅方（派发层 drop）清完挂点后，
             # stop() 的 wait 才返回，避免「已结束但仍在 _running」的窗口。
             # 只有 start() 的顶层持 _task；spawn 的子任务不发，免得误清。
             if self._task is not None:
                 await self.ended.send_async(self)
+        finally:
             self.accomplish.set()
+
+    async def _wait_finalizer(self) -> None:
+        if self._finalizer is None:
+            self._finalizer = asyncio.create_task(self._finalize())
+        cancelled = False
+        while not self._finalizer.done():
+            try:
+                await asyncio.shield(self._finalizer)
+            except asyncio.CancelledError:
+                cancelled = True
+        self._finalizer.result()
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def stop(self) -> None:
         """取消顶层任务并等待收尾结束。
@@ -120,11 +145,14 @@ class TaskBase(ABC):
         链自然传到它，没有也不需要独立句柄 —— 故此处无事可做。
         """
         task = self._task
-        if task is None or task.done():
+        if task is None:
             return
-        task.cancel()
+        if not task.done():
+            self.cancelled = True
+            task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
-        await self.accomplish.wait()
+        # create_task 后立即取消时 run() 尚未进入，仍需补齐收尾。
+        await self._wait_finalizer()

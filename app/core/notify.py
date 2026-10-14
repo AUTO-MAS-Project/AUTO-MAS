@@ -43,6 +43,8 @@ from app.models.notification import (
     NotifyPayload,
     WebhookTargetSnapshot,
 )
+from app.models.config.script import UserEntry
+from app.models.config.setting import Webhook
 from app.services.notification import Notify
 from app.utils import get_logger
 
@@ -97,7 +99,7 @@ def global_target(
         # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
         if channel.key == "system" and not include_system:
             continue
-        for target in channel.targets(Config, scope="global"):
+        for target in channel.targets(Config.setting, scope="global"):
             if channel.key == "system" and system_timeout_seconds is not None:
                 target = replace(target, timeout_seconds=system_timeout_seconds)
             pairs.append((channel, target))
@@ -108,14 +110,15 @@ def global_target(
     )
 
 
-def user_target(user_config: Any) -> NotifyTarget:
+def user_target(user_config: UserEntry) -> NotifyTarget:
     """按用户配置构造独立通知目标。"""
 
     pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
-    for channel in get_notify_channels():
-        pairs.extend(
-            (channel, target) for target in channel.targets(user_config, scope="user")
-        )
+    if user_config.notify.enabled:
+        for channel in get_notify_channels():
+            pairs.extend(
+                (channel, target) for target in channel.targets(user_config, scope="user")
+            )
     return NotifyTarget(
         name="用户",
         channels=tuple(pairs),
@@ -142,20 +145,20 @@ def should_send_result(message: dict, *, task_info: object | None = None) -> boo
     return result_time == "仅失败时" and message["uncompleted_count"] != 0
 
 
-def user_statistic_targets(user_config: Any | None) -> list[NotifyTarget]:
+def user_statistic_targets(user_config: UserEntry | None) -> list[NotifyTarget]:
     """返回已启用统计通知的用户目标。"""
 
     if (
         user_config is None
-        or not user_config.get("Notify", "Enabled")
-        or not user_config.get("Notify", "IfSendStatistic")
+        or not user_config.notify.enabled
+        or not user_config.notify.if_send_statistic
     ):
         return []
     return [user_target(user_config)]
 
 
 def statistic_targets(
-    user_config: Any | None,
+    user_config: UserEntry | None,
     *,
     global_empty_policy: EmptyPolicy = "send",
     compact_summary: bool = False,
@@ -169,6 +172,34 @@ def statistic_targets(
     if compact_summary:
         targets = [_prefer_webhook_summaries(target) for target in targets]
     return targets
+
+
+async def dispatch_test_notification() -> DispatchResult:
+    """设置 Trigger 的测试通知，使用与任务和签到相同的渠道入口。"""
+    result = await send_test_notification()
+    if result.failed:
+        raise RuntimeError(f"测试通知发送失败: {'、'.join(result.failed)}")
+    if not result.attempted:
+        raise ValueError("请先启用至少一个通知渠道")
+    return result
+
+
+async def dispatch_webhook_test(webhook: Webhook) -> DispatchResult:
+    """仅测试选中的 Webhook，仍复用渲染、投递和失败判定。"""
+    from app.core.notify_channels import webhook_target
+
+    channel = next(channel for channel in get_notify_channels() if channel.key == "webhook")
+    target = NotifyTarget(name="Webhook测试", channels=((channel, webhook_target(webhook, scope="global")),))
+    result = await dispatch(
+        NotifyPayload(
+            title="AUTO-MAS Webhook测试",
+            text="这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
+        ),
+        [target],
+    )
+    if result.failed:
+        raise RuntimeError(f"Webhook测试发送失败: {'、'.join(result.failed)}")
+    return result
 
 
 def _prefer_webhook_summaries(target: NotifyTarget) -> NotifyTarget:

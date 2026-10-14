@@ -93,6 +93,7 @@
                 <div class="cycle-line">
                   <SettingToggleButton
                     v-model="record.schedule.enabled"
+                    size="small"
                     @change="saveSchedule(record, { enabled: record.schedule.enabled })"
                   />
                   <a-select
@@ -280,7 +281,8 @@ const CYCLE_SCHEDULE_DEFAULTS = {
 // 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
 const parseTimeString = (timeString: string) => {
   const rawTime = String(timeString || '00:00')
-  const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+  const timeMatch =
+    rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
   const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
   const hours = Number(rawHours)
   const minutes = Number(rawMinutes)
@@ -582,7 +584,7 @@ onMounted(() => {
 }
 
 /* 操作按钮布局 */
-:deep(.ant-btn) {
+.action-cell :deep(.ant-btn) {
   min-width: auto;
   height: 32px;
   padding: 0 8px;

@@ -9,5 +9,5 @@
   "arrowParens": "avoid",
   "endOfLine": "lf",
   "sortPackageJson": false,
-  "ignorePatterns": ["dist", "node_modules", "dist-electron", "src/api", "**/*.md"]
+  "ignorePatterns": ["dist", "node_modules", "dist-electron", "src/api", "deferred", "**/*.md"]
 }

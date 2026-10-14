@@ -14,10 +14,16 @@ import {
 export function useSettingsApi() {
   const savingCount = ref(0)
   const error = ref<string | null>(null)
-  const query = useApiQuery(async () => {
-    const response = await requestApi(() => Service.getSettingApiSettingGetPost(), t('setting.toast.loadFailed'))
-    return fromBackendSettings((response.data ?? {}) as Setting_Output)
-  }, () => t('setting.toast.loadFailed'))
+  const query = useApiQuery(
+    async () => {
+      const response = await requestApi(
+        () => Service.getSettingApiSettingGetPost(),
+        t('setting.toast.loadFailed')
+      )
+      return fromBackendSettings((response.data ?? {}) as Setting_Output)
+    },
+    () => t('setting.toast.loadFailed')
+  )
   const loading = computed(() => query.loading.value || savingCount.value > 0)
 
   // 获取设置
@@ -31,9 +37,16 @@ export function useSettingsApi() {
     try {
       const category = Object.keys(settings)[0] as SettingsCategory | undefined
       if (!category) return true
-      await requestApi(() => Service.updateSettingApiSettingUpdatePost({
-        data: toBackendPatch(category, (settings as Record<string, unknown>)[category] as Record<string, unknown>),
-      }), t('setting.toast.saveFailed'))
+      await requestApi(
+        () =>
+          Service.updateSettingApiSettingUpdatePost({
+            data: toBackendPatch(
+              category,
+              (settings as Record<string, unknown>)[category] as Record<string, unknown>
+            ),
+          }),
+        t('setting.toast.saveFailed')
+      )
 
       return true
     } catch (err) {

@@ -39,18 +39,47 @@
 （类级 ``connect`` 在配置类旁同步声明，字段变更直接推 ``TaskItem`` 载荷）。
 """
 
-from .base import TaskBase
-from .mode_worker import (
-    MODE_WORKERS,
-    AutoProxyWorker,
-    ManualReviewWorker,
-    ModeWorker,
-    ScriptConfigWorker,
-)
-from .context import TaskContext
-from .params import ExpandError, is_selected, queue_script_ids
-from .script_expander import ScriptExpander
-from .user_expander import UserExpander
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
+
+# MaaFW 隔离 worker 会先导入祖先包；这里只声明出口，按宿主实际访问加载。
+if TYPE_CHECKING:
+    from .base import TaskBase
+    from .context import TaskContext
+    from .mode_worker import (
+        MODE_WORKERS,
+        AutoProxyWorker,
+        ManualReviewWorker,
+        ModeWorker,
+        ScriptConfigWorker,
+    )
+    from .params import ExpandError, is_selected, queue_script_ids
+    from .script_expander import ScriptExpander
+    from .user_expander import UserExpander
+
+_EXPORTS = {
+    "TaskBase": ".base",
+    "TaskContext": ".context",
+    "MODE_WORKERS": ".mode_worker",
+    "AutoProxyWorker": ".mode_worker",
+    "ManualReviewWorker": ".mode_worker",
+    "ModeWorker": ".mode_worker",
+    "ScriptConfigWorker": ".mode_worker",
+    "ExpandError": ".params",
+    "is_selected": ".params",
+    "queue_script_ids": ".params",
+    "ScriptExpander": ".script_expander",
+    "UserExpander": ".user_expander",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name, __name__), name)
+    globals()[name] = value
+    return value
 
 __all__ = [
     "MODE_WORKERS",

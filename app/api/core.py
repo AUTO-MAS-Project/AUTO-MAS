@@ -26,34 +26,30 @@ import os
 from contextlib import suppress
 
 from fastapi import APIRouter, Request, WebSocket
-from pydantic import BaseModel, Field
 
-from app.api import OutBase
 from app.api.ws_command import ws_command
 from app.core import Config, TaskDispatcher
 from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import Dialogs, MainConnection, Publisher, protocol
 from app.core.ws.protocol import WSDialogRequestData
+from app.models.schema import BackendHealthOut, OutBase, WebSocketMetaOut
 from app.services import System
-from app.utils import get_logger
+from app.utils import get_logger, is_backend_dev_mode, is_supervised
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
 
 
-class WebSocketMetaOut(BaseModel):
-    """前端协商主 WebSocket 链接时使用的元信息。"""
-
-    devMode: bool = Field(description="后端当前是否处于开发模式")
-    wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
+# 返回后端实际支持的版本，不回显监督器注入值，以便检出协议不兼容。
+HEALTH_PROTOCOL_VERSION = 1
 
 
-class BackendHealthOut(BaseModel):
-    """后端核心服务与后台初始化状态。"""
+def _resolve_injected_identity(env_name: str) -> str | None:
+    """受监督时读取监督器注入的身份，缺失时交由调用方回退。"""
 
-    ready: bool = Field(description="核心 API 是否可用")
-    backgroundStatus: str = Field(description="后台初始化状态")
-    backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
+    if not is_supervised():
+        return None
+    return os.getenv(env_name, "") or None
 
 
 @router.get(
@@ -63,20 +59,20 @@ class BackendHealthOut(BaseModel):
     status_code=200,
 )
 async def get_health(request: Request) -> BackendHealthOut:
-    """返回核心 API 与后台初始化状态。"""
+    """返回后台初始化状态与受监督身份，commit 仅来自监督器注入。"""
 
     return BackendHealthOut(
         ready=True,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
         backgroundError=getattr(request.app.state, "background_error", None),
+        backgroundWarnings=list(
+            getattr(request.app.state, "background_warnings", None) or []
+        ),
+        protocol=HEALTH_PROTOCOL_VERSION,
+        version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
+        or Config.VERSION,
+        commit=_resolve_injected_identity("AUTO_MAS_EXPECTED_COMMIT") or "",
     )
-
-
-def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式。"""
-
-    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
 
 
 @router.get(

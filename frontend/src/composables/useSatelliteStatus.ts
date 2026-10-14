@@ -11,7 +11,15 @@ export function useSatelliteStatus() {
   const { scriptStatusesByType, refresh } = useTaskRuntimeState()
 
   return {
-    statuses: computed(() => new Map<string, SatelliteModuleStatus>(scriptStatusesByType.value)),
+    statuses: computed(
+      () =>
+        new Map<string, SatelliteModuleStatus>(
+          [...scriptStatusesByType.value].map(([type, state]) => [
+            type === 'MaaScript' ? 'MAA' : type.replace(/Script$/, ''),
+            state,
+          ])
+        )
+    ),
     refresh,
   }
 }

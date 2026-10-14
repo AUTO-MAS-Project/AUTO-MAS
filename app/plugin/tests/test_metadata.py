@@ -93,7 +93,7 @@ def test_parse_meta_rejects_missing_i18n() -> None:
     assert parse_to_plugin_meta(msg) is None
 
 
-def test_parse_record_skips_display_i18n() -> None:
+def test_parse_record_preserves_plain_display_metadata() -> None:
     msg = Message()
     msg["Name"] = "automas-plugin-demo"
     msg["Version"] = "1.0.0"
@@ -102,9 +102,9 @@ def test_parse_record_skips_display_i18n() -> None:
     draft = parse_to_plugin_record(msg, import_name="demo_pkg", source="local")
     assert draft is not None
     assert draft.info.plugin_name == "demo"
-    assert "description" not in type(draft.info).model_fields
-    assert "tags" not in type(draft.info).model_fields
-    assert "display_name" not in type(draft.info).model_fields
+    assert draft.info.display_name_i18n == {"en": "demo"}
+    assert draft.info.description_i18n == {"en": "plain"}
+    assert draft.info.tags_i18n == {}
 
 
 def test_parse_pypi_json_info() -> None:

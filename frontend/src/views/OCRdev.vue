@@ -50,9 +50,7 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="预处理模式">
-                  <SettingToggleButton
-                    v-model="screenshotForm.should_preprocess"
-                  />
+                  <SettingToggleButton v-model="screenshotForm.should_preprocess" />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     启用时将排除窗口边框和标题栏
                   </span>
@@ -147,9 +145,7 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="截图方法">
-                  <SettingToggleButton
-                    v-model="adbScreenshotForm.use_screencap"
-                  />
+                  <SettingToggleButton v-model="adbScreenshotForm.use_screencap" />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     PNG 方法速度更快（推荐），RAW 方法兼容性更好
                   </span>

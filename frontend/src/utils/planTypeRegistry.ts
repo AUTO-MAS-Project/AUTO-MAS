@@ -57,44 +57,6 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     supportsLayoutMode: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
   },
-  [PLAN_CONFIG_TYPES.MAA_END]: {
-    configType: PLAN_CONFIG_TYPES.MAA_END,
-    createType: 'MaaEndScript',
-    displayNameKey: 'plan.type.maaEnd',
-    defaultName: '新 MaaEnd 计划表',
-    selectorTag: 'MaaEnd',
-    reloadAfterSave: false,
-    supportsSimpleView: true,
-    supportsLayoutMode: false,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
-  },
-  [PLAN_CONFIG_TYPES.BAAH]: {
-    configType: PLAN_CONFIG_TYPES.BAAH,
-    createType: 'BAAHScript',
-    displayNameKey: 'plan.type.baah',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 BAAH 计划表',
-    selectorTag: 'BAAH',
-    reloadAfterSave: false,
-    // BAAH 两种排法都是一格一个控件，但要按行说明每一位是什么，转置成简化视图只会更难读
-    supportsSimpleView: false,
-    // BAAH 的 key 有两种排法：六类都填（多类混打）或每天只选一类
-    supportsLayoutMode: true,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
-  },
-  [PLAN_CONFIG_TYPES.MSS]: {
-    configType: PLAN_CONFIG_TYPES.MSS,
-    createType: 'MSSScript',
-    displayNameKey: 'plan.type.mss',
-    // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 MSS 计划表',
-    selectorTag: 'MSS',
-    reloadAfterSave: false,
-    supportsSimpleView: true,
-    // 「关卡安排」只有 BAAH 的 key 分多类混打与每天一类
-    supportsLayoutMode: false,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MSSPlanTable.vue')),
-  },
 }
 
 export const DEFAULT_PLAN_CONFIG_TYPE: PlanConfigType = PLAN_CONFIG_TYPES.MAA

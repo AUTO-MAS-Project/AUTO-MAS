@@ -55,16 +55,12 @@
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
-              <a-select
-                v-model:value="record.enabled"
+              <SettingToggleButton
+                v-model="record.enabled"
                 size="small"
-                style="width: 80px"
-                class="status-select"
+                :disabled="loading"
                 @change="updateTimeSetStatus(record)"
-              >
-                <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
-                <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
-              </a-select>
+              />
             </div>
             <div class="row-cell days-cell">
               <a-select
@@ -129,6 +125,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -161,7 +158,8 @@ const parseTimeString = (timeStr: string) => {
   if (!timeStr) return undefined
   try {
     const rawTime = String(timeStr)
-    const timeMatch = rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
+    const timeMatch =
+      rawTime.match(/(?:T|\s)(\d{1,2}):(\d{2})/) ?? rawTime.match(/^(\d{1,2}):(\d{2})/)
     const [, rawHours = '0', rawMinutes = '0'] = timeMatch ?? []
     const hours = Number(rawHours)
     const minutes = Number(rawMinutes)
@@ -443,7 +441,7 @@ const onDragEnd = async (evt: any) => {
 }
 
 /* 操作按钮布局 */
-:deep(.ant-btn) {
+.action-cell :deep(.ant-btn) {
   min-width: auto;
   height: 32px;
   padding: 0 8px;
@@ -483,91 +481,6 @@ const onDragEnd = async (evt: any) => {
 /* 开关样式 */
 :deep(.ant-switch) {
   margin: 0;
-}
-
-/* 状态下拉框样式 - 使用与Plans.vue相同的config-select样式 */
-.status-select :deep(.ant-select-selector) {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 6px !important;
-  min-height: 28px !important;
-  line-height: 26px !important;
-  box-shadow: none !important;
-  text-align: center;
-}
-
-.status-select :deep(.ant-select-selection-item) {
-  line-height: 26px !important;
-  color: var(--ant-color-text) !important;
-  font-weight: 500;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-selection-placeholder) {
-  line-height: 26px !important;
-  color: var(--ant-color-text-placeholder) !important;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-clear) {
-  display: none !important;
-}
-
-.status-select :deep(.ant-select-selection-search) {
-  margin: 0 !important;
-  padding: 0;
-}
-
-.status-select :deep(.ant-select-selection-search-input) {
-  padding: 0 !important;
-  margin: 0 !important;
-  height: 26px !important;
-}
-
-.status-select:hover :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.status-select:focus-within :deep(.ant-select-selector),
-.status-select.ant-select-focused :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-}
-
-.status-select :deep(.ant-select-selector):focus,
-.status-select :deep(.ant-select-selector):focus-within {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-  cursor: default !important;
-}
-
-/* 隐藏下拉箭头或调整样式 */
-.status-select :deep(.ant-select-arrow) {
-  right: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 10px;
-}
-
-.status-select :deep(.ant-select-arrow:hover) {
-  color: var(--ant-color-primary);
-}
-
-/* 自定义下拉框样式 - 增加下拉菜单宽度 */
-.status-select :deep(.ant-select-dropdown) {
-  min-width: 100px !important;
-  max-width: 150px !important;
-}
-
-.status-select :deep(.ant-select-item) {
-  padding: 8px 12px !important;
 }
 
 /* 时间显示样式 */

@@ -101,7 +101,7 @@ export interface WSTaskScriptInfoData {
   userList: WSTaskUserInfoData[]
 }
 
-export type WSTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun'
+export type WSTaskMode = 'AutoProxy' | 'ManualReview' | 'ScriptConfig' | 'Update' | 'CycleRun'
 
 export interface WSTaskScriptIdentityData {
   scriptId: string
@@ -120,7 +120,11 @@ export interface WSTaskCyclePreviewData {
 
 /** 任务信息快照 (type=task.info.updated) */
 export interface WSTaskInfoUpdatedData {
-  task_info: WSTaskScriptInfoData[]
+  task?: Record<string, unknown>
+  info?: Record<string, unknown>
+  scripts?: Record<string, unknown>
+  current?: Record<string, unknown>
+  task_info?: WSTaskScriptInfoData[]
   /** 循环运行的待运行条目，仅循环任务非空 */
   cycleNextList?: WSTaskCyclePreviewData[]
 }
@@ -141,17 +145,20 @@ export interface WSTaskLogUpdatedData {
 
 /** 任务完成消息数据 (type=task.completed) */
 export interface WSTaskCompletedData {
+  task?: Record<string, unknown>
   result: string
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
-  task_info: WSTaskScriptInfoData[]
+  task_info?: WSTaskScriptInfoData[]
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
   taskId: string
   mode: WSTaskMode
-  scripts: WSTaskScriptIdentityData[]
+  scripts?: WSTaskScriptIdentityData[]
+  scriptId?: string | null
+  userId?: string | null
   queueId?: string | null
   taskName?: string | null
   taskType?: string | null

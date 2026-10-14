@@ -90,7 +90,10 @@ const groupCategoryMap: Record<string, SettingsCategory> = {
 }
 
 export function settingsCategoryForGroup(group: string): SettingsCategory | undefined {
-  return groupCategoryMap[group] ?? (group ? (group[0].toUpperCase() + group.slice(1) as SettingsCategory) : undefined)
+  return (
+    groupCategoryMap[group] ??
+    (group ? ((group[0].toUpperCase() + group.slice(1)) as SettingsCategory) : undefined)
+  )
 }
 
 const readGroup = (data: Setting_Output | Record<string, unknown>, key: string) => {
@@ -100,7 +103,9 @@ const readGroup = (data: Setting_Output | Record<string, unknown>, key: string) 
 
 const pick = (group: Record<string, unknown>, key: string) => group[key]
 
-export function fromBackendSettings(data: Setting_Output | Record<string, unknown>): SettingsViewModel {
+export function fromBackendSettings(
+  data: Setting_Output | Record<string, unknown>
+): SettingsViewModel {
   const uiHintsGroup = readGroup(data, 'ui')
   const appearance = readGroup(data, 'appearance')
   const start = readGroup(data, 'start')
@@ -171,7 +176,10 @@ const fieldMap: Record<string, Record<string, string>> = {
     IfBlockAd: 'if_block_ad',
   },
   Voice: { Enabled: 'enabled', Type: 'type' },
-  Display: { IfEnableVirtualDisplay: 'if_enable_virtual_display', VirtualDisplayMode: 'virtual_display_mode' },
+  Display: {
+    IfEnableVirtualDisplay: 'if_enable_virtual_display',
+    VirtualDisplayMode: 'virtual_display_mode',
+  },
   Notify: {
     SendTaskResultTime: 'send_task_result_time',
     IfSendStatistic: 'if_send_statistic',
@@ -212,20 +220,29 @@ const notifyViewKey = (key: string): string => {
     openclaw_qq_client_secret: 'OpenClawQQClientSecret',
     openclaw_qq_target_open_id: 'OpenClawQQTargetOpenId',
   }
-  return acronymKeys[key] ?? key.replace(/(^|_)([a-z])/g, (_, _prefix: string, letter: string) => letter.toUpperCase())
+  return (
+    acronymKeys[key] ??
+    key.replace(/(^|_)([a-z])/g, (_, _prefix: string, letter: string) => letter.toUpperCase())
+  )
 }
 
 export function settingsViewKey(group: string, field: string): string {
   // 读写使用同一张字段表，保留 CDK、QQ 等缩写的视图键名。
   const category = settingsCategoryForGroup(group)
-  const mapped = Object.entries(category ? fieldMap[category] ?? {} : {})
-    .find(([, backendField]) => backendField === field)?.[0]
+  const mapped = Object.entries(category ? (fieldMap[category] ?? {}) : {}).find(
+    ([, backendField]) => backendField === field
+  )?.[0]
   if (mapped) return mapped
   if (group === 'notify') return notifyViewKey(field)
-  return field.replace(/(^|_)([a-z])/g, (_, _prefix: string, letter: string) => letter.toUpperCase())
+  return field.replace(/(^|_)([a-z])/g, (_, _prefix: string, letter: string) =>
+    letter.toUpperCase()
+  )
 }
 
-export function toBackendPatch(category: SettingsCategory, changes: Record<string, unknown>): Setting_Input {
+export function toBackendPatch(
+  category: SettingsCategory,
+  changes: Record<string, unknown>
+): Setting_Input {
   const targetGroup =
     category === 'UI' ? 'appearance' : category === 'Update' ? 'updates' : category.toLowerCase()
   const mapped = Object.fromEntries(

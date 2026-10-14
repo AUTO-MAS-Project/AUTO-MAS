@@ -35,6 +35,7 @@ from app.api import OutBase
 from app.config.errors import ConfigAggregateError
 from app.core import Config
 from app.models.config import GameSignAccount, Tools
+from app.models.schema import GameSignAccountGroupConfig
 from app.tools.game_sign import (
     GameSignInProgressError,
     format_sign_results,
@@ -63,6 +64,7 @@ class ToolsConfig_ArknightsPC(BaseModel):
 
 class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏签到")
+    ActivityEnabled: bool | None = Field(default=None, description="是否启用社区日常便笺")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
     WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
     WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
@@ -90,16 +92,6 @@ class ToolsGetOut(OutBase):
 
 class ToolsUpdateIn(BaseModel):
     data: ToolsConfig = Field(..., description="工具配置需要更新的数据")
-
-
-class GameSignAccountGroupConfig(BaseModel):
-    """游戏签到账号组配置"""
-
-    Name: str | None = Field(default=None, description="账号组名称")
-    Enabled: bool | None = Field(default=None, description="是否启用")
-    MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
-    KuroToken: str | None = Field(default=None, description="库街区登录凭证")
-    SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
 
 
 class GameSignAccountCreateOut(OutBase):
@@ -164,6 +156,7 @@ def _tools_config(tools: Tools) -> ToolsConfig:
         ),
         GameSign=ToolsConfig_GameSign(
             Enabled=gs.enabled,
+            ActivityEnabled=gs.activity_enabled,
             NotifyEnabled=gs.notify_enabled,
             WindowStart=gs.window_start.strftime("%H:%M"),
             WindowEnd=gs.window_end.strftime("%H:%M"),
@@ -207,6 +200,8 @@ def _tools_from_config(cfg: ToolsConfig) -> Tools:
             gs_kwargs["enabled"] = gs.Enabled
         if gs.NotifyEnabled is not None:
             gs_kwargs["notify_enabled"] = gs.NotifyEnabled
+        if gs.ActivityEnabled is not None:
+            gs_kwargs["activity_enabled"] = gs.ActivityEnabled
         if gs.WindowStart is not None:
             gs_kwargs["window_start"] = _parse_hm(gs.WindowStart)
         if gs.WindowEnd is not None:
@@ -233,8 +228,13 @@ def _account_group(account: GameSignAccount) -> GameSignAccountGroupConfig:
         Name=info.name,
         Enabled=info.enabled,
         MiyousheToken=info.miyoushe_token,
+        MiyousheDeviceId=info.miyoushe_device_id,
+        MiyousheDeviceFp=info.miyoushe_device_fp,
+        CloudGenshinToken=info.cloud_genshin_token,
+        TaygedoToken=info.taygedo_token,
         KuroToken=info.kuro_token,
         SklandToken=info.skland_token,
+        LastSignDate=info.last_sign_date.isoformat(),
     )
 
 
@@ -426,6 +426,10 @@ async def update_game_sign_account(
             ("MiyousheToken", "miyoushe_token"),
             ("KuroToken", "kuro_token"),
             ("SklandToken", "skland_token"),
+            ("TaygedoToken", "taygedo_token"),
+            ("CloudGenshinToken", "cloud_genshin_token"),
+            ("MiyousheDeviceId", "miyoushe_device_id"),
+            ("MiyousheDeviceFp", "miyoushe_device_fp"),
         ):
             value = getattr(body.data, pascal)
             if not value:  # 空 / None：占位符不写入
@@ -489,3 +493,105 @@ async def reorder_game_sign_accounts(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+# 日常便笺只读查询；与签到共享请求守卫，不共享签到执行锁。
+from app.models.schema import (
+    CommunityActivityQueryIn, CommunityActivityOut, CommunityActivitySnapshotOut,
+    CommunityActivityTaskOut, CommunityActivityResourceOut,
+)
+from app.core.community_scheduler import community_activity_flow, CommunityActivityInProgressError
+from app.utils import get_logger
+
+
+def _log_activity_error(message: str, error: Exception) -> None:
+    get_logger("游戏社区").warning(f"{message}: {type(error).__name__}")
+
+
+@router.post(
+    "/community/activity/query",
+    tags=["Community"],
+    summary="查询游戏社区日常活跃度",
+    response_model=CommunityActivityOut,
+    status_code=200,
+)
+async def query_community_activity(
+    query: CommunityActivityQueryIn = Body(...),
+) -> CommunityActivityOut:
+    """查询游戏社区日常活动，不占用签到流程锁。"""
+
+    if Config.tools.game_sign.activity_enabled is False:
+        return CommunityActivityOut(status="success", data=[])
+
+    snapshots = ()
+    try:
+        from app.core.community_activity import (
+            build_configured_community_activity_failures,
+            collect_configured_community_activity,
+        )
+
+        async with community_activity_flow():
+            snapshots = await collect_configured_community_activity(
+                query.accountIds,
+                proxy=Config.proxy,
+            )
+    except CommunityActivityInProgressError as exc:
+        _log_activity_error("游戏社区日常查询并发冲突", exc)
+        return CommunityActivityOut(
+            code=409,
+            status="error",
+            message="游戏社区日常查询正在执行，请稍后重试",
+        )
+    except ValueError as exc:
+        _log_activity_error("游戏社区日常查询参数或凭据无效", exc)
+        return CommunityActivityOut(
+            code=400,
+            status="error",
+            message="游戏社区日常查询参数或凭据无效",
+        )
+    except Exception as exc:
+        _log_activity_error("游戏社区日常查询失败", exc)
+        snapshots = build_configured_community_activity_failures(
+            query.accountIds,
+        )
+        if not snapshots:
+            return CommunityActivityOut(
+                code=500,
+                status="error",
+                message="游戏社区日常查询失败，请稍后重试",
+            )
+
+    return CommunityActivityOut(
+        status="warning"
+        if any(snapshot.status != "success" for snapshot in snapshots)
+        else "success",
+        message="部分游戏日常查询失败"
+        if any(snapshot.status == "failed" for snapshot in snapshots)
+        else "",
+        data=[
+            CommunityActivitySnapshotOut(
+                account=snapshot.account,
+                accountUid=snapshot.account_uid,
+                game=snapshot.game,
+                platform=snapshot.platform,
+                status=snapshot.status,
+                completed=snapshot.completed,
+                target=snapshot.target,
+                tasks=[
+                    CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks
+                ],
+                resources=[
+                    CommunityActivityResourceOut(**dict(resource))
+                    for resource in snapshot.resources
+                ],
+                reason=snapshot.reason,
+                updatedAt=snapshot.updated_at,
+                roleName=snapshot.role_name,
+                roleUid=snapshot.role_uid,
+                server=snapshot.server,
+                source=snapshot.source,
+            )
+            for snapshot in snapshots
+        ],
+    )
+

@@ -92,6 +92,7 @@ class Tools(ConfigEntry):
 
     class GameSign(ConfigGroup):
         enabled: bool = Field(default=False, description="是否启用游戏签到")
+        activity_enabled: bool = Field(default=True, description="是否启用社区日常便笺")
         notify_enabled: bool = Field(default=False, description="签到后是否发送通知")
         window_start: Annotated[datetime, ui(format="hm")] = Field(
             default=datetime(2000, 1, 1, 8, 0, tzinfo=UTC8),

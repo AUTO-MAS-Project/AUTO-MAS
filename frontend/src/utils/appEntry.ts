@@ -151,5 +151,4 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
 
   // 启动版本检查服务
   startVersionServices()
-
 }

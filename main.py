@@ -352,6 +352,19 @@ def main():
 
         async def initialize_background_services() -> None:
             app.state.background_status = "running"
+
+            async def optional_service(
+                name: str, start: Callable[[], Awaitable[Any]]
+            ) -> None:
+                try:
+                    await start()
+                except Exception as error:
+                    message = (
+                        f"{name}: {type(error).__name__}: {error}"
+                    )[:BACKGROUND_ERROR_MESSAGE_MAX]
+                    app.state.background_warnings.append(message)
+                    logger.exception(f"后台服务启动失败：{name}")
+
             try:
                 import importlib
 
@@ -387,7 +400,11 @@ def main():
 
                 # ArknightWin32 暂不接入新配置系统；保留源码供后续迁移参考。
                 await MainTimer.start()
-                await DesktopGuard.start()
+                await optional_service("桌面显示输出守卫", DesktopGuard.start)
+
+                from app.services.openclaw_qq import openclaw_qq_manager
+
+                await optional_service("QQ 通知通道", openclaw_qq_manager.start)
 
                 if Config.setting.notify.if_koishi_support:
                     from app.api.ws_command import execute_ws_command
@@ -410,6 +427,7 @@ def main():
 
         app.state.background_status = "starting"
         app.state.background_error = None
+        app.state.background_warnings = []
         logger.info(
             f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
         )
@@ -427,6 +445,7 @@ def main():
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
             from app.services import Matomo, System, Updater
+            from app.services.openclaw_qq import openclaw_qq_manager
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             # （yield 前已必然创建 background_task，无需判空）
@@ -439,14 +458,16 @@ def main():
             await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()
             await MainConnection.cancel_hook_tasks()
+            # 先停止定时入口，再取消任务，避免清理过程中再次派发。
+            await MainTimer.stop()
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            await MainTimer.stop()
             await TaskDispatcher.stop("ALL")
             await DesktopGuard.stop()
+            await openclaw_qq_manager.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()

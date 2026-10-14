@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  HomeOutlined,
-  GithubOutlined,
-  QqOutlined,
-} from '@ant-design/icons-vue'
+import { HomeOutlined, GithubOutlined, QqOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, ref } from 'vue'
 import type { VersionOut } from '@/api'
@@ -13,19 +9,17 @@ import ChangelogView from '@/components/ChangelogView.vue'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import SettingGroupRenderer from './components/SettingGroupRenderer.vue'
-import { settingFieldLabels, settingFieldTips, settingOptionLabels } from './components/settingUiText'
+import {
+  settingFieldLabels,
+  settingFieldTips,
+  settingOptionLabels,
+} from './components/settingUiText'
 
 const logger = window.electronAPI.getLogger('设置-其他')
 
 const { t } = useI18n()
 
-const {
-  version,
-  backendUpdateInfo,
-  settings,
-  handleSettingChange,
-  checkUpdate,
-} = defineProps<{
+const { version, backendUpdateInfo, settings, handleSettingChange, checkUpdate } = defineProps<{
   version: string
   backendUpdateInfo: VersionOut | null
   settings: SettingsViewModel

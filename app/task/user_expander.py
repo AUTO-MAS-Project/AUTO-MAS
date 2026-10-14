@@ -244,6 +244,11 @@ class UserExpander(TaskBase):
             )
             worker.config_user_id = uid_s
             await self.spawn(worker)
+            if worker.error is not None:
+                self.error = worker.error
+            if worker.error is not None or worker._check_result != "Pass":
+                self.script_item.info.status = "error"
+                await self.script_item.commit()
 
         self.script_item.current.index = None
         await self.script_item.commit()

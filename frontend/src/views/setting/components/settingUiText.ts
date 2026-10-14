@@ -135,9 +135,9 @@ export const settingOptionLabels: Record<string, Record<string, Record<string, s
   },
   notify: {
     send_task_result_time: {
-      '不推送': 'setting.pushTime.never',
-      '仅失败时': 'setting.pushTime.failOnly',
-      '任何时刻': 'setting.pushTime.always',
+      不推送: 'setting.pushTime.never',
+      仅失败时: 'setting.pushTime.failOnly',
+      任何时刻: 'setting.pushTime.always',
     },
   },
   updates: {

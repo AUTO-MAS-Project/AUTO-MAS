@@ -16,62 +16,26 @@ from app.core.notify_channels import get_notify_channels
 _UNSET = object()
 
 
-class _Webhook:
-    def __init__(self, enabled: bool = True, name: str = "值班群") -> None:
-        self._enabled = enabled
-        self._name = name
-
-    def get(self, group: str, key: str) -> str | bool:
-        assert group == "Info"
-        if key == "Name":
-            return self._name
-        assert key == "Enabled"
-        return self._enabled
+from types import SimpleNamespace
+from uuid import UUID
+from app.models.config.setting import Setting, Webhook
+from app.models.config.script import UserEntry
+from app.models.notification import NotificationSummary
 
 
-class _Webhooks:
-    def __init__(self, webhooks: list[tuple[str, _Webhook]]) -> None:
-        self._items = [(str(uid), webhook) for uid, webhook in webhooks]
-
-    def items(self) -> list[tuple[str, _Webhook]]:
-        return list(self._items)
+def _Webhook(enabled=True, name="值班群"):
+    return {"info": {"enabled": enabled, "name": name}}
 
 
-_SWITCHES = {
-    "IfPushPlyer": False,
-    "IfSendMail": False,
-    "IfServerChan": False,
-    "IfKoishiSupport": False,
-    "IfCMCCNewMsg": False,
-    "IfOpenClawQQ": False,
-}
-_TEXTS = {
-    name: ""
-    for name in (
-        "SMTPServerAddress",
-        "FromAddress",
-        "AuthorizationCode",
-        "ToAddress",
-        "ServerChanKey",
-        "KoishiServerAddress",
-        "KoishiToken",
-        "CMCCNewMsgApiKey",
-    )
-}
-
-
-class _Config:
-    """同时提供 .get(group, name) 与 .Notify_CustomWebhooks.items() 的鸭子配置。"""
-
-    def __init__(self, values: dict | None = None, webhooks=()) -> None:
-        self._values = {**_SWITCHES, **_TEXTS, **(values or {})}
-        self.Notify_CustomWebhooks = _Webhooks(webhooks)
-        self.reads = 0
-
-    def get(self, group: str, name: str):
-        assert group == "Notify"
-        self.reads += 1
-        return self._values[name]
+def _Config(values=None, webhooks=(), *, user=False):
+    config = (UserEntry if user else Setting).model_validate({"notify": values or {}})
+    asyncio.run(config.custom_webhooks.activate())
+    if user:
+        config.notify.enabled = True
+    for uid, payload in webhooks:
+        config.custom_webhooks.add(Webhook, uid=UUID(uid), payload=payload)
+    asyncio.run(config.custom_webhooks.commit())
+    return config
 
 
 class _Notify:
@@ -134,14 +98,14 @@ class _Notify:
         )
 
     async def WebhookPush(
-        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, image_base64=_UNSET
+        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
     ):
         return await self._run(
             "WebhookPush",
             title=title,
             content=content,
             webhook=webhook,
-            image_base64=image_base64,
+            images=images,
         )
 
     async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
@@ -163,10 +127,10 @@ def _run(awaitable):
 
 
 def _global_target(
-    config: _Config, *, include_system: bool = False, empty_policy="send"
+    config: Setting, *, include_system: bool = False, empty_policy="send", system_timeout_seconds=None
 ):
-    with patch.object(notify_module, "Config", config):
-        return global_target(include_system=include_system, empty_policy=empty_policy)
+    with patch.object(notify_module, "Config", SimpleNamespace(setting=config)):
+        return global_target(include_system=include_system, empty_policy=empty_policy, system_timeout_seconds=system_timeout_seconds)
 
 
 def _protocol_members():
@@ -236,12 +200,12 @@ def test_real_notify_implementation_matches_protocol() -> None:
 def test_dispatch_isolates_false_result_and_names_webhook() -> None:
     config = _Config(
         {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
+            "if_send_mail": True,
+            "to_address": "user@example.com",
+            "if_server_chan": True,
+            "server_chan_key": "send-key",
         },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
+        webhooks=[("00000000-0000-0000-0000-000000000001", _Webhook(name="值班群"))],
     )
     notify = _Notify({"send_mail": ["false"]})
 
@@ -255,7 +219,7 @@ def test_dispatch_isolates_false_result_and_names_webhook() -> None:
 
 
 def test_dispatch_retries_false_result() -> None:
-    config = _Config({"IfKoishiSupport": True})
+    config = _Config({"if_koishi_support": True})
     notify = _Notify({"send_koishi": ["false"]})
 
     result = _run(
@@ -273,7 +237,7 @@ def test_dispatch_retries_false_result() -> None:
 
 
 def test_dispatch_reports_named_webhook_failure() -> None:
-    config = _Config(webhooks=[("hook-1", _Webhook())])
+    config = _Config(webhooks=[("00000000-0000-0000-0000-000000000001", _Webhook())])
     notify = _Notify({"WebhookPush": ["false"]})
 
     result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
@@ -284,11 +248,11 @@ def test_dispatch_reports_named_webhook_failure() -> None:
 def test_dispatch_continues_after_system_failure() -> None:
     config = _Config(
         {
-            "IfPushPlyer": True,
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
+            "if_push_plyer": True,
+            "if_send_mail": True,
+            "to_address": "user@example.com",
+            "if_server_chan": True,
+            "server_chan_key": "send-key",
         }
     )
     notify = _Notify({"push_plyer": ["raise"]})
@@ -309,8 +273,8 @@ def test_dispatch_continues_after_system_failure() -> None:
 def test_dispatch_skips_disabled_webhook_channel() -> None:
     config = _Config(
         webhooks=[
-            ("hook-1", _Webhook(enabled=True, name="启用")),
-            ("hook-2", _Webhook(enabled=False, name="禁用")),
+            ("00000000-0000-0000-0000-000000000001", _Webhook(enabled=True, name="启用")),
+            ("00000000-0000-0000-0000-000000000002", _Webhook(enabled=False, name="禁用")),
         ]
     )
     notify = _Notify()
@@ -323,23 +287,23 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
 
 def test_webhook_succeeded_ids_use_uid_while_succeeded_uses_name() -> None:
     config = _Config(
-        webhooks=[("hook-1", _Webhook(name="值班群")), ("hook-2", _Webhook(name=""))]
+        webhooks=[("00000000-0000-0000-0000-000000000001", _Webhook(name="值班群")), ("00000000-0000-0000-0000-000000000002", _Webhook(name=""))]
     )
     notify = _Notify()
 
     result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
 
-    assert list(result.succeeded) == ["全局 Webhook 值班群", "全局 Webhook hook-2"]
-    assert list(result.succeeded_ids) == ["全局 Webhook hook-1", "全局 Webhook hook-2"]
+    assert list(result.succeeded) == ["全局 Webhook 值班群", "全局 Webhook 00000000-0000-0000-0000-000000000002"]
+    assert list(result.succeeded_ids) == ["全局 Webhook 00000000-0000-0000-0000-000000000001", "全局 Webhook 00000000-0000-0000-0000-000000000002"]
 
 
 def test_dispatch_channel_names_are_verbatim() -> None:
     config = _Config(
         {
-            "IfCMCCNewMsg": True,
-            "CMCCNewMsgApiKey": "ak_x",
-            "IfKoishiSupport": True,
-            "IfOpenClawQQ": True,
+            "if_cmcc_new_msg": True,
+            "cmcc_new_msg_api_key": "ak_x",
+            "if_koishi_support": True,
+            "if_openclaw_qq": True,
         }
     )
 
@@ -353,7 +317,7 @@ def test_dispatch_channel_names_are_verbatim() -> None:
 
 
 def test_system_notification_fallbacks() -> None:
-    config = _Config({"IfPushPlyer": True})
+    config = _Config({"if_push_plyer": True})
     notify = _Notify()
 
     result = _run(
@@ -375,7 +339,7 @@ def test_system_notification_fallbacks() -> None:
 
 
 def test_system_notification_passes_override_values() -> None:
-    config = _Config({"IfPushPlyer": True})
+    config = _Config({"if_push_plyer": True})
     notify = _Notify()
 
     _run(
@@ -383,12 +347,9 @@ def test_system_notification_passes_override_values() -> None:
             NotifyPayload(
                 title="标题",
                 text="正文",
-                system_title="系统标题",
-                system_message="系统正文",
-                system_ticker="系统ticker",
-                system_timeout=7,
+                summary=NotificationSummary(title="系统标题", text="系统正文"),
             ),
-            [_global_target(config, include_system=True)],
+            [_global_target(config, include_system=True, system_timeout_seconds=7)],
             notifier=notify,
         )
     )
@@ -396,7 +357,7 @@ def test_system_notification_passes_override_values() -> None:
     assert notify.kwargs[0] == {
         "title": "系统标题",
         "message": "系统正文",
-        "ticker": "系统ticker",
+        "ticker": "系统正文",
         "t": 7,
     }
 
@@ -404,10 +365,10 @@ def test_system_notification_passes_override_values() -> None:
 def test_empty_recipient_warn_records_failure() -> None:
     config = _Config(
         {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
+            "if_send_mail": True,
+            "to_address": "",
+            "if_server_chan": True,
+            "server_chan_key": "send-key",
         }
     )
     notify = _Notify()
@@ -428,19 +389,20 @@ def test_empty_recipient_warn_records_failure() -> None:
 
 def test_target_is_a_config_snapshot() -> None:
     config = _Config(
-        {"IfSendMail": True, "ToAddress": "user@example.com", "IfServerChan": True}
+        {"if_send_mail": True, "to_address": "user@example.com", "if_server_chan": True}
     )
     target = _global_target(config)
-    reads_after_construction = config.reads
+    config.notify.to_address = "changed@example.com"
+    notify = _Notify()
 
-    _run(dispatch(PAYLOAD, [target], notifier=_Notify()))
+    _run(dispatch(PAYLOAD, [target], notifier=notify))
 
     # 构造后固定为快照：分发全程不再读配置
-    assert config.reads == reads_after_construction
+    assert notify.kwargs[0]["to_address"] == "user@example.com"
 
 
 def test_empty_recipient_skip_policy_silently_omits() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": ""})
+    config = _Config({"if_send_mail": True, "to_address": ""})
 
     result = _run(
         dispatch(
@@ -458,25 +420,26 @@ def test_empty_recipient_skip_policy_silently_omits() -> None:
 
 def test_same_name_webhooks_keep_distinct_delivery_ids() -> None:
     config = _Config(
-        webhooks=[("a", _Webhook(name="同名")), ("b", _Webhook(name="同名"))]
+        webhooks=[("00000000-0000-0000-0000-000000000003", _Webhook(name="同名")), ("00000000-0000-0000-0000-000000000004", _Webhook(name="同名"))]
     )
 
     result = _run(dispatch(PAYLOAD, [_global_target(config)], notifier=_Notify()))
 
     # 显示名相同但补发记录按 uid 区分
     assert list(result.succeeded) == ["全局 Webhook 同名", "全局 Webhook 同名"]
-    assert list(result.succeeded_ids) == ["全局 Webhook a", "全局 Webhook b"]
+    assert list(result.succeeded_ids) == ["全局 Webhook 00000000-0000-0000-0000-000000000003", "全局 Webhook 00000000-0000-0000-0000-000000000004"]
 
 
 def test_user_target_uses_user_scope_and_warn_policy() -> None:
     config = _Config(
         {
-            "IfSendMail": True,
-            "ToAddress": "",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
+            "if_send_mail": True,
+            "to_address": "",
+            "if_server_chan": True,
+            "server_chan_key": "send-key",
         },
-        webhooks=[("hook-1", _Webhook(name="值班群"))],
+        user=True,
+        webhooks=[("00000000-0000-0000-0000-000000000001", _Webhook(name="值班群"))],
     )
     notify = _Notify()
 
@@ -491,11 +454,11 @@ def test_user_target_uses_user_scope_and_warn_policy() -> None:
 def test_dispatch_honors_skip_by_name_and_by_id() -> None:
     config = _Config(
         {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfKoishiSupport": True,
+            "if_send_mail": True,
+            "to_address": "user@example.com",
+            "if_koishi_support": True,
         },
-        webhooks=[("hook-1", _Webhook()), ("hook-2", _Webhook(name="二番"))],
+        webhooks=[("00000000-0000-0000-0000-000000000001", _Webhook()), ("00000000-0000-0000-0000-000000000002", _Webhook(name="二番"))],
     )
 
     result = _run(
@@ -503,7 +466,7 @@ def test_dispatch_honors_skip_by_name_and_by_id() -> None:
             PAYLOAD,
             [_global_target(config)],
             skip_channels=("全局邮件", "全局 Koishi"),
-            skip_channel_ids=("全局 Webhook hook-1",),
+            skip_channel_ids=("全局 Webhook 00000000-0000-0000-0000-000000000001",),
             notifier=_Notify(),
         )
     )
@@ -523,10 +486,10 @@ def test_dispatch_task_report_retries_only_failed_channels() -> None:
 
     config = _Config(
         {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
+            "if_send_mail": True,
+            "to_address": "user@example.com",
+            "if_server_chan": True,
+            "server_chan_key": "send-key",
         }
     )
     task = _Task()
@@ -586,7 +549,7 @@ def test_dispatch_task_report_zero_targets_keeps_summary() -> None:
 
 
 def test_dispatch_task_report_publishes_failure_notice() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
+    config = _Config({"if_send_mail": True, "to_address": "user@example.com"})
     task = _Task()
     task.task_id = "task-1"
 
@@ -610,31 +573,23 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
 
 
 def test_descriptor_fields_exist_in_config_and_schema() -> None:
-    """描述表字段名两个方向都查：配置类里真的存在，且在下发模型里不会被静默丢弃。"""
-
-    from app.core.config import Config
-    from app.models.schema import GlobalConfig_Notify
-
+    """声明字段必须属于对应的新配置模型，不能只存在于过期 DTO。"""
+    models = {"global": Setting, "user": UserEntry}
     for channel in get_notify_channels():
-        for items in channel.fields.values():
+        for scope, items in channel.fields.items():
+            config = models[scope].build()
             for item in items:
-                Config.get(item.group, item.name)
-                assert item.name in GlobalConfig_Notify.model_fields, item.name
-        if channel.enable_field:
-            Config.get(*channel.enable_field)
-            assert channel.enable_field[1] in GlobalConfig_Notify.model_fields
+                group = getattr(config, item.group)
+                assert item.name in type(group).model_fields
+        for scope in channel.scopes:
+            if channel.enable_field:
+                group, name = channel.enable_field
+                assert name in type(getattr(models[scope].build(), group)).model_fields
 
 
-def test_channels_endpoint_returns_metadata_only() -> None:
-    from app.api.setting import get_notify_channels as endpoint
-    from app.models.ConfigBase import ConfigBase
-
-    with patch.object(
-        ConfigBase, "get", side_effect=AssertionError("描述端点不得读取配置")
-    ):
-        result = _run(endpoint())
-
-    assert result.code == 200
-    assert len(result.channels) == 8
-    assert [channel.key for channel in result.channels][0] == "system"
-    assert result.channels[-1].kind == "policy"
+def test_channel_metadata_does_not_read_runtime_config() -> None:
+    with patch.object(notify_module, "Config", None):
+        channels = get_notify_channels()
+    assert len(channels) == 8
+    assert channels[0].key == "system"
+    assert channels[-1].kind == "policy"

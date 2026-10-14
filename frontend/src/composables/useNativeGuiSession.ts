@@ -100,7 +100,10 @@ export function useNativeGuiSession(options: {
     stopping.value = true
     stoppingPromise = Promise.resolve().then(async () => {
       try {
-        await requestApi(() => Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId }), t(keys.stopFailed))
+        await requestApi(
+          () => Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId }),
+          t(keys.stopFailed)
+        )
         clearSession(keepSubscriptions)
         return true
       } catch (e) {
@@ -116,24 +119,37 @@ export function useNativeGuiSession(options: {
     return stoppingPromise
   }
 
-  const startSession = async (target: string | { scriptId: string; userId?: string }, viewOnly = false): Promise<boolean> => {
+  const startSession = async (
+    target: string | { scriptId: string; userId?: string },
+    viewOnly = false
+  ): Promise<boolean> => {
     if (configLoading.value || taskId.value) return false
     try {
       configLoading.value = true
       discardedReason = null
       if (viewOnly) throw new Error(t('scripts.viewSessionUnavailable'))
-      let selection = typeof target === 'string' ? { scriptId: target, userId: undefined as string | undefined } : target
+      let selection =
+        typeof target === 'string'
+          ? { scriptId: target, userId: undefined as string | undefined }
+          : target
       // 尚保留源码的旧编辑器只传单个 uid；通过真实集合确认其所属脚本。
       if (typeof target === 'string') {
         const scripts = await scriptsApi.getScripts()
         for (const [scriptId, script] of Object.entries(scripts.data ?? {})) {
-          if (script.users?.data?.[target]) { selection = { scriptId, userId: target }; break }
+          if (script.users?.data?.[target]) {
+            selection = { scriptId, userId: target }
+            break
+          }
         }
       }
-      const response = await requestApi(() => Service.addTaskApiDispatchStartPost({
-        ...selection,
-        mode: TaskMode.SCRIPT_CONFIG,
-      }), t(keys.startFailed))
+      const response = await requestApi(
+        () =>
+          Service.addTaskApiDispatchStartPost({
+            ...selection,
+            mode: TaskMode.SCRIPT_CONFIG,
+          }),
+        t(keys.startFailed)
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t(keys.startFailed))
       }

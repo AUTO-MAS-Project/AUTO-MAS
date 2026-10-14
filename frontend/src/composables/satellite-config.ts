@@ -1,5 +1,5 @@
 import centerIcon from '@/assets/AUTO-MAS.ico'
-import type { ScriptType } from '@/types/script'
+import type { ScriptType } from '@/types/scriptKind'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 interface SatelliteModule {

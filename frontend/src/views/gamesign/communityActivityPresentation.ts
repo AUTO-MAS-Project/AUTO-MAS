@@ -28,7 +28,7 @@ export function presentActivity(snapshot: ActivitySnapshot) {
     current: task.completed,
     target: task.target,
     status: task.status,
-    period: task.period,
+    period: task.period ?? 'daily',
   }))
   const featured = (FEATURED_RESOURCES[snapshot.game] ?? []).flatMap(name =>
     resources.filter(resource => resource.name === name)

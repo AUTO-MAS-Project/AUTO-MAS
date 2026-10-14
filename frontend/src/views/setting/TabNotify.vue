@@ -4,7 +4,11 @@ import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
 import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
 import SettingGroupRenderer from './components/SettingGroupRenderer.vue'
-import { settingFieldLabels, settingFieldTips, settingOptionLabels } from './components/settingUiText'
+import {
+  settingFieldLabels,
+  settingFieldTips,
+  settingOptionLabels,
+} from './components/settingUiText'
 
 const props = defineProps<{
   settings: SettingsViewModel
@@ -42,13 +46,20 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.notify.contentSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.contentSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
         :settings="props.settings"
         :hints="hints"
-        :include="['send_task_result_time', 'if_send_statistic', 'if_send_six_star', 'if_push_plyer']"
+        :include="[
+          'send_task_result_time',
+          'if_send_statistic',
+          'if_send_six_star',
+          'if_push_plyer',
+        ]"
         :label-keys="settingFieldLabels.notify"
         :tip-keys="settingFieldTips.notify"
         :option-labels="settingOptionLabels.notify"
@@ -57,7 +68,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.notify.systemSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.systemSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -71,7 +84,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.notify.testSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.testSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -85,7 +100,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section" v-if="notify.IfSendMail === true">
-      <div class="section-header"><h3>{{ t('setting.notify.mailSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.mailSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -100,7 +117,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section" v-if="notify.IfKoishiSupport === true">
-      <div class="section-header"><h3>{{ t('setting.notify.koishiSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.koishiSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -115,7 +134,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section" v-if="notify.IfOpenClawQQ === true">
-      <div class="section-header"><h3>{{ t('setting.notify.openclawQqSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.openclawQqSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -130,7 +151,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section" v-if="notify.IfServerChan === true">
-      <div class="section-header"><h3>{{ t('setting.notify.serverChanSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.serverChanSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="notify"
         category="Notify"
@@ -145,7 +168,9 @@ const hiddenFields = computed(() => ({
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.notify.customSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.notify.customSection') }}</h3>
+      </div>
       <WebhookManager mode="global" />
     </div>
   </div>

@@ -3,7 +3,11 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
 import SettingGroupRenderer from './components/SettingGroupRenderer.vue'
-import { settingFieldLabels, settingFieldTips, settingOptionLabels } from './components/settingUiText'
+import {
+  settingFieldLabels,
+  settingFieldTips,
+  settingOptionLabels,
+} from './components/settingUiText'
 
 const props = defineProps<{
   settings: SettingsViewModel
@@ -17,7 +21,9 @@ const hints = computed(() => props.settings.uiHints)
 <template>
   <div class="tab-content">
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.func.startupSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.func.startupSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="start"
         category="Start"
@@ -30,7 +36,9 @@ const hints = computed(() => props.settings.uiHints)
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.func.featureSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.func.featureSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="function"
         category="Function"
@@ -44,7 +52,9 @@ const hints = computed(() => props.settings.uiHints)
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.func.voiceSection') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.func.voiceSection') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="voice"
         category="Voice"
@@ -59,7 +69,9 @@ const hints = computed(() => props.settings.uiHints)
     </div>
 
     <div class="form-section">
-      <div class="section-header"><h3>{{ t('setting.display.section') }}</h3></div>
+      <div class="section-header">
+        <h3>{{ t('setting.display.section') }}</h3>
+      </div>
       <SettingGroupRenderer
         group="display"
         category="Display"
@@ -68,7 +80,9 @@ const hints = computed(() => props.settings.uiHints)
         :label-keys="settingFieldLabels.display"
         :tip-keys="settingFieldTips.display"
         :option-labels="settingOptionLabels.display"
-        :disabled-fields="{ virtual_display_mode: props.settings.Display?.IfEnableVirtualDisplay !== true }"
+        :disabled-fields="{
+          virtual_display_mode: props.settings.Display?.IfEnableVirtualDisplay !== true,
+        }"
         :handle-setting-change="props.handleSettingChange"
       />
     </div>

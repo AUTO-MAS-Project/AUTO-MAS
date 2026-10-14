@@ -27,7 +27,7 @@ const props = withDefaults(
     handleSettingChange: (
       category: SettingsCategory,
       key: string,
-      value: unknown,
+      value: unknown
     ) => Promise<boolean>
   }>(),
   {
@@ -39,7 +39,7 @@ const props = withDefaults(
     labelKeys: () => ({}),
     tipKeys: () => ({}),
     optionLabels: () => ({}),
-  },
+  }
 )
 
 const { t } = useI18n()
@@ -56,11 +56,15 @@ const sourceHints = computed<ComponentHint[]>(() => props.hints?.[props.group] ?
 const fieldHints = computed(() =>
   sourceHints.value.filter(hint => {
     const field = hint.field
-    if (!field || props.exclude.includes(field) || props.include && !props.include.includes(field)) {
+    if (
+      !field ||
+      props.exclude.includes(field) ||
+      (props.include && !props.include.includes(field))
+    ) {
       return false
     }
     return !props.hiddenFields[field]
-  }),
+  })
 )
 
 const componentName = (hint: ComponentHint) => hint.component ?? 'input'
@@ -69,7 +73,9 @@ const fieldSpan = (hint: ComponentHint) => configurationFieldSpan(componentName(
 
 const viewField = (field: string) => settingsViewKey(props.group, field)
 const fieldValue = (field: string) =>
-  Object.prototype.hasOwnProperty.call(drafts, field) ? drafts[field] : groupData.value[viewField(field)]
+  Object.prototype.hasOwnProperty.call(drafts, field)
+    ? drafts[field]
+    : groupData.value[viewField(field)]
 
 const labelFor = (field: string) => {
   const key = props.labelKeys[field]
@@ -135,9 +141,10 @@ const pickPath = (hint: ComponentHint) => {
 
   void (async () => {
     try {
-      const selected = hint.path_kind === 'file'
-        ? (await window.electronAPI.selectFile())?.[0] ?? null
-        : await window.electronAPI.selectFolder()
+      const selected =
+        hint.path_kind === 'file'
+          ? ((await window.electronAPI.selectFile())?.[0] ?? null)
+          : await window.electronAPI.selectFolder()
       if (selected) await save(field, selected)
     } catch (error) {
       message.error(t('comp.couldNotPickFile'))
@@ -166,7 +173,11 @@ const pickPath = (hint: ComponentHint) => {
           :component="hint.component"
           :label="labelFor(hint.field ?? '')"
           :model-value="fieldValue(hint.field ?? '')"
-          :disabled="hint.editable === false || disabledFields[hint.field ?? ''] === true || pending[hint.field ?? ''] === true"
+          :disabled="
+            hint.editable === false ||
+            disabledFields[hint.field ?? ''] === true ||
+            pending[hint.field ?? ''] === true
+          "
           :loading="pending[hint.field ?? ''] === true"
           :secret="hint.secret === true"
           :min="hint.min"

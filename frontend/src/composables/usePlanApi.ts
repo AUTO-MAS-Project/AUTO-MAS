@@ -29,7 +29,10 @@ const toLegacyFieldName = (key: string): string =>
     .replace(/^./, c => c.toUpperCase())
 
 const fromLegacyFieldName = (key: string): string =>
-  key.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase()
+  key
+    .replace(/([A-Z])/g, '_$1')
+    .replace(/^_/, '')
+    .toLowerCase()
 
 const normalizePlanEntry = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -50,8 +53,12 @@ const normalizePlanEntry = (value: unknown): Record<string, unknown> => {
   return result
 }
 
-const normalizePlanData = (data: Record<string, unknown> | undefined): Record<string, Record<string, unknown>> =>
-  Object.fromEntries(Object.entries(data ?? {}).map(([uid, value]) => [uid, normalizePlanEntry(value)]))
+const normalizePlanData = (
+  data: Record<string, unknown> | undefined
+): Record<string, Record<string, unknown>> =>
+  Object.fromEntries(
+    Object.entries(data ?? {}).map(([uid, value]) => [uid, normalizePlanEntry(value)])
+  )
 
 const toBackendPlanPatch = (value: unknown): unknown => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value
