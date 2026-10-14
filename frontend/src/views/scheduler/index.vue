@@ -146,7 +146,10 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
+import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref, watch } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
+import { message } from 'ant-design-vue'
+import { useTheme } from '@/composables/useTheme'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { POWER_ACTION_LABEL_KEY, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
@@ -165,6 +168,20 @@ defineOptions({ name: 'SchedulerPage' })
 const logger = window.electronAPI.getLogger('调度中心')
 
 const statusLabel = useStatusLabel()
+
+const { isDark, themeMode, appearanceId, activeAppearance } = useTheme()
+const logThemeMode = useLocalStorage('auto-mas.scheduler.log-theme', 'theme', {
+  onError: error => {
+    logger.error(`保存日志主题失败: ${String(error)}`)
+    message.error(t('scheduler.log.saveThemeFailed'))
+  },
+})
+
+// 页面统一设置默认配色，新增日志面板时保留已有手选；外观加载期间也跟随主题色。
+const resetLogThemeMode = () => {
+  logThemeMode.value = appearanceId.value ? 'theme' : isDark.value ? 'dark' : 'light'
+}
+watch([activeAppearance, appearanceId, themeMode, isDark], resetLogThemeMode, { immediate: true })
 
 // 使用业务逻辑层
 const {
@@ -286,6 +303,7 @@ onUnmounted(() => {
 // keep-alive 生命周期钩子
 onActivated(() => {
   logger.info('调度中心组件激活（路由切回）')
+  resetLogThemeMode()
   setSchedulerViewActive(true)
 })
 

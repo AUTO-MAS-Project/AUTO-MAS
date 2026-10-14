@@ -58,7 +58,7 @@ import { useTheme } from '@/composables/useTheme'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
-import { computed, nextTick, onActivated, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
 
 const { t } = useI18n()
 
@@ -79,7 +79,7 @@ const props = defineProps<Props>()
 // 解构 props 以便在模板中直接使用（保持响应性）
 const { logContent } = toRefs(props)
 
-const { isDark, themeMode, activeAppearance } = useTheme()
+const { isDark } = useTheme()
 const { token } = theme.useToken()
 const logger = window.electronAPI.getLogger('调度日志')
 // 只保存日志面板的本地显示偏好，不改变应用主题。
@@ -93,13 +93,6 @@ const logThemeMode = useLocalStorage<LogThemeMode>('auto-mas.scheduler.log-theme
     message.error(t('scheduler.log.saveThemeFailed'))
   },
 })
-
-// 应用外观包时跟随主题色，内置主题使用对应的深浅色；日志仍可临时手动切换。
-const resetLogThemeMode = () => {
-  logThemeMode.value = activeAppearance.value ? 'theme' : isDark.value ? 'dark' : 'light'
-}
-watch([activeAppearance, themeMode, isDark], resetLogThemeMode, { immediate: true })
-onActivated(resetLogThemeMode)
 const logIsDark = computed(() =>
   logThemeMode.value === 'theme' ? isDark.value : logThemeMode.value === 'dark'
 )
