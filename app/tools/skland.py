@@ -519,7 +519,7 @@ async def get_device_id(
     *,
     client: httpx.AsyncClient | None = None,
 ) -> str:
-    """获取设备ID"""
+    """获取设备 ID，对设备验证服务的间歇性拒绝做有限重试。"""
     uid = str(uuid.uuid4())
     pri_id = md5_hash(uid)[:16]
     ep = encrypt_rsa(uid, SKLAND_SM_CONFIG["publicKey"])
@@ -567,21 +567,34 @@ async def get_device_id(
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
     async def request(active_client: httpx.AsyncClient) -> str:
-        response = await active_client.post(
-            devices_info_url,
-            json=body,
-            headers={"Content-Type": "application/json"},
-            timeout=30.0,
-        )
-        resp = _parse_json_object(response)
+        # 1901 在实际请求中间歇出现；仅重试设备验证，不重放后续签到。
+        for attempt, delay in enumerate((0.0, 1.0, 2.0)):
+            if delay:
+                logger.warning(
+                    f"森空岛设备验证失败（错误码 1901），{delay:g} 秒后重试（{attempt}/2）"
+                )
+                await asyncio.sleep(delay)
+            response = await active_client.post(
+                devices_info_url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=30.0,
+            )
+            resp = _parse_json_object(response)
+            if resp.get("code") != 1901:
+                break
 
-        if resp.get("code") != 1100:
-            raise Exception(f"设备ID计算失败: {resp}")
+        code = resp.get("code")
+        if code != 1100:
+            # 只展示数值状态码，不能把上游响应或设备信息带入日志与通知。
+            code_text = f"（错误码 {code}）" if type(code) is int else ""
+            raise ValueError(f"森空岛设备验证失败{code_text}，请稍后重试")
 
         detail = resp.get("detail")
-        if not isinstance(detail, dict) or not detail.get("deviceId"):
-            raise ValueError("设备ID响应格式无效")
-        return f"B{detail['deviceId']}"
+        device_id = detail.get("deviceId") if isinstance(detail, dict) else None
+        if not isinstance(device_id, str) or not device_id.strip():
+            raise ValueError("森空岛设备验证服务返回的设备 ID 无效，请稍后重试")
+        return f"B{device_id}"
 
     if client is not None:
         return await request(client)

@@ -213,6 +213,10 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
 
     logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
 
+    # 先保留原始日志，统计解析失败时仍可据此排查。
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("".join(logs), encoding="utf-8")
+
     data = {
         "recruit_statistics": defaultdict(int),
         "drop_statistics": defaultdict(dict),
@@ -249,6 +253,9 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
             while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
                 i += 1
 
+            if i >= len(logs):
+                break  # 中止时公招结果可能尚未完整输出。
+
             if i < len(logs) and "Tags" in logs[i]:  # 识别星级
                 star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
                 if star_match:
@@ -270,9 +277,6 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
     # 和库存保持任务。
     data["drop_statistics"] = _parse_drop_statistics(logs)
 
-    # 保存日志
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("".join(logs), encoding="utf-8")
     # 保存统计数据
     log_path.with_suffix(".json").write_text(
         json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"

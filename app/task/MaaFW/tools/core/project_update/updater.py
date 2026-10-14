@@ -76,6 +76,12 @@ if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
+# 下载源选 GitHub 时补查 GitHub 版本号：单次请求超时（秒）与 Release 列表取几条。
+# 运行前每次都要查，国内直连 api.github.com 常常不通，超时给长了每次运行都白等；
+# 查不到就沿用 Mirror 酱的版本，等于退回只看 Mirror 酱。
+GITHUB_VERSION_CHECK_TIMEOUT = 10.0
+GITHUB_VERSION_CHECK_PAGE_SIZE = 20
+
 ProgressCallback = Callable[[dict[str, Any]], None]
 
 logger = logging.getLogger("automas.maafw.project_update.updater")
@@ -152,8 +158,8 @@ class MaaFWProjectUpdateDiscovery:
     plan_id: str | None = None
     project_fingerprint: str | None = None
     # 与 MaaFWProjectUpdateResult 共享的结果字段（子任务契约 §8）。
-    # ``source`` 在本对象上仍是版本元数据来源（恒为 ``mirrorchyan``）；
-    # 实际下载来源看 ``package_source``。
+    # ``source`` 在本对象上仍是版本元数据来源（恒为 ``mirrorchyan``，GitHub 源
+    # 用 GitHub 上更新的版本顶替时也不改）；实际下载来源看 ``package_source``。
     previous_version: str | None = None
     cdk_status: str = CDK_STATUS_ABSENT
     cdk_message: str = ""
@@ -247,6 +253,10 @@ class MaaFWMirrorChyanVersionCheck:
     cdk_message: str = ""
     cdk_expired_time: int | None = None
     provider_error_code: int | None = None
+    # 不是 Mirror 酱的数据：GitHub 源时比 ``version_name`` 更新、顶替它当了目标版本的
+    # GitHub Release tag，没有顶替为 None。已是最新时报「最新版本」要用它，否则会把
+    # Mirror 酱滞后的旧版本报出去。
+    superseded_by: str | None = None
 
     @property
     def fallback_reason(self) -> str:
@@ -372,9 +382,11 @@ def _host_update_target() -> ArchitectureTarget:
 def _normalise_package_source(raw_value: Any) -> str:
     """Normalize a package source name to the internal identifier.
 
-    Version metadata always comes from MirrorChyan (it answers without a CDK).
-    This value decides only where the **package** is downloaded from, and it is
-    the user's explicit choice — there is no automatic fallback between sources.
+    Version metadata comes from MirrorChyan (it answers without a CDK); with
+    the GitHub source a newer GitHub release may supersede it (see
+    :func:`_discover_project_update_detailed`).  This value decides where the
+    **package** is downloaded from, and it is the user's explicit choice —
+    there is no automatic fallback between sources.
     """
 
     value = str(raw_value or "").strip().casefold().replace("_", " ")
@@ -670,7 +682,9 @@ async def update_maafw_project_if_needed(
             updated=False,
             current_version=current_version,
             latest_version=(
-                version_check.version_name if version_check is not None else None
+                (version_check.superseded_by or version_check.version_name)
+                if version_check is not None
+                else None
             ),
             message=message,
             skipped_reason=skipped_reason or message,
@@ -849,14 +863,16 @@ async def discover_maafw_project_update(
     """Discover a newer project version and pick where to download it from.
 
     Version metadata always comes from MirrorChyan (it answers without a CDK;
-    a CDK business error 7001-7005 still yields the version).  **Where the
-    package is downloaded from is the user's explicit choice** — there is no
-    automatic fallback between sources:
+    a CDK business error 7001-7005 still yields the version).  With the GitHub
+    package source, the newest release of ``interface.github`` is consulted
+    too and wins when it is newer, so a project whose MirrorChyan upload
+    failed still updates.  **Where the package is downloaded from is the
+    user's explicit choice** — there is no automatic fallback between sources:
 
     - ``package_source="mirrorchyan"``: needs a download URL, i.e. a working
       CDK.  Missing or rejected CDK means "not installable" with a readable
       reason; it does **not** silently switch to GitHub.
-    - ``package_source="github_release"`` (the default): fetches the same
+    - ``package_source="github_release"`` (the default): fetches the target
       version from the release of ``interface.github``.  Without
       ``interface.github`` the version is reported but marked not installable.
 
@@ -956,6 +972,34 @@ async def _discover_project_update_detailed(
     latest = version_check.version_name
     send_update_log(f"version metadata source: MirrorChyan; latest={latest}")
 
+    # 下载源由用户在脚本配置里显式选定，**不做自动分流**。选 Mirror 酱就必须
+    # 自己填 CDK；CDK 缺失或不可用时明确报出原因，不悄悄换成 GitHub——用户得
+    # 知道自己在从哪下载，出问题才查得动。
+    requested = _requested_package_source(config)
+
+    # 选 GitHub 源时再问一次 GitHub，两边取较新的当目标版本。项目方往 Mirror 酱
+    # 上传失败时 Mirror 酱会一直报旧版（2026-10-14 MaaGF2Exilium v2.7.3：上传
+    # Mirror 酱的 workflow 排不上 runner 超时，GitHub Release 已发），只看 Mirror 酱
+    # 就永远等不到这一版。GitHub 查不到不阻断，沿用 Mirror 酱的版本。Mirror 酱源
+    # 不查：那边只能从 Mirror 酱下，GitHub 上有新版也装不了。
+    version_label = "Mirror酱"
+    if requested != "mirrorchyan":
+        github_latest = await _query_github_latest_version_quietly(
+            interface_model,
+            channel=channel,
+            proxy=proxy,
+            mirror_latest=latest,
+            send_log=send_update_log,
+        )
+        if _github_version_supersedes(github_latest, latest):
+            send_update_log(
+                f"GitHub Release 有更新的版本 {github_latest}"
+                f"（Mirror酱 为 {latest or '空'}），以 GitHub 为准"
+            )
+            latest = github_latest
+            version_label = "GitHub"
+            version_check.superseded_by = github_latest
+
     if not _is_remote_newer(latest, current):
         reason = f"已是最新版本: {current or latest}"
         return None, version_check, reason
@@ -977,11 +1021,6 @@ async def _discover_project_update_detailed(
         gate_reason = str(await precheck_gate(latest) or "").strip()
         if gate_reason:
             return unavailable(gate_reason)
-
-    # 下载源由用户在脚本配置里显式选定，**不做自动分流**。选 Mirror 酱就必须
-    # 自己填 CDK；CDK 缺失或不可用时明确报出原因，不悄悄换成 GitHub——用户得
-    # 知道自己在从哪下载，出问题才查得动。
-    requested = _requested_package_source(config)
 
     if requested == "mirrorchyan":
         if not mirror_cdk:
@@ -1064,12 +1103,12 @@ async def _discover_project_update_detailed(
 
     if github_discovery is None:
         return unavailable(
-            f"GitHub 仓库 {repo} 没有与 Mirror酱 版本 {latest} 匹配的 Release"
+            f"GitHub 仓库 {repo} 没有与 {version_label} 版本 {latest} 匹配的 Release"
         )
 
     if github_discovery.candidate is not None:
-        # Keep the target identity from MirrorChyan even when GitHub spells
-        # the matching tag with a conventional leading ``v``.
+        # Keep the target identity from the version check even when GitHub
+        # spells the matching tag with a conventional leading ``v``.
         github_discovery.candidate.version = latest
         github_discovery.candidate.to_version = latest
         send_update_log(f"install package source: GitHub Release; version={latest}")
@@ -1986,13 +2025,15 @@ async def _check_github_release_update(
     target_version: str = "",
     timeout: float = 30.0,
 ) -> MaaFWProjectUpdateDiscovery | None:
-    """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+    """Fetch the exact version picked by the version check from GitHub Releases.
 
     ``timeout`` is per request; the projection heal check passes a shorter one
     because it runs synchronously before a task starts.
 
     The repository is always ``interface.github``, the tag is always the
-    MirrorChyan ``version_name`` (``target_version``), and the asset is picked
+    version check's target (``target_version``: the MirrorChyan
+    ``version_name``, or a newer GitHub tag when MirrorChyan lags behind — see
+    :func:`_query_github_latest_version`), and the asset is picked
     from the release's zip files by project name, Windows x86_64 platform and
     UI-shell variant (``project_shell_hint``, falling back to the
     ``mirrorchyan_rid`` suffix).  The historical ``source_config`` keys
@@ -2109,6 +2150,158 @@ async def _check_github_release_update(
             or "GitHub release has no unambiguous matching package asset"
         ),
     )
+
+
+async def _query_github_latest_version(
+    interface_model: MaaFWInterface,
+    *,
+    channel: str,
+    proxy: httpx.Proxy | None,
+    major: int | None = None,
+    timeout: float = GITHUB_VERSION_CHECK_TIMEOUT,
+) -> str:
+    """``interface.github`` 上当前渠道的最新 Release tag；没有可用的返回空串。
+
+    ``major`` 给了就只在这个主版本号里挑（理由见 :func:`_github_version_supersedes`）。
+
+    只用来补 Mirror 酱的滞后，下载仍按版本号精确找 Release
+    （:func:`_check_github_release_update`）。stable 只认正式版：GitHub 标了
+    预发布的、tag 带预发布段（``-beta.1``）的都不算；beta 连预发布一起看，但不收
+    alpha 与 dev 段（Mirror 酱的 beta 渠道也不给 alpha）；草稿一律不看。tag 解析
+    不出版本号的跳过——比不出大小的 tag 不能拿去顶替 Mirror 酱的版本。取列表而不是
+    ``/releases/latest``：后者按发布时间取、不看版本号，也排除不了没标预发布的 beta tag。
+
+    网络或接口出错照常抛（``httpx.HTTPError`` / :class:`MaaFWProjectUpdateError`），
+    要不要降级由调用方定；仓库不存在或无权访问（404）也算出错，免得日志里看着像
+    「查过了、没有新版」。``timeout`` 是整次请求的总时限：httpx 的超时只管单次读写，
+    响应一点点往回滴时可以远超它，而这一步挡在每次运行前面。
+    """
+
+    repo = _normalize_github_repo(str(interface_model.github or ""))
+    if not repo:
+        return ""
+    headers = dict(HTTP_HEADERS)
+    headers["Accept"] = "application/vnd.github+json"
+    try:
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient(
+                proxy=proxy, follow_redirects=True, timeout=timeout
+            ) as client:
+                response = await client.get(
+                    f"https://api.github.com/repos/{repo}/releases",
+                    params={"per_page": GITHUB_VERSION_CHECK_PAGE_SIZE},
+                    headers=headers,
+                )
+    except TimeoutError as exc:
+        raise MaaFWProjectUpdateError(
+            f"GitHub release list timed out after {timeout:g}s"
+        ) from exc
+    if response.status_code == 404:
+        raise MaaFWProjectUpdateError(
+            f"GitHub repository {repo} not found or not accessible: HTTP 404"
+        )
+    try:
+        data = response.json()
+    except Exception as exc:
+        raise MaaFWProjectUpdateError(
+            f"GitHub release list did not return JSON: HTTP {response.status_code}"
+        ) from exc
+    if response.status_code >= 400:
+        message = (
+            str(data.get("message") or "").strip() if isinstance(data, dict) else ""
+        )
+        raise MaaFWProjectUpdateError(
+            f"GitHub release list failed: HTTP {response.status_code} {message}"
+        )
+    if not isinstance(data, list):
+        raise MaaFWProjectUpdateError("GitHub release list returned invalid JSON shape")
+
+    stable_only = channel == "stable"
+    best_tag = ""
+    best_version: version.Version | None = None
+    for release in data:
+        if not isinstance(release, dict) or release.get("draft") is True:
+            continue
+        tag = str(release.get("tag_name") or "").strip()
+        parsed = _parse_release_version(tag)
+        if parsed is None:
+            continue
+        if stable_only and (release.get("prerelease") is True or parsed.is_prerelease):
+            continue
+        if parsed.dev is not None or (parsed.pre is not None and parsed.pre[0] == "a"):
+            continue
+        if major is not None and parsed.major != major:
+            continue
+        if best_version is None or parsed > best_version:
+            best_tag, best_version = tag, parsed
+    return best_tag
+
+
+async def _query_github_latest_version_quietly(
+    interface_model: MaaFWInterface,
+    *,
+    channel: str,
+    proxy: httpx.Proxy | None,
+    mirror_latest: str,
+    send_log: Callable[[str], None],
+) -> str:
+    """:func:`_query_github_latest_version` 的不抛版本：出错记一行日志、返回空串。
+
+    只在 Mirror 酱版本的主版本号里挑；Mirror 酱的版本号解析不了时不查——
+    比不出大小，查回来也顶替不了（:func:`_github_version_supersedes`）。
+    """
+
+    if not _normalize_github_repo(str(interface_model.github or "")):
+        return ""
+    mirror_version = _parse_release_version(mirror_latest)
+    if mirror_latest.strip() and mirror_version is None:
+        return ""
+    try:
+        github_latest = await _query_github_latest_version(
+            interface_model,
+            channel=channel,
+            proxy=proxy,
+            major=mirror_version.major if mirror_version is not None else None,
+        )
+    except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
+        detail = _sanitize_log_message(str(exc)) or type(exc).__name__
+        send_log(f"GitHub 版本查询失败，沿用 Mirror酱 的版本: {detail}")
+        return ""
+    send_log(f"version metadata source: GitHub Release; latest={github_latest or '无'}")
+    return github_latest
+
+
+def _github_version_supersedes(github_latest: str, mirror_latest: str) -> bool:
+    """GitHub 的版本能否顶替 Mirror 酱的：严格更新才算，两边都要解析得出版本号。
+
+    Mirror 酱没给版本号时 GitHub 有就用；Mirror 酱给的解析不了时不顶替——
+    比不出大小，宁可沿用 Mirror 酱。主版本号还得相同：仓库里混着 ``2026.10.14``、
+    ``5`` 这类别的编号体系的 tag 时，它们按版本号恒大于 ``v2.7.3``，一旦被选中装上，
+    当前版本就成了它，Mirror 酱再也比不过、从此不再更新。项目真升主版本而 Mirror 酱
+    恰好滞后时漏掉这一次，等于退回只看 Mirror 酱，代价小得多。
+    """
+
+    github_version = _parse_release_version(github_latest)
+    if github_version is None:
+        return False
+    if not mirror_latest.strip():
+        return True
+    mirror_version = _parse_release_version(mirror_latest)
+    return (
+        mirror_version is not None
+        and github_version.major == mirror_version.major
+        and github_version > mirror_version
+    )
+
+
+def _parse_release_version(raw_version: str) -> version.Version | None:
+    value = _normalize_version(raw_version)
+    if not value:
+        return None
+    try:
+        return version.parse(value)
+    except version.InvalidVersion:
+        return None
 
 
 def _build_update_discovery(

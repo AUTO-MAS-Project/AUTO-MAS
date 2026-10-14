@@ -401,7 +401,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
 
         extra = _maafw_update_extra_fields(discovery)
         candidate = getattr(discovery, "candidate", None)
-        # discovery.source 是版本元数据来源（恒为 Mirror 酱）；响应里的 source
+        # discovery.source 是版本元数据来源（恒标 Mirror 酱，GitHub 源取了 GitHub 上
+        # 更新的版本时也一样）；响应里的 source
         # 要回答「会从哪里下载」：优先候选包来源，其次核心包的 package_source。
         # 一律用对外名（mirrorchyan / github）：candidate.source 是核心包的内部
         # 名（github_release），直接回给前端会让「下载来源」显示成 github_release。
