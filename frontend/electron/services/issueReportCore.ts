@@ -298,6 +298,12 @@ function readDiagnosticContent(filePath: string): Buffer {
     if (json !== undefined) {
       return Buffer.from(`${JSON.stringify(sanitizeJsonValue(json), null, 2)}\n`, 'utf-8')
     }
+    // 解析不了（带注释的 JSONC 等）走文本规则；字符串里斜杠写成转义的地址在原文上匹配
+    // 不到，再把字面量逐个解码过一遍同一套规则。先整段过文本规则，按键名的赋值规则才认得出
+    return Buffer.from(
+      maskJsonStringLiterals(sanitizeText(rawText), sanitizeText, raw => raw),
+      'utf-8'
+    )
   }
   return Buffer.from(sanitizeText(rawText), 'utf-8')
 }
@@ -457,10 +463,110 @@ export function addDiagnosticFile(
   }
 }
 
+/** 原文（未解码）里的主目录：原样、JSON 转义（反斜杠加倍）、正斜杠三种写法都换成 <HOME>。 */
+function maskHomeInRawText(text: string, homePath: string): string {
+  if (!homePath) return text
+  // 先换最长的转义形式，免得原样形式先吃掉其中一段
+  const variants = [homePath.replace(/\\/g, '\\\\'), homePath, homePath.replace(/\\/g, '/')]
+  let masked = text
+  for (const variant of [...new Set(variants)]) {
+    masked = masked.split(variant).join('<HOME>')
+  }
+  return masked
+}
+
+/** 已解码的字符串值里的主目录：原样、正斜杠两种写法。 */
+function maskHomeInValue(value: string, homePath: string): string {
+  if (!homePath) return value
+  let masked = value
+  for (const variant of [...new Set([homePath, homePath.replace(/\\/g, '/')])]) {
+    masked = masked.split(variant).join('<HOME>')
+  }
+  return masked
+}
+
+const maskRawSegment = (text: string, homePath: string) =>
+  maskHomeInRawText(maskUrlSecrets(text), homePath)
+
+/**
+ * 按 JSONC 扫描原文里的字符串字面量（跳过 // 与 /* *\/ 注释）：能解码的字面量把解码后的值交给
+ * maskValue，有变化才用 JSON.stringify 换掉这个字面量，没变化的原样保留；字面量之外的部分
+ * （注释、结构）与解码失败的字面量交给 maskRaw。不抛错。
+ */
+function maskJsonStringLiterals(
+  text: string,
+  maskValue: (value: string) => string,
+  maskRaw: (raw: string) => string
+): string {
+  const parts: string[] = []
+  let rawStart = 0
+  let index = 0
+  const flushRaw = (end: number) => {
+    if (end > rawStart) parts.push(maskRaw(text.slice(rawStart, end)))
+  }
+  while (index < text.length) {
+    const char = text[index]
+    if (char === '/' && text[index + 1] === '/') {
+      const newline = text.indexOf('\n', index)
+      index = newline < 0 ? text.length : newline
+      continue
+    }
+    if (char === '/' && text[index + 1] === '*') {
+      const close = text.indexOf('*/', index + 2)
+      index = close < 0 ? text.length : close + 2
+      continue
+    }
+    if (char !== '"') {
+      index += 1
+      continue
+    }
+    // 字符串字面量：到下一个没被转义的引号为止；碰到换行（JSON 里不合法）就当坏字面量收尾
+    let end = index + 1
+    while (end < text.length && text[end] !== '"' && text[end] !== '\n') {
+      end += text[end] === '\\' ? 2 : 1
+    }
+    const closed = end < text.length && text[end] === '"'
+    const literalEnd = closed ? end + 1 : Math.min(end, text.length)
+    flushRaw(index)
+    const literal = text.slice(index, literalEnd)
+    let decoded: unknown
+    try {
+      decoded = closed ? JSON.parse(literal) : undefined
+    } catch {
+      decoded = undefined
+    }
+    if (typeof decoded === 'string') {
+      const masked = maskValue(decoded)
+      parts.push(masked === decoded ? literal : JSON.stringify(masked))
+    } else {
+      parts.push(maskRaw(literal))
+    }
+    index = literalEnd
+    rawStart = literalEnd
+  }
+  flushRaw(text.length)
+  return parts.join('')
+}
+
+/**
+ * 给 JSON / JSONC 原文打码而不改动原文的其余部分：推送地址密钥与用户主目录。
+ *
+ * 字符串字面量按 JSON 解码后再打码：斜杠写成反斜杠转义或 \uXXXX 转义的地址在原文上匹配不到
+ * 地址规则，解码后才认得出。字面量之外的部分与解码失败的字面量按原文打码。不抛错。
+ */
+export function maskVerbatimJsonText(text: string, homePath: string): string {
+  return maskJsonStringLiterals(
+    text,
+    value => maskHomeInValue(maskUrlSecrets(value), homePath),
+    raw => maskRawSegment(raw, homePath)
+  )
+}
+
 /**
  * 按原文收一个文本文件，只把用户主目录换成 <HOME>、给推送地址里的密钥打码，不按键名打码。
  * 给项目自带的声明文件用（MFW 的 interface.json）：里面的 path 是项目内的相对路径，是排查资源
  * 加载的关键，按键名规则会被整段换成 ***；带注释的 JSONC 走文本规则还会被改坏。
+ * 打码见 maskVerbatimJsonText（字符串字面量解码后再打码，转义写法的地址也认得出）。
  * 放不下时退回 addDiagnosticFile 的截断与脱敏。
  */
 export function addVerbatimTextFile(
@@ -486,17 +592,10 @@ export function addVerbatimTextFile(
   }
   let content: Buffer
   try {
-    let text = maskUrlSecrets(fs.readFileSync(sourcePath, 'utf-8'))
-    const homePath = os.homedir()
-    if (homePath) {
-      // 原文是 JSON：Windows 路径写成反斜杠加倍的转义形式，也可能写成正斜杠，三种都换。
-      // 先换最长的转义形式，免得原样形式先吃掉其中一段
-      const variants = [homePath.replace(/\\/g, '\\\\'), homePath, homePath.replace(/\\/g, '/')]
-      for (const variant of [...new Set(variants)]) {
-        text = text.split(variant).join('<HOME>')
-      }
-    }
-    content = Buffer.from(text, 'utf-8')
+    content = Buffer.from(
+      maskVerbatimJsonText(fs.readFileSync(sourcePath, 'utf-8'), os.homedir()),
+      'utf-8'
+    )
   } catch (error) {
     addSkippedEntry(state, archivePath, stat.size, `读取文本文件失败: ${String(error)}`)
     return
