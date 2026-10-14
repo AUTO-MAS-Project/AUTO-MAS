@@ -200,6 +200,13 @@ _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
 # 云原神无本地安装路径概念，不参与存活客户端与用户路径的一致性比较
 _BGI_LOCAL_GAME_PROCESS_NAMES: tuple[str, ...] = ("YuanShen.exe", "GenshinImpact.exe")
 
+# 多用户连跑：上一用户收尾 taskkill /F 返回 ≠ 进程已从系统快照消失（原神
+# 提交内存大，内核异步回收需数秒），下一用户的「已在运行」检测会扫到正在
+# 回收的进程而误判跳过启动（2026-10-14 实机：3 账号连跑第 2 个切号必失败）。
+# 收尾后等游戏进程完全退出再放行下一用户；上限对齐切号的窗口等待宽限期。
+_GAME_EXIT_WAIT_SECONDS = 120.0
+_GAME_EXIT_POLL_INTERVAL = 1.0
+
 # 用户服务器（Switch.Resource）→ 应使用的客户端渠道；客户端渠道由
 # game_info.detect_channel 识别（config.ini channel/cps + 主程序名）
 _RESOURCE_EXPECTED_CHANNEL: dict[str, str] = {
@@ -1785,6 +1792,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 任务结束后关闭原神游戏进程（Game.CloseOnFinish）
         await self._close_game()
+        # 多用户连跑：等游戏进程完全退出后再放行下一用户（防回收期残影误判）
+        await self._wait_game_exit_before_next_user()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
@@ -2050,6 +2059,42 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await self._push_dispatch_log("任务结束，正在关闭游戏进程")
         await self._kill_game_processes(_BGI_GAME_PROCESS_NAMES)
         await self._push_dispatch_log("游戏进程已关闭")
+
+    async def _wait_game_exit_before_next_user(self) -> None:
+        """多用户切换：等上一用户的原神进程完全退出后再进下个用户。
+
+        taskkill /F 返回只代表终止请求已发出，内核回收大体积游戏进程是异步
+        的，进程快照仍会短暂看到它；不等其完全退出，下一用户的「已在运行」
+        检测会误判跳过启动，切号在窗口等待上空转满宽限期后失败。仅在还有
+        下一个用户且本次收尾确实关闭了游戏（CloseOnFinish）时等待；最后一个
+        用户与不关游戏的配置不等待——下个用户本就要复用运行中的游戏。
+        手动停止后不再切换用户，跳过等待但继续完成其余收尾。
+        """
+        if self.script_info.current_index >= len(self.script_info.user_list) - 1:
+            return
+        if not self.script_config.get("Game", "CloseOnFinish"):
+            return
+        deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            # 收尾屏蔽取消，停止发生在等待期间时读取调度器同步置位的取消标志。
+            if self.stopped_manually or getattr(
+                self.task_info, "replay_cancelled", False
+            ):
+                return
+            # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
+            # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
+            alive = False
+            for name in _BGI_LOCAL_GAME_PROCESS_NAMES:
+                if await asyncio.to_thread(find_pids_by_name, name):
+                    alive = True
+                    break
+            if not alive:
+                logger.info("原神游戏进程已完全退出，继续下一用户")
+                return
+            await asyncio.sleep(_GAME_EXIT_POLL_INTERVAL)
+        logger.warning(
+            f"等待原神游戏进程退出超时（{_GAME_EXIT_WAIT_SECONDS:g}s），继续下一用户"
+        )
 
     async def _bgi_alive(self) -> bool:
         """是否还有任意 BetterGI 存活。

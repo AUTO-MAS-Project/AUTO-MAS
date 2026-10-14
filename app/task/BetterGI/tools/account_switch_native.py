@@ -70,6 +70,7 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.task.proxy_helpers import find_pids_by_name
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
@@ -292,6 +293,11 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
+def _genshin_process_alive() -> bool:
+    """是否仍有原神本地客户端进程存活（窗口等待期的快速失败判定）。"""
+    return any(find_pids_by_name(name) for name in _GENSHIN_PROCESS_NAMES)
+
+
 def _find_game_hwnd(*, wait: bool = True) -> int:
     """按所属进程名定位原神主窗口（官服 YuanShen / 国际服 GenshinImpact）。
 
@@ -303,7 +309,8 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             吸收 MAS 拉起游戏后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到原神游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到原神游戏窗口；或等待期间原神进程
+            已全部退出（窗口不会再出现）时提前抛出。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
     while True:
@@ -325,6 +332,14 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
+        if not _genshin_process_alive():
+            # 原神进程已全部退出：窗口不可能再出现，继续轮询只会空转满宽限期，
+            # 且「窗口暂未就绪」的日志会误导排查（2026-10-14 实机：等待期一直
+            # 打「进程已启动」，实际进程早已消失）。快速如实失败。
+            raise RuntimeError(
+                f"原神游戏进程已退出（{_GENSHIN_PROCESS_NAMES}），窗口不会再出现，"
+                "请确认游戏已由 MAS 成功启动"
+            )
         logger.info(
             f"原神游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
