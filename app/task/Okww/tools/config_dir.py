@@ -28,6 +28,7 @@ app/core/config.py，迁入本模块由 OK-WW 专项自己维护。
 import shutil
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from app.core import Config
 from app.models.config import OkwwConfig
@@ -40,6 +41,7 @@ from ..AutoProxy import (
     _okww_config_base,
     _okww_mas_config_dir,
 )
+from .backup_archive import mas_config_dir
 
 logger = get_logger("OK-WW 配置目录")
 
@@ -103,4 +105,47 @@ async def ensure_user_config_dir(script_id: str, user_id: str, base: str) -> Pat
     logger.info(
         f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {target_config_dir.parent.name}"
     )
+    return target_config_dir
+
+
+async def import_script_config_dir(script_id: str, user_id: Optional[str]) -> Path:
+    """从 OK-WW 脚本目录导入当前配置，覆盖 MAS 用户配置目录。
+
+    Args:
+        script_id: OK-WW 脚本 ID。
+        user_id: 目标用户 ID；``None`` 表示共享来源（写入 Default 目录）。
+
+    Returns:
+        被覆盖写入的 MAS 用户配置目录。
+
+    Raises:
+        TypeError: 脚本不是 OK-WW 类型。
+        FileNotFoundError: 脚本目录下没有可用的 OK-WW 配置。
+    """
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, OkwwConfig):
+        raise TypeError(f"脚本配置类型错误: {script_id} 不是 OK-WW 类型")
+
+    source_config_dir = (
+        Path(script_config.get("Info", "RootPath")).expanduser() / _OKWW_REL_CONFIG_DIR
+    )
+    if not source_config_dir.is_dir() or not any(
+        item.is_file() for item in source_config_dir.rglob("*")
+    ):
+        raise FileNotFoundError("未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置")
+
+    target_config_dir = mas_config_dir(script_id, user_id or "Default")
+    temporary_path = target_config_dir.with_name(
+        f".{target_config_dir.name}.{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        shutil.copytree(source_config_dir, temporary_path)
+        target_config_dir.parent.mkdir(parents=True, exist_ok=True)
+        force_rmtree(target_config_dir)
+        temporary_path.rename(target_config_dir)
+    finally:
+        force_rmtree(temporary_path)
+
+    logger.info(f"{script_id} - {user_id or 'Default'} 已从 OK-WW 目录导入配置文件")
     return target_config_dir

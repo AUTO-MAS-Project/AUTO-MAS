@@ -600,11 +600,12 @@ export default {
     noConfigurationImportedYet: '設定はまだインポートされていません',
     whenHighTrafficSettings:
       'オンにすると、実行前にこのページの主要な設定で MaaEnd のタスクを上書きします。オフの場合は設定ファイル内のタスク設定をそのまま実行します',
-    maaEndOpenConfig: 'MaaEnd の設定画面を開く',
-    maaEndOpenConfigSharedTip:
-      'MaaEnd の設定画面で、このマネージドスクリプト配下の全アカウントで共有する共有設定を編集します。',
-    maaEndOpenConfigIndependentTip:
-      'MaaEnd の設定画面で、このアカウント専用の独立設定を編集します（他のアカウントには影響しません）。',
+    configSourceActions: '設定操作',
+    openConfigWindow: '{script} の設定画面を開く',
+    configActionsTargetShared: 'この共有の基本設定',
+    configActionsTargetIndependent: 'このアカウントの独立の基本設定',
+    configActionsImpactShared: 'このマネージドスクリプト配下の全アカウントで共有します',
+    configActionsImpactIndependent: '他のアカウントには影響しません',
     maaEndDailyOnceTasks: '1日1回だけ実行するタスク',
     maaEndDailyOnceTasksHint:
       '配達と自動採集は選択不要で1日1回のみ実行します。選択した日常タスクも正常完了後はスキップします。失敗時は再試行でき、毎日中国時間の午前4時にリセットします',
@@ -1452,6 +1453,9 @@ export default {
     overlayConfigDisabledDesc:
       'タスクは基本設定をそのまま使用します。通常設定を上書きしない場合、MAS はスクリプトを起動するだけで、この画面の上書き項目は反映されません。',
     configSemanticsTitle: 'このタスクで有効な設定',
+    configSemanticsEffectOn: '{target} を一時的に上書きし、タスク終了後に復元します',
+    configSemanticsEffectOff: '{target} は変更しません',
+    configSemanticsTargetNative: 'スクリプト本来の設定',
     configSemanticsSharedOffTitle: '共有の基本設定をそのまま使用',
     configSemanticsSharedOffDesc:
       'タスクはこのマネージドの共有の基本設定で実行されます。通常設定を上書きしない場合、MAS はスクリプトを起動するだけで、この共有の基本設定自体を変更することはありません。',

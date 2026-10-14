@@ -112,8 +112,9 @@
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
       <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
+      <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
       <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
-      <p v-if="semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
     </div>
   </a-form-item>
 </template>
@@ -162,6 +163,12 @@ const props = withDefaults(
     quickConfigDisabled?: boolean
     /** overlay 值由配置来源派生（BetterGI）：只读展示，卡片置灰且接不到变更 */
     quickConfigReadonly?: boolean | undefined
+    /**
+     * 是否在语义面板里渲染「界面入口」说明（gui）。
+     * 调用方已有自己的「配置操作」块、把这句话放到操作按钮下方时传 false，
+     * 免得同一句既挂在配置来源下、又挂在配置操作下，反而看不清「选什么就改什么」。
+     */
+    showGuiHint?: boolean
   }>(),
   {
     options: undefined,
@@ -169,6 +176,7 @@ const props = withDefaults(
     quickConfig: undefined,
     quickConfigDisabled: undefined,
     quickConfigReadonly: undefined,
+    showGuiHint: true,
   }
 )
 
@@ -378,6 +386,15 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   margin: 0;
   color: var(--ant-color-text);
   font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 改动范围：一句话点明这次任务改的是哪一份配置，比下面的细节行更重，便于一眼扫到重点 */
+.config-effective-effect {
+  margin: 0;
+  color: var(--ant-color-text);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
 }

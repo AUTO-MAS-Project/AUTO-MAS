@@ -52,6 +52,27 @@ describe('base ⊕ overlay 生效语义', () => {
     }
   })
 
+  it('改动范围一句话点明这次任务改的是哪一份配置，六个子态各不相同', () => {
+    const effects = (['shared', 'independent', 'native'] as const).flatMap(kind =>
+      (['off', 'on'] as const).map(state => {
+        const [base, quick] = kindOf[kind][state]
+        const { effect } = composeConfigSemantics(base, quick, t)
+        if (state === 'off') {
+          expect(effect).toMatch(/^不改动/)
+        } else {
+          expect(effect).toContain('临时覆写')
+          expect(effect).toContain('任务结束自动恢复')
+        }
+        return effect
+      })
+    )
+    expect(new Set(effects).size).toBe(6)
+    // 目标沿用「配置操作」块的落点说法，两处指的是同一个东西
+    expect(effects[0]).toBe('不改动这份共享基础配置')
+    expect(effects[1]).toBe('临时覆写这份共享基础配置，任务结束自动恢复')
+    expect(effects[4]).toBe('不改动脚本自带的原生配置')
+  })
+
   it('说明不是「A + B」式短语拼接，每个子态都有独立的一段解释', () => {
     const notes = (['shared', 'independent', 'native'] as const).flatMap(kind =>
       (['off', 'on'] as const).map(state => {
@@ -69,6 +90,7 @@ describe('base ⊕ overlay 生效语义', () => {
     for (const base of ['shared', 'independent', 'native'] as const) {
       expect(composeConfigSemantics(base, undefined, t)).toEqual({
         formula: '',
+        effect: '',
         note: '',
         gui: '',
       })
@@ -97,6 +119,11 @@ describe('base ⊕ overlay 生效语义', () => {
   })
 
   it('未知 base 值不渲染语义', () => {
-    expect(composeConfigSemantics('', true, t)).toEqual({ formula: '', note: '', gui: '' })
+    expect(composeConfigSemantics('', true, t)).toEqual({
+      formula: '',
+      effect: '',
+      note: '',
+      gui: '',
+    })
   })
 })

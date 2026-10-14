@@ -96,19 +96,6 @@
             </a-row>
 
             <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Base"
-                  :options="okwwConfigModeOptions"
-                  :disabled="pageLoading"
-                  :saving="isSaving"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="pageLoading || isInitializing || isSaving"
-                  :alert-message="t('edit.configSourceHintBase')"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
@@ -206,6 +193,48 @@
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
             </a-form-item>
+          </div>
+        </a-form>
+      </a-card>
+
+      <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / MAA 共用同一套面板 -->
+      <a-card class="config-card" :loading="pageLoading">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <div class="form-section">
+            <div class="section-header">
+              <h3>{{ t('edit.configurationSource') }}</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.Base"
+                  :options="okwwConfigModeOptions"
+                  :disabled="pageLoading"
+                  :saving="isSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-disabled="pageLoading || isInitializing || isSaving"
+                  :alert-message="t('edit.configSourceHintBase')"
+                  :show-gui-hint="false"
+                  @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
+                />
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <ConfigActionsSection
+                  :base="formData.Info.Base"
+                  script-label="ok-ww"
+                  :disabled="pageLoading || showOkwwConfigMask || configLocked"
+                  :config-loading="okwwConfigLoading"
+                  :configuring="showOkwwConfigMask"
+                  :import-loading="okwwImportLoading"
+                  @configure="handleOkwwConfig"
+                  @import-config="handleImportOkwwConfig"
+                  @script-config="handleScriptConfig"
+                />
+              </a-col>
+            </a-row>
           </div>
         </a-form>
       </a-card>
@@ -383,6 +412,7 @@ import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+import ConfigActionsSection from './ConfigActionsSection.vue'
 
 const { t } = useI18n()
 
@@ -390,7 +420,7 @@ const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, importScriptConfigFile } = useScriptApi()
 const {
   okwwConfigLoading,
   okwwTaskId,
@@ -401,6 +431,7 @@ const {
   saveSession,
   stopSession,
 } = useOkwwGuiSession()
+const okwwImportLoading = ref(false)
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -628,6 +659,34 @@ const handleOkwwConfig = async () => {
   if (configLocked.value) return
   if (!userId.value) return
   await startSession(userId.value)
+}
+
+const handleImportOkwwConfig = async () => {
+  if (configLocked.value) return
+  okwwImportLoading.value = true
+  try {
+    if (formData.Info.Base === 'native') throw new Error('原生来源直接使用 ok-ww 原有配置，无需导入')
+    const response = await importScriptConfigFile(
+      scriptId,
+      formData.Info.Base === 'shared' ? null : userId.value
+    )
+    if (response.code !== 200) throw new Error(response.message || '导入脚本配置文件失败')
+    const importTarget =
+      formData.Info.Base === 'shared'
+        ? t('comp.configSourceShared')
+        : t('comp.configSourceIndependent')
+    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
+  } finally {
+    okwwImportLoading.value = false
+  }
+}
+
+// 编辑托管设置：ok-ww 页没有路由守卫，先显式停会话再跳转。
+const handleScriptConfig = () => {
+  void stopSession()
+  router.push(`/scripts/${scriptId}/edit/okww`)
 }
 
 const handleSaveOkwwConfig = () => {
