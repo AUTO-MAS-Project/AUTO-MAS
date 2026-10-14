@@ -471,9 +471,10 @@ def _merge_maa_changes(
     drop_missing: bool = True,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
-    """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
+    """把 MAA 运行期配置相对基线快照的变更原地合并进来源存档。
 
-    只透传运行期(相对基线)真正发生的变更, 新增与修改透传、删除不透传; MAS 托管
+    只透传运行期(相对基线)真正发生的变更; drop_missing 为 True 时, 删除仅在
+    存档值仍与基线相同的键上透传, 保留来源独有或被 MAS 临时覆盖的配置。MAS
     注入自己改写的键(baseline 与 current 相同、仅与存档不同)不能被带回存档,
     否则运行一次就会把用户自己的配置抹成注入值。顶层结构不匹配(如写盘半截被
     截断)整体跳过。
@@ -518,6 +519,11 @@ def _merge_maa_changes(
             elif base_value != value and archive.get(key) != value:
                 archive[key] = deepcopy(value)
                 changed = True
+        if drop_missing:
+            for key in baseline.keys() - current.keys():
+                if key in archive and archive[key] == baseline[key]:
+                    del archive[key]
+                    changed = True
     return changed
 
 
