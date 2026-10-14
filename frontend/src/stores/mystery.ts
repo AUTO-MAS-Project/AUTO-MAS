@@ -103,7 +103,12 @@ export const useMysteryStore = defineStore('mystery', () => {
       const checkedContext = context.value
       const checkedFingerprint = fingerprint.value
       if (!checkedContext) return false
-      if (!(await window.electronAPI.verifyMysteryAccessCode(accessCode, checkedContext)))
+      if (
+        !(await window.electronAPI.verifyMysteryAccessCode(accessCode, {
+          deviceHash: checkedContext.deviceHash,
+          backendHash: checkedContext.backendHash,
+        }))
+      )
         return false
       if (checkedDate !== getMysteryDate() || checkedContext !== context.value) return false
 
