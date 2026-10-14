@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Literal
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -100,6 +100,9 @@ from .queue_cycle import (
 from .ws import MainConnection, Publisher, protocol
 
 System = LazyProxy("app.services", "System")
+
+if TYPE_CHECKING:
+    from .notify import TaskCommunitySignNotification
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
@@ -329,6 +332,9 @@ class _ReplayRequest:
 
 @dataclass
 class TaskInfo(TaskItem):
+    community_sign_notification: "TaskCommunitySignNotification | None" = field(
+        default=None, init=False, repr=False
+    )
     replay_cancelled: bool = field(default=False, init=False, repr=False)
     _replay_runs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _replay_active: dict[str, int] = field(default_factory=dict, init=False, repr=False)
@@ -681,6 +687,7 @@ class Task(TaskExecuteBase):
             )
             for script_id in script_ids
         ]
+        self.task_info.schedule_on_change()
 
         logger.success(
             f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
@@ -1143,8 +1150,9 @@ class Task(TaskExecuteBase):
             await self._run_cycle_task()
             return
 
-        # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
+        # 签到在后台并行执行；完成事件由通知层接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
+            from app.core.notify import TaskCommunitySignNotification
             from app.core.timer import MainTimer
 
             sign_source = {
@@ -1152,8 +1160,10 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.community_results = await MainTimer.try_community_for_task(
-                source=sign_source
+            community_sign = TaskCommunitySignNotification(self.task_info)
+            self.task_info.community_sign_notification = community_sign
+            MainTimer.schedule_community_for_task(
+                source=sign_source, on_completed=community_sign.receive
             )
 
         await self.prepare()
@@ -1391,6 +1401,9 @@ class Task(TaskExecuteBase):
             )
 
         logger.info(f"任务结束: {self.task_info.task_id}")
+
+        if self.task_info.community_sign_notification is not None:
+            self.task_info.community_sign_notification.finish()
 
         # 完成面板文本带采集节点详情（与推送报告同源渲染），
         # 未配置推送的用户在调度台也能看到
@@ -1951,7 +1964,9 @@ class _TaskManager:
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
             # 倒计时进度由电源任务经 power.countdown.updated 持续推送
-            await System.start_power_task()
+            from app.core.timer import MainTimer
+
+            await System.start_power_task(before_power=MainTimer.drain_community_tasks)
 
     async def stop_task(self, task_id: str) -> None:
         """

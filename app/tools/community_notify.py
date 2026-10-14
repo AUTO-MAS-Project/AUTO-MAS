@@ -21,6 +21,7 @@
 
 
 import re
+from collections.abc import Iterable
 from html import escape
 from html.parser import HTMLParser
 from io import BytesIO
@@ -30,7 +31,7 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core import Config
-from app.core.notify import DispatchResult, dispatch, global_target
+from app.core.notify import DispatchResult, NotifyTarget, dispatch, global_target
 from app.models.notification import NotificationImage, NotifyPayload
 from app.utils.logger import get_logger
 
@@ -563,6 +564,9 @@ def build_community_notification_payload(
 
 async def dispatch_community_notification(
     results: list[dict[str, object]],
+    *,
+    targets: list[NotifyTarget] | None = None,
+    skip_channel_ids: Iterable[str] = (),
 ) -> DispatchResult:
     """分发社区通知并保留完整渠道结果，供新旧入口共同使用。"""
     results = _notification_results(results)
@@ -572,13 +576,14 @@ async def dispatch_community_notification(
     payload = build_community_notification_payload(results)
     return await dispatch(
         payload,
-        [global_target(include_system=True)],
+        targets if targets is not None else [global_target(include_system=True)],
         attempts=NOTIFICATION_SEND_ATTEMPTS,
         retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
+        skip_channel_ids=skip_channel_ids,
     )
 
 
-async def _report_notification_failure(failed_channels: list[str]) -> None:
+async def report_community_notification_failure(failed_channels: list[str]) -> None:
     """通知渠道级失败改用系统提示回传，不让发送结果只留在日志里。
 
     Args:
@@ -603,15 +608,17 @@ async def push_community_notification(
     dispatch_result = await dispatch_community_notification(results)
     failed_channels = list(dispatch_result.failed)
     if failed_channels:
-        await _report_notification_failure(failed_channels)
+        await report_community_notification_failure(failed_channels)
     return failed_channels
 
 
 __all__ = [
     "append_task_community_summary",
+    "dispatch_community_notification",
     "format_community_notification",
     "format_community_task_summary",
     "get_task_community_summary",
     "mark_task_community_summary_consumed",
     "push_community_notification",
+    "report_community_notification_failure",
 ]
