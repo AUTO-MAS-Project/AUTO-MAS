@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from app.models.task import TaskItem, TaskScriptItem
     from app.plugin.base.game import DeviceHandle, GameControl
     from app.task.context import TaskContext
+    from app.task.mode_worker import HistoryWriter
 
 logger = get_logger("用户展开")
 
@@ -59,6 +60,7 @@ class UserExpander(TaskBase):
         TaskMode.SCRIPT_CONFIG,
     )
     mode_workers: ClassVar[dict[TaskMode, type[ModeWorker]]] = MODE_WORKERS
+    _history_writer: HistoryWriter
 
     def __init__(
         self,
@@ -75,6 +77,10 @@ class UserExpander(TaskBase):
         self.game = game
         self._user_tickets: list[tuple[UserEntry, LockTicket]] = []
         self._check_result: str = "Pass"
+
+    def bind_history_writer(self, writer: HistoryWriter) -> None:
+        """接收宿主写入器，逐用户传给模式执行器。"""
+        self._history_writer = writer
 
     @property
     def task_item(self) -> TaskItem | None:
@@ -242,6 +248,7 @@ class UserExpander(TaskBase):
                 script_item=self.script_item,
                 script_entry=entry,
             )
+            worker.bind_history_writer(self._history_writer)
             worker.config_user_id = uid_s
             await self.spawn(worker)
             if worker.error is not None:

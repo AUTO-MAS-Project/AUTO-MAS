@@ -50,6 +50,7 @@ from app.utils import get_logger
 if TYPE_CHECKING:
     from app.models.config.script import ScriptEntry
     from app.plugin.base.game import DeviceHandle, GameControl
+    from app.task.mode_worker import HistoryWriter
 
 logger = get_logger("脚本展开")
 
@@ -59,6 +60,8 @@ __all__ = ["ScriptExpander"]
 class ScriptExpander(TaskBase):
     """建脚本列表 → 逐脚本加锁/订游戏 → spawn UserExpander。"""
 
+    _history_writer: HistoryWriter
+
     def __init__(self, item: TaskItem) -> None:
         super().__init__()
         self.item = item
@@ -67,6 +70,10 @@ class ScriptExpander(TaskBase):
         self._script_ticket: LockTicket | None = None
         self._game_ticket: LockTicket | None = None
         self._game: tuple[GameControl, LockTicket, DeviceHandle | None] | None = None
+
+    def bind_history_writer(self, writer: HistoryWriter) -> None:
+        """接收派发层写入器，沿既有任务层级传递。"""
+        self._history_writer = writer
 
     def expand_scripts(self) -> list[str]:
         """按 §5.4 真值表产出脚本 uid 顺序（含队列内断点续跑切片）。
@@ -232,6 +239,7 @@ class ScriptExpander(TaskBase):
                     script_entry=entry,
                     game=self._game,
                 )
+                expander.bind_history_writer(self._history_writer)
                 await self.spawn(expander)
                 if expander.error is not None:
                     info.status = "error"

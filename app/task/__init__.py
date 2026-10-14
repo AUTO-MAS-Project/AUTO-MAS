@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from .mode_worker import (
         MODE_WORKERS,
         AutoProxyWorker,
+        HistoryWriter,
         ManualReviewWorker,
         ModeWorker,
         ScriptConfigWorker,
@@ -62,6 +63,7 @@ _EXPORTS = {
     "TaskContext": ".context",
     "MODE_WORKERS": ".mode_worker",
     "AutoProxyWorker": ".mode_worker",
+    "HistoryWriter": ".mode_worker",
     "ManualReviewWorker": ".mode_worker",
     "ModeWorker": ".mode_worker",
     "ScriptConfigWorker": ".mode_worker",
@@ -85,6 +87,7 @@ __all__ = [
     "MODE_WORKERS",
     "AutoProxyWorker",
     "ExpandError",
+    "HistoryWriter",
     "ManualReviewWorker",
     "ModeWorker",
     "ScriptExpander",

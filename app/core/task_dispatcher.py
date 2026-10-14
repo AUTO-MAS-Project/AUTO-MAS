@@ -146,7 +146,10 @@ class _TaskDispatcher:
         await item.activate()
 
         # ── ③ 建 L2 实例（传入任务信息实例）→ 成组登记 → 启动 ──
+        from app.core.history import history_store
+
         task = ScriptExpander(item)
+        task.bind_history_writer(history_store)
         self._running[uid] = RunningTask(info=item, task=task)
         task.start()
 
