@@ -540,7 +540,8 @@ def _merge_maa_config_file(
 
     set_maa 会把存档 Current 方案的内容复制进运行目录的 Default 再运行, 运行期
     的变更因此都记在 Default 键上; 存档生效方案不是 Default 时, 把合并目标临时
-    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。
+    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。运行期
+    删除整个 Default 方案时, 同步删除对应来源方案并还原来源原有的 Default。
     """
 
     if scheme == "Default":
@@ -575,12 +576,12 @@ def _merge_maa_config_file(
             ignore_keys=ignore_keys,
         )
     finally:
-        merged = configurations["Default"]
-        if original_default is None:
-            del configurations["Default"]
+        if "Default" in configurations:
+            configurations[scheme] = configurations.pop("Default")
         else:
+            configurations.pop(scheme, None)
+        if original_default is not None:
             configurations["Default"] = original_default
-        configurations[scheme] = merged
     return changed
 
 
