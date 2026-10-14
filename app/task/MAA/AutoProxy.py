@@ -469,12 +469,16 @@ def _merge_maa_changes(
     current: dict | list,
     *,
     drop_missing: bool = True,
+    drop_missing_keys: bool = False,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
-    """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
+    """把 MAA 运行期配置相对基线快照的变更原地合并进来源存档。
 
-    只透传运行期(相对基线)真正发生的变更, 新增与修改透传、删除不透传; MAS 托管
-    注入自己改写的键(baseline 与 current 相同、仅与存档不同)不能被带回存档,
+    只透传运行期(相对基线)真正发生的变更。字典键默认只增改; gui.json 迁移
+    回写同时启用 drop_missing 与 drop_missing_keys 时, 仅删除存档值仍与基线
+    相同的键, 保留来源独有或被 MAS 临时覆盖的配置。任务队列仍按 drop_missing
+    处理条目删除。MAS 注入自己改写的键(baseline 与 current 相同、仅与存档不同)
+    不能被带回存档,
     否则运行一次就会把用户自己的配置抹成注入值。顶层结构不匹配(如写盘半截被
     截断)整体跳过。
     """
@@ -500,6 +504,7 @@ def _merge_maa_changes(
                         base_value,
                         value,
                         drop_missing=drop_missing,
+                        drop_missing_keys=drop_missing_keys,
                         ignore_keys=ignore_keys,
                     )
                     or changed
@@ -518,6 +523,11 @@ def _merge_maa_changes(
             elif base_value != value and archive.get(key) != value:
                 archive[key] = deepcopy(value)
                 changed = True
+        if drop_missing and drop_missing_keys:
+            for key in baseline.keys() - current.keys():
+                if key in archive and archive[key] == baseline[key]:
+                    del archive[key]
+                    changed = True
     return changed
 
 
@@ -528,13 +538,16 @@ def _merge_maa_config_file(
     scheme: str,
     *,
     drop_missing: bool = True,
+    drop_missing_keys: bool = False,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
     set_maa 会把存档 Current 方案的内容复制进运行目录的 Default 再运行, 运行期
     的变更因此都记在 Default 键上; 存档生效方案不是 Default 时, 把合并目标临时
-    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。
+    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。运行期
+    删除整个 Default 方案且启用键删除时, 同步删除对应来源方案并还原来源原有的
+    Default。
     """
 
     if scheme == "Default":
@@ -543,6 +556,7 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
+            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
 
@@ -555,6 +569,7 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
+            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
 
@@ -566,15 +581,16 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
+            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
     finally:
-        merged = configurations["Default"]
-        if original_default is None:
-            del configurations["Default"]
+        if "Default" in configurations:
+            configurations[scheme] = configurations.pop("Default")
         else:
+            configurations.pop(scheme, None)
+        if original_default is not None:
             configurations["Default"] = original_default
-        configurations[scheme] = merged
     return changed
 
 
@@ -2494,6 +2510,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 baseline[name],
                 current,
                 maa_scheme_name(archive_dir, archive),
+                # 旧文件的迁移删除需要回写, 新文件沿用原有增改与队列回写规则。
+                drop_missing_keys=name == "gui.json",
                 # 快速配置开着时班次由 MAS 注入, MAA 自增的 PlanSelect 不回写;
                 # 关着时 MAA 跑的是存档自己的队列, 推进要靠回写保住
                 ignore_keys=(
