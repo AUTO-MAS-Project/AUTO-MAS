@@ -26,7 +26,8 @@ class MaaFWRuntimePoolError(RuntimeError):
     """Raised when a managed MaaFW runtime pool operation is unsafe or invalid."""
 
 
-_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+# userinfo 取到路径前的最后一个 @：密码里没转义的 @ 也整段打掉（pip / uv / urlsplit 都按最后一个 @ 切）
+_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s]*@")
 
 
 def mask_url_credentials(text: str) -> str:
