@@ -16,7 +16,7 @@
         }}
       </a-button>
       <a-button
-        v-if="showOpen"
+        v-if="showOpen && showImport"
         type="default"
         :loading="importLoading"
         :disabled="disabled"
@@ -67,8 +67,15 @@ const props = withDefaults(
     configLoading?: boolean
     configuring?: boolean
     importLoading?: boolean
+    showImport?: boolean
   }>(),
-  { disabled: false, configLoading: false, configuring: false, importLoading: false }
+  {
+    disabled: false,
+    configLoading: false,
+    configuring: false,
+    importLoading: false,
+    showImport: true,
+  }
 )
 
 defineEmits<{

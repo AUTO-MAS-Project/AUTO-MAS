@@ -3105,13 +3105,10 @@ class AppConfig(GlobalConfig):
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
-        # MAA / OK-WW 的配置目录布局与导入语义由各自专项维护
-        # （app/task/*/tools/config_dir.py），core 只做分派。
-        if isinstance(script_config, (MaaConfig, OkwwConfig)):
-            if isinstance(script_config, MaaConfig):
-                from app.task.MAA.tools.config_dir import import_script_config_dir
-            else:
-                from app.task.Okww.tools.config_dir import import_script_config_dir
+        # OK-WW 的配置目录布局与导入语义由专项维护
+        # （app/task/Okww/tools/config_dir.py），core 只做分派。
+        if isinstance(script_config, OkwwConfig):
+            from app.task.Okww.tools.config_dir import import_script_config_dir
 
             await import_script_config_dir(script_id, user_id)
             return

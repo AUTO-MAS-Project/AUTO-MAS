@@ -79,15 +79,15 @@
             @change="handleConfigModeChange"
             @quick-config-change="handleQuickConfigChange"
           />
+          <!-- MAA 不提供配置导入 -->
           <ConfigActionsSection
             :base="formData.Info.Base"
             script-label="MAA"
             :disabled="loading || showMaaConfigMask || configLocked"
             :config-loading="preparingSession || maaConfigLoading"
             :configuring="showMaaConfigMask"
-            :import-loading="maaImportLoading"
+            :show-import="false"
             @configure="handleMAAConfig"
-            @import-config="handleImportMaaConfig"
             @script-config="handleScriptConfig"
           />
 
@@ -289,7 +289,7 @@ const { parseImport } = useMaaCultivateImportApi()
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
-const { getScript, importScriptConfigFile } = useScriptApi()
+const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
 const {
   maaConfigLoading,
@@ -301,7 +301,6 @@ const {
   saveSession,
   stopSession,
 } = useMaaGuiSession()
-const maaImportLoading = ref(false)
 
 const formRef = ref<FormInstance>()
 const pageRef = ref<HTMLElement>()
@@ -1419,28 +1418,6 @@ const {
 
 const handleMAAConfig = async () => {
   await startConfiguration(userId)
-}
-
-const handleImportMaaConfig = async () => {
-  if (configLocked.value) return
-  maaImportLoading.value = true
-  try {
-    if (formData.Info.Base === 'native') throw new Error('原生来源直接使用 MAA 原有配置，无需导入')
-    const response = await importScriptConfigFile(
-      scriptId,
-      formData.Info.Base === 'shared' ? null : userId
-    )
-    if (response.code !== 200) throw new Error(response.message || '导入脚本配置文件失败')
-    const importTarget =
-      formData.Info.Base === 'shared'
-        ? t('comp.configSourceShared')
-        : t('comp.configSourceIndependent')
-    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
-  } finally {
-    maaImportLoading.value = false
-  }
 }
 
 // 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
