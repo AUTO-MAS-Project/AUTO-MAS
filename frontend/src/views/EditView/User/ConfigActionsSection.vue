@@ -11,7 +11,9 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ configuring ? t('edit.configuring') : t('edit.openConfigWindow', { script: scriptLabel }) }}
+        {{
+          configuring ? t('edit.configuring') : t('edit.openConfigWindow', { script: scriptLabel })
+        }}
       </a-button>
       <a-button
         v-if="showOpen"

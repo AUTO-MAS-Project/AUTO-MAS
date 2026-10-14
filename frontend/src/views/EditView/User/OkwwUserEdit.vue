@@ -665,7 +665,8 @@ const handleImportOkwwConfig = async () => {
   if (configLocked.value) return
   okwwImportLoading.value = true
   try {
-    if (formData.Info.Base === 'native') throw new Error('原生来源直接使用 ok-ww 原有配置，无需导入')
+    if (formData.Info.Base === 'native')
+      throw new Error('原生来源直接使用 ok-ww 原有配置，无需导入')
     const response = await importScriptConfigFile(
       scriptId,
       formData.Info.Base === 'shared' ? null : userId.value
