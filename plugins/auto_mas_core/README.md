@@ -46,3 +46,14 @@ dependencies = [
 `PLUGIN_API_VERSION` 主版本现为 `"6"`；与框架不兼容时提升主版本，加载阶段拒绝主版本不一致的插件。
 
 包内 `py.typed` 为 PEP 561 标记，须随 wheel 发布。
+
+## 默认配置会话
+
+脚本未指定账号的 `SCRIPT_CONFIG` 会话由 `UserExpander` 创建临时 `Default` 用户。
+宿主 `ScriptExpander` 在启动展开层前调用
+`bind_default_user_factory(decl.user_type.build)`；插件现有构造签名不变。
+独立运行展开层时，也需绑定用户工厂；普通账号任务不使用该工厂。
+
+工厂接收 `uid` 和 `payload` 两个关键字参数，返回尚未激活的用户配置节点。
+展开层沿用 `uuid5(script_entry.uid, "Default")`、脚本配置来源和关闭常规配置覆写的设置，
+随后激活节点；节点只进入本次任务树，不加入脚本的持久化账号集合。

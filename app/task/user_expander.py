@@ -28,7 +28,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import UUID, uuid5
 
 from app.config import DeletedNodeError
@@ -47,7 +47,13 @@ if TYPE_CHECKING:
 
 logger = get_logger("用户展开")
 
-__all__ = ["UserExpander"]
+__all__ = ["DefaultUserFactory", "UserExpander"]
+
+
+class DefaultUserFactory(Protocol):
+    """宿主绑定的用户构造入口；展开层只创建本次配置会话的临时用户。"""
+
+    def __call__(self, *, uid: UUID, payload: dict[str, Any]) -> UserEntry: ...
 
 
 class UserExpander(TaskBase):
@@ -73,8 +79,13 @@ class UserExpander(TaskBase):
         self.script_item = script_item
         self.script_entry = script_entry
         self.game = game
+        self._default_user_factory: DefaultUserFactory | None = None
         self._user_tickets: list[tuple[UserEntry, LockTicket]] = []
         self._check_result: str = "Pass"
+
+    def bind_default_user_factory(self, factory: DefaultUserFactory) -> None:
+        """由宿主在启动前绑定声明中的用户构造入口，不改变插件构造签名。"""
+        self._default_user_factory = factory
 
     @property
     def task_item(self) -> TaskItem | None:
@@ -97,20 +108,24 @@ class UserExpander(TaskBase):
     async def prepare(self) -> None:
         """专项资源准备；插件覆盖。不加锁、不建用户列表。"""
 
-    def expand_users(
-        self, *, mode: TaskMode, enabled_user_ids: list[str]
-    ) -> list[str]:
+    def expand_users(self, *, mode: TaskMode, enabled_user_ids: list[str]) -> list[str]:
         """按 §5.5 真值表收窄运行用户 uid 列表。只读，不加锁。"""
         ctx = self.task_context
         task = self.task_item
-        queue_id = ctx.queue_id if ctx is not None else (
-            task.info.queue_id if task is not None else None
+        queue_id = (
+            ctx.queue_id
+            if ctx is not None
+            else (task.info.queue_id if task is not None else None)
         )
-        script_id = ctx.script_id if ctx is not None else (
-            task.info.script_id if task is not None else None
+        script_id = (
+            ctx.script_id
+            if ctx is not None
+            else (task.info.script_id if task is not None else None)
         )
-        user_id = ctx.user_id if ctx is not None else (
-            task.info.user_id if task is not None else None
+        user_id = (
+            ctx.user_id
+            if ctx is not None
+            else (task.info.user_id if task is not None else None)
         )
         has_q, has_s, has_u = (
             is_selected(queue_id),
@@ -171,15 +186,18 @@ class UserExpander(TaskBase):
         runtime_users: dict[str, UserEntry] = {}
         for user_id in user_ids:
             if user_id == "Default":
-                from app.core.plugin_manager import Plugin
-
-                decl = next(
-                    d for d in Plugin.script_types.values()
-                    if type(entry) is d.entry_type
-                )
-                user = decl.user_type.build(
+                factory = self._default_user_factory
+                if factory is None:
+                    raise RuntimeError("UserExpander 缺少 default_user_factory")
+                user = factory(
                     uid=uuid5(entry.uid, "Default"),
-                    payload={"info": {"name": "Default", "mode": "脚本", "if_quick_config": False}},
+                    payload={
+                        "info": {
+                            "name": "Default",
+                            "mode": "脚本",
+                            "if_quick_config": False,
+                        }
+                    },
                 )
                 await user.activate()
             else:
