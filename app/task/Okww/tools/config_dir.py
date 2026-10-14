@@ -41,7 +41,12 @@ from ..AutoProxy import (
     _okww_config_base,
     _okww_mas_config_dir,
 )
-from .backup_archive import mas_config_dir
+from .backup_archive import (
+    mas_config_dir,
+    mas_rollback_point,
+    read_overlay_values,
+    restore_mas_backup,
+)
 
 logger = get_logger("OK-WW 配置目录")
 
@@ -111,6 +116,10 @@ async def ensure_user_config_dir(script_id: str, user_id: str, base: str) -> Pat
 async def import_script_config_dir(script_id: str, user_id: Optional[str]) -> Path:
     """从 OK-WW 脚本目录导入当前配置，覆盖 MAS 用户配置目录。
 
+    导入是显式覆盖：覆盖前先把现有 MAS 配置存底（进该用户的备份池，「配置
+    恢复」里可手工找回），替换失败时按存底自动回滚并显式报错——导入失败
+    不能只给用户留下一个空目录。
+
     Args:
         script_id: OK-WW 脚本 ID。
         user_id: 目标用户 ID；``None`` 表示共享来源（写入 Default 目录）。
@@ -121,6 +130,7 @@ async def import_script_config_dir(script_id: str, user_id: Optional[str]) -> Pa
     Raises:
         TypeError: 脚本不是 OK-WW 类型。
         FileNotFoundError: 脚本目录下没有可用的 OK-WW 配置。
+        RuntimeError: 导入失败（已尝试回滚到导入前的配置）。
     """
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
@@ -135,9 +145,43 @@ async def import_script_config_dir(script_id: str, user_id: Optional[str]) -> Pa
     ):
         raise FileNotFoundError("未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置")
 
-    target_config_dir = mas_config_dir(script_id, user_id or "Default")
+    owner = user_id or "Default"
+    target_config_dir = mas_config_dir(script_id, owner)
     target_config_dir.parent.mkdir(parents=True, exist_ok=True)
-    replace_dir(source_config_dir, target_config_dir)
 
-    logger.info(f"{script_id} - {user_id or 'Default'} 已从 OK-WW 目录导入配置文件")
+    # 存底归桶：独立来源用户的存底进自己的池（「配置恢复」里能看到「导入前」
+    # 这份）；共享来源没有请求用户，存底落在 Default 桶里，只作本次回滚点。
+    overlay: Optional[dict] = None
+    if user_id:
+        uid = uuid.UUID(user_id)
+        if uid in script_config.UserData:
+            overlay = read_overlay_values(script_config.UserData[uid])
+    rollback_ts = mas_rollback_point(script_id, owner, target_config_dir, overlay)
+
+    try:
+        replace_dir(source_config_dir, target_config_dir)
+    except Exception as exc:
+        if rollback_ts is None:
+            raise RuntimeError(
+                f"导入配置失败，且导入前没有可回滚的配置：{exc}"
+            ) from exc
+        try:
+            restore_mas_backup(
+                script_id, owner, rollback_ts, target_config_dir, overlay=overlay
+            )
+        except Exception as rollback_exc:
+            logger.opt(exception=True).error(
+                f"{script_id} - {owner} 导入失败后回滚失败: {rollback_exc}"
+            )
+            raise RuntimeError(
+                f"导入配置失败，回滚也失败：{rollback_exc}（导入错误：{exc}）"
+            ) from exc
+        logger.opt(exception=True).error(
+            f"{script_id} - {owner} 导入配置失败，已回滚到备份 {rollback_ts}"
+        )
+        raise RuntimeError(
+            f"导入配置失败，已恢复到导入前的配置（备份 {rollback_ts}）：{exc}"
+        ) from exc
+
+    logger.info(f"{script_id} - {owner} 已从 OK-WW 目录导入配置文件")
     return target_config_dir
