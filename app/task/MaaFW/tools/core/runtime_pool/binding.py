@@ -54,6 +54,7 @@ from ._shared import (
     assert_existing_chain_has_no_reparse,
     assert_not_reparse,
     format_time,
+    mask_url_credentials,
     parse_time,
     pool_lock,
     register_active_staging,
@@ -1216,16 +1217,6 @@ def _record_digest(data: bytes) -> str:
 #: 下载进度多久报一次：官方 wheel 60 MB 上下，直连 PyPI 慢的环境要一到几分钟，期间界面
 #: 只有一句「正在准备 MaaFW Python binding」，看着像卡死。
 _DOWNLOAD_PROGRESS_STEP_BYTES = 16 * 1024 * 1024
-
-
-_URL_CREDENTIALS_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
-
-
-def mask_url_credentials(text: str) -> str:
-    """把文本里 URL 的 ``user:pw@`` 换成 ``***@``（索引地址来自 ``AUTO_MAS_UV_INDEX_URL``
-    等配置，可能带凭据；与 requirements 解析不记 ``-i`` 取值同一口径）。其余部分原样。"""
-
-    return _URL_CREDENTIALS_RE.sub(r"\1***@", str(text))
 
 
 def _format_megabytes(value: int) -> str:

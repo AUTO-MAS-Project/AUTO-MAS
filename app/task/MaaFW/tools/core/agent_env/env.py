@@ -20,7 +20,11 @@ from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import mask_home_path
 from ..offline_dependencies import describe_self_install_materials
 from ..runtime_pool import runtime_managed_uv_executable
-from ..runtime_pool._shared import output_tail, remove_tree_best_effort
+from ..runtime_pool._shared import (
+    mask_url_credentials,
+    output_tail,
+    remove_tree_best_effort,
+)
 from ..runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
@@ -1261,11 +1265,14 @@ def _pip_index_arg_candidates() -> list[tuple[str, list[str]]]:
         return [("离线", ["--no-index"])]
     user_index = str(os.environ.get("PIP_INDEX_URL") or "").strip()
     if user_index:
-        return [(f"PIP_INDEX_URL={user_index}", [])]
+        return [(mask_url_credentials(f"PIP_INDEX_URL={user_index}"), [])]
     candidates = resolve_package_index_candidates()
     if not candidates:
         return [("PyPI 默认索引", [])]
-    return [(candidate, ["--index-url", candidate]) for candidate in candidates]
+    return [
+        (mask_url_credentials(candidate), ["--index-url", candidate])
+        for candidate in candidates
+    ]
 
 
 def _pip_install(
@@ -1330,7 +1337,9 @@ def _pip_install(
                 if result.returncode == 0:
                     log(f"[Python环境] {tool} 完成 ({label}): {', '.join(packages)}")
                     return True, ""
-                last_detail = (result.stderr or result.stdout or "").strip()
+                last_detail = mask_url_credentials(
+                    (result.stderr or result.stdout or "").strip()
+                )
                 if uv_exe is None and "No module named pip" in last_detail:
                     uv_exe = _find_uv_executable()
                     if uv_exe is None:
@@ -1353,12 +1362,14 @@ def _pip_install(
                 )
             except OSError as exc:
                 # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
-                last_detail = f"无法启动 {command[0]}: {exc}"
-                log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
+                last_detail = mask_url_credentials(f"无法启动 {command[0]}: {exc}")
+                log(
+                    f"[Python环境] {tool} 无法启动 ({label}): {mask_url_credentials(exc)}"
+                )
                 return False, output_tail(last_detail, 300)
             except Exception as exc:
-                last_detail = f"{label}: {exc}"
-                log(f"[Python环境] {tool} 异常 ({label}): {exc}")
+                last_detail = mask_url_credentials(f"{label}: {exc}")
+                log(f"[Python环境] {tool} 异常 ({label}): {mask_url_credentials(exc)}")
             break
     return False, output_tail(last_detail, 300)
 
