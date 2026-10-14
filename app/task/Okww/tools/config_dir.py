@@ -34,7 +34,7 @@ from app.core import Config
 from app.models.config import OkwwConfig
 from app.utils import get_logger
 from app.utils.constants import BASE_INDEPENDENT, BASE_SHARED
-from app.utils.io import force_rmtree
+from app.utils.io import force_rmtree, replace_dir
 
 from ..AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
@@ -136,16 +136,8 @@ async def import_script_config_dir(script_id: str, user_id: Optional[str]) -> Pa
         raise FileNotFoundError("未找到 OK-WW 默认设置，请先运行一次 OK-WW 并保存设置")
 
     target_config_dir = mas_config_dir(script_id, user_id or "Default")
-    temporary_path = target_config_dir.with_name(
-        f".{target_config_dir.name}.{uuid.uuid4().hex}.tmp"
-    )
-    try:
-        shutil.copytree(source_config_dir, temporary_path)
-        target_config_dir.parent.mkdir(parents=True, exist_ok=True)
-        force_rmtree(target_config_dir)
-        temporary_path.rename(target_config_dir)
-    finally:
-        force_rmtree(temporary_path)
+    target_config_dir.parent.mkdir(parents=True, exist_ok=True)
+    replace_dir(source_config_dir, target_config_dir)
 
     logger.info(f"{script_id} - {user_id or 'Default'} 已从 OK-WW 目录导入配置文件")
     return target_config_dir

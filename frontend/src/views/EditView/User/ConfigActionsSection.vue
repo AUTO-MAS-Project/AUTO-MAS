@@ -1,7 +1,8 @@
 <template>
-  <a-form-item :label="t('edit.configSourceActions')" class="config-actions">
+  <a-form-item :label="t('edit.configSourceActions')">
     <div class="config-actions-control">
       <a-button
+        v-if="showOpen"
         type="primary"
         ghost
         :loading="configLoading"
@@ -84,7 +85,8 @@ defineEmits<{
   scriptConfig: []
 }>()
 
-// 原生来源直接使用脚本自身配置，既不用打开配置界面，也没有可导入的 MAS 侧配置。
+// 原生来源直接使用脚本自身配置，既不用打开配置界面，也没有可导入的 MAS 侧配置：
+// 该来源下整个面板只剩「编辑托管设置」（与 MaaEnd 原实现一致）。
 const showOpen = computed(() => props.base !== 'native')
 
 /**
