@@ -3104,6 +3104,18 @@ class AppConfig(GlobalConfig):
         logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        if script_config.is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
+
+        # OK-WW 的配置目录布局与导入语义由专项维护
+        # （app/task/Okww/tools/config_dir.py），core 只做分派。
+        if isinstance(script_config, OkwwConfig):
+            from app.task.Okww.tools.config_dir import import_script_config_dir
+
+            await import_script_config_dir(script_id, user_id)
+            return
+
         if not isinstance(script_config, MaaEndConfig):
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 

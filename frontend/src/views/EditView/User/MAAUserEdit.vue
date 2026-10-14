@@ -36,14 +36,10 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Base"
-      :maa-config-loading="preparingSession || maaConfigLoading"
       :leaving="leavingPage"
-      :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       :config-locked="configLocked || editorBusy"
       :user-id="userId"
-      @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 
@@ -62,7 +58,33 @@
             :loading="loading"
             :server-options="serverOptions"
             @save="handleFieldSave"
-            @mode-change="handleConfigModeChange"
+          />
+
+          <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
+          <a-flex class="section-header" align="center" wrap="wrap" gap="small">
+            <h3>{{ t('edit.configurationSource') }}</h3>
+          </a-flex>
+          <GeneralConfigModeSelector
+            :model-value="formData.Info.Base"
+            :options="maaConfigModeOptions"
+            :disabled="loading"
+            :quick-config="formData.Info.IfQuickConfig"
+            :quick-config-disabled="loading || isInitializing"
+            :alert-message="t('edit.configSourceHintBase')"
+            :show-gui-hint="false"
+            @change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
+          />
+          <!-- MAA 不提供配置导入 -->
+          <ConfigActionsSection
+            :base="formData.Info.Base"
+            script-label="MAA"
+            :disabled="loading || showMaaConfigMask || configLocked"
+            :config-loading="preparingSession || maaConfigLoading"
+            :configuring="showMaaConfigMask"
+            :show-import="false"
+            @configure="handleMAAConfig"
+            @script-config="handleScriptConfig"
           />
 
           <a-flex
@@ -74,13 +96,6 @@
           >
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing"
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -239,6 +254,8 @@ const logger = window.electronAPI.getLogger('MAA用户编辑')
 // 导入拆分的组件
 import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
@@ -764,6 +781,33 @@ const { isSaving, saveField: handleFieldSave } = fieldSave
 const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
 }
+
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+const maaConfigModeOptions: Array<{
+  value: 'shared' | 'independent' | 'native'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    value: 'shared',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
+    icon: 'file',
+  },
+  {
+    value: 'independent',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    value: 'native',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
+    icon: 'setting',
+  },
+]
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -1370,6 +1414,11 @@ const {
 
 const handleMAAConfig = async () => {
   await startConfiguration(userId)
+}
+
+// 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
+const handleScriptConfig = () => {
+  void router.push(`/scripts/${scriptId}/edit/maa`)
 }
 
 const handleCancel = async () => {

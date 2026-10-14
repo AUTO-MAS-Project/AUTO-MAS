@@ -541,6 +541,9 @@ export default {
     switchedPlanModeP0: 'Switched to plan mode: {p0}',
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
+    importScriptConfigFailed: 'Failed to import the script configuration file',
+    nativeConfigNoImport:
+      'Native mode uses the existing ok-ww configuration directly; import is unavailable',
     startedSrcSetupUser: 'Started the SRC setup for account {p0}',
     startedGeneralSetupUser: 'Started the general setup for account {p0}',
     readP0: 'Read {p0}',
@@ -610,11 +613,12 @@ export default {
     noConfigurationImportedYet: 'No configuration imported yet',
     whenHighTrafficSettings:
       'When on, the most-used fields on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
-    maaEndOpenConfig: 'Open the MaaEnd window',
-    maaEndOpenConfigSharedTip:
-      'Edit the shared configuration that every account of this managed script uses, in the MaaEnd window.',
-    maaEndOpenConfigIndependentTip:
-      "Edit this account's own configuration in the MaaEnd window - it applies to this account only.",
+    configSourceActions: 'Configuration actions',
+    openConfigWindow: 'Open the {script} window',
+    configActionsTargetShared: 'the shared base configuration',
+    configActionsTargetIndependent: "this account's own base configuration",
+    configActionsImpactShared: 'every account of this managed script shares it',
+    configActionsImpactIndependent: 'other accounts are not affected',
     maaEndDailyOnceTasks: 'Tasks to run once per day',
     maaEndDailyOnceTasksHint:
       'Delivery and auto-collect stages always run once per day and need no selection. Selected routine tasks are skipped after successful completion; failures can be retried. Resets daily at 04:00 UTC+8',
@@ -1560,6 +1564,9 @@ export default {
     overlayConfigDisabledDesc:
       'The task uses the base configuration as is: without overriding the regular configuration, MAS only starts the script and the override fields on this page are not applied.',
     configSemanticsTitle: 'Configuration in effect for this task',
+    configSemanticsEffectOn: 'Temporarily overrides {target}, then restores it when the task ends',
+    configSemanticsEffectOff: 'Does not modify {target}',
+    configSemanticsTargetNative: "the script's own native configuration",
     configSemanticsSharedOffTitle: 'Runs on the shared base configuration as is',
     configSemanticsSharedOffDesc:
       'The task runs on the shared base configuration of this managed script. MAS only starts the script and does not modify the shared base configuration itself.',
