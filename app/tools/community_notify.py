@@ -44,6 +44,10 @@ NOTIFICATION_RETRY_DELAY_SECONDS = 1
 NOTIFICATION_FAST_PATH_WAIT_SECONDS = (
     NOTIFICATION_RETRY_DELAY_SECONDS * (NOTIFICATION_SEND_ATTEMPTS - 1) + 0.1
 )
+COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT = (
+    "社区签到流程异常结束，无法确认最终结果，请查看日志。"
+)
+COMMUNITY_SIGN_EMPTY_RESULT_TEXT = "本次社区签到已结束，没有新的签到结果。"
 _SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
@@ -430,7 +434,8 @@ def get_task_community_summary(
         else getattr(task_info, "game_sign_results", [])
     )
     if not results:
-        return ""
+        community_sign = getattr(task_info, "community_sign_notification", None)
+        return getattr(community_sign, "completion_notice", "")
 
     return format_community_task_summary(list(results), output_format=output_format)
 
@@ -567,13 +572,18 @@ async def dispatch_community_notification(
     *,
     targets: list[NotifyTarget] | None = None,
     skip_channel_ids: Iterable[str] = (),
+    completion_notice: str = "",
 ) -> DispatchResult:
     """分发社区通知并保留完整渠道结果，供新旧入口共同使用。"""
     results = _notification_results(results)
-    if not results:
+    if not results and not completion_notice:
         return DispatchResult()
 
-    payload = build_community_notification_payload(results)
+    payload = (
+        build_community_notification_payload(results)
+        if results
+        else NotifyPayload(title="社区签到执行结束", text=completion_notice)
+    )
     return await dispatch(
         payload,
         targets if targets is not None else [global_target(include_system=True)],
@@ -583,11 +593,14 @@ async def dispatch_community_notification(
     )
 
 
-async def report_community_notification_failure(failed_channels: list[str]) -> None:
+async def report_community_notification_failure(
+    failed_channels: list[str], *, results_saved: bool = True
+) -> None:
     """通知渠道级失败改用系统提示回传，不让发送结果只留在日志里。
 
     Args:
         failed_channels: 本次分发中发送失败的渠道名。
+        results_saved: 是否存在已保存的签到结果，空结果终态不宣称保存成功。
     """
 
     await Config.push_system_notice(
@@ -595,7 +608,11 @@ async def report_community_notification_failure(failed_channels: list[str]) -> N
         title="游戏社区通知发送不完整",
         lines=[
             f"发送失败的渠道：{'、'.join(failed_channels)}",
-            "签到结果已保存，请检查这些渠道的通知配置后重试。",
+            (
+                "签到结果已保存，请检查这些渠道的通知配置后重试。"
+                if results_saved
+                else "请检查这些渠道的通知配置后重试。"
+            ),
         ],
     )
 

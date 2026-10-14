@@ -416,7 +416,7 @@ class _MainTimer:
         self,
         *,
         source: CommunityTriggerSource,
-        on_completed: Callable[[list[dict[str, object]]], None],
+        on_completed: Callable[[list[dict[str, object]] | None], None],
     ) -> None:
         """与脚本并行签到，通过完成回调交付结果，复用现有后台任务所有权。"""
 
@@ -433,9 +433,11 @@ class _MainTimer:
         task.add_done_callback(self._on_community_sign_done)
 
         def receive_result(done_task: asyncio.Task) -> None:
-            # 异常由原有完成回调记录，失败和取消也要解除报告对完成事件的等待。
-            results = []
-            if not done_task.cancelled() and done_task.exception() is None:
+            # 异常由原有回调记录；None 表示无法确认结果，[] 保留正常跳过语义。
+            results: list[dict[str, object]] | None = []
+            if not done_task.cancelled() and done_task.exception() is not None:
+                results = None
+            elif not done_task.cancelled():
                 results = done_task.result()
             on_completed(results)
 
@@ -446,21 +448,26 @@ class _MainTimer:
     ) -> bool:
         """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
 
-        deadline = asyncio.get_running_loop().time() + timeout
-        signing = self.community_sign_task
-        if signing is not None:
-            # 即使已完成也统一等待，让结果回调先登记待补发通知。
-            _, pending = await asyncio.wait(
-                {signing}, timeout=max(0, deadline - asyncio.get_running_loop().time())
-            )
-            if pending:
-                return False
-
         from app.core.notify import drain_task_community_notifications
 
-        return await drain_task_community_notifications(
-            max(0, deadline - asyncio.get_running_loop().time())
-        )
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            signing = self.community_sign_task
+            if signing is not None:
+                # 即使已完成也统一等待，让结果回调先登记待补发通知。
+                _, pending = await asyncio.wait(
+                    {signing},
+                    timeout=max(0, deadline - asyncio.get_running_loop().time()),
+                )
+                if pending:
+                    return False
+            if not await drain_task_community_notifications(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            # 补发期间新的定时任务（如跨零点）可能又启动签到，共用原截止时间。
+            if self.community_sign_task is None:
+                return True
 
     async def _execute_community_sign(
         self, *, source: CommunityTriggerSource = "scheduled"
@@ -522,6 +529,9 @@ class _MainTimer:
         except CommunitySignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
         except Exception as e:
+            if source in TASK_COMMUNITY_SOURCES:
+                # 交给后台任务完成回调记录并交付异常终态，不能混同正常空结果。
+                raise
             logger.error(f"游戏社区签到执行失败: {e}")
             # 保留已有结果，不覆盖为错误信息
             logger.exception("游戏社区签到执行异常堆栈")
@@ -533,6 +543,7 @@ class _MainTimer:
         """执行 MAS 自动签到并返回结果。
 
         ``task`` 结果由任务完成通知汇总，``startup`` 结果独立通知。
+        任务来源的异常由后台完成回调交付，正常跳过仍返回空结果。
         """
         if source is None:
             source = "task_manual"

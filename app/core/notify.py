@@ -95,15 +95,36 @@ class TaskCommunitySignNotification:
         self.targets: list[NotifyTarget] | None = None
         self.report_sent = False
         self.wait_expired = False
+        self.result_unavailable = False
         self.task_finished = False
         self.delivery_task: asyncio.Task[None] | None = None
 
-    def receive(self, results: list[dict[str, object]]) -> None:
+    def receive(self, results: list[dict[str, object]] | None) -> None:
         """先保存结果再发布完成事件；报告等待超时不会取消签到。"""
 
-        self.task_info.community_results = results
+        self.result_unavailable = results is None
+        self.task_info.community_results = results or []
         self.completed.set()
         self.schedule_supplement()
+
+    @property
+    def completion_notice(self) -> str:
+        """异常不能推断实际签到失败，正常空结果只结清已发出的待确认提示。"""
+
+        from app.tools.community_notify import (
+            COMMUNITY_SIGN_EMPTY_RESULT_TEXT,
+            COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT,
+        )
+
+        if self.result_unavailable:
+            return COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT
+        if (
+            self.wait_expired
+            and self.completed.is_set()
+            and not self.task_info.community_results
+        ):
+            return COMMUNITY_SIGN_EMPTY_RESULT_TEXT
+        return ""
 
     def finish(self) -> None:
         """没有脚本报告（如预检失败或手动停止）时也保留签到通知出口。"""
@@ -116,7 +137,7 @@ class TaskCommunitySignNotification:
             self.task_finished or (self.report_sent and self.wait_expired)
         ):
             return
-        if not self.task_info.community_results:
+        if not self.task_info.community_results and not self.completion_notice:
             return
         if self.delivery_task is not None and not self.delivery_task.done():
             return
@@ -147,6 +168,7 @@ class TaskCommunitySignNotification:
                 self.task_info.community_results,
                 targets=self.targets,
                 skip_channel_ids=delivered,
+                completion_notice=self.completion_notice,
             )
             delivered.update(result.succeeded_ids)
             self.task_info.game_sign_summary_delivered = delivered
@@ -154,7 +176,10 @@ class TaskCommunitySignNotification:
             if result.attempted and not result.failed:
                 self.task_info.community_summary_consumed = True
             if result.failed:
-                await report_community_notification_failure(list(result.failed))
+                await report_community_notification_failure(
+                    list(result.failed),
+                    results_saved=bool(self.task_info.community_results),
+                )
 
 
 async def drain_task_community_notifications(timeout: float) -> bool:
