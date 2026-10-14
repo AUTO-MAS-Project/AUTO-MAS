@@ -2075,7 +2075,7 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
   }
 })
 
-ipcMain.handle('load-config', async () => {
+ipcMain.handle('load-config', async (_event, strict?: boolean) => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
@@ -2087,8 +2087,9 @@ ipcMain.handle('load-config', async () => {
     }
 
     return null
-  } catch {
+  } catch (error) {
     logger.error('加载配置文件失败')
+    if (strict === true) throw error
     return null
   }
 })

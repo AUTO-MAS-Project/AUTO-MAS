@@ -75,7 +75,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置文件操作
   saveConfig: (config: unknown, defaults?: unknown) =>
     ipcRenderer.invoke('save-config', config, defaults),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
+  loadConfig: (strict?: boolean) =>
+    strict === true ? ipcRenderer.invoke('load-config', true) : ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 应用初始化版本（保存前端版本号用于比对）

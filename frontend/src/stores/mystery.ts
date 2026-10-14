@@ -56,7 +56,10 @@ export const useMysteryStore = defineStore('mystery', () => {
     loadError.value = ''
     const pending = (async () => {
       try {
-        const [config, currentContext] = await Promise.all([getConfig(), getMysteryContext()])
+        const [config, currentContext] = await Promise.all([
+          getConfig({ strict: true }),
+          getMysteryContext(),
+        ])
         if (generation !== contextGeneration) return
         context.value = currentContext
         unlockedDate.value = config.mysteryUnlockedDate ?? ''
@@ -78,14 +81,12 @@ export const useMysteryStore = defineStore('mystery', () => {
 
   // 后端重连后重取它自己的源码指纹，避免更新后沿用上一进程的解锁状态。
   watch(state, status => {
-    if (status !== 'open') {
-      contextGeneration++
-      context.value = null
-      initialized.value = false
-      loadError.value = ''
-      loadPromise = null
-      return
-    }
+    contextGeneration++
+    context.value = null
+    initialized.value = false
+    loadError.value = ''
+    loadPromise = null
+    if (status !== 'open') return
     void load().catch(() => {
       // loadError 已保留可重试的失败状态，由入口页面显示。
     })
