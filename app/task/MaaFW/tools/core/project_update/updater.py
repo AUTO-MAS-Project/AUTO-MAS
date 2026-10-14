@@ -253,6 +253,10 @@ class MaaFWMirrorChyanVersionCheck:
     cdk_message: str = ""
     cdk_expired_time: int | None = None
     provider_error_code: int | None = None
+    # 不是 Mirror 酱的数据：GitHub 源时比 ``version_name`` 更新、顶替它当了目标版本的
+    # GitHub Release tag，没有顶替为 None。已是最新时报「最新版本」要用它，否则会把
+    # Mirror 酱滞后的旧版本报出去。
+    superseded_by: str | None = None
 
     @property
     def fallback_reason(self) -> str:
@@ -678,7 +682,9 @@ async def update_maafw_project_if_needed(
             updated=False,
             current_version=current_version,
             latest_version=(
-                version_check.version_name if version_check is not None else None
+                (version_check.superseded_by or version_check.version_name)
+                if version_check is not None
+                else None
             ),
             message=message,
             skipped_reason=skipped_reason or message,
@@ -992,6 +998,7 @@ async def _discover_project_update_detailed(
             )
             latest = github_latest
             version_label = "GitHub"
+            version_check.superseded_by = github_latest
 
     if not _is_remote_newer(latest, current):
         reason = f"已是最新版本: {current or latest}"
@@ -2165,7 +2172,9 @@ async def _query_github_latest_version(
     ``/releases/latest``：后者按发布时间取、不看版本号，也排除不了没标预发布的 beta tag。
 
     网络或接口出错照常抛（``httpx.HTTPError`` / :class:`MaaFWProjectUpdateError`），
-    要不要降级由调用方定。
+    要不要降级由调用方定；仓库不存在或无权访问（404）也算出错，免得日志里看着像
+    「查过了、没有新版」。``timeout`` 是整次请求的总时限：httpx 的超时只管单次读写，
+    响应一点点往回滴时可以远超它，而这一步挡在每次运行前面。
     """
 
     repo = _normalize_github_repo(str(interface_model.github or ""))
@@ -2173,16 +2182,24 @@ async def _query_github_latest_version(
         return ""
     headers = dict(HTTP_HEADERS)
     headers["Accept"] = "application/vnd.github+json"
-    async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=timeout
-    ) as client:
-        response = await client.get(
-            f"https://api.github.com/repos/{repo}/releases",
-            params={"per_page": GITHUB_VERSION_CHECK_PAGE_SIZE},
-            headers=headers,
-        )
+    try:
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient(
+                proxy=proxy, follow_redirects=True, timeout=timeout
+            ) as client:
+                response = await client.get(
+                    f"https://api.github.com/repos/{repo}/releases",
+                    params={"per_page": GITHUB_VERSION_CHECK_PAGE_SIZE},
+                    headers=headers,
+                )
+    except TimeoutError as exc:
+        raise MaaFWProjectUpdateError(
+            f"GitHub release list timed out after {timeout:g}s"
+        ) from exc
     if response.status_code == 404:
-        return ""
+        raise MaaFWProjectUpdateError(
+            f"GitHub repository {repo} not found or not accessible: HTTP 404"
+        )
     try:
         data = response.json()
     except Exception as exc:
