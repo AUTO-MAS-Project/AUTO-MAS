@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 #   SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""按已启用托管账号与首页显示设置推送游戏活动提醒。"""
+"""按已启用托管账号推送游戏活动提醒。"""
 
 import asyncio
 import hashlib
@@ -62,24 +62,6 @@ class CalendarReminder:
 
 
 _SCHEDULE_ADAPTER = TypeAdapter(list[CalendarReminder])
-
-
-def visible_calendar_games(config: Mapping[str, object]) -> dict[str, tuple[str, str]]:
-    """与首页一致：轮播总开关和游戏开关同时生效，缺省显示全部游戏。"""
-
-    layout = config.get("homeLayout")
-    hidden = layout.get("hiddenModules", []) if isinstance(layout, dict) else []
-    if not isinstance(hidden, list):
-        hidden = []
-    hidden = [key for key in hidden if isinstance(key, str)]
-    if "activities" in hidden:
-        return {}
-    games = {key: value for key, value in CALENDAR_GAMES.items() if key not in hidden}
-    if "bluearchive" in games:
-        server = config.get("homeBlueArchiveServer", "cn")
-        source, label = BLUEARCHIVE_SERVERS.get(str(server), BLUEARCHIVE_SERVERS["cn"])
-        games["bluearchive"] = (source, f"碧蓝档案（{label}）")
-    return games
 
 
 def _activity_time(value: object) -> datetime | None:
@@ -171,14 +153,8 @@ class _GameCalendar:
 
     @staticmethod
     def _notification_games() -> dict[tuple[str, str], str]:
-        path = Config.config_path / "frontend_config.json"
-        config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-        games = visible_calendar_games(config)
-        # 老版本的服务器偏好在浏览器里，先等首页迁移，不能猜成国服发送。
-        if "homeBlueArchiveServer" not in config:
-            games.pop("bluearchive", None)
-        # 同一游戏的不同服分别登记，首页与多个托管账号命中同一服时只提醒一次。
-        targets = {(game, source): label for game, (source, label) in games.items()}
+        # 同一游戏的不同服分别登记，多个托管账号命中同一服时只提醒一次。
+        targets: dict[tuple[str, str], str] = {}
         for script in Config.ScriptConfig.values():
             game = SCRIPT_CALENDAR_GAMES.get(type(script))
             if game is None:
