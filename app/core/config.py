@@ -3286,7 +3286,9 @@ class AppConfig(GlobalConfig):
             if not isinstance(script, consumer_config["script_class"]):
                 continue
             for user in script.UserData.values():
-                if user.get("Info", consumer_config["field_name"]) != str(plan_uid):
+                if user.get(
+                    consumer_config["field_group"], consumer_config["field_name"]
+                ) != str(plan_uid):
                     continue
                 if user.is_locked:
                     raise RuntimeError(
@@ -3295,7 +3297,11 @@ class AppConfig(GlobalConfig):
                 user_list.append(user)
 
         for user in user_list:
-            await user.set("Info", consumer_config["field_name"], "Fixed")
+            await user.set(
+                group=consumer_config["field_group"],
+                name=consumer_config["field_name"],
+                value="Fixed",
+            )
 
         await self.PlanConfig.remove(plan_uid)
 

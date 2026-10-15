@@ -5958,6 +5958,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.MaaPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[0],
         "script_class": MaaConfig,
+        "field_group": "Stage",
         "field_name": "StageMode",
     },
     "MaaEndPlanConfig": {
@@ -5966,6 +5967,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.MaaEndPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[1],
         "script_class": MaaEndConfig,
+        "field_group": "Info",
         "field_name": "SanityMode",
     },
     "BAAHPlanConfig": {
@@ -5974,6 +5976,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.BAAHPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[2],
         "script_class": BAAHConfig,
+        "field_group": "Info",
         "field_name": "StageMode",
     },
     "MSSPlanConfig": {
@@ -5983,6 +5986,7 @@ PLAN_BOOK = {
         # MSS 排在 baah 之后，位置索引跟着往后挪一位
         "consumer": PLAN_CONSUMER_VALUES[3],
         "script_class": MSSConfig,
+        "field_group": "Info",
         "field_name": "PlanMode",
     },
 }
