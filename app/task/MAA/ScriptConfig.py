@@ -287,6 +287,24 @@ class ScriptConfigTask(TaskExecuteBase):
         mas_dir = mas_config_dir(self.script_info.script_id, owner)
         seed_maa_base_config(mas_dir)
 
+        overlay = (
+            read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
+            if target_user_id != "Default"
+            else None
+        )
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            target_user_id,
+            mas_dir,
+            overlay=overlay,
+            # 备份标注来源：tri_state 池跨来源恢复靠它切回
+            base=(
+                CONFIG_BASE_INDEPENDENT
+                if owner == target_user_id
+                else CONFIG_BASE_SHARED
+            ),
+        )
+
         preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
             "TaskQueue"
         ]
@@ -314,24 +332,6 @@ class ScriptConfigTask(TaskExecuteBase):
         if repaired_queues and not self.view_only:
             write_file(mas_dir / "gui.new.json", base_gui_new_set)
             logger.info(f"MAA 已对齐 {repaired_queues} 个三段理智预设队列")
-
-        overlay = (
-            read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
-            if target_user_id != "Default"
-            else None
-        )
-        archive_mas_runtime_backup(
-            self.script_info.script_id,
-            target_user_id,
-            mas_dir,
-            overlay=overlay,
-            # 备份标注来源：tri_state 池跨来源恢复靠它切回
-            base=(
-                CONFIG_BASE_INDEPENDENT
-                if owner == target_user_id
-                else CONFIG_BASE_SHARED
-            ),
-        )
 
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
             shutil.copytree(
