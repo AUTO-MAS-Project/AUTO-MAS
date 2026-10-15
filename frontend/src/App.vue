@@ -77,7 +77,13 @@ const disposeMascotTaskEvents = onTaskRuntimeEvent(event => {
   }
   const { state } = event
   if (state.mode === 'ScriptConfig') return
-  const name = state.taskName || t('setting.basic.mascotTask')
+  const name =
+    state.taskName ||
+    state.taskInfo
+      .map(info => info.name)
+      .filter(Boolean)
+      .join('、') ||
+    t('setting.basic.mascotTask')
   let text: string
   let reaction: 'success' | 'failure' | 'stopped' | undefined
   if (event.type === 'info') {

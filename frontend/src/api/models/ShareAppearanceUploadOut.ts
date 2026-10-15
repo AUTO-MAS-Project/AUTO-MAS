@@ -40,9 +40,9 @@ export type ShareAppearanceUploadOut = {
      */
     appearanceId?: string;
     /**
-     * 分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限
+     * 上传拒绝的类别: pendingLimit 待审核数超限, conflict 名称被占用或内容未变, tooLarge 超过体积上限, categoryMismatch 更新目标与分类不符
      */
-    reason?: ('pendingLimit' | 'conflict' | 'tooLarge' | null);
+    reason?: ('pendingLimit' | 'conflict' | 'tooLarge' | 'categoryMismatch' | null);
 };
 export namespace ShareAppearanceUploadOut {
     /**

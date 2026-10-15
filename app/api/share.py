@@ -25,6 +25,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    ShareAppearanceCategoryIn,
     ShareAppearanceCoverIn,
     ShareAppearanceCoverOut,
     ShareAppearanceDescriptionIn,
@@ -188,6 +189,7 @@ async def upload_share_appearance(
             file_id=upload.fileId,
             cover_path=upload.coverPath,
             cover_mode=upload.coverMode,
+            category_key=upload.categoryKey,
         )
     except ConfigCenterError as e:
         return ShareAppearanceUploadOut(
@@ -208,12 +210,16 @@ async def upload_share_appearance(
     response_model=ShareAppearanceUploadsOut,
     status_code=200,
 )
-async def list_share_appearance_uploads() -> ShareAppearanceUploadsOut:
+async def list_share_appearance_uploads(
+    query: ShareAppearanceCategoryIn = Body(default=ShareAppearanceCategoryIn()),
+) -> ShareAppearanceUploadsOut:
 
     return ShareAppearanceUploadsOut(
         data=[
             ShareAppearanceUploadItem(**_)
-            for _ in ConfigCenter.list_appearance_uploads()
+            for _ in ConfigCenter.list_appearance_uploads(
+                category_key=query.categoryKey
+            )
         ]
     )
 
@@ -225,10 +231,12 @@ async def list_share_appearance_uploads() -> ShareAppearanceUploadsOut:
     response_model=ShareAppearanceMineOut,
     status_code=200,
 )
-async def list_my_share_appearances() -> ShareAppearanceMineOut:
+async def list_my_share_appearances(
+    query: ShareAppearanceCategoryIn = Body(default=ShareAppearanceCategoryIn()),
+) -> ShareAppearanceMineOut:
 
     try:
-        items = await ConfigCenter.list_my_appearances()
+        items = await ConfigCenter.list_my_appearances(category_key=query.categoryKey)
     except ConfigCenterError as e:
         return ShareAppearanceMineOut(
             code=e.status_code, status="error", message=str(e)

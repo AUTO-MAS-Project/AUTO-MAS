@@ -9,9 +9,12 @@ import type {
   DesktopMascotUpdate,
 } from '../../src/types/desktopMascot'
 import { getAppearance } from './appearanceService'
+import { getMascot } from './mascotPackageService'
 
 export interface DesktopMascotPreferences {
   appearanceId?: string | null
+  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
+  desktopMascotId?: string | null
   desktopMascotEnabled?: boolean
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
@@ -178,16 +181,15 @@ export class DesktopMascotService {
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
     this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
     this.motionOverride = typeof preferences.desktopMascotAnimationPaused === 'boolean'
-    if (
-      !this.ready ||
-      !this.colors ||
-      preferences.desktopMascotEnabled === false ||
-      !preferences.appearanceId
-    ) {
+    if (!this.ready || !this.colors || preferences.desktopMascotEnabled === false) {
       this.close()
       return
     }
-    const appearance = getAppearance(app.getPath('userData'), preferences.appearanceId)
+    const appearance = preferences.desktopMascotId
+      ? getMascot(app.getPath('userData'), preferences.desktopMascotId)
+      : preferences.appearanceId
+        ? getAppearance(app.getPath('userData'), preferences.appearanceId)
+        : null
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
