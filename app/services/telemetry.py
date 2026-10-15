@@ -37,6 +37,18 @@ from app.utils import get_logger
 
 logger = get_logger("遥测")
 
+
+@contextmanager
+def private_operation() -> Iterator[None]:
+    """隔离凭据操作的遥测，避免自动 HTTP/进程追踪记录请求或参数。"""
+    with sentry_sdk.isolation_scope() as isolation:
+        isolation.clear()
+        isolation.add_event_processor(lambda event, hint: None)
+        with sentry_sdk.new_scope() as scope:
+            scope.clear()
+            yield
+
+
 SENTRY_DSN = (
     "https://eae490f602916b04f2f51f49f0fb5155@"
     "o4511881138733056.ingest.us.sentry.io/4511902512644096"

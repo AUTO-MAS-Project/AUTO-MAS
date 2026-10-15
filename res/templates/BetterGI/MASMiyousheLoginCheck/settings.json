@@ -1,0 +1,12 @@
+[
+  {
+    "name": "expectedUid",
+    "type": "input-text",
+    "label": "目标角色 UID（由 MAS 注入）"
+  },
+  {
+    "name": "runId",
+    "type": "input-text",
+    "label": "本次校验标识（由 MAS 注入）"
+  }
+]

@@ -7,12 +7,45 @@ import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn'
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
+import type { MiyousheGenshinAccountsOut } from '../models/MiyousheGenshinAccountsOut';
+import type { MiyousheGenshinRolesIn } from '../models/MiyousheGenshinRolesIn';
+import type { MiyousheGenshinRolesOut } from '../models/MiyousheGenshinRolesOut';
 import type { OutBase } from '../models/OutBase';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GameSignService {
+    /**
+     * 查询原神登录可选社区账号
+     * @returns MiyousheGenshinAccountsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMiyousheGenshinAccountsApiToolsMiyousheGenshinAccountsPost(): CancelablePromise<MiyousheGenshinAccountsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/miyoushe/genshin/accounts',
+        });
+    }
+    /**
+     * 查询米游社绑定的原神官服角色
+     * @param requestBody
+     * @returns MiyousheGenshinRolesOut Successful Response
+     * @throws ApiError
+     */
+    public static getMiyousheGenshinRolesApiToolsMiyousheGenshinRolesPost(
+        requestBody: MiyousheGenshinRolesIn,
+    ): CancelablePromise<MiyousheGenshinRolesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/miyoushe/genshin/roles',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 获取所有游戏社区账号组
      * 获取所有游戏社区账号组

@@ -2104,6 +2104,51 @@ export default {
     bettergiUserNameHint:
       'アカウントを区別するための名前です。同じ名前のアカウントは統計上、同一アカウントとして扱われます',
     bettergiAccount: 'アカウント',
+    bettergiMiyousheLogin: '米游社で原神にログイン',
+    bettergiMiyousheLoginHint:
+      'ゲームコミュニティでログイン済みの米游社アカウントで原神を起動します。従来のアカウント切り替え方式より優先されます',
+    bettergiMiyousheOfficialOnly:
+      '中国公式サーバーのみ対応しています。先に中国公式サーバーとクライアントを選択してください。B サーバーとグローバル版には対応していません',
+    bettergiMiyousheLaunchHint:
+      'AUTO-MAS を管理者権限で実行してください。実行前に進行状況を保存して原神を終了してください。既存のゲームが実行中の場合は起動を拒否し、そのゲームを自動終了しません。起動後に選択した UID でキャラクターを確認します',
+    bettergiMiyousheAccount: '米游社アカウント',
+    bettergiMiyousheSelectAccount: 'ゲームコミュニティの米游社アカウントを選択',
+    bettergiMiyousheNeedsLogin: '（ログインが必要）',
+    bettergiMiyousheAccountMissing:
+      '連携したコミュニティアカウントが存在しません。選び直すか、ゲームコミュニティでログインしてください',
+    bettergiMiyousheRole: '原神キャラクター',
+    bettergiMiyousheSelectRole: 'ログインする中国公式サーバーの原神キャラクターを選択',
+    bettergiMiyousheNoAccounts:
+      'ログイン済みの米游社アカウントがありません。ゲームコミュニティでアカウントを追加し、米游社にログインしてください',
+    bettergiMiyousheNoRoles:
+      'このアカウントに中国公式サーバーの原神キャラクターが見つかりません。B サーバーとグローバル版のキャラクターは対応していません',
+    bettergiMiyousheManageAccounts: 'ゲームコミュニティでログイン',
+    bettergiMiyousheRefreshAccounts: 'アカウントを更新',
+    bettergiMiyousheRefreshRoles: 'キャラクターを更新',
+    bettergiMiyousheSelectionPending:
+      '現在の選択はまだ保存されていません。保存済みの起動方式が引き続き使用されます。アカウントとキャラクターを選択すると自動保存されます',
+    bettergiMiyousheSaveFailed:
+      'ログイン設定を保存できませんでした。保存済みの起動方式が引き続き使用されます。現在の選択は保持されています。再試行してください',
+    bettergiMiyousheRetrySave: '保存を再試行',
+    bettergiMiyousheRequestFailed:
+      '米游社のアカウント情報を取得できませんでした。時間をおいて再試行してください',
+    bettergiMiyousheErrors: {
+      account_missing:
+        'コミュニティアカウントが存在しません。選び直すか、ゲームコミュニティでログインしてください',
+      credential_incomplete:
+        '米游社のログイン情報が不足しています。ゲームコミュニティで再ログインしてください',
+      credential_invalid:
+        '米游社のログインが失効しています。ゲームコミュニティで再ログインしてください',
+      unsupported_region:
+        '原神の中国公式サーバーのみ対応しています。B サーバーとグローバル版は対応していません',
+      role_not_owned:
+        '選択した原神キャラクターはこの米游社アカウントに連携されていません。更新して選び直してください',
+      network_error: '米游社に接続できません。ネットワークを確認して再試行してください',
+      upstream_rejected:
+        '米游社がリクエストを拒否しました。時間をおいて再試行するか、再ログインしてください',
+      invalid_response:
+        '米游社から返されたアカウント情報を読み取れませんでした。時間をおいて再試行してください',
+    },
     bettergiEnterAccount: 'アカウントを入力してください（アカウント切り替え用。不要な場合は空欄）',
     bettergiAccountHint:
       'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。中国公式：電話番号またはメールアドレスを入力すると、MAS がゲームの表示に合わせて伏せ字に変換します。B サーバー：Bilibili アカウント名を入力してください',

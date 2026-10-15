@@ -4110,6 +4110,16 @@ class BetterGIUserConfig(ConfigBase):
         ## 用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同脚本
         ## 混服用户各用各的客户端
         self.Switch_GamePath = ConfigItem("Switch", "GamePath", "", FileValidator())
+        ## 使用已保存的米游社会话启动官服原神，启用后替代账号密码切换
+        self.Switch_MiyousheLogin = ConfigItem(
+            "Switch", "MiyousheLogin", False, BoolValidator()
+        )
+        ## 米游社社区账号组 ID（只存引用，凭据沿用社区账号的 DPAPI 存储）
+        self.Switch_MiyousheAccountUid = ConfigItem("Switch", "MiyousheAccountUid", "")
+        ## 所选原神角色 UID，启动后通过 BetterGI 公开接口核对
+        self.Switch_MiyousheRoleUid = ConfigItem("Switch", "MiyousheRoleUid", "")
+        ## 所选角色服务器，首期只支持国服官服 cn_gf01
+        self.Switch_MiyousheRoleRegion = ConfigItem("Switch", "MiyousheRoleRegion", "")
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(

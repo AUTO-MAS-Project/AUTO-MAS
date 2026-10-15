@@ -51,6 +51,11 @@ from app.models.schema import (
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
     GameSignAccountUpdateIn,
+    MiyousheGenshinAccountOut,
+    MiyousheGenshinAccountsOut,
+    MiyousheGenshinRoleOut,
+    MiyousheGenshinRolesIn,
+    MiyousheGenshinRolesOut,
     OutBase,
     TaygedoLoginIn,
     ToolsConfig,
@@ -65,6 +70,73 @@ router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
 _PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
+
+
+@router.post(
+    "/miyoushe/genshin/accounts",
+    tags=["GameSign"],
+    summary="查询原神登录可选社区账号",
+    response_model=MiyousheGenshinAccountsOut,
+    status_code=200,
+)
+async def get_miyoushe_genshin_accounts() -> MiyousheGenshinAccountsOut:
+    from app.core.miyoushe_game_login import list_genshin_login_accounts
+    from app.services.miyoushe_game_login import MiyousheGameLoginError
+
+    try:
+        accounts = list_genshin_login_accounts()
+    except MiyousheGameLoginError as error:
+        return MiyousheGenshinAccountsOut(
+            code=error.code,
+            status="error",
+            message=str(error),
+            reason=error.reason,
+        )
+    return MiyousheGenshinAccountsOut(
+        data=[
+            MiyousheGenshinAccountOut(
+                uid=account.uid,
+                name=account.name,
+                has_credentials=account.has_credentials,
+            )
+            for account in accounts
+        ]
+    )
+
+
+@router.post(
+    "/miyoushe/genshin/roles",
+    tags=["GameSign"],
+    summary="查询米游社绑定的原神官服角色",
+    response_model=MiyousheGenshinRolesOut,
+    status_code=200,
+)
+async def get_miyoushe_genshin_roles(
+    request: MiyousheGenshinRolesIn = Body(...),
+) -> MiyousheGenshinRolesOut:
+    from app.core.miyoushe_game_login import fetch_configured_genshin_roles
+    from app.services.miyoushe_game_login import MiyousheGameLoginError
+
+    try:
+        roles = await fetch_configured_genshin_roles(request.account_uid)
+    except MiyousheGameLoginError as error:
+        return MiyousheGenshinRolesOut(
+            code=error.code,
+            status="error",
+            message=str(error),
+            reason=error.reason,
+        )
+    return MiyousheGenshinRolesOut(
+        data=[
+            MiyousheGenshinRoleOut(
+                uid=role.uid,
+                region=role.region,
+                nickname=role.nickname,
+                region_name=role.region_name,
+            )
+            for role in roles
+        ]
+    )
 
 
 def _log_community_api_error(stage: str, error: Exception) -> None:

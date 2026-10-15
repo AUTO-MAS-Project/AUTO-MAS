@@ -1,0 +1,8 @@
+{
+  "name": "MAS米游社启动角色校验",
+  "version": "1.0.0",
+  "description": "使用 BetterGI 公开接口确认当前角色 UID",
+  "main": "main.js",
+  "bgi_version": "0.64.0",
+  "settings_ui": "settings.json"
+}

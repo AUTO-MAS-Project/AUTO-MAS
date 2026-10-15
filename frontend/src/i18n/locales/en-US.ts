@@ -2176,6 +2176,49 @@ export default {
     bettergiUserNameHint:
       'Name used to tell accounts apart. Accounts sharing a name are counted as one in statistics',
     bettergiAccount: 'Account',
+    bettergiMiyousheLogin: 'Log into Genshin with Miyoushe',
+    bettergiMiyousheLoginHint:
+      'Launch Genshin with a Miyoushe account signed in on Game Community. This takes priority over the existing account switch method',
+    bettergiMiyousheOfficialOnly:
+      'Only the CN official server is supported. Select the CN official server and client first. Bilibili and international clients are unsupported',
+    bettergiMiyousheLaunchHint:
+      'Run AUTO-MAS as administrator. Save your progress and close Genshin before running. An existing client blocks launch and will not be closed automatically. The selected character UID is verified after launch',
+    bettergiMiyousheAccount: 'Miyoushe account',
+    bettergiMiyousheSelectAccount: 'Select a Miyoushe account from Game Community',
+    bettergiMiyousheNeedsLogin: '(sign-in required)',
+    bettergiMiyousheAccountMissing:
+      'The linked community account no longer exists. Select another account or sign in on Game Community',
+    bettergiMiyousheRole: 'Genshin character',
+    bettergiMiyousheSelectRole: 'Select the Genshin character on the CN official server',
+    bettergiMiyousheNoAccounts:
+      'No Miyoushe accounts are signed in. Add an account and sign into Miyoushe on Game Community',
+    bettergiMiyousheNoRoles:
+      'No Genshin character on the CN official server was found for this account. Bilibili and international characters are unsupported',
+    bettergiMiyousheManageAccounts: 'Sign in on Game Community',
+    bettergiMiyousheRefreshAccounts: 'Refresh accounts',
+    bettergiMiyousheRefreshRoles: 'Refresh characters',
+    bettergiMiyousheSelectionPending:
+      'These changes have not been saved. The saved launch method remains active. Changes will be saved automatically after you select an account and character',
+    bettergiMiyousheSaveFailed:
+      'Login settings were not saved. The saved launch method remains active. Your selection is preserved; please retry',
+    bettergiMiyousheRetrySave: 'Retry saving',
+    bettergiMiyousheRequestFailed:
+      'Could not load Miyoushe account information. Please try again later',
+    bettergiMiyousheErrors: {
+      account_missing:
+        'The community account no longer exists. Select another account or sign in on Game Community',
+      credential_incomplete:
+        'The Miyoushe login credentials are incomplete. Sign in again on Game Community',
+      credential_invalid: 'The Miyoushe session has expired. Sign in again on Game Community',
+      unsupported_region:
+        'Only the CN official Genshin server is supported. Bilibili and international servers are unsupported',
+      role_not_owned:
+        'The selected Genshin character is not linked to this Miyoushe account. Refresh and select again',
+      network_error: 'Could not connect to Miyoushe. Check your network and retry',
+      upstream_rejected: 'Miyoushe rejected this request. Try again later or sign in again',
+      invalid_response:
+        'Could not read the account information returned by Miyoushe. Please try again later',
+    },
     bettergiEnterAccount: 'Enter the account (for account switching; leave empty if not needed)',
     bettergiAccountHint:
       'Used for account switching; leave empty if you do not need it. CN official: enter the full phone number or email and MAS masks it the way the game displays it; CN Bilibili: enter the Bilibili account name',
