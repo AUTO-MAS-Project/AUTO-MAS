@@ -38,11 +38,30 @@ if TYPE_CHECKING:
 type WorkspaceUnit = ConfigNode | type[ConfigNode]
 
 
+def _current_task() -> asyncio.Task[Any] | None:
+    """同步配置入口也可在尚无事件循环的线程使用。"""
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
+
+
 @dataclass
 class TransactionContext:
     """普通 / Init 事务共用上下文；登记单元在结束时合并或丢弃对应工作区。"""
 
     registered: list[WorkspaceUnit] = field(default_factory=list)
+    _task: asyncio.Task[Any] | None = field(default_factory=_current_task, init=False)
+    _thread: int = field(default_factory=threading.get_ident, init=False)
+    _active: bool = field(default=True, init=False)
+
+    def is_current(self) -> bool:
+        """ContextVar 可被子 Task 复制，事务只能由原执行者在有效期内使用。"""
+        return (
+            self._active
+            and self._thread == threading.get_ident()
+            and self._task is _current_task()
+        )
 
 
 @dataclass
@@ -65,11 +84,13 @@ class ConfigManager:
             "config_framework_v2_init_txn", default=None
         )
         # 本 Task 正在 commit 的节点 id 栈；tuple 不可变，进入 set 新元组、退出 reset
-        self._committing_nodes: ContextVar[tuple[int, ...]] = ContextVar(
-            "config_framework_v2_committing", default=()
-        )
+        self._committing_nodes: ContextVar[
+            tuple[asyncio.Task[Any] | None, tuple[int, ...]] | None
+        ] = ContextVar("config_framework_v2_committing", default=None)
         self._txn_lock = asyncio.Lock()
+        self._txn_owner: asyncio.Task[Any] | None = None
         self._sync_lock = threading.RLock()
+        self._transaction_owner: TransactionContext | None = None
         self._save_handle: asyncio.Task[None] | None = None
         self._debounce_seconds: float = 0.05
 
@@ -129,40 +150,37 @@ class ConfigManager:
 
     @property
     def in_transaction(self) -> bool:
-        return self._txn.get() is not None
+        return self.current is not None
 
     @property
     def current(self) -> TransactionContext | None:
-        return self._txn.get()
+        ctx = self._txn.get()
+        return ctx if ctx is not None and ctx.is_current() else None
+
+    @asynccontextmanager
+    async def _transaction_gate(self) -> AsyncGenerator[None, None]:
+        """全局提交许可先于节点锁获取；同 Task 可重入，不合并各条 op 的事务。"""
+        task = _current_task()
+        outer = self._txn_owner is not task
+        if outer:
+            await self._txn_lock.acquire()
+            self._txn_owner = task
+        try:
+            yield
+        finally:
+            if outer:
+                self._txn_owner = None
+                self._txn_lock.release()
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[None, None]:
-        """外层事务互斥（``_txn_lock``）；同 Task 嵌套复用同一 ``ctx``。"""
-        is_outer = not self.in_transaction
-        if is_outer:
-            await self._txn_lock.acquire()
-            self._sync_lock.acquire()
-        token = None
-        if is_outer:
-            token = self._txn.set(TransactionContext())
-        try:
+        """外层事务互斥；同 Task 嵌套复用上下文，子 Task 等待独立事务。"""
+        if self.in_transaction:
             yield
-            if is_outer:
-                ctx = self._txn.get()
-                if ctx is not None:
-                    self.COMMIT(ctx)
-        except BaseException:
-            if is_outer:
-                ctx = self._txn.get()
-                if ctx is not None:
-                    self.ROLLBACK(ctx)
-            raise
-        finally:
-            if is_outer and token is not None:
-                self._txn.reset(token)
-            if is_outer:
-                self._sync_lock.release()
-                self._txn_lock.release()
+            return
+        async with self._transaction_gate():
+            with self.transaction_sync():
+                yield
 
     @contextmanager
     def transaction_sync(self) -> Generator[None, None, None]:
@@ -170,9 +188,16 @@ class ConfigManager:
         is_outer = not self.in_transaction
         if is_outer:
             self._sync_lock.acquire()
+            # RLock 只区分线程；同线程其他 Task 不能借同步入口共享工作区。
+            if self._transaction_owner is not None:
+                self._sync_lock.release()
+                raise RuntimeError(
+                    "不能重入其他 Task 的配置事务，请等待异步 transaction"
+                )
         token = None
         if is_outer:
-            token = self._txn.set(TransactionContext())
+            self._transaction_owner = TransactionContext()
+            token = self._txn.set(self._transaction_owner)
         try:
             yield
             if is_outer:
@@ -187,12 +212,16 @@ class ConfigManager:
             raise
         finally:
             if is_outer and token is not None:
+                ctx = self._txn.get()
+                if ctx is not None:
+                    ctx._active = False
                 self._txn.reset(token)
             if is_outer:
+                self._transaction_owner = None
                 self._sync_lock.release()
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
-        ctx = self._txn.get()
+        ctx = self.current
         if ctx is None:
             return
         if not any(u is unit for u in ctx.registered):
@@ -227,18 +256,19 @@ class ConfigManager:
 
     @property
     def in_init_transaction(self) -> bool:
-        return bool(self._init_txn.get())
+        return self._current_init_ctx() is not None
 
     def _current_init_ctx(self) -> TransactionContext | None:
         stack = self._init_txn.get()
-        return stack[-1] if stack else None
+        ctx = stack[-1] if stack else None
+        return ctx if ctx is not None and ctx.is_current() else None
 
     @asynccontextmanager
     async def init_transaction(self) -> AsyncGenerator[None, None]:
         """须已在普通事务中。每次进入压入独立 ctx；结束只提交/回滚本层（可嵌套）。"""
         if not self.in_transaction:
             raise RuntimeError("init_transaction 须在 transaction 内")
-        parent = self._init_txn.get()
+        parent = self._init_txn.get() if self.in_init_transaction else None
         ctx = TransactionContext()
         token = self._init_txn.set((*(parent or ()), ctx))
         try:
@@ -248,6 +278,7 @@ class ConfigManager:
             self.ROLLBACK_init(ctx)
             raise
         finally:
+            ctx._active = False
             self._init_txn.reset(token)
 
     def _register_init_workspace(self, node: "ConfigNode") -> None:
@@ -273,33 +304,40 @@ class ConfigManager:
 
     def in_node_commit(self, node: "ConfigNode") -> bool:
         """本 Task 是否正在对该节点 ``commit``（含同 Task 嵌套）。"""
-        return id(node) in self._committing_nodes.get()
+        state = self._committing_nodes.get()
+        return (
+            state is not None and state[0] is _current_task() and id(node) in state[1]
+        )
 
     @asynccontextmanager
     async def node_commit(self, node: "ConfigNode") -> AsyncGenerator[None, None]:
-        """外层抢节点 commit 锁；同 Task 嵌套空过；释放时并入 ``_staged_pending``。"""
-        nid = id(node)
-        outer = not self.in_node_commit(node)
-        token = None
-        if outer:
-            lock = node._commit_lock
-            if lock is None:
-                lock = asyncio.Lock()
-                node._commit_lock = lock
-            await lock.acquire()
-            token = self._committing_nodes.set((*self._committing_nodes.get(), nid))
-        try:
-            yield
-        finally:
+        """先获全局许可再抢节点锁；同 Task 嵌套空过，释放时并入 pending。"""
+        async with self._transaction_gate():
+            nid = id(node)
+            outer = not self.in_node_commit(node)
+            token = None
             if outer:
-                if token is not None:
-                    self._committing_nodes.reset(token)
-                if node._staged_pending:
-                    node._staged_ops.extend(node._staged_pending)
-                    node._staged_pending.clear()
                 lock = node._commit_lock
-                if lock is not None and lock.locked():
-                    lock.release()
+                if lock is None:
+                    lock = asyncio.Lock()
+                    node._commit_lock = lock
+                await lock.acquire()
+                state = self._committing_nodes.get()
+                owner = _current_task()
+                nodes = state[1] if state is not None and state[0] is owner else ()
+                token = self._committing_nodes.set((owner, (*nodes, nid)))
+            try:
+                yield
+            finally:
+                if outer:
+                    if token is not None:
+                        self._committing_nodes.reset(token)
+                    if node._staged_pending:
+                        node._staged_ops.extend(node._staged_pending)
+                        node._staged_pending.clear()
+                    lock = node._commit_lock
+                    if lock is not None and lock.locked():
+                        lock.release()
 
     # ──────────────── 防抖落盘 ────────────────
 
