@@ -82,6 +82,7 @@ interface InstalledAppearance extends AppearanceManifest {
   mascotAnimationUrl?: string
   mascotLookUrl?: string
   mascotResultUrl?: string
+  mascotDragUrl?: string
   menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
@@ -269,6 +270,7 @@ function referencedPaths(manifest: AppearanceManifest): string[] {
     manifest.mascot?.animation?.path,
     manifest.mascot?.animation?.lookPath,
     manifest.mascot?.animation?.resultPath,
+    manifest.mascot?.animation?.dragPath,
     manifest.preview,
     ...Object.values(manifest.menuIcons ?? {}),
     ...Object.values(manifest.cursors ?? {}).map(cursor => cursor.path),
@@ -304,6 +306,9 @@ function serializeAppearance({
       : {}),
     ...(manifest.mascot?.animation?.resultPath
       ? { mascotResultUrl: getAsset(manifest.mascot.animation.resultPath) }
+      : {}),
+    ...(manifest.mascot?.animation?.dragPath
+      ? { mascotDragUrl: getAsset(manifest.mascot.animation.dragPath) }
       : {}),
     ...(manifest.menuIcons ? { menuIconUrls } : {}),
     ...(manifest.cursors ? { cursorUrls } : {}),

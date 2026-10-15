@@ -4137,7 +4137,7 @@ export default {
         'デスクトップ上の任意の場所へドラッグできます。メインウィンドウを最小化しても表示され、アプリ終了時に閉じます。',
       desktopMascotFailed: 'デスクトップペットを更新できませんでした。ペットを選び直してください。',
       appearanceAnimationInvalid:
-        'ペットのアニメーションが無効です。同じフレームサイズの2行のPNGスプライトシートを使用してください。',
+        'ペットのアニメーションが無効です。PNGスプライトシートの行列の配置とフレームサイズを確認してください。',
       mascotTask: 'タスク',
       mascotPauseAnimation: 'アニメーションを一時停止',
       mascotResumeAnimation: 'アニメーションを再開',

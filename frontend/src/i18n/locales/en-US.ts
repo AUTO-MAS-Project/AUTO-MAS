@@ -4730,7 +4730,7 @@ export default {
         'Drag anywhere on the desktop. Stays visible when the main window is minimized and closes when the app exits.',
       desktopMascotFailed: 'Could not update the desktop pet. Please select the pet again.',
       appearanceAnimationInvalid:
-        'Invalid pet animation. Use a two-row PNG sprite sheet with equal-size frames.',
+        'Invalid pet animation. Check the PNG sprite sheet layout and frame dimensions.',
       mascotTask: 'Task',
       mascotPauseAnimation: 'Pause animation',
       mascotResumeAnimation: 'Resume animation',

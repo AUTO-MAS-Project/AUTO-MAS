@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
 import type { NativeImage, Point, WebContents } from 'electron'
 import * as path from 'path'
 import type {
@@ -248,6 +248,20 @@ export class DesktopMascotService {
         }
       }
     }
+    let hasDrag = false
+    if (hasAnimation && animation && appearance.mascotDragUrl) {
+      const dragSheet = nativeImage.createFromDataURL(appearance.mascotDragUrl)
+      const size = dragSheet.getSize()
+      const frameWidth = size.width / animation.columns
+      if (!dragSheet.isEmpty() && Number.isInteger(frameWidth)) {
+        hasDrag = true
+        for (let column = 0; column < animation.columns; column++) {
+          frames.push(
+            dragSheet.crop({ x: column * frameWidth, y: 0, width: frameWidth, height: size.height })
+          )
+        }
+      }
+    }
     let hasLook = false
     if (hasAnimation && appearance.mascotLookUrl) {
       const lookSheet = nativeImage.createFromDataURL(appearance.mascotLookUrl)
@@ -348,6 +362,7 @@ export class DesktopMascotService {
               workingFps: animation.workingFps ?? 8,
               ...(hasLook ? { lookImageUrl: appearance.mascotLookUrl } : {}),
               ...(appearance.mascotResultUrl ? { resultImageUrl: appearance.mascotResultUrl } : {}),
+              ...(hasDrag ? { dragImageUrl: appearance.mascotDragUrl } : {}),
             },
           }
         : {}),
@@ -445,6 +460,9 @@ export class DesktopMascotService {
   private showContextMenu(win: BrowserWindow): void {
     const labels = this.menuLabels
     if (this.window !== win || !labels) return
+    const animationPaused =
+      this.animationPaused ||
+      (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
     Menu.buildFromTemplate([
       {
         label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
@@ -462,9 +480,9 @@ export class DesktopMascotService {
         },
       },
       {
-        label: this.animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
+        label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
         click: () => {
-          const paused = !this.animationPaused
+          const paused = !animationPaused
           try {
             this.options.saveAnimationPaused(paused)
             this.animationPaused = paused

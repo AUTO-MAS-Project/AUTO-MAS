@@ -45,11 +45,15 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
     const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
     const resultPath =
       raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)
+    const dragPath = raw.dragPath === undefined ? undefined : assertAssetPath(raw.dragPath, true)
     if (lookPath && path.posix.extname(lookPath).toLowerCase() !== '.png') {
       throw new Error('mascot.animation.lookPath requires a PNG sprite sheet')
     }
     if (resultPath && path.posix.extname(resultPath).toLowerCase() !== '.png') {
       throw new Error('mascot.animation.resultPath requires a PNG sprite sheet')
+    }
+    if (dragPath && path.posix.extname(dragPath).toLowerCase() !== '.png') {
+      throw new Error('mascot.animation.dragPath requires a PNG sprite sheet')
     }
     if (
       path.posix.extname(assetPath).toLowerCase() !== '.png' ||
@@ -65,6 +69,7 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
       ...(workingFps === undefined ? {} : { workingFps }),
       ...(lookPath === undefined ? {} : { lookPath }),
       ...(resultPath === undefined ? {} : { resultPath }),
+      ...(dragPath === undefined ? {} : { dragPath }),
     }
   } catch (error) {
     throw new AssetPackageError(
@@ -94,7 +99,7 @@ function validateMascotAnimationData(
   ) {
     throw new AssetPackageError(
       'INVALID_ANIMATION',
-      'mascot.animation: expected two rows of equal-size frames'
+      `mascot.animation: expected ${rows} row(s) of equal-size frames`
     )
   }
 }
@@ -105,6 +110,7 @@ export function mascotAssetPaths(mascot: MascotDefinition): string[] {
     mascot.animation?.path,
     mascot.animation?.lookPath,
     mascot.animation?.resultPath,
+    mascot.animation?.dragPath,
   ].filter((value): value is string => Boolean(value))
 }
 
@@ -116,4 +122,6 @@ export function validateMascotAssets(
   validateMascotAnimationData(mascot.animation, read(mascot.animation.path))
   if (mascot.animation.resultPath)
     validateMascotAnimationData(mascot.animation, read(mascot.animation.resultPath))
+  if (mascot.animation.dragPath)
+    validateMascotAnimationData(mascot.animation, read(mascot.animation.dragPath), 1)
 }

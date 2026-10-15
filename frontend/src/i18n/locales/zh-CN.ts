@@ -4615,7 +4615,7 @@ export default {
       desktopMascot: '显示桌面桌宠',
       desktopMascotTip: '可拖到桌面任意位置，主窗口最小化后仍显示；退出程序时关闭',
       desktopMascotFailed: '桌面桌宠更新失败，请重新选择桌宠',
-      appearanceAnimationInvalid: '桌宠动画无效，请使用两行且帧尺寸一致的 PNG 精灵图',
+      appearanceAnimationInvalid: '桌宠动画无效，请检查 PNG 图集的行列布局和帧尺寸',
       mascotTask: '任务',
       mascotPauseAnimation: '暂停动画',
       mascotResumeAnimation: '恢复动画',
