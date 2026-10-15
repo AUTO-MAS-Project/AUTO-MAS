@@ -9,6 +9,8 @@ import type {
 const api: DesktopMascotAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot:get'),
   pointer: action => ipcRenderer.send('desktop-mascot:pointer', action),
+  imageDecoded: (imageUrl, pngDataUrl) =>
+    ipcRenderer.send('desktop-mascot:image-decoded', imageUrl, pngDataUrl),
   onLookChanged: callback => {
     const listener = (_event: Electron.IpcRendererEvent, frame: number | null) => callback(frame)
     ipcRenderer.on('desktop-mascot:look', listener)

@@ -64,6 +64,7 @@ export class DesktopMascotService {
   private menuLabels: DesktopMascotMenuLabels | null = null
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
+  private decodedImage: { imageUrl: string; image: NativeImage } | null = null
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
@@ -80,6 +81,23 @@ export class DesktopMascotService {
 
   getData(sender: WebContents): DesktopMascotData | null {
     return this.window?.webContents === sender ? this.data : null
+  }
+
+  setDecodedImage(sender: WebContents, imageUrl: string, pngDataUrl: string): void {
+    if (
+      sender !== this.window?.webContents ||
+      !this.data?.needsImageDecode ||
+      this.data.imageUrl !== imageUrl
+    )
+      return
+    const image = nativeImage.createFromDataURL(pngDataUrl)
+    if (image.isEmpty()) return
+    this.decodedImage = { imageUrl, image }
+    try {
+      this.sync()
+    } catch (error) {
+      this.options.onError(error)
+    }
   }
 
   setIdleMessage(message: DesktopMascotIdleMessage): void {
@@ -174,11 +192,8 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const image = nativeImage.createFromDataURL(appearance.mascotUrl)
-    if (image.isEmpty()) {
-      this.close()
-      return
-    }
+    if (this.decodedImage?.imageUrl !== appearance.mascotUrl) this.decodedImage = null
+    const image = this.decodedImage?.image ?? nativeImage.createFromDataURL(appearance.mascotUrl)
     const frames: NativeImage[] = []
     const animation = appearance.mascot?.animation
     if (animation && appearance.mascotAnimationUrl) {
@@ -202,7 +217,15 @@ export class DesktopMascotService {
       }
     }
     const hasAnimation = frames.length > 0
-    if (!hasAnimation) frames.push(image)
+    const needsImageDecode =
+      !hasAnimation && image.isEmpty() && appearance.mascotUrl.startsWith('data:image/webp;')
+    if (!hasAnimation && !needsImageDecode) {
+      if (image.isEmpty()) {
+        this.close()
+        return
+      }
+      frames.push(image)
+    }
     if (hasAnimation && animation && appearance.mascotResultUrl) {
       const resultSheet = nativeImage.createFromDataURL(appearance.mascotResultUrl)
       const size = resultSheet.getSize()
@@ -254,7 +277,7 @@ export class DesktopMascotService {
         ? screen.getDisplayMatching(mainBounds)
         : screen.getPrimaryDisplay()
     const area = display.workArea
-    const sourceSize = frames[0].getSize()
+    const sourceSize = frames[0]?.getSize() ?? { width: 1, height: 1 }
     const scale = Math.min(
       (appearance.mascot?.width ?? 144) / sourceSize.width,
       (area.width * 0.35) / sourceSize.width,
@@ -297,9 +320,12 @@ export class DesktopMascotService {
       Math.min(bounds.y, targetArea.y + targetArea.height - windowHeight)
     )
     this.hitSize = { width, height }
-    this.hitMask = createMascotHitMask(frames.map(frame => frame.resize({ width, height })))
+    this.hitMask = frames.length
+      ? createMascotHitMask(frames.map(frame => frame.resize({ width, height })))
+      : new Uint8Array(width * height)
     this.data = {
       imageUrl: appearance.mascotUrl,
+      needsImageDecode,
       opacity: appearance.mascot?.opacity ?? 1,
       state: this.working ? 'working' : 'idle',
       animate: this.animate && !this.animationPaused,
@@ -357,6 +383,7 @@ export class DesktopMascotService {
         if (this.window !== createdWindow) return
         this.window = null
         this.data = null
+        this.decodedImage = null
         if (this.noticeTimer) clearTimeout(this.noticeTimer)
         this.noticeTimer = null
         if (this.trackingTimer) clearInterval(this.trackingTimer)
@@ -392,6 +419,7 @@ export class DesktopMascotService {
     const win = this.window
     this.window = null
     this.data = null
+    this.decodedImage = null
     this.dragOffset = null
     this.mouseIgnored = null
     if (this.noticeTimer) clearTimeout(this.noticeTimer)

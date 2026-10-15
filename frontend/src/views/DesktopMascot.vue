@@ -161,6 +161,20 @@ function updateMotionPreference(event: MediaQueryListEvent): void {
   reducedMotion.value = event.matches
 }
 
+function decodeStaticImage(event: Event): void {
+  const current = data.value
+  const image = event.currentTarget as HTMLImageElement
+  if (!current?.needsImageDecode || image.src !== current.imageUrl) return
+  // nativeImage 不支持 WebP；只在载入时借用浏览器解码，命中图交给主进程缓存。
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.drawImage(image, 0, 0)
+  window.desktopMascotAPI.imageDecoded(current.imageUrl, canvas.toDataURL('image/png'))
+}
+
 function hover(): void {
   if (!dragging.value) window.desktopMascotAPI?.pointer('hover')
 }
@@ -216,7 +230,14 @@ function endDrag(): void {
       <div v-if="data.animation" class="mascot-sprite">
         <img :src="spriteImageUrl" :style="spriteStyle" draggable="false" alt="" />
       </div>
-      <img v-else class="mascot-static-image" :src="data.imageUrl" draggable="false" alt="" />
+      <img
+        v-else
+        class="mascot-static-image"
+        :src="data.imageUrl"
+        draggable="false"
+        alt=""
+        @load="decodeStaticImage"
+      />
     </div>
   </div>
 </template>

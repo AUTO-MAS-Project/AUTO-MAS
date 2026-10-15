@@ -59,8 +59,16 @@ const mascotRunningStatuses = new Set(['运行', '运行中'])
 const disposeMascotTaskEvents = onTaskRuntimeEvent(event => {
   if (isStandalonePage.value || !isAppReady.value) return
   if (event.type === 'snapshot') {
-    announcedMascotTasks.clear()
-    for (const id of event.activeTaskIds) announcedMascotTasks.add(id)
+    for (const id of announcedMascotTasks) {
+      if (!event.activeTaskIds.has(id)) announcedMascotTasks.delete(id)
+    }
+    for (const state of event.states) {
+      if (
+        state.mode !== 'ScriptConfig' &&
+        state.taskInfo.some(info => scriptHasStatus(info, mascotRunningStatuses))
+      )
+        announcedMascotTasks.add(state.taskId)
+    }
     return
   }
   if (event.type === 'removed') {

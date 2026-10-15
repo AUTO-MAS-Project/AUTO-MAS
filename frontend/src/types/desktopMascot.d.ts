@@ -1,5 +1,6 @@
 export interface DesktopMascotData {
   imageUrl: string
+  needsImageDecode?: boolean
   opacity: number
   state: 'idle' | 'working'
   animate: boolean
@@ -52,6 +53,7 @@ export interface DesktopMascotAPI {
   onChanged(callback: (data: DesktopMascotData) => void): () => void
   onUpdated(callback: (update: DesktopMascotUpdate) => void): () => void
   pointer(action: DesktopMascotPointerAction): void
+  imageDecoded(imageUrl: string, pngDataUrl: string): void
   onLookChanged(callback: (frame: number | null) => void): () => void
 }
 

@@ -709,6 +709,15 @@ ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdl
 ipcMain.on('desktop-mascot:pointer', (event, action: unknown) =>
   desktopMascot.handlePointer(event.sender, action)
 )
+ipcMain.on('desktop-mascot:image-decoded', (event, imageUrl: unknown, pngDataUrl: unknown) => {
+  if (
+    typeof imageUrl !== 'string' ||
+    typeof pngDataUrl !== 'string' ||
+    !pngDataUrl.startsWith('data:image/png;base64,')
+  )
+    return
+  desktopMascot.setDecodedImage(event.sender, imageUrl, pngDataUrl)
+})
 ipcMain.handle('desktop-mascot:activity', (event, working: unknown, animate: unknown) => {
   if (
     event.sender !== mainWindow?.webContents ||
