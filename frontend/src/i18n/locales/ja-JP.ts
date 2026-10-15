@@ -3508,6 +3508,7 @@ export default {
       Hibernate: '休止状態',
       Sleep: 'スリープ',
       KillSelf: 'AUTO-MAS を終了',
+      RestartSelf: 'AUTO-MAS を再起動',
       Logoff: 'サインアウト',
     },
     item: {
@@ -3621,6 +3622,7 @@ export default {
       hibernate: '休止状態',
       sleep: 'スリープ',
       killSelf: 'AUTO-MAS を終了',
+      restartSelf: 'AUTO-MAS を再起動',
       logoff: 'サインアウト',
     },
     control: {

@@ -4127,6 +4127,7 @@ export default {
       Hibernate: 'Hibernate',
       Sleep: 'Sleep',
       KillSelf: 'Quit AUTO-MAS',
+      RestartSelf: 'Restart AUTO-MAS',
       Logoff: 'Sign out',
     },
     item: {
@@ -4237,6 +4238,7 @@ export default {
       hibernate: 'Hibernate',
       sleep: 'Sleep',
       killSelf: 'Quit AUTO-MAS',
+      restartSelf: 'Restart AUTO-MAS',
       logoff: 'Sign out',
     },
     control: {

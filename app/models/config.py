@@ -773,6 +773,7 @@ class QueueConfig(ConfigBase):
                     "Hibernate",
                     "Sleep",
                     "KillSelf",
+                    "RestartSelf",
                     "Logoff",
                 ]
             ),

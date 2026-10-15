@@ -1426,6 +1426,9 @@ export function useSchedulerLogic() {
       case 'KillSelf':
         newPowerAction = PowerIn.signal.KILL_SELF
         break
+      case 'RestartSelf':
+        newPowerAction = PowerIn.signal.RESTART_SELF
+        break
       case 'Logoff':
         newPowerAction = PowerIn.signal.LOGOFF
         break
@@ -1478,6 +1481,7 @@ export function useSchedulerLogic() {
           Hibernate: PowerIn.signal.HIBERNATE,
           Sleep: PowerIn.signal.SLEEP,
           KillSelf: PowerIn.signal.KILL_SELF,
+          RestartSelf: PowerIn.signal.RESTART_SELF,
           Logoff: PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]

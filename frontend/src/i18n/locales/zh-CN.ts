@@ -3992,6 +3992,7 @@ export default {
       Hibernate: '休眠',
       Sleep: '睡眠',
       KillSelf: '退出软件',
+      RestartSelf: '重启软件',
       Logoff: '注销',
     },
     item: {
@@ -4102,6 +4103,7 @@ export default {
       hibernate: '休眠',
       sleep: '睡眠',
       killSelf: '退出软件',
+      restartSelf: '重启软件',
       logoff: '注销',
     },
     control: {
