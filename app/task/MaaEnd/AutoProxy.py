@@ -428,7 +428,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             launcher_path = None
         if launcher_path is not None:
             return str(launcher_path)
-        return str(self.script_config.get("Game", "LauncherPath"))
+        return str(self.script_config.get("Game", "LauncherPath") or "")
 
     async def _apply_launcher_game_settings(self) -> None:
         """先执行上游 PI GameSetting 预任务，再由官方启动器打开游戏。"""
