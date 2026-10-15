@@ -448,13 +448,13 @@ class _PluginManager:
             record._plugin = None
             raise
 
-        record.info.lifecycle_context = ctx
-        # 根语义写启用中；本项内嵌 reload 保持父 RELOADING
-        if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
-            record.info.state = PluginState.ENABLING
-            await record.commit()
         deps: dict[str, Any] = {}
         try:
+            record.info.lifecycle_context = ctx
+            # 首次状态提交也可能等待配置锁，必须覆盖失败与取消清理。
+            if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
+                record.info.state = PluginState.ENABLING
+                await record.commit()
             # ── 上游 DFS ──
             path = [*path_list, uid_s]
             for dep_record in ups:
