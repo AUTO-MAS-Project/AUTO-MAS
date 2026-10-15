@@ -1353,6 +1353,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
             logger.info("开发模式下手动中止任务，保留游戏进程")
+            if self._launch_mode() == "Launcher":
+                # 启动器是 MAS 拉起的，游戏不需要它：留着只会在用户手动退出
+                # 游戏后重新弹出窗口
+                await self._kill_launcher_process()
             return
         await self.kill_game_process()
 
