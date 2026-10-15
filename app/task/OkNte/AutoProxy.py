@@ -82,6 +82,7 @@ from .tools.launcher_start import (
     AUTOPLAY_ARG,
     async_start_game_via_launcher,
     async_wait_autoplay_game,
+    detect_game_maintenance_text,
 )
 
 logger = get_logger("OK-NTE 自动代理")
@@ -935,6 +936,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         self.cur_user_item.status = "异常"
                     continue
 
+            # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
+            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前用户；
+            # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
+            if await self.skip_on_game_maintenance(detect_game_maintenance_text):
+                break
+
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled 且需开启「任务前启动游戏」（否则游戏非
             # MAS 拉起、无窗口可切）；用户未填写手机号时跳过不切换。
@@ -1179,7 +1186,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             statistics["user_result"] = (
                 "OK-NTE 任务全部完成" if self.run_book else self.cur_user_item.result
             )
-            success_symbol = "√" if self.run_book else "X"
+            # 维护跳过不是失败，统计标题用中性符号而非失败标记
+            success_symbol = (
+                "√"
+                if self.run_book
+                else "-"
+                if self.cur_user_item.maintenance_skipped
+                else "X"
+            )
 
             try:
                 await push_notification(
@@ -1231,8 +1245,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的 OK-NTE 自动代理任务已完成")
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
-            if self.cur_user_item.status != "完成":
+            maintenance_skipped = self.cur_user_item.maintenance_skipped
+            # 维护跳过不是失败：上次代理状态记「维护中」，用户状态保持「跳过」
+            await self.cur_user_config.set(
+                "Data",
+                "LastProxyStatus",
+                "维护中" if maintenance_skipped else "失败",
+            )
+            if maintenance_skipped:
+                if self.cur_user_item.status not in ("完成", "跳过"):
+                    self.cur_user_item.status = "异常"
+            elif self.cur_user_item.status != "完成":
                 self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):

@@ -473,6 +473,36 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+# ── 游戏画面维护检测 ─────────────────────────────────────────────────────
+
+# 维护弹窗特征文本（临时锚点：用户口头确认的「服务器未开放」，尚未拿到
+# 维护弹窗截图核对，后续按真实截图补充完善；国际服英文界面暂不覆盖）
+_GAME_MAINTENANCE_TEXTS = ("服务器未开放",)
+
+
+def detect_game_maintenance_text() -> str | None:
+    """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    旁路判定：窗口不存在、截图或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（截屏不抢前台）。只覆盖游戏窗口已存在的场景（MAS 拉起或客户
+    端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）负责。
+    """
+    if not IS_WINDOWS:
+        return None
+    hwnd = _find_game_hwnd()
+    if hwnd is None:
+        return None
+    try:
+        items = _read_texts(hwnd)
+    except Exception as error:
+        logger.debug(f"游戏画面维护检测 OCR 失败（忽略，继续正常流程）: {error}")
+        return None
+    for text, _ in items:
+        if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
+            return text
+    return None
+
+
 def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI

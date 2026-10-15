@@ -1,11 +1,15 @@
 """脚本单账号自动运行的总时限保护。"""
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from app.core.ws import Publisher, protocol
 from app.models.ConfigBase import ConfigBase
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.proxy_helpers import push_dispatch_log
 from app.utils.logger import get_logger
 
 logger = get_logger("脚本运行")
@@ -19,6 +23,8 @@ class ScriptAutoProxyBase(TaskExecuteBase):
     script_config: ConfigBase
     cur_user_item: UserItem
     cur_user_config: ConfigBase
+    # main_task 尝试循环内赋值的当前日志记录，维护跳过等运行期记账会写入。
+    cur_user_log: LogRecord
     # 用户级前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
     _user_scripts_started: bool = False
 
@@ -52,6 +58,41 @@ class ScriptAutoProxyBase(TaskExecuteBase):
                 Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                 "脚本后任务",
             )
+
+    async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
+        """游戏画面维护检测：命中维护弹窗文本则把当前用户记为维护跳过。
+
+        公告通道（ScriptManagerBase.skip_maintenance_user）在启动前完成跳过；
+        这里兜底「公告未覆盖但弹窗已出现」的场景，只覆盖游戏窗口已存在的
+        情况（MAS 拉起、客户端已在运行）。检测失败或窗口不存在一律放行，
+        不阻断正常流程。``detect`` 由专项提供（自持窗口截图与 OCR，命中
+        维护弹窗文本返回原文、否则 None）；须在 main_task 尝试循环内、
+        cur_user_log 赋值之后调用。
+        """
+
+        try:
+            maintenance_text = await asyncio.to_thread(detect)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"游戏画面维护检测失败（忽略，继续正常流程）: {e}"
+            )
+            return False
+        if maintenance_text is None:
+            return False
+
+        reason = f"游戏维护中，本次跳过（画面检测到：{maintenance_text}）"
+        self.cur_user_item.status = "跳过"
+        self.cur_user_item.maintenance_skipped = True
+        self.cur_user_log.status = reason
+        self.cur_user_log.content = [reason]
+        logger.info(f"用户 {self.cur_user_item.name} - {reason}")
+        await push_dispatch_log(self.script_info, reason)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="info", message=reason),
+        )
+        return True
 
     async def _finalize_task(self) -> None:
         """收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""

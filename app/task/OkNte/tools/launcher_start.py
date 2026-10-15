@@ -322,6 +322,36 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+# ── 游戏画面维护检测（公告通道的兜底）────────────────────────────────────
+
+# 维护弹窗特征文本：正式弹窗为「服务器维护中，预计N点开启！」，取两段子串
+# 防 OCR 断句；标题界面等正常画面不含这些词
+_GAME_MAINTENANCE_TEXTS = ("服务器维护", "维护中")
+
+
+def detect_game_maintenance_text() -> str | None:
+    """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    旁路判定：窗口不存在、截图或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（截屏不抢前台）。只覆盖游戏窗口已存在的场景（MAS 拉起或客户
+    端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）负责。
+    """
+    if not IS_WINDOWS:
+        return None
+    hwnd = _find_game_hwnd()
+    if hwnd is None:
+        return None
+    try:
+        items = _read_texts(hwnd)
+    except Exception as error:
+        logger.debug(f"游戏画面维护检测 OCR 失败（忽略，继续正常流程）: {error}")
+        return None
+    for text, _ in items:
+        if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
+            return text
+    return None
+
+
 def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
     """取百分比/体积/速度文本并剥离计时，供下载进度签名使用。
 
