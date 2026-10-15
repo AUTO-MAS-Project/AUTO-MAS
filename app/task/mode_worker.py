@@ -26,8 +26,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import UUID
 
 from app.models.task import HistoryRecordData, LogRecordEntry, TaskMode
@@ -44,10 +45,27 @@ logger = get_logger("模式执行")
 __all__ = [
     "MODE_WORKERS",
     "AutoProxyWorker",
+    "HistoryWriter",
     "ManualReviewWorker",
     "ModeWorker",
     "ScriptConfigWorker",
 ]
+
+
+class HistoryWriter(Protocol):
+    """模式执行器所需的历史写入能力，由宿主绑定。"""
+
+    def save(
+        self,
+        *,
+        time: datetime,
+        username: str,
+        type_key: str,
+        status: str,
+        message: str,
+        logs: str,
+        data: dict[str, Any] | None = None,
+    ) -> Path: ...
 
 
 class ModeWorker(TaskBase):
@@ -57,6 +75,7 @@ class ModeWorker(TaskBase):
     """
 
     mode: ClassVar[TaskMode]
+    _history_writer: HistoryWriter
 
     def __init__(
         self,
@@ -76,6 +95,10 @@ class ModeWorker(TaskBase):
         self.current_index: UUID | None = script_item.current.index
         self._check_result = "Pass"
         self._started_at = datetime.now(tz=UTC8)
+
+    def bind_history_writer(self, writer: HistoryWriter) -> None:
+        """运行前绑定历史写入器，专项构造签名保持不变。"""
+        self._history_writer = writer
 
     async def check(self) -> str:
         """返回 ``Pass`` 或用户可读错误串。"""
@@ -148,8 +171,6 @@ class ModeWorker(TaskBase):
 
     async def save_result(self) -> None:
         """落历史 + 回写用户上次结果。统计与终态由 ``build_history_data`` 判定。"""
-        from app.core.history import history_store
-
         if self.user_uid not in self.script_item.users:
             return
         user_item = self.script_item.users[self.user_uid]
@@ -185,7 +206,7 @@ class ModeWorker(TaskBase):
                     message=rec.info.status or "",
                     data={},
                 )
-            history_store.save(
+            self._history_writer.save(
                 time=rec.info.start_time,
                 username=username,
                 type_key=type_key,
