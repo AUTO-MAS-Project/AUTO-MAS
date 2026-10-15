@@ -89,6 +89,7 @@ class ConfigManager:
         ] = ContextVar("config_framework_v2_committing", default=None)
         self._txn_lock = asyncio.Lock()
         self._sync_lock = threading.RLock()
+        self._transaction_owner: TransactionContext | None = None
         self._save_handle: asyncio.Task[None] | None = None
         self._debounce_seconds: float = 0.05
 
@@ -162,9 +163,14 @@ class ConfigManager:
         if is_outer:
             await self._txn_lock.acquire()
             self._sync_lock.acquire()
+            if self._transaction_owner is not None:
+                self._sync_lock.release()
+                self._txn_lock.release()
+                raise RuntimeError("不能重入其他 Task 的同步配置事务")
         token = None
         if is_outer:
-            token = self._txn.set(TransactionContext())
+            self._transaction_owner = TransactionContext()
+            token = self._txn.set(self._transaction_owner)
         try:
             yield
             if is_outer:
@@ -184,6 +190,7 @@ class ConfigManager:
                     ctx._active = False
                 self._txn.reset(token)
             if is_outer:
+                self._transaction_owner = None
                 self._sync_lock.release()
                 self._txn_lock.release()
 
@@ -193,9 +200,14 @@ class ConfigManager:
         is_outer = not self.in_transaction
         if is_outer:
             self._sync_lock.acquire()
+            # RLock 只区分线程；同线程其他 Task 不能借同步入口共享工作区。
+            if self._transaction_owner is not None:
+                self._sync_lock.release()
+                raise RuntimeError("不能重入其他 Task 的配置事务，请等待异步 transaction")
         token = None
         if is_outer:
-            token = self._txn.set(TransactionContext())
+            self._transaction_owner = TransactionContext()
+            token = self._txn.set(self._transaction_owner)
         try:
             yield
             if is_outer:
@@ -215,6 +227,7 @@ class ConfigManager:
                     ctx._active = False
                 self._txn.reset(token)
             if is_outer:
+                self._transaction_owner = None
                 self._sync_lock.release()
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
