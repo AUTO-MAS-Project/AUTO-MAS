@@ -91,8 +91,8 @@ export const getLegacyEventDepotPlans = (backupJson: string): EventDepotMaintain
         StageIndex: task.ActivityStageIndex,
         DropCount: 999,
         OrundumDropCount: 9999,
-        MedicineCount: task.ActivityMedicineNumb ?? backup.Stage?.MedicineNumb ?? 0,
-        UseMedicine: (task.ActivityMedicineNumb ?? backup.Stage?.MedicineNumb ?? 0) > 0,
+        MedicineCount: task.ActivityMedicineNumb ?? backup.Info?.MedicineNumb ?? 0,
+        UseMedicine: (task.ActivityMedicineNumb ?? backup.Info?.MedicineNumb ?? 0) > 0,
         LegacyActivityFirst: true,
       })
     }

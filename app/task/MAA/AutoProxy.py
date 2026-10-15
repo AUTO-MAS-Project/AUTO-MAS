@@ -846,6 +846,7 @@ def _build_event_depot_maintain_task(
     source_task: dict | None,
     *,
     medicine_count: int = 0,
+    priority_source: dict | None = None,
 ) -> tuple[dict | None, list[tuple[str, str]]]:
     """解析活动目标，保留原生任务身份与高级参数。"""
 
@@ -855,13 +856,74 @@ def _build_event_depot_maintain_task(
         activity_stages,
         medicine_count=medicine_count,
         source_plans=source_task.get("PlanList", []),
+        priority_source=priority_source,
     )
     if not plans:
         return None, notices
+    origins = {plan.pop("_ActivityOrigin") for plan in plans}
+    settings = {}
+    if origins & {"priority", "mixed"}:
+        priority_source = priority_source or {}
+        series = priority_source.get("Series", 0)
+        priority_series = series == 0
+        if series not in (0, 1):
+            notices.append(
+                (
+                    "eventDepotPreview.legacySeriesFallback",
+                    "旧活动优先的连战次数无法在均衡任务中沿用，本轮改为单次代理，原设置保留",
+                )
+            )
+        priority_expiry = (
+            priority_source.get("UseExpiringMedicine", False)
+            and priority_source.get("MedicineExpireDays", 2) == 2
+            and not priority_source.get("UseExpireMedicineForActivity", False)
+        )
+        if (
+            priority_source.get("UseExpiringMedicine", False)
+            and priority_source.get("MedicineExpireDays", 2) != 2
+        ) or priority_source.get("UseExpireMedicineForActivity", False):
+            notices.append(
+                (
+                    "eventDepotPreview.legacyExpiryFallback",
+                    "旧活动优先的自定义或活动临期药策略无法在均衡任务中沿用，本轮不扩大用药范围，原设置保留",
+                )
+            )
+        settings.update(
+            UseAutoSeries=priority_series,
+            UseExpiringMedicine=priority_expiry,
+        )
+        if origins & {"inventory", "mixed"}:
+            depot_series = source_task.get("UseAutoSeries", False)
+            depot_expiry = source_task.get("UseExpiringMedicine", False)
+            settings.update(
+                UseAutoSeries=priority_series and depot_series,
+                UseExpiringMedicine=priority_expiry and depot_expiry,
+            )
+            if depot_series != priority_series or depot_expiry != priority_expiry:
+                notices.append(
+                    (
+                        "eventDepotPreview.legacyCommonConflict",
+                        "两份旧活动设置不同，本轮统一采用较保守的连战与临期药设置，原配置保留",
+                    )
+                )
+            if (not source_task.get("UseMedicine", True) and medicine_count > 0) or (
+                not source_task.get("UseStone", True)
+                and priority_source.get("UseStone") is True
+                and priority_source.get("StoneCount", 0) > 0
+            ):
+                notices.append(
+                    (
+                        "eventDepotPreview.budgetGateConflict",
+                        "原活动库存关闭了药剂或源石，本轮保留该限制，旧活动优先的相应额度暂不使用",
+                    )
+                )
+        else:
+            settings.update(UseMedicine=True, UseStone=True)
     return (
         _with_type_first(
             {
                 **deepcopy(source_task),
+                **settings,
                 "Name": "活动库存保持",
                 "IsEnable": True,
                 "TaskType": "DepotMaintain",
@@ -2149,6 +2211,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             }
 
         annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
+        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
 
         # 吃药 / 碎石类任务取不到原生配置就只剩默认值，用户在 MAA 里设的选项
         # 全部失效却看不出来，必须提示。剿灭作战没有同名任务时本就
@@ -2343,6 +2406,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 activity_stages,
                 source_task=event_depot_source,
                 medicine_count=self.cur_user_config.get("Task", "ActivityMedicineNumb"),
+                priority_source=activity_source or fight_source,
             )
             for notice_key, notice in activity_notices:
                 logger.warning(notice)

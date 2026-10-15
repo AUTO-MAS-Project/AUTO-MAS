@@ -14,11 +14,13 @@ def resolve_activity_inventory_plans(
     *,
     medicine_count: int = 0,
     source_plans: list[dict] | None = None,
+    priority_source: dict | None = None,
 ) -> tuple[list[dict], list[tuple[str, str]]]:
     """每轮解析当前活动，不把具体关卡、材料或生成的目标写回来源配置。
 
     material 序号沿用旧活动库存的材料关列表，activity 序号沿用旧活动优先
     的完整列表。all 预设覆盖当期全部可刷关卡，显式目标优先于预设。
+    返回的 _ActivityOrigin 只供组装段级设置，写入 MAA 前由调用者移除。
     """
 
     rows = json.loads(plans_json)
@@ -86,6 +88,9 @@ def resolve_activity_inventory_plans(
         ):
             plan.pop(key, None)
         plan.update(Stage=stage["Value"], DropId=drop_id, DropCount=count)
+        plan["_ActivityOrigin"] = (
+            "priority" if row.get("LegacyActivityFirst") else "inventory"
+        )
         return plan
 
     # 先解析显式行，all 预设不能覆盖任何已保存的自定义目标。
@@ -132,7 +137,10 @@ def resolve_activity_inventory_plans(
         if plan is not None:
             if row.get("LegacyActivityFirst"):
                 plan.update(
-                    UseMedicine=medicine_count > 0, MedicineCount=medicine_count
+                    UseMedicine=medicine_count > 0,
+                    MedicineCount=medicine_count,
+                    UseStone=(priority_source or {}).get("UseStone") is True,
+                    StoneCount=(priority_source or {}).get("StoneCount", 0),
                 )
             else:
                 source = next(
@@ -177,16 +185,24 @@ def resolve_activity_inventory_plans(
             if row.get("LegacyActivityFirst") and key in custom_plans:
                 # 默认 999/9999 不能抬高旧自定义目标；旧优先药量仅转交这一个关卡。
                 target = custom_plans[key]
-                if "MedicineCount" not in target and "UseMedicine" not in target:
-                    target.update(
-                        UseMedicine=plan["UseMedicine"],
-                        MedicineCount=plan["MedicineCount"],
-                    )
-                else:
+                target["_ActivityOrigin"] = "mixed"
+                conflict = False
+                for enabled, count in (
+                    ("UseMedicine", "MedicineCount"),
+                    ("UseStone", "StoneCount"),
+                ):
+                    if count not in target and enabled not in target:
+                        target.update({enabled: plan[enabled], count: plan[count]})
+                    elif (
+                        target.get(enabled) != plan[enabled]
+                        or target.get(count, 0) != plan[count]
+                    ):
+                        conflict = True
+                if conflict:
                     notices.append(
                         (
                             "eventDepotPreview.budgetConflict",
-                            "旧活动选关与库存目标重合，沿用自定义目标及其药量，另一份原药量保留在迁移前备份",
+                            "旧活动选关与库存目标重合，沿用自定义目标及已有药石额度，另一份原额度保留在迁移前备份",
                         )
                     )
                 continue

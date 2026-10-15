@@ -12,7 +12,15 @@ export default {
     legacyFallback:
       'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
     budgetConflict:
-      'Overlapping legacy event targets use the custom goal and its medicine allowance. The other allowance remains in the pre-migration backup.',
+      'Overlapping legacy event targets use the custom goal and its existing medicine and Originium allowances. The other allowances remain in the pre-migration backup.',
+    legacySeriesFallback:
+      'The old event battle multiplier cannot be carried over exactly. This run uses single battles; the original setting is retained.',
+    legacyExpiryFallback:
+      'The old custom or event-based expiring-medicine policy cannot be carried over exactly. Expiring medicine is disabled this run; the original setting is retained.',
+    legacyCommonConflict:
+      'The old event sources have different battle-multiplier or expiring-medicine settings. This run uses the more conservative settings; originals are retained.',
+    budgetGateConflict:
+      'The old event stock task disabled medicine or Originium. This restriction is retained, and the corresponding old event-priority allowance is not used this run.',
     name: 'Balanced event farming',
     hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
     scopeHint:
