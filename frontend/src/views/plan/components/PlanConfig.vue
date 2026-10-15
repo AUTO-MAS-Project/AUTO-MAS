@@ -1,5 +1,5 @@
 <template>
-  <a-card class="plan-config-card" :bordered="false">
+  <a-card class="plan-config-card" :class="{ 'plan-config-compact': compact }" :bordered="false">
     <template #title>
       <div class="plan-title-container">
         <div v-if="!isEditingPlanName" class="plan-title-display">
@@ -30,16 +30,31 @@
       </div>
     </template>
     <template #extra>
-      <a-space>
+      <a-space :wrap="compact">
         <span class="mode-label">{{ t('plan.modeLabel') }}</span>
         <a-segmented
           :value="currentMode"
+          :disabled="disabled"
           :options="[
             { label: t('plan.modeAll'), value: 'ALL' },
             { label: t('plan.modeWeekly'), value: 'Weekly' },
+            { label: t('plan.modeRotate'), value: 'Rotate' },
           ]"
           @change="handleModeChange"
         />
+        <!-- 只有多天轮换用得上这个天数，别的模式下摆出来会让人以为周计划也按它排 -->
+        <template v-if="currentMode === 'Rotate'">
+          <span class="mode-label">{{ t('plan.rotateDaysLabel') }}</span>
+          <a-input-number
+            :value="rotateDays"
+            :disabled="disabled"
+            :min="PLAN_ROTATE_DAYS_MIN"
+            :max="PLAN_ROTATE_DAYS_MAX"
+            size="small"
+            class="rotate-days-input"
+            @update:value="handleRotateDaysChange"
+          />
+        </template>
         <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
         <template v-if="supportsSimpleView">
           <span class="view-label">{{ t('plan.viewLabel') }}</span>
@@ -50,18 +65,6 @@
               { label: t('plan.viewSimple'), value: 'simple' },
             ]"
             @change="$emit('update:view-mode', $event)"
-          />
-        </template>
-        <!-- 关卡安排：只有 BAAH 的 key 分「每天一类」与「多类混打」两种排法 -->
-        <template v-if="supportsLayoutMode">
-          <span class="layout-label">{{ t('plan.baahLayout.label') }}</span>
-          <a-segmented
-            :value="baahLayout"
-            :options="[
-              { label: t('plan.baahLayout.single'), value: 'single' },
-              { label: t('plan.baahLayout.mixed'), value: 'mixed' },
-            ]"
-            @change="$emit('update:baah-layout', $event)"
           />
         </template>
       </a-space>
@@ -77,30 +80,38 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
+import {
+  PLAN_ROTATE_DAYS_MAX,
+  PLAN_ROTATE_DAYS_MIN,
+  clampRotateDays,
+  type PlanMode,
+} from '@/utils/planDays'
 
 const { t } = useI18n()
 
 interface Props {
   currentPlanName: string
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
+  /** 多天轮换的天数，只影响 Rotate 模式的列数 */
+  rotateDays: number
   viewMode: 'config' | 'simple'
   /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
   supportsSimpleView: boolean
-  /** 该类型是否提供「关卡安排」切换；为 false 时隐藏这一组 */
-  supportsLayoutMode: boolean
-  /** 「关卡安排」：多类混打（六类都填）或每天一类（每天只选一类） */
-  baahLayout: 'mixed' | 'single'
   isEditingPlanName: boolean
+  /** 摘要表使用紧凑标题，窄窗口允许执行模式换行。 */
+  compact?: boolean
+  /** 会改变计划表列的请求尚未完成时，暂停切模式和改天数。 */
+  disabled?: boolean
 }
 
 interface Emits {
   (e: 'update:current-plan-name', value: string): void
 
-  (e: 'update:current-mode', value: 'ALL' | 'Weekly'): void
+  (e: 'update:current-mode', value: PlanMode): void
+
+  (e: 'update:rotate-days', value: number): void
 
   (e: 'update:view-mode', value: 'config' | 'simple'): void
-
-  (e: 'update:baah-layout', value: 'mixed' | 'single'): void
 
   (e: 'start-edit-plan-name'): void
 
@@ -112,9 +123,13 @@ interface Emits {
 defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const handleModeChange = (value: 'ALL' | 'Weekly') => {
+const handleModeChange = (value: PlanMode) => {
   emit('update:current-mode', value)
   emit('mode-change')
+}
+
+const handleRotateDaysChange = (value: number | string | null) => {
+  emit('update:rotate-days', clampRotateDays(value))
 }
 </script>
 
@@ -126,11 +141,15 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 }
 
 .mode-label,
-.view-label,
-.layout-label {
+.view-label {
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   font-weight: 500;
+}
+
+/* 轮换天数是三选一旁边的一个小数，给个固定宽度免得它随数字位数跳 */
+.rotate-days-input {
+  width: 72px;
 }
 
 .plan-title-container {
@@ -179,6 +198,23 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 .plan-config-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+.plan-config-compact .plan-title-container {
+  margin-bottom: 0;
+}
+
+.plan-config-compact :deep(.ant-card-head) {
+  padding: 12px 24px;
+}
+
+.plan-config-compact :deep(.ant-card-head-wrapper) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plan-config-compact :deep(.ant-card-extra) {
+  margin-inline-start: 0;
 }
 
 .plan-title-input :deep(.ant-input) {
