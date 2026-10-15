@@ -109,7 +109,7 @@ def _result_nickname(item: dict[str, object]) -> str:
     return account
 
 
-def _notification_results(
+def filter_community_notification_results(
     results: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     """过滤没有实际签到角色的平台占位结果。"""
@@ -252,7 +252,7 @@ def _community_notification_rows(
 ) -> list[tuple[str, str]]:
     """统一文本、Markdown、HTML 与图片中的平台分组和结果行。"""
 
-    results = _notification_results(results)
+    results = filter_community_notification_results(results)
     if not results:
         return []
 
@@ -543,7 +543,7 @@ def build_community_notification_payload(
     同时提供纯文本、Markdown 和 HTML 表达，由每个目标按声明能力选择。
     """
 
-    results = _notification_results(results)
+    results = filter_community_notification_results(results)
     title = "社区签到通知"
     plain_text = format_community_notification(
         results, output_format="text", include_title=False
@@ -575,7 +575,7 @@ async def dispatch_community_notification(
     completion_notice: str = "",
 ) -> DispatchResult:
     """分发社区通知并保留完整渠道结果，供新旧入口共同使用。"""
-    results = _notification_results(results)
+    results = filter_community_notification_results(results)
     if not results and not completion_notice:
         return DispatchResult()
 
@@ -632,6 +632,7 @@ async def push_community_notification(
 __all__ = [
     "append_task_community_summary",
     "dispatch_community_notification",
+    "filter_community_notification_results",
     "format_community_notification",
     "format_community_task_summary",
     "get_task_community_summary",

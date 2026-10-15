@@ -102,8 +102,13 @@ class TaskCommunitySignNotification:
     def receive(self, results: list[dict[str, object]] | None) -> None:
         """先保存结果再发布完成事件；报告等待超时不会取消签到。"""
 
+        from app.tools.community_notify import filter_community_notification_results
+
         self.result_unavailable = results is None
-        self.task_info.community_results = results or []
+        # 占位项不参与实际通知，先统一过滤，确保空结果也能结清待确认提示。
+        self.task_info.community_results = filter_community_notification_results(
+            results or []
+        )
         self.completed.set()
         self.schedule_supplement()
 
