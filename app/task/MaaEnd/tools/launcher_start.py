@@ -31,10 +31,13 @@
     · 按钮是「更新游戏」：点击 → 出现「系统提示」弹窗（所需/剩余空间）→ 点「确认」
       → 按钮变「正在下载」，按下载态动态续延等待（多久等多久）
     · 按钮是「开始游戏」：点击 → 等 Endfield.exe 可见窗口出现
+    · 弹窗是「检测到启动器版本更新」：点「更新」交给官方 updater（绝不点「退出」）
+      → 原启动器窗口退出，updater 独立窗口自行下载安装 → 完成后自动拉起新版
+      启动器窗口，重新定位窗口并重置状态继续
     点击被吞时按时间间隔补点，至多 _START_CLICK_LIMIT 次
 
-界面文案只覆盖国服启动器（更新游戏 / 开始游戏 / 正在下载 / 系统提示 / 确认）；
-国际服 GRYPHLINK 的按钮文案不同，识别不到时按超时失败处理。
+界面文案只覆盖国服启动器（更新游戏 / 开始游戏 / 正在下载 / 系统提示 / 确认 /
+启动器版本更新）；国际服 GRYPHLINK 的按钮文案不同，识别不到时按超时失败处理。
 """
 
 import asyncio
@@ -111,6 +114,13 @@ _BUSY_STATE_TEXTS = ("正在下载", "下载中", "暂停下载", "下载")
 _DIALOG_TITLE_TEXTS = ("系统提示",)
 _DIALOG_SPACE_TEXTS = ("所需空间", "剩余空间")
 _DIALOG_CONFIRM_TEXTS = ("确认", "确定")
+# 启动器自更新弹窗（图一形态）：正文「检测到启动器版本更新」，按钮「退出/更新」；
+# 点「更新」交给官方 updater，绝不点「退出」
+_LAUNCHER_SELF_UPDATE_TEXTS = ("启动器版本更新", "启动器更新")
+_LAUNCHER_SELF_UPDATE_CONFIRM_TEXTS = ("更新",)
+# 点「更新」后 updater 独立窗口自行下载安装并拉起新版启动器窗口，此间原窗口
+# 已失效；等待新版窗口恢复的总上限
+_SELF_UPDATE_RESTART_TIMEOUT = 600
 
 # 下载进度相关文本特征：用于构造「下载进度签名」，只看含百分比/体积/速度的条目；
 # 计时文本必须剥离，否则计时器每秒变化会掩盖真实进度停滞
@@ -548,6 +558,10 @@ def start_game_via_launcher(
     变回「开始游戏」后再点。下载进行中按忙碌态动态续延等待，下载多久等多久；
     同时以百分比/体积/速度构造进度签名，长时间无变化判定下载卡死提前失败。
 
+    启动器自身也可能弹出「检测到启动器版本更新」弹窗：点「更新」交给官方
+    updater 独立窗口自行下载安装（绝不点「退出」），原启动器窗口随之退出；
+    updater 完成后自动拉起新版启动器窗口，重新定位窗口并重置状态继续。
+
     启动器拉起后会显示「系统提示」等居中弹窗，遮罩下按钮点击会被吞掉，故每轮
     先关掉弹窗再处理按钮；「取消」与「确认」同屏，一律只点「确认」/「确定」。
 
@@ -618,6 +632,10 @@ def start_game_via_launcher(
         last_update_click: float | None = None
         update_click_retries = 0
         update_exhausted_logged = False
+        # 启动器自更新进行中：原窗口已让位给 updater，等待新版窗口恢复
+        self_update_wait = False
+        self_update_clicks = 0
+        last_self_update_click: float | None = None
         # 点「更新游戏」后是否确实进入过下载态：作为「按钮被取代」的强证据，
         # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
         update_went_busy = False
@@ -638,6 +656,46 @@ def start_game_via_launcher(
             try:
                 items = _read_texts(hwnd)
             except (RuntimeError, win32gui.error):
+                if self_update_wait:
+                    # 自更新中：原窗口已让位给 updater，等待它拉起新版启动器窗口
+                    new_hwnd = _wait_launcher_hwnd(
+                        launcher_path,
+                        timeout=_SELF_UPDATE_RESTART_TIMEOUT,
+                        stop_event=stop_event,
+                    )
+                    if new_hwnd is None:
+                        raise RuntimeError(
+                            "启动器自更新后未恢复启动器窗口，请人工确认启动器状态"
+                        ) from None
+                    if new_hwnd != hwnd:
+                        # 新窗口 = 自更新完成：全量重置流程状态，界面重新探测
+                        on_log("新版启动器窗口已就绪，继续启动流程...")
+                        hwnd = new_hwnd
+                        _activate_window(hwnd, stop_event=stop_event)
+                        start_clicks = 0
+                        last_start_click = None
+                        start_click_exhausted_logged = False
+                        exit_wait_polls = 0
+                        update_clicked = False
+                        last_update_click = None
+                        update_click_retries = 0
+                        update_exhausted_logged = False
+                        update_went_busy = False
+                        busy_since = None
+                        last_download_sig = None
+                        last_download_progress = time.monotonic()
+                        self_update_wait = False
+                        self_update_clicks = 0
+                        last_self_update_click = None
+                        deadline = max(
+                            deadline, time.monotonic() + _FIND_BUTTON_TIMEOUT
+                        )
+                    else:
+                        # 旧窗口仍在（updater 尚未接管）：保持等待态继续观察，
+                        # 不重置状态，避免对已让位的窗口重新点「更新」
+                        hwnd = new_hwnd
+                    _pause(2, stop_event)
+                    continue
                 # 启动器点击「开始游戏」后会退出或最小化：只等游戏起窗
                 if start_clicks > 0:
                     exit_wait_polls += 1
@@ -666,6 +724,36 @@ def start_game_via_launcher(
             # 必须按精确文案点「确认」/「确定」，绝不点「取消」；弹窗居中，不受
             # 右下角动作区限制
             if _find_text(items, _DIALOG_TITLE_TEXTS) is not None:
+                # 启动器自更新弹窗：正文带「启动器版本更新」，按钮是「退出/更新」，
+                # 点「更新」交给官方 updater，绝不点「退出」；等待新版窗口期间
+                # 只按间隔补点（点击可能被吞），窗口恢复后由失效分支重置状态
+                if _find_text(items, _LAUNCHER_SELF_UPDATE_TEXTS) is not None:
+                    self_update_box = _find_dialog_button(
+                        items, _LAUNCHER_SELF_UPDATE_CONFIRM_TEXTS
+                    )
+                    if (
+                        self_update_box is not None
+                        and self_update_clicks < _UPDATE_CLICK_RETRY_LIMIT
+                        and (
+                            last_self_update_click is None
+                            or now - last_self_update_click
+                            >= _UPDATE_CLICK_RETRY_SECONDS
+                        )
+                    ):
+                        on_log("检测到启动器自更新，点击「更新」并等待其完成...")
+                        _click_box(
+                            hwnd,
+                            self_update_box,
+                            after_sleep=3,
+                            stop_event=stop_event,
+                        )
+                        self_update_clicks += 1
+                        last_self_update_click = now
+                        self_update_wait = True
+                        # 自更新窗口恢复可能远超基准窗口期：整体截止一并顺延
+                        deadline = max(deadline, now + _SELF_UPDATE_RESTART_TIMEOUT)
+                    _pause(2, stop_event)
+                    continue
                 confirm_box = _find_dialog_button(items, _DIALOG_CONFIRM_TEXTS)
                 if confirm_box is not None:
                     is_update_dialog = (
