@@ -190,6 +190,16 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
     return added
   }
 
+  // 活动模式：按 StageType/StageIndex 取条目，没有就补一条；不落盘，由调用方统一保存。
+  const ensureEventPlan = (seed: EventDepotMaintainPlan): DepotMaintainPlanRow => {
+    const identity = eventDepotPlanIdentity(seed)
+    const existing = plans.value.find(plan => eventDepotPlanIdentity(plan) === identity)
+    if (existing) return existing
+    const row: DepotMaintainPlanRow = { key: nextKey++, Stage: '', DropId: '', ...seed }
+    plans.value.push(row)
+    return row
+  }
+
   const addPlan = () => {
     let stageIndex = 1
     while (plans.value.some(plan => plan.StageIndex === stageIndex)) stageIndex++
@@ -236,6 +246,7 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
     onStageChange,
     importPreset,
     appendPlans,
+    ensureEventPlan,
     moveRow,
     addPlan,
     removePlan,

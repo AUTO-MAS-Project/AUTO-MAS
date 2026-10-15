@@ -3,10 +3,11 @@
     <p class="pipeline-overview">{{ t('maaStaminaPipeline.orderHint') }}</p>
     <PipelineRow
       :name="t('eventDepotPreview.name')"
+      :step="1"
       :summary="eventDepotSummary"
       :checked="formData.Task.IfEventDepotMaintain"
       :disabled="loading"
-      :hint="t('eventDepotPreview.hint')"
+      :hint="eventDepotHint"
       @change="emitSave('Task.IfEventDepotMaintain', $event)"
     >
       <DepotMaintainPlanEditor
@@ -26,8 +27,14 @@
         :activity-error="activityStageError"
         @retry-activity="emit('retryActivity')"
       />
-      <div class="activity-settings">
-        <a-form-item :label="t('edit.maaEventPotion')" class="medicine-setting">
+      <div class="stage-settings">
+        <a-form-item class="medicine-setting">
+          <template #label>
+            <LabelWithHint
+              :text="t('edit.maaEventPotion')"
+              :hint="t('eventDepotPreview.medicineHint')"
+            />
+          </template>
           <a-input-number
             :value="formData.Task.ActivityMedicineNumb"
             :min="0"
@@ -36,33 +43,16 @@
             @change="emitSave('Task.ActivityMedicineNumb', $event ?? 0)"
           />
         </a-form-item>
-        <span class="section-note">{{ t('eventDepotPreview.medicineHint') }}</span>
-      </div>
-      <div v-if="legacyPlansAvailable" class="recovery-settings">
-        <span class="section-note">{{ t('maaStaminaPipeline.recoverHint') }}</span>
-        <a-button
-          size="small"
-          :disabled="loading"
-          :loading="recoveringActivity"
-          @click="recoverActivityPlans"
-        >
-          {{ t('maaStaminaPipeline.recoverActivity') }}
-        </a-button>
       </div>
     </PipelineRow>
     <PipelineRow
       :name="t('maaStaminaPipeline.inventoryCultivate')"
+      :step="2"
       :summary="inventoryCultivateSummary"
       :checked="formData.Task.IfDepotMaintain || formData.Task.IfCultivate"
       :toggleable="false"
-      :hint="t('maaStaminaPipeline.inventoryHint')"
+      :hint="inventoryCultivateHint"
     >
-      <a-alert
-        :message="t('maaStaminaPipeline.executionHint')"
-        type="info"
-        show-icon
-        class="pipeline-alert"
-      />
       <!-- 两个来源分别保留原开关与设置，按本轮适用条件共同规划。 -->
       <CultivateTargetEditor
         :summary="cultivateSummary"
@@ -142,6 +132,7 @@
     <!-- 理智作战 -->
     <PipelineRow
       :name="t('maaStaminaPipeline.sanityFallback')"
+      :step="3"
       :hint="t('maaStaminaPipeline.sanityHint')"
       :summary="fightSummary"
       :checked="formData.Task.IfFight"
@@ -157,16 +148,15 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
 import PipelineRow from './PipelineRow.vue'
+import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import {
-  getLegacyEventDepotPlans,
   eventDepotPlanIdentity,
+  eventStageIdentity,
   getEventDepotStages,
   getEventOrundumStages,
-  resolveEventDepotStage,
 } from './eventDepotMaintainPresets'
 import { summarizeCultivate, summarizeDepot } from './taskSummaries'
 import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
@@ -205,7 +195,6 @@ const props = defineProps<{
   loadCultivatePreview: (targetsJson: string) => Promise<void>
   importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
-  recoverActivityPlans: () => Promise<void>
 }>()
 const emit = defineEmits<{
   save: [key: string, value: any]
@@ -213,14 +202,14 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const depotSettingsOpen = ref(false)
-const recoveringActivity = ref(false)
 const emitSave = (key: string, value: any) => emit('save', key, value)
-const legacyPlansAvailable = computed(() => {
-  const saved = new Set(props.eventDepotPlanEditor.plans.value.map(eventDepotPlanIdentity))
-  return getLegacyEventDepotPlans(formData.value.Data?.StaminaPipelineBackup ?? '{}').some(
-    plan => !saved.has(eventDepotPlanIdentity(plan))
-  )
-})
+/* 长说明只留一行摘要，细读内容收进行尾 ? 的 tooltip（见 PipelineRow） */
+const eventDepotHint = computed(() =>
+  [t('eventDepotPreview.hint'), t('eventDepotPreview.scopeHint')].join(' ')
+)
+const inventoryCultivateHint = computed(() =>
+  [t('maaStaminaPipeline.inventoryHint'), t('maaStaminaPipeline.executionHint')].join(' ')
+)
 const cultivateSummary = computed(() =>
   summarizeCultivate(
     {
@@ -244,59 +233,39 @@ const eventDepotSummary = computed(() => {
   if (!formData.value.Task.IfEventDepotMaintain) return ''
   if (props.activityStageLoading) return t('eventDepotPreview.loading')
   if (props.activityStageError) return t('eventDepotPreview.dataUnavailable')
-  const available = [
-    ...getEventDepotStages(props.activityStages),
-    ...getEventOrundumStages(props.activityStages),
-  ]
-  if (!available.length) return t('eventDepotPreview.noActivity')
-  const resolved = props.eventDepotPlanEditor.plans.value.flatMap(plan =>
-    plan.StageType === 'all'
-      ? available
-      : [resolveEventDepotStage(props.activityStages, plan)].filter(
-          (stage): stage is ActivityItem => !!stage
-        )
+  const material = getEventDepotStages(props.activityStages)
+  const orundum = getEventOrundumStages(props.activityStages)
+  if (!material.length && !orundum.length) return t('eventDepotPreview.noActivity')
+  // 勾选状态才是实际刷取范围：未勾选的关卡不计入摘要。
+  const skipped = new Set(
+    props.eventDepotPlanEditor.plans.value.filter(plan => plan.Skip).map(eventDepotPlanIdentity)
   )
-  const count = new Set(resolved.map(stage => `${stage.Value}:${stage.Drop}`)).size
-  return count ? t('eventDepotPreview.summary', { n: count }) : t('edit.maaDepotEmpty')
+  const farmed = [
+    ...material.filter((_, index) => !skipped.has(eventStageIdentity('material', index + 1))),
+    ...orundum.filter((_, index) => !skipped.has(eventStageIdentity('orundum', index + 1))),
+  ]
+  const count = new Set(farmed.map(stage => `${stage.Value}:${stage.Drop}`)).size
+  return t('eventDepotPreview.summary', { n: count })
 })
-const recoverActivityPlans = async () => {
-  recoveringActivity.value = true
-  try {
-    await props.recoverActivityPlans()
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    recoveringActivity.value = false
-  }
-}
 </script>
 
 <style scoped>
-.pipeline-overview,
-.section-note {
+.pipeline-overview {
+  margin: 6px 4px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
-.pipeline-overview {
-  margin: 6px 4px;
-}
-.pipeline-alert {
-  margin-bottom: 12px;
-}
-.activity-settings,
-.recovery-settings {
+/* 阶段补充设置：标签在上、控件在下，纵向排开并与表格左边缘对齐 */
+.stage-settings {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
 }
 .medicine-setting {
   margin-bottom: 0;
   width: 160px;
-}
-.recovery-settings {
-  justify-content: space-between;
 }
 :deep(.ant-select),
 :deep(.ant-input-number) {

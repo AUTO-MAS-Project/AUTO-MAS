@@ -135,7 +135,6 @@
         :load-cultivate-preview="loadCultivatePreview"
         :import-cultivate-targets="importCultivateTargets"
         :fight-summary="fightSummary"
-        :recover-activity-plans="recoverActivityPlans"
         @save="emitSave"
         @retry-activity="emit('retryActivity')"
       >
@@ -316,7 +315,6 @@ const props = defineProps<{
   loadCultivatePreview: (targetsJson: string) => Promise<void>
   importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
-  recoverActivityPlans: () => Promise<void>
   isEdit: boolean
   infrastructureImporting: boolean
   infrastructureOptions: InfrastPlanOption[]

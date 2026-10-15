@@ -1,5 +1,4 @@
 import type { ActivityItem } from '@/types/home'
-import { resolveActivityStage } from './activityStages'
 
 export type EventDepotStageType = 'material' | 'activity' | 'orundum' | 'all'
 export type EventDepotMaintainPlan = {
@@ -11,52 +10,38 @@ export type EventDepotMaintainPlan = {
   UseMedicine?: boolean
   LegacyIndex?: boolean
   LegacyActivityFirst?: boolean
+  // 前端勾选状态：true 表示本轮不刷这个关卡，后端解析时直接跳过。
+  Skip?: boolean
   [key: string]: unknown
 }
 
+// 搓玉关在 MAA 侧固定按固源岩备料，与后端 activity_inventory 的取值保持一致。
+export const ORUNDUM_ITEM_ID = '30012'
+
 // 活动列表中的搓玉效率会映射成固源岩 ID，必须同时检查原始掉落文案。
+export const isOrundumStage = (stage: ActivityItem): boolean =>
+  stage.DropName.includes('玉') || stage.Drop.includes('玉')
+
+// 计划在 MAA 侧实际备料的物品 ID（搓玉关为固源岩）。
+export const eventDepotItemId = (stage: ActivityItem): string =>
+  isOrundumStage(stage) ? ORUNDUM_ITEM_ID : stage.Drop
+
 export const getEventDepotStages = (stages: ActivityItem[]): ActivityItem[] =>
   stages.filter(
     stage =>
-      stage.Value &&
-      /^\d+$/.test(stage.Drop) &&
-      !stage.DropName.includes('玉') &&
-      !stage.Drop.includes('玉')
+      stage.Value && /^\d+$/.test(stage.Drop) && !isOrundumStage(stage)
   )
 
 export const getEventOrundumStages = (stages: ActivityItem[]): ActivityItem[] =>
-  stages.filter(
-    stage => stage.Value && (stage.DropName.includes('玉') || stage.Drop.includes('玉'))
-  )
-
-export const resolveEventDepotStage = (
-  stages: ActivityItem[],
-  plan: Pick<
-    EventDepotMaintainPlan,
-    'StageType' | 'StageIndex' | 'LegacyIndex' | 'LegacyActivityFirst'
-  >
-): ActivityItem | undefined => {
-  if (plan.StageType === 'all') return undefined
-  const candidates =
-    plan.StageType === 'activity'
-      ? stages
-      : plan.StageType === 'orundum'
-        ? getEventOrundumStages(stages)
-        : getEventDepotStages(stages)
-  if (
-    (plan.StageIndex ?? 0) > candidates.length &&
-    !plan.LegacyIndex &&
-    !plan.LegacyActivityFirst
-  ) {
-    return undefined
-  }
-  return resolveActivityStage(candidates, plan.StageIndex)
-}
+  stages.filter(stage => stage.Value && isOrundumStage(stage))
 
 // 保存动态模板，活动换期或关卡数量变化时无需重新导入。
 export const getEventDepotPresets = (): EventDepotMaintainPlan[] => [
   { StageType: 'all', DropCount: 999, OrundumDropCount: 9999 },
 ]
+
+export const eventStageIdentity = (type: EventDepotStageType, index: number): string =>
+  `${type}:${index}`
 
 export const eventDepotPlanIdentity = (plan: EventDepotMaintainPlan) =>
   `${plan.StageType ?? 'material'}:${plan.StageType === 'all' ? '' : plan.StageIndex}`
@@ -71,33 +56,4 @@ export const parseEventDepotPlans = (parsed: unknown): EventDepotMaintainPlan[] 
       ? [{ ...plan, ...(stageIndex === undefined ? {} : { StageIndex: stageIndex }) }]
       : []
   })
-}
-
-export const getLegacyEventDepotPlans = (backupJson: string): EventDepotMaintainPlan[] => {
-  try {
-    const backup = JSON.parse(backupJson)
-    const task = backup?.Task
-    if (!task || typeof task !== 'object') return []
-    const plans: EventDepotMaintainPlan[] = parseEventDepotPlans(
-      JSON.parse(task.EventDepotMaintainPlans || '[]')
-    ).map(plan => ({
-      ...plan,
-      StageType: plan.StageType ?? 'material',
-      LegacyIndex: true,
-    }))
-    if (typeof task.ActivityStageIndex === 'number') {
-      plans.push({
-        StageType: 'activity',
-        StageIndex: task.ActivityStageIndex,
-        DropCount: 999,
-        OrundumDropCount: 9999,
-        MedicineCount: task.ActivityMedicineNumb ?? backup.Info?.MedicineNumb ?? 0,
-        UseMedicine: (task.ActivityMedicineNumb ?? backup.Info?.MedicineNumb ?? 0) > 0,
-        LegacyActivityFirst: true,
-      })
-    }
-    return plans
-  } catch {
-    return []
-  }
 }

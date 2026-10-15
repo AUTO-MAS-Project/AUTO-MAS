@@ -56,9 +56,12 @@ def resolve_activity_inventory_plans(
     ]
     orundum = [stage for stage in stages if is_orundum(stage)]
 
+    def drop_id_of(stage: dict) -> object:
+        return "30012" if is_orundum(stage) else stage.get("Drop")
+
     def build(row: dict, stage: dict) -> dict | None:
         rock = is_orundum(stage)
-        drop_id = "30012" if rock else stage.get("Drop")
+        drop_id = drop_id_of(stage)
         count = (
             row.get("OrundumDropCount", row.get("DropCount"))
             if rock
@@ -85,6 +88,7 @@ def resolve_activity_inventory_plans(
             "OrundumDropCount",
             "LegacyIndex",
             "LegacyActivityFirst",
+            "Skip",
         ):
             plan.pop(key, None)
         plan.update(Stage=stage["Value"], DropId=drop_id, DropCount=count)
@@ -94,6 +98,8 @@ def resolve_activity_inventory_plans(
         return plan
 
     # 先解析显式行，all 预设不能覆盖任何已保存的自定义目标。
+    # 未勾选的关卡只由用户在前端决定，不产生计划也不提示。
+    skipped_keys: set[tuple[str, str]] = set()
     selected: dict[int, dict] = {}
     for position, row in enumerate(rows):
         if not isinstance(row, dict) or row.get("StageType") == "all":
@@ -103,6 +109,15 @@ def resolve_activity_inventory_plans(
             kind, []
         )
         index = row.get("StageIndex", position + 1 if "Stage" in row else None)
+        if row.get("Skip"):
+            if (
+                isinstance(index, int)
+                and not isinstance(index, bool)
+                and 0 < index <= len(pool)
+            ):
+                skipped = pool[index - 1]
+                skipped_keys.add((skipped["Value"], drop_id_of(skipped)))
+            continue
         if (
             not isinstance(index, int)
             or isinstance(index, bool)
@@ -177,6 +192,7 @@ def resolve_activity_inventory_plans(
                 for plan in current
                 if plan is not None
                 and (plan["Stage"], plan["DropId"]) not in explicit_keys
+                and (plan["Stage"], plan["DropId"]) not in skipped_keys
             ]
         else:
             current = [selected[position]] if position in selected else []

@@ -27,18 +27,9 @@ export default {
       'MAA selects the execution order by target completion ratio; this does not guarantee switching stages after every battle. Material and Orundum stages follow the current event.',
     stageColumn: 'Event stage',
     stageIndex: 'Material stage {n}',
-    orundumIndex: 'Orundum stage {n}',
+    orundumStage: 'Orundum stage',
     legacyIndex: 'Previous priority stage {n}',
-    fallbackStage: 'Currently falls back to {stage}',
-    allStages: 'All current event stages',
-    allMaterials: 'Event materials and Orirock',
-    materialTarget: 'Material target',
-    orundumTarget: 'Orirock target for Orundum',
-    addPresets: 'Add event preset',
-    mergeHint:
-      'New presets follow the number of event stages: 999 for materials and 9999 Orirock for Orundum. Existing custom targets take priority and stay unchanged. Reaching these finite targets continues the pipeline.',
-    added: 'Added {n} event presets',
-    alreadyAdded: 'The event preset is already added. Existing targets are unchanged.',
+    farmStage: 'Farm this stage in the current run',
     noActivity: 'No event stages are available. Targets can be saved for the next event.',
     expiredHint:
       'No event stages can be farmed this run. Saved targets will be used when event stages become available.',
@@ -57,7 +48,7 @@ export default {
     inventoryCultivate: 'Stock keeping and cultivation',
     sanityFallback: 'Sanity tasks',
     orderHint:
-      'Balanced event farming → stock keeping and cultivation → sanity tasks. A stage with nothing to farm continues to the next.',
+      'Stages run top to bottom in order 1 → 2 → 3; a stage with nothing to farm continues to the next.',
     inventoryHint:
       'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
     executionHint:
@@ -66,12 +57,6 @@ export default {
       'Uses the original fixed stage, alternatives or schedule and combat settings. This controls only the final stage; the first two can still run when it is off.',
     inventoryOff: 'Stock keeping off',
     cultivateOff: 'Cultivation off',
-    recoverActivity: 'Restore previous event targets',
-    recoverHint:
-      'Previous event settings are backed up. Restore adds missing old targets and pauses event farming; review the targets before enabling it.',
-    recoverSuccess:
-      'Previous event targets restored. Event farming is paused; review the targets before enabling it.',
-    recoverFailed: 'Failed to restore previous event targets. Please retry.',
   },
   common: {
     viewPageDocs: 'View documentation for this page',

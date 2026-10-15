@@ -132,7 +132,6 @@
             :load-cultivate-preview="loadCultivatePreview"
             :import-cultivate-targets="importCultivateTargets"
             :fight-summary="fightSummary"
-            :recover-activity-plans="recoverLegacyActivityPlans"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
@@ -260,12 +259,7 @@ import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import {
-  eventDepotPlanIdentity,
-  getEventDepotPresets,
-  getLegacyEventDepotPlans,
-  parseEventDepotPlans,
-} from '@/views/MAAUserEdit/eventDepotMaintainPresets'
+import { getEventDepotPresets } from '@/views/MAAUserEdit/eventDepotMaintainPresets'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -306,13 +300,11 @@ const {
 const formRef = ref<FormInstance>()
 const pageRef = ref<HTMLElement>()
 const isInitializing = ref(true)
-const recoveringActivity = ref(false)
 // 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
 const loading = computed(
   () =>
     editorBusy.value ||
     isInitializing.value ||
-    recoveringActivity.value ||
     (userLoading.value && !isSaving.value)
 )
 
@@ -1426,35 +1418,6 @@ const {
   onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
   onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
 })
-
-const recoverLegacyActivityPlans = () =>
-  trackEdit(async () => {
-    if (configLocked.value || editorBusy.value || isInitializing.value || recoveringActivity.value)
-      return
-    recoveringActivity.value = true
-    try {
-      await eventDepotPlanEditor.flushPendingEdits()
-      if (!(await fieldSave.flush())) throw new Error(t('maaStaminaPipeline.recoverFailed'))
-      // 先确认停用成功，再补回旧目标，避免部分保存后自动刷取旧关闭内容。
-      if (!(await handleFieldSave('Task.IfEventDepotMaintain', false))) {
-        throw new Error(t('maaStaminaPipeline.recoverFailed'))
-      }
-      const plans = parseEventDepotPlans(JSON.parse(formData.Task.EventDepotMaintainPlans || '[]'))
-      const saved = new Set(plans.map(eventDepotPlanIdentity))
-      for (const plan of getLegacyEventDepotPlans(formData.Data.StaminaPipelineBackup)) {
-        const identity = eventDepotPlanIdentity(plan)
-        if (saved.has(identity)) continue
-        saved.add(identity)
-        plans.push(plan)
-      }
-      if (!(await handleFieldSave('Task.EventDepotMaintainPlans', JSON.stringify(plans)))) {
-        throw new Error(t('maaStaminaPipeline.recoverFailed'))
-      }
-      message.success(t('maaStaminaPipeline.recoverSuccess'))
-    } finally {
-      recoveringActivity.value = false
-    }
-  })
 
 const handleMAAConfig = async () => {
   await startConfiguration(userId)
