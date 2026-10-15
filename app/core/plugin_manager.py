@@ -443,7 +443,7 @@ class _PluginManager:
         try:
             plugin.bind_notifications(self._notifications)
             await plugin.pre_enable()
-        except Exception:
+        except BaseException:
             await plugin.close_config_events()
             record._plugin = None
             raise
@@ -504,6 +504,15 @@ class _PluginManager:
             await record.commit()
             capabilities_changed.send(self, name=name, enabled=True)
             return deps
+        except asyncio.CancelledError as exc:
+            await self._fail_branch(
+                record,
+                fault=PluginState.FAULT_RUNTIME,
+                during=PluginState.ENABLING,
+                exc=exc,
+                plugin=plugin,
+            )
+            raise
         except Exception as exc:
             await self._fail_branch(
                 record,
