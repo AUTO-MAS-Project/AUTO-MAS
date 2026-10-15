@@ -3155,7 +3155,7 @@ class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[str] = Field(default=None, description="控制器类型")
     LaunchMode: Optional[Literal["Client", "Launcher"]] = Field(
         default=None,
-        description="游戏启动方式：Client=直接启动客户端，Launcher=经终末地官方启动器启动",
+        description="游戏启动方式：Launcher=经终末地官方启动器启动（默认），Client=直接启动客户端（暂未开放）",
     )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     LauncherPath: Optional[str] = Field(

@@ -1655,11 +1655,12 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
-        ## 游戏启动方式（Client=直接启动客户端，Launcher=经终末地官方启动器启动）
+        ## 游戏启动方式（Launcher=经终末地官方启动器启动，默认；Client=直接启动
+        ## 客户端，暂未在前端开放，仅存量配置继续生效）
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
-            "Client",
+            "Launcher",
             OptionsValidator(["Client", "Launcher"]),
         )
         ## 终末地游戏路径

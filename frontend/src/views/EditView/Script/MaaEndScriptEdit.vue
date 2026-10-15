@@ -717,7 +717,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
   },
   Game: {
     ControllerType: '',
-    LaunchMode: 'Client',
+    LaunchMode: 'Launcher',
     Path: '',
     LauncherPath: '',
     Arguments: '',
@@ -922,7 +922,7 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
     maaEndConfig.Game.RestoreDisplayType = 'Window'
   }
   if (config.Game?.LaunchMode == null) {
-    maaEndConfig.Game.LaunchMode = 'Client'
+    maaEndConfig.Game.LaunchMode = 'Launcher'
   }
   if (config.Game?.LauncherPath == null) {
     maaEndConfig.Game.LauncherPath = ''

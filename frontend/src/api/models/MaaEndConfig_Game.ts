@@ -8,7 +8,7 @@ export type MaaEndConfig_Game = {
      */
     ControllerType?: (string | null);
     /**
-     * 游戏启动方式：Client=直接启动客户端，Launcher=经终末地官方启动器启动
+     * 游戏启动方式：Launcher=经终末地官方启动器启动（默认），Client=直接启动客户端（暂未开放）
      */
     LaunchMode?: ('Launcher' | 'Client' | null);
     /**
