@@ -165,17 +165,34 @@ async def fill_default_task_snapshots(
         logger.opt(exception=True).warning(f"生成 MFW 默认任务队列失败：{exc}")
         return
 
-    for user_id, (text, origin) in snapshots.items():
+    for user_id, _, selected_preset in targets:
+        if user_id not in snapshots:
+            continue
+        text, origin = snapshots[user_id]
         user = users[user_id]
+
+        def unchanged(
+            user: Any = user, selected_preset: str | None = selected_preset
+        ) -> bool:
+            # 算的这段时间里、以及 update_user 写入前的预处理期间，用户页存过队列、换过预设，
+            # 或脚本开始运行了：不覆盖、不硬写
+            return (
+                not script_config.is_locked
+                and is_empty_task_snapshot(user.get("Task", "TaskSnapshot"))
+                and (str(user.get("Task", "SelectedPreset") or "").strip() or None)
+                == selected_preset
+            )
+
         try:
-            # 算的这段时间里用户页存过队列、或脚本开始运行了：不覆盖、不硬写
-            if script_config.is_locked or not is_empty_task_snapshot(
-                user.get("Task", "TaskSnapshot")
+            if not unchanged():
+                continue
+            if not await Config.update_user(
+                script_id,
+                user_id,
+                {"Task": {"TaskSnapshot": text}},
+                precondition=unchanged,
             ):
                 continue
-            await Config.update_user(
-                script_id, user_id, {"Task": {"TaskSnapshot": text}}
-            )
             # 任务数按落盘的算：特调写入前会整理（M9A 的启动 / 关闭游戏不进队列）
             logger.info(
                 f"MFW 用户 {user.get('Info', 'Name') or user_id} 的任务队列为空，"
