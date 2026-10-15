@@ -51,7 +51,7 @@ from PIL import Image
 
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
+from app.utils import get_logger, is_process_alive
 from app.utils.platform import IS_WINDOWS
 
 from .launcher_start import dismiss_screensaver
@@ -91,6 +91,11 @@ _NTE_CLIENT_PROCESS = "HTGame.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
+# 切号入口的进程消失宽限期：游戏自更新/启动交接会「旧进程退出→数秒后新进程出
+# 现」（_reacquire_game_hwnd 处理的重启换窗即此类流程），进程消失后不得立即判
+# 死。持续消失超过该宽限期仍无进程也无窗口，才判永久退出快速失败；长交接（>宽
+# 限期）原本也会因窗口宽限超时而失败，报错更准确。
+_PROCESS_GONE_GRACE_SECONDS = 30.0
 # 启动界面稳定等待：窗口已出现但尚未进入可执行态（仍停在 splash/加载/游戏内更新
 # 过渡帧）时，在硬上限内轮询等待「标题界面」或「登录面板」出现。异环更新频繁，点
 # 「开始游戏」后游戏内更新可能耗时很长，故界面仍在变化（有进展）时持续顺延等待；
@@ -168,7 +173,7 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按所属进程名定位异环主窗口。
 
     异环窗口类未实测稳定，故只用 ``EnumWindows + psutil.Process(pid).name()``
@@ -178,11 +183,19 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        fail_on_exit: 切号入口专用。为 True 时，等待期间观察到异环进程先出现后
+            全部消失，且持续 ``_PROCESS_GONE_GRACE_SECONDS`` 仍无进程也无窗口
+            （窗口不会再出现）才抛错；消失宽限期容忍游戏自更新/启动交接的短暂
+            缺席。从未观察到进程（URL 协议拉起慢等启动延迟）不触发，保持宽限
+            轮询。默认 False：重启换新窗口等进程缺席属预期的调用方维持原语义。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到异环游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到异环游戏窗口；或 ``fail_on_exit`` 且
+            异环进程先出现后持续消失超过宽限期。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    seen_alive = False
+    gone_since: float | None = None
     while True:
         candidates: list[int] = []
 
@@ -202,6 +215,24 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
+        if fail_on_exit:
+            if is_process_alive(_NTE_CLIENT_PROCESS):
+                seen_alive = True
+                gone_since = None
+            elif seen_alive:
+                # 进程先出现后消失：先容忍更新/启动交接的短暂缺席（消失期间窗口
+                # 若先回来，下一轮 EnumWindows 会直接命中），持续消失超过宽限期
+                # 仍无进程也无窗口才判永久退出，如实快速失败。从未观察到进程
+                # （URL 协议拉起慢）与权限不足读不到提权进程名（退化为原宽限
+                # 轮询）都不在此列。
+                now = time.monotonic()
+                if gone_since is None:
+                    gone_since = now
+                elif now - gone_since >= _PROCESS_GONE_GRACE_SECONDS:
+                    raise RuntimeError(
+                        f"异环游戏进程已退出（{_NTE_CLIENT_PROCESS}），窗口不会再出现，"
+                        "请确认游戏已由 MAS 成功启动"
+                    )
         logger.info(
             f"异环游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
@@ -373,6 +404,8 @@ def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
     """窗口句柄在等待期间失效（如游戏内更新触发客户端重启）时重新定位异环窗口。
 
     重定位成功返回新句柄；等待宽限期内仍找不到则抛出，交由调用方失败处理。
+    重定位期间旧进程已退出、新进程尚未拉起属预期，故不走 ``fail_on_exit``
+    快速失败，保持宽限轮询等待新窗口。
     """
     on_log("游戏窗口句柄已失效，重新定位异环游戏窗口...")
     return _find_game_hwnd(wait=True)
@@ -690,7 +723,7 @@ def account_switch(
     # 带屏保运行，避免截图全黑导致 OCR 找不到标题界面（对齐 ok-nte 上游行为）
     dismiss_screensaver()
     try:
-        hwnd = _find_game_hwnd()
+        hwnd = _find_game_hwnd(fail_on_exit=True)
         _activate_window(hwnd)
         # 启动稳定化：等界面进入「标题界面」或「登录面板」之一，再按各自流程分流，
         # 避免在窗口已现但仍在加载过渡帧时立即误判失败；等待期间窗口重启会返回新句柄。
