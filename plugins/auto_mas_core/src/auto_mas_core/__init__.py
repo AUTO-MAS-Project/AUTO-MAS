@@ -76,6 +76,7 @@ from app.plugin.types import PLUGIN_API_VERSION, PluginState
 from app.task import (
     MODE_WORKERS,
     AutoProxyWorker,
+    HistoryWriter,
     ManualReviewWorker,
     ModeWorker,
     ScriptConfigWorker,
@@ -221,6 +222,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "AdapterRuntime",
     "GameRuntime",
+    "HistoryWriter",
     "TRIGGER_TICKET",
     "BasePlugin",
     "Config",
