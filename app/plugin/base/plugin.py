@@ -10,6 +10,7 @@ from app.plugin.types import LifecycleContext, PluginState
 
 if TYPE_CHECKING:
     from app.models.config import PluginConfig, PluginRecord
+    from app.plugin.services import ServiceResolver
 
 
 class BasePlugin:
@@ -19,6 +20,7 @@ class BasePlugin:
     wants: ClassVar[tuple[str, ...]] = ()
     provides_services: ClassVar[Mapping[str, str]] = MappingProxyType({})
     config_class: ClassVar[type[PluginConfig] | None] = None
+    services: ServiceResolver
 
     def __init__(
         self, config: PluginConfig | None = None, record: PluginRecord | None = None
@@ -29,6 +31,10 @@ class BasePlugin:
         self._record_ref: weakref.ReferenceType[PluginRecord] | None = (
             weakref.ref(record) if record is not None else None
         )
+
+    def bind_services(self, services: ServiceResolver) -> None:
+        """业务钩子执行前绑定服务查询能力，构造签名保持不变。"""
+        self.services = services
 
     @property
     def record(self) -> PluginRecord:
