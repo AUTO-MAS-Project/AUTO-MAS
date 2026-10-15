@@ -17,6 +17,8 @@ export interface MascotDefinition {
     lookPath?: string
     /** 两行结果动画：第一行失败，第二行成功。 */
     resultPath?: string
+    /** 单行拖拽动画，列数与主动画一致。 */
+    dragPath?: string
   }
 }
 
@@ -35,6 +37,7 @@ export interface MascotAssets {
   mascotAnimationUrl?: string
   mascotLookUrl?: string
   mascotResultUrl?: string
+  mascotDragUrl?: string
 }
 
 export interface InstalledMascot extends MascotManifest, MascotAssets {

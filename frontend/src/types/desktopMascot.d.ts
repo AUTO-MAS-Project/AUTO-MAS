@@ -19,6 +19,7 @@ export interface DesktopMascotData {
     workingFps: number
     lookImageUrl?: string
     resultImageUrl?: string
+    dragImageUrl?: string
   }
 }
 

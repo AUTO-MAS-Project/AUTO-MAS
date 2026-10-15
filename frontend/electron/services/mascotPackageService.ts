@@ -67,6 +67,7 @@ function serializeMascot({
           mascotAnimationUrl: assets[manifest.mascot.animation.path],
           mascotLookUrl: assets[manifest.mascot.animation.lookPath ?? ''],
           mascotResultUrl: assets[manifest.mascot.animation.resultPath ?? ''],
+          mascotDragUrl: assets[manifest.mascot.animation.dragPath ?? ''],
         }
       : {}),
   }

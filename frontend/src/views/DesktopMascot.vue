@@ -36,13 +36,16 @@ const looking = computed(
     lookFrame.value !== null &&
     Boolean(data.value.animation?.lookImageUrl)
 )
+const dragSprite = computed(() => dragging.value && Boolean(data.value?.animation?.dragImageUrl))
 const spriteImageUrl = computed(() => {
   const animation = data.value?.animation
-  return reacting.value
-    ? animation?.resultImageUrl
-    : looking.value
-      ? animation?.lookImageUrl
-      : animation?.imageUrl
+  return dragSprite.value
+    ? animation?.dragImageUrl
+    : reacting.value
+      ? animation?.resultImageUrl
+      : looking.value
+        ? animation?.lookImageUrl
+        : animation?.imageUrl
 })
 
 const avatarStyle = computed(() => {
@@ -62,7 +65,7 @@ const spriteStyle = computed(() => {
   if (!data.value?.animation) return {}
   const { animation, state, reaction } = data.value
   const columns = looking.value ? 3 : animation.columns
-  const rows = looking.value ? 3 : 2
+  const rows = dragSprite.value ? 1 : looking.value ? 3 : 2
   const column = looking.value
     ? lookFrame.value! % 3
     : stopped.value
@@ -217,6 +220,7 @@ function endDrag(): void {
       class="mascot-avatar"
       :class="{
         dragging,
+        'drag-sprite': dragSprite,
         stopped,
         'reduced-motion': (reducedMotion && !data.motionOverride) || !data.animate,
       }"
@@ -265,6 +269,11 @@ function endDrag(): void {
 }
 
 .mascot-avatar.dragging.reduced-motion {
+  animation: none;
+  transform: translate(-8px, -8px);
+}
+
+.mascot-avatar.dragging.drag-sprite {
   animation: none;
   transform: translate(-8px, -8px);
 }
