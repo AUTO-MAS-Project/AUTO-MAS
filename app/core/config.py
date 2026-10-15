@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import (
@@ -1217,6 +1218,20 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        script_config = self.ScriptConfig[uid]
+        if isinstance(script_config, MaaFWConfig):
+            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
+            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(
+                script_id,
+                script_config,
+                None if user_id is None else [str(uuid.UUID(user_id))],
+            )
+
         if user_id is None:
             # 获取全部用户配置
             data = await self.ScriptConfig[uid].UserData.toDict()
@@ -1282,6 +1297,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
+            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):
@@ -3009,9 +3030,18 @@ class AppConfig(GlobalConfig):
         return {"time": ts, "target": target, **content}
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """更新用户配置"""
+        self,
+        script_id: str,
+        user_id: str,
+        data: Dict[str, Dict[str, Any]],
+        *,
+        precondition: Callable[[], bool] | None = None,
+    ) -> bool:
+        """更新用户配置，返回是否写入
+
+        ``precondition``：预处理（特调整理、密码加密等，要让出事件循环）做完、真正写入
+        之前再判一次，不成立就不写。判断与写入之间不让出，期间插不进别的写入。
+        """
 
         logger.info(f"{script_id} 更新用户配置: {user_id}")
 
@@ -3094,7 +3124,10 @@ class AppConfig(GlobalConfig):
             if notice is not None:
                 data.setdefault("Data", {})["CultivateNotice"] = notice
 
+        if precondition is not None and not precondition():
+            return False
         await user_config.update(data)
+        return True
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]

@@ -864,6 +864,6 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
             )
         return MaaFWApiReply(message=message, data=data)
     return MaaFWApiReply(
-        message=f"已复用「{source_name}」的项目，运行时与模型文件共用，不另占空间",
+        message=f"已复用「{source_name}」的项目",
         data=data,
     )

@@ -1752,7 +1752,7 @@ export default {
     maafwNoMirrorchyanRid:
       'このプロジェクトは MirrorChyan に対応していないため（interface.json に mirrorchyan_rid がありません）、MAS は更新を確認できません',
     updateSourceTip:
-      'バージョンは常に MirrorChyan で確認するため、プロジェクトが MirrorChyan に対応している必要があります。MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です',
+      'MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です。MirrorChyan に対応していないプロジェクトでも、GitHub を選べば更新を確認できます（プロジェクトに GitHub リポジトリの記載が必要です）',
     autoUpdateMode: '自動更新',
     autoUpdateModeOff: '更新しない',
     autoUpdateModeBeforeRun: '実行前',

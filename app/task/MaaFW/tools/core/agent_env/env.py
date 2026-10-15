@@ -392,10 +392,14 @@ def _prepare_project_python_env(
         "能否导入 maa.agent.agent_server。项目 Python 属于 release 内容，AUTO-MAS 不要求"
         "其提供 pip；只在自己的内嵌副本里修它的 maafw binding 版本。"
     )
+    # 处理建议按两种情况写：导入后目录锁定，「重新下载解压」照着做不了。本机副本这边，
+    # 严格检查只在缺模块时补装 binding（上面），所以重试能修好的是补装没做成的那种；视图
+    # 只在 interface.json 不在时按载荷重建，其余文件坏了要等换版本时整棵重建。
     raise MaaFWAgentEnvError(
-        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
+        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}）\n"
         f"  Python 路径: {python_exe}\n"
-        "  处理建议: 重新下载并解压完整 MaaFW 项目包"
+        "  处理建议: 本机这份副本的问题（如补装 maafw 时没联网）检查网络后重试即可；"
+        "项目包本身就缺这个模块时，等项目发布新版本后更新，或反馈给项目作者"
     )
 
 
