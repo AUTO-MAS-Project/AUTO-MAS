@@ -10,6 +10,7 @@ from auto_mas_core.utils import get_logger, ProcessManager
 from auto_mas_core.services import Notify  # 宿主业务服务
 from auto_mas_core.plugin import services, http  # 跨插件总线 / HTTP 挂载
 
+
 class PLUGIN(BasePlugin):  # 或顶层导出名为 PLUGIN 的子类
     async def on_enable(self) -> None:
         get_logger("demo").info("enabled, config=%s", self.config)
@@ -105,3 +106,14 @@ class PLUGIN(BasePlugin):
 旧 `auto_mas_core.plugin.services` 与顶层 `Plugin` 导出继续保留兼容；
 新服务消费逻辑使用实例查询接口。宿主业务服务 `auto_mas_core.services`
 （通知、更新等）仍沿用原入口，属于后续迁移范围。
+
+## 默认配置会话
+
+脚本未指定账号的 `SCRIPT_CONFIG` 会话由 `UserExpander` 创建临时 `Default` 用户。
+宿主 `ScriptExpander` 在启动展开层前调用
+`bind_default_user_factory(decl.user_type.build)`；插件现有构造签名不变。
+独立运行展开层时，也需绑定用户工厂；普通账号任务不使用该工厂。
+
+工厂接收 `uid` 和 `payload` 两个关键字参数，返回尚未激活的用户配置节点。
+展开层沿用 `uuid5(script_entry.uid, "Default")`、脚本配置来源和关闭常规配置覆写的设置，
+随后激活节点；节点只进入本次任务树，不加入脚本的持久化账号集合。
