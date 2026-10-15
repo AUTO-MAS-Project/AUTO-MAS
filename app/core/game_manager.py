@@ -18,6 +18,10 @@ from app.utils import get_logger
 logger = get_logger("游戏管理")
 
 
+class GameCleanupError(RuntimeError):
+    """上次游戏占用尚未恢复，不能降级为无游戏订阅继续执行。"""
+
+
 class _SerialGate:
     """进程内全局 FIFO 闸门：同一时刻至多一个不支持并行的游戏处于订阅中。
 
@@ -148,7 +152,10 @@ class _GameManager:
             # 上一任务的失败还原由宿主持票；重新使用该游戏前先完成恢复。
             for pending in list(self._pending_cleanup):
                 if self._subs.get(pending) is entry:
-                    await self.unsubscribe(pending)
+                    try:
+                        await self.unsubscribe(pending)
+                    except Exception as exc:
+                        raise GameCleanupError(f"游戏 {uid} 尚未完成还原") from exc
             ticket = await entry.lock_s(cascade=False)
         except BaseException:
             if gated:

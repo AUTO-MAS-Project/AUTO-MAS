@@ -88,6 +88,7 @@ class ScriptExpander(TaskBase):
     async def main_task(self) -> None:
         from app.core import Config, GameManager, Plugin
         from app.core.desktop_guard import ensure_desktop_available
+        from app.core.game_manager import GameCleanupError
         from app.plugin.base.game import DeviceSubscribeError
 
         item = self.item
@@ -189,6 +190,8 @@ class ScriptExpander(TaskBase):
                             control, game_ticket = await GameManager.subscribe(guid)
                             break
                         except asyncio.CancelledError:
+                            raise
+                        except GameCleanupError:
                             raise
                         except ValueError:
                             # 游戏正被配置 X 占用，等锁
