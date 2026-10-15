@@ -46,8 +46,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   与导入报告里的 `sourcePath` 不是同一目录就导入一次；来源不在而视图健康时什么都不做；健康但
   没有标记的老副本就地采纳一次，采纳失败就报错、本次不运行。有标记、但标记挂的载荷在本机不完整
   （目录或清单没了，`payloads.payload_complete`）的按视图现状重新登记一次
-  （`adopt_view(replace_lost=True)`），失败只告警、照常运行——不补的话更新永远以一份没有清单的
-  载荷为基准、建不成新版本。组 latest 只剩目录没有清单时同样按丢了处理（`latest_entry` 不返回它，
+  （`adopt_view(replace_lost=True)`，谱系沿用标记里的，不按 interface 重算），失败只告警、照常
+  运行——不补的话更新永远以一份没有清单的载荷为基准、建不成新版本。开发者模式、以及刚关掉开关
+  标记还带 `followSource` 的不重新登记（视图里是开发者的改动，不能以正式版本号进普通渠道）。组 latest 只剩目录没有清单时同样按丢了处理（`latest_entry` 不返回它，
   `register` 允许同版本新登记顶替）。
 - **载荷 + 视图**：项目内容按「谱系 + 版本 + 内容哈希」登记成不可变**载荷**
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），

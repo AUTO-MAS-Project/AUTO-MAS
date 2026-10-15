@@ -2715,11 +2715,18 @@ def ensure_embedded_copy(
         marker = read_view_marker(copy_dir)
         if marker is None:
             _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
-        elif not follow and not payloads.payload_complete(
-            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        elif (
+            not follow
+            and follow_source_record(marker) is None
+            and not payloads.payload_complete(
+                payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+            )
         ):
             # 每个入口都会走到这里，只 stat 两次、不解析清单（大项目的清单有几 MB）。
-            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。
+            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。刚关掉开关、标记
+            # 还带 followSource 的也不在此列：视图里是开发者改过的内容，按现状登记会以
+            # 正式版本号进普通渠道（AGENTS「开发者载荷不进普通渠道」），留给运行前检查的
+            # _leave_follow_source 回到组的 latest。
             _readopt_lost_payload(
                 script_id,
                 script_config,
@@ -2928,6 +2935,10 @@ def adopt_view(
         raise EmbeddedProjectError("副本已经登记过版本")
     interface = payloads.read_project_interface(view)
     lineage = payloads.lineage_key(interface)
+    if marker is not None:
+        # 重新登记留在标记记的谱系里：后来的版本可能改了 mirrorchyan_rid / github / name，
+        # 按 interface 重算会让脚本悄悄离开原来的组，privatePaths、damaged、预检备忘也跟丢。
+        lineage = str(marker["lineage"])
     version = str(interface.get("version") or "")
     recorded = _recorded_update_manifest(view, base)
     if recorded is not None:
