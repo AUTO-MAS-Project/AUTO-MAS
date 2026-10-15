@@ -49,6 +49,17 @@ export interface AppearanceMascot {
   width?: number
   opacity?: number
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  /** 两行等宽精灵图：第一行待机，第二行工作。 */
+  animation?: {
+    path: string
+    columns: number
+    idleFps?: number
+    workingFps?: number
+    /** 3×3 视线图，按左上到右下排列。 */
+    lookPath?: string
+    /** 两行结果动画：第一行失败，第二行成功。 */
+    resultPath?: string
+  }
 }
 
 export type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey, string>>
@@ -79,6 +90,9 @@ export interface InstalledAppearance extends AppearanceManifest {
   previewUrl?: string
   backgroundUrl?: string
   mascotUrl?: string
+  mascotAnimationUrl?: string
+  mascotLookUrl?: string
+  mascotResultUrl?: string
   menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
@@ -86,7 +100,7 @@ export interface InstalledAppearance extends AppearanceManifest {
 export interface AppearanceImportResult {
   success: boolean
   appearance?: InstalledAppearance
-  code?: 'INVALID_PACKAGE' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
+  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
   error?: string
   existing?: InstalledAppearance
 }

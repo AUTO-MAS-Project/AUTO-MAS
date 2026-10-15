@@ -1,5 +1,10 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+} from '@/types/desktopMascot'
+import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
   InstalledAppearance,
@@ -198,6 +203,15 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI {
+  setDesktopMascotReady(
+    ready: boolean,
+    labels?: DesktopMascotMenuLabels,
+    colors?: DesktopMascotColors
+  ): Promise<void>
+  setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
+  setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
+  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
+  onDesktopMascotError(callback: () => void): () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>

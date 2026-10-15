@@ -1,6 +1,5 @@
 <template>
   <a-layout
-    :class="mascotLayoutClass"
     style="
       position: relative;
       z-index: 1;
@@ -91,11 +90,6 @@ const SIDER_WIDTH = 160
 const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
-const mascotLayoutClass = computed(() => {
-  if (!activeAppearance.value?.mascotUrl) return undefined
-  const position = activeAppearance.value.mascot?.position ?? 'bottom-right'
-  return position.endsWith('left') ? 'appearance-mascot-left' : 'appearance-mascot-right'
-})
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
 // 菜单图标可由外观包按固定键替换；缺少资源时继续使用内置图标。
@@ -214,21 +208,6 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
-.appearance-mascot-left {
-  margin-left: calc(min(var(--app-appearance-mascot-width), 35vw) + 32px);
-}
-
-.appearance-mascot-right {
-  margin-right: calc(min(var(--app-appearance-mascot-width), 35vw) + 32px);
-}
-
-@media (max-width: 800px) {
-  .appearance-mascot-left,
-  .appearance-mascot-right {
-    margin-inline: 0;
-  }
-}
-
 .sider-content {
   height: 100%;
   display: flex;

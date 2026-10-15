@@ -30,7 +30,7 @@
               </template>
             </a-button>
           </a-tooltip>
-          <span class="command-author">—— {{ commandAuthor }}</span>
+          <span v-if="commandAuthor" class="command-author">—— {{ commandAuthor }}</span>
         </div>
       </div>
 

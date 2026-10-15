@@ -46,6 +46,7 @@ export function describeOnlineAppearanceError(
   fallbackKey: string
 ): string {
   const code = result?.code
+  if (code === 'INVALID_ANIMATION') return t('setting.basic.appearanceAnimationInvalid')
   if (code && Object.prototype.hasOwnProperty.call(ERROR_KEYS, code)) {
     return t(ERROR_KEYS[code as OnlineAppearanceErrorCode])
   }

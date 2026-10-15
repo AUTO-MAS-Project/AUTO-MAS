@@ -18,6 +18,11 @@ import {
 } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+} from '../src/types/desktopMascot'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
@@ -28,6 +33,10 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import {
+  DesktopMascotService,
+  type DesktopMascotPreferences,
+} from './services/desktopMascotService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -222,7 +231,7 @@ let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
-interface AppConfig {
+interface AppConfig extends DesktopMascotPreferences {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -626,6 +635,98 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
+const reportDesktopMascotError = (error: unknown): void => {
+  logger.error('桌面桌宠更新失败:', error)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop-mascot:error')
+  }
+}
+const desktopMascot = new DesktopMascotService({
+  readPreferences: loadConfig,
+  savePosition: position => {
+    const config = loadConfig()
+    config.desktopMascotPosition = position
+    saveConfig(config)
+  },
+  saveAnimationPaused: paused => {
+    const config = loadConfig()
+    config.desktopMascotAnimationPaused = paused
+    saveConfig(config)
+  },
+  saveIdleMessagePaused: paused => {
+    const config = loadConfig()
+    config.desktopMascotIdleMessagePaused = paused
+    saveConfig(config)
+  },
+  getMainWindow: () => mainWindow,
+  onError: reportDesktopMascotError,
+})
+const syncDesktopMascot = (): void => {
+  try {
+    desktopMascot.sync()
+  } catch (error) {
+    reportDesktopMascotError(error)
+  }
+}
+
+ipcMain.handle(
+  'desktop-mascot:ready',
+  (event, ready: unknown, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors) => {
+    if (event.sender !== mainWindow?.webContents || typeof ready !== 'boolean') return
+    if (
+      ready &&
+      (!colors ||
+        typeof colors.background !== 'string' ||
+        typeof colors.text !== 'string' ||
+        typeof colors.border !== 'string' ||
+        !Number.isFinite(colors.radius))
+    )
+      return
+    desktopMascot.setReady(
+      ready,
+      labels &&
+        typeof labels.pauseAnimation === 'string' &&
+        typeof labels.resumeAnimation === 'string' &&
+        typeof labels.pauseIdleMessage === 'string' &&
+        typeof labels.resumeIdleMessage === 'string'
+        ? labels
+        : undefined,
+      colors
+    )
+  }
+)
+ipcMain.handle('desktop-mascot:get', event => desktopMascot.getData(event.sender))
+ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !message ||
+    typeof message.text !== 'string' ||
+    typeof message.author !== 'string'
+  )
+    return
+  desktopMascot.setIdleMessage(message)
+})
+ipcMain.on('desktop-mascot:pointer', (event, action: unknown) =>
+  desktopMascot.handlePointer(event.sender, action)
+)
+ipcMain.handle('desktop-mascot:activity', (event, working: unknown, animate: unknown) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    typeof working !== 'boolean' ||
+    typeof animate !== 'boolean'
+  )
+    return
+  desktopMascot.setActivity(working, animate)
+})
+ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof text !== 'string') return
+  desktopMascot.showNotice(
+    text,
+    reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
+      ? reaction
+      : undefined
+  )
+})
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
@@ -1001,6 +1102,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    desktopMascot.setReady(false)
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
@@ -1966,6 +2068,19 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     if (
       patch &&
       typeof patch === 'object' &&
+      [
+        'appearanceId',
+        'desktopMascotEnabled',
+        'desktopMascotAnimationPaused',
+        'desktopMascotIdleMessagePaused',
+      ].some(key => key in patch)
+    ) {
+      syncDesktopMascot()
+    }
+
+    if (
+      patch &&
+      typeof patch === 'object' &&
       ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
     ) {
       for (const window of BrowserWindow.getAllWindows()) {
@@ -2223,7 +2338,7 @@ app.whenReady().then(async () => {
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
 
-  registerAppearanceHandlers()
+  registerAppearanceHandlers({ onChanged: syncDesktopMascot })
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器

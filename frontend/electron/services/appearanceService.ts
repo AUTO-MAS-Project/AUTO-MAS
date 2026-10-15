@@ -53,6 +53,14 @@ interface AppearanceMascot {
   width?: number
   opacity?: number
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  animation?: {
+    path: string
+    columns: number
+    idleFps?: number
+    workingFps?: number
+    lookPath?: string
+    resultPath?: string
+  }
 }
 interface AppearanceManifest {
   formatVersion: 1
@@ -71,13 +79,16 @@ interface InstalledAppearance extends AppearanceManifest {
   previewUrl?: string
   backgroundUrl?: string
   mascotUrl?: string
+  mascotAnimationUrl?: string
+  mascotLookUrl?: string
+  mascotResultUrl?: string
   menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
 interface AppearanceImportResult {
   success: boolean
   appearance?: InstalledAppearance
-  code?: 'INVALID_PACKAGE' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
+  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
   error?: string
   existing?: InstalledAppearance
 }
@@ -287,6 +298,7 @@ function normalizeMascot(value: unknown): AppearanceMascot | undefined {
   const pathValue = assertAssetPath(raw.path, true)
   const width = assertOptionalNumber(raw.width, 'mascot.width', 16, 1024)
   const opacity = assertOptionalNumber(raw.opacity, 'mascot.opacity', 0, 1)
+  const animation = normalizeMascotAnimation(raw.animation)
   const position = raw.position === undefined ? undefined : raw.position
   if (
     position !== undefined &&
@@ -302,6 +314,72 @@ function normalizeMascot(value: unknown): AppearanceMascot | undefined {
     ...(width === undefined ? {} : { width }),
     ...(opacity === undefined ? {} : { opacity }),
     ...(position === undefined ? {} : { position }),
+    ...(animation === undefined ? {} : { animation }),
+  }
+}
+
+function normalizeMascotAnimation(value: unknown): AppearanceMascot['animation'] {
+  if (value === undefined) return undefined
+  try {
+    const raw = assertPlainObject(value, 'mascot.animation')
+    const assetPath = assertAssetPath(raw.path, true)
+    const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 16)
+    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 24)
+    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 24)
+    const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
+    const resultPath =
+      raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)
+    if (lookPath && path.posix.extname(lookPath).toLowerCase() !== '.png') {
+      throw new Error('mascot.animation.lookPath requires a PNG sprite sheet')
+    }
+    if (resultPath && path.posix.extname(resultPath).toLowerCase() !== '.png') {
+      throw new Error('mascot.animation.resultPath requires a PNG sprite sheet')
+    }
+    if (
+      path.posix.extname(assetPath).toLowerCase() !== '.png' ||
+      !columns ||
+      !Number.isInteger(columns)
+    ) {
+      throw new Error('mascot.animation requires a PNG sprite sheet and an integer column count')
+    }
+    return {
+      path: assetPath,
+      columns,
+      ...(idleFps === undefined ? {} : { idleFps }),
+      ...(workingFps === undefined ? {} : { workingFps }),
+      ...(lookPath === undefined ? {} : { lookPath }),
+      ...(resultPath === undefined ? {} : { resultPath }),
+    }
+  } catch (error) {
+    throw new AppearanceError(
+      'INVALID_ANIMATION',
+      error instanceof Error ? error.message : String(error)
+    )
+  }
+}
+
+function validateMascotAnimationData(
+  animation: NonNullable<AppearanceMascot['animation']>,
+  data: Buffer,
+  rows = 2
+): void {
+  if (data.length < 33 || data.subarray(12, 16).toString('ascii') !== 'IHDR') {
+    throw new AppearanceError('INVALID_ANIMATION', 'mascot.animation: invalid PNG dimensions')
+  }
+  const width = data.readUInt32BE(16)
+  const height = data.readUInt32BE(20)
+  if (
+    !width ||
+    !height ||
+    width > 8192 ||
+    height > 8192 ||
+    width % animation.columns !== 0 ||
+    height % rows !== 0
+  ) {
+    throw new AppearanceError(
+      'INVALID_ANIMATION',
+      'mascot.animation: expected two rows of equal-size frames'
+    )
   }
 }
 
@@ -478,6 +556,9 @@ function referencedPaths(manifest: AppearanceManifest): string[] {
   return [
     manifest.background?.path,
     manifest.mascot?.path,
+    manifest.mascot?.animation?.path,
+    manifest.mascot?.animation?.lookPath,
+    manifest.mascot?.animation?.resultPath,
     manifest.preview,
     ...Object.values(manifest.menuIcons ?? {}),
     ...Object.values(manifest.cursors ?? {}).map(cursor => cursor.path),
@@ -527,6 +608,19 @@ function validateInstalledDirectory(directory: string): AppearanceManifest {
     const candidate = ensureWithinRoot(directory, path.join(directory, ...cursor.path.split('/')))
     validateCursorData(key as AppearanceCursorKey, cursor, fs.readFileSync(candidate))
   }
+  if (manifest.mascot?.animation) {
+    const animation = manifest.mascot.animation
+    validateMascotAnimationData(
+      animation,
+      fs.readFileSync(path.join(directory, ...animation.path.split('/')))
+    )
+    if (animation.resultPath) {
+      validateMascotAnimationData(
+        animation,
+        fs.readFileSync(path.join(directory, ...animation.resultPath.split('/')))
+      )
+    }
+  }
   return manifest
 }
 
@@ -552,6 +646,15 @@ function serializeAppearance(directory: string, manifest: AppearanceManifest): I
     ...(manifest.preview ? { previewUrl: getAsset(manifest.preview) } : {}),
     ...(manifest.background ? { backgroundUrl: getAsset(manifest.background.path) } : {}),
     ...(manifest.mascot ? { mascotUrl: getAsset(manifest.mascot.path) } : {}),
+    ...(manifest.mascot?.animation
+      ? { mascotAnimationUrl: getAsset(manifest.mascot.animation.path) }
+      : {}),
+    ...(manifest.mascot?.animation?.lookPath
+      ? { mascotLookUrl: getAsset(manifest.mascot.animation.lookPath) }
+      : {}),
+    ...(manifest.mascot?.animation?.resultPath
+      ? { mascotResultUrl: getAsset(manifest.mascot.animation.resultPath) }
+      : {}),
     ...(manifest.menuIcons ? { menuIconUrls } : {}),
     ...(manifest.cursors ? { cursorUrls } : {}),
   }
@@ -645,6 +748,19 @@ function parseArchive(zipPath: string): { manifest: AppearanceManifest; files: S
     if (!files.some(file => file.path.toLowerCase() === expected)) fail(`缺少资源: ${expected}`)
   }
   if (files.length !== expectedFiles.size) fail('外观资源重复或未声明')
+  if (manifest.mascot?.animation) {
+    const animation = manifest.mascot.animation
+    const animationFile = files.find(
+      file => file.path.toLowerCase() === animation.path.toLowerCase()
+    )!
+    validateMascotAnimationData(animation, animationFile.data)
+    if (animation.resultPath) {
+      const resultFile = files.find(
+        file => file.path.toLowerCase() === animation.resultPath!.toLowerCase()
+      )!
+      validateMascotAnimationData(animation, resultFile.data)
+    }
+  }
   for (const [key, cursor] of Object.entries(manifest.cursors ?? {})) {
     const file = files.find(item => item.path.toLowerCase() === cursor.path.toLowerCase())
     if (!file) fail(`缺少光标资源: ${cursor.path}`)

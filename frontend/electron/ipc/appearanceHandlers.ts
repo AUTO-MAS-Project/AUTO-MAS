@@ -30,6 +30,7 @@ const INVALID_ARGUMENT = { success: false, error: '参数无效' } as const
 const COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface AppearanceHandlerOptions {
+  onChanged?(): void
   /** 仅供测试替换分享站地址、fetch 实现与目录。 */
   online?: Partial<OnlineAppearanceServiceOptions>
 }
@@ -58,7 +59,8 @@ function onlineCacheDir(): string {
   return path.join(app.getPath('temp'), 'auto-mas-online-appearance', instance)
 }
 
-function broadcastAppearanceChange(): void {
+function broadcastAppearanceChange(onChanged?: () => void): void {
+  onChanged?.()
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send('appearance-changed')
   }
@@ -138,7 +140,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     if (result.success) {
       logger.info(`外观包已导入: ${result.appearance?.id ?? 'unknown'}`)
       if (result.appearance) forgetAppearanceSource(result.appearance.id)
-      broadcastAppearanceChange()
+      broadcastAppearanceChange(options.onChanged)
     } else {
       logger.warn(`外观包导入失败: ${result.error ?? result.code ?? 'unknown'}`)
     }
@@ -158,7 +160,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
           `清理已移除外观配置失败: ${error instanceof Error ? error.message : String(error)}`
         )
       }
-      broadcastAppearanceChange()
+      broadcastAppearanceChange(options.onChanged)
     } else {
       logger.warn(`外观包移除失败: ${id}，${result.error ?? '未知错误'}`)
     }
@@ -190,7 +192,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
       if (typeof token !== 'string' || typeof replace !== 'boolean') return INVALID_ARGUMENT
       try {
         const result = online.install(token, replace)
-        if (result.success) broadcastAppearanceChange()
+        if (result.success) broadcastAppearanceChange(options.onChanged)
         return result
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)

@@ -38,6 +38,7 @@
     "productName": "AUTO-MAS",
     "files": [
       "dist/index.html",
+      "dist/mascot.html",
       "dist/assets/**",
       "!dist/assets/**/*.map",
       "dict/AUTO-MAS.ico",
