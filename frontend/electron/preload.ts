@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { SettingsSyncPayload } from './ipc/settingsSync.types'
 
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
@@ -111,7 +112,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 同步后端配置
-  syncBackendConfig: (backendSettings: unknown) =>
+  syncBackendConfig: (backendSettings: SettingsSyncPayload) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作

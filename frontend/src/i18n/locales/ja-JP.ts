@@ -4072,6 +4072,7 @@ export default {
     toast: {
       loadFailed: '設定を読み込めませんでした',
       saveFailed: '設定を保存できませんでした',
+      saveOutcomeUnknown: '保存結果を確認できません。設定は適用されている可能性があります。',
       trayUpdateFailed: 'トレイの設定を更新できませんでした',
       updateCheckFailed: '更新確認の設定を反映できませんでした',
       fluidTitle: 'フルイドカーソルを有効にしますか？',

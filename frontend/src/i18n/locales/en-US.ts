@@ -4820,6 +4820,7 @@ export default {
     toast: {
       loadFailed: 'Could not load the settings',
       saveFailed: 'Could not save the setting',
+      saveOutcomeUnknown: 'The save result is unknown. The setting may have been applied.',
       trayUpdateFailed: 'Could not update the tray settings',
       updateCheckFailed: 'Could not apply the update-check change',
       fluidTitle: 'Turn on the fluid cursor?',

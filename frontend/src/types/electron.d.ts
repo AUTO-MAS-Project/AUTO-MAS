@@ -1,4 +1,5 @@
 import type { SettingsViewModel } from '@/types/settings'
+import type { SettingsSyncPayload } from '../../electron/ipc/settingsSync.types'
 import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
@@ -266,7 +267,7 @@ export interface ElectronAPI {
       label?: string
     }) => void
   ) => () => void
-  syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
+  syncBackendConfig: (backendSettings: SettingsSyncPayload) => Promise<boolean>
 
   // 日志文件操作
   exportLogs: () => Promise<{

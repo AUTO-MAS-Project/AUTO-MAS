@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, toRaw } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsCategory, SettingsViewModel } from '@/types/settings'
+import type { SettingsSyncPayload } from '../../../electron/ipc/settingsSync.types'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -18,6 +19,7 @@ import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
 import { useAppearanceSettings } from './useAppearanceSettings'
+import { createSettingsOperationQueue } from './settingsOperationQueue'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -49,7 +51,14 @@ const {
   handleAppearanceImport,
   handleAppearanceRemove,
 } = useAppearanceSettings()
-const { loading, loadError, error: settingsError, getSettings, updateSettings } = useSettingsApi()
+const {
+  loading,
+  loadError,
+  error: settingsError,
+  saveFailure,
+  getSettings,
+  updateSettings,
+} = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
@@ -69,6 +78,8 @@ const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<SettingsViewModel>({})
+const settingsOperations = createSettingsOperationQueue()
+onBeforeUnmount(settingsOperations.dispose)
 
 // 下拉选项
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
@@ -91,33 +102,29 @@ const NORMALIZED_SETTING_KEYS = new Set([
 ])
 
 const syncConfigToElectron = async (data: SettingsViewModel) => {
+  settingsOperations.ensureActive()
   try {
     if (window.electronAPI?.syncBackendConfig) {
       // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
       // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
       await window.electronAPI.syncBackendConfig({
-        appearance: toRaw(data.UI),
-        start: toRaw(data.Start),
-        updates: toRaw(data.Update),
-        function: toRaw(data.Function),
-      })
+        UI: toRaw(data.UI),
+        Start: toRaw(data.Start),
+        Update: toRaw(data.Update),
+        Function: toRaw(data.Function),
+      } satisfies SettingsSyncPayload)
+      settingsOperations.ensureActive()
       logger.info('配置已同步到 Electron')
     }
   } catch (error) {
+    settingsOperations.ensureActive()
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
   }
 }
 
 // 加载和保存
-const loadSettings = async () => {
-  const data = await getSettings()
-  if (data) {
-    Object.assign(settings, data)
-    syncUiPreferences(data.UI)
-    await syncConfigToElectron(data)
-  }
-}
+const loadSettings = () => settingsOperations.enqueue(() => refreshSettings(), undefined)
 
 // 保存设置 - 只发送修改的字段（遵循最小原则）
 const saveSettings = async (
@@ -127,14 +134,21 @@ const saveSettings = async (
   try {
     const updateData = { [category]: changes } as SettingsViewModel
     const result = await updateSettings(updateData)
+    settingsOperations.ensureActive()
     if (!result) {
       const reason = settingsError.value || t('setting.toast.saveFailed')
+      if (saveFailure.value === 'unknown') {
+        logger.error(`设置保存结果未知 (${category}.${Object.keys(changes).join(',')}): ${reason}`)
+        message.warning(t('setting.toast.saveOutcomeUnknown'))
+        return false
+      }
       logger.error(`设置保存失败 (${category}.${Object.keys(changes).join(',')}): ${reason}`)
       message.error(`${t('setting.toast.saveFailed')}: ${reason}`)
       return false
     }
     return true
   } catch (error) {
+    settingsOperations.ensureActive()
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`设置保存失败: ${errorMsg}`)
     message.error(t('setting.toast.saveFailed'))
@@ -144,7 +158,8 @@ const saveSettings = async (
 
 // 刷新设置数据（只在后端会改写值的字段保存后才需要整份回读）
 const refreshSettings = async () => {
-  const data = await getSettings()
+  const data = await settingsOperations.read(getSettings)
+  settingsOperations.ensureActive()
   if (data) {
     Object.assign(settings, data)
     syncUiPreferences(data.UI)
@@ -164,7 +179,7 @@ const applyLocalSettingChange = async (category: SettingsCategory, key: string, 
   if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
 }
 
-const handleSettingChange = async (
+const performSettingChange = async (
   category: SettingsCategory,
   key: string,
   value: unknown
@@ -172,6 +187,7 @@ const handleSettingChange = async (
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
+  settingsOperations.ensureActive()
 
   if (!success) {
     return false
@@ -182,6 +198,7 @@ const handleSettingChange = async (
   } else {
     await applyLocalSettingChange(category, key, value)
   }
+  settingsOperations.ensureActive()
   // 音频播放器缓存了语音设置，改了就让它下次重读
   if (category === 'Voice') invalidateVoiceSettingsCache()
 
@@ -194,8 +211,10 @@ const handleSettingChange = async (
     try {
       if (window.electronAPI?.updateTraySettings) {
         await window.electronAPI.updateTraySettings({ [key]: value })
+        settingsOperations.ensureActive()
       }
     } catch (error) {
+      settingsOperations.ensureActive()
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新托盘失败: ${errorMsg}`)
       message.error(t('setting.toast.trayUpdateFailed'))
@@ -206,7 +225,9 @@ const handleSettingChange = async (
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
+      settingsOperations.ensureActive()
     } catch (error) {
+      settingsOperations.ensureActive()
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重启更新检查失败: ${errorMsg}`)
       message.error(t('setting.toast.updateCheckFailed'))
@@ -219,6 +240,14 @@ const handleSettingChange = async (
   }
   return true
 }
+
+// 加载和完整保存流程共用队列，避免旧回读或迟到的 IPC 覆盖后续保存。
+const handleSettingChange = (
+  category: SettingsCategory,
+  key: string,
+  value: unknown
+): Promise<boolean> =>
+  settingsOperations.enqueue(() => performSettingChange(category, key, value), false)
 
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
@@ -299,8 +328,11 @@ const checkUpdate = async () => {
 // 后端版本
 const getBackendVersion = async () => {
   try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+    const versionInfo = await Service.getGitVersionApiInfoVersionPost()
+    if (!settingsOperations.isActive()) return
+    backendUpdateInfo.value = versionInfo
   } catch (error) {
+    if (!settingsOperations.isActive()) return
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取后端版本失败: ${errorMsg}`)
   }

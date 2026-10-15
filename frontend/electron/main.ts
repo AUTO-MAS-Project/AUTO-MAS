@@ -28,6 +28,7 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import type { SettingsSyncPayload } from './ipc/settingsSync.types'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -2014,7 +2015,7 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
 })
 
 // 新增：同步后端配置的IPC处理器
-ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+ipcMain.handle('sync-backend-config', async (_event, backendSettings: SettingsSyncPayload) => {
   try {
     const currentConfig = loadConfig()
 
