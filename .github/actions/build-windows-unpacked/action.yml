@@ -3,8 +3,9 @@ description: 下载并校验 Runtime，构建 Electron 应用，然后生成未�
 
 inputs:
   github-token:
-    description: 下载 Runtime Release 使用的 GitHub Token。
-    required: true
+    description: 下载 Runtime Release 使用的 GitHub Token；留空时从公开 Release 地址下载。
+    required: false
+    default: ''
   sentry-auth-token:
     description: 可选的 Sentry Auth Token；CI 构建留空。
     required: false
@@ -44,14 +45,21 @@ runs:
         New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
         $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
-        gh release download $env:RUNTIME_VERSION `
-          -R AUTO-MAS-Project/AUTO-MAS-Runtime `
-          -D $runtimeDir `
-          -p $exeName `
-          -p 'SHA256SUMS.txt' `
-          --clobber
-        if ($LASTEXITCODE -ne 0) {
-          throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+        if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+          # PR 构建不传 Token，直接下载公开附件以避开匿名 API 限流。
+          $releaseBaseUrl = "https://github.com/AUTO-MAS-Project/AUTO-MAS-Runtime/releases/download/$env:RUNTIME_VERSION"
+          Invoke-WebRequest -Uri "$releaseBaseUrl/$exeName" -OutFile (Join-Path $runtimeDir $exeName)
+          Invoke-WebRequest -Uri "$releaseBaseUrl/SHA256SUMS.txt" -OutFile (Join-Path $runtimeDir 'SHA256SUMS.txt')
+        } else {
+          gh release download $env:RUNTIME_VERSION `
+            -R AUTO-MAS-Project/AUTO-MAS-Runtime `
+            -D $runtimeDir `
+            -p $exeName `
+            -p 'SHA256SUMS.txt' `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+          }
         }
 
         Push-Location $runtimeDir
