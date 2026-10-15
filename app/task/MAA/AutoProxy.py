@@ -122,7 +122,9 @@ from .tools.cultivate import (
     apply_achievements,
     depot_cultivate_service,
     dump_cultivate_targets,
+    filter_observed_cultivate_targets,
     get_certifying_chain,
+    get_progression_chain,
     judge_achievements,
     load_oper_box_names,
     parse_cultivate_targets,
@@ -1060,6 +1062,29 @@ def _build_stock_cultivate_task(
     return task
 
 
+def _merge_cultivate_target_updates(
+    raw_targets: object,
+    updated_targets: tuple[OperatorTarget, ...] | list[OperatorTarget],
+    deferred_targets: Sequence[OperatorTarget],
+) -> list[dict]:
+    """按原顺序合并已知目标更新，延期干员的配置原文继续保留。"""
+
+    updated = {
+        item["operator_id"]: item for item in dump_cultivate_targets(updated_targets)
+    }
+    deferred_ids = {target.operator_id for target in deferred_targets}
+    merged = []
+    for item in raw_targets if isinstance(raw_targets, list) else []:
+        if not isinstance(item, dict):
+            continue
+        operator_id = item.get("operator_id")
+        if operator_id in deferred_ids:
+            merged.append(deepcopy(item))
+        elif operator_id in updated:
+            merged.append(deepcopy(updated[operator_id]))
+    return merged
+
+
 def _maa_activity_state(
     raw_data: dict, server: str, *, now: datetime
 ) -> tuple[bool, bool]:
@@ -1192,6 +1217,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     _cultivate_auto_raise_injected: bool = False
     # 每轮重新判断来源参与条件；数据不可用或触发跳过时同时暂停自动培养。
     _cultivate_round_paused: bool = True
+    _cultivate_execution_targets: tuple[OperatorTarget, ...] = ()
     # 完成活动阶段后，其他任务重试不能重新领取该阶段药石额度。
     _event_depot_completed: bool = False
 
@@ -1738,9 +1764,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ):
             return
         try:
-            targets = parse_cultivate_targets(
-                json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
+            raw_targets = json.loads(
+                self.cur_user_config.get("Task", "CultivateTargets")
             )
+            targets = parse_cultivate_targets(raw_targets)
             if not targets:
                 self._cultivate_collected_depot = False
                 self._cultivate_collected_oper_box = False
@@ -1772,24 +1799,36 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             snapshots = {
                 target.operator_id: resolve_progression(
-                    target.operator_id, get_certifying_chain(), context
+                    target.operator_id, get_progression_chain(), context
                 )
                 for target in targets
             }
-            achievements = judge_achievements(targets, snapshots)
-            updated = apply_achievements(targets, achievements)
-            if updated != list(targets):
+            ready_targets, deferred = filter_observed_cultivate_targets(
+                targets, snapshots
+            )
+            certifying_snapshots = {
+                target.operator_id: resolve_progression(
+                    target.operator_id, get_certifying_chain(), context
+                )
+                for target in ready_targets
+            }
+            achievements = judge_achievements(ready_targets, certifying_snapshots)
+            updated = apply_achievements(ready_targets, achievements)
+            if updated != ready_targets:
+                merged_payload = _merge_cultivate_target_updates(
+                    raw_targets, updated, deferred
+                )
                 await self.cur_user_config.set(
                     "Task",
                     "CultivateTargets",
-                    json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
+                    json.dumps(merged_payload, ensure_ascii=False),
                 )
                 # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
                 # 提示要一并清掉——这条路不经过用户配置写入漏斗
-                if not updated:
+                if not merged_payload:
                     await self._set_cultivate_notice("")
                 removed = summarize_achievements(
-                    targets, achievements, load_oper_box_names(context)
+                    ready_targets, achievements, load_oper_box_names(context)
                 )
                 for line in removed:
                     if line not in self._cultivate_achievement_summary:
@@ -1826,6 +1865,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 开关关闭或无有效目标时，不让保存的旧目标参与本轮备料与培养。
         self._cultivate_round_paused = True
+        self._cultivate_execution_targets = ()
         raw_targets: object
         try:
             raw_targets = json.loads(
@@ -1842,7 +1882,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if skip_this_round:
             await self._set_cultivate_notice("")
             return None, True, None
-        targets = parse_cultivate_targets(raw_targets)
+        original_targets = parse_cultivate_targets(raw_targets)
 
         skland_bound = bool(
             self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
@@ -1879,6 +1919,43 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return None, True, None
 
         try:
+            context = ProviderContext(
+                maa_data_dir=self._cultivate_archive_dir(),
+                skland_progressions=skland[0] if skland else {},
+                skland_captured_at=skland[1] if skland else 0,
+            )
+            snapshots = {
+                target.operator_id: resolve_progression(
+                    target.operator_id, get_progression_chain(), context
+                )
+                for target in original_targets
+            }
+            targets, deferred = filter_observed_cultivate_targets(
+                original_targets, snapshots
+            )
+            if deferred:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 本轮延期 {len(deferred)} 个缺少练度数据的养成目标: "
+                    + ", ".join(target.operator_id for target in deferred)
+                )
+                message = (
+                    "缺少所需练度数据的养成目标本轮暂缓并保留，其他有效目标继续执行；"
+                    "可同步森空岛练度后重试。"
+                )
+                if message not in self._missing_task_source_warned:
+                    self._missing_task_source_warned.add(message)
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning",
+                            message=message,
+                            messageKey="edit.maaCultivateTargetsDeferred",
+                        ),
+                    )
+            if not targets:
+                await self._set_cultivate_notice("")
+                return None, True, None
             (
                 updated_targets,
                 plan,
@@ -1891,7 +1968,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 config_path=Config.config_path,
                 proxy=Config.proxy,
                 today=game_now(self.cur_user_config.get("Info", "Server")).date(),
-                skland=skland,
+                context=context,
                 require_observations=True,
             )
         except Exception as e:
@@ -1915,17 +1992,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 达成拦截后把目标状态写回档案：可自证达成的目标已移除（方案 §7.6）；
         # 状态无变化时跳过，避免每轮无谓写盘
-        if updated_targets != list(targets):
+        if updated_targets != targets:
+            merged_payload = _merge_cultivate_target_updates(
+                raw_targets, updated_targets, deferred
+            )
             await self.cur_user_config.set(
                 "Task",
                 "CultivateTargets",
-                json.dumps(dump_cultivate_targets(updated_targets), ensure_ascii=False),
+                json.dumps(merged_payload, ensure_ascii=False),
             )
         # 旧接管提示清空；养成不再暂停普通库存。
         await self._set_cultivate_notice("")
         if plan is None or not plan.reservations:
             return None, True, None
         self._cultivate_round_paused = False
+        self._cultivate_execution_targets = tuple(updated_targets)
 
         cultivate_task = None
         if plan.entries:
@@ -1952,9 +2033,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             and self.cur_user_config.get("Task", "CultivateAutoRaise")
         ):
             return None
-        targets = parse_cultivate_targets(
-            json.loads(self.cur_user_config.get("Task", "CultivateTargets"))
-        )
+        targets = self._cultivate_execution_targets
         if not any(
             goal.kind != "module" and goal.state not in ("achieved", "pending_confirm")
             for target in targets
@@ -2322,6 +2401,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and stock_task.get("SkipDuringResourceCollection", False)
             )
             if stock_skipped:
+                conditions = []
+                if activity_open and stock_task.get("SkipDuringActivity", False):
+                    conditions.append("活动期间跳过")
+                if resource_collection_open and stock_task.get(
+                    "SkipDuringResourceCollection", False
+                ):
+                    conditions.append("资源全开放期间跳过")
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 普通库存本轮暂停，命中来源设置: "
+                    + "、".join(conditions)
+                )
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
                 self._stock_skipped_by_condition = True

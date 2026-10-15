@@ -445,6 +445,8 @@ export default {
       'When an event or all-resources-open skip condition applies, cultivation farming, material reserves and raising are paused for this run. Other tasks continue.',
     maaCultivatePreparationUnavailable:
       'Cultivation data is temporarily unavailable. Cultivation is paused for this run; stock keeping and sanity tasks continue.',
+    maaCultivateTargetsDeferred:
+      'Cultivation goals missing the required progression data are deferred for this run and remain saved. Other valid goals continue. Sync progression from Skland, then retry.',
     maaCultivateTakeoverHint:
       'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
     maaDataSourceYituliu: 'Data source: Yituliu',

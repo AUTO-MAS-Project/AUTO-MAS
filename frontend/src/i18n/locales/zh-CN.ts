@@ -420,6 +420,8 @@ export default {
       '触发活动或资源全开放跳过条件时，本轮暂停养成刷取、材料预留和实际培养；其他任务继续执行。',
     maaCultivatePreparationUnavailable:
       '养成数据暂时不可用，本轮养成已暂停；库存保持与理智任务继续执行',
+    maaCultivateTargetsDeferred:
+      '缺少所需练度数据的养成目标本轮暂缓并保留，其他有效目标继续执行；可同步森空岛练度后重试。',
     maaCultivateTakeoverHint:
       '库存目标表示培养完成后仍要保留的数量。库存保持与养成分别沿用原有开关和适用条件。',
     maaDataSourceYituliu: '数据来源：一图流',
