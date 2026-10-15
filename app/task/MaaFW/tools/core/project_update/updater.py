@@ -576,11 +576,13 @@ async def update_maafw_project_if_needed(
         damaged = False
         stale_projection = False
         native_residue = False
+        base_missing = ""
         if payload is not None:
             try:
                 base_manifest = payload.manifest()
-            except PayloadError:
+            except PayloadError as exc:
                 base_manifest = {}
+                base_missing = str(exc)
             source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
             # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
@@ -631,7 +633,13 @@ async def update_maafw_project_if_needed(
                     send_update_log(
                         "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
                     )
-        if prefer_full and not damaged and not stale_projection and not native_residue:
+        if (
+            prefer_full
+            and not damaged
+            and not stale_projection
+            and not native_residue
+            and not base_missing
+        ):
             send_update_log("当前版本是本地导入的，改为请求全量包")
         force_full = force_full_package()
         if force_full:
@@ -639,6 +647,15 @@ async def update_maafw_project_if_needed(
             send_update_log(
                 f"已设环境变量 {FORCE_FULL_PACKAGE_ENV}=1：一律请求全量包、不按区间差量"
             )
+        gate = precheck_gate
+        if base_missing:
+            # 新载荷要以当前载荷为基准建，它的清单不在本机就一定建不成（以前要等下载、
+            # 解压完才在 build_from_package 里失败，每次运行都白下一遍）。与上次预检失败的
+            # 备忘同一处拦：有新版本时按「有更新但不可安装」返回，不换下载地址、不下载。
+            missing_reason = f"{base_missing}，无法以它为基准构建新版本"
+
+            async def gate(_version: str) -> str:
+                return missing_reason
 
         (
             discovery,
@@ -651,7 +668,7 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
-            precheck_gate=precheck_gate,
+            precheck_gate=gate,
             cancel_event=cancel_event,
         )
     except Exception as exc:
@@ -1588,9 +1605,11 @@ async def apply_maafw_project_update(
         built, actual_version = await asyncio.to_thread(build)
         # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
         # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
+        # 删不掉（杀软正在扫刚解压的 DLL，WinError 32）不算更新失败：新载荷已在 staging 里
+        # 建好，解压目录只是临时目录，下面 finally 再删一次，还在就留给启动期清理。
         timer.start("清理解压目录")
-        await asyncio.to_thread(
-            remove_tree, range_dir if range_entries is not None else extract_dir
+        await _remove_tree_in_thread(
+            range_dir if range_entries is not None else extract_dir
         )
         timer.finish()
         if is_cancelled():

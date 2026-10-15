@@ -2449,6 +2449,48 @@ def _adopt_or_raise(
         raise EmbeddedProjectError(f"副本登记项目版本失败：{exc}") from exc
 
 
+def _readopt_lost_payload(
+    script_id: str,
+    script_config: Any,
+    lost: str,
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+) -> None:
+    """视图标记挂的载荷在本机已不完整（目录或清单没了）：按视图现状重新登记一份、挂上去。
+
+    视图本身照常能跑，丢的是「它是哪份载荷」的记录：不补的话这个脚本的项目更新永远建不成
+    新版本（要以当前载荷的清单为基准），以前还要每次下载、解压完才失败。重新登记与没有标记
+    的老副本采纳是同一套（:func:`adopt_view`），失败只告警、不拦本次运行——与修之前一样，
+    只是更新会跳过。调用方持有该视图的项目预约。
+    """
+
+    _say(
+        send_log,
+        f"副本挂的项目版本 {lost} 在本机已不完整，正在按副本现状重新登记",
+        warning=True,
+    )
+    try:
+        adopted = adopt_view(
+            script_id,
+            channel=effective_channel(script_id, script_config),
+            source=imported_source_path(script_config)
+            or str(script_config.get("Info", "Path") or ""),
+            base=base,
+            replace_lost=True,
+        )
+        settle_adopted_latest(base, lineages=[adopted.lineage])
+    except Exception as exc:  # noqa: BLE001 - 视图照常能跑，不因为这一步拦运行
+        _say(
+            send_log,
+            f"重新登记项目版本失败：{exc}；本次照常运行，项目更新会跳过，"
+            "在脚本页重新选择项目目录导入一次即可恢复",
+            warning=True,
+        )
+        return
+    _say(send_log, f"已重新登记为 {adopted.payload_id}")
+
+
 def _say(
     send_log: Callable[[str], None] | None, message: str, *, warning: bool = False
 ) -> None:
@@ -2670,8 +2712,21 @@ def ensure_embedded_copy(
     )
     if keep:
         # 视图还是它自己的来源（或来源已删 / 换成了不存在的路径）：照常用它。
-        if read_view_marker(copy_dir) is None:
+        marker = read_view_marker(copy_dir)
+        if marker is None:
             _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
+        elif not follow and not payloads.payload_complete(
+            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        ):
+            # 每个入口都会走到这里，只 stat 两次、不解析清单（大项目的清单有几 MB）。
+            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。
+            _readopt_lost_payload(
+                script_id,
+                script_config,
+                str(marker["payload"]),
+                base=base,
+                send_log=send_log,
+            )
         return None
     if not source:
         raise EmbeddedProjectError("还没有选择 MFW 项目目录")
@@ -2840,6 +2895,7 @@ def adopt_view(
     channel: str,
     source: str = "",
     base: Path | None = None,
+    replace_lost: bool = False,
 ) -> ViewResult:
     """把没有标记的老副本就地登记成载荷，视图挂上去（附录 B 第 1–7 条）。
 
@@ -2854,12 +2910,21 @@ def adopt_view(
     重建一遍（私有文件 inode 不变），写上标记。同版本多份载荷谁当 latest 不在这里定
     （登记是「同版本保留先来的」）：调用方全部采纳完再 :func:`settle_adopted_latest`。
     任一步失败：不写标记、staging 丢掉，调用方下次再试。不写任何配置。
+
+    ``replace_lost``：视图有标记、但标记挂的载荷在本机已不完整（目录或清单没了）时也照样
+    重新登记（:func:`_readopt_lost_payload`）；标记挂的载荷还在就照旧拒绝。
     """
 
     view = embedded_project_dir(script_id, base)
     if not copy_is_healthy(view):
         raise EmbeddedProjectError("副本不完整（没有 interface.json），无法登记版本")
-    if read_view_marker(view) is not None:
+    marker = read_view_marker(view)
+    if marker is not None and not (
+        replace_lost
+        and not payloads.payload_complete(
+            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        )
+    ):
         raise EmbeddedProjectError("副本已经登记过版本")
     interface = payloads.read_project_interface(view)
     lineage = payloads.lineage_key(interface)
