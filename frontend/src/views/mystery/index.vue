@@ -88,15 +88,6 @@ const load = async () => {
   }
 }
 
-const copyRequestInfo = async () => {
-  try {
-    await navigator.clipboard.writeText(store.requestInfo)
-    message.success(t('mystery.requestCopied'))
-  } catch {
-    message.error(t('mystery.copyFailed'))
-  }
-}
-
 onMounted(() => {
   void load()
   void loadPersonalMss()
@@ -155,11 +146,6 @@ const lock = async () => {
       </div>
       <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
         <a-typography-paragraph>{{ t('mystery.accessCodeHint') }}</a-typography-paragraph>
-        <a-typography-paragraph>
-          <a-button :disabled="store.saving" @click="copyRequestInfo">
-            {{ t('mystery.copyRequestInfo') }}
-          </a-button>
-        </a-typography-paragraph>
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"

@@ -9,16 +9,13 @@
  */
 export default {
   mystery: {
-    loadFailed: '申請情報または解除状態を読み込めませんでした。再試行してください。',
+    loadFailed: '解除状態を読み込めませんでした。再試行してください。',
     retry: '再試行',
     saveFailed: '解除状態を保存できませんでした。再試行してください。',
     accessCodePlaceholder: '8 文字のキーを入力（大文字・小文字を区別）',
     accessCodeInvalid: 'キーが正しくないか、有効期限が切れています',
     accessCodeHint:
       'キーは大文字・小文字を区別し、発行後 30 分間、この端末の現在のバージョンでのみ使用できます。',
-    copyRequestInfo: '申請情報をコピー',
-    requestCopied: '申請情報をコピーしました',
-    copyFailed: '申請情報をコピーできませんでした。再試行してください。',
     deviceUnavailable: '有効な端末識別子を取得できません。システムを確認して再試行してください。',
     backendUnavailable: '現在のプログラムファイルを読み取れません。修復後に再試行してください。',
   },

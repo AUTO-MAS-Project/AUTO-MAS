@@ -21,9 +21,6 @@ export const useMysteryStore = defineStore('mystery', () => {
       unlockedDate.value === today.value &&
       unlockedFingerprint.value === fingerprint.value
   )
-  const requestInfo = computed(() =>
-    context.value ? JSON.stringify({ version: 1, ...context.value }) : ''
-  )
   const initialized = ref(false)
   const saving = ref(false)
   const loadError = ref('')
@@ -139,5 +136,5 @@ export const useMysteryStore = defineStore('mystery', () => {
     }
   }
 
-  return { unlocked, initialized, saving, loadError, requestInfo, load, unlock, lock }
+  return { unlocked, initialized, saving, loadError, load, unlock, lock }
 })
