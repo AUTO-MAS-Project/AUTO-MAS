@@ -70,6 +70,7 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.task.proxy_helpers import find_pids_by_name
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
@@ -292,20 +293,28 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _genshin_process_alive() -> bool:
+    """是否仍有原神本地客户端进程存活（窗口等待期的快速失败判定）。"""
+    return any(find_pids_by_name(name) for name in _GENSHIN_PROCESS_NAMES)
+
+
+def _find_game_hwnd(*, wait: bool = True, allow_relaunch: bool = False) -> int:
     """按所属进程名定位原神主窗口（官服 YuanShen / 国际服 GenshinImpact）。
 
-    用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
-    规避提权进程 name 读取被拒导致的漏判；同进程存在多个窗口时取面积最大者。
+    用 ``EnumWindows + psutil.Process(pid).name()`` 确认窗口归属；
+    同进程存在多个窗口时取面积最大者。
 
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             吸收 MAS 拉起游戏后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        allow_relaunch: 更新后的窗口重定位允许游戏退出并重新启动，保留整个宽限期。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到原神游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到原神游戏窗口；或非重启等待中，
+            已观察到存活的原神进程随后全部退出时提前抛出。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    process_seen = False
     while True:
         candidates: list[int] = []
 
@@ -325,9 +334,21 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
-        logger.info(
-            f"原神游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
-        )
+        if _genshin_process_alive():
+            process_seen = True
+            logger.info(
+                f"原神游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            )
+        else:
+            # 首次未见进程不能证明已退出；更新重启也会有短暂的进程空窗。
+            if process_seen and not allow_relaunch:
+                raise RuntimeError(
+                    f"原神游戏进程已退出（{_GENSHIN_PROCESS_NAMES}），"
+                    "请确认游戏已由 MAS 成功启动"
+                )
+            logger.info(
+                f"正在等待原神游戏进程启动或重启，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            )
         time.sleep(_WINDOW_POLL_INTERVAL)
     raise RuntimeError(
         f"未找到原神游戏窗口（进程 {_GENSHIN_PROCESS_NAMES}），"
@@ -811,7 +832,7 @@ def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
     游戏退出后的短暂空窗，若更新耗时过长（启动器接手）则最终抛出失败。
     """
     on_log("游戏窗口句柄已失效（可能进入更新流程），重新定位原神窗口...")
-    return _find_game_hwnd(wait=True)
+    return _find_game_hwnd(wait=True, allow_relaunch=True)
 
 
 # ── 退出登录弹窗 → 登录对话框 ───────────────────────────────────────────

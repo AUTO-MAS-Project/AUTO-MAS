@@ -196,6 +196,7 @@ class BetterGIManager(ScriptManagerBase):
             )
             return
 
+        has_run_user = False
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
             if (
@@ -221,7 +222,11 @@ class BetterGIManager(ScriptManagerBase):
                 await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
+            # 下一用户通过检查才等待上一用户的游戏退出，尾部全部跳过时不空等。
+            if has_run_user:
+                await method.wait_game_exit_before_next_user()
             await self.run_user_task(current_user, method)
+            has_run_user = True
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
