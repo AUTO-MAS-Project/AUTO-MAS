@@ -4551,7 +4551,12 @@ class AppConfig(GlobalConfig):
             return False
 
         def is_skip_result(result_key: str, result_value: Any) -> bool:
-            return result_key == "general_result" and result_value in maafw_skip_results
+            # 先确认是字符串: 列表、字典等不可哈希的值做集合成员判断会抛 TypeError
+            return (
+                result_key == "general_result"
+                and isinstance(result_value, str)
+                and result_value in maafw_skip_results
+            )
 
         for json_file in statistic_path_list:
             try:
