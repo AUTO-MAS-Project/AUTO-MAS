@@ -12,7 +12,14 @@ from uuid import UUID, uuid4
 
 from blinker import Signal
 
-from app.config import ConfigEntry, ConfigNode, NodeState, UiVisibility, config_manager
+from app.config import (
+    ConfigAggregateError,
+    ConfigEntry,
+    ConfigNode,
+    NodeState,
+    UiVisibility,
+    config_manager,
+)
 from app.models.operation import OperationInfo
 from app.task.base import TaskBase
 from app.utils import get_logger
@@ -221,8 +228,14 @@ class OperationDispatcher:
             or (group, field) not in type(entry)._cfg_trigger_specs
         ):
             raise OperationUnavailable("operation_target_not_found")
+        self.check_target(entry)
+        if entry.is_locked:
+            raise OperationUnavailable("operation_target_locked")
         patch = type(entry).model_validate({group: {field: value}})
-        ids = await entry.update(patch)
+        try:
+            ids = await entry.update(patch)
+        except ConfigAggregateError as exc:
+            raise OperationUnavailable("operation_config_rejected") from exc
         if not ids:
             raise OperationUnavailable("operation_not_accepted")
         return ids[0]

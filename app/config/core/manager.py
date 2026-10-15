@@ -54,10 +54,10 @@ class TransactionContext:
     """普通 / Init 事务共用上下文；登记单元在结束时合并或丢弃对应工作区。"""
 
     registered: list[WorkspaceUnit] = field(default_factory=list)
-    commands: list[Callable[[], object]] = field(default_factory=list)
     _task: asyncio.Task[Any] | None = field(default_factory=_current_task, init=False)
     _thread: int = field(default_factory=threading.get_ident, init=False)
     _active: bool = field(default=True, init=False)
+    commands: list[Callable[[], object]] = field(default_factory=list)
 
     def is_current(self) -> bool:
         """ContextVar 可被子 Task 复制，事务只能由原执行者在有效期内使用。"""
@@ -80,6 +80,7 @@ class ConfigManager:
     def __init__(self) -> None:
         self._collections: dict[str, ConfigCollection[Any]] = {}
         self._roots: dict[UUID, RootRecord] = {}
+        self.trigger_dispatcher: TriggerDispatcher | None = None
         self._txn: ContextVar[TransactionContext | None] = ContextVar(
             "config_framework_v2_txn", default=None
         )
@@ -97,7 +98,6 @@ class ConfigManager:
         self._transaction_owner: TransactionContext | None = None
         self._save_handle: asyncio.Task[None] | None = None
         self._debounce_seconds: float = 0.05
-        self.trigger_dispatcher: TriggerDispatcher | None = None
 
     # ──────────────── ref 池（仅 Collection）────────────────
 
@@ -258,13 +258,13 @@ class ConfigManager:
             self.schedule_debounced_save()
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:
-        ctx.commands.clear()
         for unit in ctx.registered:
             if isinstance(unit, type):
                 unit._ROLLBACK_signal()
             else:
                 unit._ROLLBACK()
         ctx.registered.clear()
+        ctx.commands.clear()
 
     # ──────────────── Init 事务（须嵌在普通事务内）────────────────
 
