@@ -4003,6 +4003,7 @@ class AppConfig(GlobalConfig):
         if (
             not refresh
             and has_server_data
+            and self._stage_refresh_failed_at is None
             and datetime.now() - timedelta(hours=1)
             < datetime.strptime(
                 self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"

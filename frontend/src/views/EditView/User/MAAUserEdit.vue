@@ -915,8 +915,9 @@ const loadUserData = async (): Promise<boolean> => {
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
         // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
-        // 慢时库存列被串行阻塞。关卡候选预取不等它们：只读已落盘的计划，
-        // 纯后台取数，放前面避免被目录最坏 30s 拖住
+        // 慢时库存列被串行阻塞。活动关卡和候选预取不等它们，
+        // 放前面避免被目录最坏 30s 拖住。
+        if (!activityStageLoading.value) void loadActivityStageOptions()
         preloadDepotStageCandidates()
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
         return true
@@ -1718,7 +1719,6 @@ onMounted(async () => {
   // 才能发出，否则新建用户首次进入会静默跳过归档
   await loadScriptInfo()
   loadStageModeOptions()
-  loadActivityStageOptions()
   loadDepotItemOptions()
   // 进入编辑页：归档 MAA 原生配置当前状态（MAS 触碰前的原始态）
   void ensureMaaBackup('native')
