@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+} from '../src/types/desktopMascot'
 
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
@@ -25,6 +30,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window-maximized-changed', listener)
   },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
+  setDesktopMascotReady: (
+    ready: boolean,
+    labels?: DesktopMascotMenuLabels,
+    colors?: DesktopMascotColors
+  ) => ipcRenderer.invoke('desktop-mascot:ready', ready, labels, colors),
+  setDesktopMascotActivity: (working: boolean, animate: boolean) =>
+    ipcRenderer.invoke('desktop-mascot:activity', working, animate),
+  setDesktopMascotIdleMessage: (message: DesktopMascotIdleMessage) =>
+    ipcRenderer.invoke('desktop-mascot:idle-message', message),
+  showDesktopMascotNotice: (text: string, reaction?: 'success' | 'failure' | 'stopped') =>
+    ipcRenderer.invoke('desktop-mascot:notice', text, reaction),
+  onDesktopMascotError: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-mascot:error', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:error', listener)
+  },
   // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),

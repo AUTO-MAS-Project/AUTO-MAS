@@ -1,5 +1,5 @@
 import { translate as t } from '@/i18n'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { Service } from '@/api/services/Service'
@@ -13,7 +13,7 @@ import {
   toHomeTaskOptions,
   type HomeTaskOption,
 } from '@/views/home/homeQuickStartTasks'
-import { pickHomeGreeting } from '@/views/home/homeGreeting'
+import { useHomeGreetingStore } from '@/stores/homeGreeting'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 
 export const useHomeQuickStart = () => {
@@ -21,15 +21,10 @@ export const useHomeQuickStart = () => {
   const { playSound } = useAudioPlayer()
   const { trackStartedTask } = useSchedulerLogic()
 
-  const homeGreeting = pickHomeGreeting()
-  const commandTitle = ref(homeGreeting.text)
-  const commandAuthor = ref(homeGreeting.author)
-
-  const refreshGreeting = () => {
-    const nextGreeting = pickHomeGreeting(commandTitle.value)
-    commandTitle.value = nextGreeting.text
-    commandAuthor.value = nextGreeting.author
-  }
+  const homeGreeting = useHomeGreetingStore()
+  const commandTitle = computed(() => homeGreeting.greeting.text)
+  const commandAuthor = computed(() => homeGreeting.greeting.author)
+  const refreshGreeting = homeGreeting.refreshGreeting
 
   const schedulerTasksLoading = ref(false)
   // 任务列表拉取失败：下拉里给一句提示，重新展开下拉即重试

@@ -40,6 +40,10 @@ const {
   activeAppearance,
   modalContextHolder,
   appearanceBusy,
+  desktopMascotEnabled,
+  desktopMascotSaving,
+  desktopMascotAvailable,
+  handleDesktopMascotChange,
   themeModeOptions,
   appearanceValue,
   appearanceOptions,
@@ -399,6 +403,10 @@ onMounted(() => {
             :theme-color="themeColor"
             :theme-color-disabled="Boolean(activeAppearance)"
             :appearance-busy="appearanceBusy"
+            :desktop-mascot-enabled="desktopMascotEnabled"
+            :desktop-mascot-saving="desktopMascotSaving"
+            :desktop-mascot-available="desktopMascotAvailable"
+            :handle-desktop-mascot-change="handleDesktopMascotChange"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"

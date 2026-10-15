@@ -1,4 +1,4 @@
-import { computed, h, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +15,7 @@ import {
   type OnlineAppearanceInstallOutcome,
 } from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
+import { getConfig, saveConfig } from '@/utils/config'
 
 export function useAppearanceSettings() {
   const { t } = useI18n()
@@ -36,6 +37,27 @@ export function useAppearanceSettings() {
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
+  const desktopMascotEnabled = ref(true)
+  const desktopMascotSaving = ref(false)
+  const desktopMascotAvailable = computed(() => Boolean(activeAppearance.value?.mascotUrl))
+
+  onMounted(async () => {
+    desktopMascotEnabled.value = (await getConfig()).desktopMascotEnabled !== false
+  })
+
+  const handleDesktopMascotChange = async (enabled: boolean): Promise<void> => {
+    if (desktopMascotSaving.value) return
+    desktopMascotSaving.value = true
+    try {
+      await saveConfig({ desktopMascotEnabled: enabled })
+      desktopMascotEnabled.value = enabled
+    } catch (error) {
+      logger.error('保存桌面桌宠设置失败:', error)
+      message.error(t('setting.basic.appearanceApplyFailed'))
+    } finally {
+      desktopMascotSaving.value = false
+    }
+  }
 
   const themeModeOptions = computed(() => [
     { label: t('setting.themeMode.system'), value: 'system' },
@@ -150,7 +172,10 @@ export function useAppearanceSettings() {
     try {
       await runAppearanceInstall(
         replace => importAppearance(zipPath, replace),
-        result => result.error || t('setting.basic.appearanceImportFailed')
+        result =>
+          result.code === 'INVALID_ANIMATION'
+            ? t('setting.basic.appearanceAnimationInvalid')
+            : result.error || t('setting.basic.appearanceImportFailed')
       )
     } finally {
       appearanceBusy.value = false
@@ -238,6 +263,10 @@ export function useAppearanceSettings() {
     activeAppearance,
     modalContextHolder,
     appearanceBusy,
+    desktopMascotEnabled,
+    desktopMascotSaving,
+    desktopMascotAvailable,
+    handleDesktopMascotChange,
     themeModeOptions,
     appearanceValue,
     appearanceOptions,
