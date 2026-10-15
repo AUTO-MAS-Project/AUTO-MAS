@@ -24,7 +24,7 @@
         </a-button>
       </a-tooltip>
     </template>
-    <!-- 接管提示：后端注入时写入，非空表示养成接管中、库存保持暂停 -->
+    <!-- 本轮养成状态由后端写入，其他来源仍按各自条件执行。 -->
     <a-alert
       v-if="formData.Data?.CultivateNotice"
       :message="formData.Data.CultivateNotice"
@@ -70,6 +70,7 @@
         {{ t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
     </div>
+    <div class="skland-feedback skland-hint">{{ t('edit.maaCultivateSkipHint') }}</div>
     <div class="skland-feedback skland-hint">
       {{ t('edit.maaCultivateAutoRaiseVersionHint') }}
     </div>
@@ -368,7 +369,7 @@ import { SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import LabelWithHint from './LabelWithHint.vue'
 import PipelineRow from './PipelineRow.vue'
 import CultivatePreviewPanel from './CultivatePreviewPanel.vue'
@@ -431,7 +432,8 @@ onScopeDispose(() => {
 })
 const showModules = ref(false)
 const operatorFilter = ref('')
-const rows = ref<CultivateTargetRow[]>([])
+// 目标编辑统一替换数组；不为全量目标创建深层代理，避免保存/预览序列化遍历代理。
+const rows = shallowRef<CultivateTargetRow[]>([])
 const operatorSelection = ref(new Set<string>())
 const allOperatorsSelected = computed(
   () => filteredRows.value.length > 0 && selectedVisibleCount.value === filteredRows.value.length

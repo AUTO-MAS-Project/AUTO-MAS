@@ -3959,8 +3959,20 @@ class AppConfig(GlobalConfig):
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
+            raw_stage_data = json.loads(self.get("Data", "StageData"))
+            has_cache = isinstance(raw_stage_data.get(server), dict) and (
+                "sideStoryStage" in raw_stage_data[server]
+            )
+            activity_stages = stage_data.get("Info", [])
+            activity_status = "ready" if activity_stages else "empty"
+            if not has_cache:
+                activity_status = "unavailable"
+            elif self._stage_refresh_failed_at is not None:
+                activity_status = "stale"
             return {
-                "Activity": stage_data.get("Info", []),
+                "Activity": activity_stages,
+                "ActivityStatus": activity_status,
+                "ActivityUpdatedAt": self.get("Data", "LastStageUpdated"),
                 "Resource": res_stage_info,
                 "Options": stage_options,
             }
@@ -4031,6 +4043,7 @@ class AppConfig(GlobalConfig):
         if (
             not refresh
             and has_server_data
+            and self._stage_refresh_failed_at is None
             and datetime.now() - timedelta(hours=1)
             < datetime.strptime(
                 self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
@@ -4040,7 +4053,8 @@ class AppConfig(GlobalConfig):
             return json.loads(self.get("Data", "Stage"))
 
         if (
-            self._stage_refresh_failed_at is not None
+            not refresh
+            and self._stage_refresh_failed_at is not None
             and datetime.now() - self._stage_refresh_failed_at < timedelta(seconds=60)
         ):
             # 刚失败过就先不再抓: 断网时总览与注入流程会串行重复等超时
@@ -4091,6 +4105,7 @@ class AppConfig(GlobalConfig):
                 )
 
                 if response.status_code == 304:
+                    self._stage_refresh_failed_at = None
                     logger.info("关卡信息未更新，使用本地缓存的活动关卡信息")
                     await self.set(
                         "Data",
@@ -4098,6 +4113,7 @@ class AppConfig(GlobalConfig):
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 elif response.status_code == 200:
+                    self._stage_refresh_failed_at = None
                     logger.success("成功获取远端活动关卡信息")
                     # 时间戳最后写: 并发调用按它判断缓存新鲜度, 先写会在
                     # 两次写入之间把旧关卡当成刚更新过的缓存返回

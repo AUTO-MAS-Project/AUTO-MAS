@@ -38,7 +38,7 @@ import json
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Collection, Mapping
+from typing import Awaitable, Callable, Collection, Mapping, Sequence
 
 import httpx
 
@@ -104,6 +104,30 @@ def get_inventory_chain() -> tuple[InventoryProvider, ...]:
     """库存链（预览与接管缺口判定用）。"""
 
     return INVENTORY_POOL
+
+
+def filter_observed_cultivate_targets(
+    targets: Sequence[OperatorTarget], snapshots: Mapping[str, ProgressionSnapshot]
+) -> tuple[list[OperatorTarget], list[OperatorTarget]]:
+    """按干员划分有完整执行观测的目标，缺数据的干员留待后续同步。"""
+
+    ready = []
+    deferred = []
+    for target in targets:
+        snapshot = snapshots[target.operator_id]
+        # 未纳入备料的维度也不能交给自动培养消耗库存。
+        missing_observation = any(
+            snapshot.source == "default"
+            or (
+                goal.kind in ("skill", "mastery", "module")
+                and snapshot.source not in ("skland", "manual")
+            )
+            or (goal.kind in ("skill", "mastery") and snapshot.data.skill_level is None)
+            for goal in target.goals
+            if goal.state not in ("achieved", "pending_confirm")
+        )
+        (deferred if missing_observation else ready).append(target)
+    return ready, deferred
 
 
 # 数据集加载端口签名：(配置目录, 代理) -> 数据集
@@ -474,6 +498,7 @@ class DepotCultivateService:
         today: date | None = None,
         context: ProviderContext | None = None,
         skland: tuple[Mapping[str, Progression], int] | None = None,
+        require_observations: bool = False,
     ) -> tuple[list[OperatorTarget], CultivatePlan | None, bool]:
         """注入前的养成用例编排：达成拦截 → 剩余目标建计划 → 缺口判定。
 
@@ -487,6 +512,7 @@ class DepotCultivateService:
                 森空岛快照时使用）；传入时 `skland` 参数被忽略。
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
+            require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
 
         Returns:
             (流转后的目标列表, 养成计划, 是否存在材料缺口)；目标全部达成
@@ -520,6 +546,12 @@ class DepotCultivateService:
             for target in targets
         }
         inventory_result = resolve_inventory(context, self._inventory_chain)
+        if require_observations and inventory_result is None:
+            raise ValueError("本账号尚无可用的仓库识别数据")
+        if require_observations:
+            _, deferred = filter_observed_cultivate_targets(targets, snapshots)
+            if deferred:
+                raise ValueError("部分养成目标尚无可用的练度数据")
         inventory: Mapping[str, int] = inventory_result[0] if inventory_result else {}
 
         updated_targets = apply_achievements(
@@ -561,6 +593,7 @@ __all__ = [
     "get_inventory_chain",
     "get_progression_chain",
     "dump_cultivate_targets",
+    "filter_observed_cultivate_targets",
     "parse_cultivate_targets",
     "takeover_notice_patch_value",
 ]

@@ -1808,6 +1808,12 @@ class MaaUserConfig_Data(BaseModel):
     CultivateNotice: Optional[str] = Field(
         default=None, description="养成接管提示（空 = 未接管）"
     )
+    StaminaPipelineVersion: Optional[int] = Field(
+        default=None, description="理智流程配置迁移版本"
+    )
+    StaminaPipelineBackup: Optional[str] = Field(
+        default=None, description="理智流程升级前完整用户配置 JSON"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -1844,10 +1850,11 @@ class MaaUserConfig_Task(BaseModel):
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
     IfEventDepotMaintain: Optional[bool] = Field(
-        default=None, description="活动库存保持"
+        default=None, description="活动关均衡理智"
     )
     EventDepotMaintainPlans: Optional[str] = Field(
-        default=None, description="活动库存保持计划 JSON"
+        default=None,
+        description="动态活动库存目标 JSON（all/material/activity/orundum）",
     )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"

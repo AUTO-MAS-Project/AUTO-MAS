@@ -638,6 +638,8 @@ export interface User {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    StaminaPipelineVersion?: number
+    StaminaPipelineBackup?: string
   }
   Info: {
     Id: string

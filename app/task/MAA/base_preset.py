@@ -4,7 +4,17 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from app.utils.io import write_file
+from app.utils.io import read_file, write_file
+
+MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
+"""已收起的活动优先原生任务原文；仅随 MAS owner 配置保存，不下发给 MAA。"""
+
+_MAA_STAMINA_TASK_ALIASES = {
+    ("DepotMaintain", "活动库存保持"): ("DepotMaintain", "活动关均衡理智"),
+    ("DepotMaintain", ""): ("DepotMaintain", "库存保持与干员养成"),
+    ("DepotMaintain", "库存保持"): ("DepotMaintain", "库存保持与干员养成"),
+    ("Fight", "理智作战"): ("Fight", "理智任务"),
+}
 
 _MAA_BASE_PRESET = {
     "gui.json": {
@@ -40,6 +50,71 @@ def seed_maa_base_config(config_dir: Path) -> None:
         path = config_dir / name
         if not path.exists():
             write_file(path, deepcopy(preset))
+
+
+def capture_maa_legacy_activity_sources(
+    config_dir: Path,
+    gui_new_set: dict,
+    *,
+    current_configuration: str = "Default",
+) -> None:
+    """收起旧活动优先入口前，按配置方案保留其完整原生高级设置。"""
+
+    configurations = gui_new_set.get("Configurations")
+    if not isinstance(configurations, dict):
+        return
+    path = config_dir / MAA_STAMINA_LEGACY_FILENAME
+    sources = read_file(path) if path.exists() else {}
+    if not isinstance(sources, dict):
+        sources = {}
+    changed = False
+    for name, configuration in configurations.items():
+        if not isinstance(configuration, dict):
+            continue
+        queue = configuration.get("TaskQueue")
+        if not isinstance(queue, list):
+            continue
+        source = next(
+            (
+                task
+                for task in queue
+                if maa_task_identity(task) == ("Fight", "活动关优先")
+            ),
+            None,
+        )
+        if source is not None and sources.get(name) != source:
+            sources[name] = deepcopy(source)
+            changed = True
+    if current_configuration != "Default" and isinstance(
+        configurations.get(current_configuration), dict
+    ):
+        # 当前方案会折叠成 Default；保留来源也必须随之对齐，不能继承旧 Default。
+        selected = sources.get(current_configuration)
+        if selected is not None and sources.get("Default") != selected:
+            sources["Default"] = deepcopy(selected)
+            changed = True
+        elif selected is None and "Default" in sources:
+            del sources["Default"]
+            changed = True
+    if changed:
+        write_file(path, sources)
+
+
+def load_maa_stamina_legacy_task(
+    config_dir: Path, configuration: str = "Default"
+) -> dict | None:
+    """从当前 MAS owner 读取已收起的活动优先来源，不读取安装目录残留。"""
+
+    path = config_dir / MAA_STAMINA_LEGACY_FILENAME
+    if not path.exists():
+        return None
+    sources = read_file(path)
+    if not isinstance(sources, dict):
+        return None
+    task = sources.get(configuration)
+    return (
+        deepcopy(task) if maa_task_identity(task) == ("Fight", "活动关优先") else None
+    )
 
 
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
@@ -95,6 +170,13 @@ def maa_task_identity(task: object) -> tuple[str, str] | None:
     return task_type, name
 
 
+def canonical_maa_task_identity(task: object) -> tuple[str, str] | None:
+    """对齐三段理智流程的新旧任务名；结构校验仍使用原始身份。"""
+
+    identity = maa_task_identity(task)
+    return _MAA_STAMINA_TASK_ALIASES.get(identity, identity) if identity else None
+
+
 def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
     """Return task identities in queue order, ignoring task settings."""
 
@@ -126,16 +208,23 @@ def restore_maa_default_task_queue(
     existing_tasks: dict[tuple[str, str], dict] = {}
     if isinstance(queue, list):
         for task in queue:
-            identity = maa_task_identity(task)
+            identity = canonical_maa_task_identity(task)
             if identity is not None:
-                existing_tasks.setdefault(identity, task)
+                existing = existing_tasks.get(identity)
+                # 新身份优先；旧库存同时有空名与有名来源时选有名项，不串用设置。
+                if (
+                    existing is None
+                    or maa_task_identity(task) == identity
+                    or (not existing.get("Name") and task.get("Name"))
+                ):
+                    existing_tasks[identity] = task
 
     # 补齐新预设时保留已有任务的勾选；只有新增任务使用预设的默认开关。
     structural_keys = {"$type", "Name", "TaskType"}
     restored_queue = []
     for default_task in default_queue:
         task = deepcopy(default_task)
-        identity = maa_task_identity(task)
+        identity = canonical_maa_task_identity(task)
         existing = existing_tasks.get(identity) if identity is not None else None
         if existing is not None:
             task.update(

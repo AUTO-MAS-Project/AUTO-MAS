@@ -522,7 +522,10 @@ def build_plan(
     requirements = aggregate(build_requirements(targets, snapshots, data.demands))
     gross, unobtainable = synthesize(requirements, data, today, blacklist)
     held = dict(inventory or {})
-    net, _ = _farm_demand_net(requirements, held, data, today, blacklist)
+    reservations: dict[str, float] = {}
+    net, _ = _farm_demand_net(
+        requirements, held, data, today, blacklist, reservations=reservations
+    )
     entries = tuple(
         replace(entry, held=held.get(entry.item_id, 0))
         for entry in recommend_stages(net, data, today, blacklist)
@@ -559,6 +562,10 @@ def build_plan(
         entries=tuple(entries),
         demands=demands,
         unobtainable=tuple(unobtainable),
+        reservations=tuple(
+            Requirement(item_id=item_id, amount=math.ceil(amount))
+            for item_id, amount in sorted(reservations.items())
+        ),
     )
 
 
@@ -568,6 +575,8 @@ def _farm_demand_net(
     data: CultivateDataSet,
     today: date | None = None,
     blacklist: frozenset[str] = frozenset(),
+    *,
+    reservations: dict[str, float] | None = None,
 ) -> tuple[list[Requirement], list[Requirement]]:
     """按库存抵扣后的净需求，折算到可刷取材料（与 synthesize 同分支同选路）。
 
@@ -610,6 +619,9 @@ def _farm_demand_net(
 
         if amount <= 0:
             return
+        # 预留完整消耗再扣现存：已有材料也会被培养消耗，合成原料同理。
+        if reservations is not None:
+            reservations[item_id] = reservations.get(item_id, 0.0) + amount
         use = min(amount, stock.get(item_id, 0))
         if use:
             stock[item_id] -= use

@@ -128,6 +128,7 @@ class CultivatePlan:
     entries: tuple[FarmEntry, ...]  # 已按刷取优先级排序（见 engine 排序不变量）
     demands: tuple[Requirement, ...] = ()  # 完整材料清单（含不可直刷/不可获取，供 UI）
     unobtainable: tuple[Requirement, ...] = ()  # 不可获取类子集（UI 单列"需另行获取"）
+    reservations: tuple[Requirement, ...] = ()  # 完整培养消耗，含合成时将消耗的原料
 
 
 @dataclass(frozen=True)

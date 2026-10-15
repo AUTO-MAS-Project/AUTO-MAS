@@ -9,19 +9,45 @@
  */
 export default {
   eventDepotPreview: {
-    name: '活动库存保持',
-    hint: '优先补齐活动材料目标库存；达到目标后，继续下方活动关优先。',
-    scopeHint: '按活动材料关序号保持库存，运行时自动跟随当前活动，排除搓玉效率及无掉落项。',
-    stageColumn: '活动材料关',
+    runtimeUnresolved: '部分活动选关、材料或目标暂不可用，本轮跳过；原配置已保留。',
+    legacyFallback: '旧活动选关序号超出当期范围，本轮沿用旧版第一关回退；原选择已保留。',
+    budgetConflict: '旧活动目标重合，沿用自定义目标及已有药石额度；另一份原额度保留在迁移前备份。',
+    legacySeriesFallback: '旧活动连战次数无法等价沿用，本轮改为单次代理；原设置已保留。',
+    legacyExpiryFallback:
+      '旧活动的自定义或动态临期药策略无法等价沿用，本轮停用临期药；原设置已保留。',
+    legacyCommonConflict: '两份旧活动的连战或临期药设置不同，本轮采用较保守的设置；原配置已保留。',
+    budgetGateConflict: '原活动库存已禁用药剂或源石，本轮保留此限制，相应旧活动优先额度暂不使用。',
+    name: '活动关均衡理智',
+    hint: '先补齐当期活动目标，达到目标或没有可刷关卡时继续库存保持与干员养成。',
+    scopeHint:
+      '按库存达成率排序执行，由 MAA 决定选关顺序，不保证每场切换关卡。活动变化后自动更新材料关与搓玉关。',
+    stageColumn: '活动关卡',
     stageIndex: '第 {n} 个材料关',
-    fallbackStage: '当前回退到 {stage}',
-    addPresets: '添加活动预设',
-    mergeHint:
-      '目标默认 200，仅保存序号和目标；材料随活动更新。重复添加只补缺项，保留已有目标。序号超出范围时回退首个材料关，拖动调整执行顺序。',
-    added: '已添加 {n} 项活动预设',
-    alreadyAdded: '活动预设已全部添加，已有目标保持不变',
-    noActivity: '当前没有可用的活动关卡',
-    expiredHint: '当前没有活动材料关，本轮跳过；序号和目标会保留，下次活动时自动使用新关卡。',
+    orundumStage: '搓玉关',
+    legacyIndex: '原活动优先第 {n} 关',
+    farmStage: '本轮是否刷取该活动关',
+    noActivity: '当前没有可用的活动关卡，可先保存目标等待下期活动',
+    expiredHint: '当前没有可刷活动关，本轮跳过；已保存的目标会在活动可用时继续使用。',
+    loading: '正在加载活动关卡…',
+    retry: '重试',
+    dataUnavailable: '活动数据暂不可用，目标已保留',
+    loadFailed: '加载活动关卡失败，已保存的目标保持不变',
+    invalidData: '加载活动关卡失败：返回数据缺少关卡信息',
+    staleData: '活动数据更新失败，暂显示上次成功获取的关卡；已保存的目标保持不变。',
+    summary: '跟随当期活动 · {n} 关 · 库存比例排序',
+    medicineHint: '此份药量只分配给一个活动计划，未用完的额度不向其他计划转移。',
+  },
+  maaStaminaPipeline: {
+    inventoryCultivate: '库存保持与干员养成',
+    sanityFallback: '理智任务',
+    orderHint: '按 1 → 2 → 3 从上到下依次执行，前一段没有可刷内容时自动继续下一段。',
+    inventoryHint:
+      '库存目标表示培养完成后仍要保留的数量。库存保持与养成分别沿用原有开关和适用条件。',
+    executionHint:
+      '两者共同参与时先备养成材料，再补足养成消耗与目标库存，最后培养；本轮固定按此顺序、单次代理且不用临期药，不使用比例排序或“仅执行首个不足计划”。原库存设置仍会保留。',
+    sanityHint: '沿用原固定关卡、备选关卡或计划表及作战参数，仅控制本段；关闭后前两段仍可执行。',
+    inventoryOff: '库存保持未启用',
+    cultivateOff: '养成未启用',
   },
   common: {
     viewPageDocs: '查看本页文档',
@@ -390,7 +416,14 @@ export default {
     maaCultivateEmpty: '尚未添加养成目标',
     maaCultivateRecognitionHint:
       '练度与库存以 MAA 运行时识别为准；绑定森空岛后可设技能等级/专精/模组目标，未绑定时已有目标只读；无可设目标的干员自动从选择器隐藏',
-    maaCultivateTakeoverHint: '材料不足时养成计划接管本轮刷取，库存保持暂停；材料补齐后自动恢复',
+    maaCultivateSkipHint:
+      '触发活动或资源全开放跳过条件时，本轮暂停养成刷取、材料预留和实际培养；其他任务继续执行。',
+    maaCultivatePreparationUnavailable:
+      '养成数据暂时不可用，本轮养成已暂停；库存保持与理智任务继续执行',
+    maaCultivateTargetsDeferred:
+      '缺少所需练度数据的养成目标本轮暂缓并保留，其他有效目标继续执行；可同步森空岛练度后重试。',
+    maaCultivateTakeoverHint:
+      '库存目标表示培养完成后仍要保留的数量。库存保持与养成分别沿用原有开关和适用条件。',
     maaDataSourceYituliu: '数据来源：一图流',
     maaCultivatePreviewTitle: '预计需要材料',
     maaCultivatePreviewComputing: '计算中',
@@ -567,7 +600,7 @@ export default {
     deleteSelected: '删除选中',
     farmType: '刷取类型',
     annihilationDailyRunStart: '剿灭与日常分两次启动 MAA，组内按执行顺序排列',
-    annihilationDailyTasksEach: '剿灭作战和日常任务会分别启动两次 MAA',
+    annihilationDailyTasksEach: '剿灭作战和日常任务会分别启动一次 MAA',
     annihilationStage: '剿灭关卡',
     rewardGroupsProtocolSpace: '协议空间奖励任务可在这里选择奖励组',
     rewardGroup: '可选奖励组',

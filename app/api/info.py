@@ -338,8 +338,12 @@ async def confirm_notice() -> OutBase:
     response_model=InfoOut,
     status_code=200,
 )
-async def get_overview() -> InfoOut:
+async def get_overview(
+    refresh: bool = False,
+) -> InfoOut:
     try:
+        if refresh:
+            await Config.get_stage(refresh=True)
         stage_by_server = {
             server: await Config.get_stage_info("Info", server=server)
             for server in (

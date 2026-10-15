@@ -210,13 +210,22 @@ export class GetService {
     }
     /**
      * 信息总览
+     * @param refresh
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
-    public static getOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
+    public static getOverviewApiInfoGetOverviewPost(
+        refresh: boolean = false,
+    ): CancelablePromise<InfoOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/get/overview',
+            query: {
+                'refresh': refresh,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

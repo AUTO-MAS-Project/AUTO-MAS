@@ -49,6 +49,8 @@ from .AutoProxy import (
     read_maa_config_with_fallback,
 )
 from .base_preset import (
+    MAA_STAMINA_LEGACY_FILENAME,
+    capture_maa_legacy_activity_sources,
     ensure_maa_default_configuration,
     get_maa_base_preset,
     is_valid_maa_task_queues,
@@ -250,6 +252,14 @@ class ScriptConfigTask(TaskExecuteBase):
             return None
         return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
+    def _uses_managed_queue(self) -> bool:
+        """仅脚本预设和启用快速配置的用户使用三段托管队列。"""
+
+        user_id = self.cur_user_item.user_id
+        return user_id == "Default" or self.user_config[uuid.UUID(user_id)].get(
+            "Info", "IfQuickConfig"
+        )
+
     async def set_maa(self):
         """配置MAA运行参数"""
 
@@ -277,26 +287,6 @@ class ScriptConfigTask(TaskExecuteBase):
         mas_dir = mas_config_dir(self.script_info.script_id, owner)
         seed_maa_base_config(mas_dir)
 
-        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
-            "TaskQueue"
-        ]
-        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
-        base_configurations = base_gui_new_set.get("Configurations")
-        repaired_queues = 0
-        if isinstance(base_configurations, dict):
-            for configuration in base_configurations.values():
-                if not isinstance(configuration, dict):
-                    continue
-                queue, repaired = restore_maa_default_task_queue(
-                    configuration.get("TaskQueue"), preset_queue
-                )
-                if repaired:
-                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
-                    repaired_queues += 1
-        if repaired_queues and not self.view_only:
-            write_file(mas_dir / "gui.new.json", base_gui_new_set)
-            logger.warning(f"MAA 队列结构异常, 已恢复 {repaired_queues} 个默认队列")
-
         overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
             if target_user_id != "Default"
@@ -315,8 +305,41 @@ class ScriptConfigTask(TaskExecuteBase):
             ),
         )
 
+        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
+            "TaskQueue"
+        ]
+        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
+        base_configurations = base_gui_new_set.get("Configurations")
+        repaired_queues = 0
+        managed_queue = self._uses_managed_queue() and not self.view_only
+        if managed_queue:
+            base_gui_set = read_maa_config_with_fallback(mas_dir, "gui.json")
+            capture_maa_legacy_activity_sources(
+                mas_dir,
+                base_gui_new_set,
+                current_configuration=base_gui_set.get("Current", "Default"),
+            )
+        if managed_queue and isinstance(base_configurations, dict):
+            for configuration in base_configurations.values():
+                if not isinstance(configuration, dict):
+                    continue
+                queue, repaired = restore_maa_default_task_queue(
+                    configuration.get("TaskQueue"), preset_queue
+                )
+                if repaired:
+                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
+                    repaired_queues += 1
+        if repaired_queues and not self.view_only:
+            write_file(mas_dir / "gui.new.json", base_gui_new_set)
+            logger.info(f"MAA 已对齐 {repaired_queues} 个三段理智预设队列")
+
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
-            shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
+            shutil.copytree(
+                mas_dir,
+                self.maa_set_path,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
+            )
 
         # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；下方用预设补齐队列。
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
@@ -329,23 +352,17 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # base 缺失队列或结构错误时用预设补齐；结构有效时仅修正 $type 属性顺序。
+        # 快速配置使用三段预设；关闭快速配置和查看备份时保留来源原队列。
         for configuration in gui_new_set["Configurations"].values():
             if not isinstance(configuration, dict):
                 continue
             source_queue = configuration.get("TaskQueue")
-            if not isinstance(source_queue, list) or not source_queue:
-                source_queue = preset_queue
-            source_queue, _ = restore_maa_default_task_queue(source_queue, preset_queue)
-            # 活动预设在配置会话里默认勾选；查看备份时保留历史状态。
-            if not self.view_only:
-                for task in source_queue:
-                    if (
-                        task.get("TaskType") == "DepotMaintain"
-                        and task.get("Name") == "活动库存保持"
-                    ):
-                        task["IsEnable"] = True
-            configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
+            if managed_queue:
+                source_queue, _ = restore_maa_default_task_queue(
+                    source_queue, preset_queue
+                )
+            if isinstance(source_queue, list):
+                configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
 
         # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；
         # 会话结束时缺失键会被删除，不把 MAS 接管项写进 base。
@@ -448,7 +465,7 @@ class ScriptConfigTask(TaskExecuteBase):
             current_docs[name] = current
 
         baseline_new = (self._maa_config_baseline or {}).get("gui.new.json", {})
-        if not is_valid_maa_task_queues(
+        if self._uses_managed_queue() and not is_valid_maa_task_queues(
             baseline_new.get("Configurations"),
             current_docs["gui.new.json"].get("Configurations"),
         ):

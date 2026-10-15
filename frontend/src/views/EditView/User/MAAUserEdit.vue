@@ -107,11 +107,9 @@
             v-model:form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
-            :activity-stage-options="activityStageOptions"
             :activity-stages="activityStages"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
-            :display-activity-stage-index="displayActivityStageIndex"
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
@@ -143,6 +141,7 @@
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @select-infrast-plan="handleInfrastPlanSelectChange"
             @save="handleFieldSave"
+            @retry-activity="loadActivityStageOptions(true)"
           >
             <template #fight-detail>
               <StageConfigSection
@@ -260,7 +259,7 @@ import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import { resolveActivityStage } from '@/views/MAAUserEdit/activityStages'
+import { getEventDepotPresets } from '@/views/MAAUserEdit/eventDepotMaintainPresets'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -368,7 +367,6 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
-const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -619,11 +617,11 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfDepotMaintain: true,
     DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
-    IfEventDepotMaintain: false,
-    EventDepotMaintainPlans: '[]',
+    IfEventDepotMaintain: true,
+    EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
     IfCultivate: false,
     IfGreenTicketStore: false,
-    IfActivityFirst: true,
+    IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
@@ -648,6 +646,8 @@ const getDefaultMAAUserData = () => ({
     LastProxyDate: '',
     ProxyTimes: 0,
     CultivateNotice: '',
+    StaminaPipelineVersion: 1,
+    StaminaPipelineBackup: '{}',
   },
 })
 
@@ -659,10 +659,6 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
 })
-
-const displayActivityStageIndex = computed(
-  () => resolveActivityStage(activityStageOptions.value, formData.Task.ActivityStageIndex)?.value
-)
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
@@ -919,8 +915,9 @@ const loadUserData = async (): Promise<boolean> => {
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
         // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
-        // 慢时库存列被串行阻塞。关卡候选预取不等它们：只读已落盘的计划，
-        // 纯后台取数，放前面避免被目录最坏 30s 拖住
+        // 慢时库存列被串行阻塞。活动关卡和候选预取不等它们，
+        // 放前面避免被目录最坏 30s 拖住。
+        if (!activityStageLoading.value) void loadActivityStageOptions()
         preloadDepotStageCandidates()
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
         return true
@@ -962,7 +959,6 @@ const applyServerStageOptions = () => {
   const stageOverview = stageOverviewByServer.value[server]
   if (!stageOverview) {
     stageOptions.value = []
-    activityStageOptions.value = []
     return
   }
 
@@ -971,19 +967,21 @@ const applyServerStageOptions = () => {
     isCustom: false,
   }))
   appendConfiguredCustomStages()
-  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
-    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
-    value: index + 1,
-  }))
+  activityStageError.value =
+    stageOverview.ActivityStatus === 'stale'
+      ? t('eventDepotPreview.staleData')
+      : stageOverview.ActivityStatus === 'unavailable'
+        ? t('eventDepotPreview.dataUnavailable')
+        : ''
 }
 
-const loadActivityStageOptions = async () => {
+const loadActivityStageOptions = async (refresh = false) => {
   activityStageLoading.value = true
   activityStageError.value = ''
   try {
-    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    const response = await Service.getOverviewApiInfoGetOverviewPost(refresh)
     if (response.code !== 200) {
-      activityStageError.value = response.message || '加载活动关卡失败'
+      activityStageError.value = response.message || t('eventDepotPreview.loadFailed')
       return
     }
 
@@ -992,16 +990,23 @@ const loadActivityStageOptions = async () => {
       // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
       // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
       logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
-      activityStageError.value = '加载活动关卡失败：返回数据缺少关卡信息'
+      activityStageError.value = t('eventDepotPreview.invalidData')
       return
     }
 
-    stageOverviewByServer.value = overview.StageByServer
+    for (const [server, stages] of Object.entries(overview.StageByServer)) {
+      const previous = stageOverviewByServer.value[server]
+      // 同区服暂不可用时保留上次成功的选项，避免目标显示被清空。
+      stageOverviewByServer.value[server] =
+        stages.ActivityStatus === 'unavailable' && previous
+          ? { ...previous, ActivityStatus: 'unavailable' }
+          : stages
+    }
     applyServerStageOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载活动关卡失败: ${errorMsg}`)
-    activityStageError.value = '加载活动关卡失败'
+    activityStageError.value = t('eventDepotPreview.loadFailed')
   } finally {
     activityStageLoading.value = false
   }
@@ -1714,7 +1719,6 @@ onMounted(async () => {
   // 才能发出，否则新建用户首次进入会静默跳过归档
   await loadScriptInfo()
   loadStageModeOptions()
-  loadActivityStageOptions()
   loadDepotItemOptions()
   // 进入编辑页：归档 MAA 原生配置当前状态（MAS 触碰前的原始态）
   void ensureMaaBackup('native')

@@ -163,6 +163,7 @@ _OVERLAY_KEY_GROUPS = {
     "Info": _OVERLAY_INFO_KEYS,
     "Stage": _OVERLAY_STAGE_KEYS,
     "Task": _OVERLAY_TASK_KEYS,
+    "Data": ("StaminaPipelineVersion", "StaminaPipelineBackup"),
 }
 """侧车字段的配置段归属（各段键名无交集，侧车内平铺存储）"""
 
@@ -226,8 +227,8 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfDepotMaintain": "库存保持",
     "DepotMaintainPlans": "库存保持计划",
-    "IfEventDepotMaintain": "活动库存保持",
-    "EventDepotMaintainPlans": "活动库存保持计划",
+    "IfEventDepotMaintain": "活动关均衡理智",
+    "EventDepotMaintainPlans": "活动库存目标",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
@@ -328,6 +329,9 @@ def collect_mas_files(
         files.update(dir_files(mas_dir))
     if overlay:
         files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        old_config = overlay.get("StaminaPipelineBackup")
+        if old_config and old_config != "{}":
+            files["_mas_stamina_before_upgrade.json"] = old_config
     return files
 
 
@@ -412,13 +416,16 @@ def restore_mas_backup(
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        if rel
+        not in META_FILE_NAMES
+        | {OVERLAY_SIDECAR_NAME, "_mas_stamina_before_upgrade.json"}
     ]
     if managed:
         restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
         restored_overlay = read_overlay_sidecar(mas_dir)
         if restored_overlay is not None:
             (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+        (mas_dir / "_mas_stamina_before_upgrade.json").unlink(missing_ok=True)
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
@@ -592,6 +599,7 @@ _TASK_SWITCH_LABELS = {
 """TaskQueue 任务类型 → 开关标签（与 MAS 侧侧车词表一致）"""
 
 _TASK_ZH_TO_TYPE = {zh: en for en, zh in zip(MAA_TASKS, MAA_TASKS_ZH)}
+_TASK_ZH_TO_TYPE.update({"库存保持": "DepotMaintain", "理智作战": "Fight"})
 """MAA 任务中文名 → 任务类型（GUI 存的任务可能缺 TaskType，按名兜底）"""
 
 
