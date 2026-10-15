@@ -81,11 +81,12 @@ export function useMaaEndLauncher(options: {
       ])
       const selected = paths?.[0]
       if (!selected || disposed) return
-      if (!selected.toLowerCase().endsWith('.exe')) {
+      // 手动指定也必须指向官方启动器，与运行时（签名校验）同一口径。
+      const fileName = selected.split(/[\\/]/).pop()?.toLowerCase()
+      if (fileName !== 'launcher.exe' && fileName !== 'games.exe') {
         error.value = t('edit.maaEndPickLauncherExeError')
         return
       }
-      // 手动选择用于自动识别失败时兜底；后端仅校验文件存在，不限定安装布局。
       await save({ LauncherPath: selected })
     } catch (reason) {
       if (!disposed) {

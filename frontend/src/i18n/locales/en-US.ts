@@ -2003,7 +2003,6 @@ export default {
     maaEndLaunchTypeHint:
       'Launcher mode opens the official launcher, handles updates and starts the game. Keep the client path pointing to Endfield.exe',
     maaEndLauncherPath: 'Official Endfield launcher',
-    maaEndLauncherPathHint: 'Pick the official launcher Launcher.exe (or Games.exe)',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',
     maaEndLauncherSourceManual: 'Manual',
@@ -2012,11 +2011,11 @@ export default {
     maaEndLauncherAutoHint:
       'Detects the launcher from the game path on every run; no path to maintain',
     maaEndLauncherManualHint:
-      'Uses the selected launcher executable with any filename or install location; switch to Automatic to detect it instead',
+      'Pick the official Hypergryph launcher Launcher.exe or Games.exe (a fallback when detection fails); switch back to Automatic anytime',
     maaEndLauncherDetectFailed:
       'Official Endfield launcher not found. Switch to Manual to select it',
     maaEndPickClientBeforeLauncher: 'Select the game path first',
-    maaEndPickLauncherExeError: 'Select the Endfield launcher executable (.exe)',
+    maaEndPickLauncherExeError: 'Pick the official launcher Launcher.exe or Games.exe',
     maaEndLauncherSaveFailed:
       'Could not save launcher settings. Your previous settings have been kept',
     maaEndLauncherArgumentsHint:

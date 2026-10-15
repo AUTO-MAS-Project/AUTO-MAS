@@ -146,23 +146,9 @@ class MaaEndManager(ScriptManagerBase):
             and not Path(script_config.get("Game", "Path")).exists()
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-        if (
-            self.controller_protocol == "Win32"
-            and self.task_info.mode == "AutoProxy"
-            and str(script_config.get("Game", "LaunchMode") or "Client") != "Launcher"
-        ):
-            # 附加父进程启动（Client 模式）需要手动配置官方启动器；启动器启动
-            # 由下方分支按「自动识别或手动指定」校验
-            launcher_path = Path(str(script_config.get("Game", "LauncherPath") or ""))
-            if not launcher_path.is_file() or launcher_path.name.lower() not in {
-                "launcher.exe",
-                "games.exe",
-            }:
-                return "请在游戏设置中选择鹰角官方启动器 Launcher.exe 或 Games.exe"
-        if (
-            self.controller_protocol == "Win32"
-            and str(script_config.get("Game", "LaunchMode") or "Client") == "Launcher"
-        ):
+        if self.controller_protocol == "Win32" and self.task_info.mode == "AutoProxy":
+            # 直接启动与启动器启动共用同一个官方启动器：自动识别优先；手动指定也必须
+            # 是官方启动器（Launcher.exe / Games.exe），运行时另叠签名校验。
             client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
             try:
                 launcher = resolve_launcher_exe(
@@ -172,8 +158,8 @@ class MaaEndManager(ScriptManagerBase):
                 return str(error)
             if launcher is None:
                 return (
-                    "启动方式为「启动器启动」但未找到终末地官方启动器, "
-                    "请手动选择终末地启动器的可执行文件（.exe）！"
+                    "未找到终末地官方启动器, 请选择鹰角官方启动器 "
+                    "Launcher.exe 或 Games.exe！"
                 )
         if (
             self.task_info.mode == "AutoProxy"

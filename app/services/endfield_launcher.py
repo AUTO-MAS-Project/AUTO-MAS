@@ -34,6 +34,8 @@
 from pathlib import Path
 
 _LAUNCHER_EXE = "Launcher.exe"
+# 官方启动器可执行文件名：手动指定与自动识别都必须是其中之一，运行时再叠签名校验。
+_LAUNCHER_EXE_NAMES = frozenset({"launcher.exe", "games.exe"})
 # 版本目录内的界面程序，用作安装布局哨兵。
 _VERSION_MARKER = "Games.exe"
 
@@ -74,19 +76,19 @@ def discover_launcher_exe(client_exe: Path) -> Path | None:
 
 
 def is_launcher_exe(path: Path) -> bool:
-    """手动指定只要求现存的 exe，避免安装布局变化后无法兜底。"""
+    """手动指定必须是官方启动器的可执行文件（文件名限定，与运行时校验同口径）。"""
 
-    return path.suffix.casefold() == ".exe" and path.is_file()
+    return path.name.casefold() in _LAUNCHER_EXE_NAMES and path.is_file()
 
 
 def resolve_launcher_exe(client_exe: Path, configured_path: str = "") -> Path | None:
-    """手动路径必须有效；未指定时才随客户端位置自动识别。"""
+    """解析最终使用的启动器：手动路径优先且必须是官方启动器，未指定时按客户端位置自动识别。"""
 
     if configured_path.strip():
         path = Path(configured_path.strip())
         if not is_launcher_exe(path):
             raise ValueError(
-                "终末地启动器路径无效，请选择存在的启动器可执行文件（.exe）"
+                "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
             )
         return path
     return discover_launcher_exe(client_exe)

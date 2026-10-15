@@ -946,7 +946,7 @@ class AppConfig(GlobalConfig):
             launcher_path = (data.get("Game") or {}).get("LauncherPath")
             if launcher_path and not is_launcher_exe(Path(launcher_path)):
                 raise ValueError(
-                    "终末地启动器路径无效，请选择存在的启动器可执行文件（.exe）"
+                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
                 )
 
         await self.ScriptConfig[uid].update(data)

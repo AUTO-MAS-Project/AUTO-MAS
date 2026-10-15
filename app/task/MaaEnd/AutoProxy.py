@@ -415,6 +415,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
             str(self.script_config.get("Game", "LauncherPath") or ""),
         )
 
+    def _launcher_path_text(self) -> str:
+        """直接启动入口使用的启动器路径：手动配置优先，未配置时按游戏路径自动识别。
+
+        check() 已在自动代理模式放行前校验过；这里再兜一层，避免未校验路径的
+        会话进入时抛错。
+        """
+
+        try:
+            launcher_path = self._launcher_path()
+        except ValueError:
+            launcher_path = None
+        if launcher_path is not None:
+            return str(launcher_path)
+        return str(self.script_config.get("Game", "LauncherPath"))
+
     async def _apply_launcher_game_settings(self) -> None:
         """先执行上游 PI GameSetting 预任务，再由官方启动器打开游戏。"""
         self._read_original_game_settings()
@@ -1231,9 +1246,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                                 f"启动终末地: {self.script_config.get('Game', 'Path')}"
                             )
                             command = _game_launch_command(
-                                launcher_path=str(
-                                    self.script_config.get("Game", "LauncherPath")
-                                ),
+                                launcher_path=self._launcher_path_text(),
                                 game_path=str(self.script_config.get("Game", "Path")),
                                 game_arguments=str(
                                     self.script_config.get("Game", "Arguments")
@@ -1972,7 +1985,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.game_launch_result_path.unlink(missing_ok=True)
             _configure_game_pre_action(
                 maaend_instance,
-                launcher_path=str(self.script_config.get("Game", "LauncherPath")),
+                launcher_path=self._launcher_path_text(),
                 game_path=str(self.script_config.get("Game", "Path")),
                 game_arguments=str(self.script_config.get("Game", "Arguments")),
                 result_path=self.game_launch_result_path,
