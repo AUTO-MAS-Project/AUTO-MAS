@@ -72,9 +72,7 @@
       <a-empty
         v-else
         :description="
-          eligibleStages.length
-            ? t('edit.noStockKeepingPlans')
-            : t('eventDepotPreview.noActivity')
+          eligibleStages.length ? t('edit.noStockKeepingPlans') : t('eventDepotPreview.noActivity')
         "
         :image-style="{ height: '48px' }"
       />
@@ -273,7 +271,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
@@ -286,7 +284,7 @@ import {
 import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
 import {
   eventDepotItemId,
-  eventDepotPlanIdentity,
+  eventDepotPlansForStage,
   eventStageIdentity,
   getEventDepotStages,
   getEventOrundumStages,
@@ -334,7 +332,7 @@ type EventRow = {
   index: number
   stage: ActivityItem
   rock: boolean
-  plan?: DepotMaintainPlan
+  plans: DepotMaintainPlan[]
   farmed: boolean
   target: number
 }
@@ -367,52 +365,42 @@ const {
   removeSelectedPlans,
 } = props.editor
 
-/** 当期关卡逐行常驻：未保存的行按预设默认值展示（默认全开）。 */
+/** 当期关卡逐行常驻：默认模板全开，旧配置只勾选原本参与的来源。 */
 const eventRows = computed<EventRow[]>(() => {
-  const saved = new Map(
-    plans.value
-      .filter(plan => plan.StageType !== 'all')
-      .map(plan => [eventDepotPlanIdentity(plan), plan] as const)
-  )
   const allRow = plans.value.find(plan => plan.StageType === 'all')
   const rows: EventRow[] = []
   const push = (type: EventRow['type'], stage: ActivityItem, index: number) => {
-    const plan = saved.get(eventStageIdentity(type, index))
+    const saved = eventDepotPlansForStage(props.activityStages ?? [], plans.value, stage)
+    // 同一关的自定义库存目标优先于旧活动优先的默认目标。
+    const custom = saved.filter(plan => !plan.LegacyActivityFirst)
+    const targets = custom.length ? custom : saved
     const rock = isOrundumStage(stage)
-    const preset = rock ? allRow?.OrundumDropCount ?? 9999 : allRow?.DropCount ?? 999
+    const preset = rock ? (allRow?.OrundumDropCount ?? 9999) : (allRow?.DropCount ?? 999)
     rows.push({
       identity: eventStageIdentity(type, index),
       type,
       index,
       stage,
       rock,
-      plan,
-      farmed: !plan?.Skip,
-      target: plan ? (rock ? plan.OrundumDropCount ?? plan.DropCount : plan.DropCount) : preset,
+      plans: saved,
+      farmed: !saved.some(plan => plan.Skip) && (!!allRow || saved.length > 0),
+      target: targets.length
+        ? Math.max(
+            ...targets.map(plan =>
+              rock ? (plan.OrundumDropCount ?? plan.DropCount) : plan.DropCount
+            )
+          )
+        : preset,
     })
   }
-  getEventDepotStages(props.activityStages ?? []).forEach((stage, i) => push('material', stage, i + 1))
-  getEventOrundumStages(props.activityStages ?? []).forEach((stage, i) => push('orundum', stage, i + 1))
+  getEventDepotStages(props.activityStages ?? []).forEach((stage, i) =>
+    push('material', stage, i + 1)
+  )
+  getEventOrundumStages(props.activityStages ?? []).forEach((stage, i) =>
+    push('orundum', stage, i + 1)
+  )
   return rows
 })
-
-// 没有 all 预设的旧配置：补齐当期每个可刷关卡的条目，否则它们不会进入 MAA 计划。
-watch(
-  () => [props.activityStages, props.activityLoading, props.activityError] as const,
-  () => {
-    if (!eventMode.value || props.loading || activityUnavailable.value) return
-    if (!eligibleStages.value.length) return
-    if (plans.value.some(plan => plan.StageType === 'all')) return
-    let added = false
-    for (const row of eventRows.value) {
-      if (row.plan) continue
-      ensureEventPlan({ StageType: row.type, StageIndex: row.index, DropCount: row.target })
-      added = true
-    }
-    if (added) savePlans()
-  },
-  { immediate: true }
-)
 
 /** 关卡类别：搓玉关只有一处，不带序号；材料关按序号区分。 */
 const stageKindOf = (row: EventRow) =>
@@ -430,22 +418,39 @@ const eventStockOf = (row: EventRow) => props.inventory?.[eventDepotItemId(row.s
 
 /** 勾选状态即 Skip 标记：取消勾选不清空已保存的目标。 */
 const toggleFarm = (row: EventRow, farmed: boolean) => {
-  const plan = ensureEventPlan({
-    StageType: row.type,
-    StageIndex: row.index,
-    DropCount: row.target,
-  })
-  if (farmed) delete plan.Skip
-  else plan.Skip = true
+  const saved = row.plans.length
+    ? row.plans
+    : [
+        ensureEventPlan({
+          StageType: row.type,
+          StageIndex: row.index,
+          DropCount: row.target,
+        }),
+      ]
+  for (const plan of saved) {
+    if (farmed) delete plan.Skip
+    else plan.Skip = true
+  }
   savePlans()
 }
 
 const setStageTarget = (row: EventRow, value: number | string | null) => {
   const next = Math.max(1, Math.trunc(Number(value) || 1))
-  const plan = ensureEventPlan({ StageType: row.type, StageIndex: row.index, DropCount: next })
-  // 搓玉关沿用 MAA 侧的固源岩目标字段，其余关卡写通用目标。
-  if (row.rock && plan.OrundumDropCount !== undefined) plan.OrundumDropCount = next
-  else plan.DropCount = next
+  const saved = row.plans.length
+    ? row.plans
+    : [
+        ensureEventPlan({
+          StageType: row.type,
+          StageIndex: row.index,
+          DropCount: next,
+          ...(!row.farmed ? { Skip: true } : {}),
+        }),
+      ]
+  for (const plan of saved) {
+    // 搓玉关沿用 MAA 侧的固源岩目标字段，其余关卡写通用目标。
+    if (row.rock && plan.OrundumDropCount !== undefined) plan.OrundumDropCount = next
+    else plan.DropCount = next
+  }
   queueSave()
 }
 
@@ -497,7 +502,7 @@ const isStageLoading = (record: DepotMaintainPlan): boolean =>
   !!record.DropId && (props.stageCandidatesLoading ?? []).includes(record.DropId)
 
 const stockOf = (record: DepotMaintainPlan): number | string =>
-  record.DropId ? props.inventory?.[record.DropId] ?? '—' : '—'
+  record.DropId ? (props.inventory?.[record.DropId] ?? '—') : '—'
 
 const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 </script>

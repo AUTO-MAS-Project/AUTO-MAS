@@ -50,8 +50,7 @@ export default {
   maaStaminaPipeline: {
     inventoryCultivate: '在庫維持とオペレーター育成',
     sanityFallback: '理性タスク',
-    orderHint:
-      '1 → 2 → 3 の順に上から実行し、周回する内容がない段階は次へ進みます。',
+    orderHint: '1 → 2 → 3 の順に上から実行し、周回する内容がない段階は次へ進みます。',
     inventoryHint:
       '在庫目標は育成完了後に残す数量です。在庫維持と育成は元の独立したスイッチと適用条件を維持します。',
     executionHint:

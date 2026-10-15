@@ -113,6 +113,14 @@ def resolve_activity_inventory_plans(
             if (
                 isinstance(index, int)
                 and not isinstance(index, bool)
+                and index > len(pool)
+                and pool
+                and (row.get("LegacyIndex") or row.get("LegacyActivityFirst"))
+            ):
+                index = 1
+            if (
+                isinstance(index, int)
+                and not isinstance(index, bool)
                 and 0 < index <= len(pool)
             ):
                 skipped = pool[index - 1]
@@ -172,6 +180,12 @@ def resolve_activity_inventory_plans(
                     if key in source:
                         plan.setdefault(key, source[key])
             selected[position] = plan
+    # 同一关卡可能同时保留旧活动优先与库存行，取消勾选必须覆盖两份来源。
+    selected = {
+        position: plan
+        for position, plan in selected.items()
+        if (plan["Stage"], plan["DropId"]) not in skipped_keys
+    }
     explicit_keys = {(plan["Stage"], plan["DropId"]) for plan in selected.values()}
     custom_plans = {
         (plan["Stage"], plan["DropId"]): plan

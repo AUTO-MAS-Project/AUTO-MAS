@@ -302,10 +302,7 @@ const pageRef = ref<HTMLElement>()
 const isInitializing = ref(true)
 // 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
 const loading = computed(
-  () =>
-    editorBusy.value ||
-    isInitializing.value ||
-    (userLoading.value && !isSaving.value)
+  () => editorBusy.value || isInitializing.value || (userLoading.value && !isSaving.value)
 )
 
 // 路由参数

@@ -369,7 +369,7 @@ import { SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import LabelWithHint from './LabelWithHint.vue'
 import PipelineRow from './PipelineRow.vue'
 import CultivatePreviewPanel from './CultivatePreviewPanel.vue'
@@ -432,7 +432,8 @@ onScopeDispose(() => {
 })
 const showModules = ref(false)
 const operatorFilter = ref('')
-const rows = ref<CultivateTargetRow[]>([])
+// 目标编辑统一替换数组；不为全量目标创建深层代理，避免保存/预览序列化遍历代理。
+const rows = shallowRef<CultivateTargetRow[]>([])
 const operatorSelection = ref(new Set<string>())
 const allOperatorsSelected = computed(
   () => filteredRows.value.length > 0 && selectedVisibleCount.value === filteredRows.value.length
