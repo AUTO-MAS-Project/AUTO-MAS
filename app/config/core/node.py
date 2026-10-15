@@ -344,20 +344,27 @@ class ConfigNode(BaseModel):
 
         经 ``manager.node_commit``：外层持锁，同 Task 嵌套空过；其它 Task 等待。
         持锁期间其它 Task 的 ``_stage`` 进 pending，外层释放时并入。
-        入口快照并清空 ``_staged_ops``；``while`` 排空本批；Cancel 时归还未执行记录。
+        等待锁之前摘取本次批次，防止其他事务消费；取消时归还未执行记录。
         """
-        async with config_manager.node_commit(self):
-            if not self._staged_ops:
+        lock = self._commit_lock
+        pending = (
+            lock is not None
+            and lock.locked()
+            and not config_manager.in_node_commit(self)
+        )
+        staged = self._staged_pending if pending else self._staged_ops
+        batch = list(staged)
+        staged.clear()
+        try:
+            if not batch:
                 return
-            if self.deleted:
-                raise DeletedNodeError(self.uid)
-            if self.is_locked and self._lock_x not in x_tokens():
-                raise ValueError("配置已锁定, 无法修改")
+            async with config_manager.node_commit(self):
+                if self.deleted:
+                    raise DeletedNodeError(self.uid)
+                if self.is_locked and self._lock_x not in x_tokens():
+                    raise ValueError("配置已锁定, 无法修改")
 
-            batch = list(self._staged_ops)
-            self._staged_ops.clear()
-            errors: list[Exception] = []
-            try:
+                errors: list[Exception] = []
                 while batch:
                     op = batch.pop(0)
                     try:
@@ -370,10 +377,19 @@ class ConfigNode(BaseModel):
                         raise
                 if errors:
                     raise ConfigAggregateError(errors)
-            except BaseException:
-                if batch:
-                    self._staged_ops.extend(batch)
-                raise
+        except BaseException:
+            if batch:
+                lock = self._commit_lock
+                # 等待许可时也可取消；其他 Task 仍持节点锁时不能混入其工作批次。
+                staged = (
+                    self._staged_pending
+                    if lock is not None
+                    and lock.locked()
+                    and not config_manager.in_node_commit(self)
+                    else self._staged_ops
+                )
+                staged[:0] = batch
+            raise
 
     async def _commit_op(self, op: StagedOp) -> None:
         raise NotImplementedError(op.kind.value)
