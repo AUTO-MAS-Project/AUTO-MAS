@@ -773,6 +773,7 @@ class QueueConfig(ConfigBase):
                     "Hibernate",
                     "Sleep",
                     "KillSelf",
+                    "RestartSelf",
                     "Logoff",
                 ]
             ),
@@ -882,6 +883,57 @@ def _tag_notes(config: ConfigBase) -> dict:
         "text": (f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."),
         "color": "pink",
     }
+
+
+def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
+    """保留完整旧配置，将原来启用的两类活动内容合并为动态库存目标。"""
+
+    migrated = deepcopy(data) if isinstance(data, dict) else {}
+    if not migrated or migrated.get("Data", {}).get("StaminaPipelineVersion") == 1:
+        return migrated, False
+    task = migrated.setdefault("Task", {})
+    old_task = data.get("Task", {})
+    plans = []
+    if old_task.get("IfEventDepotMaintain", False):
+        saved = old_task.get("EventDepotMaintainPlans", "[]")
+        try:
+            saved = json.loads(saved) if isinstance(saved, str) else saved
+        except (TypeError, ValueError):
+            saved = []
+            logger.warning("旧活动库存计划无法解析，原内容已保留在迁移前备份")
+        if not isinstance(saved, list):
+            saved = []
+        for index, plan in enumerate(saved, start=1):
+            if isinstance(plan, dict):
+                plan = deepcopy(plan)
+                plan.setdefault("StageType", "material")
+                plan.setdefault("StageIndex", index)
+                plan["LegacyIndex"] = True
+                plans.append(plan)
+    if old_task.get("IfActivityFirst", True):
+        medicine = old_task.get(
+            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
+        )
+        plans.append(
+            {
+                "StageType": "activity",
+                "StageIndex": old_task.get("ActivityStageIndex", 1),
+                "DropCount": 999,
+                "OrundumDropCount": 9999,
+                "UseMedicine": medicine > 0,
+                "MedicineCount": medicine,
+                "LegacyActivityFirst": True,
+            }
+        )
+    task["IfEventDepotMaintain"] = bool(
+        old_task.get("IfEventDepotMaintain", False)
+        or old_task.get("IfActivityFirst", True)
+    )
+    task["EventDepotMaintainPlans"] = json.dumps(plans, ensure_ascii=False)
+    state = migrated.setdefault("Data", {})
+    state["StaminaPipelineBackup"] = json.dumps(data, ensure_ascii=False)
+    state["StaminaPipelineVersion"] = 1
+    return migrated, True
 
 
 class MaaUserConfig(ConfigBase):
@@ -995,6 +1047,13 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
         self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
+        ## 理智流程配置迁移版本与升级前完整用户配置（关闭的旧计划仍可找回）
+        self.Data_StaminaPipelineVersion = ConfigItem(
+            "Data", "StaminaPipelineVersion", 1, RangeValidator(0, 1)
+        )
+        self.Data_StaminaPipelineBackup = ConfigItem(
+            "Data", "StaminaPipelineBackup", "{}", JSONValidator()
+        )
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
@@ -1072,13 +1131,16 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
-        ## 是否优先保持活动材料库存
+        ## 是否启用活动关均衡理智
         self.Task_IfEventDepotMaintain = ConfigItem(
-            "Task", "IfEventDepotMaintain", False, BoolValidator()
+            "Task", "IfEventDepotMaintain", True, BoolValidator()
         )
         ## 活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动
         self.Task_EventDepotMaintainPlans = ConfigItem(
-            "Task", "EventDepotMaintainPlans", "[]", JSONValidator(list)
+            "Task",
+            "EventDepotMaintainPlans",
+            '[{"StageType":"all","DropCount":999,"OrundumDropCount":9999}]',
+            JSONValidator(list),
         )
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
@@ -1097,7 +1159,7 @@ class MaaUserConfig(ConfigBase):
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(
-            "Task", "IfActivityFirst", True, BoolValidator()
+            "Task", "IfActivityFirst", False, BoolValidator()
         )
         ## 优先刷取的活动关卡序号
         self.Task_ActivityStageIndex = ConfigItem(
@@ -1168,6 +1230,13 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        migrated_data, migrated = migrate_maa_stamina_pipeline(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
     def getInfrastName(self) -> str:
 
@@ -1655,8 +1724,19 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
+        ## 游戏启动方式（Launcher=经终末地官方启动器启动，默认；Client=直接启动
+        ## 客户端，暂未在前端开放，仅存量配置继续生效）
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Launcher",
+            OptionsValidator(["Client", "Launcher"]),
+        )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 终末地官方启动器路径；启动器启动留空自动识别，手动指定不限定文件名
+        ## 与安装布局；附加父进程启动（game_launcher）接受 Launcher.exe 或 Games.exe
+        self.Game_LauncherPath = ConfigItem("Game", "LauncherPath", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
@@ -2568,6 +2648,10 @@ class HSRConfig(ConfigBase):
         self.Cloud_LastLogin = ConfigItem("Cloud", "LastLogin", "{ }", JSONValidator())
 
         ## Run -------------------------------------------------------------
+        ## 代理次数限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
         ## 失败任务最大尝试次数
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
@@ -2712,7 +2796,9 @@ class MaaFWUserConfig(ConfigBase):
         ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions，
         ## 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）；
         ## 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）；
-        ## globalOptions 是全局选项的值，每个用户一份、所有任务共用
+        ## globalOptions 是全局选项的值，每个用户一份、所有任务共用。
+        ## 默认的空快照在建用户、读用户与运行前按项目默认（预设或默认勾选）补成实打实的队列，
+        ## 见 app/task/MaaFW/tools/embedded/default_snapshot.py
         self.Task_TaskSnapshot = ConfigItem(
             "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
         )
@@ -2816,6 +2902,37 @@ def _migrate_maafw_auto_update_mode(data: dict) -> dict:
     return normalized_data
 
 
+class MaaFWSourcePathValidator(FolderValidator):
+    """MaaFW 的 ``Info.Path``：只是导入的来源，导入完成后允许删掉。
+
+    ``FolderValidator`` 对不存在的路径会去掉最后一个点号后缀（读出来的就是纠正后的值，下次
+    保存还会写回盘）。发行包解压目录名几乎都带版本号，``…-v4.11.1`` 删掉之后读到的成了
+    ``…-v4.11``：视图丢失时按来源比对同组兄弟、``knownSources`` 都对不上，重建兜底就失效了；
+    截断后的路径恰好存在时还会从那个旧目录重新导入。这里对不存在的绝对路径原样保留；存在的
+    目录照旧按 ``FolderValidator`` 校验（系统目录、AUTO-MAS 自己的目录不收）。
+    """
+
+    @staticmethod
+    def _missing_absolute(value) -> bool:
+        if not isinstance(value, str) or not value:
+            return False
+        try:
+            path = Path(value)
+            return path.is_absolute() and not path.is_dir()
+        except (OSError, ValueError):
+            return False
+
+    def validate(self, value):
+        if self._missing_absolute(value):
+            return True
+        return super().validate(value)
+
+    def correct(self, value):
+        if self._missing_absolute(value):
+            return value
+        return super().correct(value)
+
+
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置。
 
@@ -2843,8 +2960,8 @@ class MaaFWConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", self.DEFAULT_SCRIPT_NAME)
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
-        ## MaaFW 项目根目录，应包含 interface.json
-        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+        ## MaaFW 项目的导入来源目录，应包含 interface.json；导入后可删，删了也原样保留
+        self.Info_Path = ConfigItem("Info", "Path", "", MaaFWSourcePathValidator())
         ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
         self.Info_Controller = ConfigItem("Info", "Controller", "")
         ## MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
@@ -3162,7 +3279,7 @@ class MSSUserConfig(MaaFWUserConfig):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入并排到最前
+        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前
         self.Info_IfActivityFirst = ConfigItem(
             "Info", "IfActivityFirst", True, BoolValidator()
         )
@@ -6055,6 +6172,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.MaaPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[0],
         "script_class": MaaConfig,
+        "field_group": "Stage",
         "field_name": "StageMode",
     },
     "MaaEndPlanConfig": {
@@ -6063,6 +6181,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.MaaEndPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[1],
         "script_class": MaaEndConfig,
+        "field_group": "Info",
         "field_name": "SanityMode",
     },
     "BAAHPlanConfig": {
@@ -6071,6 +6190,7 @@ PLAN_BOOK = {
         "schema_class": schema_model.BAAHPlanConfig,
         "consumer": PLAN_CONSUMER_VALUES[2],
         "script_class": BAAHConfig,
+        "field_group": "Info",
         "field_name": "StageMode",
     },
     "MSSPlanConfig": {
@@ -6080,6 +6200,7 @@ PLAN_BOOK = {
         # MSS 排在 baah 之后，位置索引跟着往后挪一位
         "consumer": PLAN_CONSUMER_VALUES[3],
         "script_class": MSSConfig,
+        "field_group": "Info",
         "field_name": "PlanMode",
     },
 }

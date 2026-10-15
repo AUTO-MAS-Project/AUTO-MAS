@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import (
@@ -231,6 +232,7 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ] = "NoAction"
         # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
@@ -940,6 +942,15 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
+        if isinstance(self.ScriptConfig[uid], MaaEndConfig):
+            from app.services.endfield_launcher import is_launcher_exe
+
+            launcher_path = (data.get("Game") or {}).get("LauncherPath")
+            if launcher_path and not is_launcher_exe(Path(launcher_path)):
+                raise ValueError(
+                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
+                )
+
         await self.ScriptConfig[uid].update(data)
 
     async def del_script(self, script_id: str) -> None:
@@ -1217,6 +1228,20 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        script_config = self.ScriptConfig[uid]
+        if isinstance(script_config, MaaFWConfig):
+            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
+            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(
+                script_id,
+                script_config,
+                None if user_id is None else [str(uuid.UUID(user_id))],
+            )
+
         if user_id is None:
             # 获取全部用户配置
             data = await self.ScriptConfig[uid].UserData.toDict()
@@ -1282,6 +1307,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
+            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):
@@ -3009,9 +3040,18 @@ class AppConfig(GlobalConfig):
         return {"time": ts, "target": target, **content}
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """更新用户配置"""
+        self,
+        script_id: str,
+        user_id: str,
+        data: Dict[str, Dict[str, Any]],
+        *,
+        precondition: Callable[[], bool] | None = None,
+    ) -> bool:
+        """更新用户配置，返回是否写入
+
+        ``precondition``：预处理（特调整理、密码加密等，要让出事件循环）做完、真正写入
+        之前再判一次，不成立就不写。判断与写入之间不让出，期间插不进别的写入。
+        """
 
         logger.info(f"{script_id} 更新用户配置: {user_id}")
 
@@ -3094,7 +3134,10 @@ class AppConfig(GlobalConfig):
             if notice is not None:
                 data.setdefault("Data", {})["CultivateNotice"] = notice
 
+        if precondition is not None and not precondition():
+            return False
         await user_config.update(data)
+        return True
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
@@ -3104,6 +3147,18 @@ class AppConfig(GlobalConfig):
         logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        if script_config.is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
+
+        # OK-WW 的配置目录布局与导入语义由专项维护
+        # （app/task/Okww/tools/config_dir.py），core 只做分派。
+        if isinstance(script_config, OkwwConfig):
+            from app.task.Okww.tools.config_dir import import_script_config_dir
+
+            await import_script_config_dir(script_id, user_id)
+            return
+
         if not isinstance(script_config, MaaEndConfig):
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 
@@ -3240,7 +3295,9 @@ class AppConfig(GlobalConfig):
             if not isinstance(script, consumer_config["script_class"]):
                 continue
             for user in script.UserData.values():
-                if user.get("Info", consumer_config["field_name"]) != str(plan_uid):
+                if user.get(
+                    consumer_config["field_group"], consumer_config["field_name"]
+                ) != str(plan_uid):
                     continue
                 if user.is_locked:
                     raise RuntimeError(
@@ -3249,7 +3306,11 @@ class AppConfig(GlobalConfig):
                 user_list.append(user)
 
         for user in user_list:
-            await user.set("Info", consumer_config["field_name"], "Fixed")
+            await user.set(
+                group=consumer_config["field_group"],
+                name=consumer_config["field_name"],
+                value="Fixed",
+            )
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -3907,8 +3968,20 @@ class AppConfig(GlobalConfig):
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
+            raw_stage_data = json.loads(self.get("Data", "StageData"))
+            has_cache = isinstance(raw_stage_data.get(server), dict) and (
+                "sideStoryStage" in raw_stage_data[server]
+            )
+            activity_stages = stage_data.get("Info", [])
+            activity_status = "ready" if activity_stages else "empty"
+            if not has_cache:
+                activity_status = "unavailable"
+            elif self._stage_refresh_failed_at is not None:
+                activity_status = "stale"
             return {
-                "Activity": stage_data.get("Info", []),
+                "Activity": activity_stages,
+                "ActivityStatus": activity_status,
+                "ActivityUpdatedAt": self.get("Data", "LastStageUpdated"),
                 "Resource": res_stage_info,
                 "Options": stage_options,
             }
@@ -3979,6 +4052,7 @@ class AppConfig(GlobalConfig):
         if (
             not refresh
             and has_server_data
+            and self._stage_refresh_failed_at is None
             and datetime.now() - timedelta(hours=1)
             < datetime.strptime(
                 self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
@@ -3988,7 +4062,8 @@ class AppConfig(GlobalConfig):
             return json.loads(self.get("Data", "Stage"))
 
         if (
-            self._stage_refresh_failed_at is not None
+            not refresh
+            and self._stage_refresh_failed_at is not None
             and datetime.now() - self._stage_refresh_failed_at < timedelta(seconds=60)
         ):
             # 刚失败过就先不再抓: 断网时总览与注入流程会串行重复等超时
@@ -4039,6 +4114,7 @@ class AppConfig(GlobalConfig):
                 )
 
                 if response.status_code == 304:
+                    self._stage_refresh_failed_at = None
                     logger.info("关卡信息未更新，使用本地缓存的活动关卡信息")
                     await self.set(
                         "Data",
@@ -4046,6 +4122,7 @@ class AppConfig(GlobalConfig):
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 elif response.status_code == 200:
+                    self._stage_refresh_failed_at = None
                     logger.success("成功获取远端活动关卡信息")
                     # 时间戳最后写: 并发调用按它判断缓存新鲜度, 先写会在
                     # 两次写入之间把旧关卡当成刚更新过的缓存返回
@@ -4517,6 +4594,13 @@ class AppConfig(GlobalConfig):
             # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
             "HSR 脚本直控完成",
         }
+        # MaaFW 停服维护跳过的两句, 与 app/task/MaaFW/tools/embedded/signal_notice.py
+        # 的 SIGNAL_USER_MESSAGES / MAINTENANCE_SKIP_MESSAGE 一致: 维护是跳过,
+        # 既不算失败, 也不能显示成完成
+        maafw_skip_results = {
+            "游戏停服维护中，本次跳过",
+            "游戏停服维护中，本次跳过（同一资源已确认在维护）",
+        }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
             # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
@@ -4530,6 +4614,14 @@ class AppConfig(GlobalConfig):
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
             return False
+
+        def is_skip_result(result_key: str, result_value: Any) -> bool:
+            # 先确认是字符串: 列表、字典等不可哈希的值做集合成员判断会抛 TypeError
+            return (
+                result_key == "general_result"
+                and isinstance(result_value, str)
+                and result_value in maafw_skip_results
+            )
 
         for json_file in statistic_path_list:
             try:
@@ -4593,9 +4685,14 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    success = is_success_result(key, single_data[key])
+                    if is_success_result(key, single_data[key]):
+                        status = "DONE"
+                    elif is_skip_result(key, single_data[key]):
+                        status = "SKIP"
+                    else:
+                        status = "ERROR"
 
-                    if not success:
+                    if status == "ERROR":
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -4604,7 +4701,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": "DONE" if success else "ERROR",
+                        "status": status,
                         "jsonFile": str(json_file),
                         "result": single_data[key],
                     }

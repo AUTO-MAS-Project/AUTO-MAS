@@ -120,6 +120,9 @@ class MaaCultivateGoalOptionItem(BaseModel):
     value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
     label: str = Field(..., description="目标名称（模组带分支码）")
     maxLevel: int = Field(default=0, description="可达档位上限（按非空消耗档数）")
+    skillIndex: Optional[int] = Field(
+        default=None, description="技能原始序号；模组为空"
+    )
 
 
 class MaaCultivateOperatorOptionItem(BaseModel):
@@ -158,8 +161,26 @@ class MaaCultivateImportIn(BaseModel):
     content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
 
 
+class MaaCultivateImportSkippedItem(BaseModel):
+    error: Literal[
+        "format",
+        "empty",
+        "operator",
+        "ambiguous",
+        "elite",
+        "skill",
+        "mastery",
+        "unsupported",
+    ] = Field(..., description="可本地化的导入错误类型")
+    index: int = Field(..., description="跳过条目的序号，从 1 开始")
+    name: str = Field(default="", description="跳过条目的干员名称")
+
+
 class MaaCultivateImportOut(MaaCultivateOperatorsOut):
     targets: str = Field(default="[]", description="转换后的现有养成目标 JSON，不落库")
+    skipped: List[MaaCultivateImportSkippedItem] = Field(
+        default_factory=list, description="无法导入而跳过的条目，不影响其余目标"
+    )
     error: Optional[str] = Field(default=None, description="可本地化的导入错误类型")
     index: Optional[int] = Field(default=None, description="出错条目的序号，从 1 开始")
     name: str = Field(default="", description="出错条目的干员名称")
@@ -1648,6 +1669,7 @@ class QueueConfig_Info(BaseModel):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
@@ -1786,6 +1808,12 @@ class MaaUserConfig_Data(BaseModel):
     CultivateNotice: Optional[str] = Field(
         default=None, description="养成接管提示（空 = 未接管）"
     )
+    StaminaPipelineVersion: Optional[int] = Field(
+        default=None, description="理智流程配置迁移版本"
+    )
+    StaminaPipelineBackup: Optional[str] = Field(
+        default=None, description="理智流程升级前完整用户配置 JSON"
+    )
 
 
 class MaaUserConfig_Task(BaseModel):
@@ -1822,10 +1850,11 @@ class MaaUserConfig_Task(BaseModel):
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
     IfEventDepotMaintain: Optional[bool] = Field(
-        default=None, description="活动库存保持"
+        default=None, description="活动关均衡理智"
     )
     EventDepotMaintainPlans: Optional[str] = Field(
-        default=None, description="活动库存保持计划 JSON"
+        default=None,
+        description="动态活动库存目标 JSON（all/material/activity/orundum）",
     )
     DepotMaintainPlans: Optional[str] = Field(
         default=None, description="库存保持计划 JSON"
@@ -3132,7 +3161,15 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[str] = Field(default=None, description="控制器类型")
+    LaunchMode: Optional[Literal["Client", "Launcher"]] = Field(
+        default=None,
+        description="游戏启动方式：Launcher=经终末地官方启动器启动（默认），Client=直接启动客户端（暂未开放）",
+    )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
+    LauncherPath: Optional[str] = Field(
+        default=None,
+        description="终末地官方启动器路径（留空自动识别；也可手动指定，附加父进程启动接受 Launcher.exe 或 Games.exe）",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
@@ -3172,6 +3209,14 @@ class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
+
+
+class MaaEndLauncherPathOut(OutBase):
+    """MaaEnd 启动器路径识别结果（供前端自动识别与落盘）"""
+
+    launcher_path: str = Field(
+        ..., description="由游戏客户端路径识别到的启动器 Launcher.exe 完整路径"
+    )
 
 
 class SrcUserConfig_Info(UserConfigInfoBase):
@@ -3439,6 +3484,7 @@ class HSRConfig_Cloud(BaseModel):
 
 
 class HSRConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(
         default=None, description="失败任务最大尝试次数"
     )
@@ -5333,7 +5379,9 @@ class ReplayListOut(OutBase):
 
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
-    status: Literal["DONE", "ERROR"] = Field(..., description="状态")
+    status: Literal["DONE", "SKIP", "ERROR"] = Field(
+        ..., description="状态: DONE 完成, SKIP 跳过(如停服维护), ERROR 失败"
+    )
     jsonFile: str = Field(..., description="对应JSON文件")
     result: Optional[str] = Field(
         default=None, description="运行结果文本，可能带运行阶段前缀"
@@ -5554,7 +5602,13 @@ class ShareAuthStatusOut(OutBase):
     interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
-class ShareAppearanceUploadIn(BaseModel):
+class ShareAppearanceCategoryIn(BaseModel):
+    categoryKey: Literal["theme", "mascot"] = Field(
+        default="theme", description="资源分类: theme 主题, mascot 独立桌宠"
+    )
+
+
+class ShareAppearanceUploadIn(ShareAppearanceCategoryIn):
     zipPath: str = Field(..., description="本地外观 ZIP 路径")
     displayName: str = Field(
         default="", max_length=60, description="外观名称, 只在新建时使用"
@@ -5598,9 +5652,11 @@ class ShareAppearanceUploadOut(OutBase):
     )
     isNewFile: bool = Field(default=False, description="是否新建了文件")
     appearanceId: str = Field(default="", description="外观 ID")
-    reason: Optional[Literal["pendingLimit", "conflict", "tooLarge"]] = Field(
+    reason: Optional[
+        Literal["pendingLimit", "conflict", "tooLarge", "categoryMismatch"]
+    ] = Field(
         default=None,
-        description="分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限",
+        description="上传拒绝的类别: pendingLimit 待审核数超限, conflict 名称被占用或内容未变, tooLarge 超过体积上限, categoryMismatch 更新目标与分类不符",
     )
 
 
@@ -6870,6 +6926,7 @@ class PowerIn(BaseModel):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "RestartSelf",
         "Logoff",
     ] = Field(..., description="电源操作信号")
 
@@ -6883,6 +6940,7 @@ class PowerOut(OutBase):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "RestartSelf",
         "Logoff",
     ] = Field(..., description="电源操作信号")
 

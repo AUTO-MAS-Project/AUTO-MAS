@@ -37,6 +37,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from app.models.config import migrate_maa_stamina_pipeline
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -215,7 +216,22 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         # 侧车字段回填（对齐 ZzzOd / ok-ww 字段回填模式）：按配置段分组写回
         # （Info/Task），页面配置随文件一起回到备份时点，否则旧表单值下次
         # 保存会静默覆盖回滚结果
-        await user.update(group_overlay(restored_overlay))
+        restored = group_overlay(restored_overlay)
+        if "StaminaPipelineVersion" not in restored.get("Data", {}):
+            # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。
+            task = restored.setdefault("Task", {})
+            task.setdefault("IfEventDepotMaintain", False)
+            task.setdefault("EventDepotMaintainPlans", "[]")
+            task.setdefault("IfActivityFirst", True)
+            task.setdefault("ActivityStageIndex", 1)
+            task.setdefault("ActivityMedicineNumb", 0)
+            task.setdefault("IfCultivate", False)
+            task.setdefault("CultivateTargets", "[]")
+            task.setdefault("CultivateAutoRaise", False)
+            task.setdefault("IfDepotMaintain", False)
+            task.setdefault("DepotMaintainPlans", "[]")
+            restored, _ = migrate_maa_stamina_pipeline(restored)
+        await user.update(restored)
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

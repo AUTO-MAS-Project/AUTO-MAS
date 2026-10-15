@@ -63,6 +63,10 @@ export interface MaaFWScriptBasicInfoSectionProps {
   /** 导入进度：后端按文件数推过来的百分比与阶段文案；没有推送时为 null，进度条显示 0 */
   importPercent: number | null
   importMessage: string
+  /** 最近一次导入 / 同步失败的原因；下次导入开始时清空 */
+  importError?: string
+  /** 最近一次读 interface 失败的原因（此时 previewData 为 null）；下次读取开始时清空 */
+  previewError?: string
   /** flavor 文案（特调类型传入）；缺省用通用 MaaFW 的「本地项目目录」那套 */
   sourceDirectoryLabel?: string
   sourceHint?: string
@@ -91,7 +95,7 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（魔改 AVD 目前只支持 M9A） */
+  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（MaaFW 里魔改 AVD 只支持 M9A） */
   emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
@@ -193,6 +197,8 @@ export interface MaaFWUserHeaderSectionProps {
   scriptRoute: { name: string; params: { id: string } }
   isEdit: boolean
   userId?: string
+  /** 点了「返回」、正在等保存完成或确认框开着：返回按钮转圈 */
+  leaving?: boolean
 }
 
 export interface MaaFWUserHeaderSectionEmits {

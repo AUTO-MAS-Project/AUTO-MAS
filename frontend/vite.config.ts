@@ -96,6 +96,12 @@ export default defineConfig(({ command }) => {
       },
     },
     build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          mascot: path.resolve(__dirname, 'mascot.html'),
+        },
+      },
       // 优化构建性能
       chunkSizeWarningLimit: 5000, // 提高到 5MB，适合 Electron 应用
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用

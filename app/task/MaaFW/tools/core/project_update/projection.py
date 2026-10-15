@@ -72,6 +72,7 @@ from ..interface.agent_entry import (
     is_relative_entry_path,
     is_uv_launcher,
 )
+from ..offline_dependencies import is_offline_dependency_file
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -85,9 +86,9 @@ PROJECTION_REVISION = 2
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
-# 超过上面上限的顶层目录，只有在这个深度以内（0 = 直接放在目录里）有 wheel / get-pip.py
-# 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
-OFFLINE_DEPENDENCY_MAX_DEPTH = 1
+# 超过上面上限的顶层目录，只有在 ``OFFLINE_DEPENDENCY_MAX_DEPTH`` 以内（0 = 直接放在目录里）
+# 有 wheel / get-pip.py 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
+# 判据与准备运行环境共用（``tools/core/offline_dependencies``）。
 # 根目录上没声明的这些后缀只可能是外壳或外壳的运行时（m9a.exe、MaaEnd.exe、qt6core.dll…）。
 UNDECLARED_BINARY_SUFFIXES = {
     ".exe",
@@ -393,7 +394,7 @@ class ProjectionRules:
                 # interface 所在目录的上级（更深的 assets 布局）本身不落成目录。
                 return ROOT if _is_relative_to(base, relative) else relative
             raise ProjectionError(
-                f"路径逃出 interface 所在目录，无法提升：{relative.as_posix()}"
+                f"路径在 interface 所在目录之外，无法放进副本：{relative.as_posix()}"
             ) from exc
         return promoted if promoted.parts else ROOT
 
@@ -1307,8 +1308,16 @@ def build_projection_rules(
                         f"controller[{index}].{key} 必须是字符串或字符串数组"
                     )
                 relative_path = declare(
-                    raw_path, f"controller[{index}].{key}", must_exist=True
+                    raw_path, f"controller[{index}].{key}", must_exist=False
                 )
+                if strict and not view.exists(relative_path):
+                    # 发行包漏打包了附加资源目录：与缺 resource 同一口径降级，只是用到这个
+                    # 控制器的运行用不了（runner 加载资源时报目录不存在），不整份拒绝导入。
+                    warnings.append(
+                        f"controller[{index}].{key} 声明的路径不存在：{raw_path}；"
+                        "使用这个控制器运行时附加资源不可用，其余照常导入"
+                    )
+                    continue
                 if relative_path is not None:
                     add_target(
                         relative_path,
@@ -1355,8 +1364,16 @@ def build_projection_rules(
                 if not isinstance(raw_path, str):
                     raise ProjectionError(f"languages.{language} 必须是字符串路径")
                 relative_path = declare(
-                    raw_path, f"languages.{language}", must_exist=True
+                    raw_path, f"languages.{language}", must_exist=False
                 )
+                if strict and not view.exists(relative_path):
+                    # 发行包漏打包了翻译文件：预览与任务别名找不到语言文件本来就跳过，
+                    # 不该让整个项目导入不了。
+                    warnings.append(
+                        f"languages.{language} 声明的文件不存在：{raw_path}；"
+                        "这个语言的界面文字不可用，其余照常导入"
+                    )
+                    continue
                 if relative_path is not None:
                     add_target(
                         relative_path,
@@ -1676,7 +1693,7 @@ def build_projection_rules(
             if target != ROOT and not _is_relative_to(target, base_relative):
                 raise ProjectionError(
                     f"interface 在 {base_relative.as_posix()}/ 下，但声明的路径 "
-                    f"{target.as_posix()} 在它之外；这种布局无法提升为内嵌副本"
+                    f"{target.as_posix()} 在它之外；这种目录布局不支持导入"
                 )
 
     rules = ProjectionRules(
@@ -1729,18 +1746,20 @@ def _scan_tree(root: Path) -> tuple[set[Path], set[Path], dict[Path, int]]:
     ):
         current = Path(current_raw)
         if current.is_symlink() or current.is_junction():
-            raise ProjectionError(f"目录里有符号链接，拒绝投影：{current}")
+            raise ProjectionError(f"目录里有符号链接或目录联接，无法导入：{current}")
         for directory_name in list(directory_names):
             directory = current / directory_name
             # Windows 的 junction 不算 symlink，os.walk(followlinks=False) 照样走进去，
             # 指回上级的 junction 会无限嵌套；一并拒绝。
             if directory.is_symlink() or directory.is_junction():
-                raise ProjectionError(f"目录里有符号链接，拒绝投影：{directory}")
+                raise ProjectionError(
+                    f"目录里有符号链接或目录联接，无法导入：{directory}"
+                )
             directories.add(directory.relative_to(root))
         for file_name in file_names:
             file_path = current / file_name
             if file_path.is_symlink():
-                raise ProjectionError(f"目录里有符号链接，拒绝投影：{file_path}")
+                raise ProjectionError(f"目录里有符号链接，无法导入：{file_path}")
             if not file_path.is_file():
                 continue
             relative = file_path.relative_to(root)
@@ -1861,7 +1880,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             requirement.path, is_directory=requirement.is_directory
         )
         raise ProjectionError(
-            f"{requirement.label} 是运行必需的，却被投影排除了："
+            f"{requirement.label} 是运行必需的，却被导入规则排除了："
             f"{requirement.path.as_posix()}（{reason or 'not-retained'}）"
         )
 
@@ -1900,7 +1919,8 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             )
             continue
         raise ProjectionError(
-            f"提升 assets/ 后路径撞车：{owner.as_posix()} 与 {source_relative.as_posix()}"
+            f"把 assets/ 里的文件放到副本根时路径重名：{owner.as_posix()} 与 "
+            f"{source_relative.as_posix()}"
         )
 
     return ProjectionPlan(
@@ -1969,38 +1989,17 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
 def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
     """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。
 
-    只数直接放在目录里、或往下一层子目录里的（深度 ≤ 1）：语料里真正的离线依赖目录
-    wheel 都在这两层（MHXY、MaaGumballs 等是 ``deps/*.whl``，MaaStarResonance 另有
-    ``deps/<子目录>/*.whl``）；更深处的是别的东西顺带解压出来的——M9A 自更新留下的
-    ``temp_res/resource_v3.22.0_extracted/deps/*.whl`` 曾让整个 185 MB 的 ``temp_res/``
-    绕过 64 MB 上限进了副本。
-
-    CPython 自带的 wheel 不算：``ensurepip/_bundled``（venv / 安装器附带 pip），以及
-    python.org 安装器默认装上的测试套件 ``Lib/test/**``（``wheeldata``、
-    ``test_importlib/data`` 里都有 .whl）。目录本身就是一个 Python 解释器
-    （``_is_python_interpreter_dir``）时也不算——那是没声明的运行时，不是依赖包；
-    否则一个没声明、超过 64 MB 的解释器目录会被整棵带走。
+    深度上限与「CPython 自带的 wheel 不算」见 ``offline_dependencies.is_offline_dependency_file``
+    （与准备运行环境共用）。目录本身就是一个 Python 解释器（``_is_python_interpreter_dir``）
+    时也不算——那是没声明的运行时，不是依赖包；否则一个没声明、超过 64 MB 的解释器目录会
+    被整棵带走。
     """
 
     if _is_python_interpreter_dir(view, directory):
         return False
     return any(
-        (path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py")
-        and len(path.relative_to(directory).parts) <= OFFLINE_DEPENDENCY_MAX_DEPTH + 1
-        and not _is_cpython_bundled_file(path)
+        is_offline_dependency_file(path, depth=len(path.relative_to(directory).parts))
         for path in view.walk_files(directory)
-    )
-
-
-def _is_cpython_bundled_file(path: Path) -> bool:
-    """路径在 CPython 自带的 ``ensurepip/`` 或标准库测试套件 ``Lib/test/`` 之下。"""
-
-    parts = [part.casefold() for part in path.parts]
-    if "ensurepip" in parts:
-        return True
-    return any(
-        part == "lib" and following == "test"
-        for part, following in zip(parts, parts[1:])
     )
 
 
@@ -2159,7 +2158,12 @@ def _adopt_small_undeclared_entries(
             if view.size(entry) <= UNDECLARED_KEEP_LIMIT:
                 targets.setdefault(entry, TargetMode(False, False))
             continue
-        if frozen_shell and _looks_like_frozen_python_package_dir(view, entry):
+        if (
+            frozen_shell
+            and entry not in targets
+            and _looks_like_frozen_python_package_dir(view, entry)
+        ):
+            # 已是白名单目标的（agent/、依赖目录）照样整个带走，不算进「未带入」的告警。
             frozen_packages.append(entry.name)
             continue
         remainder = sum(
@@ -2179,9 +2183,11 @@ def _adopt_small_undeclared_entries(
             )
         elif remainder > UNDECLARED_KEEP_LIMIT:
             if entry in targets:
+                # 已是白名单目标（agent 入口所在目录、依赖目录）：keeps() 对整棵目录放行，
+                # 实际整个带走（只剔分类表命中的缓存），告警照实说。
                 warnings.append(
-                    f"目录 {entry.as_posix()}/ 里没被 interface 引用的部分有 "
-                    f"{remainder / 2**20:.0f} MB，只带入被引用的文件"
+                    f"目录 {entry.as_posix()}/ 里没被 interface 直接引用的部分有 "
+                    f"{remainder / 2**20:.0f} MB；它是 agent / 依赖所在目录，整个带入副本"
                 )
             else:
                 warnings.append(

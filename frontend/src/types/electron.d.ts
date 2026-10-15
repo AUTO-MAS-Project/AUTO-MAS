@@ -1,4 +1,10 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
+import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+} from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
@@ -198,6 +204,19 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI {
+  listMascots?: () => Promise<MascotSummary[]>
+  importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
+  removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
+  onMascotChanged?: (callback: () => void) => () => void
+  setDesktopMascotReady(
+    ready: boolean,
+    labels?: DesktopMascotMenuLabels,
+    colors?: DesktopMascotColors
+  ): Promise<void>
+  setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
+  setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
+  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
+  onDesktopMascotError(callback: () => void): () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
@@ -210,6 +229,8 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   appRestart: () => Promise<void>
+  /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
+  appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
@@ -396,6 +417,8 @@ export interface ElectronAPI {
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
+  /** 按 base64 读二进制文件（音频等）；渲染进程用它拼 data URL */
+  readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
 
@@ -405,22 +428,37 @@ export interface ElectronAPI {
   importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
   removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
   clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
-  listOnlineAppearances?: (query?: OnlineAppearanceQuery) => Promise<OnlineAppearanceListResult>
-  getOnlineAppearance?: (fileKey: string) => Promise<OnlineAppearanceDetailResult>
+  listOnlineAppearances?: (
+    query?: OnlineAppearanceQuery,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (
+    fileKey: string,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceDetailResult>
   prepareOnlineAppearance?: (
     fileKey: string,
-    versionNo: number
+    versionNo: number,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearancePrepareResult>
   installOnlineAppearance?: (
     token: string,
-    replace?: boolean
+    replace?: boolean,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearanceInstallResult>
-  discardOnlineAppearance?: (token: string) => Promise<{ success: boolean }>
+  discardOnlineAppearance?: (
+    token: string,
+    category?: AppearanceCategory
+  ) => Promise<{ success: boolean }>
   getOnlineAppearanceCover?: (
     fileKey: string,
-    versionNo?: number
+    versionNo?: number,
+    category?: AppearanceCategory
   ) => Promise<OnlineAppearanceCoverResult>
-  inspectLocalAppearance?: (zipPath: string) => Promise<LocalAppearanceInspectResult>
+  inspectLocalAppearance?: (
+    zipPath: string,
+    category?: AppearanceCategory
+  ) => Promise<LocalAppearanceInspectResult>
   inspectAppearanceCover?: (
     imagePath: string
   ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>

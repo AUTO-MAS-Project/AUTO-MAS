@@ -19,5 +19,13 @@ export type MaaUserConfig_Data = {
      * 养成接管提示（空 = 未接管）
      */
     CultivateNotice?: (string | null);
+    /**
+     * 理智流程配置迁移版本
+     */
+    StaminaPipelineVersion?: (number | null);
+    /**
+     * 理智流程升级前完整用户配置 JSON
+     */
+    StaminaPipelineBackup?: (string | null);
 };
 

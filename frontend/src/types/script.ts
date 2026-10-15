@@ -187,7 +187,9 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
+    LaunchMode: 'Client' | 'Launcher'
     Path: string
+    LauncherPath: string
     Arguments: string
     WaitTime: number
     EmulatorId: string
@@ -637,6 +639,8 @@ export interface User {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    StaminaPipelineVersion?: number
+    StaminaPipelineBackup?: string
   }
   Info: {
     Id: string

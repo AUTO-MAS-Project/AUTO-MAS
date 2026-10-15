@@ -31,6 +31,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
@@ -145,6 +146,21 @@ class MaaEndManager(ScriptManagerBase):
             and not Path(script_config.get("Game", "Path")).exists()
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+        if self.controller_protocol == "Win32" and self.task_info.mode == "AutoProxy":
+            # 直接启动与启动器启动共用同一个官方启动器：自动识别优先；手动指定也必须
+            # 是官方启动器（Launcher.exe / Games.exe），运行时另叠签名校验。
+            client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
+            try:
+                launcher = resolve_launcher_exe(
+                    client_exe, str(script_config.get("Game", "LauncherPath") or "")
+                )
+            except ValueError as error:
+                return str(error)
+            if launcher is None:
+                return (
+                    "未找到终末地官方启动器, 请选择鹰角官方启动器 "
+                    "Launcher.exe 或 Games.exe！"
+                )
         if (
             self.task_info.mode == "AutoProxy"
             and not (
@@ -298,6 +314,16 @@ class MaaEndManager(ScriptManagerBase):
             return None
         script_config = self.script_config
         if not isinstance(script_config, MaaEndConfig):
+            return None
+        if (
+            self.controller_protocol == "Win32"
+            and str(script_config.get("Game", "LaunchMode") or "").strip() == "Launcher"
+        ):
+            # 启动器启动：游戏更新由官方启动器界面处理（MAS 只负责点按钮与等待），
+            # 跳过 API 直下的更新接管，避免两套更新互相打架
+            logger.info(
+                "启动方式为「启动器启动」，游戏更新交由启动器处理，跳过更新接管"
+            )
             return None
         if not script_config.get("Game", "IfAutoUpdate"):
             return None

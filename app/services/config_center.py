@@ -29,7 +29,7 @@ import re
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
 from PIL import Image, ImageOps
@@ -71,6 +71,10 @@ CATEGORY_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_CATEGORY", "GeneralConfig"
 APPEARANCE_CATEGORY_KEY = os.environ.get(
     "AUTO_MAS_CONFIG_CENTER_APPEARANCE_CATEGORY", "theme"
 )
+APPEARANCE_CATEGORIES = {
+    "theme": APPEARANCE_CATEGORY_KEY,
+    "mascot": os.environ.get("AUTO_MAS_CONFIG_CENTER_MASCOT_CATEGORY", "mascot"),
+}
 
 # 通用脚本配置实际只有几 KiB，2 MiB 足够留出余量，同时挡住异常的超大响应
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
@@ -493,6 +497,7 @@ class ConfigCenterClient:
         file_id: Optional[int],
         cover_path: Optional[str] = None,
         cover_mode: Optional[str] = None,
+        category_key: Literal["theme", "mascot"] = "theme",
     ) -> Dict[str, Any]:
         """把本地外观包上传到分享站; file_id 非空时给已上传的那个文件发新版本。
 
@@ -506,6 +511,7 @@ class ConfigCenterClient:
             cover_mode: 封面来源, package 用包里 theme.json 的 preview, custom 用 cover_path,
                 inherit 不发封面、由分享站沿用之前版本的封面 (只能用于新版本);
                 为空时有 cover_path 按 custom, 否则按 package。
+            category_key: 主题或独立桌宠分类, 默认主题以兼容旧客户端。
 
         Returns:
             fileId / fileKey / versionNo / reviewStatus / isNewFile / appearanceId 组成的字典。
@@ -526,6 +532,7 @@ class ConfigCenterClient:
             zip_path,
             cover_path if mode == "custom" else None,
             mode != "inherit",
+            category_key=category_key,
         )
         username = self._username
         filename = f"{appearance_id}.zip"
@@ -534,7 +541,7 @@ class ConfigCenterClient:
         # 第二步：新建文件或追加版本
         if file_id is None:
             data = await self.upload_file(
-                category_key=APPEARANCE_CATEGORY_KEY,
+                category_key=APPEARANCE_CATEGORIES[category_key],
                 display_name=display_name,
                 description=description,
                 change_note=change_note,
@@ -547,6 +554,18 @@ class ConfigCenterClient:
             )
         else:
             try:
+                target = await self._request(
+                    "GET", f"/user/files/{file_id}", token=self._require_token()
+                )
+                if (
+                    target.get("project_key") != PROJECT_KEY
+                    or target.get("category_key") != APPEARANCE_CATEGORIES[category_key]
+                ):
+                    raise ConfigCenterError(
+                        "上传文件与所选分类不一致",
+                        status_code=400,
+                        reason="categoryMismatch",
+                    )
                 data = await self.upload_file_version(
                     file_id=file_id,
                     filename=filename,
@@ -583,8 +602,10 @@ class ConfigCenterClient:
         # 第三步：记下这个账号把哪个外观传成了哪个文件，下次直接发新版本
         await self._save_appearance_upload(
             username,
-            appearance_id,
+            f"mascot:{appearance_id}" if category_key == "mascot" else appearance_id,
             {
+                "appearanceId": appearance_id,
+                "categoryKey": category_key,
                 "fileId": result["fileId"],
                 "fileKey": result["fileKey"],
                 "displayName": str(data.get("display_name") or display_name),
@@ -594,7 +615,9 @@ class ConfigCenterClient:
 
         return result
 
-    def list_appearance_uploads(self) -> List[Dict[str, Any]]:
+    def list_appearance_uploads(
+        self, *, category_key: Literal["theme", "mascot"] = "theme"
+    ) -> List[Dict[str, Any]]:
         """当前登录账号在本机留下的外观上传记录, 未登录时为空, 按更新时间从新到旧。"""
 
         status = self._build_status()
@@ -607,10 +630,12 @@ class ConfigCenterClient:
             if not isinstance(record, dict):
                 logger.warning(f"外观上传记录格式错误, 已忽略: {appearance_id}")
                 continue
+            if record.get("categoryKey", "theme") != category_key:
+                continue
             try:
                 items.append(
                     {
-                        "appearanceId": str(appearance_id),
+                        "appearanceId": str(record.get("appearanceId", appearance_id)),
                         "fileId": int(record["fileId"]),
                         "fileKey": str(record.get("fileKey") or ""),
                         "displayName": str(record.get("displayName") or ""),
@@ -625,7 +650,9 @@ class ConfigCenterClient:
 
     # ==================== 我的外观 ====================
 
-    async def list_my_appearances(self) -> List[Dict[str, Any]]:
+    async def list_my_appearances(
+        self, *, category_key: Literal["theme", "mascot"] = "theme"
+    ) -> List[Dict[str, Any]]:
         """当前登录账号在分享站外观分类下的全部文件, 含待审核和被驳回的。
 
         作者自己删掉 (回收站里) 的不列出。
@@ -643,7 +670,7 @@ class ConfigCenterClient:
                 token=token,
                 params={
                     "project_key": PROJECT_KEY,
-                    "category_key": APPEARANCE_CATEGORY_KEY,
+                    "category_key": APPEARANCE_CATEGORIES[category_key],
                     "page": page,
                     "page_size": MY_FILES_PAGE_SIZE,
                 },
@@ -865,7 +892,12 @@ class ConfigCenterClient:
 
     @classmethod
     def _read_appearance_package(
-        cls, zip_path: str, cover_path: Optional[str], need_cover: bool = True
+        cls,
+        zip_path: str,
+        cover_path: Optional[str],
+        need_cover: bool = True,
+        *,
+        category_key: Literal["theme", "mascot"] = "theme",
     ) -> Tuple[str, bytes, Optional[Tuple[str, bytes, str]]]:
         """轻量校验外观 ZIP 并读出全部内容和封面。
 
@@ -873,6 +905,7 @@ class ConfigCenterClient:
             zip_path: 本地外观 ZIP 路径。
             cover_path: 指定的封面图片路径, 为空时取 theme.json 的 preview。
             need_cover: 为 False 时不读封面 (沿用分享站上的封面), 返回的封面为空。
+            category_key: 所选资源分类, 决定读取主题还是独立桌宠清单。
 
         Returns:
             (外观 id, ZIP 文件内容, 封面 (文件名, 内容, MIME) 或空)。
@@ -898,31 +931,40 @@ class ConfigCenterClient:
 
         try:
             with zipfile.ZipFile(path) as archive:
+                manifest_name = (
+                    "mascot.json" if category_key == "mascot" else "theme.json"
+                )
                 try:
-                    info = archive.getinfo("theme.json")
+                    info = archive.getinfo(manifest_name)
                 except KeyError:
-                    raise invalid("外观包根目录缺少 theme.json") from None
+                    raise invalid(f"资源包根目录缺少 {manifest_name}") from None
                 if info.file_size > APPEARANCE_MAX_MANIFEST_BYTES:
-                    raise invalid("theme.json 过大")
+                    raise invalid(f"{manifest_name} 过大")
                 raw_manifest = archive.read(info)
 
                 try:
                     manifest = json.loads(raw_manifest.decode("utf-8-sig"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as e:
-                    raise invalid("theme.json 不是有效的 JSON") from e
+                    raise invalid(f"{manifest_name} 不是有效的 JSON") from e
                 if not isinstance(manifest, dict):
-                    raise invalid("theme.json 不是有效的外观描述")
+                    raise invalid(f"{manifest_name} 不是有效的资源描述")
                 if manifest.get("formatVersion") != 1:
                     raise invalid("不支持的外观包格式版本")
                 appearance_id = manifest.get("id")
                 if not isinstance(
                     appearance_id, str
                 ) or not APPEARANCE_ID_PATTERN.match(appearance_id):
-                    raise invalid("theme.json 里的外观 ID 无效")
+                    raise invalid(f"{manifest_name} 里的资源 ID 无效")
+                if category_key == "mascot" and not isinstance(
+                    manifest.get("mascot"), dict
+                ):
+                    raise invalid("桌宠包缺少桌宠图片配置")
 
                 # 没指定封面时用包里 preview 指向的图；Electron 导入时路径不区分大小写，这里一致
                 preview_data: Optional[bytes] = None
                 preview = manifest.get("preview")
+                if not preview and category_key == "mascot":
+                    preview = manifest["mascot"].get("path")
                 if (
                     need_cover
                     and not cover_path

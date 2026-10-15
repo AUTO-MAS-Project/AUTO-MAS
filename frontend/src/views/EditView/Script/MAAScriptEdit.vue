@@ -470,7 +470,7 @@ const {
   emulatorDeviceOptions,
   clearEmulatorDeviceOptions,
   loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
+} = useEmulatorDeviceOptions({ allowModAvd: true })
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)

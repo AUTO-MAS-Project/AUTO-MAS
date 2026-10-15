@@ -24,32 +24,6 @@
         {{ t('comp.openConfigFolder') }}
       </a-button>
       <a-button
-        v-if="userMode === 'independent' && !showMaaConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="maaConfigLoading"
-        :disabled="configLocked"
-        @click="$emit('handleMAAConfig')"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.maaConfiguration') }}
-      </a-button>
-      <a-button
-        v-if="userMode === 'independent' && showMaaConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.configuring') }}
-      </a-button>
-      <a-button
         size="large"
         class="cancel-button"
         :loading="leaving"
@@ -66,7 +40,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
@@ -75,19 +49,13 @@ const props = defineProps<{
   scriptId: string
   scriptName: string
   isEdit: boolean
-  userMode: string
-  maaConfigLoading: boolean
-  showMaaConfigMask: boolean
   loading: boolean
   leaving?: boolean
   configLocked: boolean
   userId?: string
 }>()
 
-defineEmits<{
-  handleMAAConfig: []
-  handleCancel: []
-}>()
+defineEmits<{ handleCancel: [] }>()
 
 const { loading: folderLoading, openUserConfigFolder } = useUserApi()
 

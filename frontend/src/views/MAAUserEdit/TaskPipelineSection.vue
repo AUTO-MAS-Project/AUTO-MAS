@@ -12,14 +12,6 @@
       class="task-alert"
     />
 
-    <a-alert
-      v-if="activityStageError"
-      :message="activityStageError"
-      type="warning"
-      show-icon
-      class="task-alert"
-    />
-
     <div class="task-list">
       <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
       <!-- 绿票商店：任务链只认主界面、跑完也停在商店页，所以自己占一次启动，排在剿灭之前 -->
@@ -114,148 +106,40 @@
       </PipelineRow>
 
       <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
-      <PipelineRow
-        :name="t('eventDepotPreview.name')"
-        :summary="eventDepotSummary"
-        :checked="formData.Task.IfEventDepotMaintain"
-        :disabled="loading"
-        :hint="t('eventDepotPreview.hint')"
-        @change="emitSave('Task.IfEventDepotMaintain', $event)"
+      <StaminaPipelineSection
+        v-model:form-data="formData"
+        :loading="loading"
+        :stage-options="stageOptions"
+        :activity-stages="activityStages"
+        :activity-stage-loading="activityStageLoading"
+        :activity-stage-error="activityStageError"
+        :depot-item-options="depotItemOptions"
+        :depot-item-options-loading="depotItemOptionsLoading"
+        :depot-item-options-error="depotItemOptionsError"
+        :depot-stage-candidates="depotStageCandidates"
+        :depot-stage-candidates-loading="depotStageCandidatesLoading"
+        :depot-inventory="depotInventory"
+        :depot-inventory-time="depotInventoryTime"
+        :depot-plan-editor="depotPlanEditor"
+        :event-depot-plan-editor="eventDepotPlanEditor"
+        :cultivate-operator-catalog="cultivateOperatorCatalog"
+        :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
+        :cultivate-operator-options-error="cultivateOperatorOptionsError"
+        :skland-role-options="sklandRoleOptions"
+        :skland-role-loading="sklandRoleLoading"
+        :skland-role-error="sklandRoleError"
+        :load-skland-role-options="loadSklandRoleOptions"
+        :cultivate-preview="cultivatePreview"
+        :cultivate-preview-loading="cultivatePreviewLoading"
+        :cultivate-preview-error="cultivatePreviewError"
+        :load-cultivate-preview="loadCultivatePreview"
+        :import-cultivate-targets="importCultivateTargets"
+        :fight-summary="fightSummary"
+        @save="emitSave"
+        @retry-activity="emit('retryActivity')"
       >
-        <DepotMaintainPlanEditor
-          :editor="eventDepotPlanEditor"
-          :form-data="formData"
-          :loading="loading"
-          :stage-options="stageOptions"
-          :item-options="depotItemOptions"
-          :item-options-loading="depotItemOptionsLoading"
-          :item-options-error="depotItemOptionsError"
-          :stage-candidates="{}"
-          :stage-candidates-loading="[]"
-          :inventory="depotInventory"
-          :depot-inventory-time="depotInventoryTime"
-          :activity-stages="activityStages"
-          :activity-loading="activityStageLoading"
-          :activity-error="activityStageError"
-        />
-      </PipelineRow>
-      <PipelineRow
-        :name="t('edit.maaEventFirst')"
-        :summary="activitySummary"
-        :checked="activityFirst"
-        :disabled="loading"
-        :hint="t('edit.maaEventFirstHint')"
-        @change="handleActivityToggle"
-      >
-        <a-row :gutter="16">
-          <a-col :xs="24" :md="16">
-            <a-form-item class="detail-item">
-              <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaEventStage')"
-                  :hint="t('edit.maaEventStageHint')"
-                />
-              </template>
-              <a-select
-                :value="displayActivityStageIndex"
-                :options="activityStageOptions"
-                :loading="activityStageLoading"
-                :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
-                :placeholder="
-                  activityStageOptions.length
-                    ? t('edit.maaPickEventStage')
-                    : t('edit.maaNoEventStage')
-                "
-                show-search
-                option-filter-prop="label"
-                @change="handleActivityStageChange"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item class="detail-item">
-              <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaEventPotion')"
-                  :hint="t('edit.maaEventPotionHint')"
-                />
-              </template>
-              <a-input-number
-                :value="formData.Task.ActivityMedicineNumb"
-                :min="0"
-                :max="9999"
-                :disabled="loading"
-                placeholder="0"
-                class="full-width"
-                @change="emitSave('Task.ActivityMedicineNumb', $event ?? 0)"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </PipelineRow>
-
-      <!-- 干员养成：一次性目标（精英化 / 绑定森空岛后的专精·模组），排活动关优先之后、库存保持之前（队列 #3） -->
-      <PipelineRow
-        :name="t('edit.maaCultivate')"
-        :summary="cultivateSummary"
-        :checked="formData.Task.IfCultivate"
-        :disabled="loading"
-        :hint="t('edit.maaCultivateHint')"
-        @change="emitSave('Task.IfCultivate', $event)"
-      >
-        <CultivateTargetEditor
-          :form-data="formData"
-          :loading="loading"
-          :operator-catalog="cultivateOperatorCatalog"
-          :operator-options-loading="cultivateOperatorOptionsLoading"
-          :operator-options-error="cultivateOperatorOptionsError"
-          :skland-role-options="sklandRoleOptions"
-          :skland-role-loading="sklandRoleLoading"
-          :skland-role-error="sklandRoleError"
-          :load-skland-role-options="loadSklandRoleOptions"
-          :item-options="depotItemOptions"
-          :cultivate-preview="cultivatePreview"
-          :cultivate-preview-loading="cultivatePreviewLoading"
-          :cultivate-preview-error="cultivatePreviewError"
-          :load-cultivate-preview="loadCultivatePreview"
-          :import-cultivate-targets="importCultivateTargets"
-          @save="emitSave"
-        />
-      </PipelineRow>
-
-      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
-      <PipelineRow
-        :name="t('edit.maaDepot')"
-        :summary="depotSummary"
-        :checked="formData.Task.IfDepotMaintain"
-        :disabled="loading"
-        @change="emitSave('Task.IfDepotMaintain', $event)"
-      >
-        <DepotMaintainPlanEditor
-          :editor="depotPlanEditor"
-          :form-data="formData"
-          :loading="loading"
-          :stage-options="stageOptions"
-          :item-options="depotItemOptions"
-          :item-options-loading="depotItemOptionsLoading"
-          :item-options-error="depotItemOptionsError"
-          :stage-candidates="depotStageCandidates"
-          :stage-candidates-loading="depotStageCandidatesLoading"
-          :inventory="depotInventory"
-          :depot-inventory-time="depotInventoryTime"
-        />
-      </PipelineRow>
-
-      <!-- 理智作战 -->
-      <PipelineRow
-        :name="t('edit.maaCombat')"
-        :summary="fightSummary"
-        :checked="formData.Task.IfFight"
-        :disabled="loading"
-        @change="emitSave('Task.IfFight', $event)"
-      >
-        <slot name="fight-detail" />
-      </PipelineRow>
+        <template #fight-detail><slot name="fight-detail" /></template>
+      </StaminaPipelineSection>
 
       <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
@@ -368,12 +252,10 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
-import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+import StaminaPipelineSection from './StaminaPipelineSection.vue'
 import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 
-import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
-  CultivateGoalOption as GoalOption,
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
   CultivateImportResult,
 } from './cultivateTargets'
@@ -384,10 +266,7 @@ import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
   INFRAST_MODE_OPTIONS,
-  summarizeActivity,
   summarizeAnnihilation,
-  summarizeCultivate,
-  summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
 
@@ -402,11 +281,9 @@ const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
   loading: boolean
   stageOptions: any[]
-  activityStageOptions: Array<{ label: string; value: number }>
   activityStages: ActivityItem[]
   activityStageLoading: boolean
   activityStageError: string
-  displayActivityStageIndex?: number
   depotItemOptions: SelectOption[]
   depotPlanEditor: DepotMaintainPlanEditorState
   eventDepotPlanEditor: DepotMaintainPlanEditorState
@@ -452,6 +329,7 @@ const emit = defineEmits<{
   save: [key: string, value: any]
   selectInfrastPlan: [index: number, label: string]
   selectAndImportInfrastructureConfig: []
+  retryActivity: []
 }>()
 const emitSave = (key: string, value: any) => emit('save', key, value)
 
@@ -489,24 +367,6 @@ const annihilationSummary = computed(() =>
     formData.value.Task.AnnihilationStartWeekday || 'Monday',
     annihilationCompletedThisWeek.value
   )
-)
-
-const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
-
-const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
-
-const handleActivityStageChange = (value: number) => emitSave('Task.ActivityStageIndex', value)
-
-const activitySummary = computed(() =>
-  summarizeActivity({
-    enabled: activityFirst.value,
-    loading: props.activityStageLoading,
-    optionCount: props.activityStageOptions.length,
-    stageLabel: props.activityStageOptions.find(
-      option => option.value === props.displayActivityStageIndex
-    )?.label,
-    medicine: formData.value.Task.ActivityMedicineNumb ?? 0,
-  })
 )
 
 // 自动换班随表型带上语义（时段表=按钟点选班；无时段表=从第一班起轮换）
@@ -573,28 +433,6 @@ const infrastSummary = computed(() => {
     customLabel
   )
 })
-
-const cultivateSummary = computed(() =>
-  summarizeCultivate(
-    {
-      enabled: formData.value.Task.IfCultivate,
-      targetsJson: formData.value.Task.CultivateTargets,
-      autoRaise: formData.value.Task.CultivateAutoRaise ?? false,
-    },
-    t
-  )
-)
-
-const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans, t)
-)
-const eventDepotSummary = computed(() =>
-  summarizeDepot(
-    formData.value.Task.IfEventDepotMaintain,
-    formData.value.Task.EventDepotMaintainPlans,
-    t
-  )
-)
 
 const greenTicketStoreDoneThisMonth = computed(
   () => formData.value.Data?.GreenTicketStoreMonth === serverMonthMarker()

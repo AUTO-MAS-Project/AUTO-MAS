@@ -20,7 +20,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from ._shared import output_tail
+from ._shared import mask_url_credentials, output_tail
 from .architecture import (
     architecture_from_build_platform,
     runtime_identity_architecture,
@@ -1556,7 +1556,8 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
                 "扩展模块来自不同构建——例如运行时被升级或替换过，而已有的运行池"
                 "仍指向它；或者这个环境是早期版本用便携包的 embeddable Python 建的，"
                 "从注册表混入了本机另一份 Python 的扩展模块。前者请修复或重装该 "
-                f"Python 运行时，后者删除该运行环境后重新准备即可。原始错误：{detail[-400:]}"
+                "Python 运行时，后者删除该运行环境后重新准备即可。"
+                f"出问题的解释器：{python_executable}。原始错误：{detail[-400:]}"
             )
         raise RuntimeError(
             f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {output_tail(detail, 400)}"
@@ -1731,7 +1732,8 @@ def _run(
         raise RuntimeError(f"MaaFW runtime 安装超时: {command[:3]}") from exc
     if result.returncode == 0:
         return
-    detail = (result.stderr or result.stdout or "").strip()
+    # 输出里可能带用户配的索引地址（含 user:pw@），进报错前打码
+    detail = mask_url_credentials((result.stderr or result.stdout or "").strip())
     raise RuntimeError(
         f"MaaFW runtime 安装失败 (exit={result.returncode}): {output_tail(detail, 800)}"
     )
@@ -1780,14 +1782,16 @@ def _run_with_source_rotation(
             raise RuntimeError(f"{failure_label}超时: {command[:3]}") from exc
         if result.returncode == 0:
             return source, attempt_index
-        detail = (result.stderr or result.stdout or "").strip()
+        # 失败源与输出都可能带用户配的索引地址（含 user:pw@）：进日志、报错前打码；
+        # failed_attempts 里的 source 是要拿来比对的原值，不打码（它不直接写日志）。
+        detail = mask_url_credentials((result.stderr or result.stdout or "").strip())
         failed_attempts.append((source, result.returncode, detail))
         last_message = f"{failure_label}失败 (exit={result.returncode}): {output_tail(detail, 800)}"
         if attempt_index < len(sources):
             logger.warning(
                 "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
                 failure_label,
-                source or "默认",
+                mask_url_credentials(source) if source else "默认",
                 attempt_index,
                 len(sources),
                 detail[-400:],

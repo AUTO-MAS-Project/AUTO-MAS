@@ -52,11 +52,11 @@ export type MaaUserConfig_Task = {
      */
     IfDepotMaintain?: (boolean | null);
     /**
-     * 活动库存保持
+     * 活动关均衡理智
      */
     IfEventDepotMaintain?: (boolean | null);
     /**
-     * 活动库存保持计划 JSON
+     * 动态活动库存目标 JSON（all/material/activity/orundum）
      */
     EventDepotMaintainPlans?: (string | null);
     /**

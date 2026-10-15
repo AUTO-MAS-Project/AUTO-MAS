@@ -44,136 +44,21 @@
           "TaskType": "Fight"
         },
         {
-          "$type": "RecruitTask",
-          "MaxTimes": 4,
-          "ExtraTagMode": 0,
-          "Level3PreferTags": [],
-          "PreferTagEnabled": true,
-          "PreserveTagList": [
-            "支援机械"
-          ],
-          "PreserveTagEnabled": true,
-          "RefreshLevel3": true,
-          "ForceRefresh": true,
-          "Level3Choose": true,
-          "Level3RecruitmentPermitReserveEnabled": false,
-          "Level3RecruitmentPermitReserve": 8,
-          "Level4Choose": true,
-          "Level5Choose": true,
-          "Level6Choose": false,
-          "Level3Time": 540,
-          "Level4Time": 540,
-          "Name": "自动公招",
-          "IsEnable": true,
-          "TaskType": "Recruit"
-        },
-        {
-          "$type": "InfrastTask",
-          "Mode": "Normal",
-          "UsesOfDrones": "Money",
-          "DormThreshold": 30,
-          "DormTrustEnabled": true,
-          "OriginiumShardAutoReplenishment": true,
-          "DormFilterNotStationed": false,
-          "ReceptionMessageBoard": true,
-          "ReceptionClueExchange": true,
-          "SendClue": true,
-          "ContinueTraining": true,
-          "FiammettaTarget1": "清流",
-          "FiammettaTarget2": "可露希尔",
-          "FiammettaTarget3": "但书",
-          "FiammettaRecoveryEnabled": false,
-          "UsePinusSylvestris": false,
-          "UsePerceptionInformation": false,
-          "UseWorldlyPlight": false,
-          "UseAbyssalHunter": false,
-          "CustomFileType": "user_defined",
-          "Filename": "",
-          "PlanSelect": -1,
-          "RoomList": [
-            {
-              "Room": "Power"
-            },
-            {
-              "Room": "Office"
-            },
-            {
-              "Room": "Control"
-            },
-            {
-              "Room": "Mfg"
-            },
-            {
-              "Room": "Trade"
-            },
-            {
-              "Room": "Reception"
-            },
-            {
-              "Room": "Dorm"
-            },
-            {
-              "Room": "Processing"
-            },
-            {
-              "Room": "Training"
-            },
-            {
-              "Room": "AssistantChange"
-            }
-          ],
-          "Name": "基建换班",
-          "IsEnable": true,
-          "TaskType": "Infrast"
-        },
-        {
           "$type": "DepotMaintainTask",
           "UpdateDepot": true,
           "IsStageManually": true,
           "SkipDuringActivity": false,
           "SkipDuringResourceCollection": false,
           "OnlyFirstInsufficientPlan": true,
+          "SortByProgress": true,
           "UseAutoSeries": true,
           "UseMedicine": true,
           "UseStone": true,
           "UseExpiringMedicine": true,
           "PlanList": [],
-          "Name": "活动库存保持",
+          "Name": "活动关均衡理智",
           "IsEnable": true,
           "TaskType": "DepotMaintain"
-        },
-        {
-          "$type": "FightTask",
-          "UseMedicine": true,
-          "MedicineCount": 0,
-          "UseStone": false,
-          "StoneCount": 0,
-          "EnableTargetDrop": false,
-          "DropId": "",
-          "DropCount": 0,
-          "IsInventoryTarget": false,
-          "EnableTimesLimit": false,
-          "TimesLimit": 2147483647,
-          "Series": 0,
-          "StagePlan": [
-            ""
-          ],
-          "IsDrGrandet": false,
-          "UseExpiringMedicine": true,
-          "MedicineExpireDays": 2,
-          "UseExpireMedicineForActivity": true,
-          "UseCustomAnnihilation": false,
-          "AnnihilationStage": "Annihilation",
-          "HideUnavailableStage": false,
-          "IsStageManually": false,
-          "UseOptionalStage": false,
-          "UseStoneAllowSave": false,
-          "HideSeries": false,
-          "StageResetMode": "Current",
-          "UseWeeklySchedule": false,
-          "Name": "活动关优先",
-          "IsEnable": true,
-          "TaskType": "Fight"
         },
         {
           "$type": "DepotMaintainTask",
@@ -359,7 +244,7 @@
               "StoneCount": 0
             }
           ],
-          "Name": "",
+          "Name": "库存保持与干员养成",
           "IsEnable": true,
           "TaskType": "DepotMaintain"
         },
@@ -394,9 +279,92 @@
           "HideSeries": false,
           "StageResetMode": "Ignore",
           "UseWeeklySchedule": false,
-          "Name": "理智作战",
+          "Name": "理智任务",
           "IsEnable": true,
           "TaskType": "Fight"
+        },
+        {
+          "$type": "InfrastTask",
+          "Mode": "Normal",
+          "UsesOfDrones": "Money",
+          "DormThreshold": 30,
+          "DormTrustEnabled": true,
+          "OriginiumShardAutoReplenishment": true,
+          "DormFilterNotStationed": false,
+          "ReceptionMessageBoard": true,
+          "ReceptionClueExchange": true,
+          "SendClue": true,
+          "ContinueTraining": true,
+          "FiammettaTarget1": "清流",
+          "FiammettaTarget2": "可露希尔",
+          "FiammettaTarget3": "但书",
+          "FiammettaRecoveryEnabled": false,
+          "UsePinusSylvestris": false,
+          "UsePerceptionInformation": false,
+          "UseWorldlyPlight": false,
+          "UseAbyssalHunter": false,
+          "CustomFileType": "user_defined",
+          "Filename": "",
+          "PlanSelect": -1,
+          "RoomList": [
+            {
+              "Room": "Power"
+            },
+            {
+              "Room": "Office"
+            },
+            {
+              "Room": "Control"
+            },
+            {
+              "Room": "Mfg"
+            },
+            {
+              "Room": "Trade"
+            },
+            {
+              "Room": "Reception"
+            },
+            {
+              "Room": "Dorm"
+            },
+            {
+              "Room": "Processing"
+            },
+            {
+              "Room": "Training"
+            },
+            {
+              "Room": "AssistantChange"
+            }
+          ],
+          "Name": "基建换班",
+          "IsEnable": true,
+          "TaskType": "Infrast"
+        },
+        {
+          "$type": "RecruitTask",
+          "MaxTimes": 4,
+          "ExtraTagMode": 0,
+          "Level3PreferTags": [],
+          "PreferTagEnabled": true,
+          "PreserveTagList": [
+            "支援机械"
+          ],
+          "PreserveTagEnabled": true,
+          "RefreshLevel3": true,
+          "ForceRefresh": true,
+          "Level3Choose": true,
+          "Level3RecruitmentPermitReserveEnabled": false,
+          "Level3RecruitmentPermitReserve": 8,
+          "Level4Choose": true,
+          "Level5Choose": true,
+          "Level6Choose": false,
+          "Level3Time": 540,
+          "Level4Time": 540,
+          "Name": "自动公招",
+          "IsEnable": true,
+          "TaskType": "Recruit"
         },
         {
           "$type": "MallTask",

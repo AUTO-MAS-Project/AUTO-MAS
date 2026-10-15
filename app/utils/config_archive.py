@@ -35,6 +35,7 @@ import shutil
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
+from time import sleep
 
 from app.utils import get_logger
 from app.utils.constants import normalize_base_source
@@ -75,6 +76,10 @@ _PARTIAL_SUFFIX = ".partial"
 
 _WINDOWS_MAX_PATH = 260
 """Windows 未开启长路径支持时的 MAX_PATH 上限。"""
+
+_RENAME_RETRIES = 5
+_RENAME_RETRY_INTERVAL = 0.3
+"""归档改名重试：等待 Windows 临时占用的句柄释放。"""
 
 
 def write_backup_base(backup_dir: Path, base: str) -> None:
@@ -312,7 +317,19 @@ def _archive(
             else:
                 target.write_bytes(_coerce_bytes(source))
         # 同目录改名在同一卷上是原子的：列表只会看到完整归档
-        staging.rename(dest)
+        # Windows 可能短暂占用刚写入的文件；保留完整暂存内容，稍后再改名。
+        for attempt in range(_RENAME_RETRIES):
+            try:
+                staging.rename(dest)
+                break
+            except PermissionError as e:
+                if (
+                    not IS_WINDOWS
+                    or e.winerror not in (5, 32, 33)
+                    or attempt == _RENAME_RETRIES - 1
+                ):
+                    raise
+                sleep(_RENAME_RETRY_INTERVAL)
     except BaseException:
         # 失败清理暂存目录（同 app/utils/io.py 的 atomic_write），再把原异常扩散给调用方
         force_rmtree(staging)

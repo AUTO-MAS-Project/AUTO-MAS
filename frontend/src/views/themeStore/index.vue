@@ -5,6 +5,7 @@ import { UploadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
+import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 import { useAppearanceSettings } from '@/views/setting/useAppearanceSettings'
 import AppearanceUploadModal from './components/AppearanceUploadModal.vue'
 import MyAppearanceList from './components/MyAppearanceList.vue'
@@ -18,12 +19,11 @@ import { useShareAccount } from './useShareAccount'
 
 defineOptions({ name: 'ThemeStorePage' })
 
-type ThemeStoreTab = 'all' | 'mine'
+type ThemeStoreTab = AppearanceCategory | 'mine'
 
 const { t } = useI18n()
 // 覆盖确认、失败提示和「预览 → 应用外观」沿用设置页那一套，所有窗口一起同步。
 const { modalContextHolder, installPreparedOnlineAppearance } = useAppearanceSettings()
-const store = useOnlineAppearance({ install: installPreparedOnlineAppearance })
 const account = useShareAccount({
   onAuthorized: state =>
     message.success(
@@ -31,55 +31,117 @@ const account = useShareAccount({
     ),
   onError: text => message.error(text),
 })
-// 令牌被分享站拒了：刷新一次登录状态，界面回到「登录分享站」
-const mine = useMyAppearances({ onUnauthorized: () => void account.refresh() })
-const { view } = store
+// 每个分类独立持有列表、封面和下载 token，切换时不会把旧请求写进新分类。
+const contexts = {
+  theme: {
+    store: useOnlineAppearance({ install: installPreparedOnlineAppearance }),
+    mine: useMyAppearances({
+      onUnauthorized: () => void account.refresh(),
+      onChanged: () => invalidateMine('theme'),
+    }),
+  },
+  mascot: {
+    store: useOnlineAppearance({
+      categoryKey: 'mascot',
+      install: token => installPreparedOnlineAppearance(token, 'mascot'),
+    }),
+    mine: useMyAppearances({
+      categoryKey: 'mascot',
+      onUnauthorized: () => void account.refresh(),
+      onChanged: () => invalidateMine('mascot'),
+    }),
+  },
+}
+const allMine = useMyAppearances({
+  categoryKey: 'all',
+  onUnauthorized: () => void account.refresh(),
+  onChanged: () => invalidateMine('all'),
+})
+const tab = ref<ThemeStoreTab>('theme')
+const category = computed<AppearanceCategory>(() => (tab.value === 'mascot' ? 'mascot' : 'theme'))
+const store = computed(() => contexts[category.value].store)
+const view = computed(() => store.value.view.value)
+const mine = computed(() => (tab.value === 'mine' ? allMine : contexts[category.value].mine))
+const installing = computed(() =>
+  Object.values(contexts).some(context => context.store.installing.value)
+)
 const { authorized, state: accountState } = account
 
-const tab = ref<ThemeStoreTab>('all')
 const tabOptions = computed(() => [
-  { value: 'all', label: t('themeStore.tabs.all') },
+  { value: 'theme', label: t('themeStore.tabs.resources') },
+  { value: 'mascot', label: t('themeStore.tabs.mascot') },
   { value: 'mine', label: t('themeStore.tabs.mine') },
 ])
 // 当前登录的账号；未登录为空。换账号或退出时之前账号的列表和封面都不能再用
 const accountKey = computed(() => (authorized.value ? `user:${accountState.value.username}` : ''))
 const uploadOpen = ref(false)
 const uploadTargetId = ref<number | null>(null)
+const uploadCategory = ref<AppearanceCategory>('theme')
+const uploadMine = computed(() => contexts[uploadCategory.value].mine)
 
-const openUpload = (fileId: number | null = null): void => {
+const openUpload = (fileId: number | null = null, resourceCategory?: AppearanceCategory): void => {
+  uploadCategory.value =
+    resourceCategory ??
+    store.value.detailItem.value?.categoryKey ??
+    (category.value === 'mascot' ? 'mascot' : 'theme')
   uploadTargetId.value = fileId
   uploadOpen.value = true
 }
 
 const handleUploaded = (): void => {
-  if (view.value === 'list') void store.loadList(store.page.value)
-  if (authorized.value) void mine.load()
+  invalidateMine()
+  if (tab.value !== 'mine' && view.value === 'list')
+    void store.value.loadList(store.value.page.value)
+  if (authorized.value) void mine.value.ensureLoaded()
+}
+
+// 同页三份分类缓存共用一组资源；写入后其他分类在下次展示时重新加载。
+function invalidateMine(source?: AppearanceFilter): void {
+  if (source !== 'all') allMine.reset()
+  for (const [key, context] of Object.entries(contexts)) {
+    if (key !== source) context.mine.reset()
+  }
 }
 
 const viewInStore = (item: MyAppearanceItem): void => {
-  tab.value = 'all'
-  void store.openDetail(toStoreItem(item, accountState.value.username))
+  const resourceCategory = item.categoryKey ?? 'theme'
+  tab.value = resourceCategory
+  void contexts[resourceCategory].store.loadList(1)
+  void contexts[resourceCategory].store.openDetail(toStoreItem(item, accountState.value.username))
 }
 
 // 先清再拉：两个 watcher 按定义顺序执行
-watch(accountKey, () => mine.reset())
+watch(accountKey, () => invalidateMine())
+
+watch(tab, (current, previous) => {
+  if (previous !== 'mine') {
+    const keyword = contexts[previous].store.keyword.value
+    contexts[previous].store.reset()
+    if (current !== 'mine') contexts[current].store.keyword.value = keyword
+  }
+  uploadTargetId.value = null
+  if (current !== 'mine' && view.value === 'list') void store.value.loadList(1)
+})
 
 watch(
   [tab, accountKey],
   ([currentTab, key]) => {
-    if (currentTab === 'mine' && key) void mine.ensureLoaded()
+    if (currentTab === 'mine' && key) void mine.value.ensureLoaded()
   },
   { immediate: true }
 )
 
 onMounted(() => {
-  store.open()
+  store.value.open()
   void account.refresh()
 })
 
 onBeforeUnmount(() => {
-  store.reset()
-  mine.reset()
+  for (const context of Object.values(contexts)) {
+    context.store.reset()
+    context.mine.reset()
+  }
+  allMine.reset()
   account.dispose()
 })
 </script>
@@ -98,11 +160,17 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div class="theme-store-content">
-      <a-segmented v-model:value="tab" :options="tabOptions" class="theme-store-tabs" />
-      <template v-if="tab === 'all'">
-        <OnlineAppearanceList v-if="view === 'list'" :store="store" />
+      <a-segmented
+        v-model:value="tab"
+        :options="tabOptions"
+        :disabled="uploadOpen || installing"
+        class="theme-store-tabs"
+      />
+      <template v-if="tab !== 'mine'">
+        <OnlineAppearanceList v-if="view === 'list'" :key="category" :store="store" />
         <OnlineAppearanceDetail
           v-else
+          :key="category"
           :store="store"
           :account="account"
           :mine="mine"
@@ -122,11 +190,15 @@ onBeforeUnmount(() => {
       />
     </div>
     <AppearanceUploadModal
+      :key="uploadCategory"
+      :category-key="uploadCategory"
+      :allow-category-change="uploadTargetId === null"
       v-model:open="uploadOpen"
       :account="account"
-      :mine="mine"
+      :mine="uploadMine"
       :target-file-id="uploadTargetId"
       @uploaded="handleUploaded"
+      @category-change="uploadCategory = $event"
     />
   </div>
 </template>

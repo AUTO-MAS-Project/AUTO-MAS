@@ -56,7 +56,7 @@ from PIL import Image
 
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
+from app.utils import get_logger, is_process_alive
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
@@ -95,6 +95,11 @@ _WUWA_PROCESS = "Client-Win64-Shipping.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
+# 切号入口的进程消失宽限期：游戏自更新/启动交接会「旧进程退出→数秒后新进程
+# 出现」（_wait_game_restart 等旧窗口退出最长 120s，交接是真实且可达分钟级的
+# 流程），进程消失后不得立即判死。持续消失超过该宽限期仍无进程也无窗口，才判
+# 永久退出快速失败；长交接（>宽限期）原本也会因窗口宽限超时而失败，报错更准确。
+_PROCESS_GONE_GRACE_SECONDS = 30.0
 # 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
 # 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
 # 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
@@ -187,7 +192,7 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按窗口类 + 所属进程名定位鸣潮主窗口。
 
     用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
@@ -196,11 +201,19 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             以吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        fail_on_exit: 切号入口专用。为 True 时，等待期间观察到鸣潮进程先出现后
+            全部消失，且持续 ``_PROCESS_GONE_GRACE_SECONDS`` 仍无进程也无窗口
+            （窗口不会再出现）才抛错；消失宽限期容忍游戏自更新/启动交接的短暂
+            缺席。从未观察到进程（启动延迟）不触发，保持宽限轮询。默认 False：
+            重启换新窗口等进程缺席属预期的调用方维持原语义。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口；或 ``fail_on_exit`` 且
+            鸣潮进程先出现后持续消失超过宽限期。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    seen_alive = False
+    gone_since: float | None = None
     while True:
         candidates: list[int] = []
 
@@ -222,6 +235,24 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
+        if fail_on_exit:
+            if is_process_alive(_WUWA_PROCESS):
+                seen_alive = True
+                gone_since = None
+            elif seen_alive:
+                # 进程先出现后消失：先容忍更新/启动交接的短暂缺席（消失期间窗口
+                # 若先回来，下一轮 EnumWindows 会直接命中），持续消失超过宽限期
+                # 仍无进程也无窗口才判永久退出，如实快速失败。从未观察到进程
+                # （启动延迟）与权限不足读不到提权进程名（退化为原宽限轮询）
+                # 都不在此列。
+                now = time.monotonic()
+                if gone_since is None:
+                    gone_since = now
+                elif now - gone_since >= _PROCESS_GONE_GRACE_SECONDS:
+                    raise RuntimeError(
+                        f"鸣潮游戏进程已退出（{_WUWA_PROCESS}），窗口不会再出现，"
+                        "请确认游戏已由 MAS 成功启动"
+                    )
         logger.info(
             f"鸣潮游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
@@ -887,7 +918,7 @@ def account_switch(
 
     _on_log(f"开始切换鸣潮账号：****{suffix}")
     try:
-        hwnd = _find_game_hwnd()
+        hwnd = _find_game_hwnd(fail_on_exit=True)
         _activate_window(hwnd)
         hwnd = _switch_to_login(hwnd, _on_log)
         _select_and_login(hwnd, suffix, _on_log)

@@ -36,14 +36,10 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Base"
-      :maa-config-loading="preparingSession || maaConfigLoading"
       :leaving="leavingPage"
-      :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       :config-locked="configLocked || editorBusy"
       :user-id="userId"
-      @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 
@@ -62,7 +58,33 @@
             :loading="loading"
             :server-options="serverOptions"
             @save="handleFieldSave"
-            @mode-change="handleConfigModeChange"
+          />
+
+          <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
+          <a-flex class="section-header" align="center" wrap="wrap" gap="small">
+            <h3>{{ t('edit.configurationSource') }}</h3>
+          </a-flex>
+          <GeneralConfigModeSelector
+            :model-value="formData.Info.Base"
+            :options="maaConfigModeOptions"
+            :disabled="loading"
+            :quick-config="formData.Info.IfQuickConfig"
+            :quick-config-disabled="loading || isInitializing"
+            :alert-message="t('edit.configSourceHintBase')"
+            :show-gui-hint="false"
+            @change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
+          />
+          <!-- MAA 不提供配置导入 -->
+          <ConfigActionsSection
+            :base="formData.Info.Base"
+            script-label="MAA"
+            :disabled="loading || showMaaConfigMask || configLocked"
+            :config-loading="preparingSession || maaConfigLoading"
+            :configuring="showMaaConfigMask"
+            :show-import="false"
+            @configure="handleMAAConfig"
+            @script-config="handleScriptConfig"
           />
 
           <a-flex
@@ -74,13 +96,6 @@
           >
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing"
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -92,11 +107,9 @@
             v-model:form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
-            :activity-stage-options="activityStageOptions"
             :activity-stages="activityStages"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
-            :display-activity-stage-index="displayActivityStageIndex"
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
@@ -128,6 +141,7 @@
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @select-infrast-plan="handleInfrastPlanSelectChange"
             @save="handleFieldSave"
+            @retry-activity="loadActivityStageOptions(true)"
           >
             <template #fight-detail>
               <StageConfigSection
@@ -239,11 +253,13 @@ const logger = window.electronAPI.getLogger('MAA用户编辑')
 // 导入拆分的组件
 import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import { resolveActivityStage } from '@/views/MAAUserEdit/activityStages'
+import { getEventDepotPresets } from '@/views/MAAUserEdit/eventDepotMaintainPresets'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -351,7 +367,6 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
-const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -602,11 +617,11 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfDepotMaintain: true,
     DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
-    IfEventDepotMaintain: false,
-    EventDepotMaintainPlans: '[]',
+    IfEventDepotMaintain: true,
+    EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
     IfCultivate: false,
     IfGreenTicketStore: false,
-    IfActivityFirst: true,
+    IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
@@ -631,6 +646,8 @@ const getDefaultMAAUserData = () => ({
     LastProxyDate: '',
     ProxyTimes: 0,
     CultivateNotice: '',
+    StaminaPipelineVersion: 1,
+    StaminaPipelineBackup: '{}',
   },
 })
 
@@ -642,10 +659,6 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
 })
-
-const displayActivityStageIndex = computed(
-  () => resolveActivityStage(activityStageOptions.value, formData.Task.ActivityStageIndex)?.value
-)
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
@@ -765,6 +778,33 @@ const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
 }
 
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+const maaConfigModeOptions: Array<{
+  value: 'shared' | 'independent' | 'native'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    value: 'shared',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
+    icon: 'file',
+  },
+  {
+    value: 'independent',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    value: 'native',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
+    icon: 'setting',
+  },
+]
+
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
@@ -831,6 +871,11 @@ const createUserImmediately = async () => {
 // 加载用户数据
 const loadUserData = async (): Promise<boolean> => {
   isInitializing.value = true
+  // 恢复/重载配置后，旧目标或旧绑定的预览不能再回写。
+  cultivatePreviewSeq++
+  cultivatePreview.value = null
+  cultivatePreviewLoading.value = false
+  cultivatePreviewError.value = ''
   try {
     const userResponse = await getUsers(scriptId, userId)
 
@@ -870,8 +915,9 @@ const loadUserData = async (): Promise<boolean> => {
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
         // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
-        // 慢时库存列被串行阻塞。关卡候选预取不等它们：只读已落盘的计划，
-        // 纯后台取数，放前面避免被目录最坏 30s 拖住
+        // 慢时库存列被串行阻塞。活动关卡和候选预取不等它们，
+        // 放前面避免被目录最坏 30s 拖住。
+        if (!activityStageLoading.value) void loadActivityStageOptions()
         preloadDepotStageCandidates()
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
         return true
@@ -913,7 +959,6 @@ const applyServerStageOptions = () => {
   const stageOverview = stageOverviewByServer.value[server]
   if (!stageOverview) {
     stageOptions.value = []
-    activityStageOptions.value = []
     return
   }
 
@@ -922,19 +967,21 @@ const applyServerStageOptions = () => {
     isCustom: false,
   }))
   appendConfiguredCustomStages()
-  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
-    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
-    value: index + 1,
-  }))
+  activityStageError.value =
+    stageOverview.ActivityStatus === 'stale'
+      ? t('eventDepotPreview.staleData')
+      : stageOverview.ActivityStatus === 'unavailable'
+        ? t('eventDepotPreview.dataUnavailable')
+        : ''
 }
 
-const loadActivityStageOptions = async () => {
+const loadActivityStageOptions = async (refresh = false) => {
   activityStageLoading.value = true
   activityStageError.value = ''
   try {
-    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    const response = await Service.getOverviewApiInfoGetOverviewPost(refresh)
     if (response.code !== 200) {
-      activityStageError.value = response.message || '加载活动关卡失败'
+      activityStageError.value = response.message || t('eventDepotPreview.loadFailed')
       return
     }
 
@@ -943,16 +990,23 @@ const loadActivityStageOptions = async () => {
       // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
       // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
       logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
-      activityStageError.value = '加载活动关卡失败：返回数据缺少关卡信息'
+      activityStageError.value = t('eventDepotPreview.invalidData')
       return
     }
 
-    stageOverviewByServer.value = overview.StageByServer
+    for (const [server, stages] of Object.entries(overview.StageByServer)) {
+      const previous = stageOverviewByServer.value[server]
+      // 同区服暂不可用时保留上次成功的选项，避免目标显示被清空。
+      stageOverviewByServer.value[server] =
+        stages.ActivityStatus === 'unavailable' && previous
+          ? { ...previous, ActivityStatus: 'unavailable' }
+          : stages
+    }
     applyServerStageOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载活动关卡失败: ${errorMsg}`)
-    activityStageError.value = '加载活动关卡失败'
+    activityStageError.value = t('eventDepotPreview.loadFailed')
   } finally {
     activityStageLoading.value = false
   }
@@ -1083,7 +1137,8 @@ const importCultivateTargets = (content: string): Promise<CultivateImportResult>
       parseCultivateTargets(formData.Task.CultivateTargets),
       parseCultivateTargets(imported.targets)
     )
-    if (!merged.result.operatorIds.length) return merged.result
+    const result = { ...merged.result, skipped: imported.skippedMessages }
+    if (!result.operatorIds.length) return result
     const saved = await handleFieldSave(
       'Task.CultivateTargets',
       serializeCultivateTargets(merged.rows)
@@ -1097,7 +1152,7 @@ const importCultivateTargets = (content: string): Promise<CultivateImportResult>
       ...additions,
     ]
     await loadCultivateOperatorOptions()
-    return merged.result
+    return result
   })
 
 const loadSklandRoleOptions = async () => {
@@ -1364,6 +1419,11 @@ const {
 
 const handleMAAConfig = async () => {
   await startConfiguration(userId)
+}
+
+// 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
+const handleScriptConfig = () => {
+  void router.push(`/scripts/${scriptId}/edit/maa`)
 }
 
 const handleCancel = async () => {
@@ -1659,7 +1719,6 @@ onMounted(async () => {
   // 才能发出，否则新建用户首次进入会静默跳过归档
   await loadScriptInfo()
   loadStageModeOptions()
-  loadActivityStageOptions()
   loadDepotItemOptions()
   // 进入编辑页：归档 MAA 原生配置当前状态（MAS 触碰前的原始态）
   void ensureMaaBackup('native')

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isWaitingWithoutUsers } from './taskTreePresentation'
 
 describe('任务总览脚本状态', () => {
-  it('空用户表的等待脚本显示为等待运行', () => {
+  it('空用户表的等待脚本显示待加载占位行', () => {
     expect(isWaitingWithoutUsers({ status: '等待', user_list: [] })).toBe(true)
   })
 
@@ -16,7 +16,7 @@ describe('任务总览脚本状态', () => {
     ).toBe(false)
   })
 
-  it('已有用户或已跳过脚本不显示等待运行', () => {
+  it('已有用户或已跳过脚本不显示待加载占位行', () => {
     expect(isWaitingWithoutUsers({ status: '跳过', user_list: [] })).toBe(false)
     expect(isWaitingWithoutUsers({ status: '等待', user_list: [{ name: '真实用户' }] })).toBe(false)
   })

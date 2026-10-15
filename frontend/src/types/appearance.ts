@@ -1,3 +1,10 @@
+import type {
+  AppearanceCategory,
+  MascotAssets,
+  MascotDefinition,
+  MascotSummary,
+} from './mascotPack'
+
 export type AppearanceMode = 'light' | 'dark'
 
 export const APPEARANCE_MENU_ICON_KEYS = [
@@ -44,12 +51,7 @@ export interface AppearanceBackground {
   size?: 'cover' | 'contain' | 'auto'
 }
 
-export interface AppearanceMascot {
-  path: string
-  width?: number
-  opacity?: number
-  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
-}
+export type AppearanceMascot = MascotDefinition
 
 export type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey, string>>
 
@@ -75,10 +77,9 @@ export interface AppearanceManifest {
   cursors?: AppearanceCursors
 }
 
-export interface InstalledAppearance extends AppearanceManifest {
+export interface InstalledAppearance extends AppearanceManifest, MascotAssets {
   previewUrl?: string
   backgroundUrl?: string
-  mascotUrl?: string
   menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
@@ -86,7 +87,7 @@ export interface InstalledAppearance extends AppearanceManifest {
 export interface AppearanceImportResult {
   success: boolean
   appearance?: InstalledAppearance
-  code?: 'INVALID_PACKAGE' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
+  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
   error?: string
   existing?: InstalledAppearance
 }
@@ -105,6 +106,7 @@ export interface OnlineAppearanceInstalled {
 }
 
 export interface OnlineAppearanceItem {
+  categoryKey?: AppearanceCategory
   fileKey: string
   displayName: string
   description: string
@@ -163,8 +165,8 @@ export interface OnlineAppearancePreview {
   id: string
   name: string
   description?: string
-  mode: AppearanceMode
-  tokens: AppearanceTokens
+  mode?: AppearanceMode
+  tokens?: AppearanceTokens
   previewUrl?: string
 }
 
@@ -183,7 +185,12 @@ export interface OnlineAppearancePrepareResult {
   error?: string
 }
 
-export interface OnlineAppearanceInstallResult extends Omit<AppearanceImportResult, 'code'> {
+export interface OnlineAppearanceInstallResult extends Omit<
+  AppearanceImportResult,
+  'code' | 'existing'
+> {
+  mascot?: MascotSummary
+  existing?: InstalledAppearance | MascotSummary
   code?: AppearanceImportResult['code'] | OnlineAppearanceErrorCode
 }
 

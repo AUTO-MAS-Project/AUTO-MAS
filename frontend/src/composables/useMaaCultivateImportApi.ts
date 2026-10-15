@@ -17,7 +17,20 @@ const ERROR_KEYS: Record<string, string> = {
 export function useMaaCultivateImportApi() {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MAA养成导入')
-  const parseImport = async (scriptId: string, content: string): Promise<MaaCultivateImportOut> => {
+  const formatImportError = (error: Pick<MaaCultivateImportOut, 'error' | 'index' | 'name'>) => {
+    const reason = t(ERROR_KEYS[error.error ?? ''] ?? 'edit.maaCultivateImportFailed')
+    return error.index
+      ? t('edit.maaCultivateImportRowError', {
+          index: error.index,
+          name: error.name || t('edit.maaCultivateImportUnnamed'),
+          reason,
+        })
+      : reason
+  }
+  const parseImport = async (
+    scriptId: string,
+    content: string
+  ): Promise<MaaCultivateImportOut & { skippedMessages: string[] }> => {
     let response: MaaCultivateImportOut
     try {
       response = await Service.parseMaaCultivateImportApiScriptsMaaCultivateImportPost({
@@ -29,18 +42,9 @@ export function useMaaCultivateImportApi() {
       throw new Error(t('edit.maaCultivateImportFailed'))
     }
     if (response.code !== 200) {
-      const reason = t(ERROR_KEYS[response.error ?? ''] ?? 'edit.maaCultivateImportFailed')
-      throw new Error(
-        response.index
-          ? t('edit.maaCultivateImportRowError', {
-              index: response.index,
-              name: response.name || t('edit.maaCultivateImportUnnamed'),
-              reason,
-            })
-          : reason
-      )
+      throw new Error(formatImportError(response))
     }
-    return response
+    return { ...response, skippedMessages: (response.skipped ?? []).map(formatImportError) }
   }
   return { parseImport }
 }

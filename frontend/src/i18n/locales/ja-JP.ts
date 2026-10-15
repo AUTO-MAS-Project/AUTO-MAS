@@ -9,21 +9,56 @@
  */
 export default {
   eventDepotPreview: {
-    name: 'イベント在庫維持',
-    hint: 'イベント素材を目標在庫まで補充してから、下のイベントステージ優先へ進みます。',
+    runtimeUnresolved:
+      '一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。',
+    legacyFallback:
+      '旧イベントの選択番号が当期の範囲外のため、今回は旧仕様どおり最初のステージを使用します。元の選択は保持されます。',
+    budgetConflict:
+      '旧イベント目標が重複する場合はカスタム目標と既存の理性剤・純正源石枠を使用します。もう一方の枠は移行前バックアップに残ります。',
+    legacySeriesFallback:
+      '旧イベントの連続周回倍率を同じ形で引き継げないため、今回は単回周回を使用します。元の設定は保持されます。',
+    legacyExpiryFallback:
+      '旧イベントの独自・動的な期限間近の理性剤設定を同じ形で引き継げないため、今回は使用を停止します。元の設定は保持されます。',
+    legacyCommonConflict:
+      '旧イベント設定間で連続周回や期限間近の理性剤の指定が異なるため、今回は消費を抑える設定を使用します。元の設定は保持されます。',
+    budgetGateConflict:
+      '旧イベント在庫では理性剤または純正源石が無効のため、その制限を維持し、対応する旧イベント優先枠は今回は使用しません。',
+    name: 'イベント均衡周回',
+    hint: '当期イベントの在庫目標を優先し、達成済みか周回可能なステージがなければ在庫維持と育成へ進みます。',
     scopeHint:
-      'イベント素材ステージの番号で在庫を維持します。実行時に現在のイベントを使用し、合成玉効率とドロップのない項目は除外します。',
-    stageColumn: 'イベント素材ステージ',
+      'MAA が在庫達成率に応じて実行順を決めます。毎戦ステージを切り替える動作ではありません。素材と合成玉用ステージは当期イベントに追従します。',
+    stageColumn: 'イベントステージ',
     stageIndex: '{n} 番目の素材ステージ',
-    fallbackStage: '現在は {stage} を使用',
-    addPresets: 'イベントプリセットを追加',
-    mergeHint:
-      '目標は初期値 200。番号と目標だけを保存し、素材はイベントごとに更新します。再追加は不足分だけで既存の目標を維持。範囲外の番号は最初の素材ステージを使用し、ドラッグで実行順を変更できます。',
-    added: 'イベントプリセットを {n} 件追加しました',
-    alreadyAdded: 'イベントプリセットはすべて追加済みです。既存の目標は変更されません。',
-    noActivity: '現在利用可能なイベントステージはありません',
+    orundumStage: '合成玉用ステージ',
+    legacyIndex: '旧優先設定の {n} 番目',
+    farmStage: '今回このステージを周回する',
+    noActivity:
+      '現在利用可能なイベントステージはありません。次のイベント向けに目標を保存できます。',
     expiredHint:
-      '現在はイベント素材ステージがないため、今回の実行はスキップします。番号と目標は保持し、次のイベントでは新しいステージを自動で使用します。',
+      '今回は周回可能なイベントステージがないためスキップします。保存済みの目標はイベントが利用可能になった際に再使用します。',
+    loading: 'イベントステージを読み込み中…',
+    retry: '再試行',
+    dataUnavailable: 'イベント情報を取得できません。保存済みの目標は保持します',
+    loadFailed: 'イベントステージの読み込みに失敗しました。保存済みの目標は変更されません。',
+    invalidData: 'イベントステージの読み込みに失敗しました。応答にステージ情報がありません。',
+    staleData:
+      'イベント情報を更新できませんでした。前回取得したステージを表示しています。保存済みの目標は変更されません。',
+    summary: '当期イベント · {n} ステージ · 在庫達成率順',
+    medicineHint:
+      'この理性回復剤の上限は一つのイベント計画だけに割り当てます。未使用分はほかの計画に移しません。',
+  },
+  maaStaminaPipeline: {
+    inventoryCultivate: '在庫維持とオペレーター育成',
+    sanityFallback: '理性タスク',
+    orderHint: '1 → 2 → 3 の順に上から実行し、周回する内容がない段階は次へ進みます。',
+    inventoryHint:
+      '在庫目標は育成完了後に残す数量です。在庫維持と育成は元の独立したスイッチと適用条件を維持します。',
+    executionHint:
+      '両方を実行する場合は、育成素材、育成消費分と目標在庫の順に補充してから育成します。今回はこの順序で単発周回し、期限間近の回復剤は使わず、達成率順と最初の不足計画のみの設定は適用しません。元の在庫設定は保持します。',
+    sanityHint:
+      '元の固定ステージ、代替ステージ、計画表と作戦設定を使います。この段階だけを制御し、オフでも前の二段階は実行できます。',
+    inventoryOff: '在庫維持はオフ',
+    cultivateOff: '育成はオフ',
   },
   common: {
     viewPageDocs: 'このページのドキュメントを表示',
@@ -36,6 +71,7 @@ export default {
     off: 'オフ',
     confirm: 'OK',
     cancel: 'キャンセル',
+    close: '閉じる',
     doc: 'ドキュメント',
     unknown: '不明',
   },
@@ -82,7 +118,7 @@ export default {
     fullFilePath: 'フルパス',
     fullDateTime: '日付と時刻',
     tools: 'ツール',
-    themeStore: 'テーマストア',
+    themeStore: 'リソースストア',
     boolean: '真偽値',
     fileNameExtension: '拡張子付きのファイル名',
     quotedString: '引用符で囲まれた文字列',
@@ -338,6 +374,19 @@ export default {
     maaEventPotionHint:
       'イベントステージ優先タスクで使う理性回復薬の数です。通常の理性作戦には影響しません',
     maaCultivate: 'オペレーター育成',
+    maaCultivateSettings: '育成設定',
+    maaCultivateShowModules: 'モジュール目標を表示',
+    maaCultivateSelectOperator: '{name}を選択',
+    maaCultivateSelectAll: '全オペレーターを選択',
+    maaCultivateSelectMatches: '検索結果をすべて選択',
+    maaCultivateSearchOperators: 'オペレーター名またはIDで検索',
+    maaCultivateSearchEmpty: '該当するオペレーターがありません',
+    maaCultivateDeleteSelected: '選択した目標を削除（{count}）',
+    maaCultivateDeleteSelectedConfirm: '選択した{count}名の育成目標を削除しますか？',
+    maaCultivateSkill1: 'スキル1',
+    maaCultivateSkill2: 'スキル2',
+    maaCultivateSkill3: 'スキル3',
+    maaCultivateSkillName: '{name}（{skill}）',
     maaCultivateHint:
       '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
@@ -350,6 +399,7 @@ export default {
     maaCultivateImportPlaceholder: '育成目標の JSON を貼り付け',
     maaCultivateImportSuccess: '{added} 人を追加し、{updated} 人の目標を更新しました',
     maaCultivateImportUnchanged: '目標は登録済みのため、更新は不要です',
+    maaCultivateImportSkipped: 'インポートできない目標を {count} 件スキップしました',
     maaCultivateImportFailed:
       'インポートに失敗しました。バックエンドの接続を確認して再試行してください',
     maaCultivateImportEmpty: 'インポートできる育成目標がありません',
@@ -386,18 +436,28 @@ export default {
     maaCultivateSklandSyncFailed:
       '森空島の練度同期に失敗したため、今回の育成は一時停止しました。ネットワークを確認するか、森空島を再連携してください。日課と在庫維持は通常どおり実行します。',
     maaCultivateAutoRaiseHint:
-      'MAA v6.19.0-beta.1 以降が必要です。現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+      '現在の育成目標に沿って昇進、スキル強化、特化を実行します。モジュールの自動強化は未対応です。無効にしても素材周回は継続します。',
+    maaCultivateAutoRaiseVersionHint: '自動育成には MAA v6.19.0-beta.1 以降が必要です',
     maaCultivateMasterySkillHint:
       '特化にはスキルレベル7が必要です。特化目標を選ぶとスキルレベルの目標が自動で7になり、特化目標を解除してもスキルレベルの目標は残ります。',
     maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
-      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。素材が不足している場合、このタスクが当該ラウンドの周回を引き継ぎ、在庫維持は一時停止されます。素材が揃うと自動的に再開します',
+      '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。',
+    maaCultivateSkipHint:
+      'イベント中または全資源開放期間のスキップ条件を満たす場合、今回は育成周回、素材確保、実際の育成を一時停止し、ほかのタスクを継続します。',
+    maaCultivatePreparationUnavailable:
+      '育成データを一時的に取得できないため、今回は育成を一時停止します。在庫維持と理性タスクは継続します。',
+    maaCultivateTargetsDeferred:
+      '必要な練度データがない育成目標は今回は保留し、目標はそのまま保持します。ほかの有効な目標は引き続き実行します。森空島の練度を同期してから再試行してください。',
+    maaCultivateTakeoverHint:
+      '在庫目標は育成完了後に残す数量です。在庫維持と育成は元の独立したスイッチと適用条件を維持します。',
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
     maaCultivatePreviewStageHeading: '周回計画',
     maaCultivatePreviewDemandHeading: '素材需要',
+    maaCultivatePreviewDemandNone: '必要な素材はありません',
     maaCultivatePreviewUnobtainable:
       '以下の素材は周回では入手できず、ゲーム内で別途入手する必要があります',
     maaCultivatePreviewNone:
@@ -440,6 +500,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
+    maaDepotSettings: '在庫維持の設定',
     maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaDepotPlanCount: '{count} 件の計画',
     maaDepotEmpty: '計画はまだ追加されていません',
@@ -512,6 +573,9 @@ export default {
     switchedPlanModeP0: 'プランモードに切り替えました：{p0}',
     loadedP0P1Log: 'ログを {p0} 行読み込みました（全 {p1} 行）',
     importedP0ConfigurationFile: '{p0}の設定ファイルをインポートしました',
+    importScriptConfigFailed: 'スクリプト設定ファイルをインポートできませんでした',
+    nativeConfigNoImport:
+      'ネイティブモードでは既存の ok-ww 設定を直接使用するため、インポートできません',
     startedSrcSetupUser: 'アカウント {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'アカウント {p0} の汎用設定を開始しました',
     readP0: '{p0} を読み込みました',
@@ -580,11 +644,12 @@ export default {
     noConfigurationImportedYet: '設定はまだインポートされていません',
     whenHighTrafficSettings:
       'オンにすると、実行前にこのページの主要な設定で MaaEnd のタスクを上書きします。オフの場合は設定ファイル内のタスク設定をそのまま実行します',
-    maaEndOpenConfig: 'MaaEnd の設定画面を開く',
-    maaEndOpenConfigSharedTip:
-      'MaaEnd の設定画面で、このマネージドスクリプト配下の全アカウントで共有する共有設定を編集します。',
-    maaEndOpenConfigIndependentTip:
-      'MaaEnd の設定画面で、このアカウント専用の独立設定を編集します（他のアカウントには影響しません）。',
+    configSourceActions: '設定操作',
+    openConfigWindow: '{script} の設定画面を開く',
+    configActionsTargetShared: 'この共有の基本設定',
+    configActionsTargetIndependent: 'このアカウントの独立の基本設定',
+    configActionsImpactShared: 'このマネージドスクリプト配下の全アカウントで共有します',
+    configActionsImpactIndependent: '他のアカウントには影響しません',
     maaEndDailyOnceTasks: '1日1回だけ実行するタスク',
     maaEndDailyOnceTasksHint:
       '配達と自動採集は選択不要で1日1回のみ実行します。選択した日常タスクも正常完了後はスキップします。失敗時は再試行でき、毎日中国時間の午前4時にリセットします',
@@ -950,7 +1015,7 @@ export default {
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレーター',
     regexGuide: '正規表現のガイド',
-    loadingMfwInterface: 'プロジェクトのインターフェースを読み込んでいます',
+    loadingMfwInterface: 'プロジェクトを読み込んでいます',
     loadingMaafwProjectInterface: 'MaaFW プロジェクトのインターフェースを読み込んでいます',
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
@@ -1021,7 +1086,6 @@ export default {
     couldNotPickFile: 'ファイルを選択できませんでした',
     addNoteAboutThis: 'このアカウントにメモを付けます',
     taskConfiguration: 'タスク設定',
-    readInterfaceFirstThen: '先にプロジェクト定義ファイルを読み込んでからタスクを選択します',
     enabled: '有効状態',
     whetherThisUserEnabled: 'このアカウントを有効にするかどうか',
     noActiveConfigurationSession: '有効な設定セッションがありません',
@@ -1270,7 +1334,8 @@ export default {
     notWiredIntoRun:
       '現在のバージョンではオンにしても実行前の自動更新は行われません。右側の手動更新をお使いください',
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
-    interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
+    interfaceJsonHasNot:
+      'プロジェクトを読み込めていません：まだインポートされていないか、読み込みに失敗しました（後でこのページを開き直してください）',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
     invalidManagedOverridesCleared: '無効な設定 {n} 件を削除しました',
     scriptLevelMaaendConfiguration: '共有 MaaEnd 設定を開始しました',
@@ -1432,6 +1497,9 @@ export default {
     overlayConfigDisabledDesc:
       'タスクは基本設定をそのまま使用します。通常設定を上書きしない場合、MAS はスクリプトを起動するだけで、この画面の上書き項目は反映されません。',
     configSemanticsTitle: 'このタスクで有効な設定',
+    configSemanticsEffectOn: '{target} を一時的に上書きし、タスク終了後に復元します',
+    configSemanticsEffectOff: '{target} は変更しません',
+    configSemanticsTargetNative: 'スクリプト本来の設定',
     configSemanticsSharedOffTitle: '共有の基本設定をそのまま使用',
     configSemanticsSharedOffDesc:
       'タスクはこのマネージドの共有の基本設定で実行されます。通常設定を上書きしない場合、MAS はスクリプトを起動するだけで、この共有の基本設定自体を変更することはありません。',
@@ -1591,7 +1659,7 @@ export default {
     cdkHintBlocked: 'CDK は利用停止されています',
     proxyAddress: 'プロキシアドレス',
     proxyAddressTip:
-      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → 情報 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
     proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未申告',
     updateProcess: '更新の進行',
@@ -1687,21 +1755,60 @@ export default {
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
-    adbStrategyEmulatorExtras: 'エミュレーター内蔵の ADB（EmulatorExtras）を優先',
+    adbStrategyEmulatorExtras:
+      'エミュレーター専用のスクリーンショット・入力インターフェース（EmulatorExtras）を優先',
     adbStrategyAvdExtras: 'エミュレーターのスクリーンショット高速化（共有メモリ、EmulatorExtras）',
     adbStrategyDefault: '既定',
     prepareRuntimeEnv: '実行環境を準備',
-    envPanelPlaceholder: 'interface を読み込むと、実行環境の準備過程がここに表示されます',
-    envPreparingHint: '初回は MaaFramework のダウンロードが必要で、数分かかることがあります',
+    envPanelPlaceholder: '実行環境の準備過程がここに表示されます',
+    envPreparingHint: 'MaaFramework のダウンロードが必要な場合があり、初回は時間がかかります',
     envStatusPreparing: '実行環境を準備中',
     envStatusPrepared: '実行環境の準備が完了しました',
     envStatusUpdated: '実行環境の更新が完了しました',
     envStatusCached: '実行環境の更新は不要です',
     envStatusFailed: '実行環境の準備に失敗しました',
     envFailedHint:
-      '実行環境が整っていないと、以降の設定をしても実行できません。ネットワークとプロジェクトのパスを確認して再試行してください。',
+      '多くはダウンロードの失敗です。プロキシが必要な場合は「設定 → 情報 → ネットワークプロキシ」またはこのページの「プロジェクトの更新 → プロキシアドレス」を設定してから「再試行」を押してください。詳しい原因は上のログを確認してください。',
     envReadyAgents: '準備完了のコンポーネント',
     envRetry: '再試行',
+    maafwPreviewFailed: 'プロジェクトを読み込めませんでした',
+    maafwImportFiles: '参照ファイル',
+    maafwListSeparator: '、',
+    envRuntimeIsolatedVenv: '独立した Python 環境',
+    envRuntimeProjectPython: 'プロジェクト同梱の Python',
+    envRuntimeProjectBinary: 'プロジェクト同梱のプログラム',
+    envRuntimeSharedRuntime: '共有 Python 環境',
+    envRuntimeExternal: '外部プログラム',
+    previousStep: '前へ',
+    maafwPageTitleSetup: '{name} プロジェクトのセットアップ',
+    maafwPageTitleConfig: '{name} プロジェクト設定',
+    maafwUpdateChannelStable: '安定版',
+    maafwUpdateChannelBeta: 'ベータ版',
+    maafwEmulatorTypeGeneral: '汎用エミュレーター',
+    maafwEmulatorTypeMumu: 'MuMu Player',
+    maafwEmulatorTypeLdplayer: 'LDPlayer',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: 'エミュレーター未選択',
+    maafwEmulatorTypeLoading: 'エミュレーターの種類を読み込み中',
+    maafwNoMirrorchyanRid:
+      'このプロジェクトは MirrorChyan に対応していないため（interface.json に mirrorchyan_rid がありません）、MAS は更新を確認できません',
+    updateSourceTip:
+      'MirrorChyan：CDK が必要で、ダウンロードが速く sha256 で検証します。GitHub：プロジェクトの GitHub Release からダウンロードし、CDK は不要です。MirrorChyan に対応していないプロジェクトでも、GitHub を選べば更新を確認できます（プロジェクトに GitHub リポジトリの記載が必要です）',
+    autoUpdateMode: '自動更新',
+    autoUpdateModeOff: '更新しない',
+    autoUpdateModeBeforeRun: '実行前',
+    autoUpdateModeAfterRun: '実行後',
+    autoUpdateModeTip:
+      '実行前：毎回の実行前にプロジェクトを確認して更新します。実行後：今回の実行が終わってから更新します。更新に失敗してもタスクの実行は止まりません',
+    sourceMirrorChyan: 'MirrorChyan',
+    sourceGithub: 'GitHub',
+    cdkGetLink: 'MirrorChyan CDK を入手',
+    cdkMissingForMirror:
+      '更新の取得元に MirrorChyan を選んでいますが CDK が未入力のため、MirrorChyan から更新をダウンロードできません',
+    cdkStatusIssue:
+      'MirrorChyan CDK が使えません（{status}）。MirrorChyan から更新をダウンロードできないため、CDK を確認してから再試行してください',
+    updateResultVersion: '最新バージョン',
+    updateResultSource: 'ダウンロード元',
     mfwUnityResolutionOff: '変更しない',
     mfwWaitTimeTip:
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
@@ -1849,7 +1956,6 @@ export default {
     pickProjectDirectoryContaining:
       'interface.json を含むプロジェクトフォルダーを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
-    pickLocalDirectory: 'ローカルフォルダーを選択',
     localProjectDirectory: 'ローカルのプロジェクトフォルダー',
     pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダーを選択',
     maafwDirectoryLockedHint:
@@ -1861,8 +1967,7 @@ export default {
     maafwFollowSourceStatus: '追従先 {path} · 最終同期 {time}',
     maafwFollowSourceNotSynced:
       '追従先 {path} · 未同期、次回の実行前にソースディレクトリから取り込みます',
-    maafwFollowSourceMissing:
-      'ソースディレクトリが見つかりません。実行時は現在のコピーをそのまま使います',
+    maafwFollowSourceMissing: 'ソースディレクトリが見つかりません',
     maafwFollowSourceSyncNow: '今すぐ同期',
     maafwSourceFormTag: 'ソース形式',
     maafwSourceFormHint:
@@ -1894,7 +1999,7 @@ export default {
     mssFlavorControllerHint:
       'エミュレーター版の『ステラソラ』はゲームを起動できない問題があるため、MSS はデスクトップ版のみに対応しています。デスクトップのコントローラーを選んでください。問題が修正されない限りエミュレーターには対応しません',
     mssFlavorQueueHint:
-      '· タスクキューに「イベントクイックバトル」があると、イベント期間中は先頭に移動して先に実行し、期間外は自動でスキップします\n' +
+      '· タスクキューに「イベントクイックバトル」があると、イベント期間中は「懸賞試練クイックバトル」の前に移動して先に実行し（スタミナを先に使う）、期間外は自動でスキップします\n' +
       '· タスクキューが空でプランも選んでいない場合は実行できるタスクがありません。少なくとも「懸賞試練クイックバトル」にチェックを入れるか、プランを選んでください（プランを選ぶと自動で追加されます）\n' +
       '· 新しい塔登りは最後に回します。週に一度だけ実行するには、スクリプトの「実行設定」の「今週完了したらスキップ」に追加してください',
     mssFlavorQueueEmpty:
@@ -1912,7 +2017,7 @@ export default {
     mssFlavorDefenseSaveFailed: 'スイッチを保存できませんでした。もう一度お試しください',
     mssFlavorActivityFirst: 'イベント優先',
     mssFlavorActivityFirstHint:
-      'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加して先頭に移動します。イベント情報が取れないときは追加しません',
+      'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加し、「懸賞試練クイックバトル」の前に置きます。イベント情報が取れないときは追加しません',
     mssFlavorPlanHint:
       'プランを選ぶと、実行のたびに当日のスロットに従って「懸賞試練クイックバトル」のステージ・難易度・回数を書き換えます。キューにない場合は自動で追加します。「固定」はタスクキューの設定どおりに実行します',
     maafwFlavorPlanMode: 'プラン',
@@ -2284,6 +2389,9 @@ export default {
     maafwGlobalOptionsHint: 'キュー内のすべてのタスクに適用されます。ここで一度設定するだけです',
     maafwUnsupportedOptionType:
       'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
+    maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
+    maafwQueueTaskCheckboxCountInvalid:
+      '選択数が要件を満たしていない複数選択項目があります。修正しないとこのユーザーは実行に失敗します',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',
@@ -2772,6 +2880,7 @@ export default {
     recordCount: '{count} 件の記録',
     timeRule: 'ゲーム内の 1 日は 04:00 から始まります（04:00 ～ 翌日 04:00）',
     done: '完了',
+    skipped: 'スキップ',
     failed: '失敗',
     failedWith: '失敗: {error}',
     search: '検索',
@@ -3450,6 +3559,7 @@ export default {
       Hibernate: '休止状態',
       Sleep: 'スリープ',
       KillSelf: 'AUTO-MAS を終了',
+      RestartSelf: 'AUTO-MAS を再起動',
       Logoff: 'サインアウト',
     },
     item: {
@@ -3563,6 +3673,7 @@ export default {
       hibernate: '休止状態',
       sleep: 'スリープ',
       killSelf: 'AUTO-MAS を終了',
+      restartSelf: 'AUTO-MAS を再起動',
       logoff: 'サインアウト',
     },
     control: {
@@ -3598,7 +3709,7 @@ export default {
     overview: {
       title: 'タスク概要',
       unknownScript: '不明なマネージドスクリプト',
-      waitingToRun: '実行待ち',
+      userNotLoaded: '未読み込み',
     },
     modal: {
       cannotDeleteTitle: 'この実行パネルは閉じられません',
@@ -3865,7 +3976,11 @@ export default {
     },
   },
   themeStore: {
-    title: 'テーマストア',
+    category: 'カテゴリ',
+    categories: { all: 'すべて', theme: 'テーマ', mascot: 'ペット' },
+    uploadTheme: 'テーマをアップロード',
+    uploadMascot: 'ペットをアップロード',
+    title: 'リソースストア',
     account: {
       login: '共有サイトにログイン',
       pending: 'ブラウザで承認してください。確認コード',
@@ -3877,14 +3992,16 @@ export default {
       startFailed: '共有サイトへのログインを開始できませんでした',
     },
     upload: {
-      open: '外観をアップロード',
-      title: '外観をアップロード',
+      categoryMismatch:
+        '更新先が選択したカテゴリと異なります。正しいカテゴリのファイルを選択してください。',
+      open: 'リソースをアップロード',
+      title: 'リソースをアップロード',
       loginRequired: 'アップロードするには共有サイトにログインしてください',
-      package: '外観パッケージ',
+      package: 'リソースパッケージ',
       pick: 'パッケージを選択',
       repick: '選び直す',
-      packageFilter: '外観パッケージ',
-      invalidPackage: 'この外観パッケージは検証に通りませんでした',
+      packageFilter: 'リソースパッケージ',
+      invalidPackage: 'このリソースパッケージは検証に通りませんでした',
       cover: 'カバー',
       coverFromPackage: 'パッケージ内のプレビュー画像を使用',
       coverRequired: 'パッケージにプレビュー画像がありません。カバー画像を選んでください',
@@ -3894,9 +4011,9 @@ export default {
       invalidCover: 'この画像はカバーに使えません',
       coverFilter: '画像',
       target: 'アップロード先',
-      targetNew: '新しいテーマ',
-      targetUpdate: '自分のテーマを更新',
-      targetPlaceholder: 'テーマを選択',
+      targetNew: '新しいリソース',
+      targetUpdate: '自分のリソースを更新',
+      targetPlaceholder: 'リソースを選択',
       coverInherit: '現在のカバーを使う',
       coverPackage: 'パッケージのプレビューを使う',
       coverCustom: '画像を指定',
@@ -3904,21 +4021,21 @@ export default {
       description: '説明',
       changeNote: '更新内容',
       submit: 'アップロード',
-      submitted: '送信しました。審査を通過するとテーマストアに表示されます',
-      published: 'テーマストアに公開しました',
+      submitted: '送信しました。審査を通過するとリソースストアに表示されます',
+      published: 'リソースストアに公開しました',
       failed: 'アップロードに失敗しました',
       unchanged: 'パッケージもカバーも変更されていません',
       tooLarge: 'パッケージが共有サイトのサイズ上限を超えています',
       pendingLimit:
         '審査待ちのアップロードが上限に達しています。審査が終わってから再度アップロードしてください',
       versionTargetGone:
-        '以前アップロードした外観が共有サイトに見つかりません。新しい外観としてアップロードするよう切り替えました。名前を確認して再送信してください',
+        '以前アップロードしたリソースが共有サイトに見つかりません。新しいリソースとしてアップロードするよう切り替えました。名前を確認して再送信してください',
     },
-    tabs: { all: 'すべてのテーマ', mine: 'マイテーマ' },
+    tabs: { resources: 'リソース', mascot: 'デスクトップペット', mine: 'マイアップロード' },
     mine: {
-      loginRequired: 'ログインすると自分がアップロードしたテーマを表示できます',
-      empty: 'まだテーマをアップロードしていません',
-      loadFailed: 'マイテーマを読み込めませんでした',
+      loginRequired: 'ログインすると自分がアップロードしたリソースを表示できます',
+      empty: 'まだリソースをアップロードしていません',
+      loadFailed: 'マイリソースを読み込めませんでした',
       published: 'v{version} 公開中',
       publishedPending: 'v{published} 公開中 · v{latest} 審査中',
       pending: 'v{version} 審査中',
@@ -3932,18 +4049,18 @@ export default {
       viewInStore: 'ストアで見る',
       descriptionSaved: '説明を保存しました',
       descriptionFailed: '説明を保存できませんでした',
-      notFound: 'このテーマはマイテーマにありません',
+      notFound: 'このリソースはマイリソースにありません',
     },
     search: '名前または説明で検索',
     refresh: '更新',
     retry: '再試行',
     loading: '読み込み中…',
-    listFailed: 'オンライン外観を読み込めませんでした',
-    detailFailed: '外観の詳細を読み込めませんでした',
-    prepareFailed: '外観パッケージをダウンロードできませんでした',
-    installFailed: 'オンライン外観をインストールできませんでした',
-    empty: '共有サイトにはまだ外観パッケージがありません',
-    noMatch: '一致する外観がありません',
+    listFailed: 'オンラインリソースを読み込めませんでした',
+    detailFailed: 'リソースの詳細を読み込めませんでした',
+    prepareFailed: 'リソースパッケージをダウンロードできませんでした',
+    installFailed: 'オンラインリソースをインストールできませんでした',
+    empty: '共有サイトにはまだリソースパッケージがありません',
+    noMatch: '一致するリソースがありません',
     clearSearch: '検索をクリア',
     installed: 'インストール済み',
     installedOlder: '新しいバージョンあり（v{version} をインストール済み）',
@@ -3952,21 +4069,21 @@ export default {
     noDescription: '説明なし',
     back: '一覧に戻る',
     version: 'バージョン',
-    noVersions: 'この外観にはダウンロードできるバージョンがありません',
+    noVersions: 'このリソースにはダウンロードできるバージョンがありません',
     preparing: 'ダウンロードして検証しています…',
     downloadPreview: 'プレビューをダウンロード',
     packageName: 'パッケージ内の名前',
     mode: 'モード',
-    localCopy: '同じ ID のローカル外観',
+    localCopy: '同じ ID のローカルリソース',
     install: 'このバージョンをインストール',
     error: {
       network: '共有サイトに接続できません。ネットワークを確認して再試行してください',
-      notFound: '共有サイトにこの外観またはバージョンが見つかりません',
+      notFound: '共有サイトにこのリソースまたはバージョンが見つかりません',
       badResponse: '共有サイトから認識できない応答が返されました',
       tooLarge: 'パッケージが 16 MB の上限を超えたため、ダウンロードを中止しました',
       checksum: 'ダウンロード内容が共有サイトに登録された SHA-256 と一致しないため、破棄しました',
       expired: '一時ダウンロードの有効期限が切れました。もう一度ダウンロードしてください',
-      unsupported: 'この環境ではオンライン外観を利用できません',
+      unsupported: 'この環境ではオンラインリソースを利用できません',
     },
   },
   setting: {
@@ -4032,6 +4149,12 @@ export default {
       sleekLine: 'ライン',
       fluid: 'フルイド（派手な RGB！）',
     },
+    pressSound: {
+      duck: 'ラバーダック',
+      fx1: 'サウンド1',
+      custom: 'カスタム音声',
+      customNamed: 'カスタム（{name}）',
+    },
 
     basic: {
       appearance: '外観',
@@ -4040,11 +4163,50 @@ export default {
       themeColor: 'アクセントカラー',
       themeColorTip: '画面の基調となる色',
       importAppearance: '外観をインポート',
-      themeStore: 'テーマストア',
+      themeStore: 'リソースストア',
       removeAppearance: '外観を削除',
       applyAppearance: '外観を適用',
       appearanceApplied: '外観を適用しました',
       appearanceApplyFailed: '外観を適用できませんでした',
+      mascotSection: 'デスクトップペット',
+      mascotSelect: 'ペット選択',
+      mascotFollowTheme: '現在のテーマに合わせる',
+      importMascot: 'ペットをインポート',
+      removeMascot: 'ペットを削除',
+      mascotImportTip:
+        'ペットの ZIP、またはテーマパック内のペットのみをインポートできます。独立ペットはテーマを変更しても維持されます。',
+      mascotUnavailable: '表示できるペットがありません。選択またはインポートしてください。',
+      mascotMissing: '選択したペットが無効です。選び直してください。',
+      mascotLoadFailed: 'ペット一覧を読み込めませんでした。再試行してください。',
+      mascotRetry: '再試行',
+      mascotSaveFailed: 'ペット設定を保存できませんでした。再試行してください。',
+      mascotUnsupported:
+        'このクライアントは独立ペットに対応していません。更新して再起動してください。',
+      mascotReplaceTitle: 'ペットは導入済みです',
+      mascotReplaceContent: 'ペット「{name}」は導入済みです。置き換えますか？',
+      mascotImportFailed:
+        'ペットをインポートできませんでした。ZIP とペットの素材が揃っているか確認してください。',
+      mascotImported: 'ペットをインポートしました',
+      mascotRemoveTitle: '独立ペットを削除',
+      mascotRemoveContent:
+        'ペット「{name}」を削除しますか？削除後は現在のテーマに合わせる設定に戻ります。',
+      mascotRemoveFailed: 'ペットを削除できませんでした。再試行してください。',
+      desktopMascot: 'デスクトップペットを表示',
+      desktopMascotTip:
+        'デスクトップ上の任意の場所へドラッグできます。メインウィンドウを最小化しても表示され、アプリ終了時に閉じます。',
+      desktopMascotFailed: 'デスクトップペットを更新できませんでした。ペットを選び直してください。',
+      appearanceAnimationInvalid:
+        'ペットのアニメーションが無効です。PNGスプライトシートの行列の配置とフレームサイズを確認してください。',
+      mascotTask: 'タスク',
+      mascotPauseAnimation: 'アニメーションを一時停止',
+      mascotResumeAnimation: 'アニメーションを再開',
+      mascotPauseIdleMessage: '待機中のメッセージを一時停止',
+      mascotResumeIdleMessage: '待機中のメッセージを再開',
+      mascotTaskStarted: '作業を始めます：{name}',
+      mascotTaskCompleted: '完了しました：{name}',
+      mascotTaskFailed: 'エラーが発生しました。タスクの詳細を確認してください：{name}',
+      mascotTaskStopped: 'タスクを停止しました：{name}',
+      mascotTaskPartialFailure: '一部のタスクが完了していません。詳細を確認してください：{name}',
       appearanceImportFailed: '外観をインポートできませんでした',
       appearanceRemoveFailed: '外観を削除できませんでした',
       appearanceReplaceTitle: '外観がすでに存在します',
@@ -4052,6 +4214,17 @@ export default {
       replaceAppearance: '置き換え',
       removeAppearanceTitle: 'カスタム外観を削除',
       removeAppearanceContent: '「{name}」を削除しますか？',
+      pressSoundSection: '押下サウンド',
+      pressSoundEnabled: 'サウンドを再生',
+      pressSoundEnabledTip:
+        'ホーム中央のアイコン（星核）を押したときに音を鳴らします。オフにすると無音になりますが、イースターエッグ自体は変わりません',
+      pressSoundPreset: 'サウンドの種類',
+      pressSoundPresetTip: '内蔵サウンドが 2 種類。右のボタンから自分の音声ファイルも読み込めます',
+      pressSoundImport: '音声を読み込む',
+      pressSoundVolume: '音量',
+      pressSoundVolumeTip: '押下サウンドの再生音量',
+      pressSoundPreview: '試聴',
+      pressSoundPreviewAction: '試聴',
       cursorSection: 'カーソル効果',
       cursorAnim: 'カーソルのアニメーション',
       cursorTip:
@@ -4389,6 +4562,12 @@ export default {
       pauseHomeEffectsSaveFailed:
         'スクリプト実行中のホームエフェクト一時停止設定を保存できませんでした',
       homeSatelliteSaveFailed: 'ホームの衛星スタイルを保存できませんでした',
+      pressSoundSaveFailed: '押下サウンドの設定を保存できませんでした',
+      pressSoundCustomMissing:
+        '音声がまだ読み込まれていません。「音声を読み込む」からファイルを選んでください',
+      pressSoundTooLarge: '音声ファイルが大きすぎます。1 MB 以内のものを選んでください',
+      pressSoundReadFailed: '音声ファイルを読み込めませんでした。別のファイルを試してください',
+      pressSoundImported: '音声を読み込んで有効にしました',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',
       testFailed: 'テスト通知を送信できませんでした',

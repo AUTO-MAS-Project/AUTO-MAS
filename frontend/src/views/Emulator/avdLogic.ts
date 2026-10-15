@@ -1,5 +1,5 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 M9A 用的设备标记。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 M9A 和 MAA 用的设备标记。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -17,8 +17,8 @@ export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
 /** 新建实例默认 6 GB（与后端 ``DEFAULT_MEMORY_MB`` 一致）；核数后端默认 6。 */
 export const DEFAULT_MEMORY_MB = 6144
 /**
- * 推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。魔改 AVD 目前只支持
- * M9A，只给 1999 的推荐值；开机后内存改不了，所以不按游戏自动分配。
+ * 推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。只给实测过内存的
+ * 1999 的推荐值；开机后内存改不了，所以不按游戏自动分配。
  */
 export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 
@@ -84,7 +84,7 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
 
-// ---- 魔改 AVD 只给 M9A ----
+// ---- 魔改 AVD 只给 M9A 和 MAA ----
 
 /** 设备下拉里的一项（各脚本编辑页共用的形状，同 ``ComboBoxItem``）。 */
 export interface DeviceOption {
@@ -93,8 +93,8 @@ export interface DeviceOption {
 }
 
 /**
- * 魔改 AVD 目前只支持 M9A：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
- * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（M9A）时原样返回。
+ * 魔改 AVD 目前只支持 M9A 和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
+ * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（M9A、MAA）时原样返回。
  * 后端保存与运行时也会拦，这里只是让用户选之前就看到。
  */
 export const markModAvdOptions = <T extends DeviceOption>(

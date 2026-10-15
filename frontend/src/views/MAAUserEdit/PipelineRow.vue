@@ -21,16 +21,33 @@
         :aria-expanded="hasDetail ? expanded : undefined"
         @click="hasDetail && (expanded = !expanded)"
       >
+        <span v-if="step !== undefined" class="row-step" aria-hidden="true">{{ step }}</span>
         <span class="row-name">{{ name }}</span>
         <span class="row-summary" :class="{ 'row-summary-rich': $slots.summary }">
           <slot name="summary">{{ summary }}</slot>
         </span>
-        <DownOutlined v-if="hasDetail" class="row-chevron" />
       </component>
+      <div v-if="hasDetail || $slots.actions || hint" class="row-actions">
+        <!-- 长说明收进可聚焦的 ? ：键盘与触屏能拿到，同时不再和正文抢注意力 -->
+        <a-tooltip v-if="hint" :title="hint" :trigger="['hover', 'focus']">
+          <button type="button" class="row-help" :aria-label="hint">
+            <QuestionCircleOutlined />
+          </button>
+        </a-tooltip>
+        <slot name="actions" />
+        <button
+          v-if="hasDetail"
+          type="button"
+          class="row-main row-expand"
+          :aria-label="name"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <DownOutlined class="row-chevron" />
+        </button>
+      </div>
     </div>
     <div v-if="hasDetail && expanded" class="row-detail">
-      <!-- 常驻正文而非悬停 tooltip：键盘与触屏用户同样可读（WCAG 1.4.13） -->
-      <p v-if="hint" class="row-hint">{{ hint }}</p>
       <slot />
     </div>
   </div>
@@ -38,11 +55,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 withDefaults(
   defineProps<{
     name: string
+    /** 流水线阶段序号；不传则不占位（任务清单里的行没有先后关系） */
+    step?: number
     summary?: string
     checked: boolean
     disabled?: boolean
@@ -50,7 +69,7 @@ withDefaults(
     hint?: string
     toggleable?: boolean
   }>(),
-  { summary: '', disabled: false, hasDetail: true, hint: '', toggleable: true }
+  { step: undefined, summary: '', disabled: false, hasDetail: true, hint: '', toggleable: true }
 )
 
 const emit = defineEmits<{ change: [checked: boolean] }>()
@@ -97,6 +116,23 @@ const expanded = ref(false)
   cursor: default;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  /* 行尾只保留一个展开箭头，固定在右边缘；齿轮/说明图标排在它左边。 */
+  min-width: 68px;
+  flex-shrink: 0;
+}
+
+.row-expand {
+  flex: 0 0 32px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
+}
+
 .row-main:not(.row-main-static):hover {
   background: var(--ant-color-fill-quaternary);
 }
@@ -111,6 +147,44 @@ const expanded = ref(false)
   flex: 0 0 44px;
   display: flex;
   align-items: center;
+}
+
+.row-step {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ant-color-fill-secondary);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.row-help {
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+}
+
+.row-help:hover {
+  color: var(--ant-color-primary);
+}
+
+.row-help:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 1px;
 }
 
 .row-name {
@@ -157,13 +231,6 @@ const expanded = ref(false)
    表明「这些配置属于上面那个任务」 */
 .row-detail {
   padding: 4px 8px 16px 68px;
-}
-
-.row-hint {
-  margin: 0 0 12px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ant-color-text-tertiary);
 }
 
 @media (max-width: 768px) {

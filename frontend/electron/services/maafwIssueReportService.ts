@@ -12,6 +12,7 @@ import {
   addReportManifest,
   addSanitizedJsonFile,
   addSanitizedJsonValue,
+  addVerbatimTextFile,
   isRecord,
   readJson,
   resolveDataRoots,
@@ -449,9 +450,18 @@ function projectDeclaresPasswordInput(viewDir: string): boolean {
     for (const importList of text.matchAll(IMPORT_LIST_PATTERN)) {
       for (const [, doubleQuoted, singleQuoted] of importList[1].matchAll(STRING_LITERAL_PATTERN)) {
         const importPath = (doubleQuoted ?? singleQuoted ?? '').replace(/\\(.)/g, '$1')
-        const target = path.resolve(path.dirname(filePath), importPath)
-        if (importPath && isInside(viewDir, target)) {
-          pending.push(target)
+        if (!importPath) {
+          continue
+        }
+        // 后端加载器对每一层 import 都相对 interface 根目录解析；相对当前文件所在目录的也看一眼，
+        // 两处有一个存在就算（读不到的会被跳过）
+        for (const target of new Set([
+          path.resolve(viewDir, importPath),
+          path.resolve(path.dirname(filePath), importPath),
+        ])) {
+          if (isInside(viewDir, target)) {
+            pending.push(target)
+          }
         }
       }
     }
@@ -676,7 +686,9 @@ async function createIssueReport(
       path.join(viewDir, '.auto_mas_view.json'),
       `${scriptRoot}/project/.auto_mas_view.json`
     )
-    addDiagnosticFile(
+    // interface.json 按原文收：resource[].path 这类相对路径正是排查「资源加载失败 / 投影漏文件」
+    // 要看的，按键名脱敏会被整段换成 ***
+    addVerbatimTextFile(
       state,
       path.join(viewDir, 'interface.json'),
       `${scriptRoot}/project/interface.json`
