@@ -3316,6 +3316,7 @@ export default {
     failureCount: '失败 {count} 次',
     timeRule: '游戏日从 04:00 开始计算（04:00 – 次日 04:00）',
     done: '完成',
+    skipped: '跳过',
     failed: '失败',
     failedWith: '失败: {error}',
     search: '搜索',

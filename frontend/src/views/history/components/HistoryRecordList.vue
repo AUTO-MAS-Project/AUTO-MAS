@@ -30,27 +30,27 @@
           :class="{
             active: selectedIndex === index,
             success: record.status === 'DONE',
+            skip: record.status === 'SKIP',
             error: record.status === 'ERROR',
           }"
           @click="$emit('select', index, record)"
         >
-          <div class="record-status-bar" :class="record.status === 'DONE' ? 'success' : 'error'" />
+          <div class="record-status-bar" :class="statusClass(record.status)" />
           <div class="record-content">
             <div class="record-main">
               <span class="record-time">{{ formatRecordTime(record.date) }}</span>
-              <a-tag
-                :color="record.status === 'DONE' ? 'success' : 'error'"
-                size="small"
-                class="status-tag"
-              >
+              <a-tag :color="statusTagColor(record.status)" size="small" class="status-tag">
                 <CheckCircleOutlined v-if="record.status === 'DONE'" />
+                <MinusCircleOutlined v-else-if="record.status === 'SKIP'" />
                 <CloseCircleOutlined v-else />
                 {{
                   record.status === 'DONE'
                     ? record.result || t('history.done')
-                    : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
-                      ? t('history.failedWith', { error: errorInfo[record.date] })
-                      : t('history.failed')
+                    : record.status === 'SKIP'
+                      ? record.result || t('history.skipped')
+                      : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
+                        ? t('history.failedWith', { error: errorInfo[record.date] })
+                        : t('history.failed')
                 }}
               </a-tag>
             </div>
@@ -69,10 +69,12 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   HistoryOutlined,
+  MinusCircleOutlined,
   RightOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+import { statusClass, statusTagColor } from '../historyStatus'
 
 const { t } = useI18n()
 
@@ -240,6 +242,10 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
 
 .record-status-bar.success {
   background: var(--ant-color-success);
+}
+
+.record-status-bar.skip {
+  background: var(--ant-color-text-quaternary);
 }
 
 .record-status-bar.error {

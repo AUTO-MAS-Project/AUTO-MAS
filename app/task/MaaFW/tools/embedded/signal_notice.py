@@ -38,6 +38,8 @@ SERVER_MAINTENANCE = "server_maintenance"
 CLIENT_UPDATE_REQUIRED = "client_update_required"
 
 # 用户日志状态、统计信息与「任务详情」里用的一句话。
+# 历史页按停服维护那两句（这里的和 MAINTENANCE_SKIP_MESSAGE）把记录判为「跳过」，
+# 见 app/core/config.py 的 merge_statistic_info；改这两句要一起改那边。
 SIGNAL_USER_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中，本次跳过",
     CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端，请手动更新后再运行",

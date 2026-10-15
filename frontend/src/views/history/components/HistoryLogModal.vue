@@ -19,8 +19,8 @@
               <span class="header-title">{{ t('history.log.title') }}</span>
               <span class="header-subtitle">{{ recordDate }}</span>
             </div>
-            <a-tag :color="recordStatus === 'DONE' ? 'success' : 'error'" size="small">
-              {{ recordStatus === 'DONE' ? t('history.done') : t('history.failed') }}
+            <a-tag :color="statusTagColor(recordStatus)" size="small">
+              {{ t(statusLabelKey(recordStatus)) }}
             </a-tag>
           </div>
 
@@ -204,6 +204,7 @@ import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
 import type { ReplayRecord } from '@/types/replay'
 import HistoryLogReplayPopover from './HistoryLogReplayPopover.vue'
+import { statusLabelKey, statusTagColor } from '../historyStatus'
 
 const { t } = useI18n()
 

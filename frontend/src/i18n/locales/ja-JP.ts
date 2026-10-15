@@ -2839,6 +2839,7 @@ export default {
     recordCount: '{count} 件の記録',
     timeRule: 'ゲーム内の 1 日は 04:00 から始まります（04:00 ～ 翌日 04:00）',
     done: '完了',
+    skipped: 'スキップ',
     failed: '失敗',
     failedWith: '失敗: {error}',
     search: '検索',
