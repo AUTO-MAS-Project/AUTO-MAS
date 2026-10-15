@@ -444,9 +444,15 @@ def test_unsubscribe_failure_keeps_backup() -> None:
     async def run() -> None:
         entry, ctrl = await _make(fake)
         handle = await _sub(ctrl, _ticket(), "0", "任务")
-        await handle.release()
+        with pytest.raises(RuntimeError):
+            await handle.release()
         assert _dev(entry, "0").session.backup == _AW_FULL, "原值唯一记录须留住"
-        assert ctrl._subs == {}, "登记仍须摘掉，否则实例永久不可订阅"
+        assert handle.device_uid in ctrl._subs, "还原完成前须保留原票"
+        assert not handle._released
+        fake._restore_fails = False
+        await handle.release()
+        assert _dev(entry, "0").session.backup == {}
+        assert ctrl._subs == {}
 
     asyncio.run(run())
 
