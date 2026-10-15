@@ -2041,6 +2041,28 @@ export default {
     trackChildProcesses: 'Also track the child processes the script starts',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
+    maaEndLaunchTypeHint:
+      'Via launcher (default): MAS opens the launcher UI and clicks Start Game / handles update prompts. Direct launch is not yet available. The launcher can be detected from the game path; the client path still points to Endfield.exe',
+    maaEndLaunchDirectlyDisabled: 'Direct launch (not yet available)',
+    maaEndLauncherPath: 'Official Endfield launcher',
+    maaEndLauncherPathSource: 'Launcher path source',
+    maaEndLauncherSourceAuto: 'Automatic',
+    maaEndLauncherSourceManual: 'Manual',
+    maaEndRefreshLauncher: 'Detect again',
+    maaEndChangeLauncher: 'Change file',
+    maaEndLauncherAutoHint:
+      'Detects the launcher from the game path on every run; no path to maintain',
+    maaEndLauncherManualHint:
+      'Pick the official Hypergryph launcher Launcher.exe or Games.exe (a fallback when detection fails); switch back to Automatic anytime',
+    maaEndLauncherDetectFailed:
+      'Official Endfield launcher not found. Switch to Manual to select it',
+    maaEndPickClientBeforeLauncher: 'Select the game path first',
+    maaEndPickLauncherExeError: 'Pick the official launcher Launcher.exe or Games.exe',
+    maaEndLauncherSaveFailed:
+      'Could not save launcher settings. Your previous settings have been kept',
+    maaEndLauncherArgumentsHint:
+      'Configure game launch arguments in the official launcher when using launcher mode',
+    maaEndAutoUpdateLauncherHint: 'The official launcher handles game updates in launcher mode',
     endfieldAutoUpdate: 'Update the Endfield client before running',
     endfieldAutoUpdateHint:
       'Checks the PC client version before each run and, when it is behind, applies the official delta pack: it verifies local files first and only closes a running client once they match, then downloads only what changed. When no delta exists for this baseline the client is left alone and you are asked to update manually',

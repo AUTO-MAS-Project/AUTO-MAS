@@ -8,11 +8,15 @@ export type MaaEndConfig_Game = {
      */
     ControllerType?: (string | null);
     /**
+     * 游戏启动方式：Launcher=经终末地官方启动器启动（默认），Client=直接启动客户端（暂未开放）
+     */
+    LaunchMode?: ('Launcher' | 'Client' | null);
+    /**
      * 终末地客户端路径
      */
     Path?: (string | null);
     /**
-     * 鹰角官方启动器路径
+     * 终末地官方启动器路径（留空自动识别；也可手动指定，附加父进程启动接受 Launcher.exe 或 Games.exe）
      */
     LauncherPath?: (string | null);
     /**

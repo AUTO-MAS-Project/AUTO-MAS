@@ -1724,9 +1724,18 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
+        ## 游戏启动方式（Launcher=经终末地官方启动器启动，默认；Client=直接启动
+        ## 客户端，暂未在前端开放，仅存量配置继续生效）
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Launcher",
+            OptionsValidator(["Client", "Launcher"]),
+        )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 鹰角官方启动器路径（Launcher.exe 或 Games.exe）
+        ## 终末地官方启动器路径；启动器启动留空自动识别，手动指定不限定文件名
+        ## 与安装布局；附加父进程启动（game_launcher）接受 Launcher.exe 或 Games.exe
         self.Game_LauncherPath = ConfigItem("Game", "LauncherPath", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())

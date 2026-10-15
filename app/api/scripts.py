@@ -30,11 +30,13 @@ from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
+from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
 from app.services import ConfigCenterError
+from app.services.endfield_launcher import discover_launcher_exe
 from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
@@ -351,6 +353,56 @@ async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
             # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
             message=str(e),
             client_path="",
+        )
+
+
+@router.get(
+    "/maaend/launcher-path",
+    tags=["Get"],
+    summary="从终末地客户端路径识别官方启动器路径",
+    response_model=MaaEndLauncherPathOut,
+    status_code=200,
+)
+async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
+    """按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+
+    只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+    """
+
+    try:
+        script_uid = uuid.UUID(scriptId)
+        script_config = Config.ScriptConfig[script_uid]
+        if not isinstance(script_config, RuntimeMaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
+        if not client_exe.is_file():
+            raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
+        launcher_path = discover_launcher_exe(client_exe)
+        if launcher_path is None:
+            raise ValueError(
+                "未能从游戏客户端路径识别到终末地官方启动器, "
+                "请手动选择终末地启动器的可执行文件（.exe）"
+            )
+        return MaaEndLauncherPathOut(
+            code=200,
+            status="success",
+            message="",
+            launcher_path=launcher_path.as_posix(),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_maaend_launcher_path_api失败: {type(e).__name__}: {e}"
+        )
+        return MaaEndLauncherPathOut(
+            code=(
+                400
+                if isinstance(e, (ValueError, KeyError, TypeError, FileNotFoundError))
+                else 500
+            ),
+            status="error",
+            # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
+            message=str(e),
+            launcher_path="",
         )
 
 
