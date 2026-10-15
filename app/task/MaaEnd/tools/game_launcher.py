@@ -171,6 +171,12 @@ def _verify_launcher(path: Path) -> None:
         raise RuntimeError(f"鹰角启动器签名校验失败，请重新选择官方启动器: {path}")
 
 
+def verify_launcher_signature(path: Path) -> None:
+    """对外的签名校验入口：启动器启动在拉起前复用同一套校验。"""
+
+    _verify_launcher(path)
+
+
 def _game_running(game_path: Path) -> bool:
     for process in psutil.process_iter(["exe"]):
         try:

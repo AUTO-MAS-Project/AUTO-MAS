@@ -38,9 +38,25 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.proxy_helpers import CONFIG_BASE_NATIVE, append_push_log
+from app.task.MaaFW.tools.core.interface.loader import load_interface_model
+from app.task.MaaFW.tools.core.interface.task_config import (
+    build_task_option_maps,
+    normalize_task_options_by_task,
+)
+from app.task.MaaFW.tools.core.runner.run_plan import (
+    _build_pretask_plans,
+    _select_resource,
+)
+from app.task.MaaFW.tools.embedded.shell_instances import _Labels, _mxu_option_values
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    append_push_log,
+    kill_pids,
+    push_dispatch_log,
+)
 from app.utils import (
     LogMonitor,
     ProcessManager,
@@ -75,6 +91,11 @@ from .resource_loader import (
 from .ScriptConfig import maaend_config_base, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.game_launcher import verify_launcher_signature
+from .tools.launcher_start import (
+    async_start_game_via_launcher,
+    find_launcher_pids,
+)
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -87,6 +108,12 @@ _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
 _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
 _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
 _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
+# 终末地 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
+_MAAEND_CLIENT_PROCESS = "Endfield.exe"
+# 启动器 UI 自动化（前台点击 + 全局鼠标）一次只能有一路：跨脚本按此锁串行
+_LAUNCHER_AUTOMATION_LOCK = asyncio.Lock()
+# 后一个启动会话接管同安装后，旧会话的延迟收尾不得关闭新会话的游戏或启动器。
+_LAUNCHER_OWNERS: dict[Path, object] = {}
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
 _MXU_TASKS_COMPLETED = re.compile(
     r"收到 state-changed，已刷新运行时状态,\s*kind:\s*tasks-completed\s*$"
@@ -278,8 +305,13 @@ def _configure_game_pre_action(
     game_path: str,
     game_arguments: str,
     result_path: Path,
+    enabled: bool = True,
 ) -> None:
-    """让 MXU 在 PI pretask 完成后调用 MAS 启动入口。"""
+    """让 MXU 在 PI pretask 完成后调用 MAS 启动入口。
+
+    启动器启动（Game.LaunchMode == "Launcher"）时由 MAS 自行经官方启动器
+    拉起游戏，此处的直启入口以 ``enabled=False`` 移除，避免回退直启。
+    """
 
     pre_actions = instance.get("preActions")
     if not isinstance(pre_actions, list):
@@ -291,6 +323,9 @@ def _configure_game_pre_action(
             isinstance(action, dict) and action.get("id") == _AUTOMAS_GAME_PRE_ACTION_ID
         )
     ]
+    if not enabled:
+        instance["preActions"] = pre_actions
+        return
     command = _game_launch_command(
         launcher_path=launcher_path,
         game_path=game_path,
@@ -363,6 +398,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 在首阶段预任务执行前读取，后续阶段复用同一份游戏显示设置。
         self.original_game_settings: tuple[int, int, str] | None = None
         self.original_game_settings_read = False
+        self.launcher_game_setting_options: dict[str, Any] = {}
+        self.launcher_runtime_path: Path | None = None
+        self.launcher_owner: object = object()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -372,6 +410,164 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         method = str(self.script_config.get("Run", "AccountSwitchMethod") or "")
         return method if method in {"MAS", "MAAEND"} else "MAAEND"
+
+    def _launch_mode(self) -> str:
+        """启动方式由配置验证器保证有效。"""
+        return self.script_config.get("Game", "LaunchMode")
+
+    def _launcher_path(self) -> Path | None:
+        """自动与手动路径共用服务层校验；失效的手动路径明确报错。"""
+        return resolve_launcher_exe(
+            Path(str(self.script_config.get("Game", "Path") or "")),
+            str(self.script_config.get("Game", "LauncherPath") or ""),
+        )
+
+    def _launcher_path_text(self) -> str:
+        """直接启动入口使用的启动器路径：手动配置优先，未配置时按游戏路径自动识别。
+
+        check() 已在自动代理模式放行前校验过；这里再兜一层，避免未校验路径的
+        会话进入时抛错。
+        """
+
+        try:
+            launcher_path = self._launcher_path()
+        except ValueError:
+            launcher_path = None
+        if launcher_path is not None:
+            return str(launcher_path)
+        return str(self.script_config.get("Game", "LauncherPath") or "")
+
+    async def _apply_launcher_game_settings(self) -> None:
+        """先执行上游 PI GameSetting 预任务，再由官方启动器打开游戏。"""
+        self._read_original_game_settings()
+        # 调用方持有启动器锁；此处不能再次获取同一把锁。
+        await self._kill_game_process_unlocked()
+        interface = load_interface_model(self.maaend_root_path)
+        controller_name = str(self.script_config.get("Game", "ControllerType"))
+        controller = next(
+            (item for item in interface.controller if item.name == controller_name),
+            None,
+        )
+        if controller is None:
+            raise RuntimeError(
+                f"MaaEnd 控制器 {controller_name} 在当前资源中不存在，请重新配置 MaaEnd"
+            )
+        resource = _select_resource(interface, "", controller)
+        skipped: list[str] = []
+        # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
+        values = _mxu_option_values(
+            self.launcher_game_setting_options,
+            build_task_option_maps(interface)[_MAAEND_GAME_SETTING_PRETASK],
+            "游戏启动设置",
+            _Labels(interface, None),
+            skipped,
+        )
+        if skipped:
+            raise ValueError(
+                f"游戏启动设置已失效，请重新配置 MaaEnd: {'、'.join(skipped)}"
+            )
+        options = normalize_task_options_by_task(
+            {_MAAEND_GAME_SETTING_PRETASK: values},
+            [_MAAEND_GAME_SETTING_PRETASK],
+            interface,
+            controller_name=controller.name,
+            resource_name=resource.name,
+        )
+        plans = _build_pretask_plans(
+            base_dir=self.maaend_root_path,
+            interface_model=interface,
+            controller=controller,
+            resource=resource,
+            selected_ids=[_MAAEND_GAME_SETTING_PRETASK],
+            task_options=options,
+            i18n_mapping={},
+        )
+        if not plans:
+            raise RuntimeError(
+                "当前 MaaEnd 不支持此控制器的游戏启动设置，请更新 MaaEnd"
+            )
+        await push_dispatch_log(self.script_info, "正在应用 MaaEnd 游戏启动设置...")
+        plan = plans[0]
+        result = await ProcessRunner.run_process(
+            plan.executable,
+            *plan.args,
+            cwd=self.maaend_root_path,
+            timeout=60,
+            kill_tree_on_cancel=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"MaaEnd 游戏启动设置失败: {result.failure_detail()}")
+
+    async def _mas_launch_game_via_launcher(self) -> None:
+        """由 MAS 经官方启动器拉起终末地。
+
+        启动器模式下移除 MAS 注入的直接启动前置程序，避免任何直启回退。
+        前台点击与全局鼠标一次只能有一路，跨脚本按 _LAUNCHER_AUTOMATION_LOCK 串行。
+        """
+
+        async with _LAUNCHER_AUTOMATION_LOCK:
+            launcher_path = self._launcher_path()
+            if launcher_path is None:
+                raise RuntimeError(
+                    "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
+                )
+            self.launcher_runtime_path = launcher_path.resolve()
+            _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+            # 设置前关闭游戏、执行上游预任务与启动器交互必须在同一临界区。
+            if self.mode == self.first_run_mode and self.script_config.get(
+                "Game", "SetResolution"
+            ):
+                await self._apply_launcher_game_settings()
+            if is_process_running(_MAAEND_CLIENT_PROCESS):
+                logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
+                await push_dispatch_log(
+                    self.script_info, "检测到客户端已在运行，跳过启动"
+                )
+                return
+            # 拉起前校验官方签名：与直接启动（game_launcher）同一套校验口径
+            await asyncio.to_thread(verify_launcher_signature, launcher_path)
+            if await self.game_process_manager.is_running():
+                # 阶段切换可能只关闭游戏；手动指定的常驻启动器仍由同一管理器持有。
+                await push_dispatch_log(self.script_info, "复用仍在运行的终末地启动器")
+            else:
+                await push_dispatch_log(
+                    self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
+                )
+                # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
+                await self.game_process_manager.open_process(
+                    launcher_path, "--game=Endfield", "--reason=4"
+                )
+            # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
+            # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
+            launch_loop = asyncio.get_running_loop()
+
+            def _push_launch_log(line: str) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    push_dispatch_log(self.script_info, line), launch_loop
+                )
+
+            if not await async_start_game_via_launcher(
+                launcher_path, on_log=_push_launch_log
+            ):
+                raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
+            wait_time = int(self.script_config.get("Game", "WaitTime"))
+            await push_dispatch_log(
+                self.script_info,
+                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...",
+            )
+            await asyncio.sleep(wait_time)
+
+    async def _kill_launcher_process(self) -> None:
+        """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""
+
+        try:
+            launcher_path = self._launcher_path()
+            if launcher_path is not None:
+                pids = await asyncio.to_thread(find_launcher_pids, launcher_path)
+                if pids:
+                    await kill_pids(pids)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"结束终末地启动器进程失败: {e}")
 
     async def check(self) -> str:
         """检查运行条件；拒绝运行时明确标记为异常或跳过。"""
@@ -1053,8 +1249,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 必须先让游戏进入可交互状态，再交给旧的游戏内登录流程。
             try:
                 if self.emulator_manager is None:
-                    if use_mas_account_switch:
-                        if is_process_running("Endfield.exe"):
+                    if self._launch_mode() == "Launcher":
+                        await self.set_maaend(None)
+                        logger.info(
+                            "启动方式为「启动器启动」，将由 MAS 经终末地官方启动器拉起游戏"
+                        )
+                        await self._mas_launch_game_via_launcher()
+                    elif use_mas_account_switch:
+                        if is_process_running(_MAAEND_CLIENT_PROCESS):
                             logger.info(
                                 "检测到终末地客户端已运行，准备由 MAS 执行账号切换"
                             )
@@ -1064,9 +1266,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                                 f"启动终末地: {self.script_config.get('Game', 'Path')}"
                             )
                             command = _game_launch_command(
-                                launcher_path=str(
-                                    self.script_config.get("Game", "LauncherPath")
-                                ),
+                                launcher_path=self._launcher_path_text(),
                                 game_path=str(self.script_config.get("Game", "Path")),
                                 game_arguments=str(
                                     self.script_config.get("Game", "Arguments")
@@ -1133,13 +1333,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.emulator_manager is None
                 and self.mode == self.first_run_mode
                 and bool(self.script_config.get("Game", "SetResolution"))
+                and self._launch_mode() != "Launcher"
             ):
                 logger.info(
                     "启动时设置分辨率：关闭终末地，准备执行 MaaEnd 游戏设置预任务"
                 )
                 await self.kill_game_process()
 
-            await self.set_maaend(emulator_info)
+            if self.emulator_manager is not None or self._launch_mode() != "Launcher":
+                await self.set_maaend(emulator_info)
 
             if not any(any(tasks.values()) for tasks in self.task_dict.values()):
                 self.retryable = False
@@ -1267,25 +1469,59 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
             logger.info("开发模式下手动中止任务，保留游戏进程")
+            if self._launch_mode() == "Launcher":
+                # 启动器是 MAS 拉起的，游戏不需要它：留着只会在用户手动退出
+                # 游戏后重新弹出窗口
+                async with _LAUNCHER_AUTOMATION_LOCK:
+                    if (
+                        self.launcher_runtime_path is not None
+                        and _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                        is self.launcher_owner
+                    ):
+                        await self._kill_launcher_process()
             return
         await self.kill_game_process()
 
     async def kill_game_process(self) -> None:
         """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
 
-        try:
-            if self.emulator_manager is None:
-                logger.info("中止终末地进程")
+        if self.emulator_manager is None and self._launch_mode() == "Launcher":
+            async with _LAUNCHER_AUTOMATION_LOCK:
+                if (
+                    self.launcher_runtime_path is None
+                    or _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                    is not self.launcher_owner
+                ):
+                    logger.info("启动器已由其他会话接管或尚未启动，跳过旧会话清理")
+                    return
+                await self._kill_game_process_unlocked()
+            return
+        await self._kill_game_process_unlocked()
+
+    async def _kill_game_process_unlocked(self) -> None:
+        """执行进程清理；启动器模式由调用方持锁并确认会话归属。"""
+
+        if self.emulator_manager is None:
+            logger.info("中止终末地进程")
+            try:
                 await self.game_process_manager.kill()
+            except Exception as error:
+                logger.opt(exception=True).warning(f"终末地进程管理器清理失败: {error}")
+            try:
                 await System.kill_process(self.script_config.get("Game", "Path"))
-            else:
+            except Exception as error:
+                logger.opt(exception=True).warning(f"关闭终末地客户端失败: {error}")
+            if self._launch_mode() == "Launcher":
+                await self._kill_launcher_process()
+        else:
+            try:
                 logger.info("中止模拟器进程")
                 await close_emulator(
                     self,
                     index=self.script_config.get("Game", "EmulatorIndex"),
                 )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
+            except Exception as e:
+                logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
 
     def _maaend_task_option_supported(self, task_name: str, option_name: str) -> bool:
         """读取当前安装的 MaaEnd 是否声明了指定配置项。"""
@@ -1759,8 +1995,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 or not has_later_mode
                 and self.script_config.get("Game", "CloseOnFinish")
             )
-            if if_quick_config or self.script_config.get("Game", "SetResolution"):
-                _place_managed_task(
+            if (
+                if_quick_config
+                or self.script_config.get("Game", "SetResolution")
+                or self._launch_mode() == "Launcher"
+            ):
+                game_setting_task = _place_managed_task(
                     maaend_tasks,
                     task_name=_MAAEND_GAME_SETTING_PRETASK,
                     task_id="automas-gamesetting",
@@ -1768,8 +2008,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     enabled=(
                         self.mode == self.first_run_mode
                         and bool(self.script_config.get("Game", "SetResolution"))
+                        and self._launch_mode() != "Launcher"
                     ),
                     first=True,
+                )
+                self.launcher_game_setting_options = game_setting_task.get(
+                    "optionValues", {}
                 )
             if if_quick_config or close_after_mode:
                 _place_managed_task(
@@ -1783,10 +2027,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.game_launch_result_path.unlink(missing_ok=True)
             _configure_game_pre_action(
                 maaend_instance,
-                launcher_path=str(self.script_config.get("Game", "LauncherPath")),
+                launcher_path=self._launcher_path_text(),
                 game_path=str(self.script_config.get("Game", "Path")),
                 game_arguments=str(self.script_config.get("Game", "Arguments")),
                 result_path=self.game_launch_result_path,
+                enabled=self._launch_mode() != "Launcher",
             )
 
         # 加载 i18n 配置

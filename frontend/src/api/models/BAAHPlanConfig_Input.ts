@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { BAAHPlanConfig_Info } from './BAAHPlanConfig_Info';
 import type { BAAHPlanConfig_Item } from './BAAHPlanConfig_Item';
-export type BAAHPlanConfig = {
+export type BAAHPlanConfig_Input = {
     /**
      * 基础信息
      */
