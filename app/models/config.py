@@ -1655,8 +1655,17 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
+        ## 游戏启动方式（Client=直接启动客户端，Launcher=经终末地官方启动器启动）
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Client",
+            OptionsValidator(["Client", "Launcher"]),
+        )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 终末地官方启动器路径；留空自动识别，手动指定不限定文件名与安装布局
+        self.Game_LauncherPath = ConfigItem("Game", "LauncherPath", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）

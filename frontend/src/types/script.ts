@@ -187,7 +187,9 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
+    LaunchMode: 'Client' | 'Launcher'
     Path: string
+    LauncherPath: string
     Arguments: string
     WaitTime: number
     EmulatorId: string

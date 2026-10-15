@@ -8,9 +8,17 @@ export type MaaEndConfig_Game = {
      */
     ControllerType?: (string | null);
     /**
+     * 游戏启动方式：Client=直接启动客户端，Launcher=经终末地官方启动器启动
+     */
+    LaunchMode?: ('Launcher' | 'Client' | null);
+    /**
      * 终末地客户端路径
      */
     Path?: (string | null);
+    /**
+     * 终末地官方启动器路径（Hypergryph Launcher/Launcher.exe）
+     */
+    LauncherPath?: (string | null);
     /**
      * 游戏启动参数
      */

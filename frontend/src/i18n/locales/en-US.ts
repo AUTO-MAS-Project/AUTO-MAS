@@ -2000,6 +2000,27 @@ export default {
     trackChildProcesses: 'Also track the child processes the script starts',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
+    maaEndLaunchTypeHint:
+      'Launcher mode opens the official launcher, handles updates and starts the game. Keep the client path pointing to Endfield.exe',
+    maaEndLauncherPath: 'Official Endfield launcher',
+    maaEndLauncherPathSource: 'Launcher path source',
+    maaEndLauncherSourceAuto: 'Automatic',
+    maaEndLauncherSourceManual: 'Manual',
+    maaEndRefreshLauncher: 'Detect again',
+    maaEndChangeLauncher: 'Change file',
+    maaEndLauncherAutoHint:
+      'Detects the launcher from the game path on every run; no path to maintain',
+    maaEndLauncherManualHint:
+      'Uses the selected launcher executable with any filename or install location; switch to Automatic to detect it instead',
+    maaEndLauncherDetectFailed:
+      'Official Endfield launcher not found. Switch to Manual to select it',
+    maaEndPickClientBeforeLauncher: 'Select the game path first',
+    maaEndPickLauncherExeError: 'Select the Endfield launcher executable (.exe)',
+    maaEndLauncherSaveFailed:
+      'Could not save launcher settings. Your previous settings have been kept',
+    maaEndLauncherArgumentsHint:
+      'Configure game launch arguments in the official launcher when using launcher mode',
+    maaEndAutoUpdateLauncherHint: 'The official launcher handles game updates in launcher mode',
     endfieldAutoUpdate: 'Update the Endfield client before running',
     endfieldAutoUpdateHint:
       'Checks the PC client version before each run and, when it is behind, applies the official delta pack: it verifies local files first and only closes a running client once they match, then downloads only what changed. When no delta exists for this baseline the client is left alone and you are asked to update manually',

@@ -3153,7 +3153,15 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[str] = Field(default=None, description="控制器类型")
+    LaunchMode: Optional[Literal["Client", "Launcher"]] = Field(
+        default=None,
+        description="游戏启动方式：Client=直接启动客户端，Launcher=经终末地官方启动器启动",
+    )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
+    LauncherPath: Optional[str] = Field(
+        default=None,
+        description="终末地官方启动器路径（Hypergryph Launcher/Launcher.exe）",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
@@ -3193,6 +3201,14 @@ class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
+
+
+class MaaEndLauncherPathOut(OutBase):
+    """MaaEnd 启动器路径识别结果（供前端自动识别与落盘）"""
+
+    launcher_path: str = Field(
+        ..., description="由游戏客户端路径识别到的启动器 Launcher.exe 完整路径"
+    )
 
 
 class SrcUserConfig_Info(UserConfigInfoBase):
