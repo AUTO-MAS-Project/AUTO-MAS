@@ -240,6 +240,7 @@ class ScriptExpander(TaskBase):
                     game=self._game,
                 )
                 expander.bind_history_writer(self._history_writer)
+                expander.bind_default_user_factory(decl.user_type.build)
                 await self.spawn(expander)
                 if expander.error is not None:
                     info.status = "error"
@@ -249,7 +250,9 @@ class ScriptExpander(TaskBase):
                 await self._release()
 
             # 专项检查失败同样回流到宿主任务状态。
-            if script_item.info.status.startswith(("check_fail:", "missing", "no_expander", "error", "异常")):
+            if script_item.info.status.startswith(
+                ("check_fail:", "missing", "no_expander", "error", "异常")
+            ):
                 info.status = "error"
                 await item.commit()
 
