@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, ClassVar, Mapping
 from app.plugin.types import LifecycleContext, PluginState
 
 if TYPE_CHECKING:
+    from app.config.committed import ConfigEvents
     from app.models.config import PluginConfig, PluginRecord
     from app.plugin.notifications import NotificationService
     from app.plugin.services import ServiceResolver
@@ -30,6 +31,7 @@ class BasePlugin:
         # record 只存弱引用，避免与 PluginRecord._plugin 形成不可回收环。
         self.config = config
         self._notifications: NotificationService | None = None
+        self._config_events: ConfigEvents | None = None
         self._record_ref: weakref.ReferenceType[PluginRecord] | None = (
             weakref.ref(record) if record is not None else None
         )
@@ -37,6 +39,21 @@ class BasePlugin:
     def bind_services(self, services: ServiceResolver) -> None:
         """业务钩子执行前绑定服务查询能力，构造签名保持不变。"""
         self.services = services
+
+    def bind_config_events(self, events: ConfigEvents) -> None:
+        """宿主在业务钩子前注入按实例管理的提交观察接口。"""
+        self._config_events = events
+
+    @property
+    def config_events(self) -> ConfigEvents:
+        if self._config_events is None:
+            raise RuntimeError("插件未绑定配置观察接口")
+        return self._config_events
+
+    async def close_config_events(self) -> None:
+        """独立构造的实例可以直接收尾，无需先绑定宿主。"""
+        if self._config_events is not None:
+            await self._config_events.close()
 
     def bind_notifications(self, notifications: NotificationService) -> None:
         """宿主在启用前绑定通知能力，保持插件构造签名不变。"""

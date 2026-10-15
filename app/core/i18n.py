@@ -8,6 +8,8 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigCommittedEvent, config_manager
+
 from app.core.config import Config
 from app.utils import get_logger
 from app.utils.io import read_file
@@ -34,16 +36,19 @@ class I18nManager:
         if self._initialized:
             return
 
-        # 配置信号按弱引用在接收者上挂属性，绑定方法挂不上；改挂函数并存到实例上保活
-        async def on_change(*_: object) -> None:
-            await self.invalidate()
-
-        self._on_change = on_change
-        Config.plugin_registry.connect(on_change, phase="runtime")
-        Config.setting.connect(
-            on_change, phase="runtime", group="language", field="locale"
-        )
+        config_manager.committed.connect(self._on_committed, owner=self)
         self._initialized = True
+
+    async def _on_committed(self, event: ConfigCommittedEvent) -> None:
+        if any(
+            change.root_uid == Config.plugin_registry.uid
+            or (
+                change.config_uid == Config.setting.uid
+                and "language.locale" in change.changed_paths
+            )
+            for change in event.changes
+        ):
+            await self.invalidate()
 
     async def invalidate(self, *_: object) -> None:
         """标记资源缓存失效并发布一次统一变更通知。"""

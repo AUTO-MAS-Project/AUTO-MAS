@@ -117,7 +117,9 @@ class _SignalDescriptor:
     def __init__(self, *, is_disconnect: bool) -> None:
         self._is_disconnect = is_disconnect
 
-    def __get__(self, obj: "ConfigNode | None", owner: type["ConfigNode"]) -> _SignalAccessor:
+    def __get__(
+        self, obj: "ConfigNode | None", owner: type["ConfigNode"]
+    ) -> _SignalAccessor:
         is_disconnect = self._is_disconnect
 
         @overload
@@ -590,6 +592,8 @@ class ConfigNode(BaseModel):
         if sender is not None and sender.deleted:
             return
         await _dispatch(cls.signal_effective(), sender, event)
+        if sender is not None:
+            config_manager.record_change(sender, event)
 
     # ──────────────── 生命周期 ────────────────
 

@@ -114,8 +114,12 @@ class Setting(ConfigEntry):
         )
 
     class Display(ConfigGroup):
-        if_enable_virtual_display: bool = Field(default=False, description="自动保障桌面显示输出")
-        virtual_display_mode: Literal["1920x1080@60", "1920x1080@30"] = Field(default="1920x1080@60", description="虚拟显示器模式")
+        if_enable_virtual_display: bool = Field(
+            default=False, description="自动保障桌面显示输出"
+        )
+        virtual_display_mode: Literal["1920x1080@60", "1920x1080@30"] = Field(
+            default="1920x1080@60", description="虚拟显示器模式"
+        )
 
     class Notify(ConfigGroup):
         # 使用字符串承载通知时机，避免 OpenAPI TypeScript 生成器为中文枚举生成重复成员名。
@@ -142,11 +146,9 @@ class Setting(ConfigEntry):
         )
         openclaw_qq_client_secret: Annotated[
             str, encrypted(), ui(visibility=UiVisibility.HIDE)
-        ] = Field(
-            default="", description="QQ 官方机器人客户端密钥"
-        )
-        openclaw_qq_target_open_id: Annotated[str, ui(visibility=UiVisibility.HIDE)] = Field(
-            default="", description="QQ 官方机器人目标用户 OpenID"
+        ] = Field(default="", description="QQ 官方机器人客户端密钥")
+        openclaw_qq_target_open_id: Annotated[str, ui(visibility=UiVisibility.HIDE)] = (
+            Field(default="", description="QQ 官方机器人目标用户 OpenID")
         )
         smtp_server_address: str = Field(default="", description="SMTP服务器地址")
         authorization_code: Annotated[str, encrypted()] = Field(
@@ -183,7 +185,8 @@ class Setting(ConfigEntry):
             default="", description="GitHub token/API key"
         )
         pause_until: Annotated[str, ui(widget="date", format="date")] = Field(
-            default="", description="暂停自动更新检查的截止日期 YYYY-MM-DD，空字符串表示未暂停"
+            default="",
+            description="暂停自动更新检查的截止日期 YYYY-MM-DD，空字符串表示未暂停",
         )
 
     class Data(ConfigGroup):
@@ -320,10 +323,10 @@ class Setting(ConfigEntry):
         await System.set_Sleep(cast(Setting, sender).function.if_allow_sleep)
 
 
-# 类体无法写 ``@Setting.connect``（类名尚未绑定）；定义后装饰订阅两阶段
+# 初始化仍同步应用系统设置；运行期副作用由宿主在提交后执行。
 Setting.connect(
-    Setting._on_if_self_start, phase="both", group="start", field="if_self_start"
+    Setting._on_if_self_start, phase="init", group="start", field="if_self_start"
 )
 Setting.connect(
-    Setting._on_if_allow_sleep, phase="both", group="function", field="if_allow_sleep"
+    Setting._on_if_allow_sleep, phase="init", group="function", field="if_allow_sleep"
 )

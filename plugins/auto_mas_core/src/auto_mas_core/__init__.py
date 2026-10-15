@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from app.config import (
+    CommittedConfigChange,
+    ConfigCommittedEvent,
     ConfigCollection,
     ConfigEntry,
     ConfigGroup,
@@ -34,6 +36,7 @@ from app.config import (
     ui_visibility,
     virtual_field,
 )
+from app.config.committed import ConfigEvents
 from app.models.config import (
     EmulatorDeviceEntry,
     EmulatorEntry,
@@ -128,7 +131,27 @@ class PageDeclaration(Protocol):
 
 
 class PageFacade(Protocol):
-    def register(self, *, id: str, path: str, title: str, menu_label: str, icon: str = "app", component: str = "PluginPage", renderer: PageRenderer = "component", url: str | None = None, frontend_plugin: str | None = None, element_tag: str | None = None, entry_asset_url: str | None = None, style_asset_urls: list[str] | None = None, manifest_version: int | None = None, section: PageSection = "main", order: int = 1000, visible: bool = True, dev_only: bool = False) -> PageDeclaration: ...
+    def register(
+        self,
+        *,
+        id: str,
+        path: str,
+        title: str,
+        menu_label: str,
+        icon: str = "app",
+        component: str = "PluginPage",
+        renderer: PageRenderer = "component",
+        url: str | None = None,
+        frontend_plugin: str | None = None,
+        element_tag: str | None = None,
+        entry_asset_url: str | None = None,
+        style_asset_urls: list[str] | None = None,
+        manifest_version: int | None = None,
+        section: PageSection = "main",
+        order: int = 1000,
+        visible: bool = True,
+        dev_only: bool = False,
+    ) -> PageDeclaration: ...
     def register_many(self, pages: list[Any] | tuple[Any, ...]) -> None: ...
     def unregister_all(self) -> None: ...
 
@@ -137,14 +160,18 @@ class ServiceFacade(Protocol):
     def provide(self, name: str) -> None: ...
     def set(self, name: str, value: Any) -> None: ...
     def get(self, name: str, default: Any = None) -> Any: ...
-    def inject(self, needs: Any = None, wants: Any = None, ready: Any = None) -> None: ...
+    def inject(
+        self, needs: Any = None, wants: Any = None, ready: Any = None
+    ) -> None: ...
     def miss(self) -> set[str]: ...
 
 
 class RuntimeAPI(Protocol):
     def set_runtime_options(self, options: dict[str, Any]) -> dict[str, Any]: ...
     def get_runtime_info(self, force_refresh: bool = False) -> dict[str, Any]: ...
-    def check_interpreter(self, python_executable: str | None = None) -> dict[str, Any]: ...
+    def check_interpreter(
+        self, python_executable: str | None = None
+    ) -> dict[str, Any]: ...
     def list_scripts(self) -> Any: ...
     def get_script_log(self, script_id: str, limit: int = 2000) -> Any: ...
 
@@ -165,7 +192,16 @@ class PluginCacheManager(Protocol):
 
 
 class PluginEventFacade(Protocol):
-    def on(self, event: str, handler: Any, *, priority: int = 0, scope: EventScope = "global", once: bool = False, error_policy: EventErrorPolicy | None = None) -> str: ...
+    def on(
+        self,
+        event: str,
+        handler: Any,
+        *,
+        priority: int = 0,
+        scope: EventScope = "global",
+        once: bool = False,
+        error_policy: EventErrorPolicy | None = None,
+    ) -> str: ...
 
 
 class PluginHttpRequest(Protocol):
@@ -188,7 +224,13 @@ class PluginWebSocketSession(Protocol):
 
 
 class PluginServerFacade(Protocol):
-    def http(self, path: str, handler: Any, *, methods: list[str] | tuple[str, ...] | None = None) -> Any: ...
+    def http(
+        self,
+        path: str,
+        handler: Any,
+        *,
+        methods: list[str] | tuple[str, ...] | None = None,
+    ) -> Any: ...
 
 
 class LogFacade(Protocol):
@@ -221,6 +263,9 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "CommittedConfigChange",
+    "ConfigCommittedEvent",
+    "ConfigEvents",
     "AdapterRuntime",
     "GameRuntime",
     "HistoryWriter",

@@ -10,7 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator
 from collections.abc import Iterator
-from uuid import UUID
+from uuid import UUID, uuid4
+
+from ..committed import CommittedConfigChange, CommittedEventBus, ConfigCommittedEvent
 
 # 当前 asyncio 上下文持有的 X 锁 token。判定用差集而非 Token.reset：
 # 收尾兜底可能在另一个上下文里 unlock，reset 会抛 LookupError。
@@ -28,6 +30,7 @@ def add_x_token(token: UUID) -> None:
 
 def discard_x_token(token: UUID) -> None:
     _x_tokens.set(_x_tokens.get() - {token})
+
 
 from app.utils.io import write_file
 
@@ -51,6 +54,7 @@ class TransactionContext:
     """普通 / Init 事务共用上下文；登记单元在结束时合并或丢弃对应工作区。"""
 
     registered: list[WorkspaceUnit] = field(default_factory=list)
+    changes: dict[tuple[UUID, UUID, str], set[str]] = field(default_factory=dict)
     _task: asyncio.Task[Any] | None = field(default_factory=_current_task, init=False)
     _thread: int = field(default_factory=threading.get_ident, init=False)
     _active: bool = field(default=True, init=False)
@@ -93,6 +97,8 @@ class ConfigManager:
         self._transaction_owner: TransactionContext | None = None
         self._save_handle: asyncio.Task[None] | None = None
         self._debounce_seconds: float = 0.05
+        self.committed = CommittedEventBus()
+        self._revision = 0
 
     # ──────────────── ref 池（仅 Collection）────────────────
 
@@ -227,6 +233,22 @@ class ConfigManager:
         if not any(u is unit for u in ctx.registered):
             ctx.registered.append(unit)
 
+    def record_change(self, node: ConfigNode, event: Any) -> None:
+        """内部信号完成后只登记路径；Init 和回滚不发布外部事件。"""
+        ctx = self.current
+        if ctx is None or self.in_init_transaction or event.kind.startswith("init_"):
+            return
+        if hasattr(event, "group"):
+            path = f"{event.group}.{event.field}"
+        elif event.kind == "set_order":
+            path = "order"
+        elif event.uid is not None:
+            path = f"data.{event.uid}"
+        else:
+            path = f"types.{event.entry_type.__name__}"
+        key = (node.uid, node.root.uid, type(node).__name__)
+        ctx.changes.setdefault(key, set()).add(path)
+
     def COMMIT(self, ctx: TransactionContext) -> None:
         for unit in ctx.registered:
             if isinstance(unit, type):
@@ -243,8 +265,26 @@ class ConfigManager:
         ctx.registered.clear()
         if need_save:
             self.schedule_debounced_save()
+        if ctx.changes:
+            self._revision += 1
+            event = ConfigCommittedEvent(
+                event_id=uuid4(),
+                revision=self._revision,
+                changes=tuple(
+                    CommittedConfigChange(
+                        config_uid=uid,
+                        root_uid=root_uid,
+                        config_type=name,
+                        changed_paths=tuple(sorted(paths)),
+                    )
+                    for (uid, root_uid, name), paths in ctx.changes.items()
+                ),
+            )
+            ctx.changes.clear()
+            self.committed.publish(event)
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:
+        ctx.changes.clear()
         for unit in ctx.registered:
             if isinstance(unit, type):
                 unit._ROLLBACK_signal()

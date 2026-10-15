@@ -34,7 +34,7 @@ from typing import Literal, Optional, Dict, Any, List
 import json
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app.config import ConfigCollection
+from app.config import ConfigCollection, ConfigCommittedEvent
 from app.models.config import (
     GameEntry,
     PlanEntry,
@@ -253,7 +253,28 @@ class AppConfig:
         from app.core.i18n import i18n
 
         await i18n.initialize()
+        from app.config import config_manager
+
+        config_manager.committed.connect(self._on_setting_committed, owner=self)
         logger.info("引导配置就绪：setting / plugin_registry / plugin_catalog")
+
+    async def _on_setting_committed(self, event: ConfigCommittedEvent) -> None:
+        """操作系统与设备策略只消费已提交配置，不参与配置事务。"""
+        from app.core.game_manager import GameManager
+        from app.services import System
+
+        paths = {
+            path
+            for change in event.changes
+            if change.config_uid == self.setting.uid
+            for path in change.changed_paths
+        }
+        if "start.if_self_start" in paths:
+            await System.set_SelfStart(self.setting.start.if_self_start)
+        if "function.if_allow_sleep" in paths:
+            await System.set_Sleep(self.setting.function.if_allow_sleep)
+        if "function.if_block_ad" in paths:
+            await GameManager.apply_block_ad(self.setting.function.if_block_ad)
 
     async def init_domain_configs(self) -> None:
         """领域阶段：插件注册完类型表后再激活各业务集合。"""
@@ -273,13 +294,6 @@ class AppConfig:
         self.GameConfig.connect(GameManager.on_add, phase="both", kind="add")
         self.GameConfig.connect(GameEntry.on_add_devices, phase="both", kind="add")
         self.ScriptConfig.connect(ScriptEntry.on_add_script, phase="both", kind="add")
-        # 去广告开关是系统级的，落点在各品牌；主入口统一扇出，不等下次启动
-        self.setting.connect(
-            GameManager.on_block_ad,
-            phase="runtime",
-            group="function",
-            field="if_block_ad",
-        )
         # games 须先于 scripts：脚本 game_id 外键与设备归一热化时要查游戏及其 devices
         await self._activate(
             (
@@ -514,7 +528,6 @@ class AppConfig:
         )
         return is_latest or supervised, commit_hash, commit_time
 
-
     async def update_game_sign_results(
         self, formatted: dict[str, Any], *, replace: bool = False
     ) -> None:
@@ -639,7 +652,10 @@ class AppConfig:
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息。网络检查在后台执行，立即返回本地缓存。"""
 
-        if datetime.now(tz=UTC8) - timedelta(hours=1) < self.setting.data.last_stage_updated:
+        if (
+            datetime.now(tz=UTC8) - timedelta(hours=1)
+            < self.setting.data.last_stage_updated
+        ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.setting.data.stage or "{ }")
 

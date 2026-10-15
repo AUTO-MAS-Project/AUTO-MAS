@@ -333,6 +333,7 @@ def main():
 
         if os.getenv("AUTO_MAS_DEV") == "1":
             import shutil
+
             plugins_dir = _Path.cwd() / "plugins"
             for pycache in plugins_dir.rglob("__pycache__"):
                 if pycache.is_dir():
@@ -359,9 +360,9 @@ def main():
                 try:
                     await start()
                 except Exception as error:
-                    message = (
-                        f"{name}: {type(error).__name__}: {error}"
-                    )[:BACKGROUND_ERROR_MESSAGE_MAX]
+                    message = (f"{name}: {type(error).__name__}: {error}")[
+                        :BACKGROUND_ERROR_MESSAGE_MAX
+                    ]
                     app.state.background_warnings.append(message)
                     logger.exception(f"后台服务启动失败：{name}")
 
@@ -428,9 +429,7 @@ def main():
         app.state.background_status = "starting"
         app.state.background_error = None
         app.state.background_warnings = []
-        logger.info(
-            f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
-        )
+        logger.info(f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s")
         background_task = asyncio.create_task(initialize_background_services())
 
         async def shutdown_services() -> None:
@@ -473,6 +472,10 @@ def main():
                 await System.cancel_power_task()
             await Updater.cancel_download(notify=False)
             await RuntimeTasks.shutdown()
+            # 取消并等待配置观察者，避免插件释放后仍访问设备或插件模块。
+            from app.config import config_manager
+
+            await config_manager.committed.shutdown()
             await PluginRuntime.shutdown()
             # 插件 on_teardown 可能已 commit；跳过防抖，全量落盘全部 file= 根
             from app.config import config_manager
