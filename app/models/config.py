@@ -1657,6 +1657,8 @@ class MaaEndConfig(ConfigBase):
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 鹰角官方启动器路径（Launcher.exe 或 Games.exe）
+        self.Game_LauncherPath = ConfigItem("Game", "LauncherPath", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）

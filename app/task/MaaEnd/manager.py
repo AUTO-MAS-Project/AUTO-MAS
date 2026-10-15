@@ -145,6 +145,13 @@ class MaaEndManager(ScriptManagerBase):
             and not Path(script_config.get("Game", "Path")).exists()
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+        if self.controller_protocol == "Win32" and self.task_info.mode == "AutoProxy":
+            launcher_path = Path(str(script_config.get("Game", "LauncherPath") or ""))
+            if not launcher_path.is_file() or launcher_path.name.lower() not in {
+                "launcher.exe",
+                "games.exe",
+            }:
+                return "请在游戏设置中选择鹰角官方启动器 Launcher.exe 或 Games.exe"
         if (
             self.task_info.mode == "AutoProxy"
             and not (

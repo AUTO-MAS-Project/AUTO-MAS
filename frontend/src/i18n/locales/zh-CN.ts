@@ -1081,6 +1081,8 @@ export default {
     emulators: '模拟器管理',
     gameResource: '游戏资源',
     gamePath: '游戏路径',
+    maaEndLauncherPath: '鹰角官方启动器路径',
+    maaEndLauncherPathHint: '选择鹰角官方启动器 Launcher.exe（或 Games.exe）',
     username: '账号名',
     enterLaunchArguments: '请输入启动参数',
     enterPassword: '请输入密码',

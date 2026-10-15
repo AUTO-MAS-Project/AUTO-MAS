@@ -168,6 +168,26 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="24">
+              <a-form-item :label="t('edit.maaEndLauncherPath')">
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="maaEndConfig.Game.LauncherPath"
+                    :placeholder="t('edit.maaEndLauncherPathHint')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button size="large" class="path-button" @click="selectLauncherPath">
+                    <template #icon><FolderOpenOutlined /></template>
+                    {{ t('edit.pickFile') }}
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isWinController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
@@ -684,6 +704,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
   Game: {
     ControllerType: '',
     Path: '',
+    LauncherPath: '',
     Arguments: '',
     WaitTime: 60,
     EmulatorId: '',
@@ -1044,6 +1065,23 @@ const selectGamePath = async () => {
   maaEndConfig.Game.Path = path
   await handleChange('Game', 'Path', path)
   await loadMaaEndOptions()
+}
+
+const selectLauncherPath = async () => {
+  const paths = await window.electronAPI?.selectFile([
+    { name: 'Launcher.exe / Games.exe', extensions: ['exe'] },
+  ])
+  const path = paths?.[0]
+  if (!path) return
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
+  if (fileName !== 'launcher.exe' && fileName !== 'games.exe') {
+    message.error(t('edit.maaEndLauncherPathHint'))
+    return
+  }
+  const previousPath = maaEndConfig.Game.LauncherPath
+  maaEndConfig.Game.LauncherPath = path
+  const saved = await enqueue(() => updateScript(scriptId, { Game: { LauncherPath: path } }))
+  if (!saved) maaEndConfig.Game.LauncherPath = previousPath
 }
 
 const cleanupConfigSession = () => {
