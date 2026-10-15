@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from .errors import PluginBusyError, PluginError
 from .signals import service_changed
+
+
+class ServiceResolver(Protocol):
+    """插件消费服务的查询契约；登记与注销由宿主负责。"""
+
+    def get(self, name: str, default: Any = None) -> Any: ...
+
+    def require(self, name: str) -> Any: ...
 
 
 class ServiceRegistry:
