@@ -2124,6 +2124,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
         if self.mode == "Routine":
+            # 失败重试重新按来源开关与当前时段组装，上一轮跳过或完成不能屏蔽本轮库存预留。
+            self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+                "Task", "IfDepotMaintain"
+            )
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
