@@ -1799,7 +1799,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             snapshots = {
                 target.operator_id: resolve_progression(
-                    target.operator_id, get_progression_chain(), context
+                    operator_id=target.operator_id,
+                    chain=get_progression_chain(),
+                    context=context,
                 )
                 for target in targets
             }
@@ -1808,7 +1810,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             certifying_snapshots = {
                 target.operator_id: resolve_progression(
-                    target.operator_id, get_certifying_chain(), context
+                    operator_id=target.operator_id,
+                    chain=get_certifying_chain(),
+                    context=context,
                 )
                 for target in ready_targets
             }
@@ -1816,7 +1820,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             updated = apply_achievements(ready_targets, achievements)
             if updated != ready_targets:
                 merged_payload = _merge_cultivate_target_updates(
-                    raw_targets, updated, deferred
+                    raw_targets=raw_targets,
+                    updated_targets=updated,
+                    deferred_targets=deferred,
                 )
                 await self.cur_user_config.set(
                     "Task",
@@ -1926,7 +1932,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             snapshots = {
                 target.operator_id: resolve_progression(
-                    target.operator_id, get_progression_chain(), context
+                    operator_id=target.operator_id,
+                    chain=get_progression_chain(),
+                    context=context,
                 )
                 for target in original_targets
             }
@@ -1994,7 +2002,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 状态无变化时跳过，避免每轮无谓写盘
         if updated_targets != targets:
             merged_payload = _merge_cultivate_target_updates(
-                raw_targets, updated_targets, deferred
+                raw_targets=raw_targets,
+                updated_targets=updated_targets,
+                deferred_targets=deferred,
             )
             await self.cur_user_config.set(
                 "Task",
