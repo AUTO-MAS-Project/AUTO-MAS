@@ -5,10 +5,13 @@ import {
   type ShareAppearanceMineItem,
   type ShareAppearanceUploadItem,
   ShareAppearanceUploadOut,
+  ShareAppearanceUploadIn,
+  ShareAppearanceCategoryIn,
   type ShareAuthStatusOut,
   type ShareRiskItem,
 } from '@/api'
 import { translate as t } from '@/i18n'
+import type { AppearanceCategory } from '@/types/mascotPack'
 
 export type { ShareRiskItem }
 
@@ -22,6 +25,7 @@ export interface AppearanceUploadRecord {
 }
 
 export interface AppearanceUploadPayload {
+  categoryKey?: AppearanceCategory
   zipPath: string
   displayName: string
   description: string
@@ -37,12 +41,17 @@ export interface AppearanceUploadPayload {
 export type AppearanceCoverMode = 'package' | 'custom' | 'inherit'
 
 /** 分享站拒绝上传的类别：待审核数超限、名称被占用或内容未变、超过体积上限。 */
-export type AppearanceUploadRejection = 'pendingLimit' | 'conflict' | 'tooLarge'
+export type AppearanceUploadRejection =
+  | 'pendingLimit'
+  | 'conflict'
+  | 'tooLarge'
+  | 'categoryMismatch'
 
 export type MyAppearanceReviewStatus = 'pending' | 'approved' | 'rejected'
 
 /** 当前账号在分享站上的一个外观（含待审核、被驳回的）。 */
 export interface MyAppearanceItem {
+  categoryKey?: AppearanceCategory
   fileId: number
   fileKey: string
   displayName: string
@@ -235,6 +244,14 @@ export function useShareApi() {
     error.value = null
     try {
       const response = await Service.uploadShareAppearanceApiShareAppearanceUploadPost({
+        ...(payload.categoryKey
+          ? {
+              categoryKey:
+                payload.categoryKey === 'mascot'
+                  ? ShareAppearanceUploadIn.categoryKey.MASCOT
+                  : ShareAppearanceUploadIn.categoryKey.THEME,
+            }
+          : {}),
         zipPath: payload.zipPath,
         displayName: payload.displayName,
         description: payload.description,
@@ -276,9 +293,18 @@ export function useShareApi() {
     }
   }
 
-  const listAppearanceUploads = async (): Promise<AppearanceUploadRecord[]> => {
+  const listAppearanceUploads = async (
+    categoryKey?: AppearanceCategory
+  ): Promise<AppearanceUploadRecord[]> => {
     try {
-      const response = await Service.listShareAppearanceUploadsApiShareAppearanceUploadsPost()
+      const response = categoryKey
+        ? await Service.listShareAppearanceUploadsApiShareAppearanceUploadsPost({
+            categoryKey:
+              categoryKey === 'mascot'
+                ? ShareAppearanceCategoryIn.categoryKey.MASCOT
+                : ShareAppearanceCategoryIn.categoryKey.THEME,
+          })
+        : await Service.listShareAppearanceUploadsApiShareAppearanceUploadsPost()
       if (response.code !== 200) return []
       return (response.data ?? []).map((item: ShareAppearanceUploadItem) => ({
         appearanceId: item.appearanceId,
@@ -293,9 +319,18 @@ export function useShareApi() {
   }
 
   /** 当前账号在分享站上的全部外观；失败时把状态码交给调用方（401 要刷新登录状态）。 */
-  const listMyAppearances = async (): Promise<ShareCallResult<MyAppearanceItem[]>> => {
+  const listMyAppearances = async (
+    categoryKey?: AppearanceCategory
+  ): Promise<ShareCallResult<MyAppearanceItem[]>> => {
     try {
-      const response = await Service.listMyShareAppearancesApiShareAppearanceMinePost()
+      const response = categoryKey
+        ? await Service.listMyShareAppearancesApiShareAppearanceMinePost({
+            categoryKey:
+              categoryKey === 'mascot'
+                ? ShareAppearanceCategoryIn.categoryKey.MASCOT
+                : ShareAppearanceCategoryIn.categoryKey.THEME,
+          })
+        : await Service.listMyShareAppearancesApiShareAppearanceMinePost()
       if (response.code !== 200) {
         return {
           ok: false,

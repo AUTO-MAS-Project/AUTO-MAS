@@ -12,6 +12,12 @@ export interface FrontendConfig {
   themeColor: ThemeColor
   /** 当前自定义外观包 ID；为空时使用内置外观模式。 */
   appearanceId?: string | null
+  /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
+  desktopMascotId?: string | null
+  desktopMascotEnabled?: boolean
+  desktopMascotAnimationPaused?: boolean
+  desktopMascotIdleMessagePaused?: boolean
+  desktopMascotPosition?: { x: number; y: number }
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
   /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */

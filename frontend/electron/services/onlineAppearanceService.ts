@@ -10,6 +10,14 @@ import {
   inspectAppearancePackage,
 } from './appearanceService'
 
+import type { AppearanceCategory, MascotSummary } from '../../src/types/mascotPack'
+import {
+  getMascot,
+  getMascotRoot,
+  importMascotPackage,
+  inspectMascotPackage,
+} from './mascotPackageService'
+
 // 与 src/types/appearance.ts 的 OnlineAppearance* 同形；主进程不能 import src/，在此自行声明。
 type AppearanceMode = 'light' | 'dark'
 type OnlineAppearanceErrorCode =
@@ -76,8 +84,8 @@ export interface OnlineAppearancePreview {
   id: string
   name: string
   description?: string
-  mode: AppearanceMode
-  tokens: AppearanceManifest['tokens']
+  mode?: AppearanceMode
+  tokens?: AppearanceManifest['tokens']
   previewUrl?: string
 }
 
@@ -94,7 +102,12 @@ export interface OnlineAppearancePrepareResult {
   error?: string
 }
 
-export interface OnlineAppearanceInstallResult extends Omit<AppearanceImportResult, 'code'> {
+export interface OnlineAppearanceInstallResult extends Omit<
+  AppearanceImportResult,
+  'code' | 'existing'
+> {
+  mascot?: MascotSummary
+  existing?: AppearanceImportResult['existing'] | MascotSummary
   code?: AppearanceImportResult['code'] | OnlineAppearanceErrorCode
 }
 
@@ -153,6 +166,7 @@ export interface OnlineAppearanceServiceOptions {
   baseUrl?: string
   projectKey?: string
   categoryKey?: string
+  packageKind?: AppearanceCategory
   metadataBytes?: number
   metadataTimeoutMs?: number
   downloadIdleTimeoutMs?: number
@@ -259,8 +273,11 @@ function removeQuietly(filePath: string): void {
 
 // ==================== 来源记录 ====================
 
-function sourcesPath(userDataPath: string): string {
-  return path.join(userDataPath, APPEARANCE_SOURCES_FILE)
+function sourcesPath(userDataPath: string, kind: AppearanceCategory = 'theme'): string {
+  return path.join(
+    userDataPath,
+    kind === 'mascot' ? 'mascot-sources.json' : APPEARANCE_SOURCES_FILE
+  )
 }
 
 function normalizeSourceRecord(value: unknown): AppearanceSourceRecord | null {
@@ -292,9 +309,10 @@ function normalizeSourceRecord(value: unknown): AppearanceSourceRecord | null {
 /** 读取来源记录；文件缺失按空处理，损坏时记 warn 后按空处理。 */
 export function readAppearanceSources(
   userDataPath: string,
-  logger: OnlineAppearanceLogger = NO_LOGGER
+  logger: OnlineAppearanceLogger = NO_LOGGER,
+  kind: AppearanceCategory = 'theme'
 ): Record<string, AppearanceSourceRecord> {
-  const filePath = sourcesPath(userDataPath)
+  const filePath = sourcesPath(userDataPath, kind)
   let raw: string
   try {
     const stat = fs.statSync(filePath)
@@ -330,9 +348,10 @@ export function readAppearanceSources(
 
 function writeAppearanceSources(
   userDataPath: string,
-  sources: Record<string, AppearanceSourceRecord>
+  sources: Record<string, AppearanceSourceRecord>,
+  kind: AppearanceCategory = 'theme'
 ): void {
-  const filePath = sourcesPath(userDataPath)
+  const filePath = sourcesPath(userDataPath, kind)
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`
   try {
@@ -352,23 +371,25 @@ export function setAppearanceSource(
   userDataPath: string,
   appearanceId: string,
   record: AppearanceSourceRecord,
-  logger: OnlineAppearanceLogger = NO_LOGGER
+  logger: OnlineAppearanceLogger = NO_LOGGER,
+  kind: AppearanceCategory = 'theme'
 ): void {
-  const sources = readAppearanceSources(userDataPath, logger)
+  const sources = readAppearanceSources(userDataPath, logger, kind)
   sources[appearanceId] = record
-  writeAppearanceSources(userDataPath, sources)
+  writeAppearanceSources(userDataPath, sources, kind)
 }
 
 /** 删除某个外观的来源记录；没有记录时不写文件。返回是否删掉了记录。 */
 export function removeAppearanceSource(
   userDataPath: string,
   appearanceId: string,
-  logger: OnlineAppearanceLogger = NO_LOGGER
+  logger: OnlineAppearanceLogger = NO_LOGGER,
+  kind: AppearanceCategory = 'theme'
 ): boolean {
-  const sources = readAppearanceSources(userDataPath, logger)
+  const sources = readAppearanceSources(userDataPath, logger, kind)
   if (!Object.prototype.hasOwnProperty.call(sources, appearanceId)) return false
   delete sources[appearanceId]
-  writeAppearanceSources(userDataPath, sources)
+  writeAppearanceSources(userDataPath, sources, kind)
   return true
 }
 
@@ -418,6 +439,11 @@ export function createOnlineAppearanceService(
   options: OnlineAppearanceServiceOptions
 ): OnlineAppearanceService {
   const settings = { ...ONLINE_APPEARANCE_DEFAULTS, ...stripUndefined(options) }
+  const kind = options.packageKind ?? 'theme'
+  const getInstalled = kind === 'mascot' ? getMascot : getAppearance
+  const inspectPackage = kind === 'mascot' ? inspectMascotPackage : inspectAppearancePackage
+  const packageRoot = (userDataPath: string) =>
+    kind === 'mascot' ? getMascotRoot(userDataPath) : getAppearanceRoot(userDataPath)
   const logger = options.logger ?? NO_LOGGER
   const fetchImpl = options.fetch
   const baseUrl = settings.baseUrl.replace(/\/+$/, '')
@@ -557,7 +583,7 @@ export function createOnlineAppearanceService(
   ): OnlineAppearanceInstalled | null => {
     let root: string
     try {
-      root = getAppearanceRoot(options.userDataPath())
+      root = packageRoot(options.userDataPath())
     } catch {
       return null
     }
@@ -571,7 +597,12 @@ export function createOnlineAppearanceService(
         continue
       }
       try {
-        if (!fs.statSync(path.join(root, id, 'theme.json')).isFile()) continue
+        if (
+          !fs
+            .statSync(path.join(root, id, kind === 'mascot' ? 'mascot.json' : 'theme.json'))
+            .isFile()
+        )
+          continue
       } catch {
         continue
       }
@@ -777,7 +808,7 @@ export function createOnlineAppearanceService(
       if (!isPlainObject(data) || !Array.isArray(data.items)) {
         throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回的列表格式不正确')
       }
-      const sources = readAppearanceSources(options.userDataPath(), logger)
+      const sources = readAppearanceSources(options.userDataPath(), logger, kind)
       const items = data.items
         .map(raw => mapItem(raw, sources))
         .filter((item): item is OnlineAppearanceItem => item !== null)
@@ -809,7 +840,7 @@ export function createOnlineAppearanceService(
         requestJson(fileUrl(fileKey), '分享站上找不到这个外观包'),
         fetchVersions(fileKey),
       ])
-      const item = mapItem(data, readAppearanceSources(options.userDataPath(), logger))
+      const item = mapItem(data, readAppearanceSources(options.userDataPath(), logger, kind))
       if (!item || item.fileKey !== fileKey) {
         throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回的外观信息格式不正确')
       }
@@ -862,9 +893,9 @@ export function createOnlineAppearanceService(
         throw error
       }
 
-      let inspected: ReturnType<typeof inspectAppearancePackage>
+      let inspected: ReturnType<typeof inspectPackage>
       try {
-        inspected = inspectAppearancePackage(zipPath)
+        inspected = inspectPackage(zipPath)
       } catch (error) {
         removeQuietly(zipPath)
         if (error instanceof AppearanceError) {
@@ -884,10 +915,13 @@ export function createOnlineAppearanceService(
         installing: false,
       })
       const { manifest, previewUrl } = inspected
-      const existing = getAppearance(options.userDataPath(), manifest.id)
-      const tokens = Object.fromEntries(
-        Object.entries(manifest.tokens).filter(([, value]) => value !== undefined)
-      ) as AppearanceManifest['tokens']
+      const existing = getInstalled(options.userDataPath(), manifest.id)
+      const theme = 'tokens' in manifest ? manifest : null
+      const tokens = theme
+        ? (Object.fromEntries(
+            Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
+          ) as AppearanceManifest['tokens'])
+        : undefined
       return {
         success: true,
         token,
@@ -899,8 +933,7 @@ export function createOnlineAppearanceService(
           id: manifest.id,
           name: manifest.name,
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
-          mode: manifest.mode,
-          tokens,
+          ...(theme ? { mode: theme.mode, tokens } : {}),
           ...(previewUrl ? { previewUrl } : {}),
         },
         existing: existing ? { id: existing.id, name: existing.name } : null,
@@ -945,12 +978,17 @@ export function createOnlineAppearanceService(
       }
 
       const userDataPath = options.userDataPath()
-      const result = importAppearancePackage(userDataPath, entry.path, replace)
-      if (result.success && result.appearance) {
+      const result =
+        kind === 'mascot'
+          ? importMascotPackage(userDataPath, entry.path, replace)
+          : importAppearancePackage(userDataPath, entry.path, replace)
+      const resource =
+        'mascot' in result ? result.mascot : 'appearance' in result ? result.appearance : undefined
+      if (result.success && resource) {
         try {
           setAppearanceSource(
             userDataPath,
-            result.appearance.id,
+            resource.id,
             {
               origin,
               projectKey: settings.projectKey,
@@ -960,14 +998,15 @@ export function createOnlineAppearanceService(
               sha256: entry.sha256,
               installedAt: new Date(now()).toISOString(),
             },
-            logger
+            logger,
+            kind
           )
         } catch (error) {
           logger.warn(`写入外观来源记录失败: ${errorMessage(error)}`)
         }
         dropEntry(token)
         logger.info(
-          `在线外观已安装: ${result.appearance.id}（${entry.fileKey} 版本 ${entry.versionNo}${replace ? '，覆盖安装' : ''}）`
+          `在线外观已安装: ${resource.id}（${entry.fileKey} 版本 ${entry.versionNo}${replace ? '，覆盖安装' : ''}）`
         )
         return result
       }

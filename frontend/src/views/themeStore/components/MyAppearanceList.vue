@@ -4,6 +4,7 @@ import { SkinOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
+import type { AppearanceCategory } from '@/types/mascotPack'
 import { getMyAppearanceState, isInStore, type MyAppearanceState } from '../myAppearance'
 import { formatOnlineAppearanceTime } from '../useOnlineAppearance'
 import type { MyAppearanceStore } from '../useMyAppearances'
@@ -14,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (event: 'upload-version', fileId: number): void
+  (event: 'upload-version', fileId: number, category?: AppearanceCategory): void
   (event: 'view-in-store', item: MyAppearanceItem): void
 }>()
 
@@ -67,6 +68,7 @@ const editDescription = (item: MyAppearanceItem): void => {
 
 <template>
   <div class="mine-toolbar">
+    <slot name="filters" />
     <a-button :loading="loading" @click="load">
       {{ t('themeStore.refresh') }}
     </a-button>
@@ -106,6 +108,9 @@ const editDescription = (item: MyAppearanceItem): void => {
           </a-tag>
         </span>
         <span class="mine-meta">{{ formatOnlineAppearanceTime(item.updatedAt) }}</span>
+        <span v-if="item.categoryKey" class="mine-meta">{{
+          t(`themeStore.categories.${item.categoryKey}`)
+        }}</span>
         <span class="mine-description">
           {{ item.description || t('themeStore.noDescription') }}
         </span>
@@ -116,7 +121,11 @@ const editDescription = (item: MyAppearanceItem): void => {
           {{ t('themeStore.mine.rejectReason', { reason: item.latestReviewComment.trim() }) }}
         </span>
         <div class="mine-actions">
-          <a-button size="small" type="primary" @click="emit('upload-version', item.fileId)">
+          <a-button
+            size="small"
+            type="primary"
+            @click="emit('upload-version', item.fileId, item.categoryKey)"
+          >
             {{ t('themeStore.mine.uploadVersion') }}
           </a-button>
           <a-button size="small" @click="editDescription(item)">
@@ -141,6 +150,7 @@ const editDescription = (item: MyAppearanceItem): void => {
 .mine-toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 16px;
 }
 

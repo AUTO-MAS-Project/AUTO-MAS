@@ -17,6 +17,7 @@ import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
+import MascotSettings from './components/MascotSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -179,6 +180,7 @@ const handleLocaleChange = (value: unknown): void => {
           </div>
         </a-col>
       </a-row>
+      <MascotSettings />
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">

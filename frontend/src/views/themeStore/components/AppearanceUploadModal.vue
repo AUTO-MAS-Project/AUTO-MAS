@@ -11,6 +11,7 @@ import {
   type AppearanceUploadRecord,
 } from '@/composables/useShareApi'
 import type { OnlineAppearancePreview } from '@/types/appearance'
+import type { AppearanceCategory } from '@/types/mascotPack'
 import {
   getCoverModes,
   isCoverReady,
@@ -24,6 +25,8 @@ import ThemeStoreAccount from './ThemeStoreAccount.vue'
 
 const props = defineProps<{
   open: boolean
+  categoryKey?: AppearanceCategory
+  allowCategoryChange?: boolean
   account: ShareAccount
   mine: MyAppearanceStore
   /** 外部指定的目标文件（「我的主题」或详情页的「上传新版本」）；指定后目标锁定。 */
@@ -33,6 +36,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:open', value: boolean): void
   (event: 'uploaded'): void
+  (event: 'category-change', category: AppearanceCategory): void
 }>()
 
 const DISPLAY_NAME_MAX = 60
@@ -169,7 +173,10 @@ const loadTargets = async (): Promise<void> => {
     uploads.value = []
     return
   }
-  const [records] = await Promise.all([listAppearanceUploads(), props.mine.ensureLoaded()])
+  const [records] = await Promise.all([
+    listAppearanceUploads(props.categoryKey),
+    props.mine.ensureLoaded(),
+  ])
   uploads.value = records
   applyDefaultTarget()
 }
@@ -205,11 +212,14 @@ const pickPackage = async (): Promise<void> => {
   inspecting.value = true
   inspectError.value = null
   try {
-    const result = await window.electronAPI.inspectLocalAppearance?.(picked)
+    const result = await window.electronAPI.inspectLocalAppearance?.(picked, props.categoryKey)
     if (!result?.success || !result.appearance) {
       packageInfo.value = null
       zipPath.value = ''
-      inspectError.value = result?.error || t('themeStore.upload.invalidPackage')
+      inspectError.value =
+        props.categoryKey === 'mascot'
+          ? t('themeStore.upload.invalidPackage')
+          : result?.error || t('themeStore.upload.invalidPackage')
       return
     }
     zipPath.value = picked
@@ -257,6 +267,7 @@ const close = (): void => {
 }
 
 const failureMessage = (result: { message: string; reason?: string }): string => {
+  if (result.reason === 'categoryMismatch') return t('themeStore.upload.categoryMismatch')
   if (result.reason === 'conflict' && updating.value) return t('themeStore.upload.unchanged')
   if (result.reason === 'tooLarge') return t('themeStore.upload.tooLarge')
   if (result.reason === 'pendingLimit') return t('themeStore.upload.pendingLimit')
@@ -268,6 +279,7 @@ const submit = async (): Promise<void> => {
   submitting.value = true
   try {
     const result = await uploadAppearance({
+      categoryKey: props.categoryKey,
       zipPath: zipPath.value,
       displayName: updating.value ? '' : form.displayName.trim(),
       description: updating.value ? '' : form.description.trim(),
@@ -365,6 +377,24 @@ watch(authorized, isAuthorized => {
       </a-alert>
 
       <section class="upload-section">
+        <div class="upload-label">{{ t('themeStore.category') }}</div>
+        <a-select
+          :value="categoryKey ?? 'theme'"
+          :disabled="!allowCategoryChange || submitting || inspecting || Boolean(zipPath)"
+          :aria-label="t('themeStore.category')"
+          style="width: 100%"
+          @change="
+            (value: SelectValue) => {
+              if (value === 'theme' || value === 'mascot') emit('category-change', value)
+            }
+          "
+        >
+          <a-select-option value="theme">{{ t('themeStore.categories.theme') }}</a-select-option>
+          <a-select-option value="mascot">{{ t('themeStore.categories.mascot') }}</a-select-option>
+        </a-select>
+      </section>
+
+      <section class="upload-section">
         <div class="upload-label">{{ t('themeStore.upload.package') }}</div>
         <div class="upload-file-row">
           <a-button :loading="inspecting" :disabled="submitting" @click="pickPackage">
@@ -378,7 +408,7 @@ watch(authorized, isAuthorized => {
         <a-alert v-if="inspectError" type="error" show-icon :message="inspectError" />
         <div v-if="packageInfo" class="upload-package">
           <span class="upload-package-id">ID {{ packageInfo.appearance.id }}</span>
-          <span>
+          <span v-if="packageInfo.appearance.mode">
             {{
               packageInfo.appearance.mode === 'dark'
                 ? t('setting.themeMode.dark')

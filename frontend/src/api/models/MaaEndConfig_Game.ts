@@ -12,6 +12,10 @@ export type MaaEndConfig_Game = {
      */
     Path?: (string | null);
     /**
+     * 鹰角官方启动器路径
+     */
+    LauncherPath?: (string | null);
+    /**
      * 游戏启动参数
      */
     Arguments?: (string | null);

@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type ShareAppearanceUploadIn = {
     /**
+     * 资源分类: theme 主题, mascot 独立桌宠
+     */
+    categoryKey?: ShareAppearanceUploadIn.categoryKey;
+    /**
      * 本地外观 ZIP 路径
      */
     zipPath: string;
@@ -32,4 +36,13 @@ export type ShareAppearanceUploadIn = {
      */
     coverMode?: ('package' | 'custom' | 'inherit' | null);
 };
+export namespace ShareAppearanceUploadIn {
+    /**
+     * 资源分类: theme 主题, mascot 独立桌宠
+     */
+    export enum categoryKey {
+        THEME = 'theme',
+        MASCOT = 'mascot',
+    }
+}
 

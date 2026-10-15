@@ -38,7 +38,7 @@ from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import atomic_write, replace_dir
 from app.utils.platform import is_admin
 
-from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
+from .AutoProxy import HSRAutoProxyTask, _server_day_clock, resolve_daily_native_modes
 from .task_mapping import (
     HSR_TASK_MODULES,
     engine_label,
@@ -784,6 +784,21 @@ class HSRManager(TaskExecuteBase):
             and user_config.get("Info", "RemainedDay") != 0
         )
 
+    def _proxy_times_limit_reached(self, user_config) -> bool:
+        """今日代理次数是否已达脚本页设定的上限（0 = 不限）。
+
+        ``Data.ProxyTimes`` 按服务器日期累计，写回逻辑换日时会重新从 1 起算，
+        所以这里只在 ``LastProxyDate`` 是今天时才算数。
+        """
+
+        limit = int(self.script_config.get("Run", "ProxyTimesLimit") or 0)
+        if limit == 0:
+            return False
+        today = _server_day_clock().strftime("%Y-%m-%d")
+        if str(user_config.get("Data", "LastProxyDate") or "") != today:
+            return False
+        return int(user_config.get("Data", "ProxyTimes") or 0) >= limit
+
     def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
@@ -964,6 +979,24 @@ class HSRManager(TaskExecuteBase):
                             user_config,
                         )
                     else:
+                        # 单日代理次数上限只约束 MAS 托管的调度运行。单独运行脚本是
+                        # 用户当场发起的一次性运行；直控用户虽然也走定时队列，但它的
+                        # 代理次数不由 _run_direct_user 写回，所以同样不该被这个上限挡住。
+                        if (
+                            self.task_info.is_queue_task
+                            and self._proxy_times_limit_reached(user_config)
+                        ):
+                            user_item.status = "跳过"
+                            # 结果与通知是按 log_record 读的，只设 status 会被读成
+                            # 「未开始运行」；补一条带原因的日志记录，界面才说得清
+                            # 这个用户为什么没跑。
+                            user_item.log_record[datetime.now()] = LogRecord(
+                                status="今日代理次数已达上限，跳过"
+                            )
+                            self._append_log(
+                                f"用户「{user_item.name}」今日代理次数已达上限, 跳过"
+                            )
+                            continue
                         self._reset_m7a_config_for_managed(user_item.name)
                         proxy = task_cls(
                             self.script_info,
@@ -1324,6 +1357,10 @@ class HSRManager(TaskExecuteBase):
         """将 HSR 用户日志写入历史记录。"""
 
         for user_item in self.script_info.user_list:
+            # 被跳过的用户这一轮没有真正跑过，不写历史：否则每次跳过都会在历史
+            # 页多出一条没有内容的失败记录。其它专项同样不为跳过的用户写历史。
+            if user_item.status == "跳过":
+                continue
             for start_time, log_item in user_item.log_record.items():
                 if log_item.status == "HSR 正常运行中":
                     log_item.status = (
@@ -1377,8 +1414,11 @@ class HSRManager(TaskExecuteBase):
             return
 
         over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
+        # 「跳过」不算未完成，与公共口径 UserRunSummary.uncompleted_count（只算
+        # 异常 + 等待）一致；否则被上限挡住的用户会把报告标题变成「存在异常」，
+        # 「仅失败时」也会照推。
         uncompleted_count = sum(
-            1 for u in self.script_info.user_list if u.status != "完成"
+            1 for u in self.script_info.user_list if u.status not in ("完成", "跳过")
         )
         task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         title = (

@@ -15,6 +15,8 @@ import {
   type OnlineAppearanceInstallOutcome,
 } from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
+import type { AppearanceCategory } from '@/types/mascotPack'
+import { saveConfig } from '@/utils/config'
 
 export function useAppearanceSettings() {
   const { t } = useI18n()
@@ -36,7 +38,6 @@ export function useAppearanceSettings() {
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
-
   const themeModeOptions = computed(() => [
     { label: t('setting.themeMode.system'), value: 'system' },
     { label: t('setting.themeMode.light'), value: 'light' },
@@ -110,12 +111,21 @@ export function useAppearanceSettings() {
     })
   }
 
-  const confirmReplace = (name: string): Promise<boolean> =>
+  const confirmReplace = (name: string, category: AppearanceCategory): Promise<boolean> =>
     new Promise(resolve => {
       modal.confirm({
         ...modalOptions,
-        title: t('setting.basic.appearanceReplaceTitle'),
-        content: t('setting.basic.appearanceReplaceContent', { name }),
+        title: t(
+          category === 'mascot'
+            ? 'setting.basic.mascotReplaceTitle'
+            : 'setting.basic.appearanceReplaceTitle'
+        ),
+        content: t(
+          category === 'mascot'
+            ? 'setting.basic.mascotReplaceContent'
+            : 'setting.basic.appearanceReplaceContent',
+          { name }
+        ),
         okText: t('setting.basic.replaceAppearance'),
         cancelText: t('common.cancel'),
         onOk: () => resolve(true),
@@ -126,12 +136,14 @@ export function useAppearanceSettings() {
   // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用。
   const runAppearanceInstall = async (
     install: (replace: boolean) => Promise<AppearanceImportResult | OnlineAppearanceInstallResult>,
-    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string
+    describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string,
+    category: AppearanceCategory = 'theme'
   ): Promise<OnlineAppearanceInstallOutcome> => {
     let result = await install(false)
     if (!result.success && result.code === 'DUPLICATE_ID') {
       const replace = await confirmReplace(
-        result.existing?.name ?? result.existing?.id ?? t('setting.basic.appearance')
+        result.existing?.name ?? result.existing?.id ?? t('setting.basic.appearance'),
+        category
       )
       if (!replace) return 'cancelled'
       result = await install(true)
@@ -141,6 +153,10 @@ export function useAppearanceSettings() {
       return 'failed'
     }
     if (result.appearance) showAppearancePreview(result.appearance)
+    if ('mascot' in result && result.mascot) {
+      await saveConfig({ desktopMascotId: result.mascot.id })
+      message.success(t('setting.basic.mascotImported'))
+    }
     return 'installed'
   }
 
@@ -150,7 +166,10 @@ export function useAppearanceSettings() {
     try {
       await runAppearanceInstall(
         replace => importAppearance(zipPath, replace),
-        result => result.error || t('setting.basic.appearanceImportFailed')
+        result =>
+          result.code === 'INVALID_ANIMATION'
+            ? t('setting.basic.appearanceAnimationInvalid')
+            : result.error || t('setting.basic.appearanceImportFailed')
       )
     } finally {
       appearanceBusy.value = false
@@ -158,14 +177,20 @@ export function useAppearanceSettings() {
   }
 
   const installPreparedOnlineAppearance = async (
-    token: string
+    token: string,
+    category: AppearanceCategory = 'theme'
   ): Promise<OnlineAppearanceInstallOutcome> => {
     if (appearanceBusy.value) return 'cancelled'
     appearanceBusy.value = true
     try {
       return await runAppearanceInstall(
-        replace => installOnlineAppearance(token, replace),
-        result => describeOnlineAppearanceError(result, 'themeStore.installFailed')
+        replace =>
+          category === 'mascot'
+            ? (window.electronAPI.installOnlineAppearance?.(token, replace, category) ??
+              Promise.resolve({ success: false, code: 'UNSUPPORTED' as const }))
+            : installOnlineAppearance(token, replace),
+        result => describeOnlineAppearanceError(result, 'themeStore.installFailed', category),
+        category
       )
     } catch (error) {
       logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
