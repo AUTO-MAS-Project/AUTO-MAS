@@ -219,14 +219,16 @@ const handleVersionChange = (value: SelectValue): void => {
           <dd>{{ prepared.appearance.name }}</dd>
           <dt>ID</dt>
           <dd class="online-mono">{{ prepared.appearance.id }}</dd>
-          <dt>{{ t('themeStore.mode') }}</dt>
-          <dd>
-            {{
-              prepared.appearance.mode === 'dark'
-                ? t('setting.themeMode.dark')
-                : t('setting.themeMode.light')
-            }}
-          </dd>
+          <template v-if="prepared.appearance.mode">
+            <dt>{{ t('themeStore.mode') }}</dt>
+            <dd>
+              {{
+                prepared.appearance.mode === 'dark'
+                  ? t('setting.themeMode.dark')
+                  : t('setting.themeMode.light')
+              }}
+            </dd>
+          </template>
           <template v-if="prepared.existing">
             <dt>{{ t('themeStore.localCopy') }}</dt>
             <dd>{{ prepared.existing.name }}</dd>

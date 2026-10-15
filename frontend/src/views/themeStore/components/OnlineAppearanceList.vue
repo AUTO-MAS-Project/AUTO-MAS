@@ -45,6 +45,7 @@ const handleKeywordInput = (value: string): void => {
     >
       <template #prefix><SearchOutlined /></template>
     </a-input>
+    <slot name="filters" />
     <a-button :loading="listLoading" @click="loadList(page)">
       {{ t('themeStore.refresh') }}
     </a-button>
@@ -71,15 +72,15 @@ const handleKeywordInput = (value: string): void => {
   <div v-else class="online-grid">
     <button
       v-for="item in items"
-      :key="item.fileKey"
+      :key="`${item.categoryKey ?? ''}:${item.fileKey}`"
       type="button"
       class="online-card"
       @click="openDetail(item)"
     >
       <span class="online-cover">
         <img
-          v-if="coverFor(item.fileKey, item.publishedVersionNo)"
-          :src="coverFor(item.fileKey, item.publishedVersionNo)"
+          v-if="coverFor(item.fileKey, item.publishedVersionNo, item.categoryKey)"
+          :src="coverFor(item.fileKey, item.publishedVersionNo, item.categoryKey)"
           :alt="item.displayName || item.fileKey"
           class="online-cover-image"
         />
@@ -101,6 +102,9 @@ const handleKeywordInput = (value: string): void => {
       </span>
       <span class="online-card-body">
         <span class="online-name">{{ item.displayName || item.fileKey }}</span>
+        <span v-if="item.categoryKey" class="online-meta">{{
+          t(`themeStore.categories.${item.categoryKey}`)
+        }}</span>
         <span class="online-meta">
           <span v-if="item.publishedVersionNo !== null">v{{ item.publishedVersionNo }}</span>
           <span class="online-owner">
@@ -129,10 +133,14 @@ const handleKeywordInput = (value: string): void => {
 
 <style scoped>
 .online-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.online-toolbar > :first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .online-state {

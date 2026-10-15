@@ -5503,7 +5503,13 @@ class ShareAuthStatusOut(OutBase):
     interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
-class ShareAppearanceUploadIn(BaseModel):
+class ShareAppearanceCategoryIn(BaseModel):
+    categoryKey: Literal["theme", "mascot"] = Field(
+        default="theme", description="资源分类: theme 主题, mascot 独立桌宠"
+    )
+
+
+class ShareAppearanceUploadIn(ShareAppearanceCategoryIn):
     zipPath: str = Field(..., description="本地外观 ZIP 路径")
     displayName: str = Field(
         default="", max_length=60, description="外观名称, 只在新建时使用"
@@ -5547,9 +5553,11 @@ class ShareAppearanceUploadOut(OutBase):
     )
     isNewFile: bool = Field(default=False, description="是否新建了文件")
     appearanceId: str = Field(default="", description="外观 ID")
-    reason: Optional[Literal["pendingLimit", "conflict", "tooLarge"]] = Field(
+    reason: Optional[
+        Literal["pendingLimit", "conflict", "tooLarge", "categoryMismatch"]
+    ] = Field(
         default=None,
-        description="分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限",
+        description="上传拒绝的类别: pendingLimit 待审核数超限, conflict 名称被占用或内容未变, tooLarge 超过体积上限, categoryMismatch 更新目标与分类不符",
     )
 
 
