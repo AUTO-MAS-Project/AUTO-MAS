@@ -26,9 +26,11 @@
 
 import asyncio
 import ctypes
+import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -56,6 +58,7 @@ from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
 from app.tools.error_screenshot import save_error_screenshot
+from app.tools.ocr import ocr_image
 from app.utils import get_logger, resource_path
 
 logger = get_logger("终末地登录")
@@ -89,6 +92,22 @@ OCRItem = tuple[str, Box]
 _FRAME_WIDTH = 1920
 _FRAME_HEIGHT = 1080
 _LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
+_STARTUP_TIMEOUT = 3600
+_STARTUP_STALL_TIMEOUT = 1800
+_DOWNLOAD_STALL_TIMEOUT = 300
+_WINDOW_TIMEOUT = 120
+_STARTUP_TEXTS = (
+    "正在获取终末地",
+    "下载速度",
+    "正在编译着色器",
+    "正在检查资源完整性",
+)
+# 只用百分比和已下载量判进度，速度、预计剩余时间变化不能掩盖卡死。
+_PROGRESS_PATTERN = re.compile(r"\d+(?:\.\d+)?%|\d+(?:\.\d+)?[MGK]B/(?=\d)")
+
+
+class LoginNotReadyError(RuntimeError):
+    """游戏尚未进入可登录画面，重试时保留其启动进度。"""
 
 
 @lru_cache(maxsize=1)
@@ -292,16 +311,127 @@ async def _wait_template(
     raise RuntimeError(error)
 
 
-async def _open_login_form(hwnd: int) -> None:
+def _startup_state(items: list[OCRItem]) -> tuple[str, str, Box | None]:
+    """只识别已知更新状态及其重启确认按钮，不处理无关弹窗。"""
+    text = "".join(value for value, _ in items)
+    if "资源初始化更新完成" in text and "重启游戏" in text:
+        confirm = next(
+            (
+                box
+                for value, box in items
+                if value in ("确认", "确定")
+                and 480 <= box[0] <= 1440
+                and 500 <= box[1] <= 810
+            ),
+            None,
+        )
+        return "重启确认", "", confirm
+    for state in _STARTUP_TEXTS:
+        if state in text:
+            return state, "|".join(_PROGRESS_PATTERN.findall(text.upper())), None
+    return "", "", None
+
+
+async def _open_login_form(
+    hwnd: int,
+    *,
+    restart_game: Callable[[], Awaitable[None]] | None = None,
+    write_diagnostic: Callable[[str], None] | None = None,
+) -> int:
     """Return the game to its login form from any supported screen."""
 
     logger.info("正在打开终末地登录表单")
-    await asyncio.to_thread(_activate_window, hwnd)
+    # 历史 MAS 登录入口的临时加固；上游账号切换覆盖该启动状态后改走上游并移除。
+    loop = asyncio.get_running_loop()
+    hard_deadline = loop.time() + _STARTUP_TIMEOUT
+    deadline = loop.time() + 120
+    missing_since: float | None = None
+    last_state = ""
+    last_progress = ""
+    progress_time = loop.time()
+    restart_pending = False
+    restart_count = 0
+    next_confirm_time = 0.0
     next_escape_time = 0.0
-    async for frame in _poll_frames(hwnd, 120, activate=False):
+    last_diagnostic_time = 0.0
+    while loop.time() < hard_deadline:
+        await asyncio.sleep(1)
+        now = loop.time()
+        current = win32gui.FindWindow("UnityWndClass", "Endfield")
+        if not current or not win32gui.IsWindow(current):
+            if missing_since is None:
+                missing_since = now
+                logger.info("终末地窗口暂不可用，等待重新创建")
+            if now - missing_since >= _WINDOW_TIMEOUT:
+                raise LoginNotReadyError("等待终末地窗口重新出现超时")
+            if restart_pending and now - missing_since >= 15 and restart_game:
+                restart_pending = False
+                logger.info("更新确认后游戏已退出，按原启动方式重新拉起")
+                await restart_game()
+            continue
+        if current != hwnd or missing_since is not None:
+            logger.info("已重新找到终末地窗口")
+            hwnd = current
+            deadline = now + 120
+            restart_pending = False
+        missing_since = None
+        try:
+            frame = await asyncio.to_thread(_capture_window, hwnd)
+        except (win32gui.error, RuntimeError):
+            # IsWindow 与截图之间也可能发生销毁；只吞掉窗口确实失效的竞态。
+            if not win32gui.IsWindow(hwnd):
+                continue
+            raise
+        items = await asyncio.to_thread(ocr_image, frame)
+        state, progress, confirm = _startup_state(items)
+        progress_changed = bool(progress and progress != last_progress)
+        if progress:
+            if progress_changed:
+                progress_time = now
+                if state:
+                    logger.info(f"等待终末地启动: {state} {progress}")
+        elif state and (not last_state or last_progress):
+            progress_time = now
+        elif not state and last_state:
+            progress_time = now
+        diagnostic_items = tuple(items)
+        if write_diagnostic and (
+            state != last_state or progress_changed or now - last_diagnostic_time >= 15
+        ):
+            write_diagnostic(
+                f"启动状态={state or '未识别'}, 进度={progress or '无'}\n"
+                + "\n".join(
+                    f"  ({x},{y} {width}x{height}) {text}"
+                    for text, (x, y, width, height) in diagnostic_items
+                )
+                + "\n"
+            )
+            last_diagnostic_time = now
+        last_state = state
+        last_progress = progress
+        if state:
+            stall_timeout = (
+                _DOWNLOAD_STALL_TIMEOUT if progress else _STARTUP_STALL_TIMEOUT
+            )
+            if now - progress_time >= stall_timeout:
+                raise RuntimeError(f"终末地启动进度长时间未变化: {state}")
+            if state == "重启确认" and not confirm and now - progress_time >= 120:
+                raise RuntimeError("未能识别资源初始化更新弹窗的确认按钮")
+            deadline = now + 120
+            if state == "重启确认" and confirm and now >= next_confirm_time:
+                if restart_count >= 3:
+                    raise RuntimeError("终末地更新后反复要求重启，请人工检查")
+                logger.info("确认资源初始化更新完成，等待游戏重启")
+                await asyncio.to_thread(_click_box, hwnd, confirm)
+                restart_pending = True
+                restart_count += 1
+                next_confirm_time = now + 15
+            continue
+        if now >= deadline:
+            raise LoginNotReadyError("打开终末地登录表单超时")
         if await asyncio.to_thread(_login_form_visible, frame):
             logger.info("终末地登录表单已打开")
-            return
+            return hwnd
 
         for name, confirm, message, error in (
             ("logout", "logout_confirm", "正在登出当前终末地账号", "确认登出超时"),
@@ -324,7 +454,7 @@ async def _open_login_form(hwnd: int) -> None:
                 await asyncio.to_thread(_press_escape, hwnd)
                 next_escape_time = now + 5
 
-    raise RuntimeError("打开终末地登录表单超时")
+    raise RuntimeError("等待终末地更新及启动超过一小时")
 
 
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
@@ -415,7 +545,12 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
     raise RuntimeError(message)
 
 
-async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
+async def login(
+    id: str,
+    emulator_info: DeviceInfo | None = None,
+    *,
+    restart_game: Callable[[], Awaitable[None]] | None = None,
+) -> bool:
     """切换到终末地客户端已保存的最近账号。"""
     if not IS_WINDOWS:
         raise RuntimeError("终末地账号切换仅支持 Windows 平台")
@@ -428,16 +563,35 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
         raise RuntimeError("终末地账号不足四位，无法匹配最近账号")
 
     hwnd = win32gui.FindWindow("UnityWndClass", "Endfield")
-    if hwnd == 0:
-        raise RuntimeError("未找到终末地主窗口")
 
     masked_id = f"***{id[-4:]}"
+    diagnostic_path = (
+        Path.cwd()
+        / "debug"
+        / "maaend-login"
+        / f"login-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
+    )
+
+    def _write_diagnostic(text: str) -> None:
+        try:
+            diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+            with diagnostic_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{datetime.now():%H:%M:%S}] {text}\n")
+        except OSError as error:
+            logger.warning(f"终末地登录诊断日志写入失败: {error}")
+
     logger.info(f"开始切换终末地账号: {masked_id}")
     try:
-        await _open_login_form(hwnd)
+        hwnd = await _open_login_form(
+            hwnd,
+            restart_game=restart_game,
+            write_diagnostic=_write_diagnostic,
+        )
         await _submit_login_form(hwnd, id)
         await _wait_template(hwnd, "logout", 120, "登录确认超时：未检测到已登录界面")
-    except Exception:
+    except Exception as error:
+        _write_diagnostic(f"账号切换失败: {type(error).__name__}: {error}")
+        hwnd = win32gui.FindWindow("UnityWndClass", "Endfield")
         await asyncio.to_thread(_save_error_screenshot, hwnd)
         raise
 
