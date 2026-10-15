@@ -3,7 +3,7 @@
 更新时间：2026-10-14
 工作区：D:/Dev/AUTO-MAS
 分支：refactor/plugin-migration-v3
-当前 HEAD：81531182（本轮改动尚未提交）
+当前 HEAD：62dbf7ec（数据版本升级接线改动尚未提交）
 
 ## 状态
 
@@ -14,7 +14,7 @@
 ## 已确认边界
 
 - 旧 ConfigBase、TaskManager、EmulatorManager 不进入实际运行链路。
-- JSON → YAML 只做一次启动升级，成功后归档；运行期不双读。
+- JSON → YAML 纳入数据库数据版本 `v1.11 → v2.0` 的启动升级步骤，保留独立 `upgrade_json_configs()`。全部迁移成功才提交 `v2.0`；失败保留 `v1.11` 供下次启动重试，已成功文件按归档跳过。`v2.0` 启动不再调用迁移，即使根目录重新出现 JSON；运行期不双读。无数据库安装从 `v1.11` 进入该步骤，兼顾旧数据与新安装。
 - 配置接口通过新对象的部分补丁 update() 执行；隐藏凭据仅允许内部更新。
 - 无用户的共享脚本配置派发运行时 Default，不写入真实用户集合。
 - 队列 userId 是起点游标；脚本＋用户且无队列的请求用于单用户快速运行。
@@ -54,6 +54,7 @@
 
 ## 验证事实
 
+- 数据版本升级定向验证：`uv run python -m pytest tests/core/test_config_data_version.py tests/core/test_config_yaml_upgrade.py -q`，15 passed；修改模块 compileall 通过，`uv run python -m pytest tests --collect-only -q` 收集 321 项、退出码 0。临时目录覆盖首次安装、v1.9/v1.10/v1.11 连续升级、v2.0 跳过、失败重试与部分归档后续写入失败；未改真实用户数据库。新增版本验证文件为本地一次性产物，不自动提交。
 - uv run python -m compileall -q app plugins：通过。
 - uv run python -m pytest tests app/plugin/tests -q：399 passed、4 skipped、23 subtests passed；最近日志 .dev/backend-full-regression-final.log。四项跳过不算通过。
 - MaaFW 通用核心：12 passed；资源/声明定向：7 passed。

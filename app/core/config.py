@@ -314,6 +314,7 @@ class AppConfig:
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
+            # 无数据库的旧安装也从 v1.11 进入一次性配置升级。
             cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
             db.commit()
             cur.close()
@@ -330,7 +331,7 @@ class AppConfig:
             db.close()
             raise ValueError("旧分目录配置需先用迁移前版本升级到 v1.9；原文件未改动")
 
-        if version[0][0] != "v1.11":
+        if version[0][0] != "v2.0":
             logger.info(
                 "数据文件版本更新开始",
             )
@@ -453,13 +454,26 @@ class AppConfig:
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
                 db.commit()
 
+            # v1.11-->v2.0
+            if version[0][0] == "v1.11" or if_streaming:
+                logger.info("数据文件版本更新: v1.11-->v2.0")
+                from app.core.config_upgrade import upgrade_json_configs
+
+                try:
+                    await asyncio.to_thread(upgrade_json_configs, self.config_path)
+                    # 全部迁移成功才推进版本；失败保留 v1.11，下次启动重试。
+                    cur.execute("DELETE FROM version WHERE v = ?", ("v1.11",))
+                    cur.execute("INSERT INTO version VALUES(?)", ("v2.0",))
+                    db.commit()
+                except BaseException:
+                    cur.close()
+                    db.close()
+                    raise
+
             logger.success("数据文件版本更新完成")
 
         cur.close()
         db.close()
-        from app.core.config_upgrade import upgrade_json_configs
-
-        await asyncio.to_thread(upgrade_json_configs, self.config_path)
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """读取本地 Git 身份；受监督时更新由 Runtime 负责，不判定需要更新。"""

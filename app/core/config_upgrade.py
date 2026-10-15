@@ -401,7 +401,7 @@ def merge_existing(
 
 
 def upgrade_json_configs(config_path: Path) -> None:
-    """升级已迁移领域，成功后归档源文件；后续启动不再读取归档 JSON。"""
+    """由 v1.11→v2.0 数据升级调用，转换已迁移领域并归档源 JSON。"""
     roots = (
         ("Config.json", "setting.yaml", Setting.build()),
         ("ToolsConfig.json", "tools.yaml", Tools.build()),
