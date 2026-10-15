@@ -21,6 +21,7 @@
 
 
 import re
+from collections.abc import Iterable
 from html import escape
 from html.parser import HTMLParser
 from io import BytesIO
@@ -30,7 +31,7 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core import Config
-from app.core.notify import DispatchResult, dispatch, global_target
+from app.core.notify import DispatchResult, NotifyTarget, dispatch, global_target
 from app.models.notification import NotificationImage, NotifyPayload
 from app.utils.logger import get_logger
 
@@ -43,6 +44,10 @@ NOTIFICATION_RETRY_DELAY_SECONDS = 1
 NOTIFICATION_FAST_PATH_WAIT_SECONDS = (
     NOTIFICATION_RETRY_DELAY_SECONDS * (NOTIFICATION_SEND_ATTEMPTS - 1) + 0.1
 )
+COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT = (
+    "社区签到流程异常结束，无法确认最终结果，请查看日志。"
+)
+COMMUNITY_SIGN_EMPTY_RESULT_TEXT = "本次社区签到已结束，没有新的签到结果。"
 _SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
@@ -104,7 +109,7 @@ def _result_nickname(item: dict[str, object]) -> str:
     return account
 
 
-def _notification_results(
+def filter_community_notification_results(
     results: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     """过滤没有实际签到角色的平台占位结果。"""
@@ -247,7 +252,7 @@ def _community_notification_rows(
 ) -> list[tuple[str, str]]:
     """统一文本、Markdown、HTML 与图片中的平台分组和结果行。"""
 
-    results = _notification_results(results)
+    results = filter_community_notification_results(results)
     if not results:
         return []
 
@@ -429,7 +434,8 @@ def get_task_community_summary(
         else getattr(task_info, "game_sign_results", [])
     )
     if not results:
-        return ""
+        community_sign = getattr(task_info, "community_sign_notification", None)
+        return getattr(community_sign, "completion_notice", "")
 
     return format_community_task_summary(list(results), output_format=output_format)
 
@@ -537,7 +543,7 @@ def build_community_notification_payload(
     同时提供纯文本、Markdown 和 HTML 表达，由每个目标按声明能力选择。
     """
 
-    results = _notification_results(results)
+    results = filter_community_notification_results(results)
     title = "社区签到通知"
     plain_text = format_community_notification(
         results, output_format="text", include_title=False
@@ -563,26 +569,38 @@ def build_community_notification_payload(
 
 async def dispatch_community_notification(
     results: list[dict[str, object]],
+    *,
+    targets: list[NotifyTarget] | None = None,
+    skip_channel_ids: Iterable[str] = (),
+    completion_notice: str = "",
 ) -> DispatchResult:
     """分发社区通知并保留完整渠道结果，供新旧入口共同使用。"""
-    results = _notification_results(results)
-    if not results:
+    results = filter_community_notification_results(results)
+    if not results and not completion_notice:
         return DispatchResult()
 
-    payload = build_community_notification_payload(results)
+    payload = (
+        build_community_notification_payload(results)
+        if results
+        else NotifyPayload(title="社区签到执行结束", text=completion_notice)
+    )
     return await dispatch(
         payload,
-        [global_target(include_system=True)],
+        targets if targets is not None else [global_target(include_system=True)],
         attempts=NOTIFICATION_SEND_ATTEMPTS,
         retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
+        skip_channel_ids=skip_channel_ids,
     )
 
 
-async def _report_notification_failure(failed_channels: list[str]) -> None:
+async def report_community_notification_failure(
+    failed_channels: list[str], *, results_saved: bool = True
+) -> None:
     """通知渠道级失败改用系统提示回传，不让发送结果只留在日志里。
 
     Args:
         failed_channels: 本次分发中发送失败的渠道名。
+        results_saved: 是否存在已保存的签到结果，空结果终态不宣称保存成功。
     """
 
     await Config.push_system_notice(
@@ -590,7 +608,11 @@ async def _report_notification_failure(failed_channels: list[str]) -> None:
         title="游戏社区通知发送不完整",
         lines=[
             f"发送失败的渠道：{'、'.join(failed_channels)}",
-            "签到结果已保存，请检查这些渠道的通知配置后重试。",
+            (
+                "签到结果已保存，请检查这些渠道的通知配置后重试。"
+                if results_saved
+                else "请检查这些渠道的通知配置后重试。"
+            ),
         ],
     )
 
@@ -603,15 +625,18 @@ async def push_community_notification(
     dispatch_result = await dispatch_community_notification(results)
     failed_channels = list(dispatch_result.failed)
     if failed_channels:
-        await _report_notification_failure(failed_channels)
+        await report_community_notification_failure(failed_channels)
     return failed_channels
 
 
 __all__ = [
     "append_task_community_summary",
+    "dispatch_community_notification",
+    "filter_community_notification_results",
     "format_community_notification",
     "format_community_task_summary",
     "get_task_community_summary",
     "mark_task_community_summary_consumed",
     "push_community_notification",
+    "report_community_notification_failure",
 ]
