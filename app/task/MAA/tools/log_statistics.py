@@ -96,6 +96,9 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
     target_task_names = {
         "Fight",
+        "理智任务",
+        "活动关均衡理智",
+        "库存保持与干员养成",
         "理智作战",
         "活动关优先",
         "活动库存保持",
@@ -105,6 +108,7 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
         "开始任务: Fight",
+        "开始任务: 理智任务",
         "开始任务: 理智作战",
         "Start Task Chain: Fight",
     )

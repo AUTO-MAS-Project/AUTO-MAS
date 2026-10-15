@@ -599,6 +599,7 @@ _TASK_SWITCH_LABELS = {
 """TaskQueue 任务类型 → 开关标签（与 MAS 侧侧车词表一致）"""
 
 _TASK_ZH_TO_TYPE = {zh: en for en, zh in zip(MAA_TASKS, MAA_TASKS_ZH)}
+_TASK_ZH_TO_TYPE.update({"库存保持": "DepotMaintain", "理智作战": "Fight"})
 """MAA 任务中文名 → 任务类型（GUI 存的任务可能缺 TaskType，按名兜底）"""
 
 
