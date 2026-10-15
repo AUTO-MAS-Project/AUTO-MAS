@@ -142,6 +142,7 @@ import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAppearanceCategoryIn } from '../models/ShareAppearanceCategoryIn';
 import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
 import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
 import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
@@ -608,6 +609,29 @@ export class Service {
         });
     }
     /**
+     * 从终末地客户端路径识别官方启动器路径
+     * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+     *
+     * 只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+     * @param scriptId
+     * @returns MaaEndLauncherPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
+        scriptId: string,
+    ): CancelablePromise<MaaEndLauncherPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maaend/launcher-path',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 删除脚本
      * @param requestBody
      * @returns OutBase Successful Response
@@ -716,29 +740,6 @@ export class Service {
             url: '/api/scripts/config/import',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从终末地客户端路径识别官方启动器路径
-     * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
-     *
-     * 只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
-     * @param scriptId
-     * @returns MaaEndLauncherPathOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
-        scriptId: string,
-    ): CancelablePromise<MaaEndLauncherPathOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/maaend/launcher-path',
-            query: {
-                'scriptId': scriptId,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -2779,8 +2780,8 @@ export class Service {
     }
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
-     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
+     * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target
@@ -4084,24 +4085,40 @@ export class Service {
     }
     /**
      * 获取当前账号的外观上传记录
+     * @param requestBody
      * @returns ShareAppearanceUploadsOut Successful Response
      * @throws ApiError
      */
-    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(): CancelablePromise<ShareAppearanceUploadsOut> {
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceUploadsOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/appearance/uploads',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
      * 获取当前账号在分享站上的全部外观
+     * @param requestBody
      * @returns ShareAppearanceMineOut Successful Response
      * @throws ApiError
      */
-    public static listMyShareAppearancesApiShareAppearanceMinePost(): CancelablePromise<ShareAppearanceMineOut> {
+    public static listMyShareAppearancesApiShareAppearanceMinePost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceMineOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/appearance/mine',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

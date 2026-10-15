@@ -46,6 +46,7 @@ logger = get_logger("主业务定时器")
 # 定时错过后的补跑宽限：计划时刻过去不超过这么久（按真实流逝时间）才补跑一次。
 # 只兜住短暂的睡眠 / 卡顿与春季跳表，不补长时间关机或整夜睡眠错过的定时。
 TIMED_START_GRACE = timedelta(minutes=10)
+_COMMUNITY_POWER_DRAIN_SECONDS = 30.0
 
 
 def _local_now() -> datetime:
@@ -115,9 +116,6 @@ class _MainTimer:
 
     async def stop(self):
         """停止定时器"""
-
-        if not self.started:
-            return
 
         tasks = [
             task
@@ -414,6 +412,63 @@ class _MainTimer:
         except Exception as e:
             logger.opt(exception=e).error("游戏社区签到后台任务异常")
 
+    def schedule_community_for_task(
+        self,
+        *,
+        source: CommunityTriggerSource,
+        on_completed: Callable[[list[dict[str, object]] | None], None],
+    ) -> None:
+        """与脚本并行签到，通过完成回调交付结果，复用现有后台任务所有权。"""
+
+        if not self._has_pending_community_sign(source=source):
+            on_completed([])
+            return
+        if self.community_sign_task is not None and not self.community_sign_task.done():
+            logger.info("游戏社区签到正在执行，跳过本次触发")
+            on_completed([])
+            return
+
+        task = asyncio.create_task(self.try_community_for_task(source=source))
+        self.community_sign_task = task
+        task.add_done_callback(self._on_community_sign_done)
+
+        def receive_result(done_task: asyncio.Task) -> None:
+            # 异常由原有回调记录；None 表示无法确认结果，[] 保留正常跳过语义。
+            results: list[dict[str, object]] | None = []
+            if not done_task.cancelled() and done_task.exception() is not None:
+                results = None
+            elif not done_task.cancelled():
+                results = done_task.result()
+            on_completed(results)
+
+        task.add_done_callback(receive_result)
+
+    async def drain_community_tasks(
+        self, timeout: float = _COMMUNITY_POWER_DRAIN_SECONDS
+    ) -> bool:
+        """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
+
+        from app.core.notify import drain_task_community_notifications
+
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            signing = self.community_sign_task
+            if signing is not None:
+                # 即使已完成也统一等待，让结果回调先登记待补发通知。
+                _, pending = await asyncio.wait(
+                    {signing},
+                    timeout=max(0, deadline - asyncio.get_running_loop().time()),
+                )
+                if pending:
+                    return False
+            if not await drain_task_community_notifications(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            # 补发期间新的定时任务（如跨零点）可能又启动签到，共用原截止时间。
+            if self.community_sign_task is None:
+                return True
+
     async def _execute_community_sign(
         self, *, source: CommunityTriggerSource = "scheduled"
     ) -> list[dict[str, object]]:
@@ -474,6 +529,9 @@ class _MainTimer:
         except CommunitySignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
         except Exception as e:
+            if source in TASK_COMMUNITY_SOURCES:
+                # 交给后台任务完成回调记录并交付异常终态，不能混同正常空结果。
+                raise
             logger.error(f"游戏社区签到执行失败: {e}")
             # 保留已有结果，不覆盖为错误信息
             logger.exception("游戏社区签到执行异常堆栈")
@@ -485,24 +543,30 @@ class _MainTimer:
         """执行 MAS 自动签到并返回结果。
 
         ``task`` 结果由任务完成通知汇总，``startup`` 结果独立通知。
+        任务来源的异常由后台完成回调交付，正常跳过仍返回空结果。
         """
         if source is None:
             source = "task_manual"
+
+        if not self._has_pending_community_sign(source=source):
+            return []
+        return await self._execute_community_sign(source=source)
+
+    def _has_pending_community_sign(self, *, source: CommunityTriggerSource) -> bool:
+        """共享后台派发和直接执行的触发条件，未启用或今日已完成时立即跳过。"""
 
         if not should_run_community_for_source(
             enabled=Config.ToolsConfig.get("GameSign", "Enabled"),
             run_on_startup=Config.ToolsConfig.get("GameSign", "RunOnStartup"),
             source=source,
         ):
-            return []
+            return False
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
-        # 快速检查：是否没有待处理账号
-        if all_community_accounts_signed(Config.ToolsConfig.GameSign_Accounts, today):
-            return []
-
-        return await self._execute_community_sign(source=source)
+        return not all_community_accounts_signed(
+            Config.ToolsConfig.GameSign_Accounts, today
+        )
 
 
 MainTimer = _MainTimer()

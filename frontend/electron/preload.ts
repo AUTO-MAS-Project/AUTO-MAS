@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
@@ -198,6 +199,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 自定义外观包：主进程完成 ZIP 校验后只返回已声明素材的 data URL。
   listAppearances: () => ipcRenderer.invoke('appearance:list'),
+  listMascots: () => ipcRenderer.invoke('mascot:list'),
+  importMascot: (zipPath: string, replace = false) =>
+    ipcRenderer.invoke('mascot:import', zipPath, replace),
+  removeMascot: (id: string) => ipcRenderer.invoke('mascot:remove', id),
+  onMascotChanged: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('mascot-changed', listener)
+    return () => ipcRenderer.removeListener('mascot-changed', listener)
+  },
   getAppearance: (id: string) => ipcRenderer.invoke('appearance:get', id),
   importAppearance: (zipPath: string, replace = false) =>
     ipcRenderer.invoke('appearance:import', zipPath, replace),
@@ -205,19 +215,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearInvalidAppearance: (expectedId: string) =>
     ipcRenderer.invoke('appearance:clear-invalid', expectedId),
   // 在线外观：下载、校验与安装都在主进程完成，渲染进程只拿 token。
-  listOnlineAppearances: (query?: { page?: number; pageSize?: number; keyword?: string }) =>
-    ipcRenderer.invoke('appearance:online-list', query),
-  getOnlineAppearance: (fileKey: string) => ipcRenderer.invoke('appearance:online-detail', fileKey),
-  prepareOnlineAppearance: (fileKey: string, versionNo: number) =>
-    ipcRenderer.invoke('appearance:online-prepare', fileKey, versionNo),
-  installOnlineAppearance: (token: string, replace = false) =>
-    ipcRenderer.invoke('appearance:online-install', token, replace),
-  discardOnlineAppearance: (token: string) =>
-    ipcRenderer.invoke('appearance:online-discard', token),
-  getOnlineAppearanceCover: (fileKey: string, versionNo?: number) =>
-    ipcRenderer.invoke('appearance:online-cover', fileKey, versionNo),
-  inspectLocalAppearance: (zipPath: string) =>
-    ipcRenderer.invoke('appearance:inspect-local', zipPath),
+  listOnlineAppearances: (
+    query?: { page?: number; pageSize?: number; keyword?: string },
+    category?: AppearanceCategory
+  ) => ipcRenderer.invoke('appearance:online-list', query, category),
+  getOnlineAppearance: (fileKey: string, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:online-detail', fileKey, category),
+  prepareOnlineAppearance: (fileKey: string, versionNo: number, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:online-prepare', fileKey, versionNo, category),
+  installOnlineAppearance: (token: string, replace = false, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:online-install', token, replace, category),
+  discardOnlineAppearance: (token: string, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:online-discard', token, category),
+  getOnlineAppearanceCover: (fileKey: string, versionNo?: number, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:online-cover', fileKey, versionNo, category),
+  inspectLocalAppearance: (zipPath: string, category?: AppearanceCategory) =>
+    ipcRenderer.invoke('appearance:inspect-local', zipPath, category),
   inspectAppearanceCover: (imagePath: string) =>
     ipcRenderer.invoke('appearance:inspect-cover', imagePath),
   onAppearanceChanged: (callback: () => void) => {

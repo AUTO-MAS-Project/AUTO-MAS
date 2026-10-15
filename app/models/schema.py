@@ -3160,7 +3160,7 @@ class MaaEndConfig_Game(BaseModel):
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     LauncherPath: Optional[str] = Field(
         default=None,
-        description="终末地官方启动器路径（Hypergryph Launcher/Launcher.exe）",
+        description="终末地官方启动器路径（留空自动识别；也可手动指定，附加父进程启动接受 Launcher.exe 或 Games.exe）",
     )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
@@ -5518,7 +5518,13 @@ class ShareAuthStatusOut(OutBase):
     interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
-class ShareAppearanceUploadIn(BaseModel):
+class ShareAppearanceCategoryIn(BaseModel):
+    categoryKey: Literal["theme", "mascot"] = Field(
+        default="theme", description="资源分类: theme 主题, mascot 独立桌宠"
+    )
+
+
+class ShareAppearanceUploadIn(ShareAppearanceCategoryIn):
     zipPath: str = Field(..., description="本地外观 ZIP 路径")
     displayName: str = Field(
         default="", max_length=60, description="外观名称, 只在新建时使用"
@@ -5562,9 +5568,11 @@ class ShareAppearanceUploadOut(OutBase):
     )
     isNewFile: bool = Field(default=False, description="是否新建了文件")
     appearanceId: str = Field(default="", description="外观 ID")
-    reason: Optional[Literal["pendingLimit", "conflict", "tooLarge"]] = Field(
+    reason: Optional[
+        Literal["pendingLimit", "conflict", "tooLarge", "categoryMismatch"]
+    ] = Field(
         default=None,
-        description="分享站拒绝的类别: pendingLimit 待审核数超限, conflict 新建时名称被占用或新版本内容未变, tooLarge 超过体积上限",
+        description="上传拒绝的类别: pendingLimit 待审核数超限, conflict 名称被占用或内容未变, tooLarge 超过体积上限, categoryMismatch 更新目标与分类不符",
     )
 
 

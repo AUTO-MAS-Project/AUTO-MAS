@@ -17,6 +17,7 @@ import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
+import MascotSettings from './components/MascotSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -26,10 +27,6 @@ interface TabBasicProps {
   themeColor: ThemeColor
   themeColorDisabled?: boolean
   appearanceBusy: boolean
-  desktopMascotEnabled: boolean
-  desktopMascotSaving: boolean
-  desktopMascotAvailable: boolean
-  handleDesktopMascotChange(enabled: boolean): Promise<void>
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
   cursorEffect: CursorEffect
@@ -60,10 +57,6 @@ const {
   themeColor,
   themeColorDisabled = false,
   appearanceBusy,
-  desktopMascotEnabled,
-  desktopMascotSaving,
-  desktopMascotAvailable,
-  handleDesktopMascotChange,
   themeModeOptions,
   themeColorOptions,
   cursorEffect,
@@ -187,6 +180,7 @@ const handleLocaleChange = (value: unknown): void => {
           </div>
         </a-col>
       </a-row>
+      <MascotSettings />
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
@@ -201,22 +195,6 @@ const handleLocaleChange = (value: unknown): void => {
                 {{ t(`locale.${item}`) }}
               </a-select-option>
             </a-select>
-          </div>
-        </a-col>
-        <a-col v-if="desktopMascotAvailable" :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.desktopMascot') }}</span>
-              <a-tooltip :title="t('setting.basic.desktopMascotTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-switch
-              :checked="desktopMascotEnabled"
-              :loading="desktopMascotSaving"
-              :aria-label="t('setting.basic.desktopMascot')"
-              @change="(value: boolean) => handleDesktopMascotChange(value)"
-            />
           </div>
         </a-col>
       </a-row>

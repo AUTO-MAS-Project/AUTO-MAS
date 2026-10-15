@@ -1664,7 +1664,8 @@ class MaaEndConfig(ConfigBase):
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 终末地官方启动器路径；留空自动识别，手动指定不限定文件名与安装布局
+        ## 终末地官方启动器路径；启动器启动留空自动识别，手动指定不限定文件名
+        ## 与安装布局；附加父进程启动（game_launcher）接受 Launcher.exe 或 Games.exe
         self.Game_LauncherPath = ConfigItem("Game", "LauncherPath", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())

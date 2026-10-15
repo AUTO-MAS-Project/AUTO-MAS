@@ -33,6 +33,7 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import { broadcastMascotChange, registerMascotHandlers } from './ipc/mascotHandlers'
 import {
   DesktopMascotService,
   type DesktopMascotPreferences,
@@ -2079,12 +2080,16 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
       typeof patch === 'object' &&
       [
         'appearanceId',
+        'desktopMascotId',
         'desktopMascotEnabled',
         'desktopMascotAnimationPaused',
         'desktopMascotIdleMessagePaused',
       ].some(key => key in patch)
     ) {
       syncDesktopMascot()
+      if (['desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
+        broadcastMascotChange()
+      }
     }
 
     if (
@@ -2348,6 +2353,7 @@ app.whenReady().then(async () => {
   logger.info('文件操作处理器已注册')
 
   registerAppearanceHandlers({ onChanged: syncDesktopMascot })
+  registerMascotHandlers(syncDesktopMascot)
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器

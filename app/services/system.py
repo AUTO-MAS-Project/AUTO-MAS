@@ -22,6 +22,7 @@
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
@@ -194,6 +195,8 @@ class _SystemHandler:
             "Logoff",
         ],
         delay: int = 0,
+        *,
+        before_power: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """电源任务：先静默等待队列设定的延时，再逐秒推送倒计时状态，归零后执行电源操作"""
 
@@ -212,6 +215,8 @@ class _SystemHandler:
                     ),
                 )
                 await asyncio.sleep(1)
+            if before_power is not None and not await before_power():
+                logger.warning("后台任务收尾超时，继续执行电源操作")
             await self.set_power(power_sign)
         except asyncio.CancelledError:
             await self._publish_power_cancelled(asyncio.current_task())
@@ -223,14 +228,20 @@ class _SystemHandler:
             self.current_power_operation = None
             self.current_power_remaining = 0
 
-    async def start_power_task(self):
+    async def start_power_task(
+        self, *, before_power: Callable[[], Awaitable[bool]] | None = None
+    ):
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
             power_sign = Config.power_sign
             delay = Config.power_delay
             self._power_cancelled_event_task = None
-            power_task = asyncio.create_task(self._power_task(power_sign, delay))
+            power_task = asyncio.create_task(
+                self._power_task(
+                    power_sign=power_sign, delay=delay, before_power=before_power
+                )
+            )
 
             def _on_done(done_task: asyncio.Task) -> None:
                 # 电源任务无人 await，异常只能在这里取出记录，否则失败不留痕迹

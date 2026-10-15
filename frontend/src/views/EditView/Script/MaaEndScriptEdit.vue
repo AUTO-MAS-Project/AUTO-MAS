@@ -167,6 +167,26 @@
             </a-col>
           </a-row>
 
+          <a-row v-if="isWinController && !isLauncherMode" :gutter="24">
+            <a-col :span="24">
+              <a-form-item :label="t('edit.maaEndLauncherPath')">
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="maaEndConfig.Game.LauncherPath"
+                    :placeholder="t('edit.maaEndLauncherPathHint')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button size="large" class="path-button" @click="selectAttachLauncherPath">
+                    <template #icon><FolderOpenOutlined /></template>
+                    {{ t('edit.pickFile') }}
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -1106,6 +1126,25 @@ const selectGamePath = async () => {
     await refreshScript()
     await loadMaaEndOptions()
   }
+}
+
+// 直接启动（附加父进程）模式的启动器选择：仅接受 Launcher.exe / Games.exe；
+// 启动器启动模式的路径选择在 MaaEndLauncherSection 中
+const selectAttachLauncherPath = async () => {
+  const paths = await window.electronAPI?.selectFile([
+    { name: 'Launcher.exe / Games.exe', extensions: ['exe'] },
+  ])
+  const path = paths?.[0]
+  if (!path) return
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
+  if (fileName !== 'launcher.exe' && fileName !== 'games.exe') {
+    message.error(t('edit.maaEndLauncherPathHint'))
+    return
+  }
+  const previousPath = maaEndConfig.Game.LauncherPath
+  maaEndConfig.Game.LauncherPath = path
+  const saved = await enqueue(() => updateScript(scriptId, { Game: { LauncherPath: path } }))
+  if (!saved) maaEndConfig.Game.LauncherPath = previousPath
 }
 
 const cleanupConfigSession = () => {

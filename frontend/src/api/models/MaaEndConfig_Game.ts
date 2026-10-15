@@ -16,7 +16,7 @@ export type MaaEndConfig_Game = {
      */
     Path?: (string | null);
     /**
-     * 终末地官方启动器路径（Hypergryph Launcher/Launcher.exe）
+     * 终末地官方启动器路径（留空自动识别；也可手动指定，附加父进程启动接受 Launcher.exe 或 Games.exe）
      */
     LauncherPath?: (string | null);
     /**
