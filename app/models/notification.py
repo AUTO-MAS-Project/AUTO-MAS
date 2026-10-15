@@ -106,6 +106,22 @@ class NotifyPayload:
 
 
 @dataclass(frozen=True)
+class DispatchResult:
+    """一次通知分发的明确结果。
+
+    ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
+    ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
+    ``attempted`` 为 0，切勿把该状态当作「已送达」。
+    """
+
+    attempted: int = 0
+    succeeded: tuple[str, ...] = ()
+    failed: tuple[str, ...] = ()
+    # 内部投递记录使用 ID，用户可见的 succeeded/failed 继续保留渠道名称。
+    succeeded_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class NotificationCapabilities:
     """一个具体投递目标在当前配置下的有效内容与图片能力。"""
 

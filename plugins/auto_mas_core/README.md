@@ -104,8 +104,8 @@ class PLUGIN(BasePlugin):
 
 直接构造插件做隔离验证时，先 `bind_services()` 注入查询替身。
 旧 `auto_mas_core.plugin.services` 与顶层 `Plugin` 导出继续保留兼容；
-新服务消费逻辑使用实例查询接口。宿主业务服务 `auto_mas_core.services`
-（通知、更新等）仍沿用原入口，属于后续迁移范围。
+新服务消费逻辑使用实例查询接口。宿主业务服务 `auto_mas_core.services` 保留兼容；
+通知消费使用下方宿主通知能力，其他能力按各自迁移进度接入。
 
 ## 默认配置会话
 
@@ -117,3 +117,33 @@ class PLUGIN(BasePlugin):
 工厂接收 `uid` 和 `payload` 两个关键字参数，返回尚未激活的用户配置节点。
 展开层沿用 `uuid5(script_entry.uid, "Default")`、脚本配置来源和关闭常规配置覆写的设置，
 随后激活节点；节点只进入本次任务树，不加入脚本的持久化账号集合。
+
+## 宿主通知能力
+
+宿主在 `pre_enable` 前绑定 `BasePlugin.notifications`，插件构造签名不变。
+插件使用注入接口提交内容；渠道选择、渲染、重试和签到摘要仍由宿主既有流程处理。
+
+```python
+from auto_mas_core import BasePlugin
+from auto_mas_core.notify import NotifyPayload
+from auto_mas_core.utils import get_logger
+
+
+class PLUGIN(BasePlugin):
+    async def send_notice(self) -> None:
+        result = await self.notifications.send_global(
+            NotifyPayload(title="通知标题", text="通知正文"), include_system=True
+        )
+        # attempted == 0 表示本次没有尝试投递，不能当作已送达。
+        if result.failed:
+            get_logger("demo").warning(f"通知投递失败: {result.failed}")
+```
+
+`send_user(payload, user_config)` 使用账号独立通知配置；
+`send_statistics(payload, user_config)` 复用全局和账号统计开关；
+`push_proxy_result(...)` 复用代理结果时机、模板、图片和签到摘要投递记录。
+接口类型可从 `auto_mas_core.notify` 导入 `NotificationService`。
+独立实例可调用 `bind_notifications()` 绑定替身。
+
+旧 `auto_mas_core.notify` 全局函数与 `auto_mas_core.services.Notify` 保留兼容；
+外部专项消费方的迁移另行处理。仅导入通知契约和消息类型不会初始化宿主通知实现。
