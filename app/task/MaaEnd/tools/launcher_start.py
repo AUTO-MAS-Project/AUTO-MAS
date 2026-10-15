@@ -29,7 +29,8 @@
 
     退出屏保 → 拉起 Launcher.exe → 等启动器窗口 → OCR 右下角动作区找按钮
     · 按钮是「更新游戏」：点击 → 出现「系统提示」弹窗（所需/剩余空间）→ 点「确认」
-      → 按钮变「正在下载」，按下载态动态续延等待（多久等多久）
+      → 按钮变「正在下载」，按下载态动态续延等待（多久等多久）；下载完成后
+      自动进入「安装中」「校验中」（无需干预），完毕后按钮变回「开始游戏」
     · 按钮是「开始游戏」：点击 → 等 Endfield.exe 可见窗口出现
     · 弹窗是「检测到启动器版本更新」：点「更新」交给官方 updater（绝不点「退出」）
       → 原启动器窗口退出，updater 独立窗口自行下载安装 → 完成后自动拉起新版
@@ -105,10 +106,13 @@ _ACTION_ROI: Box = (1380, 860, 1920, 1080)
 # 不会被误点。
 _START_GAME_TEXTS = ("开始游戏",)
 _UPDATE_GAME_TEXTS = ("更新游戏",)
-# 忙碌态判定文本：下载中的按钮文案与「暂停下载」附带按钮；裸「下载」用于容忍
-# OCR 拆词。「预下载」开放且游戏可玩是官方预期状态，含「预」的条目必须排除
-# （见 _find_busy_box）
-_BUSY_STATE_TEXTS = ("正在下载", "下载中", "暂停下载", "下载")
+# 下载结束后的安装/校验阶段按钮文案：实测全自动且不拦截开始游戏，按忙碌态
+# 一并续延等待，防止安装校验耗时超过下载宽限期被误判超时
+_INSTALL_PHASE_TEXTS = ("安装中", "校验中")
+# 忙碌态判定文本：下载中的按钮文案与「暂停下载」附带按钮，加安装/校验阶段；
+# 裸「下载」用于容忍 OCR 拆词。「预下载」开放且游戏可玩是官方预期状态，
+# 含「预」的条目必须排除（见 _find_busy_box）
+_BUSY_STATE_TEXTS = ("正在下载", "下载中", "暂停下载", "下载") + _INSTALL_PHASE_TEXTS
 # 更新确认弹窗（「系统提示」+ 所需/剩余空间）：弹窗居中，不受动作区限制；
 # 「取消」与「确认」同屏，必须按精确文案点「确认」/「确定」，绝不点「取消」
 _DIALOG_TITLE_TEXTS = ("系统提示",)
@@ -556,8 +560,9 @@ def start_game_via_launcher(
     """通过官方启动器拉起终末地，直到 Endfield.exe 窗口出现（停在标题界面）。
 
     启动器按钮有概率是「更新游戏」而非「开始游戏」（游戏有新版本时）：点
-    「更新游戏」后出现「系统提示」弹窗，点「确认」开始下载，等下载完成、按钮
-    变回「开始游戏」后再点。下载进行中按忙碌态动态续延等待，下载多久等多久；
+    「更新游戏」后出现「系统提示」弹窗，点「确认」开始下载，等下载完成并自动
+    走完「安装中」「校验中」（无需干预）、按钮变回「开始游戏」后再点。下载与
+    安装校验进行中按忙碌态动态续延等待，下载多久等多久；
     同时以百分比/体积/速度构造进度签名，长时间无变化判定下载卡死提前失败。
 
     启动器自身也可能弹出「检测到启动器版本更新」弹窗：点「更新」交给官方
@@ -647,6 +652,8 @@ def start_game_via_launcher(
         busy_since: float | None = None
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
+        # 安装/校验阶段进入日志只报一次；离开该阶段即复位，支持同一轮内再次更新
+        install_phase_logged = False
         last_ocr_texts: tuple[str, ...] | None = None
         last_ocr_dump = 0.0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
@@ -694,6 +701,7 @@ def start_game_via_launcher(
                         busy_since = None
                         last_download_sig = None
                         last_download_progress = time.monotonic()
+                        install_phase_logged = False
                         self_update_wait = False
                         self_update_clicks = 0
                         last_self_update_click = None
@@ -802,10 +810,25 @@ def start_game_via_launcher(
             # 状态判定与点击只认右下角动作区，排除左侧列表富文本干扰
             action_items = _items_in_action_roi(items)
 
-            # 游戏下载进行中：基于下载态动态续延等待，并以进度签名检测卡死
+            # 游戏下载/安装校验进行中：基于忙碌态动态续延等待，并以进度签名
+            # 检测卡死；进入安装/校验阶段时留一条日志（全自动，无需干预）
             if _find_busy_box(action_items) is not None:
                 if update_clicked:
                     update_went_busy = True
+                install_phase = (
+                    _find_text(action_items, _INSTALL_PHASE_TEXTS) is not None
+                )
+                if install_phase and not install_phase_logged:
+                    on_log(
+                        "下载已完成，启动器正在安装/校验游戏文件"
+                        "（全自动，请勿关闭启动器）..."
+                    )
+                    install_phase_logged = True
+                    # 安装校验的进度签名与下载分开计基准，避免跨阶段误判卡死
+                    last_download_sig = None
+                    last_download_progress = now
+                elif not install_phase:
+                    install_phase_logged = False
                 if busy_since is None:
                     busy_since = now
                 elif now - busy_since >= _BUSY_WAIT_HARD_LIMIT_SECONDS:
@@ -836,6 +859,7 @@ def start_game_via_launcher(
                 # 明确恢复「开始游戏」才视为下载结束；空帧与未知画面保留基准。
                 busy_since = None
                 last_download_sig = None
+                install_phase_logged = False
             update_box = (
                 None if start_box else _find_text(action_items, _UPDATE_GAME_TEXTS)
             )
