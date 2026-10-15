@@ -1,3 +1,4 @@
 project: settings
+highlight: true
 beta-only: true
-外观桌宠支持桌面互动、可暂停留言与任务动画，并降低播放和提醒开销
+新增可互动桌宠，支持独立导入、任务动画及资源商店下载与分享。
