@@ -37,14 +37,15 @@ from app.core.notify_channels import (
     get_notify_channels,
 )
 from app.core.notify_render import render_for_target
+from app.models.config.script import UserEntry
+from app.models.config.setting import Webhook
 from app.models.notification import (
     NOTIFICATION_SIGNATURE,
+    DispatchResult,
     NotificationImage,
     NotifyPayload,
     WebhookTargetSnapshot,
 )
-from app.models.config.script import UserEntry
-from app.models.config.setting import Webhook
 from app.services.notification import Notify
 from app.utils import get_logger
 
@@ -67,22 +68,6 @@ class NotifyTarget:
     name: str
     channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
     empty_policy: EmptyPolicy = "send"
-
-
-@dataclass(frozen=True)
-class DispatchResult:
-    """一次通知分发的明确结果。
-
-    ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
-    ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
-    ``attempted`` 为 0，切勿把该状态当作「已送达」。
-    """
-
-    attempted: int = 0
-    succeeded: tuple[str, ...] = ()
-    failed: tuple[str, ...] = ()
-    # 内部投递记录使用 ID，用户可见的 succeeded/failed 继续保留渠道名称。
-    succeeded_ids: tuple[str, ...] = ()
 
 
 def global_target(
@@ -117,7 +102,8 @@ def user_target(user_config: UserEntry) -> NotifyTarget:
     if user_config.notify.enabled:
         for channel in get_notify_channels():
             pairs.extend(
-                (channel, target) for target in channel.targets(user_config, scope="user")
+                (channel, target)
+                for target in channel.targets(user_config, scope="user")
             )
     return NotifyTarget(
         name="用户",
@@ -188,8 +174,13 @@ async def dispatch_webhook_test(webhook: Webhook) -> DispatchResult:
     """仅测试选中的 Webhook，仍复用渲染、投递和失败判定。"""
     from app.core.notify_channels import webhook_target
 
-    channel = next(channel for channel in get_notify_channels() if channel.key == "webhook")
-    target = NotifyTarget(name="Webhook测试", channels=((channel, webhook_target(webhook, scope="global")),))
+    channel = next(
+        channel for channel in get_notify_channels() if channel.key == "webhook"
+    )
+    target = NotifyTarget(
+        name="Webhook测试",
+        channels=((channel, webhook_target(webhook, scope="global")),),
+    )
     result = await dispatch(
         NotifyPayload(
             title="AUTO-MAS Webhook测试",
