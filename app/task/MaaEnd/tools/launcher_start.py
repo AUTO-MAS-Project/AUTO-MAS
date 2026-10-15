@@ -121,6 +121,8 @@ _LAUNCHER_SELF_UPDATE_CONFIRM_TEXTS = ("更新",)
 # 点「更新」后 updater 独立窗口自行下载安装并拉起新版启动器窗口，此间原窗口
 # 已失效；等待新版窗口恢复的总上限
 _SELF_UPDATE_RESTART_TIMEOUT = 600
+# 恢复等待用短拍轮询：单次长等会错过循环顶的游戏窗口判定，须短拍回主循环复查
+_SELF_UPDATE_POLL_SECONDS = 5
 
 # 下载进度相关文本特征：用于构造「下载进度签名」，只看含百分比/体积/速度的条目；
 # 计时文本必须剥离，否则计时器每秒变化会掩盖真实进度停滞
@@ -632,10 +634,12 @@ def start_game_via_launcher(
         last_update_click: float | None = None
         update_click_retries = 0
         update_exhausted_logged = False
-        # 启动器自更新进行中：原窗口已让位给 updater，等待新版窗口恢复
+        # 启动器自更新进行中：原窗口已让位给 updater，等待新版窗口恢复；
+        # 自更新等待起点用于约束恢复总时长
         self_update_wait = False
         self_update_clicks = 0
         last_self_update_click: float | None = None
+        self_update_since: float | None = None
         # 点「更新游戏」后是否确实进入过下载态：作为「按钮被取代」的强证据，
         # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
         update_went_busy = False
@@ -657,17 +661,23 @@ def start_game_via_launcher(
                 items = _read_texts(hwnd)
             except (RuntimeError, win32gui.error):
                 if self_update_wait:
-                    # 自更新中：原窗口已让位给 updater，等待它拉起新版启动器窗口
-                    new_hwnd = _wait_launcher_hwnd(
-                        launcher_path,
-                        timeout=_SELF_UPDATE_RESTART_TIMEOUT,
-                        stop_event=stop_event,
-                    )
-                    if new_hwnd is None:
+                    # 自更新中：原窗口已让位给 updater。按短拍轮询等新版窗口，
+                    # 每拍回循环顶复查游戏窗口——单次长等会把「间隙期已点到
+                    # 开始游戏、启动器正常退出」误判成自更新失败；恢复总时长
+                    # 仍受上限约束，超限才报人工确认
+                    if self_update_since is not None and (
+                        time.monotonic() - self_update_since
+                        >= _SELF_UPDATE_RESTART_TIMEOUT
+                    ):
                         raise RuntimeError(
                             "启动器自更新后未恢复启动器窗口，请人工确认启动器状态"
                         ) from None
-                    if new_hwnd != hwnd:
+                    new_hwnd = _wait_launcher_hwnd(
+                        launcher_path,
+                        timeout=_SELF_UPDATE_POLL_SECONDS,
+                        stop_event=stop_event,
+                    )
+                    if new_hwnd is not None and new_hwnd != hwnd:
                         # 新窗口 = 自更新完成：全量重置流程状态，界面重新探测
                         on_log("新版启动器窗口已就绪，继续启动流程...")
                         hwnd = new_hwnd
@@ -687,10 +697,11 @@ def start_game_via_launcher(
                         self_update_wait = False
                         self_update_clicks = 0
                         last_self_update_click = None
+                        self_update_since = None
                         deadline = max(
                             deadline, time.monotonic() + _FIND_BUTTON_TIMEOUT
                         )
-                    else:
+                    elif new_hwnd is not None:
                         # 旧窗口仍在（updater 尚未接管）：保持等待态继续观察，
                         # 不重置状态，避免对已让位的窗口重新点「更新」
                         hwnd = new_hwnd
@@ -720,25 +731,22 @@ def start_game_via_launcher(
                 last_ocr_texts = ocr_texts
                 last_ocr_dump = now
 
-            # 更新确认弹窗（「系统提示」+ 所需/剩余空间）：「取消」与「确认」同屏，
-            # 必须按精确文案点「确认」/「确定」，绝不点「取消」；弹窗居中，不受
-            # 右下角动作区限制
-            if _find_text(items, _DIALOG_TITLE_TEXTS) is not None:
-                # 启动器自更新弹窗：正文带「启动器版本更新」，按钮是「退出/更新」，
-                # 点「更新」交给官方 updater，绝不点「退出」；等待新版窗口期间
-                # 只按间隔补点（点击可能被吞），窗口恢复后由失效分支重置状态
-                if _find_text(items, _LAUNCHER_SELF_UPDATE_TEXTS) is not None:
-                    self_update_box = _find_dialog_button(
-                        items, _LAUNCHER_SELF_UPDATE_CONFIRM_TEXTS
-                    )
+            # 启动器自更新弹窗（正文「检测到启动器版本更新」，按钮「退出/更新」）：
+            # 点「更新」交给官方 updater，绝不点「退出」。检测不依赖「系统提示」
+            # 标题（标题行漏识别会让整个分支不可达），但正文子串可能被新闻/公告
+            # 命中，出手必须以整词「更新」按钮为前提；找不到按钮或补点耗尽时不
+            # 劫持，回落下方通用弹窗处理，窗口恢复后由失效分支重置状态
+            if (
+                _find_text(items, _LAUNCHER_SELF_UPDATE_TEXTS) is not None
+                and self_update_clicks < _UPDATE_CLICK_RETRY_LIMIT
+            ):
+                self_update_box = _find_dialog_button(
+                    items, _LAUNCHER_SELF_UPDATE_CONFIRM_TEXTS
+                )
+                if self_update_box is not None:
                     if (
-                        self_update_box is not None
-                        and self_update_clicks < _UPDATE_CLICK_RETRY_LIMIT
-                        and (
-                            last_self_update_click is None
-                            or now - last_self_update_click
-                            >= _UPDATE_CLICK_RETRY_SECONDS
-                        )
+                        last_self_update_click is None
+                        or now - last_self_update_click >= _UPDATE_CLICK_RETRY_SECONDS
                     ):
                         on_log("检测到启动器自更新，点击「更新」并等待其完成...")
                         _click_box(
@@ -750,10 +758,21 @@ def start_game_via_launcher(
                         self_update_clicks += 1
                         last_self_update_click = now
                         self_update_wait = True
+                        if self_update_since is None:
+                            self_update_since = now
                         # 自更新窗口恢复可能远超基准窗口期：整体截止一并顺延
-                        deadline = max(deadline, now + _SELF_UPDATE_RESTART_TIMEOUT)
+                        # （恢复上限外加一次按钮探测期，超限时能给出自更新专属报错）
+                        deadline = max(
+                            deadline,
+                            now + _SELF_UPDATE_RESTART_TIMEOUT + _FIND_BUTTON_TIMEOUT,
+                        )
                     _pause(2, stop_event)
                     continue
+
+            # 更新确认弹窗（「系统提示」+ 所需/剩余空间）：「取消」与「确认」同屏，
+            # 必须按精确文案点「确认」/「确定」，绝不点「取消」；弹窗居中，不受
+            # 右下角动作区限制
+            if _find_text(items, _DIALOG_TITLE_TEXTS) is not None:
                 confirm_box = _find_dialog_button(items, _DIALOG_CONFIRM_TEXTS)
                 if confirm_box is not None:
                     is_update_dialog = (
