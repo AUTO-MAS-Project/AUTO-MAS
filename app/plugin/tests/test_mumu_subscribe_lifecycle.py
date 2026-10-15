@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 
 from app.config import ConfigCollection, LockTicket, UiVisibility
+from app.core.game_manager import _GameRuntime
 from app.models.config.game import TRIGGER_TICKET
 from app.plugin.base.emulator import EmulatorExpect
 from app.plugin.base.game import DeviceSubscribeError
@@ -163,6 +164,7 @@ async def _make(
     entry.info.path = Path("MuMuManager.exe")
 
     ctrl = MuMuControl(config=entry)
+    ctrl.bind_runtime(_GameRuntime())
     entry._game_control = ctrl
     ctrl._run = fake  # type: ignore[method-assign]
     for idx in devices:

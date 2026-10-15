@@ -31,6 +31,23 @@ dependencies = [
 ]
 ```
 
+## 适配器与宿主接线
+
+游戏和脚本适配器仍通过 `GameTypeDecl` / `ScriptTypeDecl` 声明类型。
+类型登记、锁检查及失败回滚由宿主负责：`PluginManager` 在构造适配器后、
+调用 `pre_enable` 前注入 `AdapterRuntime`。原有 `system_enable`、
+`system_disable`、`system_rollback` 入口保留；覆写这些入口的插件仍需调用
+`super()`，以执行宿主系统阶段。
+
+- `self.instances()` 只提供该适配器类型的配置实例。返回的是配置节点，遵循已有锁与提交规则。
+- `GameControl.runtime` 提供只读 `GameRuntime` 策略：`silent` 与 `block_ad`。
+  宿主在创建控制器时绑定，每次读取都反映最新设置。
+- 适配器与控制器的构造签名保持不变。直接构造测试替身时，须先调用
+  `bind_runtime()` 注入实现，再使用依赖宿主的入口。
+
+新适配逻辑应使用这些窄接口。SDK 的 `Config` / `Plugin` 等遗留导出仍保留，
+外部脚本适配器及服务、worker 的依赖边界尚待后续迁移。
+
 ## 禁令
 
 - 允许：`from auto_mas_core import …` / `auto_mas_core.utils` / `auto_mas_core.services` / `auto_mas_core.plugin`
