@@ -374,6 +374,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         return method if method in {"MAS", "MAAEND"} else "MAAEND"
 
     async def check(self) -> str:
+        """检查运行条件；拒绝运行时明确标记为异常或跳过。"""
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
@@ -402,20 +403,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.emulator_manager is None:
             root_path = self._maaend_root_path()
             if root_path is None:
+                self.cur_user_item.status = "异常"
                 return "MaaEnd 路径未配置"
             try:
                 loader = MaaEndResourceLoader.get_loaded(root_path)
             except ValueError as error:
+                self.cur_user_item.status = "异常"
                 return f"MaaEnd 资源加载失败: {error}"
             if not loader.has_pretask("GameSetting") or not loader.has_task(
                 _MAAEND_CLOSE_GAME_TASK
             ):
+                self.cur_user_item.status = "异常"
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
             if (
                 account_switch_method == "MAAEND"
                 and account_id
                 and not loader.has_task(_MAAEND_ACCOUNT_SWITCH_TASK)
             ):
+                self.cur_user_item.status = "异常"
                 return "当前 MaaEnd 版本不支持内置账号切换，请更新 MaaEnd 后重试"
 
         config_base = maaend_config_base(self.cur_user_config.get("Info", "Base"))
@@ -982,15 +987,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
+            self.cur_user_item.log_record[datetime.now()] = LogRecord(
+                status=self.check_result
+            )
+            message = f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
+            self.script_info.log = message
+            self.script_info.log_first_line = 1
             if self.cur_user_item.status == "异常":
+                logger.warning(message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
-                    ),
+                    data=WSTaskNoticeData(level="error", message=message),
                 )
+            else:
+                logger.info(message)
             return
 
         await self.prepare()
@@ -2236,6 +2247,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def final_task(self):
 
         if self.check_result != "Pass":
+            if self.cur_user_item.status == "异常":
+                # 检查失败时尚未初始化进程和日志监控，仅归档检查原因。
+                for log_time, log_item in self.cur_user_item.log_record.items():
+                    log_path = Config.build_history_log_path(
+                        script_name=self.script_info.name,
+                        user_name=self.cur_user_item.name,
+                        log_time=log_time.astimezone(UTC4),
+                    )
+                    await Config.save_maaend_log(
+                        log_path=log_path,
+                        logs=[log_item.status],
+                        maaend_result=log_item.status,
+                    )
             return
 
         completed = all(self.run_book.values()) and not self.update_failed
