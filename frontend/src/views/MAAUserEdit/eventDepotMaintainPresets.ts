@@ -32,39 +32,6 @@ export const getEventDepotStages = (stages: ActivityItem[]): ActivityItem[] =>
 export const getEventOrundumStages = (stages: ActivityItem[]): ActivityItem[] =>
   stages.filter(stage => stage.Value && isOrundumStage(stage))
 
-// 旧活动优先沿用完整列表序号，旧库存沿用材料序号；越界回退也与后端一致。
-export const resolveEventDepotStage = (
-  stages: ActivityItem[],
-  plan: Pick<
-    EventDepotMaintainPlan,
-    'StageType' | 'StageIndex' | 'LegacyIndex' | 'LegacyActivityFirst'
-  >
-): ActivityItem | undefined => {
-  if (plan.StageType === 'all') return undefined
-  const candidates =
-    plan.StageType === 'activity'
-      ? stages.filter(stage => stage.Value)
-      : plan.StageType === 'orundum'
-        ? getEventOrundumStages(stages)
-        : getEventDepotStages(stages)
-  const index = plan.StageIndex
-  if (!Number.isInteger(index) || !index || index < 1) return undefined
-  return (
-    candidates[index - 1] ??
-    (plan.LegacyIndex || plan.LegacyActivityFirst ? candidates[0] : undefined)
-  )
-}
-
-export const eventDepotPlansForStage = <T extends EventDepotMaintainPlan>(
-  stages: ActivityItem[],
-  plans: T[],
-  stage: ActivityItem
-): T[] =>
-  plans.filter(plan => {
-    const resolved = resolveEventDepotStage(stages, plan)
-    return resolved?.Value === stage.Value && eventDepotItemId(resolved) === eventDepotItemId(stage)
-  })
-
 // 保存动态模板，活动换期或关卡数量变化时无需重新导入。
 export const getEventDepotPresets = (): EventDepotMaintainPlan[] => [
   { StageType: 'all', DropCount: 999, OrundumDropCount: 9999 },

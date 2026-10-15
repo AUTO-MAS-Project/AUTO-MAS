@@ -153,7 +153,8 @@ import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import {
-  eventDepotPlansForStage,
+  eventDepotPlanIdentity,
+  eventStageIdentity,
   getEventDepotStages,
   getEventOrundumStages,
 } from './eventDepotMaintainPresets'
@@ -236,12 +237,13 @@ const eventDepotSummary = computed(() => {
   const orundum = getEventOrundumStages(props.activityStages)
   if (!material.length && !orundum.length) return t('eventDepotPreview.noActivity')
   // 勾选状态才是实际刷取范围：未勾选的关卡不计入摘要。
-  const plans = props.eventDepotPlanEditor.plans.value
-  const all = plans.some(plan => plan.StageType === 'all')
-  const farmed = [...material, ...orundum].filter(stage => {
-    const saved = eventDepotPlansForStage(props.activityStages, plans, stage)
-    return !saved.some(plan => plan.Skip) && (all || saved.length > 0)
-  })
+  const skipped = new Set(
+    props.eventDepotPlanEditor.plans.value.filter(plan => plan.Skip).map(eventDepotPlanIdentity)
+  )
+  const farmed = [
+    ...material.filter((_, index) => !skipped.has(eventStageIdentity('material', index + 1))),
+    ...orundum.filter((_, index) => !skipped.has(eventStageIdentity('orundum', index + 1))),
+  ]
   const count = new Set(farmed.map(stage => `${stage.Value}:${stage.Drop}`)).size
   return t('eventDepotPreview.summary', { n: count })
 })
