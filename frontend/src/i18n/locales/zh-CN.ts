@@ -4793,6 +4793,7 @@ export default {
     toast: {
       loadFailed: '设置加载失败',
       saveFailed: '设置保存失败',
+      saveOutcomeUnknown: '保存结果未知，设置可能已生效。',
       trayUpdateFailed: '托盘设置更新失败',
       updateCheckFailed: '更新检查设置变更失败',
       fluidTitle: '确认开启流体光标？',
