@@ -43,6 +43,7 @@ import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from threading import Event
@@ -561,7 +562,7 @@ def start_game_via_launcher(
     Raises:
         RuntimeError: 未找到启动器窗口 / 按钮点击失败 / 等待游戏窗口超时。
     """
-    on_log = on_log or (lambda msg: logger.info(msg))
+    dispatch_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("MaaEnd 启动器启动仅支持 Windows 平台")
     # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
@@ -569,6 +570,33 @@ def start_game_via_launcher(
     previous_failsafe = pyautogui.FAILSAFE
     pyautogui.FAILSAFE = False
     stop_event = stop_event or Event()
+
+    diagnostic_path: Path | None = (
+        Path.cwd()
+        / "debug"
+        / "maaend-launcher-start"
+        / f"launcher-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
+    )
+
+    def _write_diagnostic(text: str) -> None:
+        """诊断旁路失败不得覆盖启动异常；写入失败后停止本次记录。"""
+        nonlocal diagnostic_path
+        if diagnostic_path is None:
+            return
+        try:
+            diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+            with diagnostic_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{datetime.now():%H:%M:%S}] {text}\n")
+        except OSError as error:
+            logger.warning(f"启动器诊断记录保存失败: {error}")
+            diagnostic_path = None
+
+    def _on_log(text: str) -> None:
+        _write_diagnostic(text)
+        dispatch_log(text)
+
+    on_log = _on_log
+    _write_diagnostic(f"开始启动终末地，启动器: {launcher_path}")
 
     try:
         _pause(0, stop_event)
@@ -593,10 +621,12 @@ def start_game_via_launcher(
         # 点「更新游戏」后是否确实进入过下载态：作为「按钮被取代」的强证据，
         # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
         update_went_busy = False
-        # 连续下载态的累计时长基准：跨帧累计，用于绝对上限兜底；离开下载态即清掉
+        # 下载会话跨帧累计；短暂 OCR 漏识别不代表下载完成，不能重置基准。
         busy_since: float | None = None
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
+        last_ocr_texts: tuple[str, ...] | None = None
+        last_ocr_dump = 0.0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
 
         while time.monotonic() < deadline:
@@ -620,6 +650,17 @@ def start_game_via_launcher(
                 raise
 
             now = time.monotonic()
+            ocr_texts = tuple(text for text, _ in items)
+            # 识别文本变化时留痕；相同画面每 30 秒采样一次，避免下载期日志膨胀。
+            if ocr_texts != last_ocr_texts or now - last_ocr_dump >= 30:
+                _write_diagnostic(
+                    "OCR: "
+                    + repr(items)
+                    + f"; 下载已等待={now - busy_since if busy_since is not None else 0:.0f}s"
+                    + f"; 进度未变={now - last_download_progress:.0f}s"
+                )
+                last_ocr_texts = ocr_texts
+                last_ocr_dump = now
 
             # 更新确认弹窗（「系统提示」+ 所需/剩余空间）：「取消」与「确认」同屏，
             # 必须按精确文案点「确认」/「确定」，绝不点「取消」；弹窗居中，不受
@@ -641,10 +682,10 @@ def start_game_via_launcher(
                     start_clicks = 0
                     last_start_click = None
                     start_click_exhausted_logged = False
-                    busy_since = None
                     if is_update_dialog:
                         # 点「确认」后进入下载：重置进度基准，等按钮变「正在下载」
                         update_went_busy = False
+                        busy_since = None
                         last_download_sig = None
                         last_download_progress = now
                         deadline = max(deadline, now + _UPDATE_TIMEOUT)
@@ -683,11 +724,11 @@ def start_game_via_launcher(
                 _pause(2, stop_event)
                 continue
 
-            # 离开下载态：清掉忙碌基准与进度签名，避免下次进入时用到过期时刻
-            busy_since = None
-            last_download_sig = None
-
             start_box = _find_text(action_items, _START_GAME_TEXTS)
+            if start_box is not None:
+                # 明确恢复「开始游戏」才视为下载结束；空帧与未知画面保留基准。
+                busy_since = None
+                last_download_sig = None
             update_box = (
                 None if start_box else _find_text(action_items, _UPDATE_GAME_TEXTS)
             )
@@ -767,8 +808,10 @@ def start_game_via_launcher(
             + ("（游戏更新可能未完成，请人工确认启动器状态）" if update_clicked else "")
         )
     except _LaunchCancelled:
+        _write_diagnostic("启动已取消")
         raise
-    except Exception:
+    except Exception as error:
+        _write_diagnostic(f"启动失败: {type(error).__name__}: {error}")
         # 失败留启动器/游戏原图，供排查 OCR 文本漂移
         _save_error_screenshot(launcher_path)
         raise

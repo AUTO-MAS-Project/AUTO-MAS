@@ -90,5 +90,13 @@ def resolve_launcher_exe(client_exe: Path, configured_path: str = "") -> Path | 
             raise ValueError(
                 "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
             )
+        if path.name.casefold() == "games.exe":
+            # 版本目录的界面进程不能可靠选择游戏；统一走同安装的稳定入口。
+            launcher = path.parent.parent / _LAUNCHER_EXE
+            if not launcher.is_file():
+                raise ValueError(
+                    "未找到 Games.exe 对应的 Launcher.exe，请选择同一安装的官方启动器入口"
+                )
+            return launcher
         return path
     return discover_launcher_exe(client_exe)

@@ -112,6 +112,8 @@ _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 _MAAEND_CLIENT_PROCESS = "Endfield.exe"
 # 启动器 UI 自动化（前台点击 + 全局鼠标）一次只能有一路：跨脚本按此锁串行
 _LAUNCHER_AUTOMATION_LOCK = asyncio.Lock()
+# 后一个启动会话接管同安装后，旧会话的延迟收尾不得关闭新会话的游戏或启动器。
+_LAUNCHER_OWNERS: dict[Path, object] = {}
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
 _MXU_TASKS_COMPLETED = re.compile(
     r"收到 state-changed，已刷新运行时状态,\s*kind:\s*tasks-completed\s*$"
@@ -397,6 +399,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.original_game_settings: tuple[int, int, str] | None = None
         self.original_game_settings_read = False
         self.launcher_game_setting_options: dict[str, Any] = {}
+        self.launcher_runtime_path: Path | None = None
+        self.launcher_owner: object = object()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -436,7 +440,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _apply_launcher_game_settings(self) -> None:
         """先执行上游 PI GameSetting 预任务，再由官方启动器打开游戏。"""
         self._read_original_game_settings()
-        await self.kill_game_process()
+        # 调用方持有启动器锁；此处不能再次获取同一把锁。
+        await self._kill_game_process_unlocked()
         interface = load_interface_model(self.maaend_root_path)
         controller_name = str(self.script_config.get("Game", "ControllerType"))
         controller = next(
@@ -501,17 +506,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """
 
         async with _LAUNCHER_AUTOMATION_LOCK:
+            launcher_path = self._launcher_path()
+            if launcher_path is None:
+                raise RuntimeError(
+                    "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
+                )
+            self.launcher_runtime_path = launcher_path.resolve()
+            _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+            # 设置前关闭游戏、执行上游预任务与启动器交互必须在同一临界区。
+            if self.mode == self.first_run_mode and self.script_config.get(
+                "Game", "SetResolution"
+            ):
+                await self._apply_launcher_game_settings()
             if is_process_running(_MAAEND_CLIENT_PROCESS):
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await push_dispatch_log(
                     self.script_info, "检测到客户端已在运行，跳过启动"
                 )
                 return
-            launcher_path = self._launcher_path()
-            if launcher_path is None:
-                raise RuntimeError(
-                    "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
-                )
             # 拉起前校验官方签名：与直接启动（game_launcher）同一套校验口径
             await asyncio.to_thread(verify_launcher_signature, launcher_path)
             if await self.game_process_manager.is_running():
@@ -521,15 +533,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await push_dispatch_log(
                     self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
                 )
-                # 多游戏启动器可能停留在别的游戏页：带参定位到终末地页（对齐直启），
-                # 否则 OCR 会点到当前页面那个游戏的「开始游戏」而拉起错误游戏
-                launch_args = (
-                    ("--game=Endfield", "--reason=4")
-                    if launcher_path.name.casefold() == "launcher.exe"
-                    else ()
-                )
+                # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
                 await self.game_process_manager.open_process(
-                    launcher_path, *launch_args
+                    launcher_path, "--game=Endfield", "--reason=4"
                 )
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
             # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
@@ -552,7 +558,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await asyncio.sleep(wait_time)
 
     async def _kill_launcher_process(self) -> None:
-        """结束终末地启动器进程（按进程家族 + 安装根目录树限定，避免误杀同名程序）。"""
+        """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""
 
         try:
             launcher_path = self._launcher_path()
@@ -1245,10 +1251,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if self.emulator_manager is None:
                     if self._launch_mode() == "Launcher":
                         await self.set_maaend(None)
-                        if self.mode == self.first_run_mode and self.script_config.get(
-                            "Game", "SetResolution"
-                        ):
-                            await self._apply_launcher_game_settings()
                         logger.info(
                             "启动方式为「启动器启动」，将由 MAS 经终末地官方启动器拉起游戏"
                         )
@@ -1470,12 +1472,34 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if self._launch_mode() == "Launcher":
                 # 启动器是 MAS 拉起的，游戏不需要它：留着只会在用户手动退出
                 # 游戏后重新弹出窗口
-                await self._kill_launcher_process()
+                async with _LAUNCHER_AUTOMATION_LOCK:
+                    if (
+                        self.launcher_runtime_path is not None
+                        and _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                        is self.launcher_owner
+                    ):
+                        await self._kill_launcher_process()
             return
         await self.kill_game_process()
 
     async def kill_game_process(self) -> None:
         """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
+
+        if self.emulator_manager is None and self._launch_mode() == "Launcher":
+            async with _LAUNCHER_AUTOMATION_LOCK:
+                if (
+                    self.launcher_runtime_path is None
+                    or _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                    is not self.launcher_owner
+                ):
+                    logger.info("启动器已由其他会话接管或尚未启动，跳过旧会话清理")
+                    return
+                await self._kill_game_process_unlocked()
+            return
+        await self._kill_game_process_unlocked()
+
+    async def _kill_game_process_unlocked(self) -> None:
+        """执行进程清理；启动器模式由调用方持锁并确认会话归属。"""
 
         if self.emulator_manager is None:
             logger.info("中止终末地进程")
