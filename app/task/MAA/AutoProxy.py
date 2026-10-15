@@ -1197,6 +1197,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_advanced = False
         self._cultivate_archive_positions: dict[str, int] = {}
         self._cultivate_archive_versions: dict[str, tuple[int, int, int]] = {}
+        self._stock_skipped_by_condition = False
 
     async def check(self) -> str:
 
@@ -2124,10 +2125,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
         if self.mode == "Routine":
-            # 失败重试重新按来源开关与当前时段组装，上一轮跳过或完成不能屏蔽本轮库存预留。
-            self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-                "Task", "IfDepotMaintain"
-            )
+            # 仅恢复上一尝试被时段条件暂停的库存；已执行完的任务不能在重试中再领药石额度。
+            if self._stock_skipped_by_condition:
+                self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+                    "Task", "IfDepotMaintain"
+                )
+                self._stock_skipped_by_condition = False
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
@@ -2253,6 +2256,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if stock_skipped:
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
+                self._stock_skipped_by_condition = True
             elif cultivate_plan is not None and stock_task["PlanList"]:
                 task_set["DepotMaintain"] = _build_stock_cultivate_task(
                     stock_task, cultivate_task, cultivate_plan
