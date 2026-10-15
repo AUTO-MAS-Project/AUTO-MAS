@@ -982,14 +982,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            if self.cur_user_item.status == "异常":
+            if self.cur_user_item.status != "跳过":
+                self.cur_user_item.status = "异常"
+                self.cur_user_item.log_record[datetime.now()] = LogRecord(
+                    status=self.check_result, content=[self.check_result]
+                )
+                message = (
+                    f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
+                )
+                self.script_info.log = message
+                logger.warning(message)
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="error",
-                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
-                    ),
+                    data=WSTaskNoticeData(level="error", message=message),
                 )
             return
 
