@@ -1,0 +1,205 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+#   SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""将 MAS 保存的活动选关意图解析为当期 MAA 库存保持计划。"""
+
+import json
+from copy import deepcopy
+
+
+def resolve_activity_inventory_plans(
+    plans_json: str,
+    activity_stages: list[dict],
+    *,
+    medicine_count: int = 0,
+    source_plans: list[dict] | None = None,
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """每轮解析当前活动，不把具体关卡、材料或生成的目标写回来源配置。
+
+    material 序号沿用旧活动库存的材料关列表，activity 序号沿用旧活动优先
+    的完整列表。all 预设覆盖当期全部可刷关卡，显式目标优先于预设。
+    """
+
+    rows = json.loads(plans_json)
+    stages = [
+        item
+        for item in activity_stages
+        if isinstance(item, dict)
+        and isinstance(item.get("Value"), str)
+        and item["Value"]
+    ]
+    notices: list[tuple[str, str]] = []
+    if not stages:
+        return [], (
+            [
+                (
+                    "eventDepotPreview.expiredHint",
+                    "当前没有可用活动关卡，已保留保存的选关与目标",
+                )
+            ]
+            if rows
+            else []
+        )
+
+    def is_orundum(stage: dict) -> bool:
+        return "玉" in str(stage.get("DropName", "")) or "玉" in str(
+            stage.get("Drop", "")
+        )
+
+    materials = [
+        stage
+        for stage in stages
+        if str(stage.get("Drop", "")).isdigit() and not is_orundum(stage)
+    ]
+    orundum = [stage for stage in stages if is_orundum(stage)]
+
+    def build(row: dict, stage: dict) -> dict | None:
+        rock = is_orundum(stage)
+        drop_id = "30012" if rock else stage.get("Drop")
+        count = (
+            row.get("OrundumDropCount", row.get("DropCount"))
+            if rock
+            else row.get("DropCount")
+        )
+        if (
+            not isinstance(drop_id, str)
+            or not drop_id.isdigit()
+            or not isinstance(count, int)
+            or isinstance(count, bool)
+            or count <= 0
+        ):
+            notices.append(
+                (
+                    "eventDepotPreview.runtimeUnresolved",
+                    f"活动关 {stage['Value']} 的材料或目标不可用，本轮跳过并保留配置",
+                )
+            )
+            return None
+        plan = deepcopy(row)
+        for key in (
+            "StageType",
+            "StageIndex",
+            "OrundumDropCount",
+            "LegacyIndex",
+            "LegacyActivityFirst",
+        ):
+            plan.pop(key, None)
+        plan.update(Stage=stage["Value"], DropId=drop_id, DropCount=count)
+        return plan
+
+    # 先解析显式行，all 预设不能覆盖任何已保存的自定义目标。
+    selected: dict[int, dict] = {}
+    for position, row in enumerate(rows):
+        if not isinstance(row, dict) or row.get("StageType") == "all":
+            continue
+        kind = row.get("StageType", "material")
+        pool = {"material": materials, "activity": stages, "orundum": orundum}.get(
+            kind, []
+        )
+        index = row.get("StageIndex", position + 1 if "Stage" in row else None)
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or index < 1
+            or not pool
+        ):
+            notices.append(
+                (
+                    "eventDepotPreview.runtimeUnresolved",
+                    f"第 {position + 1} 个活动选择暂时不可用，已保留原选择",
+                )
+            )
+            continue
+        if index > len(pool):
+            if row.get("LegacyIndex") or row.get("LegacyActivityFirst"):
+                notices.append(
+                    (
+                        "eventDepotPreview.legacyFallback",
+                        f"第 {position + 1} 个旧活动序号暂时越界，本轮沿用旧版第一关回退",
+                    )
+                )
+                index = 1
+            else:
+                notices.append(
+                    (
+                        "eventDepotPreview.runtimeUnresolved",
+                        f"第 {position + 1} 个活动序号暂时越界，已保留原选择",
+                    )
+                )
+                continue
+        plan = build(row, pool[index - 1])
+        if plan is not None:
+            if row.get("LegacyActivityFirst"):
+                plan.update(
+                    UseMedicine=medicine_count > 0, MedicineCount=medicine_count
+                )
+            else:
+                source = next(
+                    (
+                        item
+                        for item in source_plans or []
+                        if isinstance(item, dict)
+                        and item.get("Stage") == plan["Stage"]
+                        and item.get("DropId") == plan["DropId"]
+                    ),
+                    {},
+                )
+                for key in ("UseMedicine", "MedicineCount", "UseStone", "StoneCount"):
+                    if key in source:
+                        plan.setdefault(key, source[key])
+            selected[position] = plan
+    explicit_keys = {(plan["Stage"], plan["DropId"]) for plan in selected.values()}
+    custom_plans = {
+        (plan["Stage"], plan["DropId"]): plan
+        for position, plan in selected.items()
+        if not rows[position].get("LegacyActivityFirst")
+    }
+    plans = []
+    budget_assigned = any(
+        "MedicineCount" in plan or "UseMedicine" in plan for plan in selected.values()
+    )
+    for position, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        if row.get("StageType") == "all":
+            current = [build(row, stage) for stage in stages]
+            current = [
+                plan
+                for plan in current
+                if plan is not None
+                and (plan["Stage"], plan["DropId"]) not in explicit_keys
+            ]
+        else:
+            current = [selected[position]] if position in selected else []
+        for plan in current:
+            key = (plan["Stage"], plan["DropId"])
+            if row.get("LegacyActivityFirst") and key in custom_plans:
+                # 默认 999/9999 不能抬高旧自定义目标；旧优先药量仅转交这一个关卡。
+                target = custom_plans[key]
+                if "MedicineCount" not in target and "UseMedicine" not in target:
+                    target.update(
+                        UseMedicine=plan["UseMedicine"],
+                        MedicineCount=plan["MedicineCount"],
+                    )
+                else:
+                    notices.append(
+                        (
+                            "eventDepotPreview.budgetConflict",
+                            "旧活动选关与库存目标重合，沿用自定义目标及其药量，另一份原药量保留在迁移前备份",
+                        )
+                    )
+                continue
+            if (
+                not budget_assigned
+                and not row.get("LegacyIndex")
+                and not row.get("LegacyActivityFirst")
+                and "MedicineCount" not in plan
+                and "UseMedicine" not in plan
+            ):
+                plan.update(
+                    UseMedicine=medicine_count > 0, MedicineCount=medicine_count
+                )
+                budget_assigned = True
+            plans.append(plan)
+    return plans, notices

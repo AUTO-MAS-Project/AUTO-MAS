@@ -107,11 +107,9 @@
             v-model:form-data="formData"
             :loading="loading"
             :stage-options="stageOptions"
-            :activity-stage-options="activityStageOptions"
             :activity-stages="activityStages"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
-            :display-activity-stage-index="displayActivityStageIndex"
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
@@ -134,6 +132,7 @@
             :load-cultivate-preview="loadCultivatePreview"
             :import-cultivate-targets="importCultivateTargets"
             :fight-summary="fightSummary"
+            :recover-activity-plans="recoverLegacyActivityPlans"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
@@ -143,6 +142,7 @@
             @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
             @select-infrast-plan="handleInfrastPlanSelectChange"
             @save="handleFieldSave"
+            @retry-activity="loadActivityStageOptions(true)"
           >
             <template #fight-detail>
               <StageConfigSection
@@ -260,7 +260,12 @@ import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
-import { resolveActivityStage } from '@/views/MAAUserEdit/activityStages'
+import {
+  eventDepotPlanIdentity,
+  getEventDepotPresets,
+  getLegacyEventDepotPlans,
+  parseEventDepotPlans,
+} from '@/views/MAAUserEdit/eventDepotMaintainPresets'
 import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
@@ -301,9 +306,14 @@ const {
 const formRef = ref<FormInstance>()
 const pageRef = ref<HTMLElement>()
 const isInitializing = ref(true)
+const recoveringActivity = ref(false)
 // 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
 const loading = computed(
-  () => editorBusy.value || isInitializing.value || (userLoading.value && !isSaving.value)
+  () =>
+    editorBusy.value ||
+    isInitializing.value ||
+    recoveringActivity.value ||
+    (userLoading.value && !isSaving.value)
 )
 
 // 路由参数
@@ -368,7 +378,6 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
-const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -619,11 +628,11 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfDepotMaintain: true,
     DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
-    IfEventDepotMaintain: false,
-    EventDepotMaintainPlans: '[]',
+    IfEventDepotMaintain: true,
+    EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
     IfCultivate: false,
     IfGreenTicketStore: false,
-    IfActivityFirst: true,
+    IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
@@ -648,6 +657,8 @@ const getDefaultMAAUserData = () => ({
     LastProxyDate: '',
     ProxyTimes: 0,
     CultivateNotice: '',
+    StaminaPipelineVersion: 1,
+    StaminaPipelineBackup: '{}',
   },
 })
 
@@ -659,10 +670,6 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
 })
-
-const displayActivityStageIndex = computed(
-  () => resolveActivityStage(activityStageOptions.value, formData.Task.ActivityStageIndex)?.value
-)
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
@@ -962,7 +969,6 @@ const applyServerStageOptions = () => {
   const stageOverview = stageOverviewByServer.value[server]
   if (!stageOverview) {
     stageOptions.value = []
-    activityStageOptions.value = []
     return
   }
 
@@ -971,19 +977,21 @@ const applyServerStageOptions = () => {
     isCustom: false,
   }))
   appendConfiguredCustomStages()
-  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
-    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
-    value: index + 1,
-  }))
+  activityStageError.value =
+    stageOverview.ActivityStatus === 'stale'
+      ? t('eventDepotPreview.staleData')
+      : stageOverview.ActivityStatus === 'unavailable'
+        ? t('eventDepotPreview.dataUnavailable')
+        : ''
 }
 
-const loadActivityStageOptions = async () => {
+const loadActivityStageOptions = async (refresh = false) => {
   activityStageLoading.value = true
   activityStageError.value = ''
   try {
-    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    const response = await Service.getOverviewApiInfoGetOverviewPost(refresh)
     if (response.code !== 200) {
-      activityStageError.value = response.message || '加载活动关卡失败'
+      activityStageError.value = response.message || t('eventDepotPreview.loadFailed')
       return
     }
 
@@ -992,16 +1000,23 @@ const loadActivityStageOptions = async () => {
       // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
       // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
       logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
-      activityStageError.value = '加载活动关卡失败：返回数据缺少关卡信息'
+      activityStageError.value = t('eventDepotPreview.invalidData')
       return
     }
 
-    stageOverviewByServer.value = overview.StageByServer
+    for (const [server, stages] of Object.entries(overview.StageByServer)) {
+      const previous = stageOverviewByServer.value[server]
+      // 同区服暂不可用时保留上次成功的选项，避免目标显示被清空。
+      stageOverviewByServer.value[server] =
+        stages.ActivityStatus === 'unavailable' && previous
+          ? { ...previous, ActivityStatus: 'unavailable' }
+          : stages
+    }
     applyServerStageOptions()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载活动关卡失败: ${errorMsg}`)
-    activityStageError.value = '加载活动关卡失败'
+    activityStageError.value = t('eventDepotPreview.loadFailed')
   } finally {
     activityStageLoading.value = false
   }
@@ -1411,6 +1426,35 @@ const {
   onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
   onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
 })
+
+const recoverLegacyActivityPlans = () =>
+  trackEdit(async () => {
+    if (configLocked.value || editorBusy.value || isInitializing.value || recoveringActivity.value)
+      return
+    recoveringActivity.value = true
+    try {
+      await eventDepotPlanEditor.flushPendingEdits()
+      if (!(await fieldSave.flush())) throw new Error(t('maaStaminaPipeline.recoverFailed'))
+      // 先确认停用成功，再补回旧目标，避免部分保存后自动刷取旧关闭内容。
+      if (!(await handleFieldSave('Task.IfEventDepotMaintain', false))) {
+        throw new Error(t('maaStaminaPipeline.recoverFailed'))
+      }
+      const plans = parseEventDepotPlans(JSON.parse(formData.Task.EventDepotMaintainPlans || '[]'))
+      const saved = new Set(plans.map(eventDepotPlanIdentity))
+      for (const plan of getLegacyEventDepotPlans(formData.Data.StaminaPipelineBackup)) {
+        const identity = eventDepotPlanIdentity(plan)
+        if (saved.has(identity)) continue
+        saved.add(identity)
+        plans.push(plan)
+      }
+      if (!(await handleFieldSave('Task.EventDepotMaintainPlans', JSON.stringify(plans)))) {
+        throw new Error(t('maaStaminaPipeline.recoverFailed'))
+      }
+      message.success(t('maaStaminaPipeline.recoverSuccess'))
+    } finally {
+      recoveringActivity.value = false
+    }
+  })
 
 const handleMAAConfig = async () => {
   await startConfiguration(userId)

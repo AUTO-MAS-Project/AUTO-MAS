@@ -63,6 +63,8 @@ interface StageOption {
 }
 
 interface StageOverview {
+  ActivityStatus?: 'ready' | 'empty' | 'stale' | 'unavailable'
+  ActivityUpdatedAt?: string | number | null
   Activity: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]

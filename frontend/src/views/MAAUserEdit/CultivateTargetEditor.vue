@@ -24,7 +24,7 @@
         </a-button>
       </a-tooltip>
     </template>
-    <!-- 接管提示：后端注入时写入，非空表示养成接管中、库存保持暂停 -->
+    <!-- 本轮养成状态由后端写入，其他来源仍按各自条件执行。 -->
     <a-alert
       v-if="formData.Data?.CultivateNotice"
       :message="formData.Data.CultivateNotice"
@@ -70,6 +70,7 @@
         {{ t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
     </div>
+    <div class="skland-feedback skland-hint">{{ t('edit.maaCultivateSkipHint') }}</div>
     <div class="skland-feedback skland-hint">
       {{ t('edit.maaCultivateAutoRaiseVersionHint') }}
     </div>

@@ -337,14 +337,6 @@ class ScriptConfigTask(TaskExecuteBase):
             if not isinstance(source_queue, list) or not source_queue:
                 source_queue = preset_queue
             source_queue, _ = restore_maa_default_task_queue(source_queue, preset_queue)
-            # 活动预设在配置会话里默认勾选；查看备份时保留历史状态。
-            if not self.view_only:
-                for task in source_queue:
-                    if (
-                        task.get("TaskType") == "DepotMaintain"
-                        and task.get("Name") == "活动库存保持"
-                    ):
-                        task["IsEnable"] = True
             configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
 
         # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；

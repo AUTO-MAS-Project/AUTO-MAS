@@ -474,6 +474,7 @@ class DepotCultivateService:
         today: date | None = None,
         context: ProviderContext | None = None,
         skland: tuple[Mapping[str, Progression], int] | None = None,
+        require_observations: bool = False,
     ) -> tuple[list[OperatorTarget], CultivatePlan | None, bool]:
         """注入前的养成用例编排：达成拦截 → 剩余目标建计划 → 缺口判定。
 
@@ -487,6 +488,7 @@ class DepotCultivateService:
                 森空岛快照时使用）；传入时 `skland` 参数被忽略。
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
+            require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
 
         Returns:
             (流转后的目标列表, 养成计划, 是否存在材料缺口)；目标全部达成
@@ -520,6 +522,27 @@ class DepotCultivateService:
             for target in targets
         }
         inventory_result = resolve_inventory(context, self._inventory_chain)
+        if require_observations and inventory_result is None:
+            raise ValueError("本账号尚无可用的仓库识别数据")
+        if require_observations:
+            for target in targets:
+                snapshot = snapshots[target.operator_id]
+                for goal in target.goals:
+                    if goal.state in ("achieved", "pending_confirm"):
+                        continue
+                    if (
+                        snapshot.source == "default"
+                        or (
+                            goal.kind in ("skill", "mastery", "module")
+                            and snapshot.source not in ("skland", "manual")
+                        )
+                        or (
+                            goal.kind in ("skill", "mastery")
+                            and snapshot.data.skill_level is None
+                        )
+                    ):
+                        # 未纳入备料的维度也不能交给自动培养消耗库存。
+                        raise ValueError("部分养成目标尚无可用的练度数据")
         inventory: Mapping[str, int] = inventory_result[0] if inventory_result else {}
 
         updated_targets = apply_achievements(

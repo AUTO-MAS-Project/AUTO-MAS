@@ -324,6 +324,8 @@ export function useScriptApi() {
                             : '',
                       },
                       Data: {
+                        StaminaPipelineVersion: maaUserData.Data?.StaminaPipelineVersion ?? 1,
+                        StaminaPipelineBackup: maaUserData.Data?.StaminaPipelineBackup ?? '{}',
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate

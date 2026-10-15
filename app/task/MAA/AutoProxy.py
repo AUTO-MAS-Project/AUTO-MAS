@@ -29,7 +29,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.core import Config
@@ -105,6 +105,7 @@ from .tools import (
     push_notification,
     update_maa,
 )
+from .tools.activity_inventory import resolve_activity_inventory_plans
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     read_overlay_values,
@@ -307,8 +308,9 @@ _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
 # 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
 # PlanSelect 是 MAA 跑完基建后自增的班次指针, 脚本模式下存档全脚本共用,
-# 回写会让多个自定义基建用户互相拨对方的班次。
-_MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect"})
+# 回写会让多个自定义基建用户互相拨对方的班次。PlanList 是每轮生成的绝对库存
+# 目标，MAA 保存时补齐计划默认字段也不能把临时目标带回用户来源。
+_MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect", "PlanList"})
 
 
 _MAA_UPDATE_CONFIG_KEYS = {
@@ -419,6 +421,15 @@ def _merge_task_queue(
         key = identity(item)
         if key is not None:
             index_by_id[key] = index
+    if "PlanList" in ignore_keys and ("DepotMaintain", "库存保持") not in index_by_id:
+        unnamed = [
+            index
+            for index, item in enumerate(archive_queue)
+            if identity(item) == ("DepotMaintain", "")
+        ]
+        if len(unnamed) == 1:
+            # 普通预设本来没有名称，运行注入才命名；回写仍归原条目，不另存临时计划。
+            index_by_id[("DepotMaintain", "库存保持")] = unnamed[0]
     baseline_by_id: dict[tuple, dict] = {}
     for item in baseline_queue:
         key = identity(item)
@@ -435,6 +446,8 @@ def _merge_task_queue(
             continue
         target_index = index_by_id.get(key)
         if target_index is None:
+            if key[0] == "DepotMaintain" and "PlanList" in ignore_keys:
+                continue
             # 基线认识但存档缺失: 以基线为底补回条目, 让存档向基线结构收敛
             # (MAA 保存重写结构后, 用户对合成任务的修改不丢)
             target = deepcopy(base_task)
@@ -457,7 +470,10 @@ def _merge_task_queue(
         current_keys = {identity(task) for task in current_queue}
         dropped = [key for key in baseline_by_id if key not in current_keys]
         if dropped:
-            drop_set = set(dropped)
+            drop_set = {
+                identity(archive_queue[index_by_id[key]]) if key in index_by_id else key
+                for key in dropped
+            }
             archive_queue[:] = [
                 item for item in archive_queue if identity(item) not in drop_set
             ]
@@ -711,6 +727,7 @@ def _build_depot_maintain_task(
     source_task = source_task or {}
 
     plans = []
+    source_plans = deepcopy(source_task.get("PlanList") or [])
     for plan in json.loads(plans_json):
         if (
             isinstance(plan, dict)
@@ -722,8 +739,18 @@ def _build_depot_maintain_task(
             and not isinstance(plan.get("DropCount"), bool)
             and plan["DropCount"] > 0
         ):
-            source_plan = _copy_matching_depot_plan(
-                source_task, stage=plan["Stage"], drop_id=plan["DropId"]
+            source_index = next(
+                (
+                    index
+                    for index, item in enumerate(source_plans)
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                None,
+            )
+            source_plan = (
+                source_plans.pop(source_index) if source_index is not None else {}
             )
             plans.append(
                 {
@@ -813,57 +840,44 @@ def _build_auto_cultivate_task(
     )
 
 
-def _select_activity_stage(stages: list[dict], configured_index: int) -> dict:
-    """从非空活动列表按序号选关，序号越界时回退到第一项。"""
-
-    return (
-        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
-    )
-
-
 def _build_event_depot_maintain_task(
-    plans_json: str, activity_stages: list[dict], source_task: dict | None
-) -> dict | None:
-    """按序号解析当前活动材料关，再交给 MAA 库存保持。"""
+    plans_json: str,
+    activity_stages: list[dict],
+    source_task: dict | None,
+    *,
+    medicine_count: int = 0,
+) -> tuple[dict | None, list[tuple[str, str]]]:
+    """解析活动目标，保留原生任务身份与高级参数。"""
 
-    stages = [
-        stage
-        for stage in activity_stages
-        if isinstance(stage.get("Value"), str)
-        and stage["Value"]
-        and isinstance(stage.get("Drop"), str)
-        and stage["Drop"].isdigit()
-        and "玉" not in stage.get("DropName", "")
-    ]
-    if not stages:
-        return None
-
-    plans = []
-    for index, plan in enumerate(json.loads(plans_json), start=1):
-        if not isinstance(plan, dict):
-            continue
-        # 兼容本功能旧版的具体关卡计划，按原列表顺序转换为材料关序号。
-        stage_index = plan.get("StageIndex")
-        if stage_index is None and isinstance(plan.get("Stage"), str):
-            stage_index = index
-        if (
-            not isinstance(stage_index, int)
-            or isinstance(stage_index, bool)
-            or stage_index < 1
-        ):
-            continue
-        stage = _select_activity_stage(stages, configured_index=stage_index)
-        plans.append(
-            {
-                "Stage": stage["Value"],
-                "DropId": stage["Drop"],
-                "DropCount": plan.get("DropCount"),
-            }
-        )
-    task = _build_depot_maintain_task(
-        json.dumps(plans), source_task=source_task, name="活动库存保持"
+    source_task = source_task or {}
+    plans, notices = resolve_activity_inventory_plans(
+        plans_json,
+        activity_stages,
+        medicine_count=medicine_count,
+        source_plans=source_task.get("PlanList", []),
     )
-    return task if task["PlanList"] else None
+    if not plans:
+        return None, notices
+    return (
+        _with_type_first(
+            {
+                **deepcopy(source_task),
+                "Name": "活动库存保持",
+                "IsEnable": True,
+                "TaskType": "DepotMaintain",
+                "PlanList": [
+                    {
+                        **_copy_matching_depot_plan(
+                            source_task, stage=plan["Stage"], drop_id=plan["DropId"]
+                        ),
+                        **plan,
+                    }
+                    for plan in plans
+                ],
+            }
+        ),
+        notices,
+    )
 
 
 def _build_cultivate_task(
@@ -912,12 +926,70 @@ def _build_cultivate_task(
         "SkipDuringActivity": skip_during_activity,
         "SkipDuringResourceCollection": skip_during_resource_collection,
         "OnlyFirstInsufficientPlan": False,
+        "SortByProgress": False,
         "UseAutoSeries": False,
         "UseMedicine": False,
         "UseStone": False,
         "UseExpiringMedicine": False,
         "PlanList": plans,
     }
+
+
+def _build_stock_cultivate_task(
+    stock_task: dict | None, cultivate_task: dict | None, plan: CultivatePlan
+) -> dict | None:
+    """先备养成材料，再按完整消耗提高各条常备库存的保有量目标。"""
+
+    if stock_task is None:
+        return cultivate_task
+    reservations = {item.item_id: item.amount for item in plan.reservations}
+    task = deepcopy(stock_task)
+    for item in task["PlanList"]:
+        item["DropCount"] += reservations.get(item["DropId"], 0)
+    task["PlanList"] = (
+        deepcopy(cultivate_task["PlanList"]) if cultivate_task is not None else []
+    ) + task["PlanList"]
+    # 两组共用 MAA 任务级设置；只改当轮副本，不回写来源配置。
+    task.update(
+        {
+            "OnlyFirstInsufficientPlan": False,
+            "SortByProgress": False,
+            "UseAutoSeries": False,
+            "UseExpiringMedicine": False,
+            "SkipDuringActivity": False,
+            "SkipDuringResourceCollection": False,
+            # 养成行单独关闭药石；保留库存行原本的额度及整段显示开关。
+        }
+    )
+    return task
+
+
+def _maa_activity_state(
+    raw_data: dict, server: str, *, now: datetime
+) -> tuple[bool, bool]:
+    """从已有区服活动缓存判断活动与限时资源全开放时段。"""
+
+    server_data = raw_data.get("Official" if server == "Bilibili" else server, {})
+
+    def is_open(activity: dict) -> bool:
+        if not activity:
+            return False
+        activity_timezone = timezone(timedelta(hours=activity.get("TimeZone", 8)))
+        start = datetime.strptime(
+            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+        ).replace(tzinfo=activity_timezone)
+        end = datetime.strptime(activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S").replace(
+            tzinfo=activity_timezone
+        )
+        return start < now < end
+
+    return (
+        any(
+            is_open(item["Activity"])
+            for item in server_data.get("sideStoryStage", {}).values()
+        ),
+        is_open(server_data.get("resourceCollection", {})),
+    )
 
 
 def _build_data_update_task(
@@ -939,62 +1011,6 @@ def _build_data_update_task(
         "UpdateDepot": True,
         "TriggerInterval": "EveryTime",
     }
-
-
-def _resolve_activity_stage(
-    activity_stages: list[dict], configured_index: int
-) -> str | None:
-    """按序号选择当前活动材料关卡，序号失效时回退到第一项。"""
-
-    stages = [
-        stage
-        for stage in activity_stages
-        if isinstance(stage, dict)
-        and isinstance(stage.get("Value"), str)
-        and stage["Value"]
-    ]
-    if not stages:
-        return None
-    return _select_activity_stage(stages, configured_index=configured_index)["Value"]
-
-
-def _build_activity_priority_fight(
-    fight_task: dict, activity_stage: str, medicine_numb: int
-) -> dict:
-    """生成 MAA 活动关优先任务，使用独立理智药额度。
-
-    活动关优先与理智作战刻意保持为两个独立任务，分别使用各自的理智药
-    额度（Task.ActivityMedicineNumb 与计划表 MedicineNumb），互不转移。
-    """
-
-    activity_fight = deepcopy(fight_task)
-    activity_fight.update(
-        {
-            "Name": "活动关优先",
-            "IsEnable": True,
-            "TaskType": "Fight",
-            "StagePlan": [activity_stage],
-            "IsStageManually": True,
-            "UseOptionalStage": False,
-            "UseWeeklySchedule": False,
-            # 活动关优先不继承理智作战的「指定材料 / 指定次数」门禁：它是同一套
-            # 打法换个关卡，带上这些门禁会在刷够材料或跑满次数后提前收工
-            "EnableTargetDrop": False,
-            "DropId": "",
-            "DropCount": 0,
-            "IsInventoryTarget": False,
-            "EnableTimesLimit": False,
-            "UseMedicine": medicine_numb > 0,
-            "MedicineCount": medicine_numb,
-        }
-    )
-    # ``$type`` 必须排在首位：System.Text.Json 把它当多态判别元数据，
-    # 不在第一个属性就整个文件反序列化失败（MAA 会退回 .bak 读旧值）。
-    activity_fight = {
-        "$type": activity_fight.pop("$type", "FightTask"),
-        **activity_fight,
-    }
-    return activity_fight
 
 
 def depot_cache_snapshot_dir(script_id: str) -> Path:
@@ -1078,9 +1094,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
     _cultivate_auto_raise_injected: bool = False
-    # 每轮准备材料计划时重置；同步失败后阻止继续注入自动培养。
-    _cultivate_skland_unavailable: bool = False
-    _depot_maintain_suppressed: bool = False
+    # 每轮重新判断来源参与条件；数据不可用或触发跳过时同时暂停自动培养。
+    _cultivate_round_paused: bool = True
 
     def __init__(
         self,
@@ -1171,11 +1186,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._cultivate_collected_depot = False
         self._cultivate_collected_oper_box = False
         self._cultivate_auto_raise_injected = False
-        self._cultivate_skland_unavailable = False
+        self._cultivate_round_paused = True
         self._cultivate_achievement_summary: list[str] = []
-        # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
-        # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
-        self._depot_maintain_suppressed = False
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
 
@@ -1692,30 +1704,28 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._cultivate_auto_raise_injected = False
 
     async def _set_cultivate_notice(self, notice: str) -> None:
-        """写接管提示字段；值未变化时跳过，避免每轮无谓的配置写盘。"""
+        """写养成状态提示；值未变化时避免重复写盘。"""
 
         if self.cur_user_config.get("Data", "CultivateNotice") == notice:
             return
         await self.cur_user_config.set("Data", "CultivateNotice", notice)
 
     async def _prepare_cultivate_injection(
-        self, source_queue: list[dict]
-    ) -> tuple[dict | None, bool, bool]:
-        """准备养成计划注入：达成拦截 → 计划构建 → 接管判定（方案 §4.1/§9）。
+        self, source_queue: list[dict], *, skip_this_round: bool = False
+    ) -> tuple[dict | None, bool, CultivatePlan | None]:
+        """准备当轮养成计划，同时保留完整消耗供库存预留。
 
         仅在开关开启且目标非空时生效（Routine 门控由调用方负责）；数据集、
-        练度、库存任何异常一律 fail-open——本轮不注入、不接管，既有任务
-        队列不受影响（决策 28）。绑定森空岛后拉取失败时暂停自动培养，
+        练度、库存不可用时暂停本轮养成，保留普通库存及后续理智任务。
+        绑定森空岛后拉取失败时暂停自动培养，
         不使用缺少本轮识别保障的旧练度档案。
 
         Returns:
-            (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
+            (养成刷取任务, 是否存在原始目标, 本轮有效养成计划)
         """
 
-        # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
-        # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
-        # 养成后仍按残留目标注入并抑制库存保持
-        self._cultivate_skland_unavailable = False
+        # 开关关闭或无有效目标时，不让保存的旧目标参与本轮备料与培养。
+        self._cultivate_round_paused = True
         raw_targets: object
         try:
             raw_targets = json.loads(
@@ -1728,7 +1738,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         if notice is not None:
             await self._set_cultivate_notice(notice)
-            return None, False, False
+            return None, False, None
+        if skip_this_round:
+            await self._set_cultivate_notice("")
+            return None, True, None
         targets = parse_cultivate_targets(raw_targets)
 
         skland_bound = bool(
@@ -1746,7 +1759,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             skland = None
         if skland_bound and not (skland and skland[0]):
-            self._cultivate_skland_unavailable = True
             await self._set_cultivate_notice("")
             message = (
                 "森空岛练度同步失败，本轮养成已暂停；请检查网络或重新绑定森空岛，"
@@ -1764,13 +1776,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         messageKey="edit.maaCultivateSklandSyncFailed",
                     ),
                 )
-            return None, True, False
+            return None, True, None
 
         try:
             (
                 updated_targets,
                 plan,
-                gap,
+                _,
             ) = await depot_cultivate_service.prepare_cultivate(
                 targets=targets,
                 # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
@@ -1780,13 +1792,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 proxy=Config.proxy,
                 today=game_now(self.cur_user_config.get("Info", "Server")).date(),
                 skland=skland,
+                require_observations=True,
             )
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"用户 {self.cur_user_item.name} 养成数据准备失败, 本轮跳过养成注入: {e}"
             )
             await self._set_cultivate_notice("")
-            return None, True, False
+            message = "养成数据暂时不可用，本轮养成已暂停；库存保持与理智任务继续执行"
+            if message not in self._missing_task_source_warned:
+                self._missing_task_source_warned.add(message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=message,
+                        messageKey="edit.maaCultivatePreparationUnavailable",
+                    ),
+                )
+            return None, True, None
 
         # 达成拦截后把目标状态写回档案：可自证达成的目标已移除（方案 §7.6）；
         # 状态无变化时跳过，避免每轮无谓写盘
@@ -1796,35 +1821,30 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "CultivateTargets",
                 json.dumps(dump_cultivate_targets(updated_targets), ensure_ascii=False),
             )
-        # 接管态写提示字段供前端展示（方案 T1.19；空 = 未接管）
-        await self._set_cultivate_notice(
-            "材料存在缺口，本轮库存保持暂停，由养成计划接管" if gap else ""
-        )
+        # 旧接管提示清空；养成不再暂停普通库存。
+        await self._set_cultivate_notice("")
+        if plan is None or not plan.reservations:
+            return None, True, None
+        self._cultivate_round_paused = False
 
         cultivate_task = None
-        # gap 与计划条目同源（同一份净需求），缺口为假即无条目可刷；
-        # 显式门控，接管判定与注入判定不允许出现任何分歧
-        if plan is not None and gap:
+        if plan.entries:
             cultivate_task = _build_cultivate_task(
                 plan,
                 _find_task_source(
                     source_queue, _MAA_CULTIVATE_TASK_NAME, "DepotMaintain"
                 ),
-                skip_during_activity=self.cur_user_config.get(
-                    "Task", "CultivateSkipDuringActivity"
-                ),
-                skip_during_resource_collection=self.cur_user_config.get(
-                    "Task", "CultivateSkipDuringResourceCollection"
-                ),
+                skip_during_activity=False,
+                skip_during_resource_collection=False,
             )
-        return cultivate_task, True, gap
+        return cultivate_task, True, plan
 
     async def _prepare_auto_cultivate_injection(
         self, source_queue: list[dict]
     ) -> dict | None:
         """自动培养独立门控；关闭或森空岛同步失败时不查询目录。"""
 
-        if self._cultivate_skland_unavailable or not (
+        if self._cultivate_round_paused or not (
             self.cur_user_config.get("Task", "IfCultivate")
             and self.cur_user_config.get("Task", "CultivateAutoRaise")
         ):
@@ -1890,21 +1910,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     ),
                 )
             return None
-
-    def _restore_depot_maintain(self) -> None:
-        """按开关事实恢复库存保持，仅限上一轮确实被养成接管抑制过时。
-
-        每次 set_maa 都无条件恢复会把上一轮已完成（check_log 已置 False）
-        的库存保持重新点亮，重试轮把它整个重跑一遍；决策 28 的 fail-open
-        只在抑制过的那一轮之后需要。
-        """
-
-        if not self._depot_maintain_suppressed:
-            return
-        self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-            "Task", "IfDepotMaintain"
-        )
-        self._depot_maintain_suppressed = False
 
     async def _warn_missing_task_source(self, source_name: str, affected: str) -> None:
         """提示 MAA 任务队列里认不出某个原生任务，受影响的任务将按默认值运行。
@@ -2053,40 +2058,52 @@ class AutoProxyTask(ScriptAutoProxyBase):
         preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
             "TaskQueue"
         ]
-        # 两个活动任务各自由自己的开关控制，共用同一份当前区服活动列表。
+        # 活动目标每轮解析；旧活动优先已在配置加载时迁入这一逻辑阶段。
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
-        activity_stage = None
-        if self.mode == "Routine" and (
-            self.cur_user_config.get("Task", "IfActivityFirst")
-            or self.cur_user_config.get("Task", "IfEventDepotMaintain")
-        ):
+        if self.mode == "Routine":
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
             )
             activity_stages = stage_info.get("Activity", [])
-            if self.cur_user_config.get("Task", "IfActivityFirst"):
-                activity_stage = _resolve_activity_stage(
-                    activity_stages,
-                    self.cur_user_config.get("Task", "ActivityStageIndex"),
-                )
 
-        # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
-        # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
-        # task_dict["DepotMaintain"] = False 走既有"开关关→整条不写"路径
-        # （方案决策 20/28，不得只从队列剔除）
+        # 来源各自判断跳过条件，不能让一方的整段设置跳过另一方。
+        activity_open = resource_collection_open = False
+        if self.mode == "Routine":
+            try:
+                activity_open, resource_collection_open = _maa_activity_state(
+                    json.loads(Config.get("Data", "StageData")),
+                    self.cur_user_config.get("Info", "Server"),
+                    now=datetime.now(timezone.utc),
+                )
+            except (KeyError, TypeError, ValueError, AttributeError) as e:
+                logger.warning(f"活动时段数据不可用，本轮不按活动条件跳过: {e}")
+
+        # 养成仅在常规轮注入；暂时缺数据时继续普通库存与理智任务。
         cultivate_task = None
+        cultivate_plan = None
         auto_cultivate_task = None
         update_task = None
         if self.mode == "Routine":
-            self._restore_depot_maintain()
             (
                 cultivate_task,
                 has_targets,
-                takes_over,
-            ) = await self._prepare_cultivate_injection(source_queue)
+                cultivate_plan,
+            ) = await self._prepare_cultivate_injection(
+                source_queue,
+                skip_this_round=(
+                    activity_open
+                    and self.cur_user_config.get("Task", "CultivateSkipDuringActivity")
+                )
+                or (
+                    resource_collection_open
+                    and self.cur_user_config.get(
+                        "Task", "CultivateSkipDuringResourceCollection"
+                    )
+                ),
+            )
             auto_cultivate_task = await self._prepare_auto_cultivate_injection(
                 source_queue
             )
@@ -2103,12 +2120,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     ),
                     # 已绑定森空岛时直接使用其练度，省去游戏内干员识别。
                     update_oper_box=not skland_bound,
-                )
-            if takes_over:
-                self.task_dict["DepotMaintain"] = False
-                self._depot_maintain_suppressed = True
-                logger.info(
-                    f"用户 {self.cur_user_item.name} 养成计划接管本轮, 库存保持暂停注入"
                 )
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
@@ -2138,10 +2149,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             }
 
         annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
-        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
 
         # 吃药 / 碎石类任务取不到原生配置就只剩默认值，用户在 MAA 里设的选项
-        # 全部失效却看不出来，必须提示。剿灭作战、活动关优先没有同名任务时本就
+        # 全部失效却看不出来，必须提示。剿灭作战没有同名任务时本就
         # 沿用理智作战，只有理智作战也缺失才会落到默认值
         if "DepotMaintain" in missing_sources:
             await self._warn_missing_task_source("库存保持", "库存保持")
@@ -2155,21 +2165,32 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and annihilation_source is None
             ):
                 affected.append("剿灭作战")
-            if self.mode == "Routine" and activity_stage and activity_source is None:
-                affected.append("活动关优先")
             if affected:
                 await self._warn_missing_task_source("理智作战", "、".join(affected))
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
         # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
-        # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
-        # 任务（Name 不同，MAA 按名称区分）。
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
                 self.cur_user_config.get("Task", "DepotMaintainPlans"),
                 source_task=task_set["DepotMaintain"],
             )
+            stock_task = task_set["DepotMaintain"]
+            stock_skipped = (
+                activity_open and stock_task.get("SkipDuringActivity", False)
+            ) or (
+                resource_collection_open
+                and stock_task.get("SkipDuringResourceCollection", False)
+            )
+            if stock_skipped:
+                del task_set["DepotMaintain"]
+                self.task_dict["DepotMaintain"] = False
+            elif cultivate_plan is not None and stock_task["PlanList"]:
+                task_set["DepotMaintain"] = _build_stock_cultivate_task(
+                    stock_task, cultivate_task, cultivate_plan
+                )
+                cultivate_task = None
 
         # 加载关卡号配置
         if self.cur_user_config.get("Stage", "StageMode") == "Fixed":
@@ -2317,23 +2338,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 name="活动库存保持",
                 task_type="DepotMaintain",
             )
-            event_depot_task = _build_event_depot_maintain_task(
+            event_depot_task, activity_notices = _build_event_depot_maintain_task(
                 self.cur_user_config.get("Task", "EventDepotMaintainPlans"),
                 activity_stages,
                 source_task=event_depot_source,
+                medicine_count=self.cur_user_config.get("Task", "ActivityMedicineNumb"),
             )
+            for notice_key, notice in activity_notices:
+                logger.warning(notice)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=notice,
+                        messageKey=notice_key,
+                    ),
+                )
             self.task_dict["EventDepotMaintain"] = event_depot_task is not None
             if event_depot_task is None:
                 logger.info("活动库存保持没有当前活动的有效材料计划，本轮跳过")
-
-        activity_fight = None
-        if self.mode == "Routine" and activity_stage:
-            activity_medicine_numb = self.cur_user_config.get(
-                "Task", "ActivityMedicineNumb"
-            )
-            activity_fight = _build_activity_priority_fight(
-                activity_source or fight_source, activity_stage, activity_medicine_numb
-            )
 
         # 导出任务配置
         self.task_dict["StartUp"] = True
@@ -2354,10 +2378,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if task_type == "StartUp" and event_depot_task is not None:
                 task_queue.append(event_depot_task)
-            if task_type == "StartUp" and activity_fight:
-                task_queue.append(activity_fight)
             if task_type == "StartUp" and cultivate_task is not None:
-                # 养成计划位于活动关优先之后、库存保持之前（方案 §9 队列 #3）
+                # 没有普通库存参与时，养成备料仍位于活动阶段之后。
                 task_queue.append(cultivate_task)
 
         # 绿票商店走 MAA 的自定义任务，本模式下队列里只有它和开始唤醒
@@ -2561,8 +2583,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 maa_scheme_name(archive_dir, archive),
                 # 旧文件的迁移删除需要回写, 新文件沿用原有增改与队列回写规则。
                 drop_missing_keys=name == "gui.json",
-                # 快速配置开着时班次由 MAS 注入, MAA 自增的 PlanSelect 不回写;
-                # 关着时 MAA 跑的是存档自己的队列, 推进要靠回写保住
+                # 快速配置的班次与库存目标由 MAS 每轮注入，不把临时执行值写回；
+                # 关着时 MAA 跑存档自己的队列，计划修改与班次推进都要保留
                 ignore_keys=(
                     _MAA_TASK_KEYS_NOT_MERGED
                     if self.cur_user_config.get("Info", "IfQuickConfig")

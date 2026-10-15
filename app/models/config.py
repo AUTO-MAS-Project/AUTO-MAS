@@ -884,6 +884,57 @@ def _tag_notes(config: ConfigBase) -> dict:
     }
 
 
+def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
+    """保留完整旧配置，将原来启用的两类活动内容合并为动态库存目标。"""
+
+    migrated = deepcopy(data) if isinstance(data, dict) else {}
+    if not migrated or migrated.get("Data", {}).get("StaminaPipelineVersion") == 1:
+        return migrated, False
+    task = migrated.setdefault("Task", {})
+    old_task = data.get("Task", {})
+    plans = []
+    if old_task.get("IfEventDepotMaintain", False):
+        saved = old_task.get("EventDepotMaintainPlans", "[]")
+        try:
+            saved = json.loads(saved) if isinstance(saved, str) else saved
+        except (TypeError, ValueError):
+            saved = []
+            logger.warning("旧活动库存计划无法解析，原内容已保留在迁移前备份")
+        if not isinstance(saved, list):
+            saved = []
+        for index, plan in enumerate(saved, start=1):
+            if isinstance(plan, dict):
+                plan = deepcopy(plan)
+                plan.setdefault("StageType", "material")
+                plan.setdefault("StageIndex", index)
+                plan["LegacyIndex"] = True
+                plans.append(plan)
+    if old_task.get("IfActivityFirst", True):
+        medicine = old_task.get(
+            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
+        )
+        plans.append(
+            {
+                "StageType": "activity",
+                "StageIndex": old_task.get("ActivityStageIndex", 1),
+                "DropCount": 999,
+                "OrundumDropCount": 9999,
+                "UseMedicine": medicine > 0,
+                "MedicineCount": medicine,
+                "LegacyActivityFirst": True,
+            }
+        )
+    task["IfEventDepotMaintain"] = bool(
+        old_task.get("IfEventDepotMaintain", False)
+        or old_task.get("IfActivityFirst", True)
+    )
+    task["EventDepotMaintainPlans"] = json.dumps(plans, ensure_ascii=False)
+    state = migrated.setdefault("Data", {})
+    state["StaminaPipelineBackup"] = json.dumps(data, ensure_ascii=False)
+    state["StaminaPipelineVersion"] = 1
+    return migrated, True
+
+
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
@@ -995,6 +1046,13 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
         self.Data_CultivateNotice = ConfigItem("Data", "CultivateNotice", "")
+        ## 理智流程配置迁移版本与升级前完整用户配置（关闭的旧计划仍可找回）
+        self.Data_StaminaPipelineVersion = ConfigItem(
+            "Data", "StaminaPipelineVersion", 1, RangeValidator(0, 1)
+        )
+        self.Data_StaminaPipelineBackup = ConfigItem(
+            "Data", "StaminaPipelineBackup", "{}", JSONValidator()
+        )
         ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
@@ -1072,13 +1130,16 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
-        ## 是否优先保持活动材料库存
+        ## 是否启用活动关均衡理智
         self.Task_IfEventDepotMaintain = ConfigItem(
-            "Task", "IfEventDepotMaintain", False, BoolValidator()
+            "Task", "IfEventDepotMaintain", True, BoolValidator()
         )
         ## 活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动
         self.Task_EventDepotMaintainPlans = ConfigItem(
-            "Task", "EventDepotMaintainPlans", "[]", JSONValidator(list)
+            "Task",
+            "EventDepotMaintainPlans",
+            '[{"StageType":"all","DropCount":999,"OrundumDropCount":9999}]',
+            JSONValidator(list),
         )
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
@@ -1097,7 +1158,7 @@ class MaaUserConfig(ConfigBase):
         )
         ## 活动期间是否优先刷活动关
         self.Task_IfActivityFirst = ConfigItem(
-            "Task", "IfActivityFirst", True, BoolValidator()
+            "Task", "IfActivityFirst", False, BoolValidator()
         )
         ## 优先刷取的活动关卡序号
         self.Task_ActivityStageIndex = ConfigItem(
@@ -1168,6 +1229,13 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        migrated_data, migrated = migrate_maa_stamina_pipeline(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
     def getInfrastName(self) -> str:
 

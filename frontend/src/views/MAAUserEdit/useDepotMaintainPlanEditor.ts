@@ -4,9 +4,13 @@ import {
   type DepotMaintainPlan,
   type DepotMaintainPresetKey,
 } from './depotMaintainPresets'
-import { parseEventDepotPlans, type EventDepotMaintainPlan } from './eventDepotMaintainPresets'
+import {
+  eventDepotPlanIdentity,
+  parseEventDepotPlans,
+  type EventDepotMaintainPlan,
+} from './eventDepotMaintainPresets'
 
-export type DepotMaintainPlanRow = DepotMaintainPlan & { key: number; StageIndex?: number }
+export type DepotMaintainPlanRow = DepotMaintainPlan & EventDepotMaintainPlan & { key: number }
 
 interface DepotMaintainPlanEditorOptions {
   getSavedPlans: () => string
@@ -85,9 +89,11 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
       saveTimer = undefined
     }
     const next = JSON.stringify(
-      plans.value.map(({ Stage, DropId, StageIndex, DropCount }) =>
-        options.eventMode ? { StageIndex, DropCount } : { Stage, DropId, DropCount }
-      )
+      plans.value.map(({ key: _key, ...plan }) => {
+        if (!options.eventMode) return plan
+        const { Stage: _stage, DropId: _dropId, ...eventPlan } = plan
+        return eventPlan
+      })
     )
     if (next === options.getSavedPlans()) return
     lastEmitted = next
@@ -167,16 +173,17 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
   const appendPlans = (imported: (DepotMaintainPlan | EventDepotMaintainPlan)[]): number => {
     const existing = new Set(
       plans.value.map(plan =>
-        options.eventMode ? String(plan.StageIndex) : `${plan.Stage}:${plan.DropId}`
+        options.eventMode ? eventDepotPlanIdentity(plan) : `${plan.Stage}:${plan.DropId}`
       )
     )
     let added = 0
     for (const plan of imported) {
-      const identity =
-        'StageIndex' in plan ? String(plan.StageIndex) : `${plan.Stage}:${plan.DropId}`
+      const identity = options.eventMode
+        ? eventDepotPlanIdentity(plan as EventDepotMaintainPlan)
+        : `${plan.Stage}:${plan.DropId}`
       if (existing.has(identity)) continue
       existing.add(identity)
-      plans.value.push({ key: nextKey++, Stage: '', DropId: '', ...plan })
+      plans.value.push(Object.assign({ key: nextKey++, Stage: '', DropId: '' }, plan))
       added++
     }
     if (added) savePlans()
@@ -190,8 +197,8 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
       key: nextKey++,
       Stage: '',
       DropId: '',
-      DropCount: options.eventMode ? 200 : 1,
-      ...(options.eventMode ? { StageIndex: stageIndex } : {}),
+      DropCount: options.eventMode ? 999 : 1,
+      ...(options.eventMode ? { StageType: 'material' as const, StageIndex: stageIndex } : {}),
     })
     savePlans()
   }

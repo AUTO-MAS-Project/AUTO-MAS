@@ -1,13 +1,5 @@
 <template>
   <div class="depot-plan-editor">
-    <!-- 养成接管提示：接管发生时本任务整条不注入（方案决策 20/28），与养成编辑器共用后端写入的提示字段 -->
-    <a-alert
-      v-if="!eventMode && formData.Data?.CultivateNotice"
-      :message="formData.Data.CultivateNotice"
-      type="warning"
-      show-icon
-      class="takeover-alert"
-    />
     <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
     <a-alert
       v-if="eventMode"
@@ -16,13 +8,35 @@
       show-icon
       class="takeover-alert"
     />
+    <div v-if="eventMode && activityLoading" class="activity-loading">
+      <a-spin size="small" />
+      <span>{{ t('eventDepotPreview.loading') }}</span>
+    </div>
+    <a-alert
+      v-if="eventMode && activityError"
+      :message="activityError"
+      type="warning"
+      show-icon
+      class="takeover-alert"
+    >
+      <template #action>
+        <a-button
+          size="small"
+          :loading="activityLoading"
+          :disabled="loading"
+          @click="emit('retryActivity')"
+        >
+          {{ t('eventDepotPreview.retry') }}
+        </a-button>
+      </template>
+    </a-alert>
     <div class="plan-actions">
       <a-space wrap>
         <a-button
           v-if="eventMode"
           type="dashed"
           size="small"
-          :disabled="loading || activityUnavailable || eligibleStages.length === 0"
+          :disabled="loading || activityLoading"
           @click="importEventPresets"
         >
           <template #icon><AppstoreAddOutlined /></template>
@@ -50,7 +64,7 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-button v-if="!eventMode" type="dashed" size="small" :disabled="loading" @click="addPlan">
+        <a-button type="dashed" size="small" :disabled="loading" @click="addPlan">
           <template #icon><PlusOutlined /></template>
           {{ t('edit.addItem') }}
         </a-button>
@@ -122,7 +136,9 @@
             <EventDepotPlanFields
               v-if="eventMode"
               :stage-index="record.StageIndex"
-              :stages="eligibleStages"
+              :stage-type="record.StageType"
+              :legacy-fallback="record.LegacyIndex || record.LegacyActivityFirst"
+              :stages="activityStages ?? []"
               :loading="loading || activityUnavailable"
               :item-options="itemOptions"
               :get-popup-container="getPopupContainer"
@@ -160,13 +176,32 @@
                 @change="onItemChange(record)"
               />
             </template>
-            <a-input-number
-              v-model:value="record.DropCount"
-              :disabled="loading"
-              :min="1"
-              :precision="0"
-              @change="queueSave"
-            />
+            <div class="target-inputs">
+              <span v-if="eventMode && record.StageType === 'all'" class="target-label">{{
+                t('eventDepotPreview.materialTarget')
+              }}</span>
+              <a-input-number
+                v-model:value="record.DropCount"
+                :disabled="loading"
+                :min="1"
+                :precision="0"
+                :aria-label="t('edit.targetStock')"
+                @change="queueSave"
+              />
+              <template
+                v-if="eventMode && (record.StageType === 'all' || record.LegacyActivityFirst)"
+              >
+                <span class="target-label">{{ t('eventDepotPreview.orundumTarget') }}</span>
+                <a-input-number
+                  v-model:value="record.OrundumDropCount"
+                  :disabled="loading"
+                  :min="1"
+                  :precision="0"
+                  :aria-label="t('eventDepotPreview.orundumTarget')"
+                  @change="queueSave"
+                />
+              </template>
+            </div>
             <span class="stock-value">{{ stockOf(record) }}</span>
             <span class="col-action">
               <!-- 键盘排序走上移/下移按钮（MFW 任务队列先例），拖拽手柄供鼠标 -->
@@ -247,8 +282,13 @@ import {
 } from '@ant-design/icons-vue'
 import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
 import EventDepotPlanFields from './EventDepotPlanFields.vue'
-import { getEventDepotStages, getEventDepotPresets } from './eventDepotMaintainPresets'
-import { resolveActivityStage } from './activityStages'
+import {
+  getEventDepotStages,
+  getEventOrundumStages,
+  getEventDepotPresets,
+  resolveEventDepotStage,
+  type EventDepotStageType,
+} from './eventDepotMaintainPresets'
 import { usePlanSelectPopup } from './usePlanSelectPopup'
 import type { ActivityItem } from '@/types/home'
 import type {
@@ -274,11 +314,13 @@ const props = defineProps<{
   inventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 提供活动列表时，编辑范围限制为其中的材料掉落关卡。 */
+  /** 提供活动列表时，编辑动态活动目标及兼容的旧选关。 */
   activityStages?: ActivityItem[]
   activityLoading?: boolean
   activityError?: string
 }>()
+
+const emit = defineEmits<{ retryActivity: [] }>()
 
 type SelectOption = { label: string; value: string; disabled?: boolean }
 
@@ -289,10 +331,13 @@ const stockColumnTitle = computed(() =>
 )
 
 const eventMode = computed(() => props.activityStages !== undefined)
-const eligibleStages = computed(() => getEventDepotStages(props.activityStages ?? []))
+const eligibleStages = computed(() => [
+  ...getEventDepotStages(props.activityStages ?? []),
+  ...getEventOrundumStages(props.activityStages ?? []),
+])
 const activityUnavailable = computed(() => !!props.activityLoading || !!props.activityError)
 const importEventPresets = () => {
-  const added = props.editor.appendPlans(getEventDepotPresets(props.activityStages ?? []))
+  const added = props.editor.appendPlans(getEventDepotPresets())
   message.info(
     added ? t('eventDepotPreview.added', { n: added }) : t('eventDepotPreview.alreadyAdded')
   )
@@ -312,8 +357,16 @@ const {
   removeSelectedPlans,
 } = props.editor
 const selectedKeys = computed(() => new Set(selectedRowKeys.value))
-const onEventStageChange = (record: DepotMaintainPlan, index: number) => {
-  record.StageIndex = index
+const onEventStageChange = (
+  record: DepotMaintainPlan,
+  selection: { StageType: EventDepotStageType; StageIndex?: number }
+) => {
+  if (record.StageType === 'all' && selection.StageType !== 'all') {
+    if (selection.StageType === 'orundum') record.DropCount = record.OrundumDropCount ?? 9999
+    delete record.OrundumDropCount
+  }
+  record.StageType = selection.StageType
+  record.StageIndex = selection.StageIndex
   onStageChange(record)
 }
 const allSelected = computed(
@@ -364,7 +417,7 @@ const isStageLoading = (record: DepotMaintainPlan): boolean =>
 
 const stockOf = (record: DepotMaintainPlan): number | string => {
   const itemId = eventMode.value
-    ? resolveActivityStage(eligibleStages.value, record.StageIndex)?.Drop
+    ? resolveEventDepotStage(props.activityStages ?? [], record)?.Drop
     : record.DropId
   return itemId ? (props.inventory?.[itemId] ?? '—') : '—'
 }
@@ -388,6 +441,26 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 
 .takeover-alert {
   margin-bottom: 12px;
+}
+
+.activity-loading {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--ant-color-text-secondary);
+}
+
+.target-inputs {
+  min-width: 0;
+}
+
+.target-label {
+  display: block;
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
 }
 
 .plan-actions {

@@ -133,6 +133,7 @@
           "SkipDuringActivity": false,
           "SkipDuringResourceCollection": false,
           "OnlyFirstInsufficientPlan": true,
+          "SortByProgress": true,
           "UseAutoSeries": true,
           "UseMedicine": true,
           "UseStone": true,

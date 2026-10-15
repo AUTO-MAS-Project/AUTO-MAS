@@ -1,8 +1,8 @@
 <template>
   <a-select
-    :value="stageIndex"
+    :value="selection"
     :options="stageOptions"
-    :disabled="loading || stages.length === 0"
+    :disabled="loading"
     show-search
     option-filter-prop="label"
     :virtual="false"
@@ -10,11 +10,11 @@
     :list-height="listHeight"
     :popup-match-select-width="false"
     :placeholder="t('edit.pickStage')"
-    @change="emit('change', Number($event))"
+    @change="onChange(String($event))"
   />
   <a-select
     class="event-material-display"
-    :value="stage?.Drop"
+    :value="materialValue"
     :options="materialOptions"
     disabled
     :placeholder="'—'"
@@ -26,48 +26,93 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ActivityItem } from '@/types/home'
-import { resolveActivityStage } from './activityStages'
+import {
+  getEventDepotStages,
+  getEventOrundumStages,
+  resolveEventDepotStage,
+  type EventDepotStageType,
+} from './eventDepotMaintainPresets'
 
 const props = defineProps<{
   stageIndex?: number
+  stageType?: EventDepotStageType
+  legacyFallback?: boolean
   stages: ActivityItem[]
   loading: boolean
   itemOptions: { label: string; value: string }[]
   getPopupContainer: (trigger: HTMLElement) => HTMLElement
   listHeight: number
 }>()
-const emit = defineEmits<{ change: [value: number] }>()
+const emit = defineEmits<{
+  change: [value: { StageType: EventDepotStageType; StageIndex?: number }]
+}>()
 const { t } = useI18n()
 
-const stage = computed(() => resolveActivityStage(props.stages, props.stageIndex))
+const selection = computed(() =>
+  props.stageType === 'all' ? 'all:' : `${props.stageType ?? 'material'}:${props.stageIndex ?? ''}`
+)
+const stage = computed(() =>
+  resolveEventDepotStage(props.stages, {
+    StageType: props.stageType,
+    StageIndex: props.stageIndex,
+    LegacyIndex: props.legacyFallback,
+  })
+)
+const materialValue = computed(() => (props.stageType === 'all' ? 'all' : stage.value?.Drop))
 const materialOptions = computed(() =>
-  stage.value
-    ? [
-        {
-          value: stage.value.Drop,
-          label:
-            props.itemOptions.find(item => item.value === stage.value?.Drop)?.label ??
-            stage.value.DropName,
-        },
-      ]
-    : []
+  props.stageType === 'all'
+    ? [{ value: 'all', label: t('eventDepotPreview.allMaterials') }]
+    : stage.value
+      ? [
+          {
+            value: stage.value.Drop,
+            label:
+              props.itemOptions.find(item => item.value === stage.value?.Drop)?.label ??
+              stage.value.DropName,
+          },
+        ]
+      : []
 )
 const stageOptions = computed(() => {
-  const options = props.stages.map((item, index) => ({
-    label: `${t('eventDepotPreview.stageIndex', { n: index + 1 })} · ${item.Display}`,
-    value: index + 1,
-  }))
-  if (props.stageIndex && !options.some(option => option.value === props.stageIndex)) {
-    const label = t('eventDepotPreview.stageIndex', { n: props.stageIndex })
+  // 动态模板通过预设新增，避免把旧逐计划药量扩散到多个活动关。
+  const options =
+    props.stageType === 'all' ? [{ label: t('eventDepotPreview.allStages'), value: 'all:' }] : []
+  for (const [type, stages] of [
+    ['material', getEventDepotStages(props.stages)],
+    ['orundum', getEventOrundumStages(props.stages)],
+  ] as const) {
+    stages.forEach((item, index) =>
+      options.push({
+        label: `${t(type === 'material' ? 'eventDepotPreview.stageIndex' : 'eventDepotPreview.orundumIndex', { n: index + 1 })} · ${item.Display}`,
+        value: `${type}:${index + 1}`,
+      })
+    )
+  }
+  // 完整活动列表序号仅用于展示和保留旧优先选关，不与材料序号混用。
+  if (!options.some(option => option.value === selection.value)) {
+    const label = t(
+      props.stageType === 'activity'
+        ? 'eventDepotPreview.legacyIndex'
+        : props.stageType === 'orundum'
+          ? 'eventDepotPreview.orundumIndex'
+          : 'eventDepotPreview.stageIndex',
+      { n: props.stageIndex ?? 1 }
+    )
     options.push({
-      value: props.stageIndex,
-      label: stage.value
-        ? `${label} · ${t('eventDepotPreview.fallbackStage', { stage: stage.value.Value })}`
-        : label,
+      value: selection.value,
+      label: stage.value ? `${label} · ${stage.value.Display}` : label,
     })
   }
   return options
 })
+
+const onChange = (value: string) => {
+  const [type, index] = value.split(':')
+  emit('change', {
+    StageType: type as EventDepotStageType,
+    ...(index ? { StageIndex: Number(index) } : {}),
+  })
+}
 </script>
 
 <style scoped>

@@ -7,21 +7,63 @@
  */
 export default {
   eventDepotPreview: {
-    name: 'Event stock keeping',
-    hint: 'Replenish event materials to their target stock first, then continue with Event stage priority below.',
+    runtimeUnresolved:
+      'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
+    legacyFallback:
+      'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
+    budgetConflict:
+      'Overlapping legacy event targets use the custom goal and its medicine allowance. The other allowance remains in the pre-migration backup.',
+    name: 'Balanced event farming',
+    hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
     scopeHint:
-      'Keep stock by event material stage position. Stages follow the current event at runtime; Orundum efficiency and entries without drops are excluded.',
-    stageColumn: 'Event material stage',
+      'MAA selects the execution order by target completion ratio; this does not guarantee switching stages after every battle. Material and Orundum stages follow the current event.',
+    stageColumn: 'Event stage',
     stageIndex: 'Material stage {n}',
+    orundumIndex: 'Orundum stage {n}',
+    legacyIndex: 'Previous priority stage {n}',
     fallbackStage: 'Currently falls back to {stage}',
-    addPresets: 'Add event presets',
+    allStages: 'All current event stages',
+    allMaterials: 'Event materials and Orirock',
+    materialTarget: 'Material target',
+    orundumTarget: 'Orirock target for Orundum',
+    addPresets: 'Add event preset',
     mergeHint:
-      'Targets default to 200. Only positions and targets are saved; materials follow each event. Adding again fills missing entries and keeps targets. Out-of-range positions use the first material stage. Drag to reorder execution.',
+      'New presets follow the number of event stages: 999 for materials and 9999 Orirock for Orundum. Existing custom targets take priority and stay unchanged. Reaching these finite targets continues the pipeline.',
     added: 'Added {n} event presets',
-    alreadyAdded: 'All event presets are already added. Existing targets are unchanged.',
-    noActivity: 'No event stages are currently available',
+    alreadyAdded: 'The event preset is already added. Existing targets are unchanged.',
+    noActivity: 'No event stages are available. Targets can be saved for the next event.',
     expiredHint:
-      'No event material stages are available, so this run is skipped. Positions and targets are kept and automatically use new stages in the next event.',
+      'No event stages can be farmed this run. Saved targets will be used when event stages become available.',
+    loading: 'Loading event stages…',
+    retry: 'Retry',
+    dataUnavailable: 'Event data is unavailable; saved targets are kept',
+    loadFailed: 'Failed to load event stages. Saved targets are unchanged.',
+    invalidData: 'Failed to load event stages: stage information is missing from the response.',
+    staleData:
+      'Event data could not be refreshed. Showing the last successfully loaded stages; saved targets are unchanged.',
+    summary: 'Current event · {n} stages · stock ratio order',
+    medicineHint:
+      'This potion allowance is assigned to one event plan only. Unused allowance is not transferred to other plans.',
+  },
+  maaStaminaPipeline: {
+    inventoryCultivate: 'Stock keeping and cultivation',
+    sanityFallback: 'Sanity tasks',
+    orderHint:
+      'Balanced event farming → stock keeping and cultivation → sanity tasks. A stage with nothing to farm continues to the next.',
+    inventoryHint:
+      'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
+    executionHint:
+      'When both participate, prepare cultivation materials, then replenish cultivation costs plus target stock, and finally raise operators. This run uses that fixed order, single battles, and no expiring potions; ratio sorting and first-insufficient-plan-only are disabled. Original stock settings are retained.',
+    sanityHint:
+      'Uses the original fixed stage, alternatives or schedule and combat settings. This controls only the final stage; the first two can still run when it is off.',
+    inventoryOff: 'Stock keeping off',
+    cultivateOff: 'Cultivation off',
+    recoverActivity: 'Restore previous event targets',
+    recoverHint:
+      'Previous event settings are backed up. Restore adds missing old targets and pauses event farming; review the targets before enabling it.',
+    recoverSuccess:
+      'Previous event targets restored. Event farming is paused; review the targets before enabling it.',
+    recoverFailed: 'Failed to restore previous event targets. Please retry.',
   },
   common: {
     viewPageDocs: 'View documentation for this page',
@@ -406,8 +448,12 @@ export default {
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
       'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically.',
+    maaCultivateSkipHint:
+      'When an event or all-resources-open skip condition applies, cultivation farming, material reserves and raising are paused for this run. Other tasks continue.',
+    maaCultivatePreparationUnavailable:
+      'Cultivation data is temporarily unavailable. Cultivation is paused for this run; stock keeping and sanity tasks continue.',
     maaCultivateTakeoverHint:
-      'When materials are short, cultivation takes over farming for this run and pauses depot maintenance. Depot maintenance resumes once materials are complete.',
+      'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
