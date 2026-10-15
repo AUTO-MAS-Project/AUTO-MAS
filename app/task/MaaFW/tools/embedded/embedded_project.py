@@ -606,6 +606,32 @@ def follow_source_record(marker: Mapping[str, Any] | None) -> dict[str, Any] | N
     return dict(record) if isinstance(record, Mapping) else None
 
 
+def _is_follow_source_version(version: str) -> bool:
+    """版本号带开发者载荷的本地段（:func:`follow_source_payload_version` 的产物）。"""
+
+    text = str(version or "").strip()
+    if "+" not in text:
+        return False
+    local = text.split("+", 1)[1]
+    return local == FOLLOW_SOURCE_VERSION_LOCAL or local.endswith(
+        f".{FOLLOW_SOURCE_VERSION_LOCAL}"
+    )
+
+
+def _marker_on_follow_source(marker: Mapping[str, Any]) -> bool:
+    """视图挂的是开发者载荷：标记带着 ``followSource``（值读不读得出都算），或载荷版本带
+    ``+dev`` 本地段。后者是因为关掉开关时组里没有正式版本、来源也不在，
+    :func:`_leave_follow_source` 会摘掉 ``followSource``、视图留在开发者载荷上。载荷 id
+    以版本开头（``<版本>-<hash8>``），标记里的版本缺了也认得出。"""
+
+    if FOLLOW_SOURCE_FIELD in marker:
+        return True
+    payload_version = str(marker.get("payload") or "").rsplit("-", 1)[0]
+    return _is_follow_source_version(
+        str(marker.get("version") or "")
+    ) or _is_follow_source_version(payload_version)
+
+
 def resolve_view_payload(
     script_id: str, base: Path | None = None
 ) -> tuple[str, str] | None:
@@ -2717,16 +2743,16 @@ def ensure_embedded_copy(
             _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
         elif (
             not follow
-            and follow_source_record(marker) is None
+            and not _marker_on_follow_source(marker)
             and not payloads.payload_complete(
                 payloads_root(base), str(marker["lineage"]), str(marker["payload"])
             )
         ):
-            # 每个入口都会走到这里，只 stat 两次、不解析清单（大项目的清单有几 MB）。
-            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。刚关掉开关、标记
-            # 还带 followSource 的也不在此列：视图里是开发者改过的内容，按现状登记会以
-            # 正式版本号进普通渠道（AGENTS「开发者载荷不进普通渠道」），留给运行前检查的
-            # _leave_follow_source 回到组的 latest。
+            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。视图还挂在开发者
+            # 载荷上的（刚关掉开关、标记还带 followSource，或关掉时组里没有正式版本、
+            # 来源也不在而留在了开发者载荷上）也不在此列：视图里是开发者改过的内容，按
+            # 现状登记会以正式版本号进普通渠道（AGENTS「开发者载荷不进普通渠道」）。它们
+            # 的更新照样在换下载地址之前就跳过，重新选择项目目录导入即可恢复。
             _readopt_lost_payload(
                 script_id,
                 script_config,
@@ -2933,6 +2959,11 @@ def adopt_view(
         )
     ):
         raise EmbeddedProjectError("副本已经登记过版本")
+    if marker is not None and _marker_on_follow_source(marker):
+        # 调用方已经排除，这里兜底：开发者改过的内容不能以正式版本号进普通渠道。
+        raise EmbeddedProjectError(
+            "副本挂的是开发者模式导入的版本，不按正式版本重新登记"
+        )
     interface = payloads.read_project_interface(view)
     lineage = payloads.lineage_key(interface)
     if marker is not None:

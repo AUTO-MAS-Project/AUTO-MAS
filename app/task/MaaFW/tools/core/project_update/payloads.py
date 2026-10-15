@@ -410,13 +410,14 @@ def read_manifest(root: Path, key: str, payload_id: str) -> dict[str, Any] | Non
 
 
 def payload_complete(root: Path, key: str, payload_id: str) -> bool:
-    """载荷目录与清单都在。只剩目录、清单没了的是不可信的半成品（见 :func:`register`），
-    与载荷丢了同等对待。"""
+    """载荷目录在、清单读得出（是个 JSON 对象）。只剩目录、清单没了或读不出的载荷建不了视图、
+    也当不了更新基准（:meth:`PayloadTarget.manifest` 同一判据），与载荷丢了同等对待
+    （见 :func:`register`）。清单要整份解析，大项目几 MB、十几毫秒，不要放进逐文件的循环。"""
 
     try:
         return (
             payload_dir(root, key, payload_id).is_dir()
-            and manifest_path(root, key, payload_id).is_file()
+            and read_manifest(root, key, payload_id) is not None
         )
     except PayloadError:
         return False
@@ -992,7 +993,8 @@ def register(
       胜过 ``import``）。
     - ``latest[channel]`` **只在版本严格更高时前进**；版本相同而 id 不同时保留既有 id
       （新建的这份不登记为 latest，等启动期回收）。返回的 ``latest_id`` 就是调用方该把
-      视图切到的那个。``latest`` 指向的目录丢了才无条件换成这份。
+      视图切到的那个。``latest`` 指向的载荷不完整（目录丢了，或清单没了 / 读不出，见
+      :func:`payload_complete`）时，这份不比它旧就换成这份。
     - 同版本例外一：既有 latest 自带的 MaaFramework 在本机加载不了、这份能加载
       （见 :func:`_replaces_unloadable_latest`），换成这份。
     - 同版本例外二：这份按更新的投影规则建（``projection_revision`` 比 latest 的有效规则
@@ -1142,8 +1144,8 @@ def register(
                     )
                 )
             else:
-                # latest 指的目录丢了（或只剩目录、清单没了——同样建不了视图、当不了更新
-                # 基准）：只有新登记的不比它旧才顶上去，否则组会后退；保留原 latest，缺失的
+                # latest 指的目录丢了（或只剩目录、清单没了 / 读不出——同样建不了视图、当不了
+                # 更新基准）：只有新登记的不比它旧才顶上去，否则组会后退；保留原 latest，缺失的
                 # 载荷由自愈 / 迁移处理。
                 advanced = not version_newer(current_version, version)
                 if not advanced:

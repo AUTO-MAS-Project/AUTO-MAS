@@ -192,7 +192,7 @@ def latest_entry(
         return None
     if not entry:
         return None
-    # 只剩目录、清单没了的 latest 切不过去，也当不了更新基准（建新载荷要读它的清单）：
+    # 只剩目录、清单没了或读不出的 latest 切不过去，也当不了更新基准（建新载荷要读它的清单）：
     # 与丢了同等对待，组同步不去切、更新以视图自己挂的载荷为准。
     if not payloads.payload_complete(payloads_root(base), lineage, str(entry["id"])):
         return None
