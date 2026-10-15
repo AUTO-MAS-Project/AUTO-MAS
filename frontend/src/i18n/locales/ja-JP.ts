@@ -4096,6 +4096,12 @@ export default {
       sleekLine: 'ライン',
       fluid: 'フルイド（派手な RGB！）',
     },
+    pressSound: {
+      duck: 'ラバーダック',
+      fx1: 'サウンド1',
+      custom: 'カスタム音声',
+      customNamed: 'カスタム（{name}）',
+    },
 
     basic: {
       appearance: '外観',
@@ -4155,6 +4161,17 @@ export default {
       replaceAppearance: '置き換え',
       removeAppearanceTitle: 'カスタム外観を削除',
       removeAppearanceContent: '「{name}」を削除しますか？',
+      pressSoundSection: '押下サウンド',
+      pressSoundEnabled: 'サウンドを再生',
+      pressSoundEnabledTip:
+        'ホーム中央のアイコン（星核）を押したときに音を鳴らします。オフにすると無音になりますが、イースターエッグ自体は変わりません',
+      pressSoundPreset: 'サウンドの種類',
+      pressSoundPresetTip: '内蔵サウンドが 2 種類。右のボタンから自分の音声ファイルも読み込めます',
+      pressSoundImport: '音声を読み込む',
+      pressSoundVolume: '音量',
+      pressSoundVolumeTip: '押下サウンドの再生音量',
+      pressSoundPreview: '試聴',
+      pressSoundPreviewAction: '試聴',
       cursorSection: 'カーソル効果',
       cursorAnim: 'カーソルのアニメーション',
       cursorTip:
@@ -4492,6 +4509,12 @@ export default {
       pauseHomeEffectsSaveFailed:
         'スクリプト実行中のホームエフェクト一時停止設定を保存できませんでした',
       homeSatelliteSaveFailed: 'ホームの衛星スタイルを保存できませんでした',
+      pressSoundSaveFailed: '押下サウンドの設定を保存できませんでした',
+      pressSoundCustomMissing:
+        '音声がまだ読み込まれていません。「音声を読み込む」からファイルを選んでください',
+      pressSoundTooLarge: '音声ファイルが大きすぎます。1 MB 以内のものを選んでください',
+      pressSoundReadFailed: '音声ファイルを読み込めませんでした。別のファイルを試してください',
+      pressSoundImported: '音声を読み込んで有効にしました',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',
       testFailed: 'テスト通知を送信できませんでした',

@@ -7,7 +7,7 @@
     @pointermove="handlePointerMove"
     @pointerleave="handlePointerLeave"
     @pointerdown="handlePointerDown"
-    @pointerup="releaseCenter"
+    @pointerup="handlePointerUp"
     @pointercancel="releaseCenter"
   >
     <div v-if="loading" class="loading-spinner"></div>
@@ -35,6 +35,7 @@ import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createCenterPokeCounter } from './satellite/centerPoke'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
+import { usePressSound } from './satellite/usePressSound'
 import { SatelliteScene, type SatellitePick } from './satellite-classic/satelliteScene'
 import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
 
@@ -48,6 +49,8 @@ const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
+// 中心图标的按压音效：与 3D 星系共用同一套设置与播放逻辑
+const { playPress, playRelease } = usePressSound()
 // 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
 const {
   statuses: satelliteStatuses,
@@ -66,6 +69,8 @@ const effectsPaused = computed(
 
 let scene: SatelliteScene | null = null
 let isUnmounted = false
+/** 这一轮按下是不是落在中心图标上：决定松手时要不要响松开音 */
+let pressedOnCenter = false
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let disposeBackendReadyListener: (() => void) | null = null
 const frameScheduler = createAnimationFrameScheduler(requestAnimationFrame, cancelAnimationFrame)
@@ -300,16 +305,26 @@ function handlePointerLeave(): void {
   releaseCenter()
 }
 
-/** 按在中心图标上时给它一个压扁的形变，松开还原 */
+/** 按在中心图标上时给它一个压扁的形变、响一下按压音，松开还原 */
 function handlePointerDown(event: PointerEvent): void {
   // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做；
   // 只认主键，右键 / 中键不会产生 click，冒了字也不算连点
   if (event.button !== 0 || performanceStore.isLowPower || pickAt(event) !== 'center') return
   scene?.setCenterPressed(true)
+  pressedOnCenter = true
+  playPress()
   spawnStarBurst(event.clientX, event.clientY)
 }
 
+/** 只有真的在中心图标上松手才响松开音；pointercancel 与指针移出画布只还原形变 */
+function handlePointerUp(): void {
+  const pressed = pressedOnCenter
+  releaseCenter()
+  if (pressed) playRelease()
+}
+
 function releaseCenter(): void {
+  pressedOnCenter = false
   scene?.setCenterPressed(false)
 }
 
