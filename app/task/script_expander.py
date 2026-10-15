@@ -272,6 +272,8 @@ class ScriptExpander(TaskBase):
             except Exception:
                 uid = entry.uid if entry is not None else "?"
                 logger.exception(f"脚本 {uid} 退订游戏失败")
+                # 停止本轮展开，保留原票供 final_task 和宿主恢复路径重试。
+                raise
             self._game_ticket = None
             self._game = None
         self._script_entry = None
@@ -281,7 +283,11 @@ class ScriptExpander(TaskBase):
         from app.core.ws.protocol import WSTaskCompletedData
 
         # TaskBase 保证本方法总会跑到：取消打断循环时在此释放当前脚本占用
-        await self._release()
+        try:
+            await self._release()
+        except Exception as exc:
+            self.error = exc
+            await self.on_crash(exc)
 
         self.item.current.index = None
         await self.item.commit()

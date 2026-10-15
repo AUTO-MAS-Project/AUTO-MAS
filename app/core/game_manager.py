@@ -58,6 +58,8 @@ class _GameManager:
     def __init__(self) -> None:
         self._found: dict[UUID, Any] = {}
         self._subs: dict[LockTicket, GameEntry] = {}
+        self._release_locks: dict[LockTicket, asyncio.Lock] = {}
+        self._pending_cleanup: set[LockTicket] = set()
         self._gate = _SerialGate()
         self._gate_tokens: set[UUID] = set()
 
@@ -143,29 +145,45 @@ class _GameManager:
             await self._gate.acquire()
             gated = True
         try:
+            # 上一任务的失败还原由宿主持票；重新使用该游戏前先完成恢复。
+            for pending in list(self._pending_cleanup):
+                if self._subs.get(pending) is entry:
+                    await self.unsubscribe(pending)
             ticket = await entry.lock_s(cascade=False)
         except BaseException:
             if gated:
                 self._gate.release()
             raise
         self._subs[ticket] = entry
+        self._release_locks[ticket] = asyncio.Lock()
         if gated:
             self._gate_tokens.add(ticket.token)
         return ctrl, ticket
 
     async def unsubscribe(self, ticket: LockTicket) -> None:
-        """退订该票名下全部实例，再解开订阅时签发的那把主配置锁。"""
-        # 先 unlock 再删登记：unlock 失败时仍可经同一票重试
-        entry = self._subs[ticket]
-        # 实例先退订：任务异常退出时不留占位，否则实例永久不可订阅。
-        # 放在 unlock 之前 —— 还原要写设备配置，而设备 Entry 在 S 锁下仍可写，
-        # 顺序反了也能写，但此时票已作废，无从核对归属。
-        await entry._control.unsubscribe_all(ticket)
-        await entry.unlock(ticket)
-        del self._subs[ticket]
-        if ticket.token in self._gate_tokens:
-            self._gate_tokens.discard(ticket.token)
-            self._gate.release()
+        """还原后解锁；失败保留恢复票，但不阻塞其他游戏的串行队列。"""
+        lock = self._release_locks.get(ticket)
+        if lock is None:
+            return
+        async with lock:
+            entry = self._subs.get(ticket)
+            if entry is None:
+                return
+            try:
+                # 还原仍须保留原票与主配置锁；失败设备的登记由 Control 保留。
+                await entry._control.unsubscribe_all(ticket)
+                await entry.unlock(ticket)
+            except BaseException:
+                self._pending_cleanup.add(ticket)
+                raise
+            else:
+                del self._subs[ticket]
+                del self._release_locks[ticket]
+                self._pending_cleanup.discard(ticket)
+            finally:
+                if ticket.token in self._gate_tokens:
+                    self._gate_tokens.discard(ticket.token)
+                    self._gate.release()
 
     async def search(self) -> dict[str, dict[str, Any]]:
         """逐一调用已启用插件声明的 search，暂存未激活实例并返回目录。"""

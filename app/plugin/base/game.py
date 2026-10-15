@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import weakref
 from abc import ABC, abstractmethod
@@ -41,6 +42,8 @@ class DeviceSubscription:
     usage: str
     expect: object | None = None
     count: int = 1
+    releasing: bool = False
+    _release_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
 @dataclass
@@ -83,8 +86,8 @@ class DeviceHandle:
         """退订本实例。重复调用无副作用。"""
         if self._released:
             return
-        self._released = True
         await self.control.unsubscribe_device(self)
+        self._released = True
 
 
 class GameControl(ABC, Generic[TGame, TDevice]):
@@ -146,7 +149,7 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         """订阅实例，返回句柄。同票重复订阅同台只累加计数。
 
         首个引用时调 ``_on_device_subscribed`` 做品牌准备（备份配置、写入
-        ``expect`` 等）；准备失败则撤销登记并尽力收尾，不留半份占用。
+        ``expect`` 等）；准备失败则尽力收尾，还原未完成时保留登记供重试。
         已被他票占用时上抛 ``DeviceSubscribeError``，带出占用者用途说明。
         """
         if ticket is TRIGGER_TICKET:
@@ -158,19 +161,21 @@ class GameControl(ABC, Generic[TGame, TDevice]):
                 raise DeviceSubscribeError(
                     f"实例 {device_uid} 已被占用: {sub.usage}", usage=sub.usage
                 )
+            if sub.releasing:
+                raise DeviceSubscribeError(
+                    f"实例 {device_uid} 尚未完成还原: {sub.usage}", usage=sub.usage
+                )
             sub.count += 1
             return DeviceHandle(control=self, ticket=ticket, device_uid=device_uid)
 
         # 登记在前：他票占用时立刻上抛，不白做一轮品牌准备
-        self._subs[device_uid] = DeviceSubscription(
-            ticket=ticket, usage=usage, expect=expect
-        )
+        sub = DeviceSubscription(ticket=ticket, usage=usage, expect=expect)
+        self._subs[device_uid] = sub
         try:
             await self._on_device_subscribed(device_uid, expect)
-        except Exception:
-            del self._subs[device_uid]
+        except BaseException:
             with suppress(Exception):
-                await self._on_device_unsubscribed(device_uid)
+                await self._release_subscription(device_uid, sub, all_references=True)
             raise
         return DeviceHandle(control=self, ticket=ticket, device_uid=device_uid)
 
@@ -179,12 +184,21 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         sub = self._subs.get(handle.device_uid)
         if sub is None or sub.ticket != handle.ticket:
             return
-        sub.count -= 1
-        if sub.count > 0:
-            return
-        # 先摘登记再收尾：收尾失败也不留占位，否则实例永久不可订阅
-        del self._subs[handle.device_uid]
-        await self._on_device_unsubscribed(handle.device_uid)
+        await self._release_subscription(handle.device_uid, sub, all_references=False)
+
+    async def _release_subscription(
+        self, device_uid: UUID, sub: DeviceSubscription, *, all_references: bool
+    ) -> None:
+        """还原成功才摘登记；失败或取消保留原票，供句柄或宿主重试。"""
+        async with sub._release_lock:
+            if self._subs.get(device_uid) is not sub:
+                return
+            if not all_references and sub.count > 1:
+                sub.count -= 1
+                return
+            sub.releasing = True
+            await self._on_device_unsubscribed(device_uid)
+            del self._subs[device_uid]
 
     async def unsubscribe_all(self, ticket: LockTicket) -> None:
         """退订该票名下**全部**实例。``GameManager.unsubscribe`` 调用。
@@ -192,12 +206,11 @@ class GameControl(ABC, Generic[TGame, TDevice]):
         逐台独立收尾：某台失败不影响其余台，末尾统一上抛第一个异常。
         """
         first: BaseException | None = None
-        for device_uid in [
-            uid for uid, sub in self._subs.items() if sub.ticket == ticket
+        for device_uid, sub in [
+            (uid, sub) for uid, sub in self._subs.items() if sub.ticket == ticket
         ]:
-            del self._subs[device_uid]
             try:
-                await self._on_device_unsubscribed(device_uid)
+                await self._release_subscription(device_uid, sub, all_references=True)
             except Exception as e:
                 if first is None:
                     first = e

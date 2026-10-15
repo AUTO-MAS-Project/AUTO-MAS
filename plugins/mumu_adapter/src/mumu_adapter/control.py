@@ -229,13 +229,17 @@ class MuMuControl(EmulatorControl):
         """订阅实例：备份 ``-aw`` 原状，写稳定项与任务要求的分辨率。
 
         备份先落盘再写第一笔 —— 否则中间崩溃就永久丢了原值。
-        订阅登记与失败撤销由基类管，这里只做品牌侧的备份与写入。
+        订阅登记与失败恢复由基类管，这里只做品牌侧的备份与写入。
         ``expect`` 为 ``None`` 时只备份：任务没提期望，就没有该改的键。
         """
         if expect is not None and not isinstance(expect, EmulatorExpect):
             raise TypeError(f"expect 须为 EmulatorExpect，收到 {type(expect).__name__}")
         dev = self.config.devices[device_uid]
         idx = dev.info.index
+
+        # 启动清扫失败时也不能用当前配置覆盖尚未还原的原始备份。
+        if dev.session.backup:
+            await self._on_device_unsubscribed(device_uid)
 
         # ── 备份：-aw 一次拉齐全部可写配置，值原样保留 ──
         try:
@@ -288,7 +292,7 @@ class MuMuControl(EmulatorControl):
         不管实例是否在运行 —— 不替用户关实例；MuMu 的设置下次启动生效。
         逐键 ``-k/-val`` 会在中途失败时留下半改状态，故走官方批量入口
         ``setting -p``：一次调用要么成要么败，文件按官方要求写 UTF-8。
-        写回失败则**保留**备份并记警告：那是原值的唯一记录，下次启动清扫再试。
+        写回失败则保留备份、记录警告并上抛，由宿主持票重试或下次启动清扫。
         """
         dev = self.config.devices[device_uid]
         backup: dict[str, Any] = dev.session.backup
@@ -305,7 +309,7 @@ class MuMuControl(EmulatorControl):
                 raise RuntimeError(f"整份写回失败: {result.stdout}")
         except Exception as e:
             logger.warning(f"实例 {idx} 配置还原失败，备份保留待下次清扫: {e}")
-            return
+            raise
         finally:
             with suppress(OSError):
                 tmp.unlink()
