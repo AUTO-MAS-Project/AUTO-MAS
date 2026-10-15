@@ -91,6 +91,7 @@ from .resource_loader import (
 from .ScriptConfig import maaend_config_base, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.game_launcher import verify_launcher_signature
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
@@ -109,6 +110,8 @@ _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
 _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 # 终末地 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
 _MAAEND_CLIENT_PROCESS = "Endfield.exe"
+# 启动器 UI 自动化（前台点击 + 全局鼠标）一次只能有一路：跨脚本按此锁串行
+_LAUNCHER_AUTOMATION_LOCK = asyncio.Lock()
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
 _MXU_TASKS_COMPLETED = re.compile(
     r"收到 state-changed，已刷新运行时状态,\s*kind:\s*tasks-completed\s*$"
@@ -494,44 +497,59 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """由 MAS 经官方启动器拉起终末地。
 
         启动器模式下移除 MAS 注入的直接启动前置程序，避免任何直启回退。
+        前台点击与全局鼠标一次只能有一路，跨脚本按 _LAUNCHER_AUTOMATION_LOCK 串行。
         """
 
-        if is_process_running(_MAAEND_CLIENT_PROCESS):
-            logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
-            await push_dispatch_log(self.script_info, "检测到客户端已在运行，跳过启动")
-            return
-        launcher_path = self._launcher_path()
-        if launcher_path is None:
-            raise RuntimeError(
-                "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
-            )
-        if await self.game_process_manager.is_running():
-            # 阶段切换可能只关闭游戏；手动指定的常驻启动器仍由同一管理器持有。
-            await push_dispatch_log(self.script_info, "复用仍在运行的终末地启动器")
-        else:
+        async with _LAUNCHER_AUTOMATION_LOCK:
+            if is_process_running(_MAAEND_CLIENT_PROCESS):
+                logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
+                await push_dispatch_log(
+                    self.script_info, "检测到客户端已在运行，跳过启动"
+                )
+                return
+            launcher_path = self._launcher_path()
+            if launcher_path is None:
+                raise RuntimeError(
+                    "未找到终末地官方启动器，请重新选择启动器可执行文件（.exe）"
+                )
+            # 拉起前校验官方签名：与直接启动（game_launcher）同一套校验口径
+            await asyncio.to_thread(verify_launcher_signature, launcher_path)
+            if await self.game_process_manager.is_running():
+                # 阶段切换可能只关闭游戏；手动指定的常驻启动器仍由同一管理器持有。
+                await push_dispatch_log(self.script_info, "复用仍在运行的终末地启动器")
+            else:
+                await push_dispatch_log(
+                    self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
+                )
+                # 多游戏启动器可能停留在别的游戏页：带参定位到终末地页（对齐直启），
+                # 否则 OCR 会点到当前页面那个游戏的「开始游戏」而拉起错误游戏
+                launch_args = (
+                    ("--game=Endfield", "--reason=4")
+                    if launcher_path.name.casefold() == "launcher.exe"
+                    else ()
+                )
+                await self.game_process_manager.open_process(
+                    launcher_path, *launch_args
+                )
+            # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
+            # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
+            launch_loop = asyncio.get_running_loop()
+
+            def _push_launch_log(line: str) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    push_dispatch_log(self.script_info, line), launch_loop
+                )
+
+            if not await async_start_game_via_launcher(
+                launcher_path, on_log=_push_launch_log
+            ):
+                raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
+            wait_time = int(self.script_config.get("Game", "WaitTime"))
             await push_dispatch_log(
-                self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
+                self.script_info,
+                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...",
             )
-            await self.game_process_manager.open_process(launcher_path)
-        # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
-        # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
-        launch_loop = asyncio.get_running_loop()
-
-        def _push_launch_log(line: str) -> None:
-            asyncio.run_coroutine_threadsafe(
-                push_dispatch_log(self.script_info, line), launch_loop
-            )
-
-        if not await async_start_game_via_launcher(
-            launcher_path, on_log=_push_launch_log
-        ):
-            raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
-        wait_time = int(self.script_config.get("Game", "WaitTime"))
-        await push_dispatch_log(
-            self.script_info,
-            f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...",
-        )
-        await asyncio.sleep(wait_time)
+            await asyncio.sleep(wait_time)
 
     async def _kill_launcher_process(self) -> None:
         """结束终末地启动器进程（按进程家族 + 安装根目录树限定，避免误杀同名程序）。"""

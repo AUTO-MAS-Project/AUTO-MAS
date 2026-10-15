@@ -426,6 +426,16 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+def _find_dialog_button(items: list[OCRItem], labels: tuple[str, ...]) -> Box | None:
+    """弹窗按钮按整词匹配：正文说明文字里出现同词时不能误点（_find_text 是子串匹配），
+    且 OCR 条目自上而下排列，正文先于按钮出现。"""
+
+    for text, box in items:
+        if text.strip() in labels:
+            return box
+    return None
+
+
 def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧列表等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI
@@ -615,7 +625,7 @@ def start_game_via_launcher(
             # 必须按精确文案点「确认」/「确定」，绝不点「取消」；弹窗居中，不受
             # 右下角动作区限制
             if _find_text(items, _DIALOG_TITLE_TEXTS) is not None:
-                confirm_box = _find_text(items, _DIALOG_CONFIRM_TEXTS)
+                confirm_box = _find_dialog_button(items, _DIALOG_CONFIRM_TEXTS)
                 if confirm_box is not None:
                     is_update_dialog = (
                         _find_text(items, _DIALOG_SPACE_TEXTS) is not None
