@@ -33,6 +33,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -46,6 +47,7 @@ from pydantic import (
 
 from app.config import CollectionOrderItem
 from app.models.task import TaskItem, TaskMode
+from app.models.operation import OperationInfo
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -144,7 +146,9 @@ class PluginPageUpdateIn(BaseModel):
 
 
 class PluginActionIn(BaseModel):
-    action_id: str = Field(..., min_length=1, max_length=64, description="鎻掍欢鍔ㄤ綔鏍囪瘑")
+    action_id: str = Field(
+        ..., min_length=1, max_length=64, description="鎻掍欢鍔ㄤ綔鏍囪瘑"
+    )
 
 
 class VersionOut(OutBase):
@@ -6549,45 +6553,58 @@ class PatternDebugOut(OutBase):
 # Plugin registry/catalog contracts use the config entries themselves.
 from app.models.config.plugin import PluginMeta, PluginRecord
 
+
 class PluginRegistryGetIn(BaseModel):
-    recordId: Optional[str] = Field(default=None, description="PluginRecord.uid；缺省全部")
+    recordId: Optional[str] = Field(
+        default=None, description="PluginRecord.uid；缺省全部"
+    )
+
 
 class PluginRegistryGetOut(OutBase):
     order: list[CollectionOrderItem] = Field(default_factory=list)
     # 插件注册表条目包含运行时子类和后端 UI 声明，响应按 wire 数据透传。
     data: dict[str, Any] = Field(default_factory=dict)
 
+
 class PluginRegistryUpdateIn(BaseModel):
     recordId: str = Field(..., description="PluginRecord.uid")
     data: PluginRecord = Field(..., description="补丁；服务端剔除非 Trigger")
 
+
 class PluginCatalogGetIn(BaseModel):
     metaId: Optional[str] = Field(default=None, description="PluginMeta.uid；缺省全部")
+
 
 class PluginCatalogGetOut(OutBase):
     order: list[CollectionOrderItem] = Field(default_factory=list)
     data: dict[str, Any] = Field(default_factory=dict)
 
+
 class PluginCatalogUpdateIn(BaseModel):
     metaId: str = Field(..., description="PluginMeta.uid")
     data: PluginMeta = Field(..., description="补丁；透传全部字段，不做白名单过滤")
 
+
 class PluginCatalogRefreshIn(BaseModel):
     """全量刷新；无 TAG 筛选（前端本地过滤）。"""
+
 
 class PluginConfigGetIn(BaseModel):
     recordId: str = Field(
         ..., description="PluginRecord.uid（与 /api/plugin_registry 相同；靠端点区分）"
     )
 
+
 class PluginConfigGetOut(OutBase):
     data: Any = Field(default=None, description="配置实例；未启用或无配置则为 null")
+
 
 class PluginConfigUpdateIn(BaseModel):
     recordId: str = Field(..., description="PluginRecord.uid")
     data: dict[str, Any] = Field(
         default_factory=dict, description="热补丁；走 entry.update"
     )
+
 
 class PluginListItem(BaseModel):
     name: str
@@ -6603,5 +6620,30 @@ class PluginListItem(BaseModel):
     wants: list[str] = Field(default_factory=list)
     last_error: Optional[str] = None
 
+
 class PluginRuntimeListOut(OutBase):
     data: list[PluginListItem] = Field(default_factory=list)
+
+
+# 宿主 Trigger 操作：旧配置更新接口保持原契约，新消费者可取得明确受理 ID。
+class OperationStartIn(BaseModel):
+    configUid: UUID
+    group: str
+    field: str
+    value: bool | str = True
+
+
+class OperationGetIn(BaseModel):
+    operationId: UUID
+
+
+class OperationListIn(BaseModel):
+    configUid: UUID | None = None
+
+
+class OperationOut(OutBase):
+    data: OperationInfo | None = None
+
+
+class OperationListOut(OutBase):
+    data: list[OperationInfo] = Field(default_factory=list)

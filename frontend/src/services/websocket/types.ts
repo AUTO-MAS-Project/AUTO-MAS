@@ -39,6 +39,7 @@ export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
+export const WS_OPERATION_UPDATED = 'operation.updated'
 
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
@@ -289,6 +290,7 @@ interface WSMessageDataMap {
   [WS_TASK_COMPLETED]: WSTaskCompletedData
   [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
+  [WS_OPERATION_UPDATED]: import('@/api').OperationInfo
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData

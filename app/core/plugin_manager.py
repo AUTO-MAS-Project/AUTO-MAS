@@ -506,6 +506,21 @@ class _PluginManager:
             )
             raise PluginOperationError(str(exc), payload={"name": name}) from exc
 
+    @asynccontextmanager
+    async def _pause_operations(self, record: PluginRecord):
+        from app.core.operations import Operations
+
+        owners: set[UUID] = set()
+        pending = [record]
+        while pending:
+            current = pending.pop()
+            if current.uid in owners:
+                continue
+            owners.add(current.uid)
+            pending.extend(self._downstream(current))
+        async with Operations.pause_owners(owners):
+            yield
+
     async def disable(
         self,
         record: PluginRecord,
@@ -516,7 +531,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """DFS 禁用。"""
         if not held:
-            async with self._hold():
+            async with self._pause_operations(record), self._hold():
                 return await self.disable(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
@@ -618,7 +633,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """DFS 卸载；仅最外层入口成功后裁剪 record。"""
         if not held:
-            async with self._hold():
+            async with self._pause_operations(record), self._hold():
                 return await self.unload(record, held=True, dep_path=dep_path, ctx=ctx)
 
         path_list = list(dep_path or [])
@@ -705,7 +720,7 @@ class _PluginManager:
     ) -> dict[str, Any]:
         """拆下依赖方 → 重载本项 → 按依赖字典恢复。"""
         if not held:
-            async with self._hold():
+            async with self._pause_operations(record), self._hold():
                 return await self.reload(record, held=True, dep_path=dep_path)
 
         path_list = list(dep_path or [])

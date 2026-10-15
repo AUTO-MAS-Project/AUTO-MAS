@@ -8,6 +8,12 @@
  * en-US.ts 缺失的 key 会自动回退到这里。
  */
 export default {
+  operations: {
+    succeeded: '操作已完成',
+    failed: '操作执行失败',
+    cancelled: '操作已取消',
+    checkLogs: '请查看日志了解失败原因',
+  },
   common: {
     viewPageDocs: '查看本页文档',
     language: '语言',

@@ -128,21 +128,21 @@ class GameDeviceEntry(ConfigEntry):
             return UiVisibility.HIDE
         return self._busy_vis()
 
-    @trigger_field("action.open")
+    @trigger_field("action.open", cancellable=False)
     async def on_open(self) -> None:
         # 触发器带特殊票免订阅校验（用户权限最高）；
         # 操作互斥由控制器自己的执行器管（``GameControl.busy``）
         await self._control.open(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.close")
+    @trigger_field("action.close", cancellable=False)
     async def on_close(self) -> None:
         await self._control.close(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.show")
+    @trigger_field("action.show", cancellable=False)
     async def on_show(self) -> None:
         await self._control.show(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.hide")
+    @trigger_field("action.hide", cancellable=False)
     async def on_hide(self) -> None:
         await self._control.hide(self.uid, ticket=TRIGGER_TICKET)
 
@@ -179,7 +179,7 @@ class GameEntry(ConfigEntry):
             raise RuntimeError("游戏管理实例未挂载")
         return ctrl
 
-    @trigger_field("action.refresh")
+    @trigger_field("action.refresh", cancellable=False)
     async def on_refresh(self) -> None:
         """走配置触发器刷新 devices，受主配置 S 锁约束。"""
         await self._control.refresh()

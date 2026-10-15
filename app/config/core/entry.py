@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import weakref
 from pathlib import Path
@@ -189,9 +188,9 @@ class ConfigEntry(ConfigNode):
         group_fields: list[str] = []
         collection_fields: list[str] = []
         ref_specs: dict[tuple[str, str], RefField] = {}
-        trigger_modes: dict[tuple[str, str], tuple[str, tuple[object, ...], object]] = (
-            {}
-        )
+        trigger_modes: dict[
+            tuple[str, str], tuple[str, tuple[object, ...], object]
+        ] = {}
         tables_by_cls: dict[type, list[str]] = {}
         ui_hints: UiHintsMap = {}
         ui_visibility: dict[tuple[str, str], UiVisibilitySpec] = {}
@@ -438,32 +437,23 @@ class ConfigEntry(ConfigNode):
             return stored.plaintext()
         return stored
 
-    def _dispatch_trigger(self, group: str, field: str, value: object = True) -> None:
-        handler = getattr(self, type(self)._cfg_trigger_specs[(group, field)])
-        # bool：无额外参；Literal：传入触发值
-        result = (
-            handler()
-            if type(self)._cfg_trigger_modes[(group, field)][0] == "bool"
-            else handler(value)
-        )
-        if inspect.isawaitable(result):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            coro = (
-                result
-                if inspect.iscoroutine(result)
-                else asyncio.wait_for(result, timeout=None)
+    def _dispatch_trigger(
+        self, group: str, field: str, value: object = True
+    ) -> UUID | None:
+        dispatcher = config_manager.trigger_dispatcher
+        if dispatcher is None:
+            raise RuntimeError("触发器未绑定宿主操作分发器")
+        ctx = config_manager._current_init_ctx() or config_manager.current
+        if ctx is not None:
+            ctx.commands.append(
+                lambda: dispatcher.submit(self, group=group, field=field, value=value)
             )
-            if loop is not None:
-                loop.create_task(coro)
-            else:
-                asyncio.run(coro)
+            return None
+        return dispatcher.submit(self, group=group, field=field, value=value)
 
     # ──────────────── 更新 ────────────────
 
-    async def update(self, other: Self, *, check_visibility: bool = True) -> None:
+    async def update(self, other: Self, *, check_visibility: bool = True) -> list[UUID]:
         """用同类冷态 Entry 的 Group 字段更新本实例，自动 ``commit``；失败 ``raise ConfigAggregateError``。
 
         - 仅同步 ``_cfg_group_fields``（含触发器；跳过虚拟字段与 **未赋值** 字段），**不**改嵌套 Collection / 子 Node。
@@ -487,6 +477,7 @@ class ConfigEntry(ConfigNode):
             raise DeletedNodeError(self.uid)
 
         errors: list[Exception] = []
+        triggers: list[tuple[str, str, object]] = []
         other_set = other.model_fields_set
         for gname in self._cfg_group_fields:
             if gname not in other_set:
@@ -505,7 +496,12 @@ class ConfigEntry(ConfigNode):
                     if vis in (UiVisibility.HIDE, UiVisibility.DISABLE):
                         continue
                 try:
-                    setattr(dst, fname, src.__dict__.get(fname))
+                    value = src.__dict__.get(fname)
+                    if is_trigger_model_field(finfo):
+                        # 普通字段全部验证/提交成功后才受理命令，避免按钮早于配置生效。
+                        triggers.append((gname, fname, value))
+                    else:
+                        setattr(dst, fname, value)
                 except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
         try:
@@ -514,6 +510,17 @@ class ConfigEntry(ConfigNode):
             errors.append(exc)
         if errors:
             raise ConfigAggregateError(errors)
+        operation_ids: list[UUID] = []
+        for group, field, value in triggers:
+            mode, allowed, _idle = type(self)._cfg_trigger_modes[(group, field)]
+            if (mode == "bool" and value is not True) or value is None:
+                continue
+            if mode != "bool" and value not in allowed:
+                raise TypeError(f"触发器 {field} 不接受 {value!r}")
+            operation_id = self._dispatch_trigger(group, field, value)
+            if operation_id is not None:
+                operation_ids.append(operation_id)
+        return operation_ids
 
     # ──────────────── 激活 ────────────────
 

@@ -6,6 +6,12 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  operations: {
+    succeeded: 'Operation completed',
+    failed: 'Operation failed',
+    cancelled: 'Operation cancelled',
+    checkLogs: 'Check the logs for details',
+  },
   common: {
     viewPageDocs: 'View documentation for this page',
     language: 'Language',

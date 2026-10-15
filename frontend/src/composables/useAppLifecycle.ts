@@ -35,6 +35,7 @@ import {
   WS_CLOSE_CODE_REPLACED,
   WS_FRONTEND_CLOSE_REQUESTED,
   WS_ID_MAIN,
+  WS_OPERATION_UPDATED,
   WS_POWER_COUNTDOWN_CANCELLED,
   WS_POWER_COUNTDOWN_UPDATED,
   type WSDisconnectEvent,
@@ -931,6 +932,22 @@ export function initializeAppLifecycle(): void {
 
   // 先注册所有应用级常驻订阅，再允许建立连接；所有监听器都有明确释放函数。
   residentSubscriptionIds = [
+    subscribe({ id: 'Operations', type: WS_OPERATION_UPDATED }, ({ data }) => {
+      if (backendClosing) return
+      const state = data.state
+      const key = `operation-${data.operationId}`
+      if (state === 'failed') {
+        notification.error({
+          key,
+          message: t('operations.failed'),
+          description: t('operations.checkLogs'),
+        })
+      } else if (state === 'succeeded') {
+        notification.success({ key, message: t('operations.succeeded') })
+      } else if (state === 'cancelled') {
+        notification.info({ key, message: t('operations.cancelled') })
+      }
+    }),
     subscribe({ id: WS_ID_MAIN, type: WS_BACKEND_SHUTDOWN_READY }, () => handleShutdownReady()),
     subscribe({ id: WS_ID_MAIN, type: WS_FRONTEND_CLOSE_REQUESTED }, () => handleCloseRequested()),
     subscribe({ id: WS_ID_MAIN, type: WS_POWER_COUNTDOWN_UPDATED }, message =>

@@ -102,6 +102,7 @@ PLUGIN_INSTALLED_SYNC = "plugin.installed.sync"
 
 # 国际化资源变更（id=I18n）
 I18N_UPDATED = "i18n.updated"
+OPERATION_UPDATED = "operation.updated"
 
 # 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
 EMULATOR_NOTICE = "emulator.notice"
@@ -123,7 +124,8 @@ class WSEnvelope(BaseModel):
         description="消息类别, 点分小写命名, 如 task.info.updated、backend.shutdown.ready",
     )
     data: Dict[str, JsonValue] = Field(
-        default_factory=dict, description="消息数据, 关键消息使用对应的 WS*Data 模型构造"
+        default_factory=dict,
+        description="消息数据, 关键消息使用对应的 WS*Data 模型构造",
     )
 
     @field_validator("id", "type")

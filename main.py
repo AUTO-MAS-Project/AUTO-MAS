@@ -278,6 +278,7 @@ def main():
             core_router,
             info_router,
             dispatch_router,
+            operations_router,
             history_router,
             tools_router,
             setting_router,
@@ -301,6 +302,7 @@ def main():
         app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(dispatch_router)
+        app.include_router(operations_router)
         app.include_router(history_router)
         app.include_router(tools_router)
         app.include_router(setting_router)
@@ -329,10 +331,15 @@ def main():
         )
 
         # ---- 核心初始化：引导配置 → 插件系统 → 领域配置 ----
+        from app.config import config_manager
+        from app.core.operations import Operations
+
+        config_manager.trigger_dispatcher = Operations
         await Config.init_bootstrap_configs()
 
         if os.getenv("AUTO_MAS_DEV") == "1":
             import shutil
+
             plugins_dir = _Path.cwd() / "plugins"
             for pycache in plugins_dir.rglob("__pycache__"):
                 if pycache.is_dir():
@@ -359,9 +366,9 @@ def main():
                 try:
                     await start()
                 except Exception as error:
-                    message = (
-                        f"{name}: {type(error).__name__}: {error}"
-                    )[:BACKGROUND_ERROR_MESSAGE_MAX]
+                    message = (f"{name}: {type(error).__name__}: {error}")[
+                        :BACKGROUND_ERROR_MESSAGE_MAX
+                    ]
                     app.state.background_warnings.append(message)
                     logger.exception(f"后台服务启动失败：{name}")
 
@@ -428,9 +435,7 @@ def main():
         app.state.background_status = "starting"
         app.state.background_error = None
         app.state.background_warnings = []
-        logger.info(
-            f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
-        )
+        logger.info(f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s")
         background_task = asyncio.create_task(initialize_background_services())
 
         async def shutdown_services() -> None:
@@ -460,6 +465,10 @@ def main():
             await MainConnection.cancel_hook_tasks()
             # 先停止定时入口，再取消任务，避免清理过程中再次派发。
             await MainTimer.stop()
+            # 先密封命令入口，取消可取消命令，并等待其余命令完整结束。
+            from app.core.operations import Operations
+
+            await Operations.shutdown()
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
