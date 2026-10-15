@@ -167,6 +167,22 @@
             </a-col>
           </a-row>
 
+          <MaaEndLauncherSection
+            v-if="isWinController"
+            :launch-mode="maaEndConfig.Game.LaunchMode"
+            :source="launcherSource"
+            :path="launcherPath"
+            :error="launcherError"
+            :detecting="launcherDetecting"
+            :saving="launcherSaving"
+            :disabled="isSaving || launcherSaving"
+            :can-detect="Boolean(maaEndConfig.Game.Path)"
+            @change-launch-mode="handleLaunchModeChange"
+            @change-source="changeLauncherSource"
+            @refresh="refreshLauncherPath"
+            @select-file="selectLauncherPath"
+          />
+
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -243,22 +259,6 @@
               </a-form-item>
             </a-col>
           </a-row>
-
-          <MaaEndLauncherSection
-            v-if="isWinController"
-            :launch-mode="maaEndConfig.Game.LaunchMode"
-            :source="launcherSource"
-            :path="launcherPath"
-            :error="launcherError"
-            :detecting="launcherDetecting"
-            :saving="launcherSaving"
-            :disabled="isSaving || launcherSaving"
-            :can-detect="Boolean(maaEndConfig.Game.Path)"
-            @change-launch-mode="handleLaunchModeChange"
-            @change-source="changeLauncherSource"
-            @refresh="refreshLauncherPath"
-            @select-file="selectLauncherPath"
-          />
 
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">

@@ -19,7 +19,7 @@
         />
       </a-form-item>
     </a-col>
-    <a-col v-if="launchMode === 'Launcher'" :xs="24" :md="12">
+    <a-col :xs="24" :md="12">
       <a-form-item :validate-status="error ? 'error' : undefined" :help="error || undefined">
         <template #label>
           <span class="form-label">{{ t('edit.maaEndLauncherPath') }}</span>

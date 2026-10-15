@@ -2001,7 +2001,7 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     maaEndLaunchTypeHint:
-      'Launcher mode opens the official launcher, handles updates and starts the game. Keep the client path pointing to Endfield.exe',
+      'Direct: MAS launches the game with the official launcher as its parent. Launcher: MAS opens the launcher UI and clicks Start Game / handles update prompts. Both need the official launcher, which can be detected from the game path; the client path still points to Endfield.exe',
     maaEndLauncherPath: 'Official Endfield launcher',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',

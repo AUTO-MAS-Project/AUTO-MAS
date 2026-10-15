@@ -1898,7 +1898,7 @@ export default {
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
     maaEndLaunchTypeHint:
-      '启动器启动会自动打开官方启动器、处理更新并点击开始游戏。客户端路径仍选择 Endfield.exe',
+      '直接启动：由 MAS 以官方启动器为父进程拉起游戏；启动器启动：打开启动器界面并代点「开始游戏」及更新确认。两种方式都需要官方启动器（可按游戏路径自动识别），客户端路径仍选择 Endfield.exe',
     maaEndLauncherPath: '终末地官方启动器',
     maaEndLauncherPathSource: '启动器路径来源',
     maaEndLauncherSourceAuto: '自动识别',
