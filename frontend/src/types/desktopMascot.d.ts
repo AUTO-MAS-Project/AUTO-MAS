@@ -7,6 +7,11 @@ export interface DesktopMascotData {
   motionOverride: boolean
   width: number
   height: number
+  offsetX: number
+  offsetY: number
+  noticeBelow: boolean
+  dragging: boolean
+  dragSession?: number
   colors: DesktopMascotColors
   notice?: string
   idleMessage?: DesktopMascotIdleMessage
@@ -25,10 +30,16 @@ export interface DesktopMascotData {
 
 // 日常状态更新不携带图片，完整素材只在首次加载或更换皮肤时发送。
 export type DesktopMascotUpdate = Partial<
-  Omit<DesktopMascotData, 'imageUrl' | 'animation' | 'width' | 'height' | 'opacity'>
+  Omit<DesktopMascotData, 'imageUrl' | 'animation' | 'opacity'>
 >
 
-export type DesktopMascotPointerAction = 'hover' | 'start' | 'move' | 'end'
+export type DesktopMascotPointerAction = 'hover' | 'move' | 'end'
+
+export interface DesktopMascotDragStart {
+  x: number
+  y: number
+  session: number
+}
 
 export interface DesktopMascotColors {
   background: string
@@ -53,7 +64,8 @@ export interface DesktopMascotAPI {
   getData(): Promise<DesktopMascotData | null>
   onChanged(callback: (data: DesktopMascotData) => void): () => void
   onUpdated(callback: (update: DesktopMascotUpdate) => void): () => void
-  pointer(action: DesktopMascotPointerAction): void
+  pointer(action: DesktopMascotPointerAction, session?: number): void
+  startDrag(offset: DesktopMascotDragStart): Promise<boolean>
   imageDecoded(imageUrl: string, pngDataUrl: string): void
   onLookChanged(callback: (frame: number | null) => void): () => void
 }
