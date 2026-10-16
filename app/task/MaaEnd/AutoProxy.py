@@ -545,7 +545,48 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await asyncio.sleep(int(self.script_config.get("Game", "WaitTime")))
         return True
 
-    async def _mas_launch_game_via_launcher(self) -> None:
+    @staticmethod
+    def _game_window_present() -> bool:
+        """终末地客户端窗口是否真实存在：进程残留但窗口已消失时不能当作在运行。"""
+        from app.utils.platform import IS_WINDOWS
+
+        if not IS_WINDOWS:
+            return False
+        import win32gui
+
+        return bool(win32gui.FindWindow("UnityWndClass", "Endfield"))
+
+    async def _mas_launch_game_directly(self) -> None:
+        """通过现有直启入口拉起游戏，也用于更新确认后的重新启动。"""
+        if is_process_running(_MAAEND_CLIENT_PROCESS) and self._game_window_present():
+            logger.info("检测到终末地客户端已运行，准备由 MAS 执行账号切换")
+            return
+        # 进程残留但窗口已消失（如更新重启失败）：清掉残留后重新拉起
+        await self.game_process_manager.kill()
+        logger.info(f"启动终末地: {self.script_config.get('Game', 'Path')}")
+        command = _game_launch_command(
+            launcher_path=self._launcher_path_text(),
+            game_path=str(self.script_config.get("Game", "Path")),
+            game_arguments=str(self.script_config.get("Game", "Arguments")),
+        )
+        result = await ProcessRunner.run_process(
+            *command, timeout=60, kill_tree_on_cancel=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.failure_detail())
+        logger.info(result.stderr or result.stdout)
+        await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
+
+    async def _restart_game_after_update(self) -> None:
+        """游戏内确认更新后，只按用户选择的启动方式重新拉起。"""
+        if self._launch_mode() == "Launcher":
+            await self._mas_launch_game_via_launcher(preserve_running_game=True)
+        else:
+            await self._mas_launch_game_directly()
+
+    async def _mas_launch_game_via_launcher(
+        self, *, preserve_running_game: bool = False
+    ) -> None:
         """由 MAS 经官方启动器拉起终末地。
 
         启动器模式下移除 MAS 注入的直接启动前置程序，避免任何直启回退。
@@ -561,11 +602,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.launcher_runtime_path = launcher_path.resolve()
             _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
             # MAS 接管时直接操作官方启动器；仅复用不会启动游戏的旧版设置预任务。
-            if self.mode == self.first_run_mode and self.script_config.get(
-                "Game", "SetResolution"
+            if (
+                not preserve_running_game
+                and self.mode == self.first_run_mode
+                and self.script_config.get("Game", "SetResolution")
             ):
                 await self._apply_launcher_game_settings()
-            if is_process_running(_MAAEND_CLIENT_PROCESS):
+            if (
+                is_process_running(_MAAEND_CLIENT_PROCESS)
+                and self._game_window_present()
+            ):
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await push_dispatch_log(
                     self.script_info, "检测到客户端已在运行，跳过启动"
@@ -1269,6 +1315,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         i = 0
         mode_order = list(MAAEND_RUN_MOOD_BOOK)
         mode_index = 0
+        keep_game_for_login_retry = False
         while mode_index < len(mode_order):
             self.mode = mode_order[mode_index]
             stage_label = (
@@ -1320,33 +1367,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         logger.info(
                             "启动方式为「启动器启动」，由 MAS 直接经官方启动器拉起游戏"
                         )
-                        await self._mas_launch_game_via_launcher()
+                        await self._mas_launch_game_via_launcher(
+                            preserve_running_game=keep_game_for_login_retry
+                        )
                     elif use_mas_account_switch:
-                        if is_process_running(_MAAEND_CLIENT_PROCESS):
-                            logger.info(
-                                "检测到终末地客户端已运行，准备由 MAS 执行账号切换"
-                            )
-                        else:
-                            await self.game_process_manager.kill()
-                            logger.info(
-                                f"启动终末地: {self.script_config.get('Game', 'Path')}"
-                            )
-                            command = _game_launch_command(
-                                launcher_path=self._launcher_path_text(),
-                                game_path=str(self.script_config.get("Game", "Path")),
-                                game_arguments=str(
-                                    self.script_config.get("Game", "Arguments")
-                                ),
-                            )
-                            result = await ProcessRunner.run_process(
-                                *command, timeout=60, kill_tree_on_cancel=True
-                            )
-                            if result.returncode != 0:
-                                raise RuntimeError(result.failure_detail())
-                            logger.info(result.stderr or result.stdout)
-                            await asyncio.sleep(
-                                self.script_config.get("Game", "WaitTime")
-                            )
+                        await self._mas_launch_game_directly()
                     else:
                         # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
                         logger.info("终末地将由 MaaEnd 前置程序调用 MAS 启动")
@@ -1360,6 +1385,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
+                # 启动阶段失败后游戏状态不再可信：清除保留标记，避免下一轮
+                # 启动沿用 preserve_running_game 跳过启动器游戏设置
+                keep_game_for_login_retry = False
                 await self.handle_pre_maaend_error(
                     "游戏启动失败"
                     if self.emulator_manager is None
@@ -1370,14 +1398,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
             if use_mas_account_switch and account_id:
-                try:
-                    from .tools.login import login
+                from .tools.login import LoginNotReadyError, login
 
+                try:
                     self.script_info.log = "正在由 MAS 自建流程切换账号..."
-                    await login(account_id, emulator_info)
+                    await login(
+                        account_id,
+                        emulator_info,
+                        restart_game=self._restart_game_after_update,
+                    )
                 except Exception as error:
-                    await self.handle_pre_maaend_error("MAS 自建账号切换失败", error)
+                    keep_game_for_login_retry = (
+                        isinstance(error, LoginNotReadyError) and i < run_times_limit
+                    )
+                    await self.handle_pre_maaend_error(
+                        "MAS 自建账号切换失败",
+                        error,
+                        kill_game=not keep_game_for_login_retry,
+                    )
                     continue
+                keep_game_for_login_retry = False
                 logger.info(f"用户 {self.cur_user_item.user_id} MAS 自建账号切换成功")
                 self.script_info.log = "MAS 自建账号切换完成"
             elif account_id:
@@ -1488,7 +1528,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     i = run_times_limit
 
     async def handle_pre_maaend_error(
-        self, error_message: str, e: Exception | None = None
+        self, error_message: str, e: Exception | None = None, *, kill_game: bool = True
     ):
 
         if e is None:
@@ -1510,7 +1550,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
 
-        await self.kill_managed_process()
+        await self.kill_managed_process(kill_game=kill_game)
 
         try:
             await Notify.push_plyer(
@@ -1527,7 +1567,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         Args:
             kill_game (bool): 是否同时关闭游戏或模拟器；开发模式下手动中止
-                任务时传 False，保留游戏便于继续调试。
+                任务或等待登录画面超时后重试时传 False，保留游戏进度。
         """
 
         try:
@@ -1537,7 +1577,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
-            logger.info("开发模式下手动中止任务，保留游戏进程")
+            logger.info("保留游戏进程及当前启动进度")
             if self._launch_mode() == "Launcher":
                 # 启动器是 MAS 拉起的，游戏不需要它：留着只会在用户手动退出
                 # 游戏后重新弹出窗口
