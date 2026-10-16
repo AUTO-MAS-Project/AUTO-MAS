@@ -72,6 +72,7 @@ if IS_WINDOWS:
     import win32con
     import win32gui
     import win32process
+    import win32ui
 
 logger = get_logger("OK-WW 启动器启动")
 
@@ -479,25 +480,80 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
 # 维护弹窗截图核对，后续按真实截图补充完善；国际服英文界面暂不覆盖）
 _GAME_MAINTENANCE_TEXTS = ("服务器未开放",)
 
+# PrintWindow 的 PW_RENDERFULLCONTENT：DWM 合成下重绘窗口完整内容，
+# 窗口被遮挡也能拿到自身画面（Win 8.1+；独占全屏等场景可能失败，失败放行）
+_PW_RENDERFULLCONTENT = 0x00000002
+
+
+def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
+    """PrintWindow 抓取游戏窗口自身画面并缩放到 OCR 坐标空间。
+
+    与桌面截图裁剪不同：窗口被其他窗口遮挡时拿到的仍是游戏自己的画面，
+    不会把遮挡窗口的文字误认成游戏弹窗；不激活窗口、不抢前台。
+    抓取失败（独占全屏等）返回 None，由调用方按未命中放行。
+    """
+    try:
+        with _per_monitor_dpi():
+            width, height = _client_size(hwnd)
+            if width <= 0 or height <= 0:
+                return None
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            try:
+                source_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+                try:
+                    memory_dc = source_dc.CreateCompatibleDC()
+                    try:
+                        bitmap = win32ui.CreateBitmap()
+                        try:
+                            bitmap.CreateCompatibleBitmap(source_dc, width, height)
+                            memory_dc.SelectObject(bitmap)
+                            if not ctypes.windll.user32.PrintWindow(
+                                hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
+                            ):
+                                return None
+                            bitmap_info = bitmap.GetInfo()
+                            bitmap_bits = bitmap.GetBitmapBits(True)
+                        finally:
+                            win32gui.DeleteObject(bitmap.GetHandle())
+                    finally:
+                        memory_dc.DeleteDC()
+                finally:
+                    source_dc.DeleteDC()
+            finally:
+                win32gui.ReleaseDC(hwnd, hwnd_dc)
+        frame = Image.frombuffer(
+            "RGB",
+            (bitmap_info["bmWidth"], bitmap_info["bmHeight"]),
+            bitmap_bits,
+            "raw",
+            "BGRX",
+            0,
+            1,
+        )
+        frame = frame.resize((_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS)
+        return cv2.cvtColor(np.asarray(frame), cv2.COLOR_RGB2BGR)
+    except Exception as error:
+        logger.debug(f"PrintWindow 抓取游戏窗口画面失败（忽略，继续正常流程）: {error}")
+        return None
+
 
 def detect_game_maintenance_text() -> str | None:
     """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
 
-    旁路判定：窗口不存在、截图或 OCR 失败一律返回 None 放行，不抛错、不
-    激活窗口（截屏不抢前台）。只覆盖游戏窗口已存在的场景（MAS 拉起或客户
-    端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）负责。
+    旁路判定：窗口不存在、抓取或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（PrintWindow 不依赖前台）。只覆盖游戏窗口已存在的场景（MAS
+    拉起或客户端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）
+    负责。
     """
     if not IS_WINDOWS:
         return None
     hwnd = _find_game_hwnd()
     if hwnd is None:
         return None
-    try:
-        items = _read_texts(hwnd)
-    except Exception as error:
-        logger.debug(f"游戏画面维护检测 OCR 失败（忽略，继续正常流程）: {error}")
+    frame = _capture_game_window_frame(hwnd)
+    if frame is None:
         return None
-    for text, _ in items:
+    for text, _ in ocr_image(frame):
         if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
             return text
     return None

@@ -27,6 +27,13 @@ class ScriptAutoProxyBase(TaskExecuteBase):
     cur_user_log: LogRecord
     # 用户级前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
     _user_scripts_started: bool = False
+    # 运行期维护弹窗监视的命中结论（含原文），未命中为 None；由
+    # watch_game_maintenance 写入、main_task 出等待循环后消费。
+    _maintenance_reason: str | None = None
+    # 运行期监视参数：轮询间隔与确认次数（连续命中才算，防止游戏内
+    # 短暂出现的公告文本被误判为维护弹窗）。
+    _MAINTENANCE_WATCH_INTERVAL_SECONDS = 30.0
+    _MAINTENANCE_WATCH_CONFIRMATIONS = 2
 
     @property
     def run_timeout_seconds(self) -> float:
@@ -93,6 +100,52 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             data=WSTaskNoticeData(level="info", message=reason),
         )
         return True
+
+    async def watch_game_maintenance(
+        self, detect: Callable[[], str | None], stop: asyncio.Event
+    ) -> None:
+        """脚本运行期间的维护弹窗后台监视（与等待脚本结果并行）。
+
+        每 ``_MAINTENANCE_WATCH_INTERVAL_SECONDS`` 秒用专项的 detect 读一次
+        游戏画面，连续命中 ``_MAINTENANCE_WATCH_CONFIRMATIONS`` 次才判维护
+        （游戏内瞬时文本不算）；判定后写入 ``_maintenance_reason``、置 stop
+        事件，由 main_task 出等待循环后统一收尾。仅写状态标记与通知，不改
+        cur_user_log——日志监控停止后由 main_task 落笔，避免与末次轮询互相
+        覆盖。脚本已有成功结论或窗口不存在/识别失败时不作处理。
+        """
+        hits = 0
+        while not stop.is_set():
+            await asyncio.sleep(self._MAINTENANCE_WATCH_INTERVAL_SECONDS)
+            if stop.is_set():
+                return
+            try:
+                maintenance_text = await asyncio.to_thread(detect)
+            except Exception:
+                hits = 0
+                continue
+            if maintenance_text is None:
+                hits = 0
+                continue
+            hits += 1
+            if hits < self._MAINTENANCE_WATCH_CONFIRMATIONS:
+                continue
+            # 成功结论先落时不再覆盖（成功与弹窗同时出现的竞态）
+            if self.cur_user_log.status == "Success!":
+                return
+            self._maintenance_reason = (
+                f"游戏维护中，本次跳过（运行期间画面检测到：{maintenance_text}）"
+            )
+            self.cur_user_item.status = "跳过"
+            self.cur_user_item.maintenance_skipped = True
+            logger.info(f"用户 {self.cur_user_item.name} - {self._maintenance_reason}")
+            await push_dispatch_log(self.script_info, self._maintenance_reason)
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="info", message=self._maintenance_reason),
+            )
+            stop.set()
+            return
 
     async def _finalize_task(self) -> None:
         """收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""

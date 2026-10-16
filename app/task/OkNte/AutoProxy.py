@@ -1004,8 +1004,35 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
             self.wait_event.clear()
-            await self.wait_event.wait()
+            maintenance_watch = asyncio.create_task(
+                self.watch_game_maintenance(
+                    detect_game_maintenance_text, self.wait_event
+                )
+            )
+            try:
+                await self.wait_event.wait()
+            finally:
+                # 出等待循环（含用户手动中止与异常路径）都要停掉监视
+                maintenance_watch.cancel()
+                with suppress(asyncio.CancelledError):
+                    await maintenance_watch
             await self.log_monitor.stop()
+
+            # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
+            # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖
+            if (
+                self.cur_user_item.maintenance_skipped
+                and self._maintenance_reason
+                and self.cur_user_log.status != "Success!"
+            ):
+                self.cur_user_log.status = self._maintenance_reason
+                self.cur_user_log.content.append(self._maintenance_reason)
+                self.cur_user_item.status = "跳过"
+                self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                await self.kill_managed_process(
+                    kill_game=self._mas_should_close_game_on_retry()
+                )
+                break
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
