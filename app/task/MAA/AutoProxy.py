@@ -1221,6 +1221,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     _cultivate_execution_targets: tuple[OperatorTarget, ...] = ()
     # 完成活动阶段后，其他任务重试不能重新领取该阶段药石额度。
     _event_depot_completed: bool = False
+    # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
+    _stock_depot_completed: bool = False
 
     def __init__(
         self,
@@ -1260,7 +1262,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_advanced = False
         self._cultivate_archive_positions: dict[str, int] = {}
         self._cultivate_archive_versions: dict[str, tuple[int, int, int]] = {}
-        self._stock_skipped_by_condition = False
 
     async def check(self) -> str:
 
@@ -1405,6 +1406,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 continue
 
             self._event_depot_completed = False
+            self._stock_depot_completed = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.get("Info", "IfQuickConfig"):
@@ -2292,12 +2294,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
         if self.mode == "Routine":
-            # 仅恢复上一尝试被时段条件暂停的库存；已执行完的任务不能在重试中再领药石额度。
-            if self._stock_skipped_by_condition:
-                self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-                    "Task", "IfDepotMaintain"
-                )
-                self._stock_skipped_by_condition = False
+            # 普通库存每次尝试都重新参与，养成消耗与常备目标按当轮数据合并。
+            self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+                "Task", "IfDepotMaintain"
+            )
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
@@ -2425,6 +2425,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 source_task=task_set["DepotMaintain"],
             )
             stock_task = task_set["DepotMaintain"]
+            if self._stock_depot_completed:
+                # 重试保留库存目标，但不重新领取已执行阶段的药石额度。
+                stock_task.update(
+                    UseMedicine=False, UseStone=False, UseExpiringMedicine=False
+                )
             stock_skipped = (
                 activity_open and stock_task.get("SkipDuringActivity", False)
             ) or (
@@ -2445,7 +2450,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
-                self._stock_skipped_by_condition = True
             elif cultivate_plan is not None and stock_task["PlanList"]:
                 task_set["DepotMaintain"] = _build_stock_cultivate_task(
                     stock_task, cultivate_task, cultivate_plan
@@ -2948,17 +2952,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
             or "任务已完成，但出现错误！" in log
             or "任务已结束，以下任务出现错误" in log
         ):
-            # 常规任务和动态培养任务的成功与失败均取自 MAA 本轮输出。
+            # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 names = {zh_task}
                 if en_task == "DepotMaintain":
                     names.update(("库存保持", _MAA_CULTIVATE_TASK_NAME))
                 elif en_task == "Fight":
                     names.update(("理智作战", "剿灭作战"))
-                if any(
-                    f"完成任务: {name}" in log or f"{name} 任务跳过" in log
-                    for name in names
-                ):
+                task_completed = any(f"完成任务: {name}" in log for name in names)
+                if task_completed or any(f"{name} 任务跳过" in log for name in names):
+                    if (
+                        en_task == "DepotMaintain"
+                        and self.task_dict.get(en_task)
+                        and task_completed
+                    ):
+                        self._stock_depot_completed = True
                     self.task_dict[en_task] = False
 
             if self.task_dict.get("EventDepotMaintain"):
@@ -2997,20 +3005,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     # 来源时段跳过只结束本次尝试，下一次仍重新判断条件。
                     self.task_dict["EventDepotMaintain"] = False
 
-            # MAA v6.19.0-beta.1 培养计划失败仍会报任务链完成，须读取其培养汇总。
-            # 只使用 MAA 的失败计数；训练室忙等跳过结果不算失败。
-            cultivate_failed = any(
-                int(failed) > 0
-                for failed in re.findall(
-                    r"干员培养完成：成功 \d+，失败 (\d+)，跳过 \d+", log
-                )
-            )
+            # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
                 "任务已完成，但出现错误！" in log
                 or "任务已结束，以下任务出现错误" in log
                 or any(self.task_dict.values())
-                or cultivate_failed
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
                     for name in re.findall(r"任务出错: ([^\r\n]+)", log)
