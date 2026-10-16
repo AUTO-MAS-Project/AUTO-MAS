@@ -41,7 +41,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -400,6 +400,11 @@ class ScriptConfigTask(TaskExecuteBase):
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
         # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
         # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
         self._maa_config_baseline = {

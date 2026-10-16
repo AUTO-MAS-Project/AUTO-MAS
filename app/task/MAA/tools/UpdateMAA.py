@@ -19,6 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from app.utils import ProcessRunner, get_logger
 from app.utils.io import read_file, write_file
 
 from ..base_preset import ensure_maa_default_configuration
+from .resource_update import _wait_for_cleanup
 
 logger = get_logger("MAA 更新工具")
 
@@ -131,3 +133,18 @@ async def update_maa(maa_path: Path):
         await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=60)
     except Exception as e:
         logger.info(f"MAA 更新任务结束: {e}")
+    finally:
+        # 新版 MAA 把安装委托给独立更新器，启动进程退出不代表安装结束。
+        # 安装完成前不能还原 config；更新器自动重启的 GUI 也必须在还原前退出。
+        cleanup = asyncio.create_task(_wait_for_updater(maa_path))
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await _wait_for_cleanup(cleanup)
+            raise
+
+
+async def _wait_for_updater(maa_path: Path) -> None:
+    while await System.is_process_running(maa_path / "MAA.Updater.exe"):
+        await asyncio.sleep(0.2)
+    await System.kill_process(maa_path / "MAA.exe")

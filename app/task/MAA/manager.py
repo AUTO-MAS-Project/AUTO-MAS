@@ -20,6 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -61,13 +62,18 @@ from .AutoProxy import (
     restore_depot_cache,
 )
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
+from .tools import push_notification, update_maa
 from .tools.backup_archive import archive_native_backup
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
     acquire_resource_access_lock,
     get_resource_write_lock,
     prepare_queue_resources,
+)
+from .tools.software_package import read_pending_update, write_pending_update
+from .tools.software_update import (
+    cancel_maa_software_update_precheck,
+    prepare_maa_software_update,
 )
 from .tools.update_credentials import resolve_takeover_credentials
 
@@ -107,6 +113,15 @@ class MaaManager(ScriptManagerBase):
         self._device_provider = device_provider
         self.game_update_results: dict[str, GameUpdateResult] = {}
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
+        self._update_config_dir: Path | None = None
+        self._pending_update: tuple[str, str] | None = None
+
+    async def _finalize_task(self) -> None:
+        try:
+            if self.stopped_manually and self._update_config_dir is not None:
+                await cancel_maa_software_update_precheck(self.maa_set_path.parent)
+        finally:
+            await super()._finalize_task()
 
     async def _run_main_task(self) -> None:
         # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
@@ -420,12 +435,53 @@ class MaaManager(ScriptManagerBase):
             else:
                 kwargs["game_update_result"] = update_result
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
+            if isinstance(task, AutoProxyTask):
+                self._update_config_dir = task.update_config_dir
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
+            if isinstance(task, AutoProxyTask):
+                try:
+                    pending = await asyncio.to_thread(
+                        read_pending_update, self.maa_set_path.parent
+                    )
+                    if (
+                        all(pending)
+                        and (self.maa_set_path.parent / pending[1]).is_file()
+                    ):
+                        self._pending_update = pending
+                except (OSError, ValueError) as error:
+                    logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+
+        # 完整包会替换 resource，整批账号全部结束后才允许安装；下一轮再按需补资源。
+        if self._update_config_dir is not None:
+            # 切换用户会换入另一份配置，保留前面账号已下载的原生更新包。
+            if self._pending_update is not None:
+                try:
+                    _, current_package = await asyncio.to_thread(
+                        read_pending_update, self.maa_set_path.parent
+                    )
+                    if (
+                        not current_package
+                        or not (self.maa_set_path.parent / current_package).is_file()
+                    ):
+                        await asyncio.to_thread(
+                            write_pending_update,
+                            self.maa_set_path.parent,
+                            version=self._pending_update[0],
+                            package=self._pending_update[1],
+                        )
+                except (OSError, ValueError) as error:
+                    logger.warning(f"MAA 本体更新: 无法恢复原生待更新登记: {error}")
+            await prepare_maa_software_update(
+                self.maa_set_path.parent,
+                config_dir=self._update_config_dir,
+                config=self.script_config,
+            )
+            await update_maa(self.maa_set_path.parent)
 
     async def final_task(self):
         """运行结束后的收尾工作"""

@@ -273,26 +273,7 @@ def register_pending_update(
         _copy_if_changed(package_zip, target, expected_sha256=package_sha256)
         copied = not target_valid
 
-        new_config = maa_root / "config" / "gui.new.json"
-        old_config = maa_root / "config" / "gui.json"
-        if new_config.is_file():
-            config_path = new_config
-            data = read_dict_file(config_path)
-            update = data.setdefault("Update", {})
-            update["Name"] = version
-            update["UpdatePackage"] = str(target)
-        elif old_config.is_file():
-            config_path = old_config
-            data = read_dict_file(config_path)
-            global_set = data.setdefault("Global", {})
-            global_set["VersionUpdate.name"] = version
-            global_set["VersionUpdate.package"] = str(target)
-        else:
-            logger.warning("MAA 本体更新: 安装目录缺少 MAA 配置文件，跳过登记")
-            if copied:
-                target.unlink(missing_ok=True)
-            return False
-        write_file(config_path, data)
+        write_pending_update(maa_root, version=version, package=str(target))
         return True
     except Exception as e:
         if copied:
@@ -302,3 +283,24 @@ def register_pending_update(
         else:
             logger.warning(f"MAA 本体更新: 登记失败: {e}")
         return False
+
+
+def write_pending_update(maa_root: Path, *, version: str, package: str) -> None:
+    """透传上游待安装登记，供缓存包登记和跨账号保留原生下载结果复用。"""
+    new_config = maa_root / "config" / "gui.new.json"
+    old_config = maa_root / "config" / "gui.json"
+    if new_config.is_file():
+        config_path = new_config
+        data = read_dict_file(config_path)
+        update = data.setdefault("Update", {})
+        update["Name"] = version
+        update["UpdatePackage"] = package
+    elif old_config.is_file():
+        config_path = old_config
+        data = read_dict_file(config_path)
+        global_set = data.setdefault("Global", {})
+        global_set["VersionUpdate.name"] = version
+        global_set["VersionUpdate.package"] = package
+    else:
+        raise FileNotFoundError("安装目录缺少 MAA 配置文件")
+    write_file(config_path, data)

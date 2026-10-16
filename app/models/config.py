@@ -1411,10 +1411,40 @@ class MaaConfig(ConfigBase):
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
+        ## 接管更新的一次性迁移标记；新建脚本直接使用当前默认值
+        self.Update_TakeoverMigrationVersion = ConfigItem(
+            "Update", "TakeoverMigrationVersion", 1, RangeValidator(0, 1)
+        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """为未迁移的存量配置留标记，待全局和脚本 CDK 加载后统一迁移。"""
+        data = deepcopy(data) if isinstance(data, dict) else {}
+        update = data.get("Update")
+        if data and not (
+            isinstance(update, dict) and "TakeoverMigrationVersion" in update
+        ):
+            if not isinstance(update, dict):
+                data["Update"] = {}
+            data["Update"]["TakeoverMigrationVersion"] = 0
+        return await super().load(data)
+
+    async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
+        """为有 CDK 的旧脚本一次性开启接管，之后保留用户的开关选择。"""
+        if self.get("Update", "TakeoverMigrationVersion"):
+            return False
+        enabled = bool(
+            str(self.get("Update", "MirrorChyanCDK") or "").strip()
+            or global_cdk.strip()
+        )
+        update = {"TakeoverMigrationVersion": 1}
+        if enabled:
+            update["TakeoverEnabled"] = True
+        await self.update({"Update": update})
+        return enabled
 
 
 class BaseSourceValidator(OptionsValidator):
