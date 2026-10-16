@@ -264,6 +264,17 @@ export default {
       'バックエンドの更新があります。開発モードでは自動更新に対応していません',
     backendUpdateTitle: 'バックエンドを {version} に更新します',
     backendUpdateSucceeded: 'バックエンドを更新して再起動しました',
+    backendHotUpdateFailed: 'バックエンドの自動更新を完了できませんでした',
+    backendHotUpdateFailedDownload:
+      'バックエンド更新のダウンロードに失敗しました。現在のバージョンには影響ありません。再試行できます。',
+    backendHotUpdateDetails: 'バックエンド更新の復旧',
+    backendHotUpdateRecovering: 'バックエンドの接続を復旧しています…',
+    backendHotUpdateRetry: '更新を再試行',
+    backendHotUpdateRetryDeferred:
+      '復旧を開始できませんでした。しばらくしてから再試行してください。',
+    backendHotUpdateReconnect: '再接続',
+    backendHotUpdateFailedConnection:
+      '更新後のバックエンドは起動しましたが、再接続できませんでした。ページと下書きは保持されています。',
     backendUpdateCancelled: '更新をキャンセルしました。バックエンドは元のままです',
     backendUpdateFailedShutdown:
       '実行中のバックエンドを停止できず、更新は開始されていません。現在のバージョンはそのまま使用できます',
@@ -4480,6 +4491,10 @@ export default {
       updateSection: '更新',
       checkUpdate: '更新を確認',
       pauseUpdates: '更新を一時停止',
+      hotUpdateAvoidMinutes: '定時タスク回避時間',
+      hotUpdateAvoidMinutesTip:
+        '設定時間内に定時タスクが開始する場合、バックエンドの自動再起動を延期します。0 分は回避なし、既定は 5 分、上限は 60 分です。',
+      hotUpdateMinutes: '分',
       pauseUpdatesTip:
         '終了日を選ぶと自動更新チェックが一時停止します（1〜35日間）。手動で更新を確認すると即座に再開します。',
       pausePlaceholder: '一時停止の終了日を選択',

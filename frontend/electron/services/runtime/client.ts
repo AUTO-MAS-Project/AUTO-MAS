@@ -174,6 +174,8 @@ export interface RuntimeSuperviseOptions extends RuntimeRunOptions {
 export interface RuntimeShutdownOptions {
   /** 等待最终 result 与进程退出的超时，超时才 kill。 */
   timeoutMs?: number
+  /** 自动热更不得靠强杀取得源码切换窗口。 */
+  forceOnTimeout?: boolean
 }
 
 /** `backend supervise` 的长驻句柄。 */
@@ -913,8 +915,9 @@ export class RuntimeClient extends EventEmitter {
       status: () => session.sendControl('status'),
       cancel: () => session.sendControl('cancel'),
       kill: signal => session.kill(signal),
-      shutdown: async ({ timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS } = {}) => {
+      shutdown: async ({ timeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS, forceOnTimeout = true } = {}) => {
         if (!canShutdown) {
+          if (!forceOnTimeout) throw new Error('Runtime 不支持优雅关闭，已取消自动热更')
           // 调用方按契约只信 hello 宣告的能力：没宣告 stdin.shutdown 就不发命令，
           // 也不白等超时，直接走强制结束这条退路。
           logger.warn(
@@ -929,16 +932,23 @@ export class RuntimeClient extends EventEmitter {
           session.sendControl('shutdown')
         }
 
-        const timer = setTimeout(() => {
-          logger.warn(`Runtime 在 ${timeoutMs}ms 内未完成关闭，强制结束进程`)
-          session.kill()
-        }, timeoutMs)
-        timer.unref?.()
+        let timer: NodeJS.Timeout | undefined
+        const timedOut = new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            if (forceOnTimeout) {
+              logger.warn(`Runtime 在 ${timeoutMs}ms 内未完成关闭，强制结束进程`)
+              session.kill()
+            } else {
+              reject(new Error(`Runtime 在 ${timeoutMs}ms 内未完成优雅关闭，未应用更新`))
+            }
+          }, timeoutMs)
+          timer.unref?.()
+        })
 
         try {
-          return await session.completion
+          return await Promise.race([session.completion, timedOut])
         } finally {
-          clearTimeout(timer)
+          if (timer) clearTimeout(timer)
         }
       },
     }

@@ -25,12 +25,12 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Awaitable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -79,6 +79,7 @@ from .config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
+from .lifecycle import BackendBusyError, ShutdownCoordinator
 from .queue_cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -100,6 +101,7 @@ from .queue_cycle import (
 from .ws import MainConnection, Publisher, protocol
 
 System = LazyProxy("app.services", "System")
+Updater = LazyProxy("app.services", "Updater")
 
 if TYPE_CHECKING:
     from .notify import TaskCommunitySignNotification
@@ -1510,6 +1512,13 @@ class _TaskManager:
         self._startup_queue_started = False
         # 正在等待/执行启动队列的连接回调任务，同一时间只有一个
         self._startup_queue_task: asyncio.Task | None = None
+        # 同一事件循环内同步冻结入口，再等待已有后台工作；租约不跨 teardown 释放。
+        self._hot_update_guard: tuple[str, str, str] | None = None
+        self._hot_update_lock = asyncio.Lock()
+        self._hot_update_lease: asyncio.TimerHandle | None = None
+        self._backend_operations = 0
+        self._backend_operation_tasks: set[asyncio.Future[Any]] = set()
+        self._suppress_startup_always = False
 
     @staticmethod
     def _queue_script_entries(
@@ -1776,7 +1785,11 @@ class _TaskManager:
         # 停止全部任务期间拒绝新任务，否则它不在停止快照里，却会让停止流程
         # 一直等到它自然跑完。从这里到下方计入 _creating_tasks 之间不能有 await。
         if self._stopping_all:
-            raise RuntimeError("正在停止全部任务，暂不接受新任务")
+            raise BackendBusyError("正在停止全部任务，暂不接受新任务")
+
+        # 热更保护期间拒绝新任务，确保更新前的空闲状态不被打破
+        if self.is_hot_update_guarded():
+            raise BackendBusyError("后端正在更新或关闭，暂不接受新任务")
 
         # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
@@ -2069,6 +2082,9 @@ class _TaskManager:
 
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
+                    if self._suppress_startup_always:
+                        logger.info(f"内部热更续接，跳过重复启动队列：{uid}")
+                        continue
                     logger.info(f"启动时需要运行的队列：{uid}")
                     # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
                     # 失败时不写 LastStartupTime，下次启动仍可重试。
@@ -2113,8 +2129,227 @@ class _TaskManager:
 
         finally:
             self._startup_queue_task = None
+            if self._startup_queue_started:
+                self._suppress_startup_always = False
 
         logger.success("启动时任务开始运行")
+
+    @contextmanager
+    def backend_operation(self) -> Iterator[None]:
+        """HTTP/WS 与定时器的在途业务计数，覆盖整个异步写入而非某次 save。"""
+        if self.is_hot_update_guarded():
+            raise BackendBusyError("后端正在更新或关闭，请稍后重试")
+        self._backend_operations += 1
+        try:
+            yield
+        finally:
+            self._backend_operations -= 1
+
+    async def run_backend_operation(self, run: Callable[[], Awaitable[Any]]) -> Any:
+        """断线取消不能让仍在工作线程中落盘的请求提前退出在途计数。"""
+        with self.backend_operation():
+            operation = asyncio.ensure_future(run())
+            self._backend_operation_tasks.add(operation)
+            operation.add_done_callback(self._backend_operation_tasks.discard)
+            cancelled = False
+            while True:
+                try:
+                    result = await asyncio.shield(operation)
+                    break
+                except asyncio.CancelledError:
+                    if operation.cancelled():
+                        raise
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
+            return result
+
+    async def drain_backend_operations(self, *, timeout: float = 10) -> None:
+        """关闭入口后有界等待实际业务任务，超时保留任务并阻止拆除服务。"""
+        pending = {task for task in self._backend_operation_tasks if not task.done()}
+        if pending:
+            _, pending = await asyncio.wait(pending, timeout=timeout)
+            if pending:
+                raise TimeoutError(f"等待后端在途业务完成超时：{len(pending)} 项")
+
+    def suppress_hot_update_startup(self) -> None:
+        """只在匹配的热更检查点加载后抑制本进程的 Always 启动队列。"""
+        self._suppress_startup_always = True
+
+    def is_hot_update_guarded(self) -> bool:
+        return (
+            self._hot_update_guard is not None
+            or ShutdownCoordinator.closing
+            or (Config.server is not None and Config.server.should_exit)
+        )
+
+    def _hot_update_block_reason(self) -> str | None:
+        if ShutdownCoordinator.closing or (
+            Config.server is not None and Config.server.should_exit
+        ):
+            return "closing"
+        if (
+            self.task_handler
+            or self._creating_tasks
+            or any(not task.done() for task in self._cleanup_tasks)
+            or self._stopping_all
+            or self._backend_operations
+            or self._startup_queue_task is not None
+            or (Updater.download_task is not None and not Updater.download_task.done())
+            or Updater.is_switching_source
+            or Updater.is_locked
+            or any(not task.done() for task in Config.temp_task)
+            or (System.power_task is not None and not System.power_task.done())
+            or System.current_power_operation is not None
+        ):
+            return "busy"
+        pause_until = Config.get("Update", "PauseUntil")
+        if pause_until:
+            try:
+                if (
+                    datetime.now().date()
+                    < datetime.strptime(pause_until, "%Y-%m-%d").date()
+                ):
+                    return "paused"
+            except ValueError:
+                logger.warning("暂停更新日期无效，忽略该设置")
+        return None
+
+    def _release_hot_update_guard(self, operation: tuple[str, str, str]) -> None:
+        from .timer import MainTimer
+
+        if (
+            self._hot_update_guard != operation
+            or ShutdownCoordinator.closing
+            or (Config.server is not None and Config.server.should_exit)
+        ):
+            return
+        MainTimer.clear_hot_update_checkpoint(operation[0])
+        self._hot_update_guard = None
+        if self._hot_update_lease is not None:
+            self._hot_update_lease.cancel()
+            self._hot_update_lease = None
+        logger.info(f"已释放热更保护：{operation[0]}")
+
+    async def check_hot_update_admission(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> tuple[bool, str | None, datetime | None]:
+        """原子冻结新业务，结清签到/补发后复核，准入只保留六十秒租约。"""
+        from .timer import MainTimer
+
+        operation = (operation_id, base_commit, target_commit)
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if base_commit == target_commit or (
+            expected_commit and expected_commit.lower() != base_commit
+        ):
+            raise ValueError("热更提交身份不匹配")
+        if ShutdownCoordinator.closing:
+            return False, "closing", None
+        # 不在另一轮十秒排水后再排队十秒，保证 HTTP 请求预算有界。
+        if self._hot_update_lock.locked():
+            return False, "busy", None
+        async with self._hot_update_lock:
+            if self._hot_update_guard not in (None, operation):
+                raise ValueError("另一热更操作已持有保护，不能替换操作或提交")
+            # 从条件检查到冻结入口之间不能 await；定时器与 HTTP/WS 共用此保护。
+            if reason := self._hot_update_block_reason():
+                self._release_hot_update_guard(operation)
+                return False, reason, None
+            self._hot_update_guard = operation
+            if self._hot_update_lease is not None:
+                self._hot_update_lease.cancel()
+                self._hot_update_lease = None
+            MainTimer.begin_hot_update()
+            granted = False
+            try:
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    return False, "scheduledSoon", next_scheduled
+                if not await MainTimer.drain_community_tasks(timeout=10):
+                    return False, "busy", None
+                # 等待期间可能跨过定时边界或开始退出；复核权威配置和真实状态。
+                if reason := self._hot_update_block_reason():
+                    return False, reason, None
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    return False, "scheduledSoon", next_scheduled
+                MainTimer.save_hot_update_checkpoint(
+                    operation_id=operation_id,
+                    base_commit=base_commit,
+                    target_commit=target_commit,
+                )
+                if self._hot_update_lease is not None:
+                    self._hot_update_lease.cancel()
+                self._hot_update_lease = asyncio.get_running_loop().call_later(
+                    60, self._release_hot_update_guard, operation
+                )
+                granted = True
+                logger.info(f"热更准入成功：{operation_id}")
+                return True, None, None
+            finally:
+                if not granted:
+                    self._release_hot_update_guard(operation)
+
+    async def cancel_hot_update_guard(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> bool:
+        operation = (operation_id, base_commit, target_commit)
+        if self._hot_update_guard not in (None, operation):
+            raise ValueError("不能撤销另一热更操作的保护")
+        if ShutdownCoordinator.closing or (
+            Config.server is not None and Config.server.should_exit
+        ):
+            return False
+        async with self._hot_update_lock:
+            if self._hot_update_guard not in (None, operation):
+                raise ValueError("不能撤销另一热更操作的保护")
+            if ShutdownCoordinator.closing or (
+                Config.server is not None and Config.server.should_exit
+            ):
+                return False
+            self._release_hot_update_guard(operation)
+            return True
+
+    async def drain_hot_update(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> tuple[bool, str | None, datetime | None]:
+        """同一准备操作原子复核后进入关闭；失败保留身份，供 HTTP 重试清理。"""
+        from .timer import MainTimer
+
+        operation = (operation_id, base_commit, target_commit)
+        if self._hot_update_guard != operation:
+            raise ValueError("热更关闭必须匹配当前已准备的操作及提交")
+        if self._hot_update_lock.locked():
+            return False, "closing" if ShutdownCoordinator.closing else "busy", None
+        async with self._hot_update_lock:
+            if self._hot_update_guard != operation:
+                raise ValueError("热更关闭必须匹配当前已准备的操作及提交")
+            if not ShutdownCoordinator.closing:
+                # 复核到封闭入口之间没有 await，避免检查后再接纳新业务或定时槽。
+                if reason := self._hot_update_block_reason():
+                    self._release_hot_update_guard(operation)
+                    return False, reason, None
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    self._release_hot_update_guard(operation)
+                    return False, "scheduledSoon", next_scheduled
+                ShutdownCoordinator.begin_shutdown()
+                if self._hot_update_lease is not None:
+                    self._hot_update_lease.cancel()
+                    self._hot_update_lease = None
+            # 不发送 shutdown.ready，也不置 should_exit；监督器随后调用 /close 完成退出。
+            try:
+                await ShutdownCoordinator.run_teardown()
+            except Exception as error:
+                # 清理异常不能被 API 按提交身份冲突返回。
+                raise RuntimeError("热更关闭清理失败") from error
+            return True, None, None
 
 
 TaskManager = _TaskManager()

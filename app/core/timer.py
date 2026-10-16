@@ -20,15 +20,18 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
 from app.utils.constants import UTC8
+from app.utils.io import read_dict_file, write_file
 from app.utils.platform import IS_WINDOWS
 
 from .community_scheduler import (
@@ -39,6 +42,7 @@ from .community_scheduler import (
 )
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
+from .lifecycle import BackendBusyError
 from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
@@ -92,6 +96,8 @@ class _MainTimer:
         self._last_cleanup_date: str | None = None
         # 已触发过的 (队列, 时间槽, 计划时刻)，防止秋季回拨重复的钟点再触发一次
         self._timed_fired: set[tuple[str, str, datetime]] = set()
+        # 启动加载后保留磁盘检查点，直到首次成功送达的健康响应确认本次续接。
+        self._hot_update_restored_operation: tuple[str, str, str] | None = None
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
 
@@ -243,8 +249,11 @@ class _MainTimer:
         恢复正常后记一条恢复日志，之后再出错重新记录。
         """
 
+        if TaskManager.is_hot_update_guarded():
+            return
         try:
-            await step()
+            with TaskManager.backend_operation():
+                await step()
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -260,6 +269,12 @@ class _MainTimer:
 
     @logger.catch()
     async def timed_start(self):
+        if TaskManager.is_hot_update_guarded():
+            return
+        with TaskManager.backend_operation():
+            await self._timed_start()
+
+    async def _timed_start(self):
         """定时启动代理任务
 
         以「上次检查 → 本次检查」的本地墙钟区间判定到点：计划时刻落在
@@ -282,7 +297,6 @@ class _MainTimer:
         else:
             prev_wall = min(prev.replace(tzinfo=None), minute_floor)
             real_elapsed = now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
-        self._last_timed_check = now
 
         # 已触发记录只需覆盖秋季回拨的重复钟点，保留前一天即可
         self._timed_fired = {
@@ -292,10 +306,14 @@ class _MainTimer:
         }
 
         for uid, queue in Config.QueueConfig.items():
-            # 检查区间已前移，一个队列的配置读不出来不能连带丢掉其余队列的到点
+            # 一个队列的配置读不出来不能连带丢掉其余队列的到点
             try:
                 due = self._due_timed_slots(
-                    uid, queue, prev_wall, now_wall, real_elapsed
+                    uid=uid,
+                    queue=queue,
+                    prev_wall=prev_wall,
+                    now_wall=now_wall,
+                    real_elapsed=real_elapsed,
                 )
             except Exception as e:
                 logger.opt(exception=e).error(f"读取队列定时设置失败：{uid}")
@@ -304,15 +322,13 @@ class _MainTimer:
             if not due:
                 continue
 
-            # 同一队列一次检查内只唤起一次，多个到点的时间槽一并记为已触发
-            for time_set_id, planned in due:
-                self._timed_fired.add((str(uid), time_set_id, planned))
+            # 同一队列一次检查内只唤起一次；真正接纳任务之后再消费时间槽。
             planned = max(planned for _, planned in due)
 
             if now_wall - planned >= timedelta(minutes=1):
                 logger.info(f"补跑错过的定时 {planned:%Y-%m-%d %H:%M}：{uid}")
             logger.info(f"定时唤起任务：{uid}")
-            # 检查区间已前移，一个队列唤起失败不能连带跳过其余队列
+            # 一个队列唤起失败不能连带跳过其余队列
             try:
                 await TaskManager.add_task(
                     "AutoProxy",
@@ -324,11 +340,17 @@ class _MainTimer:
                     },
                     trigger_source="scheduled_task",
                 )
+                for time_set_id, slot in due:
+                    self._timed_fired.add((str(uid), time_set_id, slot))
                 await queue.set(
                     "Data", "LastTimedStart", planned.strftime("%Y-%m-%d %H:%M")
                 )
+            except BackendBusyError:
+                # 未接纳的时间槽不前移检查点，解除冻结后仍可补跑。
+                return
             except Exception as e:
                 logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
+        self._last_timed_check = now
 
     def _due_timed_slots(
         self,
@@ -337,6 +359,8 @@ class _MainTimer:
         prev_wall: datetime,
         now_wall: datetime,
         real_elapsed: timedelta,
+        *,
+        consume_expired: bool = True,
     ) -> list[tuple[str, datetime]]:
         """列出队列在本次检查区间内到点、且仍在补跑窗口内的 (时间槽, 计划时刻)。"""
 
@@ -371,11 +395,12 @@ class _MainTimer:
                 # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
                 lateness = min(now_wall - planned, real_elapsed)
                 if lateness > TIMED_START_GRACE:
-                    self._timed_fired.add(key)
-                    logger.info(
-                        f"定时 {planned:%Y-%m-%d %H:%M} 已错过 {lateness}，"
-                        f"超出补跑窗口，不再唤起队列：{uid}"
-                    )
+                    if consume_expired:
+                        self._timed_fired.add(key)
+                        logger.info(
+                            f"定时 {planned:%Y-%m-%d %H:%M} 已错过 {lateness}，"
+                            f"超出补跑窗口，不再唤起队列：{uid}"
+                        )
                     continue
 
                 due.append((str(time_set_id), planned))
@@ -385,7 +410,7 @@ class _MainTimer:
     def schedule_community_for_startup(self) -> None:
         """Schedule one background community sign-in after application startup."""
 
-        if not (
+        if TaskManager.is_hot_update_guarded() or not (
             Config.ToolsConfig.get("GameSign", "Enabled")
             and (Config.ToolsConfig.get("GameSign", "RunOnStartup"))
         ):
@@ -420,7 +445,9 @@ class _MainTimer:
     ) -> None:
         """与脚本并行签到，通过完成回调交付结果，复用现有后台任务所有权。"""
 
-        if not self._has_pending_community_sign(source=source):
+        if TaskManager.is_hot_update_guarded() or not self._has_pending_community_sign(
+            source=source
+        ):
             on_completed([])
             return
         if self.community_sign_task is not None and not self.community_sign_task.done():
@@ -548,7 +575,9 @@ class _MainTimer:
         if source is None:
             source = "task_manual"
 
-        if not self._has_pending_community_sign(source=source):
+        if TaskManager.is_hot_update_guarded() or not self._has_pending_community_sign(
+            source=source
+        ):
             return []
         return await self._execute_community_sign(source=source)
 
@@ -567,6 +596,144 @@ class _MainTimer:
         return not all_community_accounts_signed(
             Config.ToolsConfig.GameSign_Accounts, today
         )
+
+    def check_upcoming_scheduled(self, avoid_minutes: int) -> datetime | None:
+        """复用定时判据，包含已到点但尚未派发的槽与提前避让窗口。"""
+        now = _local_now()
+        now_wall = now.replace(tzinfo=None)
+        minute_floor = now_wall.replace(second=0, microsecond=0) - timedelta(
+            microseconds=1
+        )
+        prev = self._last_timed_check
+        prev_wall = (
+            min(prev.replace(tzinfo=None), minute_floor) if prev else minute_floor
+        )
+        elapsed = (
+            now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
+            if prev
+            else now_wall - minute_floor
+        )
+        scheduled: list[datetime] = []
+        for uid, queue in Config.QueueConfig.items():
+            scheduled.extend(
+                planned
+                for _, planned in self._due_timed_slots(
+                    uid=uid,
+                    queue=queue,
+                    prev_wall=prev_wall,
+                    now_wall=now_wall,
+                    real_elapsed=elapsed,
+                    consume_expired=False,
+                )
+            )
+            scheduled.extend(
+                planned
+                for _, planned in self._due_timed_slots(
+                    uid=uid,
+                    queue=queue,
+                    prev_wall=now_wall,
+                    now_wall=now_wall + timedelta(minutes=avoid_minutes),
+                    real_elapsed=timedelta(0),
+                    consume_expired=False,
+                )
+            )
+        return min(scheduled).replace(tzinfo=now.tzinfo) if scheduled else None
+
+    def begin_hot_update(self) -> None:
+        if self._last_timed_check is None:
+            self._last_timed_check = _local_now()
+
+    @property
+    def _hot_update_checkpoint_path(self) -> Path:
+        return Config.config_path / "hot-update-scheduler.json"
+
+    def save_hot_update_checkpoint(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> None:
+        """短小的检查点沿用原子写入，冻结区间不在工作线程里悬空。"""
+        write_file(
+            self._hot_update_checkpoint_path,
+            {
+                "operationId": operation_id,
+                "baseCommit": base_commit,
+                "targetCommit": target_commit,
+                "lastCheck": (self._last_timed_check or _local_now()).isoformat(),
+                "fired": [
+                    [uid, slot, planned.isoformat()]
+                    for uid, slot, planned in self._timed_fired
+                ],
+            },
+        )
+
+    def clear_hot_update_checkpoint(self, operation_id: str) -> None:
+        path = self._hot_update_checkpoint_path
+        if not path.exists():
+            return
+        try:
+            if read_dict_file(path).get("operationId") == operation_id:
+                path.unlink(missing_ok=True)
+        except Exception as error:
+            logger.opt(exception=error).warning("清除热更调度检查点失败")
+
+    def restore_hot_update_checkpoint(self) -> bool:
+        """只有监督器指定的同一操作可续接；普通启动清掉遗留上下文。"""
+        if self._hot_update_restored_operation is not None:
+            return False
+        path = self._hot_update_checkpoint_path
+        operation_id = os.environ.pop("AUTO_MAS_HOT_UPDATE_OPERATION_ID", "")
+        if not path.exists():
+            return False
+        try:
+            data = read_dict_file(path)
+            if not operation_id or data.get("operationId") != operation_id:
+                path.unlink(missing_ok=True)
+                return False
+            expected = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "").lower()
+            if expected and expected not in (data["baseCommit"], data["targetCommit"]):
+                path.unlink(missing_ok=True)
+                return False
+            last_check = datetime.fromisoformat(data["lastCheck"])
+            if last_check.tzinfo is None:
+                raise ValueError("热更检查时刻缺少时区")
+            fired = {
+                (uid, slot, datetime.fromisoformat(planned))
+                for uid, slot, planned in data["fired"]
+            }
+            self._hot_update_restored_operation = (
+                operation_id,
+                data["baseCommit"],
+                data["targetCommit"],
+            )
+            self._last_timed_check = last_check
+            self._timed_fired = fired
+            TaskManager.suppress_hot_update_startup()
+            logger.info(f"已加载热更调度检查点，等待健康确认：{operation_id}")
+            return True
+        except Exception as error:
+            logger.opt(exception=error).warning("恢复热更调度检查点失败，沿用普通启动")
+            return False
+
+    def confirm_hot_update_checkpoint(self) -> bool:
+        """健康响应实际送达后按原操作确认消费；未就绪崩溃仍可由同一操作重试。"""
+        operation = self._hot_update_restored_operation
+        if operation is None or TaskManager.is_hot_update_guarded():
+            return False
+        try:
+            path = self._hot_update_checkpoint_path
+            data = read_dict_file(path)
+            if (
+                data.get("operationId"),
+                data.get("baseCommit"),
+                data.get("targetCommit"),
+            ) != operation:
+                return False
+            path.unlink()
+            self._hot_update_restored_operation = None
+            logger.info(f"已确认消费热更调度检查点：{operation[0]}")
+            return True
+        except Exception as error:
+            logger.opt(exception=error).warning("确认消费热更调度检查点失败，保留重试")
+            return False
 
 
 MainTimer = _MainTimer()

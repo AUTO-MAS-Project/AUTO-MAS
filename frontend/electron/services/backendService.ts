@@ -24,11 +24,22 @@ import {
   formatStartupLogs,
   isRuntimeClientError,
   readRuntimeBaseUrl,
+  readRuntimeWarningSummaries,
   resolveRuntimeLaunchConfig,
   resolveRuntimeLaunchMode,
 } from './runtime'
 import { readRuntimeBinaryPin, syncRuntimeBinary } from './runtimeBinaryService'
-import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitializationService'
+import {
+  RuntimeInitializationService,
+  resolveRuntimeTargetVersion,
+  toRuntimeVersion,
+} from './runtimeInitializationService'
+import type {
+  HotUpdateHooks,
+  HotUpdatePhase,
+  HotUpdateRecord,
+  HotUpdateRepair,
+} from '../hotUpdateCoordination'
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
@@ -71,6 +82,7 @@ export interface BackendStartOptions {
   mainPyPath?: string
   cwd?: string
   timeout?: number // 启动超时时间（毫秒）
+  hotUpdate?: { operationId: string; version: string; onPhase: (phase: HotUpdatePhase) => void }
 }
 
 export interface BackendStartResult {
@@ -101,13 +113,20 @@ export interface BackendStopResult {
   error?: string
 }
 
-interface RuntimeBackendUpdateCheck {
+export interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
   staged?: boolean
   currentCommit?: string
   remoteCommit?: string
   commitMessage?: string
   error?: string
+  code?: string
+  version?: string
+}
+
+export interface HotUpdateApplyResult extends BackendStartResult {
+  deferred?: boolean
+  cancelled?: boolean
 }
 
 export type BackendStatusCallback = (status: BackendStatus) => void
@@ -138,6 +157,8 @@ export class BackendService {
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
+  private hotUpdateFlight: Promise<HotUpdateApplyResult> | null = null
+  private hotUpdateRepair: RuntimeInitializationService | null = null
   private readonly runtimeCommands = new Set<RuntimeRunControl>()
   private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
 
@@ -365,6 +386,7 @@ export class BackendService {
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
       launchMode: config.mode,
+      env: { AUTO_MAS_HOT_UPDATE_OPERATION_ID: options?.hotUpdate?.operationId },
     })
 
     if (config.mode === 'development') {
@@ -376,9 +398,11 @@ export class BackendService {
         if (!current.success) return this.buildRuntimeStartFailure(current, [], [])
         const details = current.result.details
         const version =
-          details.healthy === true && typeof details.version === 'string'
+          options?.hotUpdate?.version ??
+          (details.healthy === true && typeof details.version === 'string'
             ? details.version
-            : resolveRuntimeTargetVersion()
+            : resolveRuntimeTargetVersion())
+        options?.hotUpdate?.onPhase('installing')
         const prepared = await this.runRuntimePreparation(client, [
           'bootstrap',
           '--version',
@@ -399,6 +423,7 @@ export class BackendService {
     if (this.runtimeStopping) {
       return { success: false, error: '正在关闭后端，取消启动' }
     }
+    options?.hotUpdate?.onPhase('starting')
 
     // 后端 stdout / stderr 由 Runtime 逐行包装成 log 事件转发，这里按流分开累积，
     // 失败时组装成现有失败界面直接展示的整块文本。
@@ -651,7 +676,7 @@ export class BackendService {
    * 关闭超时由 `handle.shutdown` 兜底 kill Runtime 进程本身，后端进程树由 Runtime 的
    * Job Object 收走，这里不触碰 processManager 的全局清理。
    */
-  private async stopBackendViaRuntime(): Promise<BackendStopResult> {
+  private async stopBackendViaRuntime(gracefulOnly = false): Promise<BackendStopResult> {
     const handle = this.runtimeHandle
     if (!handle) {
       logger.info('Runtime 链路未持有监督句柄，无需停止后端')
@@ -660,7 +685,20 @@ export class BackendService {
 
     logger.info(`向 Runtime 发送 shutdown，Runtime PID: ${handle.pid}`)
     try {
-      const outcome = await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+      const outcome = await handle.shutdown({
+        timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS,
+        forceOnTimeout: !gracefulOnly,
+      })
+      if (
+        gracefulOnly &&
+        (!outcome.success ||
+          outcome.warnings.some(warning => warning.code === 'BACKEND_FORCE_TERMINATED') ||
+          readRuntimeWarningSummaries(outcome.result.details).some(
+            warning => warning.code === 'BACKEND_FORCE_TERMINATED'
+          ))
+      ) {
+        return { success: false, error: '后端未完成优雅关闭，未应用更新' }
+      }
       if (!outcome.success) {
         logger.warn(`Runtime 关闭后端报告失败: ${outcome.code} ${outcome.result.message}`)
       } else {
@@ -671,8 +709,8 @@ export class BackendService {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      this.clearRuntimeState(handle)
-      if (this.hasRuntimeProcessExited(error)) {
+      if (!gracefulOnly) this.clearRuntimeState(handle)
+      if (!gracefulOnly && this.hasRuntimeProcessExited(error)) {
         // 关闭超时被客户端 kill、或 Runtime 没给终态就退出：进程本身已经不在了，
         // 后端进程树随 Job Object 一并回收，对调用方而言后端已停止，不必再弹「无法安全退出」。
         logger.warn(`Runtime 未给出关闭终态就已退出，按已停止处理: ${errorMsg}`)
@@ -707,6 +745,14 @@ export class BackendService {
    */
   isRuntimeSupervised(): boolean {
     return this.runtimeHandle !== null || resolveRuntimeLaunchMode(this.appRoot) !== 'off'
+  }
+
+  isManagedBackend(): boolean {
+    return resolveRuntimeLaunchMode(this.appRoot) === 'managed'
+  }
+
+  isHotUpdateVersionCurrent(version?: string): boolean {
+    return version === resolveRuntimeTargetVersion()
   }
 
   /** Runtime 就绪后下发的后端地址；旧链路或尚未就绪时返回 null，由调用方回退原有端点。 */
@@ -1170,11 +1216,13 @@ export class BackendService {
   }
 
   /** 检查 managed 受管仓库的同分支远端 Commit，并在后台准备可供下次启动启用的更新。 */
-  checkRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
+  checkRuntimeBackendUpdate(
+    onTarget?: (target: RuntimeBackendUpdateCheck) => void
+  ): Promise<RuntimeBackendUpdateCheck> {
     if (this.runtimeStopping || this.startFlight) return Promise.resolve({ updateAvailable: false })
     if (this.runtimeUpdateReady) return Promise.resolve(this.runtimeUpdateReady)
     if (this.runtimeUpdateFlight) return this.runtimeUpdateFlight
-    const operation = this.prepareRuntimeBackendUpdate()
+    const operation = this.prepareRuntimeBackendUpdate(onTarget)
       .then(result => {
         if (result.staged) this.runtimeUpdateReady = result
         if (result.error) logger.debug(`后台后端更新未完成: ${result.error}`)
@@ -1187,10 +1235,33 @@ export class BackendService {
     return operation
   }
 
-  private async prepareRuntimeBackendUpdate(): Promise<RuntimeBackendUpdateCheck> {
+  private async prepareRuntimeBackendUpdate(
+    onTarget?: (target: RuntimeBackendUpdateCheck) => void
+  ): Promise<RuntimeBackendUpdateCheck> {
     const config = resolveRuntimeLaunchConfig(this.appRoot)
     if (config.mode !== 'managed' || !config.runtimePath) return { updateAvailable: false }
+    let checked: Partial<RuntimeBackendUpdateCheck> = {}
     try {
+      // 配置持久化是后端权威值；读取失败时本轮不联网、不重启。
+      const configPath = path.join(config.dataRoot, 'config', 'Config.json')
+      if (fs.existsSync(configPath)) {
+        const settings = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+          Update?: { PauseUntil?: string }
+        }
+        const until = settings.Update?.PauseUntil
+        if (until && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
+          const [year, month, day] = until.split('-').map(Number)
+          const date = new Date(year, month - 1, day)
+          const now = new Date()
+          if (
+            date.getFullYear() === year &&
+            date.getMonth() === month - 1 &&
+            date.getDate() === day &&
+            new Date(now.getFullYear(), now.getMonth(), now.getDate()) < date
+          )
+            return { updateAvailable: false }
+        }
+      }
       const client = createRuntimeClient({
         runtimePath: config.runtimePath,
         appRoot: config.appRoot,
@@ -1205,6 +1276,12 @@ export class BackendService {
       const updateAvailable = details.updateAvailable === true
       if (updateAvailable) {
         const version = typeof details.version === 'string' ? details.version : undefined
+        checked = {
+          updateAvailable: true,
+          version,
+          currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
+          remoteCommit: typeof details.remoteCommit === 'string' ? details.remoteCommit : undefined,
+        }
         if (!version) {
           return {
             updateAvailable: true,
@@ -1215,6 +1292,7 @@ export class BackendService {
             error: 'Runtime 远端检查未返回当前版本',
           }
         }
+        onTarget?.(checked as RuntimeBackendUpdateCheck)
         const stageOutcome = await this.runRuntimePreparation(client, [
           'workspace',
           'stage',
@@ -1223,15 +1301,18 @@ export class BackendService {
         ])
         if (!stageOutcome.success) {
           return {
+            ...checked,
             updateAvailable: true,
             staged: false,
             currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
             remoteCommit:
               typeof details.remoteCommit === 'string' ? details.remoteCommit : undefined,
             error: `${stageOutcome.code}: ${stageOutcome.result.message}`,
+            code: stageOutcome.code,
           }
         }
         return {
+          version,
           updateAvailable,
           staged: stageOutcome.result.details.staged === true,
           currentCommit: typeof details.commit === 'string' ? details.commit : undefined,
@@ -1254,6 +1335,7 @@ export class BackendService {
     } catch (error) {
       return {
         updateAvailable: false,
+        ...checked,
         error: error instanceof Error ? error.message : String(error),
       }
     }
@@ -1311,6 +1393,7 @@ export class BackendService {
 
   private async cancelRuntimePreparations(): Promise<void> {
     this.runtimeStopping = true
+    this.hotUpdateRepair?.cancel()
     if (this.runtimeRuns.size === 0) return
     for (const control of this.runtimeCommands) {
       try {
@@ -1454,6 +1537,247 @@ export class BackendService {
     if (this.statusCallback) {
       this.statusCallback(this.getStatus())
     }
+  }
+
+  /**
+   * 热更准入请求：调用后端 /api/update/hot-update 接口
+   */
+  async requestHotUpdateAdmission(
+    operationId: string,
+    baseCommit: string,
+    targetCommit: string
+  ): Promise<{ ready: boolean; reason?: string; nextScheduledTime?: string }> {
+    return this.sendHotUpdateAction({ action: 'prepare', operationId, baseCommit, targetCommit })
+  }
+
+  /**
+   * 取消热更准入
+   */
+  async cancelHotUpdateAdmission(
+    operationId: string,
+    baseCommit: string | null,
+    targetCommit: string | null
+  ): Promise<boolean> {
+    if (!baseCommit || !targetCommit) return false
+    try {
+      await this.sendHotUpdateAction({ action: 'cancel', operationId, baseCommit, targetCommit })
+      return true
+    } catch (error) {
+      logger.error(`取消热更准入失败：${error}`)
+      return false
+    }
+  }
+
+  private async sendHotUpdateAction(body: {
+    action: 'prepare' | 'cancel' | 'drain'
+    operationId: string
+    baseCommit?: string
+    targetCommit?: string
+  }): Promise<{ ready: boolean; reason?: string; nextScheduledTime?: string }> {
+    const response = await this.fetchWithTimeout(
+      `${this.resolveLocalApiEndpoint()}/api/update/hot-update`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      body.action === 'drain' ? 60000 : 15000
+    )
+    if (!response.ok) throw new Error(`热更准入请求失败: ${response.status}`)
+    const result = (await response.json()) as {
+      code?: number
+      message?: string
+      ready: boolean
+      reason?: string
+      nextScheduledTime?: string
+    }
+    if (result.code !== 200) throw new Error(result.message || '热更准入请求失败')
+    return result
+  }
+
+  private async stopForHotUpdate(record: HotUpdateRecord): Promise<HotUpdateApplyResult> {
+    if (!record.baseCommit || !record.targetCommit) return { success: false, deferred: true }
+    // Runtime 自带强制退出超时；业务收尾必须在发送 shutdown 之前确认完成。
+    const drained = await this.sendHotUpdateAction({
+      action: 'drain',
+      operationId: record.operationId,
+      baseCommit: record.baseCommit,
+      targetCommit: record.targetCommit,
+    })
+    if (!drained.ready) return { success: false, deferred: true }
+    const stop = await this.stopBackendViaRuntime(true)
+    return stop.success ? stop : { ...stop, code: 'HOT_UPDATE_STOP_FAILED', retryable: true }
+  }
+
+  /** 准入、停止与启动共用现有进程队列，不能在观察到 idle 后另行排一次重启。 */
+  applyHotUpdate(record: HotUpdateRecord, hooks: HotUpdateHooks): Promise<HotUpdateApplyResult> {
+    if (this.hotUpdateFlight) return this.hotUpdateFlight
+    const operation = this.enqueueOperation(async (): Promise<HotUpdateApplyResult> => {
+      const { operationId, baseCommit, targetCommit, version } = record
+      const cancelled = () =>
+        hooks.isClosing() ||
+        this.forceStopRequested ||
+        this.runtimeStopping ||
+        this.stopFlight !== null
+      if (cancelled()) return { success: false, cancelled: true }
+      if (
+        !this.isManagedBackend() ||
+        !this.runtimeHandle ||
+        !version ||
+        !baseCommit ||
+        !targetCommit ||
+        this.runtimeUpdateReady?.remoteCommit !== targetCommit ||
+        this.runtimeUpdateReady.currentCommit !== baseCommit ||
+        this.runtimeUpdateReady.version !== version
+      ) {
+        return { success: false, deferred: true }
+      }
+      let stopped = false
+      try {
+        const admission = await this.requestHotUpdateAdmission(
+          operationId,
+          baseCommit,
+          targetCommit
+        )
+        if (!admission.ready) return { success: false, deferred: true }
+        if (cancelled()) return { success: false, cancelled: true }
+        hooks.onPhase('stopping')
+        if (!(await hooks.rendererReady())) return { success: false, deferred: true }
+        if (cancelled()) return { success: false, cancelled: true }
+        // 页面确认期间可能恰好跨过定时时刻；仍由后端权威复核。
+        if (!(await this.requestHotUpdateAdmission(operationId, baseCommit, targetCommit)).ready)
+          return { success: false, deferred: true }
+        if (cancelled()) return { success: false, cancelled: true }
+        const stop = await this.stopForHotUpdate(record)
+        if (!stop.success) return stop
+        stopped = true
+        if (cancelled()) return { success: false, cancelled: true }
+        const result = await this.startBackendInternal({
+          hotUpdate: { operationId, version, onPhase: hooks.onPhase },
+        })
+        if (!result.success) return result
+        if (!(await this.verifyHotUpdateTarget(targetCommit))) {
+          return {
+            success: false,
+            error: '后端未运行本次更新的目标提交',
+            code: 'HOT_UPDATE_TARGET_MISMATCH',
+            retryable: true,
+          }
+        }
+        return result
+      } catch (error) {
+        if (cancelled()) return { success: false, cancelled: true }
+        return this.buildRuntimeStartFailure(error, [], [])
+      } finally {
+        if (!stopped) await this.cancelHotUpdateAdmission(operationId, baseCommit, targetCommit)
+      }
+    })
+    this.hotUpdateFlight = operation
+    void operation
+      .finally(() => {
+        if (this.hotUpdateFlight === operation) this.hotUpdateFlight = null
+      })
+      .catch(() => undefined)
+    return operation
+  }
+
+  async verifyHotUpdateTarget(targetCommit: string): Promise<boolean> {
+    if (!this.runtimeHandle || !this.runtimeBaseUrl || !/^[a-f0-9]{40}$/i.test(targetCommit))
+      return false
+    try {
+      const healthResponse = await this.fetchWithTimeout(
+        `${this.runtimeBaseUrl}${this.startupHealthPath}`,
+        { method: 'GET' },
+        5000
+      )
+      if (!healthResponse.ok) return false
+      const health = (await healthResponse.json()) as { ready?: boolean; version?: unknown }
+      if (health.ready !== true) return false
+      this.assertBackendVersionMatches(this.extractHealthVersion(health))
+      const response = await this.fetchWithTimeout(
+        `${this.runtimeBaseUrl}/api/info/version`,
+        { method: 'POST' },
+        5000
+      )
+      if (!response.ok) return false
+      const identity = (await response.json()) as { code?: number; current_hash?: string }
+      return identity.code === 200 && identity.current_hash === targetCommit
+    } catch {
+      return false
+    }
+  }
+
+  /** 主页上的失败恢复仍走现有 Runtime 同步/重建/修复，不依赖业务后端。 */
+  retryHotUpdate(
+    record: HotUpdateRecord,
+    repair?: HotUpdateRepair,
+    onPhase: (phase: HotUpdatePhase) => void = () => undefined
+  ): Promise<BackendStartResult> {
+    return this.enqueueOperation(async () => {
+      const config = resolveRuntimeLaunchConfig(this.appRoot)
+      if (
+        config.mode !== 'managed' ||
+        !record.version ||
+        !this.isHotUpdateVersionCurrent(record.version) ||
+        !record.targetCommit ||
+        this.forceStopRequested ||
+        this.stopFlight
+      ) {
+        return { success: false, error: '当前不能恢复后端热更' }
+      }
+      if (this.runtimeHandle) {
+        if (await this.verifyHotUpdateTarget(record.targetCommit)) return { success: true }
+        if (record.phase !== 'stopping')
+          return {
+            success: false,
+            error: '旧后端尚未停止，未应用更新',
+            code: 'HOT_UPDATE_STOP_FAILED',
+            retryable: true,
+          }
+        const stop = await this.stopForHotUpdate(record)
+        if (!stop.success)
+          return {
+            ...stop,
+            error: stop.error || '后端尚未完成更新前收尾，请稍后重试',
+            code: 'HOT_UPDATE_STOP_FAILED',
+            retryable: true,
+          }
+      }
+      this.runtimeStopping = false
+      if (repair) {
+        const service = new RuntimeInitializationService({
+          launchConfig: config,
+          mirrorService: this.mirrorService,
+          targetVersion: record.version,
+        })
+        this.hotUpdateRepair = service
+        try {
+          const result = await service.retryStage(
+            repair === 'runtime-repair' ? 'python' : 'dependency',
+            progress => logger.info(`热更修复 ${progress.stage}: ${progress.message}`),
+            undefined,
+            repair === 'dependencies-sync' ? 'sync' : 'rebuild'
+          )
+          if (!result.success) return result
+        } finally {
+          this.hotUpdateRepair = null
+        }
+      }
+      if (this.runtimeStopping || this.forceStopRequested || this.stopFlight)
+        return { success: false, error: '正在关闭应用' }
+      const result = await this.startBackendInternal({
+        hotUpdate: { operationId: record.operationId, version: record.version, onPhase },
+      })
+      if (result.success && !(await this.verifyHotUpdateTarget(record.targetCommit))) {
+        return {
+          success: false,
+          error: '后端未运行本次更新的目标提交',
+          code: 'HOT_UPDATE_TARGET_MISMATCH',
+          retryable: true,
+        }
+      }
+      return result
+    })
   }
 
   /**

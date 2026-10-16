@@ -55,6 +55,8 @@ import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
 // 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
+const app = createApp(App)
+app.use(createPinia())
 bootstrapRealtimeResidents()
 initializeAppLifecycle()
 
@@ -80,11 +82,7 @@ if (window.electronAPI?.getApiEndpoint) {
   logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
 }
 
-// 创建应用实例
-const app = createApp(App)
-
 // 注册插件
-app.use(createPinia())
 app.use(Antd)
 app.use(router)
 app.use(i18n)

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { HotUpdateRecord, HotUpdateRepair } from './hotUpdateCoordination'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -276,6 +277,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendStart: () => ipcRenderer.invoke('backend-start'),
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
+  getHotUpdateRecord: () => ipcRenderer.invoke('hot-update:get-record'),
+  onHotUpdateState: (callback: (record: HotUpdateRecord) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, record: HotUpdateRecord) =>
+      callback(record)
+    ipcRenderer.on('hot-update:state', listener)
+    return () => ipcRenderer.removeListener('hot-update:state', listener)
+  },
+  acknowledgeHotUpdateResult: (
+    operationId: string,
+    result: NonNullable<HotUpdateRecord['result']>
+  ) => ipcRenderer.invoke('hot-update:acknowledge', operationId, result),
+  completeHotUpdateConnection: (operationId: string, connected: boolean) =>
+    ipcRenderer.invoke('hot-update:connected', operationId, connected),
+  readyHotUpdateRestart: (operationId: string) =>
+    ipcRenderer.invoke('hot-update:renderer-ready', operationId),
+  retryHotUpdate: (repairMode?: HotUpdateRepair) =>
+    ipcRenderer.invoke('hot-update:retry', repairMode),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 
   // Runtime 链路的后端更新（启动模式复用上面的 getRuntimeLaunchMode）

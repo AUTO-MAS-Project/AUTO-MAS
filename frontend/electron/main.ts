@@ -30,6 +30,7 @@ import {
   getBackendService,
   getLocalApiEndpoint,
   resolveRuntimeInitContext,
+  isRuntimeInstallationInProgress,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
@@ -77,6 +78,8 @@ import {
   isPersistedRuntimeLaunchMode,
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
+import { HotUpdateOrchestrator } from './hotUpdateOrchestrator'
+import type { HotUpdateRepair } from './hotUpdateCoordination'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -88,6 +91,7 @@ initializeLogger()
 const logger = getLogger('主进程')
 const STOP_ALL_TASKS_SHORTCUT = resolveStopAllTasksShortcut()
 let isStoppingAllTasks = false
+let hotUpdateOrchestrator: HotUpdateOrchestrator | null = null
 
 interface ApiResult {
   code?: number
@@ -166,6 +170,30 @@ function registerStopAllTasksShortcut(): void {
     logger.info(`全局停止任务快捷键已注册: ${STOP_ALL_TASKS_SHORTCUT}`)
   } else {
     logger.error(`全局停止任务快捷键注册失败: ${STOP_ALL_TASKS_SHORTCUT}`)
+  }
+}
+
+/**
+ * 初始化热更协调器
+ */
+function initializeHotUpdateOrchestrator(): void {
+  try {
+    hotUpdateOrchestrator = new HotUpdateOrchestrator({
+      backend: getBackendService,
+      stateFile: path.join(getAppRoot(), 'config', 'hot_update_result.json'),
+      isClosing: () =>
+        coordinatedQuit ||
+        forceQuitInProgress ||
+        quitRequestInFlight ||
+        isRuntimeInstallationInProgress(),
+      onState: record => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('hot-update:state', record)
+        }
+      },
+    })
+  } catch (error) {
+    logger.error(`热更协调器初始化失败：${error}`)
   }
 }
 
@@ -511,6 +539,7 @@ function cancelQuitRequest(token?: number): void {
 function finishCoordinatedQuit(): void {
   if (coordinatedQuit) return
   coordinatedQuit = true
+  hotUpdateOrchestrator?.dispose()
   quitRequestInFlight = false
   clearQuitFallback()
   if (saveWindowStateTimeout) {
@@ -533,6 +562,7 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 }
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
+  void hotUpdateOrchestrator?.cancel()
   if (forceQuitInProgress || coordinatedQuit) return
   forceQuitInProgress = true
   clearQuitFallback()
@@ -589,6 +619,7 @@ function requestRendererClose(reason: string): void {
   }
 
   quitRequestInFlight = true
+  void hotUpdateOrchestrator?.cancel()
   // 先让用户看到窗口已经关闭，renderer 保留在后台继续完成后端清理。
   win.setSkipTaskbar(true)
   win.hide()
@@ -1189,7 +1220,7 @@ function createWindow() {
   logger.info('主窗口创建完成')
 
   // 注册初始化处理器
-  registerInitializationHandlers(win)
+  registerInitializationHandlers(win, hotUpdateOrchestrator ?? undefined)
   logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
@@ -1883,6 +1914,7 @@ ipcMain.handle('app-prepare-quit', () => {
   if (activeQuitPreparation !== null) return activeQuitPreparation
   clearQuitFallback()
   quitRequestInFlight = true
+  void hotUpdateOrchestrator?.cancel()
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
   quitPreparationExpired = false
@@ -1916,6 +1948,43 @@ ipcMain.handle('app-confirm-quit', (_event, token: number) => {
 // 页面尚未保存时，后端还未进入关闭流程，允许取消主进程发出的退出请求。
 ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
   cancelQuitRequest(token)
+})
+
+// 热更新相关 IPC 处理器
+ipcMain.handle('hot-update:get-record', event =>
+  event.sender === mainWindow?.webContents ? (hotUpdateOrchestrator?.getRecord() ?? null) : null
+)
+ipcMain.handle('hot-update:renderer-ready', (event, operationId: unknown) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    typeof operationId !== 'string' ||
+    !hotUpdateOrchestrator
+  )
+    return false
+  hotUpdateOrchestrator.rendererReady(operationId)
+  return true
+})
+ipcMain.handle('hot-update:connected', (event, operationId: unknown, connected: unknown) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    typeof operationId !== 'string' ||
+    typeof connected !== 'boolean'
+  )
+    return false
+  return hotUpdateOrchestrator?.completeConnection(operationId, connected) ?? false
+})
+ipcMain.handle('hot-update:acknowledge', (event, operationId: unknown, result: unknown) => {
+  if (event.sender === mainWindow?.webContents && typeof operationId === 'string')
+    hotUpdateOrchestrator?.acknowledge(operationId, result)
+})
+ipcMain.handle('hot-update:retry', (event, repair: unknown) => {
+  if (event.sender !== mainWindow?.webContents) return false
+  if (
+    repair !== undefined &&
+    !['dependencies-sync', 'dependencies-rebuild', 'runtime-repair'].includes(String(repair))
+  )
+    throw new TypeError('不支持的热更修复入口')
+  return hotUpdateOrchestrator?.retry(repair as HotUpdateRepair | undefined) ?? false
 })
 
 // 添加进程管理相关的 IPC 处理器
@@ -2369,6 +2438,9 @@ app.whenReady().then(async () => {
   logger.info('OK-WW 路径发现处理器已注册')
 
   registerStopAllTasksShortcut()
+
+  // 初始化热更协调器
+  initializeHotUpdateOrchestrator()
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

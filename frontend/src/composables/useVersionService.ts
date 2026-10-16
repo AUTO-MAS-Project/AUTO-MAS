@@ -38,12 +38,16 @@ const getAppVersion = async () => {
 /**
  * 获取后端版本信息（用于标题栏显示）
  */
-export const getBackendVersion = async () => {
+export const getBackendVersion = async (): Promise<boolean> => {
   try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+    const response = await Service.getGitVersionApiInfoVersionPost()
+    if (response.code !== 200) throw new Error(response.message || '获取后端版本返回错误状态')
+    backendUpdateInfo.value = response
+    return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取后端版本失败: ${errorMsg}`)
+    return false
   }
 }
 

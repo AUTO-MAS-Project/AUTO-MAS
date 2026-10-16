@@ -1,4 +1,6 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { HotUpdateRecord, HotUpdateRepair } from '../../electron/hotUpdateCoordination'
+export type { HotUpdateRecord } from '../../electron/hotUpdateCoordination'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -66,7 +68,9 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
-export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
+export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart' | 'connection'
+
+export type HotUpdateRepairMode = HotUpdateRepair
 
 export type RuntimeUpdateRetryAction =
   | 'bootstrap'
@@ -506,6 +510,15 @@ export interface ElectronAPI {
   backendStart: () => Promise<InstallStageResult>
   backendRestart: () => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
+  getHotUpdateRecord: () => Promise<HotUpdateRecord | null>
+  onHotUpdateState: (callback: (record: HotUpdateRecord) => void) => () => void
+  acknowledgeHotUpdateResult: (
+    operationId: string,
+    result: NonNullable<HotUpdateRecord['result']>
+  ) => Promise<void>
+  completeHotUpdateConnection: (operationId: string, connected: boolean) => Promise<boolean>
+  readyHotUpdateRestart: (operationId: string) => Promise<boolean>
+  retryHotUpdate: (repairMode?: HotUpdateRepairMode) => Promise<boolean>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
     staged?: boolean

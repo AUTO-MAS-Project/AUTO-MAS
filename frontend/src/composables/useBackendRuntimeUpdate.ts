@@ -23,6 +23,7 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { getBackendVersion } from './useVersionService'
+import { useAutoBackendHotUpdate } from './useAutoBackendHotUpdate'
 
 const logger = window.electronAPI.getLogger('后端更新')
 
@@ -120,6 +121,18 @@ async function settle(result: RuntimeUpdateOutcome): Promise<void> {
 }
 
 export function useBackendRuntimeUpdate() {
+  const automatic = useAutoBackendHotUpdate()
+  const showingAutomatic = computed(() => automatic.recoveryVisible.value)
+  const visible = computed({
+    get: () => showingAutomatic.value || modalVisible.value,
+    set: value => {
+      if (showingAutomatic.value) automatic.recoveryVisible.value = value
+      else modalVisible.value = value
+    },
+  })
+  const displayedOutcome = computed(() =>
+    showingAutomatic.value ? automatic.outcome.value : outcome.value
+  )
   const isRuntimeManaged = computed(() => launchMode.value === 'managed')
   const isRuntimeDevelopment = computed(() => launchMode.value === 'development')
 
@@ -132,7 +145,7 @@ export function useBackendRuntimeUpdate() {
   const stageOrder = computed(() => UPDATE_STAGE_ORDER)
 
   async function start(version: string): Promise<void> {
-    if (running.value) return
+    if (running.value || automatic.blocked.value) return
 
     resetProgress()
     targetVersion.value = version
@@ -156,6 +169,16 @@ export function useBackendRuntimeUpdate() {
   }
 
   async function retry(action: RuntimeUpdateRetryAction): Promise<void> {
+    if (showingAutomatic.value) {
+      await automatic.retry(
+        action === 'repair'
+          ? 'runtime-repair'
+          : action === 'dependencies-sync' || action === 'dependencies-rebuild'
+            ? action
+            : undefined
+      )
+      return
+    }
     if (running.value) return
 
     outcome.value = null
@@ -190,6 +213,10 @@ export function useBackendRuntimeUpdate() {
 
   /** `restart` 结局下的兜底：源码与依赖都已就位，只是后端没起来，再拉一次。 */
   async function restartBackend(): Promise<void> {
+    if (showingAutomatic.value) {
+      await automatic.retry()
+      return
+    }
     restartingBackend.value = true
     try {
       const result = await window.electronAPI.backendStart()
@@ -213,6 +240,10 @@ export function useBackendRuntimeUpdate() {
   }
 
   function close(): void {
+    if (showingAutomatic.value) {
+      if (!automatic.retrying.value) automatic.recoveryVisible.value = false
+      return
+    }
     if (running.value) return
     modalVisible.value = false
     resetProgress()
@@ -223,17 +254,29 @@ export function useBackendRuntimeUpdate() {
     ensureLaunchMode,
     isRuntimeManaged,
     isRuntimeDevelopment,
-    modalVisible,
-    running,
+    modalVisible: visible,
+    running: computed(() =>
+      showingAutomatic.value
+        ? automatic.retrying.value ||
+          (automatic.blocked.value &&
+            automatic.record.value?.result === null &&
+            !automatic.retryError.value)
+        : running.value
+    ),
+    isAutomatic: showingAutomatic,
     cancelling,
     restartingBackend,
-    targetVersion,
+    targetVersion: computed(() =>
+      showingAutomatic.value
+        ? (automatic.record.value?.targetCommit?.slice(0, 8) ?? '')
+        : targetVersion.value
+    ),
     currentStage,
     currentMessage,
     completedStages,
     stageOrder,
     overallPercent,
-    outcome,
+    outcome: displayedOutcome,
     start,
     retry,
     cancel,

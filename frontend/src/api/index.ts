@@ -167,6 +167,8 @@ export type { HistoryDataGetOut } from './models/HistoryDataGetOut';
 export { HistoryIndexItem } from './models/HistoryIndexItem';
 export { HistorySearchIn } from './models/HistorySearchIn';
 export type { HistorySearchOut } from './models/HistorySearchOut';
+export { HotUpdatePrepareIn } from './models/HotUpdatePrepareIn';
+export type { HotUpdatePrepareOut } from './models/HotUpdatePrepareOut';
 export type { HSRCapabilitiesData } from './models/HSRCapabilitiesData';
 export type { HSRCapabilitiesOut } from './models/HSRCapabilitiesOut';
 export { HSRCapabilityAdapter } from './models/HSRCapabilityAdapter';

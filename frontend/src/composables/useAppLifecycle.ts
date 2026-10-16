@@ -10,6 +10,11 @@ import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import {
+  initializeAutoBackendHotUpdate,
+  disposeAutoBackendHotUpdate,
+  isAutoBackendHotUpdateBlocking,
+} from '@/composables/useAutoBackendHotUpdate'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -129,7 +134,8 @@ const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTi
 const isClosing = (): boolean => backendClosing
 
 // 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
-const isIntentionalRestart = (): boolean => intentionalRestartActive
+const isIntentionalRestart = (): boolean =>
+  intentionalRestartActive || isAutoBackendHotUpdateBlocking()
 
 // ==================== 常驻订阅 ====================
 
@@ -249,7 +255,7 @@ const cancelPowerCountdown = async (): Promise<void> => {
   handlePowerCountdownCancelled()
 }
 
-const refreshLifecycleSnapshots = async (): Promise<void> => {
+const refreshLifecycleSnapshots = async (strict = false): Promise<void> => {
   const generation = ++lifecycleSnapshotGeneration
   const powerSequenceAtStart = powerMutationSequence
 
@@ -275,6 +281,7 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`读取电源倒计时 HTTP 快照失败: ${errorMsg}`)
+    if (strict) throw error
   }
 }
 
@@ -412,6 +419,7 @@ export function disposeAppLifecycle(): void {
     unsubscribe(subscriptionId)
   }
   disposeResidentResources()
+  disposeAutoBackendHotUpdate()
   cancelBackgroundInitCheck()
   if (powerCountdownStaleTimer !== undefined) {
     window.clearTimeout(powerCountdownStaleTimer)
@@ -753,6 +761,7 @@ export function beginIntentionalBackendRestart(reason: string): void {
   intentionalRestartTimer = window.setTimeout(() => {
     intentionalRestartTimer = undefined
     if (!intentionalRestartActive) return
+    if (isAutoBackendHotUpdateBlocking()) return
     intentionalRestartActive = false
     logger.warn('后端有意重启窗口超时未结束，恢复断开提示与自动恢复')
   }, INTENTIONAL_RESTART_TIMEOUT)
@@ -765,6 +774,7 @@ export function beginIntentionalBackendRestart(reason: string): void {
  * @param reason 记入日志的结束原因
  */
 export function endIntentionalBackendRestart(reason: string): void {
+  if (isAutoBackendHotUpdateBlocking()) return
   if (intentionalRestartTimer !== undefined) {
     window.clearTimeout(intentionalRestartTimer)
     intentionalRestartTimer = undefined
@@ -944,6 +954,12 @@ export function initializeAppLifecycle(): void {
   // 所有应用级业务订阅都必须早于主连接建立；该入口覆盖初始化向导、正常进入和手动连接。
   bootstrapResidentResources()
   initialized = true
+  initializeAutoBackendHotUpdate({
+    begin: beginIntentionalBackendRestart,
+    end: endIntentionalBackendRestart,
+    refreshState: () => refreshLifecycleSnapshots(true),
+    isConnected: () => connectionState().value === 'open',
+  })
 
   // 先注册所有应用级常驻订阅，再允许建立连接；所有监听器都有明确释放函数。
   residentSubscriptionIds = [

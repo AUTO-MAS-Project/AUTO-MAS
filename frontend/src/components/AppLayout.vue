@@ -1,5 +1,7 @@
 <template>
   <a-layout
+    :inert="hotUpdateBlocked || undefined"
+    :aria-busy="hotUpdateBlocked"
     style="
       position: relative;
       z-index: 1;
@@ -60,6 +62,8 @@
 
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
+import { storeToRefs } from 'pinia'
+import { useBackendHotUpdateStore } from '@/stores/backendHotUpdate'
 import {
   BugOutlined,
   CalendarOutlined,
@@ -84,6 +88,7 @@ import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 
 const { t } = useI18n()
+const { blocked: hotUpdateBlocked } = storeToRefs(useBackendHotUpdateStore())
 
 const SIDER_WIDTH = 160
 
