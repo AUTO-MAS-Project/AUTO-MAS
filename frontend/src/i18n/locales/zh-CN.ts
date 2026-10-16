@@ -3616,6 +3616,7 @@ export default {
     endfield: {
       refresh: '刷新',
       activities: '活动日程',
+      activityImages: '活动图片：AKEData',
       pools: '寻访卡池',
       running: '进行中',
       upcoming: '未开始',

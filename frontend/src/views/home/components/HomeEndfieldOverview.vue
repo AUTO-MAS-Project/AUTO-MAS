@@ -29,7 +29,22 @@
         show-icon
         class="status-alert"
       />
-      <ul v-if="activities.length" class="event-grid">
+      <div v-if="activities.length" class="rail-controls">
+        <span>{{ t('home.endfield.activityImages') }}</span>
+        <a-button size="small" :aria-label="t('home.carousel.prev')" @click="scrollActivities(-1)">
+          <LeftOutlined />
+        </a-button>
+        <a-button size="small" :aria-label="t('home.carousel.next')" @click="scrollActivities(1)">
+          <RightOutlined />
+        </a-button>
+      </div>
+      <ul
+        v-if="activities.length"
+        ref="activityRail"
+        class="event-rail"
+        tabindex="0"
+        :aria-label="t('home.endfield.activities')"
+      >
         <li v-for="item in activities" :key="item.id" class="event-item">
           <div v-if="item.image && !failedImages.has(item.image)" class="event-art">
             <img
@@ -48,7 +63,7 @@
               </a-tag>
               <span v-if="item.kind" class="event-kind">{{ item.kind }}</span>
             </div>
-            <h4>{{ item.name }}</h4>
+            <h4 :title="item.name">{{ item.name }}</h4>
             <div class="event-countdown">
               <span>{{
                 t(isUpcoming(item) ? 'home.countdown.startsIn' : 'home.countdown.left')
@@ -95,7 +110,7 @@
         class="status-alert"
       />
       <a-skeleton v-if="overview.PoolLoading && !pools.length" active :paragraph="{ rows: 2 }" />
-      <ul v-else-if="pools.length" class="event-grid">
+      <ul v-else-if="pools.length" class="pool-grid">
         <li v-for="item in pools" :key="item.id" class="event-item pool-item">
           <div v-if="item.image && !failedImages.has(item.image)" class="pool-art">
             <img
@@ -108,8 +123,8 @@
             />
           </div>
           <div class="event-copy">
-            <span class="event-kind">{{ item.kind }}</span>
-            <h4>{{ item.name }}</h4>
+            <a-tag class="pool-type" color="blue">{{ item.kind }}</a-tag>
+            <h4 :title="item.name">{{ item.name }}</h4>
             <p v-if="item.up" class="pool-up">{{ item.up }}</p>
             <div class="event-countdown">
               <span>{{
@@ -135,6 +150,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { EndfieldActivityOverview } from '@/types/home'
@@ -155,6 +171,11 @@ interface CardItem {
 const props = defineProps<{ loading: boolean; overview: EndfieldActivityOverview }>()
 const emit = defineEmits<{ refresh: [] }>()
 const { t, locale } = useI18n()
+const activityRail = ref<HTMLElement | null>(null)
+const scrollActivities = (direction: number) => {
+  const rail = activityRail.value
+  if (rail) rail.scrollBy({ left: direction * rail.clientWidth * 0.8, behavior: 'auto' })
+}
 const now = ref(Date.now())
 const failedImages = ref(new Set<string>())
 
@@ -299,13 +320,62 @@ const handleBoundary = () => {
   margin-bottom: 12px;
 }
 
-.event-grid {
+.event-rail,
+.pool-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 12px;
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.event-rail {
+  grid-auto-flow: column;
+  grid-auto-columns: min(280px, 85vw);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
+}
+
+.pool-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.pool-grid .pool-item {
+  flex: 0 1 340px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.rail-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.event-rail:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.event-rail .event-item {
+  scroll-snap-align: start;
+}
+
+.event-rail .event-copy h4 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  min-height: 44px;
 }
 
 .event-item {
@@ -319,18 +389,42 @@ const handleBoundary = () => {
   background: var(--ant-color-fill-quaternary);
 }
 
+.pool-item {
+  border-left: 3px solid var(--ant-color-primary);
+  background: var(--ant-color-bg-container);
+  box-shadow: 0 2px 8px var(--ant-color-fill-quaternary);
+}
+
+.pool-type {
+  align-self: flex-start;
+  margin: 0;
+}
+
+.pool-item .pool-up {
+  color: var(--ant-color-text);
+  font-weight: 500;
+}
+
+.pool-item .event-countdown {
+  padding-top: 8px;
+  margin-top: 2px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
 .event-art,
 .pool-art {
-  flex: 0 0 88px;
-  width: 88px;
-  height: 66px;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
   overflow: hidden;
   border-radius: 4px;
   background: var(--ant-color-bg-container);
 }
 
 .pool-art {
-  height: 88px;
+  flex-basis: 88px;
+  width: 88px;
+  height: 112px;
 }
 
 .event-art img,

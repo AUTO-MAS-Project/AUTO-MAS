@@ -8,6 +8,7 @@ import {
   type EndfieldSourceData,
 } from './endfieldActivityTransform'
 import { parseEndfieldSraData } from './endfieldSraTransform'
+import { withEndfieldActivityImages } from './endfieldActivityImages'
 import { createEmptyEndfieldActivityOverview, type EndfieldActivityOverview } from '@/types/home'
 import { useHomeActivitySource } from './useHomeActivitySource'
 
@@ -189,7 +190,10 @@ export const useEndfieldActivitySource = () => {
       VersionStartTime: versionValid ? primary.VersionStartTime : '',
       VersionEndTime: versionValid ? primary.VersionEndTime : '',
       VersionStale: sraOverview.value.Stale,
-      Activities: primary.Activities.filter(isPending),
+      Activities: (primary === sraData
+        ? withEndfieldActivityImages(primary.Activities, sourceData?.activities ?? [])
+        : primary.Activities
+      ).filter(isPending),
       Pools: akeOverview.value.Pools.filter(isPending),
       PoolStale: akeOverview.value.Stale,
       PoolMessage: akeOverview.value.Message,
