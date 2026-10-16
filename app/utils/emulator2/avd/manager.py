@@ -326,23 +326,36 @@ _OPENING: dict[str, asyncio.Event] = {}
 _OPENING_WAIT_EXTRA_SECONDS = 300.0
 
 
-async def _wait_opening(key: str, label: str, timeout: float) -> None:
-    """同一台实例另有一次 open 没做完就等它；超时记日志后照常继续。"""
-    event = _OPENING.get(key)
-    if event is None:
-        return
-    logger.info(f"{label} 正由另一次启动开机或做开机后设置，等它做完再继续")
+async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event | None:
+    """排到这台实例的 open：前面有 open 没做完就一个个等，轮到时登记自己的标记并返回它。
+
+    一次置位会唤醒所有等待者，所以要循环：醒来后标记已被另一个等待者抢先登记，就接着等它。
+    跳出循环和登记之间没有 ``await``，不会有两个同时登记。总共最多等 ``timeout`` 秒，
+    超时记日志、不登记（返回 ``None``），照常继续。
+    """
+    deadline = time.monotonic() + timeout
     started = time.monotonic()
-    try:
-        await asyncio.wait_for(event.wait(), timeout)
-    except TimeoutError:
-        logger.warning(
-            f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
-        )
-    else:
+    waited = False
+    while (event := _OPENING.get(key)) is not None:
+        if not waited:
+            logger.info(f"{label} 正由另一次启动开机或做开机后设置，等它做完再继续")
+            waited = True
+        remaining = deadline - time.monotonic()
+        try:
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.wait_for(event.wait(), remaining)
+        except TimeoutError:
+            logger.warning(
+                f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
+            )
+            return None
+    if waited:
         logger.info(
             f"{label} 另一次启动已做完（等了 {time.monotonic() - started:.0f} 秒）"
         )
+    mine = _OPENING[key] = asyncio.Event()
+    return mine
 
 
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
@@ -740,12 +753,9 @@ class _AvdCore(DeviceBase):
         instance = self._instance(idx)
         key = _instance_key(self.root, idx)
         max_wait = float(self.config.get("Info", "MaxWaitTime"))
-        await _wait_opening(
+        mine = await _claim_opening(
             key, f"魔改 AVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
         )
-        mine: asyncio.Event | None = None
-        if key not in _OPENING:
-            mine = _OPENING[key] = asyncio.Event()
         try:
             return await self._open(idx, instance, key, max_wait)
         finally:
