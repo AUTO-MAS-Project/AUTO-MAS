@@ -35,7 +35,7 @@ _UPDATER_TIMEOUT = 120  # 秒，超时保留原生备份，待官方更新结束
 
 
 class MaaUpdaterRunningError(RuntimeError):
-    """官方更新器仍在写盘，不能恢复配置或启动新的托管任务。"""
+    """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
 async def update_maa(maa_path: Path):
@@ -60,7 +60,10 @@ async def update_maa(maa_path: Path):
     if not maa_update_package or not (maa_path / maa_update_package).exists():
         return
 
-    await System.kill_process(maa_path / "MAA.exe")
+    if not await System.kill_process(maa_path / "MAA.exe"):
+        raise MaaUpdaterRunningError(
+            "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
+        )
 
     maa_set = read_file(maa_path / "config/gui.json")
     maa_new_set = read_file(maa_path / "config/gui.new.json")
@@ -159,4 +162,7 @@ async def _wait_for_updater(maa_path: Path) -> None:
         raise MaaUpdaterRunningError(
             "MAA 官方更新器等待超时，请等待更新结束并退出 MAA 后，从原生配置备份恢复"
         ) from error
-    await System.kill_process(maa_path / "MAA.exe")
+    if not await System.kill_process(maa_path / "MAA.exe"):
+        raise MaaUpdaterRunningError(
+            "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
+        )

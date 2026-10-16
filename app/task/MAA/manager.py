@@ -149,7 +149,7 @@ class MaaManager(ScriptManagerBase):
                                 force=True,
                             )
                             logger.warning(
-                                f"MAA 更新器仍在运行，任务前原生配置备份: {backup_path}；"
+                                f"MAA 更新相关进程未能退出，任务前原生配置备份: {backup_path}；"
                                 "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
                             )
                         else:
@@ -420,10 +420,12 @@ class MaaManager(ScriptManagerBase):
             )
             is not None
         ):
-            archive_files(
-                files=collect_native_files(self.temp_path),
-                store_root=native_backup_root(self.maa_set_path),
-            )
+            files = collect_native_files(self.temp_path)
+            if files:
+                archive_files(
+                    files=files,
+                    store_root=native_backup_root(self.maa_set_path),
+                )
         result = recover_native_config(
             self.temp_path,
             self.maa_set_path,
