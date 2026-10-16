@@ -67,8 +67,8 @@ export const endfieldActivityBanner = (
   const now = Date.now()
   const versionValid = Boolean(
     overview.VersionName &&
-      toTimestamp(overview.VersionStartTime ?? '') > 0 &&
-      toTimestamp(overview.VersionEndTime ?? '') > now
+    toTimestamp(overview.VersionStartTime ?? '') > 0 &&
+    toTimestamp(overview.VersionEndTime ?? '') > now
   )
   // 无有效版本时仅使用同一活动的标题、封面和时间，不拿卡池伪造版本周期。
   const activities = [...overview.Activities]
