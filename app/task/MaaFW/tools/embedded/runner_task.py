@@ -1246,8 +1246,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         device_info = await self.emulator_manager.open(
             emulator_index, package_name, **self._mod_avd_open_kwargs()
         )
-        # 游戏是这次刚拉起的才等画面（与桌面游戏同一道闸门）：已在前台、没给包名、
-        # 拉起失败都不等；旧式模拟器管理器不回报拉应用结果，同样不等
+        # 只有冷启动（进程原本不在，launched）才等：进程本来就在（在前台 already-running、
+        # 从后台切回 resumed）、没给包名、拉起失败都不等；旧式模拟器管理器不回报拉应用
+        # 结果，同样不等
         if getattr(device_info, "app_launch", "") == "launched":
             self.game_started_at = time.monotonic()
             self.game_start_fixed_wait = True

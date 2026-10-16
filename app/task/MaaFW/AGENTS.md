@@ -350,8 +350,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   游戏自有层由该游戏的特调或专项自己调。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
   桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
-  游戏拉到前台（`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起完成起算，
-  已在前台、没认出包名、拉起失败都不等。宿主把「最早可下发时刻」写进 job
+  游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
+  完成起算；游戏进程已在（在前台 `already-running`、从后台切回前台 `resumed`）、没认出包名、拉起失败
+  都不等。宿主把「最早可下发时刻」写进 job
   （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
   放行：连续 5s 画面没变（静态登录页）；或连续 20s 有内容哪怕一直在动（`runner.py` 的
   `STARTUP_SCREEN_CONTENT_SECONDS`）。黑屏 / 纯色把两个计数都清零，截不到图就等满上限。
@@ -363,8 +364,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **模拟器冷启动不提前放行**：上面两条提前放行只用于桌面。模拟器路径上宿主同时传
     `taskStartFixedWait`（`runner._wait_task_start_fixed`）：worker 等满 `Game.WaitTime`，之后画面有内容
     就下发；还是黑屏 / 纯色就每秒再看，出画面再下发，从开始等算满 `TASK_START_GATE_MAX_SECONDS`
-    照常下发；截不到图按时下发。核心只认这个开关，不判断设备类型。理由（2026-10-16 魔改 AVD 实测，
-    证据 `D:\MAS\docs\测试证据\MFW模拟器启动闸门-20261016`）：终末地加载页和动态标题都一直在动、
+    照常下发；截不到图按时下发。核心只认这个开关，不判断设备类型。真机数据（2026-10-16 魔改 AVD
+    实测）：终末地加载页和动态标题都一直在动、
     都有内容，像素判断分不出两者，「20s 有内容」在拉起后 37~48s、仍在「正在加载资源」时就放行；
     冷启动到标题约 73~75s，MaaEnd 的 `EnterGameRecognition`（认加载页上也有的「公告」按钮，
     max_hit 60）随后用完，3 次里 2 次判卡死。

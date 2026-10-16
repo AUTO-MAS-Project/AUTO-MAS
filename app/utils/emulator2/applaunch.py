@@ -95,8 +95,11 @@ _FOREGROUND_MARKERS = (
 )
 
 #: 结果的原因码。调用方只需要 ``ok``, 日志和排查要看这个。
+#: ``already-running`` 本来就在前台；``resumed`` 进程本来就在、只是在后台，这次切回了前台；
+#: ``launched`` 进程原本不在，这次是冷启动。三者都是成功（``ok`` 为真）。
 LaunchReason = Literal[
     "already-running",
+    "resumed",
     "launched",
     "not-installed",
     "no-adb",
@@ -173,6 +176,15 @@ def is_package_present(pm_path_output: str) -> bool:
         line.strip().startswith("package:")
         for line in (pm_path_output or "").splitlines()
     )
+
+
+def is_process_running(pidof_output: str) -> bool:
+    """从 ``pidof <包名>`` 的输出里判断这个包的主进程是否活着。
+
+    只认数字 pid：没跑时 ``pidof`` 输出为空（返回码 1），设备掉线时是一句 adb 报错，
+    两者都不算活着。``pidof`` 按进程名精确匹配，``包名:push`` 这类子进程不算。
+    """
+    return any(token.isdigit() for token in (pidof_output or "").split())
 
 
 def parse_launch_component(resolve_output: str, package_name: str) -> str | None:
@@ -327,6 +339,11 @@ async def ensure_app_running(
         logger.info(f"{prefix}{package_name} 已在前台，无需启动")
         return AppLaunchResult(True, "already-running")
 
+    # 进程活着只是在后台（比如按过 Home）：下面同样发拉起命令，Android 只是把已有任务
+    # 提回前台，不是冷启动。调用方要分清两者（冷启动还在加载，切回前台的早就加载完了）。
+    _, pids = await run_adb("shell", "pidof", package_name)
+    was_running = is_process_running(pids)
+
     # am start 要组件名，先问一次；问不到就少发这一路，不猜组件名
     _, resolved = await run_adb(
         "shell", "cmd", "package", "resolve-activity", "--brief", package_name
@@ -350,7 +367,9 @@ async def ensure_app_running(
         attempts.append(run_adb("shell", "am", "start", "-n", component))
 
     logger.info(
-        f"{prefix}模拟器已就绪，{len(attempts)} 路并发启动 {package_name}"
+        f"{prefix}模拟器已就绪，{len(attempts)} 路并发"
+        f"{'切回' if was_running else '启动'} {package_name}"
+        f"{'（进程已在后台）' if was_running else ''}"
         f"{'' if component else '（解析不出启动组件，跳过 am start）'}"
     )
     # 一起发再统一等：三条都是同一个 LAUNCHER 意图，Android 会归并成一个任务
@@ -360,6 +379,9 @@ async def ensure_app_running(
         run_adb, package_name, time.monotonic() + launch_timeout, poll_seconds
     )
     if arrived:
+        if was_running:
+            logger.info(f"{prefix}{package_name} 已切回前台")
+            return AppLaunchResult(True, "resumed")
         logger.info(f"{prefix}{package_name} 已启动")
         return AppLaunchResult(True, "launched")
 
@@ -418,7 +440,8 @@ class AppLaunchMixin(DeviceBase):
         模拟器往下跑。
 
         拉应用的结果放在返回值的 ``app_launch`` 里（原因码，见 :data:`LaunchReason`）：调用方要
-        分清应用是这次刚拉起的（``launched``，还在加载）还是本来就在前台（``already-running``）。
+        分清应用是这次冷启动的（``launched``，还在加载），还是进程本来就在（在前台
+        ``already-running``、在后台被切回前台 ``resumed``）。
         """
         try:
             await self.prepare_launch(idx)
@@ -507,5 +530,6 @@ __all__ = [
     "ensure_app_running",
     "is_package_foreground",
     "is_package_missing",
+    "is_process_running",
     "parse_launch_component",
 ]
