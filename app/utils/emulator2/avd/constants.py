@@ -25,9 +25,9 @@
 
 from dataclasses import dataclass
 
-#: 魔改 AVD 目前只给 M9A（特调声明 ``supports_mod_avd``，见 MaaFW ``flavor.py``）和 MAA 用：其它脚本
-#: 选了魔改 AVD 设备时，保存与运行时都用这句话拒绝，不走没测过的路。
-MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 M9A 和 MAA"
+#: 魔改 AVD 目前只给 MFW 脚本（MaaFW 引擎，通用项目与各特调）和 MAA 用：其它脚本选了魔改 AVD 设备时，
+#: 保存与运行时都用这句话拒绝，不走没测过的路。
+MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 MFW 脚本和 MAA"
 
 #: 端口段：原生索引 i → 控制台 ``20000 + 10*i``，adb ``+1``，gRPC ``+2``。
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
