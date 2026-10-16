@@ -1,304 +1,369 @@
 <template>
-  <a-card
-    :title="t('home.module.endfield')"
-    class="endfield-card"
-    :style="cardStyle"
-    :loading="loading"
-  >
+  <a-card :title="t('home.module.endfield')" class="endfield-card" :loading="loading">
     <template #extra>
-      <div class="card-extra">
-        <a-typography-link
-          :href="overview.SourceUrl"
-          target="_blank"
-          rel="noreferrer"
-          class="source-link"
-          @click="handleExternalLink"
-        >
-          {{ t('home.endfield.source', { name: overview.SourceName }) }}
-        </a-typography-link>
-        <a-tag v-if="overview.Stale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
-      </div>
+      <a-button size="small" :disabled="loading" @click="emit('refresh')">
+        {{ t('home.endfield.refresh') }}
+      </a-button>
     </template>
 
-    <a-alert
-      v-if="overview.Message"
-      :message="overview.Message"
-      :type="overview.Available ? 'warning' : 'error'"
-      show-icon
-      class="status-alert"
-    />
-
-    <div v-if="!loading && !displayItems.length" class="empty-state">
-      <a-empty :description="t('home.endfield.noActivity')" />
-    </div>
-
-    <!-- 卡池和活动放在同一条横排里：都是「一期一会儿就结束」的条目，按结束时间先后排 -->
-    <div v-else-if="!loading" class="activity-list">
-      <div v-for="item in displayItems" :key="item.id" class="activity-card">
-        <div class="activity-item">
-          <img
-            v-if="getItemImage(item)"
-            :src="getItemImage(item)"
-            :alt="item.name"
-            class="activity-image"
-            referrerpolicy="no-referrer"
-            decoding="async"
-            @error="handleImageError(item.id)"
-          />
-          <div class="activity-overlay" />
-          <div class="activity-content">
-            <div class="activity-head">
-              <span v-if="item.kind" class="activity-kind">{{ item.kind }}</span>
-              <span class="activity-name">{{ item.name }}</span>
-            </div>
-            <div v-if="item.up" class="activity-desc">{{ item.up }}</div>
-            <div class="activity-meta">
-              <span class="activity-countdown">
-                <span class="countdown-label">
-                  {{ isUpcoming(item) ? t('home.countdown.startsIn') : t('home.countdown.left') }}
-                </span>
-                <a-statistic-countdown
-                  :value="getCountdownValue(countdownTarget(item))"
-                  :format="t('home.countdown.dh')"
-                  :value-style="activityCountdownStyle"
-                  @finish="emit('refresh')"
-                />
-              </span>
-              <div class="activity-end-time">
-                {{
-                  isUpcoming(item)
-                    ? t('home.countdown.startsAt', {
-                        time: formatActivityTime(item.startTime, locale),
-                      })
-                    : t('home.endfield.endsAt', {
-                        time: formatActivityTime(item.endTime, locale),
-                      })
-                }}
-              </div>
-            </div>
-          </div>
+    <!-- 版本主视觉由上方轮播承担；活动和寻访各自展示来源与状态，不再混排。 -->
+    <section class="endfield-section" :aria-label="t('home.endfield.activities')">
+      <div class="section-heading">
+        <h3>{{ t('home.endfield.activities') }}</h3>
+        <div class="source-meta">
+          <a-typography-link
+            :href="overview.SourceUrl"
+            target="_blank"
+            rel="noreferrer"
+            @click="handleExternalLink"
+          >
+            {{ t('home.endfield.source', { name: overview.SourceName }) }}
+          </a-typography-link>
+          <a-tag v-if="overview.Stale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
         </div>
       </div>
-    </div>
+      <a-alert
+        v-if="overview.Message"
+        :message="overview.Message"
+        :type="overview.Available ? 'warning' : 'error'"
+        show-icon
+        class="status-alert"
+      />
+      <ul v-if="activities.length" class="event-grid">
+        <li v-for="item in activities" :key="item.id" class="event-item">
+          <div v-if="item.image && !failedImages.has(item.image)" class="event-art">
+            <img
+              :src="item.image"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              referrerpolicy="no-referrer"
+              @error="markImageFailed(item.image)"
+            />
+          </div>
+          <div class="event-copy">
+            <div class="event-heading">
+              <a-tag :color="isUpcoming(item) ? 'blue' : 'green'">
+                {{ t(isUpcoming(item) ? 'home.endfield.upcoming' : 'home.endfield.running') }}
+              </a-tag>
+              <span v-if="item.kind" class="event-kind">{{ item.kind }}</span>
+            </div>
+            <h4>{{ item.name }}</h4>
+            <div class="event-countdown">
+              <span>{{
+                t(isUpcoming(item) ? 'home.countdown.startsIn' : 'home.countdown.left')
+              }}</span>
+              <a-statistic-countdown
+                :value="countdownTarget(item)"
+                :format="t('home.countdown.dh')"
+                :value-style="countdownStyle"
+                @finish="handleBoundary"
+              />
+            </div>
+            <time :datetime="isUpcoming(item) ? item.startTime : item.endTime">
+              {{ boundaryLabel(item) }}
+            </time>
+          </div>
+        </li>
+      </ul>
+      <a-empty
+        v-else-if="!loading && overview.Available"
+        :description="t('home.endfield.noActivity')"
+      />
+    </section>
+
+    <section class="endfield-section pool-section" :aria-label="t('home.endfield.pools')">
+      <div class="section-heading">
+        <h3>{{ t('home.endfield.pools') }}</h3>
+        <div class="source-meta">
+          <a-typography-link
+            href="https://www.akedata.wiki"
+            target="_blank"
+            rel="noreferrer"
+            @click="handleExternalLink"
+          >
+            {{ t('home.endfield.source', { name: 'AKEData' }) }}
+          </a-typography-link>
+          <a-tag v-if="overview.PoolStale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
+        </div>
+      </div>
+      <a-alert
+        v-if="overview.PoolMessage"
+        :message="overview.PoolMessage"
+        type="warning"
+        show-icon
+        class="status-alert"
+      />
+      <a-skeleton v-if="overview.PoolLoading && !pools.length" active :paragraph="{ rows: 2 }" />
+      <ul v-else-if="pools.length" class="event-grid">
+        <li v-for="item in pools" :key="item.id" class="event-item pool-item">
+          <div v-if="item.image && !failedImages.has(item.image)" class="pool-art">
+            <img
+              :src="item.image"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              referrerpolicy="no-referrer"
+              @error="markImageFailed(item.image)"
+            />
+          </div>
+          <div class="event-copy">
+            <span class="event-kind">{{ item.kind }}</span>
+            <h4>{{ item.name }}</h4>
+            <p v-if="item.up" class="pool-up">{{ item.up }}</p>
+            <div class="event-countdown">
+              <span>{{
+                t(isUpcoming(item) ? 'home.countdown.startsIn' : 'home.countdown.left')
+              }}</span>
+              <a-statistic-countdown
+                :value="countdownTarget(item)"
+                :format="t('home.countdown.dh')"
+                :value-style="countdownStyle"
+                @finish="handleBoundary"
+              />
+            </div>
+            <time :datetime="isUpcoming(item) ? item.startTime : item.endTime">
+              {{ boundaryLabel(item) }}
+            </time>
+          </div>
+        </li>
+      </ul>
+      <a-empty v-else-if="!overview.PoolMessage" :description="t('home.endfield.noPools')" />
+    </section>
   </a-card>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { EndfieldActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
-import { formatActivityTime } from '@/views/home/activityTime'
 
-defineOptions({
-  name: 'HomeEndfieldOverview',
-})
+defineOptions({ name: 'HomeEndfieldOverview' })
 
-interface Props {
-  loading: boolean
-  overview: EndfieldActivityOverview
-}
-
-const props = defineProps<Props>()
-
-/** 倒计时走完就重新取一次：否则这一期结束后卡片会停在「0 天 0 时」 */
-const emit = defineEmits<{
-  refresh: []
-}>()
-
-const { t, locale } = useI18n()
-
-const ACCENT = '#ffb45a'
-const MAX_VISIBLE_ITEMS = 10
-
-/** 卡片里的一条：活动和卡池都压成这个形状 */
-interface EndfieldCardItem {
+interface CardItem {
   id: string
   name: string
   kind: string
   image: string
-  /** 卡池的 UP 角色之类的补充说明，悬停时展开 */
   up: string
   startTime: string
   endTime: string
 }
 
-const cardStyle = computed<CSSProperties>(
-  () =>
-    ({
-      '--endfield-accent': ACCENT,
-    }) as CSSProperties
-)
-
-const failedImageIds = ref(new Set<string>())
+const props = defineProps<{ loading: boolean; overview: EndfieldActivityOverview }>()
+const emit = defineEmits<{ refresh: [] }>()
+const { t, locale } = useI18n()
+const now = ref(Date.now())
+const failedImages = ref(new Set<string>())
 
 watch(
-  () => [props.overview.Activities, props.overview.Pools],
+  () => props.overview,
   () => {
-    failedImageIds.value = new Set()
+    now.value = Date.now()
   }
 )
 
-const getCountdownValue = (value: string) => {
-  const timestamp = new Date(value).getTime()
-  return Number.isNaN(timestamp) ? 0 : timestamp
-}
+// 仅素材地址变更才重试失败图片，分钟时钟不触发重复下载。
+watch(
+  () =>
+    [...props.overview.Activities, ...props.overview.Pools].map(item => item.ImageUrl).join('\n'),
+  () => {
+    failedImages.value = new Set()
+  }
+)
 
-const displayItems = computed<EndfieldCardItem[]>(() => {
-  const now = Date.now()
+const timestamp = (value: string) => new Date(value).getTime()
+const pending = (items: CardItem[]) =>
+  items
+    .filter(item => timestamp(item.endTime) > now.value)
+    .sort((a, b) => timestamp(a.endTime) - timestamp(b.endTime))
 
-  const activities: EndfieldCardItem[] = props.overview.Activities.map(activity => ({
-    id: activity.Id,
-    name: activity.Name,
-    kind: activity.Tags[0] ?? '',
-    image: activity.ImageUrl,
-    up: '',
-    startTime: activity.StartTime,
-    endTime: activity.EndTime,
-  }))
+const activities = computed(() =>
+  pending(
+    props.overview.Activities.map(item => ({
+      id: `activity-${item.Id}`,
+      name: item.Name,
+      kind: item.Tags[0] ?? '',
+      image: item.ImageUrl,
+      up: '',
+      startTime: item.StartTime,
+      endTime: item.EndTime,
+    }))
+  )
+)
+const pools = computed(() =>
+  pending(
+    props.overview.Pools.map(item => ({
+      id: `pool-${item.Id}`,
+      name: item.Name,
+      kind: item.Type,
+      image: item.ImageUrl,
+      up: item.UpCharacters.length
+        ? t('home.endfield.upCharacters', { names: item.UpCharacters.join('、') })
+        : '',
+      startTime: item.StartTime,
+      endTime: item.EndTime,
+    }))
+  )
+)
 
-  const pools: EndfieldCardItem[] = props.overview.Pools.map(pool => ({
-    id: pool.Id,
-    name: pool.Name,
-    kind: pool.Type,
-    image: pool.ImageUrl,
-    up: pool.UpCharacters.length
-      ? t('home.endfield.upCharacters', { names: pool.UpCharacters.join('、') })
-      : '',
-    startTime: pool.StartTime,
-    endTime: pool.EndTime,
-  }))
-
-  return [...activities, ...pools]
-    .filter(item => getCountdownValue(item.endTime) > now)
-    .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
-    .slice(0, MAX_VISIBLE_ITEMS)
-})
-
-const getItemImage = (item: EndfieldCardItem) => {
-  if (failedImageIds.value.has(item.id)) return ''
-  return item.image || ''
-}
-
-const handleImageError = (id: string) => {
-  failedImageIds.value = new Set(failedImageIds.value).add(id)
-}
-
-/** 还没开始的那一条，倒计时数到开始时间 */
-const isUpcoming = (item: EndfieldCardItem) => getCountdownValue(item.startTime) > Date.now()
-
-const countdownTarget = (item: EndfieldCardItem) =>
-  isUpcoming(item) ? item.startTime : item.endTime
-
-const activityCountdownStyle: CSSProperties = {
-  color: ACCENT,
+const isUpcoming = (item: CardItem) => timestamp(item.startTime) > now.value
+const countdownTarget = (item: CardItem) =>
+  timestamp(isUpcoming(item) ? item.startTime : item.endTime)
+const countdownStyle: CSSProperties = {
+  color: 'var(--ant-color-text)',
   fontSize: '14px',
-  fontWeight: 700,
+  fontWeight: 600,
+}
+
+const boundaryLabel = (item: CardItem) => {
+  const upcoming = isUpcoming(item)
+  const date = new Date(upcoming ? item.startTime : item.endTime)
+  const time = date.toLocaleString(locale.value, {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return t(upcoming ? 'home.countdown.startsAt' : 'home.endfield.endsAt', { time }) + ' (UTC+8)'
+}
+
+const markImageFailed = (url: string) => {
+  failedImages.value = new Set(failedImages.value).add(url)
+}
+
+/** 同一时刻多个倒计时结束只发一次请求，同时立即移除过期条目。 */
+let refreshQueued = false
+const handleBoundary = () => {
+  now.value = Date.now()
+  if (refreshQueued) return
+  refreshQueued = true
+  queueMicrotask(() => {
+    emit('refresh')
+    refreshQueued = false
+  })
 }
 </script>
 
-<style scoped src="./activityCard.css"></style>
-
 <style scoped>
-.endfield-card {
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+.endfield-section + .endfield-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-.endfield-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.activity-item {
-  min-width: 0;
-  width: 266px;
-  flex-shrink: 0;
-  height: 150px;
-  position: relative;
+.section-heading,
+.source-meta,
+.event-heading,
+.event-countdown {
   display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-  border-radius: 10px;
-  scroll-snap-align: start;
-  background:
-    radial-gradient(
-      ellipse at 20% 0%,
-      color-mix(in srgb, var(--endfield-accent) 16%, transparent),
-      transparent 55%
-    ),
-    linear-gradient(150deg, #2a2118 0%, #16130f 60%, #1c1813 100%);
-  transition:
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
-.activity-kind {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border: 1px solid color-mix(in srgb, var(--endfield-accent) 45%, transparent);
-  border-radius: 4px;
-  background: rgba(11, 18, 32, 0.55);
-  color: var(--endfield-accent);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.activity-name {
-  min-width: 0;
-  overflow: hidden;
-  color: white;
-  font-size: 15px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-.activity-desc {
-  max-height: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  line-height: 1.5;
-  opacity: 0;
-  text-shadow:
-    0 0 3px #000,
-    0 0 6px #000;
-  transition:
-    max-height 0.3s ease,
-    opacity 0.3s ease,
-    margin 0.3s ease;
-  margin-bottom: 0;
-}
-
-.activity-card:hover .activity-desc {
-  max-height: 40px;
-  opacity: 1;
-  margin-bottom: 8px;
-}
-
-.activity-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  min-width: 0;
-  flex-wrap: nowrap;
 }
 
-.activity-countdown {
-  display: inline-flex;
-  align-items: baseline;
+.section-heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-heading h3,
+.event-copy h4 {
+  margin: 0;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.source-meta,
+.event-kind,
+.event-copy time,
+.pool-up,
+.event-countdown > span {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.source-meta :deep(.ant-tag),
+.event-heading :deep(.ant-tag) {
+  margin-inline-end: 0;
+}
+
+.status-alert {
+  margin-bottom: 12px;
+}
+
+.event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.event-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.event-art,
+.pool-art {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 66px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--ant-color-bg-container);
+}
+
+.pool-art {
+  height: 88px;
+}
+
+.event-art img,
+.pool-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.event-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 6px;
   min-width: 0;
-  white-space: nowrap;
 }
 
-.countdown-label {
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 12px;
+.event-copy time,
+.pool-up {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.pool-up {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .event-art,
+  .pool-art {
+    flex-basis: 64px;
+    width: 64px;
+    height: 64px;
+  }
 }
 </style>

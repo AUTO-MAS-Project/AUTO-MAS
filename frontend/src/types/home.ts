@@ -99,6 +99,15 @@ interface EndfieldPoolItem {
 }
 
 export interface EndfieldActivityOverview {
+  /** SRA 同一版本记录，不能由卡池结束时间推断。 */
+  VersionName?: string
+  VersionCover?: string
+  VersionStartTime?: string
+  VersionEndTime?: string
+  VersionStale?: boolean
+  PoolStale?: boolean
+  PoolMessage?: string
+  PoolLoading?: boolean
   Available: boolean
   Stale: boolean
   Message: string

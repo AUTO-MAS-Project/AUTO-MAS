@@ -359,11 +359,7 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       return {
         ...base,
         loading: endfieldSource.loading.value,
-        ...endfieldActivityBanner(
-          endfieldSource.overview.value,
-          endfieldSource.versionArt.value,
-          endfieldSource.versionName.value
-        ),
+        ...endfieldActivityBanner(endfieldSource.overview.value),
       }
     }
 
