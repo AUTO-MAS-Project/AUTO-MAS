@@ -243,8 +243,8 @@ class Emulator2Manager(DeviceBase):
         ``manual``：用户在模拟器页手动点的启动（任务路径不传）。只有魔改 AVD 用得上——它开机时就要
         定有没有窗口，手动启动带窗口，任务拉起跟「静默模式」走；雷电 / MuMu 不收这个参数。
 
-        ``allow_mod_avd``：调用方能用魔改 AVD（M9A 特调——声明了 ``supports_mod_avd`` 的特调——与 MAA）。
-        魔改 AVD 目前只支持这两个：设备是魔改 AVD、又不是手动启动、调用方也没放行时直接拒绝，不开机。
+        ``allow_mod_avd``：调用方能用魔改 AVD（MaaFW 脚本——通用项目与各特调——与 MAA）。
+        魔改 AVD 目前只支持这两类：设备是魔改 AVD、又不是手动启动、调用方也没放行时直接拒绝，不开机。
         雷电 / MuMu 不看它。
 
         应用那一步由后端的 :class:`~.applaunch.AppLaunchMixin` 走纯 adb 完成，

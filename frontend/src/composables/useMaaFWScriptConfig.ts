@@ -3,7 +3,6 @@ import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
-import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -141,14 +140,13 @@ type PersistFn = (
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
  *
- * ``allowModAvd``：这个脚本能不能用魔改 AVD（目前只有 M9A）。不能时设备下拉里的魔改 AVD 实例置灰。
+ * 魔改 AVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
   previewData: Ref<MaaFWInterfacePreviewData | null>,
   interfaceLoading: Ref<boolean>,
-  handleChange: PersistFn,
-  allowModAvd: () => boolean = () => false
+  handleChange: PersistFn
 ) {
   const emulatorLoading = ref(false)
   const emulatorOptionsReady = ref(false)
@@ -288,16 +286,6 @@ export function useMaaFWControlConfig(
     if (!slot || slot === '-') return null
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
-
-  // MaaFW 里魔改 AVD 只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
-  const emulatorDeviceSelectOptions = computed(() =>
-    markModAvdOptions(
-      emulatorDeviceOptions.value,
-      value => value !== null && emulator2DeviceTypeBySlot.value[value] === 'avd',
-      allowModAvd(),
-      t('emulator2.avd.unsupportedScript')
-    )
-  )
 
   const selectedCapabilityType = computed(() =>
     isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
@@ -495,7 +483,7 @@ export function useMaaFWControlConfig(
     emulatorOptionsReady,
     emulatorDeviceLoading,
     emulatorOptions,
-    emulatorDeviceOptions: emulatorDeviceSelectOptions,
+    emulatorDeviceOptions,
     emulatorTypeById,
     isMultiEmulatorConfig,
     controllerOptions,
