@@ -13,26 +13,26 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
-    env:
-      GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
     steps:
       - name: 检查工作流写权限令牌
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
         run: |
           if (-not $env:GH_TOKEN) {
             throw '需要 WORKFLOW_TOKEN：Contents/Pull requests/Workflows 写权限，不能回退到 GITHUB_TOKEN'
           }
 
-      - name: 签出 dev
+      - name: 签出 main 的工作流快照
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/dev
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 0
-          token: ${{ secrets.WORKFLOW_TOKEN }}
+          persist-credentials: false
 
       - name: 设置 Python 环境
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -40,10 +40,14 @@ jobs:
           python-version: '3.12'
 
       - name: 创建或更新仅同步 .github 的 PR
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
         run: |
-          # 切换 main 基线后仍使用 dev 的脚本。
+          # 只运行 main 快照的脚本，待同步的 dev 内容仅作为数据。
           $script = Join-Path $env:RUNNER_TEMP 'sync_github_main.py'
           Copy-Item .github/scripts/sync_github_main.py $script
+          gh auth setup-git --hostname github.com
+          if ($LASTEXITCODE -ne 0) { throw '配置 Git 凭据助手失败' }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python $script

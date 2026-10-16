@@ -64,13 +64,22 @@ def sync_github():
     dev_paths = set(
         git("ls-tree", "-r", "--name-only", "origin/dev", "--", ".github").splitlines()
     )
-    unmigrated = [
-        path
-        for path in sorted(main_paths - dev_paths)
-        if not git("log", "-1", "--format=%H", "origin/dev", "--", path)
-    ]
+    # 路径曾出现过不代表 main 当前的内容已迁移到 dev。
+    unmigrated = []
+    for path in sorted(main_paths - dev_paths):
+        main_blob = git("rev-parse", f"origin/main:{path}")
+        if not git(
+            "log",
+            "-1",
+            "--format=%H",
+            f"--find-object={main_blob}",
+            "origin/dev",
+            "--",
+            path,
+        ):
+            unmigrated.append(path)
     if unmigrated:
-        raise ValueError("main 独有的 CI 文件须先迁移到 dev：" + ", ".join(unmigrated))
+        raise ValueError("main 独有的 CI 内容须先迁移到 dev：" + ", ".join(unmigrated))
 
     remote = git("ls-remote", "--heads", "origin", "refs/heads/" + branch)
     if remote:
