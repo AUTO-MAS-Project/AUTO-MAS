@@ -229,7 +229,7 @@
               </a-input-group>
             </a-form-item>
           </a-col>
-          <!-- 游戏已经开着时第二行整行隐藏，键位映射挪到启动方式右边 -->
+          <!-- 由脚本自身控制游戏时第二行整行隐藏，键位映射挪到启动方式右边 -->
           <MaaFWHotkeyField
             v-if="launchMode !== 'DirectExe'"
             :script-id="scriptId"

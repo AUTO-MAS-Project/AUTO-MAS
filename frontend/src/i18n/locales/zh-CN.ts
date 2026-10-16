@@ -1768,7 +1768,7 @@ export default {
     commandLineProcessTrack: '要追踪的进程启动参数。不确定时留空',
     couldNotLoadPlan: '计划配置加载失败，请检查计划是否存在',
     letMasLaunchGame: '由 MAS 启动和关闭游戏',
-    launchGameOtherWay: '游戏已经开着，MAS 只连接窗口',
+    launchGameOtherWay: '由脚本自身控制游戏',
     mfwUnityResolution: '尝试修改 Unity 类游戏分辨率',
     envPanelTitle: '运行环境',
     taskDescriptionLabel: '说明',
