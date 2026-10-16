@@ -1876,7 +1876,7 @@ export default {
       'Command line of the process to track. Leave empty if you are not sure',
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'MAS starts and closes the game',
-    launchGameOtherWay: 'The game is already running; MAS only attaches to the window',
+    launchGameOtherWay: 'The script controls the game itself',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
     taskDescriptionLabel: 'Notes',
