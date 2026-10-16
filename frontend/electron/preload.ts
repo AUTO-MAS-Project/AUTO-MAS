@@ -4,6 +4,7 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotSelection,
 } from '../src/types/desktopMascot'
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -206,8 +207,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importMascot: (zipPath: string, replace = false) =>
     ipcRenderer.invoke('mascot:import', zipPath, replace),
   removeMascot: (id: string) => ipcRenderer.invoke('mascot:remove', id),
-  onMascotChanged: (callback: () => void) => {
-    const listener = () => callback()
+  onMascotChanged: (callback: (selection?: DesktopMascotSelection) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, selection?: DesktopMascotSelection) =>
+      callback(selection)
     ipcRenderer.on('mascot-changed', listener)
     return () => ipcRenderer.removeListener('mascot-changed', listener)
   },

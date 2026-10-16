@@ -5,7 +5,7 @@ import type {
   DesktopMascotMenuLabels,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
-import { registerDesktopMascotHandlers } from '../ipc/mascotHandlers'
+import { broadcastMascotChange, registerDesktopMascotHandlers } from '../ipc/mascotHandlers'
 import { getLogger } from './logger'
 import { DesktopMascotService, type DesktopMascotPreferences } from './desktopMascotService'
 
@@ -119,6 +119,13 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
       if (disposed || !patch || typeof patch !== 'object') return
       if (['appearanceId', 'desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
         sync()
+        if (['desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
+          const preferences = options.readPreferences()
+          broadcastMascotChange({
+            id: preferences.desktopMascotId ?? null,
+            enabled: preferences.desktopMascotEnabled !== false,
+          })
+        }
       } else if (
         ['desktopMascotFps', 'desktopMascotAnimationPaused', 'desktopMascotIdleMessagePaused'].some(
           key => key in patch

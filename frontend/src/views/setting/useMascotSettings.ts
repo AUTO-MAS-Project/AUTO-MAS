@@ -6,6 +6,10 @@ import { useTheme } from '@/composables/useTheme'
 import type { MascotSummary } from '@/types/mascotPack'
 import { getConfig, saveConfig } from '@/utils/config'
 
+export const MASCOT_MIN_FPS = 1
+export const MASCOT_MAX_FPS = 120
+const DEFAULT_CUSTOM_FPS = 60
+
 export function useMascotSettings() {
   const { t } = useI18n()
   const { activeAppearance } = useTheme()
@@ -16,13 +20,14 @@ export function useMascotSettings() {
   const selectedId = ref<string | null>(null)
   const enabled = ref(true)
   const fpsMode = ref<'package' | 'custom'>('package')
-  const fps = ref<number | null>(60)
+  const fps = ref<number | null>(DEFAULT_CUSTOM_FPS)
   const loading = ref(true)
   const selecting = ref(false)
   const toggling = ref(false)
   const saving = ref(false)
   const loadFailed = ref(false)
   let refreshRevision = 0
+  let selectionRevision = 0
   let savedFps: number | null = null
   let requestedFps: number | null = null
   let fpsSaveRevision = 0
@@ -51,6 +56,7 @@ export function useMascotSettings() {
 
   const refresh = async (): Promise<void> => {
     const revision = ++refreshRevision
+    const selectionAtStart = selectionRevision
     loading.value = true
     try {
       const [config, items] = await Promise.all([
@@ -58,12 +64,14 @@ export function useMascotSettings() {
         window.electronAPI.listMascots?.() ?? [],
       ])
       if (revision !== refreshRevision) return
-      selectedId.value = config.desktopMascotId ?? null
-      enabled.value = config.desktopMascotEnabled !== false
+      if (selectionAtStart === selectionRevision) {
+        selectedId.value = config.desktopMascotId ?? null
+        enabled.value = config.desktopMascotEnabled !== false
+      }
       savedFps = config.desktopMascotFps ?? null
       requestedFps = savedFps
       fpsMode.value = savedFps === null ? 'package' : 'custom'
-      fps.value = savedFps ?? 60
+      fps.value = savedFps ?? DEFAULT_CUSTOM_FPS
       mascots.value = items
       loadFailed.value = false
     } catch (error) {
@@ -129,8 +137,13 @@ export function useMascotSettings() {
       await persistFps(null)
       return
     }
-    if (fps.value === null || !Number.isInteger(fps.value) || fps.value < 1 || fps.value > 120) {
-      fps.value = savedFps ?? 60
+    if (
+      fps.value === null ||
+      !Number.isInteger(fps.value) ||
+      fps.value < MASCOT_MIN_FPS ||
+      fps.value > MASCOT_MAX_FPS
+    ) {
+      fps.value = savedFps ?? DEFAULT_CUSTOM_FPS
       return
     }
     await persistFps(fps.value)
@@ -139,7 +152,7 @@ export function useMascotSettings() {
   const setFpsMode = async (next: SelectValue): Promise<void> => {
     if (busy.value || (next !== 'package' && next !== 'custom')) return
     fpsMode.value = next
-    fps.value ??= 60
+    fps.value ??= DEFAULT_CUSTOM_FPS
     await saveFps()
   }
 
@@ -223,8 +236,14 @@ export function useMascotSettings() {
   }
 
   onMounted(() => {
-    unsubscribe = window.electronAPI.onMascotChanged?.(() => {
-      void refresh()
+    unsubscribe = window.electronAPI.onMascotChanged?.(selection => {
+      if (selection) {
+        selectionRevision++
+        selectedId.value = selection.id
+        enabled.value = selection.enabled
+      } else {
+        void refresh()
+      }
     })
     void refresh()
   })

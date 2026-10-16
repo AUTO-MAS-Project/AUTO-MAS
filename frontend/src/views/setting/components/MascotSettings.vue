@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DeleteOutlined, UploadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { useMascotSettings } from '../useMascotSettings'
+import { MASCOT_MAX_FPS, MASCOT_MIN_FPS, useMascotSettings } from '../useMascotSettings'
 
 const { t } = useI18n()
 const {
@@ -108,8 +108,8 @@ const {
             v-if="fpsMode === 'custom'"
             class="mascot-fps-input"
             :value="fps"
-            :min="1"
-            :max="120"
+            :min="MASCOT_MIN_FPS"
+            :max="MASCOT_MAX_FPS"
             :precision="0"
             :step="1"
             :disabled="busy || loadFailed"

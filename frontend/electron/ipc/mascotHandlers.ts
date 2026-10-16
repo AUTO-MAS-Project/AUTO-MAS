@@ -4,6 +4,7 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotSelection,
 } from '../../src/types/desktopMascot'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -25,9 +26,9 @@ function forgetSource(id: string): void {
   }
 }
 
-export function broadcastMascotChange(): void {
+export function broadcastMascotChange(selection?: DesktopMascotSelection): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send('mascot-changed')
+    if (!window.isDestroyed()) window.webContents.send('mascot-changed', selection)
   }
 }
 

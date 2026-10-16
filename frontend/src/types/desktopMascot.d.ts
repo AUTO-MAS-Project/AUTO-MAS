@@ -30,6 +30,11 @@ export type DesktopMascotUpdate = Partial<
   Omit<DesktopMascotData, 'imageUrl' | 'animation' | 'width' | 'height' | 'opacity'>
 >
 
+export interface DesktopMascotSelection {
+  id: string | null
+  enabled: boolean
+}
+
 export type DesktopMascotPointerAction = 'hover' | 'start' | 'move' | 'end'
 
 export interface DesktopMascotColors {
