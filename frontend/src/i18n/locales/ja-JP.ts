@@ -1740,7 +1740,7 @@ export default {
     commandLineProcessTrack: '追跡するプロセスの起動引数です。分からない場合は空のままで構いません',
     couldNotLoadPlan: 'プラン設定を読み込めませんでした。プランが存在するか確認してください',
     letMasLaunchGame: 'MAS がゲームを起動・終了する',
-    launchGameOtherWay: 'ゲームは起動済みで、MAS はウィンドウに接続するだけ',
+    launchGameOtherWay: 'スクリプト自身がゲームを制御する',
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
     taskDescriptionLabel: '説明',
