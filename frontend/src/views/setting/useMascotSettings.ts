@@ -15,10 +15,17 @@ export function useMascotSettings() {
   const mascots = ref<MascotSummary[]>([])
   const selectedId = ref<string | null>(null)
   const enabled = ref(true)
+  const fpsMode = ref<'package' | 'custom'>('package')
+  const fps = ref<number | null>(60)
   const loading = ref(true)
+  const selecting = ref(false)
+  const toggling = ref(false)
   const saving = ref(false)
   const loadFailed = ref(false)
   let refreshRevision = 0
+  let savedFps: number | null = null
+  let requestedFps: number | null = null
+  let fpsSaveRevision = 0
   let unsubscribe: (() => void) | undefined
 
   const busy = computed(() => loading.value || saving.value)
@@ -53,6 +60,10 @@ export function useMascotSettings() {
       if (revision !== refreshRevision) return
       selectedId.value = config.desktopMascotId ?? null
       enabled.value = config.desktopMascotEnabled !== false
+      savedFps = config.desktopMascotFps ?? null
+      requestedFps = savedFps
+      fpsMode.value = savedFps === null ? 'package' : 'custom'
+      fps.value = savedFps ?? 60
       mascots.value = items
       loadFailed.value = false
     } catch (error) {
@@ -65,9 +76,10 @@ export function useMascotSettings() {
   }
 
   const select = async (next: SelectValue): Promise<void> => {
-    if (busy.value || typeof next !== 'string') return
+    if (busy.value || selecting.value || typeof next !== 'string') return
     const id = next === 'theme' ? null : next.slice('mascot:'.length)
-    saving.value = true
+    if (id === selectedId.value) return
+    selecting.value = true
     try {
       await saveConfig({ desktopMascotId: id })
       selectedId.value = id
@@ -75,13 +87,13 @@ export function useMascotSettings() {
       logger.error('保存桌宠选择失败:', error)
       message.error(t('setting.basic.mascotSaveFailed'))
     } finally {
-      saving.value = false
+      selecting.value = false
     }
   }
 
   const setEnabled = async (next: boolean): Promise<void> => {
-    if (busy.value) return
-    saving.value = true
+    if (busy.value || toggling.value || next === enabled.value) return
+    toggling.value = true
     try {
       await saveConfig({ desktopMascotEnabled: next })
       enabled.value = next
@@ -89,12 +101,50 @@ export function useMascotSettings() {
       logger.error('保存桌宠显示设置失败:', error)
       message.error(t('setting.basic.mascotSaveFailed'))
     } finally {
-      saving.value = false
+      toggling.value = false
     }
   }
 
-  const importMascot = async (): Promise<void> => {
+  const setFps = (next: number | string | null): void => {
+    if (next === null || typeof next === 'number') fps.value = next
+  }
+
+  const persistFps = async (next: number | null): Promise<void> => {
+    if (next === requestedFps) return
+    const revision = ++fpsSaveRevision
+    requestedFps = next
+    try {
+      await saveConfig({ desktopMascotFps: next })
+      savedFps = next
+    } catch (error) {
+      if (revision === fpsSaveRevision) requestedFps = savedFps
+      logger.error('保存桌宠帧率失败:', error)
+      message.error(t('setting.basic.mascotSaveFailed'))
+    }
+  }
+
+  const saveFps = async (): Promise<void> => {
     if (busy.value) return
+    if (fpsMode.value === 'package') {
+      await persistFps(null)
+      return
+    }
+    if (fps.value === null || !Number.isInteger(fps.value) || fps.value < 1 || fps.value > 120) {
+      fps.value = savedFps ?? 60
+      return
+    }
+    await persistFps(fps.value)
+  }
+
+  const setFpsMode = async (next: SelectValue): Promise<void> => {
+    if (busy.value || (next !== 'package' && next !== 'custom')) return
+    fpsMode.value = next
+    fps.value ??= 60
+    await saveFps()
+  }
+
+  const importMascot = async (): Promise<void> => {
+    if (busy.value || selecting.value) return
     if (!window.electronAPI.importMascot) {
       message.error(t('setting.basic.mascotUnsupported'))
       return
@@ -145,7 +195,7 @@ export function useMascotSettings() {
   }
 
   const removeMascot = (): void => {
-    if (busy.value || !selectedId.value) return
+    if (busy.value || selecting.value || !selectedId.value) return
     const id = selectedId.value
     modal.confirm({
       ...modalOptions,
@@ -188,15 +238,22 @@ export function useMascotSettings() {
     selectedId,
     value,
     enabled,
+    fpsMode,
+    fps,
     available,
     options,
     busy,
     loading,
+    selecting,
+    toggling,
     saving,
     loadFailed,
     refresh,
     select,
     setEnabled,
+    setFps,
+    saveFps,
+    setFpsMode,
     importMascot,
     removeMascot,
   }

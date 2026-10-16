@@ -4807,6 +4807,11 @@ export default {
       mascotSection: 'Desktop pet',
       mascotSelect: 'Pet selection',
       mascotFollowTheme: 'Follow current theme',
+      mascotFps: 'Animation frame rate',
+      mascotFpsPackage: 'Follow animation package',
+      mascotFpsCustom: 'Custom',
+      mascotFpsTip:
+        'Use the package rate or set 1–120 FPS. Press Enter or leave the input to save; the packaged frames loop at the selected rate.',
       importMascot: 'Import pet',
       removeMascot: 'Remove pet',
       mascotImportTip:

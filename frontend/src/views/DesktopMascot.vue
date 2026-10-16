@@ -104,21 +104,36 @@ watch(
     [
       data.value?.animation,
       data.value?.state,
+      dragging.value,
+      lookFrame.value,
+      data.value?.reaction,
+    ] as const,
+  () => {
+    frame.value = 0
+  }
+)
+
+watch(
+  () =>
+    [
+      data.value?.animation,
+      data.value?.state,
       data.value?.animate,
       reducedMotion.value && !data.value?.motionOverride,
       dragging.value,
       lookFrame.value,
       data.value?.reaction,
+      data.value?.fps,
     ] as const,
-  ([animation, state, animate, reduced, isDragging, look, reaction]) => {
+  ([animation, state, animate, reduced, isDragging, look, reaction, customFps]) => {
     clearInterval(frameTimer)
-    frame.value = 0
     if (!animation || !animate || reduced) return
     if (!isDragging && reaction === 'stopped') return
     if (!isDragging && !reaction && state === 'idle' && look !== null && animation.lookImageUrl)
       return
     const fps =
-      isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps
+      customFps ??
+      (isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps)
     frameTimer = setInterval(() => {
       frame.value = (frame.value + 1) % animation.columns
     }, 1000 / fps)

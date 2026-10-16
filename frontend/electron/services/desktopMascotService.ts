@@ -15,6 +15,8 @@ export interface DesktopMascotPreferences {
   /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
   desktopMascotId?: string | null
   desktopMascotEnabled?: boolean
+  /** 为空时使用动画包的帧率。 */
+  desktopMascotFps?: number | null
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
   desktopMascotPosition?: Point
@@ -125,6 +127,22 @@ export class DesktopMascotService {
       animate: animate && !this.animationPaused,
     })
     if (working || !animate) this.updateLook(null)
+  }
+
+  /** 播放偏好只同步状态，不重新读取图集和计算命中区域。 */
+  syncPreferences(): void {
+    if (this.disposed || !this.data) return
+    const preferences = this.options.readPreferences()
+    this.animationPaused = preferences.desktopMascotAnimationPaused === true
+    this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
+    this.motionOverride = typeof preferences.desktopMascotAnimationPaused === 'boolean'
+    this.updateData({
+      fps: preferences.desktopMascotFps ?? null,
+      animate: this.animate && !this.animationPaused,
+      motionOverride: this.motionOverride,
+      idleMessage: this.idleMessagePaused ? undefined : this.idleMessage,
+    })
+    if (this.animationPaused) this.updateLook(null)
   }
 
   showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): void {
@@ -350,6 +368,7 @@ export class DesktopMascotService {
       state: this.working ? 'working' : 'idle',
       animate: this.animate && !this.animationPaused,
       motionOverride: this.motionOverride,
+      fps: preferences.desktopMascotFps ?? null,
       width,
       height,
       colors: this.colors,

@@ -5,6 +5,8 @@ export interface DesktopMascotData {
   state: 'idle' | 'working'
   animate: boolean
   motionOverride: boolean
+  /** 为空时按动画包的待机、工作帧率播放。 */
+  fps?: number | null
   width: number
   height: number
   colors: DesktopMascotColors

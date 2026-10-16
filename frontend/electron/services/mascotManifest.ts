@@ -40,8 +40,8 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
     const raw = assertPlainObject(value, 'mascot.animation')
     const assetPath = assertAssetPath(raw.path, true)
     const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 16)
-    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 24)
-    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 24)
+    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 120)
+    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 120)
     const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
     const resultPath =
       raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)
