@@ -477,9 +477,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.game_process_manager = ProcessManager()
         # 启动游戏前临时改写的 Unity 注册表分辨率，游戏关闭后恢复；None 表示没改
         self.game_resolution_override: UnityGameResolutionOverride | None = None
-        # 本轮游戏窗口出现的单调时钟时刻，只在游戏是刚启动的（MAS 拉起、或接管时
-        # 等到窗口冒出来）才记；据此算首个任务的最早下发时刻。None 表示游戏早就在跑。
-        self.game_window_ready_at: float | None = None
+        # 本轮游戏刚启动的单调时钟时刻，据此算首个任务的最早下发时刻。只在游戏是刚
+        # 启动的才记：桌面游戏是窗口出现那一刻（MAS 拉起、或接管时等到窗口冒出来），
+        # 模拟器是 MAS 随模拟器把游戏拉到前台那一刻。None 表示游戏早就在跑。
+        self.game_started_at: float | None = None
         self.project_lock_key: str | None = None
         self.runner_process: asyncio.subprocess.Process | None = None
         self.pretask_process: asyncio.subprocess.Process | None = None
@@ -1242,6 +1243,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         device_info = await self.emulator_manager.open(
             emulator_index, package_name, **self._mod_avd_open_kwargs()
         )
+        # 游戏是这次刚拉起的才等画面（与桌面游戏同一道闸门）：已在前台、没给包名、
+        # 拉起失败都不等；旧式模拟器管理器不回报拉应用结果，同样不等
+        if getattr(device_info, "app_launch", "") == "launched":
+            self.game_started_at = time.monotonic()
+            self._append_log(f"已随模拟器启动游戏: {package_name}")
+        else:
+            self.game_started_at = None
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
@@ -2489,6 +2497,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
             self._cached_adb_address = None
             self._cached_device_info = None
+            # 游戏随模拟器一起关了；下一轮重开时按那次拉起重新起算
+            self.game_started_at = None
             # 雷电截图增强的 extras 里带着这次启动的 dnplayer pid；重开后还用旧 pid，
             # MaaFW 建不出截图实例（Failed to create ld inst），这一轮当场 connect 失败。
             self._cached_adb_profile = None
@@ -2539,7 +2549,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._note_launch_arguments_skipped()
             if await self._wait_for_desktop_game_ready(game_path):
                 # 进程在、窗口是等出来的：游戏正在启动，和 MAS 自己拉起的一样要等画面
-                self.game_window_ready_at = time.monotonic()
+                self.game_started_at = time.monotonic()
             await self._activate_desktop_game_window(game_path)
             return
 
@@ -2562,7 +2572,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
             self.opened_game = True
             await self._wait_for_desktop_game_ready(game_path)
-            self.game_window_ready_at = time.monotonic()
+            self.game_started_at = time.monotonic()
         except Exception:
             self.opened_game = False
             with suppress(Exception):
@@ -2737,27 +2747,28 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         raise RuntimeError(f"游戏进程在 {wait_time}s 内未启动: {game_path.name}")
 
     def _task_start_not_before(self) -> float | None:
-        """刚启动的桌面游戏，第一个任务最晚可下发的墙钟时刻；不用等时返回 None。
+        """本轮刚启动的游戏，第一个任务最晚可下发的墙钟时刻；不用等时返回 None。
 
-        沿用 ``Game.WaitTime``——等窗口出现用的就是它，等画面稳定再用一次同样的上限，
-        用户只需要理解一个「启动等待时间」。从窗口出现起算，扣掉已经过去的部分
-        （窗口前置、运行池租约、job 落盘）；剩下的交给 worker 在初始化完成后补足，
+        沿用 ``Game.WaitTime``，用户只需要理解一个「启动等待时间」：桌面游戏等窗口出现
+        用的就是它，等画面稳定再用一次同样的上限；模拟器上从 MAS 随模拟器把游戏拉到
+        前台起算。起算时刻（``game_started_at``）之后已经过去的部分（窗口前置、ADB 路径
+        解析、运行池租约、job 落盘）先扣掉；剩下的交给 worker 在初始化完成后补足，
         这样 MaaFW 加载资源、连 controller、起 agent 的几秒到十几秒也算在等待里。
-        worker 看到画面稳定会提前放行，这个时刻只是上限。重试轮次时游戏已经跑了
-        很久，剩余为负，直接不等。
+        worker 看到画面稳定会提前放行，这个时刻只是上限。游戏早就在跑时剩余为负，
+        直接不等。
         """
 
-        ready_at = self.game_window_ready_at
-        if ready_at is None:
+        started_at = self.game_started_at
+        if started_at is None:
             return None
         settle = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
         if settle <= 0:
             return None
-        remaining = settle - (time.monotonic() - ready_at)
+        remaining = settle - (time.monotonic() - started_at)
         if remaining <= 0:
             return None
         self._append_log(
-            f"游戏窗口出现后最多等 {settle}s 再下发任务，画面稳定即提前；"
+            f"游戏刚启动，最多等 {settle}s 再下发任务，画面稳定即提前；"
             f"剩余约 {remaining:.0f}s（与 MaaFW 初始化并行）"
         )
         return time.time() + remaining
@@ -2936,7 +2947,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return False
         finally:
             self.opened_game = False
-            self.game_window_ready_at = None
+            self.game_started_at = None
             await self._restore_game_resolution_override()
 
     async def _try_enter_project_path(self) -> bool:

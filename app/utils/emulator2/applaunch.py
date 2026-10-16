@@ -54,7 +54,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -416,6 +416,9 @@ class AppLaunchMixin(DeviceBase):
         adb 要么连不上这台设备、要么安卓一直没起完，脚本接手也只会报 ADB 连接异常。
         在这里判失败，调用方会按「模拟器启动失败」关掉它再重试，而不是带着一台用不了的
         模拟器往下跑。
+
+        拉应用的结果放在返回值的 ``app_launch`` 里（原因码，见 :data:`LaunchReason`）：调用方要
+        分清应用是这次刚拉起的（``launched``，还在加载）还是本来就在前台（``already-running``）。
         """
         try:
             await self.prepare_launch(idx)
@@ -433,6 +436,8 @@ class AppLaunchMixin(DeviceBase):
                     f"实例 {idx} 已在线，但等待安卓系统启动完成超时"
                     f"（ADB {info.adb_address}）"
                 )
+            # 复制一份再填：后端可能把同一个 DeviceInfo 留作缓存
+            info = replace(info, app_launch=result.reason)
         return info
 
     async def launch_app(

@@ -1934,7 +1934,7 @@ export default {
       'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
-      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
+      'When MAS has just launched the game, the first task waits at most this long. For desktop games MAS first waits for the window to appear and then for the screen to settle, and both waits share this cap; on emulators it waits for the screen to settle after launching the game along with the emulator. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Freshly started games are usually still on a black loading screen, and posting tasks too early makes the script report a recognition failure or a stuck game. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     mfwHotkey: 'Key bindings',
