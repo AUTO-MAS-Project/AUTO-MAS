@@ -2997,8 +2997,9 @@ class MaaFWConfig(ConfigBase):
     FLAVOR: str | None = None
     ## Run.TaskTimeLimitOverrides 的默认值（JSON 字符串，任务名 → 分钟）；通用 MaaFW 不内置
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = "{ }"
-    ## Game.WaitTime（启动等待时间，秒）的默认值；特调可按自己的游戏改
-    DEFAULT_GAME_WAIT_TIME = 60
+    ## Game.WaitTime（启动等待时间，秒）的默认值；特调可按自己的游戏改。120：模拟器上终末地
+    ## 冷启动到标题要 76~96s（2026-10-16 实测），上限要盖得住；平常靠读盘判断提前下发
+    DEFAULT_GAME_WAIT_TIME = 120
 
     def __init__(self) -> None:
 
@@ -3102,9 +3103,9 @@ class MaaFWConfig(ConfigBase):
         ## 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满；
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
-        ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器把游戏拉到前台后
-        ## 固定等这么久，不按画面提前；等满还是黑屏才继续等。游戏进程已在（不论在不在
-        ## 前台）时不等。
+        ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器冷启动游戏后最多等
+        ## 这么久，画面有内容且客体读盘连续 8 秒低于 1 MB/s（游戏加载完）就提前下发；等满
+        ## 还是黑屏才继续等。游戏进程已在（不论在不在前台）时不等。
         self.Game_WaitTime = ConfigItem(
             "Game", "WaitTime", self.DEFAULT_GAME_WAIT_TIME, RangeValidator(0, 9999)
         )

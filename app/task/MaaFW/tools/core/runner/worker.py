@@ -165,7 +165,7 @@ def main() -> int:
             failure_screenshot_dir=Path(screenshot_dir) if screenshot_dir else None,
             failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
             task_start_not_before=float(not_before) if not_before is not None else None,
-            task_start_fixed_wait=payload.get("taskStartFixedWait") is True,
+            task_start_gate_mode=str(payload.get("taskStartGateMode") or "screen"),
             run_deadline_at=float(deadline_at) if deadline_at is not None else None,
             task_time_limit_seconds=(
                 int(task_limit_seconds) if task_limit_seconds is not None else 0

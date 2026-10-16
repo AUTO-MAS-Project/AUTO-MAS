@@ -361,14 +361,18 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
   SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
   7~9s）后每次冷启动都撞上。
-  - **模拟器冷启动不提前放行**：上面两条提前放行只用于桌面。模拟器路径上宿主同时传
-    `taskStartFixedWait`（`runner._wait_task_start_fixed`）：worker 等满 `Game.WaitTime`，之后画面有内容
-    就下发；还是黑屏 / 纯色就每秒再看，出画面再下发，从开始等算满 `TASK_START_GATE_MAX_SECONDS`
-    照常下发；截不到图按时下发。核心只认这个开关，不判断设备类型。真机数据（2026-10-16 魔改 AVD
-    实测）：终末地加载页和动态标题都一直在动、
-    都有内容，像素判断分不出两者，「20s 有内容」在拉起后 37~48s、仍在「正在加载资源」时就放行；
-    冷启动到标题约 73~75s，MaaEnd 的 `EnterGameRecognition`（认加载页上也有的「公告」按钮，
-    max_hit 60）随后用完，3 次里 2 次判卡死。
+  - **模拟器冷启动按读盘放行**：上面两条按画面提前放行只用于桌面。模拟器路径上宿主传
+    `taskStartGateMode="disk_quiet"`（`runner._wait_task_start_disk_quiet`）：`Game.WaitTime` 仍是上限，
+    worker 每秒经 controller 的 `post_shell` 读一次客体 `/proc/diskstats`（只算 `/sys/block` 里的整块盘，
+    排除 dm / loop / ram / zram，免得重复计数），画面有内容且读盘连续 8 次（每秒一次）低于 1 MB/s 就
+    提前下发；到上限画面有内容就按上限下发，还是黑屏 / 纯色就继续等到出画面，从开始等算满
+    `TASK_START_GATE_MAX_SECONDS` 照常下发；截不到图或读不到 diskstats（controller 不支持 shell 等）
+    退回按时间、等满上限。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
+    模式，不判断设备类型。真机数据（2026-10-16 魔改 AVD 实测）：终末地加载页和动态标题都一直在动、
+    都有内容，「20s 有内容」在拉起后 37~48s、仍在加载资源时就放行，冷启动到标题要 76~96s；CPU 与
+    出帧也是标题比加载更忙（星铁标题只有 35 fps），都不能当判据；读盘量这套阈值在终末地、星铁、
+    1999 上都在到标题后 5~15s 放行，窗口取 5 次会被星铁 logo 与加载页之间的读盘间歇骗得早放 41s。
+    通用默认等待时间因此是 120s（`MaaFWConfig.DEFAULT_GAME_WAIT_TIME`），M9A 特调 15s。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
   `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于
