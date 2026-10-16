@@ -22,13 +22,12 @@
 
 
 import asyncio
-import json
 
 from fastapi import APIRouter, Body, Query
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.core import Config, MainTimer, TaskManager
+from app.core import Config, TaskManager
 from app.core.lifecycle import BackendBusyError
 from app.models.schema import *
 from app.services import Updater
@@ -46,34 +45,12 @@ class BackendOperationMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
-        if scope["type"] == "http" and path == "/api/core/health":
-            status = 0
-            body = bytearray()
-            complete = False
-
-            async def send_health(message: Message) -> None:
-                nonlocal status, complete
-                await send(message)
-                if message["type"] == "http.response.start":
-                    status = message["status"]
-                elif message["type"] == "http.response.body":
-                    body.extend(message.get("body", b""))
-                    complete = not message.get("more_body", False)
-
-            await self.app(scope, receive, send_health)
-            if status == 200 and complete:
-                health = json.loads(body)
-                if (
-                    health.get("ready") is True
-                    and health.get("backgroundStatus") == "ready"
-                ):
-                    MainTimer.confirm_hot_update_checkpoint()
-            return
         if (
             scope["type"] != "http"
             or not path.startswith("/api/")
             or path
             in {
+                "/api/core/health",
                 "/api/core/ws_meta",
                 "/api/core/close",
                 "/api/update/hot-update",

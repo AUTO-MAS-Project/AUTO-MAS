@@ -20,18 +20,15 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import os
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
 from app.utils.constants import UTC8
-from app.utils.io import read_dict_file, write_file
 from app.utils.platform import IS_WINDOWS
 
 from .community_scheduler import (
@@ -96,8 +93,6 @@ class _MainTimer:
         self._last_cleanup_date: str | None = None
         # 已触发过的 (队列, 时间槽, 计划时刻)，防止秋季回拨重复的钟点再触发一次
         self._timed_fired: set[tuple[str, str, datetime]] = set()
-        # 启动加载后保留磁盘检查点，直到首次成功送达的健康响应确认本次续接。
-        self._hot_update_restored_operation: tuple[str, str, str] | None = None
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
 
@@ -640,100 +635,9 @@ class _MainTimer:
         return min(scheduled).replace(tzinfo=now.tzinfo) if scheduled else None
 
     def begin_hot_update(self) -> None:
+        """首次定时检查前冻结时，仍须复核本进程等待期间的到点任务。"""
         if self._last_timed_check is None:
             self._last_timed_check = _local_now()
-
-    @property
-    def _hot_update_checkpoint_path(self) -> Path:
-        return Config.config_path / "hot-update-scheduler.json"
-
-    def save_hot_update_checkpoint(
-        self, *, operation_id: str, base_commit: str, target_commit: str
-    ) -> None:
-        """短小的检查点沿用原子写入，冻结区间不在工作线程里悬空。"""
-        write_file(
-            self._hot_update_checkpoint_path,
-            {
-                "operationId": operation_id,
-                "baseCommit": base_commit,
-                "targetCommit": target_commit,
-                "lastCheck": (self._last_timed_check or _local_now()).isoformat(),
-                "fired": [
-                    [uid, slot, planned.isoformat()]
-                    for uid, slot, planned in self._timed_fired
-                ],
-            },
-        )
-
-    def clear_hot_update_checkpoint(self, operation_id: str) -> None:
-        path = self._hot_update_checkpoint_path
-        if not path.exists():
-            return
-        try:
-            if read_dict_file(path).get("operationId") == operation_id:
-                path.unlink(missing_ok=True)
-        except Exception as error:
-            logger.opt(exception=error).warning("清除热更调度检查点失败")
-
-    def restore_hot_update_checkpoint(self) -> bool:
-        """只有监督器指定的同一操作可续接；普通启动清掉遗留上下文。"""
-        if self._hot_update_restored_operation is not None:
-            return False
-        path = self._hot_update_checkpoint_path
-        operation_id = os.environ.pop("AUTO_MAS_HOT_UPDATE_OPERATION_ID", "")
-        if not path.exists():
-            return False
-        try:
-            data = read_dict_file(path)
-            if not operation_id or data.get("operationId") != operation_id:
-                path.unlink(missing_ok=True)
-                return False
-            expected = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "").lower()
-            if expected and expected not in (data["baseCommit"], data["targetCommit"]):
-                path.unlink(missing_ok=True)
-                return False
-            last_check = datetime.fromisoformat(data["lastCheck"])
-            if last_check.tzinfo is None:
-                raise ValueError("热更检查时刻缺少时区")
-            fired = {
-                (uid, slot, datetime.fromisoformat(planned))
-                for uid, slot, planned in data["fired"]
-            }
-            self._hot_update_restored_operation = (
-                operation_id,
-                data["baseCommit"],
-                data["targetCommit"],
-            )
-            self._last_timed_check = last_check
-            self._timed_fired = fired
-            TaskManager.suppress_hot_update_startup()
-            logger.info(f"已加载热更调度检查点，等待健康确认：{operation_id}")
-            return True
-        except Exception as error:
-            logger.opt(exception=error).warning("恢复热更调度检查点失败，沿用普通启动")
-            return False
-
-    def confirm_hot_update_checkpoint(self) -> bool:
-        """健康响应实际送达后按原操作确认消费；未就绪崩溃仍可由同一操作重试。"""
-        operation = self._hot_update_restored_operation
-        if operation is None or TaskManager.is_hot_update_guarded():
-            return False
-        try:
-            path = self._hot_update_checkpoint_path
-            data = read_dict_file(path)
-            if (
-                data.get("operationId"),
-                data.get("baseCommit"),
-                data.get("targetCommit"),
-            ) != operation:
-                return False
-            path.unlink()
-            self._hot_update_restored_operation = None
-            logger.info(f"已确认消费热更调度检查点：{operation[0]}")
-            return True
-        except Exception as error:
-            logger.opt(exception=error).warning("确认消费热更调度检查点失败，保留重试")
-            return False
 
 
 MainTimer = _MainTimer()

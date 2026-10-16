@@ -1518,7 +1518,10 @@ class _TaskManager:
         self._hot_update_lease: asyncio.TimerHandle | None = None
         self._backend_operations = 0
         self._backend_operation_tasks: set[asyncio.Future[Any]] = set()
-        self._suppress_startup_always = False
+        # 内部热更不算用户重新打开软件，不重复触发 Always 启动队列。
+        self._suppress_startup_always = bool(
+            os.environ.pop("AUTO_MAS_HOT_UPDATE_OPERATION_ID", "")
+        )
 
     @staticmethod
     def _queue_script_entries(
@@ -2083,7 +2086,7 @@ class _TaskManager:
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
                     if self._suppress_startup_always:
-                        logger.info(f"内部热更续接，跳过重复启动队列：{uid}")
+                        logger.info(f"内部热更重启，跳过重复启动队列：{uid}")
                         continue
                     logger.info(f"启动时需要运行的队列：{uid}")
                     # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
@@ -2172,10 +2175,6 @@ class _TaskManager:
             if pending:
                 raise TimeoutError(f"等待后端在途业务完成超时：{len(pending)} 项")
 
-    def suppress_hot_update_startup(self) -> None:
-        """只在匹配的热更检查点加载后抑制本进程的 Always 启动队列。"""
-        self._suppress_startup_always = True
-
     def is_hot_update_guarded(self) -> bool:
         return (
             self._hot_update_guard is not None
@@ -2216,15 +2215,12 @@ class _TaskManager:
         return None
 
     def _release_hot_update_guard(self, operation: tuple[str, str, str]) -> None:
-        from .timer import MainTimer
-
         if (
             self._hot_update_guard != operation
             or ShutdownCoordinator.closing
             or (Config.server is not None and Config.server.should_exit)
         ):
             return
-        MainTimer.clear_hot_update_checkpoint(operation[0])
         self._hot_update_guard = None
         if self._hot_update_lease is not None:
             self._hot_update_lease.cancel()
@@ -2277,11 +2273,6 @@ class _TaskManager:
                 )
                 if next_scheduled is not None:
                     return False, "scheduledSoon", next_scheduled
-                MainTimer.save_hot_update_checkpoint(
-                    operation_id=operation_id,
-                    base_commit=base_commit,
-                    target_commit=target_commit,
-                )
                 if self._hot_update_lease is not None:
                     self._hot_update_lease.cancel()
                 self._hot_update_lease = asyncio.get_running_loop().call_later(

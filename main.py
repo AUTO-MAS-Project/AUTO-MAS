@@ -288,7 +288,6 @@ def main():
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
-        MainTimer.restore_hot_update_checkpoint()
 
         background_task: asyncio.Task | None = None
 
