@@ -34,13 +34,21 @@ from app.models.notification import (
 from app.models.notification_channel import ChannelTarget, NotifyChannel
 from app.notification_channels.registry import BoundChannels
 
-# 保留现有辅助函数的导入路径；实现只属于对应渠道。
-from app.notification_channels.system.transport import (
-    clip_notify_text as clip_notify_text,
-)
-from app.notification_channels.webhook.transport import (
-    webhook_body_failure as webhook_body_failure,
-)
+
+def clip_notify_text(text: str, limit: int) -> str:
+    """保留辅助函数旧路径，按需调用系统渠道实现。"""
+    from app.notification_channels.system.transport import clip_notify_text as clip
+
+    return clip(text, limit)
+
+
+def webhook_body_failure(text: str, url: str = "") -> str | None:
+    """保留辅助函数旧路径，不在导入宿主时加载可选渠道。"""
+    from app.notification_channels.webhook.transport import (
+        webhook_body_failure as failure,
+    )
+
+    return failure(text, url)
 
 
 class Notification:

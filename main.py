@@ -506,6 +506,9 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
+            from app.core.notify import shutdown_community_notifications
+
+            await shutdown_community_notifications()
             # 通知任务结束后才释放借用的 QQ 连接。渠道本身不关闭共享资源。
             await openclaw_qq_manager.stop()
             await Matomo.close()

@@ -1,0 +1,8 @@
+{
+  "interface_version": 1,
+  "id": "koishi",
+  "entrypoint": "app.notification_channels.koishi:register",
+  "requires": [
+    "websockets"
+  ]
+}

@@ -40,6 +40,8 @@ from app.models.notification import (
 )
 
 if TYPE_CHECKING:
+    from httpx import Proxy
+
     from app.models.config import Webhook
 
 from app.models.notification_channel import ChannelDependencies
@@ -92,7 +94,7 @@ def webhook_body_failure(text: str, url: str = "") -> str | None:
     return None
 
 
-def _webhook_client_kwargs(url: str, proxy: str | None) -> dict:
+def _webhook_client_kwargs(url: str, proxy: str | Proxy | None) -> dict:
     """根据 Webhook 目标地址生成 httpx 客户端参数。
 
     本地/内网目标（loopback、RFC1918 私网等）绕过代理并忽略环境变量中的
@@ -315,7 +317,7 @@ class Sender:
         headers: dict,
         name: str,
         *,
-        proxy: str | None,
+        proxy: str | Proxy | None,
     ) -> None:
         """给企业微信群机器人补发一条图片消息。
 

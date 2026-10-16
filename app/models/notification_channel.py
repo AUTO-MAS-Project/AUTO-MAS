@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from app.models.notification import (
     NotificationCapabilities,
     RenderedNotification,
     SummaryPolicy,
 )
+
+if TYPE_CHECKING:
+    from httpx import Proxy
 
 SCOPE_GLOBAL = "global"
 SCOPE_USER = "user"
@@ -38,7 +41,7 @@ class ChannelDependencies:
     """宿主装配的传输能力；读取器在每次尝试开始时返回当前配置。"""
 
     read_mail: Callable[[], MailTransport]
-    read_proxy: Callable[[], str | None]
+    read_proxy: Callable[[], str | Proxy | None]
     system_enabled: Callable[[], bool]
     smtp_factory: Callable[..., Any]
     http_factory: Callable[..., Any]

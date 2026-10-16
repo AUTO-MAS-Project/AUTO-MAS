@@ -100,30 +100,53 @@ class TargetConfigView:
         return self.__config.Notify_CustomWebhooks
 
 
-def get_notify_channels() -> tuple[NotifyChannel, ...]:
+def _get_registry() -> ChannelRegistry:
+    global _registry
     if _registry is None:
-        raise RuntimeError("通知渠道尚未装配")
-    return tuple(sorted((*_registry.channels, _POLICY), key=lambda c: (c.order, c.key)))
+        from app.notification_channels.discovery import (
+            discover_channels,
+            register_channels,
+        )
+        from app.utils import get_logger
+
+        manifests, discovery_errors = discover_channels()
+        registry, registration_errors = register_channels(manifests)
+        for diagnostic in (*discovery_errors, *registration_errors):
+            get_logger("通知服务").warning(
+                f"通知渠道 {diagnostic.channel} 不可用 ({diagnostic.stage}): {diagnostic.reason}"
+            )
+        _registry = registry
+    return _registry
+
+
+def get_notify_channels() -> tuple[NotifyChannel, ...]:
+    """目录读取不依赖传输装配；未装配时仍禁止发送。"""
+    registry = _get_registry()
+    return tuple(sorted((*registry.channels, _POLICY), key=lambda c: (c.order, c.key)))
 
 
 def initialize_notification_channels() -> None:
     """配置就绪后、开放发送入口前装配；连接仍由原管理器持有。"""
-    global _registry
     from app.services.notification import Notify
 
     if Notify.initialized:
         return
     import smtplib
 
-    import httpx
-    from plyer import notification
-
     from app.core.config import Config
     from app.models.notification_channel import ChannelDependencies, MailTransport
-    from app.services.cmcc_newmsg import send_cmcc_newmsg
-    from app.services.openclaw_qq import openclaw_qq_manager
     from app.utils import get_logger, resource_path
-    from app.utils.websocket import ws_client_manager
+
+    registry = _get_registry()
+    system_notify = None
+    if "system" in registry.by_id:
+        try:
+            from plyer import notification
+
+            # 在事件循环线程解析 plyer 的惰性后端，再交给工作线程调用。
+            system_notify = notification.notify
+        except Exception as exc:
+            get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
     def read_mail() -> MailTransport:
         return MailTransport(
@@ -132,39 +155,50 @@ def initialize_notification_channels() -> None:
             authorization_code=Config.get("Notify", "AuthorizationCode"),
         )
 
+    def read_proxy() -> Any:
+        import httpx
+
+        # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
+        url = Config.proxy_url
+        if not url:
+            return None
+        try:
+            return httpx.Proxy(url)
+        except Exception as exc:
+            get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
+            return None
+
+    def http_client(**kwargs: Any) -> Any:
+        import httpx
+
+        return httpx.AsyncClient(**kwargs)
+
+    def get_client(name: str) -> Any:
+        from app.utils.websocket import ws_client_manager
+
+        return ws_client_manager.get_client(name)
+
+    async def send_qq(**kwargs: Any) -> bool | None:
+        from app.services.openclaw_qq import openclaw_qq_manager
+
+        return await openclaw_qq_manager.send(**kwargs)
+
+    async def send_cmcc(**kwargs: Any) -> None:
+        from app.services.cmcc_newmsg import send_cmcc_newmsg
+
+        await send_cmcc_newmsg(**kwargs)
+
     dependencies = ChannelDependencies(
         read_mail=read_mail,
-        read_proxy=lambda: Config.proxy,
+        read_proxy=read_proxy,
         system_enabled=lambda: bool(Config.get("Notify", "IfPushPlyer")),
         smtp_factory=smtplib.SMTP_SSL,
-        http_factory=httpx.AsyncClient,
-        system_notify=notification.notify,
+        http_factory=http_client,
+        system_notify=system_notify,
         system_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
-        get_client=ws_client_manager.get_client,
-        send_qq=openclaw_qq_manager.send,
-        send_cmcc=send_cmcc_newmsg,
+        get_client=get_client,
+        send_qq=send_qq,
+        send_cmcc=send_cmcc,
         logger=get_logger("通知服务"),
     )
-    # 下一阶段改为只从内置清单发现，注册项已经是唯一行为来源。
-    from app.notification_channels.cmcc import register as register_cmcc
-    from app.notification_channels.koishi import register as register_koishi
-    from app.notification_channels.mail import register as register_mail
-    from app.notification_channels.openclaw_qq import register as register_openclaw_qq
-    from app.notification_channels.serverchan import register as register_serverchan
-    from app.notification_channels.system import register as register_system
-    from app.notification_channels.webhook import register as register_webhook
-
-    registry = ChannelRegistry(
-        [
-            register_system(),
-            register_mail(),
-            register_serverchan(),
-            register_cmcc(),
-            register_webhook(),
-            register_koishi(),
-            register_openclaw_qq(),
-        ]
-    )
-    bound = registry.bind(dependencies)
-    Notify.bind(bound)
-    _registry = registry
+    Notify.bind(registry.bind(dependencies))

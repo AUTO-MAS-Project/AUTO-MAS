@@ -211,6 +211,16 @@ async def drain_task_community_notifications(timeout: float) -> bool:
     return True
 
 
+async def shutdown_community_notifications() -> None:
+    """退出时取消并等待仍由手动签到持有的通知，然后才能释放共享连接。"""
+
+    tasks = [task for task in _PENDING_TASK_COMMUNITY_NOTIFICATIONS if not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def global_target(
     *,
     include_system: bool = False,
@@ -338,9 +348,9 @@ async def _send(
             return True
         except Exception as exc:
             if attempt == attempts:
-                logger.warning(f"{channel}通知发送失败: {exc}")
+                logger.warning(f"{channel}通知发送失败: {type(exc).__name__}")
                 break
-            logger.warning(f"{channel}通知发送失败，将重试: {exc}")
+            logger.warning(f"{channel}通知发送失败，将重试: {type(exc).__name__}")
             if retry_delay > 0:
                 await asyncio.sleep(retry_delay)
     return False
