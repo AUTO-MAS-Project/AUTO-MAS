@@ -79,6 +79,7 @@ logger = get_logger("MaaEnd 自动代理")
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
 _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
+_MAAEND_LAUNCH_GAME_PRETASK = "__MXU_PRETASK__LaunchGamePC"
 _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
 _AUTOMAS_GAME_PRE_ACTION_ID = "automas-endfield"
 _MAAEND_SANITY_TASK_NAMES = {"ProtocolSpace", "AutoEssence"}
@@ -363,9 +364,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 loader = MaaEndResourceLoader.get_loaded(root_path)
             except ValueError as error:
                 return f"MaaEnd 资源加载失败: {error}"
-            if not loader.has_pretask("GameSetting") or not loader.has_task(
-                _MAAEND_CLOSE_GAME_TASK
-            ):
+            if not (
+                loader.has_pretask("GameSetting") or loader.has_pretask("LaunchGamePC")
+            ) or not loader.has_task(_MAAEND_CLOSE_GAME_TASK):
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
             if (
                 account_switch_method == "MAAEND"
@@ -942,7 +943,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
             use_mas_account_switch = account_switch_method == "MAS"
-            # MAAEND 入口由 MXU 的 GameSetting pretask 启动游戏；MAS 兼容入口
+            # MAAEND 入口由 MXU 的预任务和前置程序启动游戏；MAS 兼容入口
             # 必须先让游戏进入可交互状态，再交给旧的游戏内登录流程。
             try:
                 if self.emulator_manager is None:
@@ -966,7 +967,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                                 self.script_config.get("Game", "WaitTime")
                             )
                     else:
-                        # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
+                        # Win32 游戏由 MXU 的预任务和前置程序负责启动。
                         logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
@@ -1648,18 +1649,40 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 or not has_later_mode
                 and self.script_config.get("Game", "CloseOnFinish")
             )
-            if if_quick_config or self.script_config.get("Game", "SetResolution"):
-                _place_managed_task(
+            loader = MaaEndResourceLoader.get_loaded(self.maaend_root_path)
+            uses_launch_pretask = loader.has_pretask("LaunchGamePC")
+            apply_settings = self.mode == self.first_run_mode and bool(
+                self.script_config.get("Game", "SetResolution")
+            )
+            if (
+                if_quick_config
+                or self.script_config.get("Game", "SetResolution")
+                or uses_launch_pretask
+            ):
+                setting_task = _place_managed_task(
                     maaend_tasks,
-                    task_name=_MAAEND_GAME_SETTING_PRETASK,
-                    task_id="automas-gamesetting",
-                    controller_type=controller_type,
-                    enabled=(
-                        self.mode == self.first_run_mode
-                        and bool(self.script_config.get("Game", "SetResolution"))
+                    task_name=(
+                        _MAAEND_LAUNCH_GAME_PRETASK
+                        if uses_launch_pretask
+                        else _MAAEND_GAME_SETTING_PRETASK
                     ),
+                    task_id=(
+                        "automas-launch-game"
+                        if uses_launch_pretask
+                        else "automas-gamesetting"
+                    ),
+                    controller_type=controller_type,
+                    enabled=uses_launch_pretask or apply_settings,
                     first=True,
                 )
+                if uses_launch_pretask:
+                    # 新版预任务同时负责启动；设置开关不能禁用整个启动入口。
+                    setting_task.setdefault("optionValues", {})[
+                        "LaunchGamePCGameSetting"
+                    ] = {"type": "switch", "value": apply_settings}
+                    for task in maaend_tasks:
+                        if task.get("taskName") == _MAAEND_GAME_SETTING_PRETASK:
+                            task["enabled"] = False
             if if_quick_config or close_after_mode:
                 _place_managed_task(
                     maaend_tasks,
