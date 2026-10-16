@@ -31,6 +31,8 @@ import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerMascotHandlers } from './ipc/mascotHandlers'
 import { createDesktopMascotHost } from './services/desktopMascotHost'
 import type { DesktopMascotPreferences } from './services/desktopMascotService'
+import { getAppearance } from './services/appearanceService'
+import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -648,6 +650,12 @@ const desktopMascot = createDesktopMascotHost({
   readPreferences: loadConfig,
   savePreferences: patch => saveConfig({ ...loadConfig(), ...patch }),
   getMainWindow: () => mainWindow,
+  resolveAssets: ({ desktopMascotId, appearanceId }) =>
+    desktopMascotId
+      ? getMascot(app.getPath('userData'), desktopMascotId)
+      : appearanceId
+        ? getAppearance(app.getPath('userData'), appearanceId)
+        : null,
 })
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
@@ -2269,6 +2277,7 @@ app.whenReady().then(async () => {
 
   registerAppearanceHandlers({ onChanged: desktopMascot.sync })
   registerMascotHandlers(desktopMascot.sync)
+  desktopMascot.mount()
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
