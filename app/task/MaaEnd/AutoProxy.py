@@ -38,7 +38,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
-from app.services.endfield_launcher import resolve_launcher_exe
+from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
@@ -413,17 +413,78 @@ class AutoProxyTask(ScriptAutoProxyBase):
         return method if method in {"MAS", "MAAEND"} else "MAAEND"
 
     def _launch_mode(self) -> str:
-        """启动方式由配置验证器保证有效。"""
-        return self.script_config.get("Game", "LaunchMode")
+        """旧 Client 配置按当前资源入口保留原行为，显式选择不自动切换。"""
+        mode = self.script_config.get("Game", "LaunchMode")
+        if mode == "Client":
+            root_path = self._maaend_root_path()
+            if root_path is None:
+                raise ValueError("MaaEnd 路径未配置")
+            loader = MaaEndResourceLoader.get_loaded(root_path)
+            controller = str(self.script_config.get("Game", "ControllerType"))
+            return (
+                "MaaEnd"
+                if controller in loader.pretask_controllers("LaunchGamePC")
+                else "MAS"
+            )
+        return mode
 
-    def _game_setting_pretask(self) -> str:
-        """按资源能力选择入口，兼容正式版与测试版，不依赖版本号。"""
-        loader = MaaEndResourceLoader.get_loaded(self.maaend_root_path)
-        if self._launch_mode() == "Launcher" and loader.has_pretask("GameSetting"):
+    def _game_setting_pretask(self) -> str | None:
+        """MAS 两种启动方式只复用独立设置入口，避免附带启动游戏。"""
+        root_path = self._maaend_root_path()
+        if root_path is None:
+            raise ValueError("MaaEnd 路径未配置")
+        loader = MaaEndResourceLoader.get_loaded(root_path)
+        controller = str(self.script_config.get("Game", "ControllerType"))
+        if self._launch_mode() == "MaaEnd":
+            if controller in loader.pretask_controllers("LaunchGamePC"):
+                return _MAAEND_LAUNCH_GAME_PRETASK
+            return None
+        if controller in loader.pretask_controllers("GameSetting"):
             return _MAAEND_GAME_SETTING_PRETASK
-        if loader.has_pretask("LaunchGamePC"):
-            return _MAAEND_LAUNCH_GAME_PRETASK
-        return _MAAEND_GAME_SETTING_PRETASK
+        return None
+
+    async def _start_game(self, *, preserve_running_game: bool = False) -> None:
+        """首轮启动与更新重启共用用户选择，显示设置不支持时保留配置。"""
+        mode = self._launch_mode()
+        if (
+            self.script_config.get("Game", "SetResolution")
+            and self._game_setting_pretask() is None
+        ):
+            logger.warning("当前启动方式不支持启动时设置分辨率，本轮使用游戏现有设置")
+        if mode == "Launcher":
+            logger.info("启动方式为「启动器启动」")
+            await self._mas_launch_game_via_launcher(
+                preserve_running_game=preserve_running_game
+            )
+            return
+        async with _LAUNCHER_AUTOMATION_LOCK:
+            if mode == "MaaEnd":
+                logger.info("启动方式为「MaaEnd 启动」")
+                # 仅登记游戏安装目录内可确认的启动器用于收尾，不干预上游路径选择。
+                launcher_path = await asyncio.to_thread(
+                    discover_launcher_exe,
+                    Path(str(self.script_config.get("Game", "Path"))),
+                )
+                if launcher_path is not None:
+                    self.launcher_runtime_path = launcher_path.resolve()
+                    _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+                await self._launch_game_via_maaend(
+                    preserve_running_game=preserve_running_game
+                )
+                return
+            logger.info("启动方式为「MAS 启动」")
+            if (
+                not preserve_running_game
+                and self.mode == self.first_run_mode
+                and self.script_config.get("Game", "SetResolution")
+                and self._game_setting_pretask() is not None
+            ):
+                await self._apply_launcher_game_settings()
+            launcher_path = self._launcher_path()
+            if launcher_path is not None:
+                self.launcher_runtime_path = launcher_path.resolve()
+                _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+            await self._mas_launch_game_directly()
 
     def _launcher_path(self) -> Path | None:
         """自动与手动路径共用服务层校验；失效的手动路径明确报错。"""
@@ -452,6 +513,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     ) -> None:
         """执行对应版本的上游预任务；新版同时负责启动游戏。"""
         task_name = self._game_setting_pretask()
+        if task_name is None:
+            raise RuntimeError("当前 MaaEnd 不支持所选启动方式的游戏设置入口")
         if (
             not preserve_running_game
             and self.mode == self.first_run_mode
@@ -572,13 +635,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def _restart_game_after_update(self) -> None:
         """游戏内确认更新后，只按用户选择的启动方式重新拉起。"""
-        if self._launch_mode() == "Launcher":
-            await self._mas_launch_game_via_launcher(preserve_running_game=True)
-        elif self._game_setting_pretask() == _MAAEND_LAUNCH_GAME_PRETASK:
-            async with _LAUNCHER_AUTOMATION_LOCK:
-                await self._launch_game_via_maaend(preserve_running_game=True)
-        else:
-            await self._mas_launch_game_directly()
+        await self._start_game(preserve_running_game=True)
 
     async def _mas_launch_game_via_launcher(
         self, *, preserve_running_game: bool = False
@@ -602,6 +659,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 not preserve_running_game
                 and self.mode == self.first_run_mode
                 and self.script_config.get("Game", "SetResolution")
+                and self._game_setting_pretask() is not None
             ):
                 await self._apply_launcher_game_settings()
             if (
@@ -650,7 +708,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""
 
         try:
-            launcher_path = self._launcher_path()
+            launcher_path = self.launcher_runtime_path
+            if launcher_path is None and self._launch_mode() != "MaaEnd":
+                launcher_path = self._launcher_path()
             if launcher_path is not None:
                 pids = await asyncio.to_thread(find_launcher_pids, launcher_path)
                 if pids:
@@ -700,13 +760,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ) or not loader.has_task(_MAAEND_CLOSE_GAME_TASK):
                 self.cur_user_item.status = "异常"
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
-            if (
-                self._launch_mode() == "Launcher"
-                and self.script_config.get("Game", "SetResolution")
-                and not loader.has_pretask("GameSetting")
-            ):
+            if self._launch_mode() == "MaaEnd" and self._game_setting_pretask() is None:
                 self.cur_user_item.status = "异常"
-                return "当前版本请切换为「MaaEnd 启动」以应用游戏启动设置"
+                return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
             if (
                 account_switch_method == "MAAEND"
                 and account_id
@@ -1342,32 +1398,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
             use_mas_account_switch = account_switch_method == "MAS"
-            uses_launch_pretask = (
-                self.emulator_manager is None
-                and self._game_setting_pretask() == _MAAEND_LAUNCH_GAME_PRETASK
-            )
-            # 新版启动预任务在 MXU 外执行，旧版仍由 MXU 先应用 GameSetting。
-            # MAS 登录兼容入口必须先让游戏进入可交互状态，再进行游戏内登录。
+            # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
-                    if uses_launch_pretask or self._launch_mode() == "Launcher":
-                        await self.set_maaend(None)
-                    if self._launch_mode() == "Launcher":
-                        logger.info("启动方式为「启动器启动」")
-                        await self._mas_launch_game_via_launcher(
-                            preserve_running_game=keep_game_for_login_retry
-                        )
-                    elif uses_launch_pretask:
-                        logger.info("启动方式为「MaaEnd 启动」")
-                        async with _LAUNCHER_AUTOMATION_LOCK:
-                            await self._launch_game_via_maaend(
-                                preserve_running_game=keep_game_for_login_retry
-                            )
-                    elif use_mas_account_switch:
-                        await self._mas_launch_game_directly()
-                    else:
-                        # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
-                        logger.info("终末地将由 MaaEnd 前置程序调用 MAS 启动")
+                    await self.set_maaend(None)
+                    await self._start_game(
+                        preserve_running_game=keep_game_for_login_retry
+                    )
                     emulator_info = None
                 else:
                     logger.info(
@@ -1417,32 +1454,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
-                self.script_info.log = "将由 MAAEND 启动游戏并执行账号切换"
+                self.script_info.log = "游戏已启动，等待 MaaEnd 执行账号切换"
             else:
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = (
-                    "将由 MAS 启动游戏，未配置账号，跳过账号切换"
-                    if use_mas_account_switch
-                    else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
-                )
+                self.script_info.log = "游戏已启动，未配置账号，跳过账号切换"
 
-            if (
-                self.emulator_manager is None
-                and self.mode == self.first_run_mode
-                and bool(self.script_config.get("Game", "SetResolution"))
-                and self._launch_mode() != "Launcher"
-                and not uses_launch_pretask
-            ):
-                logger.info(
-                    "启动时设置分辨率：关闭终末地，准备执行 MaaEnd 游戏设置预任务"
-                )
-                await self.kill_game_process()
-
-            if self.emulator_manager is not None or (
-                self._launch_mode() != "Launcher" and not uses_launch_pretask
-            ):
+            if self.emulator_manager is not None:
                 await self.set_maaend(emulator_info)
 
             if not any(any(tasks.values()) for tasks in self.task_dict.values()):
@@ -1571,28 +1590,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         if not kill_game:
             logger.info("保留游戏进程及当前启动进度")
-            if self._launch_mode() == "Launcher":
-                # 启动器是 MAS 拉起的，游戏不需要它：留着只会在用户手动退出
-                # 游戏后重新弹出窗口
-                async with _LAUNCHER_AUTOMATION_LOCK:
-                    if (
-                        self.launcher_runtime_path is not None
-                        and _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
-                        is self.launcher_owner
-                    ):
-                        await self._kill_launcher_process()
+            # 保留承载游戏的启动器，避免清理进程树时连带结束游戏。
             return
         await self.kill_game_process()
 
     async def kill_game_process(self) -> None:
         """关闭游戏或模拟器进程（Win32 为终末地客户端，Adb 为模拟器）"""
 
-        if self.emulator_manager is None and self._launch_mode() == "Launcher":
+        if self.emulator_manager is None:
             async with _LAUNCHER_AUTOMATION_LOCK:
                 if (
-                    self.launcher_runtime_path is None
-                    or _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
+                    self.launcher_runtime_path is not None
+                    and _LAUNCHER_OWNERS.get(self.launcher_runtime_path)
                     is not self.launcher_owner
+                    or self.launcher_runtime_path is None
+                    and self._launch_mode() != "MaaEnd"
                 ):
                     logger.info("启动器已由其他会话接管或尚未启动，跳过旧会话清理")
                     return
@@ -1613,8 +1625,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             except Exception as error:
                 logger.opt(exception=True).warning(f"关闭终末地客户端失败: {error}")
-            if self._launch_mode() == "Launcher":
-                await self._kill_launcher_process()
+            await self._kill_launcher_process()
         else:
             try:
                 logger.info("中止模拟器进程")
@@ -2098,13 +2109,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and self.script_config.get("Game", "CloseOnFinish")
             )
             setting_pretask = self._game_setting_pretask()
-            uses_launch_pretask = setting_pretask == _MAAEND_LAUNCH_GAME_PRETASK
-            if (
-                if_quick_config
-                or self.script_config.get("Game", "SetResolution")
-                or self._launch_mode() == "Launcher"
-                or uses_launch_pretask
-            ):
+            if setting_pretask is not None:
                 apply_settings = self.mode == self.first_run_mode and bool(
                     self.script_config.get("Game", "SetResolution")
                 )
@@ -2114,7 +2119,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     task_name=setting_pretask,
                     task_id=(
                         "automas-launch-game"
-                        if uses_launch_pretask
+                        if setting_pretask == _MAAEND_LAUNCH_GAME_PRETASK
                         else "automas-gamesetting"
                     ),
                     controller_type=controller_type,
@@ -2122,20 +2127,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     first=True,
                 )
                 for task in maaend_tasks:
-                    if task["taskName"] == _MAAEND_GAME_SETTING_PRETASK:
-                        task["enabled"] = (
-                            apply_settings
-                            and self._launch_mode() != "Launcher"
-                            and not uses_launch_pretask
-                        )
-                    elif task["taskName"] == _MAAEND_LAUNCH_GAME_PRETASK:
-                        task["enabled"] = False
+                    if task["taskName"] == _MAAEND_LAUNCH_GAME_PRETASK:
                         task["optionValues"]["LaunchGamePCGameSetting"] = {
                             "type": "switch",
                             "value": apply_settings,
                         }
                     if task["taskName"] == setting_pretask:
                         self.launcher_game_setting_options = task["optionValues"]
+            # 上游预任务在 MXU 外按所选方式执行；保存的其他版本入口也必须禁用。
+            for task in maaend_tasks:
+                if task["taskName"] in {
+                    _MAAEND_GAME_SETTING_PRETASK,
+                    _MAAEND_LAUNCH_GAME_PRETASK,
+                }:
+                    task["enabled"] = False
             if if_quick_config or close_after_mode:
                 _place_managed_task(
                     maaend_tasks,
@@ -2152,7 +2157,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 game_path=str(self.script_config.get("Game", "Path")),
                 game_arguments=str(self.script_config.get("Game", "Arguments")),
                 result_path=self.game_launch_result_path,
-                enabled=self._launch_mode() != "Launcher" and not uses_launch_pretask,
+                enabled=False,
             )
 
         # 加载 i18n 配置

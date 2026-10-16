@@ -501,11 +501,26 @@ class MaaEndResourceLoader:
         }
 
     def get_options(self) -> dict[str, Any]:
+        self._load_task_resources()
         return {
             **deepcopy(self._options),
             "projectName": self._interface.get("name", "mxu"),
             "projectVersion": self._interface.get("version", ""),
+            "launchGameControllers": self.pretask_controllers("LaunchGamePC"),
+            "gameSettingControllers": self.pretask_controllers("GameSetting"),
         }
+
+    def pretask_controllers(self, pretask_name: str) -> list[str]:
+        """读取公开预任务声明支持的控制器，未限制时使用全部控制器。"""
+
+        self._load_task_resources()
+        for pretask in self._pretasks:
+            if pretask.get("name") == pretask_name:
+                return list(
+                    pretask.get("controller")
+                    or [item["name"] for item in self._interface["controller"]]
+                )
+        return []
 
     def has_task_option(self, task_name: str, option_name: str) -> bool:
         """判断当前 MaaEnd 资源是否声明了某个任务选项。"""

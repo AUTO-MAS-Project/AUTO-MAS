@@ -1,7 +1,7 @@
 <template>
   <a-row :gutter="24">
     <a-col :xs="24" :md="12">
-      <a-form-item>
+      <a-form-item :help="launchHint">
         <template #label>
           <span class="form-label">
             {{ t('edit.launchType') }}
@@ -15,12 +15,16 @@
           :options="launchModeOptions"
           size="large"
           :disabled="disabled"
+          :loading="capabilitiesLoading"
           @change="emit('changeLaunchMode', $event)"
         />
       </a-form-item>
     </a-col>
     <a-col :xs="24" :md="12">
-      <a-form-item :validate-status="error ? 'error' : undefined" :help="error || undefined">
+      <a-form-item
+        :validate-status="usesMasLauncher && error ? 'error' : undefined"
+        :help="usesMasLauncher ? error || undefined : t('edit.maaEndNativeLauncherHint')"
+      >
         <template #label>
           <span class="form-label">{{ t('edit.maaEndLauncherPath') }}</span>
         </template>
@@ -32,11 +36,12 @@
             :aria-label="t('edit.maaEndLauncherPath')"
             size="large"
             readonly
+            :disabled="!usesMasLauncher"
             class="launcher-path-input"
           />
           <a-button
             :loading="detecting || saving"
-            :disabled="disabled || (source === 'auto' && !canDetect)"
+            :disabled="disabled || !usesMasLauncher || (source === 'auto' && !canDetect)"
             size="large"
             @click="source === 'auto' ? emit('refresh') : emit('selectFile')"
           >
@@ -52,7 +57,7 @@
             :value="source"
             :options="sourceOptions"
             :aria-label="t('edit.maaEndLauncherPathSource')"
-            :disabled="disabled || detecting"
+            :disabled="disabled || detecting || !usesMasLauncher"
             @change="emit('changeSource', $event.target.value)"
           />
           <a-tooltip
@@ -74,7 +79,7 @@ import { useI18n } from 'vue-i18n'
 import { FolderOpenOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { MaaEndScriptConfig } from '@/types/script'
 
-defineProps<{
+const props = defineProps<{
   launchMode: MaaEndScriptConfig['Game']['LaunchMode']
   source: 'auto' | 'manual'
   path: string
@@ -83,6 +88,9 @@ defineProps<{
   saving: boolean
   disabled: boolean
   canDetect: boolean
+  capabilitiesReady: boolean
+  capabilitiesLoading: boolean
+  maaEndLaunchSupported: boolean
 }>()
 const emit = defineEmits<{
   changeLaunchMode: [value: MaaEndScriptConfig['Game']['LaunchMode']]
@@ -91,10 +99,31 @@ const emit = defineEmits<{
   selectFile: []
 }>()
 const { t } = useI18n()
+const usesMasLauncher = computed(() => props.launchMode !== 'MaaEnd')
 const launchModeOptions = computed(() => [
   { value: 'Launcher', label: t('edit.launchViaLauncher') },
-  { value: 'Client', label: t('edit.maaEndLaunchViaMaaEnd') },
+  { value: 'MAS', label: t('edit.maaEndLaunchViaMas') },
+  {
+    value: 'MaaEnd',
+    label: t('edit.maaEndLaunchViaMaaEnd'),
+    disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
+  },
 ])
+const launchHint = computed(() => {
+  const description = t(
+    props.launchMode === 'MaaEnd'
+      ? 'edit.maaEndNativeModeHint'
+      : props.launchMode === 'MAS'
+        ? 'edit.maaEndMasModeHint'
+        : 'edit.maaEndLauncherModeHint'
+  )
+  const limitation = !props.capabilitiesReady
+    ? t('edit.maaEndLaunchCapabilitiesUnknown')
+    : !props.maaEndLaunchSupported
+      ? t('edit.maaEndNativeLaunchUnsupported')
+      : ''
+  return [description, limitation].filter(Boolean).join(' ')
+})
 const sourceOptions = computed(() => [
   { value: 'auto', label: t('edit.maaEndLauncherSourceAuto') },
   { value: 'manual', label: t('edit.maaEndLauncherSourceManual') },
