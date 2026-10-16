@@ -2997,6 +2997,8 @@ class MaaFWConfig(ConfigBase):
     FLAVOR: str | None = None
     ## Run.TaskTimeLimitOverrides 的默认值（JSON 字符串，任务名 → 分钟）；通用 MaaFW 不内置
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = "{ }"
+    ## Game.WaitTime（启动等待时间，秒）的默认值；特调可按自己的游戏改
+    DEFAULT_GAME_WAIT_TIME = 60
 
     def __init__(self) -> None:
 
@@ -3103,7 +3105,9 @@ class MaaFWConfig(ConfigBase):
         ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器把游戏拉到前台后
         ## 固定等这么久，不按画面提前；等满还是黑屏才继续等。游戏进程已在（不论在不在
         ## 前台）时不等。
-        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        self.Game_WaitTime = ConfigItem(
+            "Game", "WaitTime", self.DEFAULT_GAME_WAIT_TIME, RangeValidator(0, 9999)
+        )
         ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
         ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
         ## 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。
@@ -3300,7 +3304,7 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限，以及运行前的队列装饰
+    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限、启动等待时间默认值，以及运行前的队列装饰
     （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
@@ -3314,6 +3318,9 @@ class M9AConfig(MaaFWConfig):
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = (
         '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
     )
+    ## 1999 冷启动后不用等那么久，特调直接默认 15 秒（用户 2026-10-16 定）。只影响新建的
+    ## 脚本：已有脚本的 ScriptConfig.json 里存着自己的值。
+    DEFAULT_GAME_WAIT_TIME = 15
 
 
 class MSSUserConfig(MaaFWUserConfig):
