@@ -303,7 +303,7 @@ STARTUP_SCREEN_CONTENT_SECONDS = 20
 # 没处理着色器编译：游戏的管线缓存缺失时，标题前要编译几分钟（读盘安静、出帧约 0），这里会
 # 提前放行；实际用户跑脚本前必然手动登录过，那次已经编完。但做带游戏自更新的风味专项时必须
 # 处理：自更新以后可能重新编译，脚本会在没人手动登录的情况下撞上。办法是再加「这 8s 里每秒
-# 出帧都 ≥ 20」并放宽上限，见 app/task/MaaFW/AGENTS.md。
+# 出帧都 ≥ 5」（编译时每秒最多 2 帧，标题最低约 36 帧）并放宽上限，见 app/task/MaaFW/AGENTS.md。
 # 读盘量取 /proc/vmstat 的 pgpgin（累计读入 KB）：adb shell 用户读 /proc/diskstats 和
 # /sys/block/*/stat 都被 SELinux 拒绝（API 34 镜像 Enforcing 实测），pgpgin 不需要 root，按 bio
 # 计一次、不随 dm 叠层重复计数；同一窗口与整块盘 diskstats 读速对照误差 < 2%。
