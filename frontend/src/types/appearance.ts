@@ -53,7 +53,7 @@ export interface AppearanceBackground {
 
 export type AppearanceMascot = MascotDefinition
 
-export type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey, string>>
+export type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey | 'default', string>>
 
 export interface AppearanceCursor {
   path: string
@@ -80,7 +80,7 @@ export interface AppearanceManifest {
 export interface InstalledAppearance extends AppearanceManifest, MascotAssets {
   previewUrl?: string
   backgroundUrl?: string
-  menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
+  menuIconUrls?: AppearanceMenuIcons
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
 

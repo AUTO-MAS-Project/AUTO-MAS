@@ -92,7 +92,7 @@ const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
-// 菜单图标可由外观包按固定键替换；缺少资源时继续使用内置图标。
+// 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
   (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
   () =>
