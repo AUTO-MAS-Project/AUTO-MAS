@@ -498,11 +498,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if result.returncode != 0:
             raise RuntimeError(f"MaaEnd 游戏启动设置失败: {result.failure_detail()}")
 
+    @staticmethod
+    def _game_window_present() -> bool:
+        """终末地客户端窗口是否真实存在：进程残留但窗口已消失时不能当作在运行。"""
+        from app.utils.platform import IS_WINDOWS
+
+        if not IS_WINDOWS:
+            return False
+        import win32gui
+
+        return bool(win32gui.FindWindow("UnityWndClass", "Endfield"))
+
     async def _mas_launch_game_directly(self) -> None:
         """通过现有直启入口拉起游戏，也用于更新确认后的重新启动。"""
-        if is_process_running(_MAAEND_CLIENT_PROCESS):
+        if is_process_running(_MAAEND_CLIENT_PROCESS) and self._game_window_present():
             logger.info("检测到终末地客户端已运行，准备由 MAS 执行账号切换")
             return
+        # 进程残留但窗口已消失（如更新重启失败）：清掉残留后重新拉起
         await self.game_process_manager.kill()
         logger.info(f"启动终末地: {self.script_config.get('Game', 'Path')}")
         command = _game_launch_command(
@@ -549,7 +561,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and self.script_config.get("Game", "SetResolution")
             ):
                 await self._apply_launcher_game_settings()
-            if is_process_running(_MAAEND_CLIENT_PROCESS):
+            if (
+                is_process_running(_MAAEND_CLIENT_PROCESS)
+                and self._game_window_present()
+            ):
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await push_dispatch_log(
                     self.script_info, "检测到客户端已在运行，跳过启动"
@@ -1304,6 +1319,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
+                # 启动阶段失败后游戏状态不再可信：清除保留标记，避免下一轮
+                # 启动沿用 preserve_running_game 跳过启动器游戏设置
+                keep_game_for_login_retry = False
                 await self.handle_pre_maaend_error(
                     "游戏启动失败"
                     if self.emulator_manager is None

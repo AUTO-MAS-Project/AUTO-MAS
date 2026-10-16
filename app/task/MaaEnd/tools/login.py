@@ -102,8 +102,25 @@ _STARTUP_TEXTS = (
     "正在编译着色器",
     "正在检查资源完整性",
 )
-# 只用百分比和已下载量判进度，速度、预计剩余时间变化不能掩盖卡死。
-_PROGRESS_PATTERN = re.compile(r"\d+(?:\.\d+)?%|\d+(?:\.\d+)?[MGK]B/(?=\d)")
+# 只用百分比和已下载量判进度，速度、预计剩余时间变化不能掩盖卡死；数字与单位
+# 间容忍空格
+_PROGRESS_PATTERN = re.compile(r"\d+(?:\.\d+)?\s?%|\d+(?:\.\d+)?\s?[MGK]B/(?=\d)")
+# 进度只取状态行邻近条目（1080p 基准垂直距离），排除全屏无关数字干扰
+_PROGRESS_ROW_SPAN = 150
+# 登录表单等待窗口：无启动状态时超过该时长仍未见到登录表单则判未就绪
+_LOGIN_FORM_TIMEOUT = 120
+# 资源更新重启：确认点击最小间隔、窗口消失后等待拉起的时长与重启次数上限
+_CONFIRM_RETRY_SECONDS = 15
+_RESTART_DELAY_SECONDS = 15
+_RESTART_LIMIT = 3
+# 重启确认弹窗确认按钮的判定区下缘（1080p 基准，弹窗按钮位于表单区下半部）
+_RESTART_CONFIRM_Y_MIN = 500
+# 近期见过重启确认弹窗时暂停按 ESC，避免把弹窗按掉后误报登录未就绪
+_RESTART_ESCAPE_HOLD_SECONDS = 30
+# 单帧状态漏识别保留停滞基准，连续缺失才算状态切换
+_STATE_MISSING_FRAMES = 3
+# 登录诊断日志保留份数：全量 OCR 诊断会持续累积，仅保留最近若干份
+_DIAGNOSTIC_KEEP_COUNT = 10
 
 
 class LoginNotReadyError(RuntimeError):
@@ -311,24 +328,42 @@ async def _wait_template(
     raise RuntimeError(error)
 
 
+def _find_restart_confirm(items: list[OCRItem]) -> Box | None:
+    """资源更新重启弹窗的确认按钮：整词匹配并按中心点判区，左上角点在弹窗
+    边缘按钮上会漏判。"""
+    left, _, right, bottom = _LOGIN_FORM_ROI
+    for value, box in items:
+        if value.strip() not in ("确认", "确定"):
+            continue
+        center_x = box[0] + box[2] / 2
+        center_y = box[1] + box[3] / 2
+        if left <= center_x <= right and _RESTART_CONFIRM_Y_MIN <= center_y <= bottom:
+            return box
+    return None
+
+
 def _startup_state(items: list[OCRItem]) -> tuple[str, str, Box | None]:
-    """只识别已知更新状态及其重启确认按钮，不处理无关弹窗。"""
+    """只识别已知更新状态及其重启确认按钮，不处理无关弹窗。
+
+    重启确认按任一特征文本进入观察态（同帧要求两个都命中会因单行漏识别
+    整体不可达）；进度只取状态行邻近条目并排序归一，避免 OCR 顺序抖动让
+    进度每帧都「变化」重置停滞计时。
+    """
     text = "".join(value for value, _ in items)
-    if "资源初始化更新完成" in text and "重启游戏" in text:
-        confirm = next(
-            (
-                box
-                for value, box in items
-                if value in ("确认", "确定")
-                and 480 <= box[0] <= 1440
-                and 500 <= box[1] <= 810
-            ),
-            None,
-        )
-        return "重启确认", "", confirm
+    if "资源初始化更新完成" in text or "重启游戏" in text:
+        return "重启确认", "", _find_restart_confirm(items)
     for state in _STARTUP_TEXTS:
-        if state in text:
-            return state, "|".join(_PROGRESS_PATTERN.findall(text.upper())), None
+        anchor = next((box for value, box in items if state in value), None)
+        if anchor is None:
+            continue
+        anchor_y = anchor[1]
+        progress_values = sorted(
+            match
+            for value, box in items
+            if abs(box[1] - anchor_y) <= _PROGRESS_ROW_SPAN
+            for match in _PROGRESS_PATTERN.findall(value.upper())
+        )
+        return state, "|".join(progress_values), None
     return "", "", None
 
 
@@ -338,21 +373,36 @@ async def _open_login_form(
     restart_game: Callable[[], Awaitable[None]] | None = None,
     write_diagnostic: Callable[[str], None] | None = None,
 ) -> int:
-    """Return the game to its login form from any supported screen."""
+    """把游戏带回登录表单，等待启动期更新完成后返回当前窗口句柄。
+
+    Args:
+        hwnd: 当前终末地窗口句柄，游戏尚未起窗时可为 0。
+        restart_game: 资源更新确认后按原启动方式重新拉起游戏的回调。
+        write_diagnostic: 启动状态诊断写入回调。
+
+    Returns:
+        登录表单可见时的当前游戏窗口句柄。
+
+    Raises:
+        LoginNotReadyError: 游戏尚未进入可登录画面，重试时保留其启动进度。
+        RuntimeError: 启动进度停滞或更新重启处理异常。
+    """
 
     logger.info("正在打开终末地登录表单")
     # 历史 MAS 登录入口的临时加固；上游账号切换覆盖该启动状态后改走上游并移除。
     loop = asyncio.get_running_loop()
     hard_deadline = loop.time() + _STARTUP_TIMEOUT
-    deadline = loop.time() + 120
+    deadline = loop.time() + _LOGIN_FORM_TIMEOUT
     missing_since: float | None = None
     last_state = ""
     last_progress = ""
     progress_time = loop.time()
+    state_missing_frames = 0
     restart_pending = False
     restart_count = 0
     next_confirm_time = 0.0
     next_escape_time = 0.0
+    last_restart_seen = 0.0
     last_diagnostic_time = 0.0
     while loop.time() < hard_deadline:
         await asyncio.sleep(1)
@@ -364,15 +414,21 @@ async def _open_login_form(
                 logger.info("终末地窗口暂不可用，等待重新创建")
             if now - missing_since >= _WINDOW_TIMEOUT:
                 raise LoginNotReadyError("等待终末地窗口重新出现超时")
-            if restart_pending and now - missing_since >= 15 and restart_game:
+            if (
+                restart_pending
+                and now - missing_since >= _RESTART_DELAY_SECONDS
+                and restart_game
+            ):
                 restart_pending = False
                 logger.info("更新确认后游戏已退出，按原启动方式重新拉起")
                 await restart_game()
+                # 重启后重新计时：新版拉起与新一轮更新不占上一轮的硬上限
+                hard_deadline = loop.time() + _STARTUP_TIMEOUT
             continue
         if current != hwnd or missing_since is not None:
             logger.info("已重新找到终末地窗口")
             hwnd = current
-            deadline = now + 120
+            deadline = now + _LOGIN_FORM_TIMEOUT
             restart_pending = False
         missing_since = None
         try:
@@ -385,6 +441,8 @@ async def _open_login_form(
         items = await asyncio.to_thread(ocr_image, frame)
         state, progress, confirm = _startup_state(items)
         progress_changed = bool(progress and progress != last_progress)
+        if state or progress:
+            state_missing_frames = 0
         if progress:
             if progress_changed:
                 progress_time = now
@@ -393,7 +451,11 @@ async def _open_login_form(
         elif state and (not last_state or last_progress):
             progress_time = now
         elif not state and last_state:
-            progress_time = now
+            # 单帧漏识别保留停滞基准，连续多帧缺失才视为状态切换，
+            # 否则闪烁即可规避卡死判定
+            state_missing_frames += 1
+            if state_missing_frames >= _STATE_MISSING_FRAMES:
+                progress_time = now
         diagnostic_items = tuple(items)
         if write_diagnostic and (
             state != last_state or progress_changed or now - last_diagnostic_time >= 15
@@ -410,22 +472,28 @@ async def _open_login_form(
         last_state = state
         last_progress = progress
         if state:
+            if state == "重启确认":
+                last_restart_seen = now
             stall_timeout = (
                 _DOWNLOAD_STALL_TIMEOUT if progress else _STARTUP_STALL_TIMEOUT
             )
             if now - progress_time >= stall_timeout:
                 raise RuntimeError(f"终末地启动进度长时间未变化: {state}")
-            if state == "重启确认" and not confirm and now - progress_time >= 120:
+            if (
+                state == "重启确认"
+                and not confirm
+                and now - progress_time >= _LOGIN_FORM_TIMEOUT
+            ):
                 raise RuntimeError("未能识别资源初始化更新弹窗的确认按钮")
-            deadline = now + 120
+            deadline = now + _LOGIN_FORM_TIMEOUT
             if state == "重启确认" and confirm and now >= next_confirm_time:
-                if restart_count >= 3:
+                if restart_count >= _RESTART_LIMIT:
                     raise RuntimeError("终末地更新后反复要求重启，请人工检查")
                 logger.info("确认资源初始化更新完成，等待游戏重启")
                 await asyncio.to_thread(_click_box, hwnd, confirm)
                 restart_pending = True
                 restart_count += 1
-                next_confirm_time = now + 15
+                next_confirm_time = now + _CONFIRM_RETRY_SECONDS
             continue
         if now >= deadline:
             raise LoginNotReadyError("打开终末地登录表单超时")
@@ -450,11 +518,17 @@ async def _open_login_form(
             break
         else:
             now = asyncio.get_running_loop().time()
-            if now >= next_escape_time:
+            # 最近见过重启确认弹窗时暂停 ESC：把弹窗按掉会丢更新完成确认，
+            # 之后只能空等登录表单超时
+            if (
+                now - last_restart_seen >= _RESTART_ESCAPE_HOLD_SECONDS
+                and now >= next_escape_time
+            ):
                 await asyncio.to_thread(_press_escape, hwnd)
                 next_escape_time = now + 5
 
-    raise RuntimeError("等待终末地更新及启动超过一小时")
+    # 超限归入 LoginNotReadyError：外层按保留游戏处理，不丢更新与下载进度
+    raise LoginNotReadyError("等待终末地更新及启动超过一小时")
 
 
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
@@ -545,13 +619,28 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
     raise RuntimeError(message)
 
 
+def _prune_diagnostic_logs(directory: Path) -> None:
+    """仅保留最近 _DIAGNOSTIC_KEEP_COUNT 份登录诊断日志，文件名含时间戳可排序。"""
+    stale_logs = sorted(
+        directory.glob("login-detail-*.log"), key=lambda path: path.name, reverse=True
+    )
+    for stale in stale_logs[_DIAGNOSTIC_KEEP_COUNT:]:
+        stale.unlink(missing_ok=True)
+
+
 async def login(
     id: str,
     emulator_info: DeviceInfo | None = None,
     *,
     restart_game: Callable[[], Awaitable[None]] | None = None,
 ) -> bool:
-    """切换到终末地客户端已保存的最近账号。"""
+    """切换到终末地客户端已保存的最近账号。
+
+    Args:
+        id: 待切换的账号 Id，按客户端最近账号列表匹配。
+        emulator_info: 模拟器设备信息，终末地暂未支持模拟器登录。
+        restart_game: 资源更新确认后按原启动方式重新拉起游戏的回调。
+    """
     if not IS_WINDOWS:
         raise RuntimeError("终末地账号切换仅支持 Windows 平台")
     # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
@@ -565,18 +654,23 @@ async def login(
     hwnd = win32gui.FindWindow("UnityWndClass", "Endfield")
 
     masked_id = f"***{id[-4:]}"
+    diagnostic_dir = Path.cwd() / "debug" / "maaend-login"
     diagnostic_path = (
-        Path.cwd()
-        / "debug"
-        / "maaend-login"
-        / f"login-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
+        diagnostic_dir / f"login-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
     )
 
     def _write_diagnostic(text: str) -> None:
+        """诊断旁路失败不得覆盖登录异常；写入时遮蔽完整账号并清理旧诊断。
+
+        OCR 原文会带出登录界面的账号列表，完整账号出现处替换为掩码；OCR
+        拆碎的部分识别不在覆盖范围内，导出侧过滤仍需依赖问题包规则。
+        """
         try:
             diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+            _prune_diagnostic_logs(diagnostic_dir)
+            masked_text = text.replace(id, masked_id)
             with diagnostic_path.open("a", encoding="utf-8") as handle:
-                handle.write(f"[{datetime.now():%H:%M:%S}] {text}\n")
+                handle.write(f"[{datetime.now():%H:%M:%S}] {masked_text}\n")
         except OSError as error:
             logger.warning(f"终末地登录诊断日志写入失败: {error}")
 
