@@ -145,7 +145,7 @@ onMounted(async () => {
     pendingUpdate = {}
   })
   disposeUpdate = api.onUpdated(update => {
-    if (update.dragging === false) endDrag()
+    if (update.dragging === false && update.dragSession === dragRevision) endDrag()
     if (data.value) Object.assign(data.value, update)
     else Object.assign(pendingUpdate, update)
   })
@@ -205,6 +205,7 @@ async function startDrag(event: PointerEvent): Promise<void> {
     const accepted = await api.startDrag({
       x: event.clientX - bounds.left,
       y: event.clientY - bounds.top,
+      session: revision,
     })
     if (revision !== dragRevision) return
     if (!accepted) {
@@ -212,7 +213,7 @@ async function startDrag(event: PointerEvent): Promise<void> {
       return
     }
     dragging.value = true
-    api.pointer('move')
+    api.pointer('move', revision)
   } catch {
     if (revision === dragRevision) endDrag()
   }
@@ -221,19 +222,20 @@ async function startDrag(event: PointerEvent): Promise<void> {
 function moveDrag(event: PointerEvent): void {
   if (event.pointerId !== activePointerId) return
   if (event.buttons === 0) endDrag(event)
-  else if (dragging.value) window.desktopMascotAPI?.pointer('move')
+  else if (dragging.value) window.desktopMascotAPI?.pointer('move', dragRevision)
 }
 
 function endDrag(event?: PointerEvent): void {
   if (activePointerId === null || (event && event.pointerId !== activePointerId)) return
   const pointerId = activePointerId
   const target = pointerTarget
+  const session = dragRevision
   activePointerId = null
   pointerTarget = null
   dragRevision++
   dragging.value = false
   if (target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
-  window.desktopMascotAPI?.pointer('end')
+  window.desktopMascotAPI?.pointer('end', session)
 }
 </script>
 

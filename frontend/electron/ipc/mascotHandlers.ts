@@ -144,8 +144,8 @@ export function registerDesktopMascotHandlers(
       return
     service.setIdleMessage(message)
   })
-  const onPointer = (event: Electron.IpcMainEvent, action: unknown): void =>
-    service.handlePointer(event.sender, action)
+  const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
+    service.handlePointer(event.sender, action, session)
   ipcMain.on('desktop-mascot:pointer', onPointer)
   const onImageDecoded = (
     event: Electron.IpcMainEvent,

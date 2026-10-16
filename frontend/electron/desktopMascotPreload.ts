@@ -8,7 +8,7 @@ import type {
 // 桌宠只读取已经校验的图片，不加载主窗口的后端、配置和文件操作入口。
 const api: DesktopMascotAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot:get'),
-  pointer: action => ipcRenderer.send('desktop-mascot:pointer', action),
+  pointer: (action, session) => ipcRenderer.send('desktop-mascot:pointer', action, session),
   startDrag: offset => ipcRenderer.invoke('desktop-mascot:drag-start', offset),
   imageDecoded: (imageUrl, pngDataUrl) =>
     ipcRenderer.send('desktop-mascot:image-decoded', imageUrl, pngDataUrl),

@@ -69,7 +69,7 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
         service?.setActivity(working, animate)
       },
       getData: sender => service?.getData(sender) ?? null,
-      handlePointer: (sender, action) => service?.handlePointer(sender, action),
+      handlePointer: (sender, action, session) => service?.handlePointer(sender, action, session),
       startDrag: (sender, offset) => service?.startDrag(sender, offset) ?? false,
       setDecodedImage: (sender, imageUrl, pngDataUrl) =>
         service?.setDecodedImage(sender, imageUrl, pngDataUrl),

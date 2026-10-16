@@ -7,7 +7,7 @@ import type {
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
   DesktopMascotUpdate,
-  DesktopMascotDragOffset,
+  DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
 import { getMascotLayout, getMascotSize } from './desktopMascotGeometry'
@@ -145,8 +145,10 @@ export class DesktopMascotService {
     if (!this.window || sender !== this.window.webContents || !this.data || this.dragOffset)
       return false
     if (!offset || typeof offset !== 'object') return false
-    const { x, y } = offset as DesktopMascotDragOffset
+    const { x, y, session } = offset as DesktopMascotDragStart
     if (
+      !Number.isSafeInteger(session) ||
+      session <= 0 ||
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
       x < 0 ||
@@ -159,15 +161,16 @@ export class DesktopMascotService {
     // 抓取点来自按下事件，不用延后处理 IPC 时的鼠标位置重新命中。
     this.dragOffset = { x, y }
     this.setMouseIgnored(false)
-    this.updateData({ dragging: true })
+    this.updateData({ dragging: true, dragSession: session })
     this.updateLook(null)
     this.moveToCursor()
     return true
   }
 
-  handlePointer(sender: WebContents, action: unknown): void {
+  handlePointer(sender: WebContents, action: unknown, session?: unknown): void {
     const win = this.window
     if (!win || sender !== win.webContents) return
+    if (action !== 'hover' && session !== this.data?.dragSession) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = win.getBounds()
     const x = Math.floor(cursor.x - bounds.x - (this.data?.offsetX ?? 0))
@@ -183,7 +186,7 @@ export class DesktopMascotService {
     } else if (action === 'end' && this.dragOffset) {
       this.moveToCursor()
       this.dragOffset = null
-      this.updateData({ dragging: false })
+      this.updateData({ dragging: false, dragSession: this.data?.dragSession })
       const finalBounds = win.getBounds()
       try {
         this.options.savePosition({
@@ -203,7 +206,7 @@ export class DesktopMascotService {
     if (this.disposed) return
     if (this.dragOffset) {
       this.dragOffset = null
-      this.updateData({ dragging: false })
+      this.updateData({ dragging: false, dragSession: this.data?.dragSession })
     }
     const preferences = this.options.readPreferences()
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
