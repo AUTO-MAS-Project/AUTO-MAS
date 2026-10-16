@@ -280,3 +280,74 @@ async def prepare_hot_update(
             ready=False,
             reason="closing" if params.action == "drain" else None,
         )
+
+
+@router.post(
+    "/hot-update/apply",
+    tags=["Action"],
+    summary="原子热更新（简化版）",
+    response_model=HotUpdatePrepareOut,
+    status_code=200,
+)
+async def apply_hot_update_atomic(
+    target_commit: str = Body(..., embed=True),
+    avoid_minutes: int = Body(5, embed=True, ge=0, le=60),
+) -> HotUpdatePrepareOut:
+    """
+    原子操作：检查空闲 → 应用更新 → 安排重启。
+
+    简化版实现，一次调用完成所有步骤：
+    1. 检查是否空闲（无运行任务、无临近定时任务）
+    2. 应用更新包（解压、清理、设置环境变量）
+    3. 触发后端重启（1秒后退出，由 Electron 自动重启）
+
+    空闲条件：
+    - 无运行中任务
+    - avoid_minutes 内无定时任务
+    - 后端未关闭
+
+    返回：
+    - ready=True: 更新已应用，后端即将重启
+    - ready=False: 延期，reason 说明原因（busy/scheduledSoon/packageNotFound）
+    """
+    import os
+
+    try:
+        target_commit = target_commit.lower()
+
+        # 原子检查并应用（有锁保护）
+        result = await TaskManager.apply_hot_update_atomic(
+            target_commit=target_commit,
+            avoid_minutes=avoid_minutes,
+        )
+
+        if result["applied"]:
+            # 应用成功，1秒后退出让 Electron 重启
+            async def _delayed_exit():
+                await asyncio.sleep(1)
+                logger.info(f"热更新已应用至 {target_commit}，进程退出以重启")
+                os._exit(0)
+
+            asyncio.create_task(_delayed_exit())
+
+            return HotUpdatePrepareOut(
+                ready=True,
+                reason=None,
+            )
+
+        # 延期或失败
+        return HotUpdatePrepareOut(
+            ready=False,
+            reason=result.get("reason"),
+            nextScheduledTime=result.get("nextScheduledTime"),
+        )
+
+    except Exception as e:
+        logger.opt(exception=True).error(f"原子热更新失败: {type(e).__name__}: {e}")
+        return HotUpdatePrepareOut(
+            code=500,
+            status="error",
+            message=f"原子热更新失败: {e}",
+            ready=False,
+        )
+

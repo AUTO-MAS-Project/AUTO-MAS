@@ -2227,6 +2227,87 @@ class _TaskManager:
             self._hot_update_lease = None
         logger.info(f"已释放热更保护：{operation[0]}")
 
+    async def apply_hot_update_atomic(
+        self, target_commit: str, avoid_minutes: int
+    ) -> dict[str, Any]:
+        """
+        原子热更新：检查空闲 → 应用更新包 → 设置环境变量 → 请求重启。
+
+        返回 {"applied": True} 或 {"applied": False, "reason": ..., "nextScheduledTime": ...}
+        """
+        import os
+        import zipfile
+        from pathlib import Path
+        from datetime import datetime, timezone
+
+        from .timer import MainTimer
+
+        operation_id = f"hot-update-{target_commit[:8]}"
+        operation = (operation_id, "", target_commit)  # base不重要，简化版只检查target
+
+        # 获取锁并检查准入条件
+        async with self._hot_update_lock:
+            if reason := self._hot_update_block_reason():
+                logger.info(f"热更新被拒：{reason}")
+                return {"applied": False, "reason": reason}
+
+            next_scheduled = MainTimer.check_upcoming_scheduled(avoid_minutes)
+            if next_scheduled:
+                logger.info(
+                    f"热更新延期：{avoid_minutes}分钟内有定时任务 {next_scheduled.isoformat()}"
+                )
+                return {
+                    "applied": False,
+                    "reason": "scheduledSoon",
+                    "nextScheduledTime": next_scheduled.astimezone(timezone.utc).isoformat(),
+                }
+
+            # 在锁内快速查找更新包（只是glob，不读取内容）
+            versions = {
+                f.stem.split("_", 1)[1]: f
+                for f in Path.cwd().glob("UpdatePack_*.zip")
+            }
+            if not versions:
+                logger.error("未找到更新包")
+                return {"applied": False, "reason": "packageNotFound"}
+
+            from packaging import version as pkg_version
+            latest_version = max(versions.keys(), key=pkg_version.parse)
+            update_package = versions[latest_version]
+
+            # 设置guard以阻止新业务
+            self._hot_update_guard = operation
+            if self._hot_update_lease is not None:
+                self._hot_update_lease.cancel()
+                self._hot_update_lease = None
+
+        # 在锁外执行IO密集操作
+        logger.info(f"开始应用热更新: {update_package.name} -> {target_commit}")
+        try:
+            with zipfile.ZipFile(update_package, "r") as zip_ref:
+                await asyncio.to_thread(zip_ref.extractall, Path.cwd())
+            logger.success(f"更新包解压完成: {update_package}")
+
+            # 清理临时文件
+            for f in Path.cwd().glob("UpdatePack_*.zip"):
+                f.unlink(missing_ok=True)
+            (Path.cwd() / "changes.json").unlink(missing_ok=True)
+
+            # 设置环境变量（跳过启动队列）
+            os.environ["AUTO_MAS_HOT_UPDATE_OPERATION_ID"] = operation_id
+            logger.info(f"已设置热更新环境变量: {operation_id}")
+
+            # 标记timer准备重启
+            MainTimer.begin_hot_update()
+
+            return {"applied": True}
+        except Exception as e:
+            # 解压失败，清除guard
+            logger.error(f"解压失败: {type(e).__name__}: {e}")
+            async with self._hot_update_lock:
+                self._release_hot_update_guard(operation)
+            return {"applied": False, "reason": f"extractFailed: {e}"}
+
     async def check_hot_update_admission(
         self, *, operation_id: str, base_commit: str, target_commit: str
     ) -> tuple[bool, str | None, datetime | None]:
