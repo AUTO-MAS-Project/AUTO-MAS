@@ -716,7 +716,7 @@ async def _refresh_resource_stage(
         url = await _mirror_download_url(cdk)
         state[attempt_field] = datetime.now(timezone.utc).isoformat()
         write_file(_STATE_FILE, state)
-        await _refresh_stage(target, url, progress)
+        await _refresh_stage(target=target, url=url, progress=progress)
         return _load_manifest()
     except _DownloadError as e:
         state[failure_field] = (

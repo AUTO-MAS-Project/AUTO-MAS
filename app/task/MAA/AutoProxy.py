@@ -134,6 +134,7 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.software_package import read_pending_update
 from .tools.software_update import (
     compare_versions,
     has_cached_maa_software_update,
@@ -1250,6 +1251,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         self.check_result = "-"
         self.maa_root_path: Path | None = None
+        self.pending_update: tuple[str, str] | None = None
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -2199,6 +2201,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # MAS 用户配置整体装配，骨架只承载 MAS 托管键的容器路径。
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
+        self._remember_pending_update()
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
         # Default 本身也可能缺失——原生来源/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
@@ -2234,8 +2237,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
             config=self.script_config,
         )
         self._configure_maa_runtime(
-            gui_set, gui_new_set, emulator_info, takeover_ready=takeover_ready
+            gui_set=gui_set,
+            gui_new_set=gui_new_set,
+            emulator_info=emulator_info,
+            takeover_ready=takeover_ready,
         )
+        # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
+        gui_set["Global"]["VersionUpdate.package"] = ""
+        gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -2803,6 +2812,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
             Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         )
 
+    def _remember_pending_update(self) -> None:
+        """保留原生下载登记，供整批结束后交还官方更新入口。"""
+        try:
+            pending = read_pending_update(self.maa_root_path)
+            if all(pending) and (self.maa_root_path / pending[1]).is_file():
+                self.pending_update = pending
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+
     async def _sync_maa_config_updates(self) -> None:
         """把 MAA 运行期写盘的配置变更(相对本模式基线)回写到配置来源存档。
 
@@ -2810,6 +2828,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         存活, 下次托管 MAA 读到自己的记录后自行去重; 失败只记日志不抛出。
         """
 
+        self._remember_pending_update()
         if self.native_base:
             return
         baseline = self._maa_config_baseline
@@ -3100,6 +3119,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        self._remember_pending_update()
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
         # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。

@@ -595,9 +595,8 @@ def start_maa_software_update_precheck(
 
     Args:
         maa_root: MAA 安装目录。
-        config_dir: 优先读取更新通道偏好的配置目录。会话内应传任务前的
-            原生配置快照——安装目录当时的 config 是 MAS 托管副本；缺省时
-            读安装目录 config。
+        config_dir: 当前用户实际使用的配置来源目录；原生来源传任务前快照，
+            缺省时读安装目录 config。
         config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
     """
     try:
@@ -636,7 +635,7 @@ async def prepare_maa_software_update(
     """整批用户结束、update_maa() 之前调用。
 
     等待预检查收尾（有上限，超时本轮跳过），复核当前安装仍需要更新后，把
-    共享缓存中的完整包复制进安装目录并登记上游待更新字段；安装由未改动的
+    共享缓存中的完整包复制进安装目录并登记上游待更新字段；安装由既有的
     update_maa() → MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
     对既有合法待更新包的处理；主动取消正常传播。
 

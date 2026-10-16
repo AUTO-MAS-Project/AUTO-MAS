@@ -66,6 +66,7 @@ from .tools import push_notification, update_maa
 from .tools.backup_archive import archive_native_backup
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
+    _run_write_thread,
     acquire_resource_access_lock,
     get_resource_write_lock,
     prepare_queue_resources,
@@ -115,13 +116,24 @@ class MaaManager(ScriptManagerBase):
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
+        self._finalize_stop_requested = False
+
+    def _on_finalize_cancel_requested(self) -> None:
+        self._finalize_stop_requested = True
 
     async def _finalize_task(self) -> None:
         try:
             if self.stopped_manually and self._update_config_dir is not None:
                 await cancel_maa_software_update_precheck(self.maa_set_path.parent)
         finally:
-            await super()._finalize_task()
+            try:
+                await super()._finalize_task()
+            finally:
+                if (
+                    self._finalize_stop_requested
+                    and self._update_config_dir is not None
+                ):
+                    await cancel_maa_software_update_precheck(self.maa_set_path.parent)
 
     async def _run_main_task(self) -> None:
         # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
@@ -441,6 +453,8 @@ class MaaManager(ScriptManagerBase):
                 self.script_info.user_list[self.script_info.current_index], task
             )
             if isinstance(task, AutoProxyTask):
+                if task.pending_update is not None:
+                    self._pending_update = task.pending_update
                 try:
                     pending = await asyncio.to_thread(
                         read_pending_update, self.maa_set_path.parent
@@ -468,7 +482,7 @@ class MaaManager(ScriptManagerBase):
                         not current_package
                         or not (self.maa_set_path.parent / current_package).is_file()
                     ):
-                        await asyncio.to_thread(
+                        await _run_write_thread(
                             write_pending_update,
                             self.maa_set_path.parent,
                             version=self._pending_update[0],

@@ -205,7 +205,7 @@ def register_pending_update(
     """把完整包复制进 MAA 安装目录并登记待更新字段，返回是否登记成功。
 
     由 software_update.prepare_maa_software_update 在原有 update_maa() 调用
-    点前调用；登记后仍由未改动的 update_maa() 启动 MAA 官方更新链安装。
+    点前调用；登记后仍由 update_maa() 启动 MAA 官方更新链安装。
 
     - 上游失败标志存在、磁盘预算不足（包大小 ×3）时不登记；
     - 已有指向现存包的其他登记时不覆盖，保护现有登记；
