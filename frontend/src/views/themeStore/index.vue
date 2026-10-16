@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { UploadOutlined } from '@ant-design/icons-vue'
+import { FileTextOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 import { useAppearanceSettings } from '@/views/setting/useAppearanceSettings'
+import { useLocale } from '@/composables/useLocale'
+import { MAS_DOC_URLS, localizeDocUrl, openExternalUrl } from '@/utils/openExternal'
 import AppearanceUploadModal from './components/AppearanceUploadModal.vue'
 import MyAppearanceList from './components/MyAppearanceList.vue'
 import OnlineAppearanceDetail from './components/OnlineAppearanceDetail.vue'
@@ -22,6 +24,7 @@ defineOptions({ name: 'ThemeStorePage' })
 type ThemeStoreTab = AppearanceCategory | 'mine'
 
 const { t } = useI18n()
+const { locale } = useLocale()
 // 覆盖确认、失败提示和「预览 → 应用外观」沿用设置页那一套，所有窗口一起同步。
 const { modalContextHolder, installPreparedOnlineAppearance } = useAppearanceSettings()
 const account = useShareAccount({
@@ -86,6 +89,11 @@ const openUpload = (fileId: number | null = null, resourceCategory?: AppearanceC
     (category.value === 'mascot' ? 'mascot' : 'theme')
   uploadTargetId.value = fileId
   uploadOpen.value = true
+}
+
+/** 打开外观包与桌宠包的文档；英文界面走文档站的英文版 */
+const openDocs = (): void => {
+  void openExternalUrl(localizeDocUrl(MAS_DOC_URLS.appearance, locale.value))
 }
 
 const handleUploaded = (): void => {
@@ -153,6 +161,10 @@ onBeforeUnmount(() => {
       <h1 class="page-title">{{ t('themeStore.title') }}</h1>
       <div class="theme-store-actions">
         <ThemeStoreAccount :account="account" />
+        <a-button type="primary" @click="openDocs">
+          <template #icon><FileTextOutlined /></template>
+          {{ t('themeStore.openDocs') }}
+        </a-button>
         <a-button type="primary" @click="openUpload()">
           <template #icon><UploadOutlined /></template>
           {{ t('themeStore.upload.open') }}

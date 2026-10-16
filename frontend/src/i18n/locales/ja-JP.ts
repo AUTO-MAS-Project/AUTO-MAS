@@ -3985,6 +3985,7 @@ export default {
     uploadTheme: 'テーマをアップロード',
     uploadMascot: 'ペットをアップロード',
     title: 'リソースストア',
+    openDocs: 'ドキュメントを開く',
     account: {
       login: '共有サイトにログイン',
       pending: 'ブラウザで承認してください。確認コード',
