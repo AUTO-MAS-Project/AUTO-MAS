@@ -251,6 +251,7 @@ class Emulator2Manager(DeviceBase):
         **模拟器本来就开着时同样生效**——两家原生的带包启动参数在那种情况下会被
         整条吞掉，见 :mod:`.applaunch`。拉不起来只记警告，不影响本方法的返回；
         只有等不到安卓系统启动完成时抛 ``RuntimeError``，见 ``AppLaunchMixin.open``。
+        后端返回的 ``DeviceInfo``（含拉应用结果 ``app_launch``）原样返回。
         """
         manager, native_index = await self._dispatch(idx)
         if isinstance(manager, AvdManager) and not (manual or allow_mod_avd):
