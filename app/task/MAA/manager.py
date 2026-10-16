@@ -47,11 +47,13 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import get_logger
+from app.utils.config_archive import archive_files
 from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
+    read_native_config_snapshot,
     recover_native_config,
     swap_in_dir,
 )
@@ -63,7 +65,11 @@ from .AutoProxy import (
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification, update_maa
-from .tools.backup_archive import archive_native_backup
+from .tools.backup_archive import (
+    archive_native_backup,
+    collect_native_files,
+    native_backup_root,
+)
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
     _run_write_thread,
@@ -118,7 +124,7 @@ class MaaManager(ScriptManagerBase):
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
-        self._updater_running = False
+        self._updater_running: bool = False
 
     async def _finalize_task(self) -> None:
         try:
@@ -135,7 +141,17 @@ class MaaManager(ScriptManagerBase):
                     if self.prepared and not self.maintenance_only:
                         if self._updater_running:
                             self.script_info.status = "异常"
-                            logger.warning("MAA 更新器仍在运行，保留任务前原生配置快照")
+                            # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
+                            backup_path = await _run_write_thread(
+                                archive_files,
+                                files=collect_native_files(self.temp_path),
+                                store_root=native_backup_root(self.maa_set_path),
+                                force=True,
+                            )
+                            logger.warning(
+                                f"MAA 更新器仍在运行，任务前原生配置备份: {backup_path}；"
+                                "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
+                            )
                         else:
                             # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
                             if (
@@ -330,6 +346,8 @@ class MaaManager(ScriptManagerBase):
                     raise MaaUpdaterRunningError(
                         "MAA 官方更新器仍在运行，请等待更新结束后重试"
                     )
+                if not await System.kill_process(install / "MAA.exe"):
+                    raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
                 self.config_lock_acquired = True
                 await script_config.lock()
                 break
@@ -394,6 +412,18 @@ class MaaManager(ScriptManagerBase):
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""
 
+        # 指纹不匹配会保护现场并清理 Temp；先入原安装的备份池，保留原始内容。
+        # 上次归档若失败，本次也必须归档成功后才允许清理，不能只记录告警继续。
+        if (
+            read_native_config_snapshot(
+                self.temp_path, expected_script_id=self.script_info.script_id
+            )
+            is not None
+        ):
+            archive_files(
+                files=collect_native_files(self.temp_path),
+                store_root=native_backup_root(self.maa_set_path),
+            )
         result = recover_native_config(
             self.temp_path,
             self.maa_set_path,
@@ -499,14 +529,11 @@ class MaaManager(ScriptManagerBase):
                 kwargs["view_only"] = self.task_info.view_only
             else:
                 kwargs["game_update_result"] = update_result
-                kwargs["update_config_dir"] = self._update_config_dir
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                if self._update_config_dir is None:
-                    # 一个安装只选一个版本，本批账号沿用同一通道，不在批次中切换。
-                    self._update_config_dir = task.update_config_dir
-                    logger.info("MAA 本体更新: 本批次采用首个执行账号的更新通道")
+                # 一次只安装一个版本，批尾沿用最后实际执行账号的通道；其他通道只缓存。
+                self._update_config_dir = task.update_config_dir
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )

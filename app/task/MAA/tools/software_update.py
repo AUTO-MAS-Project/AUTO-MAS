@@ -663,9 +663,14 @@ async def prepare_maa_software_update(
         key = (_path_key(maa_root), _cache_key(arch, channel))
         cache_dir = software_cache_dir("win", arch, channel)
         task = _precheck_tasks.get(key)
-        if task is not None and not task.done():
+        downloads = [
+            pending
+            for pending_key, pending in _precheck_tasks.items()
+            if pending_key[0] == key[0] and not pending.done()
+        ]
+        if downloads:
             logger.info("MAA 本体更新: 等待本轮完整包下载完成，可停止任务取消下载")
-            await asyncio.shield(task)
+            await asyncio.gather(*(asyncio.shield(pending) for pending in downloads))
         if _precheck_tasks.get(key) is task:
             _precheck_tasks.pop(key, None)
         cache_lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
