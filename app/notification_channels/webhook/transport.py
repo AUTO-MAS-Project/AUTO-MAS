@@ -53,7 +53,9 @@ WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
 WECOM_IMAGE_MAX_BYTES = 2 * 1024 * 1024
 
 
-def webhook_body_failure(text: str, url: str = "") -> str | None:
+def webhook_body_failure(
+    text: str, url: str = "", *, include_message: bool = True
+) -> str | None:
     """从 HTTP 2xx 的响应体里识别机器人平台的业务失败。
 
     钉钉、企业微信自定义机器人被关键词/签名校验拦下、飞书 token 无效、OneBot
@@ -81,16 +83,25 @@ def webhook_body_failure(text: str, url: str = "") -> str | None:
     # 钉钉 / 企业微信：成功一律 errcode 0。
     errcode = body.get("errcode")
     if isinstance(errcode, int) and not isinstance(errcode, bool) and errcode != 0:
-        return f"errcode={errcode} {_reason('errmsg', 'msg')}"
+        return f"errcode={errcode}" + (
+            f" {_reason('errmsg', 'msg')}" if include_message else ""
+        )
     # OneBot v11：status 为 failed 才算失败，retcode 只是补充。
     if str(body.get("status", "")).lower() == "failed":
-        return f"retcode={body.get('retcode')} {_reason('msg', 'message', 'wording')}"
+        if include_message:
+            return (
+                f"retcode={body.get('retcode')} {_reason('msg', 'message', 'wording')}"
+            )
+        retcode = body.get("retcode")
+        return f"retcode={retcode}" if type(retcode) is int else "status=failed"
     # 飞书：只在飞书域名下解读 code，别的服务常拿 code=200 当成功。
     host = (urlparse(url).hostname or "").lower()
     if host.endswith(("feishu.cn", "larksuite.com")):
         code = body.get("code")
         if isinstance(code, int) and not isinstance(code, bool) and code != 0:
-            return f"code={code} {_reason('msg', 'message')}"
+            return f"code={code}" + (
+                f" {_reason('msg', 'message')}" if include_message else ""
+            )
     return None
 
 
@@ -169,6 +180,7 @@ class Sender:
             return
 
         if webhook.get("Data", "Url") == "":
+            self.dependencies.logger.warning("Webhook URL 不能为空")
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
@@ -293,11 +305,15 @@ class Sender:
 
         # 检查响应
         if not response.is_success:
+            self.dependencies.logger.warning(
+                f"Webhook 推送失败: HTTP {response.status_code}"
+            )
             raise Exception(
                 f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}"
             )
-        failure = webhook_body_failure(response.text, url)
+        failure = webhook_body_failure(response.text, url, include_message=False)
         if failure is not None:
+            self.dependencies.logger.warning(f"Webhook 服务端拒绝: {failure}")
             raise Exception(f"[{webhook.get('Info', 'Name')}] 服务端拒绝")
         self.dependencies.logger.success(
             f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
@@ -371,10 +387,10 @@ class Sender:
                 f"企业微信图片补发失败: {name} - HTTP {response.status_code}"
             )
             return
-        failure = webhook_body_failure(response.text, url)
+        failure = webhook_body_failure(response.text, url, include_message=False)
         if failure is not None:
             self.dependencies.logger.warning(
-                f"企业微信图片补发失败: {name} - 服务端拒绝"
+                f"企业微信图片补发失败: {name} - 服务端拒绝 {failure}"
             )
             return
         self.dependencies.logger.success(f"企业微信图片补发成功: {name}")

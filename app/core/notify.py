@@ -35,6 +35,7 @@ from app.core.notify_channels import (
     ChannelTarget,
     NotifyChannel,
     TargetConfigView,
+    get_notify_channel_failures,
     get_notify_channels,
 )
 from app.core.notify_render import render_for_target
@@ -75,6 +76,8 @@ class NotifyTarget:
     name: str
     channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
     empty_policy: EmptyPolicy = "send"
+    # 声明损坏时无法确定目标；只记目录未确认，不计作一次实际投递。
+    catalog_failures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,7 @@ class DispatchResult:
     ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
     ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
     ``attempted`` 为 0，切勿把该状态当作「已送达」。
+    ``failed`` 也保留无法确认的渠道目录；这类错误不增加 ``attempted``。
     """
 
     attempted: int = 0
@@ -243,6 +247,7 @@ def global_target(
         name="全局",
         channels=tuple(pairs),
         empty_policy=empty_policy,
+        catalog_failures=get_notify_channel_failures(),
     )
 
 
@@ -259,6 +264,7 @@ def user_target(user_config: Any) -> NotifyTarget:
         name="用户",
         channels=tuple(pairs),
         empty_policy="warn",
+        catalog_failures=get_notify_channel_failures(),
     )
 
 
@@ -454,6 +460,7 @@ async def dispatch(
     succeeded_ids: list[str] = []
     failed: list[str] = []
     attempted = 0
+    catalog_failures: list[str] = []
 
     async def attempt(
         channel: str,
@@ -500,6 +507,10 @@ async def dispatch(
         failed.append(channel)
 
     for target in targets:
+        # 跳过已送达 ID 不能消除目录不完整；不伪造目标、发送或递增尝试数。
+        for failure in target.catalog_failures:
+            if failure not in catalog_failures:
+                catalog_failures.append(failure)
         for channel, ct in target.channels:
             should_send = True
             # None 表示该渠道不做空值判定（系统通知 / Koishi / QQ / Webhook），
@@ -524,7 +535,7 @@ async def dispatch(
     return DispatchResult(
         attempted=attempted,
         succeeded=tuple(succeeded),
-        failed=tuple(failed),
+        failed=tuple((*failed, *catalog_failures)),
         succeeded_ids=tuple(succeeded_ids),
     )
 
@@ -751,10 +762,18 @@ async def _dispatch_task_report(
             setattr(task_info, "game_sign_summary_pending", with_summary.failed)
             if delivered & channels and not with_summary.failed:
                 mark_task_community_summary_consumed(task_info)
+        catalog_failures = {
+            failure for target in targets for failure in target.catalog_failures
+        }
         result = DispatchResult(
             attempted=with_summary.attempted + without_summary.attempted,
             succeeded=with_summary.succeeded + without_summary.succeeded,
-            failed=with_summary.failed + without_summary.failed,
+            failed=with_summary.failed
+            + tuple(
+                failure
+                for failure in without_summary.failed
+                if failure not in catalog_failures
+            ),
             succeeded_ids=with_summary.succeeded_ids + without_summary.succeeded_ids,
         )
 

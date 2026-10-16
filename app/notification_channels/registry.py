@@ -140,7 +140,11 @@ def validate_channel(channel: NotifyChannel) -> None:
 
 class ChannelRegistry:
     def __init__(
-        self, channels: Iterable[NotifyChannel], *, unavailable: Iterable[str] = ()
+        self,
+        channels: Iterable[NotifyChannel],
+        *,
+        unavailable: Iterable[str] = (),
+        unresolved: Iterable[str] = (),
     ) -> None:
         entries = tuple(channels)
         for entry in entries:
@@ -153,6 +157,8 @@ class ChannelRegistry:
         self.channels = tuple(sorted(entries, key=lambda c: (c.order, c.key)))
         self.by_id = MappingProxyType({entry.key: entry for entry in self.channels})
         self.unavailable = frozenset(unavailable)
+        # 未取得有效声明时，不能推测启用状态或伪造投递目标。
+        self.unresolved = tuple(sorted(set(unresolved)))
 
     def bind(self, dependencies: ChannelDependencies) -> BoundChannels:
         senders: dict[str, Any] = {}

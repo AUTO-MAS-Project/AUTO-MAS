@@ -46,18 +46,22 @@ class Sender:
         """
 
         proxy = self.dependencies.read_proxy()
-        if send_key == "":
-            raise ValueError("ServerChan SendKey 不能为空")
+        try:
+            if send_key == "":
+                raise ValueError("ServerChan SendKey 不能为空")
 
-        # 构造 URL
-        if send_key.startswith("sctp"):
-            match = re.match(r"^sctp(\d+)t", send_key)
-            if match:
-                url = f"https://{match.group(1)}.push.ft07.com/send/{send_key}.send"
+            # 构造 URL
+            if send_key.startswith("sctp"):
+                match = re.match(r"^sctp(\d+)t", send_key)
+                if match:
+                    url = f"https://{match.group(1)}.push.ft07.com/send/{send_key}.send"
+                else:
+                    raise ValueError("SendKey 格式不正确 (sctp<int>)")
             else:
-                raise ValueError("SendKey 格式不正确 (sctp<int>)")
-        else:
-            url = f"https://sctapi.ftqq.com/{send_key}.send"
+                url = f"https://sctapi.ftqq.com/{send_key}.send"
+        except ValueError as exc:
+            self.dependencies.logger.warning(f"ServerChan 配置错误: {exc}")
+            raise
 
         # 请求发送
         params = {"title": title, "desp": content}
@@ -70,4 +74,9 @@ class Sender:
         if result.get("code") == 0:
             self.dependencies.logger.success(f"Server酱推送通知成功: {title}")
         else:
+            code = result.get("code")
+            code_hint = f", code={code}" if type(code) is int else ""
+            self.dependencies.logger.warning(
+                f"ServerChan 服务端拒绝: HTTP {response.status_code}{code_hint}"
+            )
             raise Exception(f"ServerChan 推送通知失败: HTTP {response.status_code}")

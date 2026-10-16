@@ -110,8 +110,10 @@ def _get_registry() -> ChannelRegistry:
         from app.utils import get_logger
 
         manifests, discovery_errors = discover_channels()
-        registry, registration_errors = register_channels(manifests)
-        for diagnostic in (*discovery_errors, *registration_errors):
+        registry, diagnostics = register_channels(
+            manifests, discovery_errors=discovery_errors
+        )
+        for diagnostic in diagnostics:
             get_logger("通知服务").warning(
                 f"通知渠道 {diagnostic.channel} 不可用 ({diagnostic.stage}): {diagnostic.reason}"
             )
@@ -123,6 +125,12 @@ def get_notify_channels() -> tuple[NotifyChannel, ...]:
     """目录读取不依赖传输装配；未装配时仍禁止发送。"""
     registry = _get_registry()
     return tuple(sorted((*registry.channels, _POLICY), key=lambda c: (c.order, c.key)))
+
+
+def get_notify_channel_failures() -> tuple[str, ...]:
+    """目录不完整时明确保留不确定性，不假定损坏渠道未启用。"""
+
+    return tuple(f"通知渠道目录未确认（{key}）" for key in _get_registry().unresolved)
 
 
 def initialize_notification_channels() -> None:

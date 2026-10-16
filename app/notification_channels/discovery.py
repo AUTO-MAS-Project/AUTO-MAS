@@ -81,12 +81,14 @@ def discover_channels(
 
 def register_channels(
     manifests: tuple[ChannelManifest, ...],
+    *,
+    discovery_errors: tuple[ChannelDiagnostic, ...] = (),
 ) -> tuple[ChannelRegistry, tuple[ChannelDiagnostic, ...]]:
     """完整声明校验成功后一次登记；重复 ID 全部隔离，不静默覆盖。"""
 
     entries: list[NotifyChannel] = []
     unavailable: set[str] = set()
-    diagnostics: list[ChannelDiagnostic] = []
+    diagnostics = list(discovery_errors)
     counts = Counter(manifest.id for manifest in manifests)
     for manifest in manifests:
         if counts[manifest.id] > 1:
@@ -127,4 +129,11 @@ def register_channels(
             )
     # 声明保持可见以按既有启用配置构造目标；缺依赖时禁止绑定发送器。
     # 否则已有启用渠道会静默消失，被业务收尾误判为全部送达。
-    return ChannelRegistry(entries, unavailable=unavailable), tuple(diagnostics)
+    registered = {entry.key for entry in entries}
+    unresolved = {
+        error.channel for error in diagnostics if error.channel not in registered
+    }
+    return (
+        ChannelRegistry(entries, unavailable=unavailable, unresolved=unresolved),
+        tuple(diagnostics),
+    )

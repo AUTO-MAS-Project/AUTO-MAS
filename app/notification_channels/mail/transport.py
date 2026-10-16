@@ -104,24 +104,29 @@ class Sender:
         """
 
         transport = self.dependencies.read_mail()
-        if transport.smtp_server == "":
-            raise ValueError("邮件通知的SMTP服务器地址不能为空")
-        if transport.authorization_code == "":
-            raise ValueError("邮件通知的授权码不能为空")
-        if not bool(
-            re.match(
-                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                transport.from_address,
-            )
-        ):
-            raise ValueError("邮件通知的发送邮箱格式错误或为空")
-        if not bool(
-            re.match(
-                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                to_address,
-            )
-        ):
-            raise ValueError("邮件通知的接收邮箱格式错误或为空")
+        try:
+            if transport.smtp_server == "":
+                raise ValueError("邮件通知的SMTP服务器地址不能为空")
+            if transport.authorization_code == "":
+                raise ValueError("邮件通知的授权码不能为空")
+            if not bool(
+                re.match(
+                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                    transport.from_address,
+                )
+            ):
+                raise ValueError("邮件通知的发送邮箱格式错误或为空")
+            if not bool(
+                re.match(
+                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                    to_address,
+                )
+            ):
+                raise ValueError("邮件通知的接收邮箱格式错误或为空")
+        except ValueError as exc:
+            # 此处仅包含本渠道的固定校验文案，不含地址、授权码或第三方异常。
+            self.dependencies.logger.warning(f"邮件通知配置错误: {exc}")
+            raise
 
         email_images = []
         if mode == "网页":
