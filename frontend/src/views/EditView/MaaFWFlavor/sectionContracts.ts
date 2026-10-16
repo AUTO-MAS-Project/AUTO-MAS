@@ -95,7 +95,6 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（MaaFW 里魔改 AVD 只支持 M9A） */
   emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
