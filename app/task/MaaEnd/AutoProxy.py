@@ -419,8 +419,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _game_setting_pretask(self) -> str:
         """按资源能力选择入口，兼容正式版与测试版，不依赖版本号。"""
         loader = MaaEndResourceLoader.get_loaded(self.maaend_root_path)
-        if self._launch_mode() == "Launcher" and loader.has_pretask("GameSetting"):
-            return _MAAEND_GAME_SETTING_PRETASK
         if loader.has_pretask("LaunchGamePC"):
             return _MAAEND_LAUNCH_GAME_PRETASK
         return _MAAEND_GAME_SETTING_PRETASK
@@ -450,13 +448,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _apply_launcher_game_settings(self) -> None:
         """执行对应版本的上游预任务；新版同时负责启动游戏。"""
         task_name = self._game_setting_pretask()
-        if (
-            self._launch_mode() == "Launcher"
-            and task_name == _MAAEND_LAUNCH_GAME_PRETASK
-        ):
-            raise ValueError(
-                "当前 MaaEnd 不提供独立的游戏启动设置，请关闭「启动时设置分辨率」"
-            )
         if self.mode == self.first_run_mode and self.script_config.get(
             "Game", "SetResolution"
         ):
@@ -526,14 +517,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if result.returncode != 0:
             raise RuntimeError(f"MaaEnd 游戏启动设置失败: {result.failure_detail()}")
 
-    async def _try_maaend_launch(self) -> bool:
-        """调用方持有启动器锁，新入口失败时明确提示并交回 MAS 兜底。"""
+    async def _launch_game_via_maaend(self) -> None:
+        """调用方持有启动器锁，由 MaaEnd 完成设置与启动并等待就绪。"""
         needs_wait = not is_process_running(_MAAEND_CLIENT_PROCESS) or (
             self.mode == self.first_run_mode
             and bool(self.script_config.get("Game", "SetResolution"))
         )
+        await self._apply_launcher_game_settings()
+        if needs_wait:
+            await asyncio.sleep(int(self.script_config.get("Game", "WaitTime")))
+
+    async def _try_maaend_launch(self) -> bool:
+        """调用方持有启动器锁，新入口失败时明确提示并交回 MAS 兜底。"""
         try:
-            await self._apply_launcher_game_settings()
+            await self._launch_game_via_maaend()
         except Exception as error:
             logger.warning(f"MaaEnd 启动入口失败，将使用 MAS 启动兜底: {error}")
             await push_dispatch_log(
@@ -541,12 +538,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "MaaEnd 启动失败，将尝试 MAS 启动兜底；请确认游戏显示设置",
             )
             return False
-        if needs_wait:
-            await asyncio.sleep(int(self.script_config.get("Game", "WaitTime")))
         return True
 
     async def _mas_launch_game_via_launcher(self) -> None:
-        """由 MAS 经官方启动器拉起终末地。
+        """兼容 release 启动器选项：新版交给 MaaEnd，旧版由 MAS 启动。
 
         启动器模式下移除 MAS 注入的直接启动前置程序，避免任何直启回退。
         前台点击与全局鼠标一次只能有一路，跨脚本按 _LAUNCHER_AUTOMATION_LOCK 串行。
@@ -560,7 +555,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             self.launcher_runtime_path = launcher_path.resolve()
             _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
-            # MAS 接管时直接操作官方启动器；仅复用不会启动游戏的旧版设置预任务。
+            # release 前端尚无 MaaEnd 启动选项，临时由新版合并入口接管；
+            # 后续同步三模式配置时移除此覆盖，不改写用户保存的启动方式。
+            if self._game_setting_pretask() == _MAAEND_LAUNCH_GAME_PRETASK:
+                await self._launch_game_via_maaend()
+                return
+            # 旧版仍由 MAS 启动游戏，先复用独立设置预任务。
             if self.mode == self.first_run_mode and self.script_config.get(
                 "Game", "SetResolution"
             ):
@@ -658,16 +658,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ) or not loader.has_task(_MAAEND_CLOSE_GAME_TASK):
                 self.cur_user_item.status = "异常"
                 return "当前 MaaEnd 版本不支持托管游戏启动，请更新 MaaEnd 后重试"
-            if (
-                self._launch_mode() == "Launcher"
-                and self.script_config.get("Game", "SetResolution")
-                and not loader.has_pretask("GameSetting")
-            ):
-                self.cur_user_item.status = "异常"
-                return (
-                    "当前 MaaEnd 不提供独立的游戏启动设置，"
-                    "请关闭「启动时设置分辨率」后使用 MAS 启动器启动"
-                )
             if (
                 account_switch_method == "MAAEND"
                 and account_id
@@ -1318,7 +1308,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     if self._launch_mode() == "Launcher":
                         await self.set_maaend(None)
                         logger.info(
-                            "启动方式为「启动器启动」，由 MAS 直接经官方启动器拉起游戏"
+                            "启动方式为「启动器启动」，优先使用 MaaEnd 合并启动入口"
                         )
                         await self._mas_launch_game_via_launcher()
                     elif use_mas_account_switch:
