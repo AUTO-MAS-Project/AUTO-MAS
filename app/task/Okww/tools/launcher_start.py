@@ -506,13 +506,19 @@ def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
                         bitmap = win32ui.CreateBitmap()
                         try:
                             bitmap.CreateCompatibleBitmap(source_dc, width, height)
-                            memory_dc.SelectObject(bitmap)
-                            if not ctypes.windll.user32.PrintWindow(
-                                hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
-                            ):
-                                return None
-                            bitmap_info = bitmap.GetInfo()
-                            bitmap_bits = bitmap.GetBitmapBits(True)
+                            # SelectObject 返回被替换的旧位图：删除我们的位图前
+                            # 必须先把它从 memory_dc 选出（仍选在 DC 里的 GDI
+                            # 对象删不掉，会随每次捕获泄漏）
+                            original_bitmap = memory_dc.SelectObject(bitmap)
+                            try:
+                                if not ctypes.windll.user32.PrintWindow(
+                                    hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
+                                ):
+                                    return None
+                                bitmap_info = bitmap.GetInfo()
+                                bitmap_bits = bitmap.GetBitmapBits(True)
+                            finally:
+                                memory_dc.SelectObject(original_bitmap)
                         finally:
                             win32gui.DeleteObject(bitmap.GetHandle())
                     finally:

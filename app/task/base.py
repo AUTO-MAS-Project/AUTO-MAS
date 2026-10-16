@@ -34,6 +34,8 @@ class ScriptAutoProxyBase(TaskExecuteBase):
     # 短暂出现的公告文本被误判为维护弹窗）。
     _MAINTENANCE_WATCH_INTERVAL_SECONDS = 30.0
     _MAINTENANCE_WATCH_CONFIRMATIONS = 2
+    # 单次维护检测的超时：窗口捕获/OCR 卡住时按未命中放行，不拖住主流程
+    _MAINTENANCE_DETECT_TIMEOUT_SECONDS = 15.0
 
     @property
     def run_timeout_seconds(self) -> float:
@@ -78,11 +80,13 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         """
 
         try:
-            maintenance_text = await asyncio.to_thread(detect)
-        except Exception as e:
-            logger.opt(exception=True).warning(
-                f"游戏画面维护检测失败（忽略，继续正常流程）: {e}"
+            maintenance_text = await asyncio.wait_for(
+                asyncio.to_thread(detect),
+                timeout=self._MAINTENANCE_DETECT_TIMEOUT_SECONDS,
             )
+        except Exception as e:
+            # 超时与失败同口径放行：卡住的窗口捕获/OCR 不阻断正常流程
+            logger.warning(f"游戏画面维护检测失败（忽略，继续正常流程）: {e}")
             return False
         if maintenance_text is None:
             return False
@@ -93,12 +97,16 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         self.cur_user_log.status = reason
         self.cur_user_log.content = [reason]
         logger.info(f"用户 {self.cur_user_item.name} - {reason}")
-        await push_dispatch_log(self.script_info, reason)
-        await Publisher.send(
-            id=self.task_info.task_id,
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="info", message=reason),
-        )
+        try:
+            # 通知失败不改变跳过结论：记账已完成，不能因推送异常转入异常路径
+            await push_dispatch_log(self.script_info, reason)
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="info", message=reason),
+            )
+        except Exception:
+            logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
         return True
 
     async def watch_game_maintenance(
@@ -119,8 +127,12 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             if stop.is_set():
                 return
             try:
-                maintenance_text = await asyncio.to_thread(detect)
+                maintenance_text = await asyncio.wait_for(
+                    asyncio.to_thread(detect),
+                    timeout=self._MAINTENANCE_DETECT_TIMEOUT_SECONDS,
+                )
             except Exception:
+                # 超时与失败同口径：按一次未命中处理，监视继续采样
                 hits = 0
                 continue
             if maintenance_text is None:
@@ -138,13 +150,20 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             self.cur_user_item.maintenance_skipped = True
             logger.info(f"用户 {self.cur_user_item.name} - {self._maintenance_reason}")
-            await push_dispatch_log(self.script_info, self._maintenance_reason)
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="info", message=self._maintenance_reason),
-            )
-            stop.set()
+            try:
+                await push_dispatch_log(self.script_info, self._maintenance_reason)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="info", message=self._maintenance_reason
+                    ),
+                )
+            except Exception:
+                logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
+            finally:
+                # 通知失败也不能卡住 main_task：跳过记账已完成，必须让等待循环退出
+                stop.set()
             return
 
     def clear_maintenance_hit(self) -> None:

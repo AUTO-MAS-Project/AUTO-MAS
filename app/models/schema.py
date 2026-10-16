@@ -2073,7 +2073,7 @@ class OkwwUserConfig_Data(GeneralUserConfig_Data):
     """OK-WW 用户数据（复用通用字段）"""
 
     LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
+        default=None, description="上次代理状态（未知/成功/失败/维护中）"
     )
     LastTaskIndex: Optional[int] = Field(
         default=None, description="上次运行的 ok-ww 任务序号（-t N）"
@@ -2126,7 +2126,7 @@ class OkNteUserConfig_Data(GeneralUserConfig_Data):
     """OK-NTE 用户数据（复用通用字段）"""
 
     LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
+        default=None, description="上次代理状态（未知/成功/失败/维护中）"
     )
     LastTaskIndex: Optional[int] = Field(
         default=None, description="上次运行的 ok-nte 任务序号（-t N）"
