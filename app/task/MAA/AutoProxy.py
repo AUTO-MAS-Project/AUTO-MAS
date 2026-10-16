@@ -119,6 +119,7 @@ from .tools.cultivate import (
     CultivatePlan,
     OperatorTarget,
     ProviderContext,
+    YituliuDataError,
     apply_achievements,
     depot_cultivate_service,
     dump_cultivate_targets,
@@ -1819,6 +1820,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
             achievements = judge_achievements(ready_targets, certifying_snapshots)
             updated = apply_achievements(ready_targets, achievements)
             if updated != ready_targets:
+                names = load_oper_box_names(context)
+                # 森空岛可直接确认达成，无干员识别档案时从展示目录补齐名称。
+                if any(
+                    achievement.achieved
+                    and achievement.confident
+                    and achievement.operator_id not in names
+                    for achievement in achievements
+                ):
+                    try:
+                        catalog = await depot_cultivate_service.operator_catalog(
+                            config_path=Config.config_path, proxy=Config.proxy
+                        )
+                    except YituliuDataError as e:
+                        logger.warning(f"养成达成干员名称查询失败, 使用干员编号: {e}")
+                    else:
+                        names = {
+                            operator["value"]: operator["label"] for operator in catalog
+                        } | names
                 merged_payload = _merge_cultivate_target_updates(
                     raw_targets=raw_targets,
                     updated_targets=updated,
@@ -1834,7 +1853,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if not merged_payload:
                     await self._set_cultivate_notice("")
                 removed = summarize_achievements(
-                    ready_targets, achievements, load_oper_box_names(context)
+                    targets=ready_targets, achievements=achievements, names=names
                 )
                 for line in removed:
                     if line not in self._cultivate_achievement_summary:
