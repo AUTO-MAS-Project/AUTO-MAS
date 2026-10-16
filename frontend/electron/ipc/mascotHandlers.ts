@@ -98,6 +98,7 @@ export function registerDesktopMascotHandlers(
     | 'getData'
     | 'setIdleMessage'
     | 'handlePointer'
+    | 'startDrag'
     | 'setDecodedImage'
     | 'setActivity'
     | 'showNotice'
@@ -131,6 +132,9 @@ export function registerDesktopMascotHandlers(
     }
   )
   ipcMain.handle('desktop-mascot:get', event => service.getData(event.sender))
+  ipcMain.handle('desktop-mascot:drag-start', (event, offset: unknown) =>
+    service.startDrag(event.sender, offset)
+  )
   ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
     if (
       event.sender !== getMainWindow()?.webContents ||
@@ -141,8 +145,8 @@ export function registerDesktopMascotHandlers(
       return
     service.setIdleMessage(message)
   })
-  const onPointer = (event: Electron.IpcMainEvent, action: unknown): void =>
-    service.handlePointer(event.sender, action)
+  const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
+    service.handlePointer(event.sender, action, session)
   ipcMain.on('desktop-mascot:pointer', onPointer)
   const onImageDecoded = (
     event: Electron.IpcMainEvent,
@@ -181,6 +185,7 @@ export function registerDesktopMascotHandlers(
     for (const channel of [
       'desktop-mascot:ready',
       'desktop-mascot:get',
+      'desktop-mascot:drag-start',
       'desktop-mascot:idle-message',
       'desktop-mascot:activity',
       'desktop-mascot:notice',
