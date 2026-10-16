@@ -116,24 +116,14 @@ class MaaManager(ScriptManagerBase):
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
-        self._finalize_stop_requested = False
-
-    def _on_finalize_cancel_requested(self) -> None:
-        self._finalize_stop_requested = True
 
     async def _finalize_task(self) -> None:
         try:
-            if self.stopped_manually and self._update_config_dir is not None:
+            # 预检查只属于本轮；超时未完成也必须回收，避免跨脚本后无法停止。
+            if self._update_config_dir is not None:
                 await cancel_maa_software_update_precheck(self.maa_set_path.parent)
         finally:
-            try:
-                await super()._finalize_task()
-            finally:
-                if (
-                    self._finalize_stop_requested
-                    and self._update_config_dir is not None
-                ):
-                    await cancel_maa_software_update_precheck(self.maa_set_path.parent)
+            await super()._finalize_task()
 
     async def _run_main_task(self) -> None:
         # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
