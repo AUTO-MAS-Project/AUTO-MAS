@@ -70,6 +70,7 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
       },
       getData: sender => service?.getData(sender) ?? null,
       handlePointer: (sender, action) => service?.handlePointer(sender, action),
+      startDrag: (sender, offset) => service?.startDrag(sender, offset) ?? false,
       setDecodedImage: (sender, imageUrl, pngDataUrl) =>
         service?.setDecodedImage(sender, imageUrl, pngDataUrl),
       showNotice: (text, reaction) => service?.showNotice(text, reaction),

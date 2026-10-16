@@ -7,8 +7,10 @@ import type {
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
   DesktopMascotUpdate,
+  DesktopMascotDragOffset,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
+import { getMascotLayout, getMascotSize } from './desktopMascotGeometry'
 
 export interface DesktopMascotPreferences {
   appearanceId?: string | null
@@ -33,8 +35,6 @@ interface DesktopMascotOptions {
 }
 
 const MASCOT_MARGIN = 16
-const NOTICE_WIDTH = 280
-const NOTICE_HEIGHT = 108
 
 // 只做鼠标命中判断，不裁剪原生透明窗口；动画取所有帧的并集，避免边缘随播放闪动。
 export function createMascotHitMask(images: NativeImage[]): Uint8Array {
@@ -71,6 +71,8 @@ export class DesktopMascotService {
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
+  private frames: NativeImage[] = []
+  private preferredWidth = 144
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
@@ -139,37 +141,54 @@ export class DesktopMascotService {
     }, 8000)
   }
 
+  startDrag(sender: WebContents, offset: unknown): boolean {
+    if (!this.window || sender !== this.window.webContents || !this.data || this.dragOffset)
+      return false
+    if (!offset || typeof offset !== 'object') return false
+    const { x, y } = offset as DesktopMascotDragOffset
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      x < 0 ||
+      y < 0 ||
+      x >= this.hitSize.width ||
+      y >= this.hitSize.height ||
+      this.hitMask[Math.floor(y) * this.hitSize.width + Math.floor(x)] !== 1
+    )
+      return false
+    // 抓取点来自按下事件，不用延后处理 IPC 时的鼠标位置重新命中。
+    this.dragOffset = { x, y }
+    this.setMouseIgnored(false)
+    this.updateData({ dragging: true })
+    this.updateLook(null)
+    this.moveToCursor()
+    return true
+  }
+
   handlePointer(sender: WebContents, action: unknown): void {
     const win = this.window
     if (!win || sender !== win.webContents) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = win.getBounds()
-    const x = Math.floor(cursor.x - bounds.x - (bounds.width - this.hitSize.width))
-    const y = Math.floor(cursor.y - bounds.y - (bounds.height - this.hitSize.height))
+    const x = Math.floor(cursor.x - bounds.x - (this.data?.offsetX ?? 0))
+    const y = Math.floor(cursor.y - bounds.y - (this.data?.offsetY ?? 0))
     const hit =
       x >= 0 &&
       y >= 0 &&
       x < this.hitSize.width &&
       y < this.hitSize.height &&
       this.hitMask[y * this.hitSize.width + x] === 1
-    if (action === 'start' && hit) {
-      this.dragOffset = { x: cursor.x - bounds.x, y: cursor.y - bounds.y }
-      this.setMouseIgnored(false)
-    } else if (action === 'move' && this.dragOffset) {
-      win.setPosition(
-        Math.round(cursor.x - this.dragOffset.x),
-        Math.round(cursor.y - this.dragOffset.y)
-      )
+    if (action === 'move' && this.dragOffset) {
+      this.moveToCursor()
     } else if (action === 'end' && this.dragOffset) {
+      this.moveToCursor()
       this.dragOffset = null
-      const area = screen.getDisplayMatching(bounds).workArea
-      const left = Math.max(area.x, Math.min(bounds.x, area.x + area.width - bounds.width))
-      const top = Math.max(area.y, Math.min(bounds.y, area.y + area.height - bounds.height))
-      win.setPosition(left, top)
+      this.updateData({ dragging: false })
+      const finalBounds = win.getBounds()
       try {
         this.options.savePosition({
-          x: left + bounds.width - this.hitSize.width,
-          y: top + bounds.height - this.hitSize.height,
+          x: finalBounds.x + (this.data?.offsetX ?? 0),
+          y: finalBounds.y + (this.data?.offsetY ?? 0),
         })
       } catch (error) {
         this.options.onError(error)
@@ -182,6 +201,10 @@ export class DesktopMascotService {
 
   sync(): void {
     if (this.disposed) return
+    if (this.dragOffset) {
+      this.dragOffset = null
+      this.updateData({ dragging: false })
+    }
     const preferences = this.options.readPreferences()
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
     this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
@@ -291,54 +314,40 @@ export class DesktopMascotService {
 
     const currentBounds = this.window?.getBounds()
     const mainBounds = this.options.getMainWindow()?.getBounds()
-    const display = currentBounds
-      ? screen.getDisplayMatching(currentBounds)
+    const saved = currentBounds
+      ? {
+          x: currentBounds.x + (this.data?.offsetX ?? 0),
+          y: currentBounds.y + (this.data?.offsetY ?? 0),
+        }
+      : preferences.desktopMascotPosition
+    const display = saved
+      ? screen.getDisplayNearestPoint(saved)
       : mainBounds
         ? screen.getDisplayMatching(mainBounds)
         : screen.getPrimaryDisplay()
     const area = display.workArea
-    const sourceSize = frames[0]?.getSize() ?? { width: 1, height: 1 }
-    const scale = Math.min(
-      (appearance.mascot?.width ?? 144) / sourceSize.width,
-      (area.width * 0.35) / sourceSize.width,
-      (area.height * 0.3) / sourceSize.height
+    this.frames = frames
+    this.preferredWidth = appearance.mascot?.width ?? 144
+    const { width, height } = getMascotSize(
+      frames[0]?.getSize() ?? { width: 1, height: 1 },
+      this.preferredWidth,
+      area
     )
-    const width = Math.max(1, Math.round(sourceSize.width * scale))
-    const height = Math.max(1, Math.round(sourceSize.height * scale))
     const position = appearance.mascot?.position ?? 'bottom-right'
-    // 保存角色坐标；说话框始终预留透明空间，显示和收起都不改变窗口大小。
-    const saved = currentBounds
-      ? {
-          x: currentBounds.x + currentBounds.width - this.hitSize.width,
-          y: currentBounds.y + currentBounds.height - this.hitSize.height,
-        }
-      : preferences.desktopMascotPosition
-    const windowWidth = Math.max(width, NOTICE_WIDTH)
-    const windowHeight = height + NOTICE_HEIGHT
-    const bounds = {
-      x:
-        (saved?.x ??
-          (position.endsWith('left')
-            ? area.x + MASCOT_MARGIN
-            : area.x + area.width - width - MASCOT_MARGIN)) -
-        (windowWidth - width),
-      y:
-        (saved?.y ??
-          (position.startsWith('top')
-            ? area.y + MASCOT_MARGIN
-            : area.y + area.height - height - MASCOT_MARGIN)) - NOTICE_HEIGHT,
-      width: windowWidth,
-      height: windowHeight,
-    }
-    const targetArea = screen.getDisplayMatching(bounds).workArea
-    bounds.x = Math.max(
-      targetArea.x,
-      Math.min(bounds.x, targetArea.x + targetArea.width - windowWidth)
+    // 保存角色坐标；气泡换边或横向避让时不移动角色。
+    const layout = getMascotLayout(
+      saved ?? {
+        x: position.endsWith('left')
+          ? area.x + MASCOT_MARGIN
+          : area.x + area.width - width - MASCOT_MARGIN,
+        y: position.startsWith('top')
+          ? area.y + MASCOT_MARGIN
+          : area.y + area.height - height - MASCOT_MARGIN,
+      },
+      { width, height },
+      area
     )
-    bounds.y = Math.max(
-      targetArea.y,
-      Math.min(bounds.y, targetArea.y + targetArea.height - windowHeight)
-    )
+    const { bounds } = layout
     this.hitSize = { width, height }
     this.hitMask = frames.length
       ? createMascotHitMask(frames.map(frame => frame.resize({ width, height })))
@@ -352,6 +361,10 @@ export class DesktopMascotService {
       motionOverride: this.motionOverride,
       width,
       height,
+      offsetX: layout.offset.x,
+      offsetY: layout.offset.y,
+      noticeBelow: layout.noticeBelow,
+      dragging: false,
       colors: this.colors,
       notice: this.data?.notice,
       idleMessage: this.idleMessagePaused ? undefined : this.idleMessage,
@@ -439,6 +452,7 @@ export class DesktopMascotService {
     this.window = null
     this.data = null
     this.decodedImage = null
+    this.frames = []
     this.dragOffset = null
     this.mouseIgnored = null
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
@@ -457,6 +471,46 @@ export class DesktopMascotService {
     if (!this.window || this.mouseIgnored === ignore) return
     this.window.setIgnoreMouseEvents(ignore, { forward: true })
     this.mouseIgnored = ignore
+  }
+
+  private moveToCursor(): void {
+    if (!this.window || !this.data || !this.dragOffset) return
+    const cursor = screen.getCursorScreenPoint()
+    const area = screen.getDisplayNearestPoint(cursor).workArea
+    const size = getMascotSize(
+      this.frames[0]?.getSize() ?? { width: 1, height: 1 },
+      this.preferredWidth,
+      area
+    )
+    if (size.width !== this.hitSize.width || size.height !== this.hitSize.height) {
+      this.dragOffset = {
+        x: (this.dragOffset.x / this.hitSize.width) * size.width,
+        y: (this.dragOffset.y / this.hitSize.height) * size.height,
+      }
+      this.hitSize = size
+      this.hitMask = this.frames.length
+        ? createMascotHitMask(this.frames.map(frame => frame.resize(size)))
+        : new Uint8Array(size.width * size.height)
+    }
+    const layout = getMascotLayout(
+      { x: cursor.x - this.dragOffset.x, y: cursor.y - this.dragOffset.y },
+      size,
+      area
+    )
+    const update = {
+      width: size.width,
+      height: size.height,
+      offsetX: layout.offset.x,
+      offsetY: layout.offset.y,
+      noticeBelow: layout.noticeBelow,
+    }
+    this.window.setBounds(layout.bounds)
+    if (
+      Object.entries(update).some(
+        ([key, value]) => this.data?.[key as keyof DesktopMascotData] !== value
+      )
+    )
+      this.updateData(update)
   }
 
   private showContextMenu(win: BrowserWindow): void {
@@ -533,8 +587,8 @@ export class DesktopMascotService {
       this.lastCursor = cursor
     }
     const bounds = this.window.getBounds()
-    const x = cursor.x - (bounds.x + bounds.width - this.hitSize.width / 2)
-    const y = cursor.y - (bounds.y + bounds.height - this.hitSize.height / 2)
+    const x = cursor.x - (bounds.x + this.data.offsetX + this.hitSize.width / 2)
+    const y = cursor.y - (bounds.y + this.data.offsetY + this.hitSize.height / 2)
     const distance = Math.hypot(x, y)
     if (Date.now() - this.cursorMovedAt > 1000 || distance > 900) {
       this.updateLook(null)

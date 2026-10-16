@@ -12,6 +12,9 @@ let dispose: (() => void) | undefined
 let disposeUpdate: (() => void) | undefined
 let disposeLook: (() => void) | undefined
 let frameTimer: ReturnType<typeof setInterval> | undefined
+let activePointerId: number | null = null
+let pointerTarget: HTMLElement | null = null
+let dragRevision = 0
 
 const isIdleMessage = computed(
   () =>
@@ -50,10 +53,12 @@ const spriteImageUrl = computed(() => {
 
 const avatarStyle = computed(() => {
   if (!data.value) return {}
-  const { width, height, opacity, colors } = data.value
+  const { width, height, offsetX, offsetY, opacity, colors } = data.value
   return {
     width: `${width}px`,
     height: `${height}px`,
+    left: `${offsetX}px`,
+    top: `${offsetY}px`,
     opacity,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
@@ -89,9 +94,10 @@ const spriteStyle = computed(() => {
 
 const noticeStyle = computed(() => {
   if (!data.value) return {}
-  const { height, colors } = data.value
+  const { height, offsetY, noticeBelow, colors } = data.value
   return {
-    bottom: `${height + 12}px`,
+    top: noticeBelow ? `${offsetY + height + 12}px` : undefined,
+    bottom: noticeBelow ? undefined : `${height + 12}px`,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
@@ -132,12 +138,14 @@ onMounted(async () => {
   let changed = false
   let pendingUpdate: DesktopMascotUpdate = {}
   dispose = api.onChanged(value => {
+    endDrag()
     changed = true
     data.value = value
     lookFrame.value = value.lookFrame ?? null
     pendingUpdate = {}
   })
   disposeUpdate = api.onUpdated(update => {
+    if (update.dragging === false) endDrag()
     if (data.value) Object.assign(data.value, update)
     else Object.assign(pendingUpdate, update)
   })
@@ -157,7 +165,7 @@ onUnmounted(() => {
   disposeLook?.()
   clearInterval(frameTimer)
   motionPreference.removeEventListener('change', updateMotionPreference)
-  if (dragging.value) window.desktopMascotAPI?.pointer('end')
+  endDrag()
 })
 
 function updateMotionPreference(event: MediaQueryListEvent): void {
@@ -182,22 +190,49 @@ function hover(): void {
   if (!dragging.value) window.desktopMascotAPI?.pointer('hover')
 }
 
-function startDrag(event: PointerEvent): void {
-  if (event.button !== 0) return
+async function startDrag(event: PointerEvent): Promise<void> {
+  if (event.button !== 0 || activePointerId !== null) return
+  const api = window.desktopMascotAPI
+  if (!api) return
   event.preventDefault()
-  dragging.value = true
   const target = event.currentTarget as HTMLElement
+  const bounds = target.getBoundingClientRect()
+  activePointerId = event.pointerId
+  pointerTarget = target
+  const revision = ++dragRevision
   target.setPointerCapture(event.pointerId)
-  window.desktopMascotAPI?.pointer('start')
+  try {
+    const accepted = await api.startDrag({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    })
+    if (revision !== dragRevision) return
+    if (!accepted) {
+      endDrag()
+      return
+    }
+    dragging.value = true
+    api.pointer('move')
+  } catch {
+    if (revision === dragRevision) endDrag()
+  }
 }
 
-function moveDrag(): void {
-  if (dragging.value) window.desktopMascotAPI?.pointer('move')
+function moveDrag(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) return
+  if (event.buttons === 0) endDrag(event)
+  else if (dragging.value) window.desktopMascotAPI?.pointer('move')
 }
 
-function endDrag(): void {
-  if (!dragging.value) return
+function endDrag(event?: PointerEvent): void {
+  if (activePointerId === null || (event && event.pointerId !== activePointerId)) return
+  const pointerId = activePointerId
+  const target = pointerTarget
+  activePointerId = null
+  pointerTarget = null
+  dragRevision++
   dragging.value = false
+  if (target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
   window.desktopMascotAPI?.pointer('end')
 }
 </script>
@@ -207,7 +242,7 @@ function endDrag(): void {
     <div
       v-if="noticeText"
       class="mascot-notice"
-      :class="{ 'idle-message': isIdleMessage }"
+      :class="{ 'idle-message': isIdleMessage, 'notice-below': data.noticeBelow }"
       :style="noticeStyle"
       role="status"
     >
@@ -256,36 +291,12 @@ function endDrag(): void {
 
 .mascot-avatar {
   position: absolute;
-  right: 0;
-  bottom: 0;
   cursor: grab;
   touch-action: none;
 }
 
 .mascot-avatar.dragging {
   cursor: grabbing;
-  transform-origin: 50% 15%;
-  animation: mascot-drag-sway 600ms ease-in-out infinite;
-}
-
-.mascot-avatar.dragging.reduced-motion {
-  animation: none;
-  transform: translate(-8px, -8px);
-}
-
-.mascot-avatar.dragging.drag-sprite {
-  animation: none;
-  transform: translate(-8px, -8px);
-}
-
-@keyframes mascot-drag-sway {
-  0%,
-  100% {
-    transform: translate(-8px, -8px) rotate(-4deg);
-  }
-  50% {
-    transform: translate(-8px, -8px) rotate(4deg);
-  }
 }
 
 .mascot-avatar.stopped {
@@ -398,5 +409,11 @@ function endDrag(): void {
   background: var(--ant-color-bg-elevated);
   content: '';
   transform: rotate(45deg);
+}
+
+.mascot-notice.notice-below::after {
+  top: -5px;
+  bottom: auto;
+  transform: rotate(225deg);
 }
 </style>

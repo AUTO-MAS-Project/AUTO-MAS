@@ -79,11 +79,7 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
   }
 }
 
-function validateMascotAnimationData(
-  animation: NonNullable<MascotDefinition['animation']>,
-  data: Buffer,
-  rows = 2
-): void {
+function validateMascotAnimationData(columns: number, data: Buffer, rows = 2): void {
   if (data.length < 33 || data.subarray(12, 16).toString('ascii') !== 'IHDR') {
     throw new AssetPackageError('INVALID_ANIMATION', 'mascot.animation: invalid PNG dimensions')
   }
@@ -94,7 +90,7 @@ function validateMascotAnimationData(
     !height ||
     width > 8192 ||
     height > 8192 ||
-    width % animation.columns !== 0 ||
+    width % columns !== 0 ||
     height % rows !== 0
   ) {
     throw new AssetPackageError(
@@ -119,9 +115,10 @@ export function validateMascotAssets(
   read: (assetPath: string) => Buffer
 ): void {
   if (!mascot?.animation) return
-  validateMascotAnimationData(mascot.animation, read(mascot.animation.path))
+  validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.path))
+  if (mascot.animation.lookPath) validateMascotAnimationData(3, read(mascot.animation.lookPath), 3)
   if (mascot.animation.resultPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.resultPath))
+    validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.resultPath))
   if (mascot.animation.dragPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.dragPath), 1)
+    validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.dragPath), 1)
 }

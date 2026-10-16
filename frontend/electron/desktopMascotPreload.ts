@@ -9,6 +9,7 @@ import type {
 const api: DesktopMascotAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot:get'),
   pointer: action => ipcRenderer.send('desktop-mascot:pointer', action),
+  startDrag: offset => ipcRenderer.invoke('desktop-mascot:drag-start', offset),
   imageDecoded: (imageUrl, pngDataUrl) =>
     ipcRenderer.send('desktop-mascot:image-decoded', imageUrl, pngDataUrl),
   onLookChanged: callback => {
