@@ -24,14 +24,52 @@
 import asyncio
 
 from fastapi import APIRouter, Body, Query
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.core import Config
+from app.core import Config, TaskManager
+from app.core.lifecycle import BackendBusyError
 from app.models.schema import *
 from app.services import Updater
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
 logger = get_logger("软件更新 API")
+
+
+class BackendOperationMiddleware:
+    """保护完整 API 请求，包括 GET 触发的回读、导入与恢复落盘。"""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path", "")
+        if (
+            scope["type"] != "http"
+            or not path.startswith("/api/")
+            or path
+            in {
+                "/api/core/health",
+                "/api/core/ws_meta",
+                "/api/core/close",
+                "/api/update/hot-update",
+            }
+        ):
+            await self.app(scope, receive, send)
+            return
+        try:
+            await TaskManager.run_backend_operation(
+                lambda: self.app(scope, receive, send)
+            )
+        except BackendBusyError as error:
+            response = JSONResponse(
+                status_code=409,
+                content=OutBase(
+                    code=409, status="error", message=str(error)
+                ).model_dump(),
+            )
+            await response(scope, receive, send)
 
 
 @router.get(
@@ -178,3 +216,67 @@ async def install_update() -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/hot-update",
+    tags=["Action"],
+    summary="后端热更协调准入",
+    response_model=HotUpdatePrepareOut,
+    status_code=200,
+)
+async def prepare_hot_update(
+    params: HotUpdatePrepareIn = Body(...),
+) -> HotUpdatePrepareOut:
+    """
+    申请或撤销后端热更保护。
+
+    prepare: 检查空闲、避让窗口，准入后进入更新状态；
+    drain: 复核同一准备操作并完成关闭清理，不退出进程；
+    cancel: 撤销对应操作的保护。
+
+    忙、临近定时、暂停是正常的延期决策，不产生用户失败通知；
+    参数或执行异常仍走现有 OutBase 错误契约。
+    """
+    try:
+        if params.action in {"prepare", "drain"}:
+            action = (
+                TaskManager.check_hot_update_admission
+                if params.action == "prepare"
+                else TaskManager.drain_hot_update
+            )
+            (
+                ready,
+                reason,
+                next_scheduled,
+            ) = await action(
+                operation_id=params.operationId,
+                base_commit=params.baseCommit.lower(),
+                target_commit=params.targetCommit.lower(),
+            )
+
+            return HotUpdatePrepareOut(
+                ready=ready,
+                reason=reason,
+                nextScheduledTime=next_scheduled.isoformat()
+                if next_scheduled
+                else None,
+            )
+
+        cancelled = await TaskManager.cancel_hot_update_guard(
+            operation_id=params.operationId,
+            base_commit=params.baseCommit.lower(),
+            target_commit=params.targetCommit.lower(),
+        )
+        return HotUpdatePrepareOut(ready=False, reason=None if cancelled else "closing")
+    except ValueError as error:
+        return HotUpdatePrepareOut(code=409, status="error", message=str(error))
+    except Exception as e:
+        logger.opt(exception=True).error(f"热更准入失败: {type(e).__name__}: {e}")
+        return HotUpdatePrepareOut(
+            code=500,
+            status="error",
+            message="后端热更准备失败，请稍后重试",
+            ready=False,
+            reason="closing" if params.action == "drain" else None,
+        )

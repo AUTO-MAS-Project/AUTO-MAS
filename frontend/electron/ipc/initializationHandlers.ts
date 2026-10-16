@@ -26,6 +26,8 @@ import type {
   RuntimeUpdateRetryAction,
 } from '../services/runtimeUpdateService'
 import {
+  abortStagedBackendUpdate,
+  applyStagedBackendUpdate,
   cancelBackendUpdate,
   retryBackendUpdate,
   updateBackendViaRuntime,
@@ -61,6 +63,23 @@ const isRetryAction = (value: unknown): value is RuntimeUpdateRetryAction =>
 // 全局实例
 let initService: InitializationService | null = null
 let backendService: BackendService | null = null
+let activeInstallations = 0
+let installationTail: Promise<unknown> = Promise.resolve()
+let isClosing = () => false
+let initializationWindow: BrowserWindow | null = null
+
+function coordinateInstallation<T>(operation: () => Promise<T>, cancelStaged = true): Promise<T> {
+  activeInstallations++
+  const cancelled = cancelStaged ? abortStagedBackendUpdate() : Promise.resolve()
+  const result = installationTail.then(async () => {
+    await cancelled
+    return operation()
+  })
+  installationTail = result.catch(() => undefined)
+  return result.finally(() => {
+    activeInstallations--
+  })
+}
 
 /**
  * 向发起 IPC 调用的渲染进程回推事件。
@@ -153,14 +172,16 @@ async function runStageViaRuntime(
   rebuild?: boolean
 ): Promise<RuntimeStageOutcome | null> {
   const initService = getInitService()
-  return initService.retryStageViaRuntime(
-    stage,
-    progress => {
-      if (progress.stage !== stage) return
-      sendToSender(event, progressChannel, progress)
-    },
-    selectedMirror,
-    toRetryMode(rebuild)
+  return coordinateInstallation(() =>
+    initService.retryStageViaRuntime(
+      stage,
+      progress => {
+        if (progress.stage !== stage) return
+        sendToSender(event, progressChannel, progress)
+      },
+      selectedMirror,
+      toRetryMode(rebuild)
+    )
   )
 }
 
@@ -212,7 +233,12 @@ export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck
 /**
  * 注册所有初始化相关的 IPC 处理器
  */
-export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
+export function registerInitializationHandlers(
+  _mainWindow: BrowserWindow,
+  closing: () => boolean = () => false
+) {
+  isClosing = closing
+  initializationWindow = _mainWindow
   if (isRegistered) {
     logger.info('初始化处理器已经注册，跳过重复注册')
     return
@@ -442,10 +468,12 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
       const initService = getInitService(targetBranch)
 
-      const result = await initService.initialize(progress => {
-        // 发送进度到渲染进程
-        sendToSender(event, 'initialization-progress', progress)
-      }, startBackend)
+      const result = await coordinateInstallation(() =>
+        initService.initialize(progress => {
+          // 发送进度到渲染进程
+          sendToSender(event, 'initialization-progress', progress)
+        }, startBackend)
+      )
 
       if (result.success) {
         // 保存后端服务实例
@@ -529,6 +557,24 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return getBackendService().checkRuntimeBackendUpdate()
   })
 
+  ipcMain.handle('apply-staged-backend-update', async (event): Promise<RuntimeUpdateOutcome> => {
+    if (
+      event.sender !== initializationWindow?.webContents ||
+      isClosing() ||
+      activeInstallations > 0
+    )
+      return { success: false, deferred: true }
+    return coordinateInstallation(
+      () =>
+        applyStagedBackendUpdate(
+          progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+          { backend: getBackendService(), launchConfig: resolveRuntimeLaunchConfig(getAppRoot()) },
+          isClosing
+        ),
+      false
+    )
+  })
+
   // ==================== Runtime 链路的后端更新 ====================
 
   // 标题栏更新入口走哪条链路由 `get-runtime-launch-mode` 决定（off 走原有下载安装包流程，
@@ -539,13 +585,15 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
       logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
 
-      const result = await updateBackendViaRuntime(
-        typeof targetVersion === 'string' ? targetVersion : '',
-        progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
-        {
-          backend: getBackendService(),
-          launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
-        }
+      const result = await coordinateInstallation(() =>
+        updateBackendViaRuntime(
+          typeof targetVersion === 'string' ? targetVersion : '',
+          progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+          {
+            backend: getBackendService(),
+            launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
+          }
+        )
       )
 
       if (!result.success) {
@@ -561,8 +609,12 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       if (!isRetryAction(action)) throw new TypeError(`不支持的重试入口: ${String(action)}`)
 
       logger.info(`重试 Runtime 后端更新: ${action}`)
-      const result = await retryBackendUpdate(action, progress =>
-        sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+      const result = await coordinateInstallation(
+        () =>
+          retryBackendUpdate(action, progress =>
+            sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+          ),
+        false
       )
 
       if (!result.success) {

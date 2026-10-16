@@ -1521,6 +1521,13 @@ class GlobalConfig_Update(BaseModel):
     PauseUntil: Optional[str] = Field(
         default=None, description="暂停更新截止日期 YYYY-MM-DD，空字符串表示未暂停"
     )
+    HotUpdateAvoidMinutes: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=60,
+        strict=True,
+        description="后端热更定时任务避让分钟数，默认 5，0 仍优先执行已到点任务",
+    )
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite", "CNB"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源"
     )
@@ -6999,6 +7006,41 @@ class UpdateCheckOut(OutBase):
     update_info: Dict[str, Dict[str, List[str]]] = Field(
         ...,
         description="版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序",
+    )
+
+
+class HotUpdatePrepareIn(BaseModel):
+    """后端热更准备请求"""
+
+    action: Literal["prepare", "cancel", "drain"] = Field(..., description="操作类型")
+    operationId: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^\S+$",
+        description="本次操作的唯一标识符",
+    )
+    baseCommit: str = Field(
+        ...,
+        pattern=r"^[0-9a-fA-F]{40}$",
+        description="当前后端完整提交 SHA",
+    )
+    targetCommit: str = Field(
+        ...,
+        pattern=r"^[0-9a-fA-F]{40}$",
+        description="目标后端完整提交 SHA",
+    )
+
+
+class HotUpdatePrepareOut(OutBase):
+    """后端热更准备响应"""
+
+    ready: bool = Field(False, description="是否准入")
+    reason: Optional[Literal["busy", "scheduledSoon", "paused", "closing"]] = Field(
+        None, description="未就绪的机读原因"
+    )
+    nextScheduledTime: Optional[str] = Field(
+        None, description="最近的定时任务时刻（ISO 格式）"
     )
 
 
