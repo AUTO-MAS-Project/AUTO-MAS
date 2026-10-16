@@ -23,13 +23,13 @@ const component = (over: Partial<Emulator2AvdComponentItem>): Emulator2AvdCompon
 
 describe('instance options', () => {
   it('defaults follow the user-decided values', () => {
-    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144 })
+    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144, fps: 60 })
     expect(DEFAULT_MEMORY_MB).toBe(6144)
   })
 
-  it('create sends memory only (display, sound and balloon are fixed)', () => {
-    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144 })
-    expect(createOptions({ memoryMb: 4096 })).toEqual({ memoryMb: 4096 })
+  it('create sends memory and frame rate (display, sound and balloon are fixed)', () => {
+    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144, fps: 60 })
+    expect(createOptions({ memoryMb: 4096, fps: 30 })).toEqual({ memoryMb: 4096, fps: 30 })
   })
 })
 

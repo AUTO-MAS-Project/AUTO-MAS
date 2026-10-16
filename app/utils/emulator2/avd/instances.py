@@ -43,7 +43,9 @@ from .constants import (
     DATA_PARTITION_RANGE_GB,
     DEFAULT_CPU,
     DEFAULT_DATA_PARTITION_GB,
+    DEFAULT_FPS,
     DEFAULT_MEMORY_MB,
+    FPS_CHOICES,
     MEMORY_CHOICES_MB,
     SCREEN_DENSITY,
     SCREEN_HEIGHT,
@@ -112,6 +114,11 @@ class AvdInstance:
     @property
     def cpu(self) -> int | None:
         return _int_or_none(self.config.get("hw.cpu.ncore"))
+
+    @property
+    def fps(self) -> int:
+        """刷新率（``hw.lcd.vsync``）；没写这一项时模拟器按 60 Hz 开机。"""
+        return _int_or_none(self.config.get("hw.lcd.vsync")) or DEFAULT_FPS
 
     @property
     def data_partition_gb(self) -> int | None:
@@ -296,6 +303,16 @@ def validate_options(
     return memory, cores, data_gb
 
 
+def validate_fps(fps: int | None) -> int:
+    """刷新率只收固定档位，不给就是默认 60。"""
+    value = DEFAULT_FPS if fps is None else int(fps)
+    if value not in FPS_CHOICES:
+        raise ValueError(
+            "魔改 AVD 的帧率只能选 " + " / ".join(str(v) for v in FPS_CHOICES)
+        )
+    return value
+
+
 def create_instance_files(
     root: str | Path,
     native_index: int,
@@ -304,10 +321,12 @@ def create_instance_files(
     memory_mb: int,
     cpu: int,
     data_partition_gb: int,
+    fps: int = DEFAULT_FPS,
 ) -> AvdInstance:
     """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
 
     内存同时记进 ``hw.ramSize`` 和实例元数据；开机用元数据里的值传 ``-memory``。
+    刷新率写 ``hw.lcd.vsync``，模拟器开机时读。
     """
     if not valid_native_index(native_index):
         raise ValueError(f"原生索引 {native_index} 不可用")
@@ -328,6 +347,7 @@ def create_instance_files(
             "hw.lcd.width": str(SCREEN_WIDTH),
             "hw.lcd.height": str(SCREEN_HEIGHT),
             "hw.lcd.density": str(SCREEN_DENSITY),
+            "hw.lcd.vsync": str(fps),
             "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
         }
     )

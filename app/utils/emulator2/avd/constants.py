@@ -67,6 +67,8 @@ LOG_KEEP_PER_INSTANCE = 10
 LOGS_DIR_MAX_BYTES = 1024**3
 #: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
 SHADER_CACHE_DIR = "shader-cache"
+#: 在本机生成的客体驱动补丁库（见 ``vulkanfix.py``），生成一次，之后各实例直接用。
+GUEST_PATCH_DIR = "guest-patches"
 
 
 def console_port(native_index: int | str) -> int:
@@ -207,8 +209,11 @@ DATA_PARTITION_RANGE_GB = (16, 512)
 #: 显示固定 720p（用户 10-04 定），开机前写进 ``config.ini`` 的 ``hw.lcd.*``，不用 ``wm size``
 #: （运行时覆盖出过小毛病）。即雷电 / MuMu 的默认值，脚本都认。
 SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = 1280, 720, 240
-#: 帧率跟着客体 60 Hz 走，没有可设的项；批量设置里选 60 帧当作没改。
-SCREEN_FPS = 60
+#: 刷新率（``config.ini`` 的 ``hw.lcd.vsync``，下次开机生效），按实例设。默认 60（用户 10-16 定：
+#: 帧率影响脚本操作）；30 是低消耗档：终末地大世界 30 Hz 下稳定 30 fps、qemu 约 1.6 核，60 Hz 下
+#: 54–61 fps、qemu 4 核以上（aemu-lab 修复队列「终末地帧率与稳定性」）。
+FPS_CHOICES = (30, 60)
+DEFAULT_FPS = 60
 
 #: 空闲页上报（气球，固定开启），开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
@@ -222,6 +227,11 @@ GUEST_DIRTY_WRITEBACK_CENTISECS = 100
 
 #: 客体脚本（``res/avd/guest/``）推到客体的位置。
 GUEST_TMP_DIR = "/data/local/tmp"
+#: 客体 Vulkan 驱动（编码器）库，补丁挂在它上面（见 ``vulkanfix.py``）。
+VULKAN_ENC_GUEST_PATH = "/vendor/lib64/libvulkan_enc.so"
+#: 客体驱动补丁的上传位置：挂上之后客体里那份改好的库标签变成 ``/vendor`` 的，adb 写不了，所以另起名字。
+#: 和 ``res/avd/guest/vulkanfix.sh`` 里的 ``u=`` 一致。
+VULKAN_FIX_UPLOAD_PATH = "/data/local/tmp/vulkanfix-upload.so"
 #: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。
 LOGCAT_BUFFER_SIZE = "16M"
 

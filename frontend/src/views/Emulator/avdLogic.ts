@@ -10,12 +10,16 @@ import type { Emulator2AvdComponentItem, Emulator2AvdPrecheckItem } from '@/api'
 /** 新建实例时的选项。显示固定 720p、不带声卡、气球固定开，不在这里；核数用后端默认。 */
 export interface AvdOptionsForm {
   memoryMb: number
+  fps: number
 }
 
 /** 内存只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
 export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
 /** 新建实例默认 6 GB（与后端 ``DEFAULT_MEMORY_MB`` 一致）；核数后端默认 6。 */
 export const DEFAULT_MEMORY_MB = 6144
+/** 帧率只收这两档（与后端 ``FPS_CHOICES`` 一致），默认 60（``DEFAULT_FPS``）。 */
+export const FPS_CHOICES = [30, 60] as const
+export const DEFAULT_FPS = 60
 /**
  * 推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。只给实测过内存的
  * 1999 的推荐值；开机后内存改不了，所以不按游戏自动分配。
@@ -24,11 +28,13 @@ export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   memoryMb: DEFAULT_MEMORY_MB,
+  fps: DEFAULT_FPS,
 })
 
 /** 新建实例时随请求带上的魔改 AVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   memoryMb: form.memoryMb,
+  fps: form.fps,
 })
 
 // ---- 开机前检查 ----
