@@ -3378,6 +3378,7 @@ export default {
     recordCount: '{count} 条记录',
     successCount: '成功 {count} 次',
     failureCount: '失败 {count} 次',
+    scriptUnknown: '未标注托管',
     timeRule: '游戏日从 04:00 开始计算（04:00 – 次日 04:00）',
     done: '完成',
     skipped: '跳过',
