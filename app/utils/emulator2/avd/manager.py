@@ -319,6 +319,32 @@ def guest_script(name: str) -> Path:
 #: ``{根目录键|原生索引: 看门狗任务}``。管理器会被频繁重建（状态轮询每轮一个），
 #: 看门狗必须挂在模块上，跟着实例走而不是跟着管理器对象走。
 _WATCHDOGS: dict[str, asyncio.Task] = {}
+#: ``{根目录键|原生索引: 事件}``：这台实例有一次 open 正在开机 / 做开机后设置，做完置位。和看门狗一样
+#: 挂在模块上（管理器对象会被频繁重建）。见 :meth:`_AvdCore.open`。
+_OPENING: dict[str, asyncio.Event] = {}
+#: 等前一次 open 的上限 = 最长启动等待 + 这么多秒（开机后设置里 zygote 重启最多等 120 秒，再留余量）。
+_OPENING_WAIT_EXTRA_SECONDS = 300.0
+
+
+async def _wait_opening(key: str, label: str, timeout: float) -> None:
+    """同一台实例另有一次 open 没做完就等它；超时记日志后照常继续。"""
+    event = _OPENING.get(key)
+    if event is None:
+        return
+    logger.info(f"{label} 正由另一次启动开机或做开机后设置，等它做完再继续")
+    started = time.monotonic()
+    try:
+        await asyncio.wait_for(event.wait(), timeout)
+    except TimeoutError:
+        logger.warning(
+            f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
+        )
+    else:
+        logger.info(
+            f"{label} 另一次启动已做完（等了 {time.monotonic() - started:.0f} 秒）"
+        )
+
+
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
 _FROZEN: dict[str, str] = {}
 
@@ -707,12 +733,32 @@ class _AvdCore(DeviceBase):
             raise RuntimeError(missing_components_message(missing))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """开机并做开机后设置。同一台实例上的 open 排队：前一次还没做完（开机后最后一步会重启 zygote），
+        后一次先等它，免得后一次先返回在线、调用方拉起游戏，随后被前一次的 zygote 重启结束。
+        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、照常往下走。"""
         idx = str(idx)
         instance = self._instance(idx)
         key = _instance_key(self.root, idx)
+        max_wait = float(self.config.get("Info", "MaxWaitTime"))
+        await _wait_opening(
+            key, f"魔改 AVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
+        )
+        mine: asyncio.Event | None = None
+        if key not in _OPENING:
+            mine = _OPENING[key] = asyncio.Event()
+        try:
+            return await self._open(idx, instance, key, max_wait)
+        finally:
+            if mine is not None:
+                mine.set()
+                if _OPENING.get(key) is mine:
+                    del _OPENING[key]
+
+    async def _open(
+        self, idx: str, instance: AvdInstance, key: str, max_wait: float
+    ) -> DeviceInfo:
         _FROZEN.pop(key, None)
         port = console_port(idx)
-        max_wait = float(self.config.get("Info", "MaxWaitTime"))
 
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         launched = process is None
@@ -1047,9 +1093,24 @@ class _AvdCore(DeviceBase):
 
         生成：从客体拉原库 → 核对哈希、打补丁、核对改完的哈希（:func:`.vulkanfix.patch_vulkan_encoder`）
         → 写进缓存。任一步不成返回 ``None``（记日志，不挂）。同一条安装同时只生成一次。
+        本机读写出错（盘满、文件被杀毒软件占着）也只记警告、返回 ``None``，不挡开机。
         """
-        directory = self.root / GUEST_PATCH_DIR
-        library = directory / "libvulkan_enc.khrfix-bindlock2.so"
+        library = self.root / GUEST_PATCH_DIR / "libvulkan_enc.khrfix-bindlock2.so"
+        try:
+            return await self._make_patched_vulkan_library(idx, library)
+        except OSError as e:
+            logger.warning(
+                f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 本机读写补丁库失败（{library}）: "
+                f"{type(e).__name__}: {e}"
+            )
+            with suppress(OSError):
+                library.with_suffix(".tmp").unlink(missing_ok=True)
+            return None
+
+    async def _make_patched_vulkan_library(
+        self, idx: str, library: Path
+    ) -> Path | None:
+        directory = library.parent
         async with _VULKAN_PATCH_LOCKS.setdefault(root_key(self.root), asyncio.Lock()):
             if library.is_file():
                 digest = await asyncio.to_thread(lambda: sha256(library.read_bytes()))
@@ -1493,7 +1554,8 @@ class _AvdCore(DeviceBase):
         """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。"""
         cleaned = validate_setting_changes(changes)
         instance = self._instance(idx)
-        fps = validate_fps(cleaned.get("fps", instance.fps))
+        # 只在这次要改帧率时校验：只改 CPU / 内存不该被手改过的 hw.lcd.vsync 挡住
+        fps = validate_fps(cleaned["fps"]) if "fps" in cleaned else None
         if {"width", "height", "dpi"} & cleaned.keys():
             _check_display(
                 cleaned.get("width", SCREEN_WIDTH),
@@ -1514,15 +1576,10 @@ class _AvdCore(DeviceBase):
             ]
             if conflicts:
                 raise SettingsConflictError(conflicts)
-        write_instance_config(
-            self.root,
-            idx,
-            {
-                "hw.ramSize": f"{memory}M",
-                "hw.cpu.ncore": str(cpu),
-                "hw.lcd.vsync": str(fps),
-            },
-        )
+        config_changes = {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
+        if fps is not None:
+            config_changes["hw.lcd.vsync"] = str(fps)
+        write_instance_config(self.root, idx, config_changes)
         # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
         update_instance_meta(self.root, idx, memoryMb=memory)
         applied = {
