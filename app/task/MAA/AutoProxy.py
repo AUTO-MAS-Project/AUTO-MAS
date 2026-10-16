@@ -1987,6 +1987,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 updated_targets,
                 plan,
                 _,
+                auto_targets,
             ) = await depot_cultivate_service.prepare_cultivate(
                 targets=targets,
                 # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
@@ -1997,6 +1998,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 today=game_now(self.cur_user_config.get("Info", "Server")).date(),
                 context=context,
                 require_observations=True,
+                auto_raise=self.cur_user_config.get("Task", "CultivateAutoRaise"),
             )
         except Exception as e:
             logger.opt(exception=True).warning(
@@ -2035,7 +2037,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if plan is None or not plan.reservations:
             return None, True, None
         self._cultivate_round_paused = False
-        self._cultivate_execution_targets = tuple(updated_targets)
+        self._cultivate_execution_targets = auto_targets
 
         cultivate_task = None
         if plan.entries:

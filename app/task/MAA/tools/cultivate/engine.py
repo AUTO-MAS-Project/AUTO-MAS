@@ -33,6 +33,7 @@ from datetime import time as dt_time
 from typing import Mapping
 
 from .types import (
+    AUTO_CULTIVATE_PRIORITY_LIMIT,
     Achievement,
     CultivateDataSet,
     CultivatePlan,
@@ -162,6 +163,52 @@ def aggregate(requirements: list[Requirement]) -> list[Requirement]:
                 sources=existing.sources + requirement.sources,
             )
     return list(merged.values())
+
+
+def select_auto_cultivate_targets(
+    targets: list[OperatorTarget] | tuple[OperatorTarget, ...],
+    snapshots: Mapping[str, ProgressionSnapshot],
+    inventory: Mapping[str, int],
+    data: CultivateDataSet,
+) -> tuple[OperatorTarget, ...]:
+    """先取最多五名指定干员，再按各材料满足比例均值选取另外十名。
+
+    每名干员独立对比现有成品库存，不预分配共享材料；同分沿用目标顺序。
+    模组没有自动培养入口，不参与评分，也不占用名额。
+    """
+
+    priority_targets: list[OperatorTarget] = []
+    scored: list[tuple[OperatorTarget, float]] = []
+    for target in targets:
+        goals = tuple(
+            goal
+            for goal in target.goals
+            if goal.kind != "module"
+            and goal.state not in ("achieved", "pending_confirm")
+        )
+        if not goals:
+            continue
+        candidate = replace(target, goals=goals)
+        if candidate.priority and len(priority_targets) < AUTO_CULTIVATE_PRIORITY_LIMIT:
+            priority_targets.append(candidate)
+            continue
+        requirements = build_requirements(
+            targets=(candidate,), snapshots=snapshots, demands=data.demands
+        )
+        completion = (
+            sum(
+                min(inventory.get(item.item_id, 0) / item.amount, 1.0)
+                for item in requirements
+            )
+            / len(requirements)
+            if requirements
+            else 1.0
+        )
+        scored.append((candidate, completion))
+    return tuple(priority_targets) + tuple(
+        target
+        for target, _ in sorted(scored, key=lambda item: item[1], reverse=True)[:10]
+    )
 
 
 def _build_recipe_map(data: CultivateDataSet) -> dict[str, Recipe]:
@@ -802,7 +849,7 @@ def apply_achievements(
             else:
                 new_goals.append(goal)
         if new_goals:
-            new_targets.append(OperatorTarget(target.operator_id, tuple(new_goals)))
+            new_targets.append(replace(target, goals=tuple(new_goals)))
     return new_targets
 
 

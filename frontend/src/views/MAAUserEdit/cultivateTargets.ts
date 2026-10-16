@@ -3,8 +3,12 @@ import type { MaaCultivateOperatorOptionItem } from '@/api'
 
 export type CultivateGoalKind = 'elite' | 'skill' | 'mastery' | 'module'
 
+// 与后端 AUTO_CULTIVATE_PRIORITY_LIMIT 保持一致。
+export const CULTIVATE_PRIORITY_LIMIT = 5
+
 export interface CultivateTargetRow {
   operatorId: string
+  priority?: boolean
   /** 原始 goals（含 state），各目标按 kind 过滤展示与编辑 */
   rawGoals: unknown[]
 }
@@ -55,6 +59,7 @@ export const parseCultivateTargets = (
     const parsed = JSON.parse(plansJson || '[]')
     if (!Array.isArray(parsed)) return []
     const rows: CultivateTargetRow[] = []
+    let priorityCount = 0
     for (const item of parsed) {
       if (typeof item?.operator_id !== 'string' || item.operator_id === '') continue
       if (!Array.isArray(item.goals)) continue
@@ -75,7 +80,13 @@ export const parseCultivateTargets = (
         seen.add(key)
         return true
       })
-      rows.push({ operatorId: item.operator_id, rawGoals: goals })
+      const priority = item.priority === true && priorityCount < CULTIVATE_PRIORITY_LIMIT
+      if (priority) priorityCount += 1
+      rows.push({
+        operatorId: item.operator_id,
+        rawGoals: goals,
+        ...(priority ? { priority: true } : {}),
+      })
     }
     return rows
   } catch {
@@ -85,7 +96,22 @@ export const parseCultivateTargets = (
 
 /** 序列化回 Task.CultivateTargets JSON（state 由后端注入时按缺口/达成刷新） */
 export const serializeCultivateTargets = (rows: CultivateTargetRow[]): string =>
-  JSON.stringify(rows.map(row => ({ operator_id: row.operatorId, goals: row.rawGoals })))
+  JSON.stringify(
+    rows.map(row => ({
+      operator_id: row.operatorId,
+      goals: row.rawGoals,
+      ...(row.priority ? { priority: true } : {}),
+    }))
+  )
+
+/** 指定优先独立于目标顺序保存，最多五名；其他干员仍参与达成率排序。 */
+export const setCultivatePriority = (
+  rows: CultivateTargetRow[],
+  operatorIds: string[]
+): CultivateTargetRow[] => {
+  const priorityIds = new Set(operatorIds.slice(0, CULTIVATE_PRIORITY_LIMIT))
+  return rows.map(row => ({ ...row, priority: priorityIds.has(row.operatorId) }))
+}
 
 /** 按 kind 取目标视图（elite/skill 的 targetId 恒为空串） */
 export const listGoals = (rawGoals: unknown[], kind: CultivateGoalKind): CultivateGoalView[] =>
@@ -222,7 +248,7 @@ export const mergeCultivateTargets = (
       }
     }
     if (!changed) continue
-    merged.set(incoming.operatorId, { operatorId: incoming.operatorId, rawGoals })
+    merged.set(incoming.operatorId, { ...current, operatorId: incoming.operatorId, rawGoals })
     affected.add(incoming.operatorId)
   }
   return {

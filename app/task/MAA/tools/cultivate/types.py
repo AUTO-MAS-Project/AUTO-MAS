@@ -45,6 +45,8 @@ MaterialClass = Literal["farmable", "synthesizable", "unobtainable"]
 
 ProgressionSource = Literal["skland", "local", "manual", "default"]
 
+AUTO_CULTIVATE_PRIORITY_LIMIT = 5
+
 
 @dataclass(frozen=True)
 class Goal:
@@ -71,6 +73,7 @@ class OperatorTarget:
 
     operator_id: str
     goals: tuple[Goal, ...]
+    priority: bool = False  # 指定优先培养，每轮先于按材料达成率选出的干员
 
 
 @dataclass(frozen=True)

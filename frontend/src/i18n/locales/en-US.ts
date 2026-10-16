@@ -423,6 +423,10 @@ export default {
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
     maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivatePriority: 'Priority operators ({count}/5)',
+    maaCultivatePriorityPlaceholder: 'Select up to 5 operators to train first each run',
+    maaCultivatePriorityHint:
+      'Train priority operators first each run, then select 10 more by material completion rate, up to 15 in total.',
     maaCultivateAutoRaiseOn: 'Auto training: On',
     maaCultivateAutoRaiseOff: 'Auto training: Off',
     maaCultivateOperatorCount: 'Operators: {count}',
