@@ -15,6 +15,32 @@ from app.utils.logger import get_logger
 
 logger = get_logger("脚本运行")
 
+# 进程级在途维护检测句柄：``asyncio.to_thread`` 的底层调用无法被取消，句柄
+# 必须由跨 AutoProxy 实例（跨用户、跨重新运行）有效的 owner 持有——调度会
+# 逐用户新建 AutoProxy，实例级句柄随实例失效，卡住的截图/OCR 便会在同一个
+# 默认执行器里继续累积。按脚本条目（script_id）分槽：ok-nte 与 ok-ww 是不同的
+# 检测资源，互不阻塞。只有底层真正结束才释放。
+_INFLIGHT_DETECTIONS: dict[str, asyncio.Task] = {}
+
+
+def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
+    """回收已结束的在途检测句柄；返回仍在执行的句柄（无则 None）。"""
+
+    task = _INFLIGHT_DETECTIONS.get(script_id)
+    if task is None:
+        return None
+    if task.get_loop() is not asyncio.get_running_loop():
+        # 旧事件循环遗留的句柄：不适用于当前循环
+        _INFLIGHT_DETECTIONS.pop(script_id, None)
+        return None
+    if not task.done():
+        return task
+    _INFLIGHT_DETECTIONS.pop(script_id, None)
+    # 取回异常，避免「Task exception was never retrieved」告警
+    with suppress(Exception):
+        task.exception()
+    return None
+
 
 class ScriptAutoProxyBase(TaskExecuteBase):
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
@@ -37,9 +63,6 @@ class ScriptAutoProxyBase(TaskExecuteBase):
     _MAINTENANCE_WATCH_CONFIRMATIONS = 2
     # 单次维护检测的超时：窗口捕获/OCR 卡住时按未命中放行，不拖住主流程
     _MAINTENANCE_DETECT_TIMEOUT_SECONDS = 15.0
-    # 在途检测任务：to_thread 的底层线程无法被 wait_for 取消，超时后保留
-    # 所有权，其真正结束前不再投递新的检测，避免卡住的采样在执行器里叠加。
-    _maintenance_inflight: asyncio.Task | None = None
 
     @property
     def run_timeout_seconds(self) -> float:
@@ -102,15 +125,17 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         """执行一次维护检测，返回命中原文；未命中、失败或超时返回 None。
 
         ``asyncio.to_thread`` 已开始的调用无法被取消（Python 3.12 语义），
-        故超时只放弃异步等待、不取消实际检测任务：在途任务真正结束前不再
-        投递新检测，避免卡住的截图/OCR 在执行器里叠加。
+        故超时只放弃异步等待、不取消实际检测任务。在途句柄由进程级 registry
+        按 script_id 持有，跨用户与重新运行都有效；其真正结束前不再投递新的
+        检测，避免卡住的截图/OCR 在执行器里叠加。
         """
 
-        if self._reap_maintenance_inflight() is not None:
+        script_id = self.script_info.script_id
+        if _running_inflight_detection(script_id) is not None:
             # 上一轮底层检测仍未结束：跳过本轮采样（按未命中处理）
             return None
         task = asyncio.ensure_future(asyncio.to_thread(detect))
-        self._maintenance_inflight = task
+        _INFLIGHT_DETECTIONS[script_id] = task
         try:
             text = await asyncio.wait_for(
                 asyncio.shield(task),
@@ -119,23 +144,8 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         except Exception as e:
             logger.warning(f"游戏画面维护检测失败（忽略，继续正常流程）: {e}")
             return None
-        if task.done():
-            self._maintenance_inflight = None
+        _running_inflight_detection(script_id)
         return text
-
-    def _reap_maintenance_inflight(self) -> asyncio.Task | None:
-        """回收已结束的在途检测句柄；返回仍在执行的句柄（无则 None）。"""
-
-        task = self._maintenance_inflight
-        if task is None:
-            return None
-        if not task.done():
-            return task
-        self._maintenance_inflight = None
-        # 取回异常，避免「Task exception was never retrieved」告警
-        with suppress(Exception):
-            task.exception()
-        return None
 
     async def notify_maintenance_skip(self, reason: str) -> None:
         """推送维护跳过通知；失败仅记警告，不改变跳过结论。"""
@@ -208,6 +218,10 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             await super()._finalize_task()
         finally:
             await self.run_user_scripts_after()
+            # 收尾不等待卡住的检测：只留一条可查的说明。句柄由进程级 registry
+            # 持有并在底层结束后自动回收，既不堆积线程、也不拖住收尾。
+            if _running_inflight_detection(self.script_info.script_id) is not None:
+                logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
 
     async def _run_main_task(self) -> None:
         timeout = asyncio.timeout(self.run_timeout_seconds)
