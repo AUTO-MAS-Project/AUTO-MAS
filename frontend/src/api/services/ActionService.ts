@@ -18,6 +18,8 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { HotUpdatePrepareIn } from '../models/HotUpdatePrepareIn';
+import type { HotUpdatePrepareOut } from '../models/HotUpdatePrepareOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -513,6 +515,33 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 后端热更协调准入
+     * 申请或撤销后端热更保护。
+     *
+     * prepare: 检查空闲、避让窗口，准入后进入更新状态；
+     * drain: 复核同一准备操作并完成关闭清理，不退出进程；
+     * cancel: 撤销对应操作的保护。
+     *
+     * 忙、临近定时、暂停是正常的延期决策，不产生用户失败通知；
+     * 参数或执行异常仍走现有 OutBase 错误契约。
+     * @param requestBody
+     * @returns HotUpdatePrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareHotUpdateApiUpdateHotUpdatePost(
+        requestBody: HotUpdatePrepareIn,
+    ): CancelablePromise<HotUpdatePrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/hot-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

@@ -261,6 +261,10 @@ export default {
       'A backend update is available — automatic updates are off in development mode',
     backendUpdateTitle: 'Updating the backend to {version}',
     backendUpdateSucceeded: 'The backend has been updated and restarted',
+    backendHotUpdateDetails: 'Backend update recovery',
+    backendHotUpdateReconnect: 'Reconnect',
+    backendHotUpdateFailedConnection:
+      'The updated backend started, but reconnection failed. Your page and drafts have been kept.',
     backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
     backendUpdateFailedShutdown:
       'The running backend could not be stopped, so the update never started. The current version still works.',
@@ -2046,8 +2050,23 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     maaEndLaunchTypeHint:
-      'Via launcher (default): MAS opens the launcher UI and clicks Start Game / handles update prompts. Direct launch is not yet available. The launcher can be detected from the game path; the client path still points to Endfield.exe',
-    maaEndLaunchDirectlyDisabled: 'Direct launch (not yet available)',
+      'Via launcher: MAS operates the official launcher. Via MAS: MAS creates the game process. Via MaaEnd: use its native launch entry. Availability depends on the installed resources and controller.',
+    maaEndLaunchViaMas: 'Via MAS',
+    maaEndLaunchViaMaaEnd: 'Via MaaEnd',
+    maaEndLauncherModeHint:
+      'MAS operates the official launcher, supporting both old and new MaaEnd versions.',
+    maaEndMasModeHint:
+      'MAS creates the game process directly; the official launcher is still required.',
+    maaEndNativeModeHint: 'MaaEnd launches the game and applies the game settings it supports.',
+    maaEndLaunchCapabilitiesUnknown:
+      'Select a valid MaaEnd installation and wait for resources to load to check native launch support.',
+    maaEndNativeLaunchUnsupported:
+      'This MaaEnd installation or controller has no native launch entry. Use the launcher or MAS instead.',
+    maaEndNativeLauncherHint: 'MaaEnd locates its own launcher and does not use this path.',
+    maaEndArgumentsUnsupported:
+      'These arguments apply only to MAS launch. For other modes, use settings supported by the official launcher.',
+    maaEndResolutionUnsupported:
+      'This MaaEnd installation and launch mode cannot apply resolution independently. Existing game settings are used; saved preferences are retained.',
     maaEndLauncherPath: 'Official Endfield launcher',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',
@@ -5117,6 +5136,10 @@ export default {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
       pauseUpdates: 'Pause updates',
+      hotUpdateAvoidMinutes: 'Scheduled task buffer',
+      hotUpdateAvoidMinutesTip:
+        'Defer automatic backend restarts when a scheduled task starts within this window. 0 disables the buffer; default: 5 minutes; maximum: 60 minutes.',
+      hotUpdateMinutes: 'minutes',
       pauseUpdatesTip:
         'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
       pausePlaceholder: 'Select pause end date',

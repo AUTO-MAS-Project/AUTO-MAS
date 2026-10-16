@@ -1724,13 +1724,12 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
-        ## 游戏启动方式（Launcher=经终末地官方启动器启动，默认；Client=直接启动
-        ## 客户端，暂未在前端开放，仅存量配置继续生效）
+        ## 游戏启动方式；Client 仅用于旧配置迁移，按资源入口保留原启动行为
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
             "Launcher",
-            OptionsValidator(["Client", "Launcher"]),
+            OptionsValidator(["Client", "Launcher", "MAS", "MaaEnd"]),
         )
         ## 终末地游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -1815,6 +1814,22 @@ class MaaEndConfig(ConfigBase):
         if migrated:
             game_data["RestoreDisplayType"] = "Fullscreen"
             game_data["RestoreResolution"] = "1920x1080"
+        if isinstance(game_data, dict) and game_data.get("LaunchMode") == "Client":
+            root_path = str((data.get("Info") or {}).get("Path") or "").strip()
+            if root_path and (Path(root_path) / "interface.json").is_file():
+                from app.task.MaaEnd.resource_loader import try_load_maaend_options
+
+                options = await asyncio.to_thread(
+                    try_load_maaend_options, Path(root_path)
+                )
+                if options is not None:
+                    controller = str(game_data.get("ControllerType") or "")
+                    game_data["LaunchMode"] = (
+                        "MaaEnd"
+                        if controller in options["launchGameControllers"]
+                        else "MAS"
+                    )
+                    migrated = True
         is_dirty = await super().load(data)
         if migrated and not is_dirty:
             await self._commit_changes()
@@ -3979,7 +3994,7 @@ class OkwwUserConfig(ConfigBase):
             "Data",
             "LastProxyStatus",
             "未知",
-            OptionsValidator(["未知", "成功", "失败"]),
+            OptionsValidator(["未知", "成功", "失败", "维护中"]),
         )
         self.Data_LastTaskIndex = ConfigItem(
             "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
@@ -4122,7 +4137,7 @@ class OkNteUserConfig(ConfigBase):
             "Data",
             "LastProxyStatus",
             "未知",
-            OptionsValidator(["未知", "成功", "失败"]),
+            OptionsValidator(["未知", "成功", "失败", "维护中"]),
         )
         self.Data_LastTaskIndex = ConfigItem(
             "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
@@ -5409,6 +5424,16 @@ class ToolsConfig(ConfigBase):
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
 
+class HotUpdateAvoidMinutesValidator(ValidatorBase):
+    """热更避让只接受整数；旧配置或非法值回到默认五分钟。"""
+
+    def validate(self, value: Any) -> bool:
+        return type(value) is int and 0 <= value <= 60
+
+    def correct(self, value: Any) -> int:
+        return min(60, max(0, value)) if type(value) is int else 5
+
+
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -5592,6 +5617,10 @@ class GlobalConfig(ConfigBase):
         )
         ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
         self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
+        ## 后端热更提前避让定时任务的分钟数；0 仍让已到点的任务优先。
+        self.Update_HotUpdateAvoidMinutes = ConfigItem(
+            "Update", "HotUpdateAvoidMinutes", 5, HotUpdateAvoidMinutesValidator()
+        )
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",

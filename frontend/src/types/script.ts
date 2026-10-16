@@ -187,7 +187,7 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
-    LaunchMode: 'Client' | 'Launcher'
+    LaunchMode: 'Client' | 'Launcher' | 'MAS' | 'MaaEnd'
     Path: string
     LauncherPath: string
     Arguments: string

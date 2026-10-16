@@ -192,11 +192,11 @@ def latest_entry(
         return None
     if not entry:
         return None
-    try:
-        directory = payloads.payload_dir(payloads_root(base), lineage, str(entry["id"]))
-    except payloads.PayloadError:
+    # 只剩目录、清单没了或读不出的 latest 切不过去，也当不了更新基准（建新载荷要读它的清单）：
+    # 与丢了同等对待，组同步不去切、更新以视图自己挂的载荷为准。
+    if not payloads.payload_complete(payloads_root(base), lineage, str(entry["id"])):
         return None
-    return entry if directory.is_dir() else None
+    return entry
 
 
 def public_source(entry: dict[str, Any] | None) -> str | None:

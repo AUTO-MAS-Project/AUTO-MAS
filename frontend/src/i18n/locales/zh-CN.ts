@@ -251,6 +251,9 @@ export default {
     backendUpdateDevUnsupported: '检测到后端更新，开发模式不支持自动更新',
     backendUpdateTitle: '更新后端到 {version}',
     backendUpdateSucceeded: '后端已更新并重新启动',
+    backendHotUpdateDetails: '后端更新恢复',
+    backendHotUpdateReconnect: '重新连接',
+    backendHotUpdateFailedConnection: '新后端已启动，但未能恢复连接；当前页面与草稿已保留',
     backendUpdateCancelled: '更新已取消，后端保持原版本',
     backendUpdateFailedShutdown: '未能停止当前后端，更新没有开始，可以继续使用当前版本',
     backendUpdateFailedBootstrap: '源码或依赖同步失败，可用下面的方式重试',
@@ -1934,8 +1937,20 @@ export default {
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
     maaEndLaunchTypeHint:
-      '启动器启动（默认）：打开官方启动器界面并代点「开始游戏」及更新确认；直接启动暂未开放。启动器路径可按游戏路径自动识别，客户端路径仍选择 Endfield.exe',
-    maaEndLaunchDirectlyDisabled: '直接启动（暂未开放）',
+      '启动器启动：MAS 操作官方启动器；MAS 启动：MAS 创建游戏进程；MaaEnd 启动：调用 MaaEnd 自带启动入口。支持情况按当前安装和控制器识别。',
+    maaEndLaunchViaMas: 'MAS 启动',
+    maaEndLaunchViaMaaEnd: 'MaaEnd 启动',
+    maaEndLauncherModeHint: '由 MAS 操作官方启动器，兼容新旧 MaaEnd。',
+    maaEndMasModeHint: '由 MAS 直接创建游戏进程，仍需官方启动器。',
+    maaEndNativeModeHint: '由 MaaEnd 自带入口启动游戏并应用其支持的游戏设置。',
+    maaEndLaunchCapabilitiesUnknown:
+      '请先选择有效的 MaaEnd 路径并等待资源加载，才能确认 MaaEnd 启动是否可用。',
+    maaEndNativeLaunchUnsupported:
+      '当前 MaaEnd 或控制器没有原生启动入口，MaaEnd 启动不可选；可使用启动器启动或 MAS 启动。',
+    maaEndNativeLauncherHint: 'MaaEnd 启动使用其自身的启动器定位方式，不使用此处路径。',
+    maaEndArgumentsUnsupported: '此处启动参数仅用于 MAS 启动；其他方式请使用官方启动器支持的设置。',
+    maaEndResolutionUnsupported:
+      '当前 MaaEnd 和启动方式不支持独立设置分辨率，使用游戏现有设置；已保存的设置仍保留。',
     maaEndLauncherPath: '终末地官方启动器',
     maaEndLauncherPathSource: '启动器路径来源',
     maaEndLauncherSourceAuto: '自动识别',
@@ -5007,6 +5022,10 @@ export default {
       updateSection: '更新配置',
       checkUpdate: '检查更新',
       pauseUpdates: '暂停更新',
+      hotUpdateAvoidMinutes: '定时任务避让时间',
+      hotUpdateAvoidMinutesTip:
+        '定时任务将在设定时间内开始时，暂缓自动重启后端。0 分钟表示不避让，默认 5 分钟，上限 60 分钟。',
+      hotUpdateMinutes: '分钟',
       pauseUpdatesTip:
         '选择截止日期后暂停自动更新检查，最短 1 天、最长 35 天；期间手动检查更新会立即恢复。',
       pausePlaceholder: '选择暂停截止日期',

@@ -54,6 +54,8 @@ import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
+import type { HotUpdatePrepareIn } from '../models/HotUpdatePrepareIn';
+import type { HotUpdatePrepareOut } from '../models/HotUpdatePrepareOut';
 import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
 import type { HSRCloudLoginIn } from '../models/HSRCloudLoginIn';
 import type { HSRCloudLoginOut } from '../models/HSRCloudLoginOut';
@@ -466,6 +468,9 @@ export class Service {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -4250,6 +4255,33 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 后端热更协调准入
+     * 申请或撤销后端热更保护。
+     *
+     * prepare: 检查空闲、避让窗口，准入后进入更新状态；
+     * drain: 复核同一准备操作并完成关闭清理，不退出进程；
+     * cancel: 撤销对应操作的保护。
+     *
+     * 忙、临近定时、暂停是正常的延期决策，不产生用户失败通知；
+     * 参数或执行异常仍走现有 OutBase 错误契约。
+     * @param requestBody
+     * @returns HotUpdatePrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareHotUpdateApiUpdateHotUpdatePost(
+        requestBody: HotUpdatePrepareIn,
+    ): CancelablePromise<HotUpdatePrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/hot-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
