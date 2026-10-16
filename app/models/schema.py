@@ -1003,6 +1003,12 @@ class MaaEndAutoCollectGroup(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    launchGameControllers: list[str] = Field(
+        default_factory=list, description="支持 MaaEnd 原生启动的控制器"
+    )
+    gameSettingControllers: list[str] = Field(
+        default_factory=list, description="支持独立游戏显示设置的控制器"
+    )
     projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
     projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
     autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
@@ -3161,9 +3167,9 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[str] = Field(default=None, description="控制器类型")
-    LaunchMode: Optional[Literal["Client", "Launcher"]] = Field(
+    LaunchMode: Optional[Literal["Client", "Launcher", "MAS", "MaaEnd"]] = Field(
         default=None,
-        description="游戏启动方式：Launcher=启动器启动（默认），Client=MaaEnd 启动（沿用旧配置标识）",
+        description="游戏启动方式：Launcher=启动器启动（默认），MAS=MAS 启动，MaaEnd=MaaEnd 原生启动；Client 仅兼容旧配置",
     )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     LauncherPath: Optional[str] = Field(

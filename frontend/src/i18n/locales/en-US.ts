@@ -2042,8 +2042,23 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     maaEndLaunchTypeHint:
-      'Via launcher: MAS operates the official launcher. Via MaaEnd: MaaEnd launches the game and applies game settings; older versions retain their compatibility flow. Select Endfield.exe as the client path.',
+      'Via launcher: MAS operates the official launcher. Via MAS: MAS creates the game process. Via MaaEnd: use its native launch entry. Availability depends on the installed resources and controller.',
+    maaEndLaunchViaMas: 'Via MAS',
     maaEndLaunchViaMaaEnd: 'Via MaaEnd',
+    maaEndLauncherModeHint:
+      'MAS operates the official launcher, supporting both old and new MaaEnd versions.',
+    maaEndMasModeHint:
+      'MAS creates the game process directly; the official launcher is still required.',
+    maaEndNativeModeHint: 'MaaEnd launches the game and applies the game settings it supports.',
+    maaEndLaunchCapabilitiesUnknown:
+      'Select a valid MaaEnd installation and wait for resources to load to check native launch support.',
+    maaEndNativeLaunchUnsupported:
+      'This MaaEnd installation or controller has no native launch entry. Use the launcher or MAS instead.',
+    maaEndNativeLauncherHint: 'MaaEnd locates its own launcher and does not use this path.',
+    maaEndArgumentsUnsupported:
+      'These arguments apply only to MAS launch. For other modes, use settings supported by the official launcher.',
+    maaEndResolutionUnsupported:
+      'This MaaEnd installation and launch mode cannot apply resolution independently. Existing game settings are used; saved preferences are retained.',
     maaEndLauncherPath: 'Official Endfield launcher',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',

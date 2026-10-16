@@ -169,7 +169,10 @@
 
           <MaaEndLauncherSection
             v-if="isWinController"
-            :launch-mode="maaEndConfig.Game.LaunchMode"
+            :launch-mode="effectiveLaunchMode"
+            :capabilities-ready="launchCapabilitiesReady"
+            :capabilities-loading="maaEndOptionsLoading"
+            :maa-end-launch-supported="maaEndLaunchSupported"
             :source="launcherSource"
             :path="launcherPath"
             :error="launcherError"
@@ -219,8 +222,8 @@
                     <a-tooltip
                       :title="
                         t(
-                          isLauncherMode
-                            ? 'edit.maaEndLauncherArgumentsHint'
+                          !isMasLaunchMode
+                            ? 'edit.maaEndArgumentsUnsupported'
                             : 'edit.commandLineArgumentsUsed'
                         )
                       "
@@ -231,11 +234,14 @@
                 </template>
                 <a-input
                   v-model:value="maaEndConfig.Game.Arguments"
-                  :disabled="isLauncherMode"
+                  :disabled="isSaving || !isMasLaunchMode"
                   :placeholder="t('edit.enterLaunchArguments')"
                   size="large"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
+                <div v-if="!isMasLaunchMode" class="control-hint">
+                  {{ t('edit.maaEndArgumentsUnsupported') }}
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -262,13 +268,16 @@
 
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
-              <a-form-item :label="t('edit.maaEndSetResolution')">
+              <a-form-item
+                :label="t('edit.maaEndSetResolution')"
+                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+              >
                 <a-select
-                  v-model:value="maaEndConfig.Game.SetResolution"
+                  :value="canSetResolution && maaEndConfig.Game.SetResolution"
                   size="large"
                   :options="booleanOptions"
-                  :disabled="isSaving"
-                  @change="handleChange('Game', 'SetResolution', $event)"
+                  :disabled="isSaving || !launchCapabilitiesReady || !canSetResolution"
+                  @change="handleSetResolutionChange"
                 />
               </a-form-item>
             </a-col>
@@ -786,6 +795,9 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
+const launchGameControllers = ref<string[]>([])
+const gameSettingControllers = ref<string[]>([])
+const launchCapabilitiesReady = ref(false)
 const defaultMaaEndController = 'Win32-Front'
 
 const booleanOptions = [
@@ -811,6 +823,22 @@ const controllerProtocol = computed(
 )
 const isWinController = computed(() => controllerProtocol.value === 'Win32')
 const isLauncherMode = computed(() => maaEndConfig.Game.LaunchMode === 'Launcher')
+const maaEndLaunchSupported = computed(() =>
+  launchGameControllers.value.includes(maaEndConfig.Game.ControllerType ?? '')
+)
+const effectiveLaunchMode = computed(() =>
+  maaEndConfig.Game.LaunchMode === 'Client'
+    ? maaEndLaunchSupported.value
+      ? 'MaaEnd'
+      : 'MAS'
+    : maaEndConfig.Game.LaunchMode
+)
+const isMasLaunchMode = computed(() => effectiveLaunchMode.value === 'MAS')
+const canSetResolution = computed(() =>
+  effectiveLaunchMode.value === 'MaaEnd'
+    ? maaEndLaunchSupported.value
+    : gameSettingControllers.value.includes(maaEndConfig.Game.ControllerType ?? '')
+)
 const {
   source: launcherSource,
   path: launcherPath,
@@ -824,7 +852,8 @@ const {
 } = useMaaEndLauncher({
   game: maaEndConfig.Game,
   getScriptId: () => scriptId,
-  enabled: () => !isInitializing.value && isWinController.value,
+  enabled: () =>
+    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
@@ -851,6 +880,15 @@ const handleChange = async (category: string, key: string, value: unknown) => {
     }
     return success
   }, `${category}.${key}`)
+}
+
+const handleSetResolutionChange = async (value: unknown) => {
+  if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return
+  await enqueue(async () => {
+    const success = await updateScript(scriptId, { Game: { SetResolution: value } })
+    if (success) maaEndConfig.Game.SetResolution = value
+    return success
+  }, 'Game.SetResolution')
 }
 
 const masAccountSwitchWarningShown = ref(false)
@@ -950,6 +988,9 @@ const loadEmulatorOptions = async () => {
 }
 
 const loadMaaEndOptions = async () => {
+  launchCapabilitiesReady.value = false
+  launchGameControllers.value = []
+  gameSettingControllers.value = []
   originalResolution.value = null
   originalDisplayType.value = null
   controllerOptions.value = []
@@ -960,6 +1001,9 @@ const loadMaaEndOptions = async () => {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code !== 200) return
 
+    launchGameControllers.value = response.launchGameControllers ?? []
+    gameSettingControllers.value = response.gameSettingControllers ?? []
+    launchCapabilitiesReady.value = true
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
     originalResolution.value = response.originalResolution ?? null

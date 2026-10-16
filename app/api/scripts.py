@@ -557,6 +557,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            launchGameControllers=data["launchGameControllers"],
+            gameSettingControllers=data["gameSettingControllers"],
             projectName=data["projectName"],
             projectVersion=data["projectVersion"],
             autoCollectGroups=[
