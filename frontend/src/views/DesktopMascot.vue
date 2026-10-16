@@ -94,10 +94,19 @@ const spriteStyle = computed(() => {
 
 const noticeStyle = computed(() => {
   if (!data.value) return {}
-  const { height, offsetY, noticeBelow, colors } = data.value
+  const { width, height, offsetX, offsetY, noticeBelow, noticeWidth, noticeHeight, colors } =
+    data.value
+  const anchor = offsetX + width / 2
+  const windowWidth = Math.max(width, noticeWidth)
+  const left = Math.max(0, Math.min(anchor - noticeWidth / 2, windowWidth - noticeWidth))
   return {
+    left: `${left}px`,
+    width: `${noticeWidth}px`,
+    maxHeight: `${Math.max(0, noticeHeight - 12)}px`,
     top: noticeBelow ? `${offsetY + height + 12}px` : undefined,
     bottom: noticeBelow ? undefined : `${height + 12}px`,
+    '--mascot-notice-arrow-left': `${Math.max(4, Math.min(anchor - left - 4, noticeWidth - 12))}px`,
+    '--mascot-notice-content-height': `${Math.max(0, noticeHeight - 38 - (isIdleMessage.value && data.value.idleMessage?.author && noticeHeight >= 78 ? 20 : 0))}px`,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
@@ -193,7 +202,7 @@ function hover(): void {
 async function startDrag(event: PointerEvent): Promise<void> {
   if (event.button !== 0 || activePointerId !== null) return
   const api = window.desktopMascotAPI
-  if (!api) return
+  if (!api || !data.value) return
   event.preventDefault()
   const target = event.currentTarget as HTMLElement
   const bounds = target.getBoundingClientRect()
@@ -206,6 +215,7 @@ async function startDrag(event: PointerEvent): Promise<void> {
       x: event.clientX - bounds.left,
       y: event.clientY - bounds.top,
       session: revision,
+      revision: data.value.revision,
     })
     if (revision !== dragRevision) return
     if (!accepted) {
@@ -242,14 +252,16 @@ function endDrag(event?: PointerEvent): void {
 <template>
   <div v-if="data" class="desktop-mascot" @mousemove="hover" @mouseleave="hover">
     <div
-      v-if="noticeText"
+      v-if="noticeText && data.noticeHeight >= 58"
       class="mascot-notice"
       :class="{ 'idle-message': isIdleMessage, 'notice-below': data.noticeBelow }"
       :style="noticeStyle"
       role="status"
     >
       <span>{{ noticeText }}</span>
-      <small v-if="isIdleMessage && data.idleMessage?.author" class="mascot-notice-author"
+      <small
+        v-if="isIdleMessage && data.idleMessage?.author && data.noticeHeight >= 78"
+        class="mascot-notice-author"
         >—— {{ data.idleMessage.author }}</small
       >
     </div>
@@ -364,7 +376,6 @@ function endDrag(event?: PointerEvent): void {
 
 .mascot-notice {
   position: absolute;
-  right: 0;
   max-width: 100%;
   box-sizing: border-box;
   padding: 12px;
@@ -382,6 +393,7 @@ function endDrag(event?: PointerEvent): void {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  max-height: var(--mascot-notice-content-height);
   overflow: hidden;
 }
 
@@ -402,7 +414,7 @@ function endDrag(event?: PointerEvent): void {
 
 .mascot-notice::after {
   position: absolute;
-  right: 64px;
+  left: var(--mascot-notice-arrow-left);
   bottom: -5px;
   width: 8px;
   height: 8px;
