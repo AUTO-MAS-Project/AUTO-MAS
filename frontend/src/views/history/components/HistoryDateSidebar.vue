@@ -19,37 +19,44 @@
           </template>
 
           <div class="user-list">
-            <div
-              v-for="{ username, userData, successCount, failureCount } in dateGroup.users"
-              :key="username"
-              class="user-item"
-              :class="{ active: selectedUser === `${dateGroup.date}-${username}` }"
-              @click="$emit('select-user', dateGroup.date, username, userData)"
-            >
-              <UserOutlined class="user-icon" />
-              <span class="username">{{ username }}</span>
-              <span class="result-counts">
-                <span
-                  class="result-count success-count"
-                  role="img"
-                  :aria-label="t('history.successCount', { count: successCount })"
-                  :title="t('history.successCount', { count: successCount })"
-                >
-                  <CheckCircleOutlined aria-hidden="true" />
-                  <span aria-hidden="true">{{ successCount }}</span>
+            <template v-for="group in dateGroup.groups" :key="group.script">
+              <div v-if="dateGroup.groups.length > 1" class="script-label" :title="group.label">
+                {{ group.label }}
+              </div>
+              <div
+                v-for="row in group.rows"
+                :key="row.key"
+                class="user-item"
+                :class="{ active: selectedUser === row.key }"
+                @click="$emit('select-user', row.key, row.userData)"
+              >
+                <UserOutlined class="user-icon" />
+                <span class="username">{{ row.username }}</span>
+                <span class="result-counts">
+                  <span
+                    class="result-count success-count"
+                    :class="{ 'is-zero': !row.successCount }"
+                    role="img"
+                    :aria-label="t('history.successCount', { count: row.successCount })"
+                    :title="t('history.successCount', { count: row.successCount })"
+                  >
+                    <CheckOutlined aria-hidden="true" />
+                    <span class="count-value" aria-hidden="true">{{ row.successCount }}</span>
+                  </span>
+                  <span
+                    class="result-count failure-count"
+                    :class="{ 'is-zero': !row.failureCount }"
+                    role="img"
+                    :aria-label="t('history.failureCount', { count: row.failureCount })"
+                    :title="t('history.failureCount', { count: row.failureCount })"
+                  >
+                    <CloseOutlined aria-hidden="true" />
+                    <span class="count-value" aria-hidden="true">{{ row.failureCount }}</span>
+                  </span>
                 </span>
-                <span
-                  class="result-count failure-count"
-                  role="img"
-                  :aria-label="t('history.failureCount', { count: failureCount })"
-                  :title="t('history.failureCount', { count: failureCount })"
-                >
-                  <CloseCircleOutlined aria-hidden="true" />
-                  <span aria-hidden="true">{{ failureCount }}</span>
-                </span>
-              </span>
-              <RightOutlined class="arrow-icon" />
-            </div>
+                <RightOutlined class="arrow-icon" />
+              </div>
+            </template>
           </div>
         </a-collapse-panel>
       </a-collapse>
@@ -67,8 +74,8 @@ import { useI18n } from 'vue-i18n'
 import { type HistoryData, HistoryIndexItem } from '@/api'
 import {
   CalendarOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
+  CheckOutlined,
+  CloseOutlined,
   RightOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
@@ -84,29 +91,79 @@ interface Props {
   selectedUser: string
 }
 
+interface HistoryRow {
+  key: string
+  username: string
+  userData: HistoryData
+  successCount: number
+  failureCount: number
+}
+
+interface HistoryScriptGroup {
+  script: string
+  label: string
+  rows: HistoryRow[]
+}
+
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'update:activeKeys', value: string[]): void
-  (e: 'select-user', date: string, username: string, userData: HistoryData): void
+  (e: 'select-user', key: string, userData: HistoryData): void
 }>()
 
 const localActiveKeys = ref(props.activeKeys)
 
+// 历史文件名是 `<托管名>-<时>-<分>-<秒>.json`；不足 4 段的（MaaFW 与早期记录）
+// 文件名里没有托管名，返回空串
+const scriptNameFromJsonFile = (jsonFile: string): string => {
+  const stem = (jsonFile.split(/[\\/]/).pop() ?? '').replace(/\.json$/i, '')
+  const parts = stem.split('-')
+  return parts.length > 3 ? parts.slice(0, -3).join('-') : ''
+}
+
+// 历史目录按账号名分文件夹，不同托管下的同名账号会落进同一个文件夹；
+// 再按文件名前缀里的托管名分一组，否则同名账号的计数会混在一起
 const dateGroups = computed(() =>
-  props.historyData.map(dateGroup => ({
-    date: dateGroup.date,
-    users: Object.entries(dateGroup.users).map(([username, userData]) => {
-      let successCount = 0
-      let failureCount = 0
+  props.historyData.map(dateGroup => {
+    const byScript = new Map<string, HistoryScriptGroup>()
+    for (const [username, userData] of Object.entries(dateGroup.users)) {
+      const buckets = new Map<string, HistoryIndexItem[]>()
       for (const record of userData.index ?? []) {
-        // 跳过（SKIP，如停服维护）既不算成功也不算失败
-        if (record.status === HistoryIndexItem.status.DONE) successCount++
-        else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
+        const script = scriptNameFromJsonFile(record.jsonFile)
+        const bucket = buckets.get(script)
+        if (bucket) bucket.push(record)
+        else buckets.set(script, [record])
       }
-      return { username, userData, successCount, failureCount }
-    }),
-  }))
+      if (buckets.size === 0) buckets.set('', [])
+
+      for (const [script, records] of buckets) {
+        let successCount = 0
+        let failureCount = 0
+        for (const record of records) {
+          // 跳过（SKIP，如停服维护）既不算成功也不算失败
+          if (record.status === HistoryIndexItem.status.DONE) successCount++
+          else if (record.status === HistoryIndexItem.status.ERROR) failureCount++
+        }
+        const row: HistoryRow = {
+          key: `${dateGroup.date}-${script}-${username}`,
+          username,
+          userData: { ...userData, index: records },
+          successCount,
+          failureCount,
+        }
+        const group = byScript.get(script)
+        if (group) group.rows.push(row)
+        else
+          byScript.set(script, {
+            script,
+            label: script || t('history.scriptUnknown'),
+            rows: [row],
+          })
+      }
+    }
+    return { date: dateGroup.date, groups: [...byScript.values()] }
+  })
 )
 
 watch(
@@ -211,6 +268,18 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   padding: 0 4px;
 }
 
+/* 托管分组标题：只在同一天里出现多个托管时才渲染，纯文字、不可点，不新增菜单层级 */
+.script-label {
+  padding: 8px 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--ant-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .user-item {
   display: flex;
   align-items: center;
@@ -251,20 +320,28 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   white-space: nowrap;
 }
 
+/* 结果计数：✓/✗ 的形状本身说明成败，数字用正文色加粗，先看到数字再看图标 */
 .result-counts {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .result-count {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 34px;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.count-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-text);
 }
 
 .success-count {
@@ -273,6 +350,16 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
 
 .failure-count {
   color: var(--ant-color-error);
+}
+
+/* 零值不参与扫读，整体退为最弱的灰 */
+.result-count.is-zero {
+  color: var(--ant-color-text-quaternary);
+}
+
+.result-count.is-zero .count-value {
+  font-weight: 500;
+  color: inherit;
 }
 
 .arrow-icon {

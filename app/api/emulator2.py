@@ -203,6 +203,7 @@ async def create_instance(
             {
                 "memory_mb": payload.memoryMb,
                 "cpu": payload.cpu,
+                "fps": payload.fps,
                 "data_partition_gb": payload.dataPartitionGb,
             },
         )

@@ -2882,6 +2882,9 @@ export default {
     selectUserDesc: '左の日付一覧からアカウントを選ぶと詳細が表示されます。',
     recordList: '記録件数',
     recordCount: '{count} 件の記録',
+    successCount: '成功 {count} 回',
+    failureCount: '失敗 {count} 回',
+    scriptUnknown: 'ラベルなし',
     timeRule: 'ゲーム内の 1 日は 04:00 から始まります（04:00 ～ 翌日 04:00）',
     done: '完了',
     skipped: 'スキップ',
@@ -4175,6 +4178,11 @@ export default {
       mascotSection: 'デスクトップペット',
       mascotSelect: 'ペット選択',
       mascotFollowTheme: '現在のテーマに合わせる',
+      mascotFps: 'アニメーションのフレームレート',
+      mascotFpsPackage: 'アニメーションパックに合わせる',
+      mascotFpsCustom: 'カスタム',
+      mascotFpsTip:
+        '既定ではパックに合わせます。1～120 FPS を指定し、Enter キーを押すか入力欄から離れると保存され、その速度でアニメーションを繰り返し再生します。',
       importMascot: 'ペットをインポート',
       removeMascot: 'ペットを削除',
       mascotImportTip:

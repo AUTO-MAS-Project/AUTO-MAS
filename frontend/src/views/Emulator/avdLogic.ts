@@ -1,5 +1,5 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 M9A 和 MAA 用的设备标记。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 MFW 脚本和 MAA 用的设备标记。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -10,12 +10,16 @@ import type { Emulator2AvdComponentItem, Emulator2AvdPrecheckItem } from '@/api'
 /** 新建实例时的选项。显示固定 720p、不带声卡、气球固定开，不在这里；核数用后端默认。 */
 export interface AvdOptionsForm {
   memoryMb: number
+  fps: number
 }
 
 /** 内存只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
 export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
 /** 新建实例默认 6 GB（与后端 ``DEFAULT_MEMORY_MB`` 一致）；核数后端默认 6。 */
 export const DEFAULT_MEMORY_MB = 6144
+/** 帧率只收这两档（与后端 ``FPS_CHOICES`` 一致），默认 60（``DEFAULT_FPS``）。 */
+export const FPS_CHOICES = [30, 60] as const
+export const DEFAULT_FPS = 60
 /**
  * 推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。只给实测过内存的
  * 1999 的推荐值；开机后内存改不了，所以不按游戏自动分配。
@@ -24,11 +28,13 @@ export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   memoryMb: DEFAULT_MEMORY_MB,
+  fps: DEFAULT_FPS,
 })
 
 /** 新建实例时随请求带上的魔改 AVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   memoryMb: form.memoryMb,
+  fps: form.fps,
 })
 
 // ---- 开机前检查 ----
@@ -84,7 +90,7 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
 
-// ---- 魔改 AVD 只给 M9A 和 MAA ----
+// ---- 魔改 AVD 只给 MFW 脚本和 MAA ----
 
 /** 设备下拉里的一项（各脚本编辑页共用的形状，同 ``ComboBoxItem``）。 */
 export interface DeviceOption {
@@ -93,8 +99,8 @@ export interface DeviceOption {
 }
 
 /**
- * 魔改 AVD 目前只支持 M9A 和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
- * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（M9A、MAA）时原样返回。
+ * 魔改 AVD 目前只支持 MFW 脚本和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
+ * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（MAA）时原样返回。MFW 脚本页不经过这里。
  * 后端保存与运行时也会拦，这里只是让用户选之前就看到。
  */
 export const markModAvdOptions = <T extends DeviceOption>(

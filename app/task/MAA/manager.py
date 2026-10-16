@@ -33,6 +33,7 @@ from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import System
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.manager_base import ScriptManagerBase
@@ -46,11 +47,13 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import get_logger
+from app.utils.config_archive import archive_files
 from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
     commit_native_config_snapshot,
+    read_native_config_snapshot,
     recover_native_config,
     swap_in_dir,
 )
@@ -61,15 +64,35 @@ from .AutoProxy import (
     restore_depot_cache,
 )
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
-from .tools.backup_archive import archive_native_backup
+from .tools import push_notification, update_maa
+from .tools.backup_archive import (
+    archive_native_backup,
+    collect_native_files,
+    native_backup_root,
+)
 from .tools.game_update import ensure_game_updated
 from .tools.resource_update import (
+    _run_write_thread,
     acquire_resource_access_lock,
     get_resource_write_lock,
     prepare_queue_resources,
 )
+from .tools.software_package import (
+    clear_deferred_update,
+    load_deferred_update,
+    read_pending_update,
+    save_deferred_update,
+    write_pending_update,
+)
+from .tools.software_update import (
+    cancel_maa_software_update_precheck,
+    compare_versions,
+    parse_version,
+    prepare_maa_software_update,
+    read_installed_release,
+)
 from .tools.update_credentials import resolve_takeover_credentials
+from .tools.UpdateMAA import MaaUpdaterRunningError
 
 logger = get_logger("MAA 调度器")
 
@@ -107,6 +130,103 @@ class MaaManager(ScriptManagerBase):
         self._device_provider = device_provider
         self.game_update_results: dict[str, GameUpdateResult] = {}
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
+        self._update_config_dir: Path | None = None
+        self._pending_update: tuple[str, str] | None = None
+        self._active_proxy_task: AutoProxyTask | None = None
+        self._updater_running: bool = False
+
+    async def _finalize_task(self) -> None:
+        try:
+            # 预检查只属于本轮；主动中止或异常也必须回收，避免跨脚本后无法停止。
+            if self._update_config_dir is not None:
+                await cancel_maa_software_update_precheck(self.maa_set_path.parent)
+        finally:
+            try:
+                if self._update_config_dir is not None and not self._updater_running:
+                    try:
+                        self._remember_pending_update()
+                    except (OSError, ValueError) as error:
+                        logger.warning(
+                            f"MAA 本体更新: 保存恢复登记失败，仍尝试原生还原: {error}"
+                        )
+                await super()._finalize_task()
+            finally:
+                try:
+                    if self.prepared and not self.maintenance_only:
+                        if self._updater_running:
+                            self.script_info.status = "异常"
+                            # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
+                            backup_path = await _run_write_thread(
+                                archive_files,
+                                files=collect_native_files(self.temp_path),
+                                store_root=native_backup_root(self.maa_set_path),
+                                force=True,
+                            )
+                            logger.warning(
+                                f"MAA 更新相关进程未能退出，任务前原生配置备份: {backup_path}；"
+                                "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
+                            )
+                        else:
+                            # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
+                            if (
+                                self.temp_path.exists()
+                                and not self._keep_script_config_changes()
+                            ):
+                                swap_in_dir(self.temp_path, self.maa_set_path)
+                            await self._restore_pending_update()
+                            clear_native_config_snapshot(self.temp_path)
+                finally:
+                    self._resource_access.close()
+
+    def _remember_pending_update(self) -> None:
+        """子任务被中止时也接回它保存的登记，再补读最后一次原生写盘。"""
+        if (
+            self._active_proxy_task is not None
+            and self._active_proxy_task.pending_update
+        ):
+            self._pending_update = self._active_proxy_task.pending_update
+        try:
+            pending = read_pending_update(self.maa_set_path.parent)
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+            return
+        if all(pending) and (self.maa_set_path.parent / pending[1]).is_file():
+            self._pending_update = pending
+            save_deferred_update(
+                self.maa_set_path.parent, version=pending[0], package=pending[1]
+            )
+
+    async def _restore_pending_update(self) -> None:
+        """恢复仍有包文件的登记；成功安装后已删除的包不重新登记。"""
+        try:
+            saved = load_deferred_update(self.maa_set_path.parent)
+            if saved is not None:
+                self._pending_update = saved
+            if (
+                self._pending_update is None
+                or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
+            ):
+                return
+            release = read_installed_release(self.maa_set_path.parent)
+            current = parse_version(release[0]) if release else None
+            target = parse_version(self._pending_update[0])
+            if current and target and compare_versions(target, current) <= 0:
+                clear_deferred_update(self.maa_set_path.parent)
+                self._pending_update = None
+                return
+            _, current_package = read_pending_update(self.maa_set_path.parent)
+            if (
+                not current_package
+                or not (self.maa_set_path.parent / current_package).is_file()
+            ):
+                await _run_write_thread(
+                    write_pending_update,
+                    self.maa_set_path.parent,
+                    version=self._pending_update[0],
+                    package=self._pending_update[1],
+                )
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法恢复原生待更新登记: {error}")
 
     async def _run_main_task(self) -> None:
         # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
@@ -250,6 +370,12 @@ class MaaManager(ScriptManagerBase):
                 if Path(script_config.get("Info", "Path")) != install:
                     self._resource_access.close()
                     continue
+                if await System.is_process_running(install / "MAA.Updater.exe"):
+                    raise MaaUpdaterRunningError(
+                        "MAA 官方更新器仍在运行，请等待更新结束后重试"
+                    )
+                if not await System.kill_process(install / "MAA.exe"):
+                    raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
                 self.config_lock_acquired = True
                 await script_config.lock()
                 break
@@ -270,6 +396,7 @@ class MaaManager(ScriptManagerBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
+        await self._restore_pending_update()
 
         # overlay 层覆写的库存缓存同样先还原：存底还在说明上次运行（崩溃、强杀）
         # 没走完结束还原，不还原就会把上一账号的库存固化成这一次的「原始现场」。
@@ -314,6 +441,20 @@ class MaaManager(ScriptManagerBase):
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""
 
+        # 指纹不匹配会保护现场并清理 Temp；先入原安装的备份池，保留原始内容。
+        # 上次归档若失败，本次也必须归档成功后才允许清理，不能只记录告警继续。
+        if (
+            read_native_config_snapshot(
+                self.temp_path, expected_script_id=self.script_info.script_id
+            )
+            is not None
+        ):
+            files = collect_native_files(self.temp_path)
+            if files:
+                archive_files(
+                    files=files,
+                    store_root=native_backup_root(self.maa_set_path),
+                )
         result = recover_native_config(
             self.temp_path,
             self.maa_set_path,
@@ -420,19 +561,36 @@ class MaaManager(ScriptManagerBase):
             else:
                 kwargs["game_update_result"] = update_result
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
+            if isinstance(task, AutoProxyTask):
+                self._active_proxy_task = task
+                # 一次只安装一个版本，批尾沿用最后实际执行账号的通道；其他通道只缓存。
+                self._update_config_dir = task.update_config_dir
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
+            if isinstance(task, AutoProxyTask):
+                self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
 
+        # 完整包会替换 resource，整批账号全部结束后才允许安装；下一轮再按需补资源。
+        if self._update_config_dir is not None:
+            await self._restore_pending_update()
+            await prepare_maa_software_update(
+                self.maa_set_path.parent,
+                config_dir=self._update_config_dir,
+                config=self.script_config,
+            )
+            self._remember_pending_update()
+            try:
+                await update_maa(self.maa_set_path.parent)
+            except MaaUpdaterRunningError:
+                self._updater_running = True
+                raise
+
     async def final_task(self):
         """运行结束后的收尾工作"""
-
-        # spawn 已等待 MAA 子任务停止并收尾；剩余步骤不再读取资源。
-        # prepare 未完成、异常或主动取消也统一释放安装访问锁。
-        self._resource_access.close()
 
         if not self.prepared or not self.has_proxy_run:
             for update_task in self._game_update_tasks:
@@ -502,12 +660,6 @@ class MaaManager(ScriptManagerBase):
                         level="error", message=f"推送代理结果时出现异常: {e}"
                     ),
                 )
-
-        # 还原配置：原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
-        # 其余按任务前快照还原
-        if (self.temp_path).exists() and not self._keep_script_config_changes():
-            swap_in_dir(self.temp_path, self.maa_set_path)
-        clear_native_config_snapshot(self.temp_path)
 
         self.script_info.status = (
             "跳过" if self.all_users_maintenance_skipped else "完成"

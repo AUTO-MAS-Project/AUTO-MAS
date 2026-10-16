@@ -23,13 +23,13 @@ const component = (over: Partial<Emulator2AvdComponentItem>): Emulator2AvdCompon
 
 describe('instance options', () => {
   it('defaults follow the user-decided values', () => {
-    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144 })
+    expect(defaultAvdOptions()).toEqual({ memoryMb: 6144, fps: 60 })
     expect(DEFAULT_MEMORY_MB).toBe(6144)
   })
 
-  it('create sends memory only (display, sound and balloon are fixed)', () => {
-    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144 })
-    expect(createOptions({ memoryMb: 4096 })).toEqual({ memoryMb: 4096 })
+  it('create sends memory and frame rate (display, sound and balloon are fixed)', () => {
+    expect(createOptions(defaultAvdOptions())).toEqual({ memoryMb: 6144, fps: 60 })
+    expect(createOptions({ memoryMb: 4096, fps: 30 })).toEqual({ memoryMb: 4096, fps: 30 })
   })
 })
 
@@ -120,7 +120,7 @@ describe('test package', () => {
   })
 })
 
-describe('mod AVD is M9A only', () => {
+describe('mod AVD is for MFW scripts and MAA only', () => {
   const options = [
     { label: 'MuMu 0', value: 'mumu:0' },
     { label: 'mas_1', value: 'avd:1' },
@@ -128,13 +128,13 @@ describe('mod AVD is M9A only', () => {
   const isAvd = (value: string | null) => Boolean(value?.startsWith('avd:'))
 
   it('greys out mod AVD devices for other scripts and says why', () => {
-    expect(markModAvdOptions(options, isAvd, false, '只支持 M9A')).toEqual([
+    expect(markModAvdOptions(options, isAvd, false, '只支持 MFW 脚本和 MAA')).toEqual([
       { label: 'MuMu 0', value: 'mumu:0' },
-      { label: 'mas_1（只支持 M9A）', value: 'avd:1', disabled: true },
+      { label: 'mas_1（只支持 MFW 脚本和 MAA）', value: 'avd:1', disabled: true },
     ])
   })
 
-  it('leaves the list untouched for M9A', () => {
-    expect(markModAvdOptions(options, isAvd, true, '只支持 M9A')).toBe(options)
+  it('leaves the list untouched for MAA', () => {
+    expect(markModAvdOptions(options, isAvd, true, '只支持 MFW 脚本和 MAA')).toBe(options)
   })
 })

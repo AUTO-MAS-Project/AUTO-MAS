@@ -8,6 +8,10 @@ import {
   fail,
 } from './assetPackageService'
 
+// 与桌宠设置的范围保持一致；主进程与渲染进程独立编译。
+const MASCOT_MIN_FPS = 1
+const MASCOT_MAX_FPS = 120
+
 export function normalizeMascot(value: unknown): MascotDefinition | undefined {
   if (value === undefined) return undefined
   const raw = assertPlainObject(value, 'mascot')
@@ -40,8 +44,18 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
     const raw = assertPlainObject(value, 'mascot.animation')
     const assetPath = assertAssetPath(raw.path, true)
     const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 16)
-    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 24)
-    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 24)
+    const idleFps = assertOptionalNumber(
+      raw.idleFps,
+      'mascot.animation.idleFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
+    const workingFps = assertOptionalNumber(
+      raw.workingFps,
+      'mascot.animation.workingFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
     const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
     const resultPath =
       raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)
@@ -79,11 +93,7 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
   }
 }
 
-function validateMascotAnimationData(
-  animation: NonNullable<MascotDefinition['animation']>,
-  data: Buffer,
-  rows = 2
-): void {
+function validateMascotAnimationData(columns: number, data: Buffer, rows = 2): void {
   if (data.length < 33 || data.subarray(12, 16).toString('ascii') !== 'IHDR') {
     throw new AssetPackageError('INVALID_ANIMATION', 'mascot.animation: invalid PNG dimensions')
   }
@@ -94,7 +104,7 @@ function validateMascotAnimationData(
     !height ||
     width > 8192 ||
     height > 8192 ||
-    width % animation.columns !== 0 ||
+    width % columns !== 0 ||
     height % rows !== 0
   ) {
     throw new AssetPackageError(
@@ -119,9 +129,10 @@ export function validateMascotAssets(
   read: (assetPath: string) => Buffer
 ): void {
   if (!mascot?.animation) return
-  validateMascotAnimationData(mascot.animation, read(mascot.animation.path))
+  validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.path))
+  if (mascot.animation.lookPath) validateMascotAnimationData(3, read(mascot.animation.lookPath), 3)
   if (mascot.animation.resultPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.resultPath))
+    validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.resultPath))
   if (mascot.animation.dragPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.dragPath), 1)
+    validateMascotAnimationData(mascot.animation.columns, read(mascot.animation.dragPath), 1)
 }

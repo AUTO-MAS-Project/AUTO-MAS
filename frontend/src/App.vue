@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider, message } from 'ant-design-vue'
-import { t } from '@/i18n'
+import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
@@ -20,9 +20,9 @@ import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
 import { useHomeGreetingStore } from './stores/homeGreeting'
+import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
 import { useLocale } from './composables/useLocale.ts'
-import { onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
-import { resolveTaskCompletionFeedback, scriptHasStatus } from './utils/taskFailures'
+import { useDesktopMascot } from './composables/useDesktopMascot'
 
 const logger = window.electronAPI.getLogger('App组件')
 
@@ -50,131 +50,52 @@ const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
 )
 
-const showDesktopMascotError = () => message.error(t('setting.basic.desktopMascotFailed'))
-const disposeDesktopMascotError = window.electronAPI.onDesktopMascotError?.(showDesktopMascotError)
-onUnmounted(() => disposeDesktopMascotError?.())
-const announcedMascotTasks = new Set<string>()
-const mascotRunningStatuses = new Set(['运行', '运行中'])
-// 沿用任务总览的状态和收尾判定，不把部分失败误报为成功。
-const disposeMascotTaskEvents = onTaskRuntimeEvent(event => {
-  if (isStandalonePage.value || !isAppReady.value) return
-  if (event.type === 'snapshot') {
-    for (const id of announcedMascotTasks) {
-      if (!event.activeTaskIds.has(id)) announcedMascotTasks.delete(id)
-    }
-    for (const state of event.states) {
-      if (
-        state.mode !== 'ScriptConfig' &&
-        state.taskInfo.some(info => scriptHasStatus(info, mascotRunningStatuses))
-      )
-        announcedMascotTasks.add(state.taskId)
-    }
-    return
+useDesktopMascot(
+  {
+    isStandalonePage,
+    isAppReady,
+    ready: computed(
+      () => isAppReady.value && performanceStore.initialized && !isInitializationPage.value
+    ),
+    colors: computed(() => {
+      // 同主题包切换一样触发同步，即使最终颜色相同也保留原有接线。
+      void activeAppearance.value
+      const tokens = antTokens.value
+      return tokens
+        ? {
+            background: tokens.colorBgElevated,
+            text: tokens.colorText,
+            border: tokens.colorBorder,
+            radius: tokens.borderRadius,
+          }
+        : undefined
+    }),
+    menuLabels: computed(() => {
+      void antdLocale.value
+      return {
+        pauseAnimation: t('setting.basic.mascotPauseAnimation'),
+        resumeAnimation: t('setting.basic.mascotResumeAnimation'),
+        pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
+        resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
+      }
+    }),
+    greeting: computed(() => homeGreetingStore.greeting),
+    working: computed(() => performanceStore.anyScriptRunning),
+    animate: computed(() => !performanceStore.lowPerformanceMode),
+  },
+  {
+    api: {
+      setDesktopMascotReady: window.electronAPI.setDesktopMascotReady,
+      setDesktopMascotActivity: window.electronAPI.setDesktopMascotActivity,
+      setDesktopMascotIdleMessage: window.electronAPI.setDesktopMascotIdleMessage,
+      showDesktopMascotNotice: window.electronAPI.showDesktopMascotNotice,
+      onDesktopMascotError: window.electronAPI.onDesktopMascotError,
+    },
+    tasks: { snapshot: getTaskRuntimeStates, subscribe: onTaskRuntimeEvent },
+    translate: t,
+    reportError: (text, error) => logger.error(text, error),
+    showError: () => message.error(t('setting.basic.desktopMascotFailed')),
   }
-  if (event.type === 'removed') {
-    announcedMascotTasks.delete(event.taskId)
-    return
-  }
-  const { state } = event
-  if (state.mode === 'ScriptConfig') return
-  const name =
-    state.taskName ||
-    state.taskInfo
-      .map(info => info.name)
-      .filter(Boolean)
-      .join('、') ||
-    t('setting.basic.mascotTask')
-  let text: string
-  let reaction: 'success' | 'failure' | 'stopped' | undefined
-  if (event.type === 'info') {
-    if (
-      announcedMascotTasks.has(state.taskId) ||
-      !state.taskInfo.some(info => scriptHasStatus(info, mascotRunningStatuses))
-    )
-      return
-    announcedMascotTasks.add(state.taskId)
-    text = t('setting.basic.mascotTaskStarted', { name })
-  } else if (event.type === 'completed' && state.outcome) {
-    announcedMascotTasks.delete(state.taskId)
-    const feedback = resolveTaskCompletionFeedback({
-      outcome: state.outcome,
-      task_info: state.taskInfo,
-    })
-    const key = {
-      success: 'mascotTaskCompleted',
-      error: 'mascotTaskFailed',
-      cancelled: 'mascotTaskStopped',
-      partialFailure: 'mascotTaskPartialFailure',
-    }[feedback.kind]
-    text = t(`setting.basic.${key}`, { name })
-    reaction =
-      feedback.kind === 'success'
-        ? 'success'
-        : feedback.kind === 'cancelled'
-          ? 'stopped'
-          : 'failure'
-  } else return
-  void window.electronAPI.showDesktopMascotNotice?.(text, reaction).catch(error => {
-    logger.error('显示桌宠提醒失败:', error)
-  })
-})
-onUnmounted(disposeMascotTaskEvents)
-watch(
-  () => homeGreetingStore.greeting,
-  greeting => {
-    if (isStandalonePage.value) return
-    void window.electronAPI
-      .setDesktopMascotIdleMessage?.({ text: greeting.text, author: greeting.author })
-      .catch(error => {
-        logger.error('同步桌宠待机留言失败:', error)
-      })
-  },
-  { immediate: true }
-)
-watch(
-  () => [performanceStore.anyScriptRunning, performanceStore.lowPerformanceMode] as const,
-  ([working, lowPerformance]) => {
-    if (isStandalonePage.value) return
-    void window.electronAPI.setDesktopMascotActivity?.(working, !lowPerformance).catch(error => {
-      logger.error('同步桌宠工作状态失败:', error)
-    })
-  },
-  { immediate: true }
-)
-watch(
-  () =>
-    [
-      isAppReady.value && performanceStore.initialized && !isInitializationPage.value,
-      activeAppearance.value,
-      antdLocale.value,
-      antTokens.value,
-    ] as const,
-  ([ready, , , tokens]) => {
-    if (isStandalonePage.value) return
-    void window.electronAPI
-      .setDesktopMascotReady?.(
-        ready && Boolean(tokens),
-        {
-          pauseAnimation: t('setting.basic.mascotPauseAnimation'),
-          resumeAnimation: t('setting.basic.mascotResumeAnimation'),
-          pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
-          resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
-        },
-        tokens
-          ? {
-              background: tokens.colorBgElevated,
-              text: tokens.colorText,
-              border: tokens.colorBorder,
-              radius: tokens.borderRadius,
-            }
-          : undefined
-      )
-      .catch(error => {
-        logger.error('同步桌面桌宠失败:', error)
-        showDesktopMascotError()
-      })
-  },
-  { immediate: true, flush: 'post' }
 )
 
 onMounted(async () => {

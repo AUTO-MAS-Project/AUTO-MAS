@@ -228,17 +228,10 @@ def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedSc
 
 
 def script_supports_mod_avd(script: Any) -> bool:
-    """脚本能不能用魔改 AVD：MAA 脚本，或者它对应的 MaaFW 特调声明了 ``supports_mod_avd``（目前只有 M9A）。"""
-    from app.models.config import MaaConfig
-    from app.task.MaaFW.tools.embedded.flavor import resolve_flavor
+    """脚本能不能用魔改 AVD：MAA 脚本，或者 MaaFW 脚本（通用项目与 M9A 等特调都是 ``MaaFWConfig``）。"""
+    from app.models.config import MaaConfig, MaaFWConfig
 
-    if isinstance(script, MaaConfig):
-        return True
-    try:
-        flavor = resolve_flavor(script)
-    except Exception:  # noqa: BLE001 - 认不出特调就按不支持处理
-        return False
-    return bool(getattr(flavor, "supports_mod_avd", False))
+    return isinstance(script, (MaaConfig, MaaFWConfig))
 
 
 async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
@@ -254,7 +247,7 @@ async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
 
 
 async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
-    """脚本保存时：不支持魔改 AVD 的脚本（目前只有 M9A 和 MAA 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
+    """脚本保存时：不支持魔改 AVD 的脚本（目前只有 MaaFW 和 MAA 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
 
     两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看，只在这次带了设备号
     时检查；只改了设备号时，模拟器配置取脚本当前的值。只改模拟器配置（没带设备号）不检查。
@@ -448,7 +441,7 @@ async def create_instance(
 ) -> dict:
     """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
-    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
+    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``data_partition_gb`` /
     ``native_index``）：
     雷电 / MuMu 新建时用的是模拟器自己的默认配置。
     """

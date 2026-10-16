@@ -107,7 +107,6 @@ from .tools import (
     agree_bilibili,
     log_statistics,
     push_notification,
-    update_maa,
 )
 from .tools.activity_inventory import resolve_activity_inventory_plans
 from .tools.backup_archive import (
@@ -135,14 +134,14 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.software_package import read_pending_update, save_deferred_update
 from .tools.software_update import (
     compare_versions,
+    has_cached_maa_software_update,
     parse_version,
-    prepare_maa_software_update,
     read_installed_release,
     start_maa_software_update_precheck,
 )
-from .tools.update_credentials import resolve_takeover_credentials
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -1221,6 +1220,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
     _cultivate_execution_targets: tuple[OperatorTarget, ...] = ()
     # 完成活动阶段后，其他任务重试不能重新领取该阶段药石额度。
     _event_depot_completed: bool = False
+    # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
+    _stock_depot_completed: bool = False
 
     def __init__(
         self,
@@ -1252,6 +1253,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
         self.check_result = "-"
         self.maa_root_path: Path | None = None
+        self.pending_update: tuple[str, str] | None = None
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -1260,7 +1262,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._infrast_plan_advanced = False
         self._cultivate_archive_positions: dict[str, int] = {}
         self._cultivate_archive_versions: dict[str, tuple[int, int, int]] = {}
-        self._stock_skipped_by_condition = False
 
     async def check(self) -> str:
 
@@ -1361,13 +1362,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
 
         # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
-        # 缓存，收尾在 update_maa() 前由 prepare_maa_software_update 消费；
+        # 缓存，整批账号结束后统一登记安装，避免完整包覆盖同轮后续任务所需的新资源；
         # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
-        # 只写日志。通道偏好读任务前的原生配置快照——会话期间安装目录 config
-        # 是 MAS 托管副本，且预检查发生在快照提交之后、本轮下发之前
+        # 只写日志。通道跟随本用户的配置来源，原生来源才读任务前快照。
         start_maa_software_update_precheck(
             self.maa_root_path,
-            config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            config_dir=self.update_config_dir,
             config=self.script_config,
         )
 
@@ -1405,6 +1405,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 continue
 
             self._event_depot_completed = False
+            self._stock_depot_completed = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.get("Info", "IfQuickConfig"):
@@ -1569,19 +1570,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
-
-                # 本体更新登记：把 MAS 共享缓存中的完整包复制进安装目录并写入
-                # 上游待更新字段；安装仍由下方未改动的 update_maa() 拉起 MAA
-                # 官方更新链完成。准备内部吞掉一切失败只写日志（主动取消除外），
-                # 不改变 update_maa() 的既有行为（含消费 MAA 原生自有的待更新包）。
-                await prepare_maa_software_update(
-                    self.maa_root_path,
-                    config_dir=Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                    config=self.script_config,
-                )
-
-                await update_maa(self.maa_root_path)
-                await asyncio.sleep(3)
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
@@ -1987,6 +1975,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 updated_targets,
                 plan,
                 _,
+                auto_targets,
             ) = await depot_cultivate_service.prepare_cultivate(
                 targets=targets,
                 # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
@@ -1997,6 +1986,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 today=game_now(self.cur_user_config.get("Info", "Server")).date(),
                 context=context,
                 require_observations=True,
+                auto_raise=self.cur_user_config.get("Task", "CultivateAutoRaise"),
             )
         except Exception as e:
             logger.opt(exception=True).warning(
@@ -2035,7 +2025,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if plan is None or not plan.reservations:
             return None, True, None
         self._cultivate_round_paused = False
-        self._cultivate_execution_targets = tuple(updated_targets)
+        self._cultivate_execution_targets = auto_targets
 
         cultivate_task = None
         if plan.entries:
@@ -2156,6 +2146,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        self._remember_pending_update()
 
         # 哔哩哔哩用户协议
         if self.cur_user_config.get("Info", "Server") == "Bilibili":
@@ -2215,6 +2206,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # MAS 用户配置整体装配，骨架只承载 MAS 托管键的容器路径。
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
+        self._remember_pending_update()
 
         # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
         # Default 本身也可能缺失——原生来源/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
@@ -2244,7 +2236,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             self._apply_depot_context(gui_new_set)
 
-        self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
+        takeover_ready = await has_cached_maa_software_update(
+            self.maa_root_path,
+            config_dir=self.update_config_dir,
+            config=self.script_config,
+        )
+        self._configure_maa_runtime(
+            gui_set=gui_set,
+            gui_new_set=gui_new_set,
+            emulator_info=emulator_info,
+            takeover_ready=takeover_ready,
+        )
+        # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
+        gui_set["Global"]["VersionUpdate.package"] = ""
+        gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -2290,12 +2295,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
         if self.mode == "Routine":
-            # 仅恢复上一尝试被时段条件暂停的库存；已执行完的任务不能在重试中再领药石额度。
-            if self._stock_skipped_by_condition:
-                self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-                    "Task", "IfDepotMaintain"
-                )
-                self._stock_skipped_by_condition = False
+            # 普通库存每次尝试都重新参与，养成消耗与常备目标按当轮数据合并。
+            self.task_dict["DepotMaintain"] = self.cur_user_config.get(
+                "Task", "IfDepotMaintain"
+            )
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
@@ -2423,6 +2426,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 source_task=task_set["DepotMaintain"],
             )
             stock_task = task_set["DepotMaintain"]
+            if self._stock_depot_completed:
+                # 重试保留库存目标，但不重新领取已执行阶段的药石额度。
+                stock_task.update(
+                    UseMedicine=False, UseStone=False, UseExpiringMedicine=False
+                )
             stock_skipped = (
                 activity_open and stock_task.get("SkipDuringActivity", False)
             ) or (
@@ -2443,7 +2451,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
-                self._stock_skipped_by_condition = True
             elif cultivate_plan is not None and stock_task["PlanList"]:
                 task_set["DepotMaintain"] = _build_stock_cultivate_task(
                     stock_task, cultivate_task, cultivate_plan
@@ -2672,7 +2679,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
     def _configure_maa_runtime(
-        self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
+        self,
+        gui_set: dict,
+        gui_new_set: dict,
+        emulator_info: DeviceInfo,
+        *,
+        takeover_ready: bool = False,
     ) -> None:
         """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
@@ -2729,11 +2741,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "AutoInstallUpdatePackage": False,
             }
         )
-        # MAS 已接管本体更新时（脚本开启「更新接管」且有生效 CDK），压制 MAA
-        # 会话内自下载，避免两个更新器同时取包；只写托管会话配置，任务结束
-        # 换回原生快照，不影响用户单独运行 MAA 时的更新偏好
-        takeover, _ = resolve_takeover_credentials(self.script_config)
-        if takeover:
+        # 完整包已缓存才压制原生下载；CDK 错误、下载失败或尚未完成时保留原生更新。
+        if takeover_ready:
             global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
             gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
         if Config.get("Function", "IfSilence"):
@@ -2803,6 +2812,27 @@ class AutoProxyTask(ScriptAutoProxyBase):
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
         )
 
+    @property
+    def update_config_dir(self) -> Path:
+        """更新通道与本用户实际使用的配置来源一致。"""
+        return self._config_archive_dir() or (
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+        )
+
+    def _remember_pending_update(self) -> None:
+        """保留原生下载登记，供整批结束后交还官方更新入口。"""
+        try:
+            pending = read_pending_update(self.maa_root_path)
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+            return
+        if all(pending) and (self.maa_root_path / pending[1]).is_file():
+            self.pending_update = pending
+            # 保存失败必须向上传播，不能清空唯一登记后继续启动下一阶段。
+            save_deferred_update(
+                self.maa_root_path, version=pending[0], package=pending[1]
+            )
+
     async def _sync_maa_config_updates(self) -> None:
         """把 MAA 运行期写盘的配置变更(相对本模式基线)回写到配置来源存档。
 
@@ -2810,6 +2840,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         存活, 下次托管 MAA 读到自己的记录后自行去重; 失败只记日志不抛出。
         """
 
+        self._remember_pending_update()
         if self.native_base:
             return
         baseline = self._maa_config_baseline
@@ -2946,17 +2977,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
             or "任务已完成，但出现错误！" in log
             or "任务已结束，以下任务出现错误" in log
         ):
-            # 常规任务和动态培养任务的成功与失败均取自 MAA 本轮输出。
+            # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 names = {zh_task}
                 if en_task == "DepotMaintain":
                     names.update(("库存保持", _MAA_CULTIVATE_TASK_NAME))
                 elif en_task == "Fight":
                     names.update(("理智作战", "剿灭作战"))
-                if any(
-                    f"完成任务: {name}" in log or f"{name} 任务跳过" in log
-                    for name in names
-                ):
+                task_completed = any(f"完成任务: {name}" in log for name in names)
+                if task_completed or any(f"{name} 任务跳过" in log for name in names):
+                    if (
+                        en_task == "DepotMaintain"
+                        and self.task_dict.get(en_task)
+                        and task_completed
+                    ):
+                        self._stock_depot_completed = True
                     self.task_dict[en_task] = False
 
             if self.task_dict.get("EventDepotMaintain"):
@@ -2995,20 +3030,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     # 来源时段跳过只结束本次尝试，下一次仍重新判断条件。
                     self.task_dict["EventDepotMaintain"] = False
 
-            # MAA v6.19.0-beta.1 培养计划失败仍会报任务链完成，须读取其培养汇总。
-            # 只使用 MAA 的失败计数；训练室忙等跳过结果不算失败。
-            cultivate_failed = any(
-                int(failed) > 0
-                for failed in re.findall(
-                    r"干员培养完成：成功 \d+，失败 (\d+)，跳过 \d+", log
-                )
-            )
+            # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
                 "任务已完成，但出现错误！" in log
                 or "任务已结束，以下任务出现错误" in log
                 or any(self.task_dict.values())
-                or cultivate_failed
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
                     for name in re.findall(r"任务出错: ([^\r\n]+)", log)
@@ -3100,6 +3127,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        self._remember_pending_update()
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
         # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。

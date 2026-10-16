@@ -3518,6 +3518,9 @@ export default {
     selectUserDesc: 'Pick an account from the date list on the left to see details.',
     recordList: 'Records',
     recordCount: '{count} records',
+    successCount: 'Succeeded {count} times',
+    failureCount: 'Failed {count} times',
+    scriptUnknown: 'Unlabeled script',
     timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
     done: 'Done',
     skipped: 'Skipped',
@@ -4804,6 +4807,11 @@ export default {
       mascotSection: 'Desktop pet',
       mascotSelect: 'Pet selection',
       mascotFollowTheme: 'Follow current theme',
+      mascotFps: 'Animation frame rate',
+      mascotFpsPackage: 'Follow animation package',
+      mascotFpsCustom: 'Custom',
+      mascotFpsTip:
+        'Use the package rate or set 1–120 FPS. Press Enter or leave the input to save; the packaged frames loop at the selected rate.',
       importMascot: 'Import pet',
       removeMascot: 'Remove pet',
       mascotImportTip:

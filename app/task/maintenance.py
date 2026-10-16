@@ -6,13 +6,30 @@
 
 import httpx
 
-from app.models.config import MaaConfig, MaaEndConfig, MaaEndUserConfig, MaaUserConfig
+from app.models.config import (
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndUserConfig,
+    MaaUserConfig,
+    OkNteConfig,
+    OkwwConfig,
+    # OkNteUserConfig,  # 异环公告映射待数据侧接入后随下方挂载点一并启用
+)
 from app.models.ConfigBase import ConfigBase
 from app.services.game_maintenance import GameMaintenance, MaintenanceWindow
 
 
-def get_maintenance_message(script_config: MaaConfig | MaaEndConfig) -> str:
-    game = "明日方舟" if isinstance(script_config, MaaConfig) else "终末地"
+def get_maintenance_message(
+    script_config: MaaConfig | MaaEndConfig | OkNteConfig | OkwwConfig,
+) -> str:
+    if isinstance(script_config, MaaConfig):
+        game = "明日方舟"
+    elif isinstance(script_config, OkNteConfig):
+        game = "异环"
+    elif isinstance(script_config, OkwwConfig):
+        game = "鸣潮"
+    else:
+        game = "终末地"
     return f"{game}正在维护"
 
 
@@ -27,6 +44,12 @@ async def get_user_maintenance(
         if user_config.get("Info", "Resource") != "官服":
             return None
         game = "endfield"
+    # 异环（nte）映射待数据侧接入维护公告后挂载（画面 OCR 检测先行兜底，
+    # 见 app/task/OkNte/tools/launcher_start.py 的 detect_game_maintenance_text）：
+    # elif isinstance(user_config, OkNteUserConfig):
+    #     if user_config.get("Info", "Resource") != "官服":
+    #         return None
+    #     game = "nte"
     else:
         return None
     return await GameMaintenance.get_active(game, proxy=proxy)
