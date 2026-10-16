@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from .committed import CommittedConfigChange, CommittedEventBus, ConfigCommittedEvent
+
 from .core.collection import CollectionOrderItem, ConfigCollection
 from .core.entry import ConfigEntry
 from .core.group import ConfigGroup, ConfigTableColumn
@@ -61,6 +63,9 @@ from .types import (
 )
 
 __all__ = [
+    "CommittedConfigChange",
+    "CommittedEventBus",
+    "ConfigCommittedEvent",
     # 核心
     "ConfigNode",
     "LockTicket",

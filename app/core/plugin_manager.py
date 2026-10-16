@@ -251,6 +251,7 @@ class _PluginManager:
                 plugin = record._plugin
                 if plugin is not None:
                     try:
+                        await plugin.close_config_events()
                         await plugin.on_teardown()
                     except Exception:
                         logger.exception(
@@ -432,21 +433,28 @@ class _PluginManager:
 
             plugin.bind_runtime(ScriptAdapterRuntime(plugin))
         plugin.bind_services(self._service_resolver)
+        from app.config import config_manager
+        from app.config.committed import BoundConfigEvents
+
+        plugin.bind_config_events(
+            BoundConfigEvents(config_manager.committed, owner=plugin)
+        )
         record._plugin = plugin
         try:
             plugin.bind_notifications(self._notifications)
             await plugin.pre_enable()
-        except Exception:
+        except BaseException:
+            await plugin.close_config_events()
             record._plugin = None
             raise
 
-        record.info.lifecycle_context = ctx
-        # 根语义写启用中；本项内嵌 reload 保持父 RELOADING
-        if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
-            record.info.state = PluginState.ENABLING
-            await record.commit()
         deps: dict[str, Any] = {}
         try:
+            record.info.lifecycle_context = ctx
+            # 首次状态提交也可能等待配置锁，必须覆盖失败与取消清理。
+            if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
+                record.info.state = PluginState.ENABLING
+                await record.commit()
             # ── 上游 DFS ──
             path = [*path_list, uid_s]
             for dep_record in ups:
@@ -496,6 +504,15 @@ class _PluginManager:
             await record.commit()
             capabilities_changed.send(self, name=name, enabled=True)
             return deps
+        except asyncio.CancelledError as exc:
+            await self._fail_branch(
+                record,
+                fault=PluginState.FAULT_RUNTIME,
+                during=PluginState.ENABLING,
+                exc=exc,
+                plugin=plugin,
+            )
+            raise
         except Exception as exc:
             await self._fail_branch(
                 record,
@@ -580,6 +597,7 @@ class _PluginManager:
 
             # ── 用户段 + 系统段 ──
             if plugin is not None:
+                await plugin.close_config_events()
                 await plugin.on_disable()
 
             await self._release_config(record)
@@ -908,6 +926,8 @@ class _PluginManager:
         # 失败钩子：叶子 during + record 上 lifecycle_context 快照
         life_ctx = record.info.lifecycle_context
         inst = plugin or record._plugin
+        if inst is not None:
+            await inst.close_config_events()
         if user_cleanup and inst is not None:
             if isinstance(inst, (ScriptAdapterPlugin, GameAdapterPlugin)):
                 try:

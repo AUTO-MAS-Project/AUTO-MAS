@@ -8,7 +8,7 @@ from typing import Any, Literal, overload
 from uuid import UUID
 
 from app.config.core.node import LockTicket
-from app.config.signals import CollectionChangeEvent, FieldChangeEvent
+from app.config.signals import CollectionChangeEvent
 from app.models.config.emulator import EmulatorEntry
 from app.models.config.game import GameDeviceEntry, GameEntry
 from app.plugin.base.emulator import EmulatorControl
@@ -114,17 +114,15 @@ class _GameManager:
             raise RuntimeError(f"未找到 {type(event.entry)} 对应的 GameTypeDecl")
 
     @staticmethod
-    async def on_block_ad(sender: object, event: FieldChangeEvent) -> None:
+    async def apply_block_ad(enabled: bool) -> None:
         """全局去广告开关变更 → 逐个游戏下发，各品牌自行决定做不做。
 
         开关是系统级的，作用面却在各品牌的宿主机侧（缓存目录占位等），故由主入口
         统一扇出，而不是等下一次启动实例时顺带处理 —— 用户关掉开关就该立刻生效。
         单个游戏失败不连累其余：这不是事务，只记警告。
         """
-        _ = sender
         from app.core import Config
 
-        enabled = bool(event.value)
         for entry in Config.GameConfig.values():
             try:
                 await entry._control.set_block_ad(enabled)
@@ -161,9 +159,7 @@ class _GameManager:
             raise KeyError(f"游戏不存在: {uid}")
 
         if kind is not None and entry.info.type != kind:
-            raise TypeError(
-                f"游戏 {uid} 类型为 {entry.info.type!r}，期望 {kind!r}"
-            )
+            raise TypeError(f"游戏 {uid} 类型为 {entry.info.type!r}，期望 {kind!r}")
         if kind == "emulator" and not isinstance(entry, EmulatorEntry):
             raise TypeError(f"游戏 {uid} 不是模拟器配置")
 
