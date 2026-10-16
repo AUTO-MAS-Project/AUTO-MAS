@@ -360,6 +360,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
   SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
   7~9s）后每次冷启动都撞上。
+  - **模拟器冷启动不提前放行**：上面两条提前放行只用于桌面。模拟器路径上宿主同时传
+    `taskStartFixedWait`（`runner._wait_task_start_fixed`）：worker 等满 `Game.WaitTime`，之后画面有内容
+    就下发；还是黑屏 / 纯色就每秒再看，出画面再下发，从开始等算满 `TASK_START_GATE_MAX_SECONDS`
+    照常下发；截不到图按时下发。核心只认这个开关，不判断设备类型。理由（2026-10-16 魔改 AVD 实测，
+    证据 `D:\MAS\docs\测试证据\MFW模拟器启动闸门-20261016`）：终末地加载页和动态标题都一直在动、
+    都有内容，像素判断分不出两者，「20s 有内容」在拉起后 37~48s、仍在「正在加载资源」时就放行；
+    冷启动到标题约 73~75s，MaaEnd 的 `EnterGameRecognition`（认加载页上也有的「公告」按钮，
+    max_hit 60）随后用完，3 次里 2 次判卡死。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
   `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于

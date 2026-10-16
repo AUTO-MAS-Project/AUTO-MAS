@@ -149,6 +149,9 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 虽已出现、画面还没渲染出来，worker 把资源加载、连 controller、起 agent 都
     # 做完后再等到这个点，而不是在宿主里干等。None 表示不等。
     taskStartNotBefore: float | None = None
+    # 为真时不按画面提前放行：等满 taskStartNotBefore，之后画面还是黑屏 / 纯色才继续等
+    # （runner._wait_task_start_fixed）。宿主决定什么时候要这样。
+    taskStartFixedWait: bool = False
     # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
     # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
     runDeadlineAt: float | None = None

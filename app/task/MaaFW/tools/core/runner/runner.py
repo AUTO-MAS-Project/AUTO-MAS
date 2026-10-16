@@ -807,6 +807,7 @@ class MaaFWRunner:
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        task_start_fixed_wait: bool = False,
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
@@ -844,6 +845,9 @@ class MaaFWRunner:
         self._failure_screenshot_prefix: str = failure_screenshot_prefix
         self._failure_screenshots: list[MaaFWFailureScreenshot] = []
         self._task_start_not_before: float | None = task_start_not_before
+        # 不按画面提前放行：等满 task_start_not_before，之后只看是不是还黑屏，见
+        # _wait_task_start_fixed。宿主决定什么时候要这样，这里不分辨游戏和设备。
+        self._task_start_fixed_wait: bool = task_start_fixed_wait
         # 截止时刻到了由定时器线程置位并 post_stop；主线程看到它就截图、按超时收尾。
         # 不复用 _stop_requested：那个表示「用户取消」，取消不截图也不算失败。
         self._run_deadline_at: float | None = run_deadline_at
@@ -2931,10 +2935,15 @@ class MaaFWRunner:
         渲染完成）；或者画面连续 ``STARTUP_SCREEN_CONTENT_SECONDS`` 秒都有内容，哪怕一直
         在动（动态背景、进度条）——黑屏 / 纯色会把两个计数都清零。截不到图就等到上限，
         和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
+
+        宿主要求不提前放行（``task_start_fixed_wait``）时改走 :meth:`_wait_task_start_fixed`。
         """
 
         not_before = self._task_start_not_before
         if not_before is None:
+            return
+        if self._task_start_fixed_wait:
+            self._wait_task_start_fixed(not_before)
             return
         remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
         if self._run_deadline_at is not None:
@@ -3008,6 +3017,80 @@ class MaaFWRunner:
                     f"（实际等了 {remaining - left:.0f}s）"
                 )
                 return
+
+    def _wait_task_start_fixed(self, not_before: float) -> None:
+        """不按画面提前放行：先等满宿主给的时刻，再只看画面是不是还黑屏。
+
+        有的游戏加载页和标题页都一直在动、都有内容，「连续几秒不变」「连续几秒有内容」
+        分不出两者，只会在加载中就放行。宿主在这类场合（例如模拟器冷启动）传
+        ``task_start_fixed_wait``，这里：
+
+        1. 等到 ``not_before``（扣掉初始化已经花掉的部分，可能已经过了）；
+        2. 当前画面有内容就下发；还是黑屏 / 纯色就每秒再看一次，出画面再下发；
+        3. 从开始等算满 ``TASK_START_GATE_MAX_SECONDS`` 仍是黑屏就照常下发；
+        4. 截不到图不再等黑屏，等满时刻就下发。
+        """
+
+        gate_ends_at = time.monotonic() + TASK_START_GATE_MAX_SECONDS
+        if self._run_deadline_at is not None:
+            # 截止时刻比上限还早时只等到截止时刻，下面按超时收尾。
+            gate_ends_at = min(
+                gate_ends_at, time.monotonic() + self._run_deadline_at - time.time()
+            )
+        remaining = min(not_before - time.time(), gate_ends_at - time.monotonic())
+        if remaining > 0:
+            self.send_log(
+                f"游戏刚启动，固定再等 {remaining:.0f}s，不按画面提前下发任务"
+            )
+            hold_ends_at = time.monotonic() + remaining
+            while True:
+                left = hold_ends_at - time.monotonic()
+                if left <= 0:
+                    break
+                if self._stop_requested.wait(
+                    timeout=min(STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS, left)
+                ):
+                    raise RuntimeError("MaaFW 任务已停止")
+                self._raise_if_deadline_hit()
+        self._raise_if_deadline_hit()
+
+        blank_since: float | None = None
+        while True:
+            try:
+                frame = _sample_startup_screen(self.controller)
+            except Exception as exc:
+                self.send_log(f"启动画面截图失败，按时下发任务: {exc}")
+                return
+            if frame is None:
+                self.send_log("截不到画面，按时下发任务")
+                return
+            if not _startup_screen_is_blank(frame):
+                if blank_since is None:
+                    self.send_log("等待时间已到，画面有内容，下发任务")
+                else:
+                    self.send_log(
+                        f"画面出来了，下发任务（黑屏多等了 "
+                        f"{time.monotonic() - blank_since:.0f}s）"
+                    )
+                return
+            left = gate_ends_at - time.monotonic()
+            if left <= 0:
+                self._raise_if_deadline_hit()
+                self.send_log(
+                    f"已等到上限 {TASK_START_GATE_MAX_SECONDS:.0f}s，画面仍是黑屏或纯色，"
+                    "照常下发任务"
+                )
+                return
+            if blank_since is None:
+                blank_since = time.monotonic()
+                self.send_log(
+                    f"等待时间已到，画面仍是黑屏或纯色，继续等画面出来（最多再等 {left:.0f}s）"
+                )
+            if self._stop_requested.wait(
+                timeout=min(STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS, left)
+            ):
+                raise RuntimeError("MaaFW 任务已停止")
+            self._raise_if_deadline_hit()
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []

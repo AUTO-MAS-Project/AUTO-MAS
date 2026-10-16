@@ -481,6 +481,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 启动的才记：桌面游戏是窗口出现那一刻（MAS 拉起、或接管时等到窗口冒出来），
         # 模拟器是 MAS 随模拟器把游戏拉到前台那一刻。None 表示游戏早就在跑。
         self.game_started_at: float | None = None
+        # 模拟器冷启动游戏时为真：闸门不按画面提前放行，固定等满 Game.WaitTime（加载页
+        # 和动态标题都一直在动，像素判断分不出两者）。桌面路径始终为假。
+        self.game_start_fixed_wait = False
         self.project_lock_key: str | None = None
         self.runner_process: asyncio.subprocess.Process | None = None
         self.pretask_process: asyncio.subprocess.Process | None = None
@@ -1247,9 +1250,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 拉起失败都不等；旧式模拟器管理器不回报拉应用结果，同样不等
         if getattr(device_info, "app_launch", "") == "launched":
             self.game_started_at = time.monotonic()
+            self.game_start_fixed_wait = True
             self._append_log(f"已随模拟器启动游戏: {package_name}")
         else:
             self.game_started_at = None
+            self.game_start_fixed_wait = False
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
@@ -1856,6 +1861,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 failure_screenshot_dir=history_dir,
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
+                task_start_fixed_wait=self.game_start_fixed_wait,
                 run_deadline_at=run_deadline_at,
                 task_time_limit_seconds=task_time_limit_seconds,
                 task_time_limit_overrides=task_time_limit_overrides,
@@ -2499,6 +2505,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._cached_device_info = None
             # 游戏随模拟器一起关了；下一轮重开时按那次拉起重新起算
             self.game_started_at = None
+            self.game_start_fixed_wait = False
             # 雷电截图增强的 extras 里带着这次启动的 dnplayer pid；重开后还用旧 pid，
             # MaaFW 建不出截图实例（Failed to create ld inst），这一轮当场 connect 失败。
             self._cached_adb_profile = None
@@ -2756,6 +2763,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         这样 MaaFW 加载资源、连 controller、起 agent 的几秒到十几秒也算在等待里。
         worker 看到画面稳定会提前放行，这个时刻只是上限。游戏早就在跑时剩余为负，
         直接不等。
+
+        模拟器冷启动（``game_start_fixed_wait``）不提前放行：worker 固定等到这个时刻，
+        之后画面还是黑屏才继续等。这时剩余为负也照样给时刻，让 worker 做黑屏检查。
         """
 
         started_at = self.game_started_at
@@ -2765,6 +2775,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if settle <= 0:
             return None
         remaining = settle - (time.monotonic() - started_at)
+        if self.game_start_fixed_wait:
+            self._append_log(
+                f"模拟器冷启动游戏，固定等 {settle}s 再下发任务，不按画面提前；"
+                f"剩余约 {max(remaining, 0):.0f}s（与 MaaFW 初始化并行）"
+            )
+            return time.time() + remaining
         if remaining <= 0:
             return None
         self._append_log(

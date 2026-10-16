@@ -3101,7 +3101,7 @@ class MaaFWConfig(ConfigBase):
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
         ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器把游戏拉到前台后
-        ## 从那一刻起等画面稳定，游戏本来就在前台时不等。
+        ## 固定等这么久，不按画面提前；等满还是黑屏才继续等。游戏本来就在前台时不等。
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
         ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
