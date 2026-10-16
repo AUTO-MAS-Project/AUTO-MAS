@@ -249,7 +249,6 @@ export default {
     time: 'Time',
     notNow: 'Not now',
     noData2: 'No data',
-    noUsersYet: 'No accounts yet',
     noCustomWebhooks: 'No custom webhooks',
     more: 'More',
     couldNotUpdateWebhook: 'Could not update the webhook status',
@@ -4368,7 +4367,6 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
-      userNotLoaded: 'Not loaded yet',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',

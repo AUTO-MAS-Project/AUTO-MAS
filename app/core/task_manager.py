@@ -59,6 +59,7 @@ from app.models.task import (
 )
 from app.runtime_tasks import RuntimeTasks
 from app.task.general.tools import execute_script_task
+from app.task.manager_base import is_user_runnable
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 from app.utils.constants import UTC4
@@ -333,6 +334,21 @@ class _ReplayRequest:
     history_paths: list[str]
 
 
+def _planned_user_list(script_id: str) -> list[UserItem]:
+    """该托管启用的账号；准备阶段与轮到脚本时播种，总览里始终能看到待运行账号。
+
+    这不是最终列表：脚本开跑后由 manager 按本次运行范围重新加载。
+    """
+    script_config = Config.ScriptConfig.get(uuid.UUID(script_id))
+    if script_config is None:
+        return []
+    return [
+        UserItem(str(uid), user.get("Info", "Name"), "等待")
+        for uid, user in script_config.UserData.items()
+        if is_user_runnable(user)
+    ]
+
+
 @dataclass
 class TaskInfo(TaskItem):
     community_sign_notification: "TaskCommunitySignNotification | None" = field(
@@ -360,8 +376,11 @@ class TaskInfo(TaskItem):
         self._replay_runs[script.script_id] = str(uuid.uuid4())
         self._replay_candidates.pop(script.script_id, None)
         self._replay_active.pop(script.script_id, None)
-        # 循环队列复用 ScriptItem，上一轮账号不能参与本轮预检结果。
-        script.user_list = []
+        # 循环队列复用 ScriptItem，上一轮账号不能参与本轮预检结果；AutoProxy 重新
+        # 播种本次计划账号，总览从轮到的这一刻起也不会空着。别的模式由 manager 填。
+        script.user_list = (
+            _planned_user_list(script.script_id) if self.mode == "AutoProxy" else []
+        )
         script.current_index = -1
         script.status = "等待"
 
@@ -676,10 +695,11 @@ class Task(TaskExecuteBase):
                 script_id=script_id,
                 status="等待",
                 name=Config.ScriptConfig[uuid.UUID(script_id)].get("Info", "Name"),
-                # AutoProxy 的真实用户由对应 manager 在轮到该脚本时加载；提前
-                # 播种占位项会把未轮到的脚本伪装成已有一个用户。
+                # AutoProxy 播种本次计划运行的账号，让未轮到的脚本也能看到待运行
+                # 账号；轮到该脚本时 begin_script_run 会重新播种，manager 接管后再换
+                # 成本次真正要跑的账号。
                 user_list=(
-                    []
+                    _planned_user_list(script_id)
                     if self.task_info.mode == "AutoProxy"
                     else [
                         UserItem(
@@ -759,8 +779,9 @@ class Task(TaskExecuteBase):
                 outcome = "failed"
             elif script_item.user_list and not user_statuses:
                 outcome = "skipped"
-            elif not user_statuses:
-                # 运行前检查没过时还没加载用户，脚本状态是「异常」
+            elif not user_statuses or all(status == "等待" for status in user_statuses):
+                # 运行前检查没过时还没加载用户，脚本状态是「异常」；播种的计划账号
+                # 一个都没跑起来时同样是没人可跑
                 outcome = "failed" if script_item.status == "异常" else "no_user"
             elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
                 outcome = "success"
@@ -916,7 +937,7 @@ class Task(TaskExecuteBase):
         return {script_id for script_id, user_ids in scope.items() if not user_ids}
 
     async def _notice_scope_skipped_scripts(self) -> None:
-        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+        """任务开始时把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
 
         skipped = self._scope_skipped_script_ids()
         if not skipped:
@@ -1274,6 +1295,9 @@ class Task(TaskExecuteBase):
         return self.run_weekday in self.script_run_days[index]
 
     async def _run_script_list(self, start_index: int) -> None:
+        # 本次一个用户都没选的托管先在这里标记跳过并提示一次：顺序执行不像循环运行那样
+        # 在入口统一处理，不提前标记的话它们在任务总览里会一直显示「等待」且没有任何账号。
+        await self._notice_scope_skipped_scripts()
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
         ):
@@ -1297,18 +1321,9 @@ class Task(TaskExecuteBase):
                 continue
 
             # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            # （状态与提示已在进入循环前由 _notice_scope_skipped_scripts 统一给出）
             script_scope = self.task_info.script_user_scope(script_item.script_id)
             if script_scope is not None and not script_scope:
-                script_item.status = "跳过"
-                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="warning",
-                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
-                    ),
-                )
                 continue
 
             if not self._is_script_scheduled_today(self.task_info.current_index):
@@ -1408,6 +1423,8 @@ class Task(TaskExecuteBase):
         if self.task_info.community_sign_notification is not None:
             self.task_info.community_sign_notification.finish()
 
+        # 从未轮到的脚本保留准备阶段播种的待运行账号：任务总览在任务结束后仍要
+        # 完整展示本次计划，完成面板的「等待运行」由 build_task_result_text 判定。
         # 完成面板文本带采集节点详情（与推送报告同源渲染），
         # 未配置推送的用户在调度台也能看到
         result_text = build_task_result_text(self.task_info.script_list)
@@ -1713,10 +1730,7 @@ class _TaskManager:
 
         # 与各脚本适配器构建用户列表时的筛选口径保持一致，否则会静默跑出一个空用户列表
         user_config = script_config.UserData[user_uid]
-        if (
-            not user_config.get("Info", "Status")
-            or user_config.get("Info", "RemainedDay") == 0
-        ):
+        if not is_user_runnable(user_config):
             raise ValueError(
                 f"用户 {user_config.get('Info', 'Name')} 未启用或代理天数已耗尽"
             )

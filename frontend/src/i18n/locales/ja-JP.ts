@@ -252,7 +252,6 @@ export default {
     time: '時刻関連',
     notNow: '今はしない',
     noData2: 'データがありません',
-    noUsersYet: 'アカウントがありません',
     noCustomWebhooks: 'カスタム Webhook がありません',
     more: 'その他',
     couldNotUpdateWebhook: 'Webhook の状態を更新できませんでした',
@@ -3713,7 +3712,6 @@ export default {
     overview: {
       title: 'タスク概要',
       unknownScript: '不明なマネージドスクリプト',
-      userNotLoaded: '未読み込み',
     },
     modal: {
       cannotDeleteTitle: 'この実行パネルは閉じられません',

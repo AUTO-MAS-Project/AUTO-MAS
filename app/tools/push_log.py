@@ -156,9 +156,13 @@ def build_task_result_text(scripts: Iterable) -> str:
         return "任务未加载"
     blocks: list[str] = []
     for script in script_list:
-        if not script.user_list:
-            # 尚未轮到、按周几/锁定跳过或运行前检查失败的脚本没有真实用户；
-            # 这里不能再输出旧的「暂未加载」用户行，也不能把空表计成一位未完成用户。
+        # 尚未轮到、按周几/锁定跳过或运行前检查失败的脚本只带着准备阶段播种的待运行
+        # 账号（全部停在「等待」）：状态行报「等待运行/已跳过」，也不能把它们计成未
+        # 完成用户；真正跑过的脚本即使全员失败也至少有一个非「等待」的账号。
+        if not script.user_list or all(
+            user.status == "等待" and not getattr(user, "maintenance_skipped", False)
+            for user in script.user_list
+        ):
             status_text = {
                 "等待": "等待运行",
                 "跳过": "已跳过",

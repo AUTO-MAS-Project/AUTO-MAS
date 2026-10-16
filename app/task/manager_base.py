@@ -42,6 +42,11 @@ class UserRunSummary:
         return len(self.failed) + len(self.waiting)
 
 
+def is_user_runnable(user: ConfigBase) -> bool:
+    """账号自身是否参与运行：已启用且剩余天数未耗尽；与本次运行范围无关。"""
+    return bool(user.get("Info", "Status")) and user.get("Info", "RemainedDay") != 0
+
+
 class ScriptManagerBase(TaskExecuteBase):
     # 分组只消费专项已经给出的状态；成功口径可由专项声明。
     completed_user_statuses = frozenset({"完成"})
@@ -56,11 +61,7 @@ class ScriptManagerBase(TaskExecuteBase):
         self._executed_user_ids: set[str] = set()
 
     def is_user_selected(self, user_id: uuid.UUID | str, user: ConfigBase) -> bool:
-        return (
-            bool(user.get("Info", "Status"))
-            and user.get("Info", "RemainedDay") != 0
-            and self.task_info.is_target_user(str(user_id))
-        )
+        return is_user_runnable(user) and self.task_info.is_target_user(str(user_id))
 
     def selected_user_configs(
         self, items: Iterable[tuple[uuid.UUID, ConfigBase]] | None = None

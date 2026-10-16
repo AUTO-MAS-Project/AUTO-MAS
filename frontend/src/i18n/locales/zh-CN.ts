@@ -238,7 +238,6 @@ export default {
     time: '时间相关',
     notNow: '暂不更新',
     noData2: '暂无数据',
-    noUsersYet: '暂无账号',
     noCustomWebhooks: '暂无自定义 Webhook',
     more: '更多',
     couldNotUpdateWebhook: '更新Webhook状态失败',
@@ -4213,7 +4212,6 @@ export default {
     overview: {
       title: '任务总览',
       unknownScript: '未知托管',
-      userNotLoaded: '暂未加载',
     },
     modal: {
       cannotDeleteTitle: '无法删除调度台',
