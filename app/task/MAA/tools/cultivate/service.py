@@ -63,7 +63,6 @@ from .providers import (
     resolve_progression,
 )
 from .types import (
-    AUTO_CULTIVATE_PRIORITY_LIMIT,
     CultivateDataSet,
     CultivatePlan,
     Goal,
@@ -183,14 +182,12 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
     """把用户配置的养成目标 JSON 解析为契约目标（宽容：跳过非法条目）。
 
     字段与内核对齐：``operator_id`` + ``goals[{kind, target_id, to_level,
-    state}]``，可选 ``priority`` 标记指定优先培养，最多五名。
-    档位按 kind 校验（elite 1-2，skill 2-7，mastery/module 1-3）。
+    state}]``。档位按 kind 校验（elite 1-2，skill 2-7，mastery/module 1-3）。
     """
 
     if not isinstance(payload, list):
         return ()
     targets: list[OperatorTarget] = []
-    priority_count = 0
     for entry in payload:
         if not isinstance(entry, dict):
             continue
@@ -206,12 +203,7 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
                 goals_by_key.setdefault((goal.kind, goal.target_id), goal)
         goals = list(goals_by_key.values())
         if goals:
-            priority = (
-                entry.get("priority") is True
-                and priority_count < AUTO_CULTIVATE_PRIORITY_LIMIT
-            )
-            priority_count += int(priority)
-            targets.append(OperatorTarget(operator_id, tuple(goals), priority=priority))
+            targets.append(OperatorTarget(operator_id, tuple(goals)))
     return tuple(targets)
 
 
@@ -308,7 +300,6 @@ def dump_cultivate_targets(
     return [
         {
             "operator_id": target.operator_id,
-            **({"priority": True} if target.priority else {}),
             "goals": [
                 {
                     "kind": goal.kind,
@@ -531,7 +522,7 @@ class DepotCultivateService:
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
             require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
-            auto_raise: 使用本次练度与库存选取十名干员，另加最多五名指定优先干员。
+            auto_raise: 使用本次练度与库存按材料达成率选取最多十名干员。
 
         Returns:
             (流转后的目标列表, 养成计划, 是否存在材料缺口, 自动培养名单)；

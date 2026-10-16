@@ -430,10 +430,6 @@ export default {
     maaCultivateRemove: '削除',
     maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
     maaCultivateAutoRaise: 'オペレーターを自動育成',
-    maaCultivatePriority: '優先指定（{count}/5）',
-    maaCultivatePriorityPlaceholder: '毎回優先して育成するオペレーターを最大5名選択',
-    maaCultivatePriorityHint:
-      '毎回、指定したオペレーターを先に育成し、素材の充足率順でさらに10名、合計最大15名を選びます。',
     maaCultivateAutoRaiseOn: '自動育成：オン',
     maaCultivateAutoRaiseOff: '自動育成：オフ',
     maaCultivateOperatorCount: '{count} 名のオペレーター',

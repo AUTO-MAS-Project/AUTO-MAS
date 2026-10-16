@@ -164,24 +164,6 @@
         </a-form-item>
       </div>
 
-      <a-form-item :label="t('edit.maaCultivatePriority', { count: priorityOperatorIds.length })">
-        <a-select
-          class="cultivate-priority-select"
-          mode="multiple"
-          :value="priorityOperatorIds"
-          :options="priorityOperatorOptions"
-          :placeholder="t('edit.maaCultivatePriorityPlaceholder')"
-          :aria-label="t('edit.maaCultivatePriority', { count: priorityOperatorIds.length })"
-          :disabled="editorLoading"
-          :get-popup-container="getPopupContainer"
-          :list-height="popupListHeight"
-          option-filter-prop="label"
-          allow-clear
-          @change="handlePriorityChange"
-        />
-        <div class="skland-feedback skland-hint">{{ t('edit.maaCultivatePriorityHint') }}</div>
-      </a-form-item>
-
       <div class="cultivate-target-actions">
         <a-input
           v-model:value="operatorFilter"
@@ -395,14 +377,12 @@ import CultivateClipboardImport from './CultivateClipboardImport.vue'
 import { usePlanSelectPopup } from './usePlanSelectPopup'
 import {
   appendOperator,
-  CULTIVATE_PRIORITY_LIMIT,
   levelOptionsWithSaved,
   listGoals,
   parseCultivateTargets,
   removeGoal,
   removeOperator,
   serializeCultivateTargets,
-  setCultivatePriority,
   setEliteLevel,
   setMasteryLevel,
   upsertGoal,
@@ -488,30 +468,6 @@ const persist = (next: CultivateTargetRow[]) => {
   rows.value = next
   lastEmitted = serializeCultivateTargets(next)
   emit('save', 'Task.CultivateTargets', lastEmitted)
-}
-
-const priorityOperatorIds = computed(() =>
-  rows.value.filter(row => row.priority).map(row => row.operatorId)
-)
-const priorityOperatorOptions = computed(() =>
-  rows.value
-    .filter(
-      row =>
-        row.priority ||
-        (['elite', 'skill', 'mastery'] as const).some(kind =>
-          listGoals(row.rawGoals, kind).some(
-            goal => goal.state !== 'achieved' && goal.state !== 'pending_confirm'
-          )
-        )
-    )
-    .map(row => ({
-      value: row.operatorId,
-      label: operatorName(row.operatorId),
-      disabled: !row.priority && priorityOperatorIds.value.length >= CULTIVATE_PRIORITY_LIMIT,
-    }))
-)
-const handlePriorityChange = (operatorIds: string[]) => {
-  persist(setCultivatePriority(rows.value, operatorIds))
 }
 
 const handleAddOperator = (operatorId: string) => {
@@ -1076,10 +1032,6 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 <style scoped>
 .cultivate-settings-button {
   flex-shrink: 0;
-}
-
-.cultivate-priority-select {
-  width: 100%;
 }
 
 .cultivate-mastery-hint {
