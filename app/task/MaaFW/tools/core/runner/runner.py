@@ -298,8 +298,11 @@ STARTUP_SCREEN_CONTENT_SECONDS = 20
 # disk_quiet：画面有内容、且客体读盘速度连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
 # DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 魔改 AVD 逐秒实测，终末地 / 星铁 /
 # 1999 冷启动）：加载页和动态标题都一直在动，CPU、出帧也是标题更忙，只有读盘量分得开——
-# 加载时持续读盘，到标题后几乎为 0；这套阈值 11 轮里 10 轮在到标题后 5~15s 放行。窗口取 5 次
-# 不够：星铁 logo 和加载页之间有一段读盘间歇，会早放行 41s。
+# 加载时持续读盘，到标题后几乎为 0；终末地、1999 各轮都在到标题后 7~15s 放行。读盘安静、
+# 但还没到标题的阶段会提前放行（星铁的 logo / 健康提示页、加载页上等网络），交给项目自己识别。
+# 没处理着色器编译：游戏的管线缓存缺失时，标题前要编译几分钟（读盘安静、出帧约 0），这里会
+# 提前放行；实际用户跑脚本前必然手动登录过，那次已经编完。要处理时可以再加「这 8s 里每秒出帧
+# 都 ≥ 20」并放宽上限，见 app/task/MaaFW/AGENTS.md。
 # 读盘量取 /proc/vmstat 的 pgpgin（累计读入 KB）：adb shell 用户读 /proc/diskstats 和
 # /sys/block/*/stat 都被 SELinux 拒绝（API 34 镜像 Enforcing 实测），pgpgin 不需要 root，按 bio
 # 计一次、不随 dm 叠层重复计数；同一窗口与整块盘 diskstats 读速对照误差 < 2%。
