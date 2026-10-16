@@ -25,7 +25,6 @@ import re
 import shlex
 import sys
 import uuid
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -297,50 +296,6 @@ def _place_managed_task(
         tasks.insert(0, task)
     else:
         tasks.append(task)
-    return task
-
-
-def _configure_game_setting_pretask(
-    tasks: list[dict[str, Any]],
-    *,
-    task_name: str,
-    controller_type: str,
-    enabled: bool,
-    apply_settings: bool,
-) -> dict[str, Any]:
-    """仅在运行副本中承接新旧启动设置，移除另一版本的重复预任务。"""
-    other_name = (
-        _MAAEND_GAME_SETTING_PRETASK
-        if task_name == _MAAEND_LAUNCH_GAME_PRETASK
-        else _MAAEND_LAUNCH_GAME_PRETASK
-    )
-    source = next((task for task in tasks if task.get("taskName") == other_name), {})
-    has_current = any(task.get("taskName") == task_name for task in tasks)
-    task = _place_managed_task(
-        tasks,
-        task_name=task_name,
-        task_id="automas-gamesetting",
-        controller_type=controller_type,
-        enabled=enabled,
-        first=True,
-    )
-    if not has_current:
-        old_prefix, new_prefix = (
-            ("GameSetting", "LaunchGamePC")
-            if task_name == _MAAEND_LAUNCH_GAME_PRETASK
-            else ("LaunchGamePC", "GameSetting")
-        )
-        task["optionValues"] = {
-            new_prefix + name.removeprefix(old_prefix): deepcopy(value)
-            for name, value in source.get("optionValues", {}).items()
-            if name.startswith(old_prefix) and name != "LaunchGamePCGameSetting"
-        }
-    if task_name == _MAAEND_LAUNCH_GAME_PRETASK:
-        task.setdefault("optionValues", {})["LaunchGamePCGameSetting"] = {
-            "type": "switch",
-            "value": apply_settings,
-        }
-    tasks[:] = [item for item in tasks if item.get("taskName") != other_name]
     return task
 
 
@@ -2117,24 +2072,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 or self._launch_mode() == "Launcher"
                 or uses_launch_pretask
             ):
-                game_setting_task = _configure_game_setting_pretask(
-                    maaend_tasks,
-                    task_name=setting_pretask,
-                    controller_type=controller_type,
-                    enabled=(
-                        self.mode == self.first_run_mode
-                        and bool(self.script_config.get("Game", "SetResolution"))
-                        and self._launch_mode() != "Launcher"
-                        and not uses_launch_pretask
-                    ),
-                    apply_settings=(
-                        self.mode == self.first_run_mode
-                        and bool(self.script_config.get("Game", "SetResolution"))
-                    ),
+                apply_settings = self.mode == self.first_run_mode and bool(
+                    self.script_config.get("Game", "SetResolution")
                 )
-                self.launcher_game_setting_options = game_setting_task.get(
-                    "optionValues", {}
-                )
+                for task in maaend_tasks:
+                    if task["taskName"] == _MAAEND_GAME_SETTING_PRETASK:
+                        task["enabled"] = (
+                            apply_settings
+                            and self._launch_mode() != "Launcher"
+                            and not uses_launch_pretask
+                        )
+                    elif task["taskName"] == _MAAEND_LAUNCH_GAME_PRETASK:
+                        task["enabled"] = False
+                        task["optionValues"]["LaunchGamePCGameSetting"] = {
+                            "type": "switch",
+                            "value": apply_settings,
+                        }
+                    if task["taskName"] == setting_pretask:
+                        self.launcher_game_setting_options = task["optionValues"]
             if if_quick_config or close_after_mode:
                 _place_managed_task(
                     maaend_tasks,
