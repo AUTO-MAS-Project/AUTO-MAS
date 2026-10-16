@@ -20,11 +20,7 @@
 
           <div class="user-list">
             <template v-for="group in dateGroup.groups" :key="group.script">
-              <div
-                v-if="dateGroup.groups.length > 1"
-                class="script-label"
-                :title="group.label"
-              >
+              <div v-if="dateGroup.groups.length > 1" class="script-label" :title="group.label">
                 {{ group.label }}
               </div>
               <div
