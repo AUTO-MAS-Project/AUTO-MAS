@@ -3133,7 +3133,10 @@ class MaaFWRunner:
                 time.monotonic() + min(STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS, left)
             )
             state = self._startup_screen_state()
-            if state != "blank":
+            if state is None:
+                self.send_log("截不到画面，按上限下发任务")
+                return
+            if state == "content":
                 self.send_log(
                     f"画面出来了，下发任务（黑屏多等了 {time.monotonic() - blank_since:.0f}s）"
                 )
@@ -3718,7 +3721,9 @@ def _controller_shell(controller: Any, cmd: str) -> str:
     if controller is None or post_shell is None:
         raise RuntimeError("当前 controller 不支持 shell")
     job = post_shell(cmd, DISK_QUIET_SHELL_TIMEOUT_MS).wait()
-    if job.failed:
+    # 只认 succeeded：作业 invalid 时 get() 读到的是 controller 上一次的 shell 输出，
+    # 扇区数不变会被当成「读盘停了」
+    if not job.succeeded:
         raise RuntimeError(f"shell 执行失败: {cmd}")
     return str(job.get() or "")
 
@@ -3742,7 +3747,11 @@ def _disk_read_sectors(diskstats: str, devices: frozenset[str]) -> int:
         fields = line.split()
         if len(fields) < 6 or fields[2] not in devices:
             continue
-        total += int(fields[5])
+        try:
+            total += int(fields[5])
+        except ValueError:
+            # 只跳过这一行，不让一行坏数据把整个闸门打回按时间
+            continue
         found = True
     if not found:
         raise RuntimeError("/proc/diskstats 里没有这些盘")

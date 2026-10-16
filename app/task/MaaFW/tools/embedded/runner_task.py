@@ -2787,7 +2787,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if remaining <= 0:
             return None
         self._append_log(
-            f"游戏刚启动，最多等 {settle}s 再下发任务，画面稳定即提前；"
+            f"游戏窗口出现后最多等 {settle}s 再下发任务，画面稳定即提前；"
             f"剩余约 {remaining:.0f}s（与 MaaFW 初始化并行）"
         )
         return time.time() + remaining
