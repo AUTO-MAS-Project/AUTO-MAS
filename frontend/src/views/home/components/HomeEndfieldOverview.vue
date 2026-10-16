@@ -46,19 +46,17 @@
         :aria-label="t('home.endfield.activities')"
       >
         <li v-for="item in activities" :key="item.id" class="activity-card">
-          <div
-            class="activity-item"
-            :class="{ 'is-fallback': !item.image || failedImages.has(item.image) }"
-          >
+          <div class="activity-item" :class="{ 'is-fallback': !activityImage(item) }">
             <img
-              v-if="item.image && !failedImages.has(item.image)"
-              :src="item.image"
+              v-if="activityImage(item)"
+              :key="activityImage(item)"
+              :src="activityImage(item)"
               alt=""
               class="activity-image"
               loading="lazy"
               decoding="async"
               referrerpolicy="no-referrer"
-              @error="markImageFailed(item.image)"
+              @error="markActivityImageFailed"
             />
             <div class="activity-overlay" />
             <div class="activity-content">
@@ -195,7 +193,13 @@ watch(
 // 仅素材地址变更才重试失败图片，分钟时钟不触发重复下载。
 watch(
   () =>
-    [...props.overview.Activities, ...props.overview.Pools].map(item => item.ImageUrl).join('\n'),
+    [
+      props.overview.Version,
+      props.overview.VersionCover,
+      props.overview.VersionStartTime,
+      props.overview.VersionEndTime,
+      ...[...props.overview.Activities, ...props.overview.Pools].map(item => item.ImageUrl),
+    ].join('\n'),
   () => {
     failedImages.value = new Set()
   }
@@ -236,11 +240,26 @@ const pools = computed(() =>
   )
 )
 
+const activityImage = (item: CardItem): string => {
+  if (item.image && !failedImages.value.has(item.image)) return item.image
+  const version = props.overview
+  const cover = version.VersionCover ?? ''
+  const validVersion =
+    timestamp(version.VersionStartTime ?? '') <= now.value &&
+    timestamp(version.VersionEndTime ?? '') > now.value
+  return validVersion && cover && !failedImages.value.has(cover) ? cover : ''
+}
+
+const markActivityImageFailed = (event: Event) => {
+  const url = (event.currentTarget as HTMLImageElement).getAttribute('src')
+  if (url) markImageFailed(url)
+}
+
 const isUpcoming = (item: CardItem) => timestamp(item.startTime) > now.value
 const countdownTarget = (item: CardItem) =>
   timestamp(isUpcoming(item) ? item.startTime : item.endTime)
 const activityCountdownStyle = (item: CardItem): CSSProperties => ({
-  color: item.image && !failedImages.value.has(item.image) ? '#ffb45a' : 'var(--ant-color-primary)',
+  color: activityImage(item) ? '#ffb45a' : 'var(--ant-color-primary)',
   fontSize: '14px',
   fontWeight: 700,
 })
