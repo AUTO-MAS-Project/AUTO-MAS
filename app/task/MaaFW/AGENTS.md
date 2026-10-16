@@ -363,11 +363,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   7~9s）后每次冷启动都撞上。
   - **模拟器冷启动按读盘放行**：上面两条按画面提前放行只用于桌面。模拟器路径上宿主传
     `taskStartGateMode="disk_quiet"`（`runner._wait_task_start_disk_quiet`）：`Game.WaitTime` 仍是上限，
-    worker 每秒经 controller 的 `post_shell` 读一次客体 `/proc/diskstats`（只算 `/sys/block` 里的整块盘，
-    排除 dm / loop / ram / zram，免得重复计数），画面有内容且读盘连续 8 次（每秒一次）低于 1 MB/s 就
-    提前下发；到上限画面有内容就按上限下发，还是黑屏 / 纯色就继续等到出画面，从开始等算满
-    `TASK_START_GATE_MAX_SECONDS` 照常下发；截不到图或读不到 diskstats（controller 不支持 shell 等）
-    退回按时间、等满上限。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
+    worker 每秒经 controller 的 `post_shell` 读一次客体 `/proc/vmstat` 的 `pgpgin`（累计读入 KB）算读盘
+    速度，画面有内容且读盘连续 8 次（每秒一次）低于 1 MB/s 就提前下发；到上限画面有内容就按上限下发，
+    还是黑屏 / 纯色就继续等到出画面，从开始等算满 `TASK_START_GATE_MAX_SECONDS` 照常下发；截不到图或
+    读不到 pgpgin（controller 不支持 shell、没有这一行等）退回按时间、等满上限；计数变小时增量记 0。
+    **不用 `/proc/diskstats`**：adb shell 用户读它和 `/sys/block/*/stat` 都被 SELinux 拒绝（API 34 魔改
+    AVD，Enforcing），pgpgin 不需要 root、不随 dm 叠层重复计数，实测与整块盘 diskstats 读速误差 < 2%。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
     模式，不判断设备类型。真机数据（2026-10-16 魔改 AVD 实测）：终末地加载页和动态标题都一直在动、
     都有内容，「20s 有内容」在拉起后 37~48s、仍在加载资源时就放行，冷启动到标题要 76~96s；CPU 与
     出帧也是标题比加载更忙（星铁标题只有 35 fps），都不能当判据；读盘量这套阈值在终末地、星铁、

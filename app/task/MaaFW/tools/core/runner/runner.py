@@ -295,20 +295,20 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 # 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
 STARTUP_SCREEN_CONTENT_SECONDS = 20
 # 首个任务前的放行判据（job 的 taskStartGateMode）。screen：上面两条按画面提前放行；
-# disk_quiet：画面有内容、且客体整块盘读速连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
+# disk_quiet：画面有内容、且客体读盘速度连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
 # DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 魔改 AVD 逐秒实测，终末地 / 星铁 /
 # 1999 冷启动）：加载页和动态标题都一直在动，CPU、出帧也是标题更忙，只有读盘量分得开——
-# 加载时持续读盘，到标题后几乎为 0；这套阈值三款都在到标题后 5~15s 放行。窗口取 5 次不够：
-# 星铁 logo 和加载页之间有一段读盘间歇，会早放行 41s。
+# 加载时持续读盘，到标题后几乎为 0；这套阈值 11 轮里 10 轮在到标题后 5~15s 放行。窗口取 5 次
+# 不够：星铁 logo 和加载页之间有一段读盘间歇，会早放行 41s。
+# 读盘量取 /proc/vmstat 的 pgpgin（累计读入 KB）：adb shell 用户读 /proc/diskstats 和
+# /sys/block/*/stat 都被 SELinux 拒绝（API 34 镜像 Enforcing 实测），pgpgin 不需要 root，按 bio
+# 计一次、不随 dm 叠层重复计数；同一窗口与整块盘 diskstats 读速对照误差 < 2%。
 TASK_START_GATE_SCREEN = "screen"
 TASK_START_GATE_DISK_QUIET = "disk_quiet"
 DISK_QUIET_READ_BYTES_PER_SECOND = 1024 * 1024
 DISK_QUIET_SAMPLES = 8
 DISK_QUIET_SAMPLE_INTERVAL_SECONDS = 1.0
 DISK_QUIET_SHELL_TIMEOUT_MS = 5000
-# /sys/block 里这些不是物理盘：dm-* 叠在整块盘上（会重复计数），loop / ram / zram 是内存设备。
-# 分区（vda1）不出现在 /sys/block，天然排除。
-DISK_QUIET_EXCLUDED_BLOCK_PREFIXES = ("loop", "ram", "zram", "dm-")
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 # 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
 # 计划里第一个任务超时则结束本轮。
@@ -3039,13 +3039,13 @@ class MaaFWRunner:
 
         有的游戏加载页和标题都一直在动、都有内容，CPU 和出帧也是标题比加载更忙，像素判断
         分不出两者；读盘量分得出：加载时客体持续读盘，到标题后几乎为 0。宿主在这类场合
-        （例如模拟器冷启动）传这个模式，这里每秒采一次客体整块盘的读速：
+        （例如模拟器冷启动）传这个模式，这里每秒读一次客体 ``/proc/vmstat`` 的 ``pgpgin`` 算读盘速度：
 
         1. 读速连续 ``DISK_QUIET_SAMPLES`` 次低于 ``DISK_QUIET_READ_BYTES_PER_SECOND``、且当前画面
            有内容，就下发；
         2. 到 ``not_before``（上限）时画面有内容就按上限下发；还是黑屏 / 纯色就继续等，出画面
            再下发，从开始等算满 ``TASK_START_GATE_MAX_SECONDS`` 照常下发；
-        3. 截不到图、或读不到 ``/proc/diskstats``，退回按时间：等满上限就下发。
+        3. 截不到图、或读不到 ``pgpgin``，退回按时间：等满上限就下发。
         """
 
         started = time.monotonic()
@@ -3060,14 +3060,7 @@ class MaaFWRunner:
         )
 
         try:
-            devices = _whole_disk_names(
-                _controller_shell(self.controller, "ls /sys/block")
-            )
-            if not devices:
-                raise RuntimeError("/sys/block 里没有整块盘")
-            last_sectors = _disk_read_sectors(
-                _controller_shell(self.controller, "cat /proc/diskstats"), devices
-            )
+            last_bytes = _guest_read_bytes(self.controller)
         except Exception as exc:
             self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
             return
@@ -3079,15 +3072,14 @@ class MaaFWRunner:
                 min(time.monotonic() + DISK_QUIET_SAMPLE_INTERVAL_SECONDS, cap_end)
             )
             try:
-                sectors = _disk_read_sectors(
-                    _controller_shell(self.controller, "cat /proc/diskstats"), devices
-                )
+                read_bytes = _guest_read_bytes(self.controller)
             except Exception as exc:
                 self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
                 return
             now = time.monotonic()
-            read_rate = max(sectors - last_sectors, 0) * 512 / max(now - last_at, 1e-3)
-            last_sectors, last_at = sectors, now
+            # 计数器回绕或变小（重启过之类）时增量截成 0
+            read_rate = max(read_bytes - last_bytes, 0) / max(now - last_at, 1e-3)
+            last_bytes, last_at = read_bytes, now
             if read_rate >= DISK_QUIET_READ_BYTES_PER_SECOND:
                 quiet_samples = 0
                 continue
@@ -3722,40 +3714,26 @@ def _controller_shell(controller: Any, cmd: str) -> str:
         raise RuntimeError("当前 controller 不支持 shell")
     job = post_shell(cmd, DISK_QUIET_SHELL_TIMEOUT_MS).wait()
     # 只认 succeeded：作业 invalid 时 get() 读到的是 controller 上一次的 shell 输出，
-    # 扇区数不变会被当成「读盘停了」
+    # 计数不变会被当成「读盘停了」
     if not job.succeeded:
         raise RuntimeError(f"shell 执行失败: {cmd}")
     return str(job.get() or "")
 
 
-def _whole_disk_names(sys_block_listing: str) -> frozenset[str]:
-    """``ls /sys/block`` 的输出里取整块盘（排除 dm / loop / ram / zram）。"""
+def _guest_read_bytes(controller: Any) -> int:
+    """客体累计读入的字节数：``/proc/vmstat`` 的 ``pgpgin``（KB）× 1024。
 
-    return frozenset(
-        name
-        for name in (token.strip().rstrip("/") for token in sys_block_listing.split())
-        if name and not name.startswith(DISK_QUIET_EXCLUDED_BLOCK_PREFIXES)
-    )
+    找不到 ``pgpgin`` 行、或者值不是数字就抛错，调用方按「读不到」退回按时间。
+    """
 
-
-def _disk_read_sectors(diskstats: str, devices: frozenset[str]) -> int:
-    """``/proc/diskstats`` 里这些整块盘累计读过的扇区数（第 6 列，512 字节一个）。"""
-
-    total = 0
-    found = False
-    for line in diskstats.splitlines():
+    for line in _controller_shell(controller, "cat /proc/vmstat").splitlines():
         fields = line.split()
-        if len(fields) < 6 or fields[2] not in devices:
-            continue
-        try:
-            total += int(fields[5])
-        except ValueError:
-            # 只跳过这一行，不让一行坏数据把整个闸门打回按时间
-            continue
-        found = True
-    if not found:
-        raise RuntimeError("/proc/diskstats 里没有这些盘")
-    return total
+        if len(fields) >= 2 and fields[0] == "pgpgin":
+            try:
+                return int(fields[1]) * 1024
+            except ValueError:
+                break
+    raise RuntimeError("/proc/vmstat 里没有可用的 pgpgin")
 
 
 def _startup_screen_is_blank(frame: Any) -> bool:
