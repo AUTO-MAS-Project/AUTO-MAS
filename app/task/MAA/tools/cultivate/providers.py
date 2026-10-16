@@ -66,7 +66,7 @@ def parse_oper_box_names(payload: Mapping[str, Any]) -> dict[str, str]:
     """把 MAA OperBoxData.json 原始数据解析为干员名字映射（纯函数）。
 
     名字仅用于用户可见文案（推送报告等），不进练度契约 Progression；
-    达成判定可自证即干员必在识别数据中，名字因此总能随判定取到。
+    森空岛也可自证达成，无识别档案时需由展示目录补齐名字。
     """
 
     names: dict[str, str] = {}
