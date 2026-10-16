@@ -289,6 +289,10 @@ def main():
 
         await Config.init_config()
 
+        from app.core.notify_channels import initialize_notification_channels
+
+        initialize_notification_channels()
+
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
@@ -488,7 +492,6 @@ def main():
             await MainTimer.stop()
             from app.services.openclaw_qq import openclaw_qq_manager
 
-            await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
@@ -503,6 +506,8 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
+            # 通知任务结束后才释放借用的 QQ 连接。渠道本身不关闭共享资源。
+            await openclaw_qq_manager.stop()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 

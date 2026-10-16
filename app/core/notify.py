@@ -34,6 +34,7 @@ from app.core.config import Config
 from app.core.notify_channels import (
     ChannelTarget,
     NotifyChannel,
+    TargetConfigView,
     get_notify_channels,
 )
 from app.core.notify_render import render_for_target
@@ -44,7 +45,7 @@ from app.models.notification import (
     WebhookTargetSnapshot,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.services.notification import Notify
+from app.services.notification import Notification, Notify
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -224,7 +225,7 @@ def global_target(
         # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
         if channel.key == "system" and not include_system:
             continue
-        for target in channel.targets(Config, scope="global"):
+        for target in channel.targets(TargetConfigView(Config), scope="global"):
             if channel.key == "system" and system_timeout_seconds is not None:
                 target = replace(target, timeout_seconds=system_timeout_seconds)
             pairs.append((channel, target))
@@ -241,7 +242,8 @@ def user_target(user_config: Any) -> NotifyTarget:
     pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
     for channel in get_notify_channels():
         pairs.extend(
-            (channel, target) for target in channel.targets(user_config, scope="user")
+            (channel, target)
+            for target in channel.targets(TargetConfigView(user_config), scope="user")
         )
     return NotifyTarget(
         name="用户",
@@ -470,6 +472,8 @@ async def dispatch(
             logger.warning(f"{channel}通知内容降级: {diagnostic}")
 
         async def send() -> Any:
+            if isinstance(sender, Notification):
+                return await sender.send_channel(channel_impl, channel_target, rendered)
             return await channel_impl.send(sender, channel_target, rendered)
 
         if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):

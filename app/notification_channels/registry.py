@@ -26,7 +26,9 @@ def validate_channel(channel: NotifyChannel) -> None:
     if not channel.scopes or not channel.scopes <= {"global", "user"}:
         raise ValueError("渠道作用域无效")
     if not channel.capabilities.formats or not set(channel.capabilities.formats) <= {
-        "text", "html", "markdown"
+        "text",
+        "html",
+        "markdown",
     }:
         raise ValueError("渠道格式声明无效")
     if not callable(channel.target_builder) or not callable(channel.sender_factory):
@@ -40,7 +42,9 @@ class ChannelRegistry:
         entries = tuple(channels)
         for entry in entries:
             validate_channel(entry)
-        duplicates = [key for key, n in Counter(c.key for c in entries).items() if n > 1]
+        duplicates = [
+            key for key, n in Counter(c.key for c in entries).items() if n > 1
+        ]
         if duplicates:
             raise ValueError(f"通知渠道 ID 重复: {', '.join(sorted(duplicates))}")
         self.channels = tuple(sorted(entries, key=lambda c: (c.order, c.key)))

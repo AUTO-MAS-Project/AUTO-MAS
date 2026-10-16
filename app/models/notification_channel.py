@@ -99,7 +99,9 @@ class NotifyChannel:
     send_adapter: Callable[..., Awaitable[bool | None]] | None = None
     sender_factory: Callable[[ChannelDependencies], Any] | None = None
 
-    def targets(self, config: ChannelConfig, *, scope: str) -> tuple[ChannelTarget, ...]:
+    def targets(
+        self, config: ChannelConfig, *, scope: str
+    ) -> tuple[ChannelTarget, ...]:
         if self.kind == "policy" or scope not in self.scopes:
             return ()
         if self.enable_field and not bool(config.get(*self.enable_field)):
