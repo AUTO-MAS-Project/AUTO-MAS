@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,9 @@ class ScriptAutoProxyBase(TaskExecuteBase):
     _MAINTENANCE_WATCH_CONFIRMATIONS = 2
     # 单次维护检测的超时：窗口捕获/OCR 卡住时按未命中放行，不拖住主流程
     _MAINTENANCE_DETECT_TIMEOUT_SECONDS = 15.0
+    # 在途检测任务：to_thread 的底层线程无法被 wait_for 取消，超时后保留
+    # 所有权，其真正结束前不再投递新的检测，避免卡住的采样在执行器里叠加。
+    _maintenance_inflight: asyncio.Task | None = None
 
     @property
     def run_timeout_seconds(self) -> float:
@@ -79,15 +83,7 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         cur_user_log 赋值之后调用。
         """
 
-        try:
-            maintenance_text = await asyncio.wait_for(
-                asyncio.to_thread(detect),
-                timeout=self._MAINTENANCE_DETECT_TIMEOUT_SECONDS,
-            )
-        except Exception as e:
-            # 超时与失败同口径放行：卡住的窗口捕获/OCR 不阻断正常流程
-            logger.warning(f"游戏画面维护检测失败（忽略，继续正常流程）: {e}")
-            return False
+        maintenance_text = await self._detect_game_maintenance(detect)
         if maintenance_text is None:
             return False
 
@@ -97,8 +93,54 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         self.cur_user_log.status = reason
         self.cur_user_log.content = [reason]
         logger.info(f"用户 {self.cur_user_item.name} - {reason}")
+        await self.notify_maintenance_skip(reason)
+        return True
+
+    async def _detect_game_maintenance(
+        self, detect: Callable[[], str | None]
+    ) -> str | None:
+        """执行一次维护检测，返回命中原文；未命中、失败或超时返回 None。
+
+        ``asyncio.to_thread`` 已开始的调用无法被取消（Python 3.12 语义），
+        故超时只放弃异步等待、不取消实际检测任务：在途任务真正结束前不再
+        投递新检测，避免卡住的截图/OCR 在执行器里叠加。
+        """
+
+        if self._reap_maintenance_inflight() is not None:
+            # 上一轮底层检测仍未结束：跳过本轮采样（按未命中处理）
+            return None
+        task = asyncio.ensure_future(asyncio.to_thread(detect))
+        self._maintenance_inflight = task
         try:
-            # 通知失败不改变跳过结论：记账已完成，不能因推送异常转入异常路径
+            text = await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=self._MAINTENANCE_DETECT_TIMEOUT_SECONDS,
+            )
+        except Exception as e:
+            logger.warning(f"游戏画面维护检测失败（忽略，继续正常流程）: {e}")
+            return None
+        if task.done():
+            self._maintenance_inflight = None
+        return text
+
+    def _reap_maintenance_inflight(self) -> asyncio.Task | None:
+        """回收已结束的在途检测句柄；返回仍在执行的句柄（无则 None）。"""
+
+        task = self._maintenance_inflight
+        if task is None:
+            return None
+        if not task.done():
+            return task
+        self._maintenance_inflight = None
+        # 取回异常，避免「Task exception was never retrieved」告警
+        with suppress(Exception):
+            task.exception()
+        return None
+
+    async def notify_maintenance_skip(self, reason: str) -> None:
+        """推送维护跳过通知；失败仅记警告，不改变跳过结论。"""
+
+        try:
             await push_dispatch_log(self.script_info, reason)
             await Publisher.send(
                 id=self.task_info.task_id,
@@ -107,7 +149,6 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             )
         except Exception:
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
-        return True
 
     async def watch_game_maintenance(
         self, detect: Callable[[], str | None], stop: asyncio.Event
@@ -116,25 +157,22 @@ class ScriptAutoProxyBase(TaskExecuteBase):
 
         每 ``_MAINTENANCE_WATCH_INTERVAL_SECONDS`` 秒用专项的 detect 读一次
         游戏画面，连续命中 ``_MAINTENANCE_WATCH_CONFIRMATIONS`` 次才判维护
-        （游戏内瞬时文本不算）；判定后写入 ``_maintenance_reason``、置 stop
-        事件，由 main_task 出等待循环后统一收尾。仅写状态标记与通知，不改
-        cur_user_log——日志监控停止后由 main_task 落笔，避免与末次轮询互相
-        覆盖。脚本已有成功结论或窗口不存在/识别失败时不作处理。
+        （游戏内瞬时文本不算）；判定后只写 ``_maintenance_reason`` 与状态标记
+        并置 stop，由 main_task 出等待循环后统一落笔结论与通知——通知放在
+        最终判定处，避免与随后的成功结论互相矛盾。检测失败、窗口不存在或
+        上一次次检测仍未结束时均按未命中处理。
+
+        临时补位：上游 ok-nte / ok-ww 没有运行期维护退出信号入口（脚本把
+        维护当普通重试空转），MAS 在此按画面补位，待上游提供可消费的结果面
+        后改为复用。
         """
+
         hits = 0
         while not stop.is_set():
             await asyncio.sleep(self._MAINTENANCE_WATCH_INTERVAL_SECONDS)
             if stop.is_set():
                 return
-            try:
-                maintenance_text = await asyncio.wait_for(
-                    asyncio.to_thread(detect),
-                    timeout=self._MAINTENANCE_DETECT_TIMEOUT_SECONDS,
-                )
-            except Exception:
-                # 超时与失败同口径：按一次未命中处理，监视继续采样
-                hits = 0
-                continue
+            maintenance_text = await self._detect_game_maintenance(detect)
             if maintenance_text is None:
                 hits = 0
                 continue
@@ -144,25 +182,17 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             # 成功结论先落时不再覆盖（成功与弹窗同时出现的竞态）
             if self.cur_user_log.status == "Success!":
                 return
-            self._maintenance_reason = (
-                f"游戏维护中，本次跳过（运行期间画面检测到：{maintenance_text}）"
-            )
-            self.cur_user_item.status = "跳过"
-            self.cur_user_item.maintenance_skipped = True
-            logger.info(f"用户 {self.cur_user_item.name} - {self._maintenance_reason}")
             try:
-                await push_dispatch_log(self.script_info, self._maintenance_reason)
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="info", message=self._maintenance_reason
-                    ),
+                self._maintenance_reason = (
+                    f"游戏维护中，本次跳过（运行期间画面检测到：{maintenance_text}）"
                 )
-            except Exception:
-                logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
+                self.cur_user_item.status = "跳过"
+                self.cur_user_item.maintenance_skipped = True
+                logger.info(
+                    f"用户 {self.cur_user_item.name} - {self._maintenance_reason}"
+                )
             finally:
-                # 通知失败也不能卡住 main_task：跳过记账已完成，必须让等待循环退出
+                # 通知由 main_task 在最终判定处推送；这里必须让等待循环退出
                 stop.set()
             return
 

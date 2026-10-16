@@ -217,8 +217,14 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None:
-    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
+def _find_hwnd(
+    process_name: str, window_class: str | None = None, *, pids: set[int] | None = None
+) -> int | None:
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。
+
+    ``pids`` 给定时只认这些进程的窗口：``Client-Win64-Shipping.exe`` 是虚幻
+    通用进程名，同机可能有其它同名游戏，单按名取最大窗口会认错对象。
+    """
     candidates: list[int] = []
 
     def _enum(hwnd: int, _lparam: int) -> bool:
@@ -230,6 +236,8 @@ def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None
         except Exception:
             return True
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pids is not None and pid not in pids:
+            return True
         if pid and _process_name(pid) == process_name:
             candidates.append(hwnd)
         return True
@@ -333,6 +341,33 @@ def find_game_pids(launcher_path: Path) -> list[int]:
     return pids
 
 
+def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set[int]:
+    """当前专项运行客户端的 PID 集合（维护检测的窗口归属判据）。
+
+    两路合并：启动器安装根目录树内的同名游戏进程（find_game_pids），以及与
+    已配置客户端 exe 路径精确匹配的进程。两路都读不到时返回空集合，调用方
+    按「无法确认归属」放行，不以全局最大窗口代替。
+    """
+
+    pids: set[int] = set()
+    if launcher_path is not None:
+        pids.update(find_game_pids(launcher_path))
+    if client_exe is None:
+        return pids
+    target = str(client_exe).casefold()
+    for process in psutil.process_iter(["name", "exe"]):
+        try:
+            name = (process.info["name"] or "").casefold()
+            if name != _GAME_PROCESS.casefold():
+                continue
+            exe = process.info["exe"]
+            if exe is not None and exe.casefold() == target:
+                pids.add(process.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return pids
+
+
 def has_launcher_window(launcher_path: Path) -> bool:
     """清理后复核启动器窗口是否仍存在。
 
@@ -343,8 +378,8 @@ def has_launcher_window(launcher_path: Path) -> bool:
     return _find_launcher_hwnd(launcher_path) is not None
 
 
-def _find_game_hwnd() -> int | None:
-    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS)
+def _find_game_hwnd(pids: set[int] | None = None) -> int | None:
+    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS, pids=pids)
 
 
 def _wait_launcher_hwnd(
@@ -543,8 +578,13 @@ def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
         return None
 
 
-def detect_game_maintenance_text() -> str | None:
+def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
     """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    ``pids`` 为当前专项运行客户端的 PID 集合（``find_client_pids``）：只认
+    这些进程的窗口，避免读到同机其它同名虚幻游戏的窗口——维护命中会直接
+    跳过当前用户并终止重试，认错对象代价高。为空或窗口不属于这些进程时
+    返回 None 放行，不以全局最大窗口代替。
 
     旁路判定：窗口不存在、抓取或 OCR 失败一律返回 None 放行，不抛错、不
     激活窗口（PrintWindow 不依赖前台）。只覆盖游戏窗口已存在的场景（MAS
@@ -553,7 +593,7 @@ def detect_game_maintenance_text() -> str | None:
     """
     if not IS_WINDOWS:
         return None
-    hwnd = _find_game_hwnd()
+    hwnd = _find_game_hwnd(pids)
     if hwnd is None:
         return None
     frame = _capture_game_window_frame(hwnd)

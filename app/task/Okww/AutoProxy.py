@@ -74,6 +74,7 @@ from .tools.backup_archive import (
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     detect_game_maintenance_text,
+    find_client_pids,
     find_game_pids,
     find_launcher_pids,
     has_launcher_window,
@@ -750,6 +751,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(message)
             await self._push_dispatch_log(message)
 
+    def _maintenance_detect(self) -> str | None:
+        """维护检测：只认本专项运行客户端的窗口，避免读到同名其它游戏。
+
+        ``Client-Win64-Shipping.exe`` 是虚幻通用进程名，同机可能有另一款同名
+        进程的游戏；按本专项的启动器安装根目录树内进程与已配置客户端 exe
+        路径取 PID，读不到归属时返回 None 放行。
+        """
+
+        return detect_game_maintenance_text(
+            find_client_pids(self.game_process_path, self.launcher_path)
+        )
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -818,7 +831,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
             # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前用户；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(detect_game_maintenance_text):
+            if await self.skip_on_game_maintenance(self._maintenance_detect):
                 break
 
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
@@ -880,9 +893,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
-                self.watch_game_maintenance(
-                    detect_game_maintenance_text, self.wait_event
-                )
+                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
             )
             try:
                 await self.wait_event.wait()
@@ -904,6 +915,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_log.content.append(self._maintenance_reason)
                 self.cur_user_item.status = "跳过"
                 self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                # 通知放在最终判定处推送，避免与随后的成功结论互相矛盾
+                await self.notify_maintenance_skip(self._maintenance_reason)
                 await self.kill_managed_process(
                     kill_game=self._game_management_enabled()
                 )

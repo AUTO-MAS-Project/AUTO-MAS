@@ -1029,6 +1029,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_log.content.append(self._maintenance_reason)
                 self.cur_user_item.status = "跳过"
                 self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                # 通知放在最终判定处推送，避免与随后的成功结论互相矛盾
+                await self.notify_maintenance_skip(self._maintenance_reason)
                 await self.kill_managed_process(
                     kill_game=self._mas_should_close_game_on_retry()
                 )
