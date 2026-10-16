@@ -394,20 +394,11 @@ export class DesktopMascotService {
       const createdWindow = win
       win.webContents.on('context-menu', () => this.showContextMenu(createdWindow))
       win.once('ready-to-show', () => {
-        if (!createdWindow.isDestroyed()) createdWindow.showInactive()
+        if (this.window === createdWindow && !createdWindow.isDestroyed())
+          createdWindow.showInactive()
       })
       win.on('closed', () => {
-        if (this.window !== createdWindow) return
-        this.window = null
-        this.data = null
-        this.decodedImage = null
-        if (this.noticeTimer) clearTimeout(this.noticeTimer)
-        this.noticeTimer = null
-        if (this.trackingTimer) clearInterval(this.trackingTimer)
-        this.trackingTimer = null
-        this.lastCursor = null
-        screen.removeListener('display-removed', this.handleDisplayChanged)
-        screen.removeListener('display-metrics-changed', this.handleDisplayChanged)
+        if (this.window === createdWindow) this.close()
       })
       screen.on('display-removed', this.handleDisplayChanged)
       screen.on('display-metrics-changed', this.handleDisplayChanged)
@@ -444,10 +435,10 @@ export class DesktopMascotService {
     if (this.trackingTimer) clearInterval(this.trackingTimer)
     this.trackingTimer = null
     this.lastCursor = null
-    if (win && !win.isDestroyed()) {
+    if (win) {
       screen.removeListener('display-removed', this.handleDisplayChanged)
       screen.removeListener('display-metrics-changed', this.handleDisplayChanged)
-      win.close()
+      if (!win.isDestroyed()) win.close()
     }
   }
 
@@ -467,6 +458,7 @@ export class DesktopMascotService {
       {
         label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
         click: () => {
+          if (this.window !== win) return
           const paused = !this.idleMessagePaused
           try {
             this.options.saveIdleMessagePaused(paused)
@@ -482,6 +474,7 @@ export class DesktopMascotService {
       {
         label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
         click: () => {
+          if (this.window !== win) return
           const paused = !animationPaused
           try {
             this.options.saveAnimationPaused(paused)
