@@ -2075,6 +2075,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 apply_settings = self.mode == self.first_run_mode and bool(
                     self.script_config.get("Game", "SetResolution")
                 )
+                # 保存的配置可能早于当前资源；先补齐入口，再覆写本轮托管开关。
+                _place_managed_task(
+                    maaend_tasks,
+                    task_name=setting_pretask,
+                    task_id=(
+                        "automas-launch-game"
+                        if uses_launch_pretask
+                        else "automas-gamesetting"
+                    ),
+                    controller_type=controller_type,
+                    enabled=False,
+                    first=True,
+                )
                 for task in maaend_tasks:
                     if task["taskName"] == _MAAEND_GAME_SETTING_PRETASK:
                         task["enabled"] = (
