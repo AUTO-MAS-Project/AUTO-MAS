@@ -62,7 +62,6 @@ from app.utils import (
     ProcessManager,
     ProcessRunner,
     get_logger,
-    is_backend_dev_mode,
     is_process_running,
 )
 from app.utils.constants import (
@@ -141,6 +140,52 @@ def _game_launch_command(
     if result_path is not None:
         command.extend(["--result-file", str(result_path)])
     return command
+
+
+def _describe_maaend_pretask_failure(
+    task_name: str, *, output: str, returncode: int
+) -> str:
+    """将上游启动诊断转换为可操作提示，完整输出另行保留在日志中。"""
+
+    if task_name == _MAAEND_LAUNCH_GAME_PRETASK:
+        hints = (
+            (
+                "failed to find launcher install directory",
+                "MaaEnd 未能找到官方启动器安装目录。请检查 MaaEnd 的区服选择和启动器安装记录，"
+                "或切换为「启动器启动」/「MAS 启动」。MaaEnd 启动不使用 MAS 中配置的启动器路径。",
+            ),
+            (
+                "failed to start launcher",
+                "MaaEnd 未能打开官方启动器。请确认启动器能手动打开、文件存在且运行权限一致。",
+            ),
+            (
+                "launcher window not found",
+                "MaaEnd 未找到启动器窗口。请检查区服选择，以及启动器是否停留在更新、登录或确认弹窗。",
+            ),
+            (
+                "failed to initialize maa framework",
+                "MaaEnd 自动化组件初始化失败。请检查 MaaEnd 安装文件是否完整，或重新安装 MaaEnd。",
+            ),
+            (
+                "game window not found after launching",
+                "MaaEnd 等待游戏窗口超时。请检查游戏启动报错及启动器更新状态，或切换其他启动方式。",
+            ),
+            (
+                "failed to run launcher pipeline",
+                "MaaEnd 未能完成启动器操作。请检查启动器是否存在更新、登录或确认弹窗，"
+                "或切换为「启动器启动」/「MAS 启动」。",
+            ),
+        )
+        for marker, hint in hints:
+            if marker in output.casefold():
+                return hint
+        action = "启动游戏"
+    else:
+        action = "应用游戏显示设置"
+    return (
+        f"MaaEnd {action}失败（退出码 {returncode}），尚未识别具体原因。"
+        "请导出问题包排查，原始错误已保留在日志中。"
+    )
 
 
 def _load_json_dict(value: object) -> dict[str, object]:
@@ -468,6 +513,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 if launcher_path is not None:
                     self.launcher_runtime_path = launcher_path.resolve()
                     _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
+                else:
+                    logger.warning(
+                        "无法从游戏目录确认 MaaEnd 使用的启动器位置，"
+                        "任务结束时仅清理游戏，启动器需手动退出"
+                    )
                 await self._launch_game_via_maaend(
                     preserve_running_game=preserve_running_game
                 )
@@ -575,16 +625,41 @@ class AutoProxyTask(ScriptAutoProxyBase):
             else "正在应用 MaaEnd 游戏启动设置...",
         )
         plan = plans[0]
-        result = await ProcessRunner.run_process(
-            plan.executable,
-            *plan.args,
-            cwd=self.maaend_root_path,
-            # 新版还需等待启动器和游戏窗口，上游等待上限合计 180 秒。
-            timeout=240 if task_name == _MAAEND_LAUNCH_GAME_PRETASK else 60,
-            kill_tree_on_cancel=True,
-        )
+        launching = task_name == _MAAEND_LAUNCH_GAME_PRETASK
+        action = "启动游戏" if launching else "应用游戏显示设置"
+        # 新版还需等待启动器和游戏窗口，上游等待上限合计 180 秒。
+        timeout = 240 if launching else 60
+        try:
+            result = await ProcessRunner.run_process(
+                plan.executable,
+                *plan.args,
+                cwd=self.maaend_root_path,
+                timeout=timeout,
+                kill_tree_on_cancel=True,
+            )
+        except asyncio.TimeoutError as error:
+            raise RuntimeError(
+                f"MaaEnd {action}超时（{timeout} 秒）。请检查启动器和游戏是否正常响应，或切换其他启动方式。"
+            ) from error
+        except FileNotFoundError as error:
+            raise RuntimeError(
+                "MaaEnd 启动组件或安装目录不存在。请检查 MaaEnd 路径及安装文件是否完整。"
+            ) from error
+        except PermissionError as error:
+            raise RuntimeError(
+                "无法运行 MaaEnd 启动组件，访问被拒绝。请检查文件权限，以及 MAS 与 MaaEnd 的运行权限是否一致。"
+            ) from error
         if result.returncode != 0:
-            raise RuntimeError(f"MaaEnd 游戏启动设置失败: {result.failure_detail()}")
+            logger.error(
+                f"MaaEnd 预任务 {task_name} 执行失败: {result.failure_detail()}"
+            )
+            raise RuntimeError(
+                _describe_maaend_pretask_failure(
+                    task_name,
+                    output=f"{result.stdout}\n{result.stderr}",
+                    returncode=result.returncode,
+                )
+            )
 
     async def _launch_game_via_maaend(
         self, *, preserve_running_game: bool = False
@@ -1578,8 +1653,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """中止关联进程
 
         Args:
-            kill_game (bool): 是否同时关闭游戏或模拟器；开发模式下手动中止
-                任务或等待登录画面超时后重试时传 False，保留游戏进度。
+            kill_game (bool): 是否同时关闭游戏或模拟器；等待登录画面超时后
+                重试时传 False，保留游戏进度。
         """
 
         try:
@@ -2647,9 +2722,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 MaaEnd 进程失败: {e}")
         else:
-            # 开发模式下手动中止任务时保留游戏进程，便于继续调试
-            keep_game = is_backend_dev_mode() and self.stopped_manually
-            await self.kill_managed_process(kill_game=not keep_game)
+            # 开发与生产使用一致的停止清理流程，便于实机验证。
+            await self.kill_managed_process(kill_game=True)
 
         user_logs_list = []
         stage_log_paths = []
