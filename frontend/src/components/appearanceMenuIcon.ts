@@ -7,7 +7,7 @@ export function createAppearanceMenuIcon(
   fallback: Component,
   menuIcons: AppearanceMenuIcons | undefined
 ): VNode {
-  const url = menuIcons?.[key]
+  const url = menuIcons?.[key] || menuIcons?.default
   if (!url) return h(fallback)
 
   return h('img', {

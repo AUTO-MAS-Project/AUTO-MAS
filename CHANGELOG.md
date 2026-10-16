@@ -30,6 +30,12 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 变更
+
+- 【调度】计划表支持多天轮换；BAAH 关卡表改为六类混打、每类可开关或交给 BAAH (#1332) by @beichen24a1
+
 ## [v5.7.0-beta.4] - 2026-10-15
 
 ### 本次亮点
@@ -569,6 +575,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.4...dev
 [v5.7.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.3...v5.7.0-beta.4
 [v5.7.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...v5.7.0-beta.3
 [v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2

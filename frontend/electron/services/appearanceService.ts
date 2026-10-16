@@ -35,7 +35,7 @@ const APPEARANCE_MENU_ICON_KEYS = [
   'updateDownloadDev',
 ] as const
 type AppearanceMenuIconKey = (typeof APPEARANCE_MENU_ICON_KEYS)[number]
-type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey, string>>
+type AppearanceMenuIcons = Partial<Record<AppearanceMenuIconKey | 'default', string>>
 const APPEARANCE_CURSOR_KEYS = ['default', 'pointer', 'text'] as const
 type AppearanceCursorKey = (typeof APPEARANCE_CURSOR_KEYS)[number]
 interface AppearanceCursor {
@@ -83,7 +83,7 @@ interface InstalledAppearance extends AppearanceManifest {
   mascotLookUrl?: string
   mascotResultUrl?: string
   mascotDragUrl?: string
-  menuIconUrls?: Partial<Record<AppearanceMenuIconKey, string>>
+  menuIconUrls?: AppearanceMenuIcons
   cursorUrls?: Partial<Record<AppearanceCursorKey, string>>
 }
 interface AppearanceImportResult {
@@ -179,10 +179,10 @@ function normalizeMenuIcons(value: unknown): AppearanceMenuIcons | undefined {
   const raw = assertPlainObject(value, 'menuIcons')
   const menuIcons: AppearanceMenuIcons = {}
   for (const [key, assetPath] of Object.entries(raw)) {
-    if (!(APPEARANCE_MENU_ICON_KEYS as readonly string[]).includes(key)) {
+    if (key !== 'default' && !(APPEARANCE_MENU_ICON_KEYS as readonly string[]).includes(key)) {
       fail(`menuIcons 包含未知菜单键: ${key}`)
     }
-    menuIcons[key as AppearanceMenuIconKey] = assertAssetPath(assetPath, true)
+    menuIcons[key as keyof AppearanceMenuIcons] = assertAssetPath(assetPath, true)
   }
   return menuIcons
 }
@@ -283,10 +283,10 @@ function serializeAppearance({
 }: LoadedAssetPackage<AppearanceManifest>): InstalledAppearance {
   const getAsset = (assetPath: string | undefined): string | undefined =>
     assetPath ? assets[assetPath] : undefined
-  const menuIconUrls: Partial<Record<AppearanceMenuIconKey, string>> = {}
+  const menuIconUrls: AppearanceMenuIcons = {}
   for (const [key, assetPath] of Object.entries(manifest.menuIcons ?? {})) {
     const url = getAsset(assetPath)
-    if (url) menuIconUrls[key as AppearanceMenuIconKey] = url
+    if (url) menuIconUrls[key as keyof AppearanceMenuIcons] = url
   }
   const cursorUrls: Partial<Record<AppearanceCursorKey, string>> = {}
   for (const [key, cursor] of Object.entries(manifest.cursors ?? {})) {
