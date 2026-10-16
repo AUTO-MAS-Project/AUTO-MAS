@@ -5,11 +5,29 @@ const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 /** SRA 中文档使用国服时间；无时区字符串按 UTC+8，而非用户电脑的时区。 */
 const time = (value: unknown) => {
   const raw = text(value)
-  if (!raw) return ''
-  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(raw)
-    ? raw + '+08:00'
-    : raw
-  return Number.isFinite(Date.parse(normalized)) ? normalized : ''
+  const parts = raw.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
+  )
+  if (!parts) return ''
+  const [, year, month, day, hour, minute, second, fraction, zone] = parts
+  const y = Number(year)
+  const m = Number(month)
+  const leapYear = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)
+  const days = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if (
+    m < 1 ||
+    m > 12 ||
+    Number(day) < 1 ||
+    Number(day) > days[m - 1] ||
+    Number(hour) > 23 ||
+    Number(minute) > 59 ||
+    Number(second ?? '0') > 59
+  )
+    return ''
+  const normalized = `${year}-${month}-${day}T${hour}:${minute}:${second ?? '00'}${fraction ?? ''}${zone ?? '+08:00'}`
+  if (!Number.isFinite(Date.parse(normalized))) return ''
+  // 明确带时区的来源字符串保留原样；其余只接受上述可确认的日期时间格式。
+  return zone ? raw : normalized
 }
 
 const image = (value: unknown) => {
