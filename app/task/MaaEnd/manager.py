@@ -52,7 +52,7 @@ from app.utils.io import (
 )
 
 from .AutoProxy import AutoProxyTask
-from .resource_loader import load_maaend_controller_protocol
+from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
 from .tools.notify import collect_recent_error_images, push_notification
@@ -147,20 +147,29 @@ class MaaEndManager(ScriptManagerBase):
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
         if self.controller_protocol == "Win32" and self.task_info.mode == "AutoProxy":
-            # 直接启动与启动器启动共用同一个官方启动器：自动识别优先；手动指定也必须
-            # 是官方启动器（Launcher.exe / Games.exe），运行时另叠签名校验。
-            client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
-            try:
-                launcher = resolve_launcher_exe(
-                    client_exe, str(script_config.get("Game", "LauncherPath") or "")
-                )
-            except ValueError as error:
-                return str(error)
-            if launcher is None:
-                return (
-                    "未找到终末地官方启动器, 请选择鹰角官方启动器 "
-                    "Launcher.exe 或 Games.exe！"
-                )
+            loader = MaaEndResourceLoader.get_loaded(
+                Path(script_config.get("Info", "Path"))
+            )
+            launch_mode = loader.resolve_launch_mode(
+                script_config.get("Game", "LaunchMode"), controller_name
+            )
+            if launch_mode == "MaaEnd":
+                if controller_name not in loader.pretask_controllers("LaunchGamePC"):
+                    return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
+            else:
+                # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
+                client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
+                try:
+                    launcher = resolve_launcher_exe(
+                        client_exe, str(script_config.get("Game", "LauncherPath") or "")
+                    )
+                except ValueError as error:
+                    return str(error)
+                if launcher is None:
+                    return (
+                        "未找到终末地官方启动器, 请选择鹰角官方启动器 "
+                        "Launcher.exe 或 Games.exe！"
+                    )
         if (
             self.task_info.mode == "AutoProxy"
             and not (

@@ -466,11 +466,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 raise ValueError("MaaEnd 路径未配置")
             loader = MaaEndResourceLoader.get_loaded(root_path)
             controller = str(self.script_config.get("Game", "ControllerType"))
-            return (
-                "MaaEnd"
-                if controller in loader.pretask_controllers("LaunchGamePC")
-                else "MAS"
-            )
+            return loader.resolve_launch_mode(mode, controller)
         return mode
 
     def _game_setting_pretask(self) -> str | None:

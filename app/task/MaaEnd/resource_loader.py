@@ -522,6 +522,17 @@ class MaaEndResourceLoader:
                 )
         return []
 
+    def resolve_launch_mode(self, launch_mode: str, controller_name: str) -> str:
+        """按公开启动能力解析旧 Client 配置，显式选择保持不变。"""
+
+        if launch_mode != "Client":
+            return launch_mode
+        return (
+            "MaaEnd"
+            if controller_name in self.pretask_controllers("LaunchGamePC")
+            else "MAS"
+        )
+
     def has_task_option(self, task_name: str, option_name: str) -> bool:
         """判断当前 MaaEnd 资源是否声明了某个任务选项。"""
 
