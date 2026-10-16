@@ -51,7 +51,9 @@ def parse_maintenance(data: object) -> dict[str, MaintenanceWindow]:
 
     windows: dict[str, MaintenanceWindow] = {}
     for game, item in data["games"].items():
-        # 第一版只消费已接入的两款游戏，其他游戏不影响已支持的记录。
+        # 只消费已接入公告的游戏，其他游戏不影响已支持的记录。
+        # 异环（nte）待数据侧接入维护公告后挂载（挂载点见 app/task/maintenance.py）：
+        # if game not in ("arknights", "endfield", "nte"):
         if game not in ("arknights", "endfield"):
             continue
         if not isinstance(item, dict) or "maintenance" not in item:

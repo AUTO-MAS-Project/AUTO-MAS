@@ -285,6 +285,11 @@ class OkNteManager(ScriptManagerBase):
             await self.run_user_task(current_user, method)
 
     async def final_task(self):
+        if self.maintenance_only:
+            # 公告通道在运行前整体跳过：main_task 未执行，无配置锁与临时目录
+            # 可收尾，维护通知已由 _run_main_task 发出（对齐 MaaEnd）
+            return
+
         script_uid = uuid.UUID(self.script_info.script_id)
         script_cfg = Config.ScriptConfig[script_uid]
 
@@ -311,6 +316,10 @@ class OkNteManager(ScriptManagerBase):
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
+            elif self.all_users_maintenance_skipped:
+                # 画面检测把全部用户判为维护跳过时（公告通道未覆盖的场景），
+                # 整体状态记「跳过」而非「完成」
+                self.script_info.status = "跳过"
             else:
                 self.script_info.status = "完成"
 
@@ -333,13 +342,17 @@ class OkNteManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        mode="代理结果",
-                        title=title,
-                        message=result,
-                        user_config=None,
-                        task_info=self.task_info,
-                    )
+                    if self.all_users_maintenance_skipped:
+                        # 全员维护跳过：推维护通知而非常规代理报告（对齐 MaaEnd）
+                        await self.notify_maintenance()
+                    else:
+                        await push_notification(
+                            mode="代理结果",
+                            title=title,
+                            message=result,
+                            user_config=None,
+                            task_info=self.task_info,
+                        )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Publisher.send(

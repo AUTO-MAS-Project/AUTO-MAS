@@ -352,6 +352,9 @@ class OkwwManager(ScriptManagerBase):
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
+            elif self.all_users_maintenance_skipped:
+                # 画面检测把全部用户判为维护跳过时，整体状态记「跳过」而非「完成」
+                self.script_info.status = "跳过"
             else:
                 self.script_info.status = "完成"
 
@@ -377,13 +380,17 @@ class OkwwManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        mode="代理结果",
-                        title=title,
-                        message=result,
-                        user_config=None,
-                        task_info=self.task_info,
-                    )
+                    if self.all_users_maintenance_skipped:
+                        # 全员维护跳过：推维护通知而非常规代理报告（对齐 MaaEnd）
+                        await self.notify_maintenance()
+                    else:
+                        await push_notification(
+                            mode="代理结果",
+                            title=title,
+                            message=result,
+                            user_config=None,
+                            task_info=self.task_info,
+                        )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Publisher.send(

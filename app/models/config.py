@@ -3994,7 +3994,7 @@ class OkwwUserConfig(ConfigBase):
             "Data",
             "LastProxyStatus",
             "未知",
-            OptionsValidator(["未知", "成功", "失败"]),
+            OptionsValidator(["未知", "成功", "失败", "维护中"]),
         )
         self.Data_LastTaskIndex = ConfigItem(
             "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
@@ -4137,7 +4137,7 @@ class OkNteUserConfig(ConfigBase):
             "Data",
             "LastProxyStatus",
             "未知",
-            OptionsValidator(["未知", "成功", "失败"]),
+            OptionsValidator(["未知", "成功", "失败", "维护中"]),
         )
         self.Data_LastTaskIndex = ConfigItem(
             "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
