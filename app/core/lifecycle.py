@@ -31,6 +31,10 @@ logger = get_logger("生命周期")
 Teardown = Callable[[], Awaitable[None]]
 
 
+class BackendBusyError(RuntimeError):
+    """后端热更或关闭期间拒绝新的业务入口。"""
+
+
 class _ShutdownCoordinator:
     """后端关闭协调器。
 
@@ -45,6 +49,11 @@ class _ShutdownCoordinator:
         self._teardown: Optional[Teardown] = None
         self._lock = asyncio.Lock()
         self._done = False
+        self.closing = False
+
+    def begin_shutdown(self) -> None:
+        """在任何异步清理前关闭业务入口，清理失败也不重新接单。"""
+        self.closing = True
 
     def set_teardown(self, teardown: Teardown) -> None:
         """注册完整 teardown 步骤（应用启动时调用一次）。"""
@@ -57,6 +66,7 @@ class _ShutdownCoordinator:
             Exception: teardown 步骤抛出的异常向上传播，供调用方决定是否发送
                 完成信号。
         """
+        self.begin_shutdown()
         async with self._lock:
             if self._done:
                 return

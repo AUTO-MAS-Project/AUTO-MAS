@@ -276,6 +276,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendStart: () => ipcRenderer.invoke('backend-start'),
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
+  applyStagedBackendUpdate: () => ipcRenderer.invoke('apply-staged-backend-update'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 
   // Runtime 链路的后端更新（启动模式复用上面的 getRuntimeLaunchMode）
