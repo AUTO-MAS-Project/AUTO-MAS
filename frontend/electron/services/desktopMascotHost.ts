@@ -118,18 +118,24 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
     },
     configChanged(patch: unknown): void {
       if (disposed || !patch || typeof patch !== 'object') return
-      if (
-        [
-          'appearanceId',
-          'desktopMascotId',
-          'desktopMascotEnabled',
-          'desktopMascotAnimationPaused',
-          'desktopMascotIdleMessagePaused',
-        ].some(key => key in patch)
-      ) {
+      if (['appearanceId', 'desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
         sync()
         if (['desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
-          broadcastMascotChange()
+          const preferences = options.readPreferences()
+          broadcastMascotChange({
+            id: preferences.desktopMascotId ?? null,
+            enabled: preferences.desktopMascotEnabled !== false,
+          })
+        }
+      } else if (
+        ['desktopMascotFps', 'desktopMascotAnimationPaused', 'desktopMascotIdleMessagePaused'].some(
+          key => key in patch
+        )
+      ) {
+        try {
+          service?.syncPreferences()
+        } catch (error) {
+          reportError(error)
         }
       }
     },

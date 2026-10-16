@@ -8,6 +8,10 @@ import {
   fail,
 } from './assetPackageService'
 
+// 与桌宠设置的范围保持一致；主进程与渲染进程独立编译。
+const MASCOT_MIN_FPS = 1
+const MASCOT_MAX_FPS = 120
+
 export function normalizeMascot(value: unknown): MascotDefinition | undefined {
   if (value === undefined) return undefined
   const raw = assertPlainObject(value, 'mascot')
@@ -40,8 +44,18 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
     const raw = assertPlainObject(value, 'mascot.animation')
     const assetPath = assertAssetPath(raw.path, true)
     const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 16)
-    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 24)
-    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 24)
+    const idleFps = assertOptionalNumber(
+      raw.idleFps,
+      'mascot.animation.idleFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
+    const workingFps = assertOptionalNumber(
+      raw.workingFps,
+      'mascot.animation.workingFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
     const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
     const resultPath =
       raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)

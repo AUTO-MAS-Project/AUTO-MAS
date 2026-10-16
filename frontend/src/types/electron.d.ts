@@ -4,6 +4,7 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotSelection,
 } from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
@@ -208,7 +209,8 @@ export interface ElectronAPI {
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
-  onMascotChanged?: (callback: () => void) => () => void
+  /** 不带选择状态时表示资源列表变化。 */
+  onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   setDesktopMascotReady(
     ready: boolean,
     labels?: DesktopMascotMenuLabels,
