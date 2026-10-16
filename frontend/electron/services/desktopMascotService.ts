@@ -8,8 +8,7 @@ import type {
   DesktopMascotMenuLabels,
   DesktopMascotUpdate,
 } from '../../src/types/desktopMascot'
-import { getAppearance } from './appearanceService'
-import { getMascot } from './mascotPackageService'
+import type { MascotAssets } from '../../src/types/mascotPack'
 
 export interface DesktopMascotPreferences {
   appearanceId?: string | null
@@ -23,6 +22,9 @@ export interface DesktopMascotPreferences {
 
 interface DesktopMascotOptions {
   readPreferences(): DesktopMascotPreferences
+  resolveAssets(
+    selection: Pick<DesktopMascotPreferences, 'appearanceId' | 'desktopMascotId'>
+  ): MascotAssets | null
   savePosition(position: Point): void
   saveAnimationPaused(paused: boolean): void
   saveIdleMessagePaused(paused: boolean): void
@@ -48,6 +50,7 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
 }
 
 export class DesktopMascotService {
+  private disposed = false
   private window: BrowserWindow | null = null
   private data: DesktopMascotData | null = null
   private ready = false
@@ -72,6 +75,7 @@ export class DesktopMascotService {
   constructor(private readonly options: DesktopMascotOptions) {}
 
   setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void {
+    if (this.disposed) return
     this.ready = ready
     if (labels) this.menuLabels = labels
     if (colors) this.colors = colors
@@ -177,6 +181,7 @@ export class DesktopMascotService {
   }
 
   sync(): void {
+    if (this.disposed) return
     const preferences = this.options.readPreferences()
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
     this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
@@ -185,11 +190,10 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const appearance = preferences.desktopMascotId
-      ? getMascot(app.getPath('userData'), preferences.desktopMascotId)
-      : preferences.appearanceId
-        ? getAppearance(app.getPath('userData'), preferences.appearanceId)
-        : null
+    const appearance = this.options.resolveAssets({
+      appearanceId: preferences.appearanceId,
+      desktopMascotId: preferences.desktopMascotId,
+    })
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
@@ -423,7 +427,14 @@ export class DesktopMascotService {
       : null
   }
 
-  close(): void {
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.ready = false
+    this.close()
+  }
+
+  private close(): void {
     const win = this.window
     this.window = null
     this.data = null

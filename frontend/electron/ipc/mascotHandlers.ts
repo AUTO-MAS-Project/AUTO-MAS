@@ -91,7 +91,16 @@ export function registerMascotHandlers(onChanged: () => void): void {
 
 /** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */
 export function registerDesktopMascotHandlers(
-  service: DesktopMascotService,
+  service: Pick<
+    DesktopMascotService,
+    | 'setReady'
+    | 'getData'
+    | 'setIdleMessage'
+    | 'handlePointer'
+    | 'setDecodedImage'
+    | 'setActivity'
+    | 'showNotice'
+  >,
   getMainWindow: () => BrowserWindow | null
 ): () => void {
   ipcMain.handle(
