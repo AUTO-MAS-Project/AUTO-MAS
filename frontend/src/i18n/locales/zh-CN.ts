@@ -4678,6 +4678,11 @@ export default {
       mascotSection: '桌宠',
       mascotSelect: '桌宠选择',
       mascotFollowTheme: '跟随当前主题',
+      mascotFps: '动画帧率',
+      mascotFpsPackage: '跟随动画包',
+      mascotFpsCustom: '自定义',
+      mascotFpsTip:
+        '默认跟随动画包；自定义支持 1～120 FPS，按回车或点击别处保存，循环播放包内动画。',
       importMascot: '导入桌宠',
       removeMascot: '移除桌宠',
       mascotImportTip: '支持独立桌宠 ZIP，也可从主题包中只导入桌宠；独立桌宠不会随主题切换。',

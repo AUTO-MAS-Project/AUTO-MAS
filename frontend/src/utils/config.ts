@@ -16,6 +16,8 @@ export interface FrontendConfig {
   /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
   desktopMascotId?: string | null
   desktopMascotEnabled?: boolean
+  /** 为空时使用动画包的帧率；自定义范围为 1～120 FPS。 */
+  desktopMascotFps?: number | null
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
   desktopMascotPosition?: { x: number; y: number }
@@ -63,6 +65,7 @@ export interface FrontendConfig {
 const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
+  desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,
   pauseHomeEffectsWhenRunning: true,
