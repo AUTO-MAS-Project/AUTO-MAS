@@ -134,7 +134,7 @@ from .tools.cultivate import (
     takeover_notice_patch_value,
 )
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
-from .tools.software_package import read_pending_update
+from .tools.software_package import read_pending_update, save_deferred_update
 from .tools.software_update import (
     compare_versions,
     has_cached_maa_software_update,
@@ -2817,10 +2817,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """保留原生下载登记，供整批结束后交还官方更新入口。"""
         try:
             pending = read_pending_update(self.maa_root_path)
-            if all(pending) and (self.maa_root_path / pending[1]).is_file():
-                self.pending_update = pending
         except (OSError, ValueError) as error:
             logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+            return
+        if all(pending) and (self.maa_root_path / pending[1]).is_file():
+            self.pending_update = pending
+            # 保存失败必须向上传播，不能清空唯一登记后继续启动下一阶段。
+            save_deferred_update(
+                self.maa_root_path, version=pending[0], package=pending[1]
+            )
 
     async def _sync_maa_config_updates(self) -> None:
         """把 MAA 运行期写盘的配置变更(相对本模式基线)回写到配置来源存档。

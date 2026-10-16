@@ -77,10 +77,19 @@ from .tools.resource_update import (
     get_resource_write_lock,
     prepare_queue_resources,
 )
-from .tools.software_package import read_pending_update, write_pending_update
+from .tools.software_package import (
+    clear_deferred_update,
+    load_deferred_update,
+    read_pending_update,
+    save_deferred_update,
+    write_pending_update,
+)
 from .tools.software_update import (
     cancel_maa_software_update_precheck,
+    compare_versions,
+    parse_version,
     prepare_maa_software_update,
+    read_installed_release,
 )
 from .tools.update_credentials import resolve_takeover_credentials
 from .tools.UpdateMAA import MaaUpdaterRunningError
@@ -134,7 +143,12 @@ class MaaManager(ScriptManagerBase):
         finally:
             try:
                 if self._update_config_dir is not None and not self._updater_running:
-                    self._remember_pending_update()
+                    try:
+                        self._remember_pending_update()
+                    except (OSError, ValueError) as error:
+                        logger.warning(
+                            f"MAA 本体更新: 保存恢复登记失败，仍尝试原生还原: {error}"
+                        )
                 await super()._finalize_task()
             finally:
                 try:
@@ -173,19 +187,33 @@ class MaaManager(ScriptManagerBase):
             self._pending_update = self._active_proxy_task.pending_update
         try:
             pending = read_pending_update(self.maa_set_path.parent)
-            if all(pending) and (self.maa_set_path.parent / pending[1]).is_file():
-                self._pending_update = pending
         except (OSError, ValueError) as error:
             logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+            return
+        if all(pending) and (self.maa_set_path.parent / pending[1]).is_file():
+            self._pending_update = pending
+            save_deferred_update(
+                self.maa_set_path.parent, version=pending[0], package=pending[1]
+            )
 
     async def _restore_pending_update(self) -> None:
         """恢复仍有包文件的登记；成功安装后已删除的包不重新登记。"""
-        if (
-            self._pending_update is None
-            or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
-        ):
-            return
         try:
+            saved = load_deferred_update(self.maa_set_path.parent)
+            if saved is not None:
+                self._pending_update = saved
+            if (
+                self._pending_update is None
+                or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
+            ):
+                return
+            release = read_installed_release(self.maa_set_path.parent)
+            current = parse_version(release[0]) if release else None
+            target = parse_version(self._pending_update[0])
+            if current and target and compare_versions(target, current) <= 0:
+                clear_deferred_update(self.maa_set_path.parent)
+                self._pending_update = None
+                return
             _, current_package = read_pending_update(self.maa_set_path.parent)
             if (
                 not current_package
@@ -368,6 +396,7 @@ class MaaManager(ScriptManagerBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
+        await self._restore_pending_update()
 
         # overlay 层覆写的库存缓存同样先还原：存底还在说明上次运行（崩溃、强杀）
         # 没走完结束还原，不还原就会把上一账号的库存固化成这一次的「原始现场」。
@@ -553,6 +582,7 @@ class MaaManager(ScriptManagerBase):
                 config_dir=self._update_config_dir,
                 config=self.script_config,
             )
+            self._remember_pending_update()
             try:
                 await update_maa(self.maa_set_path.parent)
             except MaaUpdaterRunningError:

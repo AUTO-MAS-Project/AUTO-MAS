@@ -49,6 +49,7 @@ import zipfile
 from pathlib import Path
 
 from app.utils import get_logger
+from app.utils.config_archive import config_root_key
 from app.utils.io import ConfigCorruptedError, read_dict_file, write_file
 
 # 复用资源包的同款原语（哈希与覆盖式复制），避免第二套实现
@@ -193,6 +194,44 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
         if package:
             return str(global_set.get("VersionUpdate.name") or ""), package
     return "", ""
+
+
+def _deferred_update_path(maa_root: Path) -> Path:
+    return Path.cwd() / "data/maa_update/pending" / f"{config_root_key(maa_root)}.json"
+
+
+def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
+    """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
+    write_file(
+        _deferred_update_path(maa_root),
+        {"install": config_root_key(maa_root), "version": version, "package": package},
+    )
+
+
+def clear_deferred_update(maa_root: Path) -> None:
+    """官方入口已消费更新后清除 MAS 保存的登记。"""
+    _deferred_update_path(maa_root).unlink(missing_ok=True)
+
+
+def load_deferred_update(maa_root: Path) -> tuple[str, str] | None:
+    """读取同一安装的待更新登记，包已消费或删除时清理记录。"""
+    path = _deferred_update_path(maa_root)
+    if not path.is_file():
+        return None
+    data = read_dict_file(path)
+    version, package = data.get("version"), data.get("package")
+    if (
+        data.get("install") != config_root_key(maa_root)
+        or not isinstance(version, str)
+        or not version
+        or not isinstance(package, str)
+        or not package
+    ):
+        raise ConfigCorruptedError(path)
+    if not (maa_root / package).is_file():
+        clear_deferred_update(maa_root)
+        return None
+    return version, package
 
 
 def register_pending_update(
