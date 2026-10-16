@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from .core import router as core_router
     from .dispatch import router as dispatch_router
+    from .operations import router as operations_router
     from .games import router as games_router
     from .history import router as history_router
     from .i18n import router as i18n_router
@@ -65,6 +66,7 @@ _ROUTER_MODULES: dict[str, str] = {
     "games_router": ".games",
     "queue_router": ".queue",
     "dispatch_router": ".dispatch",
+    "operations_router": ".operations",
     "history_router": ".history",
     "tools_router": ".tools",
     "setting_router": ".setting",
@@ -79,11 +81,13 @@ _ROUTER_MODULES: dict[str, str] = {
 def __getattr__(name: str):
     if name in _ROUTER_MODULES:
         import importlib
+
         module = importlib.import_module(_ROUTER_MODULES[name], __package__)
         return module.router
     if name == "qr_login_router":
         try:
             from .qr_login import router
+
             return router
         except ImportError:
             return None
@@ -99,6 +103,7 @@ __all__ = [
     "games_router",
     "queue_router",
     "dispatch_router",
+    "operations_router",
     "history_router",
     "tools_router",
     "setting_router",

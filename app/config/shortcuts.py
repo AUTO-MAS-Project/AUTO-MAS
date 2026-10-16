@@ -87,11 +87,12 @@ def virtual_field(path: str) -> Callable[[_F], _F]:
     return _decorator
 
 
-def trigger_field(path: str) -> Callable[[_F], _F]:
+def trigger_field(path: str, *, cancellable: bool = True) -> Callable[[_F], _F]:
     """注册触发器；``entry.<group>.<field> = True`` 执行一次 handler。"""
     group, field_name = parse_field_path(path)
 
     def _decorator(func: _F) -> _F:
+        setattr(func, "__trigger_cancellable__", cancellable)
         setattr(
             func,
             "__trigger_field_binding__",
@@ -104,7 +105,9 @@ def trigger_field(path: str) -> Callable[[_F], _F]:
     return _decorator
 
 
-def ui_visibility(path: str) -> Callable[[Callable[..., UiVisibility]], Callable[..., UiVisibility]]:
+def ui_visibility(
+    path: str,
+) -> Callable[[Callable[..., UiVisibility]], Callable[..., UiVisibility]]:
     """注册字段 UI 显隐求值；须为返回 ``UiVisibility`` 的同步方法。"""
     group, field_name = parse_field_path(path)
 
@@ -112,9 +115,7 @@ def ui_visibility(path: str) -> Callable[[Callable[..., UiVisibility]], Callable
         setattr(
             func,
             "__ui_visibility_binding__",
-            UiVisibilityBinding(
-                group=group, field_name=field_name, getter=func
-            ),
+            UiVisibilityBinding(group=group, field_name=field_name, getter=func),
         )
         return func
 

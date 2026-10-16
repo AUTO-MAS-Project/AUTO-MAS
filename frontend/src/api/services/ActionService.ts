@@ -8,6 +8,9 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { OperationGetIn } from '../models/OperationGetIn';
+import type { OperationOut } from '../models/OperationOut';
+import type { OperationStartIn } from '../models/OperationStartIn';
 import type { PluginCatalogRefreshIn } from '../models/PluginCatalogRefreshIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
@@ -95,6 +98,44 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/cancel/power',
+        });
+    }
+    /**
+     * Start Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static startOperationApiOperationsStartPost(
+        requestBody: OperationStartIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Cancel Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelOperationApiOperationsCancelPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

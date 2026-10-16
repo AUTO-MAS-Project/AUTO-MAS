@@ -8,6 +8,12 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  operations: {
+    succeeded: '操作が完了しました',
+    failed: '操作に失敗しました',
+    cancelled: '操作をキャンセルしました',
+    checkLogs: '詳細はログを確認してください',
+  },
   plugins: {
     state: {
       unloaded: '未ロード',

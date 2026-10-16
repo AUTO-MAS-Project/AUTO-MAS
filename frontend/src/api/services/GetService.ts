@@ -25,6 +25,10 @@ import type { InstancesGetOut } from '../models/InstancesGetOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
+import type { OperationGetIn } from '../models/OperationGetIn';
+import type { OperationListIn } from '../models/OperationListIn';
+import type { OperationListOut } from '../models/OperationListOut';
+import type { OperationOut } from '../models/OperationOut';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
 import type { PluginCatalogGetIn } from '../models/PluginCatalogGetIn';
@@ -372,6 +376,44 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/get/power',
+        });
+    }
+    /**
+     * Get Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static getOperationApiOperationsGetPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Operations
+     * @param requestBody
+     * @returns OperationListOut Successful Response
+     * @throws ApiError
+     */
+    public static listOperationsApiOperationsListPost(
+        requestBody: OperationListIn,
+    ): CancelablePromise<OperationListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/list',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

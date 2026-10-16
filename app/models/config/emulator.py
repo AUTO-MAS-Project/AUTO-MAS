@@ -80,19 +80,19 @@ class EmulatorDeviceEntry(GameDeviceEntry):
             return UiVisibility.HIDE
         return self._busy_vis()
 
-    @trigger_field("action.minimize")
+    @trigger_field("action.minimize", cancellable=False)
     async def on_minimize(self) -> None:
         await self._control.minimize(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.maximize")
+    @trigger_field("action.maximize", cancellable=False)
     async def on_maximize(self) -> None:
         await self._control.maximize(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.open_store")
+    @trigger_field("action.open_store", cancellable=False)
     async def on_open_store(self) -> None:
         await self._control.open_store(self.uid, ticket=TRIGGER_TICKET)
 
-    @trigger_field("action.delete_instance")
+    @trigger_field("action.delete_instance", cancellable=False)
     async def on_delete_instance(self) -> None:
         await self._control.delete_instance(self.uid, ticket=TRIGGER_TICKET)
 
@@ -124,6 +124,6 @@ class EmulatorEntry(GameEntry):
             raise TypeError("非模拟器管理实例")
         return ctrl
 
-    @trigger_field("action.create_instance")
+    @trigger_field("action.create_instance", cancellable=False)
     async def on_create_instance(self) -> None:
         await self._control.create_instance()

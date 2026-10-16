@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator
+from collections.abc import Callable
 from collections.abc import Iterator
 from uuid import UUID, uuid4
 
@@ -35,6 +36,7 @@ def discard_x_token(token: UUID) -> None:
 from app.utils.io import write_file
 
 if TYPE_CHECKING:
+    from ..triggers import TriggerDispatcher
     from .node import ConfigNode, NodeState
     from .collection import ConfigCollection
 
@@ -58,6 +60,7 @@ class TransactionContext:
     _task: asyncio.Task[Any] | None = field(default_factory=_current_task, init=False)
     _thread: int = field(default_factory=threading.get_ident, init=False)
     _active: bool = field(default=True, init=False)
+    commands: list[Callable[[], object]] = field(default_factory=list)
 
     def is_current(self) -> bool:
         """ContextVar 可被子 Task 复制，事务只能由原执行者在有效期内使用。"""
@@ -80,6 +83,7 @@ class ConfigManager:
     def __init__(self) -> None:
         self._collections: dict[str, ConfigCollection[Any]] = {}
         self._roots: dict[UUID, RootRecord] = {}
+        self.trigger_dispatcher: TriggerDispatcher | None = None
         self._txn: ContextVar[TransactionContext | None] = ContextVar(
             "config_framework_v2_txn", default=None
         )
@@ -204,12 +208,16 @@ class ConfigManager:
         if is_outer:
             self._transaction_owner = TransactionContext()
             token = self._txn.set(self._transaction_owner)
+        committed = False
+        commands: list[Callable[[], object]] = []
         try:
             yield
             if is_outer:
                 ctx = self._txn.get()
                 if ctx is not None:
                     self.COMMIT(ctx)
+                    commands = ctx.commands
+                    committed = True
         except BaseException:
             if is_outer:
                 ctx = self._txn.get()
@@ -225,6 +233,10 @@ class ConfigManager:
             if is_outer:
                 self._transaction_owner = None
                 self._sync_lock.release()
+        if committed:
+            for command in commands:
+                command()
+            commands.clear()
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
         ctx = self.current
@@ -291,6 +303,7 @@ class ConfigManager:
             else:
                 unit._ROLLBACK()
         ctx.registered.clear()
+        ctx.commands.clear()
 
     # ──────────────── Init 事务（须嵌在普通事务内）────────────────
 
@@ -333,8 +346,14 @@ class ConfigManager:
             if not isinstance(unit, type):
                 unit._COMMIT_init()
         ctx.registered.clear()
+        stack = self._init_txn.get() or ()
+        parent = stack[-2] if len(stack) > 1 else self.current
+        if parent is not None:
+            parent.commands.extend(ctx.commands)
+        ctx.commands.clear()
 
     def ROLLBACK_init(self, ctx: TransactionContext) -> None:
+        ctx.commands.clear()
         for unit in ctx.registered:
             if not isinstance(unit, type):
                 unit._ROLLBACK_init()

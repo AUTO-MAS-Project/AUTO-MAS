@@ -66,9 +66,15 @@ class PluginRecord(ConfigEntry):
         author: str = Field(default="", description="作者")
         license: str = Field(default="", description="许可证")
         requires_dist: list[str] = Field(default_factory=list, description="发行包依赖")
-        display_name_i18n: Annotated[dict[str, str], ui(visibility=UiVisibility.HIDE)] = Field(default_factory=dict)
-        description_i18n: Annotated[dict[str, str], ui(visibility=UiVisibility.HIDE)] = Field(default_factory=dict)
-        tags_i18n: Annotated[dict[str, list[str]], ui(visibility=UiVisibility.HIDE)] = Field(default_factory=dict)
+        display_name_i18n: Annotated[
+            dict[str, str], ui(visibility=UiVisibility.HIDE)
+        ] = Field(default_factory=dict)
+        description_i18n: Annotated[
+            dict[str, str], ui(visibility=UiVisibility.HIDE)
+        ] = Field(default_factory=dict)
+        tags_i18n: Annotated[dict[str, list[str]], ui(visibility=UiVisibility.HIDE)] = (
+            Field(default_factory=dict)
+        )
         display_name: Virtual[str] = None
         description: Virtual[str] = None
         tags: Virtual[list[str]] = None
@@ -135,7 +141,9 @@ class PluginRecord(ConfigEntry):
 
     @virtual_field("info.display_name")
     def compute_display_name(self) -> str:
-        return PluginMeta._pick_str(self.info.display_name_i18n) or self.info.plugin_name
+        return (
+            PluginMeta._pick_str(self.info.display_name_i18n) or self.info.plugin_name
+        )
 
     @virtual_field("info.description")
     def compute_description(self) -> str:
@@ -145,25 +153,25 @@ class PluginRecord(ConfigEntry):
     def compute_tags(self) -> list[str]:
         return PluginMeta._pick_tags(self.info.tags_i18n)
 
-    @trigger_field("info.enable")
+    @trigger_field("info.enable", cancellable=False)
     async def on_enable(self) -> None:
         from app.core.plugin_manager import Plugin
 
         await Plugin.enable(self)
 
-    @trigger_field("info.disable")
+    @trigger_field("info.disable", cancellable=False)
     async def on_disable(self) -> None:
         from app.core.plugin_manager import Plugin
 
         await Plugin.disable(self)
 
-    @trigger_field("info.reload")
+    @trigger_field("info.reload", cancellable=False)
     async def on_reload(self) -> None:
         from app.core.plugin_manager import Plugin
 
         await Plugin.reload(self)
 
-    @trigger_field("info.uninstall")
+    @trigger_field("info.uninstall", cancellable=False)
     async def on_uninstall(self) -> None:
         from app.core.plugin_manager import Plugin
 
@@ -265,9 +273,9 @@ class PluginMeta(ConfigEntry):
         description_i18n: Annotated[
             dict[str, str], ui(visibility=UiVisibility.HIDE)
         ] = Field(default_factory=dict, description="描述 i18n 字典")
-        tags_i18n: Annotated[
-            dict[str, list[str]], ui(visibility=UiVisibility.HIDE)
-        ] = Field(default_factory=dict, description="标签 i18n 字典")
+        tags_i18n: Annotated[dict[str, list[str]], ui(visibility=UiVisibility.HIDE)] = (
+            Field(default_factory=dict, description="标签 i18n 字典")
+        )
         display_name: Virtual[str] = None
         description: Virtual[str] = None
         tags: Virtual[list[str]] = None
@@ -330,13 +338,13 @@ class PluginMeta(ConfigEntry):
         if package:
             pkg_key = package.replace("_", "-").lower()
             for record in Config.plugin_registry.values():
-                if (
-                    record.info.package_name or ""
-                ).replace("_", "-").lower() == pkg_key:
+                if (record.info.package_name or "").replace(
+                    "_", "-"
+                ).lower() == pkg_key:
                     return UiVisibility.DISABLE
         return UiVisibility.SHOW
 
-    @trigger_field("info.install")
+    @trigger_field("info.install", cancellable=False)
     async def on_install(self) -> None:
         from app.core.plugin_manager import Plugin
 

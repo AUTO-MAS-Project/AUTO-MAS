@@ -38,6 +38,11 @@ import type { InstancesGetIn } from '../models/InstancesGetIn';
 import type { InstancesGetOut } from '../models/InstancesGetOut';
 import type { InstanceUpdateIn } from '../models/InstanceUpdateIn';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { OperationGetIn } from '../models/OperationGetIn';
+import type { OperationListIn } from '../models/OperationListIn';
+import type { OperationListOut } from '../models/OperationListOut';
+import type { OperationOut } from '../models/OperationOut';
+import type { OperationStartIn } from '../models/OperationStartIn';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
@@ -562,6 +567,82 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/cancel/power',
+        });
+    }
+    /**
+     * Start Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static startOperationApiOperationsStartPost(
+        requestBody: OperationStartIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static getOperationApiOperationsGetPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Operations
+     * @param requestBody
+     * @returns OperationListOut Successful Response
+     * @throws ApiError
+     */
+    public static listOperationsApiOperationsListPost(
+        requestBody: OperationListIn,
+    ): CancelablePromise<OperationListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/list',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Cancel Operation
+     * @param requestBody
+     * @returns OperationOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelOperationApiOperationsCancelPost(
+        requestBody: OperationGetIn,
+    ): CancelablePromise<OperationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/operations/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

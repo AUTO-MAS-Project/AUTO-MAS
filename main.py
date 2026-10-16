@@ -278,6 +278,7 @@ def main():
             core_router,
             info_router,
             dispatch_router,
+            operations_router,
             history_router,
             tools_router,
             setting_router,
@@ -301,6 +302,7 @@ def main():
         app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(dispatch_router)
+        app.include_router(operations_router)
         app.include_router(history_router)
         app.include_router(tools_router)
         app.include_router(setting_router)
@@ -329,6 +331,10 @@ def main():
         )
 
         # ---- 核心初始化：引导配置 → 插件系统 → 领域配置 ----
+        from app.config import config_manager
+        from app.core.operations import Operations
+
+        config_manager.trigger_dispatcher = Operations
         await Config.init_bootstrap_configs()
 
         if os.getenv("AUTO_MAS_DEV") == "1":
@@ -459,6 +465,10 @@ def main():
             await MainConnection.cancel_hook_tasks()
             # 先停止定时入口，再取消任务，避免清理过程中再次派发。
             await MainTimer.stop()
+            # 先密封命令入口，取消可取消命令，并等待其余命令完整结束。
+            from app.core.operations import Operations
+
+            await Operations.shutdown()
 
             # 取消待执行的电源操作（无任务在跑属正常）
             with suppress(RuntimeError):
