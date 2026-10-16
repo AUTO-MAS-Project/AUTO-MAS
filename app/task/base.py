@@ -147,6 +147,11 @@ class ScriptAutoProxyBase(TaskExecuteBase):
             stop.set()
             return
 
+    def clear_maintenance_hit(self) -> None:
+        """成功结论优先：清除运行期晚到的维护命中标记，避免被误报成维护跳过。"""
+        self.cur_user_item.maintenance_skipped = False
+        self._maintenance_reason = None
+
     async def _finalize_task(self) -> None:
         """收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""
 

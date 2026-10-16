@@ -1036,6 +1036,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
+                # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
+                self.clear_maintenance_hit()
                 self.script_info.log = "检测到 OK-NTE 已完成任务\n正在等待相关进程结束"
                 # 对齐 MaaEnd：成功时先只结束 OK-NTE；是否关游戏由 Game.CloseOnFinish 在 final_task 决定
                 await self._kill_oknte_process()

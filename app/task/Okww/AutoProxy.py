@@ -911,6 +911,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
+                # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
+                self.clear_maintenance_hit()
                 self.script_info.log = (
                     "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
                 )
