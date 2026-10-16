@@ -49,6 +49,7 @@ import zipfile
 from pathlib import Path
 
 from app.utils import get_logger
+from app.utils.config_archive import config_root_key
 from app.utils.io import ConfigCorruptedError, read_dict_file, write_file
 
 # 复用资源包的同款原语（哈希与覆盖式复制），避免第二套实现
@@ -195,6 +196,44 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     return "", ""
 
 
+def _deferred_update_path(maa_root: Path) -> Path:
+    return Path.cwd() / "data/maa_update/pending" / f"{config_root_key(maa_root)}.json"
+
+
+def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
+    """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
+    write_file(
+        _deferred_update_path(maa_root),
+        {"install": config_root_key(maa_root), "version": version, "package": package},
+    )
+
+
+def clear_deferred_update(maa_root: Path) -> None:
+    """官方入口已消费更新后清除 MAS 保存的登记。"""
+    _deferred_update_path(maa_root).unlink(missing_ok=True)
+
+
+def load_deferred_update(maa_root: Path) -> tuple[str, str] | None:
+    """读取同一安装的待更新登记，包已消费或删除时清理记录。"""
+    path = _deferred_update_path(maa_root)
+    if not path.is_file():
+        return None
+    data = read_dict_file(path)
+    version, package = data.get("version"), data.get("package")
+    if (
+        data.get("install") != config_root_key(maa_root)
+        or not isinstance(version, str)
+        or not version
+        or not isinstance(package, str)
+        or not package
+    ):
+        raise ConfigCorruptedError(path)
+    if not (maa_root / package).is_file():
+        clear_deferred_update(maa_root)
+        return None
+    return version, package
+
+
 def register_pending_update(
     maa_root: Path,
     *,
@@ -205,7 +244,7 @@ def register_pending_update(
     """把完整包复制进 MAA 安装目录并登记待更新字段，返回是否登记成功。
 
     由 software_update.prepare_maa_software_update 在原有 update_maa() 调用
-    点前调用；登记后仍由未改动的 update_maa() 启动 MAA 官方更新链安装。
+    点前调用；登记后仍由 update_maa() 启动 MAA 官方更新链安装。
 
     - 上游失败标志存在、磁盘预算不足（包大小 ×3）时不登记；
     - 已有指向现存包的其他登记时不覆盖，保护现有登记；
@@ -273,26 +312,7 @@ def register_pending_update(
         _copy_if_changed(package_zip, target, expected_sha256=package_sha256)
         copied = not target_valid
 
-        new_config = maa_root / "config" / "gui.new.json"
-        old_config = maa_root / "config" / "gui.json"
-        if new_config.is_file():
-            config_path = new_config
-            data = read_dict_file(config_path)
-            update = data.setdefault("Update", {})
-            update["Name"] = version
-            update["UpdatePackage"] = str(target)
-        elif old_config.is_file():
-            config_path = old_config
-            data = read_dict_file(config_path)
-            global_set = data.setdefault("Global", {})
-            global_set["VersionUpdate.name"] = version
-            global_set["VersionUpdate.package"] = str(target)
-        else:
-            logger.warning("MAA 本体更新: 安装目录缺少 MAA 配置文件，跳过登记")
-            if copied:
-                target.unlink(missing_ok=True)
-            return False
-        write_file(config_path, data)
+        write_pending_update(maa_root, version=version, package=str(target))
         return True
     except Exception as e:
         if copied:
@@ -302,3 +322,24 @@ def register_pending_update(
         else:
             logger.warning(f"MAA 本体更新: 登记失败: {e}")
         return False
+
+
+def write_pending_update(maa_root: Path, *, version: str, package: str) -> None:
+    """透传上游待安装登记，供缓存包登记和跨账号保留原生下载结果复用。"""
+    new_config = maa_root / "config" / "gui.new.json"
+    old_config = maa_root / "config" / "gui.json"
+    if new_config.is_file():
+        config_path = new_config
+        data = read_dict_file(config_path)
+        update = data.setdefault("Update", {})
+        update["Name"] = version
+        update["UpdatePackage"] = package
+    elif old_config.is_file():
+        config_path = old_config
+        data = read_dict_file(config_path)
+        global_set = data.setdefault("Global", {})
+        global_set["VersionUpdate.name"] = version
+        global_set["VersionUpdate.package"] = package
+    else:
+        raise FileNotFoundError("安装目录缺少 MAA 配置文件")
+    write_file(config_path, data)
