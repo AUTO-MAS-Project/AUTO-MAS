@@ -109,7 +109,7 @@ _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 30 * 60  # 秒，完整包远大于资源包，放宽总时限
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔
 _RETRY_INTERVAL = 60 * 60  # 秒，失败退避
-_PRECHECK_GRACE = 60  # 秒，收尾等待预检查下载收尾的上限，超时本轮跳过
+_PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的上限
 
 # 通道映射对齐上游 GetUpdateChannel：Stable/Beta/Nightly → stable/beta/alpha
 _CHANNEL_BOOK = {"beta": "beta", "alpha": "alpha", "nightly": "alpha"}
@@ -634,8 +634,8 @@ async def prepare_maa_software_update(
 ) -> None:
     """整批用户结束、update_maa() 之前调用。
 
-    等待预检查收尾（有上限，超时本轮跳过），复核当前安装仍需要更新后，把
-    共享缓存中的完整包复制进安装目录并登记上游待更新字段；安装由既有的
+    等待本轮预下载收尾（下载自身有总超时，主动取消交管理器回收），再复核
+    当前安装是否仍需更新，把共享缓存完整包复制进安装目录并登记；安装由既有的
     update_maa() → MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
     对既有合法待更新包的处理；主动取消正常传播。
 
@@ -664,12 +664,8 @@ async def prepare_maa_software_update(
         cache_dir = software_cache_dir("win", arch, channel)
         task = _precheck_tasks.get(key)
         if task is not None and not task.done():
-            try:
-                async with asyncio.timeout(_PRECHECK_GRACE):
-                    await asyncio.shield(task)
-            except TimeoutError:
-                logger.info("MAA 本体更新: 包尚未缓存完成，本轮跳过登记，下轮继续")
-                return
+            logger.info("MAA 本体更新: 等待本轮完整包下载完成，可停止任务取消下载")
+            await asyncio.shield(task)
         if _precheck_tasks.get(key) is task:
             _precheck_tasks.pop(key, None)
         cache_lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())

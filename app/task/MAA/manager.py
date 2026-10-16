@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -34,6 +33,7 @@ from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services import System
 from app.task.emulator_core import close_emulator
 from app.task.game_update import EmulatorGameUpdateTask
 from app.task.manager_base import ScriptManagerBase
@@ -77,6 +77,7 @@ from .tools.software_update import (
     prepare_maa_software_update,
 )
 from .tools.update_credentials import resolve_takeover_credentials
+from .tools.UpdateMAA import MaaUpdaterRunningError
 
 logger = get_logger("MAA 调度器")
 
@@ -116,14 +117,72 @@ class MaaManager(ScriptManagerBase):
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
+        self._active_proxy_task: AutoProxyTask | None = None
+        self._updater_running = False
 
     async def _finalize_task(self) -> None:
         try:
-            # 预检查只属于本轮；超时未完成也必须回收，避免跨脚本后无法停止。
+            # 预检查只属于本轮；主动中止或异常也必须回收，避免跨脚本后无法停止。
             if self._update_config_dir is not None:
                 await cancel_maa_software_update_precheck(self.maa_set_path.parent)
         finally:
-            await super()._finalize_task()
+            try:
+                if self._update_config_dir is not None and not self._updater_running:
+                    self._remember_pending_update()
+                await super()._finalize_task()
+            finally:
+                try:
+                    if self.prepared and not self.maintenance_only:
+                        if self._updater_running:
+                            self.script_info.status = "异常"
+                            logger.warning("MAA 更新器仍在运行，保留任务前原生配置快照")
+                        else:
+                            # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
+                            if (
+                                self.temp_path.exists()
+                                and not self._keep_script_config_changes()
+                            ):
+                                swap_in_dir(self.temp_path, self.maa_set_path)
+                            await self._restore_pending_update()
+                            clear_native_config_snapshot(self.temp_path)
+                finally:
+                    self._resource_access.close()
+
+    def _remember_pending_update(self) -> None:
+        """子任务被中止时也接回它保存的登记，再补读最后一次原生写盘。"""
+        if (
+            self._active_proxy_task is not None
+            and self._active_proxy_task.pending_update
+        ):
+            self._pending_update = self._active_proxy_task.pending_update
+        try:
+            pending = read_pending_update(self.maa_set_path.parent)
+            if all(pending) and (self.maa_set_path.parent / pending[1]).is_file():
+                self._pending_update = pending
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+
+    async def _restore_pending_update(self) -> None:
+        """恢复仍有包文件的登记；成功安装后已删除的包不重新登记。"""
+        if (
+            self._pending_update is None
+            or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
+        ):
+            return
+        try:
+            _, current_package = read_pending_update(self.maa_set_path.parent)
+            if (
+                not current_package
+                or not (self.maa_set_path.parent / current_package).is_file()
+            ):
+                await _run_write_thread(
+                    write_pending_update,
+                    self.maa_set_path.parent,
+                    version=self._pending_update[0],
+                    package=self._pending_update[1],
+                )
+        except (OSError, ValueError) as error:
+            logger.warning(f"MAA 本体更新: 无法恢复原生待更新登记: {error}")
 
     async def _run_main_task(self) -> None:
         # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
@@ -267,6 +326,10 @@ class MaaManager(ScriptManagerBase):
                 if Path(script_config.get("Info", "Path")) != install:
                     self._resource_access.close()
                     continue
+                if await System.is_process_running(install / "MAA.Updater.exe"):
+                    raise MaaUpdaterRunningError(
+                        "MAA 官方更新器仍在运行，请等待更新结束后重试"
+                    )
                 self.config_lock_acquired = True
                 await script_config.lock()
                 break
@@ -436,63 +499,39 @@ class MaaManager(ScriptManagerBase):
                 kwargs["view_only"] = self.task_info.view_only
             else:
                 kwargs["game_update_result"] = update_result
+                kwargs["update_config_dir"] = self._update_config_dir
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
-                self._update_config_dir = task.update_config_dir
+                self._active_proxy_task = task
+                if self._update_config_dir is None:
+                    # 一个安装只选一个版本，本批账号沿用同一通道，不在批次中切换。
+                    self._update_config_dir = task.update_config_dir
+                    logger.info("MAA 本体更新: 本批次采用首个执行账号的更新通道")
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
             if isinstance(task, AutoProxyTask):
-                if task.pending_update is not None:
-                    self._pending_update = task.pending_update
-                try:
-                    pending = await asyncio.to_thread(
-                        read_pending_update, self.maa_set_path.parent
-                    )
-                    if (
-                        all(pending)
-                        and (self.maa_set_path.parent / pending[1]).is_file()
-                    ):
-                        self._pending_update = pending
-                except (OSError, ValueError) as error:
-                    logger.warning(f"MAA 本体更新: 无法保留原生待更新登记: {error}")
+                self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
 
         # 完整包会替换 resource，整批账号全部结束后才允许安装；下一轮再按需补资源。
         if self._update_config_dir is not None:
-            # 切换用户会换入另一份配置，保留前面账号已下载的原生更新包。
-            if self._pending_update is not None:
-                try:
-                    _, current_package = await asyncio.to_thread(
-                        read_pending_update, self.maa_set_path.parent
-                    )
-                    if (
-                        not current_package
-                        or not (self.maa_set_path.parent / current_package).is_file()
-                    ):
-                        await _run_write_thread(
-                            write_pending_update,
-                            self.maa_set_path.parent,
-                            version=self._pending_update[0],
-                            package=self._pending_update[1],
-                        )
-                except (OSError, ValueError) as error:
-                    logger.warning(f"MAA 本体更新: 无法恢复原生待更新登记: {error}")
+            await self._restore_pending_update()
             await prepare_maa_software_update(
                 self.maa_set_path.parent,
                 config_dir=self._update_config_dir,
                 config=self.script_config,
             )
-            await update_maa(self.maa_set_path.parent)
+            try:
+                await update_maa(self.maa_set_path.parent)
+            except MaaUpdaterRunningError:
+                self._updater_running = True
+                raise
 
     async def final_task(self):
         """运行结束后的收尾工作"""
-
-        # spawn 已等待 MAA 子任务停止并收尾；剩余步骤不再读取资源。
-        # prepare 未完成、异常或主动取消也统一释放安装访问锁。
-        self._resource_access.close()
 
         if not self.prepared or not self.has_proxy_run:
             for update_task in self._game_update_tasks:
@@ -562,12 +601,6 @@ class MaaManager(ScriptManagerBase):
                         level="error", message=f"推送代理结果时出现异常: {e}"
                     ),
                 )
-
-        # 还原配置：原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
-        # 其余按任务前快照还原
-        if (self.temp_path).exists() and not self._keep_script_config_changes():
-            swap_in_dir(self.temp_path, self.maa_set_path)
-        clear_native_config_snapshot(self.temp_path)
 
         self.script_info.status = (
             "跳过" if self.all_users_maintenance_skipped else "完成"

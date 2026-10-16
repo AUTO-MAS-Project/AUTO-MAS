@@ -1229,6 +1229,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         emulator_manager: DeviceBase,
         *,
         game_update_result: GameUpdateResult | None = None,
+        update_config_dir: Path | None = None,
     ):
         super().__init__()
 
@@ -1252,6 +1253,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.check_result = "-"
         self.maa_root_path: Path | None = None
         self.pending_update: tuple[str, str] | None = None
+        self._update_config_dir = update_config_dir
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -1363,7 +1365,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
         # 缓存，整批账号结束后统一登记安装，避免完整包覆盖同轮后续任务所需的新资源；
         # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
-        # 只写日志。通道跟随本用户的配置来源，原生来源才读任务前快照。
+        # 只写日志。通道跟随本批首个执行账号的来源，原生来源才读任务前快照。
         start_maa_software_update_precheck(
             self.maa_root_path,
             config_dir=self.update_config_dir,
@@ -2142,6 +2144,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
+        self._remember_pending_update()
 
         # 哔哩哔哩用户协议
         if self.cur_user_config.get("Info", "Server") == "Bilibili":
@@ -2807,9 +2810,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     @property
     def update_config_dir(self) -> Path:
-        """更新通道与本用户实际使用的配置来源一致。"""
-        return self._config_archive_dir() or (
-            Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+        """同一批次沿用首个执行账号的通道；单独运行跟随本用户来源。"""
+        return (
+            self._update_config_dir
+            or self._config_archive_dir()
+            or (Path.cwd() / f"data/{self.script_info.script_id}/Temp")
         )
 
     def _remember_pending_update(self) -> None:

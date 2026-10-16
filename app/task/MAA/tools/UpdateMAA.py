@@ -31,6 +31,11 @@ from ..base_preset import ensure_maa_default_configuration
 from .resource_update import _wait_for_cleanup
 
 logger = get_logger("MAA 更新工具")
+_UPDATER_TIMEOUT = 120  # 秒，超时保留原生快照，待官方更新器结束后再恢复
+
+
+class MaaUpdaterRunningError(RuntimeError):
+    """官方更新器仍在写盘，不能恢复配置或启动新的托管任务。"""
 
 
 async def update_maa(maa_path: Path):
@@ -141,10 +146,17 @@ async def update_maa(maa_path: Path):
             await asyncio.shield(cleanup)
         except asyncio.CancelledError:
             await _wait_for_cleanup(cleanup)
+            cleanup.result()
             raise
 
 
 async def _wait_for_updater(maa_path: Path) -> None:
-    while await System.is_process_running(maa_path / "MAA.Updater.exe"):
-        await asyncio.sleep(0.2)
+    try:
+        async with asyncio.timeout(_UPDATER_TIMEOUT):
+            while await System.is_process_running(maa_path / "MAA.Updater.exe"):
+                await asyncio.sleep(0.2)
+    except TimeoutError as error:
+        raise MaaUpdaterRunningError(
+            "MAA 官方更新器等待超时，请等待更新结束后重试；任务前原生配置快照已保留"
+        ) from error
     await System.kill_process(maa_path / "MAA.exe")
