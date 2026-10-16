@@ -48,7 +48,8 @@ import truststore
 if TYPE_CHECKING:
     import uvicorn
 
-    from app.utils.config_restore import ConfigRestoreService
+    from app.models.ConfigBase import ConfigBase
+    from app.utils.config_restore import ConfigRestorePool, ConfigRestoreService
 from jinja2 import Environment, FileSystemLoader
 
 from app.models.config import (
@@ -201,6 +202,10 @@ class AppConfig(GlobalConfig):
 
     def __init__(self) -> None:
         super().__init__()
+
+        self._restore_pool_resolver: (
+            Callable[["ConfigBase"], list["ConfigRestorePool"]] | None
+        ) = None
 
         logger.info("")
         logger.info("===================================")
@@ -2891,72 +2896,31 @@ class AppConfig(GlobalConfig):
             "integrated_available": "集成" in available,
         }
 
-    # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
+    # ════════════ 配置恢复（宿主注入池解析，门面绑定上下文） ════════════
+
+    def set_restore_pool_resolver(
+        self, resolver: Callable[["ConfigBase"], list["ConfigRestorePool"]]
+    ) -> None:
+        """由宿主装配恢复池解析函数，绑定仅作用于当前配置实例。"""
+
+        self._restore_pool_resolver = resolver
 
     def restore_service(
         self, script_id: str, user_id: str, *, force: bool = False
     ) -> "ConfigRestoreService":
-        """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
+        """通过注入的解析函数取得恢复池，绑定上下文构建运行时服务。
 
-        专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
-        与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
-        与 schema，只在分发链加一个分支。``force`` 随上下文下发，供专项
-        池的恢复函数读取（当前仅 ZzzOd 消费）。
+        专项只声明池表（普通函数，显式收 :class:`RestoreContext`），由宿主
+        负责选择。``force`` 随上下文下发，供专项池的恢复函数读取
+        （当前仅 ZzzOd 消费）。
         """
 
         from app.utils.config_restore import RestoreContext, build_restore_service
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkNteConfig):
-            from app.task.OkNte.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaConfig):
-            from app.task.MAA.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaEndConfig):
-            from app.task.MaaEnd.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, GeneralConfig):
-            from app.task.general.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BAAHConfig):
-            from app.task.BAAH.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, SrcConfig):
-            from app.task.SRC.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, BetterGIConfig):
-            from app.task.BetterGI.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, MaaFWConfig):
-            from app.task.MaaFW.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, HSRConfig):
-            from app.task.HSR.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        elif isinstance(script_config, WhimboxConfig):
-            from app.task.Whimbox.tools.restore_service import (
-                RESTORE_POOLS,
-            )
-        else:
-            raise ValueError("该专项暂不支持配置恢复")
+        if self._restore_pool_resolver is None:
+            raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
+        pools = self._restore_pool_resolver(script_config)
         return build_restore_service(
             RestoreContext(
                 config=self,
@@ -2965,7 +2929,7 @@ class AppConfig(GlobalConfig):
                 user_id=user_id,
                 force=force,
             ),
-            RESTORE_POOLS,
+            pools,
         )
 
     async def list_config_backups(
