@@ -2042,8 +2042,8 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     maaEndLaunchTypeHint:
-      'Via launcher (default): MAS opens the launcher UI and clicks Start Game / handles update prompts. Direct launch is not yet available. The launcher can be detected from the game path; the client path still points to Endfield.exe',
-    maaEndLaunchDirectlyDisabled: 'Direct launch (not yet available)',
+      'Via launcher: MAS operates the official launcher. Via MaaEnd: MaaEnd launches the game and applies game settings; older versions retain their compatibility flow. Select Endfield.exe as the client path.',
+    maaEndLaunchViaMaaEnd: 'Via MaaEnd',
     maaEndLauncherPath: 'Official Endfield launcher',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',

@@ -92,9 +92,8 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const launchModeOptions = computed(() => [
-  // 直接启动暂未开放：父进程附加方案保留在代码中，待实测稳定后在前端放开
-  { value: 'Client', label: t('edit.maaEndLaunchDirectlyDisabled'), disabled: true },
   { value: 'Launcher', label: t('edit.launchViaLauncher') },
+  { value: 'Client', label: t('edit.maaEndLaunchViaMaaEnd') },
 ])
 const sourceOptions = computed(() => [
   { value: 'auto', label: t('edit.maaEndLauncherSourceAuto') },

@@ -1724,8 +1724,8 @@ class MaaEndConfig(ConfigBase):
             "",
             StringValidator(),
         )
-        ## 游戏启动方式（Launcher=经终末地官方启动器启动，默认；Client=直接启动
-        ## 客户端，暂未在前端开放，仅存量配置继续生效）
+        ## 游戏启动方式（Launcher=由 MAS 操作官方启动器，默认；Client=MaaEnd
+        ## 启动，沿用旧配置标识；旧版 MaaEnd 保留原启动兼容流程）
         self.Game_LaunchMode = ConfigItem(
             "Game",
             "LaunchMode",
