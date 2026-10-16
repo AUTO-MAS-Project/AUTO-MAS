@@ -27,7 +27,8 @@
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致，预研 §6.16），默认无头
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
 （每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
-实例内存、空闲页上报、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、客体日志落盘。
+实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、
+客体日志落盘、客体 Vulkan 驱动补丁。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
 关机先 ``sync`` 再 ``kill``：控制台 ``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的
@@ -77,6 +78,7 @@ from .constants import (
     FORCE_KILL_WAIT_SECONDS,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
+    GUEST_PATCH_DIR,
     GUEST_TMP_DIR,
     KEEP_PACKAGES,
     LIGHT_LAUNCHER,
@@ -93,10 +95,11 @@ from .constants import (
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     SCREEN_DENSITY,
-    SCREEN_FPS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
+    VULKAN_ENC_GUEST_PATH,
+    VULKAN_FIX_UPLOAD_PATH,
     WATCHDOG_INTERVAL_SECONDS,
     WATCHDOG_PROBE_TIMEOUT_SECONDS,
     WATCHDOG_STRIKES,
@@ -116,14 +119,24 @@ from .instances import (
     list_instances,
     memory_for,
     update_instance_meta,
+    validate_fps,
     validate_options,
     write_instance_config,
+)
+from .vulkanfix import (
+    VULKAN_ENC_FIX_SHA256,
+    VULKAN_ENC_ORIG_SHA256,
+    VulkanFixError,
+    patch_vulkan_encoder,
+    sha256,
 )
 
 logger = get_logger("魔改 AVD 管理")
 
 #: 仓库里推到客体跑的脚本。
 GUEST_SCRIPTS_DIR = SOURCE_ROOT / "res" / "avd" / "guest"
+#: ``{根目录键: 锁}``：同一条安装同时只生成一次客体驱动补丁库（几台实例一起开机时）。
+_VULKAN_PATCH_LOCKS: dict[str, asyncio.Lock] = {}
 
 #: 等 ``sys.boot_completed`` 的轮询间隔。
 _BOOT_POLL_SECONDS = 1.0
@@ -254,6 +267,10 @@ def build_launch_args(
       ``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
       文件映射的页，空闲页上报就不生效（10-03 首测），所以关掉它；设备挂在 ``-qemu`` 最后，
       占下一个空闲 PCI 槽、不挪现有设备；
+    - ``-feature VulkanBatchedDescriptorSetUpdate``（固定开）：描述符集批量更新。宿主
+      ``advancedFeatures.ini`` 默认关、镜像那边开着；不开时终末地渲染线程 67.5% 的时间耗在
+      ``vkAllocateDescriptorSets`` 的同步往返上（每帧 159 次），开了 MaaEnd 跑任务时帧率均值
+      12.8 → 30.5（aemu-lab 修复队列「终末地帧率与稳定性」）。星铁、1999 回归都带着它跑过；
     - 磁盘 write-through：客体不再发 flush（和以前客体侧 ``nobarrier`` 一样快），但 QEMU 每次写
       都把数据和 qcow2 元数据推到宿主文件，硬杀不丢已写的数据。``nobarrier`` 硬杀 3/3 把 AVD
       弄坏（内核 panic 循环），这个设置 6/6 无损（09-26）。``-qemu`` 之后全归 QEMU，所以放最后。
@@ -279,6 +296,7 @@ def build_launch_args(
         args.append("-no-window")
     args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
+    args += ["-feature", "VulkanBatchedDescriptorSetUpdate"]
     args += [
         "-qemu",
         "-global",
@@ -711,7 +729,7 @@ class _AvdCore(DeviceBase):
             if launched:
                 host.BOOTING.discard(serial)
 
-        await self._after_boot(idx, instance)
+        await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
         return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
 
@@ -801,8 +819,8 @@ class _AvdCore(DeviceBase):
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
             f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
-            f"720p，{memory_mb} MB / {instance.cpu} 核，"
-            "气球开，不带声卡）: "
+            f"720p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
+            "气球开，不带声卡，ANDROID_EMU_VK_HIDE_REBAR=1）: "
             f"emulator {' '.join(args)}"
         )
         self._launcher = await asyncio.to_thread(
@@ -844,8 +862,13 @@ class _AvdCore(DeviceBase):
             logger.warning(f"实例 {idx} 推送 {local.name} 失败: {output}")
         return code == 0
 
-    async def _after_boot(self, idx: str, instance: AvdInstance) -> None:
+    async def _after_boot(
+        self, idx: str, instance: AvdInstance, *, fresh_boot: bool = True
+    ) -> None:
         """每次开机后的调优（重启即失效）+ 首次开机的一次性初始化。失败只记警告。
+
+        ``fresh_boot``：这次 open 是不是刚把实例开起来。本来就在跑的实例不再挂客体驱动补丁
+        （挂要重启 zygote，会把上面正在跑的游戏一起结束），见 :meth:`_ensure_vulkan_fix`。
 
         逐项照启动器 ``avd-p0.ps1`` 开机后那段。**不再做**的两项：
         ``gsm meter on|off``——每调一次，镜像的 MeterService 反而装上那个 2 GB 测试套餐（用量重置成
@@ -908,6 +931,186 @@ class _AvdCore(DeviceBase):
 
         # 10) 方向：显示器固定横屏（持久，每次开机设一次给老实例补上）
         await self._setup_orientation(idx)
+
+        # 11) 客体 Vulkan 驱动补丁（bindlock2）。必须是最后一步：挂上后要重启 zygote，system_server
+        #     和所有应用都会重来
+        if await self._ensure_vulkan_fix(idx, fresh_boot=fresh_boot):
+            # 信箱引导弹窗的开关在 system_server 内存里，跟着 zygote 重启丢了，再设一遍
+            await self._setup_orientation(idx)
+
+    async def _ensure_vulkan_fix(self, idx: str, *, fresh_boot: bool) -> bool:
+        """把本机生成的客体驱动补丁库 bind mount 到 ``/vendor/lib64/libvulkan_enc.so`` 上，再重启 zygote。
+
+        照启动器 ``avd-p0.ps1`` 的 ``-VulkanFix``，对所有实例、所有游戏统一挂（用户 10-16 定）。补丁
+        （:mod:`.vulkanfix`）同时修星铁普通模式的描述符模板（khrfix）和终末地 ``vkBindImageMemory`` 查表的
+        数据竞争（bindlock）；不走这两处的游戏（1999、M9A）不受影响。
+
+        - 客体脚本 ``vulkanfix.sh`` 先看本次开机挂没挂过（挂过就什么都不做），再核对镜像原库的哈希
+          （不是 ``898c0bbc…`` 就不挂）；改好的库缓存在客体 ``/data/local/tmp``，下次开机直接挂。
+        - 客体里没有缓存时，从 ``<根>\\guest-patches`` 里本机生成过的那份推上去；本机也没有就从客体
+          拉原库现场生成（:meth:`_patched_vulkan_library`）。改好的库**不随包分发**。
+        - 本来就在跑的实例（``fresh_boot`` 为假）只查不挂：重启 zygote 会结束正在跑的游戏，下次开机再挂。
+
+        失败只记日志，不挡开机。返回这次是否重启了 zygote。
+        """
+        remote = f"{GUEST_TMP_DIR}/vulkanfix.sh"
+        if not fresh_boot:
+            _, mounts = await self._shell(
+                idx, f"grep -c ' {VULKAN_ENC_GUEST_PATH} ' /proc/self/mountinfo"
+            )
+            if mounts.strip() not in ("", "0"):
+                logger.info(f"实例 {idx} 客体 Vulkan 驱动补丁: 本次开机已挂上")
+            else:
+                logger.info(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁: 实例已在运行且没挂，这次不挂"
+                    "（要重启 zygote，会结束正在运行的应用），下次开机挂上"
+                )
+            return False
+
+        if not await self._push(idx, guest_script("vulkanfix.sh"), remote):
+            logger.warning(f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 推送客体脚本失败")
+            return False
+
+        async def run_fix() -> str:
+            _, output = await self._shell(
+                idx,
+                f"su 0 sh {remote} {VULKAN_ENC_ORIG_SHA256} {VULKAN_ENC_FIX_SHA256}",
+                timeout=60,
+            )
+            lines = [line.strip() for line in output.splitlines() if line.strip()]
+            return lines[-1] if lines else ""
+
+        _, ui_before = await self._shell(idx, "pidof com.android.systemui")
+        status = await run_fix()
+        logger.info(
+            f"实例 {idx} 客体 Vulkan 驱动补丁 第 1 步（客体检查）: {status or '无输出'}"
+        )
+        if status.startswith("NEED_UPLOAD"):
+            library = await self._patched_vulkan_library(idx)
+            if library is None:
+                return False
+            code, output = await host.run_adb(
+                self.root,
+                "push",
+                str(library),
+                VULKAN_FIX_UPLOAD_PATH,
+                serial=host.serial_of(console_port(idx)),
+                timeout=60,
+            )
+            if code != 0:
+                logger.warning(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 推送补丁库失败: {output[-200:]}"
+                )
+                return False
+            logger.info(
+                f"实例 {idx} 客体 Vulkan 驱动补丁 第 2 步: 已推送 {library}"
+                f"（sha256 {VULKAN_ENC_FIX_SHA256}）到 {VULKAN_FIX_UPLOAD_PATH}"
+            )
+            status = await run_fix()
+            logger.info(
+                f"实例 {idx} 客体 Vulkan 驱动补丁 第 3 步（挂载）: {status or '无输出'}"
+            )
+
+        if status.startswith("ALREADY"):
+            mounted = status.partition(" ")[2]
+            if mounted == VULKAN_ENC_FIX_SHA256:
+                logger.info(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁本次开机已挂上（sha256 {mounted}）"
+                )
+            else:
+                logger.warning(
+                    f"实例 {idx} 客体驱动库上已经挂着别的文件（sha256 {mounted}），"
+                    "不是这次的补丁，没有动它"
+                )
+            return False
+        if status.startswith("VENDOR_PATCHED"):
+            logger.info(f"实例 {idx} 镜像自带的客体驱动库已是补丁版，不用挂")
+            return False
+        if not status.startswith("MOUNTED"):
+            # SKIPPED image：镜像不是预期版本；SKIPPED patched：客体缓存坏了，已删，下次重传；FAILED：挂载没成
+            logger.warning(
+                f"实例 {idx} 客体 Vulkan 驱动补丁没挂: {status or '客体脚本无输出'}"
+            )
+            return False
+
+        started = time.monotonic()
+        back = await self._wait_framework_back(idx, ui_before.strip())
+        logger.info(
+            f"实例 {idx} 客体 Vulkan 驱动补丁已挂上（sha256 {status.partition(' ')[2]}），"
+            f"zygote 重启后系统界面{'已回来' if back else '超时未回来'}"
+            f"（{time.monotonic() - started:.0f} 秒）"
+        )
+        return True
+
+    async def _patched_vulkan_library(self, idx: str) -> Path | None:
+        """本机缓存的补丁库 ``<根>\\guest-patches\\libvulkan_enc.khrfix-bindlock2.so``，没有就生成一份。
+
+        生成：从客体拉原库 → 核对哈希、打补丁、核对改完的哈希（:func:`.vulkanfix.patch_vulkan_encoder`）
+        → 写进缓存。任一步不成返回 ``None``（记日志，不挂）。同一条安装同时只生成一次。
+        """
+        directory = self.root / GUEST_PATCH_DIR
+        library = directory / "libvulkan_enc.khrfix-bindlock2.so"
+        async with _VULKAN_PATCH_LOCKS.setdefault(root_key(self.root), asyncio.Lock()):
+            if library.is_file():
+                digest = await asyncio.to_thread(lambda: sha256(library.read_bytes()))
+                if digest == VULKAN_ENC_FIX_SHA256:
+                    logger.info(
+                        f"实例 {idx} 客体 Vulkan 驱动补丁: 用本机缓存 {library}"
+                    )
+                    return library
+                logger.warning(
+                    f"本机缓存的客体驱动补丁库哈希不对（{digest}），重新生成: {library}"
+                )
+            directory.mkdir(parents=True, exist_ok=True)
+            original = directory / f"libvulkan_enc-{idx}.orig.so"
+            try:
+                code, output = await host.run_adb(
+                    self.root,
+                    "pull",
+                    VULKAN_ENC_GUEST_PATH,
+                    str(original),
+                    serial=host.serial_of(console_port(idx)),
+                    timeout=60,
+                )
+                if code != 0 or not original.is_file():
+                    logger.warning(
+                        f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 从客体拉 {VULKAN_ENC_GUEST_PATH} 失败: "
+                        f"{output[-200:]}"
+                    )
+                    return None
+                data = await asyncio.to_thread(original.read_bytes)
+                logger.info(
+                    f"实例 {idx} 从客体拉到驱动原库（sha256 {sha256(data)}），本机生成补丁库"
+                )
+                try:
+                    patched = await asyncio.to_thread(patch_vulkan_encoder, data)
+                except VulkanFixError as e:
+                    logger.warning(f"实例 {idx} 客体 Vulkan 驱动补丁没挂: {e}")
+                    return None
+                temp = library.with_suffix(".tmp")
+                await asyncio.to_thread(temp.write_bytes, patched)
+                temp.replace(library)
+            finally:
+                original.unlink(missing_ok=True)
+        logger.info(
+            f"实例 {idx} 已在本机生成客体驱动补丁库（sha256 {VULKAN_ENC_FIX_SHA256}）: {library}"
+        )
+        return library
+
+    async def _wait_framework_back(
+        self, idx: str, ui_before: str, timeout: float = 120.0
+    ) -> bool:
+        """zygote 重启后等系统界面（SystemUI）换成新进程，再多等 8 秒（照启动器）。"""
+        deadline = time.monotonic() + timeout
+        await asyncio.sleep(2.0)
+        while time.monotonic() < deadline:
+            _, ui = await self._shell(idx, "pidof com.android.systemui", timeout=10)
+            ui = ui.strip()
+            if ui and ui != ui_before:
+                await asyncio.sleep(8.0)
+                return True
+            await asyncio.sleep(2.0)
+        return False
 
     async def _setup_orientation(self, idx: str) -> None:
         """显示器固定在 0°（横屏），不跟传感器、也不跟应用的方向请求转，横屏游戏也不会翻成 180°。
@@ -1274,8 +1477,8 @@ class _AvdCore(DeviceBase):
                 "dpi": FieldValue(_int(display["hw.lcd.density"]), "saved"),
                 "cpu": FieldValue(instance.cpu, "saved"),
                 "memoryMb": memory,
-                # 帧率跟着客体 60 Hz 走，没有可设的项
-                "fps": FieldValue(None, "unset"),
+                # 刷新率 hw.lcd.vsync（30 / 60，下次开机生效）
+                "fps": FieldValue(instance.fps, "saved"),
             }
         )
 
@@ -1287,16 +1490,10 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。
-
-        帧率给的正是固定的 60 时当作没改（混放配置批量选 60 帧不该把 CPU / 内存一起拒掉），
-        其他帧率照样拒绝。"""
+        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。"""
         cleaned = validate_setting_changes(changes)
-        if cleaned.get("fps") == SCREEN_FPS:
-            del cleaned["fps"]
-        if "fps" in cleaned:
-            raise ValueError("魔改 AVD 没有可设置的帧率")
         instance = self._instance(idx)
+        fps = validate_fps(cleaned.get("fps", instance.fps))
         if {"width", "height", "dpi"} & cleaned.keys():
             _check_display(
                 cleaned.get("width", SCREEN_WIDTH),
@@ -1318,14 +1515,20 @@ class _AvdCore(DeviceBase):
             if conflicts:
                 raise SettingsConflictError(conflicts)
         write_instance_config(
-            self.root, idx, {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
+            self.root,
+            idx,
+            {
+                "hw.ramSize": f"{memory}M",
+                "hw.cpu.ncore": str(cpu),
+                "hw.lcd.vsync": str(fps),
+            },
         )
         # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
         update_instance_meta(self.root, idx, memoryMb=memory)
         applied = {
             k: v
             for k, v in cleaned.items()
-            if k in ("cpu", "memoryMb", "width", "height", "dpi")
+            if k in ("cpu", "memoryMb", "fps", "width", "height", "dpi")
         }
         logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
         return applied
@@ -1347,12 +1550,15 @@ class _AvdCore(DeviceBase):
         cpu: int | None = None,
         data_partition_gb: int | None = None,
         native_index: int | None = None,
+        fps: int | None = None,
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
-        内存、核数不给就用默认 6 GB / 6 核（:data:`~.constants.DEFAULT_MEMORY_MB` / ``DEFAULT_CPU``）。
+        内存、核数、帧率不给就用默认 6 GB / 6 核 / 60（:data:`~.constants.DEFAULT_MEMORY_MB` /
+        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）。
         """
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
+        refresh = validate_fps(fps)
         existing = {int(idx) for idx in self._instances()}
         if native_index is None:
             native_index = await asyncio.to_thread(self._free_index, existing)
@@ -1365,10 +1571,11 @@ class _AvdCore(DeviceBase):
             memory_mb=memory,
             cpu=cores,
             data_partition_gb=data_gb,
+            fps=refresh,
         )
         logger.info(
             f"已新建魔改 AVD 实例 {native_index}（内存 "
-            f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB）"
+            f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB / 帧率 {refresh}）"
         )
         return str(native_index)
 
@@ -1405,6 +1612,7 @@ class _AvdCore(DeviceBase):
         return {
             "memoryMb": memory_for(meta),
             "cpu": instance.cpu,
+            "fps": instance.fps,
             "dataPartitionGb": instance.data_partition_gb,
             "initialized": bool(meta.get("initialized", False)),
             "launcher": meta.get("launcher") or "",

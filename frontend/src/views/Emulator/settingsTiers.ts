@@ -5,7 +5,7 @@
  * （等距取大的那档），保存时把对齐后的值写进去；读不到或从没设过的项不对齐、不写。
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
-import { MEMORY_CHOICES_MB } from './avdLogic'
+import { FPS_CHOICES, MEMORY_CHOICES_MB } from './avdLogic'
 
 /** ``standard`` 雷电 14 / MuMu 6；``avd`` 魔改 AVD */
 export type TierKind = 'standard' | 'avd'
@@ -29,20 +29,21 @@ export const STANDARD_TIERS = {
   fps: [30, 60],
 } as const
 
-/** 魔改 AVD：核数、内存与后端 ``CPU_CHOICES`` / ``MEMORY_CHOICES_MB`` 一致 */
+/** 魔改 AVD：核数、内存、刷新率与后端 ``CPU_CHOICES`` / ``MEMORY_CHOICES_MB`` / ``FPS_CHOICES`` 一致 */
 export const AVD_TIERS = {
   cpu: [2, 4, 6],
   memoryMb: MEMORY_CHOICES_MB,
+  fps: FPS_CHOICES,
 } as const
 
-/** 魔改 AVD 显示固定 720p、帧率固定 60，弹窗里只显示、不能改 */
-export const AVD_FIXED = { resolution: '720p' as ResolutionTier, fps: 60 }
+/** 魔改 AVD 显示固定 720p，弹窗里只显示、不能改 */
+export const AVD_FIXED = { resolution: '720p' as ResolutionTier }
 
 export const tierKindOf = (realType: string | undefined): TierKind =>
   realType === 'avd' ? 'avd' : 'standard'
 
 /**
- * 批量设置按整条配置下发。配置里全是魔改 AVD 时只给它能改的两项，否则按雷电 / MuMu 的档位给；
+ * 批量设置按整条配置下发。配置里全是魔改 AVD 时只给它能改的三项，否则按雷电 / MuMu 的档位给；
  * 混着放的配置里，魔改 AVD 改不了的项由后端逐台拒绝，列在失败清单里。
  */
 export const batchKindOf = (pathTypes: string[]): TierKind =>
@@ -116,21 +117,21 @@ export const alignSettings = (
   const tiers = tiersOf(kind)
   const cpu = nearestTier(actual.cpu, tiers.cpu)
   const memoryMb = nearestTier(actual.memoryMb, tiers.memoryMb)
+  const fps = nearestTier(actual.fps, tiers.fps)
   if (kind === 'avd') {
     return {
-      form: { resolution: AVD_FIXED.resolution, cpu, memoryMb, fps: AVD_FIXED.fps },
+      form: { resolution: AVD_FIXED.resolution, cpu, memoryMb, fps },
       snapped: {
         resolution: null,
         dpi: null,
         cpu: snappedIf(actual.cpu, cpu),
         memoryMb: snappedIf(actual.memoryMb, memoryMb),
-        fps: null,
+        fps: snappedIf(actual.fps, fps),
       },
     }
   }
   const resolution = resolutionTierOf(actual.width, actual.height)
   const target = resolution ? RESOLUTIONS[resolution] : null
-  const fps = nearestTier(actual.fps, STANDARD_TIERS.fps)
   return {
     form: { resolution, cpu, memoryMb, fps },
     snapped: {
@@ -154,7 +155,7 @@ export const alignSettings = (
  *
  * 分辨率按档位整体处理：宽高与档位不同、或 DPI 与档位推出的值不同，就宽、高、DPI 三项一起写
  * （实例从没设过 DPI、宽高又正好在档位上时不写）。
- * 魔改 AVD 只写核数与内存。
+ * 魔改 AVD 不写分辨率。
  */
 export const settingsChanges = (
   actual: ActualSettings,
@@ -174,16 +175,14 @@ export const settingsChanges = (
       changes.dpi = target.dpi
     }
   }
-  const fields =
-    kind === 'avd' ? (['cpu', 'memoryMb'] as const) : (['cpu', 'memoryMb', 'fps'] as const)
-  for (const name of fields) {
+  for (const name of ['cpu', 'memoryMb', 'fps'] as const) {
     const value = form[name]
     if (value !== null && value !== actual[name]) changes[name] = value
   }
   return changes
 }
 
-/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。魔改 AVD 只下发核数与内存。 */
+/** 批量：只下发选了的项；分辨率选了就连 DPI 一起下发。魔改 AVD 不下发分辨率。 */
 export const batchChanges = (form: TierForm, kind: TierKind): Record<string, number> => {
   const changes: Record<string, number> = {}
   if (kind === 'standard' && form.resolution) {
@@ -194,7 +193,7 @@ export const batchChanges = (form: TierForm, kind: TierKind): Record<string, num
   }
   if (form.cpu !== null) changes.cpu = form.cpu
   if (form.memoryMb !== null) changes.memoryMb = form.memoryMb
-  if (kind === 'standard' && form.fps !== null) changes.fps = form.fps
+  if (form.fps !== null) changes.fps = form.fps
   return changes
 }
 

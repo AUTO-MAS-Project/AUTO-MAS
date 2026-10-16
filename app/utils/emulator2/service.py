@@ -448,7 +448,7 @@ async def create_instance(
 ) -> dict:
     """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
-    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
+    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``fps`` / ``data_partition_gb`` /
     ``native_index``）：
     雷电 / MuMu 新建时用的是模拟器自己的默认配置。
     """
