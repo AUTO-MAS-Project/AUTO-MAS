@@ -294,6 +294,25 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 # 早交给脚本没事——终末地在窗口出现后 22s、主界面还没出来时下发，首个任务照样成功。
 # 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
 STARTUP_SCREEN_CONTENT_SECONDS = 20
+# 首个任务前的放行判据（job 的 taskStartGateMode）。screen：上面两条按画面提前放行；
+# disk_quiet：画面有内容、且客体读盘速度连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
+# DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 魔改 AVD 逐秒实测，终末地 / 星铁 /
+# 1999 冷启动）：加载页和动态标题都一直在动，CPU、出帧也是标题更忙，只有读盘量分得开——
+# 加载时持续读盘，到标题后几乎为 0；终末地、1999 各轮都在到标题后 7~15s 放行。读盘安静、
+# 但还没到标题的阶段会提前放行（星铁的 logo / 健康提示页、加载页上等网络），交给项目自己识别。
+# 没处理着色器编译：游戏的管线缓存缺失时，标题前要编译几分钟（读盘安静、出帧约 0），这里会
+# 提前放行；实际用户跑脚本前必然手动登录过，那次已经编完。但做带游戏自更新的风味专项时必须
+# 处理：自更新以后可能重新编译，脚本会在没人手动登录的情况下撞上。办法是再加「这 8s 里每秒
+# 出帧都 ≥ 5」（编译时每秒最多 2 帧，标题最低约 36 帧）并放宽上限，见 app/task/MaaFW/AGENTS.md。
+# 读盘量取 /proc/vmstat 的 pgpgin（累计读入 KB）：adb shell 用户读 /proc/diskstats 和
+# /sys/block/*/stat 都被 SELinux 拒绝（API 34 镜像 Enforcing 实测），pgpgin 不需要 root，按 bio
+# 计一次、不随 dm 叠层重复计数；同一窗口与整块盘 diskstats 读速对照误差 < 2%。
+TASK_START_GATE_SCREEN = "screen"
+TASK_START_GATE_DISK_QUIET = "disk_quiet"
+DISK_QUIET_READ_BYTES_PER_SECOND = 1024 * 1024
+DISK_QUIET_SAMPLES = 8
+DISK_QUIET_SAMPLE_INTERVAL_SECONDS = 1.0
+DISK_QUIET_SHELL_TIMEOUT_MS = 5000
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 # 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
 # 计划里第一个任务超时则结束本轮。
@@ -807,6 +826,7 @@ class MaaFWRunner:
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        task_start_gate_mode: str = TASK_START_GATE_SCREEN,
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
@@ -844,6 +864,9 @@ class MaaFWRunner:
         self._failure_screenshot_prefix: str = failure_screenshot_prefix
         self._failure_screenshots: list[MaaFWFailureScreenshot] = []
         self._task_start_not_before: float | None = task_start_not_before
+        # 首个任务前的放行判据：screen 按画面（_wait_task_start_gate），disk_quiet 按画面有内容
+        # + 读盘停下来（_wait_task_start_disk_quiet）。宿主决定用哪种，这里不分辨游戏和设备。
+        self._task_start_gate_mode: str = task_start_gate_mode
         # 截止时刻到了由定时器线程置位并 post_stop；主线程看到它就截图、按超时收尾。
         # 不复用 _stop_requested：那个表示「用户取消」，取消不截图也不算失败。
         self._run_deadline_at: float | None = run_deadline_at
@@ -2931,10 +2954,16 @@ class MaaFWRunner:
         渲染完成）；或者画面连续 ``STARTUP_SCREEN_CONTENT_SECONDS`` 秒都有内容，哪怕一直
         在动（动态背景、进度条）——黑屏 / 纯色会把两个计数都清零。截不到图就等到上限，
         和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
+
+        宿主要求按读盘判断（``task_start_gate_mode="disk_quiet"``）时改走
+        :meth:`_wait_task_start_disk_quiet`。
         """
 
         not_before = self._task_start_not_before
         if not_before is None:
+            return
+        if self._task_start_gate_mode == TASK_START_GATE_DISK_QUIET:
+            self._wait_task_start_disk_quiet(not_before)
             return
         remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
         if self._run_deadline_at is not None:
@@ -3008,6 +3037,135 @@ class MaaFWRunner:
                     f"（实际等了 {remaining - left:.0f}s）"
                 )
                 return
+
+    def _wait_task_start_disk_quiet(self, not_before: float) -> None:
+        """按「画面有内容、读盘停下来」放行（``task_start_gate_mode="disk_quiet"``）。
+
+        有的游戏加载页和标题都一直在动、都有内容，CPU 和出帧也是标题比加载更忙，像素判断
+        分不出两者；读盘量分得出：加载时客体持续读盘，到标题后几乎为 0。宿主在这类场合
+        （例如模拟器冷启动）传这个模式，这里每秒读一次客体 ``/proc/vmstat`` 的 ``pgpgin`` 算读盘速度：
+
+        1. 读速连续 ``DISK_QUIET_SAMPLES`` 次低于 ``DISK_QUIET_READ_BYTES_PER_SECOND``、且当前画面
+           有内容，就下发；
+        2. 到 ``not_before``（上限）时画面有内容就按上限下发；还是黑屏 / 纯色就继续等，出画面
+           再下发，从开始等算满 ``TASK_START_GATE_MAX_SECONDS`` 照常下发；
+        3. 截不到图、或读不到 ``pgpgin``，退回按时间：等满上限就下发。
+        """
+
+        started = time.monotonic()
+        hard_end = started + TASK_START_GATE_MAX_SECONDS
+        if self._run_deadline_at is not None:
+            # 截止时刻比上限还早时只等到截止时刻，下面按超时收尾。
+            hard_end = min(hard_end, started + self._run_deadline_at - time.time())
+        cap_end = min(started + (not_before - time.time()), hard_end)
+        self.send_log(
+            f"游戏刚启动，最多等 {max(cap_end - started, 0):.0f}s；画面有内容且读盘连续 "
+            f"{DISK_QUIET_SAMPLES}s 低于 1 MB/s 就提前下发任务"
+        )
+
+        try:
+            last_bytes = _guest_read_bytes(self.controller)
+        except Exception as exc:
+            self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
+            return
+        last_at = time.monotonic()
+
+        quiet_samples = 0
+        while time.monotonic() < cap_end:
+            self._hold_task_start_until(
+                min(time.monotonic() + DISK_QUIET_SAMPLE_INTERVAL_SECONDS, cap_end)
+            )
+            try:
+                read_bytes = _guest_read_bytes(self.controller)
+            except Exception as exc:
+                self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
+                return
+            now = time.monotonic()
+            # 计数器回绕或变小（重启过之类）时增量截成 0
+            read_rate = max(read_bytes - last_bytes, 0) / max(now - last_at, 1e-3)
+            last_bytes, last_at = read_bytes, now
+            if read_rate >= DISK_QUIET_READ_BYTES_PER_SECOND:
+                quiet_samples = 0
+                continue
+            quiet_samples += 1
+            if quiet_samples < DISK_QUIET_SAMPLES:
+                continue
+            state = self._startup_screen_state()
+            if state is None:
+                self._hold_task_start_by_time(cap_end, "截不到画面")
+                return
+            if state == "content":
+                self.send_log(
+                    f"画面有内容、读盘已连续 {DISK_QUIET_SAMPLES}s 低于 1 MB/s，下发任务"
+                    f"（实际等了 {time.monotonic() - started:.0f}s）"
+                )
+                return
+
+        self._raise_if_deadline_hit()
+        state = self._startup_screen_state()
+        if state is None:
+            self.send_log("截不到画面，按上限下发任务")
+            return
+        if state == "content":
+            self.send_log(
+                f"等满 {time.monotonic() - started:.0f}s，画面有内容，按上限下发任务"
+            )
+            return
+        left = hard_end - time.monotonic()
+        self.send_log(
+            f"等满上限时画面仍是黑屏或纯色，继续等画面出来（最多再等 {max(left, 0):.0f}s）"
+        )
+        blank_since = time.monotonic()
+        while True:
+            left = hard_end - time.monotonic()
+            if left <= 0:
+                self._raise_if_deadline_hit()
+                self.send_log(
+                    f"已等到上限 {TASK_START_GATE_MAX_SECONDS:.0f}s，画面仍是黑屏或纯色，"
+                    "照常下发任务"
+                )
+                return
+            self._hold_task_start_until(
+                time.monotonic() + min(STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS, left)
+            )
+            state = self._startup_screen_state()
+            if state is None:
+                self.send_log("截不到画面，按上限下发任务")
+                return
+            if state == "content":
+                self.send_log(
+                    f"画面出来了，下发任务（黑屏多等了 {time.monotonic() - blank_since:.0f}s）"
+                )
+                return
+
+    def _startup_screen_state(self) -> str | None:
+        """当前画面：``content`` 有内容、``blank`` 黑屏或纯色、``None`` 截不到。"""
+
+        try:
+            frame = _sample_startup_screen(self.controller)
+        except Exception:
+            return None
+        if frame is None:
+            return None
+        return "blank" if _startup_screen_is_blank(frame) else "content"
+
+    def _hold_task_start_until(self, end: float) -> None:
+        """等到单调时钟 ``end``；停止请求、运行截止都能立即打断。"""
+
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            if self._stop_requested.wait(timeout=min(1.0, left)):
+                raise RuntimeError("MaaFW 任务已停止")
+            self._raise_if_deadline_hit()
+
+    def _hold_task_start_by_time(self, cap_end: float, reason: str) -> None:
+        """判据取不到时退回按时间：等满上限就下发。"""
+
+        self.send_log(f"{reason}，退回按时间：等满上限就下发任务")
+        self._hold_task_start_until(cap_end)
+        self._raise_if_deadline_hit()
 
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
@@ -3550,6 +3708,36 @@ def _sample_startup_screen(controller: Any) -> Any | None:
         return None
     stride = STARTUP_SCREEN_SAMPLE_STRIDE
     return image[::stride, ::stride].astype(np.int16)
+
+
+def _controller_shell(controller: Any, cmd: str) -> str:
+    """经 controller 在设备上跑一条 shell（只有 ADB 控制器支持），返回输出。"""
+
+    post_shell = getattr(controller, "post_shell", None)
+    if controller is None or post_shell is None:
+        raise RuntimeError("当前 controller 不支持 shell")
+    job = post_shell(cmd, DISK_QUIET_SHELL_TIMEOUT_MS).wait()
+    # 只认 succeeded：作业 invalid 时 get() 读到的是 controller 上一次的 shell 输出，
+    # 计数不变会被当成「读盘停了」
+    if not job.succeeded:
+        raise RuntimeError(f"shell 执行失败: {cmd}")
+    return str(job.get() or "")
+
+
+def _guest_read_bytes(controller: Any) -> int:
+    """客体累计读入的字节数：``/proc/vmstat`` 的 ``pgpgin``（KB）× 1024。
+
+    找不到 ``pgpgin`` 行、或者值不是数字就抛错，调用方按「读不到」退回按时间。
+    """
+
+    for line in _controller_shell(controller, "cat /proc/vmstat").splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "pgpgin":
+            try:
+                return int(fields[1]) * 1024
+            except ValueError:
+                break
+    raise RuntimeError("/proc/vmstat 里没有可用的 pgpgin")
 
 
 def _startup_screen_is_blank(frame: Any) -> bool:

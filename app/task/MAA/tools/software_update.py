@@ -109,7 +109,7 @@ _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 30 * 60  # 秒，完整包远大于资源包，放宽总时限
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔
 _RETRY_INTERVAL = 60 * 60  # 秒，失败退避
-_PRECHECK_GRACE = 60  # 秒，收尾等待预检查下载收尾的上限，超时本轮跳过
+_PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的上限
 
 # 通道映射对齐上游 GetUpdateChannel：Stable/Beta/Nightly → stable/beta/alpha
 _CHANNEL_BOOK = {"beta": "beta", "alpha": "alpha", "nightly": "alpha"}
@@ -504,7 +504,7 @@ def _cache_key(arch: str, channel: str) -> str:
     return f"win/{arch}/{channel}"
 
 
-_precheck_tasks: dict[str, asyncio.Task[None]] = {}
+_precheck_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
 _cache_locks: dict[str, asyncio.Lock] = {}
 # 下载地址只留在内存，避免把带鉴权信息的 URL 写入状态文件。
 _latest_queries: dict[str, _Latest] = {}
@@ -595,9 +595,8 @@ def start_maa_software_update_precheck(
 
     Args:
         maa_root: MAA 安装目录。
-        config_dir: 优先读取更新通道偏好的配置目录。会话内应传任务前的
-            原生配置快照——安装目录当时的 config 是 MAS 托管副本；缺省时
-            读安装目录 config。
+        config_dir: 当前用户实际使用的配置来源目录；原生来源传任务前快照，
+            缺省时读安装目录 config。
         config: 脚本配置（MaaConfig），按 get(段, 键) 读取接管开关与 CDK。
     """
     try:
@@ -618,13 +617,13 @@ def start_maa_software_update_precheck(
                 f"MAA 本体更新: 无法识别更新通道（版本={version_text!r}，配置未表达），跳过"
             )
             return
-        key = _path_key(maa_root)
+        key = (_path_key(maa_root), _cache_key(arch, channel))
         existing = _precheck_tasks.get(key)
         if existing is not None and not existing.done():
             return
         _precheck_tasks[key] = asyncio.create_task(
             _precheck_flow(maa_root, channel, arch, cdk),
-            name=f"maa-software-update-{_path_key(maa_root)}-{key}",
+            name=f"maa-software-update-{key}",
         )
     except Exception as e:
         logger.warning(f"MAA 本体更新: 预检查未能启动（不影响任务）: {e}")
@@ -633,10 +632,10 @@ def start_maa_software_update_precheck(
 async def prepare_maa_software_update(
     maa_root: Path, *, config_dir: Path | None = None, config: MaaConfig | None = None
 ) -> None:
-    """用户轮次收尾、原有 update_maa() 之前调用。
+    """整批用户结束、update_maa() 之前调用。
 
-    等待预检查收尾（有上限，超时本轮跳过），复核当前安装仍需要更新后，把
-    共享缓存中的完整包复制进安装目录并登记上游待更新字段；安装由未改动的
+    等待本轮预下载收尾（下载自身有总超时，主动取消交管理器回收），再复核
+    当前安装是否仍需更新，把共享缓存完整包复制进安装目录并登记；安装由既有的
     update_maa() → MAA 官方更新链完成。任何失败只写日志，不改变 update_maa()
     对既有合法待更新包的处理；主动取消正常传播。
 
@@ -661,16 +660,17 @@ async def prepare_maa_software_update(
         )
         if channel is None:
             return
-        key = _path_key(maa_root)
+        key = (_path_key(maa_root), _cache_key(arch, channel))
         cache_dir = software_cache_dir("win", arch, channel)
         task = _precheck_tasks.get(key)
-        if task is not None and not task.done():
-            try:
-                async with asyncio.timeout(_PRECHECK_GRACE):
-                    await asyncio.shield(task)
-            except TimeoutError:
-                logger.info("MAA 本体更新: 包尚未缓存完成，本轮跳过登记，下轮继续")
-                return
+        downloads = [
+            pending
+            for pending_key, pending in _precheck_tasks.items()
+            if pending_key[0] == key[0] and not pending.done()
+        ]
+        if downloads:
+            logger.info("MAA 本体更新: 等待本轮完整包下载完成，可停止任务取消下载")
+            await asyncio.gather(*(asyncio.shield(pending) for pending in downloads))
         if _precheck_tasks.get(key) is task:
             _precheck_tasks.pop(key, None)
         cache_lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
@@ -728,3 +728,45 @@ async def prepare_maa_software_update(
         raise
     except Exception:
         logger.exception("MAA 本体更新: 准备异常（已忽略，不影响本轮任务）")
+
+
+async def has_cached_maa_software_update(
+    maa_root: Path, *, config_dir: Path, config: MaaConfig
+) -> bool:
+    """只有可用的新版本完整包已缓存，才压制本轮 MAA 自身下载。"""
+    enabled, _ = resolve_takeover_credentials(config)
+    release = read_installed_release(maa_root) if enabled else None
+    if release is None:
+        return False
+    version, arch = release
+    channel = resolve_update_channel(version, [config_dir, maa_root / "config"])
+    if channel is None:
+        return False
+    lock = _cache_locks.setdefault(_cache_key(arch, channel), asyncio.Lock())
+    if lock.locked():
+        return False
+    async with lock:
+        cache_dir = software_cache_dir("win", arch, channel)
+        manifest = load_cache_manifest(cache_dir)
+        current = parse_version(version)
+        target = parse_version(manifest["version"]) if manifest else None
+        return bool(
+            manifest
+            and current
+            and target
+            and compare_versions(target, current) > 0
+            and await asyncio.to_thread(cache_zip_matches, cache_dir, manifest)
+        )
+
+
+async def cancel_maa_software_update_precheck(maa_root: Path) -> None:
+    """停止安装对应的预下载，并等文件写入清理结束。"""
+    install_key = _path_key(maa_root)
+    tasks = [
+        _precheck_tasks.pop(key)
+        for key in list(_precheck_tasks)
+        if key[0] == install_key
+    ]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)

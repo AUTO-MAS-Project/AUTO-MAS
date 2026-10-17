@@ -46,9 +46,7 @@ import ctypes
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from threading import Event
 
@@ -62,6 +60,7 @@ from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -160,26 +159,6 @@ _START_CLICK_INTERVAL_SECONDS = 12.0
 # 以按钮长时间停留原状（未被下载 UI 取代）为被吞判据；自更新「更新」补点共用该节奏
 _UPDATE_CLICK_RETRY_SECONDS = 15.0
 _UPDATE_CLICK_RETRY_LIMIT = 3
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
 
 
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────

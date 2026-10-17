@@ -911,17 +911,12 @@ def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
                 plan["LegacyIndex"] = True
                 plans.append(plan)
     if old_task.get("IfActivityFirst", True):
-        medicine = old_task.get(
-            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
-        )
         plans.append(
             {
                 "StageType": "activity",
                 "StageIndex": old_task.get("ActivityStageIndex", 1),
                 "DropCount": 999,
                 "OrundumDropCount": 9999,
-                "UseMedicine": medicine > 0,
-                "MedicineCount": medicine,
                 "LegacyActivityFirst": True,
             }
         )
@@ -1411,10 +1406,40 @@ class MaaConfig(ConfigBase):
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
+        ## 接管更新的一次性迁移标记；新建脚本直接使用当前默认值
+        self.Update_TakeoverMigrationVersion = ConfigItem(
+            "Update", "TakeoverMigrationVersion", 1, RangeValidator(0, 1)
+        )
 
         self.UserData = MultipleConfig([MaaUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """为未迁移的存量配置留标记，待全局和脚本 CDK 加载后统一迁移。"""
+        data = deepcopy(data) if isinstance(data, dict) else {}
+        update = data.get("Update")
+        if data and not (
+            isinstance(update, dict) and "TakeoverMigrationVersion" in update
+        ):
+            if not isinstance(update, dict):
+                data["Update"] = {}
+            data["Update"]["TakeoverMigrationVersion"] = 0
+        return await super().load(data)
+
+    async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
+        """为有 CDK 的旧脚本一次性开启接管，之后保留用户的开关选择。"""
+        if self.get("Update", "TakeoverMigrationVersion"):
+            return False
+        enabled = bool(
+            str(self.get("Update", "MirrorChyanCDK") or "").strip()
+            or global_cdk.strip()
+        )
+        update = {"TakeoverMigrationVersion": 1}
+        if enabled:
+            update["TakeoverEnabled"] = True
+        await self.update({"Update": update})
+        return enabled
 
 
 class BaseSourceValidator(OptionsValidator):
@@ -2967,6 +2992,9 @@ class MaaFWConfig(ConfigBase):
     FLAVOR: str | None = None
     ## Run.TaskTimeLimitOverrides 的默认值（JSON 字符串，任务名 → 分钟）；通用 MaaFW 不内置
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = "{ }"
+    ## Game.WaitTime（启动等待时间，秒）的默认值；特调可按自己的游戏改。120：模拟器上终末地
+    ## 冷启动到标题要 76~96s（2026-10-16 实测），上限要盖得住；平常靠读盘判断提前下发
+    DEFAULT_GAME_WAIT_TIME = 120
 
     def __init__(self) -> None:
 
@@ -3070,7 +3098,12 @@ class MaaFWConfig(ConfigBase):
         ## 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满；
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
-        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器冷启动游戏后最多等
+        ## 这么久，画面有内容且客体读盘连续 8 秒低于 1 MB/s（游戏加载完）就提前下发；等满
+        ## 还是黑屏才继续等。游戏进程已在（不论在不在前台）时不等。
+        self.Game_WaitTime = ConfigItem(
+            "Game", "WaitTime", self.DEFAULT_GAME_WAIT_TIME, RangeValidator(0, 9999)
+        )
         ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
         ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
         ## 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。
@@ -3267,7 +3300,7 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限，以及运行前的队列装饰
+    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限、启动等待时间默认值，以及运行前的队列装饰
     （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
@@ -3281,6 +3314,9 @@ class M9AConfig(MaaFWConfig):
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = (
         '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
     )
+    ## 1999 冷启动后不用等那么久，特调直接默认 15 秒（用户 2026-10-16 定）。只影响新建的
+    ## 脚本：已有脚本的 ScriptConfig.json 里存着自己的值。
+    DEFAULT_GAME_WAIT_TIME = 15
 
 
 class MSSUserConfig(MaaFWUserConfig):

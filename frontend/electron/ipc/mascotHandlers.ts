@@ -1,4 +1,11 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import type { DesktopMascotService } from '../services/desktopMascotService'
+import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+  DesktopMascotSelection,
+} from '../../src/types/desktopMascot'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { MascotSummary } from '../../src/types/mascotPack'
@@ -19,9 +26,9 @@ function forgetSource(id: string): void {
   }
 }
 
-export function broadcastMascotChange(): void {
+export function broadcastMascotChange(selection?: DesktopMascotSelection): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send('mascot-changed')
+    if (!window.isDestroyed()) window.webContents.send('mascot-changed', selection)
   }
 }
 
@@ -81,4 +88,110 @@ export function registerMascotHandlers(onChanged: () => void): void {
     }
     return result
   })
+}
+
+/** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */
+export function registerDesktopMascotHandlers(
+  service: Pick<
+    DesktopMascotService,
+    | 'setReady'
+    | 'getData'
+    | 'setIdleMessage'
+    | 'handlePointer'
+    | 'startDrag'
+    | 'setDecodedImage'
+    | 'setActivity'
+    | 'showNotice'
+  >,
+  getMainWindow: () => BrowserWindow | null
+): () => void {
+  ipcMain.handle(
+    'desktop-mascot:ready',
+    (event, ready: unknown, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors) => {
+      if (event.sender !== getMainWindow()?.webContents || typeof ready !== 'boolean') return
+      if (
+        ready &&
+        (!colors ||
+          typeof colors.background !== 'string' ||
+          typeof colors.text !== 'string' ||
+          typeof colors.border !== 'string' ||
+          !Number.isFinite(colors.radius))
+      )
+        return
+      service.setReady(
+        ready,
+        labels &&
+          typeof labels.pauseAnimation === 'string' &&
+          typeof labels.resumeAnimation === 'string' &&
+          typeof labels.pauseIdleMessage === 'string' &&
+          typeof labels.resumeIdleMessage === 'string'
+          ? labels
+          : undefined,
+        colors
+      )
+    }
+  )
+  ipcMain.handle('desktop-mascot:get', event => service.getData(event.sender))
+  ipcMain.handle('desktop-mascot:drag-start', (event, offset: unknown) =>
+    service.startDrag(event.sender, offset)
+  )
+  ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      !message ||
+      typeof message.text !== 'string' ||
+      typeof message.author !== 'string'
+    )
+      return
+    service.setIdleMessage(message)
+  })
+  const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
+    service.handlePointer(event.sender, action, session)
+  ipcMain.on('desktop-mascot:pointer', onPointer)
+  const onImageDecoded = (
+    event: Electron.IpcMainEvent,
+    imageUrl: unknown,
+    pngDataUrl: unknown
+  ): void => {
+    if (
+      typeof imageUrl !== 'string' ||
+      typeof pngDataUrl !== 'string' ||
+      !pngDataUrl.startsWith('data:image/png;base64,')
+    )
+      return
+    service.setDecodedImage(event.sender, imageUrl, pngDataUrl)
+  }
+  ipcMain.on('desktop-mascot:image-decoded', onImageDecoded)
+  ipcMain.handle('desktop-mascot:activity', (event, working: unknown, animate: unknown) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      typeof working !== 'boolean' ||
+      typeof animate !== 'boolean'
+    )
+      return
+    service.setActivity(working, animate)
+  })
+  ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
+    if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
+    service.showNotice(
+      text,
+      reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
+        ? reaction
+        : undefined
+    )
+  })
+
+  return () => {
+    for (const channel of [
+      'desktop-mascot:ready',
+      'desktop-mascot:get',
+      'desktop-mascot:drag-start',
+      'desktop-mascot:idle-message',
+      'desktop-mascot:activity',
+      'desktop-mascot:notice',
+    ])
+      ipcMain.removeHandler(channel)
+    ipcMain.removeListener('desktop-mascot:pointer', onPointer)
+    ipcMain.removeListener('desktop-mascot:image-decoded', onImageDecoded)
+  }
 }

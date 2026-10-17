@@ -11,16 +11,6 @@ export default {
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
     legacyFallback:
       'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
-    budgetConflict:
-      'Overlapping legacy event targets use the custom goal and its existing medicine and Originium allowances. The other allowances remain in the pre-migration backup.',
-    legacySeriesFallback:
-      'The old event battle multiplier cannot be carried over exactly. This run uses single battles; the original setting is retained.',
-    legacyExpiryFallback:
-      'The old custom or event-based expiring-medicine policy cannot be carried over exactly. Expiring medicine is disabled this run; the original setting is retained.',
-    legacyCommonConflict:
-      'The old event sources have different battle-multiplier or expiring-medicine settings. This run uses the more conservative settings; originals are retained.',
-    budgetGateConflict:
-      'The old event stock task disabled medicine or Originium. This restriction is retained, and the corresponding old event-priority allowance is not used this run.',
     name: 'Balanced event farming',
     hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
     scopeHint:
@@ -41,8 +31,6 @@ export default {
     staleData:
       'Event data could not be refreshed. Showing the last successfully loaded stages; saved targets are unchanged.',
     summary: 'Current event · {n} stages · stock ratio order',
-    medicineHint:
-      'This potion allowance is assigned to one event plan only. Unused allowance is not transferred to other plans.',
   },
   maaStaminaPipeline: {
     inventoryCultivate: 'Stock keeping and cultivation',
@@ -369,9 +357,6 @@ export default {
       'Saved by position in the list. After an event update the stage at the same position is picked; if that position is gone, it falls back to the first one.',
     maaPickEventStage: 'Pick an event stage',
     maaNoEventStage: 'No event stages to farm right now',
-    maaEventPotion: 'Event stage potions',
-    maaEventPotionHint:
-      'How many sanity potions the event-stage task may use. Normal sanity combat is unaffected.',
     maaCultivate: 'Operator cultivation',
     maaCultivateSettings: 'Cultivation settings',
     maaCultivateShowModules: 'Show module targets',
@@ -1934,7 +1919,7 @@ export default {
       'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
-      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
+      'When MAS has just launched the game, the first task waits before starting; MaaFW initialisation runs in parallel. Desktop games: MAS waits for the window to appear and then for the screen to settle, each for at most this long, and starts early once the screen settles; no wait if the game window is already open. Emulators: after cold-starting the game along with the emulator, MAS waits at most this long, and starts early once the screen shows content and the game has stopped reading from disk, and keeps waiting if the screen is still black at that point; no wait if the game process is already running, in the foreground or not. Freshly started games are usually still loading, and posting tasks too early makes the script report a recognition failure or a stuck game.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     mfwHotkey: 'Key bindings',
@@ -3518,6 +3503,9 @@ export default {
     selectUserDesc: 'Pick an account from the date list on the left to see details.',
     recordList: 'Records',
     recordCount: '{count} records',
+    successCount: 'Succeeded {count} times',
+    failureCount: 'Failed {count} times',
+    scriptUnknown: 'Unlabeled script',
     timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
     done: 'Done',
     skipped: 'Skipped',
@@ -4806,6 +4794,11 @@ export default {
       mascotSection: 'Desktop pet',
       mascotSelect: 'Pet selection',
       mascotFollowTheme: 'Follow current theme',
+      mascotFps: 'Animation frame rate',
+      mascotFpsPackage: 'Follow animation package',
+      mascotFpsCustom: 'Custom',
+      mascotFpsTip:
+        'Follow the animation package or choose 8, 16, 24, 30, 60, or 120 FPS. Changes are saved automatically.',
       importMascot: 'Import pet',
       removeMascot: 'Remove pet',
       mascotImportTip:

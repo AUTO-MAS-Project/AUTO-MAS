@@ -2195,30 +2195,6 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     )
 
 
-class OneDragonPlanStep(BaseModel):
-    """一条龙执行计划中的单个步骤（执行层实例）。"""
-
-    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
-    kind: Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"] = (
-        Field(..., description="步骤来源类型")
-    )
-    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
-    enabled: bool = Field(default=True, description="是否启用该步骤")
-    settings: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
-    )
-
-
-class OneDragonPlan(BaseModel):
-    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
-
-    version: int = Field(default=1, description="Plan 结构版本")
-    steps: List[OneDragonPlanStep] = Field(
-        default_factory=list, description="有序步骤列表"
-    )
-
-
 class BetterGIGameInfoOut(OutBase):
     """BetterGI 游戏客户端信息（用户页透传展示）"""
 
@@ -6055,6 +6031,10 @@ class Emulator2InstanceCreateIn(BaseModel):
     cpu: Optional[int] = Field(
         default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
     )
+    fps: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+    )
     dataPartitionGb: Optional[int] = Field(
         default=None,
         description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
@@ -6314,6 +6294,9 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
         default=None, description="内存 MB, 每次开机用 -memory 传"
     )
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    fps: Optional[int] = Field(
+        default=None, description="帧率 (hw.lcd.vsync), 下次开机生效"
+    )
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
     initialized: bool = Field(
         default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"

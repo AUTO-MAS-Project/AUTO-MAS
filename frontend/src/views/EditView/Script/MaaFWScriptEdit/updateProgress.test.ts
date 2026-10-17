@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { WSMaaFWProjectUpdateProgressData } from '@/services/websocket/types'
 import {
   MAX_UPDATE_LOG_LINES,

@@ -42,7 +42,7 @@ from app.utils.io import (
     atomic_write,
     read_dict_file,
     read_file,
-    replace_dir,
+    swap_in_dir,
     write_file,
 )
 from app.utils.logger import get_logger
@@ -936,18 +936,16 @@ def restore_run_record_files(
 
 
 def _atomic_copytree(source: Path, target: Path) -> None:
-    """目录整体替换, 覆盖目标已有内容（先清后拷, 不再走 tmp + rename）。"""
+    """目录整体替换，目标旧目录先改名留底再换入。"""
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    replace_dir(source, target)
+    swap_in_dir(source, target)
 
 
 def backup_instance(root: Path, idx: int, backup_dir: Path) -> None:
     """把实例目录整体备份（注入前调用，供 restore_instance 原样恢复）。"""
 
-    shutil.rmtree(backup_dir, ignore_errors=True)
-    backup_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(instance_dir(root, idx), backup_dir)
+    _atomic_copytree(instance_dir(root, idx), backup_dir)
 
 
 def restore_instance(root: Path, idx: int, backup_dir: Path) -> None:

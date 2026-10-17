@@ -208,7 +208,6 @@ const handleLocaleChange = (value: unknown): void => {
           </div>
         </a-col>
       </a-row>
-      <MascotSettings />
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
@@ -227,6 +226,8 @@ const handleLocaleChange = (value: unknown): void => {
         </a-col>
       </a-row>
     </div>
+
+    <MascotSettings />
 
     <PressSoundSettings
       :enabled="pressSoundEnabled"

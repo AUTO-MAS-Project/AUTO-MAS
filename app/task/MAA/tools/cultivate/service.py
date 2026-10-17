@@ -44,7 +44,13 @@ import httpx
 
 from app.utils.constants import UTC4
 
-from .engine import apply_achievements, build_plan, has_material_gap, judge_achievements
+from .engine import (
+    apply_achievements,
+    build_plan,
+    has_material_gap,
+    judge_achievements,
+    select_auto_cultivate_targets,
+)
 from .providers import (
     DefaultProgressionProvider,
     LocalInventoryProvider,
@@ -478,7 +484,7 @@ class DepotCultivateService:
                     chain=get_progression_chain(),
                     context=context,
                 )
-        _, plan, _ = await self.prepare_cultivate(
+        _, plan, _, _ = await self.prepare_cultivate(
             targets=targets,
             maa_data_dir=maa_data_dir,
             config_path=config_path,
@@ -499,7 +505,10 @@ class DepotCultivateService:
         context: ProviderContext | None = None,
         skland: tuple[Mapping[str, Progression], int] | None = None,
         require_observations: bool = False,
-    ) -> tuple[list[OperatorTarget], CultivatePlan | None, bool]:
+        auto_raise: bool = False,
+    ) -> tuple[
+        list[OperatorTarget], CultivatePlan | None, bool, tuple[OperatorTarget, ...]
+    ]:
         """注入前的养成用例编排：达成拦截 → 剩余目标建计划 → 缺口判定。
 
         方案 §4.1 注入三步判定的数据组织：先经自证链判定达成并流转状态
@@ -513,10 +522,11 @@ class DepotCultivateService:
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
             require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
+            auto_raise: 使用本次练度与库存按材料达成率选取最多十名干员。
 
         Returns:
-            (流转后的目标列表, 养成计划, 是否存在材料缺口)；目标全部达成
-            移除时计划为 None、缺口为 False。
+            (流转后的目标列表, 养成计划, 是否存在材料缺口, 自动培养名单)；
+            目标全部达成移除时计划为 None、缺口为 False、培养名单为空。
 
         Raises:
             Exception: 数据集不可用等错误原样抛出，由调用方 fail-open
@@ -563,7 +573,7 @@ class DepotCultivateService:
             today=today,
         )
         if not updated_targets:
-            return [], None, False
+            return [], None, False, ()
 
         plan = build_plan(
             targets=updated_targets,
@@ -573,7 +583,17 @@ class DepotCultivateService:
             inventory=inventory,
         )
         gap = has_material_gap(updated_targets, snapshots, inventory, dataset, today)
-        return updated_targets, plan, gap
+        auto_targets = (
+            select_auto_cultivate_targets(
+                targets=updated_targets,
+                snapshots=snapshots,
+                inventory=inventory,
+                data=dataset,
+            )
+            if auto_raise
+            else ()
+        )
+        return updated_targets, plan, gap, auto_targets
 
     async def _load_dataset(
         self, config_path: Path, proxy: httpx.Proxy | str | None

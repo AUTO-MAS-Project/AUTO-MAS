@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { MaaFWInterfacePreviewData, MaaFWTaskInfo } from '@/types/script'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,

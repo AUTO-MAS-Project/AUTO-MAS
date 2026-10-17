@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { createCenterPokeCounter } from './centerPoke'
 
 /** 每隔 100ms 点一次，返回每次点击的结果 */

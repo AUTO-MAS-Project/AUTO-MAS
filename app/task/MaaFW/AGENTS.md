@@ -348,8 +348,20 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
   这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），
   游戏自有层由该游戏的特调或专项自己调。
-- 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**（MAS
-  拉起，或接管时窗口是等出来的）才生效，从窗口出现起算，宿主把「最早可下发时刻」写进 job
+- **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像用户级「脚本前任务」只跑一次：
+  MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
+  MAS 既不拉起也不关游戏。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
+  已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
+  `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
+  控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本
+  对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
+  看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
+  MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
+- 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
+  桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
+  游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
+  完成起算；游戏进程已在（在前台 `already-running`、从后台切回前台 `resumed`）、没认出包名、拉起失败
+  都不等。宿主把「最早可下发时刻」写进 job
   （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
   放行：连续 5s 画面没变（静态登录页）；或连续 20s 有内容哪怕一直在动（`runner.py` 的
   `STARTUP_SCREEN_CONTENT_SECONDS`）。黑屏 / 纯色把两个计数都清零，截不到图就等满上限。
@@ -358,6 +370,39 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
   SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
   7~9s）后每次冷启动都撞上。
+  - **模拟器冷启动按读盘放行**：上面两条按画面提前放行只用于桌面。模拟器路径上宿主传
+    `taskStartGateMode="disk_quiet"`（`runner._wait_task_start_disk_quiet`）：`Game.WaitTime` 仍是上限，
+    worker 每秒经 controller 的 `post_shell` 读一次客体 `/proc/vmstat` 的 `pgpgin`（累计读入 KB）算读盘
+    速度，画面有内容且读盘连续 8 次（每秒一次）低于 1 MB/s 就提前下发；到上限画面有内容就按上限下发，
+    还是黑屏 / 纯色就继续等到出画面，从开始等算满 `TASK_START_GATE_MAX_SECONDS` 照常下发；截不到图或
+    读不到 pgpgin（controller 不支持 shell、没有这一行等）退回按时间、等满上限；计数变小时增量记 0。
+    **不用 `/proc/diskstats`**：adb shell 用户读它和 `/sys/block/*/stat` 都被 SELinux 拒绝（API 34 魔改
+    AVD，Enforcing），pgpgin 不需要 root、不随 dm 叠层重复计数，实测与整块盘 diskstats 读速误差 < 2%。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
+    模式，不判断设备类型。真机数据（2026-10-16 魔改 AVD 实测）：终末地加载页和动态标题都一直在动、
+    都有内容，「20s 有内容」在拉起后 37~48s、仍在加载资源时就放行，冷启动到标题要 76~96s；CPU 与
+    出帧也是标题比加载更忙（星铁标题只有 35 fps），都不能当判据；读盘量这套阈值在终末地 8 轮、
+    1999 1 轮冷启动里都在到标题后 7~15s 放行。
+    **反例**：读盘安静、画面有内容、但还没到标题的阶段都会提前放行。星铁一轮在 logo / 健康提示页
+    （拉起后 17~24s，读盘 0~0.2 MB/s）上，拉起后 25s 就放行，比标题（64s）早 39s；另一轮在加载页上
+    等登录约 80s，26s 就放行，比标题（150s）早 124s。这些阶段只能交给项目自己识别（MaaEnd 等的
+    启动任务本来就会等标题），闸门不去猜。
+    **着色器编译不处理**（2026-10-17 定）：
+    - 清掉游戏自己的管线缓存（终末地的 `vulkan_pso_cache.bin`）后冷启动，标题前要编译约 320s。
+      编译期间 6 个 vCPU 跑满，读盘约 0.15 MB/s，出帧约 0，到标题共 412s。闸门在拉起后约 66s 就放行。
+    - 实际场景不会出现脚本等编译：用户跑脚本前必然手动登录过一次，那次已经编完。宿主显卡的着色器
+      缓存清不清，实测看不出差别。
+    - **做带游戏自更新的风味专项时必须处理**：游戏自更新以后可能重新编译，而脚本会在没人手动登录的
+      情况下直接撞上。M9A 特调已经有游戏 APK 更新，但它的启动等待由 M9A 自己处理；新做的风味如果
+      依赖这道闸门，就要先补上下面这一条，再放开自更新。
+    - 以后要处理的话，可以在放行条件里再加「这 8s 里每秒出帧都 ≥ 5」，并把模拟器上的上限放宽到能
+      盖住编译（终末地约 420s）。
+      - 编译期间每秒最多 2 帧，≥3 就挡得住，取 5 留了余量；标题最低是星铁的约 36 帧，加上 30 Hz 档
+        帧率还会减半，所以阈值不宜取 20。
+      - 实测两轮编译都改在标题后 8~9s 放行，其余各轮的放行时刻不变。
+      - 这一条只为挡编译。星铁 logo / 健康提示页本身有 48~60 帧，加载页等网络时有 60 帧，出帧判据
+        都挡不住（阈值取 20 时 logo 页那轮被挡住，是因为碰巧有一秒只有 17.9 帧）。
+    - 出帧数的来源：魔改 AVD 读截图共享内存里的帧号，其他模拟器读 SurfaceFlinger 的帧时间戳。
+    通用默认等待时间因此是 120s（`MaaFWConfig.DEFAULT_GAME_WAIT_TIME`），M9A 特调 15s。
 - **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
   首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
   `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于
@@ -441,7 +486,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
   `bbcdll/*.log` …）由 `runner_task` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
-  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<时分秒>.project.log`（每段一行分隔头；
+  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<脚本名>-<时分秒>.project.log`（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
   `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按后缀认 history
   文件，`.project.log` 与 `.worker.log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
@@ -596,6 +641,6 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   "读错键"类缺陷全程绿灯。
 - 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
   否则 Windows 报 `WinError 206`，看起来像代码坏了。
-- 排障先看 `history/<日期>/…/<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
+- 排障先看 `history/<日期>/…/<脚本名>-<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
   只记在那里，宿主日志只有一句"连接超时"。agent 自己的 DEBUG 日志、Go agent 的 panic 在同名
   的 `.project.log` 里。

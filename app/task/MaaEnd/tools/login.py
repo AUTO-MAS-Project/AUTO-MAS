@@ -25,11 +25,9 @@
 
 
 import asyncio
-import ctypes
 import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -39,6 +37,7 @@ import cv2
 import numpy as np
 
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 if TYPE_CHECKING:
     import pyautogui
@@ -125,25 +124,6 @@ _DIAGNOSTIC_KEEP_COUNT = 10
 
 class LoginNotReadyError(RuntimeError):
     """游戏尚未进入可登录画面，重试时保留其启动进度。"""
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
 
 
 @lru_cache(maxsize=1)

@@ -12,15 +12,12 @@ def resolve_activity_inventory_plans(
     plans_json: str,
     activity_stages: list[dict],
     *,
-    medicine_count: int = 0,
     source_plans: list[dict] | None = None,
-    priority_source: dict | None = None,
 ) -> tuple[list[dict], list[tuple[str, str]]]:
     """每轮解析当前活动，不把具体关卡、材料或生成的目标写回来源配置。
 
     material 序号沿用旧活动库存的材料关列表，activity 序号沿用旧活动优先
     的完整列表。all 预设覆盖当期全部可刷关卡，显式目标优先于预设。
-    返回的 _ActivityOrigin 只供组装段级设置，写入 MAA 前由调用者移除。
     """
 
     rows = json.loads(plans_json)
@@ -92,9 +89,6 @@ def resolve_activity_inventory_plans(
         ):
             plan.pop(key, None)
         plan.update(Stage=stage["Value"], DropId=drop_id, DropCount=count)
-        plan["_ActivityOrigin"] = (
-            "priority" if row.get("LegacyActivityFirst") else "inventory"
-        )
         return plan
 
     # 先解析显式行，all 预设不能覆盖任何已保存的自定义目标。
@@ -150,27 +144,19 @@ def resolve_activity_inventory_plans(
                 continue
         plan = build(row, pool[index - 1])
         if plan is not None:
-            if row.get("LegacyActivityFirst"):
-                plan.update(
-                    UseMedicine=medicine_count > 0,
-                    MedicineCount=medicine_count,
-                    UseStone=(priority_source or {}).get("UseStone") is True,
-                    StoneCount=(priority_source or {}).get("StoneCount", 0),
-                )
-            else:
-                source = next(
-                    (
-                        item
-                        for item in source_plans or []
-                        if isinstance(item, dict)
-                        and item.get("Stage") == plan["Stage"]
-                        and item.get("DropId") == plan["DropId"]
-                    ),
-                    {},
-                )
-                for key in ("UseMedicine", "MedicineCount", "UseStone", "StoneCount"):
-                    if key in source:
-                        plan.setdefault(key, source[key])
+            source = next(
+                (
+                    item
+                    for item in source_plans or []
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
+            for key in ("UseMedicine", "MedicineCount", "UseStone", "StoneCount"):
+                if key in source:
+                    plan.setdefault(key, source[key])
             selected[position] = plan
     explicit_keys = {(plan["Stage"], plan["DropId"]) for plan in selected.values()}
     custom_plans = {
@@ -179,9 +165,6 @@ def resolve_activity_inventory_plans(
         if not rows[position].get("LegacyActivityFirst")
     }
     plans = []
-    budget_assigned = any(
-        "MedicineCount" in plan or "UseMedicine" in plan for plan in selected.values()
-    )
     for position, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
@@ -199,39 +182,7 @@ def resolve_activity_inventory_plans(
         for plan in current:
             key = (plan["Stage"], plan["DropId"])
             if row.get("LegacyActivityFirst") and key in custom_plans:
-                # 默认 999/9999 不能抬高旧自定义目标；旧优先药量仅转交这一个关卡。
-                target = custom_plans[key]
-                target["_ActivityOrigin"] = "mixed"
-                conflict = False
-                for enabled, count in (
-                    ("UseMedicine", "MedicineCount"),
-                    ("UseStone", "StoneCount"),
-                ):
-                    if count not in target and enabled not in target:
-                        target.update({enabled: plan[enabled], count: plan[count]})
-                    elif (
-                        target.get(enabled) != plan[enabled]
-                        or target.get(count, 0) != plan[count]
-                    ):
-                        conflict = True
-                if conflict:
-                    notices.append(
-                        (
-                            "eventDepotPreview.budgetConflict",
-                            "旧活动选关与库存目标重合，沿用自定义目标及已有药石额度，另一份原额度保留在迁移前备份",
-                        )
-                    )
+                # 默认 999/9999 不能抬高旧自定义目标。
                 continue
-            if (
-                not budget_assigned
-                and not row.get("LegacyIndex")
-                and not row.get("LegacyActivityFirst")
-                and "MedicineCount" not in plan
-                and "UseMedicine" not in plan
-            ):
-                plan.update(
-                    UseMedicine=medicine_count > 0, MedicineCount=medicine_count
-                )
-                budget_assigned = True
             plans.append(plan)
     return plans, notices

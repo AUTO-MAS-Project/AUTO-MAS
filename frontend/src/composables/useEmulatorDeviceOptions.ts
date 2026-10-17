@@ -82,7 +82,7 @@ const loadModAvdSlots = async (emulatorId: string): Promise<Set<string>> => {
 }
 
 /**
- * 用这个下拉的是 MAA / SRC / MaaEnd / BAAH / 通用脚本页。魔改 AVD 目前只支持 M9A 和 MAA：
+ * 用这个下拉的是 MAA / SRC / MaaEnd / BAAH / 通用脚本页。魔改 AVD 目前只支持 MFW 脚本和 MAA：
  * ``allowModAvd`` 为 true（MAA 页）时原样列出，否则它的实例置灰并写明原因。
  */
 export const useEmulatorDeviceOptions = ({

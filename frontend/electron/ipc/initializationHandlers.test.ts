@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 
 // 只验证注册守卫：handler 本体依赖真实服务，全部替换成空壳
 vi.mock('electron', () => ({
