@@ -1,0 +1,55 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+name: 检查 Issue 勾选与日志
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+  schedule:
+    # 到期后巡检，避开整点；关闭前始终重新读取正文与全部评论。
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      include_history:
+        description: 为历史 Bug 先发提醒，再给 24 小时补日志
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+# 事件与巡检共享提醒状态，串行更新，避免重复留言或关闭。
+concurrency:
+  group: issue-auto-close
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: >-
+      github.repository == 'AUTO-MAS-Project/AUTO-MAS' &&
+      !github.event.issue.pull_request &&
+      (github.event_name != 'issue_comment' || github.event.sender.type != 'Bot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出可信脚本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 检查到期反馈
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INCLUDE_HISTORY: ${{ inputs.include_history || false }}
+        run: python scripts/issue_auto_close.py
