@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import traceback
 from collections.abc import Sequence
 from email.header import Header
 from email.mime.image import MIMEImage
@@ -31,6 +32,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from html import escape as html_escape
+from pathlib import Path
 from typing import Literal
 
 from app.models.notification import (
@@ -185,13 +187,47 @@ class Sender:
         authorization_code = transport.authorization_code
 
         def send() -> None:
-            with self.dependencies.smtp_factory(
-                smtp_server,
-                465,
-                timeout=SMTP_TIMEOUT_SECONDS,
-            ) as smtp_obj:
-                smtp_obj.login(from_address, authorization_code)
-                smtp_obj.sendmail(from_address, to_address, message.as_string())
+            stage = "连接"
+            smtp_obj = None
+            try:
+                with self.dependencies.smtp_factory(
+                    smtp_server,
+                    465,
+                    timeout=SMTP_TIMEOUT_SECONDS,
+                ) as smtp_obj:
+                    stage = "握手"
+                    if not smtp_obj.local_hostname.isascii():
+                        smtp_obj.local_hostname = smtp_obj.local_hostname.encode(
+                            "idna"
+                        ).decode("ascii")
+                    stage = "认证"
+                    smtp_obj.login(from_address, authorization_code)
+                    stage = "发送"
+                    smtp_obj.sendmail(from_address, to_address, message.as_string())
+                    stage = "关闭连接"
+            except Exception as exc:
+                frames = traceback.extract_tb(exc.__traceback__)
+                if any(
+                    Path(frame.filename).name == "smtplib.py"
+                    and frame.name in {"ehlo", "helo", "ehlo_or_helo_if_needed"}
+                    for frame in frames
+                ):
+                    stage = "握手"
+                hostname = getattr(smtp_obj, "local_hostname", None)
+                hostname_is_ascii = (
+                    hostname.isascii() if isinstance(hostname, str) else None
+                )
+                # 只记录状态和栈位置，不附带异常原文、源码行或局部变量。
+                self.dependencies.logger.warning(
+                    f"邮件发送诊断: 阶段={stage}, 异常={type(exc).__name__}, "
+                    f"EHLO主机名ASCII={hostname_is_ascii}, "
+                    f"授权码ASCII={authorization_code.isascii()}, 调用位置: "
+                    + " -> ".join(
+                        f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}"
+                        for frame in frames
+                    )
+                )
+                raise
 
         await asyncio.to_thread(send)
         self.dependencies.logger.success(f"邮件发送成功: {title}")
