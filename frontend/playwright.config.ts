@@ -68,7 +68,7 @@ export default defineConfig({
       stderr: realE2E ? 'ignore' : 'pipe',
     },
     {
-      command: `yarn vite --host 127.0.0.1 --port ${frontendPort} --strictPort`,
+      command: `yarn vp dev --host 127.0.0.1 --port ${frontendPort} --strictPort`,
       cwd: frontendRoot,
       url: `http://127.0.0.1:${frontendPort}`,
       timeout: 120_000,

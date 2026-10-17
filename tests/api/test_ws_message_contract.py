@@ -12,7 +12,7 @@ from app.models import schema
 
 # 出站消息模型 -> 字段名集合。改动任何一个字段名/删除字段都必须同步这里。
 CONTRACT: dict[str, frozenset[str]] = {
-    "WSTaskNoticeData": frozenset({"level", "message"}),
+    "WSTaskNoticeData": frozenset({"level", "message", "messageKey"}),
     "WSTaskConfigDiscardedData": frozenset({"reason"}),
     "WSSystemNoticeData": frozenset({"level", "title", "lines"}),
     "WSEmulatorOperationData": frozenset(
