@@ -31,6 +31,20 @@
         </div>
       </div>
       <a-alert
+        v-if="completion.errorMessage.value"
+        :message="t('home.endfield.completionUnavailable')"
+        :description="completion.errorMessage.value"
+        type="warning"
+        show-icon
+        class="status-alert"
+      >
+        <template #action>
+          <a-button size="small" :loading="completion.loading.value" @click="completion.load">
+            {{ t('home.endfield.retryCompletion') }}
+          </a-button>
+        </template>
+      </a-alert>
+      <a-alert
         v-if="overview.Message"
         :message="overview.Message"
         :type="overview.Available ? 'warning' : 'error'"
@@ -44,7 +58,40 @@
         :aria-label="t('home.endfield.activities')"
       >
         <li v-for="item in activities" :key="item.id" class="activity-card">
-          <div class="activity-item" :class="{ 'is-fallback': !activityImage(item) }">
+          <div
+            class="activity-item"
+            :class="{
+              'is-fallback': !activityImage(item),
+              'is-completed': completion.isCompleted(item),
+              'is-actionable': canToggleCompletion(item),
+              'is-saving': completion.isSaving(item),
+            }"
+            role="button"
+            :tabindex="canToggleCompletion(item) ? 0 : -1"
+            :aria-label="
+              t(
+                completion.isCompleted(item)
+                  ? 'home.endfield.undoCompletion'
+                  : 'home.endfield.markCompleted',
+                { name: item.name }
+              )
+            "
+            :aria-pressed="completion.isCompleted(item)"
+            :aria-disabled="!canToggleCompletion(item)"
+            :title="
+              canToggleCompletion(item)
+                ? t(
+                    completion.isCompleted(item)
+                      ? 'home.endfield.undoCompletion'
+                      : 'home.endfield.markCompleted',
+                    { name: item.name }
+                  )
+                : undefined
+            "
+            @click="toggleCompletion(item)"
+            @keydown.enter.prevent="toggleCompletion(item)"
+            @keydown.space.prevent="toggleCompletion(item)"
+          >
             <img
               v-if="activityImage(item)"
               :key="activityImage(item)"
@@ -59,8 +106,21 @@
             <div class="activity-overlay" />
             <div class="activity-content">
               <div class="activity-head">
-                <a-tag :color="isUpcoming(item) ? 'blue' : 'green'">
-                  {{ t(isUpcoming(item) ? 'home.endfield.upcoming' : 'home.endfield.running') }}
+                <a-tag
+                  :class="{ 'completion-tag': completion.isCompleted(item) }"
+                  :color="
+                    completion.isCompleted(item) ? undefined : isUpcoming(item) ? 'blue' : 'green'
+                  "
+                >
+                  {{
+                    t(
+                      completion.isCompleted(item)
+                        ? 'home.endfield.completed'
+                        : isUpcoming(item)
+                          ? 'home.endfield.upcoming'
+                          : 'home.endfield.running'
+                    )
+                  }}
                 </a-tag>
                 <span v-if="item.kind" class="activity-kind">{{ item.kind }}</span>
               </div>
@@ -151,6 +211,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { message } from 'ant-design-vue'
+import { useEndfieldActivityCompletionApi } from '@/composables/useEndfieldActivityCompletionApi'
 import type { EndfieldActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -175,10 +237,12 @@ const emit = defineEmits<{ refresh: [] }>()
 const { t, locale } = useI18n()
 const now = ref(Date.now())
 const failedImages = ref(new Set<string>())
+const completion = useEndfieldActivityCompletionApi()
 
 // 活动进度按分钟更新，同时刷新活动状态与过期条目。
 let progressTimer: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
+  if (props.section === 'activities') void completion.load()
   progressTimer = setInterval(() => {
     now.value = Date.now()
   }, 60_000)
@@ -262,6 +326,16 @@ const markActivityImageFailed = (event: Event) => {
 const isUpcoming = (item: CardItem) => timestamp(item.startTime) > now.value
 const isRunning = (item: CardItem) =>
   timestamp(item.startTime) <= now.value && timestamp(item.endTime) > now.value
+const canToggleCompletion = (item: CardItem) =>
+  completion.ready.value && !completion.isSaving(item) && isRunning(item)
+const toggleCompletion = async (item: CardItem) => {
+  if (!canToggleCompletion(item)) return
+  try {
+    await completion.toggle(item)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('home.endfield.completionSaveFailed'))
+  }
+}
 const activityProgress = (item: CardItem) =>
   Math.min(
     100,
@@ -385,6 +459,26 @@ const handleBoundary = () => {
 .activity-kind {
   color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
+}
+.activity-item.is-actionable {
+  cursor: pointer;
+}
+.activity-item.is-saving {
+  cursor: progress;
+}
+.is-completed .activity-image {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.activity-head :deep(.completion-tag) {
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-border);
+  font-weight: 600;
+}
+.activity-item:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
 }
 .activity-name {
   margin-bottom: 8px;

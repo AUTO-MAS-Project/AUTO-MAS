@@ -32,6 +32,7 @@ import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
+import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -97,6 +98,17 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
+    /**
+     * 获取终末地已完成活动
+     * @returns GameCalendarActivitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldActivityCompletionsApiInfoEndfieldActivityCompletionsGet(): CancelablePromise<GameCalendarActivitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/activity/completions',
+        });
+    }
     /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response
@@ -282,6 +294,9 @@ export class GetService {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
