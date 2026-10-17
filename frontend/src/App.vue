@@ -20,11 +20,11 @@ import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
 import { useHomeGreetingStore } from './stores/homeGreeting'
-import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
 import { useLocale } from './composables/useLocale.ts'
 import { useDesktopMascot } from './composables/useDesktopMascot'
 import { useTrayTaskActions } from './composables/useTrayTaskActions'
 import { useDesktopMascotTaskActions } from './composables/useDesktopMascotTaskActions'
+import { useDesktopMascotTaskAdapter } from './composables/useDesktopMascotTaskAdapter'
 import { connectionState } from './services/websocket/connection'
 import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
 import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
@@ -57,24 +57,41 @@ const isStandalonePage = computed(
 )
 
 const { trackStartedTask } = useSchedulerLogic()
-useDesktopMascotTaskActions({
-  active: computed(
-    () =>
-      !isStandalonePage.value &&
-      !isInitializationPage.value &&
-      isAppReady.value &&
-      performanceStore.initialized &&
-      !isClosing.value
-  ),
-  canOperate: () => !isBackendRuntimeUpdating() && connectionState().value === 'open',
-  api: window.electronAPI,
-  onStarted: task =>
-    trackStartedTask({
-      ...task,
-      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-      modeLabel: t('scheduler.mode.autoProxy'),
-    }),
-})
+const mascotTasks = useDesktopMascotTaskAdapter()
+const mascotTaskLogger = window.electronAPI.getLogger('桌宠任务')
+useDesktopMascotTaskActions(
+  {
+    active: computed(
+      () =>
+        !isStandalonePage.value &&
+        !isInitializationPage.value &&
+        isAppReady.value &&
+        performanceStore.initialized &&
+        !isClosing.value
+    ),
+    canOperate: () => !isBackendRuntimeUpdating() && connectionState().value === 'open',
+    api: window.electronAPI,
+    onStarted: task => {
+      trackStartedTask({
+        ...task,
+        selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+        modeLabel: t('scheduler.mode.autoProxy'),
+      })
+      void playSound('task_started').catch(error =>
+        mascotTaskLogger.warn('播放任务启动音频失败:', error)
+      )
+    },
+  },
+  {
+    tasks: mascotTasks.control,
+    translate: t,
+    reportWarning: (text, error) => mascotTaskLogger.warn(text, error),
+    showError: text => {
+      mascotTaskLogger.error('桌宠任务操作失败:', text)
+      message.error(text)
+    },
+  }
+)
 useTrayTaskActions({
   active: computed(
     () =>
@@ -136,7 +153,7 @@ useDesktopMascot(
       showDesktopMascotNotice: window.electronAPI.showDesktopMascotNotice,
       onDesktopMascotError: window.electronAPI.onDesktopMascotError,
     },
-    tasks: { snapshot: getTaskRuntimeStates, subscribe: onTaskRuntimeEvent },
+    tasks: mascotTasks.events,
     translate: t,
     reportError: (text, error) => logger.error(text, error),
     showError: () => message.error(t('setting.basic.desktopMascotFailed')),

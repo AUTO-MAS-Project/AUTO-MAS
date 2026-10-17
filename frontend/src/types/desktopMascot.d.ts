@@ -90,6 +90,39 @@ export interface DesktopMascotTaskAction {
   taskId: string
 }
 
+/** 应用适配器提供任务能力，桌宠不直接依赖调度 API 或运行状态实现。 */
+export interface DesktopMascotTaskControl {
+  list(): { result: Promise<DesktopMascotTaskMenuItem[]>; cancel(): void }
+  running(): DesktopMascotTaskMenuItem[]
+  start(taskId: string): Promise<{ taskId: string }>
+  stop(taskId: string): Promise<void>
+}
+
+export interface DesktopMascotTaskSnapshot {
+  taskId: string
+  name: string | null
+  working: boolean
+}
+
+export type DesktopMascotTaskEvent =
+  | {
+      type: 'snapshot'
+      tasks: DesktopMascotTaskSnapshot[]
+      activeTaskIds: ReadonlySet<string>
+    }
+  | { type: 'started'; task: DesktopMascotTaskSnapshot }
+  | {
+      type: 'completed'
+      task: DesktopMascotTaskSnapshot
+      result: 'success' | 'failure' | 'stopped' | 'partialFailure'
+    }
+  | { type: 'removed'; taskId: string }
+
+export interface DesktopMascotTaskEvents {
+  snapshot(): DesktopMascotTaskSnapshot[]
+  subscribe(listener: (event: DesktopMascotTaskEvent) => void): () => void
+}
+
 /** 任务菜单由应用提供，桌宠只展示选项并回传用户选择。 */
 export interface DesktopMascotTaskHostAPI {
   onDesktopMascotTaskMenuRequest(callback: (requestId: number) => void): () => void
