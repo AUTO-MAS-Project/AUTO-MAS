@@ -3,6 +3,9 @@ import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
+  DesktopMascotMenuAction,
+  DesktopMascotMenuCapability,
+  DesktopMascotMenuResult,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
 
@@ -38,5 +41,28 @@ export interface DesktopMascotRuntime {
   setDecodedImage(sender: WebContents, imageUrl: string, pngDataUrl: string): void
   sync(): void
   syncPreferences(): void
+  dispose(): void
+}
+
+/** 应用适配器接入运行输入，运行宿主不解释业务标签和任务协议。 */
+export type DesktopMascotHostInputs = Pick<
+  DesktopMascotRuntime,
+  | 'setReady'
+  | 'getData'
+  | 'setIdleMessage'
+  | 'setActivity'
+  | 'showNotice'
+  | 'handlePointer'
+  | 'startDrag'
+  | 'setDecodedImage'
+>
+
+export interface DesktopMascotCapabilities {
+  snapshot(): { capabilities: DesktopMascotMenuCapability[]; unavailableLabel: string } | null
+  subscribe(listener: () => void): () => void
+  open(): void
+  close(): void
+  reset(): void
+  execute(action: DesktopMascotMenuAction): Promise<DesktopMascotMenuResult>
   dispose(): void
 }

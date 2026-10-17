@@ -3,6 +3,8 @@ import type { DesktopMascotMenuAPI, DesktopMascotMenuData } from '../src/types/d
 
 const api: DesktopMascotMenuAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot-menu:get'),
+  getViewport: () => ipcRenderer.invoke('desktop-mascot-menu:viewport'),
+  resize: size => ipcRenderer.send('desktop-mascot-menu:resize', size),
   onChanged: callback => {
     const listener = (_event: Electron.IpcRendererEvent, data: DesktopMascotMenuData) =>
       callback(data)

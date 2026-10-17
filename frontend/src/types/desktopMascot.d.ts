@@ -129,9 +129,16 @@ export interface DesktopMascotMenuAction {
 
 export interface DesktopMascotMenuAPI {
   getData(): Promise<DesktopMascotMenuData | null>
+  getViewport(): Promise<DesktopMascotMenuSize | null>
+  resize(size: DesktopMascotMenuSize): void
   onChanged(callback: (data: DesktopMascotMenuData) => void): () => void
   execute(action: DesktopMascotMenuAction): Promise<DesktopMascotMenuResult>
   close(): void
+}
+
+export interface DesktopMascotMenuSize {
+  width: number
+  height: number
 }
 
 /** 应用适配器提供任务能力，桌宠不直接依赖调度 API 或运行状态实现。 */

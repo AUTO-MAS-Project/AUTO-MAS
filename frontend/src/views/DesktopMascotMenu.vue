@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import type { DesktopMascotMenuCapability, DesktopMascotMenuData } from '@/types/desktopMascot'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type {
+  DesktopMascotMenuCapability,
+  DesktopMascotMenuData,
+  DesktopMascotMenuSize,
+} from '@/types/desktopMascot'
 
 const data = ref<DesktopMascotMenuData | null>(null)
 const expanded = ref<string | null>(null)
 const pending = ref(false)
 const error = ref('')
 const root = ref<HTMLElement>()
+const surface = ref<HTMLElement>()
+const viewport = ref<DesktopMascotMenuSize>()
+const menuHeight = ref(160)
 const feedback = ref<HTMLElement>()
 const api = window.desktopMascotMenuAPI
 let disposed = false
 let unsubscribe: (() => void) | undefined
+let observer: ResizeObserver | undefined
+let layoutFrame = 0
+let lastSize: DesktopMascotMenuSize | undefined
 const selected = computed(() => data.value?.capabilities.find(item => item.id === expanded.value))
 const entries = computed(
   () =>
@@ -34,6 +44,8 @@ const style = computed(() => {
     '--mascot-menu-radius': `${skin?.radius ?? colors.radius}px`,
     '--mascot-menu-font': `${skin?.fontSize ?? 13}px`,
     '--mascot-menu-item-height': `${skin?.itemHeight ?? 32}px`,
+    width: `${Math.min(Math.round(skin?.width ?? 180), viewport.value?.width ?? 180)}px`,
+    '--mascot-menu-max-height': `${Math.max(1, Math.min(viewport.value?.height ?? 160, expanded.value ? Math.max(160, menuHeight.value) : Infinity) - 8)}px`,
     '--app-scrollbar-track': 'transparent',
     '--app-scrollbar-thumb': `color-mix(in srgb, ${skin?.text ?? colors.text} 28%, transparent)`,
     '--app-scrollbar-thumb-hover': `color-mix(in srgb, ${skin?.text ?? colors.text} 45%, transparent)`,
@@ -47,16 +59,45 @@ onMounted(async () => {
     changed = true
     data.value = value
   })
-  const initial = await api.getData()
+  const [initial, available] = await Promise.all([api.getData(), api.getViewport()])
   if (disposed) return
+  if (!available) {
+    api.close()
+    return
+  }
+  viewport.value = available
   if (!changed) data.value = initial
   await focusFirst()
+  measureLayout()
+})
+watch(root, element => {
+  observer?.disconnect()
+  if (!element) return
+  observer = new ResizeObserver(scheduleLayout)
+  observer.observe(element)
 })
 onUnmounted(() => {
   disposed = true
   unsubscribe?.()
+  observer?.disconnect()
+  cancelAnimationFrame(layoutFrame)
   window.removeEventListener('keydown', keydown)
 })
+
+function scheduleLayout(): void {
+  cancelAnimationFrame(layoutFrame)
+  layoutFrame = requestAnimationFrame(measureLayout)
+}
+
+function measureLayout(): void {
+  if (disposed || !viewport.value || !surface.value || !root.value) return
+  const bounds = surface.value.getBoundingClientRect()
+  const size = { width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) }
+  if (!expanded.value) menuHeight.value = size.height
+  if (lastSize?.width === size.width && lastSize.height === size.height) return
+  lastSize = size
+  api.resize(size)
+}
 
 async function focusFirst(): Promise<void> {
   await nextTick()
@@ -140,7 +181,13 @@ function keydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="menu-surface" :style="style" @pointerdown.self="api.close()" @contextmenu.prevent>
+  <div
+    ref="surface"
+    class="menu-surface"
+    :style="style"
+    @pointerdown.self="api.close()"
+    @contextmenu.prevent
+  >
     <div v-if="data" ref="root" class="mascot-menu" tabindex="-1" role="menu" :aria-busy="pending">
       <template v-if="selected">
         <div class="menu-heading">
@@ -203,12 +250,12 @@ function keydown(event: KeyboardEvent): void {
 .menu-surface {
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
+  height: auto;
   padding: 4px;
 }
 .mascot-menu {
   box-sizing: border-box;
-  max-height: 100%;
+  max-height: var(--mascot-menu-max-height);
   overflow: auto;
   padding: 4px;
   color: var(--mascot-menu-text);

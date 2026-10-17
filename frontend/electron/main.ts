@@ -35,6 +35,8 @@ import {
 } from './services/desktopMascotHost'
 import { DesktopMascotService } from './services/desktopMascotService'
 import { DesktopMascotMenuService } from './services/desktopMascotMenuService'
+import { createMasDesktopMascotCapabilities } from './services/masDesktopMascotCapabilities'
+import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
@@ -650,16 +652,23 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
+const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
+  patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), patch, defaultConfig)
+}
+const mascotCapabilities = createMasDesktopMascotCapabilities({
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  onPreferencesChanged: () => desktopMascot.syncPreferences(),
+})
 const desktopMascot = createDesktopMascotHost({
   createRuntime: options => new DesktopMascotService(options),
   createMenuRuntime: options => new DesktopMascotMenuService(options),
+  capabilities: mascotCapabilities,
+  defaultMenu: DEFAULT_MASCOT_MENU,
+  registerHandlers: mascotCapabilities.register,
   readPreferences: loadConfig,
-  savePreferences: patch =>
-    patchConfigFile(
-      path.join(getAppRoot(), 'config', 'frontend_config.json'),
-      patch,
-      defaultConfig
-    ),
+  savePreferences: saveMascotPreferences,
   getMainWindow: () => mainWindow,
   resolveAssets: ({ desktopMascotId, appearanceId }) =>
     desktopMascotId

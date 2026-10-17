@@ -26,11 +26,51 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
   private data: DesktopMascotMenuData | null = null
   private disposed = false
   private pending = false
+  private anchor: Point | null = null
+  private ready = false
+  private sized = false
+  private shown = false
 
   constructor(private readonly options: DesktopMascotMenuOptions) {
     ipcMain.handle('desktop-mascot-menu:get', event =>
       event.sender === this.window?.webContents ? this.data : null
     )
+    ipcMain.handle('desktop-mascot-menu:viewport', event => {
+      if (event.sender !== this.window?.webContents || !this.anchor) return null
+      const area = screen.getDisplayNearestPoint(this.anchor).workArea
+      return { width: Math.max(1, area.width - 16), height: Math.max(1, area.height - 16) }
+    })
+    this.onResize = (event, size: unknown) => {
+      const win = this.window
+      if (
+        !win ||
+        event.sender !== win.webContents ||
+        !this.anchor ||
+        !size ||
+        typeof size !== 'object' ||
+        !('width' in size) ||
+        typeof size.width !== 'number' ||
+        !Number.isFinite(size.width) ||
+        size.width <= 0 ||
+        !('height' in size) ||
+        typeof size.height !== 'number' ||
+        !Number.isFinite(size.height) ||
+        size.height <= 0
+      )
+        return
+      const area = screen.getDisplayNearestPoint(this.anchor).workArea
+      const width = Math.min(Math.ceil(size.width), Math.max(1, area.width - 16))
+      const height = Math.min(Math.ceil(size.height), Math.max(1, area.height - 16))
+      win.setBounds({
+        x: Math.max(area.x, Math.min(this.anchor.x, area.x + area.width - width)),
+        y: Math.max(area.y, Math.min(this.anchor.y, area.y + area.height - height)),
+        width,
+        height,
+      })
+      this.sized = true
+      this.showWhenReady()
+    }
+    ipcMain.on('desktop-mascot-menu:resize', this.onResize)
     ipcMain.handle('desktop-mascot-menu:execute', async (event, action: unknown) => {
       if (event.sender !== this.window?.webContents || !this.data || this.pending)
         return { success: false }
@@ -63,45 +103,26 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
   }
 
   private readonly onClose: (event: Electron.IpcMainEvent) => void
+  private readonly onResize: (event: Electron.IpcMainEvent, size: unknown) => void
+
+  private showWhenReady(): void {
+    if (!this.window || !this.ready || !this.sized || this.shown) return
+    this.shown = true
+    this.window.show()
+    this.window.focus()
+  }
 
   open(position: Point, data: DesktopMascotMenuData): void {
     if (this.disposed) return
     this.close()
     this.data = data
+    this.anchor = position
     const area = screen.getDisplayNearestPoint(position).workArea
-    const style = data.presentation.style
-    const width = Math.min(Math.round(style?.width ?? 180), Math.max(1, area.width - 16))
-    const columns = data.presentation.layout === 'grid' ? 2 : 1
-    let rows = 0
-    let separators = 0
-    let column = 0
-    for (const item of data.presentation.items) {
-      if ('separator' in item) {
-        separators++
-        column = 0
-      } else {
-        if (column === 0) rows++
-        column = (column + 1) % columns
-      }
-    }
-    // 与菜单的内边距、行间距及分隔线高度一致，避免按整行给分隔线留白。
-    const height = Math.min(
-      Math.max(
-        160,
-        Math.round(
-          rows * (style?.itemHeight ?? 32) +
-            separators * 9 +
-            Math.max(0, rows + separators - 1) * 2 +
-            18
-        )
-      ),
-      Math.max(1, area.height - 16)
-    )
     const win = new BrowserWindow({
-      x: Math.max(area.x, Math.min(position.x, area.x + area.width - width)),
-      y: Math.max(area.y, Math.min(position.y, area.y + area.height - height)),
-      width,
-      height,
+      x: Math.max(area.x, Math.min(position.x, area.x + area.width - 1)),
+      y: Math.max(area.y, Math.min(position.y, area.y + area.height - 1)),
+      width: 1,
+      height: 1,
       frame: false,
       transparent: true,
       backgroundColor: '#00000000',
@@ -121,8 +142,8 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
     this.window = win
     win.once('ready-to-show', () => {
       if (this.window === win && !win.isDestroyed()) {
-        win.show()
-        win.focus()
+        this.ready = true
+        this.showWhenReady()
       }
     })
     win.on('blur', () => {
@@ -153,6 +174,10 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
     this.window = null
     this.data = null
     this.pending = false
+    this.anchor = null
+    this.ready = false
+    this.sized = false
+    this.shown = false
     if (win) this.options.onClosed()
     if (win && !win.isDestroyed()) win.destroy()
   }
@@ -161,8 +186,13 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
     if (this.disposed) return
     this.disposed = true
     this.close()
-    for (const channel of ['desktop-mascot-menu:get', 'desktop-mascot-menu:execute'])
+    for (const channel of [
+      'desktop-mascot-menu:get',
+      'desktop-mascot-menu:execute',
+      'desktop-mascot-menu:viewport',
+    ])
       ipcMain.removeHandler(channel)
     ipcMain.removeListener('desktop-mascot-menu:close', this.onClose)
+    ipcMain.removeListener('desktop-mascot-menu:resize', this.onResize)
   }
 }
