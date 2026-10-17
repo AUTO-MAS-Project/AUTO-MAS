@@ -1133,6 +1133,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
             )
 
+            # 清事件必须在启动日志监控之前：监控回调随时会 set()，晚于它们的 clear() 会把
+            # 唤醒抹掉（早期更是在 set() 之后才清），进程秒退时只能等 60s 空转超时。
+            self.wait_event.clear()
+
             # 启动日志监控（文件日志）
             # 传入可调用对象让监控器按日期滚动日志跨零点自动切换新文件，
             # 避免固定路径在午夜后读不到新日志行而误判超时
