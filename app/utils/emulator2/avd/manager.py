@@ -363,6 +363,22 @@ async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event 
     return mine
 
 
+#: ``{根目录键|原生索引: 锁}``：这台实例有一次 close 正在做。正常关机要等 qemu 自己退出（最多十几秒），
+#: 这段时间 qemu 还在：同一台实例的 close 要排队，否则后一次会在前一次正常关机的半途退回 kill；
+#: open 也要先等它关完，否则会把正在关机的实例当成已在运行。close 不等 open（开机中照样能关）。
+_CLOSING: dict[str, asyncio.Lock] = {}
+
+
+async def _wait_closing(key: str, label: str) -> None:
+    """这台实例正在关机就等它关完（close 自身最多 28 秒，见 constants 关机那一组）。"""
+    lock = _CLOSING.get(key)
+    if lock is None or not lock.locked():
+        return
+    logger.info(f"{label} 正在关机，等它关完再开机")
+    async with lock:
+        pass
+
+
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
 _FROZEN: dict[str, str] = {}
 
@@ -762,6 +778,7 @@ class _AvdCore(DeviceBase):
             key, f"魔改 AVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
         )
         try:
+            await _wait_closing(key, f"魔改 AVD 实例 {idx}")
             return await self._open(idx, instance, key, max_wait)
         finally:
             if mine is not None:
@@ -1473,11 +1490,20 @@ class _AvdCore(DeviceBase):
     # ---- 关机 -----------------------------------------------------------
 
     async def close(self, idx: str) -> DeviceStatus:
+        """关机。同一台实例的 close 排队做（见 :data:`_CLOSING`）。"""
         idx = str(idx)
         instance = self._instance(idx)
+        key = _instance_key(self.root, idx)
+        lock = _CLOSING.setdefault(key, asyncio.Lock())
+        if lock.locked():
+            logger.info(f"魔改 AVD 实例 {idx} 正由另一次关闭在关，等它关完再继续")
+        async with lock:
+            return await self._close(idx, instance, key)
+
+    async def _close(self, idx: str, instance: AvdInstance, key: str) -> DeviceStatus:
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
-        _FROZEN.pop(_instance_key(self.root, idx), None)
+        _FROZEN.pop(key, None)
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         if process is None:
             return DeviceStatus.OFFLINE
@@ -1491,7 +1517,8 @@ class _AvdCore(DeviceBase):
         # 磁盘 write-through 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。
         # 强制关闭（ForceKillOnClose）不走正常关机，只先 sync 再强杀。
         # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限与
-        # 三条路径的算式见 constants 里关机那一组（最坏 28 秒）。adb 命令都不走重新登记（会多等 5 秒）。
+        # 三条路径的算式见 constants 里关机那一组（最坏 28 秒）。adb 命令都不走重新登记（会多等 5 秒），
+        # 私有 server 中途没了要重起时，等它的时间也从这条命令的上限里扣（total_timeout）。
         started = time.monotonic()
         # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就既不能正常关机、
         # 也不能 sync，直接用控制台关
@@ -1552,6 +1579,7 @@ class _AvdCore(DeviceBase):
             serial=host.serial_of(port),
             timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
             reregister=False,
+            total_timeout=True,
         )
         if code != 0:
             return f"关机命令没有成功返回（返回码 {code}）: {output}"
@@ -1576,6 +1604,7 @@ class _AvdCore(DeviceBase):
                 serial=host.serial_of(port),
                 timeout=timeout,
                 reregister=False,
+                total_timeout=True,
             )
         else:
             code, output = -1, problem
