@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { selectBatchTargets } from './real-batch.mjs'
 import { acquireRealRunLock, parseLauncherArgs, seedRealProfile } from './run.mjs'
 
 test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', async () => {
@@ -459,4 +460,17 @@ test('启动器参数不透传给 playwright', () => {
     inPlace: true,
     playwrightArgs: ['--grep', '@smoke'],
   })
+})
+test('批量模式按专项过滤目标并拒绝未配置的专项', () => {
+  const candidates = [
+    { scriptType: 'MaaConfig', accountName: 'a' },
+    { scriptType: 'SrcConfig', accountName: 'b' },
+    { scriptType: 'MaaConfig', accountName: 'c' },
+  ]
+  assert.deepEqual(selectBatchTargets(candidates, []), candidates)
+  assert.deepEqual(
+    selectBatchTargets(candidates, ['MaaConfig']).map(candidate => candidate.accountName),
+    ['a', 'c']
+  )
+  assert.throws(() => selectBatchTargets(candidates, ['MaaEndConfig']), /没有这些专项/)
 })

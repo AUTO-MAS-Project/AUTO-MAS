@@ -113,7 +113,7 @@ const describeSelection = candidate =>
   `${candidate.accountName}（${candidate.scriptType} 脚本 ${candidate.scriptId} / 用户 ${candidate.userId}）`
 
 // 开发者在应用里调好的第一个已启用用户就是默认真实 E2E 目标，避免为跑一次测试再抄三个 UUID。
-const listRealCandidates = scriptConfig => {
+export const listRealCandidates = scriptConfig => {
   const candidates = []
   for (const instance of scriptConfig.instances ?? []) {
     if (!supportedScriptTypes.has(instance.type)) continue
