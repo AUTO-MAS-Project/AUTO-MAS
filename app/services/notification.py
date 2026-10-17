@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any
 
 from app.models.config import Webhook
 from app.models.notification import (
@@ -35,24 +35,8 @@ from app.models.notification_channel import ChannelTarget, NotifyChannel
 from app.notification_channels.registry import BoundChannels
 
 
-def clip_notify_text(text: str, limit: int) -> str:
-    """保留辅助函数旧路径，按需调用系统渠道实现。"""
-    from app.notification_channels.system.transport import clip_notify_text as clip
-
-    return clip(text, limit)
-
-
-def webhook_body_failure(text: str, url: str = "") -> str | None:
-    """保留辅助函数旧路径，不在导入宿主时加载可选渠道。"""
-    from app.notification_channels.webhook.transport import (
-        webhook_body_failure as failure,
-    )
-
-    return failure(text, url)
-
-
 class Notification:
-    """兼容现有单渠道入口，不触发广播、额外重试或外部连接。"""
+    """持有已装配渠道，并保留系统通知和 Webhook 测试的直接入口。"""
 
     def __init__(self) -> None:
         self._channels: BoundChannels | None = None
@@ -84,40 +68,6 @@ class Notification:
             title=title, message=message, ticker=ticker, t=t
         )
 
-    async def send_mail(
-        self,
-        mode: Literal["文本", "网页"],
-        title: str,
-        content: str,
-        to_address: str,
-        *,
-        images: Sequence[NotificationImage] = (),
-    ) -> None:
-        return await self._sender("mail").send_mail(
-            mode=mode,
-            title=title,
-            content=content,
-            to_address=to_address,
-            images=images,
-        )
-
-    async def ServerChanPush(self, title: str, content: str, send_key: str) -> None:
-        return await self._sender("serverchan").ServerChanPush(
-            title=title, content=content, send_key=send_key
-        )
-
-    async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:
-        return await self._sender("cmcc").send_cmcc_newmsg(
-            title=title, content=content, api_key=api_key
-        )
-
-    async def send_openclaw_qq(
-        self, title: str, content: str, *, images: Sequence[NotificationImage] = ()
-    ) -> None:
-        return await self._sender("openclaw_qq").send_openclaw_qq(
-            title=title, content=content, images=images
-        )
-
     async def WebhookPush(
         self,
         title: str,
@@ -128,13 +78,6 @@ class Notification:
     ) -> None:
         return await self._sender("webhook").WebhookPush(
             title=title, content=content, webhook=webhook, images=images
-        )
-
-    async def send_koishi(
-        self, message: str, msgtype: str = "text", client_name: str = "Koishi"
-    ) -> bool:
-        return await self._sender("koishi").send_koishi(
-            message=message, msgtype=msgtype, client_name=client_name
         )
 
 

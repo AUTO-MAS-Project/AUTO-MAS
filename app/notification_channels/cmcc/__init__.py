@@ -93,10 +93,6 @@ def register() -> NotifyChannel:
                 ),
             )
         },
-        capabilities=NotificationCapabilities(
-            formats=("text",),
-            body_title_policy="always",
-        ),
         target_builder=_cmcc_targets,
         send_adapter=_cmcc_send,
         sender_factory=Sender,

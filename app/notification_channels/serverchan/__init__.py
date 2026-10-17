@@ -97,12 +97,6 @@ def register() -> NotifyChannel:
         summary_key="setting.notify.summary.serverchan",
         summary_fields=("ServerChanKey",),
         fields={SCOPE_GLOBAL: (_SERVERCHAN_FIELD,), SCOPE_USER: (_SERVERCHAN_FIELD,)},
-        capabilities=NotificationCapabilities(
-            formats=("markdown", "text"),
-            image_presentations=frozenset({"markdown"}),
-            max_content_utf8_bytes=30 * 1024,
-            double_text_newlines=True,
-        ),
         target_builder=_serverchan_targets,
         send_adapter=_serverchan_send,
         sender_factory=Sender,

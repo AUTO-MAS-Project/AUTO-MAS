@@ -10,7 +10,6 @@ import type {
 } from '../../src/types/desktopMascot'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { MascotSummary } from '../../src/types/mascotPack'
 import { getAppRoot } from '../services/environmentService'
 import { getLogger } from '../services/logger'
 import { importMascotPackage, listMascots, removeMascot } from '../services/mascotPackageService'
@@ -34,13 +33,6 @@ export function broadcastMascotChange(selection?: DesktopMascotSelection): void 
   }
 }
 
-const summary = (mascot: MascotSummary): MascotSummary => ({
-  id: mascot.id,
-  name: mascot.name,
-  ...(mascot.description ? { description: mascot.description } : {}),
-  ...(mascot.previewUrl ? { previewUrl: mascot.previewUrl } : {}),
-})
-
 export function registerMascotHandlers(onChanged: () => void): void {
   if (registered) return
   registered = true
@@ -53,23 +45,19 @@ export function registerMascotHandlers(onChanged: () => void): void {
     if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
       return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 桌宠包' }
     }
-    const { mascot, existing, ...result } = importMascotPackage(
+    const result = importMascotPackage(
       app.getPath('userData'),
       path.resolve(zipPath),
       replace === true
     )
     if (result.success) {
-      logger.info(`桌宠已导入: ${mascot?.id}`)
-      if (mascot) forgetSource(mascot.id)
+      logger.info(`桌宠已导入: ${result.mascot?.id}`)
+      if (result.mascot) forgetSource(result.mascot.id)
       notify()
     } else {
       logger.warn(`桌宠导入失败: ${result.error}`)
     }
-    return {
-      ...result,
-      ...(mascot ? { mascot: summary(mascot) } : {}),
-      ...(existing ? { existing: summary(existing) } : {}),
-    }
+    return result
   })
   ipcMain.handle('mascot:remove', (_event, id: unknown) => {
     if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }

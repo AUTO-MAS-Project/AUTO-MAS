@@ -9,7 +9,6 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Any
 
-from app.models.notification import NotificationCapabilities
 from app.models.notification_channel import (
     ChannelDependencies,
     NotifyChannel,
@@ -95,40 +94,6 @@ def validate_channel(channel: NotifyChannel) -> None:
                 )
             ):
                 raise ValueError("渠道配置字段元数据无效")
-    if (
-        not isinstance(channel.capabilities, NotificationCapabilities)
-        or not isinstance(channel.capabilities.formats, tuple)
-        or not channel.capabilities.formats
-        or not set(channel.capabilities.formats)
-        <= {
-            "text",
-            "html",
-            "markdown",
-        }
-    ):
-        raise ValueError("渠道格式声明无效")
-    caps = channel.capabilities
-    if (
-        not isinstance(caps.image_presentations, frozenset)
-        or not caps.image_presentations <= {"html", "markdown", "base64", "rich_media"}
-        or caps.body_title_policy not in {"never", "always", "when_title_missing"}
-        or any(
-            type(value) is not bool
-            for value in (
-                caps.append_signature,
-                caps.title_in_template,
-                caps.double_text_newlines,
-            )
-        )
-        or (
-            caps.max_content_utf8_bytes is not None
-            and (
-                type(caps.max_content_utf8_bytes) is not int
-                or caps.max_content_utf8_bytes <= 0
-            )
-        )
-    ):
-        raise ValueError("渠道能力声明无效")
     if not callable(channel.target_builder) or not callable(channel.sender_factory):
         raise ValueError("渠道目标构造器或发送器工厂缺失")
     if not inspect.iscoroutinefunction(channel.send_adapter):
@@ -175,12 +140,11 @@ class ChannelRegistry:
                 dependencies.logger.warning(
                     f"通知渠道 {entry.key} 装配失败: {type(exc).__name__}"
                 )
-        return BoundChannels(self, senders)
+        return BoundChannels(senders)
 
 
 class BoundChannels:
-    def __init__(self, registry: ChannelRegistry, senders: dict[str, Any]) -> None:
-        self.registry = registry
+    def __init__(self, senders: dict[str, Any]) -> None:
         self._senders = MappingProxyType(senders)
 
     def sender(self, key: str) -> Any:

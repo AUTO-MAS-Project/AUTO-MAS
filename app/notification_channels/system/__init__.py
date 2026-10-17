@@ -81,10 +81,6 @@ def register() -> NotifyChannel:
         summary_key="setting.notify.summary.system",
         summary_fields=(),
         fields={},
-        capabilities=NotificationCapabilities(
-            formats=("text",),
-            append_signature=False,
-        ),
         target_builder=_system_targets,
         send_adapter=_system_send,
         sender_factory=Sender,
