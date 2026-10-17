@@ -4656,6 +4656,9 @@ export default {
 
     basic: {
       appearance: '外观配置',
+      resetTheme: '重置主题',
+      themeReset: '主题已恢复为跟随系统和默认蓝色',
+      themeResetFailed: '重置主题失败，请重试',
       themeMode: '主题模式',
       themeModeTip: '界面外观主题',
       themeColor: '主题色',

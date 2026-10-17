@@ -4779,6 +4779,9 @@ export default {
 
     basic: {
       appearance: 'Appearance',
+      resetTheme: 'Reset theme',
+      themeReset: 'Theme reset to system mode and the default blue accent',
+      themeResetFailed: 'Could not reset theme. Please try again.',
       themeMode: 'Theme mode',
       themeModeTip: 'Overall look of the interface',
       themeColor: 'Accent color',
