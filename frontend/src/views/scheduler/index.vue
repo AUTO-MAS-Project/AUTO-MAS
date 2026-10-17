@@ -80,7 +80,7 @@
             <!-- 任务控制栏 -->
             <SchedulerTaskControl
               v-model:selected-task-id="tab.selectedTaskId"
-              v-model:selected-mode="tab.selectedMode"
+              :selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
               v-model:selected-user-ids="tab.selectedUserIds"
               v-model:queue-user-scope="tab.queueUserScope"
@@ -94,7 +94,6 @@
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
-              :is-cycle-queue="tab.isCycleQueue"
               :cycle-next-list="tab.cycleNextList || []"
               :queue-scope-groups="tab.queueScopeGroups || []"
               :queue-scope-loading="tab.queueScopeLoading"

@@ -28,16 +28,11 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
   异常: 'error',
 }
 
-// 任务模式选项（直接复用后端枚举值）
+// 运行模式标签（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
   { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
   { labelKey: 'scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
 ]
-
-export const getTaskModeOptions = (supportedModes?: string[] | null) => {
-  if (!supportedModes) return TASK_MODE_OPTIONS
-  return TASK_MODE_OPTIONS.filter(option => supportedModes.includes(option.value))
-}
 
 // 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
 export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
@@ -89,7 +84,7 @@ export interface SchedulerTab {
   runningModeLabel?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
-  // 所选任务是否为循环队列，决定是否给出「循环运行」模式
+  // 所选任务是否为循环队列，循环队列固定按「循环运行」启动
   isCycleQueue?: boolean
   // 循环运行的待运行条目预览
   cycleNextList?: WSTaskCyclePreviewData[]

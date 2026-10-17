@@ -15,24 +15,7 @@
             @change="onTaskChange"
             @dropdown-visible-change="onDropdownVisibleChange"
           />
-          <a-select
-            v-if="status !== '运行'"
-            v-model:value="localSelectedMode"
-            :placeholder="t('scheduler.control.modePlaceholder')"
-            style="width: 120px"
-            :disabled="disabled"
-            size="large"
-            @change="onModeChange"
-          >
-            <a-select-option
-              v-for="option in modeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ t(option.labelKey) }}
-            </a-select-option>
-          </a-select>
-          <div v-else class="running-info">
+          <div v-if="status === '运行'" class="running-info">
             <span class="info-item">
               <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
@@ -217,7 +200,7 @@ import {
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
-import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import {
   countQueueSelectedUsers,
   countQueueUsers,
@@ -249,7 +232,6 @@ interface Props {
   disabled?: boolean
   runningTaskLabel?: string
   runningModeLabel?: string
-  isCycleQueue?: boolean
   cycleNextList?: WSTaskCyclePreviewData[]
   // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts
   queueUserScope?: QueueUserScope
@@ -261,7 +243,6 @@ interface Props {
 interface Emits {
   (e: 'update:selectedTaskId', value: string | null): void
 
-  (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
   (e: 'update:resumeFromScriptId', value: string | null): void
   (e: 'update:selectedUserIds', value: string[] | undefined): void
 
@@ -293,7 +274,6 @@ const props = withDefaults(defineProps<Props>(), {
   userOptionsLoading: false,
   runningTaskLabel: '',
   runningModeLabel: '',
-  isCycleQueue: false,
   cycleNextList: () => [],
   queueUserScope: () => ({}),
   queueScopeGroups: () => [],
@@ -305,12 +285,7 @@ const emit = defineEmits<Emits>()
 
 // 本地状态，用于双向绑定
 const localSelectedTaskId = ref(props.selectedTaskId)
-const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
-// 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
-const modeOptions = computed(() =>
-  getTaskModeOptions(props.isCycleQueue ? null : [TaskCreateIn.mode.AUTO_PROXY])
-)
 
 const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
@@ -331,10 +306,7 @@ const showResumeScriptSelect = computed(
 // 脚本任务（非队列）也用「本次运行范围」挑账号，它是唯一入口：
 // 单个脚本包成一个托管分组，勾选结果写回既有的 userIds。列表为空时同样保留面板以便重试。
 const showScriptRunScope = computed(
-  () =>
-    localSelectedMode.value === TaskCreateIn.mode.AUTO_PROXY &&
-    Boolean(selectedTaskOption.value) &&
-    !selectedIsQueueTask.value
+  () => Boolean(selectedTaskOption.value) && !selectedIsQueueTask.value
 )
 
 const scriptScope = computed(() =>
@@ -403,7 +375,7 @@ const showRunScope = computed(
 // 启动按钮的禁用条件集中在这里维护，模板里的表达式不再继续膨胀
 const startDisabled = computed(() => {
   if (props.status === '运行') return false
-  if (!localSelectedTaskId.value || !localSelectedMode.value || props.disabled) return true
+  if (!localSelectedTaskId.value || props.disabled) return true
   if (!props.taskOptions.some(option => option.value === localSelectedTaskId.value)) return true
   // 脚本任务：账号还在加载、或显式取消到一个人都不剩时不让启动（与启动守卫同口径）
   if (showScriptRunScope.value) {
@@ -442,7 +414,7 @@ watch(
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
       emit('update:runningTaskLabel', taskLabel)
 
-      const modeOption = modeOptions.value.find(opt => opt.value === props.selectedMode)
+      const modeOption = TASK_MODE_OPTIONS.find(opt => opt.value === props.selectedMode)
       const modeLabel = modeOption ? t(modeOption.labelKey) : props.selectedMode || ''
       emit('update:runningModeLabel', modeLabel)
     }
@@ -459,21 +431,6 @@ watch(
 )
 
 watch(
-  () => props.selectedMode,
-  newVal => {
-    localSelectedMode.value = newVal
-  },
-  { immediate: true }
-)
-
-watch(modeOptions, options => {
-  if (options.some(option => option.value === localSelectedMode.value)) return
-  const nextMode = options[0]?.value ?? null
-  localSelectedMode.value = nextMode
-  emit('update:selectedMode', nextMode)
-})
-
-watch(
   () => props.resumeFromScriptId,
   newVal => {
     localResumeFromScriptId.value = newVal ?? null
@@ -485,10 +442,6 @@ watch(
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
   emit('task-changed', value)
-}
-
-const onModeChange = (value: TaskCreateIn.mode) => {
-  emit('update:selectedMode', value)
 }
 
 const onResumeScriptChange = (value: string | undefined) => {

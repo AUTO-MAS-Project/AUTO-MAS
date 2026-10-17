@@ -3670,7 +3670,6 @@ export default {
     },
     control: {
       taskPlaceholder: 'タスクを選択',
-      modePlaceholder: 'モードを選択',
       taskLabel: 'タスク：',
       modeLabel: 'モード：',
       resumePlaceholder: '指定したマネージドスクリプトから再開（既定は先頭）',
@@ -3731,7 +3730,8 @@ export default {
       needRunUsers: '実行するアカウントを1つ以上選択してください',
       needQueueRunUsers: '実行するアカウントを1つ以上選択してください',
       loadQueueRunUsersFailed: 'キューのアカウントを読み込み中です。しばらくして再試行してください',
-      needTaskAndMode: 'タスクと実行モードの両方を選んでください',
+      needTask: 'タスクを選んでください',
+      loadTaskModeFailed: 'タスクの実行方式を確認できませんでした。再試行してください',
       taskOptionsUnavailable: 'タスク一覧を読み込み中です。少し待ってから再試行してください',
       taskStarted: 'タスクを開始しました',
       startTaskFailed: 'タスクを開始できませんでした',

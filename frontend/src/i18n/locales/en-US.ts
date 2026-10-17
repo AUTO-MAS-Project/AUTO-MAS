@@ -4322,7 +4322,6 @@ export default {
     },
     control: {
       taskPlaceholder: 'Pick a task',
-      modePlaceholder: 'Pick a mode',
       taskLabel: 'Task:',
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific managed script (defaults to the first)',
@@ -4385,7 +4384,8 @@ export default {
       needRunUsers: 'Select at least one account to run',
       needQueueRunUsers: 'Select at least one account to run',
       loadQueueRunUsersFailed: 'Queue accounts are still loading. Try again later',
-      needTaskAndMode: 'Pick both a task and a mode',
+      needTask: 'Pick a task',
+      loadTaskModeFailed: 'Could not determine how to run this task. Please retry',
       taskOptionsUnavailable: 'Tasks are not loaded yet. Please retry shortly',
       taskStarted: 'Task started',
       startTaskFailed: 'Could not start the task',

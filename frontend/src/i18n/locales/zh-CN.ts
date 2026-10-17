@@ -4173,7 +4173,6 @@ export default {
     },
     control: {
       taskPlaceholder: '选择任务项',
-      modePlaceholder: '选择模式',
       taskLabel: '任务：',
       modeLabel: '模式：',
       resumePlaceholder: '从指定托管继续（默认第一个）',
@@ -4233,7 +4232,8 @@ export default {
       needRunUsers: '请至少选择一个运行账号',
       needQueueRunUsers: '请至少勾选一个要运行的账号',
       loadQueueRunUsersFailed: '队列的账号尚未加载完成，请稍后重试',
-      needTaskAndMode: '请选择任务项和执行模式',
+      needTask: '请选择任务项',
+      loadTaskModeFailed: '无法确认任务运行方式，请重试',
       taskOptionsUnavailable: '任务列表尚未加载，请稍后重试',
       taskStarted: '任务启动成功',
       startTaskFailed: '启动任务失败',
