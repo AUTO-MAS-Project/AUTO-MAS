@@ -1752,6 +1752,12 @@ ipcMain.handle('get-window-activity', () => {
   return mainWindow.isVisible() && !mainWindow.isMinimized() ? 'visible' : 'background'
 })
 
+// 只读 GPU 功能门控；不修改驱动黑名单、显卡选择或 Chromium 启动开关。
+ipcMain.handle('get-graphics-acceleration', () => {
+  const status = app.getGPUFeatureStatus()
+  return status.webgl2 === 'enabled' && status.gpu_compositing === 'enabled'
+})
+
 // 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
 ipcMain.handle('window-focus', () => {
   if (mainWindow) {

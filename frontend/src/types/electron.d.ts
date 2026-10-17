@@ -245,6 +245,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
+  /** 只读 Chromium GPU 功能状态，不能保证具体显卡或实测性能。 */
+  getGraphicsAcceleration?: () => Promise<boolean>
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => () => void
 
   // 进程管理

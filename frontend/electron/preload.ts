@@ -105,6 +105,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 窗口可见性/后台状态
   getWindowActivity: () => ipcRenderer.invoke('get-window-activity'),
+  getGraphicsAcceleration: () => ipcRenderer.invoke('get-graphics-acceleration'),
   onWindowActivityChange: (callback: (activity: 'visible' | 'background') => void) => {
     const listener = (_event: Electron.IpcRendererEvent, activity: unknown) => {
       if (activity === 'visible' || activity === 'background') {

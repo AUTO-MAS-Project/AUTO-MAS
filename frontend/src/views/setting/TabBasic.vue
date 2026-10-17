@@ -383,6 +383,9 @@ const handleLocaleChange = (value: unknown): void => {
               <a-select-option value="galaxy">
                 {{ t('setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
+              <a-select-option value="three-star">
+                {{ t('setting.basic.homeSatelliteThreeStar') }}
+              </a-select-option>
             </a-select>
           </div>
         </a-col>
