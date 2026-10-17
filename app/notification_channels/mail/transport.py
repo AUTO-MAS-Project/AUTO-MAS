@@ -209,7 +209,7 @@ class Sender:
                 frames = traceback.extract_tb(exc.__traceback__)
                 if any(
                     Path(frame.filename).name == "smtplib.py"
-                    and frame.name in {"ehlo", "helo"}
+                    and frame.name in {"ehlo", "helo", "ehlo_or_helo_if_needed"}
                     for frame in frames
                 ):
                     stage = "握手"
