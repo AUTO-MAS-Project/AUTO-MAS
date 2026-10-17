@@ -4,11 +4,13 @@
 但用户如果已经手动改过原生配置, 绝不能拿旧快照盖回去。
 """
 
+import json
 from pathlib import Path
 
 import pytest
 
 from app.utils.io import (
+    NATIVE_CONFIG_FINGERPRINT_VERSION,
     clear_native_config_snapshot,
     dir_fingerprint,
     mark_native_config_injected,
@@ -33,7 +35,9 @@ def _commit_snapshot(
         baseline=dir_fingerprint(snapshot),
         injected=injected,
     )
-    assert read_native_config_snapshot(snapshot) is not None
+    state = read_native_config_snapshot(snapshot)
+    assert state is not None
+    assert state.fingerprint_version == NATIVE_CONFIG_FINGERPRINT_VERSION
     assert live.exists()
 
 
@@ -150,6 +154,36 @@ def test_uncommitted_snapshot_is_discarded(tmp_path: Path) -> None:
         "cleared"
     )
     assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
+    assert not snapshot.exists()
+
+
+def test_legacy_fingerprint_snapshot_is_preserved_aside(tmp_path: Path) -> None:
+    """旧算法写下的快照比不了指纹: 不恢复也不删除, 改名留存用户的原始配置。"""
+
+    snapshot = tmp_path / "Temp"
+    live = tmp_path / "config"
+    _write_config(snapshot, "original")
+    _write_config(live, "injected")
+    # 旧版本写下的标记没有 fingerprint_version
+    snapshot.with_name("Temp.ready.json").write_text(
+        json.dumps(
+            {
+                "script_id": "script-1",
+                "original_exists": True,
+                "baseline": "old-algorithm",
+                "injected": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert recover_native_config(snapshot, live, expected_script_id="script-1") == (
+        "legacy"
+    )
+    assert (live / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "injected"
+    preserved = tmp_path / "Temp.legacy"
+    assert (preserved / "mxu-MaaEnd.json").read_text(encoding="utf-8") == "original"
+    assert preserved.with_name("Temp.legacy.ready.json").exists()
     assert not snapshot.exists()
 
 
