@@ -272,10 +272,6 @@ export function useScriptApi() {
                           maaUserData.Task?.ActivityStageIndex !== undefined
                             ? maaUserData.Task.ActivityStageIndex
                             : 1,
-                        ActivityMedicineNumb:
-                          maaUserData.Task?.ActivityMedicineNumb !== undefined
-                            ? maaUserData.Task.ActivityMedicineNumb
-                            : (maaUserData.Stage?.MedicineNumb ?? 0),
                         DepotMaintainPlans:
                           maaUserData.Task?.DepotMaintainPlans !== undefined
                             ? maaUserData.Task.DepotMaintainPlans

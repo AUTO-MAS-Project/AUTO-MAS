@@ -50,7 +50,6 @@ from .AutoProxy import (
 )
 from .base_preset import (
     MAA_STAMINA_LEGACY_FILENAME,
-    capture_maa_legacy_activity_sources,
     ensure_maa_default_configuration,
     get_maa_base_preset,
     is_valid_maa_task_queues,
@@ -312,13 +311,6 @@ class ScriptConfigTask(TaskExecuteBase):
         base_configurations = base_gui_new_set.get("Configurations")
         repaired_queues = 0
         managed_queue = self._uses_managed_queue() and not self.view_only
-        if managed_queue:
-            base_gui_set = read_maa_config_with_fallback(mas_dir, "gui.json")
-            capture_maa_legacy_activity_sources(
-                mas_dir,
-                base_gui_new_set,
-                current_configuration=base_gui_set.get("Current", "Default"),
-            )
         if managed_queue and isinstance(base_configurations, dict):
             for configuration in base_configurations.values():
                 if not isinstance(configuration, dict):

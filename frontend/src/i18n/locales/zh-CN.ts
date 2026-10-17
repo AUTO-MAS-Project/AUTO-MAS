@@ -11,12 +11,6 @@ export default {
   eventDepotPreview: {
     runtimeUnresolved: '部分活动选关、材料或目标暂不可用，本轮跳过；原配置已保留。',
     legacyFallback: '旧活动选关序号超出当期范围，本轮沿用旧版第一关回退；原选择已保留。',
-    budgetConflict: '旧活动目标重合，沿用自定义目标及已有药石额度；另一份原额度保留在迁移前备份。',
-    legacySeriesFallback: '旧活动连战次数无法等价沿用，本轮改为单次代理；原设置已保留。',
-    legacyExpiryFallback:
-      '旧活动的自定义或动态临期药策略无法等价沿用，本轮停用临期药；原设置已保留。',
-    legacyCommonConflict: '两份旧活动的连战或临期药设置不同，本轮采用较保守的设置；原配置已保留。',
-    budgetGateConflict: '原活动库存已禁用药剂或源石，本轮保留此限制，相应旧活动优先额度暂不使用。',
     name: '活动关均衡理智',
     hint: '先补齐当期活动目标，达到目标或没有可刷关卡时继续库存保持与干员养成。',
     scopeHint:
@@ -35,7 +29,6 @@ export default {
     invalidData: '加载活动关卡失败：返回数据缺少关卡信息',
     staleData: '活动数据更新失败，暂显示上次成功获取的关卡；已保存的目标保持不变。',
     summary: '跟随当期活动 · {n} 关 · 库存比例排序',
-    medicineHint: '此份药量只分配给一个活动计划，未用完的额度不向其他计划转移。',
   },
   maaStaminaPipeline: {
     inventoryCultivate: '库存保持与干员养成',
@@ -354,8 +347,6 @@ export default {
     maaEventStageHint: '按列表序号保存；活动更新后自动选择相同序号的新关卡，序号失效时回退到第一项',
     maaPickEventStage: '请选择活动关卡',
     maaNoEventStage: '当前无可刷活动关',
-    maaEventPotion: '活动关理智药',
-    maaEventPotionHint: '活动关优先任务使用的理智药数量，不影响普通理智作战',
     maaCultivate: '干员养成',
     maaCultivateSettings: '养成设置',
     maaCultivateShowModules: '显示模组目标',
