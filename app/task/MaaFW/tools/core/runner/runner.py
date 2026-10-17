@@ -3716,12 +3716,39 @@ def _controller_shell(controller: Any, cmd: str) -> str:
     post_shell = getattr(controller, "post_shell", None)
     if controller is None or post_shell is None:
         raise RuntimeError("当前 controller 不支持 shell")
+    _declare_shell_signatures(Library.framework())
     job = post_shell(cmd, DISK_QUIET_SHELL_TIMEOUT_MS).wait()
     # 只认 succeeded：作业 invalid 时 get() 读到的是 controller 上一次的 shell 输出，
     # 计数不变会被当成「读盘停了」
     if not job.succeeded:
         raise RuntimeError(f"shell 执行失败: {cmd}")
     return str(job.get() or "")
+
+
+def _declare_shell_signatures(framework: Any) -> None:
+    """给 shell 的两个 C 接口补上 ctypes 签名（binding 自己声明过就不动）。
+
+    老 binding（实测 5.12.3、5.14.0b1）没声明：64 位控制器句柄按 C int 传，``post_shell``
+    一调用就 ``argument 1: OverflowError: int too long to convert``，读盘闸门因此一直读不到
+    读盘量、退回按时间等满上限。5.14.2 起 binding 自己声明了，这里照它的签名补
+    （同 :func:`_encode_current_screen_png`）。
+    """
+
+    from maa.define import (
+        MaaBool,
+        MaaControllerHandle,
+        MaaCtrlId,
+        MaaStringBufferHandle,
+    )
+
+    post_shell = framework.MaaControllerPostShell
+    if post_shell.argtypes is None:
+        post_shell.restype = MaaCtrlId
+        post_shell.argtypes = [MaaControllerHandle, ctypes.c_char_p, ctypes.c_int64]
+    get_output = framework.MaaControllerGetShellOutput
+    if get_output.argtypes is None:
+        get_output.restype = MaaBool
+        get_output.argtypes = [MaaControllerHandle, MaaStringBufferHandle]
 
 
 def _guest_read_bytes(controller: Any) -> int:
