@@ -65,6 +65,7 @@ export interface DesktopMascotMenuLabels {
   resumeAnimation: string
   pauseIdleMessage: string
   resumeIdleMessage: string
+  refreshIdleMessage: string
   quickStart: string
   stopTask: string
   noTasks: string
@@ -141,6 +142,7 @@ export interface DesktopMascotHostAPI {
   setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
   showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
   onDesktopMascotError(callback: () => void): () => void
+  onDesktopMascotRefreshIdleMessage(callback: () => void): () => void
 }
 
 export interface DesktopMascotAPI {

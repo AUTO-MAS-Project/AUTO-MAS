@@ -4705,6 +4705,7 @@ export default {
       mascotResumeAnimation: '恢复动画',
       mascotPauseIdleMessage: '暂停留言',
       mascotResumeIdleMessage: '恢复留言',
+      mascotRefreshIdleMessage: '刷新留言',
       mascotTaskStarted: '开始工作啦：{name}',
       mascotTaskCompleted: '完成啦：{name}',
       mascotTaskFailed: '任务出错了，请查看任务详情：{name}',

@@ -546,6 +546,14 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       { label: labels.stopTask, submenu: taskItems('stop') },
       { type: 'separator' },
       {
+        label: labels.refreshIdleMessage,
+        enabled: !this.idleMessagePaused && !this.working,
+        click: () => {
+          if (this.window === win && !this.idleMessagePaused && !this.working)
+            this.options.onRefreshIdleMessage()
+        },
+      },
+      {
         label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
         click: () => {
           if (this.window !== win) return

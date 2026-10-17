@@ -28,6 +28,7 @@ export interface DesktopMascotOptions {
   getInitialBounds(): Rectangle | undefined
   loadTaskMenu(): Promise<DesktopMascotTaskMenu | null>
   onTaskAction(action: DesktopMascotTaskAction): void
+  onRefreshIdleMessage(): void
   onError(error: unknown): void
 }
 

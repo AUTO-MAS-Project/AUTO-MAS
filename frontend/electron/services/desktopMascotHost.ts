@@ -84,6 +84,11 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
       if (!disposed && ready && win && !win.isDestroyed())
         win.webContents.send('desktop-mascot:task-action', action)
     },
+    onRefreshIdleMessage: () => {
+      const win = options.getMainWindow()
+      if (!disposed && ready && win && !win.isDestroyed())
+        win.webContents.send('desktop-mascot:refresh-idle-message')
+    },
     onError: reportError,
   }
   let service: DesktopMascotRuntime | undefined

@@ -4835,6 +4835,7 @@ export default {
       mascotResumeAnimation: 'Resume animation',
       mascotPauseIdleMessage: 'Pause idle messages',
       mascotResumeIdleMessage: 'Resume idle messages',
+      mascotRefreshIdleMessage: 'Refresh idle message',
       mascotTaskStarted: 'Getting to work: {name}',
       mascotTaskCompleted: 'All done: {name}',
       mascotTaskFailed: 'Something went wrong. Check task details: {name}',

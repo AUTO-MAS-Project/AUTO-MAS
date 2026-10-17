@@ -50,6 +50,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop-mascot:error', listener)
     return () => ipcRenderer.removeListener('desktop-mascot:error', listener)
   },
+  onDesktopMascotRefreshIdleMessage: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-mascot:refresh-idle-message', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:refresh-idle-message', listener)
+  },
   onDesktopMascotTaskMenuRequest: (callback: (requestId: number) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, requestId: number) => callback(requestId)
     ipcRenderer.on('desktop-mascot:task-menu-request', listener)

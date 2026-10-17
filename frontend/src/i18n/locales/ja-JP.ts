@@ -4206,6 +4206,7 @@ export default {
       mascotResumeAnimation: 'アニメーションを再開',
       mascotPauseIdleMessage: '待機中のメッセージを一時停止',
       mascotResumeIdleMessage: '待機中のメッセージを再開',
+      mascotRefreshIdleMessage: '待機中のメッセージを更新',
       mascotTaskStarted: '作業を始めます：{name}',
       mascotTaskCompleted: '完了しました：{name}',
       mascotTaskFailed: 'エラーが発生しました。タスクの詳細を確認してください：{name}',

@@ -127,6 +127,7 @@ export function registerDesktopMascotHandlers(
           typeof labels.resumeAnimation === 'string' &&
           typeof labels.pauseIdleMessage === 'string' &&
           typeof labels.resumeIdleMessage === 'string' &&
+          typeof labels.refreshIdleMessage === 'string' &&
           typeof labels.quickStart === 'string' &&
           typeof labels.stopTask === 'string' &&
           typeof labels.noTasks === 'string' &&

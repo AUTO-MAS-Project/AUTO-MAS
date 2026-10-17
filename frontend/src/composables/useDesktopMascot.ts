@@ -22,6 +22,7 @@ interface DesktopMascotInputs {
 interface DesktopMascotCapabilities {
   api: DesktopMascotHostAPI
   tasks: DesktopMascotTaskEvents
+  refreshIdleMessage(): void
   translate(key: string, params?: Record<string, string>): string
   reportError(message: string, error: unknown): void
   showError(): void
@@ -41,7 +42,13 @@ export function useDesktopMascot(
       if (scope.active) showError()
     }
     const disposeDesktopMascotError = api.onDesktopMascotError?.(showDesktopMascotError)
-    onScopeDispose(() => disposeDesktopMascotError?.())
+    const disposeRefreshIdleMessage = api.onDesktopMascotRefreshIdleMessage?.(() => {
+      if (scope.active && !isStandalonePage.value && ready.value) capabilities.refreshIdleMessage()
+    })
+    onScopeDispose(() => {
+      disposeDesktopMascotError?.()
+      disposeRefreshIdleMessage?.()
+    })
     const announcedMascotTasks = new Set<string>()
     // 沿用任务总览的状态和收尾判定，不把部分失败误报为成功。
     const consumeTaskEvent = (event: DesktopMascotTaskEvent): void => {
