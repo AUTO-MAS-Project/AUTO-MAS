@@ -701,6 +701,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 尝试里：它自己失败要能重试；游戏被本轮的「关闭游戏」任务或重启关掉后，重试也要
             # 靠它重新拉起，否则第 2、3 次在找窗口那一步当场失败。
             pretasks_done = False
+            # 上一次失败后 MAS 自己起的游戏 / 模拟器是否已关掉（关的时候报错也算：两个关闭
+            # 函数不论成败都清掉 opened_*，下一轮会重新拉起），这时运行前设置要重跑
+            client_reset = False
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -726,8 +729,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
                     if not pretasks_done or await self._pretasks_need_rerun(
-                        previous_restarted
+                        client_reset
                     ):
+                        # 先清标记：重跑到一半失败时，下一轮不能因为窗口已被拉起就跳过
+                        pretasks_done = False
                         await self._run_pretasks()
                         pretasks_done = True
                     await self._ensure_desktop_game_started()
@@ -776,9 +781,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if unretryable:
                         break
                     previous_failure = message
-                    previous_restarted = await self._restart_client_before_retry(
-                        index + 1
-                    )
+                    (
+                        previous_restarted,
+                        client_reset,
+                    ) = await self._reset_client_for_retry(index + 1)
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
@@ -844,9 +850,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         previous_failure = message
-                        previous_restarted = await self._restart_client_before_retry(
-                            index + 1
-                        )
+                        (
+                            previous_restarted,
+                            client_reset,
+                        ) = await self._reset_client_for_retry(index + 1)
         finally:
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
@@ -2191,18 +2198,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._terminate_pretask_process()
         await self._terminate_runner_process()
 
-    async def _pretasks_need_rerun(self, client_restarted: bool) -> bool:
+    async def _pretasks_need_rerun(self, client_reset: bool) -> bool:
         """重试前判断要不要再跑一遍已经成功过的运行前设置。
 
         只在客户端已经不在时重跑：MAS 刚关掉自己起的游戏 / 模拟器，或者 Win32 下
         控制器的窗口已经找不到（游戏由运行前设置拉起、被队列里的「关闭游戏」任务关掉，
         MAS 不知道它是谁起的）。游戏还开着时不重跑，免得项目的启动脚本对着已在运行的
-        游戏再走一遍。
+        游戏再走一遍。固定 HWnd、控制器没有窗口规则这两种只是「看不出窗口在不在」，
+        不挡前一种：MAS 自己关掉的客户端一定不在了。
         """
 
         if self.run_plan is None or not self.run_plan.pretasks:
             return False
-        if client_restarted:
+        if client_reset:
+            self._append_log("游戏/模拟器已在上一次失败后关闭，重新应用运行前设置")
             return True
         if self.run_plan.controllerType != "Win32" or self.interface_model is None:
             return False
@@ -2852,6 +2861,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(0.5)
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
+
+    async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
+        """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。
+
+        前者只决定下一轮日志开头写不写「已重启」；后者给运行前设置判断要不要重跑——
+        关的时候报错，opened_* 也已清掉、下一轮会重新拉起，运行前设置同样要重来。
+        """
+
+        had_client = self.opened_game or self.opened_emulator
+        restarted = await self._restart_client_before_retry(attempt)
+        still_open = self.opened_game or self.opened_emulator
+        return restarted, bool(had_client and not still_open)
 
     async def _restart_client_before_retry(self, attempt: int) -> bool:
         """一轮失败后把 MAS 自己拉起的游戏/模拟器关掉，让下一轮从启动重新来。
