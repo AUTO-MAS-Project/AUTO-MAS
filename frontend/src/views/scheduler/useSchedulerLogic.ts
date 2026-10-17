@@ -931,7 +931,9 @@ export function useSchedulerLogic() {
       message.success(t('scheduler.toast.taskStarted'))
       saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg =
+        (error instanceof Error ? error.message : String(error)) ||
+        t('scheduler.toast.startTaskFailed')
       logger.error(`启动任务失败: ${errorMsg}`)
       message.error(errorMsg)
     } finally {
@@ -985,7 +987,9 @@ export function useSchedulerLogic() {
         saveTabsToStorage(schedulerTabs.value)
       }
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg =
+        (error instanceof Error ? error.message : String(error)) ||
+        t('scheduler.toast.stopTaskFailed')
       logger.error(`停止任务失败: ${errorMsg}`)
       message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)

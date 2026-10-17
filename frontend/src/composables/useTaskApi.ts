@@ -1,5 +1,4 @@
 import { ApiError, Service, type TaskCreateIn, type TaskCreateOut } from '@/api'
-import { translate as t } from '@/i18n'
 
 function taskRequestError(error: unknown): Error {
   if (error instanceof ApiError) {
@@ -17,7 +16,7 @@ function taskRequestError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-/** 共用任务操作只处理请求结果，调度台登记、提示与音效由入口负责。 */
+/** 共用任务操作只处理请求结果；缺少后端说明时，提示文案由入口负责。 */
 export function useTaskApi() {
   const startTask = async (request: TaskCreateIn): Promise<TaskCreateOut> => {
     let response: TaskCreateOut
@@ -27,7 +26,7 @@ export function useTaskApi() {
       throw taskRequestError(error)
     }
     if (response.code !== 200 || !response.taskId) {
-      throw new Error(response.message || t('scheduler.toast.startTaskFailed'))
+      throw new Error(response.message)
     }
     return response
   }
@@ -36,7 +35,7 @@ export function useTaskApi() {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || t('scheduler.toast.stopTaskFailed'))
+        throw new Error(response.message)
       }
     } catch (error) {
       throw taskRequestError(error)

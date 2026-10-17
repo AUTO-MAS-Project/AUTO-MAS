@@ -39,7 +39,9 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
       })
       .catch(error => {
         if (disposed) return
-        const errorMsg = error instanceof Error ? error.message : String(error)
+        const errorMsg =
+          (error instanceof Error ? error.message : String(error)) ||
+          t('scheduler.toast.startTaskFailed')
         logger.error('托盘启动任务失败:', errorMsg)
         message.error(errorMsg)
       })
