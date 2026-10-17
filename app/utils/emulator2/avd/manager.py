@@ -31,8 +31,9 @@
 客体日志落盘、客体 Vulkan 驱动补丁。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
-关机先 ``sync`` 再 ``kill``：控制台 ``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的
-数据会丢（10-03 星铁 9 个热更新清单因此变成 0 字节）。
+关机默认让安卓自己正常关机、等 qemu 自己退出，不成再退回 ``sync`` + 控制台 ``kill``：控制台
+``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢（10-03 星铁 9 个热更新清单因此
+变成 0 字节），``sync`` 之后到 qemu 退出之间游戏写的东西也会丢（见 :meth:`AvdManager.close`）。
 """
 
 from __future__ import annotations
@@ -75,7 +76,11 @@ from .constants import (
     CLOSE_TIMEOUT_SECONDS,
     CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
+    FALLBACK_FORCE_KILL_WAIT_SECONDS,
+    FALLBACK_KILL_TIMEOUT_SECONDS,
+    FALLBACK_SYNC_TIMEOUT_SECONDS,
     FORCE_KILL_WAIT_SECONDS,
+    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
     GUEST_PATCH_DIR,
@@ -1477,23 +1482,99 @@ class _AvdCore(DeviceBase):
         if process is None:
             return DeviceStatus.OFFLINE
 
-        # 先 sync：控制台 kill / 强杀都直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢
-        # （10-03 星铁 9 个热更新清单变成 0 字节，表现成「网络请求超时」和黑屏）。磁盘 write-through
-        # 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。强制关闭也先 sync。
-        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限见
-        # constants 里关机那一组（合计 27 秒）。sync 不走重新登记（会多等 5 秒）。
+        # 默认让安卓自己正常关机（``sys.powerctl shutdown``），等 qemu 自己退出；不成再退回
+        # 「sync + 控制台 kill + 强杀」。控制台 kill / 强杀都直接结束 qemu，客体不走关机流程：
+        # 页缓存里没写回的数据会丢（星铁热更新清单因此变成过 0 字节，表现成「网络请求超时」和黑屏），
+        # 而且 sync 之后到 qemu 真正退出之间还有 2–3 秒，这段时间里游戏写的东西 sync 也管不到。
+        # 正常关机时客体 init 依次结束各个服务和应用、把页缓存写回、卸载分区，最后断电让 qemu 自己
+        # 退出，和手机关机、MuMu / 雷电关机一样。
+        # 磁盘 write-through 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。
+        # 强制关闭（ForceKillOnClose）不走正常关机，只先 sync 再强杀。
+        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限与
+        # 三条路径的算式见 constants 里关机那一组（最坏 28 秒）。adb 命令都不走重新登记（会多等 5 秒）。
         started = time.monotonic()
-        # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就不 sync 了，直接关
+        # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就既不能正常关机、
+        # 也不能 sync，直接用控制台关
         problem = await host.prepare_adb_for_close(
             self.root, port, timeout=ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS
         )
+
+        if self.config.get("Info", "ForceKillOnClose"):
+            await self._sync_before_kill(idx, port, problem, SYNC_TIMEOUT_SECONDS)
+            await self._force_kill(process, FORCE_KILL_WAIT_SECONDS)
+            logger.info(f"魔改 AVD 实例 {idx} 已强制关闭")
+            return DeviceStatus.OFFLINE
+
+        if problem is None:
+            reason = await self._graceful_shutdown(port, process)
+            if reason is None:
+                logger.info(
+                    f"魔改 AVD 实例 {idx} 正常关机完成"
+                    f"（{time.monotonic() - started:.1f} s）"
+                )
+                return DeviceStatus.OFFLINE
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 正常关机没成（{reason}），退回 sync + 控制台 kill"
+            )
+            await self._sync_before_kill(idx, port, None, FALLBACK_SYNC_TIMEOUT_SECONDS)
+            kill_timeout = FALLBACK_KILL_TIMEOUT_SECONDS
+            force_kill_wait = FALLBACK_FORCE_KILL_WAIT_SECONDS
+        else:
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 私有 adb 用不了，不能正常关机也不能 sync，"
+                f"直接用控制台关: {problem}"
+            )
+            kill_timeout = CONSOLE_KILL_TIMEOUT_SECONDS + CLOSE_TIMEOUT_SECONDS
+            force_kill_wait = FORCE_KILL_WAIT_SECONDS
+
+        await self._console_kill(idx, port, process, kill_timeout)
+        if process.is_running():
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 未在 {kill_timeout:.0f} 秒内退出，强制结束"
+            )
+            await self._force_kill(process, force_kill_wait)
+        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
+        return DeviceStatus.OFFLINE
+
+    async def _graceful_shutdown(
+        self, port: int, process: psutil.Process
+    ) -> str | None:
+        """让安卓正常关机，等 qemu 自己退出，发命令连同等待最多
+        :data:`~.constants.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` 秒。退出了返回 ``None``，否则返回原因。
+
+        ``sys.powerctl`` 只有 root 能写，这些 userdebug 镜像上用 ``su 0``（同 :meth:`_su`）。
+        """
+        started = time.monotonic()
+        code, output = await host.run_adb(
+            self.root,
+            "shell",
+            "su 0 setprop sys.powerctl shutdown",
+            serial=host.serial_of(port),
+            timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+            reregister=False,
+        )
+        if code != 0:
+            return f"关机命令没有成功返回（返回码 {code}）: {output}"
+        remaining = GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS - (time.monotonic() - started)
+        if remaining > 0:
+            with suppress(psutil.TimeoutExpired):
+                await asyncio.to_thread(process.wait, remaining)
+        if process.is_running():
+            return f"{GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:.0f} 秒内没有自己退出"
+        return None
+
+    async def _sync_before_kill(
+        self, idx: str, port: int, problem: str | None, timeout: float
+    ) -> None:
+        """控制台 kill / 强杀前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
+        started = time.monotonic()
         if problem is None:
             code, output = await host.run_adb(
                 self.root,
                 "shell",
                 "sync",
                 serial=host.serial_of(port),
-                timeout=SYNC_TIMEOUT_SECONDS,
+                timeout=timeout,
                 reregister=False,
             )
         else:
@@ -1505,25 +1586,31 @@ class _AvdCore(DeviceBase):
         else:
             logger.warning(f"魔改 AVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
-        if not self.config.get("Info", "ForceKillOnClose"):
-            try:
-                await host.console_command(
-                    port, "kill", timeout=CONSOLE_KILL_TIMEOUT_SECONDS
-                )
-            except host.ConsoleError as e:
-                logger.warning(f"实例 {idx} 正常关机失败，改为强制结束: {e}")
-            else:
-                with suppress(psutil.TimeoutExpired):
-                    await asyncio.to_thread(process.wait, CLOSE_TIMEOUT_SECONDS)
-        if process.is_running():
-            logger.warning(
-                f"魔改 AVD 实例 {idx} 未在 {CLOSE_TIMEOUT_SECONDS:.0f} 秒内退出，强制结束"
+    async def _console_kill(
+        self, idx: str, port: int, process: psutil.Process, timeout: float
+    ) -> None:
+        """发控制台 ``kill`` 并等 qemu 退出，两步合计最多 ``timeout`` 秒（发命令本身最多
+        :data:`~.constants.CONSOLE_KILL_TIMEOUT_SECONDS` 秒）。没退出由调用方强杀。"""
+        started = time.monotonic()
+        try:
+            await host.console_command(
+                port, "kill", timeout=min(CONSOLE_KILL_TIMEOUT_SECONDS, timeout)
             )
-            host.kill_process_tree(process)
+        except host.ConsoleError as e:
+            logger.warning(f"实例 {idx} 控制台 kill 失败，改为强制结束: {e}")
+            return
+        remaining = timeout - (time.monotonic() - started)
+        if remaining > 0:
             with suppress(psutil.TimeoutExpired):
-                await asyncio.to_thread(process.wait, FORCE_KILL_WAIT_SECONDS)
-        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
-        return DeviceStatus.OFFLINE
+                await asyncio.to_thread(process.wait, remaining)
+
+    @staticmethod
+    async def _force_kill(process: psutil.Process, wait: float) -> None:
+        if not process.is_running():
+            return
+        host.kill_process_tree(process)
+        with suppress(psutil.TimeoutExpired):
+            await asyncio.to_thread(process.wait, wait)
 
     # ---- 设置 -----------------------------------------------------------
 

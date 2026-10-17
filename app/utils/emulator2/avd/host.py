@@ -299,10 +299,10 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
 async def prepare_adb_for_close(
     root: str | Path, console: int, *, timeout: float
 ) -> str | None:
-    """关机前让私有 server 能对这台实例发 ``shell sync``，最多 ``timeout`` 秒。可以 sync 返回 ``None``，
-    否则返回不能 sync 的原因。
+    """关机前让私有 server 能对这台实例发 adb 命令（正常关机命令、``shell sync``），最多 ``timeout`` 秒。
+    可以发返回 ``None``，否则返回不能发的原因。
 
-    server 本来就在听：直接返回（server 认不认识这台实例由 sync 的结果说话）。server 不在：起它，
+    server 本来就在听：直接返回（server 认不认识这台实例由后面那条命令的结果说话）。server 不在：起它，
     等它开始监听；新起的 server 不认识模拟器（模拟器只在开机时登记一次），确认 adb 端口确实是这台
     实例自己的 qemu 在听之后直接替它登记，再等它回到 ``device``。不走 :func:`reregister_emulator`：
     那里的开机期保护（qemu 起来不到 60 秒不登记）和 5 秒等待都不适合关机。
@@ -493,7 +493,7 @@ async def run_adb(
     轮询会一秒一条，所以这里不像 ``ProcessRunner`` 那样每条都记 info 日志。
     私有 server 上找不到 ``emulator-<控制台端口>`` 时先重新登记（:func:`reregister_emulator`），
     登记回来就重跑一次。``reregister=False`` 不做这一步：开机等待期间模拟器本来就还没登记，
-    关机前的 sync 要守时限，都不该去替它登记。
+    关机前的命令（正常关机、sync）要守时限，都不该去替它登记。
     """
     code, output = await _run_adb_once(root, *args, serial=serial, timeout=timeout)
     if reregister and code != 0 and serial and device_missing(serial, output):

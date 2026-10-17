@@ -129,7 +129,7 @@ async def close_instances(
 async def close_running_instances(
     *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
 ) -> dict[str, str]:
-    """关机 / 重启 / 注销前，对正在跑的魔改 AVD 实例逐个走 ``close``（先 ``sync`` 再关）。
+    """关机 / 重启 / 注销前，对正在跑的魔改 AVD 实例逐个走 ``close``（安卓正常关机，不成再 ``sync`` + 关）。
 
     电源路径之后会按进程名强杀模拟器，强杀不走客体关机流程，页缓存里没写回的数据会丢（10-03 星铁
     热更新清单变 0 字节）。这里整体限时，不让关机卡住；出任何错都只记日志。
@@ -149,7 +149,7 @@ async def close_running_instances(
             targets.append((f"{root}#{idx}", lambda m=manager, i=idx: m.close(i)))
     if not targets:
         return {}
-    logger.info(f"关机前先正常关闭 {len(targets)} 台魔改 AVD 实例（先 sync）")
+    logger.info(f"关机前先正常关闭 {len(targets)} 台魔改 AVD 实例（安卓正常关机）")
     return await close_instances(targets, timeout=timeout)
 
 
