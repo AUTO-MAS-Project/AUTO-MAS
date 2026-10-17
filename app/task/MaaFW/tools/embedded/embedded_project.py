@@ -81,6 +81,7 @@ from app.task.MaaFW.tools.core.project_update.projection import (
     ProjectionError,
     ProjectionPlan,
     build_projection_plan,
+    discover_project_interface,
     is_shared_path,
     read_json_object,
 )
@@ -603,6 +604,32 @@ def follow_source_record(marker: Mapping[str, Any] | None) -> dict[str, Any] | N
 
     record = (marker or {}).get(FOLLOW_SOURCE_FIELD)
     return dict(record) if isinstance(record, Mapping) else None
+
+
+def _is_follow_source_version(version: str) -> bool:
+    """版本号带开发者载荷的本地段（:func:`follow_source_payload_version` 的产物）。"""
+
+    text = str(version or "").strip()
+    if "+" not in text:
+        return False
+    local = text.split("+", 1)[1]
+    return local == FOLLOW_SOURCE_VERSION_LOCAL or local.endswith(
+        f".{FOLLOW_SOURCE_VERSION_LOCAL}"
+    )
+
+
+def _marker_on_follow_source(marker: Mapping[str, Any]) -> bool:
+    """视图挂的是开发者载荷：标记带着 ``followSource``（值读不读得出都算），或载荷版本带
+    ``+dev`` 本地段。后者是因为关掉开关时组里没有正式版本、来源也不在，
+    :func:`_leave_follow_source` 会摘掉 ``followSource``、视图留在开发者载荷上。载荷 id
+    以版本开头（``<版本>-<hash8>``），标记里的版本缺了也认得出。"""
+
+    if FOLLOW_SOURCE_FIELD in marker:
+        return True
+    payload_version = str(marker.get("payload") or "").rsplit("-", 1)[0]
+    return _is_follow_source_version(
+        str(marker.get("version") or "")
+    ) or _is_follow_source_version(payload_version)
 
 
 def resolve_view_payload(
@@ -1427,14 +1454,20 @@ def import_embedded_project(
 
     source = Path(str(source_path or "").strip())
     if not source.is_absolute() or not source.is_dir():
-        raise EmbeddedProjectError(
-            "来源目录不存在或不是绝对路径，请先在项目路径里选一个 MFW 项目目录"
-        )
+        raise EmbeddedProjectError("来源目录不存在或不是绝对路径，请重新选择项目目录")
     source = source.resolve()
     final_dir = embedded_project_dir(script_id, base)
     root = embedded_projects_root(base)
     if _is_relative_to(source, root):
-        raise EmbeddedProjectError("来源目录不能是内嵌副本自己")
+        raise EmbeddedProjectError(
+            "来源目录不能是 AUTO-MAS 里的项目副本，请选择原来的项目目录"
+        )
+    if not follow_source and _journal_path(final_dir.name, base).exists():
+        # 换视图那一步才会撞上它，而那时载荷已经登记、组的 latest 已经推进：用户看到导入
+        # 失败，同组兄弟却会在下次运行前切到这一版。在登记之前就拒绝。
+        raise EmbeddedProjectError(
+            "该脚本的项目上一次切换版本还没收尾，请重启 AUTO-MAS 后再试"
+        )
 
     try:
         if plan is None:
@@ -1447,7 +1480,9 @@ def import_embedded_project(
         )
         lineage = payloads.lineage_key(interface)
     except ProjectionError as exc:
-        raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+        raise EmbeddedProjectError(
+            f"导入失败：{_describe_projection_failure(source, exc)}"
+        ) from exc
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     if plan.rules.source_layout:
@@ -1549,15 +1584,26 @@ def import_embedded_project(
             from_payload=registered.target_id,
         )
     else:
-        view_result = _realize_view(
-            final_dir,
-            lineage,
-            registered.target_id,
-            base=base,
-            carry=True,
-            seed_private=_runtime_state_seed(plan),
-            follow_source=follow_record,
-        )
+        try:
+            view_result = _realize_view(
+                final_dir,
+                lineage,
+                registered.target_id,
+                base=base,
+                carry=True,
+                seed_private=_runtime_state_seed(plan),
+                follow_source=follow_record,
+            )
+        except Exception as exc:
+            if not registered.advanced or follow_source:
+                raise
+            # 登记就是提交点：组的 latest 已经推进，换不进本视图也收不回来。别让用户以为
+            # 「什么都没变」——同组空闲的兄弟下次运行前会切到这一版。
+            raise EmbeddedProjectError(
+                f"导入失败：{_describe_source_failure(exc)}。新版本 "
+                f"{registered.manifest.get('version') or registered.payload_id} 已经登记，"
+                "同项目同渠道的其他脚本下次运行时会切换到它"
+            ) from exc
     if view_result.seeded:
         preview = ", ".join(view_result.seeded[:10])
         more = " ..." if len(view_result.seeded) > 10 else ""
@@ -1779,8 +1825,9 @@ def _clone_legacy_copy(
     # 读到的是半截状态。拿不到源的预约就不克隆（载荷路径不读源视图，不需要这一步）。
     source_key = try_reserve_project_path_sync(source_dir)
     if source_key is None:
+        # 复用入口只在新建对话框里，失败后这个脚本已经建好、没法再复用，别让用户「稍后再试」
         raise EmbeddedProjectError(
-            "源脚本的项目副本正被占用（运行 / 更新 / 准备环境），请稍后再试"
+            "所选脚本正在运行、更新或准备运行环境，这时复用不了它的项目"
         )
     try:
         return _clone_legacy_copy_locked(source_script_id, target_script_id, base)
@@ -2191,6 +2238,29 @@ def _same_directory(left: str, right: str) -> bool:
         return False
 
 
+def view_imported_from(script_id: str, source: str, base: Path | None = None) -> bool:
+    """脚本视图挂的载荷是不是从 ``source`` 这个目录导入的（载荷清单 ``source.ref``）。
+
+    组共用载荷：同版本或更旧的导入会挂上组里别人导入的那一份，视图里的 ``config/`` 就是
+    别的目录带来的（外壳配置实例、账号都在里面）。更新得来的载荷（``source.kind=update``）
+    说不清 ``config/`` 是哪个目录带来的，同样不认。
+    """
+
+    marker = read_view_marker(embedded_project_dir(script_id, base))
+    if marker is None or not source:
+        return False
+    try:
+        manifest = payloads.read_manifest(
+            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        )
+    except payloads.PayloadError:
+        return False
+    origin = (manifest or {}).get("source") or {}
+    if str(origin.get("kind") or "") != "import":
+        return False
+    return _same_directory(str(origin.get("ref") or ""), source)
+
+
 def inherit_embedded_record(
     source_config: Any, target_script_id: str, base: Path | None = None
 ) -> dict[str, Any]:
@@ -2405,6 +2475,48 @@ def _adopt_or_raise(
         raise EmbeddedProjectError(f"副本登记项目版本失败：{exc}") from exc
 
 
+def _readopt_lost_payload(
+    script_id: str,
+    script_config: Any,
+    lost: str,
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+) -> None:
+    """视图标记挂的载荷在本机已不完整（目录或清单没了）：按视图现状重新登记一份、挂上去。
+
+    视图本身照常能跑，丢的是「它是哪份载荷」的记录：不补的话这个脚本的项目更新永远建不成
+    新版本（要以当前载荷的清单为基准），以前还要每次下载、解压完才失败。重新登记与没有标记
+    的老副本采纳是同一套（:func:`adopt_view`），失败只告警、不拦本次运行——与修之前一样，
+    只是更新会跳过。调用方持有该视图的项目预约。
+    """
+
+    _say(
+        send_log,
+        f"副本挂的项目版本 {lost} 在本机已不完整，正在按副本现状重新登记",
+        warning=True,
+    )
+    try:
+        adopted = adopt_view(
+            script_id,
+            channel=effective_channel(script_id, script_config),
+            source=imported_source_path(script_config)
+            or str(script_config.get("Info", "Path") or ""),
+            base=base,
+            replace_lost=True,
+        )
+        settle_adopted_latest(base, lineages=[adopted.lineage])
+    except Exception as exc:  # noqa: BLE001 - 视图照常能跑，不因为这一步拦运行
+        _say(
+            send_log,
+            f"重新登记项目版本失败：{exc}；本次照常运行，项目更新会跳过，"
+            "在脚本页重新选择项目目录导入一次即可恢复",
+            warning=True,
+        )
+        return
+    _say(send_log, f"已重新登记为 {adopted.payload_id}")
+
+
 def _say(
     send_log: Callable[[str], None] | None, message: str, *, warning: bool = False
 ) -> None:
@@ -2476,6 +2588,18 @@ def _describe_source_failure(exc: BaseException) -> str:
     if isinstance(exc, (ProjectionError, EmbeddedProjectError, payloads.PayloadError)):
         return text or type(exc).__name__
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _describe_projection_failure(source: Path, exc: ProjectionError) -> str:
+    """导入时投影失败给用户的原因：最常见的是选错了层级（选成了解压包的外层目录）。"""
+
+    try:
+        discover_project_interface(source)
+    except ProjectionError:
+        return "所选目录里没有 interface.json，请选择解压后直接包含 interface.json 的那一层目录"
+    except OSError:
+        pass
+    return str(exc)
 
 
 def _keep_last_follow_source_sync(
@@ -2614,8 +2738,28 @@ def ensure_embedded_copy(
     )
     if keep:
         # 视图还是它自己的来源（或来源已删 / 换成了不存在的路径）：照常用它。
-        if read_view_marker(copy_dir) is None:
+        marker = read_view_marker(copy_dir)
+        if marker is None:
             _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
+        elif (
+            not follow
+            and not _marker_on_follow_source(marker)
+            and not payloads.payload_complete(
+                payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+            )
+        ):
+            # 开发者模式不在此列：它不做项目更新，来源变了就重新导入。视图还挂在开发者
+            # 载荷上的（刚关掉开关、标记还带 followSource，或关掉时组里没有正式版本、
+            # 来源也不在而留在了开发者载荷上）也不在此列：视图里是开发者改过的内容，按
+            # 现状登记会以正式版本号进普通渠道（AGENTS「开发者载荷不进普通渠道」）。它们
+            # 的更新照样在换下载地址之前就跳过，重新选择项目目录导入即可恢复。
+            _readopt_lost_payload(
+                script_id,
+                script_config,
+                str(marker["payload"]),
+                base=base,
+                send_log=send_log,
+            )
         return None
     if not source:
         raise EmbeddedProjectError("还没有选择 MFW 项目目录")
@@ -2784,6 +2928,7 @@ def adopt_view(
     channel: str,
     source: str = "",
     base: Path | None = None,
+    replace_lost: bool = False,
 ) -> ViewResult:
     """把没有标记的老副本就地登记成载荷，视图挂上去（附录 B 第 1–7 条）。
 
@@ -2798,15 +2943,33 @@ def adopt_view(
     重建一遍（私有文件 inode 不变），写上标记。同版本多份载荷谁当 latest 不在这里定
     （登记是「同版本保留先来的」）：调用方全部采纳完再 :func:`settle_adopted_latest`。
     任一步失败：不写标记、staging 丢掉，调用方下次再试。不写任何配置。
+
+    ``replace_lost``：视图有标记、但标记挂的载荷在本机已不完整（目录或清单没了）时也照样
+    重新登记（:func:`_readopt_lost_payload`）；标记挂的载荷还在就照旧拒绝。
     """
 
     view = embedded_project_dir(script_id, base)
     if not copy_is_healthy(view):
         raise EmbeddedProjectError("副本不完整（没有 interface.json），无法登记版本")
-    if read_view_marker(view) is not None:
+    marker = read_view_marker(view)
+    if marker is not None and not (
+        replace_lost
+        and not payloads.payload_complete(
+            payloads_root(base), str(marker["lineage"]), str(marker["payload"])
+        )
+    ):
         raise EmbeddedProjectError("副本已经登记过版本")
+    if marker is not None and _marker_on_follow_source(marker):
+        # 调用方已经排除，这里兜底：开发者改过的内容不能以正式版本号进普通渠道。
+        raise EmbeddedProjectError(
+            "副本挂的是开发者模式导入的版本，不按正式版本重新登记"
+        )
     interface = payloads.read_project_interface(view)
     lineage = payloads.lineage_key(interface)
+    if marker is not None:
+        # 重新登记留在标记记的谱系里：后来的版本可能改了 mirrorchyan_rid / github / name，
+        # 按 interface 重算会让脚本悄悄离开原来的组，privatePaths、damaged、预检备忘也跟丢。
+        lineage = str(marker["lineage"])
     version = str(interface.get("version") or "")
     recorded = _recorded_update_manifest(view, base)
     if recorded is not None:
@@ -3125,5 +3288,6 @@ __all__ = [
     "switch_root",
     "switch_in_progress",
     "switch_view",
+    "view_imported_from",
     "write_view_marker",
 ]

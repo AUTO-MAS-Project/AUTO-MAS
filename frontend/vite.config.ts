@@ -1,4 +1,4 @@
-import { configDefaults, defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vite-plus'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
@@ -6,6 +6,10 @@ import path from 'path'
 
 // 读取主程序版本号
 const versionJson = require('../res/version.json')
+const lintConfig = require('./.oxlintrc.json')
+const formatConfig = require('./.oxfmtrc.json')
+delete lintConfig.$schema
+delete formatConfig.$schema
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
 const sentryOrg = process.env.SENTRY_ORG
 const sentryProject = process.env.SENTRY_PROJECT
@@ -57,6 +61,8 @@ export default defineConfig(({ command }) => {
     (command === 'serve' ? DEV_HTTP_PORT : DEFAULT_HTTP_PORT)
 
   return {
+    lint: lintConfig,
+    fmt: formatConfig,
     plugins: [vue(), tailwindcss(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
     base: './',
     resolve: {
@@ -96,13 +102,24 @@ export default defineConfig(({ command }) => {
       },
     },
     build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          mascot: path.resolve(__dirname, 'mascot.html'),
+        },
+      },
       // 优化构建性能
       chunkSizeWarningLimit: 5000, // 提高到 5MB，适合 Electron 应用
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用
     },
     test: {
+      // Vitest v4 compatibility: preserve mock call history.
+      // Remove after tests no longer rely on calls from setup or earlier tests.
+      // https://viteplus.dev/guide/vitest-v5#remove-unneeded-compatibility-settings
+      // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
+      clearMocks: false,
       // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
-      // 编译后的 require('vitest') 无法运行，不排除会让 yarn test 随构建必然失败
+      // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
       exclude: [...configDefaults.exclude, '**/dist-electron/**'],
     },
   }

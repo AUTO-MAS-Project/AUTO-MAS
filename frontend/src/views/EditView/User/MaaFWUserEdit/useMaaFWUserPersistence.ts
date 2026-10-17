@@ -26,6 +26,12 @@ interface MaaFWUserPersistenceOptions {
   pendingCount: MaaFWUserSaveStatus['pendingCount']
 }
 
+/** 保存状态里任务队列（预设 + 快照）这一项的 key */
+const TASK_SAVE_KEY = 'Task'
+
+/** 单字段保存在保存状态里的 key：userName 实际写的是 Info.Name，两者算同一项 */
+const saveItemKey = (fieldKey: string) => (fieldKey === 'userName' ? 'Info.Name' : fieldKey)
+
 /**
  * 用户页落盘：单字段保存与任务队列（预设 + 快照）保存。
  * 两条路径都在初始化期间或还没有用户 id 时直接返回。
@@ -64,13 +70,15 @@ export function useMaaFWUserPersistence({
       }
 
       const success = await updateUser(scriptId, userIdHolder.value, userData)
-      if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
+      // 这句会进页头的保存失败提示，不带内部字段键名；键名只进日志
+      if (!success) throw new Error(t('edit.couldNotSaveUser'))
       logger.info(`用户配置已保存: ${key}`)
-    })
+      // 失败按字段记账：只有这个字段后来存成功才算补上（userName 写的就是 Info.Name）
+    }, saveItemKey(key))
       .then(() => true)
       .catch(error => {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`保存失败: ${errorMsg}`)
+        logger.error(`保存失败 (${key}): ${errorMsg}`)
         return false
       })
   }
@@ -92,10 +100,11 @@ export function useMaaFWUserPersistence({
           TaskSnapshot: taskSnapshotValue,
         },
       })
-      if (!success) throw new Error('任务预设保存失败')
+      if (!success) throw new Error(t('edit.couldNotSaveUser'))
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
-    })
+      // 每次都写整份队列快照：任一次存成功就补上了之前失败的那次
+    }, TASK_SAVE_KEY)
       .then(() => true)
       .catch(error => {
         const errorMsg = error instanceof Error ? error.message : String(error)

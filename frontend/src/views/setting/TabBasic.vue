@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   DeleteOutlined,
+  PlayCircleOutlined,
   QuestionCircleOutlined,
   SkinOutlined,
   UploadOutlined,
@@ -13,10 +14,12 @@ import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
+import type { PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
+import MascotSettings from './components/MascotSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -32,8 +35,20 @@ interface TabBasicProps {
   cursorEffectOptions: { label: string; value: CursorEffect }[]
   lowPerformanceMode: boolean
   lowPerformanceModeSaving: boolean
+  pauseHomeEffectsWhenRunning: boolean
+  pauseHomeEffectsWhenRunningSaving: boolean
   homeSatelliteStyle: HomeSatelliteStyle
   homeSatelliteStyleSaving: boolean
+  pressSoundEnabled: boolean
+  pressSoundPreset: PressSoundPreset
+  pressSoundOptions: { label: string; value: PressSoundPreset }[]
+  pressSoundVolume: number
+  pressSoundSaving: boolean
+  handlePressSoundEnabledChange(_enabled: boolean): Promise<void>
+  handlePressSoundPresetChange(value: SelectValue): Promise<void>
+  handlePressSoundVolumeChange(_volume: number): Promise<void>
+  handlePressSoundImport(): Promise<void>
+  handlePressSoundPreview(): void
   handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
   handleThemeModeChange(value: SelectValue): Promise<void>
   handleAppearanceChange(value: SelectValue): Promise<void>
@@ -42,6 +57,7 @@ interface TabBasicProps {
   handleThemeColorChange(value: SelectValue): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
+  handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
   handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
 }
 
@@ -59,8 +75,20 @@ const {
   cursorEffectOptions,
   lowPerformanceMode,
   lowPerformanceModeSaving,
+  pauseHomeEffectsWhenRunning,
+  pauseHomeEffectsWhenRunningSaving,
   homeSatelliteStyle,
   homeSatelliteStyleSaving,
+  pressSoundEnabled,
+  pressSoundPreset,
+  pressSoundOptions,
+  pressSoundVolume,
+  pressSoundSaving,
+  handlePressSoundEnabledChange,
+  handlePressSoundPresetChange,
+  handlePressSoundVolumeChange,
+  handlePressSoundImport,
+  handlePressSoundPreview,
   handleHomeSatelliteStyleChange,
   handleThemeModeChange,
   handleAppearanceChange,
@@ -69,6 +97,7 @@ const {
   handleThemeColorChange,
   handleCursorEffectChange,
   handleLowPerformanceModeChange,
+  handlePauseHomeEffectsWhenRunningChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
 
@@ -192,6 +221,95 @@ const handleLocaleChange = (value: unknown): void => {
       </a-row>
     </div>
 
+    <MascotSettings />
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>{{ t('setting.basic.pressSoundSection') }}</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pressSoundEnabled') }}</span>
+              <a-tooltip :title="t('setting.basic.pressSoundEnabledTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="pressSoundEnabled"
+              :disabled="pressSoundSaving"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handlePressSoundEnabledChange(value === true)"
+            >
+              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pressSoundPreset') }}</span>
+              <a-tooltip :title="t('setting.basic.pressSoundPresetTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <div class="press-sound-row">
+              <a-select
+                :value="pressSoundPreset"
+                :options="pressSoundOptions"
+                :disabled="pressSoundSaving"
+                size="large"
+                style="flex: 1"
+                @change="handlePressSoundPresetChange"
+              />
+              <a-button size="large" :disabled="pressSoundSaving" @click="handlePressSoundImport">
+                <template #icon><UploadOutlined /></template>
+                {{ t('setting.basic.pressSoundImport') }}
+              </a-button>
+            </div>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pressSoundVolume') }}</span>
+              <a-tooltip :title="t('setting.basic.pressSoundVolumeTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <div class="press-sound-row">
+              <a-slider
+                :value="pressSoundVolume"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                :disabled="pressSoundSaving"
+                style="flex: 1"
+                @change="(value: number) => handlePressSoundVolumeChange(value)"
+              />
+              <span class="press-sound-percent">{{ Math.round(pressSoundVolume * 100) }}%</span>
+            </div>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pressSoundPreview') }}</span>
+            </div>
+            <a-button size="large" :disabled="pressSoundSaving" @click="handlePressSoundPreview">
+              <template #icon><PlayCircleOutlined /></template>
+              {{ t('setting.basic.pressSoundPreviewAction') }}
+            </a-button>
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('setting.basic.cursorSection') }}</h3>
@@ -265,6 +383,29 @@ const handleLocaleChange = (value: unknown): void => {
               <a-select-option value="galaxy">
                 {{ t('setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pauseHomeEffects') }}</span>
+              <a-tooltip :title="t('setting.basic.pauseHomeEffectsTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="pauseHomeEffectsWhenRunning"
+              :disabled="pauseHomeEffectsWhenRunningSaving"
+              :loading="pauseHomeEffectsWhenRunningSaving"
+              size="large"
+              style="width: 100%"
+              @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
+            >
+              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -353,6 +494,20 @@ const handleLocaleChange = (value: unknown): void => {
 </template>
 
 <style scoped>
+.press-sound-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.press-sound-percent {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .appearance-controls {
   display: flex;
   flex-wrap: wrap;

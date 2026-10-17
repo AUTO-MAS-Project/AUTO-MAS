@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { theme } from 'ant-design-vue'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 import { createAppearanceCursorValue } from '@/components/appearanceCursor'
@@ -7,7 +7,7 @@ import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './app
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
 
 type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
-let resolvedAntTokens: AntTokens | undefined
+const resolvedAntTokens = shallowRef<AntTokens>()
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -183,11 +183,11 @@ const updateCSSVariables = () => {
     '--app-appearance-mascot-position',
     activeAppearance.value?.mascot?.position ?? 'bottom-right'
   )
-  if (!resolvedAntTokens) return
+  if (!resolvedAntTokens.value) return
   const customTokens = activeAppearance.value?.tokens
   const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]
   // 由 ConfigProvider 内的 ThemeTokenBridge 传入最终 token，包含包内的 alias overrides。
-  const antTokens = resolvedAntTokens
+  const antTokens = resolvedAntTokens.value
 
   // 基础背景（用于估算混合）
   const baseLightBg = '#ffffff'
@@ -799,12 +799,13 @@ export function useTheme() {
     themeColor: computed(() => themeColor.value),
     isDark: computed(() => isDark.value),
     antdTheme,
+    antTokens: computed(() => resolvedAntTokens.value),
     themeColors,
     appearances: computed(() => appearances.value),
     appearanceId: computed(() => appearanceId.value),
     activeAppearance: computed(() => activeAppearance.value),
     syncAntTokens: (tokens: AntTokens) => {
-      resolvedAntTokens = tokens
+      resolvedAntTokens.value = tokens
       updateCSSVariables()
     },
     setThemeMode,

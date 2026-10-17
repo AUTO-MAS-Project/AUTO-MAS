@@ -50,9 +50,9 @@ from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
+    CONFIG_BASE_NATIVE,
     push_dispatch_log,
-    read_config_source,
+    read_config_base,
 )
 from app.utils import get_logger
 from app.utils.constants import UTC4
@@ -144,11 +144,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: WhimboxUserConfig = self.user_config[self.cur_user_uid]
-        # base 来源三态（共享/独立/原生）：脚本/用户=把面板值写入上游 config.json
-        # （运行时物化）；直控=用上游原生配置、MAS 零写入——除非开启覆写层
+        # base 来源三态（共享/独立/原生）：shared/independent=把面板值写入上游 config.json
+        # （运行时物化）；原生来源=用上游原生配置、MAS 零写入——除非开启覆写层
         # （快速配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
-        self.config_mode = read_config_source(self.cur_user_config)
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
+        self.config_base = read_config_base(self.cur_user_config)
+        self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE or bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
 
@@ -184,7 +184,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._last_failure_reason: str | None = None
         # 运行前归档锚点（None=运行前无 config.json，还原时删除会话期新建）
         self._pre_run_archive_ts: str | None = None
-        # 本轮是否接管了上游配置（直控+关闭时不物化也不还原，上游自行迁移）
+        # 本轮是否接管了上游配置（原生来源+关闭时不物化也不还原，上游自行迁移）
         self._config_took_over = False
         # 实时进展已推送的行数（避免重复转述）
         self._dispatch_pushed_lines = 0

@@ -127,12 +127,12 @@ export interface HSRManagedTask extends HSRTaskCapability {
   forms: Partial<Record<HSREngine, HSRManagedEngineForm>>
 }
 
-/** 任务计划挂在谁身上：script = 脚本共享计划，user = 该用户自己的计划。 */
+/** 任务计划挂在谁身上：script = 共享计划，user = 该用户自己的计划。 */
 export type HSRPlanOwner = 'script' | 'user'
 
 export interface HSRManagedConfigSnapshot {
   revision: number | string
-  /** 表单值取自哪份计划；与用户的配置来源（Info.Mode）一一对应，直控按 user 返回。 */
+  /** 表单值取自哪份计划；与用户的配置来源（Info.Base）一一对应，原生来源按 user 返回。 */
   plan_owner?: HSRPlanOwner
   tasks: HSRManagedTask[]
   task_mapping: Record<string, HSREngine>

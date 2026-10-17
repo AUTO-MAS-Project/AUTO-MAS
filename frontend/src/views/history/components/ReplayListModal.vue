@@ -1,10 +1,13 @@
 <template>
+  <!-- z-index 900 让弹窗连同遮罩整体压在标题栏（1000）之下；
+       弹窗体是唯一滚动者，高度按视口扣掉弹窗上边距、头部与内边距，低窗口高度下关闭按钮仍可达 -->
   <a-modal
     :open="open"
     :title="t('history.replays.title')"
     :footer="null"
     width="900px"
-    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
+    :z-index="900"
+    :body-style="{ maxHeight: 'min(70vh, calc(100vh - 220px))', overflowY: 'auto' }"
     @cancel="$emit('close')"
   >
     <div class="replay-modal-content">

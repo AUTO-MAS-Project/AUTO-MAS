@@ -178,7 +178,7 @@
             </a-col>
             <a-col :span="24">
               <GeneralConfigModeSelector
-                :model-value="formData.Info.Mode ?? '用户'"
+                :model-value="formData.Info.Base ?? 'independent'"
                 :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
@@ -327,8 +327,8 @@ const getDefaultGeneralUserData = () => ({
     Notes: '',
     Status: true,
     RemainedDay: -1,
-    // 配置来源三态（脚本/用户/直控）
-    Mode: '用户',
+    // 配置来源三态（shared/independent/native）
+    Base: 'independent',
     IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
@@ -425,12 +425,12 @@ const handleFieldSave = async (key: string, value: any) => {
   }, key)
 }
 
-// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 「脚本」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分脚本态），
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+// 「共享」置灰：通用脚本运行/配置始终按 per-user 目录（AutoProxy/ScriptConfig 均不区分共享来源），
 // 选了也不生效——禁用并悬停说明原因
 const generalConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'database' | 'setting'
@@ -439,7 +439,7 @@ const generalConfigModeOptions: Array<{
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
@@ -448,49 +448,49 @@ const generalConfigModeOptions: Array<{
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.useScriptSCurrent'),
     icon: 'setting',
   },
 ]
 
-// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存
+// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存
 // 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   if (isInitializing.value || configModeSaving.value || !userId) return
-  if (formData.Info.Mode === value) return
+  if (formData.Info.Base === value) return
 
-  const previousMode = formData.Info.Mode
+  const previousMode = formData.Info.Base
   const previousIfUseMas = formData.Info.IfUseMasConfig
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  formData.Info.IfUseMasConfig = value !== '直控'
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  formData.Info.IfUseMasConfig = value !== 'native'
   configModeSaving.value = true
 
   try {
     const saved = await updateUser(scriptId, userId, {
       Info: {
-        Mode: formData.Info.Mode as '脚本' | '用户' | '直控',
+        Base: formData.Info.Base as 'shared' | 'independent' | 'native',
         IfUseMasConfig: formData.Info.IfUseMasConfig,
       },
     })
 
     if (!saved) {
-      formData.Info.Mode = previousMode
+      formData.Info.Base = previousMode
       formData.Info.IfUseMasConfig = previousIfUseMas
       return
     }
 
     await loadUserData()
-    logger.info(`配置来源已切换为: ${formData.Info.Mode}`)
+    logger.info(`配置来源已切换为: ${formData.Info.Base}`)
   } finally {
     configModeSaving.value = false
   }

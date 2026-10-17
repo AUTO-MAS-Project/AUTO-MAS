@@ -25,9 +25,9 @@
 
 from dataclasses import dataclass
 
-#: 魔改 AVD 目前只给 M9A 用（特调声明 ``supports_mod_avd``，见 MaaFW ``flavor.py``）：其它脚本选了
-#: 魔改 AVD 设备时，保存与运行时都用这句话拒绝，不走没测过的路。
-MOD_AVD_M9A_ONLY_MESSAGE = "魔改 AVD 目前只支持 M9A"
+#: 魔改 AVD 目前只给 MFW 脚本（MaaFW 引擎，通用项目与各特调）和 MAA 用：其它脚本选了魔改 AVD 设备时，
+#: 保存与运行时都用这句话拒绝，不走没测过的路。
+MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 MFW 脚本和 MAA"
 
 #: 端口段：原生索引 i → 控制台 ``20000 + 10*i``，adb ``+1``，gRPC ``+2``。
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
@@ -56,6 +56,8 @@ AVD_NAME_PREFIX = "mas_"
 SDK_DIR = "sdk"
 AVD_DIR = "avd"
 COMPONENTS_DIR = "components"
+#: MAA 截图用的假 MuMu 目录（``<根>\mumu-shim\shell\sdk\external_renderer_ipc.dll``，见 ``maa_shim.py``）。
+MUMU_SHIM_DIR = "mumu-shim"
 METADATA_FILE = "mas-avd.json"
 #: 模拟器日志、客体 logcat。
 LOGS_DIR = "logs"
@@ -65,6 +67,8 @@ LOG_KEEP_PER_INSTANCE = 10
 LOGS_DIR_MAX_BYTES = 1024**3
 #: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
 SHADER_CACHE_DIR = "shader-cache"
+#: 在本机生成的客体驱动补丁库（见 ``vulkanfix.py``），生成一次，之后各实例直接用。
+GUEST_PATCH_DIR = "guest-patches"
 
 
 def console_port(native_index: int | str) -> int:
@@ -194,7 +198,7 @@ CPU_CHOICES = (2, 4, 6)
 DEFAULT_MEMORY_MB = 6144
 DEFAULT_CPU = 6
 #: 游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
-#: 魔改 AVD 目前只支持 M9A，只列 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
+#: 只列实测过内存的 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
 RECOMMENDED_MEMORY_MB: dict[str, int] = {
     "com.shenlan.m.reverse1999": 4096,
 }
@@ -205,8 +209,13 @@ DATA_PARTITION_RANGE_GB = (16, 512)
 #: 显示固定 720p（用户 10-04 定），开机前写进 ``config.ini`` 的 ``hw.lcd.*``，不用 ``wm size``
 #: （运行时覆盖出过小毛病）。即雷电 / MuMu 的默认值，脚本都认。
 SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = 1280, 720, 240
+#: 刷新率（``config.ini`` 的 ``hw.lcd.vsync``，下次开机生效），按实例设。默认 60（用户 10-16 定：
+#: 帧率影响脚本操作）；30 是低消耗档：终末地大世界 30 Hz 下稳定 30 fps、qemu 约 1.6 核，60 Hz 下
+#: 54–61 fps、qemu 4 核以上（aemu-lab 修复队列「终末地帧率与稳定性」）。
+FPS_CHOICES = (30, 60)
+DEFAULT_FPS = 60
 
-#: 空闲页上报（气球）开着时，开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
+#: 空闲页上报（气球，固定开启），开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
 BALLOON_PAGE_REPORTING_ORDER = 9
 #: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
@@ -218,6 +227,11 @@ GUEST_DIRTY_WRITEBACK_CENTISECS = 100
 
 #: 客体脚本（``res/avd/guest/``）推到客体的位置。
 GUEST_TMP_DIR = "/data/local/tmp"
+#: 客体 Vulkan 驱动（编码器）库，补丁挂在它上面（见 ``vulkanfix.py``）。
+VULKAN_ENC_GUEST_PATH = "/vendor/lib64/libvulkan_enc.so"
+#: 客体驱动补丁的上传位置：挂上之后客体里那份改好的库标签变成 ``/vendor`` 的，adb 写不了，所以另起名字。
+#: 和 ``res/avd/guest/vulkanfix.sh`` 里的 ``u=`` 一致。
+VULKAN_FIX_UPLOAD_PATH = "/data/local/tmp/vulkanfix-upload.so"
 #: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。
 LOGCAT_BUFFER_SIZE = "16M"
 

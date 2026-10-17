@@ -13,25 +13,28 @@ import { markModAvdOptions } from '@/views/Emulator/avdLogic'
  */
 const DEVICE_OPTIONS_TTL_MS = 60_000
 
-/** 下拉的一项；魔改 AVD 实例在非 M9A 脚本里 ``disabled`` */
+/** 下拉的一项；魔改 AVD 实例在不支持它的脚本里 ``disabled`` */
 export type EmulatorDeviceOption = ComboBoxItem & { disabled?: boolean }
 
+/** 共享缓存存原始选项和魔改 AVD 设备号：同一个模拟器配置，MAA 页能选、别的页置灰，各页自己标。 */
 const sharedDeviceOptions = new Map<
   string,
-  { options: EmulatorDeviceOption[]; expiresAt: number }
+  { options: ComboBoxItem[]; modAvdSlots: Set<string>; expiresAt: number }
 >()
 
 /** 模拟器配置 ID → 配置类型（``Info.Type``）。类型建好就不变，只在作废缓存时一起清。 */
 const sharedEmulatorTypes = new Map<string, string>()
 
-const readShared = (emulatorId: string): EmulatorDeviceOption[] | undefined => {
+const readShared = (
+  emulatorId: string
+): { options: ComboBoxItem[]; modAvdSlots: Set<string> } | undefined => {
   const entry = sharedDeviceOptions.get(emulatorId)
   if (!entry) return undefined
   if (Date.now() >= entry.expiresAt) {
     sharedDeviceOptions.delete(emulatorId)
     return undefined
   }
-  return entry.options
+  return entry
 }
 
 /** 模拟器页增删了实例 / 路径之后调用，让脚本页下次重新拉列表。 */
@@ -79,13 +82,23 @@ const loadModAvdSlots = async (emulatorId: string): Promise<Set<string>> => {
 }
 
 /**
- * 用这个下拉的都是 MAA / SRC / MaaEnd / BAAH / 通用脚本页，不是 M9A：魔改 AVD 目前只支持 M9A，
- * 它的实例在这里置灰并写明原因。
+ * 用这个下拉的是 MAA / SRC / MaaEnd / BAAH / 通用脚本页。魔改 AVD 目前只支持 MFW 脚本和 MAA：
+ * ``allowModAvd`` 为 true（MAA 页）时原样列出，否则它的实例置灰并写明原因。
  */
-export const useEmulatorDeviceOptions = () => {
+export const useEmulatorDeviceOptions = ({
+  allowModAvd = false,
+}: { allowModAvd?: boolean } = {}) => {
   const emulatorDeviceLoading = ref(false)
   const emulatorDeviceOptions = ref<EmulatorDeviceOption[]>([])
   let requestSequence = 0
+
+  const markOptions = (options: ComboBoxItem[], modAvdSlots: Set<string>) =>
+    markModAvdOptions(
+      options,
+      value => value !== null && modAvdSlots.has(value),
+      allowModAvd,
+      t('emulator2.avd.unsupportedScript')
+    )
 
   /** 模拟器选择被清空：丢掉本页的选项、作废在飞的请求。共享缓存不动，那是别的页面的。 */
   const clearEmulatorDeviceOptions = () => {
@@ -98,14 +111,15 @@ export const useEmulatorDeviceOptions = () => {
     const requestId = ++requestSequence
     emulatorDeviceOptions.value = []
 
-    if (!emulatorId) {
+    // 「未选择」存的是 '-'，不是模拟器 ID，拿去查配置类型后端会解析失败
+    if (!emulatorId || emulatorId === '-') {
       emulatorDeviceLoading.value = false
       return
     }
 
-    const cachedOptions = readShared(emulatorId)
-    if (cachedOptions) {
-      emulatorDeviceOptions.value = cachedOptions
+    const cached = readShared(emulatorId)
+    if (cached) {
+      emulatorDeviceOptions.value = markOptions(cached.options, cached.modAvdSlots)
       emulatorDeviceLoading.value = false
       return
     }
@@ -121,17 +135,13 @@ export const useEmulatorDeviceOptions = () => {
       if (response.code === 200) {
         const modAvdSlots = await loadModAvdSlots(emulatorId)
         if (requestId !== requestSequence) return
-        const options = markModAvdOptions(
-          response.data || [],
-          value => value !== null && modAvdSlots.has(value),
-          false,
-          t('emulator2.avd.m9aOnly')
-        )
+        const options = response.data || []
         sharedDeviceOptions.set(emulatorId, {
           options,
+          modAvdSlots,
           expiresAt: Date.now() + DEVICE_OPTIONS_TTL_MS,
         })
-        emulatorDeviceOptions.value = options
+        emulatorDeviceOptions.value = markOptions(options, modAvdSlots)
       } else {
         message.error(response.message || '加载模拟器实例选项失败')
       }

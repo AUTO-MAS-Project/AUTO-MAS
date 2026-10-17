@@ -56,7 +56,12 @@ from app.utils.config_archive import (
     restore_dir,
     timestamp_sort_key,
 )
-from app.utils.io import ConfigCorruptedError, force_rmtree, read_dict_file
+from app.utils.io import (
+    ConfigCorruptedError,
+    force_rmtree,
+    read_dict_file,
+    swap_in_dir,
+)
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -87,7 +92,7 @@ MAS_USER_INFO_FILE = "mas_user_info.yml"
 _MAS_INFO_FIELDS: tuple[str, ...] = (
     "Name",
     "Status",
-    "Mode",
+    "Base",
     "LauncherMode",
     "RemainedDay",
     "Notes",
@@ -95,7 +100,7 @@ _MAS_INFO_FIELDS: tuple[str, ...] = (
 
 
 def collect_mas_user_info(user_config) -> dict:
-    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Mode/.../PushLogMode）。
+    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Base/.../PushLogMode）。
 
     槽备份只落盘账号与任务编排；用户名、启用状态、配置模式、启动器、剩余
     天数、备注与节点详情推送存在 UserData 中，恢复/预览需要与槽快照同批
@@ -421,9 +426,9 @@ def restore_onedragon_backup(
     )
     for idx_dir_name in idx_dirs:
         idx = int(idx_dir_name)
-        target = instance_dir(root, idx)
-        shutil.rmtree(target, ignore_errors=True)
-        shutil.copytree(backup_dir / idx_dir_name, target)
+        # 整目录换入走公共原语：先把旧目录改名留底再换入，失败时实例目录
+        # 保持原样，不会停在「删了一半、备份没拷回」的状态。
+        swap_in_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
 
     logger.info(f"一条龙原生配置已恢复备份 {ts} (实例目录 {len(idx_dirs)} 个)")
 

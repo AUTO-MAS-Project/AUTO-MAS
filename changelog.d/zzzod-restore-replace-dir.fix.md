@@ -1,0 +1,3 @@
+project: zzz
+beta-only: true
+恢复一条龙原生配置时，个别实例目录可能只删掉一半并报错

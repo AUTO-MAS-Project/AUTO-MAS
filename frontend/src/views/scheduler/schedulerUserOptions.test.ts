@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   scriptScopeGroup,
   scriptScopeSelection,
-  toRunnableUserOptions,
+  splitUserOptions,
   toScriptUserIds,
 } from './schedulerUserOptions'
 import {
+  countQueueUsers,
   countQueueSelectedUsers,
   withoutAllQueueUsers,
   withQueueGroupSelection,
@@ -18,52 +19,81 @@ const build = (users: Array<{ uid: string; info: Record<string, unknown> }>) =>
   ({
     index: users.map(u => ({ uid: u.uid, type: 'MaaUserConfig' as const })),
     data: Object.fromEntries(users.map(u => [u.uid, { Info: u.info }])),
-  }) as unknown as Parameters<typeof toRunnableUserOptions>[0]
+  }) as unknown as Parameters<typeof splitUserOptions>[0]
 
-describe('toRunnableUserOptions', () => {
-  it('筛掉未启用的用户', () => {
-    const options = toRunnableUserOptions(
+describe('splitUserOptions', () => {
+  it('未启用的用户归到 disabled，原因 disabled', () => {
+    const { runnable, disabled } = splitUserOptions(
       build([
         user('a', { Name: '甲', Status: true, RemainedDay: -1 }),
         user('b', { Name: '乙', Status: false, RemainedDay: -1 }),
       ])
     )
-    expect(options).toEqual([{ value: 'a', label: '甲' }])
+    expect(runnable).toEqual([{ value: 'a', label: '甲' }])
+    expect(disabled).toEqual([{ value: 'b', label: '乙', reason: 'disabled' }])
   })
 
-  it('筛掉剩余天数为 0 的用户，但保留 -1（无限）与正数', () => {
-    const options = toRunnableUserOptions(
+  it('剩余天数为 0 的归到 disabled，原因 expired；-1（无限）与正数保留', () => {
+    const { runnable, disabled } = splitUserOptions(
       build([
         user('a', { Name: '甲', Status: true, RemainedDay: 0 }),
         user('b', { Name: '乙', Status: true, RemainedDay: -1 }),
         user('c', { Name: '丙', Status: true, RemainedDay: 3 }),
       ])
     )
-    expect(options.map(item => item.value)).toEqual(['b', 'c'])
+    expect(runnable.map(item => item.value)).toEqual(['b', 'c'])
+    expect(disabled).toEqual([{ value: 'a', label: '甲', reason: 'expired' }])
+  })
+
+  it('未启用且天数耗尽时以未启用为准', () => {
+    const { disabled } = splitUserOptions(
+      build([user('a', { Name: '甲', Status: false, RemainedDay: 0 })])
+    )
+    expect(disabled).toEqual([{ value: 'a', label: '甲', reason: 'disabled' }])
   })
 
   it('保持 index 的顺序', () => {
-    const options = toRunnableUserOptions(
+    const { runnable } = splitUserOptions(
       build([
         user('c', { Name: '丙', Status: true, RemainedDay: -1 }),
         user('a', { Name: '甲', Status: true, RemainedDay: -1 }),
         user('b', { Name: '乙', Status: true, RemainedDay: -1 }),
       ])
     )
-    expect(options.map(item => item.value)).toEqual(['c', 'a', 'b'])
+    expect(runnable.map(item => item.value)).toEqual(['c', 'a', 'b'])
   })
 
   it('用户名为空时退回 uid', () => {
-    const options = toRunnableUserOptions(
+    const { runnable } = splitUserOptions(
       build([user('a', { Name: '', Status: true, RemainedDay: -1 })])
     )
-    expect(options).toEqual([{ value: 'a', label: 'a' }])
+    expect(runnable).toEqual([{ value: 'a', label: 'a' }])
   })
 
-  it('index 里有但 data 缺条目时跳过，不抛错', () => {
+  it('index 里有但 data 缺条目时两组都不放，不抛错', () => {
     const payload = build([user('a', { Name: '甲', Status: true, RemainedDay: -1 })])
     payload.index.push({ uid: 'ghost' } as (typeof payload.index)[number])
-    expect(toRunnableUserOptions(payload)).toEqual([{ value: 'a', label: '甲' }])
+    const { runnable, disabled } = splitUserOptions(payload)
+    expect(runnable).toEqual([{ value: 'a', label: '甲' }])
+    expect(disabled).toEqual([])
+  })
+
+  it('disabled 只展示：不参与账号计数，写回也不带它', () => {
+    const { runnable, disabled } = splitUserOptions(
+      build([
+        user('a', { Name: '甲', Status: true, RemainedDay: -1 }),
+        user('b', { Name: '乙', Status: false, RemainedDay: -1 }),
+      ])
+    )
+    const group: QueueScopeGroup = {
+      scriptId: 's1',
+      scriptName: 'MAA',
+      users: runnable,
+      disabledUsers: disabled,
+    }
+    expect(countQueueUsers([group])).toBe(1)
+    expect(countQueueSelectedUsers(scriptScopeSelection(group, undefined), [group])).toBe(1)
+    expect(toScriptUserIds(scriptScopeSelection(group, undefined), group)).toEqual(['a'])
   })
 })
 

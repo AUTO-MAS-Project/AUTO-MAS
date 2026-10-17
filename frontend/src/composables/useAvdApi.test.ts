@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const statusRequest = vi.fn()
 const addPathRequest = vi.fn()
@@ -35,9 +35,7 @@ describe('useAvdApi', () => {
       'error',
       'getInstanceOptions',
       'getStatus',
-      'installApk',
       'loading',
-      'setInstanceOptions',
     ])
   })
 

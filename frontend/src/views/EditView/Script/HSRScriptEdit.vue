@@ -399,6 +399,26 @@
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.runsPerDayThis') }}
+                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-number
+                  v-model:value="hsrConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleRunConfigChange('ProxyTimesLimit', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
               <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
@@ -805,6 +825,7 @@ const hsrConfig = reactive<HSRConfigData>({
   },
   Cloud: getDefaultCloudConfig(),
   Run: {
+    ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     DailyTimeLimit: 20,
     WeeklyTimeLimit: 60,
@@ -1224,7 +1245,7 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-// 清空路径：保存空字符串到后端；任务映射在用户页维护（脚本来源写脚本级，用户来源写用户级）。
+// 清空路径：保存空字符串到后端；任务映射在用户页维护（shared 来源写脚本级，independent 来源写用户级）。
 const clearPath = async (key: string) => {
   if (key === 'M7APath' || key === 'SRAPath') {
     await handleChange('Info', key, '')

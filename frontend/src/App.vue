@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ConfigProvider } from 'ant-design-vue'
+import { ConfigProvider, message } from 'ant-design-vue'
+import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
@@ -18,7 +19,10 @@ import AppearanceDecoration from './components/AppearanceDecoration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
+import { useHomeGreetingStore } from './stores/homeGreeting'
+import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
 import { useLocale } from './composables/useLocale.ts'
+import { useDesktopMascot } from './composables/useDesktopMascot'
 
 const logger = window.electronAPI.getLogger('App组件')
 
@@ -30,7 +34,7 @@ const DebugPanel =
     : null
 
 const route = useRoute()
-const { antdTheme } = useTheme()
+const { antdTheme, activeAppearance, antTokens } = useTheme()
 const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
@@ -38,6 +42,7 @@ const { playSound } = useAudioPlayer()
 const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
+const homeGreetingStore = useHomeGreetingStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -45,6 +50,54 @@ const isInitializationPage = computed(() => route.name === 'Initialization')
 // 判断是否为独立页面（不需要 AppLayout 的页面：日志窗口、虚拟显示器询问弹窗）
 const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
+)
+
+useDesktopMascot(
+  {
+    isStandalonePage,
+    isAppReady,
+    ready: computed(
+      () => isAppReady.value && performanceStore.initialized && !isInitializationPage.value
+    ),
+    colors: computed(() => {
+      // 同主题包切换一样触发同步，即使最终颜色相同也保留原有接线。
+      void activeAppearance.value
+      const tokens = antTokens.value
+      return tokens
+        ? {
+            background: tokens.colorBgElevated,
+            text: tokens.colorText,
+            border: tokens.colorBorder,
+            radius: tokens.borderRadius,
+          }
+        : undefined
+    }),
+    menuLabels: computed(() => {
+      void antdLocale.value
+      return {
+        pauseAnimation: t('setting.basic.mascotPauseAnimation'),
+        resumeAnimation: t('setting.basic.mascotResumeAnimation'),
+        pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
+        resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
+      }
+    }),
+    greeting: computed(() => homeGreetingStore.greeting),
+    working: computed(() => performanceStore.anyScriptRunning),
+    animate: computed(() => !performanceStore.lowPerformanceMode),
+  },
+  {
+    api: {
+      setDesktopMascotReady: window.electronAPI.setDesktopMascotReady,
+      setDesktopMascotActivity: window.electronAPI.setDesktopMascotActivity,
+      setDesktopMascotIdleMessage: window.electronAPI.setDesktopMascotIdleMessage,
+      showDesktopMascotNotice: window.electronAPI.showDesktopMascotNotice,
+      onDesktopMascotError: window.electronAPI.onDesktopMascotError,
+    },
+    tasks: { snapshot: getTaskRuntimeStates, subscribe: onTaskRuntimeEvent },
+    translate: t,
+    reportError: (text, error) => logger.error(text, error),
+    showError: () => message.error(t('setting.basic.desktopMascotFailed')),
+  }
 )
 
 onMounted(async () => {
@@ -76,7 +129,7 @@ onMounted(async () => {
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale">
     <ThemeTokenBridge />
-    <AppearanceDecoration :show-mascot="!isInitializationPage && !isStandalonePage" />
+    <AppearanceDecoration />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />

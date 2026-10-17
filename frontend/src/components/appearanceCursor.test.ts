@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { createAppearanceCursorValue } from './appearanceCursor'
 
 const POINTER_URL = 'data:image/png;base64,AA=='

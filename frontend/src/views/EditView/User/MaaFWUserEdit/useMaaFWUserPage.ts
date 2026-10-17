@@ -1,15 +1,17 @@
 import {
   computed,
+  getCurrentInstance,
   markRaw,
   nextTick,
   onBeforeUnmount,
   onMounted,
   onUnmounted,
+  provide,
   ref,
   shallowRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
@@ -31,8 +33,10 @@ import type {
 } from '@/types/script'
 import { managedMaaFWQueueState } from '../maafwManagedTasks'
 import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
+import { createMaaFWOptionDraftRegistry, MAAFW_OPTION_DRAFTS_KEY } from '../maafwOptionDrafts'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
 import { useMaaFWUserSaveStatus } from './useMaaFWUserSaveStatus'
+import { createMaaFWLeaveGuard } from './maafwLeaveGuard'
 import { useMaaFWUserForm } from './useMaaFWUserForm'
 import { useMaaFWUserTaskContext } from './useMaaFWUserTaskContext'
 import { useMaaFWUserPersistence, type MaaFWUserIdHolder } from './useMaaFWUserPersistence'
@@ -67,8 +71,20 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const pageLoading = ref(true)
   const loading = computed(() => pageLoading.value)
   const isInitializing = ref(true)
-  const { isSaving, hasUnsavedChanges, saveStatus, saveErrorMessage, enqueueSave, pendingCount } =
-    useMaaFWUserSaveStatus()
+  const {
+    isSaving,
+    hasUnsavedChanges,
+    saveStatus,
+    saveErrorMessage,
+    enqueueSave,
+    waitForSaves,
+    resetSaveFailures,
+    pendingCount,
+  } = useMaaFWUserSaveStatus()
+
+  // 页面上各个选项编辑器里没提交的草稿（文本 / 数字 / 密码失焦才提交），离开页面前统一提交
+  const optionDrafts = createMaaFWOptionDraftRegistry()
+  if (getCurrentInstance()) provide(MAAFW_OPTION_DRAFTS_KEY, optionDrafts)
 
   const userIdHolder: MaaFWUserIdHolder = { value: userId }
   const isEdit = ref(!!userIdHolder.value)
@@ -145,7 +161,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     context,
     savePresetAndSnapshot,
   })
-  const { presentQueuedTasks, syncControllerResourceSelection } = queue
+  const { presentQueuedTasks } = queue
 
   const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
 
@@ -161,6 +177,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
       displayName: task => getDisplayName(task),
+      separator: t('edit.maafwUnselectableTaskSeparator'),
     })
     if (state?.kind === 'split' && flavor.value.userPage.managed.warningKey) {
       return { type: 'warning', message: t(flavor.value.userPage.managed.warningKey, state) }
@@ -282,11 +299,11 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
               keepMissing: true,
             }
           )
-          await syncControllerResourceSelection()
           formData.Task.TaskSnapshot = JSON.stringify(taskSnapshot.value)
           await nextTick()
           formData.userName = formData.Info.Name || ''
-          hasUnsavedChanges.value = false
+          // 页面上的值换成了后端这一份：之前没存上的改动已不在，失败账一并清掉
+          resetSaveFailures()
           isInitializing.value = false
         } else {
           message.error(t('edit.userDoesNotExist'))
@@ -316,28 +333,59 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     if (data) {
       previewData.value = markRaw(data)
       taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data, { keepMissing: true })
-      await syncControllerResourceSelection()
       await nextTick()
       if (showMessage) message.success(t('edit.interfaceLoaded'))
     }
   }
 
-  const handleCancel = () => {
-    if (isSaving.value || hasUnsavedChanges.value) {
+  // 离开本页（「返回」、面包屑、侧栏、浏览器后退……）都走同一个路由离开守卫：
+  // 先提交选项编辑器里没提交的草稿；还在保存（改完输入框直接点走，失焦刚触发了保存）就先等它
+  // 存完；只有存失败、或有校验不过的草稿时才弹确认，选「继续编辑」就留在本页。
+  // 转圈、连点只算一次、放行后不再拦见 createMaaFWLeaveGuard。
+  const confirmLeave = () =>
+    new Promise<boolean>(resolve => {
       Modal.confirm({
         title: t('edit.youHaveUnsavedChanges'),
         content: t('edit.leaveWithoutSavingUnsaved'),
         okText: t('edit.leave'),
         cancelText: t('edit.keepEditing'),
-        onOk: () => router.push('/scripts'),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
       })
-      return
-    }
-    router.push('/scripts')
+    })
+
+  const prepareLeave = async () => {
+    const draftsCommitted = optionDrafts.flush()
+    if (isSaving.value) await waitForSaves()
+    if (draftsCommitted && !hasUnsavedChanges.value) return true
+    return await confirmLeave()
   }
 
+  const {
+    leaving,
+    guard: guardLeave,
+    reset: resetLeaveApproval,
+  } = createMaaFWLeaveGuard(prepareLeave)
+
+  // 守卫只能在组件 setup 里挂（单测在 effectScope 里跑这个组合式函数，没有组件实例）
+  if (getCurrentInstance()) {
+    onBeforeRouteLeave(() => guardLeave())
+    // 放行后这次导航没走成（被别的守卫拦下，或中途抛错）、页面还在：下次离开照常检查
+    onUnmounted(router.afterEach(() => resetLeaveApproval()))
+    onUnmounted(router.onError(() => resetLeaveApproval()))
+  }
+
+  // 「返回」只负责发起导航，检查都在离开守卫里
+  const handleCancel = () => {
+    if (leaving.value) return
+    void router.push('/scripts')
+  }
+
+  // 关窗口 / 刷新：同步提交草稿（提交会立刻排进保存队列，isSaving 随之为真），
+  // 提交不了的草稿与还在保存、保存失败一样拦下来
   const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!isSaving.value && !hasUnsavedChanges.value) return
+    const draftsCommitted = optionDrafts.flush()
+    if (draftsCommitted && !isSaving.value && !hasUnsavedChanges.value) return
     event.preventDefault()
     event.returnValue = ''
   }
@@ -409,6 +457,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     ...restore,
     loadUserData,
     reloadInterface,
+    leaving,
     handleCancel,
   }
 }

@@ -48,6 +48,7 @@ import httpx
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
@@ -310,7 +311,7 @@ async def login_taygedo_with_password(
         device_id or credential.get("deviceId") or _stable_device_id(phone_value)
     ).strip()
 
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
         laohu_token, laohu_user_id = await _laohu_password_login(
             client,
             phone_value,
@@ -562,7 +563,7 @@ async def refresh_taygedo_credential(
 
     cloud_token = str(credential.get("cloudToken") or "").strip()
     cloud_user_id = str(credential.get("cloudUserId") or "").strip()
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
         response = await client.post(
             REFRESH_TOKEN_URL,
             headers={
@@ -1210,7 +1211,7 @@ async def _sign_taygedo_games(
                 "reason": reason,
             }
 
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
         results = list(
             await asyncio.gather(*(sign_role(role, client) for role in roles))
         )
@@ -1238,7 +1239,7 @@ async def _get_taygedo_game_roles_with_status(
 ) -> tuple[list[dict[str, str]], bool]:
     """读取带游戏归属的角色卡，旧接口仅作为兼容回退。"""
 
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
         # 角色卡响应带有明确 gameId，是区分幻塔和异环的唯一可靠来源。
         try:
             response = await client.get(
@@ -1565,7 +1566,7 @@ async def _get_game_sign_state(
     proxy: str | None,
 ) -> dict[str, object]:
     if client is None:
-        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+        async with create_community_client(proxy=proxy) as owned_client:
             return await _get_game_sign_state(
                 access_token,
                 game_id,
@@ -1595,7 +1596,7 @@ async def _get_game_sign_rewards(
     """读取塔吉多应用内游戏签到奖励表。"""
 
     if client is None:
-        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+        async with create_community_client(proxy=proxy) as owned_client:
             return await _get_game_sign_rewards(
                 access_token,
                 game_id,
@@ -1655,7 +1656,7 @@ async def _submit_game_sign(
     proxy: str | None,
 ) -> str:
     if client is None:
-        async with httpx.AsyncClient(proxy=proxy, trust_env=False) as owned_client:
+        async with create_community_client(proxy=proxy) as owned_client:
             return await _submit_game_sign(
                 access_token,
                 game_id,
@@ -1743,7 +1744,7 @@ async def get_cloud_duration(
     }
     params["sign"] = _md5_join(params, CLOUD_APP_KEY)
 
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
         response = await client.post(
             CLOUD_USER_INFO_URL,
             headers={
@@ -1862,7 +1863,7 @@ async def _community_sign(
 ) -> list[tuple[str, str, str, str]]:
     """并发执行塔吉多应用内签到（随已绑定游戏附带触发）。"""
 
-    async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
+    async with create_community_client(proxy=proxy) as client:
 
         async def sign_community(community_id: str) -> tuple[str, str, str, str]:
             community_name = TAYGEDO_COMMUNITY_NAMES.get(community_id, community_id)

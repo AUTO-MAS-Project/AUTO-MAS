@@ -16,10 +16,6 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     message?: string;
     /**
-     * 空闲页上报 (气球) 是否开启
-     */
-    balloon?: boolean;
-    /**
      * 内存 MB, 每次开机用 -memory 传
      */
     memoryMb?: (number | null);
@@ -27,6 +23,10 @@ export type Emulator2AvdInstanceOptionsOut = {
      * CPU 核数
      */
     cpu?: (number | null);
+    /**
+     * 帧率 (hw.lcd.vsync), 下次开机生效
+     */
+    fps?: (number | null);
     /**
      * 数据盘上限 GB
      */

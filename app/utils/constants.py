@@ -126,8 +126,8 @@ MAA_TASKS = [
 
 MAA_TASKS_ZH = [
     "开始唤醒",
-    "库存保持",
-    "理智作战",
+    "库存保持与干员养成",
+    "理智任务",
     "基建换班",
     "自动公招",
     "信用收支",
@@ -403,6 +403,53 @@ MAAEND_SANITY_TASK_FIELDS = (
     "AutoEssenceTargetWeapons",
 )
 """MaaEnd理智任务字段列表"""
+
+ENDFIELD_SERVER_PRESETS: dict[tuple[str, str, str], dict[str, str]] = {
+    ("6LL0KJuqHBVz33WK", "1", "1"): {
+        "label": "官服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "1",
+        "sub_channel": "1",
+        "seq": "5",
+    },
+    ("6LL0KJuqHBVz33WK", "2", "2"): {
+        "label": "B服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "2",
+        "sub_channel": "2",
+        "seq": "5",
+    },
+    ("YDUTE5gscDZ229CW", "6", "6"): {
+        "label": "国际服",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "6",
+        "seq": "3",
+    },
+    ("YDUTE5gscDZ229CW", "6", "802"): {
+        "label": "国际服（Google Play）",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "802",
+        "seq": "3",
+    },
+}
+"""终末地 PC 客户端的四套服务器参数，按渠道区分。
+
+键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`, 用来选出官服、B服、国际服与国际服
+
+MAS 没有选服入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+
+`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判400，版本串带首尾空格会被判 500。
+"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {
@@ -1310,3 +1357,40 @@ CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
 """循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""
+
+BASE_SHARED = "shared"
+"""base 来源：脚本级共享配置（旧字面量「脚本」/「简洁」）"""
+
+BASE_INDEPENDENT = "independent"
+"""base 来源：用户独立配置（旧字面量「用户」/「详细」/「自定义」）"""
+
+BASE_NATIVE = "native"
+"""base 来源：脚本原生配置（旧字面量「直控」）"""
+
+LEGACY_BASE_SOURCES = {
+    "脚本": BASE_SHARED,
+    "用户": BASE_INDEPENDENT,
+    "直控": BASE_NATIVE,
+    "简洁": BASE_SHARED,
+    "详细": BASE_INDEPENDENT,
+    "自定义": BASE_INDEPENDENT,
+}
+"""旧配置来源字面量 → base 来源：只出现在存量数据与旧备份里，读取时归一"""
+
+
+def normalize_base_source(value: object) -> str:
+    """把配置来源值归一为 base 来源三态（shared / independent / native）。
+
+    无法识别的值原样返回，由调用方决定是否回落；空值返回空串。
+    """
+
+    text = str(value or "").strip()
+    return LEGACY_BASE_SOURCES.get(text, text)
+
+
+BASE_SOURCE_LABELS = {
+    BASE_SHARED: "共享",
+    BASE_INDEPENDENT: "独立",
+    BASE_NATIVE: "原生",
+}
+"""base 来源三态的展示词表（后端预览等无前端 i18n 处使用）"""

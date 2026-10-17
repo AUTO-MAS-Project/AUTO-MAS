@@ -1,7 +1,7 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
-import type { QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
+import type { QueueScopeDisabledUser, QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -48,6 +48,7 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
   [PowerIn.signal.HIBERNATE]: 'scheduler.power.hibernate',
   [PowerIn.signal.SLEEP]: 'scheduler.power.sleep',
   [PowerIn.signal.KILL_SELF]: 'scheduler.power.killSelf',
+  [PowerIn.signal.RESTART_SELF]: 'scheduler.power.restartSelf',
   [PowerIn.signal.LOGOFF]: 'scheduler.power.logoff',
 }
 export interface SchedulerTab {
@@ -63,6 +64,8 @@ export interface SchedulerTab {
   // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
   selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
+  // 托管里未启用/天数耗尽的账号，只在「本次运行范围」面板展示，不可勾选
+  userDisabledOptions?: QueueScopeDisabledUser[]
   userOptionsLoading?: boolean
   userOptionsLoaded?: boolean
   taskId: string | null

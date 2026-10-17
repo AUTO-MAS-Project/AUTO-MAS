@@ -44,7 +44,13 @@ from .apply import (
     _validate_plan_base,
     build_package_plan,
 )
-from .blob_store import RuntimeBlobStore, _copy_exclusive, place_fresh, sha256_file
+from .blob_store import (
+    RuntimeBlobStore,
+    _copy_exclusive,
+    place_fresh,
+    sha256_file,
+    unlink_forced,
+)
 from .contracts import (
     VIEW_MARKER_FILE_NAME,
     canonical_json,
@@ -145,7 +151,7 @@ def remove_tree(path: Path) -> None:
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(long_path(path), onexc=_clear_readonly_and_retry)
         else:
-            path.unlink()
+            unlink_forced(path)
 
 
 # --------------------------------------------------------------------------
@@ -341,6 +347,36 @@ def version_newer(candidate: str, current: str) -> bool:
         return remote != local
 
 
+_RELEASE_PREFIX_RE = re.compile(r"^[vV]?(\d+(?:\.\d+)*)")
+
+
+def _version_strictly_newer(candidate: str, current: str) -> bool:
+    """``candidate`` 是否**确定**比 ``current`` 新；比不出来就算不新。
+
+    :func:`version_newer` 遇到非 PEP 440 的版本号（``v1.2.3-hotfix``、``v2.0.0_fix``）
+    按「不相等即更新」，导入一个更旧的目录也会推进组的 latest、整组降级。这里先按
+    PEP 440 比；比不了就比开头的数字段（``1.2.3``），数字段不同按它定，相同（只差后缀）
+    或取不出数字段一律不算新——不能比较就不前进。
+    """
+
+    remote = str(candidate or "").strip()
+    local = str(current or "").strip()
+    if not remote:
+        return False
+    if not local:
+        return True
+    try:
+        return Version(remote.lstrip("vV")) > Version(local.lstrip("vV"))
+    except InvalidVersion:
+        pass
+    remote_match = _RELEASE_PREFIX_RE.match(remote)
+    local_match = _RELEASE_PREFIX_RE.match(local)
+    if remote_match is None or local_match is None:
+        return False
+    # 数字段相同（只差后缀）时两者相等，返回 False。
+    return Version(remote_match.group(1)) > Version(local_match.group(1))
+
+
 # --------------------------------------------------------------------------
 # 清单
 # --------------------------------------------------------------------------
@@ -371,6 +407,20 @@ def manifest_files(manifest: Mapping[str, Any] | None) -> dict[str, dict[str, An
 
 def read_manifest(root: Path, key: str, payload_id: str) -> dict[str, Any] | None:
     return _read_json(manifest_path(root, key, payload_id))
+
+
+def payload_complete(root: Path, key: str, payload_id: str) -> bool:
+    """载荷目录在、清单读得出（是个 JSON 对象）。只剩目录、清单没了或读不出的载荷建不了视图、
+    也当不了更新基准（:meth:`PayloadTarget.manifest` 同一判据），与载荷丢了同等对待
+    （见 :func:`register`）。清单要整份解析，大项目几 MB、十几毫秒，不要放进逐文件的循环。"""
+
+    try:
+        return (
+            payload_dir(root, key, payload_id).is_dir()
+            and read_manifest(root, key, payload_id) is not None
+        )
+    except PayloadError:
+        return False
 
 
 def _non_negative_int(value: Any) -> int:
@@ -676,7 +726,7 @@ def build_from_package(
         import_files = {
             rel for rel, entry in old_files.items() if entry["origin"] != ORIGIN_PACKAGE
         }
-        stale |= _import_origin_orphans(old_root, plan) & import_files
+        stale |= _import_origin_orphans(old_root, plan, send_log) & import_files
         # 换过外壳的导入目录里留着的旧布局原生库（maafw/ 与 runtimes/<rid>/native 并存）：
         # 新包在别处带着 MaaFramework 时清掉，否则 runner 与 agent 会各挑一份。
         abandoned = abandoned_native_runtime_files(import_files, plan.files)
@@ -752,7 +802,8 @@ def build_from_package(
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             if os.path.lexists(target):
-                os.unlink(target)
+                # 老载荷里可能留着来源带来的只读位（硬链接共用属性）：被拒就清掉再删。
+                unlink_forced(target)
             try:
                 os.replace(source, target)
             except OSError:
@@ -771,6 +822,35 @@ def build_from_package(
     for rel in plan.files:
         origins[rel] = ORIGIN_PACKAGE
     return PackageBuild(plan=plan, stale=stale, origins=origins, applied_files=applied)
+
+
+def linked_hashes(
+    old_manifest: Mapping[str, Any], old_payload_dir: Path, staging: Path
+) -> dict[str, str]:
+    """staging 里与旧载荷**同一 inode** 的文件 → 旧清单记的 sha256。
+
+    更新时没变的大文件是从旧载荷硬链接进 staging 的（``clone_payload_into``），内容就是
+    旧清单记的那份，登记时不必再整读一遍算哈希。只认同一 inode：复制来的、被包覆盖的、
+    预检时被重写的都是新 inode，照常重算。被写穿过（``damaged``）的载荷由调用方不传。
+    """
+
+    result: dict[str, str] = {}
+    old_root = Path(old_payload_dir)
+    staging = Path(staging)
+    for rel, entry in manifest_files(old_manifest).items():
+        digest = entry.get("sha256")
+        if not digest:
+            continue
+        try:
+            current = os.stat(staging / rel)
+            if current.st_nlink < 2:
+                continue
+            previous = os.stat(old_root / rel)
+        except OSError:
+            continue
+        if (current.st_ino, current.st_dev) == (previous.st_ino, previous.st_dev):
+            result[rel] = str(digest)
+    return result
 
 
 @dataclass
@@ -905,6 +985,7 @@ def register(
     bundled: Mapping[str, Any] | None = None,
     projection_revision: int = 0,
     always_advance: bool = False,
+    version_checked: bool = False,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -912,7 +993,8 @@ def register(
       胜过 ``import``）。
     - ``latest[channel]`` **只在版本严格更高时前进**；版本相同而 id 不同时保留既有 id
       （新建的这份不登记为 latest，等启动期回收）。返回的 ``latest_id`` 就是调用方该把
-      视图切到的那个。``latest`` 指向的目录丢了才无条件换成这份。
+      视图切到的那个。``latest`` 指向的载荷不完整（目录丢了，或清单没了 / 读不出，见
+      :func:`payload_complete`）时，这份不比它旧就换成这份。
     - 同版本例外一：既有 latest 自带的 MaaFramework 在本机加载不了、这份能加载
       （见 :func:`_replaces_unloadable_latest`），换成这份。
     - 同版本例外二：这份按更新的投影规则建（``projection_revision`` 比 latest 的有效规则
@@ -923,6 +1005,11 @@ def register(
     ``always_advance``：不比版本，这次登记的就是 ``latest[channel]``。只给开发者模式的脚本
     私有渠道用（宿主侧 ``dev:<视图名>``，组里只有那一个脚本、来源目录就是真相，版本号
     不变的本地修改也要换上去）；其余渠道一律不传，上面几条语义不变。
+
+    「版本更高」的比法：``version_checked``（更新器传：它已按 ``_is_remote_newer`` 确认
+    目标比组版本新）沿用 :func:`version_newer`；其余（导入、采纳、补齐）用
+    :func:`_version_strictly_newer`——非 PEP 440 的版本号比不出先后时不前进，免得导入
+    一个更旧的目录把整组降级。
     """
 
     staging = Path(staging)
@@ -1029,11 +1116,16 @@ def register(
         else:
             current_version = str(current_latest.get("version") or "")
             latest_dir = lineage_dir(root, lineage) / str(current_latest["id"])
-            if latest_dir.is_dir():
+            if payload_complete(root, lineage, str(current_latest["id"])):
                 same_id = str(current_latest["id"]) == payload_id
                 same_version = not version_newer(current_version, version)
-                advanced = (
+                newer = (
                     version_newer(version, current_version)
+                    if version_checked
+                    else _version_strictly_newer(version, current_version)
+                )
+                advanced = (
+                    newer
                     or _replaces_unloadable_latest(
                         latest_dir,
                         target,
@@ -1052,12 +1144,13 @@ def register(
                     )
                 )
             else:
-                # latest 指的目录丢了：只有新登记的不比它旧才顶上去，否则组会后退；
-                # 保留原 latest，缺失的载荷由自愈 / 迁移处理。
+                # latest 指的目录丢了（或只剩目录、清单没了 / 读不出——同样建不了视图、当不了
+                # 更新基准）：只有新登记的不比它旧才顶上去，否则组会后退；保留原 latest，缺失的
+                # 载荷由自愈 / 迁移处理。
                 advanced = not version_newer(current_version, version)
                 if not advanced:
                     logger.warning(
-                        "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机，新登记的 %s 更旧，"
+                        "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机或不完整，新登记的 %s 更旧，"
                         "保留原 latest",
                         lineage,
                         channel,
@@ -1084,7 +1177,7 @@ def register(
             }
         write_lineage(root, lineage, data)
         latest_id = str(data["latest"][channel]["id"])
-        latest_available = (lineage_dir(root, lineage) / latest_id).is_dir()
+        latest_available = payload_complete(root, lineage, latest_id)
     return RegisterResult(
         payload_id=payload_id,
         latest_id=latest_id,
@@ -1369,6 +1462,7 @@ __all__ = [
     "lineage_key",
     "lineage_key_for_project",
     "lineage_lock",
+    "linked_hashes",
     "list_ids",
     "list_lineages",
     "manifest_files",
@@ -1377,6 +1471,7 @@ __all__ = [
     "add_known_source",
     "lineage_by_known_source",
     "settle_same_version_latest",
+    "payload_complete",
     "payload_dir",
     "payload_ref",
     "place_fresh",

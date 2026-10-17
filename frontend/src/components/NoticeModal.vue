@@ -182,7 +182,10 @@ watch(visible, async newVisible => {
 </script>
 
 <style scoped>
-.notice-modal :deep(.ant-modal-body) {
+/* 弹窗壳由 Ant Design 渲染，使用专属类定位传送到 body 的节点。 */
+:global(.notice-modal .ant-modal-body) {
+  display: flex;
+  flex-direction: column;
   padding: 16px 24px;
   max-height: 70vh;
   overflow: hidden;
@@ -192,6 +195,7 @@ watch(visible, async newVisible => {
   display: flex;
   flex-direction: column;
   height: 60vh;
+  min-height: 0;
 }
 
 .notice-tabs {
@@ -322,6 +326,7 @@ watch(visible, async newVisible => {
 
 .notice-footer {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
   margin-top: 16px;
@@ -355,7 +360,7 @@ watch(visible, async newVisible => {
     margin: 10px;
   }
 
-  .notice-modal :deep(.ant-modal-body) {
+  :global(.notice-modal .ant-modal-body) {
     padding: 12px 16px;
     max-height: 60vh;
   }

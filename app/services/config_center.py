@@ -29,7 +29,7 @@ import re
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
 from PIL import Image, ImageOps
@@ -54,6 +54,13 @@ Config = LazyProxy("app.core", "Config")
 API_BASE_URL = os.environ.get(
     "AUTO_MAS_CONFIG_CENTER_API", "https://data.auto-mas.top/api/v1"
 ).rstrip("/")
+# data.auto-mas.top 前面是 EdgeOne，境外访问会被 307 到 data2.auto-mas.top（Cloudflare）。httpx
+# 跟随跨域跳转时会删掉 Authorization，带令牌的请求跳过去就是 401，令牌随即被清，表现为登录后
+# 立刻掉线。令牌只补给 data、data2 这类「data + 数字」主机，且整条跳转链都得是这类主机、都是
+# https；auto-mas.top 的其他子域（文档、下载站等）和跳转链中途经过的别家主机一律不带。
+# EdgeOne 回 307 时带 Connection: close，请求体还没传完就断开，外观包这类大上传跟着跳转走
+# 经常在第一跳就失败；所以跳过一次之后记下新地址，后面的请求直接发过去。
+TOKEN_REDIRECT_HOST = re.compile(r"data\d*\.auto-mas\.top")
 PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
 # 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
 # 不会报错，只会静默返回 0 条，模板列表就永远是空的。通用脚本模板都发布在这个分类下。
@@ -64,6 +71,10 @@ CATEGORY_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_CATEGORY", "GeneralConfig"
 APPEARANCE_CATEGORY_KEY = os.environ.get(
     "AUTO_MAS_CONFIG_CENTER_APPEARANCE_CATEGORY", "theme"
 )
+APPEARANCE_CATEGORIES = {
+    "theme": APPEARANCE_CATEGORY_KEY,
+    "mascot": os.environ.get("AUTO_MAS_CONFIG_CENTER_MASCOT_CATEGORY", "mascot"),
+}
 
 # 通用脚本配置实际只有几 KiB，2 MiB 足够留出余量，同时挡住异常的超大响应
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
@@ -129,6 +140,9 @@ class ConfigCenterClient:
         self._username: str = ""
         self._display_name: str = ""
 
+        ## 实际请求的 API 地址: 分享站把 API 跳到别的 data 主机后改成跳转后的地址
+        self._api_base: str = API_BASE_URL
+
         self._lock = asyncio.Lock()
 
     # ==================== 模板浏览 ====================
@@ -184,13 +198,14 @@ class ConfigCenterClient:
         """
 
         params = {"version_no": version_no} if version_no else None
-        url = f"{API_BASE_URL}/files/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
+        path = f"/files/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
-        ) as client:
+        async with self._client(REQUEST_TIMEOUT, None) as client:
             try:
-                async with client.stream("GET", url, params=params) as response:
+                async with client.stream(
+                    "GET", f"{self._api_base}{path}", params=params
+                ) as response:
+                    self._remember_api_base(response, path)
                     if response.status_code != 200:
                         await response.aread()
                         raise ConfigCenterError(
@@ -207,8 +222,7 @@ class ConfigCenterClient:
                             )
                         chunks.append(chunk)
             except httpx.HTTPError as e:
-                logger.warning(f"下载配置失败: {e}")
-                raise ConfigCenterError(f"无法连接配置中心: {e}") from e
+                raise self._connection_error("GET", path, e) from e
 
         try:
             data = json.loads(b"".join(chunks).decode("utf-8"))
@@ -483,6 +497,7 @@ class ConfigCenterClient:
         file_id: Optional[int],
         cover_path: Optional[str] = None,
         cover_mode: Optional[str] = None,
+        category_key: Literal["theme", "mascot"] = "theme",
     ) -> Dict[str, Any]:
         """把本地外观包上传到分享站; file_id 非空时给已上传的那个文件发新版本。
 
@@ -496,6 +511,7 @@ class ConfigCenterClient:
             cover_mode: 封面来源, package 用包里 theme.json 的 preview, custom 用 cover_path,
                 inherit 不发封面、由分享站沿用之前版本的封面 (只能用于新版本);
                 为空时有 cover_path 按 custom, 否则按 package。
+            category_key: 主题或独立桌宠分类, 默认主题以兼容旧客户端。
 
         Returns:
             fileId / fileKey / versionNo / reviewStatus / isNewFile / appearanceId 组成的字典。
@@ -516,6 +532,7 @@ class ConfigCenterClient:
             zip_path,
             cover_path if mode == "custom" else None,
             mode != "inherit",
+            category_key=category_key,
         )
         username = self._username
         filename = f"{appearance_id}.zip"
@@ -524,7 +541,7 @@ class ConfigCenterClient:
         # 第二步：新建文件或追加版本
         if file_id is None:
             data = await self.upload_file(
-                category_key=APPEARANCE_CATEGORY_KEY,
+                category_key=APPEARANCE_CATEGORIES[category_key],
                 display_name=display_name,
                 description=description,
                 change_note=change_note,
@@ -537,6 +554,18 @@ class ConfigCenterClient:
             )
         else:
             try:
+                target = await self._request(
+                    "GET", f"/user/files/{file_id}", token=self._require_token()
+                )
+                if (
+                    target.get("project_key") != PROJECT_KEY
+                    or target.get("category_key") != APPEARANCE_CATEGORIES[category_key]
+                ):
+                    raise ConfigCenterError(
+                        "上传文件与所选分类不一致",
+                        status_code=400,
+                        reason="categoryMismatch",
+                    )
                 data = await self.upload_file_version(
                     file_id=file_id,
                     filename=filename,
@@ -573,8 +602,10 @@ class ConfigCenterClient:
         # 第三步：记下这个账号把哪个外观传成了哪个文件，下次直接发新版本
         await self._save_appearance_upload(
             username,
-            appearance_id,
+            f"mascot:{appearance_id}" if category_key == "mascot" else appearance_id,
             {
+                "appearanceId": appearance_id,
+                "categoryKey": category_key,
                 "fileId": result["fileId"],
                 "fileKey": result["fileKey"],
                 "displayName": str(data.get("display_name") or display_name),
@@ -584,7 +615,9 @@ class ConfigCenterClient:
 
         return result
 
-    def list_appearance_uploads(self) -> List[Dict[str, Any]]:
+    def list_appearance_uploads(
+        self, *, category_key: Literal["theme", "mascot"] = "theme"
+    ) -> List[Dict[str, Any]]:
         """当前登录账号在本机留下的外观上传记录, 未登录时为空, 按更新时间从新到旧。"""
 
         status = self._build_status()
@@ -597,10 +630,12 @@ class ConfigCenterClient:
             if not isinstance(record, dict):
                 logger.warning(f"外观上传记录格式错误, 已忽略: {appearance_id}")
                 continue
+            if record.get("categoryKey", "theme") != category_key:
+                continue
             try:
                 items.append(
                     {
-                        "appearanceId": str(appearance_id),
+                        "appearanceId": str(record.get("appearanceId", appearance_id)),
                         "fileId": int(record["fileId"]),
                         "fileKey": str(record.get("fileKey") or ""),
                         "displayName": str(record.get("displayName") or ""),
@@ -615,7 +650,9 @@ class ConfigCenterClient:
 
     # ==================== 我的外观 ====================
 
-    async def list_my_appearances(self) -> List[Dict[str, Any]]:
+    async def list_my_appearances(
+        self, *, category_key: Literal["theme", "mascot"] = "theme"
+    ) -> List[Dict[str, Any]]:
         """当前登录账号在分享站外观分类下的全部文件, 含待审核和被驳回的。
 
         作者自己删掉 (回收站里) 的不列出。
@@ -633,7 +670,7 @@ class ConfigCenterClient:
                 token=token,
                 params={
                     "project_key": PROJECT_KEY,
-                    "category_key": APPEARANCE_CATEGORY_KEY,
+                    "category_key": APPEARANCE_CATEGORIES[category_key],
                     "page": page,
                     "page_size": MY_FILES_PAGE_SIZE,
                 },
@@ -710,16 +747,15 @@ class ConfigCenterClient:
         params = {"version_no": version_no} if version_no else None
         path = f"/user/files/{file_id}/cover"
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
-        ) as client:
+        async with self._client(REQUEST_TIMEOUT, token) as client:
             try:
                 async with client.stream(
                     "GET",
-                    f"{API_BASE_URL}{path}",
+                    f"{self._api_base}{path}",
                     params=params,
                     headers={"Authorization": f"Bearer {token}"},
                 ) as response:
+                    self._remember_api_base(response, path)
                     if response.status_code >= 400:
                         await response.aread()
                         raise self._failure_error(response, token, "获取封面失败")
@@ -734,10 +770,7 @@ class ConfigCenterClient:
                             )
                         chunks.append(chunk)
             except httpx.HTTPError as e:
-                logger.warning(f"请求配置中心失败: GET {path} - {e}")
-                raise ConfigCenterError(
-                    f"无法连接配置中心: {e}", status_code=503
-                ) from e
+                raise self._connection_error("GET", path, e) from e
 
         data = b"".join(chunks)
         mime = self._sniff_image(data)
@@ -859,7 +892,12 @@ class ConfigCenterClient:
 
     @classmethod
     def _read_appearance_package(
-        cls, zip_path: str, cover_path: Optional[str], need_cover: bool = True
+        cls,
+        zip_path: str,
+        cover_path: Optional[str],
+        need_cover: bool = True,
+        *,
+        category_key: Literal["theme", "mascot"] = "theme",
     ) -> Tuple[str, bytes, Optional[Tuple[str, bytes, str]]]:
         """轻量校验外观 ZIP 并读出全部内容和封面。
 
@@ -867,6 +905,7 @@ class ConfigCenterClient:
             zip_path: 本地外观 ZIP 路径。
             cover_path: 指定的封面图片路径, 为空时取 theme.json 的 preview。
             need_cover: 为 False 时不读封面 (沿用分享站上的封面), 返回的封面为空。
+            category_key: 所选资源分类, 决定读取主题还是独立桌宠清单。
 
         Returns:
             (外观 id, ZIP 文件内容, 封面 (文件名, 内容, MIME) 或空)。
@@ -892,31 +931,40 @@ class ConfigCenterClient:
 
         try:
             with zipfile.ZipFile(path) as archive:
+                manifest_name = (
+                    "mascot.json" if category_key == "mascot" else "theme.json"
+                )
                 try:
-                    info = archive.getinfo("theme.json")
+                    info = archive.getinfo(manifest_name)
                 except KeyError:
-                    raise invalid("外观包根目录缺少 theme.json") from None
+                    raise invalid(f"资源包根目录缺少 {manifest_name}") from None
                 if info.file_size > APPEARANCE_MAX_MANIFEST_BYTES:
-                    raise invalid("theme.json 过大")
+                    raise invalid(f"{manifest_name} 过大")
                 raw_manifest = archive.read(info)
 
                 try:
                     manifest = json.loads(raw_manifest.decode("utf-8-sig"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as e:
-                    raise invalid("theme.json 不是有效的 JSON") from e
+                    raise invalid(f"{manifest_name} 不是有效的 JSON") from e
                 if not isinstance(manifest, dict):
-                    raise invalid("theme.json 不是有效的外观描述")
+                    raise invalid(f"{manifest_name} 不是有效的资源描述")
                 if manifest.get("formatVersion") != 1:
                     raise invalid("不支持的外观包格式版本")
                 appearance_id = manifest.get("id")
                 if not isinstance(
                     appearance_id, str
                 ) or not APPEARANCE_ID_PATTERN.match(appearance_id):
-                    raise invalid("theme.json 里的外观 ID 无效")
+                    raise invalid(f"{manifest_name} 里的资源 ID 无效")
+                if category_key == "mascot" and not isinstance(
+                    manifest.get("mascot"), dict
+                ):
+                    raise invalid("桌宠包缺少桌宠图片配置")
 
                 # 没指定封面时用包里 preview 指向的图；Electron 导入时路径不区分大小写，这里一致
                 preview_data: Optional[bytes] = None
                 preview = manifest.get("preview")
+                if not preview and category_key == "mascot":
+                    preview = manifest["mascot"].get("path")
                 if (
                     need_cover
                     and not cover_path
@@ -1142,6 +1190,86 @@ class ConfigCenterClient:
         )
         return result if isinstance(result, dict) else {}
 
+    @staticmethod
+    def _client(timeout: float, token: Optional[str]) -> httpx.AsyncClient:
+        """建立请求配置中心的客户端; 带令牌时, 跟随分享站自己的跨主机跳转仍带上令牌。
+
+        首跳的令牌由调用方放进请求头; 这里只补 httpx 跨域跳转时删掉的那份。
+        请求钩子每一跳都会调用, 307 / 308 的请求体 (含 multipart) 由 httpx 原样重发。
+        跳转链的状态记在钩子里, 所以一个客户端只发一个请求。
+        """
+
+        event_hooks = None
+        if token:
+            left_trusted = False
+
+            async def keep_token(request: httpx.Request) -> None:
+                nonlocal left_trusted
+                host = request.url.host
+                if (
+                    left_trusted
+                    or request.url.scheme != "https"
+                    or not TOKEN_REDIRECT_HOST.fullmatch(host)
+                ):
+                    # 中途到过别的主机, 后面去哪就由它说了算, 跳回分享站也不再补
+                    left_trusted = True
+                    return
+                if "Authorization" not in request.headers:
+                    logger.debug(f"配置中心请求跳转到 {host}, 补回令牌")
+                request.headers["Authorization"] = f"Bearer {token}"
+
+            event_hooks = {"request": [keep_token]}
+
+        return httpx.AsyncClient(
+            proxy=Config.proxy,
+            follow_redirects=True,
+            timeout=timeout,
+            event_hooks=event_hooks,
+        )
+
+    def _remember_api_base(self, response: httpx.Response, path: str) -> None:
+        """分享站把 API 跳到别的 data 主机时记下跳转后的地址, 之后的请求直接发过去。
+
+        只认 https、路径不变、前后都是 data 主机的跳转; 自定义 API 地址不跟。
+        """
+
+        if not response.history:
+            return
+        final = response.url
+        if (
+            final.scheme != "https"
+            or not final.path.endswith(path)
+            or not TOKEN_REDIRECT_HOST.fullmatch(final.host)
+            or not TOKEN_REDIRECT_HOST.fullmatch(httpx.URL(self._api_base).host)
+        ):
+            return
+        api_base = f"https://{final.netloc.decode('ascii')}{final.path[: -len(path)]}"
+        if api_base != self._api_base:
+            logger.info(f"配置中心 API 已跳转到 {api_base}, 之后直接请求该地址")
+            self._api_base = api_base
+
+    def _connection_error(
+        self, method: str, path: str, error: httpx.HTTPError
+    ) -> ConfigCenterError:
+        """记下网络失败并转成 ConfigCenterError (503)。
+
+        httpx 不少异常 (对端中途关连接、超时) 的消息是空的, 日志和提示里补上异常类型。
+        连不上跳转后的地址时退回默认地址, 下次请求重新跟一次跳转。
+        """
+
+        logger.warning(
+            f"请求配置中心失败: {method} {self._api_base}{path} - {type(error).__name__}: {error}"
+        )
+        if (
+            isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout))
+            and self._api_base != API_BASE_URL
+        ):
+            logger.info(f"连不上 {self._api_base}, 退回 {API_BASE_URL}")
+            self._api_base = API_BASE_URL
+        return ConfigCenterError(
+            f"无法连接配置中心: {str(error) or type(error).__name__}", status_code=503
+        )
+
     async def _request_data(
         self,
         method: str,
@@ -1164,13 +1292,11 @@ class ConfigCenterClient:
 
         headers = {"Authorization": f"Bearer {token}"} if token else None
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True, timeout=timeout
-        ) as client:
+        async with self._client(timeout, token) as client:
             try:
                 response = await client.request(
                     method,
-                    f"{API_BASE_URL}{path}",
+                    f"{self._api_base}{path}",
                     params=params,
                     json=json_body,
                     data=data,
@@ -1178,11 +1304,9 @@ class ConfigCenterClient:
                     headers=headers,
                 )
             except httpx.HTTPError as e:
-                logger.warning(f"请求配置中心失败: {method} {path} - {e}")
-                raise ConfigCenterError(
-                    f"无法连接配置中心: {e}", status_code=503
-                ) from e
+                raise self._connection_error(method, path, e) from e
 
+        self._remember_api_base(response, path)
         if response.status_code >= 400:
             raise self._failure_error(
                 response,

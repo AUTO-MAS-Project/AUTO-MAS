@@ -34,17 +34,21 @@
      `managed.py` 整理快照并返回要一并写的 `Info.Account` / `Info.Notes`；拆分提示不在这里写。
   4. `ensure_game_updated(...)`：引擎的**可选**游戏更新钩子（契约写在 MaaFW `flavor.py` 的模块
      说明里，不在协议里），转给 `game_update.py`。
-  5. `supports_mod_avd = True`：引擎的**可选**声明（契约同样在 MaaFW `flavor.py` 的模块说明里）。
-     魔改 AVD 目前只对声明了它的特调放行，其它脚本选魔改 AVD 设备在保存与运行时都被拒绝。
-  6. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就结束
+  5. `abort_round_entries` / `nonfatal_entries`：引擎的**可选**声明（契约同上）。切换账号失败就结束
      本轮、照常重试；关闭游戏（`Close1999`）失败、超时或打转只截图记一行，不算本轮失败、不重试。
-  7. `skip_on_retry_entries`：引擎的**可选**声明（契约同上）。列的是 v4.11.3 全部非受管任务的 entry，
+  6. `skip_on_retry_entries`：引擎的**可选**声明（契约同上）。列的是 v4.11.3 全部非受管任务的 entry，
      本次运行里完成过的重试时不再补跑；**逐个写出**，M9A 新增的任务默认照旧补跑，确认重跑无意义再加。
      受管三项每次尝试都要重做，不列。
-  8. `unselectable_entries`：引擎的**可选**声明（契约同上）。五个小游戏（`8bit`、`CritterCrash`、
+  7. `unselectable_entries`：引擎的**可选**声明（契约同上）。五个小游戏（`8bit`、`CritterCrash`、
      `MusesBoxStartParty`、`PreStormProtocolStart`、`CompleteInduction`）要用户先手动停在对应页面，
      M9A 没有导航：用户页不让选（已在队列里的照常显示、给一句提示），运行时剔掉并记一行。
      优先于上面三项声明，`skip_on_retry_entries` 里的同名 entry 留着不动。
+  8. `no_default_fallback_inputs`：引擎的**可选**声明（契约同上）。只列「自定义兑换码」的
+     「兑换码」字段：引擎对没填的字符串字段回落 interface 的 default，而它的 default 是字面量
+     「占位」，旧版迁移专门把预填的它清成空串（`migration._clean_input_values`），agent 遇到交不过去
+     的码会中断整个兑换、后面真正的兑换码也不交。其余字段照常回落。
+  9. `retype_notice_lines(...)`：引擎的**可选**钩子（契约同上）。导入项目后脚本换成 / 换出 M9A 时，
+     系统通知里说明启停与切号；「账号栏改掉或清空」只在脚本已有用户时说。
 - `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
   直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），
@@ -62,7 +66,7 @@
   `Update.AutoUpdateMode` 必须显式写 `AfterRun` / `Off`（引擎对缺省回落 `BeforeRun`）、
   用户级服务器 → 脚本级资源（不一致的用户停用 + 备注）、CDK 按 MFAA `config.json` 的 `DownloadCDK`
   → MAS 全局 CDK → GitHub 推导一次。input 值只清兑换码「占位」这一个预填哨兵（别的 default 是能跑的
-  真值，引擎对 string 空值不回落 default）；快速配置来源的队列里三类受管任务是陈旧数据，直接剔；实例文件
+  真值，保留；兑换码清成空串后靠 `no_default_fallback_inputs` 不被引擎回落成「占位」）；快速配置来源的队列里三类受管任务是陈旧数据，直接剔；实例文件
   来源的「切换账号」先带着选项翻译出来，再按 `managed.py` 落地（1 个进 `Info.Account`，多个照搬进队列并
   在备注与通知里提示拆分）。v5.6.0-beta.1 的迁移清了输入值、丢了实例文件里的切号，
   `repair_m9a_migration_losses` 在迁移之后按 `.m9a-legacy-*.bak` 补回一次（切号同样按 `managed.py`：

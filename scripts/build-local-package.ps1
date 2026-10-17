@@ -51,7 +51,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "未找到 Node.js，请先安装项目要求的 Node.js 环境。"
 }
 if (-not (Get-Command yarn -ErrorAction SilentlyContinue)) {
-    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.9.1 --activate"
+    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.18.1 --activate"
 }
 
 # 版本一致性由 scripts/changelog.py 判定，这里需要一个可用的 Python。

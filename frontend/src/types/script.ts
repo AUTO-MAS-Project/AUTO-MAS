@@ -187,7 +187,9 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
+    LaunchMode: 'Client' | 'Launcher' | 'MAS' | 'MaaEnd'
     Path: string
+    LauncherPath: string
     Arguments: string
     WaitTime: number
     EmulatorId: string
@@ -198,6 +200,8 @@ export interface MaaEndScriptConfig {
     RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
+    IfAutoUpdate: boolean
+    UpdateTimeLimit: number
   }
 }
 
@@ -351,6 +355,8 @@ export interface MaaFWTaskSnapshot {
    * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。
    */
   globalOptions?: Record<string, MaaFWTaskOptionValue>
+  /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
+  taskLabels?: Record<string, string>
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
@@ -358,7 +364,12 @@ export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
   missing?: false
-  /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  /** 用户给这一份起的显示名；没有时显示任务的 label / name */
+  customLabel?: string
+  /**
+   * 同一基础名（显示名，没有就是任务的 label / name）的副本中的序号，从 1 起；
+   * 仅在 `copyTotal > 1` 时需要显示
+   */
   copyIndex: number
   copyTotal: number
 }
@@ -369,6 +380,8 @@ export interface MaaFWMissingQueuedTask {
   missing: true
   /** 实例 id 去掉副本后缀后的原任务名 */
   name: string
+  /** 成为虚影前用户给这一份起的显示名；有就优先显示它 */
+  customLabel?: string
   copyIndex: number
   copyTotal: number
 }
@@ -389,7 +402,7 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
-    Mode?: '脚本' | '用户' | '直控'
+    Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
@@ -626,14 +639,13 @@ export interface User {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    StaminaPipelineVersion?: number
+    StaminaPipelineBackup?: string
   }
   Info: {
-    Annihilation: string
     Id: string
-    InfrastMode: string
-    InfrastName: string
-    MedicineNumb: number
-    Mode: string
+    Base: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string
@@ -641,15 +653,20 @@ export interface User {
     Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
-    SeriesNumb: string
     Server: string
-    Stage: string
-    StageMode: string
-    Stage_1: string
-    Stage_2: string
-    Stage_3: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
+  }
+  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
+  Stage?: {
+    StageMode?: string
+    MedicineNumb?: number
+    SeriesNumb?: string
+    Stage?: string
+    Stage_1?: string
+    Stage_2?: string
+    Stage_3?: string
+    [key: string]: unknown
   }
   Notify: {
     Enabled: boolean
@@ -682,7 +699,12 @@ export interface User {
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string
+    IfEventDepotMaintain?: boolean
+    EventDepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
+    Annihilation?: string
+    InfrastMode?: string
+    InfrastName?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

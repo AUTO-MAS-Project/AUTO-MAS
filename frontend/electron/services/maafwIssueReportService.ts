@@ -12,6 +12,7 @@ import {
   addReportManifest,
   addSanitizedJsonFile,
   addSanitizedJsonValue,
+  addVerbatimTextFile,
   isRecord,
   readJson,
   resolveDataRoots,
@@ -28,10 +29,12 @@ const MSS_CONFIG_TYPE = 'MSSConfig'
 const VIEW_DIR_NAME_LENGTH = 12
 
 // 与 app/task/MaaFW/tools/embedded/runner_task.py 的 history_dir / history_stamp 同步：
-// history/<YYYY-MM-DD>/<用户名>/<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
-// 失败截图 <HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起
+// history/<YYYY-MM-DD>/<用户名>/<脚本名>-<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
+// 失败截图 <脚本名>-<HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起。
+// 早期记录没有脚本名前缀（旧版 MaaFW 的写法），前缀段可选，解析时同样兼容。
+// 非贪婪匹配避免脚本名包含 -HH-MM-SS 模式时误解析（如 Test-12-34-56-10-20-30.json）
 const HISTORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const HISTORY_FILE_PATTERN = /^(\d{2}-\d{2}-\d{2})\.(.+)$/
+const HISTORY_FILE_PATTERN = /^(?:(.+?)-)?(\d{2}-\d{2}-\d{2})\.(.+)$/
 const SCREENSHOT_SUFFIX_PATTERN = /^[a-z]+-\d{6}-.+\.png$/i
 const HISTORY_SCAN_DAYS = 30
 const RECENT_RUN_COUNT = 5
@@ -274,7 +277,9 @@ function scanHistoryRuns(dataRoot: string): HistoryRun[] {
           continue
         }
 
-        const [, stamp, suffix] = match
+        // 前缀（脚本名）可选：stamp 取整段文件名主干，与盘上的文件名一一对应
+        const [, scriptPrefix, timeStamp, suffix] = match
+        const stamp = scriptPrefix ? `${scriptPrefix}-${timeStamp}` : timeStamp
         const run = runsByStamp.get(stamp) ?? {
           date,
           user: userEntry.name,
@@ -449,9 +454,18 @@ function projectDeclaresPasswordInput(viewDir: string): boolean {
     for (const importList of text.matchAll(IMPORT_LIST_PATTERN)) {
       for (const [, doubleQuoted, singleQuoted] of importList[1].matchAll(STRING_LITERAL_PATTERN)) {
         const importPath = (doubleQuoted ?? singleQuoted ?? '').replace(/\\(.)/g, '$1')
-        const target = path.resolve(path.dirname(filePath), importPath)
-        if (importPath && isInside(viewDir, target)) {
-          pending.push(target)
+        if (!importPath) {
+          continue
+        }
+        // 后端加载器对每一层 import 都相对 interface 根目录解析；相对当前文件所在目录的也看一眼，
+        // 两处有一个存在就算（读不到的会被跳过）
+        for (const target of new Set([
+          path.resolve(viewDir, importPath),
+          path.resolve(path.dirname(filePath), importPath),
+        ])) {
+          if (isInside(viewDir, target)) {
+            pending.push(target)
+          }
         }
       }
     }
@@ -676,7 +690,9 @@ async function createIssueReport(
       path.join(viewDir, '.auto_mas_view.json'),
       `${scriptRoot}/project/.auto_mas_view.json`
     )
-    addDiagnosticFile(
+    // interface.json 按原文收：resource[].path 这类相对路径正是排查「资源加载失败 / 投影漏文件」
+    // 要看的，按键名脱敏会被整段换成 ***
+    addVerbatimTextFile(
       state,
       path.join(viewDir, 'interface.json'),
       `${scriptRoot}/project/interface.json`

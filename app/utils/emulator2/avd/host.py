@@ -504,6 +504,25 @@ async def run_adb(
     return code, output
 
 
+async def run_adb_bytes(
+    root: str | Path,
+    *args: str,
+    serial: str | None = None,
+    timeout: float = ADB_TIMEOUT,
+) -> tuple[int, bytes, str]:
+    """同 :func:`run_adb`，但标准输出按原始字节返回（``exec-out screencap -p`` 这类二进制输出），
+    标准错误单独解码返回：``(返回码, 输出字节, 错误文本)``。**不抛异常。**"""
+    code, stdout, stderr = await _run_adb_raw(
+        root, *args, serial=serial, timeout=timeout
+    )
+    if code != 0 and serial and device_missing(serial, stderr):
+        if await reregister_emulator(root, serial):
+            code, stdout, stderr = await _run_adb_raw(
+                root, *args, serial=serial, timeout=timeout
+            )
+    return code, stdout, stderr
+
+
 async def _run_adb_once(
     root: str | Path,
     *args: str,
@@ -689,6 +708,11 @@ def launch_emulator(
 
     宿主显卡驱动的着色器缓存放 ``<根>\\shader-cache``（``__GL_SHADER_DISK_CACHE_PATH``，
     照启动器 ``-ShaderCache``）：和用户的其它程序分开，需要时我们能自己清。
+
+    ``ANDROID_EMU_VK_HIDE_REBAR=1``（固定开）：宿主 Vulkan 里「显存 + 主机可见」的内存类型（NVIDIA
+    ReBAR）对客体只报成显存。终末地往 ReBAR 显存里写顶点时每帧都要等写合并排空，标题页 14.6 → 60 fps
+    （aemu-lab 修复队列「终末地帧率与稳定性」）；不碰这类内存的游戏不受影响。mas-27 起的内测包才认它，
+    更早的包没人读，无害。
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = emulator_env(root)
@@ -699,6 +723,7 @@ def launch_emulator(
             "__GL_SHADER_DISK_CACHE": "1",
             "__GL_SHADER_DISK_CACHE_PATH": str(cache),
             "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP": "1",
+            "ANDROID_EMU_VK_HIDE_REBAR": "1",
         }
     )
     with log_path.open("ab") as log_file:

@@ -10,6 +10,7 @@ import type {
 } from '@/types/script'
 import { buildPresetAppliedSnapshot, type MaaFWPresetQueueEntry } from './maafwPresetQueue'
 import { maafwMissingTaskName } from './maafwTaskChanges'
+import { pickMaaFWTaskLabels, taskLabelsField } from './MaaFWUserEdit/maafwTaskSnapshot'
 
 type TaskOptionMap = Record<string, Record<string, MaaFWTaskOptionValue>>
 
@@ -43,6 +44,8 @@ export type MaaFWQueueSource = {
   passwordCount: number
   /** 来源的选项表（只含能导入的项，未去密码） */
   taskOptions: TaskOptionMap
+  /** 来源的实例显示名（只含能导入的项） */
+  taskLabels?: Record<string, string>
 }
 
 export type MaaFWQueueSourceContext = {
@@ -119,11 +122,17 @@ export const describeMaaFWQueueSource = (
     const task = context.taskByName.get(taskName)
     if (task && context.isManagedTask(task)) continue
     const available = context.availableTaskByName.get(taskName)
+    // 来源里给这一份改过显示名就显示它，与来源用户自己队列里看到的一致
+    const customLabel = snapshot.taskLabels?.[taskId]
     if (available) {
       entries.push({ id: taskId, task: available })
-      chips.push({ id: taskId, label: context.displayName(available), invalid: false })
+      chips.push({
+        id: taskId,
+        label: customLabel || context.displayName(available),
+        invalid: false,
+      })
     } else {
-      const label = task ? context.displayName(task) : maafwMissingTaskName(taskId)
+      const label = customLabel || (task ? context.displayName(task) : maafwMissingTaskName(taskId))
       chips.push({ id: taskId, label, invalid: true })
     }
   }
@@ -137,6 +146,7 @@ export const describeMaaFWQueueSource = (
     invalidCount: chips.length - entries.length,
     passwordCount: countMaaFWPasswordValues(taskOptions, context.passwordFields),
     taskOptions,
+    ...taskLabelsField(pickMaaFWTaskLabels(snapshot.taskLabels, entryIds)),
   }
 }
 
@@ -156,11 +166,11 @@ export const countMaaFWQueueReplacementImports = (
 }
 
 /**
- * 用来源的可用项替换当前队列，与套用预设同一套：当前队列里的前置任务留在最前（带着自己的选项），
- * 其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）。
+ * 用来源的可用项替换当前队列，与套用预设同一套：当前队列里的前置任务留在最前（带着自己的选项
+ * 与显示名），其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）与显示名。
  */
 export const buildMaaFWQueueReplacement = (
-  source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions'>,
+  source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels'>,
   current: MaaFWTaskSnapshot,
   isPretaskId: (taskId: string) => boolean,
   passwordFields: MaaFWPasswordFields
@@ -176,10 +186,16 @@ export const buildMaaFWQueueReplacement = (
   const sourceOptions = JSON.parse(
     JSON.stringify(stripMaaFWPasswordValues(source.taskOptions, passwordFields))
   ) as TaskOptionMap
+  // 显示名同理：保留下来的当前前置任务只认它自己的（没有就是没改名），不让来源同 id 的混进来
+  const currentPretaskIds = new Set(Object.keys(currentPretaskOptions))
+  const sourceLabels = Object.fromEntries(
+    Object.entries(source.taskLabels || {}).filter(([taskId]) => !currentPretaskIds.has(taskId))
+  )
   return buildPresetAppliedSnapshot(
     source.entries,
     { ...sourceOptions, ...currentPretaskOptions },
     current.taskOrder,
-    isPretaskId
+    isPretaskId,
+    { ...sourceLabels, ...pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds) }
   )
 }

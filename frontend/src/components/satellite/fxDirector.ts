@@ -71,6 +71,11 @@ export class FxDirector {
     this.meteors = []
   }
 
+  /** 还有没放完的特效（含在飞的流星）：暂停帧循环时据此续帧，别把特效冻在半空 */
+  get busy(): boolean {
+    return this.effects.length > 0 || this.meteors.length > 0
+  }
+
   /**
    * 指针附近有流星就接住它：在头部炸一小撮星屑，返回它在世界坐标里的位置。
    * project 把世界坐标换成容器像素，判定半径 40 像素——流星飞得快，判得宽一点才点得中。

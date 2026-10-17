@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { MaaFWOptionInfo } from '@/types/script'
 import { maafwPasswordFields } from './maafwQueueSource'
 import {
@@ -195,5 +195,24 @@ describe('buildMaaFWQueueTemplateSnapshot', () => {
     })
     expect(snapshot.taskOptions.日常__MAS_DUP__x).not.toBe(taskOptions.日常__MAS_DUP__x)
     expect(taskOptions.日常.登录.密码).toBe('mas-dpapi:AAA')
+  })
+})
+
+describe('模板带实例显示名', () => {
+  it('存模板只带所收实例的显示名，读回时同样只认队列里的实例', () => {
+    const snapshot = buildMaaFWQueueTemplateSnapshot(
+      [{ id: 'A' }, { id: 'A__MAS_DUP__x' }],
+      { A: {} },
+      new Map(),
+      { A__MAS_DUP__x: '账号A', Gone: '不收' }
+    )
+    expect(snapshot.taskLabels).toEqual({ A__MAS_DUP__x: '账号A' })
+    const [template] = parseMaaFWQueueTemplates([
+      { name: 't', snapshot: { ...snapshot, taskLabels: { A: '早班', Gone: 'x' } } },
+    ])
+    expect(template.snapshot.taskLabels).toEqual({ A: '早班' })
+    expect('taskLabels' in buildMaaFWQueueTemplateSnapshot([{ id: 'A' }], {}, new Map())).toBe(
+      false
+    )
   })
 })

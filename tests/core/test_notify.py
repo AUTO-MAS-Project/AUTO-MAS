@@ -12,6 +12,7 @@ from app.core.notify import (
     user_target,
 )
 from app.core.notify_channels import get_notify_channels
+from app.models.notification import NotificationSummary
 
 _UNSET = object()
 
@@ -22,11 +23,15 @@ class _Webhook:
         self._name = name
 
     def get(self, group: str, key: str) -> str | bool:
-        assert group == "Info"
-        if key == "Name":
-            return self._name
-        assert key == "Enabled"
-        return self._enabled
+        values = {
+            ("Info", "Name"): self._name,
+            ("Info", "Enabled"): self._enabled,
+            ("Data", "Url"): "https://example.com/webhook",
+            ("Data", "Template"): '{"title": "{title}", "content": "{content}"}',
+            ("Data", "Headers"): "{}",
+            ("Data", "Method"): "POST",
+        }
+        return values[(group, key)]
 
 
 class _Webhooks:
@@ -134,14 +139,14 @@ class _Notify:
         )
 
     async def WebhookPush(
-        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, image_base64=_UNSET
+        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
     ):
         return await self._run(
             "WebhookPush",
             title=title,
             content=content,
             webhook=webhook,
-            image_base64=image_base64,
+            images=images,
         )
 
     async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
@@ -163,10 +168,18 @@ def _run(awaitable):
 
 
 def _global_target(
-    config: _Config, *, include_system: bool = False, empty_policy="send"
+    config: _Config,
+    *,
+    include_system: bool = False,
+    empty_policy="send",
+    system_timeout_seconds=None,
 ):
     with patch.object(notify_module, "Config", config):
-        return global_target(include_system=include_system, empty_policy=empty_policy)
+        return global_target(
+            include_system=include_system,
+            empty_policy=empty_policy,
+            system_timeout_seconds=system_timeout_seconds,
+        )
 
 
 def _protocol_members():
@@ -365,7 +378,7 @@ def test_system_notification_fallbacks() -> None:
     )
 
     assert result.attempted == 1
-    # 三个 or 回退：system_* 缺省时标题/正文/ticker 落到通用字段
+    # 未提供摘要时，系统通知使用通用标题、正文和默认显示时长。
     assert notify.kwargs[0] == {
         "title": "标题",
         "message": "正文",
@@ -383,19 +396,18 @@ def test_system_notification_passes_override_values() -> None:
             NotifyPayload(
                 title="标题",
                 text="正文",
-                system_title="系统标题",
-                system_message="系统正文",
-                system_ticker="系统ticker",
-                system_timeout=7,
+                summary=NotificationSummary(
+                    title="系统标题", text="系统ticker\n系统正文"
+                ),
             ),
-            [_global_target(config, include_system=True)],
+            [_global_target(config, include_system=True, system_timeout_seconds=7)],
             notifier=notify,
         )
     )
 
     assert notify.kwargs[0] == {
         "title": "系统标题",
-        "message": "系统正文",
+        "message": "系统ticker\n系统正文",
         "ticker": "系统ticker",
         "t": 7,
     }

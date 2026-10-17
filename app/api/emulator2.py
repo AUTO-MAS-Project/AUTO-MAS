@@ -31,7 +31,6 @@ from app.models.schema import (
     Emulator2AvdApkInstallOut,
     Emulator2AvdInstanceIn,
     Emulator2AvdInstanceOptionsOut,
-    Emulator2AvdInstanceOptionsSetIn,
     Emulator2AvdStatusIn,
     Emulator2AvdStatusOut,
     Emulator2DevicesIn,
@@ -204,8 +203,8 @@ async def create_instance(
             {
                 "memory_mb": payload.memoryMb,
                 "cpu": payload.cpu,
+                "fps": payload.fps,
                 "data_partition_gb": payload.dataPartitionGb,
-                "balloon": payload.balloon,
             },
         )
     except Exception as e:
@@ -429,32 +428,6 @@ async def avd_instance_options(
     except Exception as e:
         logger.opt(exception=True).warning(
             f"avd_instance_options失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdInstanceOptionsOut(**_error(e))
-    return Emulator2AvdInstanceOptionsOut(**result)
-
-
-@router.post(
-    "/avd/instance/options/set",
-    tags=["Action"],
-    summary="修改魔改 AVD 实例选项",
-    response_model=Emulator2AvdInstanceOptionsOut,
-    status_code=200,
-)
-async def avd_set_instance_options(
-    payload: Emulator2AvdInstanceOptionsSetIn = Body(...),
-) -> Emulator2AvdInstanceOptionsOut:
-    """内存、气球，只改传了的项，下次启动生效。"""
-    try:
-        result = await avd_service.set_instance_options(
-            payload.emulatorId,
-            payload.slot,
-            memory_mb=payload.memoryMb,
-            balloon=payload.balloon,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_set_instance_options失败: {type(e).__name__}: {e}"
         )
         return Emulator2AvdInstanceOptionsOut(**_error(e))
     return Emulator2AvdInstanceOptionsOut(**result)

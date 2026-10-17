@@ -63,6 +63,10 @@ export interface MaaFWScriptBasicInfoSectionProps {
   /** 导入进度：后端按文件数推过来的百分比与阶段文案；没有推送时为 null，进度条显示 0 */
   importPercent: number | null
   importMessage: string
+  /** 最近一次导入 / 同步失败的原因；下次导入开始时清空 */
+  importError?: string
+  /** 最近一次读 interface 失败的原因（此时 previewData 为 null）；下次读取开始时清空 */
+  previewError?: string
   /** flavor 文案（特调类型传入）；缺省用通用 MaaFW 的「本地项目目录」那套 */
   sourceDirectoryLabel?: string
   sourceHint?: string
@@ -91,7 +95,6 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（魔改 AVD 目前只支持 M9A） */
   emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
@@ -117,6 +120,8 @@ export interface MaaFWScriptControlSectionEmits {
 
 /** 脚本页 `update`：项目更新来源、渠道、CDK 与检查 / 应用 */
 export interface MaaFWScriptUpdateSectionProps {
+  /** 脚本 ID：CDK 输入框下那行剩余时间 / CDK 状态按它查 */
+  scriptId: string
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   isAutoUpdateDisabled: boolean
@@ -191,6 +196,8 @@ export interface MaaFWUserHeaderSectionProps {
   scriptRoute: { name: string; params: { id: string } }
   isEdit: boolean
   userId?: string
+  /** 点了「返回」、正在等保存完成或确认框开着：返回按钮转圈 */
+  leaving?: boolean
 }
 
 export interface MaaFWUserHeaderSectionEmits {
@@ -306,6 +313,10 @@ export interface MaaFWUserTaskQueueSectionEmits {
   globalOptionUpdate: [payload: { optionName: string; value: MaaFWTaskOptionValue }]
   deleteSelectedTask: []
   deleteTask: [taskId: string]
+  /** 队列行右键「复制任务」：在它正下方插一份，勾选、选项与显示名一起复制 */
+  duplicateTask: [taskId: string]
+  /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
+  renameTask: [taskId: string, name: string]
 }
 
 /** 用户页分节键 → props 契约 */

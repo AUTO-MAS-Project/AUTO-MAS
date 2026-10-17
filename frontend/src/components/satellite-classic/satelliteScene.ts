@@ -481,7 +481,15 @@ export class SatelliteScene {
     renderer.clearDepth()
     renderer.render(this.cardScene, camera)
 
-    return exploding
+    // 还有动效在飞：暂停帧循环时据此续帧，把入场和按压形变放完再停
+    const deformTargetX = this.centerPressed ? CENTER_PRESS_SCALE_X : 1
+    const deformTargetY = this.centerPressed ? CENTER_PRESS_SCALE_Y : 1
+    return (
+      exploding ||
+      this.appearStartedAt !== null ||
+      Math.abs(this.centerScaleX - deformTargetX) > 0.002 ||
+      Math.abs(this.centerScaleY - deformTargetY) > 0.002
+    )
   }
 
   resize(): void {

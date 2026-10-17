@@ -49,7 +49,7 @@ jobs:
       - name: 设置 Yarn
         run: |
           corepack enable
-          corepack prepare yarn@4.9.1 --activate
+          corepack prepare yarn@4.18.1 --activate
 
       - name: 安装前端依赖
         working-directory: frontend

@@ -8,7 +8,7 @@ export type HistoryIndexItem = {
      */
     date: string;
     /**
-     * 状态
+     * 状态: DONE 完成, SKIP 跳过(如停服维护), ERROR 失败
      */
     status: HistoryIndexItem.status;
     /**
@@ -22,10 +22,11 @@ export type HistoryIndexItem = {
 };
 export namespace HistoryIndexItem {
     /**
-     * 状态
+     * 状态: DONE 完成, SKIP 跳过(如停服维护), ERROR 失败
      */
     export enum status {
         DONE = 'DONE',
+        SKIP = 'SKIP',
         ERROR = 'ERROR',
     }
 }

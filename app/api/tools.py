@@ -39,6 +39,7 @@ from app.core.community_sign import (
     community_sign_flow,
     run_community_sign_in,
 )
+from app.core.notify import track_community_notification
 from app.models.schema import (
     CommunityActivityOut,
     CommunityActivityQueryIn,
@@ -121,6 +122,7 @@ async def _dispatch_community_notification(
 
     task = asyncio.create_task(push_community_notification(results))
     _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
+    track_community_notification(task)
     task.add_done_callback(_track_community_notification)
     try:
         return await asyncio.wait_for(
@@ -431,7 +433,7 @@ async def update_game_sign_account(
                 return OutBase(
                     code=400,
                     status="error",
-                    message="森空岛凭据格式无效，请检查后重试",
+                    message=str(exc),
                 )
         cloud_genshin_token = flat_data.get("CloudGenshinToken")
         if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():

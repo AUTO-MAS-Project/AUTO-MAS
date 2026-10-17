@@ -28,10 +28,15 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from app.core import Config
-from app.task.MSS.flavor import DEFENSE_ACTIVITY_NAME, DEFENSE_MAX_FAILED_DAYS
+from app.task.MSS.flavor import (
+    DEFENSE_ACTIVITY_NAME,
+    DEFENSE_MAX_FAILED_DAYS,
+    personal_mss_enabled,
+)
 from app.tools.stella_official import permanent_activity_window
 from app.utils import get_logger
 
@@ -66,17 +71,21 @@ async def defense_status(script_id: str, user_id: str) -> dict[str, Any]:
     """
 
     try:
+        # 带 user_id 时返回的是 {str(uid): 用户配置}，顶层没有 Data
         _, data = await Config.get_user(script_id, user_id)
+        user = data.get(str(uuid.UUID(user_id))) or {}
     except Exception as exc:  # noqa: BLE001 - 脚本或用户已经不在：按「没有记录」继续，别拦页面
         logger.warning(f"读用户配置失败（{script_id} / {user_id}）：{exc}")
-        data = {}
-    record = _record((data.get("Data") or {}).get("PersonalMssDefense"))
+        user = {}
+    record = _record((user.get("Data") or {}).get("PersonalMssDefense"))
     period = await permanent_activity_window(DEFENSE_ACTIVITY_NAME)
 
     same_period = bool(period) and str(record.get("period") or "") == period
     failed_days = _failed_days(record) if same_period else []
 
     return {
+        # 整个个人版的总开关：没开的时候前端连这一块 UI 都不渲染，省得它再去读一遍全局配置
+        "enabled": personal_mss_enabled(),
         "period": period or "",
         # 取不到期（官网读不出来）时按「未知」显示，别把它说成「本期没打」
         "known": bool(period),

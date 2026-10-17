@@ -49,9 +49,7 @@ import ctypes
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -63,6 +61,7 @@ from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -72,6 +71,7 @@ if IS_WINDOWS:
     import win32con
     import win32gui
     import win32process
+    import win32ui
 
 logger = get_logger("OK-WW 启动器启动")
 
@@ -169,26 +169,6 @@ _UPDATE_CLICK_RETRY_SECONDS = 15.0
 _UPDATE_CLICK_RETRY_LIMIT = 3
 
 
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
-
-
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
 
 
@@ -216,8 +196,14 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None:
-    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
+def _find_hwnd(
+    process_name: str, window_class: str | None = None, *, pids: set[int] | None = None
+) -> int | None:
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。
+
+    ``pids`` 给定时只认这些进程的窗口：``Client-Win64-Shipping.exe`` 是虚幻
+    通用进程名，同机可能有其它同名游戏，单按名取最大窗口会认错对象。
+    """
     candidates: list[int] = []
 
     def _enum(hwnd: int, _lparam: int) -> bool:
@@ -229,6 +215,8 @@ def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None
         except Exception:
             return True
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        if pids is not None and pid not in pids:
+            return True
         if pid and _process_name(pid) == process_name:
             candidates.append(hwnd)
         return True
@@ -332,6 +320,33 @@ def find_game_pids(launcher_path: Path) -> list[int]:
     return pids
 
 
+def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set[int]:
+    """当前专项运行客户端的 PID 集合（维护检测的窗口归属判据）。
+
+    两路合并：启动器安装根目录树内的同名游戏进程（find_game_pids），以及与
+    已配置客户端 exe 路径精确匹配的进程。两路都读不到时返回空集合，调用方
+    按「无法确认归属」放行，不以全局最大窗口代替。
+    """
+
+    pids: set[int] = set()
+    if launcher_path is not None:
+        pids.update(find_game_pids(launcher_path))
+    if client_exe is None:
+        return pids
+    target = str(client_exe).casefold()
+    for process in psutil.process_iter(["name", "exe"]):
+        try:
+            name = (process.info["name"] or "").casefold()
+            if name != _GAME_PROCESS.casefold():
+                continue
+            exe = process.info["exe"]
+            if exe is not None and exe.casefold() == target:
+                pids.add(process.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return pids
+
+
 def has_launcher_window(launcher_path: Path) -> bool:
     """清理后复核启动器窗口是否仍存在。
 
@@ -342,8 +357,8 @@ def has_launcher_window(launcher_path: Path) -> bool:
     return _find_launcher_hwnd(launcher_path) is not None
 
 
-def _find_game_hwnd() -> int | None:
-    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS)
+def _find_game_hwnd(pids: set[int] | None = None) -> int | None:
+    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS, pids=pids)
 
 
 def _wait_launcher_hwnd(
@@ -473,6 +488,102 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+# ── 游戏画面维护检测 ─────────────────────────────────────────────────────
+
+# 维护弹窗特征文本（临时锚点：用户口头确认的「服务器未开放」，尚未拿到
+# 维护弹窗截图核对，后续按真实截图补充完善；国际服英文界面暂不覆盖）
+_GAME_MAINTENANCE_TEXTS = ("服务器未开放",)
+
+# PrintWindow 的 PW_RENDERFULLCONTENT：DWM 合成下重绘窗口完整内容，
+# 窗口被遮挡也能拿到自身画面（Win 8.1+；独占全屏等场景可能失败，失败放行）
+_PW_RENDERFULLCONTENT = 0x00000002
+
+
+def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
+    """PrintWindow 抓取游戏窗口自身画面并缩放到 OCR 坐标空间。
+
+    与桌面截图裁剪不同：窗口被其他窗口遮挡时拿到的仍是游戏自己的画面，
+    不会把遮挡窗口的文字误认成游戏弹窗；不激活窗口、不抢前台。
+    抓取失败（独占全屏等）返回 None，由调用方按未命中放行。
+    """
+    try:
+        with _per_monitor_dpi():
+            width, height = _client_size(hwnd)
+            if width <= 0 or height <= 0:
+                return None
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            try:
+                source_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+                try:
+                    memory_dc = source_dc.CreateCompatibleDC()
+                    try:
+                        bitmap = win32ui.CreateBitmap()
+                        try:
+                            bitmap.CreateCompatibleBitmap(source_dc, width, height)
+                            # SelectObject 返回被替换的旧位图：删除我们的位图前
+                            # 必须先把它从 memory_dc 选出（仍选在 DC 里的 GDI
+                            # 对象删不掉，会随每次捕获泄漏）
+                            original_bitmap = memory_dc.SelectObject(bitmap)
+                            try:
+                                if not ctypes.windll.user32.PrintWindow(
+                                    hwnd, memory_dc.GetSafeHdc(), _PW_RENDERFULLCONTENT
+                                ):
+                                    return None
+                                bitmap_info = bitmap.GetInfo()
+                                bitmap_bits = bitmap.GetBitmapBits(True)
+                            finally:
+                                memory_dc.SelectObject(original_bitmap)
+                        finally:
+                            win32gui.DeleteObject(bitmap.GetHandle())
+                    finally:
+                        memory_dc.DeleteDC()
+                finally:
+                    source_dc.DeleteDC()
+            finally:
+                win32gui.ReleaseDC(hwnd, hwnd_dc)
+        frame = Image.frombuffer(
+            "RGB",
+            (bitmap_info["bmWidth"], bitmap_info["bmHeight"]),
+            bitmap_bits,
+            "raw",
+            "BGRX",
+            0,
+            1,
+        )
+        frame = frame.resize((_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS)
+        return cv2.cvtColor(np.asarray(frame), cv2.COLOR_RGB2BGR)
+    except Exception as error:
+        logger.debug(f"PrintWindow 抓取游戏窗口画面失败（忽略，继续正常流程）: {error}")
+        return None
+
+
+def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
+    """OCR 游戏窗口画面，命中维护弹窗文本时返回命中的原文，否则返回 None。
+
+    ``pids`` 为当前专项运行客户端的 PID 集合（``find_client_pids``）：只认
+    这些进程的窗口，避免读到同机其它同名虚幻游戏的窗口——维护命中会直接
+    跳过当前用户并终止重试，认错对象代价高。为空或窗口不属于这些进程时
+    返回 None 放行，不以全局最大窗口代替。
+
+    旁路判定：窗口不存在、抓取或 OCR 失败一律返回 None 放行，不抛错、不
+    激活窗口（PrintWindow 不依赖前台）。只覆盖游戏窗口已存在的场景（MAS
+    拉起或客户端已在运行）；启动前的判定由维护公告通道（ScriptManagerBase）
+    负责。
+    """
+    if not IS_WINDOWS:
+        return None
+    hwnd = _find_game_hwnd(pids)
+    if hwnd is None:
+        return None
+    frame = _capture_game_window_frame(hwnd)
+    if frame is None:
+        return None
+    for text, _ in ocr_image(frame):
+        if any(needle in text for needle in _GAME_MAINTENANCE_TEXTS):
+            return text
+    return None
+
+
 def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
     left, top, right, bottom = _ACTION_ROI
@@ -587,6 +698,9 @@ def start_game_via_launcher(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-WW 启动器启动仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
 
     # 开启诊断记录：窗口定位结果与各轮 OCR 全量条目写入 debug/okww-launcher-start/，
     # 供按钮未被点击时排查窗口错抓、截图偏移与 OCR 文本漂移

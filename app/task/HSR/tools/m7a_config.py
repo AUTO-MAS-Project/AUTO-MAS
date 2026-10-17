@@ -34,7 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
-from .managed_fields import M7A_MANAGED_FIELDS, managed_field_keys
+from .managed_fields import managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -63,21 +63,6 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         "weekly_divergent_stable_mode",
     }
 )
-
-
-def managed_modules_for_key(key: str) -> tuple[str, ...]:
-    """Map a native M7A key to the MAS module that may override it.
-
-    以 :data:`M7A_MANAGED_FIELDS` 为准：字段表里没有的键不归任何模块。
-    """
-
-    if key in M7A_MANAGED_STAGE_KEYS:
-        return ()
-    return tuple(
-        module_key
-        for module_key, specs in M7A_MANAGED_FIELDS.items()
-        if any(spec.key == key for spec in specs)
-    )
 
 
 def m7a_managed_keys(module_key: str) -> frozenset[str]:
@@ -380,7 +365,7 @@ def build_m7a_daily_patch(
         "echo_of_war_start_day_of_week": eow_start_weekday,
         "cloud_game_enable": False,
         # 三月七原生体力计划先于 MAS 选的副本执行、抢体力，整轮还原后又永远消耗
-        # 不完；托管运行一律清空，原生计划只在直控下生效。
+        # 不完；托管运行一律清空，原生计划只在原生来源下生效。
         "power_plan": [],
     }
 

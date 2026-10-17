@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import (
@@ -102,6 +103,9 @@ from app.task.M9A.migration import (
 from app.utils import get_logger, is_supervised, resource_path
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
     RESOURCE_STAGE_DATE_TEXT,
     RESOURCE_STAGE_DROP_INFO,
     RESOURCE_STAGE_INFO,
@@ -109,6 +113,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
     game_now,
+    normalize_base_source,
 )
 from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
@@ -124,6 +129,9 @@ DIAGNOSTIC_SCREENSHOT_SUFFIXES = frozenset({".png", ".jpg"})
 # 单个诊断目录的失败截图总量上限，超出后按时间从旧到新回收；
 # 每目录独立结算，一个专项的截图风暴不会挤掉其他专项的证据
 DIAGNOSTIC_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
+# 诊断文件的统一保留天数：诊断文件不是用户数据，用固定保留期兜住无界
+# 累积，不跟随历史记录保留时间设置
+DIAGNOSTIC_RETENTION_DAYS = 15
 
 #: 本进程启动时刻；启动清理只碰比它更早的半成品。
 _PROCESS_STARTED_AT = time.time()
@@ -189,7 +197,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.7.0-beta.1"
+    VERSION = "v5.7.0-beta.5"
 
     def __init__(self) -> None:
         super().__init__()
@@ -224,6 +232,7 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ] = "NoAction"
         # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
@@ -337,6 +346,12 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json"
         )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        # 正式版没有接管字段，早期公测版默认关闭；有 CDK 的存量脚本只迁移一次。
+        for script in self.ScriptConfig.values():
+            if isinstance(script, MaaConfig) and await script.migrate_update_takeover(
+                global_cdk=str(self.get("Update", "MirrorChyanCDK") or "")
+            ):
+                logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
         if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
         if m9a_repair.needs_notice:
@@ -519,7 +534,8 @@ class AppConfig(GlobalConfig):
                                         )
                                     )
 
-                                    user_config["Info"]["StageMode"] = plan_dict.get(
+                                    stage_cfg = user_config.setdefault("Stage", {})
+                                    stage_cfg["StageMode"] = plan_dict.get(
                                         user_config["Info"]["StageMode"], "Fixed"
                                     )
                                     user_config["Info"]["Password"] = ""
@@ -932,6 +948,15 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
+        if isinstance(self.ScriptConfig[uid], MaaEndConfig):
+            from app.services.endfield_launcher import is_launcher_exe
+
+            launcher_path = (data.get("Game") or {}).get("LauncherPath")
+            if launcher_path and not is_launcher_exe(Path(launcher_path)):
+                raise ValueError(
+                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
+                )
+
         await self.ScriptConfig[uid].update(data)
 
     async def del_script(self, script_id: str) -> None:
@@ -1209,6 +1234,20 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        script_config = self.ScriptConfig[uid]
+        if isinstance(script_config, MaaFWConfig):
+            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
+            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(
+                script_id,
+                script_config,
+                None if user_id is None else [str(uuid.UUID(user_id))],
+            )
+
         if user_id is None:
             # 获取全部用户配置
             data = await self.ScriptConfig[uid].UserData.toDict()
@@ -1259,7 +1298,7 @@ class AppConfig(GlobalConfig):
                 await ensure_user_config_dir(
                     script_id=script_id,
                     user_id=str(uid),
-                    mode=str(config.get("Info", "Mode") or "脚本"),
+                    base=str(config.get("Info", "Base") or BASE_SHARED),
                 )
             except Exception:
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
@@ -1274,6 +1313,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
+            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
+            from app.task.MaaFW.tools.embedded.default_snapshot import (
+                fill_default_task_snapshots,
+            )
+
+            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):
@@ -1302,7 +1347,7 @@ class AppConfig(GlobalConfig):
 
         三层防线（与 FolderValidator 非空分支、自动发现/check() 同一组哨兵）：
         1. 拒绝空串——``FolderValidator`` 对空串放行，``Path("").is_dir()``
-           在 cwd 下为真，用户态保存会把 ``config/01/`` 建进 MAS 工作目录；
+           在 cwd 下为真，independent 来源保存会把 ``config/01/`` 建进 MAS 工作目录；
         2. 拒绝非绝对路径 / 不存在的目录 / ``Path.cwd()``；
         3. ``validate_install`` 安装哨兵（``src`` 目录）——任意随机目录
            （如 D:\\）只要 is_dir 就放行会在其下建出 config/01。不要求
@@ -1363,7 +1408,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         idx = add_instance(root, name, collect_used_slot_idxs(root))
-        logger.info(f"ZZZ-OD 直控新建实例: 槽 {idx:02d} (名称 {name})")
+        logger.info(f"ZZZ-OD 原生来源新建实例: 槽 {idx:02d} (名称 {name})")
         return self.get_zzzod_instances(script_id)
 
     def rename_zzzod_instance(
@@ -1378,7 +1423,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         rename_instance(root, instance_idx, name)
-        logger.info(f"ZZZ-OD 直控重命名实例: {instance_idx:02d} → {name}")
+        logger.info(f"ZZZ-OD 原生来源重命名实例: {instance_idx:02d} → {name}")
         return self.get_zzzod_instances(script_id)
 
     def set_zzzod_instance_active_in_od(
@@ -1424,7 +1469,7 @@ class AppConfig(GlobalConfig):
 
         self.ensure_zzzod_direct_backup(script_id)
         save_native_instance_run(root, instance_run)
-        logger.info(f"ZZZ-OD 直控运行实例 → {instance_run}")
+        logger.info(f"ZZZ-OD 原生来源运行实例 → {instance_run}")
 
     def set_zzzod_instance_force_login(
         self, script_id: str, instance_idx: int, value: bool
@@ -1509,7 +1554,7 @@ class AppConfig(GlobalConfig):
         被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
         不受「只收归属用户已不存在的号」的台账限制（来路不明的残留正是用户要清的
         对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
-        直控用户显式发起即可，不受「直控零写入」约束——那条约束管的是 MAS
+        原生来源用户显式发起即可，不受「原生来源零写入」约束——那条约束管的是 MAS
         在运行期间自行写安装目录。
 
         Raises:
@@ -1665,7 +1710,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """任务级配置（字段元数据 + 当前值）。
 
-        instance_idx 给定时（直控模式）读取该原生实例的 per-app YAML；
+        instance_idx 给定时（原生来源模式）读取该原生实例的 per-app YAML；
         否则读取用户绑定槽（未分配槽时取元数据默认值）。
         """
 
@@ -1769,7 +1814,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """保存任务级配置到目标位置（字段白名单校验后写入）。
 
-        instance_idx 给定时（直控模式）直接写该原生实例的 per-app YAML；
+        instance_idx 给定时（原生来源模式）直接写该原生实例的 per-app YAML；
         否则写用户绑定槽（首次编辑会自动分配绑定槽）。值按字段类型转换
         （select→str / bool→bool / number→int），plan_list 整表合并写入并
         按 plan_id 保留既有 run_times。
@@ -1899,7 +1944,7 @@ class AppConfig(GlobalConfig):
 
         team.yml：名称 + 绑定配队方案 + 成员（agent_id → 代理人下拉可选）。
         缺失项按上游规则补「编队N」默认编队。
-        instance_idx 给定时（直控模式）读该原生实例；否则读用户绑定槽。
+        instance_idx 给定时（原生来源模式）读该原生实例；否则读用户绑定槽。
         附带配队方案与代理人选项（静态数据，不含识别能力）供前端渲染。
         """
 
@@ -2061,6 +2106,9 @@ class AppConfig(GlobalConfig):
             backup_info = read_dict_file(
                 backup_dir / MAS_USER_INFO_FILE, allow_empty=True
             )
+            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
+            if "Mode" in backup_info and "Base" not in backup_info:
+                backup_info["Base"] = normalize_base_source(backup_info.pop("Mode"))
         except ConfigCorruptedError as exc:
             raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
@@ -2128,12 +2176,12 @@ class AppConfig(GlobalConfig):
         await user_cfg.set(
             "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
         )
-        # 信息字段回填（用户名/启用/模式/启动器/剩余天数/备注/节点详情推送）：
+        # 信息字段回填（用户名/启用/base 来源/启动器/剩余天数/备注/节点详情推送）：
         # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
         for field in (
             "Name",
             "Status",
-            "Mode",
+            "Base",
             "LauncherMode",
             "RemainedDay",
             "Notes",
@@ -2512,7 +2560,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
 
-        - target="mas"：基本信息卡信息字段（用户名/启用/模式/启动器/剩余天数/
+        - target="mas"：基本信息卡信息字段（用户名/启用/base 来源/启动器/剩余天数/
           备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
           密码掩码）+ 任务编排（应用目录并入中文名）；
         - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
@@ -2620,6 +2668,9 @@ class AppConfig(GlobalConfig):
         info: dict = {}
         try:
             info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+            # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
+            if "Mode" in info and "Base" not in info:
+                info["Base"] = normalize_base_source(info.pop("Mode"))
         except ConfigCorruptedError as exc:
             warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
         account: dict = {}
@@ -2640,7 +2691,7 @@ class AppConfig(GlobalConfig):
         for key, field in (
             ("name", "Name"),
             ("status", "Status"),
-            ("mode", "Mode"),
+            ("base", "Base"),
             ("launcher_mode", "LauncherMode"),
             ("remained_day", "RemainedDay"),
             ("notes", "Notes"),
@@ -2926,9 +2977,9 @@ class AppConfig(GlobalConfig):
     async def list_config_backups(
         self, script_id: str, user_id: str, target: str
     ) -> dict:
-        """列出配置备份（时间倒序，每项带配置来源标注）与当前来源。
+        """列出配置备份（时间倒序，每项带 base 来源标注）与当前 base 来源。
 
-        返回 ``{"items": [{"time", "mode"}], "mode": 当前来源或 None}``；
+        返回 ``{"items": [{"time", "base"}], "base": 当前来源或 None}``；
         当前来源只在三态池返回（前端据此比对是否需要跨来源提示）。
         target 取值由专项池定义。
         """
@@ -2936,7 +2987,7 @@ class AppConfig(GlobalConfig):
         service = self.restore_service(script_id, user_id)
         return {
             "items": await service.list(target),
-            "mode": await service.current_mode(target),
+            "base": await service.current_base(target),
         }
 
     async def ensure_config_backup(
@@ -2995,9 +3046,18 @@ class AppConfig(GlobalConfig):
         return {"time": ts, "target": target, **content}
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """更新用户配置"""
+        self,
+        script_id: str,
+        user_id: str,
+        data: Dict[str, Dict[str, Any]],
+        *,
+        precondition: Callable[[], bool] | None = None,
+    ) -> bool:
+        """更新用户配置，返回是否写入
+
+        ``precondition``：预处理（特调整理、密码加密等，要让出事件循环）做完、真正写入
+        之前再判一次，不成立就不写。判断与写入之间不让出，期间插不进别的写入。
+        """
 
         logger.info(f"{script_id} 更新用户配置: {user_id}")
 
@@ -3006,31 +3066,35 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # 直控守卫：每脚本仅允许一个直控用户——直控共享脚本级原生配置（MAA/SRC
-        # 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多直控用户共享
-        # 同一份状态互相干扰。
-        # ZzzOd 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
-        # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）。
+        # 原生来源守卫：每脚本仅允许一个原生来源用户——原生来源共享脚本级原生
+        # 配置（MAA/SRC 的 Default、ZzzOd 的实例视图都在一份脚本级配置里），多
+        # 个原生来源用户共享同一份状态互相干扰。
+        # ZzzOd 切到原生来源时同步清空任务编排残留：原生来源不消费 AppList，残留
+        # 会让注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）。
         if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
-            new_mode = str(data.get("Info", {}).get("Mode", "") or "")
-            # 仅 ZzzOd 需要清空任务编排残留: 直控不消费 AppList, 残留会让
-            # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）
-            if new_mode == "直控" and isinstance(script_config, ZzzOdConfig):
+            new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
+            # 仅 ZzzOd 需要清空任务编排残留: 原生来源不消费 AppList, 残留会让
+            # 注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）
+            if new_base == BASE_NATIVE and isinstance(script_config, ZzzOdConfig):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
-                # 快速配置已封锁（覆盖写槽与直控零写入相悖，维护者决策）：
-                # 切直控时同步归关，免得界面隐藏的开关残留旧值
+                # 快速配置已封锁（覆盖写槽与原生来源零写入相悖，维护者决策）：
+                # 切到原生来源时同步归关，免得界面隐藏的开关残留旧值
                 data.setdefault("Info", {})["IfQuickConfig"] = False
             if (
-                new_mode == "直控"
-                and str(user_config.get("Info", "Mode") or "用户") != "直控"
+                new_base == BASE_NATIVE
+                and normalize_base_source(
+                    user_config.get("Info", "Base") or BASE_INDEPENDENT
+                )
+                != BASE_NATIVE
                 and any(
-                    str(cfg.get("Info", "Mode") or "用户") == "直控"
+                    normalize_base_source(cfg.get("Info", "Base") or BASE_INDEPENDENT)
+                    == BASE_NATIVE
                     for uid, cfg in script_config.UserData.items()
                     if uid != user_uid
                 )
             ):
                 raise ValueError(
-                    "每个脚本仅允许一个直控用户, 多账号请在该用户的实例管理中配置"
+                    "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
                 )
 
         # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
@@ -3076,7 +3140,10 @@ class AppConfig(GlobalConfig):
             if notice is not None:
                 data.setdefault("Data", {})["CultivateNotice"] = notice
 
+        if precondition is not None and not precondition():
+            return False
         await user_config.update(data)
+        return True
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
@@ -3086,6 +3153,18 @@ class AppConfig(GlobalConfig):
         logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        if script_config.is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
+
+        # OK-WW 的配置目录布局与导入语义由专项维护
+        # （app/task/Okww/tools/config_dir.py），core 只做分派。
+        if isinstance(script_config, OkwwConfig):
+            from app.task.Okww.tools.config_dir import import_script_config_dir
+
+            await import_script_config_dir(script_id, user_id)
+            return
+
         if not isinstance(script_config, MaaEndConfig):
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 
@@ -3222,7 +3301,9 @@ class AppConfig(GlobalConfig):
             if not isinstance(script, consumer_config["script_class"]):
                 continue
             for user in script.UserData.values():
-                if user.get("Info", consumer_config["field_name"]) != str(plan_uid):
+                if user.get(
+                    consumer_config["field_group"], consumer_config["field_name"]
+                ) != str(plan_uid):
                     continue
                 if user.is_locked:
                     raise RuntimeError(
@@ -3231,7 +3312,11 @@ class AppConfig(GlobalConfig):
                 user_list.append(user)
 
         for user in user_list:
-            await user.set("Info", consumer_config["field_name"], "Fixed")
+            await user.set(
+                group=consumer_config["field_group"],
+                name=consumer_config["field_name"],
+                value="Fixed",
+            )
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -3889,8 +3974,20 @@ class AppConfig(GlobalConfig):
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
+            raw_stage_data = json.loads(self.get("Data", "StageData"))
+            has_cache = isinstance(raw_stage_data.get(server), dict) and (
+                "sideStoryStage" in raw_stage_data[server]
+            )
+            activity_stages = stage_data.get("Info", [])
+            activity_status = "ready" if activity_stages else "empty"
+            if not has_cache:
+                activity_status = "unavailable"
+            elif self._stage_refresh_failed_at is not None:
+                activity_status = "stale"
             return {
-                "Activity": stage_data.get("Info", []),
+                "Activity": activity_stages,
+                "ActivityStatus": activity_status,
+                "ActivityUpdatedAt": self.get("Data", "LastStageUpdated"),
                 "Resource": res_stage_info,
                 "Options": stage_options,
             }
@@ -3961,6 +4058,7 @@ class AppConfig(GlobalConfig):
         if (
             not refresh
             and has_server_data
+            and self._stage_refresh_failed_at is None
             and datetime.now() - timedelta(hours=1)
             < datetime.strptime(
                 self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
@@ -3970,7 +4068,8 @@ class AppConfig(GlobalConfig):
             return json.loads(self.get("Data", "Stage"))
 
         if (
-            self._stage_refresh_failed_at is not None
+            not refresh
+            and self._stage_refresh_failed_at is not None
             and datetime.now() - self._stage_refresh_failed_at < timedelta(seconds=60)
         ):
             # 刚失败过就先不再抓: 断网时总览与注入流程会串行重复等超时
@@ -4021,6 +4120,7 @@ class AppConfig(GlobalConfig):
                 )
 
                 if response.status_code == 304:
+                    self._stage_refresh_failed_at = None
                     logger.info("关卡信息未更新，使用本地缓存的活动关卡信息")
                     await self.set(
                         "Data",
@@ -4028,6 +4128,7 @@ class AppConfig(GlobalConfig):
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
                 elif response.status_code == 200:
+                    self._stage_refresh_failed_at = None
                     logger.success("成功获取远端活动关卡信息")
                     # 时间戳最后写: 并发调用按它判断缓存新鲜度, 先写会在
                     # 两次写入之间把旧关卡当成刚更新过的缓存返回
@@ -4494,7 +4595,17 @@ class AppConfig(GlobalConfig):
             "HSR 用户任务完成",
             "HSR 失败任务补跑完成",
             "HSR 本轮无需执行，已跳过",
+            "HSR 脚本原生来源完成",
+            # 「HSR 脚本直控完成」= 来源术语迁移前的历史存量文案, 运行时已改写为
+            # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
             "HSR 脚本直控完成",
+        }
+        # MaaFW 停服维护跳过的两句, 与 app/task/MaaFW/tools/embedded/signal_notice.py
+        # 的 SIGNAL_USER_MESSAGES / MAINTENANCE_SKIP_MESSAGE 一致: 维护是跳过,
+        # 既不算失败, 也不能显示成完成
+        maafw_skip_results = {
+            "游戏停服维护中，本次跳过",
+            "游戏停服维护中，本次跳过（同一资源已确认在维护）",
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
@@ -4503,12 +4614,20 @@ class AppConfig(GlobalConfig):
                 return False
             value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
             if value in ("Success!", "今日任务均已完成"):
-                # 「今日任务均已完成」= zzz-od 直控/按记录跳过场景的历史存量文案,
+                # 「今日任务均已完成」= zzz-od 原生来源/按记录跳过场景的历史存量文案,
                 # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
             return False
+
+        def is_skip_result(result_key: str, result_value: Any) -> bool:
+            # 先确认是字符串: 列表、字典等不可哈希的值做集合成员判断会抛 TypeError
+            return (
+                result_key == "general_result"
+                and isinstance(result_value, str)
+                and result_value in maafw_skip_results
+            )
 
         for json_file in statistic_path_list:
             try:
@@ -4572,9 +4691,14 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    success = is_success_result(key, single_data[key])
+                    if is_success_result(key, single_data[key]):
+                        status = "DONE"
+                    elif is_skip_result(key, single_data[key]):
+                        status = "SKIP"
+                    else:
+                        status = "ERROR"
 
-                    if not success:
+                    if status == "ERROR":
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -4583,7 +4707,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": "DONE" if success else "ERROR",
+                        "status": status,
                         "jsonFile": str(json_file),
                         "result": single_data[key],
                     }
@@ -5371,22 +5495,19 @@ class AppConfig(GlobalConfig):
         except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
             logger.warning(f"MFW 运行池回收失败: {exc}")
 
-    async def clean_debug_diagnostics(self) -> None:
+    def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
 
         自动扫描 ``debug/`` 下全部子目录（各专项的登录/切号/启动器失败诊断，
-        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图按历史记录的
-        保留天数清理；截图另受每目录独立的大小上限约束，超限从旧到新
-        回收，不受历史记录永久保留设置影响——一个专项的截图风暴不会
-        挤掉其他专项的证据。
+        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图统一按固定保留
+        天数清理，不跟随历史记录保留时间——诊断文件不是用户数据，解绑后任何
+        配置下都不会无界累积。失败截图另受每目录独立的大小上限约束，超限
+        从旧到新回收——一个专项的截图风暴不会挤掉其他专项的证据。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
-        retention_days = self.get("Function", "HistoryRetentionTime")
-        if retention_days == 0:
-            logger.info("诊断文件永久保留, 跳过按保留期限清理")
-            cutoff = None
-        else:
-            cutoff = time.time() - retention_days * 86400
+        cutoff = time.time() - DIAGNOSTIC_RETENTION_DAYS * 86400
 
         debug_root = Path.cwd() / "debug"
         if not debug_root.is_dir():
@@ -5411,7 +5532,7 @@ class AppConfig(GlobalConfig):
                 except OSError as exc:
                     logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     continue
-                if cutoff is not None and file_stat.st_mtime < cutoff:
+                if file_stat.st_mtime < cutoff:
                     try:
                         file.unlink()
                     except OSError as exc:
@@ -5443,7 +5564,7 @@ class AppConfig(GlobalConfig):
         if screenshot_deleted_count:
             logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
 
-    async def clean_maafw_native_debug_logs(self) -> None:
+    def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
 
         MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
@@ -5451,9 +5572,17 @@ class AppConfig(GlobalConfig):
         的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
         ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
         保留时长沿用历史记录的保留天数设置。
+
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
         """
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
+        # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
+        # 和增删脚本。items() 是 zip(order 列表, data 逐项查找) 的惰性结构，
+        # list() 消费它并非原子拷贝、并发增删仍可 KeyError 中止本轮；直接对
+        # data 的 dict 视图做 list() 才是单条 C 级拷贝的真原子快照
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
             return
 
@@ -5462,9 +5591,9 @@ class AppConfig(GlobalConfig):
             resolve_maafw_project_root,
         )
 
-        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        cutoff = time.time() - retention_days * 86400
         deleted_count = 0
-        for uid, script_config in self.ScriptConfig.items():
+        for uid, script_config in list(self.ScriptConfig.data.items()):
             if not isinstance(script_config, MaaFWConfig):
                 continue
             # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
@@ -5490,10 +5619,16 @@ class AppConfig(GlobalConfig):
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
 
-    async def clean_old_history(self):
-        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+    def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）。
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
+        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
+        """
+
+        # 只读一次：定时器在工作线程跑本函数，循环内逐目录重读会看到扫描
+        # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
+        retention_days = self.get("Function", "HistoryRetentionTime")
+        if retention_days == 0:
             logger.info("历史记录永久保留, 跳过历史记录清理")
             return
 
@@ -5509,7 +5644,7 @@ class AppConfig(GlobalConfig):
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
                 folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
                 if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=self.get("Function", "HistoryRetentionTime")
+                    days=retention_days
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1

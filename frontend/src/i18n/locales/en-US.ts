@@ -6,6 +6,46 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  eventDepotPreview: {
+    runtimeUnresolved:
+      'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
+    legacyFallback:
+      'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
+    name: 'Balanced event farming',
+    hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
+    scopeHint:
+      'MAA selects the execution order by target completion ratio; this does not guarantee switching stages after every battle. Material and Orundum stages follow the current event.',
+    stageColumn: 'Event stage',
+    stageIndex: 'Material stage {n}',
+    orundumStage: 'Orundum stage',
+    legacyIndex: 'Previous priority stage {n}',
+    farmStage: 'Farm this stage in the current run',
+    noActivity: 'No event stages are available. Targets can be saved for the next event.',
+    expiredHint:
+      'No event stages can be farmed this run. Saved targets will be used when event stages become available.',
+    loading: 'Loading event stages…',
+    retry: 'Retry',
+    dataUnavailable: 'Event data is unavailable; saved targets are kept',
+    loadFailed: 'Failed to load event stages. Saved targets are unchanged.',
+    invalidData: 'Failed to load event stages: stage information is missing from the response.',
+    staleData:
+      'Event data could not be refreshed. Showing the last successfully loaded stages; saved targets are unchanged.',
+    summary: 'Current event · {n} stages · stock ratio order',
+  },
+  maaStaminaPipeline: {
+    inventoryCultivate: 'Stock keeping and cultivation',
+    sanityFallback: 'Sanity tasks',
+    orderHint:
+      'Stages run top to bottom in order 1 → 2 → 3; a stage with nothing to farm continues to the next.',
+    inventoryHint:
+      'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
+    executionHint:
+      'When both participate, prepare cultivation materials, then replenish cultivation costs plus target stock, and finally raise operators. This run uses that fixed order, single battles, and no expiring potions; ratio sorting and first-insufficient-plan-only are disabled. Original stock settings are retained.',
+    sanityHint:
+      'Uses the original fixed stage, alternatives or schedule and combat settings. This controls only the final stage; the first two can still run when it is off.',
+    inventoryOff: 'Stock keeping off',
+    cultivateOff: 'Cultivation off',
+  },
   common: {
     viewPageDocs: 'View documentation for this page',
     language: 'Language',
@@ -17,10 +57,17 @@ export default {
     off: 'Off',
     confirm: 'OK',
     cancel: 'Cancel',
+    close: 'Close',
     doc: 'Docs',
     unknown: 'Unknown',
   },
   comp: {
+    currentConfig: 'Configuration: {source}',
+    configSourceShared: 'Shared',
+    configSourceIndependent: 'Independent',
+    configSourceNative: 'Script native',
+    configOverrideEnabled: 'Overrides on',
+    configOverrideDisabled: 'Overrides off',
     changelog: {
       empty: 'No changelog for this version yet',
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
@@ -57,7 +104,7 @@ export default {
     fullFilePath: 'Full file path',
     fullDateTime: 'Full date and time',
     tools: 'Tools',
-    themeStore: 'Theme store',
+    themeStore: 'Resource store',
     boolean: 'Boolean',
     fileNameExtension: 'File name with extension',
     quotedString: 'Quoted string',
@@ -202,6 +249,10 @@ export default {
       'A backend update is available — automatic updates are off in development mode',
     backendUpdateTitle: 'Updating the backend to {version}',
     backendUpdateSucceeded: 'The backend has been updated and restarted',
+    backendHotUpdateDetails: 'Backend update recovery',
+    backendHotUpdateReconnect: 'Reconnect',
+    backendHotUpdateFailedConnection:
+      'The updated backend started, but reconnection failed. Your page and drafts have been kept.',
     backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
     backendUpdateFailedShutdown:
       'The running backend could not be stopped, so the update never started. The current version still works.',
@@ -269,7 +320,6 @@ export default {
     configureSrc: 'Configure SRC',
     configureOkWw: 'Configure ok-ww',
     configureWhimbox: 'Configure Whimbox',
-    configurePerUserMaaend: "Edit this account's own configuration in the MaaEnd window.",
     restartingAutoMasStops: 'Restarting AUTO-MAS stops whatever is running. Restart anyway?',
     restartBackendUpdate: 'Restart the backend to update',
     resetEverything: 'Reset everything',
@@ -307,29 +357,93 @@ export default {
       'Saved by position in the list. After an event update the stage at the same position is picked; if that position is gone, it falls back to the first one.',
     maaPickEventStage: 'Pick an event stage',
     maaNoEventStage: 'No event stages to farm right now',
-    maaEventPotion: 'Event stage potions',
-    maaEventPotionHint:
-      'How many sanity potions the event-stage task may use. Normal sanity combat is unaffected.',
     maaCultivate: 'Operator cultivation',
+    maaCultivateSettings: 'Cultivation settings',
+    maaCultivateShowModules: 'Show module targets',
+    maaCultivateSelectOperator: 'Select {name}',
+    maaCultivateSelectAll: 'Select all operators',
+    maaCultivateSelectMatches: 'Select all results',
+    maaCultivateSearchOperators: 'Search operator name or ID',
+    maaCultivateSearchEmpty: 'No matching operators',
+    maaCultivateDeleteSelected: 'Delete selected ({count})',
+    maaCultivateDeleteSelectedConfirm:
+      'Delete cultivation targets for the {count} selected operators?',
+    maaCultivateSkill1: 'Skill 1',
+    maaCultivateSkill2: 'Skill 2',
+    maaCultivateSkill3: 'Skill 3',
+    maaCultivateSkillName: '{name} ({skill})',
     maaCultivateHint:
       'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
     maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
+    maaCultivateImportClipboard: 'Import from clipboard',
+    maaCultivateImporting: 'Importing',
+    maaCultivateImportSubmit: 'Import',
+    maaCultivateImportPasteHint:
+      'Cannot read the clipboard. Paste the training targets from Arknights Toolbox’s “Export to MAA”.',
+    maaCultivateImportPlaceholder: 'Paste training targets as JSON',
+    maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
+    maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
+    maaCultivateImportSkipped: 'Skipped {count} entries that could not be imported',
+    maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
+    maaCultivateImportEmpty: 'No training targets to import',
+    maaCultivateImportFormatError:
+      'Invalid format. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportOperatorError:
+      'Cannot match the operator name and class. Use the Chinese names exported by the toolbox',
+    maaCultivateImportAmbiguous:
+      'Multiple operators share this name. Specify the class to identify the operator',
+    maaCultivateImportEliteError:
+      'Invalid promotion target or missing training data for this operator',
+    maaCultivateImportSkillError:
+      'Invalid skill level target or missing training data for this operator',
+    maaCultivateImportMasteryError: 'Invalid mastery target or missing mastery data for this skill',
+    maaCultivateImportUnsupported:
+      'Unsupported targets. Copy training targets using the toolbox’s “Export to MAA”',
+    maaCultivateImportCatalogError: 'Operator training data is unavailable. Try again later',
+    maaCultivateImportRowError: 'Entry {index} ({name}): {reason}',
+    maaCultivateImportUnnamed: 'Operator name missing',
+    maaCultivateImportUnavailable:
+      'Save the user and finish any ongoing configuration operation before importing',
     maaCultivateNoOperators: 'Operator catalog unavailable',
     maaCultivateElite0: 'Elite 0',
     maaCultivateElite1: 'Elite 1',
     maaCultivateElite2: 'Elite 2',
     maaCultivateRemove: 'Remove',
     maaCultivateSkipActivity: 'Skip cultivation plan during events',
+    maaCultivateAutoRaise: 'Automatically train operators',
+    maaCultivateAutoRaiseOn: 'Auto training: On',
+    maaCultivateAutoRaiseOff: 'Auto training: Off',
+    maaCultivateOperatorCount: 'Operators: {count}',
+    maaCultivateAutoRaiseUnsupported:
+      'Automatic training was skipped. Use MAA v6.19.0-beta.1 or later and confirm that Operator Progression is available in MAA. Material farming continues.',
+    maaCultivateAutoRaiseDataUnavailable:
+      'Automatic training was skipped because training data is unavailable. Refresh the operator catalog and try again. Material farming continues.',
+    maaCultivateSklandSyncFailed:
+      'Skland progression sync failed, so cultivation is paused for this run. Check your network or bind Skland again. Daily tasks and depot maintenance continue as usual.',
+    maaCultivateAutoRaiseHint:
+      'Executes promotion, skill upgrades, and mastery from your cultivation targets. Automatic module upgrades are not supported. Material farming continues when disabled.',
+    maaCultivateAutoRaiseVersionHint: 'Automatic training requires MAA v6.19.0-beta.1 or later',
+    maaCultivateMasterySkillHint:
+      'Mastery requires skill rank 7. Selecting a mastery target automatically sets the skill rank target to 7; clearing the mastery target leaves the skill rank target unchanged.',
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
-      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set mastery/module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
+      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically.',
+    maaCultivateSkipHint:
+      'When an event or all-resources-open skip condition applies, cultivation farming, material reserves and raising are paused for this run. Other tasks continue.',
+    maaCultivatePreparationUnavailable:
+      'Cultivation data is temporarily unavailable. Cultivation is paused for this run; stock keeping and sanity tasks continue.',
+    maaCultivateTargetsDeferred:
+      'Cultivation goals missing the required progression data are deferred for this run and remain saved. Other valid goals continue. Sync progression from Skland, then retry.',
+    maaCultivateTakeoverHint:
+      'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
     maaCultivatePreviewStageHeading: 'Farming plan',
     maaCultivatePreviewDemandHeading: 'Material demands',
+    maaCultivatePreviewDemandNone: 'No materials needed',
     maaCultivatePreviewUnobtainable:
       'The following materials cannot be obtained by farming and must be acquired in game',
     maaCultivatePreviewNone: 'Nothing to farm (materials are complete, or no stages are open)',
@@ -343,32 +457,37 @@ export default {
       '; the above is a conservative estimate assuming Elite 0 and empty inventory. Finish recognition in MAA and check again',
     maaCultivateSklandTitle: 'Bind Skland',
     maaCultivateSklandHint:
-      'After binding, mastery/module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
+      'After binding, skill rank, mastery, and module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
     maaCultivateSklandRole: 'Select game role',
     maaCultivateSklandBoundRole: 'Bound role',
     maaCultivateSklandUnboundHint: 'Only Elite goals are available before binding Skland',
-    maaCultivateSklandLockedHint: 'Bind Skland to set mastery/module goals',
+    maaCultivateSklandLockedHint: 'Bind Skland to set skill rank, mastery, and module goals',
     maaCultivateSklandDegradedHint:
-      'Skland progression is temporarily unavailable; mastery/module goals are paused and will resume automatically',
+      'Some Skland progression data is temporarily unavailable; affected skill rank, mastery, and module goals are paused and will resume automatically',
     maaCultivateGoalElite: 'Elite',
+    maaCultivateGoalSkill: 'Skill rank',
+    maaCultivateSkillLevel: 'Rank {level}',
     maaCultivateGoalNone: 'No goal',
     maaCultivateCurrent: 'Current',
     maaCultivateCurrentUnknown: 'Current ?',
     maaCultivateCurrentUnknownHint:
-      'No progression data: elite is estimated as Elite 0; mastery/module without Skland data are paused',
+      'No progression data: elite is estimated as Elite 0; skill rank, mastery, and module goals without Skland data are paused',
     maaCultivateGoalLevel1: 'Level 1',
     maaCultivateGoalLevel2: 'Level 2',
     maaCultivateGoalLevel3: 'Level 3',
     maaCultivateOverLimit: 'Beyond the reachable tier; will not be farmed automatically',
     maaCultivateOverLimitShort: 'Over limit',
     maaCultivateToggleGoals: 'Expand/collapse goals',
-    maaCultivateNoGoalTier: 'No Elite goal',
+    maaCultivateNoGoalTier: 'No available cultivation goals',
     maaCultivateNoGoalDataMissing: 'Cultivation data missing',
     maaCultivateStateInProgress: 'Farming',
     maaCultivateStateAchieved: 'Achieved',
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
+    maaDepotSettings: 'Depot maintenance settings',
     maaDepotHint: 'Set target stock per material; farmed automatically when short',
+    maaDepotPlanCount: '{count} plans',
+    maaDepotEmpty: 'No plans added',
     maaCombat: 'Sanity combat',
     maaInfrast: 'Infrastructure shift',
     maaInfrastMode: 'Infrastructure mode',
@@ -452,6 +571,9 @@ export default {
     switchedPlanModeP0: 'Switched to plan mode: {p0}',
     loadedP0P1Log: 'Loaded {p0} of {p1} log lines',
     importedP0ConfigurationFile: 'Imported the {p0} configuration file',
+    importScriptConfigFailed: 'Failed to import the script configuration file',
+    nativeConfigNoImport:
+      'Native mode uses the existing ok-ww configuration directly; import is unavailable',
     startedSrcSetupUser: 'Started the SRC setup for account {p0}',
     startedGeneralSetupUser: 'Started the general setup for account {p0}',
     readP0: 'Read {p0}',
@@ -521,11 +643,12 @@ export default {
     noConfigurationImportedYet: 'No configuration imported yet',
     whenHighTrafficSettings:
       'When on, the most-used fields on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
-    maaEndOpenConfig: 'Open the MaaEnd window',
-    maaEndOpenConfigSharedTip:
-      'Edit the shared configuration that every account of this managed script uses, in the MaaEnd window.',
-    maaEndOpenConfigIndependentTip:
-      "Edit this account's own configuration in the MaaEnd window - it applies to this account only.",
+    configSourceActions: 'Configuration actions',
+    openConfigWindow: 'Open the {script} window',
+    configActionsTargetShared: 'the shared base configuration',
+    configActionsTargetIndependent: "this account's own base configuration",
+    configActionsImpactShared: 'every account of this managed script shares it',
+    configActionsImpactIndependent: 'other accounts are not affected',
     maaEndDailyOnceTasks: 'Tasks to run once per day',
     maaEndDailyOnceTasksHint:
       'Delivery and auto-collect stages always run once per day and need no selection. Selected routine tasks are skipped after successful completion; failures can be retried. Resets daily at 04:00 UTC+8',
@@ -728,7 +851,6 @@ export default {
     executables: 'Executables',
     enabled3: 'Enabled',
     jsonFiles: 'JSON files',
-    unspecified: 'Unspecified',
     keyword2: 'Keyword',
     include: 'Include',
     on2: 'On',
@@ -949,7 +1071,7 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the project interface',
+    loadingMfwInterface: 'Reading the project',
     loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
@@ -1021,7 +1143,6 @@ export default {
     couldNotPickFile: 'Could not pick the file',
     addNoteAboutThis: 'Add a note about this account',
     taskConfiguration: 'Task configuration',
-    readInterfaceFirstThen: 'Read the project definition file first, then pick tasks',
     enabled: 'Enabled',
     whetherThisUserEnabled: 'Whether this account is enabled',
     noActiveConfigurationSession: 'No active configuration session',
@@ -1269,7 +1390,8 @@ export default {
     notWiredIntoRun:
       'Not wired into the run flow yet: in this version, turning it on does not check for updates before a run — use the manual update on the right',
     noOkWwSettings: 'No ok-ww settings have been generated yet',
-    interfaceJsonHasNot: 'interface.json has not been read yet',
+    interfaceJsonHasNot:
+      'No project loaded: the script has not imported a project yet, or reading it failed (reopen this page later)',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
     invalidManagedOverridesCleared: 'Removed {n} invalid settings',
     scriptLevelMaaendConfiguration: 'Shared MaaEnd configuration started',
@@ -1472,6 +1594,9 @@ export default {
     overlayConfigDisabledDesc:
       'The task uses the base configuration as is: without overriding the regular configuration, MAS only starts the script and the override fields on this page are not applied.',
     configSemanticsTitle: 'Configuration in effect for this task',
+    configSemanticsEffectOn: 'Temporarily overrides {target}, then restores it when the task ends',
+    configSemanticsEffectOff: 'Does not modify {target}',
+    configSemanticsTargetNative: "the script's own native configuration",
     configSemanticsSharedOffTitle: 'Runs on the shared base configuration as is',
     configSemanticsSharedOffDesc:
       'The task runs on the shared base configuration of this managed script. MAS only starts the script and does not modify the shared base configuration itself.',
@@ -1632,7 +1757,7 @@ export default {
     autoUpdateModeAfterRun: 'After run',
     updateSource: 'Update source',
     updateSourceTip:
-      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
+      'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: downloads from the project GitHub Release, no CDK needed. Projects not on MirrorChyan can still be checked for updates with GitHub selected (the project must name its GitHub repository)',
     updateChannel: 'Update channel',
     cdkTip:
       'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
@@ -1669,7 +1794,15 @@ export default {
     sourceGithub: 'GitHub',
     cdkStatusIssue:
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
-    cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
+    cdkHintRemaining: '{days} day(s) left (expires on {date})',
+    cdkHintLessThanDay: 'Less than 1 day left (expires on {date})',
+    cdkHintExpired: 'The CDK has expired',
+    cdkHintExpiredOn: 'The CDK expired on {date}',
+    cdkHintInvalid: 'Invalid CDK; check that it was entered correctly',
+    cdkHintQuota: "The CDK's download quota for today is used up",
+    cdkHintQuotaRemaining: "The CDK's download quota for today is used up; {remaining}",
+    cdkHintMismatched: 'This CDK type does not match this project',
+    cdkHintBlocked: 'The CDK has been blocked',
     directory: 'Directory',
     useExistingOkwwConfiguration:
       'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',
@@ -1732,35 +1865,61 @@ export default {
       'Command line of the process to track. Leave empty if you are not sure',
     couldNotLoadPlan: 'Could not load the plan configuration — check that the plan still exists',
     letMasLaunchGame: 'MAS starts and closes the game',
-    launchGameOtherWay: 'The game is already running; MAS only attaches to the window',
+    launchGameOtherWay: 'The script controls the game itself',
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
     taskDescriptionLabel: 'Notes',
     missingTaskTag: 'No longer in interface',
     missingTaskHint: 'This task is no longer in the project and will be skipped',
     missingTaskSettings: 'Previous settings',
+    queueTaskDuplicate: 'Duplicate task',
+    queueTaskRename: 'Rename',
+    queueTaskDelete: 'Delete task',
+    queueTaskRenameTitle: 'Edit display name',
+    queueTaskDisplayName: 'Display name',
     missingTaskValueSeparator: ', ',
     missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',
-    adbStrategyEmulatorExtras: "Prefer the emulator's own ADB (EmulatorExtras)",
+    adbStrategyEmulatorExtras:
+      "Prefer the emulator's dedicated screenshot and input interface (EmulatorExtras)",
     adbStrategyAvdExtras: 'Emulator screenshot acceleration (shared memory, EmulatorExtras)',
     adbStrategyDefault: 'Default',
     prepareRuntimeEnv: 'Prepare runtime environment',
-    envPanelPlaceholder:
-      'The environment preparation steps show up here after the interface is read',
-    envPreparingHint: 'The first run downloads MaaFramework and may take a few minutes',
+    envPanelPlaceholder: 'The environment preparation steps show up here',
+    envPreparingHint: 'MaaFramework may need to be downloaded; the first time takes longer',
     envStatusPreparing: 'Preparing the runtime environment',
     envStatusPrepared: 'Runtime environment ready',
     envStatusUpdated: 'Runtime environment updated',
     envStatusCached: 'Runtime environment is up to date',
     envStatusFailed: 'Failed to prepare the runtime environment',
     envFailedHint:
-      'Nothing below will run until the environment is ready. Check the network and project path, then retry.',
+      'Usually a download failed. If you need a proxy, set it in "Settings → About → Network proxy" or in "Project update → Proxy address" on this page, then click "Retry". See the log above for the exact cause.',
     envReadyAgents: 'Ready components',
     envRetry: 'Retry',
+    maafwPreviewFailed: 'Could not read the project',
+    maafwImportFiles: 'Referenced files',
+    maafwListSeparator: ', ',
+    envRuntimeIsolatedVenv: 'Isolated Python environment',
+    envRuntimeProjectPython: 'Bundled Python',
+    envRuntimeProjectBinary: 'Bundled program',
+    envRuntimeSharedRuntime: 'Shared Python environment',
+    envRuntimeExternal: 'External program',
+    previousStep: 'Previous',
+    maafwPageTitleSetup: '{name} project setup',
+    maafwPageTitleConfig: '{name} project settings',
+    maafwUpdateChannelStable: 'Stable',
+    maafwUpdateChannelBeta: 'Beta',
+    maafwEmulatorTypeGeneral: 'Generic emulator',
+    maafwEmulatorTypeMumu: 'MuMu Player',
+    maafwEmulatorTypeLdplayer: 'LDPlayer',
+    maafwEmulatorTypeEmulator2: 'Emulator 2.0',
+    maafwEmulatorNotSelected: 'No emulator selected',
+    maafwEmulatorTypeLoading: 'Loading emulator type',
+    maafwNoMirrorchyanRid:
+      'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
-      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
+      'When MAS has just launched the game, the first task waits before starting; MaaFW initialisation runs in parallel. Desktop games: MAS waits for the window to appear and then for the screen to settle, each for at most this long, and starts early once the screen settles; no wait if the game window is already open. Emulators: after cold-starting the game along with the emulator, MAS waits at most this long, and starts early once the screen shows content and the game has stopped reading from disk, and keeps waiting if the screen is still black at that point; no wait if the game process is already running, in the foreground or not. Freshly started games are usually still loading, and posting tasks too early makes the script report a recognition failure or a stuck game.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     mfwHotkey: 'Key bindings',
@@ -1871,6 +2030,64 @@ export default {
     trackChildProcesses: 'Also track the child processes the script starts',
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
+    maaEndLaunchTypeHint:
+      'Via launcher: MAS operates the official launcher. Via MAS: MAS creates the game process. Via MaaEnd: use its native launch entry. Availability depends on the installed resources and controller.',
+    maaEndLaunchViaMas: 'Via MAS',
+    maaEndLaunchViaMaaEnd: 'Via MaaEnd',
+    maaEndLauncherModeHint:
+      'MAS operates the official launcher, supporting both old and new MaaEnd versions.',
+    maaEndMasModeHint:
+      'MAS creates the game process directly; the official launcher is still required.',
+    maaEndNativeModeHint: 'MaaEnd launches the game and applies the game settings it supports.',
+    maaEndLaunchCapabilitiesUnknown:
+      'Select a valid MaaEnd installation and wait for resources to load to check native launch support.',
+    maaEndNativeLaunchUnsupported:
+      'This MaaEnd installation or controller has no native launch entry. Use the launcher or MAS instead.',
+    maaEndNativeLauncherHint: 'MaaEnd locates its own launcher and does not use this path.',
+    maaEndArgumentsUnsupported:
+      'These arguments apply only to MAS launch. For other modes, use settings supported by the official launcher.',
+    maaEndResolutionUnsupported:
+      'This MaaEnd installation and launch mode cannot apply resolution independently. Existing game settings are used; saved preferences are retained.',
+    maaEndLauncherPath: 'Official Endfield launcher',
+    maaEndLauncherPathSource: 'Launcher path source',
+    maaEndLauncherSourceAuto: 'Automatic',
+    maaEndLauncherSourceManual: 'Manual',
+    maaEndRefreshLauncher: 'Detect again',
+    maaEndChangeLauncher: 'Change file',
+    maaEndLauncherAutoHint:
+      'Detects the launcher from the game path on every run; no path to maintain',
+    maaEndLauncherManualHint:
+      'Pick the official Hypergryph launcher Launcher.exe or Games.exe (a fallback when detection fails); switch back to Automatic anytime',
+    maaEndLauncherDetectFailed:
+      'Official Endfield launcher not found. Switch to Manual to select it',
+    maaEndPickClientBeforeLauncher: 'Select the game path first',
+    maaEndPickLauncherExeError: 'Pick the official launcher Launcher.exe or Games.exe',
+    maaEndLauncherSaveFailed:
+      'Could not save launcher settings. Your previous settings have been kept',
+    maaEndLauncherArgumentsHint:
+      'Configure game launch arguments in the official launcher when using launcher mode',
+    maaEndAutoUpdateLauncherHint: 'The official launcher handles game updates in launcher mode',
+    endfieldAutoUpdate: 'Update the Endfield client before running',
+    endfieldAutoUpdateHint:
+      'Checks the PC client version before each run and, when it is behind, applies the official delta pack: it verifies local files first and only closes a running client once they match, then downloads only what changed. When no delta exists for this baseline the client is left alone and you are asked to update manually',
+    endfieldUpdateTimeoutHint:
+      'How long AUTO-MAS may take to verify local files, close the running client, download the delta and apply it; once it passes the run is aborted but the downloaded delta and the files already written stay on disk, and the next run continues from there. A full run usually needs tens of minutes or more, so a small value aborts it every time',
+    endfieldManualUpdate: 'Manual update',
+    endfieldCheckUpdateTitle: 'Check the Endfield client for updates',
+    endfieldUpdateProgressTitle: 'Endfield client update progress',
+    endfieldWillBeUpdated:
+      'AUTO-MAS updates the Endfield PC client with the official delta pack: it reads local files to verify the baseline, then downloads only what changed (a cross-version run downloads a few GB and reads tens of GB to verify). Once the baseline verifies it closes the running game and locks this script config. When the official pack has no delta for this baseline nothing is downloaded and you are asked to update manually',
+    endfieldUpdateCloseConfirm:
+      'Closing the dialog aborts this run. The downloaded delta and the game files already written stay on disk, so the next run resumes instead of starting over. Close anyway?',
+    endfieldUpdateAbortTitle: 'Abort this update run?',
+    endfieldUpdateAbortConfirm: 'Close anyway',
+    endfieldUpdateAlreadyFinished:
+      'This update run has already finished; the outcome is in the script run log',
+    endfieldUpdateFailed: 'Endfield update failed: {p0}',
+    endfieldUpdateTask: 'Endfield update task finished',
+    endfieldUpdateConnecting: 'Connecting to the update task...',
+    endfieldUpdateStartFailed: 'Failed to start the Endfield update',
+    endfieldUpdateStopFailed: 'Failed to stop the Endfield update',
     pickMfwResourceLeave:
       'Pick the resource; leave empty to auto-pick the first resource matching the control method',
     pickMfwProject: 'Pick the project',
@@ -1883,7 +2100,6 @@ export default {
     pickProjectDirectoryContaining:
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
-    pickLocalDirectory: 'Pick a local directory',
     localProjectDirectory: 'Local project directory',
     pickMfwProjectDirectory: 'Pick the MaaFW project directory containing interface.json',
     maafwDirectoryLockedHint:
@@ -1899,7 +2115,7 @@ export default {
     maafwFollowSourceStatus: 'Following {path} · last synced {time}',
     maafwFollowSourceNotSynced:
       'Following {path} · not synced yet, will import before the next run',
-    maafwFollowSourceMissing: 'Source directory is missing; runs keep using the current copy',
+    maafwFollowSourceMissing: 'Source directory is missing',
     maafwAccountRecordTooltip:
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
@@ -1927,15 +2143,14 @@ export default {
     mssFlavorControllerHint:
       'The emulator build of Stella Sora cannot launch the game, so MSS supports the desktop build only; pick the desktop controller. Emulators will not be supported unless that problem is fixed',
     mssFlavorQueueHint:
-      '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
+      '· With "Event quick battle" in the task queue it is moved ahead of "Bounty Trial quick battle" (to spend stamina on the event first) while an event is live, and skipped when none is running\n' +
       '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
       '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
     mssFlavorQueueEmpty:
       'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
     mssFlavorDefense: 'Catastrophe Defense',
     mssFlavorDefenseHint:
-      "When on, the personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's",
-    mssFlavorDefenseOff: 'Disabled',
+      "The personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's, and turning the switch off skips it entirely",
     mssFlavorDefenseDone: 'Played this period',
     mssFlavorDefensePending: 'Not played this period',
     mssFlavorDefenseArmed: 'Queued for this run',
@@ -1946,7 +2161,7 @@ export default {
     mssFlavorDefenseSaveFailed: 'The switch was not saved, please try again',
     mssFlavorActivityFirst: 'Activity first',
     mssFlavorActivityFirstHint:
-      'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
+      'When on, the event task is added ahead of "Bounty Trial quick battle" while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
     mssFlavorPlanHint:
       'With a plan selected, each run rewrites the stage, difficulty and count of "Bounty Trial quick battle" from today\'s slot, adding the task if it is not queued; "Fixed" runs the options set in the task queue',
     maafwFlavorPlanMode: 'Plan',
@@ -2195,11 +2410,11 @@ export default {
     bettergiViewClose: 'Close viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
-    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
+    // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
       'Backups of the MAS config (task snapshot and device overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     maafwConfigRestoreScriptDesc:
-      'Backups of the MaaFW project config (config folder and interface.json); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+      'Backups of the MaaFW project config (the config folder); restoring overwrites the project config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // HSR 配置恢复（mas=托管字段侧车；native=M7A config.yaml + SRA appdata）
     hsrConfigRestoreUserDesc:
       'Backups of the MAS config (task mapping and managed overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
@@ -2413,7 +2628,7 @@ export default {
     configRestoreUnrestorableTitle: 'This backup cannot be restored',
     configRestoreUnrestorableDesc:
       'The backup is incomplete or contains MAS temporary instances, so restore is disabled.',
-    // 备份列表的配置来源标签（备份时点 Info.Mode）
+    // 备份列表的配置来源标签（备份时点 Info.Base）
     configRestoreModeScript: 'Shared',
     configRestoreModeUser: 'Independent',
     configRestoreModeDirect: 'Native',
@@ -2435,7 +2650,7 @@ export default {
       'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
     configSessionDiscardedUnknown:
       'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
-    // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
+    // ok-nte 原生配置备份的描述覆写（ok-nte 无原生来源，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
@@ -2795,6 +3010,9 @@ export default {
     maafwGlobalOptionsHint: 'Apply to every task in the queue; set them once here',
     maafwUnsupportedOptionType:
       'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
+    maafwInputVerifyFailed: 'The input does not meet the script requirements',
+    maafwQueueTaskCheckboxCountInvalid:
+      'A multi-select setting has too few or too many choices; this user will fail to run until it is fixed',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',
@@ -2826,6 +3044,9 @@ export default {
     bettergiRewardDefault: 'Default',
     bettergiDomainPickerClearAll: 'Clear all',
     bettergiDomainPickerClearAllConfirm: 'Clear all selected domains?',
+    bettergiDomainPickerGuide: 'Select by Training Guide',
+    bettergiDomainPickerGuideTip:
+      'BetterGI reads the in-game Training Guide and automatically picks the matching domain at the highest difficulty (requires BetterGI 0.66 or later)',
     bettergiDomainPickerNone: 'No domains available',
     bettergiDomainPickerOk: 'OK',
     bettergiDomainPickerTitle: 'Domain picker',
@@ -2985,22 +3206,18 @@ export default {
     openStore: 'Open game center',
     settings: 'Settings',
     settingsTitle: 'Instance settings',
-    settingsHint:
-      'Applied on next start; a running instance keeps its current configuration. Fields left empty are not changed.',
+    settingsHint: 'Applied on next start',
     save: 'Save',
     keepCurrent: 'Unchanged',
-    fieldWidth: 'Width',
-    fieldHeight: 'Height',
-    fieldDpi: 'DPI',
+    fieldResolution: 'Resolution',
     fieldCpu: 'CPU cores',
-    fieldMemory: 'Memory (MB)',
+    fieldMemory: 'Memory',
     fieldFps: 'Frame rate',
+    tierActual: 'Currently {value}',
     batchSettings: 'Batch settings',
     batchTitle: 'Apply settings to all instances',
     batchApply: 'Apply to all',
-    batchWarning:
-      'Fields you fill in are written to all {count} devices; empty fields are left alone.',
-    batchHint: 'Applied on next start; running instances keep their current configuration.',
+    batchWarning: 'Fields you pick are written to all {count} devices; the rest are left alone.',
     batchFailures: 'Devices that were not updated',
     field: {
       width: 'Width',
@@ -3286,8 +3503,12 @@ export default {
     selectUserDesc: 'Pick an account from the date list on the left to see details.',
     recordList: 'Records',
     recordCount: '{count} records',
+    successCount: 'Succeeded {count} times',
+    failureCount: 'Failed {count} times',
+    scriptUnknown: 'Unlabeled script',
     timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
     done: 'Done',
+    skipped: 'Skipped',
     failed: 'Failed',
     failedWith: 'Failed: {error}',
     search: 'Search',
@@ -3378,6 +3599,7 @@ export default {
   home: {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
+    satelliteEffectsPaused: 'Effects paused · click to resume',
     satelliteEgg: {
       star: 'star!',
       overclock: 'Overclock!',
@@ -3783,16 +4005,12 @@ export default {
     modeLabel: 'Mode:',
     modeAll: 'Global',
     modeWeekly: 'Weekly',
+    modeRotate: 'Rotation',
+    rotateDaysLabel: 'Rotation days:',
+    rotateDay: 'Day {n}',
     viewLabel: 'View:',
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
-    // Stage layout: the two ways a BAAH plan can be arranged
-    baahLayout: {
-      label: 'Layout:',
-      mixed: 'Mixed stages',
-      single: 'One type per day',
-      emptyOption: 'None',
-    },
     typeFallback: 'plan',
     type: {
       maa: 'MAA plan',
@@ -3840,12 +4058,6 @@ export default {
       exchange: 'Academy exchange',
       hard: 'Hard stages',
       normal: 'Normal stages',
-      eventHint: 'Event stage: stage number / sweep count (-1 = maximum)',
-      wantedHint: 'Bounty hunt: area / stage (-1 = last stage) / count (-1 = maximum)',
-      specialHint: 'Special task: area / stage (-1 = last stage) / count (-1 = maximum)',
-      exchangeHint: 'Academy exchange: academy / stage (-1 = last stage) / count (-1 = maximum)',
-      hardHint: 'Hard stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
-      normalHint: 'Normal stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
       partStageIndex: 'Stage number',
       partTimes: 'Times',
       partRegion: 'Area',
@@ -3854,19 +4066,38 @@ export default {
       partAcademy: 'Academy',
       partChapter: 'Chapter',
       partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
-      // One row per thing in the one-kind-per-day layout, so the hint spells out that row's range
-      rowKind: 'Stage type',
-      rowStage: 'Stage name',
-      rowTimes: 'Battle count',
-      rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
-      rowStageHint:
-        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last stage from the end that can be raided (it steps one stage back when that one cannot be raided), while hard and normal stages only take a concrete stage number',
-      rowTimesHint: 'How many times to run it; "Max runs" sweeps every remaining run at once',
       // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
       stageHighest: 'Last raid-able',
       timesMax: 'Max runs',
-      // The switch row above each stage kind in the mixed layout
-      partEnabled: 'Enabled',
+      // The state row above each stage kind: on / off / leave it to BAAH
+      rowState: 'Mode',
+      rowStateHint:
+        'On: run this kind with the values here; Off: skip this kind today; Defer to BAAH: leave this kind untouched today and keep the settings in BAAH itself',
+      stateOn: 'On',
+      stateOff: 'Off',
+      stateAuto: 'Defer to BAAH',
+      skipToday: 'Skip today',
+      save: 'Save',
+      upstreamSettings: 'Use BAAH settings',
+      stageNumber: 'Stage {value}',
+      academyNumber: 'Academy {value}',
+      timesNumber: '{value} runs',
+      regionNumber: 'No. {value}',
+      regions: {
+        one: 'No. 1',
+        two: 'No. 2',
+        three: 'No. 3',
+        four: 'No. 4',
+        five: 'No. 5',
+        six: 'No. 6',
+        seven: 'No. 7',
+        eight: 'No. 8',
+        nine: 'No. 9',
+        ten: 'No. 10',
+      },
+      unsavedHint: 'You have unsaved parameters. Save or cancel editing first.',
+      savingHint: 'Saving parameters. Please wait.',
+      saveFailed: 'Could not save. Your parameters have been kept; please try again.',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',
@@ -3975,6 +4206,7 @@ export default {
       Hibernate: 'Hibernate',
       Sleep: 'Sleep',
       KillSelf: 'Quit AUTO-MAS',
+      RestartSelf: 'Restart AUTO-MAS',
       Logoff: 'Sign out',
     },
     item: {
@@ -4085,6 +4317,7 @@ export default {
       hibernate: 'Hibernate',
       sleep: 'Sleep',
       killSelf: 'Quit AUTO-MAS',
+      restartSelf: 'Restart AUTO-MAS',
       logoff: 'Sign out',
     },
     control: {
@@ -4097,13 +4330,13 @@ export default {
       selectAllUsers: 'Select all',
       clearAllUsers: 'Clear all',
       runScopeTitle: 'Run scope',
-      runScopeExpand: 'Expand',
-      runScopeCollapse: 'Collapse',
       runScopeTip:
         'Unchecked managed scripts and accounts are skipped this run; the selection is kept after the run',
-      runScopeSelected: '{selected}/{total} accounts selected',
+      runScopeSelected: '{selected}/{total} runnable accounts selected',
       runScopeLoading: 'Loading accounts…',
       runScopeNoUsers: 'No account can run',
+      runScopeUserDisabled: 'Disabled',
+      runScopeUserExpired: 'Days used up',
       runScopeLoadFailed: 'Could not load accounts. Retry',
       runScopeRetry: 'Retry',
       stop: 'Stop',
@@ -4111,6 +4344,9 @@ export default {
     },
     log: {
       title: 'Log',
+      theme: 'Log theme',
+      followTheme: 'Follow theme color',
+      saveThemeFailed: 'Could not save the log theme preference',
       follow: 'Follow',
       browse: 'Browse',
       empty: 'No data',
@@ -4120,7 +4356,7 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
-      waitingToRun: 'Waiting to run',
+      userNotLoaded: 'Not loaded yet',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',
@@ -4373,10 +4609,7 @@ export default {
       saveFailedRaw: 'Could not save the {label} configuration',
       maaEndUnsupported:
         'This controller does not support shared MaaEnd configuration — use the independent configuration entry instead',
-      maaEndUserStarted: 'Started the MaaEnd configuration for {script} / {user}',
       maaEndScriptStarted: 'Started the MaaEnd configuration for {script}',
-      maaEndUserTimeout: 'The configuration session for {script} / {user} timed out',
-      maaEndUserSaved: 'Configuration for {script} / {user} saved',
       okwwStarted: 'Opened the ok-ww settings for {name}',
       okwwStartFailed: 'Could not open the ok-ww settings: {error}',
       okwwSaved: 'Settings for {name} saved',
@@ -4386,7 +4619,11 @@ export default {
     },
   },
   themeStore: {
-    title: 'Theme store',
+    category: 'Category',
+    categories: { all: 'All', theme: 'Themes', mascot: 'Pets' },
+    uploadTheme: 'Upload theme',
+    uploadMascot: 'Upload pet',
+    title: 'Resource store',
     account: {
       login: 'Sign in to the share site',
       pending: 'Confirm in your browser. Code',
@@ -4398,14 +4635,16 @@ export default {
       startFailed: 'Could not start signing in to the share site',
     },
     upload: {
-      open: 'Upload appearance',
-      title: 'Upload appearance',
+      categoryMismatch:
+        'The update target belongs to another category. Select a file in the correct category.',
+      open: 'Upload resource',
+      title: 'Upload resource',
       loginRequired: 'Sign in to the share site before uploading',
-      package: 'Appearance package',
+      package: 'Resource package',
       pick: 'Choose package',
       repick: 'Choose again',
-      packageFilter: 'Appearance package',
-      invalidPackage: 'This appearance package did not pass validation',
+      packageFilter: 'Resource package',
+      invalidPackage: 'This resource package did not pass validation',
       cover: 'Cover',
       coverFromPackage: 'Using the preview image in the package',
       coverRequired: 'The package has no preview image. Choose a cover image',
@@ -4415,9 +4654,9 @@ export default {
       invalidCover: 'This image cannot be used as a cover',
       coverFilter: 'Image',
       target: 'Upload as',
-      targetNew: 'New theme',
-      targetUpdate: 'Update my theme',
-      targetPlaceholder: 'Choose a theme',
+      targetNew: 'New resource',
+      targetUpdate: 'Update my resource',
+      targetPlaceholder: 'Choose a resource',
       coverInherit: 'Keep the current cover',
       coverPackage: 'Use the package preview',
       coverCustom: 'Custom image',
@@ -4425,20 +4664,20 @@ export default {
       description: 'Description',
       changeNote: 'Change note',
       submit: 'Upload',
-      submitted: 'Submitted. It will appear in the theme store once approved',
-      published: 'Published to the theme store',
+      submitted: 'Submitted. It will appear in the resource store once approved',
+      published: 'Published to the resource store',
       failed: 'Upload failed',
       unchanged: 'Neither the package nor the cover has changed',
       tooLarge: 'The package exceeds the share site size limit',
       pendingLimit: 'Too many uploads are waiting for review. Upload again after they are reviewed',
       versionTargetGone:
-        'The appearance you uploaded before is no longer on the share site. Switched to uploading a new appearance; check the name and submit again',
+        'The resource you uploaded before is no longer on the share site. Switched to uploading a new resource; check the name and submit again',
     },
-    tabs: { all: 'All themes', mine: 'My themes' },
+    tabs: { resources: 'Resources', mascot: 'Pets', mine: 'My uploads' },
     mine: {
-      loginRequired: 'Sign in to see the themes you uploaded',
-      empty: 'You have not uploaded any themes yet',
-      loadFailed: 'Failed to load your themes',
+      loginRequired: 'Sign in to see the resources you uploaded',
+      empty: 'You have not uploaded any resources yet',
+      loadFailed: 'Failed to load your resources',
       published: 'Published v{version}',
       publishedPending: 'Published v{published} · v{latest} in review',
       pending: 'v{version} in review',
@@ -4452,18 +4691,18 @@ export default {
       viewInStore: 'View in store',
       descriptionSaved: 'Description saved',
       descriptionFailed: 'Failed to save the description',
-      notFound: 'This theme is not in My themes',
+      notFound: 'This resource is not in My resources',
     },
     search: 'Search by name or description',
     refresh: 'Refresh',
     retry: 'Retry',
     loading: 'Loading…',
-    listFailed: 'Failed to load online appearances',
-    detailFailed: 'Failed to load appearance details',
-    prepareFailed: 'Failed to download the appearance package',
-    installFailed: 'Failed to install the online appearance',
-    empty: 'No appearance packages on the share site yet',
-    noMatch: 'No matching appearances',
+    listFailed: 'Failed to load online resources',
+    detailFailed: 'Failed to load resource details',
+    prepareFailed: 'Failed to download the resource package',
+    installFailed: 'Failed to install the online resource',
+    empty: 'No resource packages on the share site yet',
+    noMatch: 'No matching resources',
     clearSearch: 'Clear search',
     installed: 'Installed',
     installedOlder: 'Update available (v{version} installed)',
@@ -4472,22 +4711,22 @@ export default {
     noDescription: 'No description',
     back: 'Back to list',
     version: 'Version',
-    noVersions: 'This appearance has no downloadable versions yet',
+    noVersions: 'This resource has no downloadable versions yet',
     preparing: 'Downloading and verifying…',
     downloadPreview: 'Download preview',
     packageName: 'Package name',
     mode: 'Mode',
-    localCopy: 'Local appearance with the same ID',
+    localCopy: 'Local resource with the same ID',
     install: 'Install this version',
     error: {
       network: 'Cannot reach the share site. Check your network and try again',
-      notFound: 'This appearance or version is not on the share site',
+      notFound: 'This resource or version is not on the share site',
       badResponse: 'The share site returned an unrecognized response',
       tooLarge: 'The package exceeds the 16 MB limit; download stopped',
       checksum:
         'The download does not match the SHA-256 registered on the share site and was discarded',
       expired: 'The temporary download has expired. Download it again',
-      unsupported: 'Online appearances are not supported in this environment',
+      unsupported: 'Online resources are not supported in this environment',
     },
   },
   setting: {
@@ -4531,6 +4770,12 @@ export default {
       gold: 'Gold',
     },
     cursor: { none: 'Off', sleekLine: 'Sleek line', fluid: 'Fluid (flashy RGB!)' },
+    pressSound: {
+      duck: 'Rubber duck',
+      fx1: 'Sound 1',
+      custom: 'Custom audio',
+      customNamed: 'Custom ({name})',
+    },
 
     basic: {
       appearance: 'Appearance',
@@ -4539,11 +4784,55 @@ export default {
       themeColor: 'Accent color',
       themeColorTip: 'Primary color of the interface',
       importAppearance: 'Import appearance',
-      themeStore: 'Theme store',
+      themeStore: 'Resource store',
       removeAppearance: 'Remove appearance',
       applyAppearance: 'Apply appearance',
       appearanceApplied: 'Appearance applied',
       appearanceApplyFailed: 'Could not apply appearance',
+      mascotSection: 'Desktop pet',
+      mascotSelect: 'Pet selection',
+      mascotFollowTheme: 'Follow current theme',
+      mascotFps: 'Animation frame rate',
+      mascotFpsPackage: 'Follow animation package',
+      mascotFpsCustom: 'Custom',
+      mascotFpsTip:
+        'Follow the animation package or choose 8, 16, 24, 30, 60, or 120 FPS. Changes are saved automatically.',
+      importMascot: 'Import pet',
+      removeMascot: 'Remove pet',
+      mascotImportTip:
+        'Import a pet ZIP or extract only the pet from a theme package. Independent pets stay selected when the theme changes.',
+      mascotUnavailable: 'No pet is available. Select or import a pet.',
+      mascotMissing: 'Selected pet is unavailable. Please select another.',
+      mascotLoadFailed: 'Could not load the pet list. Please retry.',
+      mascotRetry: 'Retry',
+      mascotSaveFailed: 'Could not save the pet settings. Please retry.',
+      mascotUnsupported:
+        'This client does not support independent pets. Please update and restart it.',
+      mascotReplaceTitle: 'Pet already installed',
+      mascotReplaceContent: 'Pet “{name}” is already installed. Replace it?',
+      mascotImportFailed:
+        'Could not import the pet. Check that the ZIP file and pet assets are complete.',
+      mascotImported: 'Pet imported',
+      mascotRemoveTitle: 'Remove independent pet',
+      mascotRemoveContent:
+        'Remove pet “{name}”? Pet selection will return to following the current theme.',
+      mascotRemoveFailed: 'Could not remove the pet. Please retry.',
+      desktopMascot: 'Show desktop pet',
+      desktopMascotTip:
+        'Drag anywhere on the desktop. Stays visible when the main window is minimized and closes when the app exits.',
+      desktopMascotFailed: 'Could not update the desktop pet. Please select the pet again.',
+      appearanceAnimationInvalid:
+        'Invalid pet animation. Check the PNG sprite sheet layout and frame dimensions.',
+      mascotTask: 'Task',
+      mascotPauseAnimation: 'Pause animation',
+      mascotResumeAnimation: 'Resume animation',
+      mascotPauseIdleMessage: 'Pause idle messages',
+      mascotResumeIdleMessage: 'Resume idle messages',
+      mascotTaskStarted: 'Getting to work: {name}',
+      mascotTaskCompleted: 'All done: {name}',
+      mascotTaskFailed: 'Something went wrong. Check task details: {name}',
+      mascotTaskStopped: 'Task stopped: {name}',
+      mascotTaskPartialFailure: 'Some tasks did not finish. Check task details: {name}',
       appearanceImportFailed: 'Could not import appearance',
       appearanceRemoveFailed: 'Could not remove appearance',
       appearanceReplaceTitle: 'Appearance already exists',
@@ -4551,6 +4840,18 @@ export default {
       replaceAppearance: 'Replace',
       removeAppearanceTitle: 'Remove custom appearance',
       removeAppearanceContent: 'Remove “{name}”?',
+      pressSoundSection: 'Press sound',
+      pressSoundEnabled: 'Play sound',
+      pressSoundEnabledTip:
+        'Plays a sound when you click the home centre icon (the star core). With it off there is no sound; the easter eggs themselves are unaffected.',
+      pressSoundPreset: 'Sound',
+      pressSoundPresetTip:
+        'Two built-in sounds, or import your own audio file with the button on the right',
+      pressSoundImport: 'Import audio',
+      pressSoundVolume: 'Volume',
+      pressSoundVolumeTip: 'Playback volume of the press sound',
+      pressSoundPreview: 'Preview',
+      pressSoundPreviewAction: 'Preview',
       cursorSection: 'Cursor effect',
       cursorAnim: 'Cursor animation',
       cursorTip:
@@ -4564,6 +4865,9 @@ export default {
       lowPerf: 'Low performance mode',
       lowPerfTip:
         'Reduces decorative animations and background rendering. Script execution and task scheduling are unaffected; decorative animations pause automatically while the window is minimized.',
+      pauseHomeEffects: 'Pause home effects while scripts run',
+      pauseHomeEffectsTip:
+        'Pauses the home satellite animation while any script task is running to save GPU; satellite status colors keep updating, and the hint at the top-left of the satellite area resumes it temporarily.',
       traySection: 'System tray',
       showTray: 'Always show tray icon',
       showTrayTip: 'Keep the tray icon visible even when the window is not minimized',
@@ -4608,15 +4912,6 @@ export default {
       voiceEnableTip: 'Play a voice prompt at certain moments',
       voiceType: 'Voice style',
       voiceTypeTip: 'How much the voice prompts say',
-      personalMssEntry: 'Not a mystery entrance',
-      personalMssEntryOn: 'Not a mystery entrance (enabled)',
-      personalMssHint: "Enter the password to enable Beichen's side-project MSS support",
-      personalMssPassword: 'Password',
-      personalMssPlaceholder: 'Enter the password',
-      personalMssWrong: 'Wrong password',
-      personalMssOn: 'Personal-edition MaaStellaSora jobs enabled',
-      personalMssOff: 'Personal-edition MaaStellaSora jobs disabled',
-      personalMssFailed: 'Failed to save, please try again',
     },
     replay: {
       section: 'Failure replays',
@@ -4830,6 +5125,10 @@ export default {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
       pauseUpdates: 'Pause updates',
+      hotUpdateAvoidMinutes: 'Scheduled task buffer',
+      hotUpdateAvoidMinutesTip:
+        'Defer automatic backend restarts when a scheduled task starts within this window. 0 disables the buffer; default: 5 minutes; maximum: 60 minutes.',
+      hotUpdateMinutes: 'minutes',
       pauseUpdatesTip:
         'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
       pausePlaceholder: 'Select pause end date',
@@ -4910,7 +5209,13 @@ export default {
       fluidOk: 'Turn it on',
       cursorSaveFailed: 'Could not save the cursor effect',
       lowPerfSaveFailed: 'Could not save low performance mode',
+      pauseHomeEffectsSaveFailed: 'Could not save the home effects pause setting',
       homeSatelliteSaveFailed: 'Could not save the home satellite style',
+      pressSoundSaveFailed: 'Could not save the press sound settings',
+      pressSoundCustomMissing: 'No audio imported yet — click “Import audio” to pick a file',
+      pressSoundTooLarge: 'That audio file is too large; pick one under 1 MB',
+      pressSoundReadFailed: 'Could not read the audio file — try another one',
+      pressSoundImported: 'Audio imported and enabled',
       testUnknown: 'The test notification returned an unknown result',
       testSent: 'Test notification sent',
       testFailed: 'Could not send the test notification',

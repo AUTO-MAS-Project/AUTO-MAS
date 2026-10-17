@@ -15,7 +15,7 @@ export type OkwwUserConfig_Data = {
      */
     ProxyTimes?: (number | null);
     /**
-     * 上次代理状态（未知/成功/失败）
+     * 上次代理状态（未知/成功/失败/维护中）
      */
     LastProxyStatus?: (string | null);
     /**

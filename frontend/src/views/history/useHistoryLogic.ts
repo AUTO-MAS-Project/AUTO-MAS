@@ -120,8 +120,17 @@ export function useHistoryLogic() {
       if (!isMounted) return
 
       if (response.code === 200) {
+        // 记录条目按时间倒序：点进日志时最先看到的应该是最近一次
         historyData.value = Object.entries(response.data)
-          .map(([date, users]) => ({ date, users }))
+          .map(([date, users]) => ({
+            date,
+            users: Object.fromEntries(
+              Object.entries(users).map(([name, data]) => [
+                name,
+                { ...data, index: [...(data.index ?? [])].reverse() },
+              ])
+            ),
+          }))
           .sort((a, b) => b.date.localeCompare(a.date))
 
         const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
@@ -173,9 +182,9 @@ export function useHistoryLogic() {
     currentPreset.value = ''
   }
 
-  // 选择用户处理
-  const handleSelectUser = async (date: string, username: string, userData: HistoryData) => {
-    selectedUser.value = `${date}-${username}`
+  // 选择用户处理（key 由侧栏给出：日期-托管名-账号名）
+  const handleSelectUser = async (key: string, userData: HistoryData) => {
+    selectedUser.value = key
     selectedUserData.value = userData
     selectedRecordIndex.value = -1
     currentDetail.value = null

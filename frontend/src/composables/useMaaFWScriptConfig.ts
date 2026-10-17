@@ -3,17 +3,17 @@ import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
-import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
 export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
-const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
-  general: '通用模拟器',
-  mumu: 'MuMu 模拟器',
-  ldplayer: '雷电模拟器',
-  emulator2: 'Emulator 2.0',
+// 词表 key：显示时再取，界面语言变了跟着变
+const EMULATOR_TYPE_LABEL_KEYS: Record<EmulatorType, string> = {
+  general: 'edit.maafwEmulatorTypeGeneral',
+  mumu: 'edit.maafwEmulatorTypeMumu',
+  ldplayer: 'edit.maafwEmulatorTypeLdplayer',
+  emulator2: 'edit.maafwEmulatorTypeEmulator2',
 }
 
 // Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
@@ -37,22 +37,30 @@ export const isDirectControllerType = (
  * CDK 不可用时后端明确报错而不是悄悄换成 GitHub。两项须与后端
  * MaaFWConfig.Update.Source 的 OptionsValidator 一致。
  */
-export const updateSourceOptions = [
-  { label: 'Mirror 酱', value: 'MirrorChyan' },
-  { label: 'GitHub', value: 'GitHub' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
+const UPDATE_SOURCES = [
+  'MirrorChyan',
+  'GitHub',
+] as const satisfies readonly MaaFWProjectUpdateSource[]
 
 /** 项目更新通道只有稳定版 / 测试版，没有「跟随全局」，也故意不开放 alpha。 */
-export const updateChannelOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '测试版', value: 'beta' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateChannel }>
+const UPDATE_CHANNELS = ['stable', 'beta'] as const satisfies readonly MaaFWProjectUpdateChannel[]
+
+// 下拉选项的文案随界面语言变，所以是 computed
+export const updateSourceOptions = computed(() => [
+  { label: t('edit.sourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('edit.sourceGithub'), value: 'GitHub' },
+])
+
+export const updateChannelOptions = computed(() => [
+  { label: t('edit.maafwUpdateChannelStable'), value: 'stable' },
+  { label: t('edit.maafwUpdateChannelBeta'), value: 'beta' },
+])
 
 export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
-  updateSourceOptions.some(option => option.value === value)
+  (UPDATE_SOURCES as readonly unknown[]).includes(value)
 
 export const isMaaFWUpdateChannel = (value: unknown): value is MaaFWProjectUpdateChannel =>
-  updateChannelOptions.some(option => option.value === value)
+  (UPDATE_CHANNELS as readonly unknown[]).includes(value)
 
 /**
  * MaaFW 脚本配置的默认形态。后端未返回某段时用它兜底，保证编辑页所有
@@ -88,7 +96,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     LaunchPath: '',
     PackageName: '',
     Arguments: '',
-    WaitTime: 60,
+    WaitTime: 120,
     UnityResolution: 'Off',
     Hotkeys: '{}',
   },
@@ -132,14 +140,13 @@ type PersistFn = (
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
  *
- * ``allowModAvd``：这个脚本能不能用魔改 AVD（目前只有 M9A）。不能时设备下拉里的魔改 AVD 实例置灰。
+ * 魔改 AVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
   previewData: Ref<MaaFWInterfacePreviewData | null>,
   interfaceLoading: Ref<boolean>,
-  handleChange: PersistFn,
-  allowModAvd: () => boolean = () => false
+  handleChange: PersistFn
 ) {
   const emulatorLoading = ref(false)
   const emulatorOptionsReady = ref(false)
@@ -258,9 +265,13 @@ export function useMaaFWControlConfig(
   const selectedEmulatorType = computed(() => emulatorTypeById.value[maafwConfig.Emulator.Id])
 
   const selectedEmulatorLabel = computed(() => {
-    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') return '未选择模拟器'
+    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
+      return t('edit.maafwEmulatorNotSelected')
+    }
     const emulatorType = selectedEmulatorType.value
-    return emulatorType ? EMULATOR_TYPE_LABELS[emulatorType] : '模拟器类型加载中'
+    return emulatorType
+      ? t(EMULATOR_TYPE_LABEL_KEYS[emulatorType])
+      : t('edit.maafwEmulatorTypeLoading')
   })
 
   // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
@@ -275,16 +286,6 @@ export function useMaaFWControlConfig(
     if (!slot || slot === '-') return null
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
-
-  // 魔改 AVD 目前只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
-  const emulatorDeviceSelectOptions = computed(() =>
-    markModAvdOptions(
-      emulatorDeviceOptions.value,
-      value => value !== null && emulator2DeviceTypeBySlot.value[value] === 'avd',
-      allowModAvd(),
-      t('emulator2.avd.m9aOnly')
-    )
-  )
 
   const selectedCapabilityType = computed(() =>
     isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
@@ -482,7 +483,7 @@ export function useMaaFWControlConfig(
     emulatorOptionsReady,
     emulatorDeviceLoading,
     emulatorOptions,
-    emulatorDeviceOptions: emulatorDeviceSelectOptions,
+    emulatorDeviceOptions,
     emulatorTypeById,
     isMultiEmulatorConfig,
     controllerOptions,

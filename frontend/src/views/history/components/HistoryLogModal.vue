@@ -4,8 +4,8 @@
     :title="null"
     :footer="null"
     :width="'90vw'"
-    :style="{ top: '5vh', maxWidth: '1400px' }"
-    :body-style="{ padding: 0, height: '85vh' }"
+    :style="{ maxWidth: '1400px' }"
+    :body-style="{ padding: 0, height: 'calc(100vh - 104px)' }"
     :destroy-on-close="true"
     @cancel="$emit('close')"
   >
@@ -19,8 +19,8 @@
               <span class="header-title">{{ t('history.log.title') }}</span>
               <span class="header-subtitle">{{ recordDate }}</span>
             </div>
-            <a-tag :color="recordStatus === 'DONE' ? 'success' : 'error'" size="small">
-              {{ recordStatus === 'DONE' ? t('history.done') : t('history.failed') }}
+            <a-tag :color="statusTagColor(recordStatus)" size="small">
+              {{ t(statusLabelKey(recordStatus)) }}
             </a-tag>
           </div>
 
@@ -112,30 +112,7 @@
                 }}
               </a-button>
             </a-popover>
-            <a-popover v-if="replays.length > 0" placement="bottomLeft" trigger="click">
-              <template #content>
-                <div class="replay-popover">
-                  <div v-for="replay in replays" :key="replay.replayId" class="replay-entry">
-                    <div class="replay-entry-info">
-                      <strong>{{ replay.scriptName }}</strong>
-                      <span>{{ formatBackendDateTime(replay.failedAt) }}</span>
-                    </div>
-                    <a-space size="small">
-                      <a-button size="small" type="link" @click="$emit('open-replay', replay)">
-                        {{ t('history.replays.play') }}
-                      </a-button>
-                      <a-button size="small" type="link" @click="$emit('locate-replay', replay)">
-                        {{ t('history.replays.locate') }}
-                      </a-button>
-                    </a-space>
-                  </div>
-                </div>
-              </template>
-              <a-button size="small" class="drop-btn">
-                <PlayCircleOutlined />
-                {{ t('history.replays.associated', { count: replays.length }) }}
-              </a-button>
-            </a-popover>
+            <HistoryLogReplayPopover v-if="replays.length > 0" :replays="replays" />
           </div>
         </div>
 
@@ -220,14 +197,14 @@ import {
   GiftOutlined,
   InboxOutlined,
   LoadingOutlined,
-  PlayCircleOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
 import type { ReplayRecord } from '@/types/replay'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
+import HistoryLogReplayPopover from './HistoryLogReplayPopover.vue'
+import { statusLabelKey, statusTagColor } from '../historyStatus'
 
 const { t } = useI18n()
 
@@ -257,8 +234,6 @@ defineEmits<{
   close: []
   'open-file': []
   'open-directory': []
-  'open-replay': [ReplayRecord]
-  'locate-replay': [ReplayRecord]
   'update:fontSize': [number]
 }>()
 
@@ -283,7 +258,7 @@ const displayLogContent = computed(() => {
 .log-modal-content {
   display: flex;
   flex-direction: column;
-  height: 85vh;
+  height: 100%;
   background: var(--ant-color-bg-container);
   border-radius: 8px;
   overflow: hidden;
@@ -427,47 +402,6 @@ const displayLogContent = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
-
-.replay-popover {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 280px;
-  max-width: 420px;
-}
-
-.replay-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.replay-entry:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.replay-entry-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 2px;
-}
-
-.replay-entry-info strong,
-.replay-entry-info span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.replay-entry-info span {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
 }

@@ -93,7 +93,7 @@ async def get_health(request: Request) -> BackendHealthOut:
     """
 
     return BackendHealthOut(
-        ready=True,
+        ready=not ShutdownCoordinator.closing,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
         backgroundError=getattr(request.app.state, "background_error", None),
         backgroundWarnings=list(
@@ -190,6 +190,8 @@ async def close() -> OutBase:
     if _shutdown_task is not None and not _shutdown_task.done():
         return OutBase(message="关闭流程已在进行中")
 
+    if not is_backend_dev_mode():
+        ShutdownCoordinator.begin_shutdown()
     _shutdown_task = asyncio.create_task(_shutdown_backend())
 
     def _on_done(task: asyncio.Task) -> None:

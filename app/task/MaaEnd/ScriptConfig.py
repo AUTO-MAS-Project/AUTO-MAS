@@ -33,6 +33,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
+from app.utils.constants import (
+    BASE_NATIVE,
+    BASE_SHARED,
+    BASE_SOURCE_LABELS,
+    normalize_base_source,
+)
 from app.utils.io import (
     mark_native_config_injected,
     read_file,
@@ -46,20 +52,19 @@ from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_value
 logger = get_logger("MaaEnd 脚本设置")
 
 
-def maaend_config_mode(raw: object) -> str:
-    """读取 MaaEnd 配置来源，并兼容旧版名称。"""
+def maaend_config_base(raw: object) -> str:
+    """读取 MaaEnd 配置来源（base 三态），并兼容旧版字面量。"""
 
-    mode = str(raw or "脚本")
-    return {"简洁": "脚本", "详细": "用户", "自定义": "用户"}.get(mode, mode)
+    return normalize_base_source(raw) or BASE_SHARED
 
 
-def maaend_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
+def maaend_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
     """返回脚本共享或用户独立配置目录。"""
 
-    mode = maaend_config_mode(mode)
-    if mode == "直控":
-        raise ValueError("直控配置不使用 MAS 配置目录")
-    owner = "Default" if mode == "脚本" else user_id
+    base = maaend_config_base(base)
+    if base == BASE_NATIVE:
+        raise ValueError("原生来源配置不使用 MAS 配置目录")
+    owner = "Default" if base == BASE_SHARED else user_id
     return Path.cwd() / "data" / script_id / owner / "ConfigFile"
 
 
@@ -111,7 +116,7 @@ class ScriptConfigTask(TaskExecuteBase):
     """MaaEnd 脚本设置模式
 
     会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则
-    （:func:`maaend_mas_config_dir`：脚本态=Default 共享、用户态=独立目录）。
+    （:func:`maaend_mas_config_dir`：shared 来源=Default 共享、independent 来源=独立目录）。
     view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
     会话下发的 owner 目录即刚恢复的备份（所见即备份），脚本级会话跳过
     下发（原生目录即备份）；结束不回写 MAS 配置，安装 config/ 由 manager
@@ -140,17 +145,17 @@ class ScriptConfigTask(TaskExecuteBase):
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
         target_user_id = self.cur_user_item.user_id
-        self.config_mode = "脚本"
+        self.config_base = BASE_SHARED
         if target_user_id != "Default":
-            self.config_mode = maaend_config_mode(
-                self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+            self.config_base = maaend_config_base(
+                self.user_config[uuid.UUID(target_user_id)].get("Info", "Base")
             )
-        self.use_mas_config = self.config_mode != "直控"
+        self.use_mas_config = self.config_base != BASE_NATIVE
         self.config_file_path = (
             maaend_mas_config_dir(
                 self.script_info.script_id,
                 target_user_id,
-                self.config_mode,
+                self.config_base,
             )
             if self.use_mas_config
             else None
@@ -197,11 +202,6 @@ class ScriptConfigTask(TaskExecuteBase):
                     maaend_set["settings"] = settings
                 settings["autoRunOnLaunch"] = False
                 write_file(maaend_set_path, maaend_set)
-                mark_native_config_injected(
-                    Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                    self.maaend_set_path,
-                    script_id=self.script_info.script_id,
-                )
             logger.info("MaaEnd 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
@@ -243,7 +243,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.config_file_path,
                 overlay=overlay,
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode=self.config_mode,
+                base=self.config_base,
             )
 
         if not maaend_set_path.exists():
@@ -265,13 +265,10 @@ class ScriptConfigTask(TaskExecuteBase):
             maaend_set["settings"] = settings
         settings["autoRunOnLaunch"] = False
         write_file(maaend_set_path, maaend_set)
-        if self.use_mas_config:
-            mark_native_config_injected(
-                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                self.maaend_set_path,
-                script_id=self.script_info.script_id,
-            )
-        logger.success(f"MaaEnd 运行参数配置完成: {self.config_mode}配置")
+        logger.success(
+            f"MaaEnd 运行参数配置完成: "
+            f"{BASE_SOURCE_LABELS.get(self.config_base, self.config_base)}配置"
+        )
 
     async def final_task(self):
 
@@ -301,7 +298,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")
             self.cur_user_item.status = "完成"
         elif not self.crashed:
-            logger.success("MaaEnd 直控配置已由脚本原生 GUI 保存")
+            logger.success("MaaEnd 原生来源配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception):

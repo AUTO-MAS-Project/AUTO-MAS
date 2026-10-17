@@ -21,6 +21,8 @@ import {
   type OnlineAppearanceServiceOptions,
 } from '../services/onlineAppearanceService'
 import { clearAppearanceConfigIfCurrent } from '../utils/configFile'
+import { inspectMascotPackage } from '../services/mascotPackageService'
+import { broadcastMascotChange } from './mascotHandlers'
 
 const logger = getLogger('外观包')
 let isRegistered = false
@@ -30,6 +32,7 @@ const INVALID_ARGUMENT = { success: false, error: '参数无效' } as const
 const COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
 
 export interface AppearanceHandlerOptions {
+  onChanged?(): void
   /** 仅供测试替换分享站地址、fetch 实现与目录。 */
   online?: Partial<OnlineAppearanceServiceOptions>
 }
@@ -53,12 +56,17 @@ function userDataPath(): string {
 
 // 开发版和正式版的 userData 不同、可以同时运行，却共用系统临时目录；按 userData 分子目录，
 // 免得一个实例启动清理时删掉另一个实例刚下好的临时包。
-function onlineCacheDir(): string {
+function onlineCacheDir(mascot = false): string {
   const instance = crypto.createHash('sha256').update(userDataPath()).digest('hex').slice(0, 12)
-  return path.join(app.getPath('temp'), 'auto-mas-online-appearance', instance)
+  return path.join(
+    app.getPath('temp'),
+    'auto-mas-online-appearance',
+    mascot ? `${instance}-mascot` : instance
+  )
 }
 
-function broadcastAppearanceChange(): void {
+function broadcastAppearanceChange(onChanged?: () => void): void {
+  onChanged?.()
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send('appearance-changed')
   }
@@ -100,8 +108,27 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     logger,
     ...options.online,
   })
+  const onlineMascot = createOnlineAppearanceService({
+    fetch: createNetRequestFetch(net),
+    userDataPath,
+    logger,
+    ...options.online,
+    cacheDir: () =>
+      options.online?.cacheDir
+        ? path.join(options.online.cacheDir(), 'mascot')
+        : onlineCacheDir(true),
+    categoryKey: 'mascot',
+    packageKind: 'mascot',
+  })
+  const serviceFor = (category: unknown) =>
+    category === undefined || category === 'theme'
+      ? online
+      : category === 'mascot'
+        ? onlineMascot
+        : null
   // 上次运行留下的临时包在内存里已没有 token，启动时一并清掉。
   online.clearCacheDirectory()
+  onlineMascot.clearCacheDirectory()
 
   ipcMain.handle('appearance:list', () => listAppearances(userDataPath()))
 
@@ -138,7 +165,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     if (result.success) {
       logger.info(`外观包已导入: ${result.appearance?.id ?? 'unknown'}`)
       if (result.appearance) forgetAppearanceSource(result.appearance.id)
-      broadcastAppearanceChange()
+      broadcastAppearanceChange(options.onChanged)
     } else {
       logger.warn(`外观包导入失败: ${result.error ?? result.code ?? 'unknown'}`)
     }
@@ -158,7 +185,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
           `清理已移除外观配置失败: ${error instanceof Error ? error.message : String(error)}`
         )
       }
-      broadcastAppearanceChange()
+      broadcastAppearanceChange(options.onChanged)
     } else {
       logger.warn(`外观包移除失败: ${id}，${result.error ?? '未知错误'}`)
     }
@@ -168,29 +195,45 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
   // ==================== 在线外观（分享站） ====================
   // 渲染进程只能传查询条件、file_key、版本号和 token；URL、路径、哈希一律由主进程决定。
 
-  ipcMain.handle('appearance:online-list', (_event, query: unknown) => {
-    if (query === undefined || query === null) return online.list({})
+  ipcMain.handle('appearance:online-list', (_event, query: unknown, category: unknown) => {
+    const service = serviceFor(category)
+    if (!service) return INVALID_ARGUMENT
+    if (query === undefined || query === null) return service.list({})
     if (typeof query !== 'object' || Array.isArray(query)) return INVALID_ARGUMENT
-    return online.list(query)
+    return service.list(query)
   })
 
-  ipcMain.handle('appearance:online-detail', (_event, fileKey: unknown) => {
+  ipcMain.handle('appearance:online-detail', (_event, fileKey: unknown, category: unknown) => {
+    const service = serviceFor(category)
+    if (!service) return INVALID_ARGUMENT
     if (typeof fileKey !== 'string') return INVALID_ARGUMENT
-    return online.detail(fileKey)
-  })
-
-  ipcMain.handle('appearance:online-prepare', (_event, fileKey: unknown, versionNo: unknown) => {
-    if (typeof fileKey !== 'string' || typeof versionNo !== 'number') return INVALID_ARGUMENT
-    return online.prepare(fileKey, versionNo)
+    return service.detail(fileKey)
   })
 
   ipcMain.handle(
+    'appearance:online-prepare',
+    (_event, fileKey: unknown, versionNo: unknown, category: unknown) => {
+      const service = serviceFor(category)
+      if (!service) return INVALID_ARGUMENT
+      if (typeof fileKey !== 'string' || typeof versionNo !== 'number') return INVALID_ARGUMENT
+      return service.prepare(fileKey, versionNo)
+    }
+  )
+
+  ipcMain.handle(
     'appearance:online-install',
-    (_event, token: unknown, replace: unknown = false) => {
+    (_event, token: unknown, replace: unknown = false, category: unknown) => {
+      const service = serviceFor(category)
+      if (!service) return INVALID_ARGUMENT
       if (typeof token !== 'string' || typeof replace !== 'boolean') return INVALID_ARGUMENT
       try {
-        const result = online.install(token, replace)
-        if (result.success) broadcastAppearanceChange()
+        const result = service.install(token, replace)
+        if (result.success) {
+          if (category === 'mascot') {
+            options.onChanged?.()
+            broadcastMascotChange()
+          } else broadcastAppearanceChange(options.onChanged)
+        }
         return result
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -200,32 +243,45 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     }
   )
 
-  ipcMain.handle('appearance:online-discard', (_event, token: unknown) => {
+  ipcMain.handle('appearance:online-discard', (_event, token: unknown, category: unknown) => {
+    const service = serviceFor(category)
+    if (!service) return { success: false }
     if (typeof token !== 'string') return { success: false }
-    return online.discard(token)
+    return service.discard(token)
   })
 
-  ipcMain.handle('appearance:online-cover', (_event, fileKey: unknown, versionNo: unknown) => {
-    if (typeof fileKey !== 'string') return INVALID_ARGUMENT
-    if (versionNo !== undefined && versionNo !== null && typeof versionNo !== 'number') {
-      return INVALID_ARGUMENT
+  ipcMain.handle(
+    'appearance:online-cover',
+    (_event, fileKey: unknown, versionNo: unknown, category: unknown) => {
+      const service = serviceFor(category)
+      if (!service) return INVALID_ARGUMENT
+      if (typeof fileKey !== 'string') return INVALID_ARGUMENT
+      if (versionNo !== undefined && versionNo !== null && typeof versionNo !== 'number') {
+        return INVALID_ARGUMENT
+      }
+      return service.cover(fileKey, versionNo ?? undefined)
     }
-    return online.cover(fileKey, versionNo ?? undefined)
-  })
+  )
 
   // ==================== 上传前预览 ====================
   // 与导入同一套只读校验，不写任何目录；上传对话框据此显示外观摘要。
 
-  ipcMain.handle('appearance:inspect-local', (_event, zipPath: unknown) => {
+  ipcMain.handle('appearance:inspect-local', (_event, zipPath: unknown, category: unknown) => {
+    if (category !== undefined && category !== 'theme' && category !== 'mascot')
+      return INVALID_ARGUMENT
     if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
       return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 外观包' }
     }
     const resolved = path.resolve(zipPath)
     try {
-      const { manifest, previewUrl } = inspectAppearancePackage(resolved)
-      const tokens = Object.fromEntries(
-        Object.entries(manifest.tokens).filter(([, value]) => value !== undefined)
-      )
+      const { manifest, previewUrl } =
+        category === 'mascot' ? inspectMascotPackage(resolved) : inspectAppearancePackage(resolved)
+      const theme = 'tokens' in manifest ? manifest : null
+      const tokens = theme
+        ? Object.fromEntries(
+            Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
+          )
+        : undefined
       return {
         success: true,
         fileSize: fs.statSync(resolved).size,
@@ -233,8 +289,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
           id: manifest.id,
           name: manifest.name,
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
-          mode: manifest.mode,
-          tokens,
+          ...(theme ? { mode: theme.mode, tokens } : {}),
           ...(previewUrl ? { previewUrl } : {}),
         },
       }

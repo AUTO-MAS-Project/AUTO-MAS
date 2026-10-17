@@ -28,19 +28,31 @@
 mas 池 = **纯字段侧车**（MaaFW 无 per-user 目录，用户配置是字段）：
 Info（Mode 仅预览 / IfQuickConfig / Account / Controller / Resource）+
 Task（SelectedPreset / TaskSnapshot）+ Device 段。恢复 = 回填 UserData。
-池恒按用户分桶。native 池 = MaaFW 项目 ``config/`` + ``interface.json``，
-按物理项目根指纹分桶（脚本级共享、跨脚本复用）。
+池恒按用户分桶。native 池 = MaaFW 项目 ``config/``（interface.json 随项目版本走，
+不归档、不恢复，见 ``backup_archive``），按视图路径指纹分桶（脚本级）。
 """
 
 import asyncio
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
+from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
+from app.task.MaaFW.tools.core.interface.models import (
+    build_pretask_task_name,
+    iter_pretasks,
+    resolve_task_instance_name,
+)
+from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
 from app.task.MaaFW.tools.embedded.embedded_project import (
     resolve_maafw_project_root,
 )
 from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
+from app.task.MaaFW.tools.embedded.project_path import (
+    release_project_path,
+    try_reserve_project_path,
+)
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
@@ -104,7 +116,44 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     overlay = read_overlay_sidecar(backup_dir)
-    return build_overlay_preview(overlay) if overlay else {"sections": []}
+    if not overlay:
+        return {"sections": []}
+    project_path = _project_path(ctx)
+    task_label = (
+        await asyncio.to_thread(_task_label_resolver, project_path)
+        if project_path is not None
+        else None
+    )
+    return build_overlay_preview(overlay, task_label)
+
+
+def _task_label_resolver(project_path: Path) -> Callable[[str], str] | None:
+    """快照里的任务实例 ID → 界面上的显示名（按当前视图的 interface，label 翻过语言文件）。
+
+    读不出 interface 返回 None，预览退回显示任务 name。
+    """
+
+    try:
+        interface = load_interface_model_cached(project_path)
+        translate = interface_text_translator(project_path, interface)
+    except Exception:  # noqa: BLE001 - 预览的附加信息，读不出就不翻
+        return None
+    labels: dict[str, str | None] = {}
+    for task in interface.task:
+        labels.setdefault(task.name, task.label)
+    for pretask in iter_pretasks(interface):
+        labels.setdefault(
+            build_pretask_task_name(pretask), pretask.label or pretask.name
+        )
+
+    def resolve(instance_id: str) -> str:
+        name = resolve_task_instance_name(instance_id, labels.keys())
+        if name not in labels:
+            return ""
+        text = (translate(labels[name]) or "").strip()
+        return text if text and not text.startswith("$") else name
+
+    return resolve
 
 
 async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
@@ -128,7 +177,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
 
 
 async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
-    """归档内容 = 项目 ``config/`` + ``interface.json``（缺失项跳过）。"""
+    """归档内容 = 项目 ``config/``（缺失项跳过）。"""
 
     project_path = _project_path(ctx)
     if project_path is None:
@@ -154,14 +203,22 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> None:
     project_path = _project_path(ctx)
     if project_path is None:
         raise ValueError("请先设置 MaaFW 项目路径")
-    restore_native_backup(ctx.script_id, project_path, ts)
+    # 运行、更新、准备环境、兄弟脚本导入触发的切换都持着视图的项目预约；is_locked 只管
+    # 本脚本运行，挡不住后几种
+    reservation = await try_reserve_project_path(project_path)
+    if reservation is None:
+        raise ValueError("该项目正在运行、更新或准备运行环境，请稍后再恢复")
+    try:
+        await asyncio.to_thread(restore_native_backup, ctx.script_id, project_path, ts)
+    finally:
+        await release_project_path(reservation)
 
 
 RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="sidecar_only",
+        mas_base="sidecar_only",
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

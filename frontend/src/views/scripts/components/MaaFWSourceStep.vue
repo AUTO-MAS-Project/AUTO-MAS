@@ -44,7 +44,7 @@
       </label>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
-      {{ t('scripts.create.mfwReuseEmpty', { type }) }}
+      {{ t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
     </div>
   </a-radio-group>
 </template>
@@ -52,6 +52,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type {
   MaaFWCreateSourceSectionEmits,
   MaaFWCreateSourceSectionProps,

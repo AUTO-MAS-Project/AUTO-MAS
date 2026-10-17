@@ -42,7 +42,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LogMonitor,
     ProcessInfo,
@@ -133,9 +133,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.config_mode = read_config_source(self.cur_user_config)
-        # 是否写 MAS 侧配置：直控=不写，脚本/用户来源都写面板值。
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
+        self.config_base = read_config_base(self.cur_user_config)
+        # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
+        self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -571,7 +571,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def update_config(self):
 
         if not self.use_mas_config:
-            logger.info("脚本直控配置：跳过回写用户独立配置")
+            logger.info("脚本原生配置：跳过回写用户独立配置")
             return
 
         config_path_mode = self.script_config.get("Script", "ConfigPathMode")
@@ -648,7 +648,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await System.kill_process(self.script_exe_path)
 
         if not self.use_mas_config:
-            logger.info("脚本直控配置：跳过写入脚本配置")
+            logger.info("脚本原生来源配置：跳过写入脚本配置")
             return
 
         # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖

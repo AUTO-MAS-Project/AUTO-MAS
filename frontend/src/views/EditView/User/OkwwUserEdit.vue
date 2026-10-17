@@ -9,7 +9,7 @@
       :config-label="t('edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId || configLocked"
+      :config-disabled="configActionsDisabled"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
@@ -96,19 +96,6 @@
             </a-row>
 
             <a-row :gutter="24">
-              <a-col :span="24">
-                <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
-                  :options="okwwConfigModeOptions"
-                  :disabled="pageLoading"
-                  :saving="isSaving"
-                  :quick-config="formData.Info.IfQuickConfig"
-                  :quick-config-disabled="pageLoading || isInitializing || isSaving"
-                  :alert-message="t('edit.configSourceHintBase')"
-                  @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
-                />
-              </a-col>
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
@@ -206,6 +193,48 @@
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
             </a-form-item>
+          </div>
+        </a-form>
+      </a-card>
+
+      <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / MAA 共用同一套面板 -->
+      <a-card class="config-card config-source-card" :loading="pageLoading">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <div class="form-section">
+            <div class="section-header">
+              <h3>{{ t('edit.configurationSource') }}</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.Base"
+                  :options="okwwConfigModeOptions"
+                  :disabled="configActionsDisabled"
+                  :saving="isSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-disabled="configActionsDisabled || isInitializing"
+                  :alert-message="t('edit.configSourceHintBase')"
+                  :show-gui-hint="false"
+                  @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
+                />
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="24" class="config-actions-tail">
+                <ConfigActionsSection
+                  :base="formData.Info.Base"
+                  script-label="ok-ww"
+                  :disabled="configActionsDisabled"
+                  :config-loading="okwwConfigLoading"
+                  :configuring="showOkwwConfigMask"
+                  :import-loading="okwwImportLoading"
+                  @configure="handleOkwwConfig"
+                  @import-config="handleImportOkwwConfig"
+                  @script-config="handleScriptConfig"
+                />
+              </a-col>
+            </a-row>
           </div>
         </a-form>
       </a-card>
@@ -362,7 +391,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -383,6 +412,7 @@ import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
+import ConfigActionsSection from './ConfigActionsSection.vue'
 
 const { t } = useI18n()
 
@@ -390,7 +420,7 @@ const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, importScriptConfigFile } = useScriptApi()
 const {
   okwwConfigLoading,
   okwwTaskId,
@@ -401,6 +431,7 @@ const {
   saveSession,
   stopSession,
 } = useOkwwGuiSession()
+const okwwImportLoading = ref(false)
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -412,6 +443,18 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
+const configActionsDisabled = computed(
+  () =>
+    pageLoading.value ||
+    !userId.value ||
+    isSaving.value ||
+    okwwConfigLoading.value ||
+    okwwImportLoading.value ||
+    showOkwwConfigMask.value ||
+    showOkwwViewMask.value ||
+    stoppingOkwwConfig.value ||
+    configLocked.value
+)
 
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
@@ -427,28 +470,28 @@ const pushLogModeOptions = [
 
 const okwwConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.useExistingOkwwConfiguration'),
     icon: 'setting',
@@ -492,7 +535,7 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     IfUseMasConfig: true,
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
@@ -537,9 +580,11 @@ const formData = reactive<OkwwUserFormData>({
 const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await saveField('Info.Mode', formData.Info.Mode)
+  if (configActionsDisabled.value) return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  const previous = formData.Info.Base
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  if (!(await saveField('Info.Base', formData.Info.Base))) formData.Info.Base = previous
 }
 
 const handleCancel = async () => {
@@ -625,9 +670,35 @@ const saveTaskConfig = async () => {
 }
 
 const handleOkwwConfig = async () => {
-  if (configLocked.value) return
-  if (!userId.value) return
+  if (configActionsDisabled.value) return
   await startSession(userId.value)
+}
+
+const handleImportOkwwConfig = async () => {
+  if (configActionsDisabled.value) return
+  okwwImportLoading.value = true
+  try {
+    if (formData.Info.Base === 'native') throw new Error(t('edit.nativeConfigNoImport'))
+    const response = await importScriptConfigFile(scriptId, userId.value)
+    if (response.code !== 200)
+      throw new Error(response.message || t('edit.importScriptConfigFailed'))
+    const importTarget =
+      formData.Info.Base === 'shared'
+        ? t('comp.configSourceShared')
+        : t('comp.configSourceIndependent')
+    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('edit.importScriptConfigFailed'))
+  } finally {
+    okwwImportLoading.value = false
+  }
+}
+
+// 编辑托管设置：ok-ww 页没有路由守卫，先显式停会话再跳转。
+const handleScriptConfig = async () => {
+  if (configActionsDisabled.value) return
+  if (!(await stopSession(true))) return
+  await router.push(`/scripts/${scriptId}/edit/okww`)
 }
 
 const handleSaveOkwwConfig = () => {
@@ -753,7 +824,7 @@ const handleRestored = async (target: string) => {
 // （确认后由基座把配置来源切回备份时点再恢复）。
 const handleRestoreView = (
   target: string,
-  item: { time: string; mode?: string | null },
+  item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
   if (configLocked.value) return Promise.resolve(false)
@@ -765,7 +836,7 @@ const handleRestoreView = (
         title: t('edit.configRestoreDetailView'),
         desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
       },
-      item.mode,
+      item.base,
       currentMode
     )
     Modal.confirm({
@@ -868,6 +939,19 @@ onUnmounted(() => {
 
 .config-card :deep(.ant-card-body) {
   padding: 32px;
+}
+
+/* 配置文件来源是独立卡片，与页面其它卡片一样自带上下的 24px 卡片间距
+   （卡片默认首尾相接，该卡片上下的 基本信息卡片 / 任务配置 标题会直接贴住卡边）。 */
+.config-source-card {
+  margin: 24px 0;
+}
+
+/* 该卡片只有一个分区，且尾部是配置操作项：卡片自身的 padding 已是底部留白，
+   去掉分区与操作项的尾距，避免卡片底部多出一整块空白。 */
+.config-source-card :deep(.form-section),
+.config-actions-tail :deep(.ant-form-item) {
+  margin-bottom: 0;
 }
 
 .section-header {

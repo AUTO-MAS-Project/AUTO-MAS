@@ -19,6 +19,14 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * 支持 MaaEnd 原生启动的控制器
+     */
+    launchGameControllers?: Array<string>;
+    /**
+     * 支持独立游戏显示设置的控制器
+     */
+    gameSettingControllers?: Array<string>;
+    /**
      * MaaEnd 资源声明的项目名称
      */
     projectName?: string;

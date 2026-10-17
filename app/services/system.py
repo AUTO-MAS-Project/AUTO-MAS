@@ -22,6 +22,7 @@
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
@@ -114,6 +115,7 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ],
         from_frontend: bool = False,
@@ -134,15 +136,17 @@ class _SystemHandler:
         if not await ObsReplay.drain():
             logger.warning("失败回放尚未保存完成，继续执行电源操作")
 
-        if mode == "KillSelf" and Config.server is not None:
-            logger.info("执行退出主程序操作")
+        if mode in {"KillSelf", "RestartSelf"} and Config.server is not None:
+            restart = mode == "RestartSelf"
+            action = "重启" if restart else "退出"
+            logger.info(f"执行{action}主程序操作")
             if not from_frontend:
                 try:
-                    await self._request_frontend_close()
+                    await self._request_frontend_close(restart=restart)
                 except TimeoutError as e:
-                    # 退出是用户设定的完成后操作或安装更新的要求，前端卡死不能让
+                    # 退出 / 重启是用户设定的完成后操作或安装更新的要求，前端卡死不能让
                     # 后端就此留下不退；此前这里只抛异常，退出被静默放弃。
-                    logger.error(f"{e}，仍继续退出主程序")
+                    logger.error(f"{e}，仍继续{action}主程序")
             Config.server.should_exit = True
             return
 
@@ -159,15 +163,24 @@ class _SystemHandler:
         # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
-    async def _request_frontend_close(self) -> None:
-        """请求前端退出，并等待主会话断开（仅用于后端自行退出的 KillSelf 场景）。"""
+    async def _request_frontend_close(self, restart: bool = False) -> None:
+        """请求前端退出或重启，并等待主会话断开（后端自行的 KillSelf / RestartSelf 场景）。"""
 
+        action = "重启" if restart else "退出"
         sent = await Publisher.send(
-            id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
+            id=protocol.ID_MAIN,
+            type=(
+                protocol.FRONTEND_RESTART_REQUESTED
+                if restart
+                else protocol.FRONTEND_CLOSE_REQUESTED
+            ),
         )
         if not sent:
-            # 当前没有前端会话，本身已满足“前端关闭”前置条件。
-            logger.info("当前无前端主连接，继续退出主程序")
+            # 当前没有前端会话。退出时这本身已满足“前端关闭”前置条件；重启则没人接收信号，
+            # 只能退到后端退出这一步（Runtime 监督下会被重新拉起），记一条日志免得看着像成功了。
+            logger.info(f"当前无前端主连接，继续{action}主程序")
+            if restart:
+                logger.warning("重启请求没有前端接收，本次只重启后端进程")
             return
 
         disconnected = await MainConnection.wait_until_disconnected(
@@ -191,9 +204,12 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "RestartSelf",
             "Logoff",
         ],
         delay: int = 0,
+        *,
+        before_power: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """电源任务：先静默等待队列设定的延时，再逐秒推送倒计时状态，归零后执行电源操作"""
 
@@ -212,6 +228,8 @@ class _SystemHandler:
                     ),
                 )
                 await asyncio.sleep(1)
+            if before_power is not None and not await before_power():
+                logger.warning("后台任务收尾超时，继续执行电源操作")
             await self.set_power(power_sign)
         except asyncio.CancelledError:
             await self._publish_power_cancelled(asyncio.current_task())
@@ -223,14 +241,20 @@ class _SystemHandler:
             self.current_power_operation = None
             self.current_power_remaining = 0
 
-    async def start_power_task(self):
+    async def start_power_task(
+        self, *, before_power: Callable[[], Awaitable[bool]] | None = None
+    ):
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
             power_sign = Config.power_sign
             delay = Config.power_delay
             self._power_cancelled_event_task = None
-            power_task = asyncio.create_task(self._power_task(power_sign, delay))
+            power_task = asyncio.create_task(
+                self._power_task(
+                    power_sign=power_sign, delay=delay, before_power=before_power
+                )
+            )
 
             def _on_done(done_task: asyncio.Task) -> None:
                 # 电源任务无人 await，异常只能在这里取出记录，否则失败不留痕迹
@@ -319,6 +343,19 @@ class _SystemHandler:
 
         await asyncio.to_thread(_kill_all)
         logger.success("模拟器进程清除完成")
+
+    async def is_process_running(self, path: Path | str) -> bool:
+        """按镜像路径判断该进程是否还在跑。
+
+        Args:
+            path (Path | str): 目标进程路径。
+
+        Returns:
+            bool: 有该路径的进程在跑时返回 True。读不出镜像路径的同名候选不算——
+                那些进程无法归到这个路径上，与 `kill_process` 用同一套判据。
+        """
+
+        return bool((await self._scan_processes_by_path(path)).pids)
 
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。

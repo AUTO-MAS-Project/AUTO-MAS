@@ -41,7 +41,20 @@ _CONNECT_TIMEOUT = 3.0
 _REQUEST_TIMEOUT = 5.0
 _SAVE_EVENT_TIMEOUT = 30.0
 _QUEUE_TIMEOUT = 60.0
-_STOP_TIMEOUT = 30.0
+# 电源操作前的收尾窗口（system.py），不受进程退出期限约束。
+_DRAIN_TIMEOUT = 30.0
+# 后端退出时 stop() 从开始到返回的硬上限。外层期限：Electron 只给 Runtime 发
+# shutdown 并等 30 秒（frontend/electron/services/backendService.ts 的
+# RUNTIME_SHUTDOWN_TIMEOUT_MS），Runtime 从 POST /api/core/close 到后端进程退出
+# 只等 --shutdown-timeout（缺省 5 秒，Electron 未传；runtime 仓
+# internal/cli/backend.go 的 backendShutdownTimeoutDefault、
+# internal/backend/control.go 的 closeCtx），超时即强制回收进程树。这 5 秒要
+# 覆盖 main.py shutdown_services() 的全部步骤（停任务、DesktopGuard、本服务、
+# RuntimeTasks、Matomo）和 uvicorn 退出，所以本服务只占 2 秒：前 1 秒等在途
+# 保存完成，余下留给取消生效与关闭 OBS 连接。被放弃的线程是守护线程：能跑完就
+# 各自收尾，进程先退出留下的半成品由下次启动时的 _sweep_leftovers 清理。
+_STOP_TIMEOUT = 2.0
+_STOP_CANCEL_RESERVE = 1.0
 _COPY_CANCEL_TIMEOUT = 2.0
 _COPY_CHUNK_SIZE = 1024 * 1024
 _METADATA_PREFIX = "mas-replay-"
@@ -74,10 +87,10 @@ class ObsReplayOptions:
 
 @dataclass(eq=False)
 class _CopyOperation:
-    """A copy running in a worker thread, with cooperative cancellation."""
+    """Blocking file work in a daemon thread, with cooperative cancellation."""
 
     cancel_event: threading.Event = field(default_factory=threading.Event)
-    future: asyncio.Future[None] | None = None
+    future: asyncio.Future[Any] | None = None
 
 
 class _CopyCancelled(Exception):
@@ -134,7 +147,9 @@ def _copy_file_chunked(
         raise
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomic(
+    path: Path, payload: dict[str, Any], *, mtime_ns: int | None = None
+) -> None:
     """Write metadata in the same directory and publish it with os.replace."""
 
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.part")
@@ -144,10 +159,61 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
+        if mtime_ns is not None:
+            os.utime(temporary, ns=(mtime_ns, mtime_ns))
         os.replace(temporary, path)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def _publish_files(
+    temporary: Path,
+    target: Path,
+    metadata: Path,
+    payload: dict[str, Any],
+    cancel_event: threading.Event,
+) -> None:
+    """Move the copy into place and commit it by writing its metadata.
+
+    Runs in a daemon thread that may outlive an abandoned wait, so it cleans up
+    on its own: once it finishes, either both files are published or neither
+    remains.  If the process exits first, :func:`_sweep_leftovers` removes the
+    half-published copy on the next start.
+    """
+
+    try:
+        if cancel_event.is_set():
+            raise _CopyCancelled
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    try:
+        if cancel_event.is_set():
+            raise _CopyCancelled
+        # 元数据原子写入即提交点；写入前失败或取消则撤回已挪入的副本。
+        _write_json_atomic(metadata, payload)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+
+
+def _rewrite_metadata(
+    metadata: Path, update: dict[str, Any], cancel_event: threading.Event
+) -> None:
+    """Merge fields into published metadata, keeping its publication time."""
+
+    published_at = metadata.stat().st_mtime_ns
+    payload = json.loads(metadata.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return
+    payload.update(update)
+    ReplayRecord.model_validate(payload)
+    if cancel_event.is_set():
+        raise _CopyCancelled
+    # 保留时间按元数据 mtime 排序，补齐信息不能让旧副本变成「最新」。
+    _write_json_atomic(metadata, payload, mtime_ns=published_at)
 
 
 def _delete_managed_file(path: Path, directory: Path) -> bool:
@@ -160,6 +226,42 @@ def _delete_managed_file(path: Path, directory: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+_LEFTOVER_PART = re.compile(r"\..+\.[0-9a-f]{32}\.part")
+_REPLAY_STEM = re.compile(r".+-\d{8}T\d{12}Z-(?P<token>[0-9a-f]{32})")
+
+
+def _sweep_leftovers(directory: Path) -> int:
+    """Remove files left by daemon threads that the previous process abandoned.
+
+    Only this service's own names are touched: ``.part`` temporaries, and
+    copies whose same-token metadata is missing.  Copies pair with metadata by
+    token rather than by the stored absolute path, so moving the whole install
+    directory does not orphan anything.  Must run before this process starts
+    any copy or publish.
+    """
+
+    resolved = directory.resolve(strict=False)
+    removed = 0
+    for path in directory.iterdir():
+        if path.is_symlink() or not path.is_file():
+            continue
+        if _LEFTOVER_PART.fullmatch(path.name):
+            orphan = True
+        elif path.name.startswith((".", _METADATA_PREFIX)):
+            continue
+        else:
+            match = _REPLAY_STEM.fullmatch(path.stem)
+            orphan = (
+                match is not None
+                and not (
+                    directory / f"{_METADATA_PREFIX}{match['token']}.json"
+                ).exists()
+            )
+        if orphan and _delete_managed_file(path, resolved):
+            removed += 1
+    return removed
 
 
 def _auth_response(password: str, salt: str, challenge: str) -> str:
@@ -375,7 +477,10 @@ class ObsReplayService:
         self._save_tasks: set[asyncio.Task[Any]] = set()
         self._copy_operations: set[_CopyOperation] = set()
         self._connections: set[_ObsClient] = set()
+        # 保存在途的回放 replayId -> 暂存的补齐字段，发布时合并，失败时丢弃。
+        self._staged_updates: dict[str, dict[str, Any]] = {}
         self._closing = False
+        self._swept = False
 
     @asynccontextmanager
     async def _client(self, options: ObsReplayOptions) -> AsyncIterator[_ObsClient]:
@@ -425,6 +530,7 @@ class ObsReplayService:
             raise ObsReplayError("回放服务正在停止")
         if current_task is not None:
             self._save_tasks.add(current_task)
+        self._staged_updates[record.replayId] = {}
         try:
             return await self._save_impl(options, record)
         except asyncio.CancelledError:
@@ -434,6 +540,63 @@ class ObsReplayService:
         except Exception as exc:
             logger.opt(exception=True).warning(f"OBS回放保存失败：{type(exc).__name__}")
             raise ObsReplayError(f"OBS回放保存失败：{type(exc).__name__}") from exc
+        finally:
+            # 发布时已取走；仍在这里说明保存失败或被取消，暂存的补齐随之丢弃。
+            self._staged_updates.pop(record.replayId, None)
+            if current_task is not None:
+                self._save_tasks.discard(current_task)
+
+    async def update_record(
+        self,
+        replay_id: str,
+        *,
+        reason: str | None = None,
+        history_paths: list[str] | None = None,
+    ) -> None:
+        """Fill in the reason and history links once the failure log is final.
+
+        A save still in flight keeps the update and merges it on publication;
+        a published record has its metadata rewritten atomically.  This is a
+        side channel: failures are only logged and never reach the scheduler.
+        """
+
+        update: dict[str, Any] = {}
+        if reason is not None:
+            update["reason"] = reason
+        if history_paths is not None:
+            update["historyPaths"] = list(history_paths)
+        if not update:
+            return
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            # 补齐也是回放收尾的一部分，电源操作前的 drain 与 stop 一并等待或取消。
+            self._save_tasks.add(current_task)
+        try:
+            async with self._storage_lock:
+                staged = self._staged_updates.get(replay_id)
+                if staged is not None:
+                    staged.update(update)
+                    return
+                if self._closing:
+                    return
+                metadata = next(
+                    (
+                        path
+                        for path, record in await self._read_records()
+                        if record.replayId == replay_id
+                    ),
+                    None,
+                )
+                if metadata is None:
+                    # 保存失败、被取消，或已被保留策略清掉。
+                    return
+                await self._run_file_work(
+                    _rewrite_metadata, metadata, update, name="obs-replay-update"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(f"失败回放信息补齐失败：{type(exc).__name__}")
         finally:
             if current_task is not None:
                 self._save_tasks.discard(current_task)
@@ -531,90 +694,105 @@ class ObsReplayService:
         target = self.directory / f"{name}-{timestamp}-{token}{source.suffix}"
         temporary = self.directory / f".{target.name}.{token}.part"
         metadata = self.directory / f"{_METADATA_PREFIX}{token}.json"
+        publishing = False
         try:
             await self._copy_to(source, temporary)
             async with self._storage_lock:
-                await self._thread_join(os.replace, temporary, target)
-                published = record.model_copy(update={"filePath": str(target)})
+                # 取走暂存的补齐字段；此后到达的补齐直接改写已发布的元数据。
+                staged = self._staged_updates.pop(record.replayId, {})
+                published = record.model_copy(
+                    update={**staged, "filePath": str(target)}
+                )
                 payload = published.model_dump(mode="json")
                 payload["sourcePath"] = str(source)
                 payload["obsVersion"] = version
-                await self._thread_join(_write_json_atomic, metadata, payload)
-                await self._retain(options.max_replay_count)
+                publishing = True
+                await self._run_file_work(
+                    _publish_files,
+                    temporary,
+                    target,
+                    metadata,
+                    payload,
+                    name="obs-replay-publish",
+                )
+                try:
+                    await self._retain(options.max_replay_count)
+                except Exception as exc:
+                    # 副本已完整发布，清理旧副本失败不算这次保存失败。
+                    logger.warning(f"回放保留清理失败：{type(exc).__name__}")
             return published
         except asyncio.CancelledError:
-            # 磁盘读取仍阻塞时临时文件可能被线程持有；线程结束后自行清理。
-            with suppress(OSError):
-                temporary.unlink(missing_ok=True)
-            _delete_managed_file(target, self.directory)
-            _delete_managed_file(metadata, self.directory)
+            # 发布线程自己负责副本与元数据的一致性，这里只清理还没交给它的临时文件；
+            # 复制线程仍持有临时文件时删除会失败，它停止后自行清理。
+            if not publishing:
+                with suppress(OSError):
+                    temporary.unlink(missing_ok=True)
             raise
+        except _CopyCancelled as exc:
+            raise ObsReplayError("回放文件发布已取消") from exc
         except ObsReplayError:
             temporary.unlink(missing_ok=True)
-            _delete_managed_file(target, self.directory)
-            _delete_managed_file(metadata, self.directory)
             raise
         except Exception as exc:
             temporary.unlink(missing_ok=True)
-            _delete_managed_file(target, self.directory)
-            _delete_managed_file(metadata, self.directory)
-            raise ObsReplayError(f"回放文件复制失败：{type(exc).__name__}") from exc
+            stage = "发布" if publishing else "复制"
+            raise ObsReplayError(f"回放文件{stage}失败：{type(exc).__name__}") from exc
 
     async def _copy_to(self, source: Path, temporary: Path) -> None:
+        # OBS 输出可能在慢盘上；取消后复制线程只负责停止复制和删除临时文件，
+        # 不会发布副本或元数据。
+        try:
+            await self._run_file_work(
+                _copy_file_chunked, source, temporary, name="obs-replay-copy"
+            )
+        except _CopyCancelled as exc:
+            raise ObsReplayError("回放文件复制已取消") from exc
+
+    async def _run_file_work(self, function: Any, *args: Any, name: str) -> Any:
+        """Run blocking file work in a daemon thread with a bounded cancel wait.
+
+        The default executor is non-daemon: ``asyncio.run`` and interpreter
+        exit join it, so a blocked write would hold up backend shutdown.  On
+        cancellation the worker is told to stop and waited for at most
+        ``_COPY_CANCEL_TIMEOUT``; an abandoned worker cleans up its own files.
+        """
+
         operation = _CopyOperation()
         self._copy_operations.add(operation)
         loop = asyncio.get_running_loop()
         future = operation.future = loop.create_future()
 
-        def finish(error: BaseException | None) -> None:
+        def finish(result: Any, error: BaseException | None) -> None:
             if not future.done():
                 if error is None:
-                    future.set_result(None)
+                    future.set_result(result)
                 else:
                     future.set_exception(error)
 
-        def copy() -> None:
-            error = None
+        def work() -> None:
+            result = error = None
             try:
-                _copy_file_chunked(source, temporary, operation.cancel_event)
+                result = function(*args, operation.cancel_event)
             except BaseException as exc:
                 error = exc
             with suppress(RuntimeError):
-                loop.call_soon_threadsafe(finish, error)
+                loop.call_soon_threadsafe(finish, result, error)
 
-        # OBS 输出可能在慢盘上。守护线程不会让关闭进程再等默认线程池的无限 join；
-        # 取消后它只负责停止复制和删除临时文件，不会发布副本或元数据。
         try:
-            threading.Thread(target=copy, name="obs-replay-copy", daemon=True).start()
-            await asyncio.shield(future)
+            threading.Thread(target=work, name=name, daemon=True).start()
+            return await asyncio.shield(future)
         except asyncio.CancelledError:
             operation.cancel_event.set()
             try:
                 await asyncio.wait_for(asyncio.shield(future), _COPY_CANCEL_TIMEOUT)
             except asyncio.TimeoutError:
-                logger.warning(
-                    "回放复制取消超时，继续退出；复制线程停止后将清理临时文件"
-                )
+                logger.warning(f"{name} 取消超时，继续退出；线程停止后自行清理文件")
             except BaseException:
                 pass
             future.cancel()
             raise
-        except _CopyCancelled as exc:
-            raise ObsReplayError("回放文件复制已取消") from exc
         finally:
             self._copy_operations.discard(operation)
-
-    @staticmethod
-    async def _thread_join(function: Any, *args: Any) -> Any:
-        task = asyncio.create_task(asyncio.to_thread(function, *args))
-        try:
-            return await asyncio.shield(task)
-        except asyncio.CancelledError:
-            try:
-                await asyncio.shield(task)
-            except BaseException:
-                pass
-            raise
 
     async def _read_records(self) -> list[tuple[Path, ReplayRecord]]:
         records: list[tuple[Path, ReplayRecord]] = []
@@ -653,6 +831,16 @@ class ObsReplayService:
         if self.directory.is_symlink():
             raise ObsReplayError("回放目录无效")
         self.directory.mkdir(parents=True, exist_ok=True)
+        if not self._swept:
+            # 本进程第一次用到目录时还没有任何复制或发布在进行，可以放心清理。
+            self._swept = True
+            try:
+                removed = _sweep_leftovers(self.directory)
+            except OSError as exc:
+                logger.warning(f"回放目录残留清理失败：{type(exc).__name__}")
+            else:
+                if removed:
+                    logger.info(f"已清理上次退出时残留的回放半成品 {removed} 个")
 
     async def list_replays(self, history_path: str | None = None) -> list[ReplayRecord]:
         """Return published records, newest first, optionally by history path."""
@@ -678,7 +866,7 @@ class ObsReplayService:
             if _delete_managed_file(file_path, self.directory.resolve(strict=False)):
                 _delete_managed_file(metadata, self.directory.resolve(strict=False))
 
-    async def drain(self, timeout: float = _STOP_TIMEOUT) -> bool:
+    async def drain(self, timeout: float = _DRAIN_TIMEOUT) -> bool:
         """Wait for currently registered saves, returning false on timeout."""
 
         # 让调度层刚注册的后台保存先进入服务，避免错判为没有在途任务。
@@ -700,25 +888,45 @@ class ObsReplayService:
                 return False
 
     async def stop(self) -> None:
-        """Reject new saves and finish or cancel all in-flight operations."""
+        """Reject new saves and finish or cancel all in-flight operations.
+
+        Every step shares one deadline of ``_STOP_TIMEOUT`` seconds.  Work that
+        has not settled by then is abandoned: file workers are daemon threads
+        that leave either a complete replay or nothing behind if they get to
+        finish; leftovers from a process that exits first are swept on the next
+        start.
+        """
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _STOP_TIMEOUT
+
+        async def wait_until_deadline(tasks: list[asyncio.Task[Any]]) -> bool:
+            remaining = deadline - loop.time()
+            if remaining > 0:
+                await asyncio.wait(tasks, timeout=remaining)
+            return all(task.done() for task in tasks)
 
         await asyncio.sleep(0)
         self._closing = True
-        if not await self.drain(_STOP_TIMEOUT):
+        settled = await self.drain(max(0.0, _STOP_TIMEOUT - _STOP_CANCEL_RESERVE))
+        if not settled:
             for operation in tuple(self._copy_operations):
                 operation.cancel_event.set()
             tasks = [task for task in self._save_tasks if not task.done()]
             for task in tasks:
                 task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+            settled = not tasks or await wait_until_deadline(tasks)
         for operation in tuple(self._copy_operations):
             operation.cancel_event.set()
         clients = tuple(self._connections)
         if clients:
-            await asyncio.gather(
-                *(client.close() for client in clients), return_exceptions=True
-            )
+            closing = [asyncio.create_task(client.close()) for client in clients]
+            if not await wait_until_deadline(closing):
+                settled = False
+                for task in closing:
+                    task.cancel()
+        if not settled:
+            logger.warning("OBS回放服务未在退出期限内收尾，已放弃等待")
 
 
 ObsReplay = ObsReplayService()

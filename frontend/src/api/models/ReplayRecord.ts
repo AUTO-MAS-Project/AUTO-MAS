@@ -44,3 +44,4 @@ export type ReplayRecord = {
      */
     historyPaths?: Array<string>;
 };
+

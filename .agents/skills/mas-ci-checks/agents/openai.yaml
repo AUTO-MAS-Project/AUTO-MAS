@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS CI Checks"
+  short_description: "Reproduce and fix AUTO-MAS dev-PR CI gates"
+  default_prompt: "Use $mas-ci-checks to diagnose this AUTO-MAS PR's failing CI gate and reproduce it locally."

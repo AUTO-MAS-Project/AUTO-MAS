@@ -9,6 +9,7 @@
       :script-route="scriptRoute"
       :is-edit="isEdit"
       :user-id="userIdHolder.value"
+      :leaving="leaving"
       @cancel="handleCancel"
     />
 
@@ -107,6 +108,8 @@
             @global-option-update="handleGlobalOptionUpdate"
             @delete-selected-task="deleteSelectedTask"
             @delete-task="deleteTask"
+            @duplicate-task="duplicateTask"
+            @rename-task="renameTask"
           />
           <MaaFWFlavorSlot
             part="userPage"
@@ -231,6 +234,8 @@ const {
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
+  duplicateTask,
+  renameTask,
   handleTaskOptionUpdate,
   handleGlobalOptionUpdate,
   moveTask,
@@ -255,6 +260,7 @@ const {
   restoreApi,
   previewSections,
   handleRestored,
+  leaving,
   handleCancel,
 } = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
 

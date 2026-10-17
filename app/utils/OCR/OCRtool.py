@@ -935,6 +935,8 @@ class OCRTool:
                     # 执行点击
                     import pyautogui
 
+                    # 光标停在主屏四角时 click 会抛 FailSafeException，无人值守托管下停用
+                    pyautogui.FAILSAFE = False
                     pyautogui.click(screen_x, screen_y)
                     logger.info(
                         f"成功点击图像 {image_path} 的位置: ({screen_x}, {screen_y})"
@@ -1025,6 +1027,8 @@ class OCRTool:
                         # 执行点击
                         import pyautogui
 
+                        # 光标停在主屏四角时 click 会抛 FailSafeException，无人值守托管下停用
+                        pyautogui.FAILSAFE = False
                         pyautogui.click(screen_x, screen_y)
                         logger.info(
                             f"成功点击文字 '{text}' 的位置: ({screen_x}, {screen_y})"

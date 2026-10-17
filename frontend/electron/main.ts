@@ -28,6 +28,11 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import { registerMascotHandlers } from './ipc/mascotHandlers'
+import { createDesktopMascotHost } from './services/desktopMascotHost'
+import type { DesktopMascotPreferences } from './services/desktopMascotService'
+import { getAppearance } from './services/appearanceService'
+import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -67,6 +72,10 @@ import {
   isPersistedRuntimeLaunchMode,
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
+import {
+  abortRuntimeUpdateForShutdown,
+  prepareRuntimeUpdateForClose,
+} from './services/runtimeUpdateService'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -222,7 +231,7 @@ let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
-interface AppConfig {
+interface AppConfig extends DesktopMascotPreferences {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -525,6 +534,7 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
   forceQuitInProgress = true
+  await abortRuntimeUpdateForShutdown()
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
@@ -583,10 +593,20 @@ function requestRendererClose(reason: string): void {
   win.setSkipTaskbar(true)
   win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
-  win.webContents.send('app-close-requested')
-  quitFallbackTimer = setTimeout(() => {
-    void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
-  }, RENDERER_QUIT_FALLBACK_MS)
+  void prepareRuntimeUpdateForClose().then(ready => {
+    if (!ready) {
+      cancelQuitRequest()
+      return
+    }
+    if (win.isDestroyed() || win.webContents.isDestroyed()) {
+      void forceQuitAfterRendererTimeout(`${reason}（等待更新期间 renderer 已关闭）`)
+      return
+    }
+    win.webContents.send('app-close-requested')
+    quitFallbackTimer = setTimeout(() => {
+      void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
+    }, RENDERER_QUIT_FALLBACK_MS)
+  })
 }
 
 // 更新托盘状态
@@ -626,6 +646,17 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
+const desktopMascot = createDesktopMascotHost({
+  readPreferences: loadConfig,
+  savePreferences: patch => saveConfig({ ...loadConfig(), ...patch }),
+  getMainWindow: () => mainWindow,
+  resolveAssets: ({ desktopMascotId, appearanceId }) =>
+    desktopMascotId
+      ? getMascot(app.getPath('userData'), desktopMascotId)
+      : appearanceId
+        ? getAppearance(app.getPath('userData'), appearanceId)
+        : null,
+})
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
@@ -782,6 +813,7 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
@@ -836,9 +868,11 @@ function createWindow() {
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
     restoreToMaximized = true
+    win.webContents.send('window-maximized-changed', true)
   })
   win.on('unmaximize', () => {
     restoreToMaximized = false
+    win.webContents.send('window-maximized-changed', false)
   })
   win.on('restore', () => {
     notifyWindowActivity('visible')
@@ -1075,7 +1109,10 @@ function createWindow() {
   logger.info('主窗口创建完成')
 
   // 注册初始化处理器
-  registerInitializationHandlers(win)
+  registerInitializationHandlers(
+    win,
+    () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight
+  )
   logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
@@ -1751,19 +1788,33 @@ ipcMain.handle('app-restart', () => {
   requestRendererClose('应用重启')
 })
 
+// 后端请求的重启：只置「这次退出后重新拉起」，退出本身仍走 app-quit 那条已协调好的路。
+// 这里不调 requestRendererClose：调用它的收尾流程已经把连接关了，再发一次窗口关闭请求
+// 只会等渲染进程确认，等不到就落进强制退出兜底，反而把重启变成超时。
+ipcMain.handle('app-restart-on-quit', () => {
+  logger.info('已标记退出后重新启动应用')
+  relaunchAfterQuit = true
+})
+
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
-ipcMain.handle('app-prepare-quit', () => {
+ipcMain.handle('app-prepare-quit', async () => {
   if (coordinatedQuit || forceQuitInProgress) return null
-  if (activeQuitPreparation !== null) return activeQuitPreparation
+  if (activeQuitPreparation !== null) {
+    return (await prepareRuntimeUpdateForClose()) ? activeQuitPreparation : null
+  }
   clearQuitFallback()
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
   quitPreparationExpired = false
+  if (!(await prepareRuntimeUpdateForClose())) {
+    cancelQuitRequest(token)
+    return null
+  }
   quitFallbackTimer = setTimeout(() => {
     quitFallbackTimer = null
     quitPreparationExpired = true
@@ -1961,6 +2012,8 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
+    desktopMascot.configChanged(patch)
+
     if (
       patch &&
       typeof patch === 'object' &&
@@ -1978,7 +2031,7 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     }
 
     // 如果是UI配置更新，需要更新托盘状态
-    if (config.UI) {
+    if (patch && typeof patch === 'object' && 'UI' in patch && config.UI) {
       updateTrayVisibility(config)
       if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
         rebuildTrayMenu(config.UI.TrayItems)
@@ -2196,6 +2249,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
 
@@ -2221,7 +2275,9 @@ app.whenReady().then(async () => {
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
 
-  registerAppearanceHandlers()
+  registerAppearanceHandlers({ onChanged: desktopMascot.sync })
+  registerMascotHandlers(desktopMascot.sync)
+  desktopMascot.mount()
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器

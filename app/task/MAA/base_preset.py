@@ -6,6 +6,16 @@ from pathlib import Path
 
 from app.utils.io import write_file
 
+MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
+"""历史活动优先侧车文件；保留时不复制到 MAA 运行目录。"""
+
+_MAA_STAMINA_TASK_ALIASES = {
+    ("DepotMaintain", "活动库存保持"): ("DepotMaintain", "活动关均衡理智"),
+    ("DepotMaintain", ""): ("DepotMaintain", "库存保持与干员养成"),
+    ("DepotMaintain", "库存保持"): ("DepotMaintain", "库存保持与干员养成"),
+    ("Fight", "理智作战"): ("Fight", "理智任务"),
+}
+
 _MAA_BASE_PRESET = {
     "gui.json": {
         "Current": "Default",
@@ -95,6 +105,13 @@ def maa_task_identity(task: object) -> tuple[str, str] | None:
     return task_type, name
 
 
+def canonical_maa_task_identity(task: object) -> tuple[str, str] | None:
+    """对齐三段理智流程的新旧任务名；结构校验仍使用原始身份。"""
+
+    identity = maa_task_identity(task)
+    return _MAA_STAMINA_TASK_ALIASES.get(identity, identity) if identity else None
+
+
 def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
     """Return task identities in queue order, ignoring task settings."""
 
@@ -126,15 +143,23 @@ def restore_maa_default_task_queue(
     existing_tasks: dict[tuple[str, str], dict] = {}
     if isinstance(queue, list):
         for task in queue:
-            identity = maa_task_identity(task)
+            identity = canonical_maa_task_identity(task)
             if identity is not None:
-                existing_tasks.setdefault(identity, task)
+                existing = existing_tasks.get(identity)
+                # 新身份优先；旧库存同时有空名与有名来源时选有名项，不串用设置。
+                if (
+                    existing is None
+                    or maa_task_identity(task) == identity
+                    or (not existing.get("Name") and task.get("Name"))
+                ):
+                    existing_tasks[identity] = task
 
-    structural_keys = {"$type", "Name", "IsEnable", "TaskType"}
+    # 补齐新预设时保留已有任务的勾选；只有新增任务使用预设的默认开关。
+    structural_keys = {"$type", "Name", "TaskType"}
     restored_queue = []
     for default_task in default_queue:
         task = deepcopy(default_task)
-        identity = maa_task_identity(task)
+        identity = canonical_maa_task_identity(task)
         existing = existing_tasks.get(identity) if identity is not None else None
         if existing is not None:
             task.update(

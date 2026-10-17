@@ -21,16 +21,17 @@
 
 
 import asyncio
+import json
 import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Awaitable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -79,6 +80,7 @@ from .config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
+from .lifecycle import BackendBusyError, ShutdownCoordinator
 from .queue_cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -100,6 +102,10 @@ from .queue_cycle import (
 from .ws import MainConnection, Publisher, protocol
 
 System = LazyProxy("app.services", "System")
+Updater = LazyProxy("app.services", "Updater")
+
+if TYPE_CHECKING:
+    from .notify import TaskCommunitySignNotification
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
@@ -295,7 +301,7 @@ def _emulator_key(script_config: object) -> str | None:
         index = script_config.get("Emulator", "Index")
     elif isinstance(script_config, MaaEndConfig):
         # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
-        # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
+        # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
         # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
         emulator_id = script_config.get("Game", "EmulatorId")
         index = script_config.get("Game", "EmulatorIndex")
@@ -316,8 +322,22 @@ def _emulator_key(script_config: object) -> str | None:
     return f"{emulator_id}:{index}"
 
 
+@dataclass(eq=False)
+class _ReplayRequest:
+    """本轮已发起保存的回放，失败日志写完后据此补齐原因与历史关联。"""
+
+    script: ScriptItem
+    user: UserItem | None
+    explicit_reason: bool
+    reason: str
+    history_paths: list[str]
+
+
 @dataclass
 class TaskInfo(TaskItem):
+    community_sign_notification: "TaskCommunitySignNotification | None" = field(
+        default=None, init=False, repr=False
+    )
     replay_cancelled: bool = field(default=False, init=False, repr=False)
     _replay_runs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _replay_active: dict[str, int] = field(default_factory=dict, init=False, repr=False)
@@ -327,8 +347,14 @@ class TaskInfo(TaskItem):
     _replay_seen: set[tuple[str, str | None]] = field(
         default_factory=set, init=False, repr=False
     )
+    # script_id -> replayId -> 发起时的快照；补齐后移除，不受 _replay_seen 去重影响。
+    _replay_requests: dict[str, dict[str, _ReplayRequest]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def begin_script_run(self, script: ScriptItem) -> None:
+        # 兜底：上一轮漏掉的补齐必须在清空本轮状态之前完成。
+        self.flush_replays(script)
         previous = self._replay_runs.get(script.script_id)
         self._replay_seen = {key for key in self._replay_seen if key[0] != previous}
         self._replay_runs[script.script_id] = str(uuid.uuid4())
@@ -365,7 +391,7 @@ class TaskInfo(TaskItem):
             elif self._replay_active.get(script.script_id, 0):
                 candidates[item.user_id] = item
             else:
-                # 账号预检、HSR 直控、MFW inner task 不经过 spawn，异常即其终态。
+                # 账号预检、HSR 原生来源、MFW inner task 不经过 spawn，异常即其终态。
                 self._request_replay(script, item)
         elif status == "异常" and not self._replay_active.get(script.script_id, 0):
             self._request_replay(script)
@@ -416,32 +442,101 @@ class TaskInfo(TaskItem):
                 scriptName=script.name if script else "调度任务",
                 userName=user.name if user else "",
                 failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                reason=reason
-                or (
-                    user.result
-                    if user and user.log_record
-                    else "账号执行异常"
-                    if user
-                    else "脚本执行异常"
-                ),
-                historyPaths=[
-                    str(
-                        Config.build_history_log_path(
-                            script_name=script.name,
-                            user_name=user.name,
-                            log_time=start.astimezone(UTC4),
-                        ).with_suffix(".json")
-                    )
-                    for start in user.log_record
-                ]
-                if user and script
-                else [],
+                reason=reason or self._replay_reason(user),
+                historyPaths=self._replay_history_paths(script, user),
             )
             RuntimeTasks.spawn(
                 self._save_replay(options, record), name=f"obs-replay:{record.replayId}"
             )
+            if script is not None:
+                self._replay_requests.setdefault(script_id, {})[record.replayId] = (
+                    _ReplayRequest(
+                        script=script,
+                        user=user,
+                        explicit_reason=bool(reason),
+                        reason=record.reason,
+                        history_paths=list(record.historyPaths),
+                    )
+                )
         except Exception as error:
             logger.warning(f"无法安排失败回放: {type(error).__name__}")
+
+    @staticmethod
+    def _replay_reason(user: UserItem | None) -> str:
+        if user is None:
+            return "脚本执行异常"
+        return user.result if user.log_record else "账号执行异常"
+
+    @staticmethod
+    def _replay_history_paths(
+        script: ScriptItem | None, user: UserItem | None
+    ) -> list[str]:
+        if script is None or user is None:
+            return []
+        try:
+            script_config = Config.ScriptConfig[uuid.UUID(script.script_id)]
+        except (KeyError, ValueError):
+            script_config = None
+        if isinstance(script_config, MaaFWConfig):
+            # MaaFW 引擎（含特调）自己拼 history 路径，文件名带脚本名前缀。
+            from app.task.MaaFW.tools.embedded.history_paths import (
+                maafw_history_log_path,
+            )
+
+            return [
+                str(
+                    maafw_history_log_path(user.name, start, script.name).with_suffix(
+                        ".json"
+                    )
+                )
+                for start in user.log_record
+            ]
+        return [
+            str(
+                Config.build_history_log_path(
+                    script_name=script.name,
+                    user_name=user.name,
+                    log_time=start.astimezone(UTC4),
+                ).with_suffix(".json")
+            )
+            for start in user.log_record
+        ]
+
+    def flush_replays(self, script: ScriptItem | None = None) -> None:
+        """按当前日志补齐已发起回放的原因与历史关联。
+
+        保存在发现失败时立即发起，部分适配器之后才建日志或写失败原因；在脚本
+        管理器收尾（历史已写完）后调用，``script`` 为空时补齐全部在途脚本。
+        补齐只读当前状态，失败只记日志，不影响任务结果。
+        """
+
+        try:
+            if script is None:
+                pending = list(self._replay_requests.values())
+                self._replay_requests.clear()
+            else:
+                pending = [self._replay_requests.pop(script.script_id, {})]
+            for requests in pending:
+                for replay_id, request in requests.items():
+                    reason = (
+                        request.reason
+                        if request.explicit_reason
+                        else self._replay_reason(request.user)
+                    )
+                    history_paths = self._replay_history_paths(
+                        request.script, request.user
+                    )
+                    if (
+                        reason == request.reason
+                        and history_paths == request.history_paths
+                    ):
+                        continue
+                    RuntimeTasks.spawn(
+                        self._update_replay(replay_id, reason, history_paths),
+                        name=f"obs-replay-update:{replay_id}",
+                    )
+        except Exception as error:
+            logger.warning(f"无法补齐失败回放信息: {type(error).__name__}")
 
     async def _save_replay(self, options, record: ReplayRecord) -> None:
         from app.services.obs_replay import ObsReplay
@@ -457,6 +552,15 @@ class TaskInfo(TaskItem):
                     level="warning", message=f"失败回放未保存：{error}"
                 ),
             )
+
+    async def _update_replay(
+        self, replay_id: str, reason: str, history_paths: list[str]
+    ) -> None:
+        from app.services.obs_replay import ObsReplay
+
+        await ObsReplay.update_record(
+            replay_id, reason=reason, history_paths=history_paths
+        )
 
     async def on_change(self):
         await Publisher.send(
@@ -590,6 +694,7 @@ class Task(TaskExecuteBase):
             )
             for script_id in script_ids
         ]
+        self.task_info.schedule_on_change()
 
         logger.success(
             f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
@@ -649,8 +754,16 @@ class Task(TaskExecuteBase):
         outcome = "error"
         try:
             yield
-            user_statuses = [user.status for user in script_item.user_list]
-            if not user_statuses:
+            user_statuses = [
+                user.status
+                for user in script_item.user_list
+                if not user.maintenance_skipped
+            ]
+            if script_item.status == "异常":
+                outcome = "failed"
+            elif script_item.user_list and not user_statuses:
+                outcome = "skipped"
+            elif not user_statuses:
                 # 运行前检查没过时还没加载用户，脚本状态是「异常」
                 outcome = "failed" if script_item.status == "异常" else "no_user"
             elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
@@ -795,7 +908,7 @@ class Task(TaskExecuteBase):
                 continue
             results.append(await self._run_cycle_entry(queue_uid, entry, entries))
 
-        if results and not any(result == "success" for result in results):
+        if results and not any(result in ("success", "skipped") for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
     def _scope_skipped_script_ids(self) -> set[str]:
@@ -842,11 +955,12 @@ class Task(TaskExecuteBase):
         queue_uid: uuid.UUID,
         entry: CycleEntry,
         entries: list[CycleEntry],
-    ) -> Literal["success", "failed", "blocked"]:
+    ) -> Literal["success", "failed", "blocked", "skipped"]:
         """跑一个队列项。
 
         Returns:
             ``blocked`` 表示脚本被别的任务占用、本轮没跑；``failed`` 表示跑了但没成功。
+            ``skipped`` 表示维护跳过，按原周期排下一轮，不立即重试。
         """
 
         # 脚本列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
@@ -876,6 +990,7 @@ class Task(TaskExecuteBase):
             return "failed"
 
         script_config = Config.ScriptConfig[script_uid]
+        self.task_info.current_index = entry.index
         root_paths, emulator_key = _exclusive_resources(script_config)
         reservation_owner = self.task_info.task_id
 
@@ -892,6 +1007,7 @@ class Task(TaskExecuteBase):
 
         self.task_info.begin_script_run(script_item)
         started_at = datetime.now()
+        previous_started_at = queue_item.get("Data", "LastCycleStartedAt")
         success = False
         # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
         # 用户主动停止走的是 CancelledError，不在这里拦。
@@ -937,6 +1053,18 @@ class Task(TaskExecuteBase):
             logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
         finally:
             self.script_reservations.release(script_uid, reservation_owner)
+            # 管理器已收尾、历史已写完，按最终日志补齐本条目的失败回放。
+            self.task_info.flush_replays(script_item)
+
+        # 维护可能在 manager 准备期间开始；全员尚未开跑时不留实际运行记录。
+        if (
+            script_item.status == "跳过"
+            and script_item.user_list
+            and all(user.maintenance_skipped for user in script_item.user_list)
+        ):
+            await queue_item.set("Data", "LastCycleStartedAt", previous_started_at)
+            await self._advance_cycle_after_maintenance(queue_item)
+            return "skipped"
 
         # 成败都要把下次运行时间推到未来，否则失败的条目会立刻再被挑中。
         finished_at = datetime.now()
@@ -953,6 +1081,15 @@ class Task(TaskExecuteBase):
         if not success:
             logger.warning(f"循环任务未成功: {entry.script_name}")
         return "success" if success else "failed"
+
+    async def _advance_cycle_after_maintenance(self, queue_item) -> None:
+        """仅消费本次排期，不记录代理执行，也不安排维护结束补跑。"""
+        skipped_at = datetime.now()
+        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+            next_run_at = next_after_start(queue_item, skipped_at)
+        else:
+            next_run_at = next_after_finish(queue_item, skipped_at)
+        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
 
     async def _spawn_with_preview(
         self,
@@ -1020,8 +1157,9 @@ class Task(TaskExecuteBase):
             await self._run_cycle_task()
             return
 
-        # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
+        # 签到在后台并行执行；完成事件由通知层接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
+            from app.core.notify import TaskCommunitySignNotification
             from app.core.timer import MainTimer
 
             sign_source = {
@@ -1029,8 +1167,10 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.community_results = await MainTimer.try_community_for_task(
-                source=sign_source
+            community_sign = TaskCommunitySignNotification(self.task_info)
+            self.task_info.community_sign_notification = community_sign
+            MainTimer.schedule_community_for_task(
+                source=sign_source, on_completed=community_sign.receive
             )
 
         await self.prepare()
@@ -1250,8 +1390,13 @@ class Task(TaskExecuteBase):
                     await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
+                # 管理器已收尾、历史已写完，按最终日志补齐本脚本的失败回放。
+                self.task_info.flush_replays(script_item)
 
     async def final_task(self) -> None:
+
+        # 崩溃或取消时脚本循环来不及补齐，这里收掉还在途的失败回放。
+        self.task_info.flush_replays()
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。
         if self._queue_run_started and self.task_info.queue_id is not None:
@@ -1263,6 +1408,9 @@ class Task(TaskExecuteBase):
             )
 
         logger.info(f"任务结束: {self.task_info.task_id}")
+
+        if self.task_info.community_sign_notification is not None:
+            self.task_info.community_sign_notification.finish()
 
         # 完成面板文本带采集节点详情（与推送报告同源渲染），
         # 未配置推送的用户在调度台也能看到
@@ -1369,6 +1517,27 @@ class _TaskManager:
         self._startup_queue_started = False
         # 正在等待/执行启动队列的连接回调任务，同一时间只有一个
         self._startup_queue_task: asyncio.Task | None = None
+        # 同一事件循环内同步冻结入口，再等待已有后台工作；租约不跨 teardown 释放。
+        self._hot_update_guard: tuple[str, str, str] | None = None
+        self._hot_update_lock = asyncio.Lock()
+        self._hot_update_lease: asyncio.TimerHandle | None = None
+        self._backend_operations = 0
+        self._backend_operation_tasks: set[asyncio.Future[Any]] = set()
+        # 监督器会继承启动环境；一次性标记避免后续崩溃重启继续跳过 Always 队列。
+        self._suppress_startup_always = False
+        operation_id = os.environ.pop("AUTO_MAS_HOT_UPDATE_OPERATION_ID", "")
+        if operation_id:
+            marker = Config.config_path / "hot_update_startup.json"
+            try:
+                if json.loads(marker.read_text(encoding="utf-8")) == {
+                    "operationId": operation_id
+                }:
+                    marker.unlink()
+                    self._suppress_startup_always = True
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError) as error:
+                logger.warning(f"消费热更启动标记失败，沿用普通启动：{error}")
 
     @staticmethod
     def _queue_script_entries(
@@ -1635,7 +1804,11 @@ class _TaskManager:
         # 停止全部任务期间拒绝新任务，否则它不在停止快照里，却会让停止流程
         # 一直等到它自然跑完。从这里到下方计入 _creating_tasks 之间不能有 await。
         if self._stopping_all:
-            raise RuntimeError("正在停止全部任务，暂不接受新任务")
+            raise BackendBusyError("正在停止全部任务，暂不接受新任务")
+
+        # 热更保护期间拒绝新任务，确保更新前的空闲状态不被打破
+        if self.is_hot_update_guarded():
+            raise BackendBusyError("后端正在更新或关闭，暂不接受新任务")
 
         # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
@@ -1823,7 +1996,9 @@ class _TaskManager:
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
             # 倒计时进度由电源任务经 power.countdown.updated 持续推送
-            await System.start_power_task()
+            from app.core.timer import MainTimer
+
+            await System.start_power_task(before_power=MainTimer.drain_community_tasks)
 
     async def stop_task(self, task_id: str) -> None:
         """
@@ -1926,6 +2101,9 @@ class _TaskManager:
 
                 StartUpMode = queue.get("Info", "StartUpMode")
                 if StartUpMode == "Always":
+                    if self._suppress_startup_always:
+                        logger.info(f"内部热更重启，跳过重复启动队列：{uid}")
+                        continue
                     logger.info(f"启动时需要运行的队列：{uid}")
                     # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
                     # 失败时不写 LastStartupTime，下次启动仍可重试。
@@ -1970,8 +2148,218 @@ class _TaskManager:
 
         finally:
             self._startup_queue_task = None
+            if self._startup_queue_started:
+                self._suppress_startup_always = False
 
         logger.success("启动时任务开始运行")
+
+    @contextmanager
+    def backend_operation(self) -> Iterator[None]:
+        """HTTP/WS 与定时器的在途业务计数，覆盖整个异步写入而非某次 save。"""
+        if self.is_hot_update_guarded():
+            raise BackendBusyError("后端正在更新或关闭，请稍后重试")
+        self._backend_operations += 1
+        try:
+            yield
+        finally:
+            self._backend_operations -= 1
+
+    async def run_backend_operation(self, run: Callable[[], Awaitable[Any]]) -> Any:
+        """断线取消不能让仍在工作线程中落盘的请求提前退出在途计数。"""
+        with self.backend_operation():
+            operation = asyncio.ensure_future(run())
+            self._backend_operation_tasks.add(operation)
+            operation.add_done_callback(self._backend_operation_tasks.discard)
+            cancelled = False
+            while True:
+                try:
+                    result = await asyncio.shield(operation)
+                    break
+                except asyncio.CancelledError:
+                    if operation.cancelled():
+                        raise
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
+            return result
+
+    async def drain_backend_operations(self, *, timeout: float = 10) -> None:
+        """关闭入口后有界等待实际业务任务，超时保留任务并阻止拆除服务。"""
+        pending = {task for task in self._backend_operation_tasks if not task.done()}
+        if pending:
+            _, pending = await asyncio.wait(pending, timeout=timeout)
+            if pending:
+                raise TimeoutError(f"等待后端在途业务完成超时：{len(pending)} 项")
+
+    def is_hot_update_guarded(self) -> bool:
+        return (
+            self._hot_update_guard is not None
+            or ShutdownCoordinator.closing
+            or (Config.server is not None and Config.server.should_exit)
+        )
+
+    def _hot_update_block_reason(self) -> str | None:
+        if ShutdownCoordinator.closing or (
+            Config.server is not None and Config.server.should_exit
+        ):
+            return "closing"
+        if (
+            self.task_handler
+            or self._creating_tasks
+            or any(not task.done() for task in self._cleanup_tasks)
+            or self._stopping_all
+            or self._backend_operations
+            or self._startup_queue_task is not None
+            or (Updater.download_task is not None and not Updater.download_task.done())
+            or Updater.is_switching_source
+            or Updater.is_locked
+            or any(not task.done() for task in Config.temp_task)
+            or (System.power_task is not None and not System.power_task.done())
+            or System.current_power_operation is not None
+        ):
+            return "busy"
+        pause_until = Config.get("Update", "PauseUntil")
+        if pause_until:
+            try:
+                if (
+                    datetime.now().date()
+                    < datetime.strptime(pause_until, "%Y-%m-%d").date()
+                ):
+                    return "paused"
+            except ValueError:
+                logger.warning("暂停更新日期无效，忽略该设置")
+        return None
+
+    def _release_hot_update_guard(self, operation: tuple[str, str, str]) -> None:
+        if (
+            self._hot_update_guard != operation
+            or ShutdownCoordinator.closing
+            or (Config.server is not None and Config.server.should_exit)
+        ):
+            return
+        self._hot_update_guard = None
+        if self._hot_update_lease is not None:
+            self._hot_update_lease.cancel()
+            self._hot_update_lease = None
+        logger.info(f"已释放热更保护：{operation[0]}")
+
+    async def check_hot_update_admission(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> tuple[bool, str | None, datetime | None]:
+        """原子冻结新业务，结清签到/补发后复核，准入只保留六十秒租约。"""
+        from .timer import MainTimer
+
+        operation = (operation_id, base_commit, target_commit)
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if base_commit == target_commit or (
+            expected_commit and expected_commit.lower() != base_commit
+        ):
+            raise ValueError("热更提交身份不匹配")
+        if ShutdownCoordinator.closing:
+            # 同一操作可重试关闭清理，不能把恢复请求当成新的准入。
+            if self._hot_update_guard == operation:
+                return True, None, None
+            return False, "closing", None
+        # 不在另一轮十秒排水后再排队十秒，保证 HTTP 请求预算有界。
+        if self._hot_update_lock.locked():
+            return False, "busy", None
+        async with self._hot_update_lock:
+            if self._hot_update_guard not in (None, operation):
+                raise ValueError("另一热更操作已持有保护，不能替换操作或提交")
+            # 从条件检查到冻结入口之间不能 await；定时器与 HTTP/WS 共用此保护。
+            if reason := self._hot_update_block_reason():
+                self._release_hot_update_guard(operation)
+                return False, reason, None
+            self._hot_update_guard = operation
+            if self._hot_update_lease is not None:
+                self._hot_update_lease.cancel()
+                self._hot_update_lease = None
+            MainTimer.begin_hot_update()
+            granted = False
+            try:
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    return False, "scheduledSoon", next_scheduled
+                if not await MainTimer.drain_community_tasks(timeout=10):
+                    return False, "busy", None
+                # 等待期间可能跨过定时边界或开始退出；复核权威配置和真实状态。
+                if reason := self._hot_update_block_reason():
+                    return False, reason, None
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    return False, "scheduledSoon", next_scheduled
+                if self._hot_update_lease is not None:
+                    self._hot_update_lease.cancel()
+                self._hot_update_lease = asyncio.get_running_loop().call_later(
+                    60, self._release_hot_update_guard, operation
+                )
+                granted = True
+                logger.info(f"热更准入成功：{operation_id}")
+                return True, None, None
+            finally:
+                if not granted:
+                    self._release_hot_update_guard(operation)
+
+    async def cancel_hot_update_guard(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> bool:
+        operation = (operation_id, base_commit, target_commit)
+        if self._hot_update_guard not in (None, operation):
+            raise ValueError("不能撤销另一热更操作的保护")
+        if ShutdownCoordinator.closing or (
+            Config.server is not None and Config.server.should_exit
+        ):
+            return False
+        async with self._hot_update_lock:
+            if self._hot_update_guard not in (None, operation):
+                raise ValueError("不能撤销另一热更操作的保护")
+            if ShutdownCoordinator.closing or (
+                Config.server is not None and Config.server.should_exit
+            ):
+                return False
+            self._release_hot_update_guard(operation)
+            return True
+
+    async def drain_hot_update(
+        self, *, operation_id: str, base_commit: str, target_commit: str
+    ) -> tuple[bool, str | None, datetime | None]:
+        """同一准备操作原子复核后进入关闭；失败保留身份，供 HTTP 重试清理。"""
+        from .timer import MainTimer
+
+        operation = (operation_id, base_commit, target_commit)
+        if self._hot_update_guard != operation:
+            raise ValueError("热更关闭必须匹配当前已准备的操作及提交")
+        if self._hot_update_lock.locked():
+            return False, "closing" if ShutdownCoordinator.closing else "busy", None
+        async with self._hot_update_lock:
+            if self._hot_update_guard != operation:
+                raise ValueError("热更关闭必须匹配当前已准备的操作及提交")
+            if not ShutdownCoordinator.closing:
+                # 复核到封闭入口之间没有 await，避免检查后再接纳新业务或定时槽。
+                if reason := self._hot_update_block_reason():
+                    self._release_hot_update_guard(operation)
+                    return False, reason, None
+                next_scheduled = MainTimer.check_upcoming_scheduled(
+                    Config.get("Update", "HotUpdateAvoidMinutes")
+                )
+                if next_scheduled is not None:
+                    self._release_hot_update_guard(operation)
+                    return False, "scheduledSoon", next_scheduled
+                ShutdownCoordinator.begin_shutdown()
+                if self._hot_update_lease is not None:
+                    self._hot_update_lease.cancel()
+                    self._hot_update_lease = None
+            # 不发送 shutdown.ready，也不置 should_exit；监督器随后调用 /close 完成退出。
+            try:
+                await ShutdownCoordinator.run_teardown()
+            except Exception as error:
+                # 清理异常不能被 API 按提交身份冲突返回。
+                raise RuntimeError("热更关闭清理失败") from error
+            return True, None, None
 
 
 TaskManager = _TaskManager()

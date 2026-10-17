@@ -5,8 +5,8 @@
 /**
  * 奇想盒用户信息
  *
- * base 来源三态（#879 语义）：「脚本/用户」=共享/独立 base（MAS 面板值，当前
- * 运行行为一致、为后续特殊功能预留），「直控」=原生 base（奇想盒自带配置）；
+ * base 来源三态（#879 语义）：shared/independent=共享/独立 base（MAS 面板值，
+ * 当前运行行为一致、为后续特殊功能预留），native=原生 base（奇想盒自带配置）；
  * 覆写层（IfQuickConfig）为账号级独立开关，开启时原生态任务前也会物化面板覆盖集。
  */
 export type WhimboxUserConfig_Info = {
@@ -23,9 +23,9 @@ export type WhimboxUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * base 来源（脚本=共享/用户=独立/直控=原生）
+     * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | '直控' | null);
+    Base?: ('shared' | 'independent' | 'native' | null);
     /**
      * 是否启用覆写层（快速配置，与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）
      */

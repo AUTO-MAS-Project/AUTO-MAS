@@ -1,5 +1,5 @@
 import { setImmediate as nextTurn } from 'node:timers/promises'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 function deferred() {
   let resolve!: () => void
@@ -192,11 +192,9 @@ describe('共享前端配置读写', () => {
   it('一次写入失败会通知调用方，后续写入仍能执行', async () => {
     const config = await import('./config')
     saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
-    const failed = expect(config.saveConfig({ language: 'en-US' })).rejects.toThrow(
-      'disk unavailable'
-    )
+    const failed = config.saveConfig({ language: 'en-US' })
     const next = config.saveConfig({ themeColor: 'green' })
-    await failed
+    await expect(failed).rejects.toThrow('disk unavailable')
     await next
 
     expect(disk).toMatchObject({ themeColor: 'green', mysteryUnlockedDate: '2026-10-02' })

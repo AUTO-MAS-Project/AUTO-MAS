@@ -25,7 +25,7 @@
 CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空时
 下载），GitHub 源只保留 GUI 手动入口（设置页按钮 / 主窗口拖拽导入），且没有
 任何程序化触发方式（Bootstrapper.ParseArgs 无相关 flag）。本模块在 MAS 侧
-补位：MAA 自动代理任务运行前（MaaManager.prepare 锁定配置之前；配置会话
+补位：MAA 自动代理任务运行前（MaaManager._run_main_task 锁定配置之前；配置会话
 不触发）按需更新启用「更新接管」脚本的 MAA 实例的资源。
 由触发脚本的接管开关与生效 CDK 驱动：脚本 CDK 优先、空则回退 MAS 全局
 配置；未开接管时完全不创建更新任务，检查与分发也只覆盖开了接管的安装。
@@ -478,11 +478,9 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
 
 
 async def _refresh_stage(
-    target: datetime, cdk: str, progress: _Progress | None = None
-) -> bool:
-    """取包并重建暂存。返回 False = 按设置本轮不可取包（无退避）；失败抛
-    _DownloadError。"""
-    url = await _mirror_download_url(cdk)
+    target: datetime, url: str, progress: _Progress | None = None
+) -> None:
+    """下载已取得地址的资源包并重建暂存；失败抛 _DownloadError。"""
     await _stream_download(url, progress)
     await _report(progress, "校验并暂存资源包…")
     await _run_write_thread(
@@ -493,7 +491,6 @@ async def _refresh_stage(
     # zip 是可弃缓存，删不掉（AV 隔离等）也无妨——下次下载按 "wb" 截断重写
     with suppress(OSError):
         _STAGE_ZIP.unlink(missing_ok=True)
-    return True
 
 
 # --------------------------------------------------------------------------
@@ -705,29 +702,24 @@ async def _refresh_resource_stage(
     ):
         return stage
     now = datetime.now(timezone.utc)
-    if backoff_active(state, "download_fail_until", now):
+    credential_key = hashlib.sha256(cdk.encode("utf-8")).hexdigest()[:16]
+    attempt_field = f"last_download_attempt_at/{credential_key}"
+    failure_field = f"download_fail_until/{credential_key}"
+    if backoff_active(state, failure_field, now):
         return stage
-    if attempted_today(state, "last_download_attempt_at", now):
+    if attempted_today(state, attempt_field, now):
         await _report(progress, "今日已尝试获取资源包，明日再试；已有缓存照常分发")
         return stage
     await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
-    previous_attempt = state.get("last_download_attempt_at")
-    # 请求前持久记账：失败、取消或进程退出都不能再次消耗当天预算。
-    state["last_download_attempt_at"] = datetime.now(timezone.utc).isoformat()
-    write_file(_STATE_FILE, state)
     try:
-        refreshed = await _refresh_stage(target, cdk, progress)
-        if not refreshed:
-            # 启用条件改变且尚未请求资源包，不占用当天预算。
-            if previous_attempt is None:
-                state.pop("last_download_attempt_at", None)
-            else:
-                state["last_download_attempt_at"] = previous_attempt
-            write_file(_STATE_FILE, state)
-            await _report(progress, "更新源未使用 Mirror酱 或未填 Key，跳过资源更新")
+        # 凭据被拒、尚未取得下载地址时不消耗当天取包次数；不同 CDK 独立退避。
+        url = await _mirror_download_url(cdk)
+        state[attempt_field] = datetime.now(timezone.utc).isoformat()
+        write_file(_STATE_FILE, state)
+        await _refresh_stage(target=target, url=url, progress=progress)
         return _load_manifest()
     except _DownloadError as e:
-        state["download_fail_until"] = (
+        state[failure_field] = (
             datetime.now(timezone.utc) + timedelta(seconds=_RETRY_INTERVAL)
         ).isoformat()
         write_file(_STATE_FILE, state)
@@ -830,6 +822,12 @@ async def _sweep(progress: _Progress | None = None, cdk: str = "") -> None:
     clocks = dict(pairs)
     await _report(progress, "检查 MAA 资源更新…")
     state = load_state(_STATE_FILE)
+    # 旧版把不同 CDK 的失败共用为一天的禁用状态；保留资源缓存，清除这两项旧记账。
+    if "last_download_attempt_at" in state or "download_fail_until" in state:
+        state.pop("last_download_attempt_at", None)
+        state.pop("download_fail_until", None)
+        state.pop("last_query_at", None)
+        write_file(_STATE_FILE, state)
     stage = await _run_write_thread(_load_valid_manifest)
     target = await _query_resource_version(clocks=clocks, stage=stage, state=state)
     stage = await _refresh_resource_stage(
@@ -867,7 +865,7 @@ async def prepare_queue_resources(
 ) -> None:
     """MAA 任务运行前按需更新全部启用接管脚本的 MAA 实例资源。
 
-    必须在 MaaManager.prepare 锁定脚本配置之前调用：lock() 之后本安装会被
+    由 MaaManager._run_main_task 在维护判断与锁定配置之前调用：lock() 之后本安装会被
     占用过滤跳过，更新不到它自己。
 
     Args:

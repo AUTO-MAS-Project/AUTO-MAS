@@ -289,6 +289,10 @@ def main():
 
         await Config.init_config()
 
+        from app.core.notify_channels import initialize_notification_channels
+
+        initialize_notification_channels()
+
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
@@ -310,7 +314,8 @@ def main():
                 """执行一个初始化步骤，失败时返回「步骤名（异常）」，成功返回 None。"""
 
                 try:
-                    await step()
+                    with TaskManager.backend_operation():
+                        await step()
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -371,20 +376,20 @@ def main():
             try:
                 await run_optional_step("MCP 服务挂载", mount_mcp)
                 await run_optional_step("活动关卡信息获取", init_stage_info)
-                await run_optional_step("历史记录清理", Config.clean_old_history)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
-                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        with TaskManager.backend_operation():
+                            await Config.migrate_maafw_embedded_copies_to_payloads()
+                            await Config.clean_maafw_agent_venvs()
+                            await Config.clean_maafw_embedded_copies()
+                            await Config.clean_maafw_runtime_blobs()
+                            await Config.clean_maafw_update_cache()
+                            # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
+                            await Config.clean_maafw_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -392,10 +397,6 @@ def main():
 
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
-                )
-                await run_optional_step("诊断文件清理", Config.clean_debug_diagnostics)
-                await run_optional_step(
-                    "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
                 )
 
                 if IS_WINDOWS:
@@ -463,6 +464,9 @@ def main():
             from app.runtime_tasks import RuntimeTasks
             from app.services import Matomo, System, Updater
 
+            # closing 已封住新入口；先结清断线后仍受保护的写入，再拆它依赖的服务。
+            await TaskManager.drain_backend_operations(timeout=10)
+
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
                 background_task.cancel()
@@ -488,7 +492,6 @@ def main():
             await MainTimer.stop()
             from app.services.openclaw_qq import openclaw_qq_manager
 
-            await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
@@ -503,6 +506,11 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
+            from app.core.notify import shutdown_community_notifications
+
+            await shutdown_community_notifications()
+            # 通知任务结束后才释放借用的 QQ 连接。渠道本身不关闭共享资源。
+            await openclaw_qq_manager.stop()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 
@@ -537,6 +545,7 @@ def main():
         tools_router,
         update_router,
     )
+    from app.api.update import BackendOperationMiddleware
 
     app = FastAPI(
         title="AUTO-MAS",
@@ -544,6 +553,8 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
+
+    app.add_middleware(BackendOperationMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

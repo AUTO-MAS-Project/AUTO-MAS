@@ -47,6 +47,7 @@ from app.task.MaaFW.tools.core.runtime_pool.binding import (
     binding_index_candidates,
     ensure_binding,
     exact_version_of,
+    mask_url_credentials,
     release_binding,
     resolve_binding_version,
     retain_binding,
@@ -63,6 +64,11 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
     install_cancel_scope,
     is_package_index_offline,
     raise_if_install_cancelled,
+)
+from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
+    RequirementsFileError,
+    read_requirements_file,
+    scan_top_level_requirements,
 )
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -426,7 +432,8 @@ def prepare_runner_environment(
 def _describe_binding_source(binding: BindingInfo) -> str:
     source = binding.source
     if source.startswith("pypi:"):
-        return f"PyPI/镜像 {source[len('pypi:') :]}"
+        # 已装好的 binding 清单里可能还记着带 user:pw@ 的索引地址（打码之前装的）
+        return f"PyPI/镜像 {mask_url_credentials(source[len('pypi:') :])}"
     if source.startswith("github-source:"):
         return f"GitHub 源码 {source[len('github-source:') :]}"
     if source.startswith("harvest"):
@@ -631,21 +638,6 @@ def release_runner_environment(
     if not runtime_id or not lease_id or pool is None:
         return None
     return pool.release_lease(runtime_id, lease_id)
-
-
-def build_runner_packages(
-    project_path: str | Path | None = None,
-    *,
-    maafw_requirement: str | None = None,
-) -> list[str]:
-    """base venv 的包集合：常量，与项目无关。
-
-    ``project_path`` / ``maafw_requirement`` 保留在签名里给旧调用方对齐：maafw 不再
-    进 venv，按版本存在 ``<pool>/bindings/``（见 runtime_pool/binding.py）。
-    """
-
-    del project_path, maafw_requirement
-    return list(BASE_RUNTIME_PACKAGES)
 
 
 def _select_project_maafw_requirement(
@@ -1414,17 +1406,20 @@ def prefer_active_venv_site_packages(
 
 
 def _load_requirements(project_path: Path) -> list[str]:
+    # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
+    # 「  # via ...」时也认得出来。
+    # 这里只用来找 maafw 版本声明：清单展开不了（-c / -e、-r 越界或找不到）时退回只扫顶层
+    # 依赖行（跳过指令），顶层写着的声明照样认得出，记一行告警，不拦运行环境准备；
+    # agent 隔离 venv 真要装这份清单时仍会照常报错。
     requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
     try:
-        for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            packages.append(line)
-    except FileNotFoundError:
-        pass
-    return packages
+        parsed = read_requirements_file(requirements_path)
+    except RequirementsFileError as exc:
+        logger.warning(
+            "项目 requirements.txt 展开不了，找 maafw 版本声明时只看顶层依赖行：%s", exc
+        )
+        return scan_top_level_requirements(requirements_path)
+    return list(parsed.requirements) if parsed is not None else []
 
 
 def _normalized_sys_path(path: str) -> str:

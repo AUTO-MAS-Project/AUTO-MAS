@@ -8,8 +8,6 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
-import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -20,6 +18,8 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { HotUpdatePrepareIn } from '../models/HotUpdatePrepareIn';
+import type { HotUpdatePrepareOut } from '../models/HotUpdatePrepareOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -216,26 +216,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/guard/capture',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 修改魔改 AVD 实例选项
-     * 内存、气球，只改传了的项，下次启动生效。
-     * @param requestBody
-     * @returns Emulator2AvdInstanceOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
-        requestBody: Emulator2AvdInstanceOptionsSetIn,
-    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/instance/options/set',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -535,6 +515,33 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 后端热更协调准入
+     * 申请或撤销后端热更保护。
+     *
+     * prepare: 检查空闲、避让窗口，准入后进入更新状态；
+     * drain: 复核同一准备操作并完成关闭清理，不退出进程；
+     * cancel: 撤销对应操作的保护。
+     *
+     * 忙、临近定时、暂停是正常的延期决策，不产生用户失败通知；
+     * 参数或执行异常仍走现有 OutBase 错误契约。
+     * @param requestBody
+     * @returns HotUpdatePrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareHotUpdateApiUpdateHotUpdatePost(
+        requestBody: HotUpdatePrepareIn,
+    ): CancelablePromise<HotUpdatePrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/hot-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

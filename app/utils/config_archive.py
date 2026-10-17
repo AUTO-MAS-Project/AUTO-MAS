@@ -35,8 +35,10 @@ import shutil
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
+from time import sleep
 
 from app.utils import get_logger
+from app.utils.constants import normalize_base_source
 from app.utils.io import force_rmtree
 from app.utils.platform import IS_WINDOWS, is_long_path_supported
 
@@ -54,11 +56,17 @@ OVERLAY_SIDECAR_NAME = "_mas_overlay.json"
 """MAS 页面字段侧车文件名（跨专项统一；恢复时先随目录落盘、由专项读回
 回填后删除，最终不留在配置目录——分离逻辑在专项 restore 回调内）"""
 
-MODE_FILE_NAME = "_mas_mode"
-"""备份时点的配置来源标注文件名（内容为三态 Mode 原文，如「脚本」「用户」）。
+BASE_FILE_NAME = "_mas_base"
+"""备份时点的配置来源标注文件名（内容为 base 来源，如 "shared" "independent"）。
 
 供备份列表类型标签与跨来源恢复校验用；只存归档内，不是配置内容。
 """
+
+LEGACY_BASE_FILE_NAME = "_mas_mode"
+"""旧版标注文件名（内容为旧来源字面量），只为读旧归档兼容。"""
+
+META_FILE_NAMES = frozenset({BASE_FILE_NAME, LEGACY_BASE_FILE_NAME})
+"""归档元数据文件：不是配置内容，不进指纹对比、不落目标目录。"""
 
 _PARTIAL_SUFFIX = ".partial"
 """归档暂存目录后缀：复制期间为 <时间戳>.partial，全部写完后改名为时间戳目录。
@@ -69,24 +77,35 @@ _PARTIAL_SUFFIX = ".partial"
 _WINDOWS_MAX_PATH = 260
 """Windows 未开启长路径支持时的 MAX_PATH 上限。"""
 
-
-def write_backup_mode(backup_dir: Path, mode: str) -> None:
-    """把配置来源 Mode 写入归档目录（备份时点标注；列表标签/恢复校验用）。"""
-
-    (Path(backup_dir) / MODE_FILE_NAME).write_text(str(mode), encoding="utf-8")
+_RENAME_RETRIES = 5
+_RENAME_RETRY_INTERVAL = 0.3
+"""归档改名重试：等待 Windows 临时占用的句柄释放。"""
 
 
-def read_backup_mode(backup_dir: Path) -> str | None:
-    """读取归档记录的配置来源 Mode；无记录（旧版备份）或损坏返回 ``None``。"""
+def write_backup_base(backup_dir: Path, base: str) -> None:
+    """把配置来源 base 写入归档目录（备份时点标注；列表标签/恢复校验用）。"""
 
-    path = Path(backup_dir) / MODE_FILE_NAME
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8").strip()
-    except Exception:
-        return None
-    return text or None
+    (Path(backup_dir) / BASE_FILE_NAME).write_text(str(base), encoding="utf-8")
+
+
+def read_backup_base(backup_dir: Path) -> str | None:
+    """读取归档记录的配置来源 base；无记录（旧版备份）或损坏返回 ``None``。
+
+    旧归档的标注文件写的是旧来源字面量（如「脚本」「用户」），一并归一。
+    """
+
+    root = Path(backup_dir)
+    for name in (BASE_FILE_NAME, LEGACY_BASE_FILE_NAME):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if text:
+            return normalize_base_source(text)
+    return None
 
 
 def config_root_key(config_path: str | Path) -> str:
@@ -251,13 +270,13 @@ def _archive(
         # 一致，多出来的存底条目没有信息量，却会在 keep 清理时挤掉最旧的
         for ts in times:
             try:
-                # 备份元数据（_mas_mode，归档后写入、不在 payload 里）不参与指纹
+                # 备份元数据（_mas_base，归档后写入、不在 payload 里）不参与指纹
                 # 对比，计入会让去重恒失效；_mas_overlay.json 侧车是 payload 内的
                 # 用户数据，必须参与（只改侧车字段也要新建归档）
                 latest = {
                     k: v
                     for k, v in dir_files(store_root / ts).items()
-                    if k != MODE_FILE_NAME
+                    if k not in META_FILE_NAMES
                 }
                 if file_set_hash(latest) == file_set_hash(files):
                     return None
@@ -268,7 +287,7 @@ def _archive(
             latest = {
                 k: v
                 for k, v in dir_files(store_root / times[0]).items()
-                if k != MODE_FILE_NAME
+                if k not in META_FILE_NAMES
             }
             if file_set_hash(latest) == file_set_hash(files):
                 return None
@@ -298,7 +317,19 @@ def _archive(
             else:
                 target.write_bytes(_coerce_bytes(source))
         # 同目录改名在同一卷上是原子的：列表只会看到完整归档
-        staging.rename(dest)
+        # Windows 可能短暂占用刚写入的文件；保留完整暂存内容，稍后再改名。
+        for attempt in range(_RENAME_RETRIES):
+            try:
+                staging.rename(dest)
+                break
+            except PermissionError as e:
+                if (
+                    not IS_WINDOWS
+                    or e.winerror not in (5, 32, 33)
+                    or attempt == _RENAME_RETRIES - 1
+                ):
+                    raise
+                sleep(_RENAME_RETRY_INTERVAL)
     except BaseException:
         # 失败清理暂存目录（同 app/utils/io.py 的 atomic_write），再把原异常扩散给调用方
         force_rmtree(staging)
@@ -418,7 +449,7 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     restored = {
         rel: path
         for rel, path in dir_files(backup_dir).items()
-        if rel != MODE_FILE_NAME  # 模式标注不是配置内容，不落目标目录
+        if rel not in META_FILE_NAMES  # 来源标注不是配置内容，不落目标目录
     }
     if not restored:
         raise ValueError(f"备份内容为空: {ts}")
@@ -490,7 +521,18 @@ def read_overlay_sidecar(
         data = json.loads(sidecar.read_text(encoding="utf-8"))
     except Exception:
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    # 迁移前的侧车把 base 来源写在 Mode（HSR 是 Info.Mode）：键与配置项一起迁到
+    # Base、值归一为新语义，旧备份的预览与回填口径才一致
+    for legacy, current in (("Mode", "Base"), ("Info.Mode", "Info.Base")):
+        if legacy in data and current not in data:
+            data[current] = normalize_base_source(data.pop(legacy))
+    # Whimbox 的侧车把 Info 段嵌成子对象（旧版写 {"Info": {"Mode": …}}）
+    nested = data.get("Info")
+    if isinstance(nested, dict) and "Mode" in nested and "Base" not in nested:
+        nested["Base"] = normalize_base_source(nested.pop("Mode"))
+    return data
 
 
 def mask_account(value) -> str:
@@ -542,7 +584,7 @@ def restore_files(
     managed = (
         sorted(rel_keys)
         if rel_keys is not None
-        else sorted(rel for rel in dir_files(backup_dir) if rel != MODE_FILE_NAME)
+        else sorted(rel for rel in dir_files(backup_dir) if rel not in META_FILE_NAMES)
     )
     if not managed:
         raise ValueError(f"备份内容为空: {backup_dir.name}")

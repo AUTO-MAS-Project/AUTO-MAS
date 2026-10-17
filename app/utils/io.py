@@ -157,7 +157,14 @@ def force_rmtree(path: Path) -> None:
 
     for attempt in range(_RMTREE_RETRIES):
         try:
-            shutil.rmtree(path, onexc=remove_readonly)
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_junction():
+                path.rmdir()
+            elif not path.exists():
+                return
+            else:
+                shutil.rmtree(path, onexc=remove_readonly)
             return
         except OSError:
             if attempt == _RMTREE_RETRIES - 1:
@@ -340,7 +347,7 @@ def mark_native_config_injected(
     """
     记录 MAS 注入后的原生配置指纹, 供崩溃恢复区分污染与用户改动
 
-    MAS 把配置写进原生目录后调用; 未注入(直控)时不调用, 快照保持 injected
+    MAS 把配置写进原生目录后调用; 未注入(原生来源)时不调用, 快照保持 injected
     为 None, 恢复时现场与基线一致即视为无污染。
 
     Args:
@@ -421,7 +428,7 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     force_rmtree(backup_path)
     shutil.copytree(src, staging_path)
     dst_moved = False
-    if dst.exists():
+    if dst.exists() or dst.is_symlink() or dst.is_junction():
         dst.rename(backup_path)
         dst_moved = True
     try:

@@ -50,7 +50,7 @@ logger = get_logger("HSR M7A 运行器")
 # 不是中文时更会直接崩在写不出中文的 stdout 上，把已经做完的模块判成失败。
 #
 # M7A 读配置时环境变量优先于 config.yaml（module/config/config.py 的映射表）。
-# MARCH7TH_AFTER_FINISH 钉成 None：托管与直控都不让 M7A 在任务后退出游戏、
+# MARCH7TH_AFTER_FINISH 钉成 None：托管与原生来源都不让 M7A 在任务后退出游戏、
 # 关机或睡眠——这些由 MAS 的队列完成后操作负责。后端环境里其余 MARCH7TH_*
 # 会静默盖过 MAS 写进 config.yaml 的值，起进程前剔掉（见 build_m7a_env）。
 M7A_HEADLESS_ENV: dict[str, str] = {
@@ -74,7 +74,7 @@ def build_m7a_platform_env(
     """按游戏平台钉住三月七的云开关（环境变量优先于 config.yaml）。
 
     客户端平台钉 ``false``，托管运行时用户在三月七里开过云游戏也不会跑到云上
-    （客户端 + 直控不调用这里，见 ``build_platform_m7a_env``）；云平台再钉浏览器
+    （客户端 + 原生来源不调用这里，见 ``build_platform_m7a_env``）；云平台再钉浏览器
     类型与有窗口模式，与 MAS 托管浏览器的
     连接条件一致（内置 Chrome + 同版本 chromedriver，没有 ``--headless``）。
     ``browser_debug_port`` 等键没有环境变量，只能写 config.yaml。

@@ -16,7 +16,8 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""``/maafw/update`` 背后的业务：手动检查 / 应用 MFW 项目更新。
+"""``/maafw/update`` 背后的业务：手动检查 / 应用 MFW 项目更新；另有 ``/maafw/mirror-cdk``
+查 Mirror 酱 CDK 状态（编辑页 CDK 输入框下的小字）。
 
 应用走与运行前 / 运行后自动更新同一条 ``view_update.run_view_update``（一个组只更新
 一次），区别只在：整段持本视图预约、拿谱系锁限时、不读预检备忘（手动即强制重试）。
@@ -29,7 +30,11 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
-from app.models.schema import MaaFWProjectUpdateData, WSMaaFWProjectUpdateProgressData
+from app.models.schema import (
+    MaaFWMirrorCdkData,
+    MaaFWProjectUpdateData,
+    WSMaaFWProjectUpdateProgressData,
+)
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
@@ -44,7 +49,9 @@ from app.task.MaaFW.tools.core.interface.loader import (
 )
 from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
+    can_check_project_update,
     discover_maafw_project_update,
+    query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.project_update.updater import (
@@ -54,6 +61,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     follow_source_enabled,
     is_source_form,
+    resolve_maafw_project_root,
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -85,6 +93,12 @@ UPDATE_FOLLOW_SOURCE = (
 UPDATE_SOURCE_FORM = (
     "这是按源码形态导入的项目（interface 在 assets/、Agent 在源码目录），始终跟随来源目录、"
     "不做项目更新：直接改来源目录即可（下次运行前或点「立即同步」重新导入）；要用发行版请导入发行包"
+)
+# 没声明 rid、又不满足「下载源选 GitHub + interface 声明了 github 仓库」（那样就只看
+# GitHub Release）时，MAS 没法检查这个项目的更新；判据见 can_check_project_update。
+UPDATE_NO_MIRRORCHYAN_RID = (
+    "该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），"
+    "MAS 无法检查它的更新"
 )
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
@@ -208,6 +222,33 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     return config
 
 
+def _describe_group_ahead(version: str) -> str:
+    return f"同项目的其他脚本已更新到 {version}，点「更新」即可切换（无需下载）"
+
+
+def _group_ahead_version(root_path: Path, channel: str) -> str | None:
+    """同项目、同更新通道的其他脚本已经更新到、比本脚本新的版本；没有为 None。
+
+    只读视图标记与谱系记录（不联网）。本脚本运行中被跳过、随后又被停止时会落后于
+    其他脚本；这时「更新」只是切过去，不用下载。
+    """
+
+    from app.task.MaaFW.tools.core.project_update.payloads import version_newer
+    from app.task.MaaFW.tools.embedded.embedded_project import read_view_marker
+    from app.task.MaaFW.tools.embedded.view_update import latest_entry
+
+    marker = read_view_marker(root_path)
+    if marker is None:
+        return None
+    entry = latest_entry(str(marker["lineage"]), channel)
+    if entry is None or str(entry["id"]) == str(marker["payload"]):
+        return None
+    version = str(entry.get("version") or "")
+    if not version_newer(version, str(marker.get("version") or "")):
+        return None
+    return version
+
+
 async def _heal_projection(
     script_id: str,
     script_config: RuntimeMaaFWConfig,
@@ -283,7 +324,12 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     if root_path is None:
         return MaaFWApiReply.error(400, error)
     if not root_path.is_dir():
-        return MaaFWApiReply.error(400, "MFW 项目路径不是有效目录，请检查 Info.Path")
+        # 有效根是 MAS 管理的项目副本，不是 Info.Path，别让用户去查配置键。
+        return MaaFWApiReply.error(
+            400,
+            "找不到项目文件。请关闭本页后重新打开，MAS 会尝试自动修复；"
+            "仍不行就新建脚本重新导入",
+        )
 
     try:
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
@@ -359,16 +405,60 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             shell_hint=str(source_config.get("project_shell_hint") or ""),
             send_log=send_update_log,
         )
+        # 组里已有比本脚本新的版本时，以它为准问远端（与应用时第 1 步组同步之后一致），
+        # 远端没有更新的就提示「点更新即可切换」，别引导用户去配 CDK 或等下次运行。
+        try:
+            group_version = await asyncio.to_thread(
+                _group_ahead_version, root_path, source_config["channel"]
+            )
+        except Exception as exc:  # noqa: BLE001 - 读不了就按视图版本检查
+            _maafw_update_logger.warning(f"读取同项目已更新的版本失败: {exc}")
+            group_version = None
+
+        def group_ahead_reply() -> MaaFWApiReply:
+            assert group_version is not None
+            message = _describe_group_ahead(group_version)
+            publish_progress(tracker.finished(success=True, message=message))
+            return MaaFWApiReply(
+                message=message,
+                data=MaaFWProjectUpdateData(
+                    checked=True,
+                    updateAvailable=True,
+                    installable=True,
+                    currentVersion=current_version,
+                    latestVersion=group_version,
+                    versionName=group_version,
+                ),
+            )
+
+        if not can_check_project_update(interface, source_config):
+            # 查不了时核心包只记一行「跳过更新检查」、返回 None，过去被当成「已是最新」。
+            if group_version:
+                return group_ahead_reply()
+            _maafw_update_logger.info(f"{UPDATE_NO_MIRRORCHYAN_RID}: {script_id}")
+            publish_progress(
+                tracker.finished(success=False, message=UPDATE_NO_MIRRORCHYAN_RID)
+            )
+            return MaaFWApiReply(
+                message=UPDATE_NO_MIRRORCHYAN_RID,
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    currentVersion=current_version,
+                    skippedReason=UPDATE_NO_MIRRORCHYAN_RID,
+                ),
+            )
+        skipped: list[str] = []
         try:
             discovery = await discover_maafw_project_update(
                 interface,
-                current_version=current_version,
+                current_version=group_version or current_version,
                 source_config=source_config,
                 proxy=proxy,
                 send_log=send_update_log,
                 # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
                 # 而用户可能只是随手点了下「检查更新」。真更新时再取。
                 version_only=True,
+                on_skipped=skipped.append,
             )
         except MaaFWProjectUpdateError as exc:
             message = f"MFW 更新检查失败: {exc}"
@@ -383,6 +473,20 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             return MaaFWApiReply.error(500, message)
 
         if discovery is None:
+            if group_version:
+                return group_ahead_reply()
+            if skipped:
+                # 没查成（只看 GitHub 时连不上、没有可用的 Release）不是「已是最新」。
+                message = skipped[0]
+                publish_progress(tracker.finished(success=False, message=message))
+                return MaaFWApiReply(
+                    message=message,
+                    data=MaaFWProjectUpdateData(
+                        checked=False,
+                        currentVersion=current_version,
+                        skippedReason=message,
+                    ),
+                )
             message = f"MFW 项目已是最新版本: {current_version or '未知'}"
             publish_progress(tracker.finished(success=True, message=message))
             return MaaFWApiReply(
@@ -394,7 +498,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
 
         extra = _maafw_update_extra_fields(discovery)
         candidate = getattr(discovery, "candidate", None)
-        # discovery.source 是版本元数据来源（恒为 Mirror 酱）；响应里的 source
+        # discovery.source 是版本元数据来源（恒标 Mirror 酱，GitHub 源取了 GitHub 上
+        # 更新的版本时也一样）；响应里的 source
         # 要回答「会从哪里下载」：优先候选包来源，其次核心包的 package_source。
         # 一律用对外名（mirrorchyan / github）：candidate.source 是核心包的内部
         # 名（github_release），直接回给前端会让「下载来源」显示成 github_release。
@@ -412,6 +517,10 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         unavailable_reason = getattr(discovery, "unavailable_reason", "")
         if not installable and unavailable_reason:
             message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
+            if group_version:
+                # 远端的装不了，但同项目其他脚本已有更新的版本：「更新」能先切过去。
+                message = f"{message}；{_describe_group_ahead(group_version)}"
+                installable = True
         publish_progress(
             tracker.finished(
                 success=True,
@@ -569,9 +678,24 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             except Exception as exc:  # noqa: BLE001 - 确认失败不算更新失败，运行前还会再备
                 _maafw_update_logger.warning(f"更新后确认运行环境失败: {exc}")
                 send_update_log(f"运行环境确认失败（运行前会再准备）: {exc}")
+        if outcome.updated and not outcome.registered_id:
+            # 第 1 步组同步就切到了同项目其他脚本已有的版本，核心包随后的收尾说的是远端
+            # （「已是最新」或「没有可安装的更新包」，后者按失败显示）：结论以切换为准。
+            publish_progress(
+                tracker.finished(
+                    success=True, message=str(getattr(result, "message", "") or "")
+                )
+            )
+        elif not outcome.updated and not can_check_project_update(
+            interface, source_config
+        ):
+            publish_progress(
+                tracker.finished(success=False, message=UPDATE_NO_MIRRORCHYAN_RID)
+            )
     except MaaFWProjectUpdateError as exc:
         if exc.project_lock_busy:
-            return MaaFWApiReply.error(409, "MFW 项目正在自动更新/预检中，请稍后再试")
+            # 占着谱系锁的可能是同项目另一个脚本的手动 / 自动更新或补齐，原文已说清是谁。
+            return MaaFWApiReply.error(409, str(exc))
         return MaaFWApiReply.error(400, f"MFW 项目更新失败: {exc}")
     except Exception as exc:
         logger.opt(exception=True).warning(
@@ -603,6 +727,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
+    if not outcome.updated and not can_check_project_update(interface, source_config):
+        message = UPDATE_NO_MIRRORCHYAN_RID
     return MaaFWApiReply(
         message=_maafw_update_message_with_cdk(message, extra),
         data=MaaFWProjectUpdateData(
@@ -620,4 +746,51 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             source=getattr(result, "source", None),
             **extra,
         ),
+    )
+
+
+async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
+    """``/maafw/mirror-cdk``：编辑页 CDK 输入框下那行小字要的 CDK 状态与到期时间。
+
+    CDK 用请求里的值（输入框当前值，失焦后保存可能还没落盘）；渠道与代理按脚本级
+    ``Update.*``，与手动更新同一口径。项目根按脚本取视图，但**不**像 ``/maafw/update``
+    那样先补建视图——这只是一行提示，不该在打开页面时触发导入；视图不在、interface 读不了
+    都按 ``unsupported`` 返回，界面上什么都不显示。查不到（网络等）同样按成功返回
+    ``error``，不报红字。
+    """
+
+    try:
+        script_config = maafw_script_config(script_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+
+    rid = ""
+    status = "unsupported"
+    expired_time: int | None = None
+    root_path = resolve_maafw_project_root(script_id, script_config)
+    try:
+        interface = (
+            await asyncio.to_thread(load_interface_model_cached, root_path)
+            if root_path.is_dir()
+            else None
+        )
+    except Exception:  # noqa: BLE001 - 读不了就是不支持，不让这行提示报错
+        interface = None
+    if interface is not None:
+        rid = str(interface.mirrorchyan_rid or "").strip()
+        result = await query_mirrorchyan_cdk_status(
+            interface,
+            mirror_cdk=cdk,
+            channel=resolve_update_credentials(script_config).channel,
+            # 代理地址可能带 user:pw，不进日志，也不走 ``Config.proxy``
+            proxy=_maafw_httpx_proxy(resolve_update_proxy_url(script_config)),
+        )
+        status = result.status
+        expired_time = result.expired_time
+    # CDK 一个字符都不进日志
+    _maafw_update_logger.info(
+        f"MFW CDK 状态查询: script={script_id} rid={rid or '无'} status={status}"
+    )
+    return MaaFWApiReply(
+        data=MaaFWMirrorCdkData(status=status, expiredTime=expired_time)
     )

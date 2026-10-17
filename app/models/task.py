@@ -63,6 +63,8 @@ class UserItem:
     push_log_mode: str = field(
         default="汇总"
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
+    # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
+    maintenance_skipped: bool = field(default=False, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -152,7 +154,9 @@ class TaskItem(ABC):
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
-    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
+    instance_idx: int | None = (
+        None  # 配置会话（原生来源）：会话窗口临时切换到的原生实例
+    )
     cycle_next_list: List[dict] = field(
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
@@ -406,6 +410,13 @@ class TaskExecuteBase(ABC):
 
         await self.final_task()
 
+    def _on_finalize_cancel_requested(self) -> None:
+        """收尾进行中又收到取消（用户点了停止）时调一次；收尾本身不会被取消。
+
+        默认什么都不做。收尾里有耗时步骤、需要提前停下的子类覆写它（置令牌），
+        不要在这里 await 或抛异常。
+        """
+
     async def _run_final_task(self) -> None:
         """推迟外层取消，直到收尾协程真正结束。"""
 
@@ -430,6 +441,7 @@ class TaskExecuteBase(ABC):
                 cancellation = e
                 while current_task.cancelling():
                     current_task.uncancel()
+                self._on_finalize_cancel_requested()
             except Exception:
                 break
 

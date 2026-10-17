@@ -34,8 +34,14 @@ from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import (
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -43,6 +49,7 @@ from .AutoProxy import (
     read_maa_config_with_fallback,
 )
 from .base_preset import (
+    MAA_STAMINA_LEGACY_FILENAME,
     ensure_maa_default_configuration,
     get_maa_base_preset,
     is_valid_maa_task_queues,
@@ -169,8 +176,8 @@ def _restore_session_startup_overrides(
 class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式
 
-    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（脚本态共享
-    Default、用户态独立目录），见 :meth:`_mas_owner`。view_only=True 时为
+    会话包络（下发源 + 回写目标）与运行下发同一套 owner 规则（shared 来源共享
+    Default、independent 来源独立目录），见 :meth:`_mas_owner`。view_only=True 时为
     查看会话：只读预览（如「查看历史备份」）——用户级会话下发的 owner 目录
     即刚恢复的备份（所见即备份），脚本级会话跳过下发（原生目录即备份）；
     结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
@@ -226,23 +233,31 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     def _mas_owner(self) -> str | None:
-        """本会话的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+        """本会话的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
         与运行下发（AutoProxy ``set_maa``）同一套来源规则——会话的下发与
-        回写此前硬编码用户目录，脚本态用户的会话改动运行时根本不读（改了
-        白改），配置备份也因此采不到会话现场；现对齐运行态。直控用户没有
-        MAS 托管配置目录（对齐 MaaEnd 的「直控无 mas 池」），返回 ``None``。
+        回写此前硬编码用户目录，共享来源用户的会话改动运行时根本不读（改了
+        白改），配置备份也因此采不到会话现场；现对齐运行态。原生来源用户没有
+        MAS 托管配置目录（对齐 MaaEnd 的「原生来源无 mas 池」），返回 ``None``。
         """
 
         user_id = self.cur_user_item.user_id
         if user_id == "Default":
             return "Default"
-        mode = str(
-            self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
-        ).strip()
-        if mode == "直控":
+        base = read_config_base(
+            self.user_config[uuid.UUID(user_id)], CONFIG_BASE_SHARED
+        )
+        if base == CONFIG_BASE_NATIVE:
             return None
-        return user_id if mode == "用户" else "Default"
+        return user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
+
+    def _uses_managed_queue(self) -> bool:
+        """仅脚本预设和启用快速配置的用户使用三段托管队列。"""
+
+        user_id = self.cur_user_item.user_id
+        return user_id == "Default" or self.user_config[uuid.UUID(user_id)].get(
+            "Info", "IfQuickConfig"
+        )
 
     async def set_maa(self):
         """配置MAA运行参数"""
@@ -257,10 +272,10 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("MAA 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
-        # 直控会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
+        # 原生来源会话：安装目录原生配置即现场，MAS 零写入（含归档）；MAA GUI
         # 内的编辑由本体落盘并保留
         if self._mas_owner() is None:
-            logger.info("MAA 直控会话: 直接使用安装目录原生配置, MAS 零写入")
+            logger.info("MAA 原生来源会话: 直接使用安装目录原生配置, MAS 零写入")
             return
 
         # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；带页面
@@ -270,26 +285,6 @@ class ScriptConfigTask(TaskExecuteBase):
         owner = self._mas_owner()
         mas_dir = mas_config_dir(self.script_info.script_id, owner)
         seed_maa_base_config(mas_dir)
-
-        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
-            "TaskQueue"
-        ]
-        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
-        base_configurations = base_gui_new_set.get("Configurations")
-        repaired_queues = 0
-        if isinstance(base_configurations, dict):
-            for configuration in base_configurations.values():
-                if not isinstance(configuration, dict):
-                    continue
-                queue, repaired = restore_maa_default_task_queue(
-                    configuration.get("TaskQueue"), preset_queue
-                )
-                if repaired:
-                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
-                    repaired_queues += 1
-        if repaired_queues and not self.view_only:
-            write_file(mas_dir / "gui.new.json", base_gui_new_set)
-            logger.warning(f"MAA 队列结构异常, 已恢复 {repaired_queues} 个默认队列")
 
         overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
@@ -302,11 +297,41 @@ class ScriptConfigTask(TaskExecuteBase):
             mas_dir,
             overlay=overlay,
             # 备份标注来源：tri_state 池跨来源恢复靠它切回
-            mode="用户" if owner == target_user_id else "脚本",
+            base=(
+                CONFIG_BASE_INDEPENDENT
+                if owner == target_user_id
+                else CONFIG_BASE_SHARED
+            ),
         )
 
+        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
+            "TaskQueue"
+        ]
+        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
+        base_configurations = base_gui_new_set.get("Configurations")
+        repaired_queues = 0
+        managed_queue = self._uses_managed_queue() and not self.view_only
+        if managed_queue and isinstance(base_configurations, dict):
+            for configuration in base_configurations.values():
+                if not isinstance(configuration, dict):
+                    continue
+                queue, repaired = restore_maa_default_task_queue(
+                    configuration.get("TaskQueue"), preset_queue
+                )
+                if repaired:
+                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
+                    repaired_queues += 1
+        if repaired_queues and not self.view_only:
+            write_file(mas_dir / "gui.new.json", base_gui_new_set)
+            logger.info(f"MAA 已对齐 {repaired_queues} 个三段理智预设队列")
+
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
-            shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
+            shutil.copytree(
+                mas_dir,
+                self.maa_set_path,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
+            )
 
         # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；下方用预设补齐队列。
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
@@ -319,15 +344,17 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # base 缺失队列或结构错误时用预设补齐；结构有效时仅修正 $type 属性顺序。
+        # 快速配置使用三段预设；关闭快速配置和查看备份时保留来源原队列。
         for configuration in gui_new_set["Configurations"].values():
             if not isinstance(configuration, dict):
                 continue
             source_queue = configuration.get("TaskQueue")
-            if not isinstance(source_queue, list) or not source_queue:
-                source_queue = preset_queue
-            source_queue, _ = restore_maa_default_task_queue(source_queue, preset_queue)
-            configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
+            if managed_queue:
+                source_queue, _ = restore_maa_default_task_queue(
+                    source_queue, preset_queue
+                )
+            if isinstance(source_queue, list):
+                configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
 
         # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；
         # 会话结束时缺失键会被删除，不把 MAS 接管项写进 base。
@@ -365,6 +392,11 @@ class ScriptConfigTask(TaskExecuteBase):
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
         # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
         # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
         self._maa_config_baseline = {
@@ -402,9 +434,9 @@ class ScriptConfigTask(TaskExecuteBase):
             self.cur_user_item.status = "完成"
             return
 
-        # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
+        # 原生来源会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
-            logger.success("MAA 直控配置已由脚本原生 GUI 保存")
+            logger.success("MAA 原生来源配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
             return
 
@@ -430,7 +462,7 @@ class ScriptConfigTask(TaskExecuteBase):
             current_docs[name] = current
 
         baseline_new = (self._maa_config_baseline or {}).get("gui.new.json", {})
-        if not is_valid_maa_task_queues(
+        if self._uses_managed_queue() and not is_valid_maa_task_queues(
             baseline_new.get("Configurations"),
             current_docs["gui.new.json"].get("Configurations"),
         ):

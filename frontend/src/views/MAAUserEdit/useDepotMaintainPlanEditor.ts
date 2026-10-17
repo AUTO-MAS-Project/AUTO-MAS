@@ -4,8 +4,13 @@ import {
   type DepotMaintainPlan,
   type DepotMaintainPresetKey,
 } from './depotMaintainPresets'
+import {
+  eventDepotPlanIdentity,
+  parseEventDepotPlans,
+  type EventDepotMaintainPlan,
+} from './eventDepotMaintainPresets'
 
-export type DepotMaintainPlanRow = DepotMaintainPlan & { key: number }
+export type DepotMaintainPlanRow = DepotMaintainPlan & EventDepotMaintainPlan & { key: number }
 
 interface DepotMaintainPlanEditorOptions {
   getSavedPlans: () => string
@@ -13,6 +18,7 @@ interface DepotMaintainPlanEditorOptions {
   loadStageCandidates: (itemId: string) => Promise<void>
   getBestStage: (itemId: string) => string | undefined
   isLoading: () => boolean
+  eventMode?: boolean
 }
 
 const DEBOUNCE_FLUSH_MS = 500
@@ -47,19 +53,26 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
       selectedRowKeys.value = []
       try {
         const parsed: unknown = JSON.parse(value || '[]')
-        plans.value = Array.isArray(parsed)
-          ? parsed
-              .filter((plan: unknown): plan is DepotMaintainPlan => {
-                if (!plan || typeof plan !== 'object') return false
-                const row = plan as Partial<DepotMaintainPlan>
-                return (
-                  typeof row.Stage === 'string' &&
-                  typeof row.DropId === 'string' &&
-                  typeof row.DropCount === 'number'
-                )
-              })
-              .map(plan => ({ key: nextKey++, ...plan }))
-          : []
+        plans.value = options.eventMode
+          ? parseEventDepotPlans(parsed).map(plan => ({
+              key: nextKey++,
+              Stage: '',
+              DropId: '',
+              ...plan,
+            }))
+          : Array.isArray(parsed)
+            ? parsed
+                .filter((plan: unknown): plan is DepotMaintainPlan => {
+                  if (!plan || typeof plan !== 'object') return false
+                  const row = plan as Partial<DepotMaintainPlan>
+                  return (
+                    typeof row.Stage === 'string' &&
+                    typeof row.DropId === 'string' &&
+                    typeof row.DropCount === 'number'
+                  )
+                })
+                .map(plan => ({ key: nextKey++, ...plan }))
+            : []
       } catch {
         plans.value = []
       }
@@ -76,7 +89,11 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
       saveTimer = undefined
     }
     const next = JSON.stringify(
-      plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
+      plans.value.map(({ key: _key, ...plan }) => {
+        if (!options.eventMode) return plan
+        const { Stage: _stage, DropId: _dropId, ...eventPlan } = plan
+        return eventPlan
+      })
     )
     if (next === options.getSavedPlans()) return
     lastEmitted = next
@@ -153,8 +170,46 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
     savePlans()
   }
 
+  const appendPlans = (imported: (DepotMaintainPlan | EventDepotMaintainPlan)[]): number => {
+    const existing = new Set(
+      plans.value.map(plan =>
+        options.eventMode ? eventDepotPlanIdentity(plan) : `${plan.Stage}:${plan.DropId}`
+      )
+    )
+    let added = 0
+    for (const plan of imported) {
+      const identity = options.eventMode
+        ? eventDepotPlanIdentity(plan as EventDepotMaintainPlan)
+        : `${plan.Stage}:${plan.DropId}`
+      if (existing.has(identity)) continue
+      existing.add(identity)
+      plans.value.push(Object.assign({ key: nextKey++, Stage: '', DropId: '' }, plan))
+      added++
+    }
+    if (added) savePlans()
+    return added
+  }
+
+  // 活动模式：按 StageType/StageIndex 取条目，没有就补一条；不落盘，由调用方统一保存。
+  const ensureEventPlan = (seed: EventDepotMaintainPlan): DepotMaintainPlanRow => {
+    const identity = eventDepotPlanIdentity(seed)
+    const existing = plans.value.find(plan => eventDepotPlanIdentity(plan) === identity)
+    if (existing) return existing
+    const row: DepotMaintainPlanRow = { key: nextKey++, Stage: '', DropId: '', ...seed }
+    plans.value.push(row)
+    return row
+  }
+
   const addPlan = () => {
-    plans.value.push({ key: nextKey++, Stage: '', DropId: '', DropCount: 1 })
+    let stageIndex = 1
+    while (plans.value.some(plan => plan.StageIndex === stageIndex)) stageIndex++
+    plans.value.push({
+      key: nextKey++,
+      Stage: '',
+      DropId: '',
+      DropCount: options.eventMode ? 999 : 1,
+      ...(options.eventMode ? { StageType: 'material' as const, StageIndex: stageIndex } : {}),
+    })
     savePlans()
   }
 
@@ -190,6 +245,8 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
     onItemChange,
     onStageChange,
     importPreset,
+    appendPlans,
+    ensureEventPlan,
     moveRow,
     addPlan,
     removePlan,

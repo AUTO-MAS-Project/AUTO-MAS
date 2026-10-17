@@ -102,7 +102,6 @@
     @start-maa-config="handleStartMAAConfig"
     @start-src-config="handleStartSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
-    @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @start-okww-config="handleStartOkwwConfig"
     @start-whimbox-config="handleStartWhimboxConfig"
     @toggle-user-status="handleToggleUserStatus"
@@ -212,7 +211,7 @@ const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
 type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww' | 'Whimbox'
-const configMask = ref<{ kind: ConfigMaskKind; script: Script; user: User | null } | null>(null)
+const configMask = ref<{ kind: ConfigMaskKind; script: Script } | null>(null)
 const clearConfigMask = () => {
   configMask.value = null
 }
@@ -239,10 +238,8 @@ const configMaskView = computed(() => {
     case 'MaaEnd':
       return {
         iconColor: 'var(--ant-color-primary)',
-        title: mask.user ? t('scripts.mask.maaEndUserTitle') : t('scripts.mask.maaEndScriptTitle'),
-        description: mask.user
-          ? t('scripts.mask.maaEndUserDesc', { name: mask.user.Info.Name })
-          : t('scripts.mask.maaEndScriptDesc'),
+        title: t('scripts.mask.maaEndScriptTitle'),
+        description: t('scripts.mask.maaEndScriptDesc'),
         tip: t('scripts.mask.maaEndUnlockTip'),
         button: t('scripts.mask.saveConfig'),
       }
@@ -296,7 +293,7 @@ const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
 // 丢弃帧由任务收尾过程发出，与停止响应分属两条链路：停止后等一个回合再判定改动是否生效
 const DISCARD_FRAME_GRACE_MS = 300
 
-// 配置会话的连接记录（键为 scriptId/userId）
+// 配置会话的连接记录（键为 scriptId）
 type ConfigSessionConnection = {
   subscriptionIds: string[]
   taskId: string
@@ -307,7 +304,7 @@ type ConfigSessionConnection = {
   discardWarned: boolean
 }
 
-// WebSocket连接管理：scriptId/userId -> ConfigSessionConnection
+// WebSocket连接管理：scriptId -> ConfigSessionConnection
 const activeConnections = ref<Map<string, ConfigSessionConnection>>(new Map())
 
 // 定时队列等别处发起的任务结束后，用户的代理状态已在后端更新，防抖后重新拉一次列表；
@@ -738,7 +735,7 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Wh
       script.id,
       kind,
       () => {
-        configMask.value = { kind, script, user: null }
+        configMask.value = { kind, script }
       },
       clearConfigMask,
       (data, discardedReason) => {
@@ -782,36 +779,27 @@ const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, '
 const handleStartWhimboxConfig = (script: Script) => handleStartScriptConfig(script, 'Whimbox')
 const handleSaveWhimboxConfig = (script: Script) => handleSaveScriptConfig(script, 'Whimbox')
 
-const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
+const handleStartMaaEndConfig = async (script: Script) => {
   try {
     const controllerType = (script.config as any).Game?.ControllerType
-    if (!user && controllerType !== 'Win32-Front') {
+    if (controllerType !== 'Win32-Front') {
       message.warning(t('scripts.toast.maaEndUnsupported'))
       return
     }
 
-    const targetId = user?.id ?? script.id
     const started = await startConfigSession(
-      targetId,
+      script.id,
       'MaaEnd',
       () => {
-        configMask.value = { kind: 'MaaEnd', script, user }
+        configMask.value = { kind: 'MaaEnd', script }
       },
       clearConfigMask
     )
     if (!started) return
 
-    message.success(
-      user
-        ? t('scripts.toast.maaEndUserStarted', { script: script.name, user: user.Info.Name })
-        : t('scripts.toast.maaEndScriptStarted', { script: script.name })
-    )
-    scheduleConfigSessionTimeout(targetId, clearConfigMask, () =>
-      message.info(
-        user
-          ? t('scripts.toast.maaEndUserTimeout', { script: script.name, user: user.Info.Name })
-          : t('scripts.toast.sessionTimeout', { name: script.name })
-      )
+    message.success(t('scripts.toast.maaEndScriptStarted', { script: script.name }))
+    scheduleConfigSessionTimeout(script.id, clearConfigMask, () =>
+      message.info(t('scripts.toast.sessionTimeout', { name: script.name }))
     )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -820,21 +808,11 @@ const handleStartMaaEndConfig = async (script: Script, user: User | null = null)
   }
 }
 
-const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
-  await handleStartMaaEndConfig(script, user)
-}
-
 const handleSaveMaaEndConfig = async (script: Script) => {
   try {
-    const currentUser = configMask.value?.kind === 'MaaEnd' ? configMask.value.user : null
-    const targetId = currentUser?.id ?? script.id
-    const saved = await stopConfigSession(targetId, 'MaaEnd', clearConfigMask)
+    const saved = await stopConfigSession(script.id, 'MaaEnd', clearConfigMask)
     if (saved) {
-      message.success(
-        currentUser
-          ? t('scripts.toast.maaEndUserSaved', { script: script.name, user: currentUser.Info.Name })
-          : t('scripts.toast.configSaved', { name: script.name })
-      )
+      message.success(t('scripts.toast.configSaved', { name: script.name }))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -849,7 +827,7 @@ const handleStartOkwwConfig = async (script: Script) => {
       script.id,
       'ok-ww',
       () => {
-        configMask.value = { kind: 'Okww', script, user: null }
+        configMask.value = { kind: 'Okww', script }
       },
       clearConfigMask
     )

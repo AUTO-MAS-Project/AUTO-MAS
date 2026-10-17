@@ -28,7 +28,7 @@ from app.task.general.tools import execute_script_task
 async def run_script_before_task(user_config: HSRUserConfig) -> None:
     """执行用户配置的任务前脚本，未开启时直接返回。
 
-    HSR 的托管与直控两条路径都要用，所以抽成函数；其余专项在 AutoProxy 里
+    HSR 的托管与原生来源两条路径都要用，所以抽成函数；其余专项在 AutoProxy 里
     内联同样的两行。
 
     Args:

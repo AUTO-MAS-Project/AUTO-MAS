@@ -1,6 +1,7 @@
 import type { AppLocale } from '@/i18n'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
 import type { CursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPreset } from '@/types/pressSound'
 import type { HomeLayoutConfig } from '@/types/home'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 
@@ -12,8 +13,27 @@ export interface FrontendConfig {
   themeColor: ThemeColor
   /** 当前自定义外观包 ID；为空时使用内置外观模式。 */
   appearanceId?: string | null
+  /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
+  desktopMascotId?: string | null
+  desktopMascotEnabled?: boolean
+  /** 为空时使用动画包的帧率；自定义范围为 1～120 FPS。 */
+  desktopMascotFps?: number | null
+  desktopMascotAnimationPaused?: boolean
+  desktopMascotIdleMessagePaused?: boolean
+  desktopMascotPosition?: { x: number; y: number }
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
+  /** 有脚本任务运行时自动暂停主页卫星动效；旧配置缺省按开启算 */
+  pauseHomeEffectsWhenRunning?: boolean
+
+  // 主页中心图标（星核）按压音效
+  pressSoundEnabled?: boolean
+  pressSoundPreset?: PressSoundPreset
+  pressSoundVolume?: number
+  /** 用户导入音频的绝对路径；preset 为 custom 时使用 */
+  pressSoundCustomPath?: string
+  /** 用户导入音频的显示名，仅用于界面 */
+  pressSoundCustomName?: string
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -45,8 +65,15 @@ export interface FrontendConfig {
 const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
+  desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,
+  pauseHomeEffectsWhenRunning: true,
+  pressSoundEnabled: false,
+  pressSoundPreset: 'duck',
+  pressSoundVolume: 0.6,
+  pressSoundCustomPath: '',
+  pressSoundCustomName: '',
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

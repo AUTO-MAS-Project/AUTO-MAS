@@ -190,11 +190,8 @@ export function useScriptApi() {
                             ? maaUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Mode: maaUserData.Info?.Mode !== undefined ? maaUserData.Info.Mode : '脚本',
-                        StageMode:
-                          maaUserData.Info?.StageMode !== undefined
-                            ? maaUserData.Info.StageMode
-                            : 'Fixed',
+                        Base:
+                          maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
                         Server:
                           maaUserData.Info?.Server !== undefined
                             ? maaUserData.Info.Server
@@ -205,37 +202,38 @@ export function useScriptApi() {
                           maaUserData.Info?.RemainedDay !== undefined
                             ? maaUserData.Info.RemainedDay
                             : -1,
-                        Annihilation:
-                          maaUserData.Info?.Annihilation !== undefined
-                            ? maaUserData.Info.Annihilation
-                            : 'Annihilation',
-                        InfrastMode:
-                          maaUserData.Info?.InfrastMode !== undefined
-                            ? maaUserData.Info.InfrastMode
-                            : 'Normal',
-                        InfrastName:
-                          maaUserData.Info?.InfrastName !== undefined
-                            ? maaUserData.Info.InfrastName
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
+                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                      },
+                      Stage: {
+                        StageMode:
+                          maaUserData.Stage?.StageMode !== undefined
+                            ? maaUserData.Stage.StageMode
+                            : 'Fixed',
                         MedicineNumb:
-                          maaUserData.Info?.MedicineNumb !== undefined
-                            ? maaUserData.Info.MedicineNumb
+                          maaUserData.Stage?.MedicineNumb !== undefined
+                            ? maaUserData.Stage.MedicineNumb
                             : 0,
                         SeriesNumb:
-                          maaUserData.Info?.SeriesNumb !== undefined
-                            ? maaUserData.Info.SeriesNumb
+                          maaUserData.Stage?.SeriesNumb !== undefined
+                            ? maaUserData.Stage.SeriesNumb
                             : '0',
-                        Stage: maaUserData.Info?.Stage !== undefined ? maaUserData.Info.Stage : '-',
+                        Stage:
+                          maaUserData.Stage?.Stage !== undefined ? maaUserData.Stage.Stage : '-',
                         Stage_1:
-                          maaUserData.Info?.Stage_1 !== undefined ? maaUserData.Info.Stage_1 : '-',
+                          maaUserData.Stage?.Stage_1 !== undefined
+                            ? maaUserData.Stage.Stage_1
+                            : '-',
                         Stage_2:
-                          maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
+                          maaUserData.Stage?.Stage_2 !== undefined
+                            ? maaUserData.Stage.Stage_2
+                            : '-',
                         Stage_3:
-                          maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                          maaUserData.Stage?.Stage_3 !== undefined
+                            ? maaUserData.Stage.Stage_3
+                            : '-',
                       },
                       Task: {
                         IfStartUp:
@@ -264,6 +262,8 @@ export function useScriptApi() {
                           maaUserData.Task?.IfDepotMaintain !== undefined
                             ? maaUserData.Task.IfDepotMaintain
                             : false,
+                        IfEventDepotMaintain: maaUserData.Task?.IfEventDepotMaintain ?? false,
+                        EventDepotMaintainPlans: maaUserData.Task?.EventDepotMaintainPlans ?? '[]',
                         IfActivityFirst:
                           maaUserData.Task?.IfActivityFirst !== undefined
                             ? maaUserData.Task.IfActivityFirst
@@ -272,14 +272,22 @@ export function useScriptApi() {
                           maaUserData.Task?.ActivityStageIndex !== undefined
                             ? maaUserData.Task.ActivityStageIndex
                             : 1,
-                        ActivityMedicineNumb:
-                          maaUserData.Task?.ActivityMedicineNumb !== undefined
-                            ? maaUserData.Task.ActivityMedicineNumb
-                            : (maaUserData.Info?.MedicineNumb ?? 0),
                         DepotMaintainPlans:
                           maaUserData.Task?.DepotMaintainPlans !== undefined
                             ? maaUserData.Task.DepotMaintainPlans
                             : '[]',
+                        Annihilation:
+                          maaUserData.Task?.Annihilation !== undefined
+                            ? maaUserData.Task.Annihilation
+                            : 'Annihilation',
+                        InfrastMode:
+                          maaUserData.Task?.InfrastMode !== undefined
+                            ? maaUserData.Task.InfrastMode
+                            : 'Normal',
+                        InfrastName:
+                          maaUserData.Task?.InfrastName !== undefined
+                            ? maaUserData.Task.InfrastName
+                            : '',
                       },
                       Notify: {
                         Enabled:
@@ -312,6 +320,8 @@ export function useScriptApi() {
                             : '',
                       },
                       Data: {
+                        StaminaPipelineVersion: maaUserData.Data?.StaminaPipelineVersion ?? 1,
+                        StaminaPipelineBackup: maaUserData.Data?.StaminaPipelineBackup ?? '{}',
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
@@ -335,7 +345,8 @@ export function useScriptApi() {
                         Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
                         Password:
                           srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '脚本',
+                        Base:
+                          srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
                         Server:
                           srcUserData.Info?.Server !== undefined
                             ? srcUserData.Info.Server
@@ -519,10 +530,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Password !== undefined
                             ? maaEndUserData.Info.Password
                             : '',
-                        Mode:
-                          maaEndUserData.Info?.Mode !== undefined
-                            ? maaEndUserData.Info.Mode
-                            : '脚本',
+                        Base:
+                          maaEndUserData.Info?.Base !== undefined
+                            ? maaEndUserData.Info.Base
+                            : 'shared',
                         SanityMode:
                           maaEndUserData.Info?.SanityMode !== undefined
                             ? maaEndUserData.Info.SanityMode
@@ -736,8 +747,8 @@ export function useScriptApi() {
                           okwwUserData.Info?.Password !== undefined
                             ? okwwUserData.Info.Password
                             : '',
-                        Mode:
-                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '脚本',
+                        Base:
+                          okwwUserData.Info?.Base !== undefined ? okwwUserData.Info.Base : 'shared',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig
@@ -1059,10 +1070,10 @@ export function useScriptApi() {
                           whimboxUserData.Info?.Status !== undefined
                             ? whimboxUserData.Info.Status
                             : true,
-                        Mode:
-                          whimboxUserData.Info?.Mode !== undefined
-                            ? whimboxUserData.Info.Mode
-                            : '脚本',
+                        Base:
+                          whimboxUserData.Info?.Base !== undefined
+                            ? whimboxUserData.Info.Base
+                            : 'shared',
                         RemainedDay:
                           whimboxUserData.Info?.RemainedDay !== undefined
                             ? whimboxUserData.Info.RemainedDay
@@ -1159,8 +1170,10 @@ export function useScriptApi() {
                           zzzodUserData.Info?.Status !== undefined
                             ? zzzodUserData.Info.Status
                             : true,
-                        Mode:
-                          zzzodUserData.Info?.Mode !== undefined ? zzzodUserData.Info.Mode : '用户',
+                        Base:
+                          zzzodUserData.Info?.Base !== undefined
+                            ? zzzodUserData.Info.Base
+                            : 'independent',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay
@@ -1332,6 +1345,22 @@ export function useScriptApi() {
                   return null
                 })
                 .filter((user): user is User => user !== null)
+                .map(user => {
+                  const info = userResponse.data[user.id]?.Info
+                  return {
+                    ...user,
+                    Info: {
+                      ...user.Info,
+                      Base: info?.Base ?? user.Info.Base,
+                      IfQuickConfig:
+                        info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
+                          ? info.IfQuickConfig
+                          : typeof user.Info.IfQuickConfig === 'boolean'
+                            ? user.Info.IfQuickConfig
+                            : undefined,
+                    },
+                  }
+                })
 
               return {
                 ...script,

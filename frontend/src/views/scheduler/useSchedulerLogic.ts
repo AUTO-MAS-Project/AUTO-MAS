@@ -29,7 +29,7 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
-import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
+import { reconcileSelectedUserIds, splitUserOptions } from './schedulerUserOptions'
 import {
   countQueueSelectedUsers,
   countQueueUsers,
@@ -140,6 +140,8 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   // 刷新后要恢复队列任务的勾选，否则界面上显示的默认全选会和用户上次的选择不一致
   queueUserScope: { ...(tab.queueUserScope || {}) },
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
+  // 面板用的展示数据，随账号列表重新拉取，不持久化
+  userDisabledOptions: [],
   userOptionsLoading: false,
   userOptionsLoaded: false,
   taskId: tab.taskId,
@@ -165,6 +167,7 @@ const normalizePersistedTab = (
       ? [tab.selectedUserId]
       : undefined,
   userOptions: tab.userOptions || [],
+  userDisabledOptions: [],
   userOptionsLoading: false,
   userOptionsLoaded: false,
   queueUserScope: normalizePersistedQueueScope(tab.queueUserScope),
@@ -206,6 +209,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeScriptLoading: false,
       selectedUserIds: undefined,
       userOptions: [],
+      userDisabledOptions: [],
       userOptionsLoading: false,
       userOptionsLoaded: false,
       taskId: null,
@@ -397,6 +401,7 @@ export function useSchedulerLogic() {
       resumeScriptLoading: false,
       selectedUserIds: undefined,
       userOptions: [],
+      userDisabledOptions: [],
       userOptionsLoading: false,
       userOptionsLoaded: false,
       taskId: options?.taskId || null,
@@ -717,10 +722,12 @@ export function useSchedulerLogic() {
           tab.queueScopeFailed = true
           return
         }
+        const { runnable, disabled } = splitUserOptions(response)
         groups.push({
           scriptId: script.scriptId,
           scriptName: script.scriptName,
-          users: toRunnableUserOptions(response),
+          users: runnable,
+          disabledUsers: disabled,
         })
       }
 
@@ -747,6 +754,7 @@ export function useSchedulerLogic() {
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
       latestUserOptionsRequest.delete(tab)
       tab.userOptions = []
+      tab.userDisabledOptions = []
       tab.selectedUserIds = undefined
       tab.userOptionsLoading = false
       tab.userOptionsLoaded = false
@@ -773,9 +781,10 @@ export function useSchedulerLogic() {
         return
       }
 
-      const options = toRunnableUserOptions(response)
-      tab.userOptions = options
-      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, options)
+      const { runnable, disabled } = splitUserOptions(response)
+      tab.userOptions = runnable
+      tab.userDisabledOptions = disabled
+      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, runnable)
       tab.userOptionsLoaded = true
     } catch (error) {
       if (isStale()) return
@@ -794,6 +803,7 @@ export function useSchedulerLogic() {
     tab.resumeFromScriptId = null
     tab.selectedUserIds = undefined
     tab.userOptions = []
+    tab.userDisabledOptions = []
     tab.userOptionsLoaded = false
     // 换了任务就重新开始选，上一个队列的勾选不能带到新队列上
     tab.queueUserScope = {}
@@ -1168,6 +1178,7 @@ export function useSchedulerLogic() {
 
   const handleTaskNotice = async (tab: SchedulerTab, data: WSTaskNoticeData) => {
     const { playSound } = useAudioPlayer()
+    const noticeMessage = data.messageKey ? t(data.messageKey) : data.message
 
     if (data.level === 'error') {
       const errorMsg = String(data.message).toLowerCase()
@@ -1215,10 +1226,7 @@ export function useSchedulerLogic() {
             maskClosable: true,
             keyboard: true,
             title: t('scheduler.modal.maaEndFailTitle'),
-            content: h('div', [
-              h('p', String(data.message)),
-              h('p', t('scheduler.modal.maaEndFailHint')),
-            ]),
+            content: h('div', [h('p', noticeMessage), h('p', t('scheduler.modal.maaEndFailHint'))]),
             okCancel: true,
             okText: t('scheduler.modal.maaEndExport'),
             cancelText: t('scheduler.modal.maaEndSkip'),
@@ -1231,12 +1239,15 @@ export function useSchedulerLogic() {
           })
         }
       } else {
-        notification.error({ message: t('scheduler.toast.taskError'), description: data.message })
+        notification.error({ message: t('scheduler.toast.taskError'), description: noticeMessage })
       }
     } else if (data.level === 'warning') {
       // 播放异常音频
       await playSound('exception_occurred')
-      notification.warning({ message: t('scheduler.toast.taskWarning'), description: data.message })
+      notification.warning({
+        message: t('scheduler.toast.taskWarning'),
+        description: noticeMessage,
+      })
     } else {
       const infoMsg = String(data.message).toLowerCase()
 
@@ -1267,7 +1278,7 @@ export function useSchedulerLogic() {
         await playSound('adb_failed')
       }
 
-      notification.info({ message: t('scheduler.toast.taskInfo'), description: data.message })
+      notification.info({ message: t('scheduler.toast.taskInfo'), description: noticeMessage })
     }
   }
 
@@ -1415,6 +1426,9 @@ export function useSchedulerLogic() {
       case 'KillSelf':
         newPowerAction = PowerIn.signal.KILL_SELF
         break
+      case 'RestartSelf':
+        newPowerAction = PowerIn.signal.RESTART_SELF
+        break
       case 'Logoff':
         newPowerAction = PowerIn.signal.LOGOFF
         break
@@ -1467,6 +1481,7 @@ export function useSchedulerLogic() {
           Hibernate: PowerIn.signal.HIBERNATE,
           Sleep: PowerIn.signal.SLEEP,
           KillSelf: PowerIn.signal.KILL_SELF,
+          RestartSelf: PowerIn.signal.RESTART_SELF,
           Logoff: PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]
