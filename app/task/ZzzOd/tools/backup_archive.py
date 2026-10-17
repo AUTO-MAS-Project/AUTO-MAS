@@ -56,7 +56,12 @@ from app.utils.config_archive import (
     restore_dir,
     timestamp_sort_key,
 )
-from app.utils.io import ConfigCorruptedError, force_rmtree, read_dict_file
+from app.utils.io import (
+    ConfigCorruptedError,
+    force_rmtree,
+    read_dict_file,
+    replace_dir,
+)
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -421,9 +426,9 @@ def restore_onedragon_backup(
     )
     for idx_dir_name in idx_dirs:
         idx = int(idx_dir_name)
-        target = instance_dir(root, idx)
-        shutil.rmtree(target, ignore_errors=True)
-        shutil.copytree(backup_dir / idx_dir_name, target)
+        # 整目录替换走公共原语：先删后拷，删除带只读位清除与重试，
+        # 不留「删了一半、备份没拷回」的半删状态。
+        replace_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
 
     logger.info(f"一条龙原生配置已恢复备份 {ts} (实例目录 {len(idx_dirs)} 个)")
 
