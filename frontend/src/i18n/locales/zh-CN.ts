@@ -4672,8 +4672,7 @@ export default {
       mascotFps: '动画帧率',
       mascotFpsPackage: '跟随动画包',
       mascotFpsCustom: '自定义',
-      mascotFpsTip:
-        '默认跟随动画包；自定义支持 1～120 FPS，按回车或点击别处保存，循环播放包内动画。',
+      mascotFpsTip: '默认跟随动画包；自定义可选 8、16、24、30、60、120 FPS，选择后自动保存。',
       importMascot: '导入桌宠',
       removeMascot: '移除桌宠',
       mascotImportTip: '支持独立桌宠 ZIP，也可从主题包中只导入桌宠；独立桌宠不会随主题切换。',
