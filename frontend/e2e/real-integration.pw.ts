@@ -414,11 +414,20 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
       expect(scriptIndex >= 0).toBe(true)
       await options.nth(scriptIndex).click()
 
-      const accountRows = page.locator('.queue-scope-group label.ant-checkbox-wrapper')
+      // 「本次运行范围」收在浮层里：先展开，再按账号名勾选
+      const scopeTrigger = page.locator('.task-control .control-row button:has(.anticon-team)')
+      await expect(scopeTrigger).toBeVisible()
+      await scopeTrigger.click()
+      const scopePanel = page.locator('.ant-popover:visible .queue-scope')
+      await expect(scopePanel).toBeVisible()
+      const accountRows = scopePanel.locator('.queue-scope-group label.ant-checkbox-wrapper')
       await expect(accountRows).toHaveCount(1)
       expect((await accountRows.first().innerText()).trim() === config.accountName).toBe(true)
       await accountRows.first().getByRole('checkbox').check()
-      await expect(page.locator('.queue-scope .ant-checkbox-checked')).toHaveCount(1)
+      await expect(scopePanel.locator('.ant-checkbox-checked')).toHaveCount(1)
+      // 浮层是 click 触发的，再点一次触发器收起，避免盖住启动按钮
+      await scopeTrigger.click()
+      await expect(page.locator('.ant-popover:visible .queue-scope')).toHaveCount(0)
       const beforeStart = await readBody(
         await page.request.get(apiUrl('/api/dispatch/runtime-snapshot'))
       )
