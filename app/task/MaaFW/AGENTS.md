@@ -461,7 +461,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
   `bbcdll/*.log` …）由 `runner_task` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
-  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<时分秒>.project.log`（每段一行分隔头；
+  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<脚本名>-<时分秒>.project.log`（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
   `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按后缀认 history
   文件，`.project.log` 与 `.worker.log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
@@ -616,6 +616,6 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   "读错键"类缺陷全程绿灯。
 - 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
   否则 Windows 报 `WinError 206`，看起来像代码坏了。
-- 排障先看 `history/<日期>/…/<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
+- 排障先看 `history/<日期>/…/<脚本名>-<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
   只记在那里，宿主日志只有一句"连接超时"。agent 自己的 DEBUG 日志、Go agent 的 panic 在同名
   的 `.project.log` 里。

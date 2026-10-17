@@ -114,8 +114,8 @@ const emit = defineEmits<{
 
 const localActiveKeys = ref(props.activeKeys)
 
-// 历史文件名是 `<托管名>-<时>-<分>-<秒>.json`；不足 4 段的（MaaFW 与早期记录）
-// 文件名里没有托管名，返回空串
+// 历史文件名是 `<托管名>-<时>-<分>-<秒>.json`；不足 4 段的（MaaFW 补前缀之前的
+// 旧记录）文件名里没有托管名，返回空串
 const scriptNameFromJsonFile = (jsonFile: string): string => {
   const stem = (jsonFile.split(/[\\/]/).pop() ?? '').replace(/\.json$/i, '')
   const parts = stem.split('-')

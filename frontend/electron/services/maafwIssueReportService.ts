@@ -29,10 +29,11 @@ const MSS_CONFIG_TYPE = 'MSSConfig'
 const VIEW_DIR_NAME_LENGTH = 12
 
 // 与 app/task/MaaFW/tools/embedded/runner_task.py 的 history_dir / history_stamp 同步：
-// history/<YYYY-MM-DD>/<用户名>/<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
-// 失败截图 <HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起
+// history/<YYYY-MM-DD>/<用户名>/<脚本名>-<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
+// 失败截图 <脚本名>-<HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起。
+// 早期记录没有脚本名前缀（旧版 MaaFW 的写法），前缀段可选，解析时同样兼容
 const HISTORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const HISTORY_FILE_PATTERN = /^(\d{2}-\d{2}-\d{2})\.(.+)$/
+const HISTORY_FILE_PATTERN = /^(?:(.+)-)?(\d{2}-\d{2}-\d{2})\.(.+)$/
 const SCREENSHOT_SUFFIX_PATTERN = /^[a-z]+-\d{6}-.+\.png$/i
 const HISTORY_SCAN_DAYS = 30
 const RECENT_RUN_COUNT = 5
@@ -275,7 +276,9 @@ function scanHistoryRuns(dataRoot: string): HistoryRun[] {
           continue
         }
 
-        const [, stamp, suffix] = match
+        // 前缀（脚本名）可选：stamp 取整段文件名主干，与盘上的文件名一一对应
+        const [, scriptPrefix, timeStamp, suffix] = match
+        const stamp = scriptPrefix ? `${scriptPrefix}-${timeStamp}` : timeStamp
         const run = runsByStamp.get(stamp) ?? {
           date,
           user: userEntry.name,

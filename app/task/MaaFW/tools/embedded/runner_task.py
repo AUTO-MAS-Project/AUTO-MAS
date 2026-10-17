@@ -1842,7 +1842,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             raise
         started_at = self.cur_user_log_started_at or datetime.now()
-        history_log = maafw_history_log_path(self.cur_user_item.name, started_at)
+        history_log = maafw_history_log_path(
+            self.cur_user_item.name, started_at, self.script_info.name
+        )
         history_dir = history_log.parent
         history_stamp = history_log.stem
         job_path: Path | None = None
@@ -2991,7 +2993,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
-            log_path = maafw_history_log_path(self.cur_user_item.name, timestamp)
+            log_path = maafw_history_log_path(
+                self.cur_user_item.name, timestamp, self.script_info.name
+            )
             if not log_item.content:
                 log_item.content = ["未捕获到任何运行日志"]
             if log_item.status == "未开始监看日志":
