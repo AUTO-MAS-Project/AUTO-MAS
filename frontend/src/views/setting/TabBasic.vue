@@ -3,6 +3,7 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
   SkinOutlined,
   UploadOutlined,
 } from '@ant-design/icons-vue'
@@ -29,6 +30,7 @@ interface TabBasicProps {
   themeColor: ThemeColor
   themeColorDisabled?: boolean
   appearanceBusy: boolean
+  themeResetting: boolean
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
   cursorEffect: CursorEffect
@@ -55,6 +57,7 @@ interface TabBasicProps {
   handleAppearanceImport(): Promise<void>
   handleAppearanceRemove(): Promise<void>
   handleThemeColorChange(value: SelectValue): Promise<void>
+  handleThemeReset(): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
@@ -69,6 +72,7 @@ const {
   themeColor,
   themeColorDisabled = false,
   appearanceBusy,
+  themeResetting,
   themeModeOptions,
   themeColorOptions,
   cursorEffect,
@@ -95,6 +99,7 @@ const {
   handleAppearanceImport,
   handleAppearanceRemove,
   handleThemeColorChange,
+  handleThemeReset,
   handleCursorEffectChange,
   handleLowPerformanceModeChange,
   handlePauseHomeEffectsWhenRunningChange,
@@ -114,6 +119,10 @@ const handleLocaleChange = (value: unknown): void => {
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('setting.basic.appearance') }}</h3>
+        <a-button :loading="themeResetting" :disabled="appearanceBusy" @click="handleThemeReset">
+          <template #icon><ReloadOutlined /></template>
+          {{ t('setting.basic.resetTheme') }}
+        </a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
@@ -128,6 +137,7 @@ const handleLocaleChange = (value: unknown): void => {
               <a-select
                 class="appearance-select"
                 :value="appearanceValue"
+                :disabled="appearanceBusy"
                 size="large"
                 @change="handleAppearanceChange"
               >
@@ -176,7 +186,7 @@ const handleLocaleChange = (value: unknown): void => {
             </div>
             <a-select
               :value="themeColor"
-              :disabled="themeColorDisabled"
+              :disabled="themeColorDisabled || appearanceBusy"
               size="large"
               style="width: 100%"
               @change="handleThemeColorChange"

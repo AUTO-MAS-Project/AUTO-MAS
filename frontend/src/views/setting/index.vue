@@ -44,6 +44,7 @@ const {
   activeAppearance,
   modalContextHolder,
   appearanceBusy,
+  themeResetting,
   themeModeOptions,
   appearanceValue,
   appearanceOptions,
@@ -53,6 +54,7 @@ const {
   handleAppearanceChange,
   handleAppearanceImport,
   handleAppearanceRemove,
+  handleThemeReset,
 } = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
@@ -498,7 +500,8 @@ onMounted(() => {
             :appearance-options="appearanceOptions"
             :theme-color="themeColor"
             :theme-color-disabled="Boolean(activeAppearance)"
-            :appearance-busy="appearanceBusy"
+            :appearance-busy="appearanceBusy || themeResetting"
+            :theme-resetting="themeResetting"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"
@@ -525,6 +528,7 @@ onMounted(() => {
             :handle-appearance-import="handleAppearanceImport"
             :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
+            :handle-theme-reset="handleThemeReset"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"
             :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"

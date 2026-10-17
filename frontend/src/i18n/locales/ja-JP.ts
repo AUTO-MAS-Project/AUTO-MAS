@@ -4150,6 +4150,9 @@ export default {
 
     basic: {
       appearance: '外観',
+      resetTheme: 'テーマをリセット',
+      themeReset: 'システム設定に合わせるモードと既定の青色に戻しました',
+      themeResetFailed: 'テーマをリセットできませんでした。もう一度お試しください。',
       themeMode: 'テーマ',
       themeModeTip: '画面全体の外観',
       themeColor: 'アクセントカラー',
