@@ -1,7 +1,7 @@
-/** 主页卫星样式：原来的平面卫星（经典，默认），或可拖动的 3D 星系 */
-export type HomeSatelliteStyle = 'classic' | 'galaxy'
+/** 主页装饰样式；保留经典默认值，新增款式需用户主动选择。 */
+export type HomeSatelliteStyle = 'classic' | 'galaxy' | 'three-star'
 
 export const DEFAULT_HOME_SATELLITE_STYLE: HomeSatelliteStyle = 'classic'
 
 export const normalizeHomeSatelliteStyle = (value: unknown): HomeSatelliteStyle =>
-  value === 'galaxy' ? 'galaxy' : DEFAULT_HOME_SATELLITE_STYLE
+  value === 'galaxy' || value === 'three-star' ? value : DEFAULT_HOME_SATELLITE_STYLE

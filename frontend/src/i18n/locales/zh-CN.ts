@@ -3462,6 +3462,23 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    threeStar: {
+      title: '三星引力场',
+      pause: '暂停',
+      resume: '继续',
+      reset: '重置',
+      schedule: '调度',
+      execute: '执行',
+      feedback: '反馈',
+      nearEncounter: '近遇达到计算边界，已暂停；可重置初值',
+      precision: '达到数值精度边界，已暂停；可重置初值',
+      nonFinite: '数值异常，已保留最后有效状态；可重置',
+      static: '静态展示 · 动态流体未启用',
+      taskPaused: '任务期间动效已暂停，可点击继续',
+      paused: '已暂停 · 点击继续',
+      budget: '计算预算已满，模拟正在减速',
+      fluid: '牛顿三体 · 艺术星冕 · 二维视觉流体',
+    },
     satelliteEffectsPaused: '动效已暂停 · 点击继续',
     satelliteEgg: {
       star: 'star！',
@@ -4697,8 +4714,10 @@ export default {
       cursorTip: '选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认',
       perfSection: '性能配置',
       homeSatellite: '主页卫星样式',
-      homeSatelliteTip: '经典是原来的平面卫星，占用更少；3D 星系可拖动旋转、带状态光效和彩蛋',
+      homeSatelliteTip:
+        '经典占用较少；3D 星系可拖动旋转；三星引力场展示牛顿三体与视觉流体，需要硬件加速',
       homeSatelliteGalaxy: '3D 星系',
+      homeSatelliteThreeStar: '三星引力场',
       homeSatelliteClassic: '经典',
       lowPerf: '低性能模式',
       lowPerfTip:

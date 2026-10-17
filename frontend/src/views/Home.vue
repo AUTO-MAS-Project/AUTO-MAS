@@ -80,6 +80,7 @@
                 v-if="homeSatelliteStore.style === 'classic'"
                 v-show="!performanceStore.isBackgrounded"
               />
+              <ThreeStarGravity v-else-if="homeSatelliteStore.style === 'three-star'" />
               <SatelliteAnimation v-else v-show="!performanceStore.isBackgrounded" />
             </template>
           </section>
@@ -209,7 +210,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, watch } from 'vue'
+import { defineAsyncComponent, computed, onMounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
@@ -259,6 +260,7 @@ const { isBootstrapping } = useAppInitialization()
 const performanceStore = usePerformanceStore()
 // 卫星样式读到之前先不出卫星，免得先按默认建一遍再换成用户选的那种
 const homeSatelliteStore = useHomeSatelliteStore()
+const ThreeStarGravity = defineAsyncComponent(() => import('@/components/ThreeStarGravity.vue'))
 void homeSatelliteStore.load()
 const {
   layoutReady,

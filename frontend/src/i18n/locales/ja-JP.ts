@@ -2962,6 +2962,23 @@ export default {
   home: {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
+    threeStar: {
+      title: '三つ星の重力場',
+      pause: '一時停止',
+      resume: '再開',
+      reset: 'リセット',
+      schedule: 'スケジュール',
+      execute: '実行',
+      feedback: '結果',
+      nearEncounter: '近接遭遇が計算限界に達したため停止しました。リセットで初期状態に戻せます',
+      precision: '数値精度の限界に達したため停止しました。リセットで初期状態に戻せます',
+      nonFinite: '数値異常のため最後の有効な状態を保持しました。リセットできます',
+      static: '静止表示 · 動的流体は無効',
+      taskPaused: 'タスク実行中のため停止中。「再開」で続行できます',
+      paused: '一時停止中 ·「再開」で続行',
+      budget: '計算予算の上限によりシミュレーションを減速中',
+      fluid: 'ニュートン三体 · 芸術的コロナ · 2D 視覚流体',
+    },
     satelliteEffectsPaused: 'エフェクト一時停止中 · クリックで再開',
     satelliteEgg: {
       star: 'star！',
@@ -4200,8 +4217,9 @@ export default {
       perfSection: 'パフォーマンス',
       homeSatellite: 'ホームの衛星スタイル',
       homeSatelliteTip:
-        'クラシックは従来の平面の衛星で、負荷が軽めです。3D 銀河はドラッグで回転でき、状態エフェクトとイースターエッグがあります。',
+        'クラシックは低負荷、3D 銀河は回転操作に対応。三つ星の重力場は三体運動と視覚流体を表示し、ハードウェアアクセラレーションが必要です。',
       homeSatelliteGalaxy: '3D 銀河',
+      homeSatelliteThreeStar: '三つ星の重力場',
       homeSatelliteClassic: 'クラシック',
       lowPerf: '低負荷モード',
       lowPerfTip:
