@@ -165,6 +165,8 @@ _BGI_UNKILLABLE_HINT = (
 # 报成功 3ms 后仍能扫到残留，导致误判「杀不掉」并白中止一次），必须留出真正退出的时间。
 _BGI_EXIT_VERIFY_ATTEMPTS = 6
 _BGI_EXIT_VERIFY_INTERVAL = 0.5
+# 进程退出后给日志监控留出一次轮询机会，避免完成行已写入但尚未读到时误判失败。
+_BGI_RESULT_LOG_GRACE_SECONDS = 2.0
 
 
 async def _wait_bgi_exit(
@@ -2098,6 +2100,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """等日志结论，并在进程退出且没有结论时及时唤醒。"""
         while not self.wait_event.is_set():
             if not await self._bgi_alive():
+                # 给日志监控一次读取终态日志的机会；BetterGI 自重启也可能在此窗口内重新出现。
+                try:
+                    await asyncio.wait_for(
+                        self.wait_event.wait(), timeout=_BGI_RESULT_LOG_GRACE_SECONDS
+                    )
+                    return
+                except asyncio.TimeoutError:
+                    if await self._bgi_alive():
+                        continue
                 # 日志回调可能在进程扫描期间识别出成功或失败，结果以回调为准。
                 if self.wait_event.is_set():
                     return
