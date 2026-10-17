@@ -25,9 +25,6 @@ export const MAX_PRESS_SOUND_BYTES = 1024 * 1024
 export const isBuiltinPressSound = (preset: PressSoundPreset): preset is 'duck' | 'fx1' =>
   preset === 'duck' || preset === 'fx1'
 
-/** 自定义音效是不是「按下、松开各用一个文件」的那种 */
-export const isPairedPressSound = (preset: PressSoundPreset): boolean => preset === 'customPair'
-
 export const normalizePressSoundPreset = (value: unknown): PressSoundPreset => {
   if (value === 'custom' || value === 'customPair') {
     return value

@@ -20,6 +20,8 @@ let pressElement: HTMLAudioElement | null = null
 let releaseElement: HTMLAudioElement | null = null
 /** 松手时按压音还没放完，就把「接在它后面播」这个动作挂在这里 */
 let pendingRelease: (() => void) | null = null
+let preparingPress: Promise<void> = Promise.resolve()
+let pressRequest = 0
 
 const logger = window.electronAPI.getLogger('按压音效')
 
@@ -137,7 +139,33 @@ export interface PressSoundPlayOptions {
  * 按下和松开各要一个音源：内置音效是两个文件；自定义「单个」时两个阶段共用同一个文件，
  * 自定义「两个文件」时按下的响一下、松开的响另一下。
  */
-export async function playPressSound(options: PressSoundPlayOptions): Promise<void> {
+export function playPressSound(options: PressSoundPlayOptions): Promise<void> {
+  const phase = options.phase ?? 'press'
+  const request = phase === 'press' ? ++pressRequest : pressRequest
+  const allowed = options.shouldPlay ?? (() => true)
+  const currentOptions = {
+    ...options,
+    shouldPlay: () => request === pressRequest && allowed(),
+  }
+
+  if (phase === 'press') {
+    dropPendingRelease()
+    stopRelease()
+    pressElement = null
+    releaseElement = null
+    preparingPress = playPressSoundPhase(currentOptions)
+    return preparingPress
+  }
+
+  // 自定义文件首次读取是异步的，快点松手也要等这一轮音源准备好。
+  return preparingPress.then(() => {
+    if (request === pressRequest) {
+      return playPressSoundPhase(currentOptions)
+    }
+  })
+}
+
+async function playPressSoundPhase(options: PressSoundPlayOptions): Promise<void> {
   const {
     preset,
     volume,
