@@ -103,9 +103,19 @@
                 :active-key="gameKey"
               />
             </template>
+            <template #sidebar="{ moduleKey: gameKey }">
+              <HomeEndfieldOverview
+                v-if="gameKey === 'endfield'"
+                section="activities"
+                :loading="endfieldSource.loading.value"
+                :overview="endfieldSource.overview.value"
+                @refresh="endfieldSource.refresh"
+              />
+            </template>
             <template #detail="{ moduleKey: gameKey }">
               <HomeEndfieldOverview
                 v-if="gameKey === 'endfield'"
+                section="pools"
                 :loading="endfieldSource.loading.value"
                 :overview="endfieldSource.overview.value"
                 @refresh="endfieldSource.refresh"

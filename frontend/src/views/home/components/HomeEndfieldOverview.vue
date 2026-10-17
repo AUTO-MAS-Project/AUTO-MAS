@@ -1,24 +1,32 @@
 <template>
-  <a-card :title="t('home.module.endfield')" class="endfield-card" :loading="loading">
+  <a-card
+    :title="t(section === 'pools' ? 'home.endfield.pools' : 'home.endfield.activities')"
+    class="endfield-card"
+    :loading="loading"
+  >
     <template #extra>
-      <a-button size="small" :disabled="loading" @click="emit('refresh')">
-        {{ t('home.endfield.refresh') }}
-      </a-button>
+      <div v-if="section === 'activities'" class="card-extra">
+        <a-typography-link
+          :href="overview.SourceUrl"
+          target="_blank"
+          rel="noreferrer"
+          class="source-link"
+          @click="handleExternalLink"
+        >
+          {{ t('home.sra.poweredBy', { name: 'SRA&AKEData' }) }}
+        </a-typography-link>
+      </div>
+      <a-tag v-else-if="overview.PoolStale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
     </template>
 
-    <!-- 版本主视觉由上方轮播承担；活动和寻访各自展示来源与状态，不再混排。 -->
-    <section class="endfield-section" :aria-label="t('home.endfield.activities')">
-      <div class="section-heading">
-        <h3>{{ t('home.endfield.activities') }}</h3>
+    <!-- 版本主视觉由上方轮播承担；活动和寻访各自展示状态，不再混排。 -->
+    <section
+      v-if="section === 'activities'"
+      class="endfield-section"
+      :aria-label="t('home.endfield.activities')"
+    >
+      <div v-if="overview.Stale" class="section-heading">
         <div class="source-meta">
-          <a-typography-link
-            :href="overview.SourceUrl"
-            target="_blank"
-            rel="noreferrer"
-            @click="handleExternalLink"
-          >
-            {{ t('home.endfield.source', { name: overview.SourceName }) }}
-          </a-typography-link>
           <a-tag v-if="overview.Stale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
         </div>
       </div>
@@ -29,18 +37,8 @@
         show-icon
         class="status-alert"
       />
-      <div v-if="activities.length" class="rail-controls">
-        <span>{{ t('home.endfield.activityImages') }}</span>
-        <a-button size="small" :aria-label="t('home.carousel.prev')" @click="scrollActivities(-1)">
-          <LeftOutlined />
-        </a-button>
-        <a-button size="small" :aria-label="t('home.carousel.next')" @click="scrollActivities(1)">
-          <RightOutlined />
-        </a-button>
-      </div>
       <ul
         v-if="activities.length"
-        ref="activityRail"
         class="activity-list"
         tabindex="0"
         :aria-label="t('home.endfield.activities')"
@@ -82,6 +80,17 @@
                 >
               </div>
             </div>
+            <a-progress
+              v-if="isRunning(item)"
+              class="activity-progress"
+              :percent="activityProgress(item)"
+              :show-info="false"
+              :stroke-color="activityImage(item) ? '#ffb45a' : undefined"
+              :trail-color="activityImage(item) ? 'rgba(255, 255, 255, 0.25)' : undefined"
+              :stroke-width="4"
+              stroke-linecap="butt"
+              status="normal"
+            />
           </div>
         </li>
       </ul>
@@ -91,21 +100,7 @@
       />
     </section>
 
-    <section class="endfield-section pool-section" :aria-label="t('home.endfield.pools')">
-      <div class="section-heading">
-        <h3>{{ t('home.endfield.pools') }}</h3>
-        <div class="source-meta">
-          <a-typography-link
-            href="https://www.akedata.wiki"
-            target="_blank"
-            rel="noreferrer"
-            @click="handleExternalLink"
-          >
-            {{ t('home.endfield.source', { name: 'AKEData' }) }}
-          </a-typography-link>
-          <a-tag v-if="overview.PoolStale" color="orange">{{ t('home.endfield.stale') }}</a-tag>
-        </div>
-      </div>
+    <section v-else class="endfield-section pool-section" :aria-label="t('home.endfield.pools')">
       <a-alert
         v-if="overview.PoolMessage"
         :message="overview.PoolMessage"
@@ -153,8 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { EndfieldActivityOverview } from '@/types/home'
@@ -172,16 +166,26 @@ interface CardItem {
   endTime: string
 }
 
-const props = defineProps<{ loading: boolean; overview: EndfieldActivityOverview }>()
+const props = defineProps<{
+  loading: boolean
+  overview: EndfieldActivityOverview
+  section: 'activities' | 'pools'
+}>()
 const emit = defineEmits<{ refresh: [] }>()
 const { t, locale } = useI18n()
-const activityRail = ref<HTMLElement | null>(null)
-const scrollActivities = (direction: number) => {
-  const rail = activityRail.value
-  if (rail) rail.scrollBy({ left: direction * rail.clientWidth * 0.8, behavior: 'auto' })
-}
 const now = ref(Date.now())
 const failedImages = ref(new Set<string>())
+
+// 活动进度按分钟更新，同时刷新活动状态与过期条目。
+let progressTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  progressTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 60_000)
+})
+onBeforeUnmount(() => {
+  clearInterval(progressTimer)
+})
 
 watch(
   () => props.overview,
@@ -222,7 +226,7 @@ const activities = computed(() =>
       startTime: item.StartTime,
       endTime: item.EndTime,
     }))
-  )
+  ).sort((a, b) => Number(isUpcoming(a)) - Number(isUpcoming(b)))
 )
 const pools = computed(() =>
   pending(
@@ -256,6 +260,18 @@ const markActivityImageFailed = (event: Event) => {
 }
 
 const isUpcoming = (item: CardItem) => timestamp(item.startTime) > now.value
+const isRunning = (item: CardItem) =>
+  timestamp(item.startTime) <= now.value && timestamp(item.endTime) > now.value
+const activityProgress = (item: CardItem) =>
+  Math.min(
+    100,
+    Math.max(
+      0,
+      ((now.value - timestamp(item.startTime)) /
+        (timestamp(item.endTime) - timestamp(item.startTime))) *
+        100
+    )
+  )
 const countdownTarget = (item: CardItem) =>
   timestamp(isUpcoming(item) ? item.startTime : item.endTime)
 const activityCountdownStyle = (item: CardItem): CSSProperties => ({
@@ -302,11 +318,6 @@ const handleBoundary = () => {
 
 <style scoped src="./activityCard.css"></style>
 <style scoped>
-.endfield-section + .endfield-section {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
 .section-heading,
 .source-meta,
 .event-countdown {
@@ -340,16 +351,9 @@ const handleBoundary = () => {
 .activity-head :deep(.ant-tag) {
   margin-inline-end: 0;
 }
-.rail-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
 .activity-list {
+  flex-direction: column;
+  overflow-x: visible;
   margin: 0;
   padding: 4px 0 8px;
   list-style: none;
@@ -360,7 +364,8 @@ const handleBoundary = () => {
   outline-offset: 2px;
 }
 .activity-card {
-  flex: 0 0 266px;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
 }
 .activity-item {
@@ -396,6 +401,18 @@ const handleBoundary = () => {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+}
+.activity-progress {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  width: 100%;
+  margin: 0;
+  line-height: 0;
+}
+.activity-progress :deep(.ant-progress-outer),
+.activity-progress :deep(.ant-progress-inner) {
+  display: block;
 }
 .activity-item.is-fallback {
   background: var(--ant-color-fill-quaternary);
@@ -459,9 +476,6 @@ const handleBoundary = () => {
   margin: 0;
 }
 @media (max-width: 560px) {
-  .activity-card {
-    flex-basis: 240px;
-  }
   .pool-art {
     flex-basis: 64px;
     width: 64px;
