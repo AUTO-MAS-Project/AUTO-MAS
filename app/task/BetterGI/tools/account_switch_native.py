@@ -505,11 +505,6 @@ def _wait_ocr_text(
     return None
 
 
-def _on_title_screen(hwnd: int) -> bool:
-    """标题界面（「点击进入」横条）。"""
-    return _find_text(_read_texts(hwnd), _TITLE_TEXTS) is not None
-
-
 def _on_login_dialog(hwnd: int) -> bool:
     """登录对话框（下拉选号态）：底部「登录其他账号」链接。"""
     return _find_text(_read_texts(hwnd), _LOGIN_DIALOG_TEXTS) is not None

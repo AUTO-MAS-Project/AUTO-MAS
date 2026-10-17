@@ -1,7 +1,6 @@
 import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import '@/styles/inspira.css'
 import App from './App.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'

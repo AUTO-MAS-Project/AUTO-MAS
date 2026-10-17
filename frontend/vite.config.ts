@@ -1,6 +1,5 @@
 import { configDefaults, defineConfig } from 'vite-plus'
 import vue from '@vitejs/plugin-vue'
-import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 
@@ -63,7 +62,7 @@ export default defineConfig(({ command }) => {
   return {
     lint: lintConfig,
     fmt: formatConfig,
-    plugins: [vue(), tailwindcss(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
+    plugins: [vue(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
     base: './',
     resolve: {
       extensions: ['.js', '.ts', '.vue', '.json'],
