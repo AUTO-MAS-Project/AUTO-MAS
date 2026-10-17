@@ -1,5 +1,5 @@
 <template>
-  <div class="title-bar" :class="{ 'title-bar-dark': isDark }">
+  <div class="title-bar" :class="{ 'title-bar-dark': isDark, 'title-bar-macos': isMacOS }">
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
@@ -54,7 +54,7 @@
     <div class="title-bar-center drag-region"></div>
 
     <!-- 右侧：窗口控制按钮 -->
-    <div class="title-bar-right">
+    <div v-if="!isMacOS" class="title-bar-right">
       <div class="window-controls">
         <button
           class="control-button minimize-button"
@@ -196,6 +196,7 @@ import type { RuntimeUpdateRetryAction } from '@/types/electron'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
+const isMacOS = window.electronAPI.isMacOS
 const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
@@ -549,6 +550,10 @@ onBeforeUnmount(() => {
   min-width: 64px;
   height: 100%;
   -webkit-app-region: drag;
+}
+
+.title-bar-macos .title-bar-left {
+  padding-left: 80px;
 }
 
 .logo-section {

@@ -206,6 +206,7 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI {
+  isMacOS: boolean
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
