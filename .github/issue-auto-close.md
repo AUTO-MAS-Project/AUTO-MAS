@@ -1,7 +1,7 @@
 # Issue 自动关闭规则
 
-工作流 `workflows/issue-auto-close.yml` 调用 `scripts/issue_auto_close.py`（仓库根目录）。
-两者都要同步到默认分支 `main` 才生效；只合入 `dev` 不会处理 Issue。
+工作流 `.github/workflows/issue-auto-close.yml` 调用 `.github/scripts/issue_auto_close.py`。
+两者随 `.github` 一起同步到默认分支 `main` 后生效；只合入 `dev` 不会处理 Issue。
 
 - 勾选「我未仔细阅读」后，机器人先留言，至少给 10 分钟取消机会。
   取消勾选后解除该规则；重新勾选重新计时。为了覆盖事件排队或被合并的情况，
