@@ -1,6 +1,6 @@
-"""gettext PO 文件解析
+"""gettext 翻译文件解析
 
-把 .po 文件解析为 msgid → msgstr 映射，供 PoTranslator 使用。
+把 .po/.mo 文件解析为 msgid → msgstr 映射，供 PoTranslator 与专项适配使用。
 
 PO 条目格式（msgid/msgstr 均可跨行拼接，字符串支持 \\n \\t \\" \\\\ 转义）::
 
@@ -12,6 +12,7 @@ PO 条目格式（msgid/msgstr 均可跨行拼接，字符串支持 \\n \\t \\" 
 
 from __future__ import annotations
 
+import gettext
 from pathlib import Path
 
 
@@ -122,4 +123,24 @@ def parse_po(path: Path) -> dict[str, str]:
                 value += fragment
 
     flush()
+    return result
+
+
+def parse_mo(path: Path) -> dict[str, str]:
+    """解析 .mo 编译翻译文件，返回 msgid → msgstr 映射（失败时返回空）"""
+    result: dict[str, str] = {}
+    try:
+        with open(path, "rb") as f:
+            translations = gettext.GNUTranslations(f)
+        catalog = getattr(translations, "_catalog", {})
+        for key, value in catalog.items():
+            # 跳过空 msgid（文件头）；空 key 会在 replace 时污染整段文本
+            if not key:
+                continue
+            if isinstance(key, str) and isinstance(value, str):
+                result[key] = value
+    except Exception:  # noqa: BLE001 - 单个翻译文件损坏不应中断标签加载
+        # ponytail: 无 charset 头的 .mo 会解析失败退回空表(选项显示英文), 真实
+        # gettext 产物都带 Content-Type 头; 需要时再按显式编码重解
+        pass
     return result

@@ -4,7 +4,7 @@
 按行翻译，供日志采集（log_box 前置翻译）、专项适配等场景复用。
 """
 
-from .po import parse_po
+from .po import parse_mo, parse_po
 from .translator import PoTranslator
 
-__all__ = ["PoTranslator", "parse_po"]
+__all__ = ["PoTranslator", "parse_mo", "parse_po"]
