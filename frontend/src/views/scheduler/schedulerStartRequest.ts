@@ -14,7 +14,9 @@ export const buildStartTaskRequest = (
   queueUserIds?: Record<string, string[]>
 ): TaskCreateIn => {
   const requestBody: TaskCreateIn = { taskId, mode }
-  if (resumeFromScriptId) requestBody.resumeFromScriptId = resumeFromScriptId
+  if (mode === TaskCreateIn.mode.AUTO_PROXY && resumeFromScriptId) {
+    requestBody.resumeFromScriptId = resumeFromScriptId
+  }
   if (mode === TaskCreateIn.mode.AUTO_PROXY && selectedUserIds !== undefined) {
     requestBody.userIds = [...selectedUserIds]
   }
