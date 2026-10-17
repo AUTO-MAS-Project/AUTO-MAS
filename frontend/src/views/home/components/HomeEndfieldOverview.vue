@@ -290,7 +290,11 @@ const activities = computed(() =>
       startTime: item.StartTime,
       endTime: item.EndTime,
     }))
-  ).sort((a, b) => Number(isUpcoming(a)) - Number(isUpcoming(b)))
+  ).sort(
+    (a, b) =>
+      Number(completion.isCompleted(a)) - Number(completion.isCompleted(b)) ||
+      Number(isUpcoming(a)) - Number(isUpcoming(b))
+  )
 )
 const pools = computed(() =>
   pending(
