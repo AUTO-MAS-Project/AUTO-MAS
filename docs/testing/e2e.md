@@ -160,21 +160,26 @@ test.describe('@my-feature', () => {
 
 ## 作者本机真实流程
 
-`yarn e2e:real` 调用 [`run-real.ps1`](../../frontend/e2e/run-real.ps1)，设置 `AUTO_MAS_E2E_REAL=1` 后委托唯一入口 `run.mjs`。以下变量必须配置，缺失或格式不对时入口一次性列出全部问题，不用逐个试：
+`yarn e2e:real` 调用 [`run-real.ps1`](../../frontend/e2e/run-real.ps1)，设置 `AUTO_MAS_E2E_REAL=1` 后委托唯一入口 `run.mjs`。
+
+**默认零配置**：不用设任何变量。入口读你当前检出里 `config/ScriptConfig.json`，取第一个「用户已启用」的脚本与用户，并在启动日志打印选中目标（`[e2e] 真实 E2E 目标：<账号名>（脚本 … / 用户 …）`）。有多个可用用户时默认用第一个，同时列出全部候选。
+
+只有想跑特定脚本或账号时才需要这三个变量（缺哪个补哪个，也可全给）：
 
 | 环境变量 | 含义 |
 | --- | --- |
-| `AUTO_MAS_E2E_SCRIPT_ID` | 已配置且本机可运行的脚本 UUID |
-| `AUTO_MAS_E2E_USER_ID` | 脚本下已启用用户 UUID |
-| `AUTO_MAS_E2E_ACCOUNT_NAME` | 配置中该用户的名称 |
+| `AUTO_MAS_E2E_SCRIPT_ID` | 脚本 UUID，用于在多个脚本间挑选 |
+| `AUTO_MAS_E2E_USER_ID` | 该脚本下的用户 UUID |
+| `AUTO_MAS_E2E_ACCOUNT_NAME` | 该用户的名称，和配置里的名字必须一致 |
+
+指定的目标在配置里不存在时直接报错并列出现有候选，不会静默换成别的账号。
 
 最小步骤：
 
 ```powershell
-# 1. 本机配置里准备好脚本、用户（绑定模拟器时还有模拟器），并设好三个 AUTO_MAS_E2E_* 变量
 Set-Location frontend
-yarn e2e:real --grep '@real'
-# 2. 看 frontend/test-results/real/real-e2e-summary.json 与精选截图，贴到 PR
+yarn e2e:real --grep '@real'      # 直接用你的默认账号，不需设变量
+# 看 frontend/test-results/real/real-e2e-summary.json 与精选截图，贴到 PR
 ```
 
 数据根里的配置需能直接跑通所选流程：`config/ScriptConfig.json` 有该脚本，绑定模拟器时 `config/EmulatorConfig.json` 有对应实例，用户的计划字段（MAA/BAAH 为 `Info.StageMode`、MaaEnd 为 `Info.SanityMode`、MSS 为 `Info.PlanMode`）引用计划时 `config/PlanConfig.json` 有该计划。模拟器 ID 和实例索引从所选脚本绑定读取，也可通过 `AUTO_MAS_E2E_EMULATOR_ID`、`AUTO_MAS_E2E_EMULATOR_INDEX` 限定目标；未绑定模拟器的脚本可省略它们。密码和密文按不透明配置透传，须在能解密原配置的 Windows 身份下运行。

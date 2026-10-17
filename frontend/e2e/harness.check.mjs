@@ -353,6 +353,65 @@ test('真实入口拒绝并发运行', async () => {
   }
 })
 
+test('真实流程无需环境变量即可选中本机第一个已启用用户', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-e2e-pick-'))
+  const source = path.join(root, 'source')
+  const config = path.join(source, 'config')
+  const collection = (id, type, value) => ({ instances: [{ uid: id, type }], [id]: value })
+  const disabledScriptId = '00000000-0000-0000-0000-000000000011'
+  const enabledScriptId = '00000000-0000-0000-0000-000000000012'
+  const enabledUserId = '00000000-0000-0000-0000-000000000013'
+  try {
+    await mkdir(config, { recursive: true })
+    const scripts = {
+      instances: [
+        { uid: disabledScriptId, type: 'MaaConfig' },
+        { uid: enabledScriptId, type: 'GeneralConfig' },
+      ],
+      [disabledScriptId]: {
+        Info: { Name: 'disabled script' },
+        SubConfigsInfo: {
+          UserData: collection('00000000-0000-0000-0000-000000000014', 'GeneralUserConfig', {
+            Info: { Name: 'disabled account', Status: false },
+          }),
+        },
+      },
+      [enabledScriptId]: {
+        Info: { Name: 'enabled script' },
+        SubConfigsInfo: {
+          UserData: collection(enabledUserId, 'GeneralUserConfig', {
+            Info: { Name: '本机账号', Status: true },
+          }),
+        },
+      },
+    }
+    await writeFile(path.join(config, 'ScriptConfig.json'), JSON.stringify(scripts))
+
+    const selected = await seedRealProfile(source, path.join(root, 'target'), {})
+    assert.equal(selected.scriptId, enabledScriptId)
+    assert.equal(selected.userId, enabledUserId)
+    assert.equal(selected.accountName, '本机账号')
+
+    // 显式指定一个不存在的目标时给出可读错误，而不是静默换一个用户
+    await assert.rejects(
+      seedRealProfile(source, path.join(root, 'target'), {
+        AUTO_MAS_E2E_ACCOUNT_NAME: '不存在的账号',
+      }),
+      /匹配/
+    )
+    await writeFile(
+      path.join(config, 'ScriptConfig.json'),
+      JSON.stringify({ instances: [], [enabledScriptId]: '' })
+    )
+    await assert.rejects(
+      seedRealProfile(source, path.join(root, 'target'), { AUTO_MAS_E2E_ACCOUNT_NAME: '任意' }),
+      /已启用/
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('启动器参数不透传给 playwright', () => {
   assert.deepEqual(parseLauncherArgs(['--grep', '@smoke', '--in-place']), {
     inPlace: true,

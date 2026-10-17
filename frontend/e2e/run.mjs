@@ -93,7 +93,9 @@ const readConfig = async file => {
     if (details.isSymbolicLink() || !details.isFile()) throw new Error('invalid file')
     return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''))
   } catch {
-    throw new Error(`无法读取 E2E 配置 ${path.basename(file)}`)
+    throw new Error(
+      `无法读取 E2E 配置 ${path.basename(file)}：不存在、为空或不是有效 JSON。先在本机应用里配好一个用户；在 worktree 里跑时用 AUTO_MAS_E2E_TEMPLATE_ROOT 指向你的主检出目录`
+    )
   }
 }
 
@@ -106,22 +108,84 @@ const selectEntry = (collection, id, expectedType) => {
   return { instances: [entry], [id]: collection[id] }
 }
 
-export async function seedRealProfile(sourceRoot, dataRoot, env) {
-  const problems = ['SCRIPT_ID', 'USER_ID', 'ACCOUNT_NAME']
-    .filter(key => !env[`AUTO_MAS_E2E_${key}`]?.trim())
-    .map(key => `缺少 AUTO_MAS_E2E_${key}`)
-  for (const key of ['SCRIPT_ID', 'USER_ID']) {
-    const value = env[`AUTO_MAS_E2E_${key}`]?.trim()
-    if (value && !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) {
-      problems.push(`AUTO_MAS_E2E_${key} 必须是配置 UUID`)
+const uuidPattern = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+const describeSelection = candidate =>
+  `${candidate.accountName}（${candidate.scriptType} 脚本 ${candidate.scriptId} / 用户 ${candidate.userId}）`
+
+// 开发者在应用里调好的第一个已启用用户就是默认真实 E2E 目标，避免为跑一次测试再抄三个 UUID。
+const listRealCandidates = scriptConfig => {
+  const candidates = []
+  for (const instance of scriptConfig.instances ?? []) {
+    if (!supportedScriptTypes.has(instance.type)) continue
+    const users = scriptConfig[instance.uid]?.SubConfigsInfo?.UserData
+    for (const entry of users?.instances ?? []) {
+      const info = users[entry.uid]?.Info
+      if (info?.Status !== true || !info.Name?.trim()) continue
+      candidates.push({
+        scriptId: instance.uid,
+        scriptType: instance.type,
+        userId: entry.uid,
+        accountName: info.Name,
+      })
     }
   }
-  if (problems.length > 0) throw new Error(`真实 E2E 环境变量不完整: ${problems.join('；')}`)
+  return candidates
+}
 
-  const scriptId = env.AUTO_MAS_E2E_SCRIPT_ID
-  const userId = env.AUTO_MAS_E2E_USER_ID
+const resolveRealSelection = (candidates, requested) => {
+  const matched = candidates.filter(
+    candidate =>
+      (!requested.scriptId || candidate.scriptId === requested.scriptId) &&
+      (!requested.userId || candidate.userId === requested.userId) &&
+      (!requested.accountName || candidate.accountName === requested.accountName)
+  )
+  const hint = '用 AUTO_MAS_E2E_SCRIPT_ID / AUTO_MAS_E2E_USER_ID / AUTO_MAS_E2E_ACCOUNT_NAME 指定'
+  if (matched.length === 0) {
+    const asked = [requested.scriptId, requested.userId, requested.accountName].filter(Boolean)
+    throw new Error(
+      candidates.length === 0
+        ? '本机 config 里没有已启用的脚本用户；先在应用里添加一个用户，或指定 AUTO_MAS_E2E_* 变量'
+        : `本机 config 里没有匹配${asked.length > 0 ? `（${asked.join(' / ')}）` : ''}的已启用用户；${hint}`
+    )
+  }
+  if (matched.length > 1) {
+    const preview = matched.slice(0, 5).map(candidate => `  - ${describeSelection(candidate)}`)
+    if (matched.length > preview.length)
+      preview.push(`  … 另有 ${matched.length - preview.length} 个`)
+    console.warn(
+      `[e2e] 本机有 ${matched.length} 个可用用户，默认用第一个：${describeSelection(matched[0])}。${hint}\n${preview.join('\n')}`
+    )
+  }
+  return matched[0]
+}
+
+export async function seedRealProfile(sourceRoot, dataRoot, env) {
   sourceRoot = path.resolve(sourceRoot)
   const sourceConfig = path.join(sourceRoot, 'config')
+  const requested = {
+    scriptId: env.AUTO_MAS_E2E_SCRIPT_ID?.trim() ?? '',
+    userId: env.AUTO_MAS_E2E_USER_ID?.trim() ?? '',
+    accountName: env.AUTO_MAS_E2E_ACCOUNT_NAME?.trim() ?? '',
+  }
+  const selection =
+    requested.scriptId && requested.userId && requested.accountName
+      ? requested
+      : resolveRealSelection(
+          listRealCandidates(await readConfig(path.join(sourceConfig, 'ScriptConfig.json'))),
+          requested
+        )
+  const problems = []
+  for (const [key, value] of [
+    ['SCRIPT_ID', selection.scriptId],
+    ['USER_ID', selection.userId],
+  ]) {
+    if (!uuidPattern.test(value)) problems.push(`AUTO_MAS_E2E_${key} 必须是配置 UUID`)
+  }
+  if (!selection.accountName) problems.push('缺少 AUTO_MAS_E2E_ACCOUNT_NAME')
+  if (problems.length > 0) throw new Error(`真实 E2E 目标配置不完整: ${problems.join('；')}`)
+
+  const scriptId = selection.scriptId
+  const userId = selection.userId
   const scripts = selectEntry(
     await readConfig(path.join(sourceConfig, 'ScriptConfig.json')),
     scriptId
@@ -150,7 +214,7 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   }
   const users = selectEntry(script.SubConfigsInfo?.UserData ?? {}, userId)
   const user = users[userId]
-  if (user.Info?.Name !== env.AUTO_MAS_E2E_ACCOUNT_NAME || user.Info?.Status !== true) {
+  if (user.Info?.Name !== selection.accountName || user.Info?.Status !== true) {
     throw new Error('所选用户名称不匹配或用户未启用')
   }
   script.SubConfigsInfo.UserData = users
@@ -242,7 +306,7 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   if (scriptType === 'HSRConfig' && script.Game?.Platform === 'Cloud') {
     await copyDirectory(path.join('data', scriptId, userId, 'cloud-profile'))
   }
-  return { emulatorId, emulatorIndex }
+  return { emulatorId, emulatorIndex, scriptId, userId, accountName: selection.accountName }
 }
 
 export function parseLauncherArgs(argv) {
@@ -264,7 +328,7 @@ async function main() {
     runRoot = await mkdtemp(path.join(tempBase, 'auto-mas-e2e-'))
     const tempDirectory = path.join(runRoot, 'temp')
     await mkdir(tempDirectory, { recursive: true })
-    let selected = { emulatorId: '', emulatorIndex: '' }
+    let selected = { emulatorId: '', emulatorIndex: '', scriptId: '', userId: '', accountName: '' }
     if (inPlace) {
       // 就地模式：直接用开发者自己调好的配置，方便顺手调试要接入的字段，跑完不清理
       dataRoot = path.resolve(process.env.AUTO_MAS_E2E_DATA_ROOT?.trim() || repositoryRoot)
@@ -278,6 +342,9 @@ async function main() {
           process.env.AUTO_MAS_E2E_TEMPLATE_ROOT ?? repositoryRoot,
           dataRoot,
           process.env
+        )
+        console.warn(
+          `[e2e] 真实 E2E 目标：${selected.accountName}（脚本 ${selected.scriptId} / 用户 ${selected.userId}）`
         )
       }
       // 关掉需要读写本机游戏工具的专项，避免测试去碰开发者的真实安装
@@ -299,6 +366,9 @@ async function main() {
         TMP: tempDirectory,
         TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
+        AUTO_MAS_E2E_SCRIPT_ID: selected.scriptId,
+        AUTO_MAS_E2E_USER_ID: selected.userId,
+        AUTO_MAS_E2E_ACCOUNT_NAME: selected.accountName,
         AUTO_MAS_E2E_EMULATOR_ID: selected.emulatorId,
         AUTO_MAS_E2E_EMULATOR_INDEX: selected.emulatorIndex,
         AUTO_MAS_E2E_IN_PLACE: inPlace ? '1' : '',

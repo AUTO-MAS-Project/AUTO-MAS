@@ -8,14 +8,12 @@ $ErrorActionPreference = 'Stop'
 
 $env:AUTO_MAS_E2E_REAL = '1'
 
-$required = @(
-  'AUTO_MAS_E2E_SCRIPT_ID',
-  'AUTO_MAS_E2E_USER_ID',
-  'AUTO_MAS_E2E_ACCOUNT_NAME'
-)
-$missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
-if ($missing.Count -gt 0) {
-  throw "缺少本机真实 E2E 配置: $($missing -join ', ')"
+$target = @('AUTO_MAS_E2E_SCRIPT_ID', 'AUTO_MAS_E2E_USER_ID', 'AUTO_MAS_E2E_ACCOUNT_NAME') |
+  Where-Object { -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+if ($target.Count -eq 0) {
+  Write-Host '未指定真实 E2E 目标：自动使用本机 config 里第一个已启用用户。想指定就设 AUTO_MAS_E2E_SCRIPT_ID / USER_ID / ACCOUNT_NAME。'
+} else {
+  Write-Host "真实 E2E 目标：$($target -join ', ')"
 }
 
 Write-Host '运行本机真实专项、游戏和账号 E2E；默认把所选脚本/用户/计划复制到临时数据根（不写你的 config/data），加 --in-place 才就地使用当前 config/data。'
