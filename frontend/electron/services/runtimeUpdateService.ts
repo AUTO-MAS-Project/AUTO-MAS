@@ -535,6 +535,9 @@ async function retryBackendUpdateInternal(
   if (current.stagedUpdate?.phase === 'restart' && action === 'bootstrap')
     return restartBackend(current, onProgress)
 
+  const stopFailure = await ensureBackendStopped(current)
+  if (stopFailure) return stopFailure
+
   if (action === 'bootstrap') {
     // 第 0 步失败后重来：后端仍然停着、源码一动没动，与首次进入 bootstrap 的处境完全一样，
     // 所以取消的处置也一样——把旧后端拉回来。
@@ -571,6 +574,27 @@ async function retryBackendUpdateInternal(
   }
 
   return restartBackend(current, onProgress)
+}
+
+/**
+ * 重试前把后端停掉。
+ *
+ * 上次失败后应用可能已被 WebSocket 断线恢复重新拉起后端，而 Runtime 的变更命令要求没有
+ * 受管后端在跑，否则直接返回 MUTEX_OPERATION_FAILED——不先停掉，重试必然失败。
+ * 后端本来就没在跑时 stopBackend 是空操作。
+ */
+async function ensureBackendStopped(current: UpdateSession): Promise<RuntimeUpdateOutcome | null> {
+  const stop = await current.backend.stopBackend()
+  if (stop.success) return null
+  const message = stop.error ?? '无法停止当前后端，未重试更新'
+  logger.warn(`重试前停止后端失败: ${message}`)
+  return {
+    success: false,
+    phase: 'shutdown',
+    error: message,
+    retryable: true,
+    retryActions: ['bootstrap'],
+  }
 }
 
 /** 本次会话实际会执行的命令，供界面与测试确认重试入口没接错。 */

@@ -724,18 +724,20 @@ export class BackendService {
       })
       // completion 兑现即意味着 Runtime 已给出终态且进程已退出，进程树随之清理完毕。
       this.clearRuntimeState(handle)
-      if (
-        gracefulOnly &&
-        (!outcome.success ||
-          outcome.warnings.some(warning => warning.code === 'BACKEND_FORCE_TERMINATED') ||
-          readRuntimeWarningSummaries(outcome.result.details).some(
-            warning => warning.code === 'BACKEND_FORCE_TERMINATED'
-          ))
-      ) {
-        return { success: false, error: '后端未完成优雅关闭，未应用更新' }
-      }
       if (!outcome.success) {
         logger.warn(`Runtime 关闭后端报告失败: ${outcome.code} ${outcome.result.message}`)
+        if (gracefulOnly) return { success: false, error: '后端未完成关闭，未应用更新' }
+        return { success: true }
+      }
+      // 强杀只说明关得不优雅，不代表后端还在：Runtime 已给出终态、进程树随 Job Object
+      // 回收，热更前也已 drain 过，没有任务会因此中断，可以继续应用更新。
+      if (
+        outcome.warnings.some(warning => warning.code === 'BACKEND_FORCE_TERMINATED') ||
+        readRuntimeWarningSummaries(outcome.result.details).some(
+          warning => warning.code === 'BACKEND_FORCE_TERMINATED'
+        )
+      ) {
+        logger.warn('后端未在时限内优雅关闭，已由 Runtime 强制终止，继续应用更新')
       } else {
         logger.info('Runtime 已确认后端关闭')
       }

@@ -489,7 +489,8 @@ describe('bootstrap 失败的两种现场', () => {
 
     expect(retried.success).toBe(true)
     // 上一次失败给了 rebuild-environment，但显式选「重试同步」时不能被改写成 rebuild。
-    expect(callLog).toEqual(['run:dependencies sync', 'startBackend'])
+    // 重试前先停后端：上次失败后应用可能已被断线恢复重新拉起后端，不停掉 Runtime 会拒跑变更命令。
+    expect(callLog).toEqual(['stopBackend', 'run:dependencies sync', 'startBackend'])
   })
 
   it('失败段到重试入口的映射', () => {
@@ -657,7 +658,7 @@ describe('取消更新', () => {
       }
     })
 
-    expect(callLog).toEqual(['run:dependencies sync', 'stdin:cancel'])
+    expect(callLog).toEqual(['stopBackend', 'run:dependencies sync', 'stdin:cancel'])
     expect(retried).toMatchObject({
       success: false,
       phase: 'bootstrap',
@@ -959,7 +960,12 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
     const retried = await retryBackendUpdate('bootstrap', collect)
 
     expect(retried.success).toBe(true)
-    expect(callLog).toEqual(['alignRuntime', 'run:bootstrap --version v5.6.0', 'startBackend'])
+    expect(callLog).toEqual([
+      'stopBackend',
+      'alignRuntime',
+      'run:bootstrap --version v5.6.0',
+      'startBackend',
+    ])
   })
 
   it('第 0 步期间取消：结局是取消，旧后端被拉回来', async () => {
