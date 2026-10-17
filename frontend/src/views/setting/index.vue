@@ -9,7 +9,11 @@ import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
-import { clearCustomSoundCache, playPressSound } from '@/components/satellite/pressSound'
+import {
+  clearCustomSoundCache,
+  playPressSound,
+  previewPressSound,
+} from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -425,10 +429,7 @@ const handlePressSoundPreview = (phase?: PressSoundPhase) => {
     customPath: pressSoundStore.customPath,
     customReleasePath: pressSoundStore.customReleasePath,
   }
-  // 先按下再松开，两声之间的等待长度交给 playPressSound 去排（按下音没放完就接在后面）
-  void playPressSound({ ...options, phase: 'press' }).then(() =>
-    playPressSound({ ...options, phase: 'release' })
-  )
+  void previewPressSound(options)
 }
 
 // 其他操作

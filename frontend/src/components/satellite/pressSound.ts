@@ -165,6 +165,16 @@ export function playPressSound(options: PressSoundPlayOptions): Promise<void> {
   })
 }
 
+/** 整组试听只续接原来的按下请求，新的试听或真实按压会使它失效。 */
+export async function previewPressSound(options: PressSoundPlayOptions): Promise<void> {
+  const preparing = playPressSound({ ...options, phase: 'press' })
+  const request = pressRequest
+  await preparing
+  if (request === pressRequest) {
+    await playPressSound({ ...options, phase: 'release' })
+  }
+}
+
 async function playPressSoundPhase(options: PressSoundPlayOptions): Promise<void> {
   const {
     preset,
