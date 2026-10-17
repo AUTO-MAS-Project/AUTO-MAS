@@ -31,86 +31,91 @@
         <slot v-if="activeKey" name="community" :module-key="activeKey" />
       </div>
 
-      <div v-if="activeItem" class="banner-viewport">
-        <div class="banner-track">
-          <article v-for="item in [activeItem]" :key="item.key" class="banner-slide">
-            <div class="banner-body" :style="bannerStyle(item)">
-              <img
-                v-if="hasCover(item)"
-                :src="item.cover"
-                :alt="item.title"
-                class="banner-cover"
-                :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(item.cover) }]"
-                referrerpolicy="no-referrer"
-                @load="onCoverLoad(item, $event)"
-                @error="onCoverError(item)"
-              />
-              <div class="banner-overlay" />
+      <div class="activity-layout" :class="{ 'has-sidebar': activeKey === 'endfield' }">
+        <div v-if="activeItem" class="banner-viewport">
+          <div class="banner-track">
+            <article v-for="item in [activeItem]" :key="item.key" class="banner-slide">
+              <div class="banner-body" :style="bannerStyle(item)">
+                <img
+                  v-if="hasCover(item)"
+                  :src="item.cover"
+                  :alt="item.title"
+                  class="banner-cover"
+                  :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(item.cover) }]"
+                  referrerpolicy="no-referrer"
+                  @load="onCoverLoad(item, $event)"
+                  @error="onCoverError(item)"
+                />
+                <div class="banner-overlay" />
 
-              <div class="banner-content">
-                <div class="banner-badge">
-                  <span class="banner-dot" :style="{ background: item.accent }" />
-                  <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
-                  <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+                <div class="banner-content">
+                  <div class="banner-badge">
+                    <span class="banner-dot" :style="{ background: item.accent }" />
+                    <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
+                    <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+                  </div>
+                  <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
                 </div>
-                <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
-              </div>
 
-              <!--
+                <!--
                 左下角给起止时间，右下角是倒计时（相对时间）：
                 两角各占一处，绝对时间与倒计时可对照着看。
                 版本号已经在上面那枚徽章里，这里不再重复一遍
               -->
-              <div
-                v-if="item.startTime || item.endTime"
-                class="banner-meta"
-                :class="{ 'has-remaining': item.endTime }"
-              >
-                <span v-if="item.startTime" class="meta-time">
-                  {{ formatActivityTime(item.startTime, locale) }}
-                </span>
-                <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
-                  ~
-                </span>
-                <span v-if="item.endTime" class="meta-time">
-                  {{ formatActivityTime(item.endTime, locale) }}
-                </span>
-              </div>
+                <div
+                  v-if="item.startTime || item.endTime"
+                  class="banner-meta"
+                  :class="{ 'has-remaining': item.endTime }"
+                >
+                  <span v-if="item.startTime" class="meta-time">
+                    {{ formatActivityTime(item.startTime, locale) }}
+                  </span>
+                  <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
+                    ~
+                  </span>
+                  <span v-if="item.endTime" class="meta-time">
+                    {{ formatActivityTime(item.endTime, locale) }}
+                  </span>
+                </div>
 
-              <div v-if="item.endTime" class="banner-remaining">
-                <div class="remaining-label">{{ countdownLabel(item) }}</div>
-                <a-statistic-countdown
-                  :value="countdownValue(countdownTarget(item))"
-                  :format="countdownFormat(item)"
-                  :value-style="remainingStyle"
-                />
+                <div v-if="item.endTime" class="banner-remaining">
+                  <div class="remaining-label">{{ countdownLabel(item) }}</div>
+                  <a-statistic-countdown
+                    :value="countdownValue(countdownTarget(item))"
+                    :format="countdownFormat(item)"
+                    :value-style="remainingStyle"
+                  />
+                </div>
               </div>
-            </div>
-          </article>
+            </article>
+          </div>
+
+          <button
+            v-if="items.length > 1"
+            type="button"
+            class="banner-arrow is-prev"
+            :aria-label="t('home.carousel.prev')"
+            @click="select(activeIndex - 1)"
+          >
+            <LeftOutlined />
+          </button>
+          <button
+            v-if="items.length > 1"
+            type="button"
+            class="banner-arrow is-next"
+            :aria-label="t('home.carousel.next')"
+            @click="select(activeIndex + 1)"
+          >
+            <RightOutlined />
+          </button>
         </div>
 
-        <button
-          v-if="items.length > 1"
-          type="button"
-          class="banner-arrow is-prev"
-          :aria-label="t('home.carousel.prev')"
-          @click="select(activeIndex - 1)"
-        >
-          <LeftOutlined />
-        </button>
-        <button
-          v-if="items.length > 1"
-          type="button"
-          class="banner-arrow is-next"
-          :aria-label="t('home.carousel.next')"
-          @click="select(activeIndex + 1)"
-        >
-          <RightOutlined />
-        </button>
-      </div>
-
-      <div v-if="activeKey" class="activity-detail">
-        <slot name="detail" :module-key="activeKey" />
+        <div v-if="activeKey" class="activity-detail">
+          <slot name="detail" :module-key="activeKey" />
+        </div>
+        <aside v-if="activeKey === 'endfield'" class="activity-sidebar">
+          <slot name="sidebar" :module-key="activeKey" />
+        </aside>
       </div>
     </template>
   </section>
@@ -332,6 +337,78 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.activity-layout {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.activity-layout.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  align-items: start;
+}
+
+.has-sidebar .banner-viewport {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.has-sidebar .activity-detail {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.activity-sidebar {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  position: relative;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 侧栏与左侧主图、卡池的总高度对齐，仅活动内容滚动。 */
+.activity-sidebar :deep(.endfield-card) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-sidebar :deep(.ant-card-head) {
+  flex-shrink: 0;
+}
+
+.activity-sidebar :deep(.ant-card-body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* 收紧主图高度并保留上方画面，裁去素材底部的文字区域。 */
+.has-sidebar .banner-body {
+  height: auto;
+  aspect-ratio: 16 / 7;
+  min-height: 240px;
+}
+
+.has-sidebar .banner-body .banner-cover {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  object-position: center top;
+  transform: none;
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 /* 切换条与社区信息跟着页面一起滚：吸顶会一直挡着滚上来的横幅与卡片 */
@@ -630,6 +707,23 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 800px) {
+  .activity-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activity-sidebar {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .activity-sidebar :deep(.endfield-card) {
+    position: static;
+  }
+
+  .activity-sidebar :deep(.ant-card-body) {
+    overflow-y: visible;
+  }
+
   .banner-body {
     height: 220px;
   }

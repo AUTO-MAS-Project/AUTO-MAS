@@ -103,9 +103,19 @@
                 :active-key="gameKey"
               />
             </template>
+            <template #sidebar="{ moduleKey: gameKey }">
+              <HomeEndfieldOverview
+                v-if="gameKey === 'endfield'"
+                section="activities"
+                :loading="endfieldSource.loading.value"
+                :overview="endfieldSource.overview.value"
+                @refresh="endfieldSource.refresh"
+              />
+            </template>
             <template #detail="{ moduleKey: gameKey }">
               <HomeEndfieldOverview
                 v-if="gameKey === 'endfield'"
+                section="pools"
                 :loading="endfieldSource.loading.value"
                 :overview="endfieldSource.overview.value"
                 @refresh="endfieldSource.refresh"
@@ -359,11 +369,7 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       return {
         ...base,
         loading: endfieldSource.loading.value,
-        ...endfieldActivityBanner(
-          endfieldSource.overview.value,
-          endfieldSource.versionArt.value,
-          endfieldSource.versionName.value
-        ),
+        ...endfieldActivityBanner(endfieldSource.overview.value),
       }
     }
 

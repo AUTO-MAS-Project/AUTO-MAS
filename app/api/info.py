@@ -38,6 +38,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 
 from app.core import Config
+from app.core.game_calendar import GameCalendar
 from app.models.schema import *
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
@@ -45,6 +46,56 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 logger = get_logger("信息获取 API")
+
+
+@router.get(
+    "/endfield/activity/completions",
+    tags=["Get"],
+    summary="获取终末地已完成活动",
+    response_model=GameCalendarActivitiesOut,
+)
+async def get_endfield_activity_completions() -> GameCalendarActivitiesOut:
+    try:
+        activities = await GameCalendar.completed_activities(game="endfield")
+        return GameCalendarActivitiesOut(
+            data=[
+                GameCalendarActivityInfo(
+                    name=item.name, startTime=item.start_at, endTime=item.end_at
+                )
+                for item in activities
+            ]
+        )
+    except (OSError, ValueError, TypeError):
+        logger.exception("读取终末地活动完成状态失败")
+        return GameCalendarActivitiesOut(
+            code=500, status="error", message="读取活动完成状态失败"
+        )
+
+
+@router.post(
+    "/endfield/activity/completions",
+    tags=["Set"],
+    summary="设置终末地活动完成状态",
+    response_model=OutBase,
+)
+async def set_endfield_activity_completion(
+    payload: GameCalendarActivityUpdateIn,
+) -> OutBase:
+    try:
+        await GameCalendar.set_activity_completed(
+            game="endfield",
+            name=payload.name,
+            start=payload.startTime,
+            end=payload.endTime,
+            completed=payload.completed,
+        )
+        return OutBase()
+    except ValueError as error:
+        return OutBase(code=400, status="error", message=str(error))
+    except (OSError, TypeError):
+        logger.exception("保存终末地活动完成状态失败")
+        return OutBase(code=500, status="error", message="保存活动完成状态失败")
+
 
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，
 ## 少了会返回 {"code": 403, "msg": "缺少游戏信息"}；它同时给三个服，

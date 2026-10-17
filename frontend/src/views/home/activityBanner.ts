@@ -62,48 +62,32 @@ export const sraActivityBanner = (overview: SraActivityOverview): ActivityBanner
 }
 
 export const endfieldActivityBanner = (
-  overview: EndfieldActivityOverview,
-  /** 官网当期宣传图（已由数据源换成后端缩放地址），有就用它当封面 */
-  versionArt = '',
-  /** 版本名（如「雪凇幽梦」），有就用它当标题 */
-  versionName = ''
+  overview: EndfieldActivityOverview
 ): ActivityBannerSource => {
-  // 标题、时间与背景图都跟着「当前那场活动」走；卡池只是附带的，取不到活动时才用它兜底
   const now = Date.now()
-  const activities = [...overview.Activities].sort(
-    (left, right) => toTimestamp(left.StartTime) - toTimestamp(right.StartTime)
+  const versionValid = Boolean(
+    overview.VersionName &&
+    toTimestamp(overview.VersionStartTime ?? '') > 0 &&
+    toTimestamp(overview.VersionEndTime ?? '') > now
   )
-  const activity =
-    activities.find(
-      item => toTimestamp(item.StartTime) <= now && toTimestamp(item.EndTime) > now
-    ) ??
-    activities.find(item => toTimestamp(item.StartTime) > now) ??
-    activities[0]
-
-  // 封面只认版本图；取不到就留空，让轮播用主题色底纹顶上。
-  // 这里刻意不退回活动的背景大图：那是游戏原生素材，实测单张 2640×1920、20MB 级，
-  // 后端得先把它整个下载下来才能缩放，网络稍差就是长时间挂住或直接失败，横幅反而空着。
-  // 卡池头像那种小图同理不凑数——宁可没有图，也不要一个转不出来的图。
-  const cover = versionArt
-
-  // 横幅报的是「这个版本」：标题是版本名，倒计时也应当数到本期内容整体结束，
-  // 而不是随便挑一场活动。所以取当前活动与卡池里最晚的结束时间当终点。
-  // 起点同理只算还在进行或将要开始的：已结束条目的开始时间会把时间条拉到几周前
-  const pending = [...overview.Activities, ...overview.Pools].filter(
-    item => toTimestamp(item.EndTime) > now
-  )
-  const ends = pending.map(item => toTimestamp(item.EndTime)).filter(value => value > 0)
-  const starts = pending.map(item => toTimestamp(item.StartTime)).filter(value => value > 0)
-
+  // 无有效版本时仅使用同一活动的标题、封面和时间，不拿卡池伪造版本周期。
+  const activities = [...overview.Activities]
+    .filter(item => toTimestamp(item.EndTime) > now)
+    .sort((left, right) => toTimestamp(left.StartTime) - toTimestamp(right.StartTime))
+  const activity = activities.find(item => toTimestamp(item.StartTime) <= now) ?? activities[0]
   return {
-    cover,
-    // 徽章里只要版本号本身，「1.5.3@10506507-7」这种热更后缀太长
-    version: (overview.Version || '').split('@')[0],
-    subtitle: versionName || activity?.Name || overview.Version || '',
-    startTime: starts.length ? new Date(Math.min(...starts)).toISOString() : '',
-    endTime: ends.length ? new Date(Math.max(...ends)).toISOString() : (activity?.EndTime ?? ''),
+    // AKE 原生活动图可能数十 MB；兜底只显示文字，不直接加载这些大图。
+    cover: versionValid
+      ? (overview.VersionCover ?? '')
+      : overview.SourceName === 'SRA'
+        ? (activity?.CoverUrl ?? '')
+        : '',
+    version: versionValid ? overview.Version : '',
+    subtitle: versionValid ? (overview.VersionName ?? '') : (activity?.Name ?? ''),
+    startTime: versionValid ? (overview.VersionStartTime ?? '') : (activity?.StartTime ?? ''),
+    endTime: versionValid ? (overview.VersionEndTime ?? '') : (activity?.EndTime ?? ''),
     available: overview.Available,
-    stale: overview.Stale,
+    stale: versionValid ? (overview.VersionStale ?? overview.Stale) : overview.Stale,
   }
 }
 
