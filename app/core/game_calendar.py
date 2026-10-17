@@ -243,7 +243,11 @@ class _GameCalendar:
                     self._save_schedule()
                     continue
                 if target_ids.issubset(reminder.delivered):
-                    reminder.completed = True
+                    reminder.completed = not target.catalog_failures
+                    if not reminder.completed:
+                        reminder.next_attempt_at = now + timedelta(
+                            seconds=CALENDAR_RETRY_INTERVAL_SECONDS
+                        )
                     self._save_schedule()
                     continue
                 reminders.append(reminder)
@@ -286,7 +290,10 @@ class _GameCalendar:
                         reminder.delivered = tuple(
                             dict.fromkeys((*reminder.delivered, *result.succeeded_ids))
                         )
-                        reminder.completed = target_ids.issubset(reminder.delivered)
+                        reminder.completed = (
+                            not target.catalog_failures
+                            and target_ids.issubset(reminder.delivered)
+                        )
                     if result.failed:
                         logger.warning(
                             f"游戏日历提醒部分发送失败：{'、'.join(result.failed)}"

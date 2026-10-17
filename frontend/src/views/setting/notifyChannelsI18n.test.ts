@@ -1,13 +1,31 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vite-plus/test'
 import zhCN from '@/i18n/locales/zh-CN'
 
-// 描述表在后端 Python 源里，测试不能 import Python，用源码文本断言
-// （照 ScriptCreateDialog.test.ts 的写法）。
-const source = readFileSync(
-  new URL('../../../../app/core/notify_channels.py', import.meta.url),
-  'utf8'
-)
+// 跨语言词表契约：只读取随应用交付的内置清单和声明，不执行 Python 渠道。
+const repoRoot = new URL('../../../../', import.meta.url)
+const channelRoot = new URL('app/notification_channels/', repoRoot)
+const channelSources = readdirSync(channelRoot, { withFileTypes: true })
+  .filter(entry => entry.isDirectory())
+  .map(entry => entry.name)
+  .sort()
+  .flatMap(name => {
+    const files = readdirSync(new URL(`${name}/`, channelRoot))
+    if (!files.includes('manifest.json')) return []
+    const manifest = JSON.parse(
+      readFileSync(new URL(`${name}/manifest.json`, channelRoot), 'utf8')
+    ) as { interface_version: number; id: string; entrypoint: string }
+    expect(manifest.interface_version).toBe(1)
+    expect(manifest.id).toBe(name)
+    expect(manifest.entrypoint).toBe(`app.notification_channels.${name}:register`)
+    const [module] = manifest.entrypoint.split(':')
+    return readFileSync(new URL(`${module.split('.').join('/')}/__init__.py`, repoRoot), 'utf8')
+  })
+// 通知内容 policy 仍归宿主，不是可发送的渠道。
+const source = [
+  readFileSync(new URL('app/core/notify_channels.py', repoRoot), 'utf8'),
+  ...channelSources,
+].join('\n')
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
