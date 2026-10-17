@@ -945,9 +945,7 @@ def _atomic_copytree(source: Path, target: Path) -> None:
 def backup_instance(root: Path, idx: int, backup_dir: Path) -> None:
     """把实例目录整体备份（注入前调用，供 restore_instance 原样恢复）。"""
 
-    shutil.rmtree(backup_dir, ignore_errors=True)
-    backup_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(instance_dir(root, idx), backup_dir)
+    _atomic_copytree(instance_dir(root, idx), backup_dir)
 
 
 def restore_instance(root: Path, idx: int, backup_dir: Path) -> None:

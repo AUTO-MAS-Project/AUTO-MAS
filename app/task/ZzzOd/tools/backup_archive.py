@@ -60,7 +60,7 @@ from app.utils.io import (
     ConfigCorruptedError,
     force_rmtree,
     read_dict_file,
-    replace_dir,
+    swap_in_dir,
 )
 
 from .zzz_od_config import (
@@ -426,9 +426,9 @@ def restore_onedragon_backup(
     )
     for idx_dir_name in idx_dirs:
         idx = int(idx_dir_name)
-        # 整目录替换走公共原语：先删后拷，删除带只读位清除与重试，
-        # 不留「删了一半、备份没拷回」的半删状态。
-        replace_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
+        # 整目录换入走公共原语：先把旧目录改名留底再换入，失败时实例目录
+        # 保持原样，不会停在「删了一半、备份没拷回」的状态。
+        swap_in_dir(backup_dir / idx_dir_name, instance_dir(root, idx))
 
     logger.info(f"一条龙原生配置已恢复备份 {ts} (实例目录 {len(idx_dirs)} 个)")
 
