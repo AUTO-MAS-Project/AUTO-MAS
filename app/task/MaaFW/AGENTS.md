@@ -348,6 +348,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
   这个通用选项**不做逐游戏适配**（2026-10-04 定，理由见 `game_resolution.py` 文件头），
   游戏自有层由该游戏的特调或专项自己调。
+- **项目的运行前设置（interface `pretask`）在每次尝试里跑**，不像用户级「脚本前任务」只跑一次：
+  MaaEnd 的「🚀启动游戏（PC）」就是它，此时 `Game.LaunchMode` 是 AttachOnly、`opened_game` 为假，
+  MAS 既不拉起也不关游戏。第一次尝试照常跑；它自己失败按普通失败重试；成功过之后的重试只在客户端
+  已经不在时重跑（`_pretasks_need_rerun`：MAS 刚关掉自己起的游戏 / 模拟器——关的时候报错也算，
+  `_close_*` 不论成败都清 `opened_*`、下一轮会重新拉起，见 `_reset_client_for_retry`；或 Win32 下
+  控制器窗口找不到——队列末尾的「关闭游戏」任务会把它关掉）。游戏还开着不重跑，免得项目的启动脚本
+  对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
+  看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
+  MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
   桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
   游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
