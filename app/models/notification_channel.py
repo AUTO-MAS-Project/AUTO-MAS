@@ -97,7 +97,6 @@ class NotifyChannel:
     summary_key: str | None
     summary_fields: tuple[str, ...]
     fields: Mapping[str, tuple[NotifyChannelField, ...]]
-    capabilities: NotificationCapabilities = NotificationCapabilities()
     target_builder: Callable[..., tuple[ChannelTarget, ...]] | None = None
     send_adapter: Callable[..., Awaitable[bool | None]] | None = None
     sender_factory: Callable[[ChannelDependencies], Any] | None = None

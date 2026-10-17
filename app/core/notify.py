@@ -22,7 +22,7 @@
 """统一通知编排。
 
 脚本和业务模块负责生成正文，本模块负责读取通知配置、选择目标渠道、失败隔离与重试；
-``app.services.notification`` 只保留具体渠道的传输实现。
+``app.services.notification`` 持有已装配发送器，具体传输由各渠道实现。
 """
 
 import asyncio
@@ -40,7 +40,6 @@ from app.core.notify_channels import (
 )
 from app.core.notify_render import render_for_target
 from app.models.notification import (
-    NOTIFICATION_SIGNATURE,
     NotificationImage,
     NotifyPayload,
     WebhookTargetSnapshot,
@@ -51,7 +50,6 @@ from app.utils import get_logger
 
 logger = get_logger("通知编排")
 
-SIGNATURE = NOTIFICATION_SIGNATURE
 _PENDING_TASK_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[Any]] = set()
 
 
@@ -73,7 +71,6 @@ class NotifyTarget:
     读配置。
     """
 
-    name: str
     channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
     empty_policy: EmptyPolicy = "send"
     # 声明损坏时无法确定目标；只记目录未确认，不计作一次实际投递。
@@ -244,7 +241,6 @@ def global_target(
                 target = replace(target, timeout_seconds=system_timeout_seconds)
             pairs.append((channel, target))
     return NotifyTarget(
-        name="全局",
         channels=tuple(pairs),
         empty_policy=empty_policy,
         catalog_failures=get_notify_channel_failures(),
@@ -261,7 +257,6 @@ def user_target(user_config: Any) -> NotifyTarget:
             for target in channel.targets(TargetConfigView(user_config), scope="user")
         )
     return NotifyTarget(
-        name="用户",
         channels=tuple(pairs),
         empty_policy="warn",
         catalog_failures=get_notify_channel_failures(),
@@ -380,11 +375,10 @@ def _recipient_action(
 
 
 class Notifier(Protocol):
-    """``dispatch`` 需要的通知渠道发送面。
+    """渠道适配器需要的发送面，测试可直接注入同一接口。
 
-    默认实现是 ``app.services.notification.Notify``（模块级单例），测试与
-    未来的渠道扩展可传入自己的实现。按 ``_send`` 的判定，返回 ``False``
-    表示该渠道发送失败，``None`` 表示成功。
+    生产通过 Notify 按渠道取出已装配的发送器。按 ``_send`` 的判定，返回
+    ``False`` 表示该渠道发送失败，``None`` 表示成功。
     """
 
     async def push_plyer(
@@ -439,7 +433,7 @@ async def dispatch(
     retry_delay: float = 0,
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
-    notifier: Notifier | None = None,
+    notifier: Notifier | Notification | None = None,
 ) -> DispatchResult:
     """向所有目标分发通知，返回实际尝试/成功/失败渠道。
 
@@ -548,7 +542,7 @@ async def dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
-    notifier: Notifier | None = None,
+    notifier: Notifier | Notification | None = None,
 ) -> DispatchResult:
     """报告只短暂等待签到事件，超时照常投递，迟到结果在后台补发。"""
 
@@ -632,7 +626,7 @@ async def _dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
-    notifier: Notifier | None = None,
+    notifier: Notifier | Notification | None = None,
 ) -> DispatchResult:
     """统一附加社区结果，并按渠道维护任务报告的投递状态。
 

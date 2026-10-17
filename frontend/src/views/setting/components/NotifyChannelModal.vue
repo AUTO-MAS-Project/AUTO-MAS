@@ -13,28 +13,18 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     channel: NotifyChannelOut | null
-    /** 取哪组字段；也决定 Webhook 走全局还是用户接口 */
-    scope?: 'global' | 'user'
-    /** 扁平取值源（settings.Notify / 用户配置的 Notify 组） */
+    /** 全局通知配置的扁平取值源（settings.Notify） */
     values: Record<string, unknown>
-    /** 保存函数，签名固定 (group, name, value)；用户级宿主自行包一层 */
+    /** 保存函数，签名固定 (group, name, value) */
     save: (group: string, name: string, value: unknown) => unknown
-    /** 预留：用户级 Notify.Enabled 总开关会禁用每一个控件 */
-    controlsDisabled?: boolean
     /** Claw 渠道的提升绑定状态；非 Claw 渠道传 null */
     clawBinding?: ClawBindingState | null
     /** 嵌套浮层容器；弹窗场景传弹窗 wrap 节点，让浮层整体压在标题栏之下 */
     getPopupContainer?: () => HTMLElement
-    scriptId?: string | null
-    userId?: string | null
   }>(),
   {
-    scope: 'global',
-    controlsDisabled: false,
     clawBinding: null,
     getPopupContainer: undefined,
-    scriptId: null,
-    userId: null,
   }
 )
 
@@ -53,7 +43,7 @@ const groupTag = computed(() =>
     ? t('setting.notify.customGroup')
     : t('setting.notify.channelsGroup')
 )
-const fields = computed(() => (props.channel ? scopeFields(props.channel, props.scope) : []))
+const fields = computed(() => (props.channel ? scopeFields(props.channel, 'global') : []))
 const enableGroup = computed(() => props.channel?.enableField?.[0] ?? null)
 const enableName = computed(() => props.channel?.enableField?.[1] ?? null)
 const enabled = computed(() => {
@@ -64,13 +54,11 @@ const isClaw = computed(() => (props.channel?.customBlock ?? '').startsWith('cla
 const clawConnected = computed(() => !!props.clawBinding?.status?.connected)
 // 未绑定时开关不可点（沿用 ClawBinding 原逻辑：未连接 / 查询中 / 解绑中都禁用）
 const switchDisabled = computed(() => {
-  if (props.controlsDisabled) return true
   if (isClaw.value && props.clawBinding) {
     return !clawConnected.value || props.clawBinding.statusLoading || props.clawBinding.unbinding
   }
   return false
 })
-const webhookMode = computed(() => (props.scope === 'user' ? 'user' : 'global'))
 
 const saving = ref(false)
 const setEnabled = async (value: boolean | string | number) => {
@@ -165,9 +153,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
         <WebhookManager
           v-else-if="channel.customBlock === 'webhook_list'"
           compact
-          :mode="webhookMode"
-          :script-id="scriptId"
-          :user-id="userId"
+          mode="global"
           :get-popup-container="getPopupContainer"
           @listed="onWebhookListed"
         />
@@ -177,7 +163,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
           :key="field.name"
           :field="field"
           :value="values[field.name]"
-          :disabled="controlsDisabled"
           :get-popup-container="getPopupContainer"
           @save="value => saveField(field.group, field.name, value)"
         />

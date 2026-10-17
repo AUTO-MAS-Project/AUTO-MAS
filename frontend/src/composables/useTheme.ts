@@ -171,18 +171,6 @@ const updateCSSVariables = () => {
     '--app-appearance-background-size',
     activeAppearance.value?.background?.size ?? 'cover'
   )
-  root.style.setProperty(
-    '--app-appearance-mascot-width',
-    `${activeAppearance.value?.mascot?.width ?? 144}px`
-  )
-  root.style.setProperty(
-    '--app-appearance-mascot-opacity',
-    String(activeAppearance.value?.mascot?.opacity ?? 1)
-  )
-  root.style.setProperty(
-    '--app-appearance-mascot-position',
-    activeAppearance.value?.mascot?.position ?? 'bottom-right'
-  )
   if (!resolvedAntTokens.value) return
   const customTokens = activeAppearance.value?.tokens
   const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]

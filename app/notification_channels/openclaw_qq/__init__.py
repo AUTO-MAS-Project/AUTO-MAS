@@ -78,11 +78,6 @@ def register() -> NotifyChannel:
         summary_key=None,
         summary_fields=(),
         fields={},
-        capabilities=NotificationCapabilities(
-            formats=("text",),
-            image_presentations=frozenset({"rich_media"}),
-            body_title_policy="always",
-        ),
         target_builder=_openclaw_qq_targets,
         send_adapter=_openclaw_qq_send,
         sender_factory=Sender,

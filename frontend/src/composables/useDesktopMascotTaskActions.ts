@@ -71,7 +71,7 @@ export function useDesktopMascotTaskActions(
       taskOptionsRequest = request
       startState = 'loading'
       void publishMenu(requestId).catch(error => reportWarning('同步桌宠任务菜单失败:', error))
-      // 给宿主超时留出余量；开始列表失败仍可展示当前运行任务。
+      // 限制任务列表等待时间；开始列表失败仍可展示当前运行任务。
       const timeout = setTimeout(() => request.cancel(), 2000)
       taskOptionsTimer = timeout
       try {

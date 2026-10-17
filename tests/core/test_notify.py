@@ -192,7 +192,7 @@ def _protocol_members():
 
 def test_notifier_fake_matches_protocol_signatures() -> None:
     """录制发送器与 Notifier 协议逐方法同参同名同默认形态（真实实现的对比
-    见 test_real_notify_implementation_matches_protocol）。"""
+    见 test_channel_transports_match_notifier_protocol）。"""
 
     members = _protocol_members()
     assert sorted(members) == [
@@ -220,14 +220,25 @@ def test_notifier_fake_matches_protocol_signatures() -> None:
             assert fake_param.default is not fake_param.empty, (name, param_name)
 
 
-def test_real_notify_implementation_matches_protocol() -> None:
-    """仓库无类型检查器，这是 Notifier 协议与真实 Notify 实现不漂移的唯一断言。"""
+def test_channel_transports_match_notifier_protocol() -> None:
+    """校验渠道适配器使用的协议与各渠道真实发送器签名一致。"""
 
-    from app.services.notification import Notification
+    from importlib import import_module
+
+    channels = {
+        "push_plyer": "system",
+        "send_mail": "mail",
+        "ServerChanPush": "serverchan",
+        "send_cmcc_newmsg": "cmcc",
+        "WebhookPush": "webhook",
+        "send_koishi": "koishi",
+        "send_openclaw_qq": "openclaw_qq",
+    }
 
     for name, protocol_method in _protocol_members().items():
-        # 取类而不是实例：实例方法是绑定签名，会少掉 self，与协议不可比
-        real = getattr(Notification, name, None)
+        # 取类而不是实例：实例方法是绑定签名，会少掉 self，与协议不可比。
+        sender = import_module(f"app.notification_channels.{channels[name]}.transport")
+        real = getattr(sender.Sender, name, None)
         assert real is not None, name
         real_params = inspect.signature(real).parameters
         assert list(real_params) == list(

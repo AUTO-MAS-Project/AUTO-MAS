@@ -129,11 +129,6 @@ def register() -> NotifyChannel:
                 ),
             )
         },
-        capabilities=NotificationCapabilities(
-            # Koishi 接收 HTML 正文片段；完整邮件文档在发送适配器中退回文本表达。
-            formats=("html", "text"),
-            body_title_policy="always",
-        ),
         target_builder=_koishi_targets,
         send_adapter=_koishi_send,
         sender_factory=Sender,

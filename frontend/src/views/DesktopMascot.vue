@@ -310,7 +310,6 @@ function endDrag(event?: PointerEvent): void {
       class="mascot-avatar"
       :class="{
         dragging,
-        'drag-sprite': dragSprite,
         stopped,
         'reduced-motion': (reducedMotion && !data.motionOverride) || !data.animate,
       }"

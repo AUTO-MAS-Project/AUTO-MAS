@@ -30,7 +30,6 @@ export function createMasDesktopMascotCapabilities(options: MasDesktopMascotCapa
   let taskMenu: DesktopMascotTaskMenu | null = null
   let menuRequestId = 0
   let activeMenuRequestId = 0
-  let menuTimer: ReturnType<typeof setTimeout> | undefined
   let actionRequestId = 0
   let actionRequest:
     | {
@@ -54,8 +53,6 @@ export function createMasDesktopMascotCapabilities(options: MasDesktopMascotCapa
   }
   const cancelMenuRequest = (): void => {
     const id = activeMenuRequestId
-    clearTimeout(menuTimer)
-    menuTimer = undefined
     activeMenuRequestId = 0
     taskMenu = null
     const win = options.getMainWindow()
@@ -175,11 +172,6 @@ export function createMasDesktopMascotCapabilities(options: MasDesktopMascotCapa
       if (!ready || !win || win.isDestroyed()) return
       const id = ++menuRequestId
       activeMenuRequestId = id
-      // 列表超时只停用任务能力，保留本地能力。
-      menuTimer = setTimeout(() => {
-        menuTimer = undefined
-        if (activeMenuRequestId === id) publish()
-      }, 3000)
       win.webContents.send('desktop-mascot:task-menu-request', id)
     },
     close: cancelMenuRequest,
@@ -206,8 +198,6 @@ export function createMasDesktopMascotCapabilities(options: MasDesktopMascotCapa
         options.getMainWindow,
         (id, nextMenu) => {
           if (id !== activeMenuRequestId || disposed) return
-          clearTimeout(menuTimer)
-          menuTimer = undefined
           taskMenu = nextMenu
           publish()
         },

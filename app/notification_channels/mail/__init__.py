@@ -126,11 +126,6 @@ def register() -> NotifyChannel:
         summary_key="setting.notify.summary.mail",
         summary_fields=("SMTPServerAddress", "ToAddress"),
         fields=_MAIL_FIELDS,
-        capabilities=NotificationCapabilities(
-            formats=("html", "text"),
-            image_presentations=frozenset({"html"}),
-            append_signature=False,
-        ),
         target_builder=_mail_targets,
         send_adapter=_mail_send,
         sender_factory=Sender,

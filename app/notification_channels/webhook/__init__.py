@@ -142,9 +142,6 @@ def register() -> NotifyChannel:
         summary_key="setting.notify.summary.webhook",
         summary_fields=(),
         fields={},
-        capabilities=NotificationCapabilities(
-            formats=("markdown", "text"), image_presentations=frozenset({"base64"})
-        ),
         target_builder=_webhook_targets,
         send_adapter=_webhook_send,
         sender_factory=Sender,
