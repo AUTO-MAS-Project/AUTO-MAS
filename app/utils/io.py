@@ -157,7 +157,14 @@ def force_rmtree(path: Path) -> None:
 
     for attempt in range(_RMTREE_RETRIES):
         try:
-            shutil.rmtree(path, onexc=remove_readonly)
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_junction():
+                path.rmdir()
+            elif not path.exists():
+                return
+            else:
+                shutil.rmtree(path, onexc=remove_readonly)
             return
         except OSError:
             if attempt == _RMTREE_RETRIES - 1:
@@ -419,7 +426,7 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     force_rmtree(backup_path)
     shutil.copytree(src, staging_path)
     dst_moved = False
-    if dst.exists():
+    if dst.exists() or dst.is_symlink() or dst.is_junction():
         dst.rename(backup_path)
         dst_moved = True
     try:
