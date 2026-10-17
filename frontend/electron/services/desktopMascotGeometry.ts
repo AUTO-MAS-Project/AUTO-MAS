@@ -21,11 +21,13 @@ export function getMascotLayout(position: Point, size: Size, area: Rectangle) {
   const y = Math.max(area.y, Math.min(position.y, area.y + area.height - size.height))
   const width = Math.min(area.width, Math.max(size.width, NOTICE_WIDTH))
   const height = size.height + NOTICE_HEIGHT
-  const left = Math.max(area.x, Math.min(x - (width - size.width) / 2, area.x + area.width - width))
+  const left = Math.round(
+    Math.max(area.x, Math.min(x - (width - size.width) / 2, area.x + area.width - width))
+  )
   const noticeBelow = y - area.y < NOTICE_HEIGHT
   const top = noticeBelow ? y : y - NOTICE_HEIGHT
   return {
-    bounds: { x: Math.round(left), y: Math.round(top), width, height },
+    bounds: { x: left, y: Math.round(top), width, height },
     offset: { x: Math.round(x - left), y: noticeBelow ? 0 : NOTICE_HEIGHT },
     noticeBelow,
   }

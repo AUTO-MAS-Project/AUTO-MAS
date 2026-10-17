@@ -102,8 +102,9 @@ const noticeStyle = computed(() => {
   const anchor = offsetX + width / 2
   const boxWidth = noticeWidth.value || viewportWidth.value
   const left = Math.max(0, Math.min(anchor - boxWidth / 2, viewportWidth.value - boxWidth))
-  const inset = Math.min(colors.radius + 5, boxWidth / 2)
-  const arrow = Math.max(inset, Math.min(anchor - left, boxWidth - inset))
+  const arrow = anchor - left
+  const leftRadius = Math.max(0, Math.min(colors.radius, arrow - 5))
+  const rightRadius = Math.max(0, Math.min(colors.radius, boxWidth - arrow - 5))
   return {
     left: `${left}px`,
     '--mascot-notice-arrow-x': `${arrow - 1}px`,
@@ -112,7 +113,9 @@ const noticeStyle = computed(() => {
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
-    borderRadius: `${colors.radius}px`,
+    borderRadius: noticeBelow
+      ? `${leftRadius}px ${rightRadius}px ${colors.radius}px ${colors.radius}px`
+      : `${colors.radius}px ${colors.radius}px ${rightRadius}px ${leftRadius}px`,
   }
 })
 
