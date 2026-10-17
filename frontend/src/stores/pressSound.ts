@@ -10,13 +10,17 @@ import {
   type PressSoundPreset,
 } from '@/types/pressSound'
 
-/** 主页中心图标按压音效的设置：开关、音效种类（内置或自定义文件）、音量 */
+/** 主页中心图标按压音效的设置：开关、音效种类（内置，或自定义一个 / 两个音频文件）、音量 */
 export const usePressSoundStore = defineStore('press-sound', () => {
   const enabled = ref(DEFAULT_PRESS_SOUND_ENABLED)
   const preset = ref<PressSoundPreset>(DEFAULT_PRESS_SOUND_PRESET)
   const volume = ref(DEFAULT_PRESS_SOUND_VOLUME)
+  /** 自定义音效的「按下」文件；单文件模式下松手也用它 */
   const customPath = ref('')
   const customName = ref('')
+  /** 自定义两个文件时「松开」的文件 */
+  const customReleasePath = ref('')
+  const customReleaseName = ref('')
   const saving = ref(false)
   const initialized = ref(false)
   let loadPromise: Promise<void> | null = null
@@ -38,12 +42,16 @@ export const usePressSoundStore = defineStore('press-sound', () => {
         volume.value = normalizePressSoundVolume(config.pressSoundVolume)
         customPath.value = config.pressSoundCustomPath ?? ''
         customName.value = config.pressSoundCustomName ?? ''
+        customReleasePath.value = config.pressSoundCustomReleasePath ?? ''
+        customReleaseName.value = config.pressSoundCustomReleaseName ?? ''
       } catch {
         enabled.value = DEFAULT_PRESS_SOUND_ENABLED
         preset.value = DEFAULT_PRESS_SOUND_PRESET
         volume.value = DEFAULT_PRESS_SOUND_VOLUME
         customPath.value = ''
         customName.value = ''
+        customReleasePath.value = ''
+        customReleaseName.value = ''
       } finally {
         initialized.value = true
         loadPromise = null
@@ -69,6 +77,8 @@ export const usePressSoundStore = defineStore('press-sound', () => {
     volume?: number
     customPath?: string
     customName?: string
+    customReleasePath?: string
+    customReleaseName?: string
   }): Promise<void> => {
     const run = async (): Promise<void> => {
       await load()
@@ -79,6 +89,8 @@ export const usePressSoundStore = defineStore('press-sound', () => {
         volume: volume.value,
         customPath: customPath.value,
         customName: customName.value,
+        customReleasePath: customReleasePath.value,
+        customReleaseName: customReleaseName.value,
       }
 
       if (next.enabled !== undefined) {
@@ -96,6 +108,12 @@ export const usePressSoundStore = defineStore('press-sound', () => {
       if (next.customName !== undefined) {
         customName.value = next.customName
       }
+      if (next.customReleasePath !== undefined) {
+        customReleasePath.value = next.customReleasePath
+      }
+      if (next.customReleaseName !== undefined) {
+        customReleaseName.value = next.customReleaseName
+      }
 
       try {
         saving.value = true
@@ -105,6 +123,8 @@ export const usePressSoundStore = defineStore('press-sound', () => {
           pressSoundVolume: volume.value,
           pressSoundCustomPath: customPath.value,
           pressSoundCustomName: customName.value,
+          pressSoundCustomReleasePath: customReleasePath.value,
+          pressSoundCustomReleaseName: customReleaseName.value,
         })
       } catch (error) {
         enabled.value = previous.enabled
@@ -112,6 +132,8 @@ export const usePressSoundStore = defineStore('press-sound', () => {
         volume.value = previous.volume
         customPath.value = previous.customPath
         customName.value = previous.customName
+        customReleasePath.value = previous.customReleasePath
+        customReleaseName.value = previous.customReleaseName
         throw error
       } finally {
         saving.value = false
@@ -131,6 +153,8 @@ export const usePressSoundStore = defineStore('press-sound', () => {
     volume,
     customPath,
     customName,
+    customReleasePath,
+    customReleaseName,
     saving,
     initialized,
     load,
