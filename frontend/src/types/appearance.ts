@@ -23,6 +23,7 @@ export const APPEARANCE_MENU_ICON_KEYS = [
   'ocrDev',
   'overlayMaskDev',
   'updateDownloadDev',
+  'maaPresetEditor',
 ] as const
 
 export type AppearanceMenuIconKey = (typeof APPEARANCE_MENU_ICON_KEYS)[number]

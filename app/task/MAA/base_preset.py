@@ -1,11 +1,12 @@
 """MAA base defaults used when a managed configuration is first created."""
 
-import json
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
-from app.utils.io import read_file, write_file
+from app.utils.io import ConfigCorruptedError, read_dict_file, read_file, write_file
 
+MAA_BASE_PRESET_PATH = Path(__file__).with_name("base_preset.json")
 MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
 """已收起的活动优先原生任务原文；仅随 MAS owner 配置保存，不下发给 MAA。"""
 
@@ -15,6 +16,49 @@ _MAA_STAMINA_TASK_ALIASES = {
     ("DepotMaintain", "库存保持"): ("DepotMaintain", "库存保持与干员养成"),
     ("Fight", "理智作战"): ("Fight", "理智任务"),
 }
+
+
+def _validate_maa_base_preset(payload: object) -> dict[str, Any]:
+    """Validate the structure consumed by MAS before it reaches MAA."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("MAA 预设根节点必须是对象")
+    configurations = payload.get("Configurations")
+    if not isinstance(configurations, dict):
+        raise ValueError("MAA 预设缺少 Configurations 对象")
+    default = configurations.get("Default")
+    if not isinstance(default, dict):
+        raise ValueError("MAA 预设缺少 Configurations.Default 对象")
+    queue = default.get("TaskQueue")
+    if not isinstance(queue, list) or not queue:
+        raise ValueError("MAA 预设的 Default.TaskQueue 必须是非空数组")
+
+    # 只校验 MAS 会硬索引的结构与任务身份，MAA 其余字段由上游解释。
+    for index, task in enumerate(queue):
+        if not isinstance(task, dict):
+            raise ValueError(f"MAA 预设任务 {index + 1} 必须是对象")
+        if (
+            next(iter(task), None) != "$type"
+            or not isinstance(task.get("$type"), str)
+            or not task["$type"]
+        ):
+            raise ValueError(f"MAA 预设任务 {index + 1} 的首字段必须是非空 $type")
+        if not isinstance(task.get("TaskType"), str) or not task["TaskType"]:
+            raise ValueError(f"MAA 预设任务 {index + 1} 缺少 TaskType")
+        if not isinstance(task.get("Name"), str):
+            raise ValueError(f"MAA 预设任务 {index + 1} 缺少 Name")
+    return payload
+
+
+def _load_maa_base_preset() -> dict[str, Any]:
+    """Load and validate the checked-in MAA preset file."""
+
+    payload = read_dict_file(MAA_BASE_PRESET_PATH)
+    try:
+        return _validate_maa_base_preset(payload)
+    except ValueError as exc:
+        raise ConfigCorruptedError(MAA_BASE_PRESET_PATH) from exc
+
 
 _MAA_BASE_PRESET = {
     "gui.json": {
@@ -28,11 +72,7 @@ _MAA_BASE_PRESET = {
         },
         "Configurations": {"Default": {}},
     },
-    "gui.new.json": {
-        **json.loads(
-            Path(__file__).with_name("base_preset.json").read_text(encoding="utf-8")
-        ),
-    },
+    "gui.new.json": _load_maa_base_preset(),
 }
 
 
@@ -40,6 +80,22 @@ def get_maa_base_preset(name: str) -> dict:
     """Return an independent copy of one MAA base configuration preset."""
 
     return deepcopy(_MAA_BASE_PRESET[name])
+
+
+def update_maa_base_preset(payload: object) -> dict[str, Any]:
+    """Persist and activate a new MAA base preset in the running process."""
+
+    preset = deepcopy(_validate_maa_base_preset(payload))
+    write_file(MAA_BASE_PRESET_PATH, preset)
+    return reload_maa_base_preset()
+
+
+def reload_maa_base_preset() -> dict[str, Any]:
+    """Reload the checked-in preset into the running MAA defaults."""
+
+    preset = _load_maa_base_preset()
+    _MAA_BASE_PRESET["gui.new.json"] = deepcopy(preset)
+    return deepcopy(preset)
 
 
 def seed_maa_base_config(config_dir: Path) -> None:

@@ -40,6 +40,12 @@ const devRoutes = import.meta.env.DEV
         component: () => import('../views/OverlayMaskDev.vue'),
         meta: { title: '遮罩彩蛋测试' },
       },
+      {
+        path: '/developer/maa-preset',
+        name: 'MaaPresetEditor',
+        component: () => import('../views/MaaPresetEditor.vue'),
+        meta: { title: 'MAA 预设编辑器' },
+      },
     ]
   : []
 

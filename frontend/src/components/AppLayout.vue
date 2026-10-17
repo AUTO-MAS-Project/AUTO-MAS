@@ -67,6 +67,7 @@ import {
   BugOutlined,
   CalendarOutlined,
   CarryOutOutlined,
+  CodeOutlined,
   ControlOutlined,
   DatabaseOutlined,
   FileTextOutlined,
@@ -125,6 +126,11 @@ const devMenuItems = computed(() => [
     key: '/OverlayMaskDev',
     label: t('comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
+  },
+  {
+    key: '/developer/maa-preset',
+    label: t('comp.maaPresetEditor.menu'),
+    icon: icon('maaPresetEditor', CodeOutlined),
   },
   ...(import.meta.env.DEV
     ? [

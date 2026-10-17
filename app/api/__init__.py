@@ -22,6 +22,7 @@
 
 
 from .core import router as core_router
+from .developer import router as developer_router
 from .dispatch import router as dispatch_router
 from .emulator import router as emulator_router
 from .emulator2 import router as emulator2_router
@@ -41,6 +42,7 @@ from .update import router as update_router
 
 __all__ = [
     "core_router",
+    "developer_router",
     "info_router",
     "scripts_router",
     "plan_router",

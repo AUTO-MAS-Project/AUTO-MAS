@@ -520,6 +520,7 @@ def main():
 
     from app.api import (
         core_router,
+        developer_router,
         dispatch_router,
         emulator2_router,
         emulator_router,
@@ -557,6 +558,7 @@ def main():
     )
 
     app.include_router(core_router)
+    app.include_router(developer_router)
     app.include_router(info_router)
     app.include_router(scripts_router)
     app.include_router(plan_router)

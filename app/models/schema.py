@@ -116,6 +116,19 @@ class MaaDepotInventoryOut(OutBase):
     )
 
 
+class MaaBasePresetUpdateIn(BaseModel):
+    """开发模式下提交给 MAA 内置预设编辑器的完整 JSON。"""
+
+    data: Dict[str, Any] = Field(..., description="MAA base_preset.json 内容")
+
+
+class MaaBasePresetOut(OutBase):
+    """开发模式下读取或保存 MAA 内置预设的结果。"""
+
+    data: Dict[str, Any] = Field(default_factory=dict, description="MAA 预设内容")
+    path: str = Field(default="", description="预设文件路径")
+
+
 class MaaCultivateGoalOptionItem(BaseModel):
     value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
     label: str = Field(..., description="目标名称（模组带分支码）")
