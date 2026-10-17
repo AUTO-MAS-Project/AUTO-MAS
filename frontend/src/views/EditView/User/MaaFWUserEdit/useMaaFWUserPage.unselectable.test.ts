@@ -1,5 +1,5 @@
 import { effectScope, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 // 用户页对特调声明不可选任务（预览里的 unselectableReason）的处理：不进「添加任务」与预设模板，
 // 已在队列里的照常显示，队列提示里多一句运行时会跳过

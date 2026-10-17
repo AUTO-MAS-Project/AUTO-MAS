@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   CAROUSEL_ERA_MODULE_KEYS,
   HOME_ACTIVITY_CAROUSEL_KEY,

@@ -11,12 +11,6 @@ export default {
   eventDepotPreview: {
     runtimeUnresolved: '部分活动选关、材料或目标暂不可用，本轮跳过；原配置已保留。',
     legacyFallback: '旧活动选关序号超出当期范围，本轮沿用旧版第一关回退；原选择已保留。',
-    budgetConflict: '旧活动目标重合，沿用自定义目标及已有药石额度；另一份原额度保留在迁移前备份。',
-    legacySeriesFallback: '旧活动连战次数无法等价沿用，本轮改为单次代理；原设置已保留。',
-    legacyExpiryFallback:
-      '旧活动的自定义或动态临期药策略无法等价沿用，本轮停用临期药；原设置已保留。',
-    legacyCommonConflict: '两份旧活动的连战或临期药设置不同，本轮采用较保守的设置；原配置已保留。',
-    budgetGateConflict: '原活动库存已禁用药剂或源石，本轮保留此限制，相应旧活动优先额度暂不使用。',
     name: '活动关均衡理智',
     hint: '先补齐当期活动目标，达到目标或没有可刷关卡时继续库存保持与干员养成。',
     scopeHint:
@@ -35,7 +29,6 @@ export default {
     invalidData: '加载活动关卡失败：返回数据缺少关卡信息',
     staleData: '活动数据更新失败，暂显示上次成功获取的关卡；已保存的目标保持不变。',
     summary: '跟随当期活动 · {n} 关 · 库存比例排序',
-    medicineHint: '此份药量只分配给一个活动计划，未用完的额度不向其他计划转移。',
   },
   maaStaminaPipeline: {
     inventoryCultivate: '库存保持与干员养成',
@@ -354,8 +347,6 @@ export default {
     maaEventStageHint: '按列表序号保存；活动更新后自动选择相同序号的新关卡，序号失效时回退到第一项',
     maaPickEventStage: '请选择活动关卡',
     maaNoEventStage: '当前无可刷活动关',
-    maaEventPotion: '活动关理智药',
-    maaEventPotionHint: '活动关优先任务使用的理智药数量，不影响普通理智作战',
     maaCultivate: '干员养成',
     maaCultivateSettings: '养成设置',
     maaCultivateShowModules: '显示模组目标',
@@ -1824,7 +1815,7 @@ export default {
       '该项目没有接入 Mirror 酱（interface.json 缺少 mirrorchyan_rid），MAS 无法检查它的更新',
     mfwUnityResolutionOff: '不修改',
     mfwWaitTimeTip:
-      'MAS 启动游戏时的两段等待共用这个上限：先等窗口出现，再等画面稳定——每秒看一眼画面，有内容且连续 5 秒没有变化就提前开始下发任务；MaaFW 初始化与之并行。Unity 游戏窗口出现时往往还在黑屏加载，太早下发任务会被脚本判成识别异常。游戏已在运行时不等画面。',
+      'MAS 刚启动游戏时，第一个任务先等一段时间再下发，MaaFW 初始化与之并行。桌面游戏：先等窗口出现、再等画面稳定，两段各最多等这么久，画面稳定会提前开始；游戏窗口早已在时不等。模拟器：随模拟器冷启动游戏后最多等这么久，画面出来且游戏读盘停下来就提前开始，到时仍是黑屏就继续等到出画面；游戏进程已在（不论在不在前台）时不等。游戏刚启动时往往还在加载，太早下发任务会被脚本判成识别异常或卡死。',
     mfwUnityResolutionTip:
       '仅对 Unity 引擎的游戏有效：MAS 启动游戏前按 exe 路径反查游戏的注册表，把分辨率临时改成所选尺寸的窗口模式，游戏关闭后恢复原值；游戏已在运行时不改。',
     mfwHotkey: '键位映射',
@@ -4681,8 +4672,7 @@ export default {
       mascotFps: '动画帧率',
       mascotFpsPackage: '跟随动画包',
       mascotFpsCustom: '自定义',
-      mascotFpsTip:
-        '默认跟随动画包；自定义支持 1～120 FPS，按回车或点击别处保存，循环播放包内动画。',
+      mascotFpsTip: '默认跟随动画包；自定义可选 8、16、24、30、60、120 FPS，选择后自动保存。',
       importMascot: '导入桌宠',
       removeMascot: '移除桌宠',
       mascotImportTip: '支持独立桌宠 ZIP，也可从主题包中只导入桌宠；独立桌宠不会随主题切换。',

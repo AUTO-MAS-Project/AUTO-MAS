@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const checkObsReplayMock = vi.fn()
 const saveObsReplayMock = vi.fn()

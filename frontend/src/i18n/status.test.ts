@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import enUS from './locales/en-US'
 import zhCN from './locales/zh-CN'

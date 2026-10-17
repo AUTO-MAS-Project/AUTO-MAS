@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import zhCN from '@/i18n/locales/zh-CN'
 
 // 跨语言词表契约：只读取随应用交付的内置清单和声明，不执行 Python 渠道。

@@ -96,7 +96,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     LaunchPath: '',
     PackageName: '',
     Arguments: '',
-    WaitTime: 60,
+    WaitTime: 120,
     UnityResolution: 'Off',
     Hotkeys: '{}',
   },

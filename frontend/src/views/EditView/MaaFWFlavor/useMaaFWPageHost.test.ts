@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createSSRApp, defineComponent, h, type Component } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import type { RouteMeta } from 'vue-router'

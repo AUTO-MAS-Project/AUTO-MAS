@@ -27,23 +27,6 @@
         :activity-error="activityStageError"
         @retry-activity="emit('retryActivity')"
       />
-      <div class="stage-settings">
-        <a-form-item class="medicine-setting">
-          <template #label>
-            <LabelWithHint
-              :text="t('edit.maaEventPotion')"
-              :hint="t('eventDepotPreview.medicineHint')"
-            />
-          </template>
-          <a-input-number
-            :value="formData.Task.ActivityMedicineNumb"
-            :min="0"
-            :max="9999"
-            :disabled="loading"
-            @change="emitSave('Task.ActivityMedicineNumb', $event ?? 0)"
-          />
-        </a-form-item>
-      </div>
     </PipelineRow>
     <PipelineRow
       :name="t('maaStaminaPipeline.inventoryCultivate')"
@@ -149,7 +132,6 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import PipelineRow from './PipelineRow.vue'
-import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import {
@@ -254,18 +236,6 @@ const eventDepotSummary = computed(() => {
   margin: 6px 4px;
   color: var(--ant-color-text-secondary);
   font-size: 12px;
-}
-/* 阶段补充设置：标签在上、控件在下，纵向排开并与表格左边缘对齐 */
-.stage-settings {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 16px;
-}
-.medicine-setting {
-  margin-bottom: 0;
-  width: 160px;
 }
 :deep(.ant-select),
 :deep(.ant-input-number) {

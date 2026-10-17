@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { normalizeMaaFWProjectName, resolveMaaFWProjectName } from './maafwProjectName'
 
 // 样本照抄真实项目经后端预览接口返回的 project.name / label / title
