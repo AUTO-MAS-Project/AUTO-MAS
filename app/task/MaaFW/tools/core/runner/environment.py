@@ -640,21 +640,6 @@ def release_runner_environment(
     return pool.release_lease(runtime_id, lease_id)
 
 
-def build_runner_packages(
-    project_path: str | Path | None = None,
-    *,
-    maafw_requirement: str | None = None,
-) -> list[str]:
-    """base venv 的包集合：常量，与项目无关。
-
-    ``project_path`` / ``maafw_requirement`` 保留在签名里给旧调用方对齐：maafw 不再
-    进 venv，按版本存在 ``<pool>/bindings/``（见 runtime_pool/binding.py）。
-    """
-
-    del project_path, maafw_requirement
-    return list(BASE_RUNTIME_PACKAGES)
-
-
 def _select_project_maafw_requirement(
     project: Path,
     *,

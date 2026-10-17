@@ -59,10 +59,9 @@ import re
 import threading
 import time
 from collections.abc import Callable
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from datetime import datetime
 from difflib import SequenceMatcher
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -75,6 +74,7 @@ from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 from .account_switch import mask_account
 
@@ -252,26 +252,6 @@ _BILI_NICKNAME_THRESHOLD = 0.7
 _CHECK_HUE_RANGE = (8, 28)
 _CHECK_SAT_MIN = 60
 _CHECK_VAL_MIN = 120
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
