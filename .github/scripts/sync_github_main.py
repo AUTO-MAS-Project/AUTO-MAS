@@ -49,17 +49,6 @@ def report(message):
             stream.write(message + "\n")
 
 
-def stage_github():
-    """从 main 重建完整树，只替换 .github，同时同步 dev 中的删除。"""
-
-    git("restore", "--source=origin/main", "--staged", "--worktree", ".")
-    git("restore", "--source=origin/dev", "--staged", "--worktree", ".github")
-    diff = git("diff", "--cached", "--name-only", "origin/main")
-    if any(not path.startswith(".github/") for path in diff.splitlines()):
-        raise RuntimeError("同步 PR 包含 .github 以外的改动")
-    return diff
-
-
 def sync_github():
     branch = "codex/sync-github-main"
     git(
@@ -105,11 +94,16 @@ def sync_github():
     else:
         git("checkout", "-b", branch, "origin/main")
 
-    diff = stage_github()
+    # 从 main 重建完整树，只替换 .github；同时同步 dev 中的删除。
+    git("restore", "--source=origin/main", "--staged", "--worktree", ".")
+    git("restore", "--source=origin/dev", "--staged", "--worktree", ".github")
+    diff = git("diff", "--cached", "--name-only", "origin/main")
+    if any(not path.startswith(".github/") for path in diff.splitlines()):
+        raise RuntimeError("同步 PR 包含 .github 以外的改动")
 
     owner = os.environ["GITHUB_REPOSITORY"].split("/")[0]
+    prs = github_request(f"pulls?state=open&base=main&head={owner}:{branch}")
     if not diff:
-        prs = github_request(f"pulls?state=open&base=main&head={owner}:{branch}")
         if prs:
             github_request(
                 f"pulls/{prs[0]['number']}", method="PATCH", data={"state": "closed"}
@@ -119,60 +113,29 @@ def sync_github():
 
     if git("diff", "--cached", "--name-only"):
         git("commit", "-m", "ci: 同步 dev/.github 到 main")
-    head_sha = git("rev-parse", "HEAD")
     git("push", "origin", f"HEAD:refs/heads/{branch}")
     body = "## 摘要\n\n- 仅同步 dev/.github 的新增、修改和删除。\n- 请维护者审核合并。"
-    # 推送与维护者合并可能交错；每次都刷新 main 和开放 PR，不复用旧查询。
-    for _ in range(3):
-        git(
-            "fetch",
-            "--no-tags",
-            "origin",
-            "refs/heads/main:refs/remotes/origin/main",
+    if prs:
+        pr = github_request(
+            f"pulls/{prs[0]['number']}", method="PATCH", data={"body": body}
         )
-        if not git("diff", "--name-only", "origin/main", "HEAD", "--", ".github"):
-            report("待同步的 .github 内容已进入 main，无需新建 PR。")
-            return
-
-        # 旧 PR 被 squash 合并后，接上新 main，避免新 PR 重复旧差异或冲突。
-        if git("merge-base", "origin/main", "HEAD") != git("rev-parse", "origin/main"):
-            git("merge", "--no-edit", "-s", "ours", "origin/main")
-            stage_github()
-            if git("diff", "--cached", "--name-only"):
-                git("commit", "-m", "ci: 同步 dev/.github 到 main")
-            head_sha = git("rev-parse", "HEAD")
-            git("push", "origin", f"HEAD:refs/heads/{branch}")
-
-        prs = github_request(f"pulls?state=open&base=main&head={owner}:{branch}")
-        if prs:
-            pr = github_request(
-                f"pulls/{prs[0]['number']}", method="PATCH", data={"body": body}
-            )
-        else:
-            pr = github_request(
-                "pulls",
-                method="POST",
-                data={
-                    "head": branch,
-                    "base": "main",
-                    "title": "ci: 同步 dev/.github 到 main",
-                    "body": body,
-                },
-            )
-        if pr["state"] != "open":
-            continue
-        if pr["head"]["sha"] != head_sha:
-            raise RuntimeError("同步分支已被其他操作更新，请重新运行工作流")
-        github_request(
-            f"issues/{pr['number']}/labels",
+    else:
+        pr = github_request(
+            "pulls",
             method="POST",
-            data={"labels": ["skip-changelog"]},
+            data={
+                "head": branch,
+                "base": "main",
+                "title": "ci: 同步 dev/.github 到 main",
+                "body": body,
+            },
         )
-        current = github_request(f"pulls/{pr['number']}")
-        if current["state"] == "open" and current["head"]["sha"] == head_sha:
-            report(f"同步 PR：{current['html_url']}")
-            return
-    raise RuntimeError("同步期间 PR 状态持续变化，请重新运行工作流")
+    github_request(
+        f"issues/{pr['number']}/labels",
+        method="POST",
+        data={"labels": ["skip-changelog"]},
+    )
+    report(f"同步 PR：{pr['html_url']}")
 
 
 if __name__ == "__main__":

@@ -52,4 +52,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INCLUDE_HISTORY: ${{ inputs.include_history || false }}
-        run: python .github/scripts/issue_auto_close.py
+        run: python scripts/issue_auto_close.py
