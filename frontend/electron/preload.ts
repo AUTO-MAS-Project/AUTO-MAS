@@ -65,8 +65,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('system-resumed', listener)
     return () => ipcRenderer.removeListener('system-resumed', listener)
   },
-  onAppCloseRequested: (callback: () => void) => {
-    const listener = () => callback()
+  onAppCloseRequested: (callback: (confirmRunningTasks: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, confirmRunningTasks: boolean) =>
+      callback(confirmRunningTasks)
     ipcRenderer.on('app-close-requested', listener)
     return () => ipcRenderer.removeListener('app-close-requested', listener)
   },

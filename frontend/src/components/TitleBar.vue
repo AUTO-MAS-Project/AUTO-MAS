@@ -177,6 +177,10 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import {
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
@@ -279,23 +283,6 @@ const downloadHint = computed(() => {
   return ''
 })
 
-// 检查是否有运行中的队列任务
-const hasRunningTasks = (): boolean => {
-  try {
-    const saved = sessionStorage.getItem('scheduler-tabs-session')
-    if (saved) {
-      const tabs = JSON.parse(saved)
-      if (Array.isArray(tabs)) {
-        return tabs.some((tab: any) => tab.status === '运行')
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`检查运行任务状态失败: ${errorMsg}`)
-  }
-  return false
-}
-
 const { isDark } = useTheme()
 const isMaximized = ref(false)
 
@@ -391,23 +378,7 @@ const doCloseWindow = async () => {
 }
 
 const closeWindow = async () => {
-  // 检查是否有运行中的队列任务
-  if (hasRunningTasks()) {
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    // 没有运行中的任务，直接关闭
-    await doCloseWindow()
-  }
+  if (await confirmCloseIfRunningTasks()) await doCloseWindow()
 }
 
 // 托盘触发退出：与窗口关闭按钮走同一套确认流程
@@ -415,20 +386,10 @@ const handleTrayQuit = () => {
   if (hasRunningTasks()) {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
     window.electronAPI?.windowFocus?.()
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    void doCloseWindow()
   }
+  void confirmCloseIfRunningTasks().then(confirmed => {
+    if (confirmed) return doCloseWindow()
+  })
 }
 
 // 托盘触发重启：统一确认窗风格（与关闭确认一致）

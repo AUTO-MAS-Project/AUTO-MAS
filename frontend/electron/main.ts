@@ -579,7 +579,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   }
 }
 
-function requestRendererClose(reason: string): void {
+function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
   const win = mainWindow
@@ -602,7 +602,7 @@ function requestRendererClose(reason: string): void {
       void forceQuitAfterRendererTimeout(`${reason}（等待更新期间 renderer 已关闭）`)
       return
     }
-    win.webContents.send('app-close-requested')
+    win.webContents.send('app-close-requested', confirmRunningTasks)
     quitFallbackTimer = setTimeout(() => {
       void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
     }, RENDERER_QUIT_FALLBACK_MS)
@@ -1004,7 +1004,7 @@ function createWindow() {
         updateTrayVisibility(currentConfig)
         logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
       } else {
-        requestRendererClose('窗口关闭')
+        requestRendererClose('窗口关闭', process.platform === 'darwin')
       }
     } else {
       // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态

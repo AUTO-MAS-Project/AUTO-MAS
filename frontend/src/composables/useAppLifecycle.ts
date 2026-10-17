@@ -11,6 +11,10 @@ import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import {
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
+import {
   isBackendRuntimeUpdating,
   finishBackendRuntimeReconnect,
 } from '@/composables/useBackendRuntimeUpdate'
@@ -980,8 +984,17 @@ export function initializeAppLifecycle(): void {
   })
   if (disposeSystemResume) lifecycleDisposers.push(disposeSystemResume)
 
-  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(() => {
-    void closeApp()
+  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(confirmRunningTasks => {
+    void (async () => {
+      if (confirmRunningTasks && hasRunningTasks()) {
+        await window.electronAPI?.windowFocus?.()
+        if (!(await confirmCloseIfRunningTasks())) {
+          await window.electronAPI?.appCancelQuit?.()
+          return
+        }
+      }
+      await closeApp()
+    })()
   })
   if (disposeCloseRequested) lifecycleDisposers.push(disposeCloseRequested)
 

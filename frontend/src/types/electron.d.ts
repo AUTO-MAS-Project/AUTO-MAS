@@ -252,7 +252,7 @@ export interface ElectronAPI {
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
-  onAppCloseRequested?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: (confirmRunningTasks: boolean) => void) => () => void
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
