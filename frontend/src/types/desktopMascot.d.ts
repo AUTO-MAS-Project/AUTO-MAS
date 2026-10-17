@@ -12,6 +12,9 @@ export interface DesktopMascotData {
   offsetX: number
   offsetY: number
   noticeBelow: boolean
+  noticeWidth: number
+  noticeHeight: number
+  revision: number
   dragging: boolean
   dragSession?: number
   colors: DesktopMascotColors
@@ -46,6 +49,7 @@ export interface DesktopMascotDragStart {
   x: number
   y: number
   session: number
+  revision: number
 }
 
 export interface DesktopMascotColors {
@@ -71,7 +75,7 @@ export interface DesktopMascotAPI {
   getData(): Promise<DesktopMascotData | null>
   onChanged(callback: (data: DesktopMascotData) => void): () => void
   onUpdated(callback: (update: DesktopMascotUpdate) => void): () => void
-  pointer(action: DesktopMascotPointerAction, session?: number): void
+  pointer(...args: ['hover'] | ['move' | 'end', number]): void
   startDrag(offset: DesktopMascotDragStart): Promise<boolean>
   imageDecoded(imageUrl: string, pngDataUrl: string): void
   onLookChanged(callback: (frame: number | null) => void): () => void
