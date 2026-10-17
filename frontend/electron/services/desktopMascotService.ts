@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
-import type { NativeImage, Point, WebContents } from 'electron'
+import type { MenuItemConstructorOptions, NativeImage, Point, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
@@ -51,6 +51,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
   private frames: NativeImage[] = []
   private preferredWidth = 144
+  private menuRequestId = 0
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
@@ -404,7 +405,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       })
       this.window = win
       const createdWindow = win
-      win.webContents.on('context-menu', () => this.showContextMenu(createdWindow))
+      win.webContents.on('context-menu', () => {
+        void this.showContextMenu(createdWindow).catch(error => this.options.onError(error))
+      })
       win.once('ready-to-show', () => {
         if (this.window === createdWindow && !createdWindow.isDestroyed())
           createdWindow.showInactive()
@@ -508,13 +511,40 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       this.updateData(update)
   }
 
-  private showContextMenu(win: BrowserWindow): void {
+  private async showContextMenu(win: BrowserWindow): Promise<void> {
+    const requestId = ++this.menuRequestId
+    const tasks = await this.options.loadTaskMenu()
     const labels = this.menuLabels
-    if (this.window !== win || !labels) return
+    if (this.window !== win || !labels || requestId !== this.menuRequestId) return
+    const taskItems = (action: 'start' | 'stop'): MenuItemConstructorOptions[] => {
+      const items = tasks?.[action] ?? []
+      return items.length
+        ? items.map(item => ({
+            label: item.label.replace(/&/g, '&&'),
+            enabled: Boolean(tasks?.enabled && item.enabled),
+            click: () => {
+              if (this.window === win) this.options.onTaskAction({ action, taskId: item.taskId })
+            },
+          }))
+        : [
+            {
+              label:
+                !tasks || (action === 'start' && tasks.startFailed)
+                  ? labels.tasksUnavailable
+                  : action === 'start'
+                    ? labels.noTasks
+                    : labels.noRunningTasks,
+              enabled: false,
+            },
+          ]
+    }
     const animationPaused =
       this.animationPaused ||
       (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
     Menu.buildFromTemplate([
+      { label: labels.quickStart, submenu: taskItems('start') },
+      { label: labels.stopTask, submenu: taskItems('stop') },
+      { type: 'separator' },
       {
         label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
         click: () => {

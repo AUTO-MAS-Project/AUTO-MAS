@@ -65,6 +65,36 @@ export interface DesktopMascotMenuLabels {
   resumeAnimation: string
   pauseIdleMessage: string
   resumeIdleMessage: string
+  quickStart: string
+  stopTask: string
+  noTasks: string
+  noRunningTasks: string
+  tasksUnavailable: string
+}
+
+export interface DesktopMascotTaskMenuItem {
+  taskId: string
+  label: string
+  enabled: boolean
+}
+
+export interface DesktopMascotTaskMenu {
+  enabled: boolean
+  start: DesktopMascotTaskMenuItem[]
+  stop: DesktopMascotTaskMenuItem[]
+  startFailed: boolean
+}
+
+export interface DesktopMascotTaskAction {
+  action: 'start' | 'stop'
+  taskId: string
+}
+
+/** 任务菜单由应用提供，桌宠只展示选项并回传用户选择。 */
+export interface DesktopMascotTaskHostAPI {
+  onDesktopMascotTaskMenuRequest(callback: (requestId: number) => void): () => void
+  setDesktopMascotTaskMenu(requestId: number, menu: DesktopMascotTaskMenu): Promise<void>
+  onDesktopMascotTaskAction(callback: (action: DesktopMascotTaskAction) => void): () => void
 }
 
 /** 主界面向桌宠宿主同步状态的最小能力面。 */

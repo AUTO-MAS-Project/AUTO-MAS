@@ -4195,6 +4195,13 @@ export default {
       appearanceAnimationInvalid:
         'ペットのアニメーションが無効です。PNGスプライトシートの行列の配置とフレームサイズを確認してください。',
       mascotTask: 'タスク',
+      mascotQuickStart: 'クイック開始',
+      mascotStopTask: 'タスクを中止',
+      mascotNoTasks: '選択できるタスクはありません',
+      mascotNoRunningTasks: '実行中のタスクはありません',
+      mascotTasksUnavailable: 'タスクを利用できません。後でもう一度お試しください。',
+      mascotStartingTask: 'タスクを開始しています…',
+      mascotStoppingTask: 'タスクを中止しています…',
       mascotPauseAnimation: 'アニメーションを一時停止',
       mascotResumeAnimation: 'アニメーションを再開',
       mascotPauseIdleMessage: '待機中のメッセージを一時停止',

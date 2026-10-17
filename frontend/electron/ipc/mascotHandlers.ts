@@ -5,6 +5,7 @@ import type {
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
   DesktopMascotSelection,
+  DesktopMascotTaskMenu,
 } from '../../src/types/desktopMascot'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -103,7 +104,8 @@ export function registerDesktopMascotHandlers(
     | 'setActivity'
     | 'showNotice'
   >,
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BrowserWindow | null,
+  receiveTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) => void
 ): () => void {
   ipcMain.handle(
     'desktop-mascot:ready',
@@ -124,7 +126,12 @@ export function registerDesktopMascotHandlers(
           typeof labels.pauseAnimation === 'string' &&
           typeof labels.resumeAnimation === 'string' &&
           typeof labels.pauseIdleMessage === 'string' &&
-          typeof labels.resumeIdleMessage === 'string'
+          typeof labels.resumeIdleMessage === 'string' &&
+          typeof labels.quickStart === 'string' &&
+          typeof labels.stopTask === 'string' &&
+          typeof labels.noTasks === 'string' &&
+          typeof labels.noRunningTasks === 'string' &&
+          typeof labels.tasksUnavailable === 'string'
           ? labels
           : undefined,
         colors
@@ -132,6 +139,43 @@ export function registerDesktopMascotHandlers(
     }
   )
   ipcMain.handle('desktop-mascot:get', event => service.getData(event.sender))
+  ipcMain.handle('desktop-mascot:task-menu', (event, requestId: unknown, menu: unknown) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      typeof requestId !== 'number' ||
+      !Number.isSafeInteger(requestId) ||
+      !menu ||
+      typeof menu !== 'object' ||
+      !('enabled' in menu) ||
+      typeof menu.enabled !== 'boolean' ||
+      !('startFailed' in menu) ||
+      typeof menu.startFailed !== 'boolean'
+    )
+      return
+    const validItems = (items: unknown): items is DesktopMascotTaskMenu['start'] =>
+      Array.isArray(items) &&
+      items.every(
+        item =>
+          item &&
+          typeof item.taskId === 'string' &&
+          item.taskId.length > 0 &&
+          typeof item.label === 'string' &&
+          typeof item.enabled === 'boolean'
+      )
+    if (
+      !('start' in menu) ||
+      !validItems(menu.start) ||
+      !('stop' in menu) ||
+      !validItems(menu.stop)
+    )
+      return
+    receiveTaskMenu(requestId, {
+      enabled: menu.enabled,
+      startFailed: menu.startFailed,
+      start: menu.start,
+      stop: menu.stop,
+    })
+  })
   ipcMain.handle('desktop-mascot:drag-start', (event, offset: unknown) =>
     service.startDrag(event.sender, offset)
   )
@@ -185,6 +229,7 @@ export function registerDesktopMascotHandlers(
     for (const channel of [
       'desktop-mascot:ready',
       'desktop-mascot:get',
+      'desktop-mascot:task-menu',
       'desktop-mascot:drag-start',
       'desktop-mascot:idle-message',
       'desktop-mascot:activity',

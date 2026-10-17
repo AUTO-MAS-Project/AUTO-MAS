@@ -4824,6 +4824,13 @@ export default {
       appearanceAnimationInvalid:
         'Invalid pet animation. Check the PNG sprite sheet layout and frame dimensions.',
       mascotTask: 'Task',
+      mascotQuickStart: 'Quick start',
+      mascotStopTask: 'Stop task',
+      mascotNoTasks: 'No tasks available',
+      mascotNoRunningTasks: 'No running tasks',
+      mascotTasksUnavailable: 'Tasks unavailable. Try again later.',
+      mascotStartingTask: 'Starting task…',
+      mascotStoppingTask: 'Stopping task…',
       mascotPauseAnimation: 'Pause animation',
       mascotResumeAnimation: 'Resume animation',
       mascotPauseIdleMessage: 'Pause idle messages',

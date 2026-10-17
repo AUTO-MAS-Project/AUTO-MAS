@@ -24,6 +24,8 @@ import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskR
 import { useLocale } from './composables/useLocale.ts'
 import { useDesktopMascot } from './composables/useDesktopMascot'
 import { useTrayTaskActions } from './composables/useTrayTaskActions'
+import { useDesktopMascotTaskActions } from './composables/useDesktopMascotTaskActions'
+import { connectionState } from './services/websocket/connection'
 import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
 import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
 import { TaskCreateIn } from './api'
@@ -55,6 +57,24 @@ const isStandalonePage = computed(
 )
 
 const { trackStartedTask } = useSchedulerLogic()
+useDesktopMascotTaskActions({
+  active: computed(
+    () =>
+      !isStandalonePage.value &&
+      !isInitializationPage.value &&
+      isAppReady.value &&
+      performanceStore.initialized &&
+      !isClosing.value
+  ),
+  canOperate: () => !isBackendRuntimeUpdating() && connectionState().value === 'open',
+  api: window.electronAPI,
+  onStarted: task =>
+    trackStartedTask({
+      ...task,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      modeLabel: t('scheduler.mode.autoProxy'),
+    }),
+})
 useTrayTaskActions({
   active: computed(
     () =>
@@ -97,6 +117,11 @@ useDesktopMascot(
         resumeAnimation: t('setting.basic.mascotResumeAnimation'),
         pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
         resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
+        quickStart: t('setting.basic.mascotQuickStart'),
+        stopTask: t('setting.basic.mascotStopTask'),
+        noTasks: t('setting.basic.mascotNoTasks'),
+        noRunningTasks: t('setting.basic.mascotNoRunningTasks'),
+        tasksUnavailable: t('setting.basic.mascotTasksUnavailable'),
       }
     }),
     greeting: computed(() => homeGreetingStore.greeting),

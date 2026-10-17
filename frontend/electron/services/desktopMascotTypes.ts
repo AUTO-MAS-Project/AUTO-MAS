@@ -4,6 +4,8 @@ import type {
   DesktopMascotData,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotTaskAction,
+  DesktopMascotTaskMenu,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
 
@@ -24,6 +26,8 @@ export interface DesktopMascotOptions {
   saveAnimationPaused(paused: boolean): void
   saveIdleMessagePaused(paused: boolean): void
   getInitialBounds(): Rectangle | undefined
+  loadTaskMenu(): Promise<DesktopMascotTaskMenu | null>
+  onTaskAction(action: DesktopMascotTaskAction): void
   onError(error: unknown): void
 }
 

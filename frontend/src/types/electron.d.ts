@@ -1,6 +1,10 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
-import type { DesktopMascotHostAPI, DesktopMascotSelection } from '@/types/desktopMascot'
+import type {
+  DesktopMascotHostAPI,
+  DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
+} from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
   AppearanceImportResult,
@@ -200,7 +204,7 @@ export interface VirtualDisplayPromptPayload {
   monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
-export interface ElectronAPI extends DesktopMascotHostAPI {
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
