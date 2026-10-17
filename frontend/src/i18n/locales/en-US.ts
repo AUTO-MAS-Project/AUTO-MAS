@@ -11,16 +11,6 @@ export default {
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
     legacyFallback:
       'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
-    budgetConflict:
-      'Overlapping legacy event targets use the custom goal and its existing medicine and Originium allowances. The other allowances remain in the pre-migration backup.',
-    legacySeriesFallback:
-      'The old event battle multiplier cannot be carried over exactly. This run uses single battles; the original setting is retained.',
-    legacyExpiryFallback:
-      'The old custom or event-based expiring-medicine policy cannot be carried over exactly. Expiring medicine is disabled this run; the original setting is retained.',
-    legacyCommonConflict:
-      'The old event sources have different battle-multiplier or expiring-medicine settings. This run uses the more conservative settings; originals are retained.',
-    budgetGateConflict:
-      'The old event stock task disabled medicine or Originium. This restriction is retained, and the corresponding old event-priority allowance is not used this run.',
     name: 'Balanced event farming',
     hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
     scopeHint:
@@ -41,8 +31,6 @@ export default {
     staleData:
       'Event data could not be refreshed. Showing the last successfully loaded stages; saved targets are unchanged.',
     summary: 'Current event · {n} stages · stock ratio order',
-    medicineHint:
-      'This potion allowance is assigned to one event plan only. Unused allowance is not transferred to other plans.',
   },
   maaStaminaPipeline: {
     inventoryCultivate: 'Stock keeping and cultivation',
@@ -369,9 +357,6 @@ export default {
       'Saved by position in the list. After an event update the stage at the same position is picked; if that position is gone, it falls back to the first one.',
     maaPickEventStage: 'Pick an event stage',
     maaNoEventStage: 'No event stages to farm right now',
-    maaEventPotion: 'Event stage potions',
-    maaEventPotionHint:
-      'How many sanity potions the event-stage task may use. Normal sanity combat is unaffected.',
     maaCultivate: 'Operator cultivation',
     maaCultivateSettings: 'Cultivation settings',
     maaCultivateShowModules: 'Show module targets',

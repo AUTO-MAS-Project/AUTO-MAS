@@ -911,17 +911,12 @@ def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
                 plan["LegacyIndex"] = True
                 plans.append(plan)
     if old_task.get("IfActivityFirst", True):
-        medicine = old_task.get(
-            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
-        )
         plans.append(
             {
                 "StageType": "activity",
                 "StageIndex": old_task.get("ActivityStageIndex", 1),
                 "DropCount": 999,
                 "OrundumDropCount": 9999,
-                "UseMedicine": medicine > 0,
-                "MedicineCount": medicine,
                 "LegacyActivityFirst": True,
             }
         )
