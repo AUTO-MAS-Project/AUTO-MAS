@@ -107,7 +107,7 @@ When multiple concerns appear, apply this order:
 11. `mas-game-sign`
 12. `mas-ci-checks`, when the work ends by making a PR pass CI.
 
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last because they constrain credential handling and external request behavior inside an already-placed module.
+Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
 
 ## Output Requirements
 When using this hub:
