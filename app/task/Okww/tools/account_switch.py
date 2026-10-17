@@ -873,7 +873,7 @@ def account_switch(
         raise RuntimeError("OK-WW 账号切换仅支持 Windows 平台")
     # 关闭四角 fail-safe：MAS 属无人值守托管运行，光标停在主屏四角时任何鼠标/
     # 键盘操作都会在真实移动发生前抛 FailSafeException，重试轮次无法自愈；紧急
-    # 停止由 MAS 的任务停止入口承担（对齐 app/MaaFW/ArknightWin32.py 的先例；
+    # 停止由 MAS 的任务停止入口承担；
     # failSafeCheck 每次调用实时读该全局，赋值即生效）
     pyautogui.FAILSAFE = False
     account_id = str(account_id or "").strip()

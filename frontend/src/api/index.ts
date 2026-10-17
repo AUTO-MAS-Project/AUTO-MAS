@@ -469,7 +469,6 @@ export type { TimeSetIndexItem } from './models/TimeSetIndexItem';
 export type { TimeSetReorderIn } from './models/TimeSetReorderIn';
 export type { TimeSetUpdateIn } from './models/TimeSetUpdateIn';
 export type { ToolsConfig } from './models/ToolsConfig';
-export type { ToolsConfig_ArknightsPC } from './models/ToolsConfig_ArknightsPC';
 export type { ToolsConfig_GameSign } from './models/ToolsConfig_GameSign';
 export type { ToolsGetOut } from './models/ToolsGetOut';
 export type { ToolsUpdateIn } from './models/ToolsUpdateIn';

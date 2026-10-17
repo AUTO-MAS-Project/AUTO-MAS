@@ -44,7 +44,6 @@ ID_TASK_MANAGER = "TaskManager"
 ID_UPDATE = "Update"
 ID_GAME_SIGN = "GameSign"
 ID_EMULATOR_MANAGER = "EmulatorManager"
-ID_ARKNIGHTS_PC_TOOLKIT = "ArknightsPCToolkit"
 
 
 # ==================== 消息类别（后端 → 前端） ====================
@@ -85,9 +84,8 @@ UPDATE_CANCELLED = "update.cancelled"
 # 游戏签到结果（id=GameSign）
 GAMESIGN_RESULT_UPDATED = "gamesign.result.updated"
 
-# 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+# 通用错误提示（id=EmulatorManager）
 EMULATOR_NOTICE = "emulator.notice"
-TOOLKIT_NOTICE = "toolkit.notice"
 
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
