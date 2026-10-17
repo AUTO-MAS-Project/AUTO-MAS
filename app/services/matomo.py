@@ -20,6 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import json
 import platform
 import time
@@ -111,13 +112,14 @@ class _MatomoHandler:
             params.update({"e_c": category, "e_a": action, "e_n": name, "e_v": value})
             params = {k: v for k, v in params.items() if v is not None}
 
-            response = await session.get(self.base_url, params=params)
+            async with asyncio.timeout(10):
+                response = await session.get(self.base_url, params=params)
             if response.status_code == 200:
                 logger.debug(f"Matomo事件上报成功: {category}/{action}")
             else:
                 logger.warning(f"Matomo事件上报失败: {response.status_code}")
 
-        except httpx.TimeoutException:
+        except (asyncio.TimeoutError, httpx.TimeoutException):
             logger.warning("Matomo事件上报超时")
         except Exception as e:
             logger.error(f"Matomo事件上报错误: {e}")
