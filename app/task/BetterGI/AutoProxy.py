@@ -489,7 +489,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         return "Pass"
 
     async def prepare(self):
-        self.bettergi_process_manager = ProcessManager()
+        self.bettergi_process_manager = ProcessManager(reseek_target=True)
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
@@ -1125,6 +1125,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 f"{' '.join(self.bettergi_args)}"
             )
 
+            self.wait_event.clear()
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 *self.bettergi_args,
@@ -1132,10 +1133,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
                 elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
             )
-
-            # 清事件必须在启动日志监控之前：监控回调随时会 set()，晚于它们的 clear() 会把
-            # 唤醒抹掉（早期更是在 set() 之后才清），进程秒退时只能等 60s 空转超时。
-            self.wait_event.clear()
 
             # 启动日志监控（文件日志）
             # 传入可调用对象让监控器按日期滚动日志跨零点自动切换新文件，
@@ -1145,15 +1142,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self._resolve_log_file_path, self.log_start_time
             )
 
-            # 启动后若一个 BetterGI 都不剩（参数被旧单实例吞掉 / 进程秒退），直接置失败并唤醒
-            # 等待，避免 wait_event 永远等不到日志行而无限卡住（2026-09-15 实机排障）。
-            if not await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME):
-                self.cur_user_log.status = (
-                    "BetterGI 启动后立即退出（可能有旧实例在运行）"
-                )
-                self.wait_event.set()
-
-            await self.wait_event.wait()
+            await self._wait_for_bgi_result()
             await self.log_monitor.stop()
 
             if self.cur_user_log.status == "Success!":
@@ -2104,6 +2093,31 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if await self.bettergi_process_manager.is_running():
             return True
         return bool(await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME))
+
+    async def _wait_for_bgi_result(self) -> None:
+        """等日志结论，并在进程退出且没有结论时及时唤醒。"""
+        while not self.wait_event.is_set():
+            if not await self._bgi_alive():
+                # 日志回调可能在进程扫描期间识别出成功或失败，结果以回调为准。
+                if self.wait_event.is_set():
+                    return
+                if self.cur_user_log.status == "Success!":
+                    self.wait_event.set()
+                    return
+                if self.cur_user_log.status == "未开始监看日志":
+                    self.cur_user_log.status = (
+                        "BetterGI 启动后立即退出（可能有旧实例在运行）"
+                    )
+                    self.cur_user_item.status = "异常"
+                elif self.cur_user_log.status == "BetterGI 正常运行中":
+                    self.cur_user_log.status = "BetterGI 在完成任务前退出"
+                    self.cur_user_item.status = "异常"
+                self.wait_event.set()
+                return
+            try:
+                await asyncio.wait_for(self.wait_event.wait(), timeout=0.5)
+            except asyncio.TimeoutError:
+                pass
 
     async def kill_managed_process(self) -> bool:
         """中止 BetterGI 进程（游戏进程由 BetterGI 自身管理）。
