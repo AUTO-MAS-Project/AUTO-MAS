@@ -485,9 +485,9 @@ class TaskInfo(TaskItem):
 
             return [
                 str(
-                    maafw_history_log_path(
-                        user.name, start, script.name
-                    ).with_suffix(".json")
+                    maafw_history_log_path(user.name, start, script.name).with_suffix(
+                        ".json"
+                    )
                 )
                 for start in user.log_record
             ]
