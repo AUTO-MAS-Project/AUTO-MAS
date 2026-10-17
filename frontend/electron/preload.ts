@@ -4,6 +4,7 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotMenuResult,
   DesktopMascotSelection,
   DesktopMascotTaskAction,
   DesktopMascotTaskMenu,
@@ -62,12 +63,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   setDesktopMascotTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) =>
     ipcRenderer.invoke('desktop-mascot:task-menu', requestId, menu),
-  onDesktopMascotTaskAction: (callback: (action: DesktopMascotTaskAction) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, action: DesktopMascotTaskAction) =>
-      callback(action)
+  onDesktopMascotTaskMenuClosed: (callback: (requestId: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: number) => callback(requestId)
+    ipcRenderer.on('desktop-mascot:task-menu-closed', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:task-menu-closed', listener)
+  },
+  onDesktopMascotTaskAction: (
+    callback: (action: DesktopMascotTaskAction, requestId: number) => void
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      action: DesktopMascotTaskAction,
+      requestId: number
+    ) => callback(action, requestId)
     ipcRenderer.on('desktop-mascot:task-action', listener)
     return () => ipcRenderer.removeListener('desktop-mascot:task-action', listener)
   },
+  setDesktopMascotTaskActionResult: (requestId: number, result: DesktopMascotMenuResult) =>
+    ipcRenderer.invoke('desktop-mascot:task-action-result', requestId, result),
   // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),

@@ -1,12 +1,30 @@
 export type AppearanceCategory = 'theme' | 'mascot'
 export type AppearanceFilter = 'all' | AppearanceCategory
 
+/** 菜单 UI 由包声明，能力标识及状态由宿主解释。 */
+export interface MascotMenuDefinition {
+  protocolVersion: 1
+  layout: 'list' | 'grid'
+  items: Array<{ capability: string; icon?: string } | { separator: true }>
+  style?: {
+    width?: number
+    radius?: number
+    fontSize?: number
+    itemHeight?: number
+    background?: string
+    text?: string
+    border?: string
+    accent?: string
+  }
+}
+
 /** 主题附带和独立桌宠共用同一套图片与动画格式。 */
 export interface MascotDefinition {
   path: string
   width?: number
   opacity?: number
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  menu?: MascotMenuDefinition
   /** 两行等宽精灵图：第一行待机，第二行工作。 */
   animation?: {
     path: string

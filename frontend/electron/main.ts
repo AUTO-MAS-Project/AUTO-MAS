@@ -34,6 +34,7 @@ import {
   type DesktopMascotHostPreferences,
 } from './services/desktopMascotHost'
 import { DesktopMascotService } from './services/desktopMascotService'
+import { DesktopMascotMenuService } from './services/desktopMascotMenuService'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
@@ -651,8 +652,14 @@ let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 const desktopMascot = createDesktopMascotHost({
   createRuntime: options => new DesktopMascotService(options),
+  createMenuRuntime: options => new DesktopMascotMenuService(options),
   readPreferences: loadConfig,
-  savePreferences: patch => saveConfig({ ...loadConfig(), ...patch }),
+  savePreferences: patch =>
+    patchConfigFile(
+      path.join(getAppRoot(), 'config', 'frontend_config.json'),
+      patch,
+      defaultConfig
+    ),
   getMainWindow: () => mainWindow,
   resolveAssets: ({ desktopMascotId, appearanceId }) =>
     desktopMascotId

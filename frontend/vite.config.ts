@@ -106,6 +106,7 @@ export default defineConfig(({ command }) => {
         input: {
           main: path.resolve(__dirname, 'index.html'),
           mascot: path.resolve(__dirname, 'mascot.html'),
+          mascotMenu: path.resolve(__dirname, 'mascot-menu.html'),
         },
       },
       // 优化构建性能

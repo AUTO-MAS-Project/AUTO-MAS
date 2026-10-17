@@ -4,6 +4,7 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotMenuResult,
   DesktopMascotSelection,
   DesktopMascotTaskMenu,
 } from '../../src/types/desktopMascot'
@@ -95,7 +96,6 @@ export function registerMascotHandlers(onChanged: () => void): void {
 export function registerDesktopMascotHandlers(
   service: Pick<
     DesktopMascotRuntime,
-    | 'setReady'
     | 'getData'
     | 'setIdleMessage'
     | 'handlePointer'
@@ -103,9 +103,12 @@ export function registerDesktopMascotHandlers(
     | 'setDecodedImage'
     | 'setActivity'
     | 'showNotice'
-  >,
+  > & {
+    setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void
+  },
   getMainWindow: () => BrowserWindow | null,
-  receiveTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) => void
+  receiveTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) => void,
+  receiveTaskActionResult: (requestId: number, result: DesktopMascotMenuResult) => void
 ): () => void {
   ipcMain.handle(
     'desktop-mascot:ready',
@@ -128,11 +131,14 @@ export function registerDesktopMascotHandlers(
           typeof labels.pauseIdleMessage === 'string' &&
           typeof labels.resumeIdleMessage === 'string' &&
           typeof labels.refreshIdleMessage === 'string' &&
+          typeof labels.refreshUnavailable === 'string' &&
           typeof labels.quickStart === 'string' &&
           typeof labels.stopTask === 'string' &&
           typeof labels.noTasks === 'string' &&
           typeof labels.noRunningTasks === 'string' &&
-          typeof labels.tasksUnavailable === 'string'
+          typeof labels.tasksUnavailable === 'string' &&
+          typeof labels.loadingTasks === 'string' &&
+          typeof labels.capabilityUnavailable === 'string'
           ? labels
           : undefined,
         colors
@@ -150,7 +156,9 @@ export function registerDesktopMascotHandlers(
       !('enabled' in menu) ||
       typeof menu.enabled !== 'boolean' ||
       !('startFailed' in menu) ||
-      typeof menu.startFailed !== 'boolean'
+      typeof menu.startFailed !== 'boolean' ||
+      !('startLoading' in menu) ||
+      typeof menu.startLoading !== 'boolean'
     )
       return
     const validItems = (items: unknown): items is DesktopMascotTaskMenu['start'] =>
@@ -173,12 +181,32 @@ export function registerDesktopMascotHandlers(
     receiveTaskMenu(requestId, {
       enabled: menu.enabled,
       startFailed: menu.startFailed,
+      startLoading: menu.startLoading,
       start: menu.start,
       stop: menu.stop,
     })
   })
   ipcMain.handle('desktop-mascot:drag-start', (event, offset: unknown) =>
     service.startDrag(event.sender, offset)
+  )
+  ipcMain.handle(
+    'desktop-mascot:task-action-result',
+    (event, requestId: unknown, result: unknown) => {
+      if (
+        event.sender !== getMainWindow()?.webContents ||
+        !Number.isSafeInteger(requestId) ||
+        !result ||
+        typeof result !== 'object' ||
+        !('success' in result) ||
+        typeof result.success !== 'boolean' ||
+        ('message' in result && typeof result.message !== 'string')
+      )
+        return
+      receiveTaskActionResult(requestId as number, {
+        success: result.success,
+        ...('message' in result ? { message: result.message as string } : {}),
+      })
+    }
   )
   ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
     if (
@@ -231,6 +259,7 @@ export function registerDesktopMascotHandlers(
       'desktop-mascot:ready',
       'desktop-mascot:get',
       'desktop-mascot:task-menu',
+      'desktop-mascot:task-action-result',
       'desktop-mascot:drag-start',
       'desktop-mascot:idle-message',
       'desktop-mascot:activity',

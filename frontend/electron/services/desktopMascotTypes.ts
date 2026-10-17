@@ -3,9 +3,6 @@ import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
-  DesktopMascotTaskAction,
-  DesktopMascotTaskMenu,
 } from '../../src/types/desktopMascot'
 import type { MascotAssets } from '../../src/types/mascotPack'
 
@@ -23,18 +20,15 @@ export interface DesktopMascotOptions {
   readPreferences(): DesktopMascotPreferences
   resolveAssets(): MascotAssets | null
   savePosition(position: Point): void
-  saveAnimationPaused(paused: boolean): void
-  saveIdleMessagePaused(paused: boolean): void
   getInitialBounds(): Rectangle | undefined
-  loadTaskMenu(): Promise<DesktopMascotTaskMenu | null>
-  onTaskAction(action: DesktopMascotTaskAction): void
-  onRefreshIdleMessage(): void
+  onContextMenu(position: Point): void
+  onClosed(): void
   onError(error: unknown): void
 }
 
 /** 宿主与 IPC 共用的运行契约，不依赖具体窗口服务类。 */
 export interface DesktopMascotRuntime {
-  setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void
+  setReady(ready: boolean, colors?: DesktopMascotColors): void
   getData(sender: WebContents): DesktopMascotData | null
   setIdleMessage(message: DesktopMascotIdleMessage): void
   setActivity(working: boolean, animate: boolean): void

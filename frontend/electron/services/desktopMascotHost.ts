@@ -1,13 +1,20 @@
-import type { BrowserWindow } from 'electron'
+import { systemPreferences, type BrowserWindow } from 'electron'
 import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
+  DesktopMascotMenuAction,
+  DesktopMascotMenuCapability,
+  DesktopMascotMenuData,
   DesktopMascotMenuLabels,
+  DesktopMascotMenuResult,
+  DesktopMascotTaskAction,
   DesktopMascotTaskMenu,
 } from '../../src/types/desktopMascot'
-import type { MascotAssets } from '../../src/types/mascotPack'
+import type { MascotAssets, MascotMenuDefinition } from '../../src/types/mascotPack'
 import { broadcastMascotChange, registerDesktopMascotHandlers } from '../ipc/mascotHandlers'
 import { getLogger } from './logger'
+import type { DesktopMascotMenuOptions, DesktopMascotMenuRuntime } from './desktopMascotMenuService'
+import { DEFAULT_MASCOT_MENU } from './mascotMenuDefinition'
 import type {
   DesktopMascotOptions,
   DesktopMascotPreferences,
@@ -28,88 +35,221 @@ interface DesktopMascotHostOptions {
     selection: Pick<DesktopMascotHostPreferences, 'appearanceId' | 'desktopMascotId'>
   ): MascotAssets | null
   createRuntime(options: DesktopMascotOptions): DesktopMascotRuntime
+  createMenuRuntime(options: DesktopMascotMenuOptions): DesktopMascotMenuRuntime
 }
 
-/** 只装配桌宠服务与宿主接线；窗口行为和资源校验仍由已有服务负责。 */
+/** 宿主提供能力，包提供菜单 UI；窗口运行时不解释任务业务或菜单结构。 */
 export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
   const logger = getLogger('桌面桌宠')
-  let menuRequestId = 0
-  let menuRequest: {
-    id: number
-    resolve(menu: DesktopMascotTaskMenu | null): void
-    timer: ReturnType<typeof setTimeout>
-  } | null = null
-  const finishMenuRequest = (menu: DesktopMascotTaskMenu | null): void => {
-    if (!menuRequest) return
-    const request = menuRequest
-    menuRequest = null
-    clearTimeout(request.timer)
-    request.resolve(menu)
-  }
-  const reportError = (error: unknown): void => {
-    logger.error('桌面桌宠更新失败:', error)
-    const win = options.getMainWindow()
-    if (win && !win.isDestroyed()) win.webContents.send('desktop-mascot:error')
-  }
-  const serviceOptions: DesktopMascotOptions = {
-    readPreferences: options.readPreferences,
-    resolveAssets: () => {
-      const { appearanceId, desktopMascotId } = options.readPreferences()
-      return options.resolveAssets({ appearanceId, desktopMascotId })
-    },
-    savePosition: (position: Electron.Point) =>
-      options.savePreferences({ desktopMascotPosition: position }),
-    saveAnimationPaused: (paused: boolean) =>
-      options.savePreferences({ desktopMascotAnimationPaused: paused }),
-    saveIdleMessagePaused: (paused: boolean) =>
-      options.savePreferences({ desktopMascotIdleMessagePaused: paused }),
-    getInitialBounds: () => options.getMainWindow()?.getBounds(),
-    loadTaskMenu: () => {
-      finishMenuRequest(null)
-      const win = options.getMainWindow()
-      if (disposed || !ready || !win || win.isDestroyed()) return Promise.resolve(null)
-      const id = ++menuRequestId
-      return new Promise(resolve => {
-        menuRequest = {
-          id,
-          resolve,
-          // 后端或主界面无响应时，仍可使用原有动画和留言菜单。
-          timer: setTimeout(() => finishMenuRequest(null), 3000),
-        }
-        win.webContents.send('desktop-mascot:task-menu-request', id)
-      })
-    },
-    onTaskAction: action => {
-      const win = options.getMainWindow()
-      if (!disposed && ready && win && !win.isDestroyed())
-        win.webContents.send('desktop-mascot:task-action', action)
-    },
-    onRefreshIdleMessage: () => {
-      const win = options.getMainWindow()
-      if (!disposed && ready && win && !win.isDestroyed())
-        win.webContents.send('desktop-mascot:refresh-idle-message')
-    },
-    onError: reportError,
-  }
   let service: DesktopMascotRuntime | undefined
+  let menu: DesktopMascotMenuRuntime | undefined
   let disposed = false
   let detachMainWindow: (() => void) | undefined
-  // 通信输入属于应用宿主，运行实例释放后仍可接收；重建时只恢复当前状态，不重播提醒。
+  // 共享输入由宿主保留，重建窗口只恢复当前状态，不重播历史提醒。
   let ready = false
   let labels: DesktopMascotMenuLabels | undefined
   let colors: DesktopMascotColors | undefined
   let idleMessage: DesktopMascotIdleMessage | undefined
   let working = false
   let animate = true
+  let presentation: MascotMenuDefinition = DEFAULT_MASCOT_MENU
+  let taskMenu: DesktopMascotTaskMenu | null = null
+  let menuRequestId = 0
+  let activeMenuRequestId = 0
+  let menuTimer: ReturnType<typeof setTimeout> | undefined
+  let actionRequestId = 0
+  let actionRequest:
+    | {
+        id: number
+        resolve(result: DesktopMascotMenuResult): void
+        timer: ReturnType<typeof setTimeout>
+      }
+    | undefined
+
+  const unavailable = (): DesktopMascotMenuResult => ({
+    success: false,
+    message: labels?.capabilityUnavailable,
+  })
+  const finishAction = (result: DesktopMascotMenuResult): void => {
+    if (!actionRequest) return
+    const request = actionRequest
+    actionRequest = undefined
+    clearTimeout(request.timer)
+    request.resolve(result)
+  }
+  const cancelMenuRequest = (): void => {
+    const id = activeMenuRequestId
+    clearTimeout(menuTimer)
+    menuTimer = undefined
+    activeMenuRequestId = 0
+    taskMenu = null
+    const win = options.getMainWindow()
+    if (id && win && !win.isDestroyed()) win.webContents.send('desktop-mascot:task-menu-closed', id)
+  }
+  const reportError = (error: unknown): void => {
+    logger.error('桌面桌宠更新失败:', error)
+    const win = options.getMainWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('desktop-mascot:error')
+  }
+  const menuData = (): DesktopMascotMenuData | null => {
+    if (!ready || !labels || !colors) return null
+    const menuLabels = labels
+    const preferences = options.readPreferences()
+    const animationPaused =
+      preferences.desktopMascotAnimationPaused === true ||
+      (typeof preferences.desktopMascotAnimationPaused !== 'boolean' &&
+        systemPreferences.getAnimationSettings().prefersReducedMotion)
+    const idlePaused = preferences.desktopMascotIdleMessagePaused === true
+    const tasks = (action: 'start' | 'stop'): DesktopMascotMenuCapability => ({
+      id: `task.${action}`,
+      label: action === 'start' ? menuLabels.quickStart : menuLabels.stopTask,
+      enabled: Boolean(
+        taskMenu?.enabled &&
+        !(action === 'start' && (taskMenu.startFailed || taskMenu.startLoading))
+      ),
+      loading: action === 'start' && taskMenu?.startLoading === true,
+      disabledReason:
+        !taskMenu?.enabled || (action === 'start' && taskMenu.startFailed)
+          ? menuLabels.tasksUnavailable
+          : action === 'start' && taskMenu.startLoading
+            ? menuLabels.loadingTasks
+            : undefined,
+      options: (taskMenu?.[action] ?? []).map(item => ({
+        value: item.taskId,
+        label: item.label,
+        enabled: item.enabled,
+      })),
+      emptyLabel:
+        !taskMenu || (action === 'start' && taskMenu.startFailed)
+          ? menuLabels.tasksUnavailable
+          : action === 'start'
+            ? menuLabels.noTasks
+            : menuLabels.noRunningTasks,
+    })
+    return {
+      protocolVersion: 1,
+      presentation,
+      colors,
+      unavailableLabel: labels.capabilityUnavailable,
+      capabilities: [
+        tasks('start'),
+        tasks('stop'),
+        {
+          id: 'idle.refresh',
+          label: labels.refreshIdleMessage,
+          enabled: !idlePaused && !working,
+          disabledReason: idlePaused || working ? labels.refreshUnavailable : undefined,
+        },
+        {
+          id: 'idle.toggle',
+          label: idlePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
+          enabled: true,
+          checked: idlePaused,
+        },
+        {
+          id: 'animation.toggle',
+          label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
+          enabled: true,
+          checked: animationPaused,
+        },
+      ],
+    }
+  }
+  const updateMenu = (): void => {
+    const data = menuData()
+    if (data) menu?.update(data)
+    else menu?.close()
+  }
+  const executeTask = (action: DesktopMascotTaskAction): Promise<DesktopMascotMenuResult> => {
+    const win = options.getMainWindow()
+    if (disposed || !ready || !win || win.isDestroyed() || actionRequest)
+      return Promise.resolve(unavailable())
+    const id = ++actionRequestId
+    return new Promise(resolve => {
+      actionRequest = { id, resolve, timer: setTimeout(() => finishAction(unavailable()), 30000) }
+      win.webContents.send('desktop-mascot:task-action', action, id)
+    })
+  }
+  const execute = async (action: DesktopMascotMenuAction): Promise<DesktopMascotMenuResult> => {
+    const data = menuData()
+    const declared = presentation.items.some(
+      item => 'capability' in item && item.capability === action.capability
+    )
+    const capability = data?.capabilities.find(item => item.id === action.capability)
+    if (disposed || !declared || !capability?.enabled) return unavailable()
+    if (capability.options) {
+      if (typeof action.value !== 'string') return unavailable()
+      if (!capability.options.some(item => item.value === action.value && item.enabled))
+        return unavailable()
+      return executeTask({
+        action: capability.id === 'task.start' ? 'start' : 'stop',
+        taskId: action.value,
+      })
+    }
+    if (action.value !== undefined) return unavailable()
+    if (action.capability === 'idle.refresh') {
+      const win = options.getMainWindow()
+      if (!win || win.isDestroyed()) return unavailable()
+      win.webContents.send('desktop-mascot:refresh-idle-message')
+    } else {
+      options.savePreferences(
+        action.capability === 'idle.toggle'
+          ? { desktopMascotIdleMessagePaused: !capability.checked }
+          : { desktopMascotAnimationPaused: !capability.checked }
+      )
+      service?.syncPreferences()
+      updateMenu()
+    }
+    return { success: true }
+  }
+  const serviceOptions: DesktopMascotOptions = {
+    readPreferences: options.readPreferences,
+    resolveAssets: () => {
+      menu?.close()
+      cancelMenuRequest()
+      const { appearanceId, desktopMascotId } = options.readPreferences()
+      const assets = options.resolveAssets({ appearanceId, desktopMascotId })
+      presentation = assets?.mascot?.menu ?? DEFAULT_MASCOT_MENU
+      return assets
+    },
+    savePosition: position => options.savePreferences({ desktopMascotPosition: position }),
+    getInitialBounds: () => options.getMainWindow()?.getBounds(),
+    onContextMenu: position => {
+      if (disposed) return
+      cancelMenuRequest()
+      const data = menuData()
+      if (!data) return
+      menu?.open(position, data)
+      const win = options.getMainWindow()
+      if (!win || win.isDestroyed()) return
+      const id = ++menuRequestId
+      activeMenuRequestId = id
+      // 任务列表超时只停用任务能力，本地留言和动画仍可操作。
+      menuTimer = setTimeout(() => {
+        menuTimer = undefined
+        if (activeMenuRequestId === id) updateMenu()
+      }, 3000)
+      win.webContents.send('desktop-mascot:task-menu-request', id)
+    },
+    onClosed: () => {
+      menu?.close()
+      cancelMenuRequest()
+    },
+    onError: reportError,
+  }
   const disposeHandlers = registerDesktopMascotHandlers(
     {
       setReady(nextReady, nextLabels, nextColors): void {
         if (disposed) return
         ready = nextReady
-        if (!ready) finishMenuRequest(null)
+        if (!ready) {
+          cancelMenuRequest()
+          finishAction(unavailable())
+        }
         if (nextLabels) labels = nextLabels
         if (nextColors) colors = nextColors
-        service?.setReady(ready, labels, colors)
+        service?.setReady(ready, colors)
+        updateMenu()
       },
       setIdleMessage(message): void {
         if (disposed) return
@@ -121,6 +261,7 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
         working = nextWorking
         animate = nextAnimate
         service?.setActivity(working, animate)
+        updateMenu()
       },
       getData: sender => service?.getData(sender) ?? null,
       handlePointer: (sender, action, session) => service?.handlePointer(sender, action, session),
@@ -130,47 +271,67 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
       showNotice: (text, reaction) => service?.showNotice(text, reaction),
     },
     options.getMainWindow,
-    (id, menu) => {
-      if (menuRequest?.id === id) finishMenuRequest(menu)
+    (id, nextMenu) => {
+      if (id !== activeMenuRequestId || disposed) return
+      clearTimeout(menuTimer)
+      menuTimer = undefined
+      taskMenu = nextMenu
+      updateMenu()
+    },
+    (id, result) => {
+      if (actionRequest?.id === id) finishAction(result)
     }
   )
 
   const unmount = (): void => {
-    finishMenuRequest(null)
+    cancelMenuRequest()
+    finishAction(unavailable())
+    const previousMenu = menu
+    menu = undefined
+    previousMenu?.dispose()
     const previous = service
     service = undefined
     previous?.dispose()
   }
-
   const sync = (): void => {
     if (disposed) return
+    menu?.close()
+    cancelMenuRequest()
     try {
       service?.sync()
     } catch (error) {
       reportError(error)
     }
   }
-
   return {
     mount(): void {
       if (disposed || service) return
+      menu = options.createMenuRuntime({
+        execute,
+        onError: reportError,
+        onClosed: cancelMenuRequest,
+      })
       service = options.createRuntime(serviceOptions)
       if (idleMessage) service.setIdleMessage(idleMessage)
       service.setActivity(working, animate)
-      service.setReady(ready, labels, colors)
+      service.setReady(ready, colors)
     },
     unmount,
     sync,
     attachMainWindow(win: BrowserWindow): void {
       if (disposed) return
       detachMainWindow?.()
-      finishMenuRequest(null)
       ready = false
+      cancelMenuRequest()
+      finishAction(unavailable())
+      menu?.close()
       service?.setReady(false)
       const onClosed = (): void => {
         if (options.getMainWindow() !== win) return
         ready = false
-        finishMenuRequest(null)
+        cancelMenuRequest()
+        finishAction(unavailable())
+        menu?.close()
         service?.setReady(false)
       }
       win.once('closed', onClosed)
@@ -194,6 +355,7 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
       ) {
         try {
           service?.syncPreferences()
+          updateMenu()
         } catch (error) {
           reportError(error)
         }

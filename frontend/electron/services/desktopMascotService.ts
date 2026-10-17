@@ -1,11 +1,10 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
-import type { MenuItemConstructorOptions, NativeImage, Point, WebContents } from 'electron'
+import { app, BrowserWindow, nativeImage, screen } from 'electron'
+import type { NativeImage, Point, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
   DesktopMascotUpdate,
   DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
@@ -45,20 +44,17 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   private animationPaused = false
   private idleMessagePaused = false
   private motionOverride = false
-  private menuLabels: DesktopMascotMenuLabels | null = null
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
   private frames: NativeImage[] = []
   private preferredWidth = 144
-  private menuRequestId = 0
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
-  setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void {
+  setReady(ready: boolean, colors?: DesktopMascotColors): void {
     if (this.disposed) return
     this.ready = ready
-    if (labels) this.menuLabels = labels
     if (colors) this.colors = colors
     if (ready && this.window && this.data) {
       if (colors) this.updateData({ colors })
@@ -406,7 +402,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       this.window = win
       const createdWindow = win
       win.webContents.on('context-menu', () => {
-        void this.showContextMenu(createdWindow).catch(error => this.options.onError(error))
+        if (this.window === createdWindow) this.options.onContextMenu(screen.getCursorScreenPoint())
       })
       win.once('ready-to-show', () => {
         if (this.window === createdWindow && !createdWindow.isDestroyed())
@@ -448,6 +444,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   private close(): void {
     const win = this.window
     this.window = null
+    if (win) this.options.onClosed()
     this.data = null
     this.decodedImage = null
     this.frames = []
@@ -509,83 +506,6 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       )
     )
       this.updateData(update)
-  }
-
-  private async showContextMenu(win: BrowserWindow): Promise<void> {
-    const requestId = ++this.menuRequestId
-    const tasks = await this.options.loadTaskMenu()
-    const labels = this.menuLabels
-    if (this.window !== win || !labels || requestId !== this.menuRequestId) return
-    const taskItems = (action: 'start' | 'stop'): MenuItemConstructorOptions[] => {
-      const items = tasks?.[action] ?? []
-      return items.length
-        ? items.map(item => ({
-            label: item.label.replace(/&/g, '&&'),
-            enabled: Boolean(tasks?.enabled && item.enabled),
-            click: () => {
-              if (this.window === win) this.options.onTaskAction({ action, taskId: item.taskId })
-            },
-          }))
-        : [
-            {
-              label:
-                !tasks || (action === 'start' && tasks.startFailed)
-                  ? labels.tasksUnavailable
-                  : action === 'start'
-                    ? labels.noTasks
-                    : labels.noRunningTasks,
-              enabled: false,
-            },
-          ]
-    }
-    const animationPaused =
-      this.animationPaused ||
-      (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
-    Menu.buildFromTemplate([
-      { label: labels.quickStart, submenu: taskItems('start') },
-      { label: labels.stopTask, submenu: taskItems('stop') },
-      { type: 'separator' },
-      {
-        label: labels.refreshIdleMessage,
-        enabled: !this.idleMessagePaused && !this.working,
-        click: () => {
-          if (this.window === win && !this.idleMessagePaused && !this.working)
-            this.options.onRefreshIdleMessage()
-        },
-      },
-      {
-        label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !this.idleMessagePaused
-          try {
-            this.options.saveIdleMessagePaused(paused)
-            this.idleMessagePaused = paused
-            if (this.data) {
-              this.updateData({ idleMessage: paused ? undefined : this.idleMessage })
-            }
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-      {
-        label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !animationPaused
-          try {
-            this.options.saveAnimationPaused(paused)
-            this.animationPaused = paused
-            this.motionOverride = true
-            this.updateData({ motionOverride: true })
-            this.setActivity(this.working, this.animate)
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-    ]).popup({ window: win })
   }
 
   private updateData(update: DesktopMascotUpdate): void {

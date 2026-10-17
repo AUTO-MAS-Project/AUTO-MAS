@@ -1,3 +1,5 @@
+import type { MascotMenuDefinition } from './mascotPack'
+
 export interface DesktopMascotData {
   imageUrl: string
   needsImageDecode?: boolean
@@ -66,11 +68,14 @@ export interface DesktopMascotMenuLabels {
   pauseIdleMessage: string
   resumeIdleMessage: string
   refreshIdleMessage: string
+  refreshUnavailable: string
   quickStart: string
   stopTask: string
   noTasks: string
   noRunningTasks: string
   tasksUnavailable: string
+  loadingTasks: string
+  capabilityUnavailable: string
 }
 
 export interface DesktopMascotTaskMenuItem {
@@ -84,11 +89,49 @@ export interface DesktopMascotTaskMenu {
   start: DesktopMascotTaskMenuItem[]
   stop: DesktopMascotTaskMenuItem[]
   startFailed: boolean
+  startLoading: boolean
 }
 
 export interface DesktopMascotTaskAction {
   action: 'start' | 'stop'
   taskId: string
+}
+
+export interface DesktopMascotMenuResult {
+  success: boolean
+  message?: string
+}
+
+/** 渲染器只消费能力，不解释任务、配置或宿主模块。 */
+export interface DesktopMascotMenuCapability {
+  id: string
+  label: string
+  enabled: boolean
+  disabledReason?: string
+  loading?: boolean
+  checked?: boolean
+  options?: Array<{ value: string; label: string; enabled: boolean }>
+  emptyLabel?: string
+}
+
+export interface DesktopMascotMenuData {
+  protocolVersion: 1
+  presentation: MascotMenuDefinition
+  capabilities: DesktopMascotMenuCapability[]
+  colors: DesktopMascotColors
+  unavailableLabel: string
+}
+
+export interface DesktopMascotMenuAction {
+  capability: string
+  value?: string
+}
+
+export interface DesktopMascotMenuAPI {
+  getData(): Promise<DesktopMascotMenuData | null>
+  onChanged(callback: (data: DesktopMascotMenuData) => void): () => void
+  execute(action: DesktopMascotMenuAction): Promise<DesktopMascotMenuResult>
+  close(): void
 }
 
 /** 应用适配器提供任务能力，桌宠不直接依赖调度 API 或运行状态实现。 */
@@ -127,8 +170,15 @@ export interface DesktopMascotTaskEvents {
 /** 任务菜单由应用提供，桌宠只展示选项并回传用户选择。 */
 export interface DesktopMascotTaskHostAPI {
   onDesktopMascotTaskMenuRequest(callback: (requestId: number) => void): () => void
+  onDesktopMascotTaskMenuClosed(callback: (requestId: number) => void): () => void
   setDesktopMascotTaskMenu(requestId: number, menu: DesktopMascotTaskMenu): Promise<void>
-  onDesktopMascotTaskAction(callback: (action: DesktopMascotTaskAction) => void): () => void
+  onDesktopMascotTaskAction(
+    callback: (action: DesktopMascotTaskAction, requestId: number) => void
+  ): () => void
+  setDesktopMascotTaskActionResult(
+    requestId: number,
+    result: DesktopMascotMenuResult
+  ): Promise<void>
 }
 
 /** 主界面向桌宠宿主同步状态的最小能力面。 */
@@ -158,5 +208,6 @@ export interface DesktopMascotAPI {
 declare global {
   interface Window {
     desktopMascotAPI: DesktopMascotAPI
+    desktopMascotMenuAPI: DesktopMascotMenuAPI
   }
 }
