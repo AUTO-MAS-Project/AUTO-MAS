@@ -30,6 +30,30 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【设置】桌宠支持自定义右键菜单并修正留言框箭头位置（仅公测） (#1466) by @jinghero
+
+### 变更
+
+- 【MFW】模拟器上按读盘判断游戏是否加载完再开始第一个任务，通用默认等待时间改成 120 秒 (#1437) by @qiyinxi
+- 【调度】移除运行模式选择，循环队列固定循环并隐藏续跑入口，其他任务固定自动代理 (#1470) by @jinghero
+- 【设置】统一桌宠设置布局与问号说明，帧率支持常用档位下拉选择（仅公测） (#1448) by @jinghero
+
+### 移除
+
+- 【工具】移除已退役的明日方舟 PC 工具，下线工具页面 (#1475) by @1w1w11w1
+
+### 修复
+
+- 【MAA】修复活动关均衡理智误触发临期理智药配置冲突（仅公测） (#1443) by @1w1w11w1
+- 【bgi】BetterGI 启动后立即退出时要空等约 1 分钟才提示失败（仅公测） (#1464) by @1w1w11w1
+- 【绝区零一条龙】恢复一条龙原生配置时，个别实例目录可能只删掉一半并报错（仅公测） (#1463) by @1w1w11w1
+- 【MFW】重试时会重新执行项目的运行前设置（如 MaaEnd 启动游戏），不再因游戏已关闭而直接失败 (#1467) by @qiyinxi
+- 【通知】修复部分中文计算机名环境下邮件通知发送失败的问题 (#1469) by @jinghero
+
 ## [v5.7.0-beta.5] - 2026-10-17
 
 ### 新增
@@ -600,6 +624,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.5...dev
 [v5.7.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.4...v5.7.0-beta.5
 [v5.7.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.3...v5.7.0-beta.4
 [v5.7.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...v5.7.0-beta.3
