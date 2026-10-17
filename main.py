@@ -525,6 +525,7 @@ def main():
         emulator_router,
         history_router,
         info_router,
+        mystery_router,
         ocr_router,
         openclaw_qq_router,
         plan_router,
@@ -558,6 +559,7 @@ def main():
 
     app.include_router(core_router)
     app.include_router(info_router)
+    app.include_router(mystery_router)
     app.include_router(scripts_router)
     app.include_router(plan_router)
     app.include_router(emulator_router)

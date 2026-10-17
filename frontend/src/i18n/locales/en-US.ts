@@ -6,6 +6,18 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  mystery: {
+    loadFailed: 'Could not load unlock status. Please retry.',
+    retry: 'Retry',
+    saveFailed: 'Could not save unlock status. Please retry.',
+    accessCodePlaceholder: 'Enter the 8-character code (case-sensitive)',
+    accessCodeInvalid: 'The code is incorrect or has expired',
+    accessCodeHint:
+      'Codes are case-sensitive, valid for 30 minutes after issue, and tied to this device and its current version.',
+    deviceUnavailable: 'Could not read a valid device identifier. Check the system and retry.',
+    backendUnavailable:
+      'Could not read the current program files. Repair the installation and retry.',
+  },
   eventDepotPreview: {
     runtimeUnresolved:
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',

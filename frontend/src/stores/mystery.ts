@@ -1,15 +1,31 @@
 import { defineStore } from 'pinia'
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
+import type { MysteryContextData } from '@/api'
+import { getMysteryContext, MysteryContextError } from '@/composables/useMysteryApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { getConfig, saveConfig } from '@/utils/config'
-import { getMysteryDate, isValidMysteryAccessCode } from '@/utils/mysteryAccess'
+import { getMysteryDate } from '@/utils/mysteryAccess'
 
 export const useMysteryStore = defineStore('mystery', () => {
   const unlockedDate = ref('')
+  const unlockedFingerprint = ref('')
+  const context = ref<MysteryContextData | null>(null)
   const today = ref(getMysteryDate())
-  const unlocked = computed(() => unlockedDate.value === today.value)
+  const fingerprint = computed(() =>
+    context.value ? `${context.value.deviceHash}:${context.value.backendHash}` : ''
+  )
+  const unlocked = computed(
+    () =>
+      !!fingerprint.value &&
+      unlockedDate.value === today.value &&
+      unlockedFingerprint.value === fingerprint.value
+  )
   const initialized = ref(false)
   const saving = ref(false)
+  const loadError = ref('')
+  const { state } = useWebSocket()
+  let contextGeneration = 0
   let loadPromise: Promise<void> | null = null
   let expiryTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -33,18 +49,45 @@ export const useMysteryStore = defineStore('mystery', () => {
     if (initialized.value) return
     if (loadPromise) return loadPromise
 
-    loadPromise = (async () => {
+    const generation = contextGeneration
+    loadError.value = ''
+    const pending = (async () => {
       try {
-        const config = await getConfig()
+        const [config, currentContext] = await Promise.all([
+          getConfig({ strict: true }),
+          getMysteryContext(),
+        ])
+        if (generation !== contextGeneration) return
+        context.value = currentContext
         unlockedDate.value = config.mysteryUnlockedDate ?? ''
+        unlockedFingerprint.value = config.mysteryUnlockedFingerprint ?? ''
         initialized.value = true
+      } catch (error) {
+        if (generation === contextGeneration) {
+          loadError.value =
+            error instanceof MysteryContextError ? error.message : 'CONTEXT_UNAVAILABLE'
+        }
+        throw error
       } finally {
-        loadPromise = null
+        if (generation === contextGeneration) loadPromise = null
       }
     })()
-
-    return loadPromise
+    loadPromise = pending
+    return pending
   }
+
+  // 后端重连后重取它自己的源码指纹，避免更新后沿用上一进程的解锁状态。
+  watch(state, status => {
+    contextGeneration++
+    context.value = null
+    initialized.value = false
+    loadError.value = ''
+    loadPromise = null
+    if (status !== 'open') return
+    void load().catch(() => {
+      // loadError 已保留可重试的失败状态，由入口页面显示。
+    })
+  })
 
   const unlock = async (accessCode: string): Promise<boolean> => {
     await load()
@@ -54,11 +97,24 @@ export const useMysteryStore = defineStore('mystery', () => {
     try {
       const checkedAt = new Date()
       const checkedDate = getMysteryDate(checkedAt)
-      if (!(await isValidMysteryAccessCode(accessCode, checkedAt))) return false
-      if (checkedDate !== getMysteryDate()) return false
+      const checkedContext = context.value
+      const checkedFingerprint = fingerprint.value
+      if (!checkedContext) return false
+      if (
+        !(await window.electronAPI.verifyMysteryAccessCode(accessCode, {
+          deviceHash: checkedContext.deviceHash,
+          backendHash: checkedContext.backendHash,
+        }))
+      )
+        return false
+      if (checkedDate !== getMysteryDate() || checkedContext !== context.value) return false
 
-      await saveConfig({ mysteryUnlockedDate: checkedDate })
+      await saveConfig({
+        mysteryUnlockedDate: checkedDate,
+        mysteryUnlockedFingerprint: checkedFingerprint,
+      })
       unlockedDate.value = checkedDate
+      unlockedFingerprint.value = checkedFingerprint
       refreshDate()
       return unlocked.value
     } finally {
@@ -72,12 +128,13 @@ export const useMysteryStore = defineStore('mystery', () => {
 
     saving.value = true
     try {
-      await saveConfig({ mysteryUnlockedDate: '' })
+      await saveConfig({ mysteryUnlockedDate: '', mysteryUnlockedFingerprint: '' })
       unlockedDate.value = ''
+      unlockedFingerprint.value = ''
     } finally {
       saving.value = false
     }
   }
 
-  return { unlocked, initialized, saving, load, unlock, lock }
+  return { unlocked, initialized, saving, loadError, load, unlock, lock }
 })

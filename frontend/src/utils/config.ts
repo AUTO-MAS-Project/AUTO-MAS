@@ -37,6 +37,8 @@ export interface FrontendConfig {
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
+  /** 解锁时的设备与后端源码指纹；旧的仅日期记录需重新解锁。 */
+  mysteryUnlockedFingerprint?: string
 
   // 界面语言；未设置时跟随系统
   language?: AppLocale
@@ -121,19 +123,22 @@ function enqueueConfigOperation<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 // 读取配置（内部使用，不触发保存）
-async function getConfigInternal(): Promise<FrontendConfig> {
+async function getConfigInternal(options: { strict?: boolean } = {}): Promise<FrontendConfig> {
   let fileConfig: Awaited<ReturnType<typeof window.electronAPI.loadConfig>>
   try {
     // 优先从文件读取配置；旧 localStorage 仍需参与迁移，不能因为文件已有语言字段就丢掉旧主题。
-    fileConfig = await window.electronAPI.loadConfig()
+    fileConfig = await (options.strict
+      ? window.electronAPI.loadConfig(true)
+      : window.electronAPI.loadConfig())
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`读取配置失败: ${errorMsg}`)
+    if (options.strict) throw error
     return { ...DEFAULT_CONFIG }
   }
 
   // localStorage 读取故障要继续向上抛出，让启动层保留原有的迁移失败信号；
-  // Electron IPC 故障则按上面的兼容路径回落默认配置。
+  // 常规读取的 Electron IPC 故障按上面的兼容路径回落默认配置；strict 读取保留失败信号。
   const localConfig = localStorage.getItem('app-config')
   const themeConfig = localStorage.getItem('theme-settings')
   const legacyThemePatch = getLegacyThemePatch()
@@ -169,14 +174,15 @@ async function getConfigInternal(): Promise<FrontendConfig> {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`解析配置失败: ${errorMsg}`)
+    if (options.strict) throw error
     return { ...DEFAULT_CONFIG }
   }
 }
 
 // 读取配置（公共接口）
-export async function getConfig(): Promise<FrontendConfig> {
+export async function getConfig(options: { strict?: boolean } = {}): Promise<FrontendConfig> {
   return enqueueConfigOperation(async () => {
-    const config = await getConfigInternal()
+    const config = await getConfigInternal(options)
 
     // 如果是从localStorage迁移的配置，保存到文件并清理localStorage
     const hasLocalStorage =
