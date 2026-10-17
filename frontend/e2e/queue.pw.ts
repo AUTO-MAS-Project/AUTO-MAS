@@ -41,8 +41,8 @@ test.describe('@queue persistence', () => {
     ).toBeVisible()
 
     await app.evidence('queue-configured')
-    await app.goto('/home')
-    await app.goto('/queue')
+    // 必须整页刷新才会重新从后端读配置：hash 路由来回切用的是内存里的旧数据，断言不到持久化
+    await page.reload()
     await expect(page.locator('.queue-title-text')).toHaveText('PR 队列验证')
     await expect(
       page.locator('.ant-select-selection-item', { hasText: 'Run every time' })

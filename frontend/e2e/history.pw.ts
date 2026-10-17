@@ -33,26 +33,8 @@ test.describe('@history search and view', () => {
     await app.evidence('history-filtered-by-date')
   })
 
-  test('expands history item to view logs', async ({ app, page }) => {
-    await app.goto('/history')
-    await expect(page.locator('.history-page')).toBeVisible()
-
-    // 展开日志需要先有历史数据：日期侧栏的账号项（HistoryDateSidebar.vue:22-27）
-    const userItem = page.locator('.date-sidebar .user-item').first()
-    test.skip((await userItem.count()) === 0, '当前数据根没有历史记录，无可展开项')
-
-    await userItem.click()
-    const recordItem = page.locator('.record-list-panel .record-item').first()
-    await expect(recordItem).toBeVisible()
-
-    // 点击记录打开日志弹窗（index.vue:181-189、HistoryLogModal.vue:12、:189/:199）
-    await recordItem.click()
-    await expect(page.locator('.log-modal-content')).toBeVisible()
-    await expect(page.locator('.log-editor, .empty-log').first()).toBeVisible()
-
-    await app.evidence('history-expanded')
-  })
-
+  // 原「展开日志」用例已删除：默认隔离的数据根没有历史记录，而历史只能由真实任务运行写入，
+  // 没有可 seed 的入口，这条用例在默认模式下永远 skip。等出现能写入历史的 API 或 run.mjs 种子再加回。
   // 历史页既没有文本搜索框，也没有独立的刷新按钮（HistorySearchPanel.vue 只有快捷时间、合并方式、
   // 起止日期与搜索/重置按钮），原「空搜索结果」「刷新列表」两个用例没有可断言的用户路径，故删除；
   // 重新检索的路径由上面的快捷时间用例覆盖。

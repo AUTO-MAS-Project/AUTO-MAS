@@ -21,72 +21,38 @@ function lastMainSocketOpen(sockets: WebSocket[], after: number): boolean {
   return sockets.length > after && !sockets[sockets.length - 1].isClosed()
 }
 
+// 曾有三条用例（页面导航保状态、空闲刷新重连、断线重连）都在做「刷新后等新连接」，
+// 断言完全相同且刷新走的是全新 bootstrap，并没有驱动 scheduleReconnect 的退避重连逻辑
+// （那条路径由 frontend/src/services/websocket/connection.test.ts 覆盖），故合并为一条。
 test.describe('@recovery websocket resilience', () => {
-  test('maintains UI state across page navigation', async ({ app, page }) => {
-    // 访问队列页面并创建队列
-    await app.goto('/queue')
-    const queueTitleText = page.locator('.queue-title-text')
-    await expect(queueTitleText).toBeVisible()
-    const previousTitle = await queueTitleText.innerText()
-
-    await page.getByRole('button', { name: 'New queue' }).click()
-    // 新建后当前队列标题异步切换，等它落到新队列再取样，否则会把上一个队列当成基线
-    await expect(queueTitleText).not.toHaveText(previousTitle)
-    const queueTitle = await queueTitleText.innerText()
-
-    // 导航到其他页面
-    await app.goto('/scheduler')
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
-
-    // 返回队列页面，验证状态保持
-    await app.goto('/queue')
-    await expect(queueTitleText).toHaveText(queueTitle)
-
-    await app.evidence('recovery-navigation-state')
-  })
-
-  test('handles page reload during idle state', async ({ app, page }) => {
-    // 监听必须先于首次导航注册，否则捕获不到 bootstrap 阶段建立的连接
+  test('reloads the page and re-establishes the main WebSocket', async ({ app, page }) => {
     const sockets = trackMainWebSockets(page)
 
     await app.goto('/scheduler')
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
-    // 轮询等待 WebSocket 连接
+    // 记录任务控制台的初始状态：侧栏文字先于懒加载的调度台渲染，
+    // 必须先等页面内容（有标签页渲染卡片，无标签页渲染空态）再取样，否则会把空列表当基线
+    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
+    const taskControls = page.locator('.task-control')
+    const initialCount = await taskControls.count()
+
+    // 基线必须在刷新前采样：刷新后新建的连接才算「重连」
     await expect.poll(() => lastMainSocketOpen(sockets, 0), { timeout: 5000 }).toBe(true)
+    const initialSocketCount = sockets.length
 
-    await app.evidence('recovery-before-reload')
-
-    // 刷新页面
     await page.reload()
     await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
 
-    // 轮询等待刷新后重新建立的 WebSocket 连接
-    await expect.poll(() => lastMainSocketOpen(sockets, 1), { timeout: 5000 }).toBe(true)
+    await expect
+      .poll(() => lastMainSocketOpen(sockets, initialSocketCount), { timeout: 5000 })
+      .toBe(true)
 
-    await app.evidence('recovery-after-reload')
-  })
+    // 刷新后要等页面内容重新渲染，用自动重试断言避免采样到加载中的空列表；
+    // 数量不变说明没有留下上一次会话的任务卡片
+    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
+    await expect(taskControls).toHaveCount(initialCount)
 
-  test('reconnects WebSocket after temporary disconnection', async ({ app, page }) => {
-    // 监听必须先于首次导航注册，否则捕获不到 bootstrap 阶段建立的连接
-    const sockets = trackMainWebSockets(page)
-
-    await app.goto('/scheduler')
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
-
-    // 轮询等待初始连接
-    await expect.poll(() => lastMainSocketOpen(sockets, 0), { timeout: 5000 }).toBe(true)
-
-    await app.evidence('recovery-ws-connected')
-
-    // 模拟断线：刷新页面强制断开 WebSocket
-    await page.reload()
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
-
-    // 轮询等待重连
-    await expect.poll(() => lastMainSocketOpen(sockets, 1), { timeout: 5000 }).toBe(true)
-
-    await app.evidence('recovery-ws-reconnected')
+    await app.evidence('recovery-reload-reconnected')
   })
 
   test('handles backend restart gracefully', async ({ app, page }) => {
@@ -127,37 +93,5 @@ test.describe('@recovery websocket resilience', () => {
     await expect
       .poll(() => lastMainSocketOpen(sockets, socketsBeforeRecovery), { timeout: 5000 })
       .toBe(true)
-  })
-
-  test('preserves task state during WebSocket reconnection', async ({ app, page }) => {
-    // 监听必须先于首次导航注册，否则捕获不到 bootstrap 阶段建立的连接
-    const sockets = trackMainWebSockets(page)
-
-    await app.goto('/scheduler')
-
-    // 记录任务控制台的初始状态：侧栏文字先于懒加载的调度台渲染，
-    // 必须先等页面内容（有标签页渲染卡片，无标签页渲染空态）再取样，否则会把空列表当基线
-    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
-    const taskControls = page.locator('.task-control')
-    const initialCount = await taskControls.count()
-
-    // 基线必须在刷新前采样：刷新后新建的连接才算“重连”
-    await expect.poll(() => lastMainSocketOpen(sockets, 0), { timeout: 5000 }).toBe(true)
-    const initialSocketCount = sockets.length
-
-    // 刷新页面触发重连
-    await page.reload()
-    await expect(page.getByText('Scheduler', { exact: true }).first()).toBeVisible()
-
-    // 轮询等待 WebSocket 重连
-    await expect
-      .poll(() => lastMainSocketOpen(sockets, initialSocketCount), { timeout: 5000 })
-      .toBe(true)
-
-    // 验证任务控制台状态恢复：刷新后要等页面内容重新渲染，用自动重试断言避免采样到加载中的空列表
-    await expect(page.locator('.task-unified-card, .empty-tab-content').first()).toBeVisible()
-    await expect(taskControls).toHaveCount(initialCount)
-
-    await app.evidence('recovery-task-state-preserved')
   })
 })

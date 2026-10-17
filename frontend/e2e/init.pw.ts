@@ -4,6 +4,7 @@ import path from 'node:path'
 
 const backendUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
 const dataRoot = process.env.AUTO_MAS_E2E_DATA_ROOT
+const inPlace = process.env.AUTO_MAS_E2E_IN_PLACE === '1'
 
 test.describe('@init backend cold start', () => {
   test('reaches background ready with the local configuration', async ({ app, page }, testInfo) => {
@@ -38,8 +39,10 @@ test.describe('@init backend cold start', () => {
     const arknightsPcEnabled = tools.data?.ArknightsPC?.Enabled === true
 
     expect(dataRoot).toBeTruthy()
-    if (!arknightsPcEnabled) {
-      // 就地运行用的是开发者自己的工具配置，只在本机未启用该工具时断言它不初始化。
+    if (!inPlace) {
+      // 隔离模式的数据根是新建的：run.mjs 关掉了明日方舟 PC 工具，它必须不初始化、也不写 maa_option.json。
+      // 就地模式用的是开发者自己的工具配置，才需要看本机实际设置。
+      expect(arknightsPcEnabled).toBe(false)
       expect(warnings.some(warning => warning.startsWith('明日方舟 PC 工具初始化'))).toBe(false)
       await expect
         .poll(

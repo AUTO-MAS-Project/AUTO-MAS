@@ -18,7 +18,7 @@ if ($missing.Count -gt 0) {
   throw "缺少本机真实 E2E 配置: $($missing -join ', ')"
 }
 
-Write-Host '运行本机真实专项、游戏和账号 E2E；按所选脚本绑定的资源执行，直接使用当前 config/data，测试会写入其中。'
+Write-Host '运行本机真实专项、游戏和账号 E2E；默认把所选脚本/用户/计划复制到临时数据根（不写你的 config/data），加 --in-place 才就地使用当前 config/data。'
 if ([string]::IsNullOrWhiteSpace($Grep)) {
   $Grep = $env:AUTO_MAS_E2E_GREP
 }
