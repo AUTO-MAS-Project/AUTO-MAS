@@ -12,29 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
-from .po import parse_po
+from .po import parse_mo, parse_po
 
 PathLike = Union[str, Path]
-
-
-def _parse_mo(path: Path) -> dict[str, str]:
-    """用 Python 标准库 gettext 读取 .mo 编译文件为映射（失败时返回空）"""
-    import gettext
-
-    result: dict[str, str] = {}
-    try:
-        with open(path, "rb") as f:
-            translations = gettext.GNUTranslations(f)
-        catalog = getattr(translations, "_catalog", {})
-        for key, value in catalog.items():
-            # 跳过空 msgid（文件头）；空 key 会在 replace 时污染整段文本
-            if not key:
-                continue
-            if isinstance(key, str) and isinstance(value, str):
-                result[key] = value
-    except (OSError, ValueError, gettext.Error):
-        pass
-    return result
 
 
 class PoTranslator:
@@ -135,5 +115,5 @@ class PoTranslator:
     def _load_file(path: Path) -> dict[str, str]:
         """按扩展名加载单个翻译文件（未知类型按 .po 处理）"""
         if path.suffix.lower() == ".mo":
-            return _parse_mo(path)
+            return parse_mo(path)
         return parse_po(path)
