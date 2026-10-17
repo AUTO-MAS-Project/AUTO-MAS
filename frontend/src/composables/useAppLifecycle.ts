@@ -987,6 +987,7 @@ export function initializeAppLifecycle(): void {
   const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(confirmRunningTasks => {
     void (async () => {
       if (confirmRunningTasks && hasRunningTasks()) {
+        if (!(await window.electronAPI?.appWaitForQuitConfirmation?.())) return
         await window.electronAPI?.windowFocus?.()
         if (!(await confirmCloseIfRunningTasks())) {
           await window.electronAPI?.appCancelQuit?.()
@@ -994,7 +995,10 @@ export function initializeAppLifecycle(): void {
         }
       }
       await closeApp()
-    })()
+    })().catch(async error => {
+      logger.error(`处理关闭请求失败: ${error instanceof Error ? error.message : String(error)}`)
+      await window.electronAPI?.appCancelQuit?.()
+    })
   })
   if (disposeCloseRequested) lifecycleDisposers.push(disposeCloseRequested)
 

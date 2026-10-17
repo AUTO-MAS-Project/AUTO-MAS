@@ -243,6 +243,8 @@ export interface ElectronAPI {
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
+  appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
   appPrepareQuit?: () => Promise<number | null>
   /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */

@@ -219,6 +219,7 @@ let tray: Tray | null = null
 let coordinatedQuit = false
 let forceQuitInProgress = false
 let quitRequestInFlight = false
+let quitConfirmationPending = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 let quitPreparationSequence = 0
@@ -501,6 +502,7 @@ function cancelQuitRequest(token?: number): void {
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
   activeQuitPreparation = null
+  quitConfirmationPending = false
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
@@ -823,8 +825,9 @@ function createWindow() {
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
-    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
-    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+    if (quitConfirmationPending) cancelQuitRequest()
+    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1801,12 +1804,27 @@ ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
+// renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
+ipcMain.handle('app-wait-for-quit-confirmation', () => {
+  if (
+    !quitRequestInFlight ||
+    activeQuitPreparation !== null ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  clearQuitFallback()
+  quitConfirmationPending = true
+  return true
+})
+
 ipcMain.handle('app-prepare-quit', async () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) {
     return (await prepareRuntimeUpdateForClose()) ? activeQuitPreparation : null
   }
   clearQuitFallback()
+  quitConfirmationPending = false
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
