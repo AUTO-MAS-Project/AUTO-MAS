@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ConfigProvider, message } from 'ant-design-vue'
+import { ConfigProvider } from 'ant-design-vue'
 import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
@@ -19,13 +19,9 @@ import AppearanceDecoration from './components/AppearanceDecoration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
-import { useHomeGreetingStore } from './stores/homeGreeting'
 import { useLocale } from './composables/useLocale.ts'
-import { useDesktopMascot } from './composables/useDesktopMascot'
+import { useDesktopMascotHost } from './composables/useDesktopMascotHost'
 import { useTrayTaskActions } from './composables/useTrayTaskActions'
-import { useDesktopMascotTaskActions } from './composables/useDesktopMascotTaskActions'
-import { useDesktopMascotTaskAdapter } from './composables/useDesktopMascotTaskAdapter'
-import { connectionState } from './services/websocket/connection'
 import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
 import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
 import { TaskCreateIn } from './api'
@@ -38,7 +34,7 @@ const DebugPanel = import.meta.env.DEV
   : null
 
 const route = useRoute()
-const { antdTheme, activeAppearance, antTokens } = useTheme()
+const { antdTheme } = useTheme()
 const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
@@ -46,7 +42,6 @@ const { playSound } = useAudioPlayer()
 const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
-const homeGreetingStore = useHomeGreetingStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -57,41 +52,7 @@ const isStandalonePage = computed(
 )
 
 const { trackStartedTask } = useSchedulerLogic()
-const mascotTasks = useDesktopMascotTaskAdapter()
-const mascotTaskLogger = window.electronAPI.getLogger('桌宠任务')
-useDesktopMascotTaskActions(
-  {
-    active: computed(
-      () =>
-        !isStandalonePage.value &&
-        !isInitializationPage.value &&
-        isAppReady.value &&
-        performanceStore.initialized &&
-        !isClosing.value
-    ),
-    canOperate: () => !isBackendRuntimeUpdating() && connectionState().value === 'open',
-    api: window.electronAPI,
-    onStarted: task => {
-      trackStartedTask({
-        ...task,
-        selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-        modeLabel: t('scheduler.mode.autoProxy'),
-      })
-      void playSound('task_started').catch(error =>
-        mascotTaskLogger.warn('播放任务启动音频失败:', error)
-      )
-    },
-  },
-  {
-    tasks: mascotTasks.control,
-    translate: t,
-    reportWarning: (text, error) => mascotTaskLogger.warn(text, error),
-    showError: text => {
-      mascotTaskLogger.error('桌宠任务操作失败:', text)
-      message.error(text)
-    },
-  }
-)
+useDesktopMascotHost({ isStandalonePage, isInitializationPage, playSound, trackStartedTask })
 useTrayTaskActions({
   active: computed(
     () =>
@@ -106,62 +67,6 @@ useTrayTaskActions({
       modeLabel: t('scheduler.mode.autoProxy'),
     }),
 })
-
-useDesktopMascot(
-  {
-    isStandalonePage,
-    isAppReady,
-    ready: computed(
-      () => isAppReady.value && performanceStore.initialized && !isInitializationPage.value
-    ),
-    colors: computed(() => {
-      // 同主题包切换一样触发同步，即使最终颜色相同也保留原有接线。
-      void activeAppearance.value
-      const tokens = antTokens.value
-      return tokens
-        ? {
-            background: tokens.colorBgElevated,
-            text: tokens.colorText,
-            border: tokens.colorBorder,
-            radius: tokens.borderRadius,
-          }
-        : undefined
-    }),
-    menuLabels: computed(() => {
-      void antdLocale.value
-      return {
-        pauseAnimation: t('setting.basic.mascotPauseAnimation'),
-        resumeAnimation: t('setting.basic.mascotResumeAnimation'),
-        pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
-        resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
-        refreshIdleMessage: t('setting.basic.mascotRefreshIdleMessage'),
-        quickStart: t('setting.basic.mascotQuickStart'),
-        stopTask: t('setting.basic.mascotStopTask'),
-        noTasks: t('setting.basic.mascotNoTasks'),
-        noRunningTasks: t('setting.basic.mascotNoRunningTasks'),
-        tasksUnavailable: t('setting.basic.mascotTasksUnavailable'),
-      }
-    }),
-    greeting: computed(() => homeGreetingStore.greeting),
-    working: computed(() => performanceStore.anyScriptRunning),
-    animate: computed(() => !performanceStore.lowPerformanceMode),
-  },
-  {
-    api: {
-      setDesktopMascotReady: window.electronAPI.setDesktopMascotReady,
-      setDesktopMascotActivity: window.electronAPI.setDesktopMascotActivity,
-      setDesktopMascotIdleMessage: window.electronAPI.setDesktopMascotIdleMessage,
-      showDesktopMascotNotice: window.electronAPI.showDesktopMascotNotice,
-      onDesktopMascotError: window.electronAPI.onDesktopMascotError,
-      onDesktopMascotRefreshIdleMessage: window.electronAPI.onDesktopMascotRefreshIdleMessage,
-    },
-    tasks: mascotTasks.events,
-    refreshIdleMessage: homeGreetingStore.refreshGreeting,
-    translate: t,
-    reportError: (text, error) => logger.error(text, error),
-    showError: () => message.error(t('setting.basic.desktopMascotFailed')),
-  }
-)
 
 onMounted(async () => {
   logger.info('App组件已挂载')
