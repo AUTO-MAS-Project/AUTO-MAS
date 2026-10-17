@@ -41,6 +41,10 @@ import yaml
 from .logger import get_logger
 from .tools import decode_bytes
 
+# 原生配置快照指纹算法版本。指纹口径变更时递增: 旧版本写下的快照无法与当前
+# 目录比较, 恢复流程只保留现场, 不按指纹判定归属。
+NATIVE_CONFIG_FINGERPRINT_VERSION = 2
+
 logger = get_logger("路径迁移")
 
 
@@ -194,9 +198,9 @@ def replace_dir(src: Path, dst: Path) -> None:
 
 def dir_fingerprint(path: Path) -> str:
     """
-    对目录树做轻量指纹, 用于判断配置是否被改动过
+    对目录树做内容指纹, 用于判断配置是否被改动过
 
-    只取相对路径与文件大小, 不读内容: 只需区分「与某次已知状态是否一致」。
+    记录相对路径与文件内容, 避免同长度的用户改动被误判为原内容。
 
     Args:
         path: 目录路径, 不存在时返回空串指纹。
@@ -212,12 +216,14 @@ def dir_fingerprint(path: Path) -> str:
     for entry in sorted(path.rglob("*")):
         if not entry.is_file():
             continue
-        try:
-            stat_result = entry.stat()
-        except OSError:
-            continue
         digest.update(str(entry.relative_to(path)).encode("utf-8", "surrogatepass"))
-        digest.update(str(stat_result.st_size).encode("ascii"))
+        try:
+            with entry.open("rb") as file:
+                while chunk := file.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError:
+            # 读取失败时让恢复流程保留快照, 不把未知现场当成安全状态。
+            raise
     return digest.hexdigest()
 
 
@@ -231,12 +237,14 @@ class NativeConfigSnapshot:
         original_exists: 快照时原生配置目录是否存在。
         baseline: 原始配置指纹, 用于识别「尚未被 MAS 改动」。
         injected: MAS 注入后的预期指纹, None 表示本次运行未注入。
+        fingerprint_version: 写快照时的指纹算法版本, 与当前版本不符即不可比较。
     """
 
     script_id: str
     original_exists: bool
     baseline: str
     injected: str | None = None
+    fingerprint_version: int = 0
 
 
 def _snapshot_ready_path(snapshot_path: Path) -> Path:
@@ -280,6 +288,7 @@ def write_native_config_snapshot(
             "original_exists": original_exists,
             "baseline": baseline,
             "injected": injected,
+            "fingerprint_version": NATIVE_CONFIG_FINGERPRINT_VERSION,
         },
     )
 
@@ -315,11 +324,15 @@ def read_native_config_snapshot(
         return None
 
     injected = state.get("injected")
+    fingerprint_version = state.get("fingerprint_version")
     return NativeConfigSnapshot(
         script_id=script_id,
         original_exists=bool(state.get("original_exists", False)),
         baseline=str(state.get("baseline") or ""),
         injected=injected if isinstance(injected, str) else None,
+        fingerprint_version=(
+            fingerprint_version if isinstance(fingerprint_version, int) else 0
+        ),
     )
 
 
@@ -440,6 +453,33 @@ def swap_in_dir(src: Path, dst: Path) -> None:
         force_rmtree(backup_path)
 
 
+def _preserve_legacy_snapshot(snapshot_path: Path) -> Path:
+    """
+    把指纹版本不符的旧快照改名留存
+
+    旧快照里的原始配置仍是用户的数据, 但它的指纹由旧算法生成, 无法与当前目录
+    比较。改名留存后, 下一次提交快照不会把它覆盖掉。
+
+    Args:
+        snapshot_path: 快照目录。
+
+    Returns:
+        改名后的快照目录。
+    """
+
+    index = 0
+    while True:
+        suffix = "" if index == 0 else f".{index}"
+        target = snapshot_path.with_name(f"{snapshot_path.name}.legacy{suffix}")
+        if not target.exists() and not _snapshot_ready_path(target).exists():
+            break
+        index += 1
+    snapshot_path.rename(target)
+    with suppress(OSError):
+        _snapshot_ready_path(snapshot_path).rename(_snapshot_ready_path(target))
+    return target
+
+
 def recover_native_config(
     snapshot_path: Path,
     live_path: Path,
@@ -457,13 +497,15 @@ def recover_native_config(
     - 其它指纹: 用户在崩溃后手动改过原生配置, 只清理快照不覆盖, 避免把
       用户的新改动吃掉。
 
+    快照由旧版本的指纹算法写下时无法比较, 一律改名留存并返回 legacy。
+
     Args:
         snapshot_path: 快照目录(与提交标记配套)。
         live_path: 脚本原生配置目录。
         expected_script_id: 期望归属的脚本, 不符则只清理不恢复。
 
     Returns:
-        处置结果: restored / intact / skipped / cleared。
+        处置结果: restored / intact / skipped / cleared / legacy。
     """
 
     staging_path, backup_path = _snapshot_swap_paths(live_path)
@@ -473,28 +515,32 @@ def recover_native_config(
     state = read_native_config_snapshot(
         snapshot_path, expected_script_id=expected_script_id
     )
-    try:
-        if state is None:
-            return "cleared"
-
-        if not live_path.exists():
-            if state.original_exists:
-                swap_in_dir(snapshot_path, live_path)
-                return "restored"
-            return "cleared"
-
+    if state is None:
+        result = "cleared"
+    elif state.fingerprint_version != NATIVE_CONFIG_FINGERPRINT_VERSION:
+        _preserve_legacy_snapshot(snapshot_path)
+        return "legacy"
+    elif not live_path.exists():
+        if state.original_exists:
+            swap_in_dir(snapshot_path, live_path)
+            result = "restored"
+        else:
+            result = "cleared"
+    else:
         live = dir_fingerprint(live_path)
         if state.injected is not None and live == state.injected:
             if state.original_exists:
                 swap_in_dir(snapshot_path, live_path)
             else:
                 force_rmtree(live_path)
-            return "restored"
-        if live == state.baseline:
-            return "intact"
-        return "skipped"
-    finally:
-        clear_native_config_snapshot(snapshot_path)
+            result = "restored"
+        elif live == state.baseline:
+            result = "intact"
+        else:
+            result = "skipped"
+
+    clear_native_config_snapshot(snapshot_path)
+    return result
 
 
 def atomic_write(path: Path, data: bytes) -> None:

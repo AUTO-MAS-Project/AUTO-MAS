@@ -187,6 +187,10 @@ class GeneralManager(ScriptManagerBase):
         )
         if result == "restored":
             logger.info("已恢复上次中断前的通用脚本原始配置")
+        elif result == "legacy":
+            logger.warning(
+                "检测到上次中断残留的 通用脚本 原生配置快照由旧版本生成, 已改名保留以便手动恢复"
+            )
         elif result == "skipped":
             logger.warning(
                 "检测到通用脚本原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
