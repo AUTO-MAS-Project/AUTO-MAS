@@ -276,7 +276,10 @@ const waitForTaskTermination = async (
   await expect
     .poll(
       async () => {
-        if (observer.taskCompletion(taskId)) return 'event'
+        if (observer.taskCompletion(taskId)) {
+          status = 'event'
+          return status
+        }
         try {
           status = await readTaskStatus(page, taskId)
         } catch {

@@ -412,6 +412,39 @@ test('真实流程无需环境变量即可选中本机第一个已启用用户',
   }
 })
 
+test('MAA 现行格式把 StageMode 放在 Stage 组时也复制计划表', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-e2e-stage-'))
+  const source = path.join(root, 'source')
+  const target = path.join(root, 'target')
+  const scriptId = '00000000-0000-0000-0000-000000000021'
+  const userId = '00000000-0000-0000-0000-000000000022'
+  const planId = '00000000-0000-0000-0000-000000000023'
+  const collection = (id, type, value) => ({ instances: [{ uid: id, type }], [id]: value })
+  try {
+    await mkdir(path.join(source, 'config'), { recursive: true })
+    for (const [name, value] of Object.entries({
+      ScriptConfig: collection(scriptId, 'MaaConfig', {
+        Info: { Name: 'test script' },
+        SubConfigsInfo: {
+          UserData: collection(userId, 'MaaUserConfig', {
+            Info: { Name: 'test account', Status: true },
+            Stage: { StageMode: planId },
+          }),
+        },
+      }),
+      PlanConfig: collection(planId, 'MaaPlanConfig', { plan: 'stage-mode' }),
+    }))
+      await writeFile(path.join(source, 'config', `${name}.json`), JSON.stringify(value))
+
+    await seedRealProfile(source, target, {})
+    const plans = JSON.parse(await readFile(path.join(target, 'config', 'PlanConfig.json')))
+    assert.deepEqual(plans.instances, [{ uid: planId, type: 'MaaPlanConfig' }])
+    assert.deepEqual(plans[planId], { plan: 'stage-mode' })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('启动器参数不透传给 playwright', () => {
   assert.deepEqual(parseLauncherArgs(['--grep', '@smoke', '--in-place']), {
     inPlace: true,
@@ -420,5 +453,10 @@ test('启动器参数不透传给 playwright', () => {
   assert.deepEqual(parseLauncherArgs(['--grep', '@queue']), {
     inPlace: false,
     playwrightArgs: ['--grep', '@queue'],
+  })
+  // 文档里的 AUTO_MAS_E2E_IN_PLACE=1 也要生效
+  assert.deepEqual(parseLauncherArgs(['--grep', '@smoke'], { AUTO_MAS_E2E_IN_PLACE: '1' }), {
+    inPlace: true,
+    playwrightArgs: ['--grep', '@smoke'],
   })
 })

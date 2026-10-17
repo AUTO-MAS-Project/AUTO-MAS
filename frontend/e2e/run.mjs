@@ -159,9 +159,24 @@ const resolveRealSelection = (candidates, requested) => {
   return matched[0]
 }
 
-export async function seedRealProfile(sourceRoot, dataRoot, env) {
-  sourceRoot = path.resolve(sourceRoot)
-  const sourceConfig = path.join(sourceRoot, 'config')
+// 计划引用按分组读取：MAA 现行格式把 StageMode 放在 Stage，其余专项与旧格式在 Info。
+const readPlanId = (user, field) => {
+  for (const group of ['Stage', 'Info']) {
+    const value = user?.[group]?.[field]
+    if (typeof value === 'string' && !['Fixed', '-', ''].includes(value)) return value
+  }
+  return undefined
+}
+
+/**
+ * 解析这一次真实 E2E 的目标脚本与用户。
+ *
+ * 隔离模式用它决定要往临时数据根复制什么，就地模式用它校验开发者自己的数据根；
+ * 未指定 AUTO_MAS_E2E_* 时取本机第一个已启用用户。
+ */
+export async function resolveRealTarget(sourceRoot, env) {
+  const sourceConfig = path.join(path.resolve(sourceRoot), 'config')
+  const scripts = await readConfig(path.join(sourceConfig, 'ScriptConfig.json'))
   const requested = {
     scriptId: env.AUTO_MAS_E2E_SCRIPT_ID?.trim() ?? '',
     userId: env.AUTO_MAS_E2E_USER_ID?.trim() ?? '',
@@ -170,10 +185,7 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   const selection =
     requested.scriptId && requested.userId && requested.accountName
       ? requested
-      : resolveRealSelection(
-          listRealCandidates(await readConfig(path.join(sourceConfig, 'ScriptConfig.json'))),
-          requested
-        )
+      : resolveRealSelection(listRealCandidates(scripts), requested)
   const problems = []
   for (const [key, value] of [
     ['SCRIPT_ID', selection.scriptId],
@@ -184,14 +196,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   if (!selection.accountName) problems.push('缺少 AUTO_MAS_E2E_ACCOUNT_NAME')
   if (problems.length > 0) throw new Error(`真实 E2E 目标配置不完整: ${problems.join('；')}`)
 
-  const scriptId = selection.scriptId
-  const userId = selection.userId
-  const scripts = selectEntry(
-    await readConfig(path.join(sourceConfig, 'ScriptConfig.json')),
-    scriptId
-  )
-  const script = scripts[scriptId]
-  const scriptType = scripts.instances[0].type
+  const selectedScripts = selectEntry(scripts, selection.scriptId)
+  const script = selectedScripts[selection.scriptId]
+  const scriptType = selectedScripts.instances[0].type
   if (!supportedScriptTypes.has(scriptType)) {
     throw new Error(`真实 E2E 尚未登记专项类型 ${scriptType}，请由专项作者补充适配`)
   }
@@ -201,9 +208,7 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
     throw new Error('所选脚本的模拟器绑定不完整')
   }
   if (emulatorId) {
-    if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(emulatorId)) {
-      throw new Error('所选脚本的模拟器 ID 无效')
-    }
+    if (!uuidPattern.test(emulatorId)) throw new Error('所选脚本的模拟器 ID 无效')
     if (!/^\d+$/.test(emulatorIndex)) throw new Error('模拟器实例索引必须是数字')
     if (env.AUTO_MAS_E2E_EMULATOR_ID && env.AUTO_MAS_E2E_EMULATOR_ID !== emulatorId) {
       throw new Error('所选脚本绑定的模拟器与 E2E 目标不一致')
@@ -212,9 +217,27 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
       throw new Error('所选脚本绑定的模拟器与 E2E 目标不一致')
     }
   }
+  return {
+    sourceConfig,
+    scripts: selectedScripts,
+    script,
+    scriptType,
+    emulatorId,
+    emulatorIndex,
+    scriptId: selection.scriptId,
+    userId: selection.userId,
+    accountName: selection.accountName,
+  }
+}
+
+export async function seedRealProfile(sourceRoot, dataRoot, env) {
+  sourceRoot = path.resolve(sourceRoot)
+  const resolved = await resolveRealTarget(sourceRoot, env)
+  const { sourceConfig, scripts, script, scriptType, emulatorId, emulatorIndex, scriptId, userId } =
+    resolved
   const users = selectEntry(script.SubConfigsInfo?.UserData ?? {}, userId)
   const user = users[userId]
-  if (user.Info?.Name !== selection.accountName || user.Info?.Status !== true) {
+  if (user.Info?.Name !== resolved.accountName || user.Info?.Status !== true) {
     throw new Error('所选用户名称不匹配或用户未启用')
   }
   script.SubConfigsInfo.UserData = users
@@ -242,8 +265,8 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
     await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value, null, 2))
   }
   const planSelection = planSelectionByScriptType[scriptType]
-  const planId = planSelection ? user.Info?.[planSelection.field] : undefined
-  if (planSelection && planId && !['Fixed', '-'].includes(planId)) {
+  const planId = planSelection ? readPlanId(user, planSelection.field) : undefined
+  if (planSelection && planId) {
     const plans = selectEntry(
       await readConfig(path.join(sourceConfig, 'PlanConfig.json')),
       planId,
@@ -306,12 +329,12 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   if (scriptType === 'HSRConfig' && script.Game?.Platform === 'Cloud') {
     await copyDirectory(path.join('data', scriptId, userId, 'cloud-profile'))
   }
-  return { emulatorId, emulatorIndex, scriptId, userId, accountName: selection.accountName }
+  return { emulatorId, emulatorIndex, scriptId, userId, accountName: resolved.accountName }
 }
 
-export function parseLauncherArgs(argv) {
+export function parseLauncherArgs(argv, env = process.env) {
   return {
-    inPlace: argv.includes('--in-place'),
+    inPlace: argv.includes('--in-place') || env.AUTO_MAS_E2E_IN_PLACE === '1',
     playwrightArgs: argv.filter(argument => argument !== '--in-place'),
   }
 }
@@ -332,6 +355,13 @@ async function main() {
     if (inPlace) {
       // 就地模式：直接用开发者自己调好的配置，方便顺手调试要接入的字段，跑完不清理
       dataRoot = path.resolve(process.env.AUTO_MAS_E2E_DATA_ROOT?.trim() || repositoryRoot)
+      if (real) {
+        // 就地真实运行同样要确认目标；不解析就会把空值传下去，让 spec 静默 skip 整条流程
+        selected = await resolveRealTarget(dataRoot, process.env)
+        console.warn(
+          `[e2e] 真实 E2E 目标：${selected.accountName}（脚本 ${selected.scriptId} / 用户 ${selected.userId}）`
+        )
+      }
       console.warn(
         `[e2e] 就地数据根 ${dataRoot}：测试会写入它的 config/data/history/debug 且不清理`
       )
@@ -355,6 +385,18 @@ async function main() {
       )
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
+    // 只覆盖解析出的目标；显式传入的变量在解析不到时保持原值，不被空串抹掉
+    const selectedEnv = Object.fromEntries(
+      Object.entries({
+        SCRIPT_ID: selected.scriptId,
+        USER_ID: selected.userId,
+        ACCOUNT_NAME: selected.accountName,
+        EMULATOR_ID: selected.emulatorId,
+        EMULATOR_INDEX: selected.emulatorIndex,
+      })
+        .filter(([, value]) => value)
+        .map(([key, value]) => [`AUTO_MAS_E2E_${key}`, value])
+    )
     const cli = path.join(path.dirname(require.resolve('@playwright/test/package.json')), 'cli.js')
     const child = spawn(process.execPath, [cli, 'test', ...playwrightArgs], {
       cwd: frontendRoot,
@@ -366,11 +408,7 @@ async function main() {
         TMP: tempDirectory,
         TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
-        AUTO_MAS_E2E_SCRIPT_ID: selected.scriptId,
-        AUTO_MAS_E2E_USER_ID: selected.userId,
-        AUTO_MAS_E2E_ACCOUNT_NAME: selected.accountName,
-        AUTO_MAS_E2E_EMULATOR_ID: selected.emulatorId,
-        AUTO_MAS_E2E_EMULATOR_INDEX: selected.emulatorIndex,
+        ...selectedEnv,
         AUTO_MAS_E2E_IN_PLACE: inPlace ? '1' : '',
         ...(real ? { PLAYWRIGHT_NO_COPY_PROMPT: '1' } : {}),
       },
