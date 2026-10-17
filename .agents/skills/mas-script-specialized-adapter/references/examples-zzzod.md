@@ -88,13 +88,9 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 - `--instance 1,2,...`（逗号分隔多实例）**只在 `instance_run=全部实例` 分支被读取**——instance_run 由合成视图统一落盘（窗口结束随视图恢复原生值）；且 idx 必须在视图注册表内，未注册的会被启动器静默丢弃。
 - 注入只做一次，**重试不清运行记录**（zzz-od 按记录跳过已完成任务）；新建槽的目录保留（配队持久）。
-- 判态：内置致命日志（未找到有效的实例 / 请先结束其他运行中的功能 再启动 / 运行应用 one_dragon 失败 / 指令[ 一条龙 ] 执行失败）→ 各槽 `app_run_record` 前后 diff；成功标志「指令[ 一条龙 ] 执行成功」出现即结束日志等待（不等启动器进程退出，LogMonitor 静默期回调节流最长 60s），终态成败仍由 diff 判定。
-- **节点失败不触发重跑**：运行记录 diff 里的应用失败只记录进任务报告（次日运行
-  时 zzz-od 会按运行记录自行重试失败节点），不再维护关键名单、也不按名单判整轮
-  重跑（曾有的 `_ZZZOD_CRITICAL_APPS` 机制已随 #696 移除）。**运行级失败
-  （启动器没起来 / 登录失败 / 配置错误）**仍由 `check_log` 致命日志关键词 +
-  超时态折算 `run_book=False` 走 main_task 既有「用户运行失败 → 重试」分支。
-- **「通知」应用是汇总信号**：上游 NotifyApp 在本轮存在失败任务时会把自己 round_fail（消息本身 fire-and-forget 已发出），MAS 侧在 `_failed_apps`（diff 判定）与 push_log resolve（节点行）两处剔除，避免「通知（失败）」误导。
+- 判态：运行级失败（内置致命日志、超时）优先；随后按实例取应用最后一次成功、失败或「应用已完成」日志，缺少对应应用日志时沿用运行记录差分。连续两轮同一应用失败、记录差分为空时仍须判失败。「指令[ 一条龙 ] 执行成功」只表示整轮结束，用于释放日志等待，不代表所有应用成功。
+- **应用最终失败触发有界重跑**：沿用脚本设置的尝试次数上限，不另建关键任务名单；重试不改任务开关、不重新注入配置、不清运行记录，由一条龙维护已完成跳过、周期目标与计划进度。内部步骤临时失败后应用最终成功的，不触发重跑；上游把内部失败吞成应用成功的情况应在上游修正。
+- **「通知」应用是汇总信号**：上游根据最近三小时内运行记录的当前有效状态汇总失败，不等于 MAS 本轮应用结果。通知应用自身的失败不触发重跑，也不进入 MAS 节点失败明细，避免重复归因；不要把所有含「失败」的日志当作应用失败。
 - **吞失败警告（⚠ 异常，2026-10 维护者决策）**：体力刷本/恶名狩猎把计划级失败吞成成功收尾，log_box 后置处理器在应用成功收尾时按「辅助指令失败原因白名单」（`app/task/ZzzOd/push_log.py` 的 `_WARNING_FAIL_REASONS`，fail-closed，仅注册的有价值异常才透出）追加 `⚠ 异常: 应用（原因）` 行；`⚠ 异常` 是通用渲染 `app/tools/push_log.py` 状态正则认可的第四种前缀（汇总模式归组且固定垫底，普通行如「🔋 剩余体力」在其前）。恶名狩猎领奖失败是应用内节点失败，不落「执行失败」终态行，当前采集口径不可见（上游盲点，修在上游）。
 - 直控任务编排保存保留完整顺序（`save_native_tasks` 含未启用项原位写回，对齐原生队列「灰色可任意位置」语义）；「启用在前」只由前端一键整理按钮触发。用户模式 AppList 同为整表语义（含未启用项，运行侧 `parse_user_apps` 只消费启用项）；开关/拖拽/一键整理为两模式共用封装 `useZzzOdTaskBoard`，仅落盘方式不同。
 - 恢复在 `main_task` finally、`final_task`、`on_crash` 三处幂等执行：先还原合成视图，再逐槽备份恢复（目录一律保留）。
@@ -110,7 +106,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 - 字段：`Enabled`（启用游戏配置，任务前启动的总控）/ `LaunchBeforeTask`（任务前由 MAS 启动游戏，检测到游戏进程已在运行则跳过）/ `Path`（**游戏本体** `ZenlessZoneZero.exe`，不是一条龙启动器）/ `Arguments` / `WaitTime`（拉起后等待秒数）。
 - **MAS 侧兜底关闭游戏**：收尾/失败重试/手动停止调度都走 `kill_managed_process(kill_game=CloseOnFinish)`，按进程名结束游戏本体（游戏由启动器拉起、可能不在启动器进程树内，进程管理器跟踪不到）。`CloseOnFinish` 不依赖 `Enabled`（历史上默认开启，避免存量配置悄悄变「不关游戏」）。与下一条的 `--close-game` 相互独立，同时配置会各执行一次（无害）。
-- **游戏结束后操作走 CLI 传参（`OneDragon.AfterDone`，用户级字段）**：上游 `after_done` **配置**只在「从一条龙 GUI 内启动运行」时被消费，CLI（`--onedragon`）路径的结束后动作只认启动参数 `--close-game` / `--shutdown`（`application_launcher` 传的是 `args.close_game` / `args.shutdown`，不读 `one_dragon_config.after_done`）。故 MAS 侧新增下拉（无 / 关闭游戏 / 关机，词表与上游 `AfterDoneOpEnum` 一致），运行时翻译成 `--close-game` 或 `--shutdown 60`（关机固定 60 秒，与上游 GUI 内启动口径一致）；`无` 不追加任何参数。**取值随来源**：脚本/用户读 MAS 字段，直控读原生 `after_done`（`read_native_after_done`）。**两端显示同步靠两条通道**：用户模式由配置会话双向联动（`write_instance_view(after_done=...)` 注入视图 → GUI 所见即本页下拉；`_readback_user_fields` 经 `read_after_done` 回读，须在 `restore_instance_view` 前）；直控模式 UI 直接读写原生 `after_done`（`/native-config` 端点的 `afterDone` 字段，与原生 GUI 同源）。**不要把原生 `after_done` 当 MAS 用户模式的生效开关**——CLI 不读它。与 `CloseOnFinish` 相互独立，同时配置会各执行一次（无害）。
+- **游戏结束后操作由 MAS 下发（`OneDragon.AfterDone`，用户级字段）**：上游 CLI 不读原生 `after_done` 配置。选择「关闭游戏」时传 `--close-game`；选择「关机」时不向每次尝试传 `--shutdown`，由 MAS 在实际参与用户全部成功且配置恢复完成后安排 60 秒关机，避免部分失败启动的倒计时打断补跑。多实例触发用户可能被正常跳过，不能用触发者是否「完成」代替整轮成功；任一槽恢复失败须取消本次关机，保留现场。选择「无」时不安排结束后动作。**取值随来源**：脚本/用户读 MAS 字段，直控读原生 `after_done`（`read_native_after_done`）。**两端显示同步靠两条通道**：用户模式由配置会话双向联动（`write_instance_view(after_done=...)` 注入视图 → GUI 所见即本页下拉；`_readback_user_fields` 经 `read_after_done` 回读，须在 `restore_instance_view` 前）；直控模式 UI 直接读写原生 `after_done`（`/native-config` 端点的 `afterDone` 字段，与原生 GUI 同源）。与 `CloseOnFinish` 相互独立。
 
 ## 在一条龙内配置（配置会话，双向联动）
 

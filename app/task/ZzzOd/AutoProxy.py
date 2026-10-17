@@ -1871,6 +1871,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 failed.append((slot, str(e)))
         if failed:
+            # 配置未完整恢复时保留现场，不能因实际运行用户已完成就自动关机。
+            self._shutdown_after_success = False
             # 失败槽里留着 MAS 注入内容：只标该槽对应的用户，不牵连已恢复成功的槽
             for slot, _ in failed:
                 user_item = slot_owner_items.get(slot) or self.cur_user_item
@@ -2004,11 +2006,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
 
         await self._persist_user_run_result()
-        if (
-            self._shutdown_after_success
-            and self.run_book
-            and self.cur_user_item.status == "完成"
-        ):
+        # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
+        if self._shutdown_after_success and self.run_book:
             shutdown_error = ""
             try:
                 process = await asyncio.create_subprocess_exec(
