@@ -1091,19 +1091,6 @@ class EmulatorConfig(BaseModel):
     )
 
 
-class ToolsConfig_ArknightsPC(BaseModel):
-    Enabled: bool | None = Field(default=None, description="是否启用 ArknightsPC 工具")
-    PauseKey: str | None = Field(default=None, description="暂停键位")
-    SelectDeployedKey: str | None = Field(
-        default=None, description="选中已部署干员键位"
-    )
-    UseSkillKey: str | None = Field(default=None, description="释放技能键位")
-    RetreatKey: str | None = Field(default=None, description="撤退键位")
-    NextFrameKey: str | None = Field(default=None, description="下一帧键位")
-    AnotherQuitKey: str | None = Field(default=None, description="自定义退出、暂停键位")
-    Status: str | None = Field(default=None, description="工具状态 Tag")
-
-
 class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
@@ -1262,9 +1249,6 @@ class TaygedoLoginIn(BaseModel):
 
 
 class ToolsConfig(BaseModel):
-    ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
-        default=None, description="明日方舟PC工具配置"
-    )
     GameSign: ToolsConfig_GameSign | None = Field(
         default=None, description="游戏社区签到配置"
     )

@@ -296,7 +296,7 @@ def main():
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
+            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、主定时器。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -338,13 +338,6 @@ def main():
                 from app.api.mcp import mount_mcp as mount_mcp_server
 
                 await mount_mcp_server(app)
-
-            async def init_arknight_win32() -> None:
-                # 只接管开关、启用时在后台发起加载，不在这里导入：导入会整套载入
-                # MaaFramework 原生库，新装环境首次能拖过监督器的 60 秒健康预算
-                from app.MaaFW import arknights_pc
-
-                await arknights_pc.start()
 
             async def start_desktop_guard() -> None:
                 from app.core.desktop_guard import DesktopGuard
@@ -398,11 +391,6 @@ def main():
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
                 )
-
-                if IS_WINDOWS:
-                    await run_optional_step(
-                        "明日方舟 PC 工具初始化", init_arknight_win32
-                    )
 
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：

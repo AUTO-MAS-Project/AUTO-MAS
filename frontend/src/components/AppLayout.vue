@@ -74,7 +74,6 @@ import {
   HomeOutlined,
   SettingOutlined,
   SkinOutlined,
-  ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { computed } from 'vue'
@@ -140,7 +139,6 @@ const devMenuItems = computed(() => [
 const bottomMenuItems = computed(() => [
   { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/tools', label: t('comp.tools'), icon: icon('tools', ToolOutlined) },
   { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
   { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
 ])

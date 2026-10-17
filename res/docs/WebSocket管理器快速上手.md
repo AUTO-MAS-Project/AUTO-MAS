@@ -46,7 +46,6 @@
 | `Update` | `update.progress` / `update.completed` / `update.failed` / `update.cancelled` | — |
 | `GameSign` | `gamesign.result.updated` | — |
 | `EmulatorManager` | `emulator.notice` | — |
-| `ArknightsPCToolkit` | `toolkit.notice` | — |
 
 完整常量定义：`app/core/ws/protocol.py`。
 

@@ -26,7 +26,7 @@ import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.utils import get_logger
 from app.utils.constants import (
@@ -71,7 +71,6 @@ from .ConfigBase import (
     FileValidator,
     FolderValidator,
     JSONValidator,
-    KeyValidator,
     MultipleConfig,
     MultipleOptionsValidator,
     MultipleUIDValidator,
@@ -5339,34 +5338,6 @@ class ToolsConfig(ConfigBase):
 
     def __init__(self) -> None:
 
-        self.ArknightsPC_Enabled = ConfigItem(
-            "ArknightsPC", "Enabled", False, BoolValidator()
-        )
-        self.ArknightsPC_PauseKey = ConfigItem(
-            "ArknightsPC", "PauseKey", "f10", KeyValidator("f10")
-        )
-        self.ArknightsPC_SelectDeployedKey = ConfigItem(
-            "ArknightsPC", "SelectDeployedKey", "w", KeyValidator("w")
-        )
-        self.ArknightsPC_UseSkillKey = ConfigItem(
-            "ArknightsPC", "UseSkillKey", "r", KeyValidator("r")
-        )
-        self.ArknightsPC_RetreatKey = ConfigItem(
-            "ArknightsPC", "RetreatKey", "t", KeyValidator("t")
-        )
-        self.ArknightsPC_NextFrameKey = ConfigItem(
-            "ArknightsPC", "NextFrameKey", "f", KeyValidator("f")
-        )
-        self.ArknightsPC_AnotherQuitKey = ConfigItem(
-            "ArknightsPC", "AnotherQuitKey", "space", KeyValidator("space")
-        )
-        self.ArknightsPC_Status = ConfigItem(
-            "ArknightsPC",
-            "Status",
-            "-",
-            VirtualConfigValidator(self.arknights_pc_status),
-        )
-
         ## GameSign - 启用签到
         self.GameSign_Enabled = ConfigItem(
             "GameSign", "Enabled", False, BoolValidator()
@@ -5408,44 +5379,9 @@ class ToolsConfig(ConfigBase):
             VirtualConfigValidator(self.game_sign_result),
         )
 
-        self.arknights_pc_running = False
-        self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
         self._game_sign_result_data: dict = {}
 
         super().__init__()
-
-    @property
-    def arknights_pc_connected(self) -> bool:
-
-        return self.arknights_pc_get_connected()
-
-    def arknights_pc_status(self) -> str:
-
-        if not self.get("ArknightsPC", "Enabled"):
-            return TagItem(text="未启用", color="gray").model_dump_json()
-        else:
-            if self.arknights_pc_running:
-                if self.arknights_pc_connected:
-                    return TagItem(text="运行中", color="green").model_dump_json()
-                else:
-                    return TagItem(text="未连接", color="red").model_dump_json()
-            else:
-                return TagItem(text="已暂停", color="yellow").model_dump_json()
-
-    @property
-    def arknights_pc_keys(self) -> list[str]:
-        """获取明日方舟 PC 按键配置"""
-
-        return [
-            self.get("ArknightsPC", _)
-            for _ in (
-                "SelectDeployedKey",
-                "UseSkillKey",
-                "RetreatKey",
-                "NextFrameKey",
-                "AnotherQuitKey",
-            )
-        ]
 
     def game_sign_status(self) -> str:
         """游戏社区状态标签"""
