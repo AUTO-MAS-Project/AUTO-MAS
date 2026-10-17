@@ -376,6 +376,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     速度，画面有内容且读盘连续 8 次（每秒一次）低于 1 MB/s 就提前下发；到上限画面有内容就按上限下发，
     还是黑屏 / 纯色就继续等到出画面，从开始等算满 `TASK_START_GATE_MAX_SECONDS` 照常下发；截不到图或
     读不到 pgpgin（controller 不支持 shell、没有这一行等）退回按时间、等满上限；计数变小时增量记 0。
+    老 binding（实测 5.12.3、5.14.0b1）没给 `MaaControllerPostShell` / `MaaControllerGetShellOutput`
+    声明 ctypes 签名，64 位句柄一传就 `OverflowError`；调用前由 `runner._declare_shell_signatures`
+    按 5.14.2 的签名补上，binding 自己声明过就不动。
     **不用 `/proc/diskstats`**：adb shell 用户读它和 `/sys/block/*/stat` 都被 SELinux 拒绝（API 34 魔改
     AVD，Enforcing），pgpgin 不需要 root、不随 dm 叠层重复计数，实测与整块盘 diskstats 读速误差 < 2%。阈值、窗口、采样间隔是 `runner.py` 的 `DISK_QUIET_*` 常量。核心只认这个
     模式，不判断设备类型。真机数据（2026-10-16 魔改 AVD 实测）：终末地加载页和动态标题都一直在动、
