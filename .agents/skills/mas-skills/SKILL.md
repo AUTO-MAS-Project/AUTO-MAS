@@ -44,7 +44,7 @@ Use these skills as needed:
 8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
-11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, and sanitized evidence.
+11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
 12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 
@@ -81,7 +81,7 @@ Use `mas-api-contract`.
 Use `mas-data-model`.
 9. Task mentions adding a new script, script-specific adaptation, task lifecycle, or a specific adapter such as MAA / SRC / MaaEnd / General / Okww / OkNte（异环）/ HSR (M9A is not an adapter: it is a MaaFW flavor, see `app/task/M9A/AGENTS.md`):
 Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, `mas-data-model`, `mas-function-design`, and `mas-api-contract` as needed.
-10. Task mentions E2E, Playwright, real game runs, emulator/account scheduling evidence, PR-specific test selection, or screenshot/trace evidence:
+10. Task mentions E2E, Playwright, real game runs, emulator/account scheduling evidence, PR-specific test selection, screenshot/trace evidence, or a PR is open and awaiting review while the change still needs E2E proof:
 Use `mas-e2e`; combine `mas-script-specialized-adapter` when the flow depends on a particular script line.
 11. Task mentions commit messages, docstrings, config comments, or project contribution style:
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.

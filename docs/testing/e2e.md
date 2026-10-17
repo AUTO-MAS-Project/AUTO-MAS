@@ -2,7 +2,7 @@
 
 目标是验证用户从配置、调度到结果查看与恢复的完整链路，并让每个 PR 只运行相关流程。当前已有普通浏览器用例、冷启动用例和作者本机真实调度用例；下表是覆盖目标，尚未实现的流程需在对应 PR 中补充。
 
-真实流程使用 PR 作者本机已有的脚本安装、用户配置及可选模拟器，不依赖 MAS 提供游戏资源或专用账号。入口按 MAS 的公开配置和调度契约工作，支持 BetterGI 等专项；需要模拟器的专项按配置执行模拟器步骤，不接入 USB、手机、实体设备或硬件校准链路。
+真实流程完全跑在 PR 作者本机的环境里：用的是他本机已安装的脚本、MAS 软件里已经配好的真实用户配置，以及可选的模拟器。MAS 官方仓库不提供也不附带任何游戏资源、脚本安装包或测试账号，仓库里只有代码和用例本身。入口只按 MAS 的公开配置和调度契约工作，支持 BetterGI 等专项；需要模拟器的专项按配置执行模拟器步骤，不接入 USB、手机、实体设备或硬件校准链路。
 
 ## 按 PR 选择
 
@@ -50,11 +50,13 @@ yarn e2e:history
 yarn e2e:recovery
 yarn e2e --grep '@queue|@scheduler'
 yarn e2e:real
+yarn e2e:real:all
+yarn e2e:ui
 yarn e2e:report
 yarn playwright show-report playwright-report/real
 ```
 
-`e2e:check` 运行 harness 自检（数据根隔离、配置种子白名单、真实运行锁、启动参数不透传）和 E2E TypeScript 检查；`e2e:init` 运行后端冷启动流程。`e2e:report` 打开浏览器 HTML 报告；真实流程使用 `playwright show-report playwright-report/real`。`--grep` 是正则表达式，空值默认运行 Playwright 配置中的默认集合。默认配置排除所有 `@real` 用例；真实流程由作者本机运行，不访问共享 CI 账号、模拟器或游戏资源。真实命令从当前检出的分支启动，`dev` 与 `release/*` 均可验证各自代码。浏览器 E2E 不阻断合并，PR 作者按改动选择需要的流程，并手动附上经过检查的截图或摘要；E2E 基础设施契约（`frontend/e2e/harness.check.mjs`）随「格式检查」工作流在 CI 跑，改坏数据根隔离、配置种子或启动参数会直接失败。
+`e2e:check` 运行 harness 自检（数据根隔离、配置种子白名单、真实运行锁、启动参数不透传）和 E2E TypeScript 检查；`e2e:init` 运行后端冷启动流程。`e2e:ui` 打开 Playwright 可视化运行器（用例树、实时进度、逐步时间线、单条重跑，跑完保留在当前数据根里便于复现）；`e2e:report` 打开浏览器 HTML 报告；真实流程使用 `playwright show-report playwright-report/real`。`--grep` 是正则表达式，空值默认运行 Playwright 配置中的默认集合。默认配置排除所有 `@real` 用例；真实流程由作者本机运行，不访问共享 CI 账号、模拟器或游戏资源。真实命令从当前检出的分支启动，`dev` 与 `release/*` 均可验证各自代码。浏览器 E2E 不阻断合并，PR 作者按改动选择需要的流程，并手动附上经过检查的截图或摘要；E2E 基础设施契约（`frontend/e2e/harness.check.mjs`）随「格式检查」工作流在 CI 跑，改坏数据根隔离、配置种子或启动参数会直接失败。
 
 ### 合并门槛（三层）
 
@@ -195,6 +197,35 @@ MAS 配置和托管数据就地运行，脚本安装路径也指向本机真实�
 真实模式不会自动复制后端原始日志，也不把完整后端输出附加到报告。`real-e2e-summary.json` 记录起止时间、阶段、调度状态、账号完成情况和清理状态；Playwright 只附加用例明确生成的精选截图和摘要。完整 HTML 报告、断言错误和终端输出仍可能包含本机信息，分享前人工检查。
 
 该用例验证脚本公开上报的用户结果；`accountResultAccepted` 表示任务级结果为成功、脚本状态为「完成」，且目标用户状态为「完成」或调度器接受的「部分失败」，不等同于账号全部步骤成功。`taskAndEmulatorCleanupStatus` 只表示任务已终止及测试启动的模拟器已关闭，不验证脚本安装目录的原生配置是否恢复。流程不读取或反推上游内部状态，也不单独识别游戏前台、登录画面或切号结果。历史页面、社区账号/签到和 Electron 主进程不在当前真实用例中。
+
+### 批量跑全部专项
+
+`yarn e2e:real:all` 遍历本机 config 里每个「用户已启用」的脚本，逐个跑一遍真实流程（[`real-batch.mjs`](../../frontend/e2e/real-batch.mjs)）：
+
+```powershell
+Set-Location frontend
+yarn e2e:real:all --list                      # 只列目标，不跑
+yarn e2e:real:all                             # 全部已启用专项，串行
+yarn e2e:real:all --only MaaConfig,SrcConfig  # 只跑这些专项
+```
+
+- 每个目标一次独立运行：独立隔离数据根、独立真实运行锁，上一个目标的队列、历史和模拟器状态不会串到下一个；单个目标失败不中断后面的目标，结束时汇总 `PASS`/`FAIL` 并以非 0 退出码报告失败数。
+- 结果按目标分别留在 `frontend/test-results/real-batch/<序号-专项-账号>/`，`real-e2e-summary.json` 仍在其中；HTML 报告只保留最后一次运行。
+- 串行重启整套服务，每个目标的固定开销约 20-30 秒，加上真实任务本身，批量请留足时间；不支持 `--in-place`，批量必须每个目标独立数据根。
+- 模拟器由每个目标自己的脚本绑定决定，批量会忽略外部传入的 `AUTO_MAS_E2E_EMULATOR_ID` / `AUTO_MAS_E2E_EMULATOR_INDEX`。
+
+## 让 AI 助手跑测试
+
+助手可以直接按下面的说法执行，不要绕过 `run.mjs` 与 `real-batch.mjs` 调用 `playwright test`。
+
+| 说法 | 助手执行 |
+| --- | --- |
+| 改完 UI，看有没有跑坏 | `yarn e2e --grep '@smoke\|@<相关标签>'` |
+| 改过入口或种子规则 | `yarn e2e:check` |
+| 改到调度、任务或某个专项 | `yarn e2e:real`，或 `yarn e2e:real:all --only <专项>` |
+| 只想看本机有哪些真实目标 | `yarn e2e:real:all --list` |
+
+**PR 开出来到等 review 之间，助手必须主动把这张表交出来**：按改动路径列出相关命令、每条产出什么（截图、HTML 报告、`real-e2e-summary.json`）、然后问「要我现在跑哪条」。非真实命令助手可以直接跑；`@real` 只能作者本机跑，助手不得代为声称结果。约定见 [`.agents/skills/mas-e2e/SKILL.md`](../../.agents/skills/mas-e2e/SKILL.md) 的「After opening a PR」与 [`.agents/skills/pr/SKILL.md`](../../.agents/skills/pr/SKILL.md)。
 
 ## 等待与证据约定
 
