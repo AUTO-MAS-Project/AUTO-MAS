@@ -4639,6 +4639,7 @@ export default {
     uploadTheme: 'Upload theme',
     uploadMascot: 'Upload pet',
     title: 'Resource store',
+    openDocs: 'Open docs',
     account: {
       login: 'Sign in to the share site',
       pending: 'Confirm in your browser. Code',
