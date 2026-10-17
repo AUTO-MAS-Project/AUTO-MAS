@@ -178,7 +178,6 @@ import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
@@ -200,7 +199,6 @@ const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
-const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
 let removeWindowMaximizedListener: (() => void) | undefined
 
@@ -447,17 +445,7 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
-const handleTrayStartTask = (taskId?: string, label?: string) => {
-  if (updateRunning.value) return
-  if (!taskId) {
-    logger.warn('托盘启动任务缺少任务 ID，忽略')
-    return
-  }
-  void startTaskById(taskId, label)
-}
-
-// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
   action: 'quit' | 'restart' | 'startTask'
   taskId?: string
@@ -467,13 +455,11 @@ const handleTrayActionRequest = (request: {
     handleTrayRestart()
   } else if (request.action === 'quit') {
     handleTrayQuit()
-  } else {
-    handleTrayStartTask(request.taskId, request.label)
   }
 }
 
 onMounted(async () => {
-  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  // 监听托盘退出和重启请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   // 双击标题栏或系统快捷键也会改变窗口状态。

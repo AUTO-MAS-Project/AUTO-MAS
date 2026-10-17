@@ -6,6 +6,9 @@ const data = ref<DesktopMascotData | null>(null)
 const frame = ref(0)
 const dragging = ref(false)
 const lookFrame = ref<number | null>(null)
+const noticeElement = ref<HTMLElement>()
+const noticeWidth = ref(0)
+const viewportWidth = ref(window.innerWidth)
 const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
 const reducedMotion = ref(motionPreference.matches)
 let dispose: (() => void) | undefined
@@ -15,6 +18,7 @@ let frameTimer: ReturnType<typeof setInterval> | undefined
 let activePointerId: number | null = null
 let pointerTarget: HTMLElement | null = null
 let dragRevision = 0
+let noticeObserver: ResizeObserver | undefined
 
 const isIdleMessage = computed(
   () =>
@@ -94,16 +98,38 @@ const spriteStyle = computed(() => {
 
 const noticeStyle = computed(() => {
   if (!data.value) return {}
-  const { height, offsetY, noticeBelow, colors } = data.value
+  const { width, height, offsetX, offsetY, noticeBelow, colors } = data.value
+  const anchor = offsetX + width / 2
+  const boxWidth = noticeWidth.value || viewportWidth.value
+  const left = Math.max(0, Math.min(anchor - boxWidth / 2, viewportWidth.value - boxWidth))
+  const arrow = anchor - left
+  const leftRadius = Math.max(0, Math.min(colors.radius, arrow - 5))
+  const rightRadius = Math.max(0, Math.min(colors.radius, boxWidth - arrow - 5))
   return {
+    left: `${left}px`,
+    '--mascot-notice-arrow-x': `${arrow - 1}px`,
     top: noticeBelow ? `${offsetY + height + 12}px` : undefined,
     bottom: noticeBelow ? undefined : `${height + 12}px`,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
-    borderRadius: `${colors.radius}px`,
+    borderRadius: noticeBelow
+      ? `${leftRadius}px ${rightRadius}px ${colors.radius}px ${colors.radius}px`
+      : `${colors.radius}px ${colors.radius}px ${rightRadius}px ${leftRadius}px`,
   }
 })
+
+watch(
+  noticeElement,
+  element => {
+    noticeObserver?.disconnect()
+    if (!element) return
+    measureNotice()
+    noticeObserver = new ResizeObserver(measureNotice)
+    noticeObserver.observe(element)
+  },
+  { flush: 'post' }
+)
 
 watch(
   () =>
@@ -147,6 +173,7 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportWidth)
   motionPreference.addEventListener('change', updateMotionPreference)
   const api = window.desktopMascotAPI
   if (!api) return
@@ -179,9 +206,19 @@ onUnmounted(() => {
   disposeUpdate?.()
   disposeLook?.()
   clearInterval(frameTimer)
+  noticeObserver?.disconnect()
+  window.removeEventListener('resize', updateViewportWidth)
   motionPreference.removeEventListener('change', updateMotionPreference)
   endDrag()
 })
+
+function measureNotice(): void {
+  noticeWidth.value = noticeElement.value?.getBoundingClientRect().width ?? 0
+}
+
+function updateViewportWidth(): void {
+  viewportWidth.value = window.innerWidth
+}
 
 function updateMotionPreference(event: MediaQueryListEvent): void {
   reducedMotion.value = event.matches
@@ -258,6 +295,7 @@ function endDrag(event?: PointerEvent): void {
   <div v-if="data" class="desktop-mascot" @mousemove="hover" @mouseleave="hover">
     <div
       v-if="noticeText"
+      ref="noticeElement"
       class="mascot-notice"
       :class="{ 'idle-message': isIdleMessage, 'notice-below': data.noticeBelow }"
       :style="noticeStyle"
@@ -379,7 +417,7 @@ function endDrag(event?: PointerEvent): void {
 
 .mascot-notice {
   position: absolute;
-  right: 0;
+  width: max-content;
   max-width: 100%;
   box-sizing: border-box;
   padding: 12px;
@@ -417,7 +455,7 @@ function endDrag(event?: PointerEvent): void {
 
 .mascot-notice::after {
   position: absolute;
-  right: 64px;
+  left: var(--mascot-notice-arrow-x);
   bottom: -5px;
   width: 8px;
   height: 8px;
@@ -425,12 +463,12 @@ function endDrag(event?: PointerEvent): void {
   border-bottom: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-elevated);
   content: '';
-  transform: rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
 }
 
 .mascot-notice.notice-below::after {
   top: -5px;
   bottom: auto;
-  transform: rotate(225deg);
+  transform: translateX(-50%) rotate(225deg);
 }
 </style>

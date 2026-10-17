@@ -1,5 +1,6 @@
 import * as path from 'path'
 import type { MascotDefinition } from '../../src/types/mascotPack'
+import { normalizeMascotMenu } from './mascotMenuDefinition'
 import {
   AssetPackageError,
   assertAssetPath,
@@ -19,6 +20,7 @@ export function normalizeMascot(value: unknown): MascotDefinition | undefined {
   const width = assertOptionalNumber(raw.width, 'mascot.width', 16, 1024)
   const opacity = assertOptionalNumber(raw.opacity, 'mascot.opacity', 0, 1)
   const animation = normalizeMascotAnimation(raw.animation)
+  const menu = normalizeMascotMenu(raw.menu)
   const position = raw.position === undefined ? undefined : raw.position
   if (
     position !== undefined &&
@@ -35,6 +37,7 @@ export function normalizeMascot(value: unknown): MascotDefinition | undefined {
     ...(opacity === undefined ? {} : { opacity }),
     ...(position === undefined ? {} : { position }),
     ...(animation === undefined ? {} : { animation }),
+    ...(menu === undefined ? {} : { menu }),
   }
 }
 

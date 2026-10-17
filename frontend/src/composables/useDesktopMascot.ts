@@ -1,12 +1,12 @@
 import { effectScope, getCurrentScope, onScopeDispose, watch, type Ref } from 'vue'
-import type { TaskRuntimeEvent, TaskRuntimeState } from './useTaskRuntimeState'
-import type { ElectronAPI } from '@/types/electron'
 import type {
   DesktopMascotColors,
+  DesktopMascotHostAPI,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotTaskEvent,
+  DesktopMascotTaskEvents,
 } from '@/types/desktopMascot'
-import { resolveTaskCompletionFeedback, scriptHasStatus } from '@/utils/taskFailures'
 
 interface DesktopMascotInputs {
   isStandalonePage: Readonly<Ref<boolean>>
@@ -20,18 +20,9 @@ interface DesktopMascotInputs {
 }
 
 interface DesktopMascotCapabilities {
-  api: Pick<
-    ElectronAPI,
-    | 'setDesktopMascotReady'
-    | 'setDesktopMascotActivity'
-    | 'setDesktopMascotIdleMessage'
-    | 'showDesktopMascotNotice'
-    | 'onDesktopMascotError'
-  >
-  tasks: {
-    snapshot(): TaskRuntimeState[]
-    subscribe(listener: (event: TaskRuntimeEvent) => void): () => void
-  }
+  api: DesktopMascotHostAPI
+  tasks: DesktopMascotTaskEvents
+  refreshIdleMessage(): void
   translate(key: string, params?: Record<string, string>): string
   reportError(message: string, error: unknown): void
   showError(): void
@@ -51,22 +42,23 @@ export function useDesktopMascot(
       if (scope.active) showError()
     }
     const disposeDesktopMascotError = api.onDesktopMascotError?.(showDesktopMascotError)
-    onScopeDispose(() => disposeDesktopMascotError?.())
+    const disposeRefreshIdleMessage = api.onDesktopMascotRefreshIdleMessage?.(() => {
+      if (scope.active && !isStandalonePage.value && ready.value) capabilities.refreshIdleMessage()
+    })
+    onScopeDispose(() => {
+      disposeDesktopMascotError?.()
+      disposeRefreshIdleMessage?.()
+    })
     const announcedMascotTasks = new Set<string>()
-    const mascotRunningStatuses = new Set(['运行', '运行中'])
     // 沿用任务总览的状态和收尾判定，不把部分失败误报为成功。
-    const consumeTaskEvent = (event: TaskRuntimeEvent): void => {
+    const consumeTaskEvent = (event: DesktopMascotTaskEvent): void => {
       if (!scope.active || isStandalonePage.value || !isAppReady.value) return
       if (event.type === 'snapshot') {
         for (const id of announcedMascotTasks) {
           if (!event.activeTaskIds.has(id)) announcedMascotTasks.delete(id)
         }
-        for (const state of event.states) {
-          if (
-            state.mode !== 'ScriptConfig' &&
-            state.taskInfo.some(info => scriptHasStatus(info, mascotRunningStatuses))
-          )
-            announcedMascotTasks.add(state.taskId)
+        for (const task of event.tasks) {
+          if (task.working) announcedMascotTasks.add(task.taskId)
         }
         return
       }
@@ -74,45 +66,30 @@ export function useDesktopMascot(
         announcedMascotTasks.delete(event.taskId)
         return
       }
-      const { state } = event
-      if (state.mode === 'ScriptConfig') return
-      const name =
-        state.taskName ||
-        state.taskInfo
-          .map(info => info.name)
-          .filter(Boolean)
-          .join('、') ||
-        t('setting.basic.mascotTask')
+      const { task } = event
+      const name = task.name || t('setting.basic.mascotTask')
       let text: string
       let reaction: 'success' | 'failure' | 'stopped' | undefined
-      if (event.type === 'info') {
-        if (
-          announcedMascotTasks.has(state.taskId) ||
-          !state.taskInfo.some(info => scriptHasStatus(info, mascotRunningStatuses))
-        )
-          return
-        announcedMascotTasks.add(state.taskId)
+      if (event.type === 'started') {
+        if (announcedMascotTasks.has(task.taskId)) return
+        announcedMascotTasks.add(task.taskId)
         text = t('setting.basic.mascotTaskStarted', { name })
-      } else if (event.type === 'completed' && state.outcome) {
-        announcedMascotTasks.delete(state.taskId)
-        const feedback = resolveTaskCompletionFeedback({
-          outcome: state.outcome,
-          task_info: state.taskInfo,
-        })
+      } else {
+        announcedMascotTasks.delete(task.taskId)
         const key = {
           success: 'mascotTaskCompleted',
-          error: 'mascotTaskFailed',
-          cancelled: 'mascotTaskStopped',
+          failure: 'mascotTaskFailed',
+          stopped: 'mascotTaskStopped',
           partialFailure: 'mascotTaskPartialFailure',
-        }[feedback.kind]
+        }[event.result]
         text = t(`setting.basic.${key}`, { name })
         reaction =
-          feedback.kind === 'success'
+          event.result === 'success'
             ? 'success'
-            : feedback.kind === 'cancelled'
+            : event.result === 'stopped'
               ? 'stopped'
               : 'failure'
-      } else return
+      }
       void api.showDesktopMascotNotice?.(text, reaction).catch(error => {
         reportError('显示桌宠提醒失败:', error)
       })
@@ -124,11 +101,11 @@ export function useDesktopMascot(
       active => {
         if (!active) return
         // 新实例只用已有快照标记运行任务，不重播开始或历史完成提醒。
-        const states = tasks.snapshot().filter(state => state.phase !== 'completed')
+        const snapshot = tasks.snapshot()
         consumeTaskEvent({
           type: 'snapshot',
-          states,
-          activeTaskIds: new Set(states.map(state => state.taskId)),
+          tasks: snapshot,
+          activeTaskIds: new Set(snapshot.map(task => task.taskId)),
         })
       },
       { immediate: true, flush: 'sync' }

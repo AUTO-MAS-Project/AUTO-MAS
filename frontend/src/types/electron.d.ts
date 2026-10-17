@@ -1,10 +1,9 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
-  DesktopMascotColors,
-  DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
+  DesktopMascotHostAPI,
   DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
 } from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
@@ -205,21 +204,12 @@ export interface VirtualDisplayPromptPayload {
   monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
   /** 不带选择状态时表示资源列表变化。 */
   onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
-  setDesktopMascotReady(
-    ready: boolean,
-    labels?: DesktopMascotMenuLabels,
-    colors?: DesktopMascotColors
-  ): Promise<void>
-  setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
-  setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
-  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
-  onDesktopMascotError(callback: () => void): () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>

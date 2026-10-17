@@ -7,6 +7,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useTaskApi } from '@/composables/useTaskApi'
 import {
   getTaskRuntimeState,
   getTaskRuntimeStates,
@@ -62,6 +63,7 @@ const runtimeModeLabel = (mode: string | null): string | null => {
 }
 
 const logger = window.electronAPI.getLogger('调度台逻辑')
+const taskApi = useTaskApi()
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
 // sessionStorage 在页面刷新时保留数据，但在关闭标签页/重启应用时清除
@@ -901,79 +903,41 @@ export function useSchedulerLogic() {
           : undefined
       )
 
-      const response = await Service.addTaskApiDispatchStartPost(requestBody)
+      const response = await taskApi.startTask(requestBody)
+      tab.status = '运行'
+      tab.taskId = response.taskId
 
-      if (response.code === 200) {
-        tab.status = '运行'
-        tab.taskId = response.taskId
+      // 确保清理任何可能存在的旧订阅
+      unsubscribeTab(tab)
 
-        // 确保清理任何可能存在的旧订阅
-        unsubscribeTab(tab)
+      // 清空之前的状态
+      tab.logBuffer = ''
+      tab.logSeq = undefined
+      tab.logFirstLine = 1
+      tab.displayLogFirstLine = 1
+      pendingLogResyncs.delete(tab.key)
+      tab.lastLogContent = ''
+      tab.cycleNextList = []
+      tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
-        // 清空之前的状态
-        tab.logBuffer = ''
-        tab.logSeq = undefined
-        tab.logFirstLine = 1
-        tab.displayLogFirstLine = 1
-        pendingLogResyncs.delete(tab.key)
-        tab.lastLogContent = ''
-        tab.cycleNextList = []
-        tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
+      subscribeToTask(tab)
+      const runtimeState = getTaskRuntimeState(response.taskId)
+      if (runtimeState) applyRuntimeStateToTab(tab, runtimeState)
 
-        subscribeToTask(tab)
-        const runtimeState = getTaskRuntimeState(response.taskId)
-        if (runtimeState) applyRuntimeStateToTab(tab, runtimeState)
-
-        // 播放任务启动成功音频
-        const { playSound } = useAudioPlayer()
-        await playSound('task_started')
-
-        message.success(t('scheduler.toast.taskStarted'))
-        saveTabsToStorage(schedulerTabs.value)
-      } else {
-        message.error(response.message || t('scheduler.toast.startTaskFailed'))
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`启动任务失败: ${errorMsg}`)
-      message.error(t('scheduler.toast.startTaskFailed'))
-    } finally {
-      startingTabKeys.delete(tab.key)
-    }
-  }
-
-  // 按任务 ID 直接启动（供托盘「启动任务」等外部入口使用）：新建调度台并启动，与正常运行行为一致
-  const startTaskById = async (taskId: string, taskLabel?: string) => {
-    if (!taskId) return false
-
-    try {
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId,
-        mode: TaskCreateIn.mode.AUTO_PROXY,
-      })
-
-      if (response.code !== 200) {
-        message.error(response.message || t('scheduler.toast.startTaskFailed'))
-        return false
-      }
-
-      trackStartedTask({
-        taskId: response.taskId,
-        selectedTaskId: taskId,
-        selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-        taskLabel: taskLabel || taskId,
-        modeLabel: t('scheduler.mode.autoProxy'),
-      })
-
+      // 播放任务启动成功音频
       const { playSound } = useAudioPlayer()
       await playSound('task_started')
-      message.success(t('scheduler.toast.taskBegun'))
-      return true
+
+      message.success(t('scheduler.toast.taskStarted'))
+      saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`按任务 ID 启动失败: ${errorMsg}`)
-      message.error(t('scheduler.toast.startTaskFailed'))
-      return false
+      const errorMsg =
+        (error instanceof Error ? error.message : String(error)) ||
+        t('scheduler.toast.startTaskFailed')
+      logger.error(`启动任务失败: ${errorMsg}`)
+      message.error(errorMsg)
+    } finally {
+      startingTabKeys.delete(tab.key)
     }
   }
 
@@ -1003,10 +967,7 @@ export function useSchedulerLogic() {
 
     const taskId = tab.taskId
     try {
-      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-      if (response.code !== 200) {
-        throw new Error(response.message || t('scheduler.toast.stopTaskFailed'))
-      }
+      await taskApi.stopTask(taskId)
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()
@@ -1026,7 +987,9 @@ export function useSchedulerLogic() {
         saveTabsToStorage(schedulerTabs.value)
       }
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg =
+        (error instanceof Error ? error.message : String(error)) ||
+        t('scheduler.toast.stopTaskFailed')
       logger.error(`停止任务失败: ${errorMsg}`)
       message.error(errorMsg)
       saveTabsToStorage(schedulerTabs.value)
@@ -1771,7 +1734,6 @@ export function useSchedulerLogic() {
     // 任务操作
     trackStartedTask,
     startTask,
-    startTaskById,
     stopTask,
     handleTaskSelectionChange,
     loadResumeScriptOptions,

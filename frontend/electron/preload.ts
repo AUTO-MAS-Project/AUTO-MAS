@@ -4,7 +4,10 @@ import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
+  DesktopMascotMenuResult,
   DesktopMascotSelection,
+  DesktopMascotTaskAction,
+  DesktopMascotTaskMenu,
 } from '../src/types/desktopMascot'
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -48,6 +51,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('desktop-mascot:error', listener)
     return () => ipcRenderer.removeListener('desktop-mascot:error', listener)
   },
+  onDesktopMascotRefreshIdleMessage: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-mascot:refresh-idle-message', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:refresh-idle-message', listener)
+  },
+  onDesktopMascotTaskMenuRequest: (callback: (requestId: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: number) => callback(requestId)
+    ipcRenderer.on('desktop-mascot:task-menu-request', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:task-menu-request', listener)
+  },
+  setDesktopMascotTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) =>
+    ipcRenderer.invoke('desktop-mascot:task-menu', requestId, menu),
+  onDesktopMascotTaskMenuClosed: (callback: (requestId: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: number) => callback(requestId)
+    ipcRenderer.on('desktop-mascot:task-menu-closed', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:task-menu-closed', listener)
+  },
+  onDesktopMascotTaskAction: (
+    callback: (action: DesktopMascotTaskAction, requestId: number) => void
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      action: DesktopMascotTaskAction,
+      requestId: number
+    ) => callback(action, requestId)
+    ipcRenderer.on('desktop-mascot:task-action', listener)
+    return () => ipcRenderer.removeListener('desktop-mascot:task-action', listener)
+  },
+  setDesktopMascotTaskActionResult: (requestId: number, result: DesktopMascotMenuResult) =>
+    ipcRenderer.invoke('desktop-mascot:task-action-result', requestId, result),
   // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),

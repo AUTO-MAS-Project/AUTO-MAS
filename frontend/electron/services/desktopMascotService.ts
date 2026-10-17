@@ -1,40 +1,15 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
+import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import type { NativeImage, Point, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
   DesktopMascotUpdate,
   DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
-import type { MascotAssets } from '../../src/types/mascotPack'
 import { getMascotLayout, getMascotSize } from './desktopMascotGeometry'
-
-export interface DesktopMascotPreferences {
-  appearanceId?: string | null
-  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
-  desktopMascotId?: string | null
-  desktopMascotEnabled?: boolean
-  /** 为空时使用动画包的帧率。 */
-  desktopMascotFps?: number | null
-  desktopMascotAnimationPaused?: boolean
-  desktopMascotIdleMessagePaused?: boolean
-  desktopMascotPosition?: Point
-}
-
-interface DesktopMascotOptions {
-  readPreferences(): DesktopMascotPreferences
-  resolveAssets(
-    selection: Pick<DesktopMascotPreferences, 'appearanceId' | 'desktopMascotId'>
-  ): MascotAssets | null
-  savePosition(position: Point): void
-  saveAnimationPaused(paused: boolean): void
-  saveIdleMessagePaused(paused: boolean): void
-  getMainWindow(): BrowserWindow | null
-  onError(error: unknown): void
-}
+import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
 
@@ -51,7 +26,7 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
   return mask
 }
 
-export class DesktopMascotService {
+export class DesktopMascotService implements DesktopMascotRuntime {
   private disposed = false
   private window: BrowserWindow | null = null
   private data: DesktopMascotData | null = null
@@ -69,7 +44,6 @@ export class DesktopMascotService {
   private animationPaused = false
   private idleMessagePaused = false
   private motionOverride = false
-  private menuLabels: DesktopMascotMenuLabels | null = null
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
@@ -78,10 +52,9 @@ export class DesktopMascotService {
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
-  setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void {
+  setReady(ready: boolean, colors?: DesktopMascotColors): void {
     if (this.disposed) return
     this.ready = ready
-    if (labels) this.menuLabels = labels
     if (colors) this.colors = colors
     if (ready && this.window && this.data) {
       if (colors) this.updateData({ colors })
@@ -234,10 +207,7 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const appearance = this.options.resolveAssets({
-      appearanceId: preferences.appearanceId,
-      desktopMascotId: preferences.desktopMascotId,
-    })
+    const appearance = this.options.resolveAssets()
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
@@ -334,7 +304,7 @@ export class DesktopMascotService {
     }
 
     const currentBounds = this.window?.getBounds()
-    const mainBounds = this.options.getMainWindow()?.getBounds()
+    const mainBounds = this.options.getInitialBounds()
     const saved = currentBounds
       ? {
           x: currentBounds.x + (this.data?.offsetX ?? 0),
@@ -431,7 +401,9 @@ export class DesktopMascotService {
       })
       this.window = win
       const createdWindow = win
-      win.webContents.on('context-menu', () => this.showContextMenu(createdWindow))
+      win.webContents.on('context-menu', () => {
+        if (this.window === createdWindow) this.options.onContextMenu(screen.getCursorScreenPoint())
+      })
       win.once('ready-to-show', () => {
         if (this.window === createdWindow && !createdWindow.isDestroyed())
           createdWindow.showInactive()
@@ -472,6 +444,7 @@ export class DesktopMascotService {
   private close(): void {
     const win = this.window
     this.window = null
+    if (win) this.options.onClosed()
     this.data = null
     this.decodedImage = null
     this.frames = []
@@ -533,48 +506,6 @@ export class DesktopMascotService {
       )
     )
       this.updateData(update)
-  }
-
-  private showContextMenu(win: BrowserWindow): void {
-    const labels = this.menuLabels
-    if (this.window !== win || !labels) return
-    const animationPaused =
-      this.animationPaused ||
-      (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
-    Menu.buildFromTemplate([
-      {
-        label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !this.idleMessagePaused
-          try {
-            this.options.saveIdleMessagePaused(paused)
-            this.idleMessagePaused = paused
-            if (this.data) {
-              this.updateData({ idleMessage: paused ? undefined : this.idleMessage })
-            }
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-      {
-        label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !animationPaused
-          try {
-            this.options.saveAnimationPaused(paused)
-            this.animationPaused = paused
-            this.motionOverride = true
-            this.updateData({ motionOverride: true })
-            this.setActivity(this.working, this.animate)
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-    ]).popup({ window: win })
   }
 
   private updateData(update: DesktopMascotUpdate): void {
