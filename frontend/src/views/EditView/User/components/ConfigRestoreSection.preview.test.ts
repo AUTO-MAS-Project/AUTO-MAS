@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import * as Vue from 'vue'
 import * as ts from 'typescript'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 
 const source = readFileSync(new URL('./ConfigRestoreSection.vue', import.meta.url), 'utf8')
 const descriptor = parse(source, { filename: 'ConfigRestoreSection.vue' }).descriptor

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import zhCN from '@/i18n/locales/zh-CN'
 
 // 描述表在后端 Python 源里，测试不能 import Python，用源码文本断言

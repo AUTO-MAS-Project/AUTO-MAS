@@ -5,7 +5,7 @@ import type { AddressInfo } from 'net'
 import * as os from 'os'
 import * as path from 'path'
 import AdmZip = require('adm-zip')
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import {
   APPEARANCE_SOURCES_FILE,
   createOnlineAppearanceService,

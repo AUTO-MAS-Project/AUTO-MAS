@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { buildEndfieldOverview, restoreEndfieldSourceData } from './endfieldActivityTransform'
 
 describe('终末地活动快照', () => {

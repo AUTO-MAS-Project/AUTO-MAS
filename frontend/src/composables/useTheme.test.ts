@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { ConfigProvider } from 'ant-design-vue'
 import { createSSRApp, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'

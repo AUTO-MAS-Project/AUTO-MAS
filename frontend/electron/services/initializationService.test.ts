@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { InitializationService, InitializationProgress } from './initializationService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'

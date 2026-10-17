@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createSSRApp, defineComponent, getCurrentInstance, h, type Component } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'

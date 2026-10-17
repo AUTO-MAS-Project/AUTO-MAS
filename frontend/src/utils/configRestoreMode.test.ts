@@ -1,5 +1,5 @@
 // 配置来源共用判定与提示文案的纯逻辑测试（不挂载组件，直接测分支行为）。
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { VNode } from 'vue'
 
 import {

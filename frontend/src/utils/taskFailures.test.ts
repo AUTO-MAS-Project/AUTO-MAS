@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { WSTaskScriptInfoData } from '@/services/websocket/types'
 import { countTaskFailures, resolveTaskCompletionFeedback } from './taskFailures'
 
