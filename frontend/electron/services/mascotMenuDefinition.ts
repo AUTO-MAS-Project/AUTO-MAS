@@ -10,8 +10,8 @@ export const DEFAULT_MASCOT_MENU: MascotMenuDefinition = {
     { capability: 'task.stop', icon: '■' },
     { separator: true },
     { capability: 'idle.refresh', icon: '↻' },
-    { capability: 'idle.toggle' },
-    { capability: 'animation.toggle' },
+    { capability: 'idle.toggle', icon: '✉' },
+    { capability: 'animation.toggle', icon: '❚❚' },
   ],
 }
 
@@ -43,7 +43,7 @@ export function normalizeMascotMenu(value: unknown): MascotMenuDefinition | unde
   if (raw.style !== undefined) {
     const input = assertPlainObject(raw.style, 'mascot.menu.style')
     style = {}
-    const ranges = { width: [200, 480], radius: [0, 32], fontSize: [12, 20], itemHeight: [32, 64] }
+    const ranges = { width: [160, 480], radius: [0, 32], fontSize: [12, 20], itemHeight: [32, 64] }
     for (const [key, [min, max]] of Object.entries(ranges)) {
       const value = assertOptionalNumber(input[key], `mascot.menu.style.${key}`, min, max)
       if (value !== undefined) Object.assign(style, { [key]: value })

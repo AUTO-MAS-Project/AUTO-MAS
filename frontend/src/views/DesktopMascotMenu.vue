@@ -32,8 +32,8 @@ const style = computed(() => {
     '--mascot-menu-border': skin?.border ?? colors.border,
     '--mascot-menu-accent': skin?.accent ?? colors.text,
     '--mascot-menu-radius': `${skin?.radius ?? colors.radius}px`,
-    '--mascot-menu-font': `${skin?.fontSize ?? 14}px`,
-    '--mascot-menu-item-height': `${skin?.itemHeight ?? 40}px`,
+    '--mascot-menu-font': `${skin?.fontSize ?? 13}px`,
+    '--mascot-menu-item-height': `${skin?.itemHeight ?? 32}px`,
     '--app-scrollbar-track': 'transparent',
     '--app-scrollbar-thumb': `color-mix(in srgb, ${skin?.text ?? colors.text} 28%, transparent)`,
     '--app-scrollbar-thumb-hover': `color-mix(in srgb, ${skin?.text ?? colors.text} 45%, transparent)`,
@@ -210,7 +210,7 @@ function keydown(event: KeyboardEvent): void {
   box-sizing: border-box;
   max-height: 100%;
   overflow: auto;
-  padding: 6px;
+  padding: 4px;
   color: var(--mascot-menu-text);
   background: var(--mascot-menu-bg);
   border: 1px solid var(--mascot-menu-border);
@@ -222,7 +222,7 @@ function keydown(event: KeyboardEvent): void {
 }
 .menu-items {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 .menu-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -231,10 +231,10 @@ button {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   min-height: var(--mascot-menu-item-height);
-  padding: 8px 10px;
+  padding: 4px 8px;
   border: 0;
   border-radius: calc(var(--mascot-menu-radius) / 2);
   color: inherit;
@@ -265,7 +265,7 @@ button:disabled {
   font-size: 12px;
 }
 .menu-icon {
-  flex: 0 0 18px;
+  flex: 0 0 14px;
   text-align: center;
 }
 .menu-separator {
@@ -276,13 +276,13 @@ button:disabled {
 }
 .menu-heading {
   position: sticky;
-  top: -6px;
+  top: -4px;
   z-index: 1;
   background: var(--mascot-menu-bg);
 }
 .menu-options {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 .menu-empty,
 .menu-error {

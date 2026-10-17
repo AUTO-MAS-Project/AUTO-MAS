@@ -70,13 +70,31 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
     this.data = data
     const area = screen.getDisplayNearestPoint(position).workArea
     const style = data.presentation.style
-    const width = Math.min(Math.round(style?.width ?? 272), Math.max(1, area.width - 16))
-    const rows =
-      data.presentation.layout === 'grid'
-        ? Math.ceil(data.presentation.items.length / 2)
-        : data.presentation.items.length
+    const width = Math.min(Math.round(style?.width ?? 180), Math.max(1, area.width - 16))
+    const columns = data.presentation.layout === 'grid' ? 2 : 1
+    let rows = 0
+    let separators = 0
+    let column = 0
+    for (const item of data.presentation.items) {
+      if ('separator' in item) {
+        separators++
+        column = 0
+      } else {
+        if (column === 0) rows++
+        column = (column + 1) % columns
+      }
+    }
+    // 与菜单的内边距、行间距及分隔线高度一致，避免按整行给分隔线留白。
     const height = Math.min(
-      Math.max(240, Math.round(rows * (style?.itemHeight ?? 40) + 24)),
+      Math.max(
+        160,
+        Math.round(
+          rows * (style?.itemHeight ?? 32) +
+            separators * 9 +
+            Math.max(0, rows + separators - 1) * 2 +
+            18
+        )
+      ),
       Math.max(1, area.height - 16)
     )
     const win = new BrowserWindow({
