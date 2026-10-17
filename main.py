@@ -40,6 +40,7 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
 
 from app.utils import (  # noqa: E402
     get_logger,
+    is_backend_dev_mode,
     is_supervised,
     resource_path,
     sanitize_log_message,
@@ -558,7 +559,8 @@ def main():
     )
 
     app.include_router(core_router)
-    app.include_router(developer_router)
+    if is_backend_dev_mode():
+        app.include_router(developer_router)
     app.include_router(info_router)
     app.include_router(scripts_router)
     app.include_router(plan_router)

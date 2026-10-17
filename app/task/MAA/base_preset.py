@@ -37,12 +37,8 @@ def _validate_maa_base_preset(payload: object) -> dict[str, Any]:
     for index, task in enumerate(queue):
         if not isinstance(task, dict):
             raise ValueError(f"MAA 预设任务 {index + 1} 必须是对象")
-        if (
-            next(iter(task), None) != "$type"
-            or not isinstance(task.get("$type"), str)
-            or not task["$type"]
-        ):
-            raise ValueError(f"MAA 预设任务 {index + 1} 的首字段必须是非空 $type")
+        if not isinstance(task.get("$type"), str) or not task["$type"]:
+            raise ValueError(f"MAA 预设任务 {index + 1} 缺少非空 $type")
         if not isinstance(task.get("TaskType"), str) or not task["TaskType"]:
             raise ValueError(f"MAA 预设任务 {index + 1} 缺少 TaskType")
         if not isinstance(task.get("Name"), str):
