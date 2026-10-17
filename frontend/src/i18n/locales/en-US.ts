@@ -4796,7 +4796,7 @@ export default {
       mascotFpsPackage: 'Follow animation package',
       mascotFpsCustom: 'Custom',
       mascotFpsTip:
-        'Use the package rate or set 1–120 FPS. Press Enter or leave the input to save; the packaged frames loop at the selected rate.',
+        'Follow the animation package or choose 8, 16, 24, 30, 60, or 120 FPS. Changes are saved automatically.',
       importMascot: 'Import pet',
       removeMascot: 'Remove pet',
       mascotImportTip:

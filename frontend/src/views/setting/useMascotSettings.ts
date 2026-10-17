@@ -125,9 +125,13 @@ export function useMascotSettings() {
       await saveConfig({ desktopMascotFps: next })
       savedFps = next
     } catch (error) {
-      if (revision === fpsSaveRevision) requestedFps = savedFps
+      if (revision === fpsSaveRevision) {
+        requestedFps = savedFps
+        fps.value = savedFps ?? DEFAULT_CUSTOM_FPS
+        fpsMode.value = savedFps === null ? 'package' : 'custom'
+        message.error(t('setting.basic.mascotSaveFailed'))
+      }
       logger.error('保存桌宠帧率失败:', error)
-      message.error(t('setting.basic.mascotSaveFailed'))
     }
   }
 

@@ -4167,7 +4167,7 @@ export default {
       mascotFpsPackage: 'アニメーションパックに合わせる',
       mascotFpsCustom: 'カスタム',
       mascotFpsTip:
-        '既定ではパックに合わせます。1～120 FPS を指定し、Enter キーを押すか入力欄から離れると保存され、その速度でアニメーションを繰り返し再生します。',
+        '既定ではパックに合わせます。カスタムでは 8、16、24、30、60、120 FPS から選択でき、変更は自動保存されます。',
       importMascot: 'ペットをインポート',
       removeMascot: 'ペットを削除',
       mascotImportTip:
