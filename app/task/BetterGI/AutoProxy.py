@@ -1145,11 +1145,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self._resolve_log_file_path, self.log_start_time
             )
 
-            # 清事件必须在等待之前、且不能落在 set() 之后：原先 set() 紧跟 clear()
-            # 会把刚置的唤醒抹掉，进程秒退时必然等不到日志行，只能靠日志监控
-            # 60s 空转超时才结束。
-            self.wait_event.clear()
-
             # 启动后若一个 BetterGI 都不剩（参数被旧单实例吞掉 / 进程秒退），直接置失败并唤醒
             # 等待，避免 wait_event 永远等不到日志行而无限卡住（2026-09-15 实机排障）。
             if not await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME):
