@@ -693,11 +693,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            await self._run_pretasks()
             # 上一次尝试的失败摘要与是否重启过客户端：新一次另起日志后界面从头显示，
             # 不在开头写一句，用户只看到「尝试次数: 2/3」，不知道为什么重来。
             previous_failure: str | None = None
             previous_restarted = False
+            # 项目的运行前设置（interface pretask，如 MaaEnd 的「启动游戏（PC）」）放进每次
+            # 尝试里：它自己失败要能重试；游戏被本轮的「关闭游戏」任务或重启关掉后，重试也要
+            # 靠它重新拉起，否则第 2、3 次在找窗口那一步当场失败。
+            pretasks_done = False
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -722,6 +725,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
+                    if not pretasks_done or await self._pretasks_need_rerun(
+                        previous_restarted
+                    ):
+                        await self._run_pretasks()
+                        pretasks_done = True
                     await self._ensure_desktop_game_started()
                     device_config = await self._build_device_config(
                         self.run_plan,
@@ -2182,6 +2190,33 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _shutdown_runner(self) -> None:
         await self._terminate_pretask_process()
         await self._terminate_runner_process()
+
+    async def _pretasks_need_rerun(self, client_restarted: bool) -> bool:
+        """重试前判断要不要再跑一遍已经成功过的运行前设置。
+
+        只在客户端已经不在时重跑：MAS 刚关掉自己起的游戏 / 模拟器，或者 Win32 下
+        控制器的窗口已经找不到（游戏由运行前设置拉起、被队列里的「关闭游戏」任务关掉，
+        MAS 不知道它是谁起的）。游戏还开着时不重跑，免得项目的启动脚本对着已在运行的
+        游戏再走一遍。
+        """
+
+        if self.run_plan is None or not self.run_plan.pretasks:
+            return False
+        if client_restarted:
+            return True
+        if self.run_plan.controllerType != "Win32" or self.interface_model is None:
+            return False
+        if _optional_int(self.script_config.get("Device", "HWnd")):
+            return False
+        controller = _find_controller(
+            self.interface_model, self.run_plan.controllerName
+        )
+        if not controller_has_window_rules(controller):
+            return False
+        if await asyncio.to_thread(_match_controller_windows, controller):
+            return False
+        self._append_log("未找到游戏窗口，重新应用运行前设置")
+        return True
 
     async def _run_pretasks(self) -> None:
         if self.run_plan is None:
