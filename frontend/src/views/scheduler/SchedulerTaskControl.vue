@@ -289,7 +289,7 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
 const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
-// 仅当选中队列任务时显示恢复脚本下拉框。
+// 仅普通队列支持指定续跑起点，循环队列按既有排期运行。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
 const selectedTaskOption = computed(() =>
   props.taskOptions.find(opt => opt.value === localSelectedTaskId.value)
@@ -300,7 +300,10 @@ const selectedIsQueueTask = computed(() =>
 )
 
 const showResumeScriptSelect = computed(
-  () => Boolean(localSelectedTaskId.value) && selectedIsQueueTask.value
+  () =>
+    Boolean(localSelectedTaskId.value) &&
+    selectedIsQueueTask.value &&
+    props.selectedMode === TaskCreateIn.mode.AUTO_PROXY
 )
 
 // 脚本任务（非队列）也用「本次运行范围」挑账号，它是唯一入口：

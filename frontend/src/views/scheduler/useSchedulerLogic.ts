@@ -844,6 +844,8 @@ export function useSchedulerLogic() {
       tab.selectedMode = tab.isCycleQueue
         ? TaskCreateIn.mode.CYCLE_RUN
         : TaskCreateIn.mode.AUTO_PROXY
+      // 循环执行不消费续跑起点，清理旧面板保存的无效选择。
+      if (tab.isCycleQueue) tab.resumeFromScriptId = null
       return true
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
