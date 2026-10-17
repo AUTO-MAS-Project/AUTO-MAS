@@ -29,8 +29,11 @@ import {
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerMascotHandlers } from './ipc/mascotHandlers'
-import { createDesktopMascotHost } from './services/desktopMascotHost'
-import type { DesktopMascotPreferences } from './services/desktopMascotService'
+import {
+  createDesktopMascotHost,
+  type DesktopMascotHostPreferences,
+} from './services/desktopMascotHost'
+import { DesktopMascotService } from './services/desktopMascotService'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
@@ -231,7 +234,7 @@ let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
-interface AppConfig extends DesktopMascotPreferences {
+interface AppConfig extends DesktopMascotHostPreferences {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -647,6 +650,7 @@ let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 const desktopMascot = createDesktopMascotHost({
+  createRuntime: options => new DesktopMascotService(options),
   readPreferences: loadConfig,
   savePreferences: patch => saveConfig({ ...loadConfig(), ...patch }),
   getMainWindow: () => mainWindow,

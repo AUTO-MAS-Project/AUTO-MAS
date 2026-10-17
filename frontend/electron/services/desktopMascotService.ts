@@ -9,32 +9,8 @@ import type {
   DesktopMascotUpdate,
   DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
-import type { MascotAssets } from '../../src/types/mascotPack'
 import { getMascotLayout, getMascotSize } from './desktopMascotGeometry'
-
-export interface DesktopMascotPreferences {
-  appearanceId?: string | null
-  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
-  desktopMascotId?: string | null
-  desktopMascotEnabled?: boolean
-  /** 为空时使用动画包的帧率。 */
-  desktopMascotFps?: number | null
-  desktopMascotAnimationPaused?: boolean
-  desktopMascotIdleMessagePaused?: boolean
-  desktopMascotPosition?: Point
-}
-
-interface DesktopMascotOptions {
-  readPreferences(): DesktopMascotPreferences
-  resolveAssets(
-    selection: Pick<DesktopMascotPreferences, 'appearanceId' | 'desktopMascotId'>
-  ): MascotAssets | null
-  savePosition(position: Point): void
-  saveAnimationPaused(paused: boolean): void
-  saveIdleMessagePaused(paused: boolean): void
-  getMainWindow(): BrowserWindow | null
-  onError(error: unknown): void
-}
+import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
 
@@ -51,7 +27,7 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
   return mask
 }
 
-export class DesktopMascotService {
+export class DesktopMascotService implements DesktopMascotRuntime {
   private disposed = false
   private window: BrowserWindow | null = null
   private data: DesktopMascotData | null = null
@@ -234,10 +210,7 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const appearance = this.options.resolveAssets({
-      appearanceId: preferences.appearanceId,
-      desktopMascotId: preferences.desktopMascotId,
-    })
+    const appearance = this.options.resolveAssets()
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
@@ -334,7 +307,7 @@ export class DesktopMascotService {
     }
 
     const currentBounds = this.window?.getBounds()
-    const mainBounds = this.options.getMainWindow()?.getBounds()
+    const mainBounds = this.options.getInitialBounds()
     const saved = currentBounds
       ? {
           x: currentBounds.x + (this.data?.offsetX ?? 0),

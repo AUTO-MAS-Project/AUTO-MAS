@@ -7,15 +7,26 @@ import type {
 import type { MascotAssets } from '../../src/types/mascotPack'
 import { broadcastMascotChange, registerDesktopMascotHandlers } from '../ipc/mascotHandlers'
 import { getLogger } from './logger'
-import { DesktopMascotService, type DesktopMascotPreferences } from './desktopMascotService'
+import type {
+  DesktopMascotOptions,
+  DesktopMascotPreferences,
+  DesktopMascotRuntime,
+} from './desktopMascotTypes'
+
+export interface DesktopMascotHostPreferences extends DesktopMascotPreferences {
+  appearanceId?: string | null
+  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
+  desktopMascotId?: string | null
+}
 
 interface DesktopMascotHostOptions {
-  readPreferences(): DesktopMascotPreferences
-  savePreferences(patch: Partial<DesktopMascotPreferences>): void
+  readPreferences(): DesktopMascotHostPreferences
+  savePreferences(patch: Partial<DesktopMascotHostPreferences>): void
   getMainWindow(): BrowserWindow | null
   resolveAssets(
-    selection: Pick<DesktopMascotPreferences, 'appearanceId' | 'desktopMascotId'>
+    selection: Pick<DesktopMascotHostPreferences, 'appearanceId' | 'desktopMascotId'>
   ): MascotAssets | null
+  createRuntime(options: DesktopMascotOptions): DesktopMascotRuntime
 }
 
 /** 只装配桌宠服务与宿主接线；窗口行为和资源校验仍由已有服务负责。 */
@@ -26,19 +37,22 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
     const win = options.getMainWindow()
     if (win && !win.isDestroyed()) win.webContents.send('desktop-mascot:error')
   }
-  const serviceOptions = {
+  const serviceOptions: DesktopMascotOptions = {
     readPreferences: options.readPreferences,
-    resolveAssets: options.resolveAssets,
+    resolveAssets: () => {
+      const { appearanceId, desktopMascotId } = options.readPreferences()
+      return options.resolveAssets({ appearanceId, desktopMascotId })
+    },
     savePosition: (position: Electron.Point) =>
       options.savePreferences({ desktopMascotPosition: position }),
     saveAnimationPaused: (paused: boolean) =>
       options.savePreferences({ desktopMascotAnimationPaused: paused }),
     saveIdleMessagePaused: (paused: boolean) =>
       options.savePreferences({ desktopMascotIdleMessagePaused: paused }),
-    getMainWindow: options.getMainWindow,
+    getInitialBounds: () => options.getMainWindow()?.getBounds(),
     onError: reportError,
   }
-  let service: DesktopMascotService | undefined
+  let service: DesktopMascotRuntime | undefined
   let disposed = false
   let detachMainWindow: (() => void) | undefined
   // 通信输入属于应用宿主，运行实例释放后仍可接收；重建时只恢复当前状态，不重播提醒。
@@ -96,7 +110,7 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
   return {
     mount(): void {
       if (disposed || service) return
-      service = new DesktopMascotService(serviceOptions)
+      service = options.createRuntime(serviceOptions)
       if (idleMessage) service.setIdleMessage(idleMessage)
       service.setActivity(working, animate)
       service.setReady(ready, labels, colors)

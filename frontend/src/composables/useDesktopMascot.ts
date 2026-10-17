@@ -1,8 +1,8 @@
 import { effectScope, getCurrentScope, onScopeDispose, watch, type Ref } from 'vue'
 import type { TaskRuntimeEvent, TaskRuntimeState } from './useTaskRuntimeState'
-import type { ElectronAPI } from '@/types/electron'
 import type {
   DesktopMascotColors,
+  DesktopMascotHostAPI,
   DesktopMascotIdleMessage,
   DesktopMascotMenuLabels,
 } from '@/types/desktopMascot'
@@ -20,14 +20,7 @@ interface DesktopMascotInputs {
 }
 
 interface DesktopMascotCapabilities {
-  api: Pick<
-    ElectronAPI,
-    | 'setDesktopMascotReady'
-    | 'setDesktopMascotActivity'
-    | 'setDesktopMascotIdleMessage'
-    | 'showDesktopMascotNotice'
-    | 'onDesktopMascotError'
-  >
+  api: DesktopMascotHostAPI
   tasks: {
     snapshot(): TaskRuntimeState[]
     subscribe(listener: (event: TaskRuntimeEvent) => void): () => void

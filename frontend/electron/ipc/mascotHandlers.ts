@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import type { DesktopMascotService } from '../services/desktopMascotService'
+import type { DesktopMascotRuntime } from '../services/desktopMascotTypes'
 import type {
   DesktopMascotColors,
   DesktopMascotIdleMessage,
@@ -93,7 +93,7 @@ export function registerMascotHandlers(onChanged: () => void): void {
 /** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */
 export function registerDesktopMascotHandlers(
   service: Pick<
-    DesktopMascotService,
+    DesktopMascotRuntime,
     | 'setReady'
     | 'getData'
     | 'setIdleMessage'

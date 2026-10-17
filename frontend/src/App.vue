@@ -23,6 +23,10 @@ import { useHomeGreetingStore } from './stores/homeGreeting'
 import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
 import { useLocale } from './composables/useLocale.ts'
 import { useDesktopMascot } from './composables/useDesktopMascot'
+import { useTrayTaskActions } from './composables/useTrayTaskActions'
+import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
+import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
+import { TaskCreateIn } from './api'
 
 const logger = window.electronAPI.getLogger('App组件')
 
@@ -49,6 +53,22 @@ const isInitializationPage = computed(() => route.name === 'Initialization')
 const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
 )
+
+const { trackStartedTask } = useSchedulerLogic()
+useTrayTaskActions({
+  active: computed(
+    () =>
+      !isStandalonePage.value &&
+      (isInitializationPage.value || (isAppReady.value && performanceStore.initialized))
+  ),
+  canStart: () => !isBackendRuntimeUpdating(),
+  onStarted: task =>
+    trackStartedTask({
+      ...task,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      modeLabel: t('scheduler.mode.autoProxy'),
+    }),
+})
 
 useDesktopMascot(
   {

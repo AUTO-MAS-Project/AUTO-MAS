@@ -67,6 +67,19 @@ export interface DesktopMascotMenuLabels {
   resumeIdleMessage: string
 }
 
+/** 主界面向桌宠宿主同步状态的最小能力面。 */
+export interface DesktopMascotHostAPI {
+  setDesktopMascotReady(
+    ready: boolean,
+    labels?: DesktopMascotMenuLabels,
+    colors?: DesktopMascotColors
+  ): Promise<void>
+  setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
+  setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
+  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
+  onDesktopMascotError(callback: () => void): () => void
+}
+
 export interface DesktopMascotAPI {
   getData(): Promise<DesktopMascotData | null>
   onChanged(callback: (data: DesktopMascotData) => void): () => void
