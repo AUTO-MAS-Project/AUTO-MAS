@@ -20,7 +20,7 @@ from app.core import Config
 from app.core.notify import (
     DispatchResult,
     dispatch,
-    user_statistic_targets,
+    statistic_targets,
 )
 from app.models.config import ZzzOdUserConfig
 from app.models.notification import NotifyPayload
@@ -42,8 +42,8 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "统计信息":
-        # ZZZ-OD 的统计信息只推用户独立渠道, 不走全局
-        targets = user_statistic_targets(user_config)
+        # 统计信息遵循全局开关，并保留用户独立渠道。
+        targets = statistic_targets(user_config)
         if not targets:
             return DispatchResult()
 
