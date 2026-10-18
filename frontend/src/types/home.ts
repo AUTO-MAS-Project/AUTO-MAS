@@ -18,6 +18,8 @@ export type HomeModuleKey =
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
   hiddenModules: HomeModuleKey[]
+  /** 手动开启的游戏活动；其余未隐藏的游戏默认随托管脚本显示 */
+  shownActivityModules?: HomeModuleKey[]
   hideScrollHint?: boolean
   /** 活动轮播是否自动播放；未设置按开启处理 */
   carouselAutoplay?: boolean

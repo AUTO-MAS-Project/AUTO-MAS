@@ -3157,6 +3157,8 @@ export default {
       scrollHint: 'スクロールのヒント',
       scrollHintVisibility: 'スクロールのヒントを表示',
       activityGroup: 'カルーセルに入るゲーム',
+      activityDefaults:
+        '管理中のスクリプトに対応するゲームを初期表示します。手動設定が優先されます。',
       carouselAutoplay: '自動切り替え',
       carouselAutoplayVisibility: 'イベントカルーセルの自動切り替え',
     },

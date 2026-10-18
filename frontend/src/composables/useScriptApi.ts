@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   type ScriptUpdateIn,
+  type ScriptGetOut,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
@@ -21,6 +22,9 @@ import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
 
 const logger = window.electronAPI.getLogger('脚本API')
+
+// 首页卫星与活动区共用在途的列表请求，完成后释放，后续读取仍取最新数据。
+let scriptListRequest: Promise<ScriptGetOut> | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
 type ScriptWithUsers = ScriptDetail & { users: User[] }
@@ -94,6 +98,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       // 播放添加脚本成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_script_instance')
@@ -126,7 +131,13 @@ export function useScriptApi() {
     }
 
     try {
-      const response = await Service.getScriptApiScriptsGetPost({})
+      if (!scriptListRequest) {
+        const request = Service.getScriptApiScriptsGetPost({}).finally(() => {
+          if (scriptListRequest === request) scriptListRequest = null
+        })
+        scriptListRequest = request
+      }
+      const response = await scriptListRequest
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本列表失败'
@@ -1520,6 +1531,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       // 播放删除脚本成功音频
       const { playSound } = useAudioPlayer()
       await playSound('delete_script_instance')
@@ -1568,6 +1580,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
@@ -1599,6 +1612,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
@@ -1613,7 +1627,12 @@ export function useScriptApi() {
   }
 
   const importScriptConfigFile = (scriptId: string, userId: string | null) =>
-    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId }).then(
+      response => {
+        if (response.code === 200) scriptListRequest = null
+        return response
+      }
+    )
 
   return {
     loading,

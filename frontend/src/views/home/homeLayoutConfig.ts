@@ -1,4 +1,5 @@
 import type { HomeLayoutConfig, HomeModuleKey } from '@/types/home'
+import type { ScriptType } from '@/types/script'
 
 /** 活动轮播容器自身的模块键，既是排序里的一格，也是整组游戏卡的总开关 */
 export const HOME_ACTIVITY_CAROUSEL_KEY: HomeModuleKey = 'activities'
@@ -33,6 +34,26 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'arknights',
   'stellasora',
 ]
+
+// 与活动提醒使用相同的专项归属；通用脚本没有游戏身份，不按名称或路径猜测。
+const ACTIVITY_GAME_BY_SCRIPT_TYPE: Partial<Record<ScriptType, HomeModuleKey>> = {
+  MAA: 'arknights',
+  MaaEnd: 'endfield',
+  SRC: 'starrail',
+  HSR: 'starrail',
+  BetterGI: 'genshin',
+  ZzzOd: 'zenless',
+  Okww: 'wutheringwaves',
+  OkNte: 'nte',
+  M9A: 'reverse1999',
+  BAAH: 'bluearchive',
+  MSS: 'stellasora',
+}
+
+export const managedHomeActivityKeys = (scripts: { type: ScriptType }[]): HomeModuleKey[] =>
+  HOME_ACTIVITY_MODULE_KEYS.filter(key =>
+    scripts.some(script => ACTIVITY_GAME_BY_SCRIPT_TYPE[script.type] === key)
+  )
 
 /** 已接入日常便笺的游戏，提供首页社区信息的独立开关。 */
 export const HOME_ACTIVITY_NOTE_KEYS: HomeModuleKey[] = [
@@ -95,6 +116,9 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   return {
     moduleOrder: isMigration ? placeCarousel(mergedOrder) : mergedOrder,
     hiddenModules,
+    shownActivityModules: normalizeModuleKeys(config.shownActivityModules).filter(
+      isHomeActivityModuleKey
+    ),
     hideScrollHint: config.hideScrollHint === true,
     // 新装及缺少该字段的旧配置统一默认关闭，避免阅读时自动切换；保留显式开启的选择。
     carouselAutoplay: config.carouselAutoplay === true,

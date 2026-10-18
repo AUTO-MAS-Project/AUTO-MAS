@@ -3809,6 +3809,8 @@ export default {
       scrollHint: 'Scroll hint',
       scrollHintVisibility: 'Show the scroll hint',
       activityGroup: 'Games in the carousel',
+      activityDefaults:
+        'Games with managed scripts are shown by default. Manual choices take priority.',
       carouselAutoplay: 'Auto-rotate',
       carouselAutoplayVisibility: 'Auto-rotate the event carousel',
       activityNotesGroup: 'Sign-in status and daily notes on home',
