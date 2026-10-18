@@ -33,6 +33,7 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'bluearchive',
   'arknights',
   'stellasora',
+  'infinitynikki',
 ]
 
 // 与活动提醒使用相同的专项归属；通用脚本没有游戏身份，不按名称或路径猜测。

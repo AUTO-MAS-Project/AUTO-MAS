@@ -171,6 +171,17 @@
                 @refresh="nevernessToEvernessSource.refresh"
               />
 
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'infinitynikki'"
+                :title="t('home.module.infinitynikki')"
+                :accent="getActivityAccent('infinitynikki')"
+                :empty-text="t('home.empty.infinitynikki')"
+                :loading="infinityNikkiSource.loading.value"
+                :overview="infinityNikkiSource.overview.value"
+                vertical
+                @refresh="infinityNikkiSource.refresh"
+              />
+
               <HomeReverse1999Overview
                 v-else-if="gameKey === 'reverse1999'"
                 :loading="reverse1999Source.loading.value"
@@ -312,13 +323,14 @@ const {
 
 const { t } = useI18n()
 
-// 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
+// SRA 活动卡直连公开接口，独立快照/失败态，不依赖聚合接口
 // 传游戏名的 i18n key（而非 t() 的结果）：失败文案在出错时按当前语言现取
 const starRailSource = useSraActivitySource('sr', 'home.game.starrail')
 const genshinSource = useSraActivitySource('ys', 'home.game.genshin')
 const zenlessSource = useSraActivitySource('zzz', 'home.game.zenless')
 const wutheringWavesSource = useSraActivitySource('ww', 'home.game.wutheringwaves')
 const nevernessToEvernessSource = useSraActivitySource('nte', 'home.game.nte')
+const infinityNikkiSource = useSraActivitySource('infinitynikki', 'home.game.infinitynikki')
 const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
 const arknightsSource = useArknightsActivitySource()
@@ -340,6 +352,8 @@ const sraSourceFor = (key: HomeModuleKey) => {
       return wutheringWavesSource
     case 'nte':
       return nevernessToEvernessSource
+    case 'infinitynikki':
+      return infinityNikkiSource
     case 'reverse1999':
       return reverse1999Source
     default:
@@ -354,6 +368,7 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       key,
       title: t(`home.game.${key}`),
       accent: getActivityAccent(key),
+      detailPlacement: key === 'infinitynikki' ? ('right' as const) : undefined,
     }
 
     if (key === 'endfield') {
@@ -428,6 +443,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
   ['zenless', zenlessSource],
   ['wutheringwaves', wutheringWavesSource],
   ['nte', nevernessToEvernessSource],
+  ['infinitynikki', infinityNikkiSource],
   ['reverse1999', reverse1999Source],
   ['bluearchive', blueArchiveSource],
   ['arknights', arknightsSource],

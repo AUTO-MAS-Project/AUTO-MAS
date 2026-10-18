@@ -2,7 +2,7 @@
   <a-card
     :title="title"
     class="sra-card"
-    :class="{ 'is-plain': activityPlain }"
+    :class="{ 'is-plain': activityPlain, 'is-sidebar': vertical }"
     :style="cardStyle"
     :loading="loading"
   >
@@ -94,11 +94,14 @@ const props = withDefaults(
     emptyText: string
     /** 活动卡片始终使用无封面浅色样式（Banner 有图时也生效） */
     plainActivities?: boolean
+    /** 活动在主图右侧时竖排，沿用原有活动卡片 */
+    vertical?: boolean
     sourceName?: string
     sourceUrl?: string
   }>(),
   {
     plainActivities: false,
+    vertical: false,
     sourceName: 'SRA',
     sourceUrl: 'https://starrailassistant.top',
   }
@@ -316,5 +319,48 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
   .activity-list.is-plain .activity-card {
     width: 200px;
   }
+}
+
+.sra-card.is-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.is-sidebar :deep(.ant-card-head) {
+  flex-shrink: 0;
+}
+
+.is-sidebar :deep(.ant-card-body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.is-sidebar .activity-list {
+  flex-direction: column;
+  overflow-x: visible;
+  scroll-snap-type: none;
+}
+
+.is-sidebar .activity-list .activity-card,
+.is-sidebar .activity-list .activity-item {
+  width: 100%;
+}
+
+.is-sidebar .activity-name {
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.is-sidebar .activity-meta {
+  flex-wrap: wrap;
+}
+
+.is-sidebar .activity-list.is-plain .activity-content {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 </style>

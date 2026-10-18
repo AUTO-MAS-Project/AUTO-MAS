@@ -3029,6 +3029,7 @@ export default {
       reverse1999: 'リバース：1999 のイベント情報',
       bluearchive: 'ブルーアーカイブのイベント情報',
       stellasora: 'ステラソラのイベント情報',
+      infinitynikki: 'インフィニティニキのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -3042,6 +3043,7 @@ export default {
       reverse1999: 'リバース：1999',
       bluearchive: 'ブルーアーカイブ',
       stellasora: 'ステラソラ',
+      infinitynikki: 'インフィニティニキ',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -3063,6 +3065,7 @@ export default {
       nte: '開催中の Neverness to Everness のイベントはありません',
       reverse1999: '開催中のリバース：1999 のイベントはありません',
       stellasora: '開催中のステラソラのイベントはありません',
+      infinitynikki: '開催中のインフィニティニキのイベントはありません',
       noData: 'データなし',
     },
     stella: {
