@@ -1390,22 +1390,35 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('log:export', async () => {
+ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
   try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    if (!mainWindow)
+      return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
+    const dialogLabels =
+      rawDialogLabels && typeof rawDialogLabels === 'object'
+        ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+        : undefined
     const appRoot = getAppRoot()
     const debugDir = path.join(appRoot, 'debug')
 
     if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在' }
+      return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
     }
 
     // 选择保存位置
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出日志',
+      title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
       defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      filters: [
+        {
+          name:
+            typeof dialogLabels?.zipFilterName === 'string'
+              ? dialogLabels.zipFilterName
+              : 'ZIP文件',
+          extensions: ['zip'],
+        },
+      ],
     })
 
     if (result.canceled || !result.filePath) {
@@ -1429,7 +1442,7 @@ ipcMain.handle('log:export', async () => {
       includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
     })
     if (!hasFiles) {
-      return { success: false, error: '日志目录为空，没有可导出的文件' }
+      return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
     }
 
     // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
@@ -1452,6 +1465,7 @@ ipcMain.handle('log:export', async () => {
         skipped.length > 0
           ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
           : '日志压缩包导出成功',
+      skippedPaths: skipped.map(entry => entry.path),
       zipPath: zipPath,
     }
   } catch (error) {
