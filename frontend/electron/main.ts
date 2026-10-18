@@ -826,6 +826,11 @@ function createWindow() {
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
 
+  // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
+  win.webContents.on('did-navigate', () => {
+    if (quitConfirmationPending) cancelQuitRequest()
+  })
+
   // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
