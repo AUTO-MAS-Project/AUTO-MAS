@@ -15,9 +15,11 @@ import {
 } from 'three'
 import {
   advectionFragmentShaderSource,
+  curlFragmentShaderSource,
   divergenceFragmentShaderSource,
   gradientSubtractFragmentShaderSource,
   pressureFragmentShaderSource,
+  vorticityFragmentShaderSource,
 } from '@/components/inspira/fluidShaders'
 import { FLUID_DT, STAR_COLORS, type FluidSplat } from './visualState'
 
@@ -45,13 +47,13 @@ const splatShader = `
   uniform float limit;
   void main() {
     vec2 p = vUv - point; p.x *= aspectRatio;
-    float weight = exp(-dot(p,p) / 0.00018);
+    float weight = exp(-dot(p,p) / 0.0004);
     vec3 result = texture2D(uTarget, vUv).xyz + impulse * weight;
     gl_FragColor = vec4(clamp(result, vec3(-limit), vec3(limit)), 1.0);
   }
 `
 
-/** 单向、屏幕空间视觉流体。复用光标的四个纯 shader，不持有输入或动画循环。 */
+/** 单向、屏幕空间视觉流体。复用光标的纯 shader，不持有输入或动画循环。 */
 export class StarFluid {
   private readonly targets: WebGLRenderTarget[] = []
   private readonly materials: ShaderMaterial[] = []
@@ -63,11 +65,14 @@ export class StarFluid {
   private readonly dye: WebGLRenderTarget[]
   private readonly pressure: WebGLRenderTarget[]
   private readonly divergence: WebGLRenderTarget
+  private readonly curlTarget: WebGLRenderTarget
   private readonly advect: ShaderMaterial
   private readonly diverge: ShaderMaterial
   private readonly solvePressure: ShaderMaterial
   private readonly project: ShaderMaterial
   private readonly splat: ShaderMaterial
+  private readonly curl: ShaderMaterial
+  private readonly vorticity: ShaderMaterial
   private disposed = false
 
   constructor(private readonly renderer: WebGLRenderer) {
@@ -76,6 +81,8 @@ export class StarFluid {
     this.solvePressure = this.material(pressureFragmentShaderSource)
     this.project = this.material(gradientSubtractFragmentShaderSource)
     this.splat = this.material(splatShader)
+    this.curl = this.material(curlFragmentShaderSource)
+    this.vorticity = this.material(vorticityFragmentShaderSource, { BOUNDED_VELOCITY: 1 })
     this.quad = new Mesh(this.geometry, this.splat)
     this.quad.frustumCulled = false
     this.scene.add(this.quad)
@@ -90,6 +97,7 @@ export class StarFluid {
       this.dye = [this.target(DYE_SIZE), this.target(DYE_SIZE)]
       this.pressure = [this.target(VELOCITY_SIZE), this.target(VELOCITY_SIZE)]
       this.divergence = this.target(VELOCITY_SIZE)
+      this.curlTarget = this.target(VELOCITY_SIZE)
       for (const target of this.targets) {
         renderer.setRenderTarget(target)
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
@@ -125,7 +133,7 @@ export class StarFluid {
     const time = Math.min(dt, FLUID_DT)
     const previous = this.renderer.getRenderTarget()
     // 平流速度后再注入、投影；压力每次归零，防止旧解无限累积。
-    this.advection(this.velocity, this.velocity[0].texture, time, 1.5)
+    this.advection(this.velocity, this.velocity[0].texture, time, 1.2)
     for (const source of sources.slice(0, 3 * 8)) {
       const u = this.splat.uniforms
       u.point.value.set(source.x, source.y)
@@ -138,11 +146,17 @@ export class StarFluid {
       )
       this.ping(this.splat, this.velocity, { uTarget: this.velocity[0].texture })
       const color = new Color(STAR_COLORS[source.star])
-      const intensity = source.amount * (1.5 + Math.min(1, Math.hypot(source.vx, source.vy) * 2))
+      const intensity = source.amount * (5 + Math.min(3, Math.hypot(source.vx, source.vy) * 8))
       u.limit.value = 2
       u.impulse.value.set(color.r, color.g, color.b).multiplyScalar(intensity)
       this.ping(this.splat, this.dye, { uTarget: this.dye[0].texture })
     }
+    this.pass(this.curl, this.curlTarget, { uVelocity: this.velocity[0].texture })
+    this.vorticity.uniforms.dt.value = time
+    this.ping(this.vorticity, this.velocity, {
+      uVelocity: this.velocity[0].texture,
+      uCurl: this.curlTarget.texture,
+    })
     this.pass(this.diverge, this.divergence, { uVelocity: this.velocity[0].texture })
     for (const target of this.pressure) {
       this.renderer.setRenderTarget(target)
@@ -157,7 +171,7 @@ export class StarFluid {
       uPressure: this.pressure[0].texture,
       uVelocity: this.velocity[0].texture,
     })
-    this.advection(this.dye, this.velocity[0].texture, time, 0.8)
+    this.advection(this.dye, this.velocity[0].texture, time, 0.55)
     this.renderer.setRenderTarget(previous)
   }
 
@@ -188,6 +202,8 @@ export class StarFluid {
         uTarget: { value: null },
         uPressure: { value: null },
         uDivergence: { value: null },
+        uCurl: { value: null },
+        curl: { value: 3 },
         point: { value: new Vector2() },
         impulse: { value: new Vector3() },
         limit: { value: 2 },

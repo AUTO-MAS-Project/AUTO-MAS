@@ -36,9 +36,9 @@ export class ThreeStarScene {
   private readonly renderer: WebGLRenderer
   private readonly world = new Scene()
   private readonly screen = new Scene()
-  private readonly camera = new PerspectiveCamera(38, 1, 0.05, 300)
+  private readonly camera = new PerspectiveCamera(34, 1, 0.05, 300)
   private readonly screenCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
-  private readonly sphere = new SphereGeometry(1, 32, 24)
+  private readonly sphere = new SphereGeometry(1, 48, 32)
   private readonly plane = new PlaneGeometry(2, 2)
   private readonly materials: ShaderMaterial[] = []
   private readonly stars: Mesh<SphereGeometry, ShaderMaterial>[] = []
@@ -56,8 +56,8 @@ export class ThreeStarScene {
   private fluidElapsed = 0
   private elapsed = 0
   private flash: { kind: TaskFlash; at: number } | null = null
-  private distance = 5.8
-  private lastFluidDistance = 5.8
+  private distance = 3.8
+  private lastFluidDistance = 3.8
   private pointer = new Vector2()
   private lastFluidPointer = new Vector2()
   private readonly tmp = new Vector3()
@@ -116,9 +116,9 @@ export class ThreeStarScene {
         })
         this.materials.push(surface, corona)
         const star = new Mesh(this.sphere, surface)
-        star.scale.setScalar(0.105)
+        star.scale.setScalar(0.17)
         const glow = new Mesh(this.plane, corona)
-        glow.scale.setScalar(0.23)
+        glow.scale.setScalar(0.37)
         this.stars.push(star)
         this.coronas.push(glow)
         this.world.add(star, glow)
@@ -176,7 +176,7 @@ export class ThreeStarScene {
       extent = Math.max(extent, position.length())
     }
     // 只调整相机。展示尺度上限之外仍保留物理位置，由方向提示告知用户。
-    const wanted = Math.min(80, Math.max(5.8, (extent * 3.6) / Math.min(1, this.camera.aspect)))
+    const wanted = Math.min(80, Math.max(3.8, (extent * 3.4) / Math.min(1, this.camera.aspect)))
     this.distance += (wanted - this.distance) * (1 - Math.exp(-dt * 2))
     this.camera.position.set(
       this.pointer.x * this.distance,

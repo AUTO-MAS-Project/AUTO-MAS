@@ -33,6 +33,7 @@ const reason = ref(session.solver.fault ?? '')
 const budgetLimited = ref(false)
 const simulationTime = ref(session.solver.time)
 const energyError = ref(0)
+const simulationSpeed = ref(1)
 const labels = shallowRef<ProjectedStar[]>([])
 const roles = ['schedule', 'execute', 'feedback'] as const
 const activeTypes = computed(() =>
@@ -200,7 +201,11 @@ function renderFrame(now: number): void {
   const dt = clock.tick(now)
   try {
     const started = performance.now()
-    const result = session.solver.advance(dt * 0.35, 64, () => performance.now() - started > 3)
+    const result = session.solver.advance(
+      dt * simulationSpeed.value,
+      64,
+      () => performance.now() - started > 3
+    )
     budgetLimited.value = result.budgetLimited
     if (session.solver.fault) reason.value = session.solver.fault
     // 只用已接受状态。求解器停下时不再注入或推进流体。
@@ -278,6 +283,14 @@ function pointerMove(event: PointerEvent): void {
     <div class="three-star-toolbar">
       <span>{{ t('home.threeStar.title') }}</span>
       <a-space size="small">
+        <a-select
+          v-model:value="simulationSpeed"
+          size="small"
+          class="three-star-speed"
+          :aria-label="t('home.threeStar.speed')"
+          :disabled="staticMode || fallback"
+          :options="[0.5, 1, 2, 4].map(value => ({ value, label: `${value}×` }))"
+        />
         <a-button size="small" :disabled="!!reason || staticMode || fallback" @click="togglePause">
           {{ t(blocked ? 'home.threeStar.resume' : 'home.threeStar.pause') }}
         </a-button>
@@ -364,10 +377,17 @@ function pointerMove(event: PointerEvent): void {
   display: flex;
   align-items: center;
   gap: 4px;
-  transform: translate(12px, 12px);
+  transform: translate(24px, 20px);
+  padding: 2px 6px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
   pointer-events: none;
   font-size: 12px;
   color: var(--ant-color-text-secondary);
+}
+.three-star-speed {
+  width: 72px;
 }
 .three-star-badge {
   display: inline-flex;

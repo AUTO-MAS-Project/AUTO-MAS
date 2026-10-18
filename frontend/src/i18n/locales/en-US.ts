@@ -3599,6 +3599,7 @@ export default {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
     threeStar: {
+      speed: 'Simulation speed',
       title: 'Three-star gravity',
       pause: 'Pause',
       resume: 'Resume',

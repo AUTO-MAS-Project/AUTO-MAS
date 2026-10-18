@@ -2963,6 +2963,7 @@ export default {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
     threeStar: {
+      speed: 'シミュレーション速度',
       title: '三つ星の重力場',
       pause: '一時停止',
       resume: '再開',

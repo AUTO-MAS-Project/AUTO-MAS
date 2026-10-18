@@ -3463,6 +3463,7 @@ export default {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
     threeStar: {
+      speed: '模拟速度',
       title: '三星引力场',
       pause: '暂停',
       resume: '继续',

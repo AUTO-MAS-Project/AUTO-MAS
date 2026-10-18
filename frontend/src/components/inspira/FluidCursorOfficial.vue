@@ -8,6 +8,8 @@
 import { onMounted, onUnmounted, ref, watch, withDefaults } from 'vue'
 import {
   advectionFragmentShaderSource,
+  curlFragmentShaderSource,
+  vorticityFragmentShaderSource,
   divergenceFragmentShaderSource,
   pressureFragmentShaderSource,
   gradientSubtractFragmentShaderSource,
@@ -148,58 +150,6 @@ const splatFragmentShaderSource = `
     vec3 splat = exp(-dot(p, p) / radius) * color;
     vec3 base = texture2D(uTarget, vUv).xyz;
     gl_FragColor = vec4(base + splat, 1.0);
-  }
-`
-
-const curlFragmentShaderSource = `
-  precision mediump float;
-  precision mediump sampler2D;
-  varying highp vec2 vUv;
-  varying highp vec2 vL;
-  varying highp vec2 vR;
-  varying highp vec2 vT;
-  varying highp vec2 vB;
-  uniform sampler2D uVelocity;
-
-  void main () {
-    float L = texture2D(uVelocity, vL).y;
-    float R = texture2D(uVelocity, vR).y;
-    float T = texture2D(uVelocity, vT).x;
-    float B = texture2D(uVelocity, vB).x;
-    float vorticity = R - L - T + B;
-    gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
-  }
-`
-
-const vorticityFragmentShaderSource = `
-  precision highp float;
-  precision highp sampler2D;
-  varying vec2 vUv;
-  varying vec2 vL;
-  varying vec2 vR;
-  varying vec2 vT;
-  varying vec2 vB;
-  uniform sampler2D uVelocity;
-  uniform sampler2D uCurl;
-  uniform float curl;
-  uniform float dt;
-
-  void main () {
-    float L = texture2D(uCurl, vL).x;
-    float R = texture2D(uCurl, vR).x;
-    float T = texture2D(uCurl, vT).x;
-    float B = texture2D(uCurl, vB).x;
-    float C = texture2D(uCurl, vUv).x;
-
-    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
-    force /= length(force) + 0.0001;
-    force *= curl * C;
-    force.y *= -1.0;
-
-    vec2 velocity = texture2D(uVelocity, vUv).xy;
-    velocity += force * dt;
-    velocity = min(max(velocity, -1000.0), 1000.0);
-    gl_FragColor = vec4(velocity, 0.0, 1.0);
   }
 `
 
