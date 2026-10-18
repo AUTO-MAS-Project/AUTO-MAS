@@ -558,9 +558,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.owner_config.get("OneDragon", "IfUseTeams")
         )
         self.one_dragon_teams = (
-            team_resolver.parse_teams(
-                self.owner_config.get("OneDragon", "Teams") or ""
-            )
+            team_resolver.parse_teams(self.owner_config.get("OneDragon", "Teams") or "")
             if self.use_mas_config
             else []
         )
