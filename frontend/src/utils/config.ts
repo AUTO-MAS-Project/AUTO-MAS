@@ -35,6 +35,11 @@ export interface FrontendConfig {
   /** 用户导入音频的显示名，仅用于界面 */
   pressSoundCustomName?: string
 
+  /** 用户自定义背景的绝对路径；为空时使用内置或外观包背景。 */
+  customBackgroundPath?: string
+  /** 自定义背景下的主界面表面透明度；范围为 0.10～1.00。 */
+  customSurfaceOpacity?: number
+
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
 
@@ -74,6 +79,8 @@ const DEFAULT_CONFIG: FrontendConfig = {
   pressSoundVolume: 0.6,
   pressSoundCustomPath: '',
   pressSoundCustomName: '',
+  customBackgroundPath: '',
+  customSurfaceOpacity: 1,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

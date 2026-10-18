@@ -5,6 +5,7 @@ import { renderToString } from '@vue/server-renderer'
 import type { AppearanceCleanupResult, InstalledAppearance } from '@/types/appearance'
 
 const saveConfig = vi.fn(async () => undefined)
+const readFileBase64 = vi.fn(async (path: string) => ({ base64: 'AA==', size: 4, path }))
 const appearanceChanged = vi.fn(() => () => undefined)
 const appearance: InstalledAppearance = {
   formatVersion: 1 as const,
@@ -59,6 +60,7 @@ vi.stubGlobal('window', {
     getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
     loadConfig: async () => null,
     saveConfig,
+    readFileBase64,
     listAppearances,
     getAppearance,
     clearInvalidAppearance,
@@ -102,6 +104,8 @@ describe('useTheme custom appearance persistence', () => {
     rootStyle.setProperty.mockClear()
     rootClassList.add.mockClear()
     rootClassList.remove.mockClear()
+    readFileBase64.mockClear()
+    readFileBase64.mockImplementation(async (path: string) => ({ base64: 'AA==', size: 4, path }))
   })
 
   it('restores a valid package and falls back when the saved package is missing', async () => {
@@ -204,6 +208,108 @@ describe('useTheme custom appearance persistence', () => {
     expect(theme.activeAppearance.value?.id).toBe('other')
     expect(clearInvalidAppearance).not.toHaveBeenCalled()
     expect(saveConfig).not.toHaveBeenCalledWith({ appearanceId: null }, expect.any(Object))
+  })
+
+  it('restores a custom background and persists custom surface opacity', async () => {
+    const theme = useTheme()
+    await theme.initTheme({
+      themeMode: 'light',
+      themeColor: 'blue',
+      appearanceId: null,
+      customBackgroundPath: 'D:\\背景\\wallpaper.png',
+      customSurfaceOpacity: 0.2,
+    })
+
+    expect(readFileBase64).toHaveBeenCalledWith('D:\\背景\\wallpaper.png', 8 * 1024 * 1024)
+    expect(theme.customBackgroundUrl.value).toBe('data:image/png;base64,AA==')
+    expect(theme.customSurfaceOpacity.value).toBe(0.2)
+    await renderThemeTokens()
+    expect(rootStyle.getPropertyValue('--app-appearance-background-image')).toMatch(/^url\("blob:/)
+    expect(rootClassList.add).toHaveBeenCalledWith('appearance-background-custom')
+    expect(rootStyle.setProperty).toHaveBeenCalledWith(
+      '--app-appearance-surface-bg',
+      expect.stringContaining(' 20%, transparent')
+    )
+
+    theme.previewCustomSurfaceOpacity(0.4)
+    await renderThemeTokens()
+    expect(theme.customSurfaceOpacity.value).toBe(0.4)
+    expect(rootStyle.setProperty).toHaveBeenCalledWith(
+      '--app-appearance-surface-bg',
+      expect.stringContaining(' 40%, transparent')
+    )
+    expect(saveConfig).not.toHaveBeenCalledWith({ customSurfaceOpacity: 0.4 }, expect.any(Object))
+
+    saveConfig.mockRejectedValueOnce(new Error('保存失败'))
+    await expect(theme.setCustomSurfaceOpacity(2)).rejects.toThrow('保存失败')
+    expect(theme.customSurfaceOpacity.value).toBe(0.2)
+    await renderThemeTokens()
+    expect(rootStyle.getPropertyValue('--app-appearance-surface-bg')).toContain(' 20%, transparent')
+
+    await theme.setCustomSurfaceOpacity(2)
+    expect(theme.customSurfaceOpacity.value).toBe(1)
+    expect(saveConfig).toHaveBeenCalledWith({ customSurfaceOpacity: 1 }, expect.any(Object))
+    await theme.clearCustomBackground()
+  })
+
+  it('prefers a package background and falls back to the saved custom image later', async () => {
+    const theme = useTheme()
+    await theme.initTheme({
+      themeMode: 'light',
+      themeColor: 'blue',
+      appearanceId: 'demo',
+      customBackgroundPath: 'D:\\背景\\wallpaper.png',
+      customSurfaceOpacity: 0.4,
+    })
+
+    expect(readFileBase64).not.toHaveBeenCalled()
+    expect(theme.customBackgroundUrl.value).toBe('')
+    await renderThemeTokens()
+    const packageImage = rootStyle.getPropertyValue('--app-appearance-background-image')
+    expect(packageImage).toMatch(/^url\("blob:/)
+
+    await theme.setAppearance(null)
+    expect(readFileBase64).toHaveBeenCalledWith('D:\\背景\\wallpaper.png', 8 * 1024 * 1024)
+    expect(theme.customBackgroundUrl.value).toBe('data:image/png;base64,AA==')
+    await renderThemeTokens()
+    expect(rootStyle.getPropertyValue('--app-appearance-background-image')).not.toBe(packageImage)
+    await theme.clearCustomBackground()
+  })
+
+  it('persists and clears a custom background selected in this window', async () => {
+    const theme = useTheme()
+    await theme.initTheme({ themeMode: 'light', themeColor: 'blue', appearanceId: null })
+
+    await theme.setCustomBackground('D:\\背景\\photo.webp', 'AA==')
+    expect(saveConfig).toHaveBeenCalledWith(
+      { customBackgroundPath: 'D:\\背景\\photo.webp' },
+      expect.any(Object)
+    )
+    expect(theme.customBackgroundUrl.value).toBe('data:image/webp;base64,AA==')
+
+    await theme.clearCustomBackground()
+    expect(saveConfig).toHaveBeenCalledWith({ customBackgroundPath: '' }, expect.any(Object))
+    expect(theme.customBackgroundUrl.value).toBe('')
+    await renderThemeTokens()
+    expect(rootClassList.remove).toHaveBeenCalledWith('appearance-background-custom')
+  })
+
+  it('restores a custom background when the active package is switched off', async () => {
+    const theme = useTheme()
+    await theme.initTheme({
+      themeMode: 'light',
+      themeColor: 'blue',
+      appearanceId: 'demo',
+      customBackgroundPath: 'D:\\背景\\wallpaper.png',
+    })
+    expect(theme.customBackgroundUrl.value).toBe('')
+
+    await theme.setThemeMode('dark')
+
+    expect(theme.activeAppearance.value).toBe(null)
+    expect(readFileBase64).toHaveBeenCalledWith('D:\\背景\\wallpaper.png', 8 * 1024 * 1024)
+    expect(theme.customBackgroundUrl.value).toBe('data:image/png;base64,AA==')
+    await theme.clearCustomBackground()
   })
 
   it('persists applying and clearing a package while updating CSS variables', async () => {

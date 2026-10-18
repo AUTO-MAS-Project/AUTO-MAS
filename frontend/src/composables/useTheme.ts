@@ -5,6 +5,12 @@ import { createAppearanceCursorValue } from '@/components/appearanceCursor'
 import { createAppearanceBackgroundApplier } from './appearanceBackground'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
+import {
+  clampCustomSurfaceOpacity,
+  createCustomBackgroundDataUrl,
+  CUSTOM_BACKGROUND_MAX_BYTES,
+  hasCustomBackgroundExtension,
+} from '@/utils/customBackground'
 
 type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
 const resolvedAntTokens = shallowRef<AntTokens>()
@@ -30,6 +36,13 @@ const themeColor = ref<ThemeColor>('blue')
 const appearanceId = ref<string | null>(null)
 const activeAppearance = ref<InstalledAppearance | null>(null)
 const appearances = ref<InstalledAppearance[]>([])
+const customBackgroundPath = ref('')
+const customBackgroundUrl = ref('')
+const customSurfaceOpacity = ref(1)
+const customSurfaceOpacityPreview = ref<number | null>(null)
+const displayedCustomSurfaceOpacity = computed(
+  () => customSurfaceOpacityPreview.value ?? customSurfaceOpacity.value
+)
 const isDark = ref(false)
 const logger = window.electronAPI.getLogger('主题')
 const applyAppearanceBackground = createAppearanceBackgroundApplier({ logger })
@@ -38,6 +51,8 @@ let themeConfigListenerInitialized = false
 let themeRevision = 0
 let configRevision = 0
 let appearanceLoadRevision = 0
+let customBackgroundRevision = 0
+let customSurfaceRevision = 0
 let themeChangeQueue: Promise<void> = Promise.resolve()
 
 // 连续操作按顺序完成状态变更和持久化，失败回退后再处理下一项设置。
@@ -150,7 +165,11 @@ const updateCSSVariables = () => {
     '--app-appearance-cursor-text',
     createAppearanceCursorValue('text', cursorUrls, cursors)
   )
-  const surfaceOpacity = getAppearanceSurfaceOpacity(activeAppearance.value)
+  const backgroundSource =
+    activeAppearance.value?.backgroundUrl ?? (customBackgroundUrl.value || undefined)
+  const surfaceOpacity =
+    getAppearanceSurfaceOpacity(activeAppearance.value) ??
+    (backgroundSource ? clampCustomSurfaceOpacity(displayedCustomSurfaceOpacity.value) : undefined)
   if (surfaceOpacity !== undefined) {
     root.classList.add('appearance-background-custom')
   } else {
@@ -158,14 +177,15 @@ const updateCSSVariables = () => {
   }
   // 素材和开关独立于 token bridge，清除外观时立即恢复，不依赖下一次组件渲染。
   // 背景只在图片真的变了时才写，避免每次换主题色都重新解码。
-  applyAppearanceBackground(root.style, activeAppearance.value?.backgroundUrl)
+  applyAppearanceBackground(root.style, backgroundSource)
   root.style.setProperty(
     '--app-appearance-background-opacity',
     String(activeAppearance.value?.background?.opacity ?? 1)
   )
   root.style.setProperty(
     '--app-appearance-background-position',
-    activeAppearance.value?.background?.position ?? 'right bottom'
+    activeAppearance.value?.background?.position ??
+      (customBackgroundUrl.value ? 'center' : 'right bottom')
   )
   root.style.setProperty(
     '--app-appearance-background-size',
@@ -215,6 +235,8 @@ const updateCSSVariables = () => {
   root.style.setProperty('--ant-color-bg-container', antTokens.colorBgContainer)
   root.style.setProperty('--ant-color-bg-layout', antTokens.colorBgLayout)
   root.style.setProperty('--ant-color-bg-elevated', antTokens.colorBgElevated)
+  root.style.setProperty('--ant-box-shadow-secondary', antTokens.boxShadowSecondary)
+  root.style.setProperty('--ant-box-shadow-tertiary', antTokens.boxShadowTertiary)
   root.style.setProperty('--ant-color-border', antTokens.colorBorder)
   root.style.setProperty('--ant-color-border-secondary', antTokens.colorBorderSecondary)
   root.style.setProperty('--ant-color-bg-container-disabled', antTokens.colorBgContainerDisabled)
@@ -513,6 +535,35 @@ function getThemeConfig() {
 
 const antdTheme = computed(getThemeConfig)
 
+const readCustomBackground = async (path: string, revision: number): Promise<void> => {
+  try {
+    const { base64 } = await window.electronAPI.readFileBase64(path, CUSTOM_BACKGROUND_MAX_BYTES)
+    if (revision !== customBackgroundRevision) return
+    customBackgroundUrl.value = createCustomBackgroundDataUrl(base64, path) ?? ''
+    if (!customBackgroundUrl.value) {
+      logger.warn(`自定义背景格式不受支持，已按无背景处理: ${path}`)
+    }
+    updateTheme()
+  } catch (error) {
+    if (revision !== customBackgroundRevision) return
+    customBackgroundUrl.value = ''
+    updateTheme()
+    logger.warn(`读取自定义背景失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const loadCustomBackgroundIfNeeded = async (): Promise<void> => {
+  if (
+    !customBackgroundPath.value ||
+    customBackgroundUrl.value ||
+    activeAppearance.value?.backgroundUrl
+  ) {
+    return
+  }
+  const revision = ++customBackgroundRevision
+  await readCustomBackground(customBackgroundPath.value, revision)
+}
+
 export function useTheme() {
   const setThemeMode = (mode: ThemeMode): Promise<void> =>
     queueThemeChange(async () => {
@@ -522,6 +573,7 @@ export function useTheme() {
       activeAppearance.value = null
       appearanceId.value = null
       updateTheme()
+      await loadCustomBackgroundIfNeeded()
       try {
         await saveConfig({ themeMode: mode, appearanceId: null })
         if (configRevision === savedConfigRevision) {
@@ -573,6 +625,7 @@ export function useTheme() {
     if (listFailed) {
       activeAppearance.value = null
       updateTheme()
+      await loadCustomBackgroundIfNeeded()
       return
     }
     if (appearanceId.value) {
@@ -619,6 +672,7 @@ export function useTheme() {
       activeAppearance.value = null
     }
     updateTheme()
+    await loadCustomBackgroundIfNeeded()
   }
 
   const setAppearance = (id: string | null): Promise<void> =>
@@ -629,6 +683,7 @@ export function useTheme() {
         activeAppearance.value = null
         appearanceId.value = null
         updateTheme()
+        await loadCustomBackgroundIfNeeded()
         try {
           await saveConfig({ appearanceId: null })
           if (configRevision === savedConfigRevision) {
@@ -651,6 +706,7 @@ export function useTheme() {
       activeAppearance.value = appearance
       appearanceId.value = appearance.id
       updateTheme()
+      await loadCustomBackgroundIfNeeded()
       try {
         await saveConfig({ appearanceId: appearance.id })
         if (configRevision === savedConfigRevision) {
@@ -660,6 +716,71 @@ export function useTheme() {
         if (revision === themeRevision) restorePersistedThemeSnapshot()
         logger.error(
           `保存自定义外观失败: ${error instanceof Error ? error.message : String(error)}`
+        )
+        throw error
+      }
+    })
+
+  const setCustomBackground = (path: string, base64?: string): Promise<void> =>
+    queueThemeChange(async () => {
+      if (path && !hasCustomBackgroundExtension(path)) {
+        throw new Error('自定义背景格式不受支持')
+      }
+
+      const revision = ++customBackgroundRevision
+      const previousPath = customBackgroundPath.value
+      const previousUrl = customBackgroundUrl.value
+      customBackgroundPath.value = path
+      customBackgroundUrl.value =
+        path && base64 !== undefined ? (createCustomBackgroundDataUrl(base64, path) ?? '') : ''
+      if (path && !customBackgroundUrl.value) {
+        logger.warn(`自定义背景格式不受支持，已按无背景处理: ${path}`)
+      }
+      updateTheme()
+      if (path && base64 === undefined) {
+        await readCustomBackground(path, revision)
+      }
+
+      try {
+        await saveConfig({ customBackgroundPath: path })
+      } catch (error) {
+        if (revision === customBackgroundRevision) {
+          customBackgroundPath.value = previousPath
+          customBackgroundUrl.value = previousUrl
+          updateTheme()
+        }
+        logger.error(
+          `保存自定义背景失败: ${error instanceof Error ? error.message : String(error)}`
+        )
+        throw error
+      }
+    })
+
+  const clearCustomBackground = (): Promise<void> => setCustomBackground('')
+
+  // 拖动只刷新本地外观；真正写入配置留给 afterChange，避免一次拖动产生大量 IPC。
+  const previewCustomSurfaceOpacity = (value: number): void => {
+    customSurfaceOpacityPreview.value = clampCustomSurfaceOpacity(value)
+    updateTheme()
+  }
+
+  const setCustomSurfaceOpacity = (value: number): Promise<void> =>
+    queueThemeChange(async () => {
+      const revision = ++customSurfaceRevision
+      const previousOpacity = customSurfaceOpacity.value
+      customSurfaceOpacity.value = clampCustomSurfaceOpacity(value)
+      customSurfaceOpacityPreview.value = null
+      updateTheme()
+
+      try {
+        await saveConfig({ customSurfaceOpacity: customSurfaceOpacity.value })
+      } catch (error) {
+        if (revision === customSurfaceRevision) {
+          customSurfaceOpacity.value = previousOpacity
+          updateTheme()
+        }
+        logger.error(
+          `保存界面透明度失败: ${error instanceof Error ? error.message : String(error)}`
         )
         throw error
       }
@@ -746,12 +867,26 @@ export function useTheme() {
         themeColor.value = config.themeColor
       }
       appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
-      commitPersistedThemeSnapshot()
-      // 回声只换选择：缓存里有就直接用，全量重读留给 appearance-changed，
-      // 否则每切一次主题色，每个窗口都要把所有包的素材经 IPC 重传一遍。
       const cached = appearanceId.value
         ? appearances.value.find(item => item.id === appearanceId.value)
         : null
+      if (
+        config.customBackgroundPath !== undefined &&
+        config.customBackgroundPath !== customBackgroundPath.value
+      ) {
+        const revision = ++customBackgroundRevision
+        customBackgroundPath.value = config.customBackgroundPath
+        customBackgroundUrl.value = ''
+        if (config.customBackgroundPath && !cached?.backgroundUrl) {
+          void readCustomBackground(config.customBackgroundPath, revision)
+        }
+      }
+      if (config.customSurfaceOpacity !== undefined) {
+        customSurfaceOpacity.value = clampCustomSurfaceOpacity(config.customSurfaceOpacity)
+      }
+      commitPersistedThemeSnapshot()
+      // 回声只换选择：缓存里有就直接用，全量重读留给 appearance-changed，
+      // 否则每切一次主题色，每个窗口都要把所有包的素材经 IPC 重传一遍。
       if (cached === undefined) {
         activeAppearance.value = null
         void loadAppearances()
@@ -759,6 +894,9 @@ export function useTheme() {
       }
       activeAppearance.value = cached
       updateTheme()
+      if (!cached?.backgroundUrl) {
+        void loadCustomBackgroundIfNeeded()
+      }
     })
   }
 
@@ -778,8 +916,15 @@ export function useTheme() {
       themeColor.value = config.themeColor
     }
     appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
+    if (config.customBackgroundPath !== undefined) {
+      customBackgroundPath.value = config.customBackgroundPath
+    }
+    if (config.customSurfaceOpacity !== undefined) {
+      customSurfaceOpacity.value = clampCustomSurfaceOpacity(config.customSurfaceOpacity)
+    }
     commitPersistedThemeSnapshot()
     await loadAppearances()
+    await loadCustomBackgroundIfNeeded()
   }
 
   return {
@@ -792,6 +937,9 @@ export function useTheme() {
     appearances: computed(() => appearances.value),
     appearanceId: computed(() => appearanceId.value),
     activeAppearance: computed(() => activeAppearance.value),
+    customBackgroundPath: computed(() => customBackgroundPath.value),
+    customBackgroundUrl: computed(() => customBackgroundUrl.value),
+    customSurfaceOpacity: computed(() => displayedCustomSurfaceOpacity.value),
     syncAntTokens: (tokens: AntTokens) => {
       resolvedAntTokens.value = tokens
       updateCSSVariables()
@@ -799,6 +947,10 @@ export function useTheme() {
     setThemeMode,
     setThemeColor,
     setAppearance,
+    setCustomBackground,
+    clearCustomBackground,
+    previewCustomSurfaceOpacity,
+    setCustomSurfaceOpacity,
     loadAppearances,
     importAppearance,
     installOnlineAppearance,
