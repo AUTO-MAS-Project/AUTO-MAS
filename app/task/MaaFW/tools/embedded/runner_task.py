@@ -689,9 +689,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # Windows 到点熄屏后，鹰角启动器这类网页界面不出画面，项目的运行前设置在里面什么都
         # 认不出（2026-10-17/18 生产 MaaEnd「🚀启动游戏（PC）」两晚失败，亮屏 5 秒即过）。
         # 整个用户运行期间保持显示开启，屏已熄就先叫醒；收尾时撤销，final_task 再兜一次。
-        self._display_hold = power.hold_display(
-            f"MFW 运行（{self.cur_user_item.name}）"
-        )
+        self._ensure_display_hold()
         try:
             # 执行任务前脚本（每用户仅一次，重试不重复跑）。
             # 和下面 finally 里的后脚本放进同一个 try，两者严格配对：
@@ -737,6 +735,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
+                    self._ensure_display_hold()
                     if not pretasks_done or await self._pretasks_need_rerun(
                         client_reset
                     ):
@@ -3050,6 +3049,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
         await release_project_path(self.project_lock_key)
         self.project_lock_key = None
+
+    def _ensure_display_hold(self) -> None:
+        """没有生效中的「保持显示开启」请求就再请求一份。
+
+        每次尝试开头都调：电源延时 / 倒计时期间又起了任务时，MAS 执行睡眠 / 休眠前会撤掉
+        所有请求、醒来后不会自己补；请求本身失败也会变成已撤销。怕熄屏的启动器那一步就在
+        尝试开头的运行前设置里。
+        """
+
+        hold = self._display_hold
+        if hold is None or not hold.active:
+            self._display_hold = power.hold_display(
+                f"MFW 运行（{self.cur_user_item.name}）"
+            )
 
     def _release_display_hold(self) -> None:
         hold, self._display_hold = self._display_hold, None
