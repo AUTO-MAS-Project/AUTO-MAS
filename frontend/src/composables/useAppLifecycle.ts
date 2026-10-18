@@ -10,6 +10,10 @@ import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import {
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -973,8 +977,21 @@ export function initializeAppLifecycle(): void {
   })
   if (disposeSystemResume) lifecycleDisposers.push(disposeSystemResume)
 
-  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(() => {
-    void closeApp()
+  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(confirmRunningTasks => {
+    void (async () => {
+      if (confirmRunningTasks && hasRunningTasks()) {
+        if (!(await window.electronAPI?.appWaitForQuitConfirmation?.())) return
+        await window.electronAPI?.windowFocus?.()
+        if (!(await confirmCloseIfRunningTasks())) {
+          await window.electronAPI?.appCancelQuit?.()
+          return
+        }
+      }
+      await closeApp()
+    })().catch(async error => {
+      logger.error(`处理关闭请求失败: ${error instanceof Error ? error.message : String(error)}`)
+      await window.electronAPI?.appCancelQuit?.()
+    })
   })
   if (disposeCloseRequested) lifecycleDisposers.push(disposeCloseRequested)
 
