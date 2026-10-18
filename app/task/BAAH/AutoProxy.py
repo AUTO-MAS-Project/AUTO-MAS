@@ -49,6 +49,7 @@ from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
+from app.utils.update_files import directory_lock
 
 from .tools import (
     BAAH_PUSH_RULES,
@@ -345,17 +346,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         config_name = await self._resolve_effective_config_name()
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
 
-        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
-        ## 任务）：此刻配置文件尚未被托管项改写，是「本轮动手前」的完整现场
-        from .tools.backup_archive import archive_native_backup
-
-        try:
-            archive_native_backup(self.config_dir, config_name, str(self.cur_user_uid))
-        except Exception:
-            logger.opt(exception=True).warning(
-                "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
-            )
-
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -557,8 +547,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return self._plan_stage_runtime_values()
 
         if running:
-            runtime_values = {option: [] for option in BAAH_STAGE_OPTIONS.values()}
-            logger.info("碧蓝档案当前有活动, 跳过计划表并仅执行活动扫荡")
+            runtime_values: dict[str, Any] = {}
         else:
             runtime_values = {
                 **self._plan_stage_runtime_values(),
@@ -570,17 +559,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
             user_config = read_json(self.user_config_path)
         except Exception as e:
             logger.opt(exception=True).warning(
-                f"读取 BAAH 配置失败, 本次不调整活动关卡顺序: {e}"
+                f"读取 BAAH 配置失败, 本次沿用计划表或 BAAH 原生配置: {e}"
             )
-            return runtime_values
+            return self._plan_stage_runtime_values() if running else runtime_values
 
         updated, note = prioritize_event_quest(
             user_config.get("TASK_ORDER_GROUP"), enabled=running
         )
         if updated is None:
-            logger.warning(f"活动关优先已跳过: {note}")
-            return runtime_values
+            logger.warning(f"活动关优先已跳过，沿用计划表或 BAAH 原生配置: {note}")
+            return self._plan_stage_runtime_values() if running else runtime_values
 
+        # 确认活动任务能够启用后，才关闭其他扫荡，避免任务线异常时一项都不打。
+        if running:
+            runtime_values = {option: [] for option in BAAH_STAGE_OPTIONS.values()}
+            logger.info("碧蓝档案当前有活动, 跳过计划表并仅执行活动扫荡")
         logger.info(note)
         runtime_values["TASK_ORDER_GROUP"] = updated
         return runtime_values
@@ -592,10 +585,30 @@ class AutoProxyTask(ScriptAutoProxyBase):
         最后无论成功失败都恢复托管配置。
         """
 
+        # 不同 MAS 托管可指向同一安装；软件配置也共享，按真实安装目录串行。
+        async with directory_lock(self.root_path.resolve()):
+            await self._run_once_locked()
+
+    async def _run_once_locked(self) -> None:
+        """持有安装目录锁时执行，归档、读取和最终还原均不与其他任务交错。"""
+
         self.wait_event.clear()
 
         if not await self._ensure_emulator_online():
             return
+
+        ## 运行前归档该用户的 BAAH 配置（按用户分桶，指纹去重，失败不阻断
+        ## 任务）：锁内归档，确保不会把另一个任务的托管取值当成用户原配置。
+        from .tools.backup_archive import archive_native_backup
+
+        try:
+            archive_native_backup(
+                self.config_dir, self.user_config_path.stem, str(self.cur_user_uid)
+            )
+        except Exception:
+            logger.opt(exception=True).warning(
+                "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
+            )
 
         ## 关卡计划表与活动关优先是用户在用户页单独打开的开关，与「托管 BAAH
         ## 运行配置」无关：托管没开时它们照样要在本次运行生效。两者都只在这一次
@@ -629,8 +642,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ## 先于配置恢复执行，是因为恢复失败会向上抛出，采集不能因此漏掉；
             ## 放在 finally 里则是因为 BAAH 每次运行各有自己的日志文件，采集
             ## 会话必须随着本次运行一起收尾（close 幂等）
-            self._close_log_collect()
-            await self._restore_managed_config()
+            try:
+                self._close_log_collect()
+            finally:
+                await self._restore_managed_config()
 
     async def _restore_managed_config(self) -> None:
         """恢复托管配置，并把恢复失败明确告知用户。
