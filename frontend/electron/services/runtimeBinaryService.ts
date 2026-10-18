@@ -44,6 +44,7 @@ import {
   RUNTIME_EXE_ENV,
   createRuntimeClient,
   recoverRuntimeBackup,
+  type RuntimeRunControl,
 } from './runtime'
 import {
   RUNTIME_RELEASE_REPO,
@@ -354,6 +355,9 @@ export function hashFileSha256(filePath: string): Promise<string | null> {
   })
 }
 
+/** 单次版本探测总时限，包含握手、结果和进程退出。 */
+export const RUNTIME_VERSION_PROBE_TIMEOUT_MS = 15_000
+
 /**
  * 问磁盘上那个 exe 自己是什么版本（`auto-mas-runtime.exe version`）。
  *
@@ -368,10 +372,30 @@ async function readInstalledRuntimeVersion(
   runtimePath: string,
   appRoot: string
 ): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let control: RuntimeRunControl | undefined
+  let timedOut = false
   try {
     const client = createRuntimeClient({ runtimePath, appRoot })
-    const outcome = await client.run(['version'])
-    if (!outcome.success) return null
+    const timeout = new Promise<null>(resolve => {
+      timer = setTimeout(() => {
+        timedOut = true
+        control?.kill()
+        logger.warn('查询 Runtime 版本超时，放弃本次探测')
+        resolve(null)
+      }, RUNTIME_VERSION_PROBE_TIMEOUT_MS)
+      timer.unref?.()
+    })
+    const outcome = await Promise.race([
+      client.run(['version'], {
+        onStarted: started => {
+          control = started
+          if (timedOut) started.kill()
+        },
+      }),
+      timeout,
+    ])
+    if (!outcome?.success) return null
 
     const reported = outcome.result.details.runtimeVersion ?? outcome.hello?.runtimeVersion
     return typeof reported === 'string' && reported.trim() !== '' ? reported.trim() : null
@@ -380,6 +404,8 @@ async function readInstalledRuntimeVersion(
       `查询现有 Runtime 版本失败: ${error instanceof Error ? error.message : String(error)}`
     )
     return null
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -1057,6 +1083,44 @@ export interface RuntimeBinaryAlignOptions {
   /** 测试注入。 */
   fetchLatest?: LatestRuntimeVersionResolver
   sync?: (options: RuntimeBinarySyncOptions) => Promise<RuntimeBinarySyncResult>
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  target?: RuntimeBinaryTarget
+  error?: string
+}
+
+export interface RuntimeBinaryCheckOptions {
+  channel: RuntimeReleaseChannel
+  runtimePath: string
+  appRoot: string
+  fetchLatest?: LatestRuntimeVersionResolver
+  readVersion?: RuntimeBinarySyncOptions['readVersion']
+}
+
+/** 读取已安装版本和同一发布通道的线上最新版，不下载或替换文件。 */
+export async function checkRuntimeBinaryLatest(
+  options: RuntimeBinaryCheckOptions
+): Promise<RuntimeBinaryUpdateCheck> {
+  if (isDeveloperRuntime(options.runtimePath)) return { status: 'skipped' }
+  const [currentVersion, lookup] = await Promise.all([
+    (options.readVersion ?? readInstalledRuntimeVersion)(options.runtimePath, options.appRoot),
+    (options.fetchLatest ?? defaultLatestResolver)(options.channel),
+  ])
+  if (lookup.status === 'unavailable') {
+    return { status: 'unavailable', currentVersion, error: lookup.error }
+  }
+  const available =
+    currentVersion === null ||
+    !RUNTIME_VERSION_PATTERN.test(currentVersion) ||
+    isNewerRuntimeVersion(lookup.version, currentVersion)
+  return {
+    status: available ? 'available' : 'current',
+    currentVersion,
+    target: { version: lookup.version },
+  }
 }
 
 /**
