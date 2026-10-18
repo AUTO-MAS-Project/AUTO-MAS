@@ -22,6 +22,12 @@ export type MaaFWUpdateProgressPhase =
 
 export type MaaFWUpdatePackageKind = 'full' | 'incremental'
 
+/** 日志框里的一行；`alert` 是要用户留意的行（如项目发错版本号），整行标红。 */
+export interface MaaFWUpdateLogLine {
+  text: string
+  alert: boolean
+}
+
 export interface MaaFWUpdateProgressState {
   phase: MaaFWUpdateProgressPhase
   /** 后端原始阶段名，调试与日志用；面板文案看 phase。 */
@@ -39,7 +45,7 @@ export interface MaaFWUpdateProgressState {
   extractTotalFiles: number | null
   extractedBytes: number | null
   extractTotalBytes: number | null
-  logs: string[]
+  logs: MaaFWUpdateLogLine[]
 }
 
 /** 日志框最多留这么多行；更新日志一般几十行，留有余量即可。 */
@@ -112,7 +118,12 @@ export function reduceUpdateProgress(
   state: MaaFWUpdateProgressState,
   data: WSMaaFWProjectUpdateProgressData
 ): MaaFWUpdateProgressState {
-  const logs = data.log ? [...state.logs.slice(-(MAX_UPDATE_LOG_LINES - 1)), data.log] : state.logs
+  const logs = data.log
+    ? [
+        ...state.logs.slice(-(MAX_UPDATE_LOG_LINES - 1)),
+        { text: data.log, alert: data.logLevel === 'alert' },
+      ]
+    : state.logs
   if (data.stage === 'log') {
     return logs === state.logs ? state : { ...state, logs }
   }

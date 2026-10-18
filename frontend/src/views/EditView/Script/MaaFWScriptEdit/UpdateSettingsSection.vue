@@ -193,8 +193,13 @@
           >
             {{ t('edit.updateProcessPlaceholder') }}
           </div>
-          <div v-for="(line, index) in updateProgress.logs" :key="index" class="update-log-line">
-            {{ line }}
+          <div
+            v-for="(line, index) in updateProgress.logs"
+            :key="index"
+            class="update-log-line"
+            :class="{ 'update-log-line--alert': line.alert }"
+          >
+            {{ line.text }}
           </div>
           <div
             v-if="updateProgress.phase !== 'idle'"
@@ -651,6 +656,11 @@ watch(
 
 .update-log-line--empty {
   color: var(--ant-color-text-tertiary);
+}
+
+/* 要用户留意的行（如项目发错版本号）整行标红 */
+.update-log-line--alert {
+  color: var(--ant-color-error);
 }
 
 /* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色，代替原来单独的一条结果 alert */
