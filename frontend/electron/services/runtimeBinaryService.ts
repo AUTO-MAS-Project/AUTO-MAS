@@ -44,6 +44,7 @@ import {
   RUNTIME_EXE_ENV,
   createRuntimeClient,
   recoverRuntimeBackup,
+  type RuntimeRunControl,
 } from './runtime'
 import {
   RUNTIME_RELEASE_REPO,
@@ -354,6 +355,9 @@ export function hashFileSha256(filePath: string): Promise<string | null> {
   })
 }
 
+/** 单次版本探测总时限，包含握手、结果和进程退出。 */
+export const RUNTIME_VERSION_PROBE_TIMEOUT_MS = 15_000
+
 /**
  * 问磁盘上那个 exe 自己是什么版本（`auto-mas-runtime.exe version`）。
  *
@@ -368,10 +372,30 @@ async function readInstalledRuntimeVersion(
   runtimePath: string,
   appRoot: string
 ): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let control: RuntimeRunControl | undefined
+  let timedOut = false
   try {
     const client = createRuntimeClient({ runtimePath, appRoot })
-    const outcome = await client.run(['version'])
-    if (!outcome.success) return null
+    const timeout = new Promise<null>(resolve => {
+      timer = setTimeout(() => {
+        timedOut = true
+        control?.kill()
+        logger.warn('查询 Runtime 版本超时，放弃本次探测')
+        resolve(null)
+      }, RUNTIME_VERSION_PROBE_TIMEOUT_MS)
+      timer.unref?.()
+    })
+    const outcome = await Promise.race([
+      client.run(['version'], {
+        onStarted: started => {
+          control = started
+          if (timedOut) started.kill()
+        },
+      }),
+      timeout,
+    ])
+    if (!outcome?.success) return null
 
     const reported = outcome.result.details.runtimeVersion ?? outcome.hello?.runtimeVersion
     return typeof reported === 'string' && reported.trim() !== '' ? reported.trim() : null
@@ -380,6 +404,8 @@ async function readInstalledRuntimeVersion(
       `查询现有 Runtime 版本失败: ${error instanceof Error ? error.message : String(error)}`
     )
     return null
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
@@ -578,15 +604,60 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   removeStaleDownloads(runtimePath)
 
   let installed = await readVersion(runtimePath, appRoot)
-  if (fs.existsSync(backupPath) && installed !== target.version) {
-    // 备份还在而当前文件未通过版本验收：即使能运行、且自报更高版本，也可能是上次拒绝后
-    // 没换回去的文件。先恢复备份；恢复失败就按未知版本继续，不能放行或拿它覆盖旧备份。
-    installed = restoreBackup(runtimePath, backupPath)
-      ? await readVersion(runtimePath, appRoot)
-      : null
+  let acceptedBackupRemains = false
+  if (fs.existsSync(backupPath)) {
+    let expected: string | null = null
+    try {
+      if (fs.existsSync(`${backupPath}.version`)) {
+        expected = fs.readFileSync(`${backupPath}.version`, 'utf8').trim()
+        if (!RUNTIME_VERSION_PATTERN.test(expected)) throw new Error('替换版本记录无效')
+      }
+    } catch (error) {
+      return {
+        status: 'failed',
+        target,
+        code: RUNTIME_BINARY_REPLACE_FAILED,
+        error: `无法核对上次 Runtime 替换，已保留当前文件与备份：${String(error)}`,
+      }
+    }
+    // 记录的是上次下载的目标，不能用本轮线上版本判断上次是否验收成功。
+    // 旧版本没有记录时，只接受目标一致或备份与现有文件同版本的情形；无法判定就保留两份。
+    const accepted =
+      installed !== null &&
+      (expected !== null
+        ? installed === expected
+        : installed === target.version || installed === (await readVersion(backupPath, appRoot)))
+    if (expected === null && installed !== null && !accepted) {
+      return {
+        status: 'failed',
+        target,
+        code: RUNTIME_BINARY_REPLACE_FAILED,
+        error: '无法确认上次 Runtime 替换是否完成，已保留当前文件与旧备份，请重新安装完整程序。',
+      }
+    }
+    if (accepted) {
+      // 清理失败时仍保留验收依据，下次不能把有效文件当作未完成替换来回滚。
+      if (expected === null) {
+        try {
+          fs.writeFileSync(`${backupPath}.version`, `${installed}\n`, 'utf8')
+        } catch (error) {
+          return {
+            status: 'failed',
+            target,
+            code: RUNTIME_BINARY_REPLACE_FAILED,
+            error: describeReplaceFailure(runtimePath, error),
+          }
+        }
+      }
+      removeQuietly(backupPath)
+      acceptedBackupRemains = fs.existsSync(backupPath)
+    } else {
+      installed = restoreBackup(runtimePath, backupPath)
+        ? await readVersion(runtimePath, appRoot)
+        : null
+    }
   }
-  // 当前文件自报版本与目标一致才算验收完成，不能仅因能运行就删除回滚备份。
-  if (installed === target.version) removeQuietly(backupPath)
+  if (!fs.existsSync(backupPath)) removeQuietly(`${backupPath}.version`)
 
   // 只有「已安装且版本号合法」才谈得上升级判断：自报 `dev`、空串或非法形态都按「需要换」
   // 处理——一个连版本号都不是的 exe 没资格被当成最新版留在盘上。
@@ -604,6 +675,15 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   }
   if (options.isCancelled?.())
     return { status: 'cancelled', target, code: RUNTIME_BINARY_CANCELLED }
+  if (acceptedBackupRemains) {
+    // 旧备份仍被占用时不能覆盖它，也不能把当前有效文件当作坏文件丢弃。
+    return {
+      status: 'failed',
+      target,
+      code: RUNTIME_BINARY_REPLACE_FAILED,
+      error: `旧 Runtime 备份 ${backupPath} 无法清理，已保留当前可用版本，请完全退出程序后重试。`,
+    }
+  }
 
   logger.info(`现有 Runtime ${installed ?? '版本未知'}，线上最新 ${target.version}，开始下载并替换`)
 
@@ -622,11 +702,17 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
 
   let backedUp: boolean
   try {
-    backedUp = replaceRuntimeBinary(runtimePath, downloaded.downloadPath, backupPath)
+    backedUp = replaceRuntimeBinary(
+      runtimePath,
+      downloaded.downloadPath,
+      backupPath,
+      target.version
+    )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`替换 Runtime 可执行文件失败: ${message}`)
     removeQuietly(downloaded.downloadPath)
+    if (!fs.existsSync(backupPath)) removeQuietly(`${backupPath}.version`)
     return {
       status: 'failed',
       target,
@@ -671,6 +757,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     }
   }
   if (backedUp) removeQuietly(backupPath)
+  if (!fs.existsSync(backupPath)) removeQuietly(`${backupPath}.version`)
 
   logger.info(`Runtime 已更新到线上最新 ${target.version}`)
   options.onProgress?.({ progress: 100, message: `Runtime 已更新到 ${target.version}` })
@@ -965,10 +1052,13 @@ function removeStaleDownloads(runtimePath: string): void {
 function replaceRuntimeBinary(
   runtimePath: string,
   downloadPath: string,
-  backupPath: string
+  backupPath: string,
+  version: string
 ): boolean {
   const hadExisting = fs.existsSync(runtimePath)
   const hadBackup = fs.existsSync(backupPath)
+  // 先记录预期版本再动文件，跨重启也能对原来的替换目标完成验收。
+  if (hadExisting || hadBackup) fs.writeFileSync(`${backupPath}.version`, `${version}\n`, 'utf8')
   let discarded: string | null = null
   if (hadExisting && hadBackup) {
     // 备份还在，说明现在这份 exe 未通过验收、且换不回去：它不配当备份，按半截
@@ -995,6 +1085,7 @@ function restoreBackup(runtimePath: string, backupPath: string): boolean {
   removeQuietly(runtimePath)
   try {
     fs.renameSync(backupPath, runtimePath)
+    removeQuietly(`${backupPath}.version`)
     return true
   } catch (error) {
     logger.error(
@@ -1057,6 +1148,44 @@ export interface RuntimeBinaryAlignOptions {
   /** 测试注入。 */
   fetchLatest?: LatestRuntimeVersionResolver
   sync?: (options: RuntimeBinarySyncOptions) => Promise<RuntimeBinarySyncResult>
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  target?: RuntimeBinaryTarget
+  error?: string
+}
+
+export interface RuntimeBinaryCheckOptions {
+  channel: RuntimeReleaseChannel
+  runtimePath: string
+  appRoot: string
+  fetchLatest?: LatestRuntimeVersionResolver
+  readVersion?: RuntimeBinarySyncOptions['readVersion']
+}
+
+/** 读取已安装版本和同一发布通道的线上最新版，不下载或替换文件。 */
+export async function checkRuntimeBinaryLatest(
+  options: RuntimeBinaryCheckOptions
+): Promise<RuntimeBinaryUpdateCheck> {
+  if (isDeveloperRuntime(options.runtimePath)) return { status: 'skipped' }
+  const [currentVersion, lookup] = await Promise.all([
+    (options.readVersion ?? readInstalledRuntimeVersion)(options.runtimePath, options.appRoot),
+    (options.fetchLatest ?? defaultLatestResolver)(options.channel),
+  ])
+  if (lookup.status === 'unavailable') {
+    return { status: 'unavailable', currentVersion, error: lookup.error }
+  }
+  const available =
+    currentVersion === null ||
+    !RUNTIME_VERSION_PATTERN.test(currentVersion) ||
+    isNewerRuntimeVersion(lookup.version, currentVersion)
+  return {
+    status: available ? 'available' : 'current',
+    currentVersion,
+    target: { version: lookup.version },
+  }
 }
 
 /**

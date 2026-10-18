@@ -21,7 +21,11 @@ import {
   RUNTIME_BINARY_CANCELLED,
   RuntimeBinaryAlignOptions,
   RuntimeBinaryAlignResult,
+  RuntimeBinarySyncProgress,
+  RuntimeBinaryCheckOptions,
+  RuntimeBinaryUpdateCheck,
   alignRuntimeBinaryWithLatest,
+  checkRuntimeBinaryLatest,
 } from './runtimeBinaryService'
 import { resolveRuntimeReleaseChannel, type RuntimeReleaseChannel } from './runtimeReleaseService'
 import {
@@ -626,6 +630,7 @@ export interface RuntimeInitializationOptions {
   targetVersion?: string
   /** 第 0 步的实现，测试注入；默认真的联网解析线上最新版、下载替换。 */
   alignRuntimeBinary?: (options: RuntimeBinaryAlignOptions) => Promise<RuntimeBinaryAlignResult>
+  checkRuntimeBinary?: (options: RuntimeBinaryCheckOptions) => Promise<RuntimeBinaryUpdateCheck>
 }
 
 // 走统一工厂而不是裸 new RuntimeClient：遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient
@@ -647,6 +652,8 @@ export class RuntimeInitializationService {
   private activeControl: RuntimeRunControl | null = null
   /** 第 0 步是否在途：它不是 Runtime 命令，取消要靠这个标志而不是 stdin。 */
   private aligning = false
+  /** 覆盖对齐、握手和命令之间的间隙，避免恢复与二进制更新重叠。 */
+  private operating = false
   /** 本次 bootstrap / 重试期间是否收到过取消；每次开始时清零。 */
   private cancelRequested = false
   private readonly alignRuntimeBinary: NonNullable<
@@ -666,6 +673,62 @@ export class RuntimeInitializationService {
   /** 本实例的目标版本；省略时退回应用自身版本。 */
   get targetVersion(): string {
     return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+  }
+
+  get isBusy(): boolean {
+    return this.operating || this.activeControl !== null || this.aligning
+  }
+
+  async checkRuntimeBinaryUpdate(): Promise<RuntimeBinaryUpdateCheck> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) return { status: 'skipped' }
+    try {
+      return await (this.options.checkRuntimeBinary ?? checkRuntimeBinaryLatest)({
+        channel: this.releaseChannel,
+        runtimePath,
+        appRoot,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`检查 Runtime 更新失败: ${message}`)
+      return { status: 'unavailable', error: message }
+    }
+  }
+
+  /** 失败页只重做第 0 步，保留源码、依赖与上一次失败的处置动作。 */
+  async updateRuntimeBinary(
+    onProgress: (progress: RuntimeBinarySyncProgress) => void,
+    stopBackends?: () => Promise<void>
+  ): Promise<RuntimeBinaryAlignResult> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) {
+      return { status: 'failed', error: '当前运行模式无法更新 Runtime，请重新安装完整程序。' }
+    }
+    if (this.isBusy) {
+      return { status: 'failed', error: '运行环境操作尚未结束，请稍后再试。' }
+    }
+
+    this.cancelRequested = false
+    this.operating = true
+    this.aligning = true
+    try {
+      await stopBackends?.()
+      if (this.cancelRequested) return { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
+      return await this.alignRuntimeBinary({
+        channel: this.releaseChannel,
+        runtimePath,
+        appRoot,
+        onProgress,
+        isCancelled: () => this.cancelRequested,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`更新 Runtime 失败: ${message}`)
+      return { status: 'failed', error: message, code: RUNTIME_BINARY_ALIGN_ERROR }
+    } finally {
+      this.aligning = false
+      this.operating = false
+    }
   }
 
   /**
@@ -693,8 +756,8 @@ export class RuntimeInitializationService {
       logger.info('已向在途 Runtime 命令下发 cancel')
       return true
     }
-    if (this.aligning) {
-      logger.info('已要求第 0 步（Runtime 核对）停下')
+    if (this.operating || this.aligning) {
+      logger.info('已要求当前运行环境操作停下')
       return true
     }
     return false
@@ -706,6 +769,19 @@ export class RuntimeInitializationService {
    * bootstrap 只做准备工作，不启动后端；成功后由调用方另行启动 `backend supervise`。
    */
   async bootstrap(
+    onProgress: (update: BootstrapProgressUpdate) => void,
+    mirror?: RuntimeMirrorSelection | null
+  ): Promise<RuntimeStageOutcome> {
+    if (this.isBusy) return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
+    this.operating = true
+    try {
+      return await this.runBootstrap(onProgress, mirror)
+    } finally {
+      this.operating = false
+    }
+  }
+
+  private async runBootstrap(
     onProgress: (update: BootstrapProgressUpdate) => void,
     mirror?: RuntimeMirrorSelection | null
   ): Promise<RuntimeStageOutcome> {
@@ -766,6 +842,21 @@ export class RuntimeInitializationService {
     mirrorKey?: string,
     mode: RuntimeRetryMode = 'auto'
   ): Promise<RuntimeStageOutcome> {
+    if (this.isBusy) return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
+    this.operating = true
+    try {
+      return await this.runRetryStage(stage, onProgress, mirrorKey, mode)
+    } finally {
+      this.operating = false
+    }
+  }
+
+  private async runRetryStage(
+    stage: InitializationRunStage,
+    onProgress: (update: BootstrapProgressUpdate) => void,
+    mirrorKey?: string,
+    mode: RuntimeRetryMode = 'auto'
+  ): Promise<RuntimeStageOutcome> {
     if (stage === 'mirror' || stage === 'pip' || stage === 'git') {
       logger.info(`${stage} 段在 Runtime 链路没有对应物，直接跳过`)
       onProgress({
@@ -784,13 +875,13 @@ export class RuntimeInitializationService {
       if (!mirror) {
         logger.info(`镜像源 ${mirrorKey} 在 Runtime 目录里没有对应源，按默认轮换重跑 bootstrap`)
       }
-      return this.bootstrap(onProgress, mirror)
+      return this.runBootstrap(onProgress, mirror)
     }
 
     const command = this.resolveRetryCommand(stage, mode)
     if (!command) {
       logger.warn(`未知的重试段 ${stage}，按整条 bootstrap 重跑`)
-      return this.bootstrap(onProgress)
+      return this.runBootstrap(onProgress)
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
@@ -805,6 +896,22 @@ export class RuntimeInitializationService {
       }
     }
     let outcome = await this.execute(command, mirror, bridge)
+    if (
+      !outcome.success &&
+      this.options.launchConfig.mode === 'managed' &&
+      stage === 'dependency' &&
+      [
+        'LOCKFILE_MISSING',
+        'LOCKFILE_OUTDATED',
+        'LOCKFILE_INVALID',
+        'LOCKFILE_CHECK_FAILED',
+      ].includes(outcome.code ?? '') &&
+      !this.cancelRequested
+    ) {
+      logger.info('锁文件检查失败，自动恢复受管程序文件并重新准备环境')
+      // bootstrap 自身不回到 retryStage，因此每次局部重试最多自动恢复一次。
+      return this.runBootstrap(onProgress)
+    }
     if (
       !outcome.success &&
       stage === 'dependency' &&
@@ -1044,6 +1151,7 @@ export class RuntimeInitializationService {
       outcome = await client.run(command, {
         onStarted: control => {
           this.activeControl = control
+          if (this.cancelRequested) control.cancel()
         },
         onProgress: event =>
           bridge.observe(event.stage, event.message, event.percent, {

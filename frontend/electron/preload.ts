@@ -299,6 +299,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('install-dependencies', selectedMirror, rebuild),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
   getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
+  checkRuntimeBinaryUpdate: () => ipcRenderer.invoke('check-runtime-binary-update'),
+  updateRuntimeBinary: () => ipcRenderer.invoke('update-runtime-binary'),
+  onRuntimeBinaryProgress: (callback: (progress: unknown) => void) => {
+    ipcRenderer.on('runtime-binary-progress', (_, progress) => callback(progress))
+  },
+  removeRuntimeBinaryProgressListener: () => {
+    ipcRenderer.removeAllListeners('runtime-binary-progress')
+  },
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),

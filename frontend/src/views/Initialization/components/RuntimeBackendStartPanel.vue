@@ -5,11 +5,13 @@
     :message="errorMessage"
     :failure-actions="BACKEND_FAILURE_ACTIONS"
     :failure-logs="backendLogs"
+    :runtime-mode="runtimeMode"
     :show-skip-button="showSkipButton"
     :docs-url="BACKEND_START_FAILURE_DOC_URL"
     @action="handleFailureAction"
     @open-docs="handleOpenDocumentation"
     @skip="emit('skip')"
+    @runtime-updated="emit('runtime-updated')"
   />
   <LaunchStatus
     v-else
@@ -29,7 +31,7 @@ import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLi
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { SLOW_LAUNCH_THRESHOLD_MS, openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './LaunchFailure.vue'
-import type { RuntimeFailureFields } from '@/types/electron'
+import type { RuntimeFailureFields, RuntimeInitMode } from '@/types/electron'
 import type { FailureAction, FailureActionKind } from '@/utils/initializationDecision'
 
 defineOptions({ name: 'RuntimeBackendStartPanel' })
@@ -38,11 +40,13 @@ interface Props {
   showSkipButton?: boolean
   /** 静默启动失败后回落到本页时为真，文案要说明是在重试而不是首次启动。 */
   retrying?: boolean
+  runtimeMode?: RuntimeInitMode
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showSkipButton: false,
   retrying: false,
+  runtimeMode: 'off',
 })
 
 const emit = defineEmits<{
@@ -50,13 +54,14 @@ const emit = defineEmits<{
   complete: []
   error: [error: string, failure: RuntimeFailureFields]
   skip: []
+  'runtime-updated': []
 }>()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('后端启动步骤')
 const { startPolling } = useUpdateChecker()
 
-// 后端起不来时能做的只有重试，换源和重建环境都轮不到这一段。
+// 后端启动失败可重试或单独更新 Runtime，换源和重建环境都轮不到这一段。
 // 加一个查看日志：这一段的失败结果不带 logPath，spawn 之前就失败时连日志正文都没有，
 // 「详细信息」折叠整块不出现，不给入口的话这一屏一个日志出口都没有。
 const BACKEND_FAILURE_ACTIONS: FailureAction[] = [
