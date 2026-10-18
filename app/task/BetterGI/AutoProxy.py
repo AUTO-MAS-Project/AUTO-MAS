@@ -1056,10 +1056,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 与 BGI 槽位、覆盖副本内容；指纹去重，失败不阻断运行）。native 池
         # 由 manager.prepare 在任务级一次性归档
         with suppress(Exception):
+            # 共享来源的编排在脚本级段里、不在副本目录，随归档一并存底
+            _shared_od = (
+                (await self.script_config.toDict()).get("OneDragon")
+                if self.owner_config is self.script_config
+                else None
+            )
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 read_overlay_values(self.cur_user_config),
+                owner=self.owner_user_id,
+                shared_one_dragon=(
+                    _shared_od if isinstance(_shared_od, dict) else None
+                ),
             )
         self._write_one_dragon_config()
         # 自定义项执行层组名由物化结果派生（MAS-{短id}-自定义配置组{N}）；仅当执行层接管时才非空有效。

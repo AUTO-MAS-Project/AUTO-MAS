@@ -80,19 +80,14 @@ def _bettergi_user_config(script_config: RuntimeBetterGIConfig, user_id: str):
 
 
 def _bettergi_owner_id(script_config: RuntimeBetterGIConfig, user_id: str) -> str:
-    """MAS 侧 per-user 副本的 owner 维度：由该用户的配置来源决定。
+    """MAS 侧 per-user 副本的 owner 维度（归属解析见 ``tools.script_source``）。
 
-    「脚本」来源（shared）的用户共读共写脚本级那一份（``one_dragon.SCRIPT_LEVEL_OWNER``），
-    其余来源各用各的副本；原生不读 MAS 副本，返回原 id 仅供调用方统一口径。
     只在读写 per-user 副本时使用——校验用户是否存在仍走 ``_bettergi_user_id``。
     """
 
-    from app.task.BetterGI.tools import one_dragon
-    from app.task.proxy_helpers import read_config_base
+    from app.task.BetterGI.tools import script_source
 
-    return one_dragon.owner_user_id(
-        user_id, read_config_base(_bettergi_user_config(script_config, user_id))
-    )
+    return script_source.owner_id(script_config, user_id)
 
 
 def _bettergi_uses_script_source(
@@ -100,12 +95,9 @@ def _bettergi_uses_script_source(
 ) -> bool:
     """该用户是否是「脚本」来源——一条龙编排读写脚本级共享段而不是自己的用户配置。"""
 
-    from app.task.proxy_helpers import CONFIG_BASE_SHARED, read_config_base
+    from app.task.BetterGI.tools import script_source
 
-    return (
-        read_config_base(_bettergi_user_config(script_config, user_id))
-        == CONFIG_BASE_SHARED
-    )
+    return script_source.uses_script_source(script_config, user_id)
 
 
 def _bettergi_owner_config(script_config: RuntimeBetterGIConfig, user_id: str):
@@ -114,11 +106,9 @@ def _bettergi_owner_config(script_config: RuntimeBetterGIConfig, user_id: str):
     Info / Task / Switch 段（来源、名称、账号等）始终属于用户自己，不走本入口。
     """
 
-    return (
-        script_config
-        if _bettergi_uses_script_source(script_config, user_id)
-        else _bettergi_user_config(script_config, user_id)
-    )
+    from app.task.BetterGI.tools import script_source
+
+    return script_source.owner_config(script_config, user_id)
 
 
 async def _bettergi_apply_script_level_source(
@@ -129,29 +119,9 @@ async def _bettergi_apply_script_level_source(
     来源为「用户」的用户原样返回；脚本级段读不到时保持用户级值，不阻断读取。
     """
 
-    from app.task.proxy_helpers import CONFIG_BASE_SHARED, read_config_base
+    from app.task.BetterGI.tools import script_source
 
-    if not isinstance(script_config, RuntimeBetterGIConfig) or not isinstance(
-        data, dict
-    ):
-        return data
-    try:
-        shared = (await script_config.toDict()).get("OneDragon")
-    except Exception:  # pragma: no cover - 读取失败退回用户级值
-        return data
-    if not isinstance(shared, dict):
-        return data
-    for cfg in data.values():
-        if not isinstance(cfg, dict):
-            continue
-        if read_config_base(cfg) != CONFIG_BASE_SHARED:
-            continue
-        one_dragon_cfg = cfg.get("OneDragon")
-        if isinstance(one_dragon_cfg, dict):
-            one_dragon_cfg.update(shared)
-        else:
-            cfg["OneDragon"] = dict(shared)
-    return data
+    return await script_source.apply_script_level_source(script_config, data)
 
 
 def _whimbox_script_config(script_id: str):
@@ -809,7 +779,7 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
                 _od.ensure_keymouse_groups(
                     _root,
                     user.scriptId,
-                    user.userId,
+                    _bettergi_owner_id(script_cfg, user.userId),
                     [e.get("name") for e in _queue if isinstance(e, dict)],
                 )
             except Exception:  # pragma: no cover - 兜底：生成失败不应阻断保存
@@ -1869,7 +1839,9 @@ async def get_bettergi_script_groups_api(
         names = one_dragon.list_script_groups(root)
         if userId:
             _bettergi_user_id(script_config, userId)
-            copy_names = one_dragon.list_user_script_group_names(scriptId, userId)
+            copy_names = one_dragon.list_user_script_group_names(
+                scriptId, _bettergi_owner_id(script_config, userId)
+            )
             merged: list[str] = []
             for name in (*copy_names, *names):
                 if name and name not in merged:
@@ -1918,7 +1890,9 @@ async def get_bettergi_script_group_detail_api(
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
-        data = one_dragon.read_user_script_group(root, scriptId, userId, name)
+        data = one_dragon.read_user_script_group(
+            root, scriptId, _bettergi_owner_id(script_config, userId), name
+        )
         if not data:
             return BetterGIScriptGroupDetailOut(
                 code=404,
@@ -2576,7 +2550,11 @@ async def save_bettergi_script_group_api(
         if not isinstance(projects, list):
             raise ValueError("projects 必须为数组（按执行顺序的项目列表）")
         out = one_dragon.write_user_script_group(
-            root, req.scriptId, req.userId, req.name, req.data
+            root,
+            req.scriptId,
+            _bettergi_owner_id(script_config, req.userId),
+            req.name,
+            req.data,
         )
         if out is None:
             # 名为空等无可写内容的情况：按成功返回，不把「配置组名非法」弹给用户

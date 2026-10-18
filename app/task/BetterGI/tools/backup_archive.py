@@ -38,8 +38,10 @@
   （一条龙配置副本）、``ScriptGroup/``（配置组副本）、``GlobalDomain/``
   （秘境刷取配置副本）——前端端点直接读写、就是页面编辑对象（对齐
   OkNte「ConfigFile 即页面编辑对象」）；shared/independent/native 都走 per-user
-  副本（副本与来源无关，原生来源下前端编辑同样落盘），池**恒按用户分桶**，
-  无 owner 解耦（对齐 General）。
+  副本（副本归属由配置来源决定：shared → 脚本级保留 id，其余 → 用户自己），
+  池**恒按用户分桶**、恢复目标按同一 owner 解析（对齐 Okww 的「池按用户、
+  目标按 owner」）；共享来源的脚本级 OneDragon 段不在副本目录里，另以侧车
+  随归档存底、恢复时回填。
 - 字段侧车：OneDragon 段全部字段 + Task.OneDragonConfigName + Switch.
   Resource（运行时物化进副本/原生或注入切号脚本）+ Info.Base（仅预览：
   决定是否物化）。Id/Password/前后置脚本/通知/Data 由 MAS 自己消费（登录
@@ -196,15 +198,20 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
     return Path.cwd() / "data" / script_id / "BetterGIBackups" / "mas" / user_id
 
 
-def _collect_mas_files(script_id: str, user_id: str) -> dict[str, Path]:
-    """收集 per-user 副本文件集（相对键保留子目录名，如 ``OneDragon/xxx.json``）。
+SHARED_ONEDRAGON_SIDECAR_NAME = "_mas_shared_onerdragon.json"
+"""共享编排侧车名：脚本级 OneDragon 段不在副本目录里，随归档存底、恢复时回填"""
 
-    仅收 per-user 副本三个子目录；UserData 字段与其它数据（切号脚本残留等）
-    不属于副本内容，不进备份。
+
+def _collect_mas_files(script_id: str, owner: str) -> dict[str, Path]:
+    """收集 ``owner`` 的副本文件集（相对键保留子目录名，如 ``OneDragon/xxx.json``）。
+
+    ``owner`` 是副本归属维度：shared 来源为脚本级保留 id（见 ``tools.script_source``），
+    其余来源为该用户自己。仅收副本三个子目录；UserData 字段与其它数据（切号脚本
+    残留等）不属于副本内容，不进备份。
     """
 
     files: dict[str, Path] = {}
-    user_root = mas_user_dir(script_id, user_id)
+    user_root = mas_user_dir(script_id, owner)
     for sub in _PER_USER_SUB_DIRS:
         sub_dir = user_root / sub
         if not sub_dir.is_dir():
@@ -219,17 +226,25 @@ def archive_mas_backup(
     user_id: str,
     overlay: dict | None = None,
     force: bool = False,
+    owner: str | None = None,
+    shared_one_dragon: dict | None = None,
 ) -> Path | None:
-    """归档 per-user 副本 + 页面字段侧车到用户池（指纹去重，无变化跳过）。
+    """归档副本 + 页面字段侧车到用户池（指纹去重，无变化跳过）。
 
-    副本与侧车都参与指纹：只改页面字段、未动副本时同样新建归档。副本
+    ``user_id`` 是池归属（恒按用户分桶）；``owner`` 是副本目录维度，由调用方按来源
+    解析（缺省即用户自己）；``shared_one_dragon`` 为共享来源的脚本级编排，随归档
+    存底。副本与侧车都参与指纹：只改页面字段、未动副本时同样新建归档。副本
     全部缺失（用户从未保存过配置组/秘境刷取且未运行过任务）时无可恢复
     内容，返回 ``None``。
     """
 
-    files = _collect_mas_files(script_id, user_id)
+    files: dict[str, Path | str] = _collect_mas_files(script_id, owner or user_id)
     if overlay:
         files[OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
+    if shared_one_dragon is not None:
+        files[SHARED_ONEDRAGON_SIDECAR_NAME] = json.dumps(
+            shared_one_dragon, ensure_ascii=False, indent=2
+        )
     if not files:
         return None
     dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
@@ -253,15 +268,22 @@ def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
 
 
 def restore_mas_backup(
-    script_id: str, user_id: str, ts: str, overlay: dict | None = None
+    script_id: str,
+    user_id: str,
+    ts: str,
+    overlay: dict | None = None,
+    owner: str | None = None,
+    shared_one_dragon: dict | None = None,
 ) -> dict | None:
-    """把用户池归档恢复到 per-user 副本（恢复前自动归档当前，误恢复可找回）。
+    """把用户池归档恢复到副本目录（恢复前自动归档当前，误恢复可找回）。
 
     恢复走基座 ``restore_files`` 的 replace 语义：受管副本子目录
     （OneDragon/ScriptGroup/GlobalDomain）整棵替换为备份时点内容，副本内
-    备份之外的残留一并清理，恢复结果与备份完全一致；per-user 根目录其余
-    内容（切号脚本残留等）原样保留。侧车与模式标注不写回副本，侧车读回
-    供调用方回填 UserData 后即分离删除。
+    备份之外的残留一并清理，恢复结果与备份完全一致；副本根目录其余
+    内容（切号脚本残留等）原样保留。``owner`` 为恢复目标维度（缺省用户自己，
+    由调用方按来源解析）；``shared_one_dragon`` 供恢复前的强制存底记下当前
+    共享编排。侧车与模式标注不写回副本，侧车读回供调用方回填 UserData 后即
+    分离删除。
     归档只含侧车（用户只有页面字段、尚未产生任何副本文件的首个
     independent 来源用户）时
     无副本可写回，跳过文件恢复只回填侧车——此时强行调用会因受管键为空
@@ -274,30 +296,67 @@ def restore_mas_backup(
     backup_dir = get_mas_backup_dir(script_id, user_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    archive_mas_backup(script_id, user_id, overlay=overlay, force=True)
-    # 把归档内副本文件（按 OneDragon/… 相对键）写回 per-user 根目录
+    archive_mas_backup(
+        script_id,
+        user_id,
+        overlay=overlay,
+        force=True,
+        owner=owner,
+        shared_one_dragon=shared_one_dragon,
+    )
+    # 把归档内副本文件（按 OneDragon/… 相对键）写回 owner 目录
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        if rel
+        not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME, SHARED_ONEDRAGON_SIDECAR_NAME}
     ]
     if managed:
-        restore_files(backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed)
+        restore_files(
+            backup_dir, mas_user_dir(script_id, owner or user_id), rel_keys=managed
+        )
     restored_overlay = read_overlay_sidecar(backup_dir)
-    logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
+    logger.info(f"用户 {owner or user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
 
-def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> None:
-    """运行物化前归档 per-user 副本 + 页面字段到用户池。
+def read_shared_onedragon_sidecar(backup_dir: Path) -> dict | None:
+    """读取备份里的共享编排侧车；没有（独立/原生来源或旧备份）返回 ``None``。"""
 
-    运行会把字段物化进副本与 BGI 槽位、覆盖副本内容，物化前存底；指纹
+    path = backup_dir / SHARED_ONEDRAGON_SIDECAR_NAME
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning(f"共享编排侧车无法读取: {path}")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def archive_mas_runtime_backup(
+    script_id: str,
+    user_id: str,
+    overlay: dict,
+    owner: str | None = None,
+    shared_one_dragon: dict | None = None,
+) -> None:
+    """运行物化前归档副本 + 页面字段 + 共享编排到用户池。
+
+    运行会把字段物化进副本与 BGI 槽位、覆盖副本内容，物化前存底；``owner``
+    为副本目录维度（缺省用户自己），共享来源另把脚本级编排随归档存底。指纹
     去重，失败只记日志，绝不中止随后的运行或会话（归档是现场保护，不是
     前置条件）。
     """
 
     try:
-        archive_mas_backup(script_id, user_id, overlay=overlay)
+        archive_mas_backup(
+            script_id,
+            user_id,
+            overlay=overlay,
+            owner=owner,
+            shared_one_dragon=shared_one_dragon,
+        )
     except Exception:
         logger.opt(exception=True).warning(
             "BetterGI 运行前 MAS 配置归档失败，已跳过（不阻断任务）"
@@ -542,7 +601,8 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     files = {
         rel: path.stat().st_size
         for rel, path in dir_files(backup_dir).items()
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        if rel
+        not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME, SHARED_ONEDRAGON_SIDECAR_NAME}
     }
     if files:
         file_rows = [
