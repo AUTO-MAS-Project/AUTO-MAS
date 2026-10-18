@@ -1,6 +1,7 @@
 <template>
   <section
     class="activity-carousel"
+    :class="{ 'has-sidebar': activeItem?.detailPlacement === 'right' }"
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
     @focusin="focused = true"
@@ -608,6 +609,55 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+/* 主视觉与活动侧栏并排，图片保持原比例，活动列表独立滚动。 */
+.activity-carousel.has-sidebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+  align-items: start;
+}
+
+.has-sidebar .activity-header {
+  grid-column: 1 / -1;
+}
+
+.has-sidebar .banner-viewport {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.has-sidebar .banner-body {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.has-sidebar .banner-cover {
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+  object-position: center;
+  transform: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.has-sidebar .activity-detail {
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+
+.has-sidebar .activity-detail :deep(.sra-card) {
+  position: absolute;
+  inset: 0;
+}
+
 .switcher-chip:focus-visible,
 .banner-arrow:focus-visible {
   outline: 2px solid var(--ant-color-primary);
@@ -626,6 +676,22 @@ onBeforeUnmount(() => {
 @media (hover: none) {
   .banner-arrow {
     opacity: 1;
+  }
+}
+
+/* 应用侧栏与正文边距还会占用 224px，提前折列以留足主图和时间信息的空间。 */
+@media (max-width: 1200px) {
+  .activity-carousel.has-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .has-sidebar .activity-detail {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .has-sidebar .activity-detail :deep(.sra-card) {
+    position: static;
   }
 }
 
