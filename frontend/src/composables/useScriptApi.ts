@@ -149,6 +149,7 @@ export function useScriptApi() {
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
         type: resolveScriptType(indexItem.type),
+        activityGame: indexItem.activityGame,
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -1434,6 +1435,7 @@ export function useScriptApi() {
       return {
         uid: item.uid,
         type: scriptType,
+        activityGame: item.activityGame,
         name: config?.Info?.Name || `${item.type}脚本`,
         config,
       }

@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.core import Config
+from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
@@ -269,7 +270,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
+        activity_games = {
+            config.__name__: game for config, game in SCRIPT_CALENDAR_GAMES.items()
+        }
+        index = [
+            ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
+            for item in index
+        ]
         data = {
             uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
                 **cfg
