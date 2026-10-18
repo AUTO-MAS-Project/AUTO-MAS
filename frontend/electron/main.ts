@@ -78,10 +78,6 @@ import {
   isPersistedRuntimeLaunchMode,
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
-import {
-  abortRuntimeUpdateForShutdown,
-  prepareRuntimeUpdateForClose,
-} from './services/runtimeUpdateService'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -540,7 +536,6 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
   forceQuitInProgress = true
-  await abortRuntimeUpdateForShutdown()
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
@@ -599,20 +594,10 @@ function requestRendererClose(reason: string): void {
   win.setSkipTaskbar(true)
   win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
-  void prepareRuntimeUpdateForClose().then(ready => {
-    if (!ready) {
-      cancelQuitRequest()
-      return
-    }
-    if (win.isDestroyed() || win.webContents.isDestroyed()) {
-      void forceQuitAfterRendererTimeout(`${reason}（等待更新期间 renderer 已关闭）`)
-      return
-    }
-    win.webContents.send('app-close-requested')
-    quitFallbackTimer = setTimeout(() => {
-      void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
-    }, RENDERER_QUIT_FALLBACK_MS)
-  })
+  win.webContents.send('app-close-requested')
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
+  }, RENDERER_QUIT_FALLBACK_MS)
 }
 
 // 更新托盘状态
@@ -1129,10 +1114,7 @@ function createWindow() {
   logger.info('主窗口创建完成')
 
   // 注册初始化处理器
-  registerInitializationHandlers(
-    win,
-    () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight
-  )
+  registerInitializationHandlers(win)
   logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
@@ -1821,20 +1803,14 @@ ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
-ipcMain.handle('app-prepare-quit', async () => {
+ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
-  if (activeQuitPreparation !== null) {
-    return (await prepareRuntimeUpdateForClose()) ? activeQuitPreparation : null
-  }
+  if (activeQuitPreparation !== null) return activeQuitPreparation
   clearQuitFallback()
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
   quitPreparationExpired = false
-  if (!(await prepareRuntimeUpdateForClose())) {
-    cancelQuitRequest(token)
-    return null
-  }
   quitFallbackTimer = setTimeout(() => {
     quitFallbackTimer = null
     quitPreparationExpired = true

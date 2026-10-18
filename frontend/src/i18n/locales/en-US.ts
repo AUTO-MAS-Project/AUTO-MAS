@@ -248,10 +248,6 @@ export default {
       'A backend update is available — automatic updates are off in development mode',
     backendUpdateTitle: 'Updating the backend to {version}',
     backendUpdateSucceeded: 'The backend has been updated and restarted',
-    backendHotUpdateDetails: 'Backend update recovery',
-    backendHotUpdateReconnect: 'Reconnect',
-    backendHotUpdateFailedConnection:
-      'The updated backend started, but reconnection failed. Your page and drafts have been kept.',
     backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
     backendUpdateFailedShutdown:
       'The running backend could not be stopped, so the update never started. The current version still works.',
@@ -5085,10 +5081,6 @@ export default {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
       pauseUpdates: 'Pause updates',
-      hotUpdateAvoidMinutes: 'Scheduled task buffer',
-      hotUpdateAvoidMinutesTip:
-        'Defer automatic backend restarts when a scheduled task starts within this window. 0 disables the buffer; default: 5 minutes; maximum: 60 minutes.',
-      hotUpdateMinutes: 'minutes',
       pauseUpdatesTip:
         'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
       pausePlaceholder: 'Select pause end date',

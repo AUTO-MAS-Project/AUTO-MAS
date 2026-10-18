@@ -5396,16 +5396,6 @@ class ToolsConfig(ConfigBase):
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
 
-class HotUpdateAvoidMinutesValidator(ValidatorBase):
-    """热更避让只接受整数；旧配置或非法值回到默认五分钟。"""
-
-    def validate(self, value: Any) -> bool:
-        return type(value) is int and 0 <= value <= 60
-
-    def correct(self, value: Any) -> int:
-        return min(60, max(0, value)) if type(value) is int else 5
-
-
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -5589,10 +5579,6 @@ class GlobalConfig(ConfigBase):
         )
         ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
         self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
-        ## 后端热更提前避让定时任务的分钟数；0 仍让已到点的任务优先。
-        self.Update_HotUpdateAvoidMinutes = ConfigItem(
-            "Update", "HotUpdateAvoidMinutes", 5, HotUpdateAvoidMinutesValidator()
-        )
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",
