@@ -598,7 +598,17 @@ async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> N
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
-    stdout, _ = await process.communicate()
+    try:
+        stdout, _ = await process.communicate()
+    except asyncio.CancelledError:
+        # 取消等待时子进程仍在跑：先终止并等它退出，再把取消向上传播。
+        # 否则任务已停、hpatchz 还在写输出目录，会和随后的清理或重试互相踩。
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+        await process.wait()
+        raise
     if process.returncode != 0:
         detail = stdout.decode("utf-8", "replace").strip().splitlines()
         raise HpatchzApplyError(process.returncode, detail[-1] if detail else "")
@@ -867,14 +877,18 @@ async def _apply_groups(
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
         if fallback:
+            # 先按清单声明体积预检，再下载整组：超过上限的组不该先下完装完再报错，
+            # 否则无人值守更新会先吃掉超出预算的带宽与磁盘。
+            group_bytes = sum(entry.size for entry in group.dst_files)
+            if fallback_bytes + group_bytes > fallback_limit:
+                raise RuntimeError(
+                    f"补丁回退重下将累计 {(fallback_bytes + group_bytes) / 1024**3:.1f}GB"
+                    f"（超过 {fallback_limit / 1024**3:.1f}GB 上限），已中止，"
+                    "请用官方启动器更新"
+                )
             fallback_bytes += await _redownload_group(
                 client, plan, group, staging, install_dir, on_progress=on_progress
             )
-            if fallback_bytes > fallback_limit:
-                raise RuntimeError(
-                    f"补丁回退重下已累计 {fallback_bytes / 1024**3:.1f}GB（超过 "
-                    f"{fallback_limit / 1024**3:.1f}GB 上限），已中止，请用官方启动器更新"
-                )
         await _report(on_progress, f"鸣潮更新应用中 {done}/{total}")
 
 
