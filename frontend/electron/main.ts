@@ -1849,7 +1849,7 @@ ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
-    const { getRelatedProcesses } = await import('./utils/processManager')
+    const { getRelatedProcesses } = await import('./utils/processManager.js')
     return await getRelatedProcesses()
   } catch {
     logger.error('获取进程信息失败')
