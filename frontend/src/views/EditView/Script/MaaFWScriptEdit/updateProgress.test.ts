@@ -24,7 +24,7 @@ describe('reduceUpdateProgress', () => {
       event({ stage: 'log', log: 'start checking', message: 'start checking' })
     )
     expect(state.phase).toBe('checking')
-    expect(state.logs).toEqual(['start checking'])
+    expect(state.logs).toEqual([{ text: 'start checking', alert: false }])
     expect(state.message).toBe('')
   })
 
@@ -34,7 +34,7 @@ describe('reduceUpdateProgress', () => {
       state = reduceUpdateProgress(state, event({ stage: 'log', log: `line ${i}` }))
     }
     expect(state.logs).toHaveLength(MAX_UPDATE_LOG_LINES)
-    expect(state.logs[0]).toBe('line 5')
+    expect(state.logs[0]?.text).toBe('line 5')
   })
 
   it('下载事件带上字节、速度与百分比，包类型一路继承', () => {
@@ -108,7 +108,7 @@ describe('reduceUpdateProgress', () => {
     )
     expect(state.phase).toBe('failed')
     expect(state.message).toBe('下载失败')
-    expect(state.logs).toEqual(['迟到的一行'])
+    expect(state.logs).toEqual([{ text: '迟到的一行', alert: false }])
   })
 
   it('rolled_back 与 completed 都是终态', () => {
