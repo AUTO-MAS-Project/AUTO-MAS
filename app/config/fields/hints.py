@@ -198,9 +198,9 @@ def hint_for_field(
             if m.secret:
                 hint["secret"] = True
         elif isinstance(m, (Ge, Gt)):
-            hint["min"] = getattr(m, "ge", None) or getattr(m, "gt", None)
+            hint["min"] = m.ge if isinstance(m, Ge) else m.gt
         elif isinstance(m, (Le, Lt)):
-            hint["max"] = getattr(m, "le", None) or getattr(m, "lt", None)
+            hint["max"] = m.le if isinstance(m, Le) else m.lt
 
     # ── Python / Literal / Enum 类型推导 ──
     # 无 endpoint 的 select 仍从 Literal / Enum 推导静态选项；有 endpoint 时由接口供值。
