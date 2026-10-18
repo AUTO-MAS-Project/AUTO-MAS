@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskStatusOut } from '@/api/models/TaskStatusOut'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
@@ -148,6 +149,23 @@ export function useNativeGuiSession(options: {
           clearSession()
         }),
       ]
+      // 订阅是在启动请求返回后才建立的：启动瞬间就失败的任务，终态消息可能
+      // 已经先到并被丢弃。先查一次既有终态缓存，别把「已失败」当成「已打开」。
+      let alreadyFinished = false
+      try {
+        const status = await Service.getTaskStatusApiDispatchTaskTaskIdGet(response.taskId)
+        alreadyFinished = status.status !== TaskStatusOut.status.RUNNING
+        if (status.status === TaskStatusOut.status.ERROR) {
+          message.error(status.error || t(keys.startFailed))
+        }
+      } catch (e) {
+        // 状态查询失败不影响正常打开流程
+        logger.error(e instanceof Error ? e.message : String(e))
+      }
+      if (alreadyFinished) {
+        clearSession()
+        return false
+      }
       message.success(viewOnly ? t(keys.viewOpened) : t(keys.opened))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
