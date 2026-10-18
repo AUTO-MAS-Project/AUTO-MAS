@@ -1781,7 +1781,7 @@ const loadOneDragonConfigs = async () => {
   }
 }
 
-// 自动战斗策略选项（「根据队伍自动选择」+ {RootPath}/User/AutoFight/*.txt），由后端实时读取
+// 自动战斗策略选项（「根据队伍自动选择」+ {RootPath}/User/AutoFight/*.txt、*.json），由后端实时读取
 const strategyOptions = ref<{ label: string; value: string }[]>([])
 const loadStrategyOptions = async () => {
   try {

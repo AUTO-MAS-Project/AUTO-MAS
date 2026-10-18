@@ -1512,7 +1512,7 @@ async def get_hsr_stage_options_api(
     status_code=200,
 )
 async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
-    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt`` 文件名。"""
+    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt``、``*.json`` 文件名。"""
 
     try:
         script_config = _bettergi_script_config(scriptId)

@@ -130,14 +130,17 @@ _ALL_GLOBAL_LEAVES = _GLOBAL_TEAM_LEAVES + _GLOBAL_STRATEGY_LEAVES
 
 
 def list_auto_boss_strategies(root: Path) -> list[str]:
-    """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight/*.txt 文件名。
+    """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight/*.txt、*.json 文件名。
 
-    玩家可自行往该目录放置 .txt 战斗脚本，故每次调用实时扫描以反映最新选项。
+    玩家可自行往该目录放置 .txt 或 .json 战斗脚本（BetterGI 原生按后缀分派：txt 走
+    旧战斗脚本、json 走 JsonCombatStrategy），故每次调用实时扫描以反映最新选项；同一
+    策略同时存在 .txt 与 .json 时按文件名去重，只列一次。
     """
     options = [_AUTO_BOSS_BUILTIN_STRATEGY]
     autofight_dir = root / _AUTO_FIGHT_REL_DIR
     if autofight_dir.is_dir():
-        for p in sorted(autofight_dir.glob("*.txt"), key=lambda p: p.stem):
+        files = [*autofight_dir.glob("*.txt"), *autofight_dir.glob("*.json")]
+        for p in sorted(files, key=lambda p: p.stem):
             name = p.stem.strip()
             if name and name not in options:
                 options.append(name)
@@ -701,7 +704,7 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
     - ``oneDragon``：一条龙配置目录（{RootPath}/User/OneDragon）
     - ``scriptGroup``：配置组目录（{RootPath}/User/ScriptGroup）
     - ``keyMouseScript``：键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript）
-    - ``autoFight``：自动战斗策略目录（{RootPath}/User/AutoFight，*.txt 即一份策略）
+    - ``autoFight``：自动战斗策略目录（{RootPath}/User/AutoFight，*.txt / *.json 各算一份策略）
     - ``exe``：BetterGI 主程序（{RootPath}/BetterGI.exe，用于打开 BGI 调度/主界面）
 
     目录不存在时仅返回派生路径，由调用方决定是否提示缺失；返回绝对路径便于前端直接打开。
