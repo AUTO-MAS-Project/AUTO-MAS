@@ -262,6 +262,18 @@ def _snapshot_swap_paths(live_path: Path) -> tuple[Path, Path]:
     )
 
 
+def recover_directory_swap(live_path: Path) -> tuple[Path, Path]:
+    """先复原上次换入留下的旧目录，不能把唯一留底当临时文件清掉。"""
+
+    staging_path, backup_path = _snapshot_swap_paths(live_path)
+    if os.path.lexists(backup_path):
+        if os.path.lexists(live_path):
+            raise RuntimeError(f"配置换入留底尚未处理，请先检查并保留: {backup_path}")
+        backup_path.rename(live_path)
+    force_rmtree(staging_path)
+    return staging_path, backup_path
+
+
 def write_native_config_snapshot(
     snapshot_path: Path,
     *,
@@ -421,10 +433,10 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     同卷副本改名就位, 全程不存在「dst 已被删除而新内容尚未就位」的中间态:
     脚本原生配置是要保的最后一份数据, 替换它的最后一步必须是改名而非删除。
     中断后现场只可能是「dst 缺失(留底还在)」「dst 完整」或「dst 原样」,
-    前两种再调用一次本函数或恢复快照即可复原。
+    目标缺失时再次调用会先复原留底；目标与留底同时存在时保留现场并报错。
 
     src 与 dst 须同卷(与 dst 同级的临时副本天然满足); 留底与副本目录固定
-    带 .automas-old / .automas-new 后缀, 每次调用开头都会清理上一次的残留。
+    带 .automas-old / .automas-new 后缀, 旧目录只有在换入或回滚成功后才清理。
 
     Args:
         src: 内容来源目录, 必须已存在。
@@ -434,9 +446,7 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     if not src.is_dir():
         raise RuntimeError(f"配置换入的源目录不存在: {src}")
 
-    staging_path, backup_path = _snapshot_swap_paths(dst)
-    force_rmtree(staging_path)
-    force_rmtree(backup_path)
+    staging_path, backup_path = recover_directory_swap(dst)
     shutil.copytree(src, staging_path)
     dst_moved = False
     if dst.exists() or dst.is_symlink() or dst.is_junction():
@@ -445,12 +455,13 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     try:
         staging_path.rename(dst)
     except BaseException:
-        if dst_moved and not dst.exists():
+        if dst_moved and not os.path.lexists(dst):
             backup_path.rename(dst)
         raise
+    else:
+        force_rmtree(backup_path)
     finally:
         force_rmtree(staging_path)
-        force_rmtree(backup_path)
 
 
 def _preserve_legacy_snapshot(snapshot_path: Path) -> Path:
@@ -508,9 +519,7 @@ def recover_native_config(
         处置结果: restored / intact / skipped / cleared / legacy。
     """
 
-    staging_path, backup_path = _snapshot_swap_paths(live_path)
-    force_rmtree(staging_path)
-    force_rmtree(backup_path)
+    recover_directory_swap(live_path)
 
     state = read_native_config_snapshot(
         snapshot_path, expected_script_id=expected_script_id

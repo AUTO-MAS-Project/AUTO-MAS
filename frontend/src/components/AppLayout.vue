@@ -77,7 +77,6 @@ import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
-import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
@@ -89,7 +88,6 @@ const SIDER_WIDTH = 160
 const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
-const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
 // 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
@@ -180,13 +178,6 @@ const selectedKeys = computed(() => {
 
 const onMenuClick: MenuProps['onClick'] = info => {
   const target = String(info.key)
-
-  // 检查路由是否被锁定
-  if (isRouteLocked.value) {
-    // 如果路由被锁定，触发回调而不进行路由跳转
-    triggerBlockCallback(target)
-    return
-  }
 
   if (
     target === '/update-download-dev' &&

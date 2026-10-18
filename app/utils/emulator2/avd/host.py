@@ -1060,7 +1060,13 @@ async def check_acceleration(root: str | Path, *, use_cache: bool = True) -> Acc
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+        try:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=60)
+        finally:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+                await process.communicate()
         result = parse_accel_check(process.returncode or 0, decode_bytes(stdout))
     except Exception as e:  # noqa: BLE001 - 查不了当不可用，原因给用户
         result = AccelCheck(False, f"{type(e).__name__}: {e}")

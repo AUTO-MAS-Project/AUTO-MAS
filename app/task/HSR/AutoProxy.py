@@ -1101,37 +1101,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     daily_eow_enabled=module_daily_eow_enabled,
                     redeem_codes_enabled=redeem_codes_enabled,
                 )
-                if item is not None:
-                    if (
-                        module.key == "ReceiveRewards"
-                        and redeem_codes_enabled
-                        and redeem_code_fingerprint
-                    ):
-                        previous_on_success = item.on_success
-
-                        def on_rewards_success(
-                            result,
-                            previous_on_success=previous_on_success,
-                            fingerprint=redeem_code_fingerprint,
-                            engine=assigned,
-                        ):
-                            if previous_on_success is not None:
-                                previous_on_success(result)
-                            self._queue_data_writeback(
-                                user_id=uid,
-                                user_name=user_name,
-                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
-                                fields=[
-                                    (
-                                        "Data",
-                                        f"{engine}RedeemCodeFingerprint",
-                                        fingerprint,
-                                    )
-                                ],
-                            )
-
-                        item.on_success = on_rewards_success
-                    items.append(item)
             else:
                 item = self._m7a_control.create_module_item(
                     user_item=user_item,
@@ -1146,37 +1115,37 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     daily_eow_enabled=module_daily_eow_enabled,
                     redeem_codes_enabled=redeem_codes_enabled,
                 )
-                if item is not None:
-                    if (
-                        module.key == "ReceiveRewards"
-                        and redeem_codes_enabled
-                        and redeem_code_fingerprint
+            if item is not None:
+                if (
+                    module.key == "ReceiveRewards"
+                    and redeem_codes_enabled
+                    and redeem_code_fingerprint
+                ):
+                    previous_on_success = item.on_success
+
+                    def on_rewards_success(
+                        result,
+                        previous_on_success=previous_on_success,
+                        fingerprint=redeem_code_fingerprint,
+                        engine=assigned,
                     ):
-                        previous_on_success = item.on_success
+                        if previous_on_success is not None:
+                            previous_on_success(result)
+                        self._queue_data_writeback(
+                            user_id=uid,
+                            user_name=user_name,
+                            reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
+                            fields=[
+                                (
+                                    "Data",
+                                    f"{engine}RedeemCodeFingerprint",
+                                    fingerprint,
+                                )
+                            ],
+                        )
 
-                        def on_rewards_success(
-                            result,
-                            previous_on_success=previous_on_success,
-                            fingerprint=redeem_code_fingerprint,
-                            engine=assigned,
-                        ):
-                            if previous_on_success is not None:
-                                previous_on_success(result)
-                            self._queue_data_writeback(
-                                user_id=uid,
-                                user_name=user_name,
-                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
-                                fields=[
-                                    (
-                                        "Data",
-                                        f"{engine}RedeemCodeFingerprint",
-                                        fingerprint,
-                                    )
-                                ],
-                            )
-
-                        item.on_success = on_rewards_success
-                    items.append(item)
+                    item.on_success = on_rewards_success
+                items.append(item)
 
         return items
 

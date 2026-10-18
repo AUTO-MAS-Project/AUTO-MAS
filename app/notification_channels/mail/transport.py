@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import ssl
 import traceback
 from collections.abc import Sequence
 from email.header import Header
@@ -194,6 +195,7 @@ class Sender:
                     smtp_server,
                     465,
                     timeout=SMTP_TIMEOUT_SECONDS,
+                    context=ssl.create_default_context(),
                 ) as smtp_obj:
                     stage = "握手"
                     if not smtp_obj.local_hostname.isascii():

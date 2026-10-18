@@ -320,7 +320,7 @@ class ProcessManager:
         """
 
         try:
-            while _ := await stream.readline():
+            while await stream.read(64 * 1024):
                 pass
         except (ValueError, OSError):
             # 管道读端在子进程退出后被关闭, 属正常终止; 忽略无效句柄冲突

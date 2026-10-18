@@ -912,6 +912,8 @@ class ConfigBase(ABC):
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
         self._save_lock = asyncio.Lock()
+        self._change_revision = 0
+        self._committed_revision = 0
 
         # 配置项索引
         self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
@@ -985,9 +987,12 @@ class ConfigBase(ABC):
 
     async def _commit_changes(self):
         """统一变更提交：本地保存一次 + 广播保存回调一次。"""
+        revision = self._change_revision
         if self.file:
             await self.save()
         await self._run_save_methods()
+        # 较早的提交只确认自己的修改，不能清掉等待落盘或回调的新修改。
+        self._committed_revision = max(self._committed_revision, revision)
 
     async def load(self, data: dict) -> bool:
         """
@@ -1039,6 +1044,8 @@ class ConfigBase(ABC):
         is_dirty = normalized_data != source_data
 
         if is_dirty:
+            self._change_revision += 1
+        if self._change_revision > self._committed_revision:
             await self._commit_changes()
 
         return is_dirty
@@ -1099,13 +1106,13 @@ class ConfigBase(ABC):
             raise ValueError("配置已锁定, 无法修改")
 
         is_changed = self._config_item_index[group][name].setValue(value)
-        if not is_changed:
-            return False
+        if is_changed:
+            self._change_revision += 1
 
-        if commit:
+        if commit and self._change_revision > self._committed_revision:
             await self._commit_changes()
 
-        return True
+        return is_changed
 
     async def update(self, data: dict[str, dict[str, Any]]) -> None:
         """
@@ -1117,13 +1124,11 @@ class ConfigBase(ABC):
             形如 ``{分组名: {配置项名: 新值}}`` 的配置数据
         """
 
-        is_changed = False
         for group, items in data.items():
             for name, value in items.items():
-                if await self.set(group, name, value, commit=False):
-                    is_changed = True
+                await self.set(group, name, value, commit=False)
 
-        if is_changed:
+        if self._change_revision > self._committed_revision:
             await self._commit_changes()
 
     def bind(self, group: str, name: str, slot: Callable[[Any], Any]):

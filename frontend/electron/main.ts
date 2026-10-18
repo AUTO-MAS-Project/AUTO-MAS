@@ -11,6 +11,7 @@ import {
   Notification,
   powerMonitor,
   screen,
+  session,
   shell,
   Tray,
   type Display,
@@ -18,6 +19,7 @@ import {
 } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { pathToFileURL } from 'url'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
@@ -2262,6 +2264,25 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  const rendererFiles = new Set(
+    ['index.html', 'mascot.html', 'mascot-menu.html'].map(
+      file => pathToFileURL(path.join(app.getAppPath(), 'dist', file)).href
+    )
+  )
+  // 仅给本应用文件页发往回环地址的请求标记来源。
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['http://127.0.0.1/*', 'http://localhost/*', 'ws://127.0.0.1/*', 'ws://localhost/*'] },
+    (details, callback) => {
+      for (const key of Object.keys(details.requestHeaders)) {
+        if (key.toLowerCase() === 'x-auto-mas-client') delete details.requestHeaders[key]
+      }
+      if (rendererFiles.has(details.frame?.url.replace(/[?#].*$/, '') ?? '')) {
+        details.requestHeaders['X-AUTO-MAS-Client'] = 'desktop'
+      }
+      callback({ requestHeaders: details.requestHeaders })
+    }
+  )
+
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)

@@ -21,8 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import base64
 from io import BytesIO
+from threading import Lock
 from typing import TYPE_CHECKING, Optional
 
 from fastapi import APIRouter, Body
@@ -45,6 +47,7 @@ def _ocr_tool() -> "type[OCRTool]":
 logger = get_logger("OCR API")
 
 router = APIRouter(prefix="/api/ocr", tags=["OCR识别"])
+_OCR_LOCK = Lock()
 
 
 # ========== 截图相关模型 ==========
@@ -172,37 +175,43 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
     try:
         OCRTool = _ocr_tool()
 
-        # 获取截图区域（如果没有提供自定义区域）
-        if params.region is None:
-            region = OCRTool.get_screenshot_region(
-                params.window_title, params.should_preprocess
-            )
-        else:
-            region = params.region
+        def run() -> OCRScreenshotOut:
+            with _OCR_LOCK:
+                # 获取截图区域（如果没有提供自定义区域）
+                if params.region is None:
+                    region = OCRTool.get_screenshot_region(
+                        params.window_title, params.should_preprocess
+                    )
+                else:
+                    region = params.region
 
-        # 获取截图
-        screenshot_image = OCRTool.get_screenshot_with_pc(
-            title=params.window_title,
-            should_preprocess=params.should_preprocess,
-            region=region,
-        )
+                # 获取截图
+                screenshot_image = OCRTool.get_screenshot_with_pc(
+                    title=params.window_title,
+                    should_preprocess=params.should_preprocess,
+                    region=region,
+                )
 
-        # 将PIL Image转换为Base64
-        buffer = BytesIO()
-        screenshot_image.save(buffer, format="PNG")
-        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                # 将PIL Image转换为Base64
+                buffer = BytesIO()
+                screenshot_image.save(buffer, format="PNG")
+                image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-        logger.info(f"成功截取窗口 [{params.window_title}] 的截图，区域: {region}")
+                logger.info(
+                    f"成功截取窗口 [{params.window_title}] 的截图，区域: {region}"
+                )
 
-        return OCRScreenshotOut(
-            code=200,
-            status="success",
-            message="截图成功",
-            image_base64=image_base64,
-            region=region,
-            image_width=screenshot_image.width,
-            image_height=screenshot_image.height,
-        )
+                return OCRScreenshotOut(
+                    code=200,
+                    status="success",
+                    message="截图成功",
+                    image_base64=image_base64,
+                    region=region,
+                    image_width=screenshot_image.width,
+                    image_height=screenshot_image.height,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"截图失败: {type(e).__name__}: {str(e)}")
@@ -243,31 +252,36 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
     """
     try:
         OCRTool = _ocr_tool()
-        # 使用 OCRTool 通过 ADB 获取截图
-        screenshot_image = OCRTool.get_screenshot_with_adb(
-            adb_path=params.adb_path,
-            serial=params.serial,
-            use_screencap=params.use_screencap,
-        )
 
-        # 将PIL Image转换为Base64
-        buffer = BytesIO()
-        screenshot_image.save(buffer, format="PNG")
-        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        def run() -> ADBScreenshotOut:
+            with _OCR_LOCK:
+                # 使用 OCRTool 通过 ADB 获取截图
+                screenshot_image = OCRTool.get_screenshot_with_adb(
+                    adb_path=params.adb_path,
+                    serial=params.serial,
+                    use_screencap=params.use_screencap,
+                )
 
-        logger.info(
-            f"成功通过 ADB 截取设备 [{params.serial}] 的截图，尺寸: {screenshot_image.size}"
-        )
+                # 将PIL Image转换为Base64
+                buffer = BytesIO()
+                screenshot_image.save(buffer, format="PNG")
+                image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-        return ADBScreenshotOut(
-            code=200,
-            status="success",
-            message="ADB 截图成功",
-            image_base64=image_base64,
-            image_width=screenshot_image.width,
-            image_height=screenshot_image.height,
-            serial=params.serial,
-        )
+                logger.info(
+                    f"成功通过 ADB 截取设备 [{params.serial}] 的截图，尺寸: {screenshot_image.size}"
+                )
+
+                return ADBScreenshotOut(
+                    code=200,
+                    status="success",
+                    message="ADB 截图成功",
+                    image_base64=image_base64,
+                    image_width=screenshot_image.width,
+                    image_height=screenshot_image.height,
+                    serial=params.serial,
+                )
+
+        return await asyncio.to_thread(run)
 
     except FileNotFoundError as e:
         logger.error(f"ADB 文件未找到: {str(e)}")
@@ -329,26 +343,31 @@ async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
     """
     try:
         OCRTool = _ocr_tool()
-        # 设置全局窗口标题
-        OCRTool.set_title(params.window_title)
 
-        # 调用 check 方法
-        found = OCRTool.check(
-            image_path=params.image_path,
-            interval=params.interval,
-            retry_times=params.retry_times,
-            threshold=params.threshold,
-        )
+        def run() -> CheckImageOut:
+            with _OCR_LOCK:
+                # 设置全局窗口标题
+                OCRTool.set_title(params.window_title)
 
-        logger.info(f"图像检查完成: {params.image_path}, 结果: {found}")
+                # 调用 check 方法
+                found = OCRTool.check(
+                    image_path=params.image_path,
+                    interval=params.interval,
+                    retry_times=params.retry_times,
+                    threshold=params.threshold,
+                )
 
-        return CheckImageOut(
-            code=200,
-            status="success",
-            message=f"图像检查完成，{'找到' if found else '未找到'}图像",
-            found=found,
-            attempts=params.retry_times,
-        )
+                logger.info(f"图像检查完成: {params.image_path}, 结果: {found}")
+
+                return CheckImageOut(
+                    code=200,
+                    status="success",
+                    message=f"图像检查完成，{'找到' if found else '未找到'}图像",
+                    found=found,
+                    attempts=params.retry_times,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"图像检查失败: {type(e).__name__}: {str(e)}")
@@ -385,26 +404,33 @@ async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
     """
     try:
         OCRTool = _ocr_tool()
-        # 设置全局窗口标题
-        OCRTool.set_title(params.window_title)
 
-        # 调用 check_any 方法
-        found = OCRTool.check_any(
-            image_paths=params.image_paths,
-            interval=params.interval,
-            retry_times=params.retry_times,
-            threshold=params.threshold,
-        )
+        def run() -> CheckImageOut:
+            with _OCR_LOCK:
+                # 设置全局窗口标题
+                OCRTool.set_title(params.window_title)
 
-        logger.info(f"多图像检查（ANY）完成: {params.image_paths}, 结果: {found}")
+                # 调用 check_any 方法
+                found = OCRTool.check_any(
+                    image_paths=params.image_paths,
+                    interval=params.interval,
+                    retry_times=params.retry_times,
+                    threshold=params.threshold,
+                )
 
-        return CheckImageOut(
-            code=200,
-            status="success",
-            message=f"多图像检查完成，{'找到任意一个' if found else '未找到任何'}图像",
-            found=found,
-            attempts=params.retry_times,
-        )
+                logger.info(
+                    f"多图像检查（ANY）完成: {params.image_paths}, 结果: {found}"
+                )
+
+                return CheckImageOut(
+                    code=200,
+                    status="success",
+                    message=f"多图像检查完成，{'找到任意一个' if found else '未找到任何'}图像",
+                    found=found,
+                    attempts=params.retry_times,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"多图像检查（ANY）失败: {type(e).__name__}: {str(e)}")
@@ -441,26 +467,33 @@ async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
     """
     try:
         OCRTool = _ocr_tool()
-        # 设置全局窗口标题
-        OCRTool.set_title(params.window_title)
 
-        # 调用 check_all 方法
-        found = OCRTool.check_all(
-            image_paths=params.image_paths,
-            interval=params.interval,
-            retry_times=params.retry_times,
-            threshold=params.threshold,
-        )
+        def run() -> CheckImageOut:
+            with _OCR_LOCK:
+                # 设置全局窗口标题
+                OCRTool.set_title(params.window_title)
 
-        logger.info(f"多图像检查（ALL）完成: {params.image_paths}, 结果: {found}")
+                # 调用 check_all 方法
+                found = OCRTool.check_all(
+                    image_paths=params.image_paths,
+                    interval=params.interval,
+                    retry_times=params.retry_times,
+                    threshold=params.threshold,
+                )
 
-        return CheckImageOut(
-            code=200,
-            status="success",
-            message=f"多图像检查完成，{'找到所有' if found else '未找到所有'}图像",
-            found=found,
-            attempts=params.retry_times,
-        )
+                logger.info(
+                    f"多图像检查（ALL）完成: {params.image_paths}, 结果: {found}"
+                )
+
+                return CheckImageOut(
+                    code=200,
+                    status="success",
+                    message=f"多图像检查完成，{'找到所有' if found else '未找到所有'}图像",
+                    found=found,
+                    attempts=params.retry_times,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"多图像检查（ALL）失败: {type(e).__name__}: {str(e)}")
@@ -498,26 +531,31 @@ async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
     """
     try:
         OCRTool = _ocr_tool()
-        # 设置全局窗口标题
-        OCRTool.set_title(params.window_title)
 
-        # 调用 click_img 方法
-        success = OCRTool.click_img(
-            image_path=params.image_path,
-            interval=params.interval,
-            retry_times=params.retry_times,
-            threshold=params.threshold,
-        )
+        def run() -> ClickOut:
+            with _OCR_LOCK:
+                # 设置全局窗口标题
+                OCRTool.set_title(params.window_title)
 
-        logger.info(f"图像点击完成: {params.image_path}, 结果: {success}")
+                # 调用 click_img 方法
+                success = OCRTool.click_img(
+                    image_path=params.image_path,
+                    interval=params.interval,
+                    retry_times=params.retry_times,
+                    threshold=params.threshold,
+                )
 
-        return ClickOut(
-            code=200,
-            status="success",
-            message=f"图像点击{'成功' if success else '失败'}",
-            success=success,
-            attempts=params.retry_times,
-        )
+                logger.info(f"图像点击完成: {params.image_path}, 结果: {success}")
+
+                return ClickOut(
+                    code=200,
+                    status="success",
+                    message=f"图像点击{'成功' if success else '失败'}",
+                    success=success,
+                    attempts=params.retry_times,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"图像点击失败: {type(e).__name__}: {str(e)}")
@@ -553,23 +591,30 @@ async def click_text(params: ClickTextIn = Body(...)) -> ClickOut:
     """
     try:
         OCRTool = _ocr_tool()
-        # 设置全局窗口标题
-        OCRTool.set_title(params.window_title)
 
-        # 调用 click_txt 方法
-        success = OCRTool.click_txt(
-            text=params.text, interval=params.interval, retry_times=params.retry_times
-        )
+        def run() -> ClickOut:
+            with _OCR_LOCK:
+                # 设置全局窗口标题
+                OCRTool.set_title(params.window_title)
 
-        logger.info(f"文字点击完成: '{params.text}', 结果: {success}")
+                # 调用 click_txt 方法
+                success = OCRTool.click_txt(
+                    text=params.text,
+                    interval=params.interval,
+                    retry_times=params.retry_times,
+                )
 
-        return ClickOut(
-            code=200,
-            status="success",
-            message=f"文字点击{'成功' if success else '失败'}",
-            success=success,
-            attempts=params.retry_times,
-        )
+                logger.info(f"文字点击完成: '{params.text}', 结果: {success}")
+
+                return ClickOut(
+                    code=200,
+                    status="success",
+                    message=f"文字点击{'成功' if success else '失败'}",
+                    success=success,
+                    attempts=params.retry_times,
+                )
+
+        return await asyncio.to_thread(run)
 
     except Exception as e:
         logger.error(f"文字点击失败: {type(e).__name__}: {str(e)}")

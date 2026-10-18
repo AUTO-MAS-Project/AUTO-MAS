@@ -16,8 +16,6 @@
     "build": "vp build && yarn build:main && electron-builder --publish never",
     "web": "vp dev",
     "release": "vp build && yarn build:main && electron-builder --win --publish always",
-    "release:full": "vp build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-full.json",
-    "release:lite": "vp build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-lite.json",
     "lint": "vp lint .",
     "lint:fix": "vp lint . --fix",
     "lint:md": "markdownlint-cli2 \"**/*.md\"",

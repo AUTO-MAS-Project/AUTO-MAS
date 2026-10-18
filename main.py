@@ -455,6 +455,9 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
+            mcp_client = getattr(app.state, "mcp_http_client", None)
+            if mcp_client is not None:
+                await mcp_client.aclose()
             # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
             # 被打断的切换有 journal，下次启动收尾。
             maintenance = getattr(app.state, "maafw_startup_maintenance", None)
@@ -507,8 +510,6 @@ def main():
             await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
-    from fastapi.middleware.cors import CORSMiddleware
-
     from app.api import (
         core_router,
         dispatch_router,
@@ -528,6 +529,7 @@ def main():
         tools_router,
         update_router,
     )
+    from app.api.access import LocalAccessMiddleware
 
     app = FastAPI(
         title="AUTO-MAS",
@@ -537,8 +539,13 @@ def main():
     )
 
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # 允许所有域名跨域访问
+        LocalAccessMiddleware,
+        allow_origins=["null", "file://"],
+        allow_origin_regex=(
+            r"http://(?:127\.0\.0\.1|localhost|\[::1\]):\d+"
+            if development_environment
+            else rf"http://(?:127\.0\.0\.1|localhost|\[::1\]):{resolve_http_port(development_environment=False)}"
+        ),
         allow_credentials=True,
         allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
         allow_headers=["*"],  # 允许所有请求头
@@ -582,7 +589,7 @@ def main():
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
             app,
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=http_port,
             log_level="info",
             log_config=None,

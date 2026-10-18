@@ -4,6 +4,8 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskStatusOut } from '@/api/models/TaskStatusOut'
+import { getTaskRuntimeState } from '@/composables/useTaskRuntimeState'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import {
@@ -148,6 +150,29 @@ export function useNativeGuiSession(options: {
           clearSession()
         }),
       ]
+      // 补偿启动响应前已到达的终态；断线漏帧时再向后端核实。
+      const cached = getTaskRuntimeState(response.taskId)
+      const status =
+        cached?.phase === 'completed'
+          ? { code: 200, status: cached.outcome, error: cached.error }
+          : await Service.getTaskStatusApiDispatchTaskTaskIdGet(response.taskId).catch(error => {
+              logger.error(error instanceof Error ? error.message : String(error))
+              return null
+            })
+      // 查询期间 WS 可能已结束会话或发起停止，旧响应不能再次提示打开。
+      if (taskId.value !== response.taskId || stopping.value) return false
+      if (!status) {
+        // 核实失败时保留会话入口，用户仍可保存或关闭原生窗口。
+        message.error(t(keys.startFailed))
+        return false
+      }
+      if (status.code !== 200 || status.status !== TaskStatusOut.status.RUNNING) {
+        if (status.code !== 200 || status.status === TaskStatusOut.status.ERROR) {
+          message.error(status.error || t(keys.startFailed))
+        }
+        clearSession()
+        return false
+      }
       message.success(viewOnly ? t(keys.viewOpened) : t(keys.opened))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」

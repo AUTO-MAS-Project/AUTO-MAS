@@ -106,6 +106,7 @@ from app.utils.constants import (
     BASE_INDEPENDENT,
     BASE_NATIVE,
     BASE_SHARED,
+    CYCLE_EMPTY_TIME,
     RESOURCE_STAGE_DATE_TEXT,
     RESOURCE_STAGE_DROP_INFO,
     RESOURCE_STAGE_INFO,
@@ -3542,7 +3543,15 @@ class AppConfig(GlobalConfig):
         if "Info" in data:
             self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
-        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
+        queue_item = self.QueueConfig[queue_uid].QueueItem[queue_item_uid]
+        schedule = data.get("Schedule", {})
+        if "NextRunAt" not in schedule and any(
+            value != queue_item.get("Schedule", key)
+            for key, value in schedule.items()
+            if key in ("Mode", "Days", "Time", "IntervalMinutes")
+        ):
+            data = {**data, "Schedule": {**schedule, "NextRunAt": CYCLE_EMPTY_TIME}}
+        await queue_item.update(data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""

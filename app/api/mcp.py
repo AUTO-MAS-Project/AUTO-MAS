@@ -30,6 +30,7 @@ import asyncio
 import importlib
 import os
 
+import httpx
 from fastapi import FastAPI
 
 from app.utils.logger import get_logger
@@ -186,6 +187,11 @@ async def mount_mcp(app: FastAPI) -> None:
         fastapi_mcp = await asyncio.to_thread(importlib.import_module, "fastapi_mcp")
         _patch_fastapi_mcp_ref_recursion()
 
+        app.state.mcp_http_client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://127.0.0.1",
+            timeout=10.0,
+        )
         mcp = await asyncio.to_thread(
             fastapi_mcp.FastApiMCP,
             app,
@@ -208,6 +214,7 @@ async def mount_mcp(app: FastAPI) -> None:
             ),
             describe_full_response_schema=False,
             describe_all_responses=False,
+            http_client=app.state.mcp_http_client,
             # 仅暴露通用配置与试运行能力；新增 HTTP 接口不会自动成为工具。
             # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
             include_operations=list(MCP_INCLUDED_OPERATIONS),

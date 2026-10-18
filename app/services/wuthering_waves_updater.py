@@ -35,6 +35,7 @@ import os
 import shutil
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -598,7 +599,13 @@ async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> N
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
-    stdout, _ = await process.communicate()
+    try:
+        stdout, _ = await process.communicate()
+    except asyncio.CancelledError:
+        with suppress(ProcessLookupError):
+            process.kill()
+        await process.communicate()
+        raise
     if process.returncode != 0:
         detail = stdout.decode("utf-8", "replace").strip().splitlines()
         raise HpatchzApplyError(process.returncode, detail[-1] if detail else "")
@@ -641,14 +648,11 @@ async def _redownload_group(
     install_dir: Path,
     *,
     on_progress: ProgressHook | None = None,
-) -> int:
+) -> None:
     """某个 group 打补丁失败时，整文件重下该组产物。
 
     hpatchz 要求源文件字节精确，用户改过游戏文件就会失败。
     远端清单带全量 md5，所以总能靠整文件重下自愈，不该让整次更新死掉。
-
-    Returns:
-        本组重下条目的声明体积之和，供调用方累计回退体积。
     """
 
     if not plan.whole_file_base_url:
@@ -664,7 +668,6 @@ async def _redownload_group(
     await _commit_entries(
         staging, install_dir, group.dst_files, on_progress=on_progress
     )
-    return sum(entry.size for entry in group.dst_files)
 
 
 def _read_packed_uint(data: bytes, pos: int, tag_bit: int = 0) -> tuple[int, int]:
@@ -867,14 +870,15 @@ async def _apply_groups(
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
         if fallback:
-            fallback_bytes += await _redownload_group(
-                client, plan, group, staging, install_dir, on_progress=on_progress
-            )
+            fallback_bytes += sum(entry.size for entry in group.dst_files)
             if fallback_bytes > fallback_limit:
                 raise RuntimeError(
-                    f"补丁回退重下已累计 {fallback_bytes / 1024**3:.1f}GB（超过 "
+                    f"补丁回退重下将累计 {fallback_bytes / 1024**3:.1f}GB（超过 "
                     f"{fallback_limit / 1024**3:.1f}GB 上限），已中止，请用官方启动器更新"
                 )
+            await _redownload_group(
+                client, plan, group, staging, install_dir, on_progress=on_progress
+            )
         await _report(on_progress, f"鸣潮更新应用中 {done}/{total}")
 
 

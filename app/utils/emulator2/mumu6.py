@@ -43,17 +43,21 @@ MuMu 这边有三个实测出来的坑，都在本模块里兜住：
 
 import asyncio
 import json
+import time
+from contextlib import suppress
 from pathlib import Path
+
+import psutil
 
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceRef
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.mumu import MumuManager
+from app.utils.platform.common.process_runner import create_subprocess, decode_bytes
 
 from .applaunch import AppLaunchMixin
 from .master_mode import (
     MUMU_LAUNCHER_PACKAGE,
-    MUMU_SH_HELPER_IMAGE,
     MUMU_SH_TIMEOUT,
     is_master_mode_enabled,
     mumu_component_applied,
@@ -273,52 +277,85 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
     async def _root_shell(self, idx: str, command: str) -> str | None:
         """``MuMuManager sh -v N -c``：uid=0 的 root 通道，不需要打开 ``root_permission``。
 
-        它底层的 ``NemuShell.exe`` 连不上实例的命名管道会**无限重试**，所以带短超时；超时后
-        ``ProcessRunner`` 只杀得掉 ``MuMuManager.exe`` 本身，孤儿 ``NemuShell.exe`` 得另外清，
-        不然它会一直占着 CPU 重试。失败返回 ``None``。
+        命名管道连不上时 helper 会无限重试；运行期间记录派生进程，超时或取消只清理本次命令。
+        失败返回 ``None``。
         """
         try:
-            result = await ProcessRunner.run_process(
+            started = time.time()
+            process = await create_subprocess(
                 self.emulator_path,
                 "sh",
                 "-v",
                 idx,
                 "-c",
                 command,
-                timeout=MUMU_SH_TIMEOUT,
-                if_merge_std=True,
                 breakaway=True,
+                cwd=self.emulator_path.parent,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
             )
+            children: set[psutil.Process] = set()
+
+            def command_children() -> list[psutil.Process]:
+                if process.returncode is None:
+                    with suppress(psutil.Error):
+                        return psutil.Process(process.pid).children(recursive=True)
+                # Windows 的子进程保留原始 PPID，父进程先退出时仍能定位本次 helper。
+                return [
+                    child
+                    for child in psutil.process_iter(["ppid", "create_time"])
+                    if child.info["ppid"] == process.pid
+                    and (child.info["create_time"] or 0) >= started
+                ]
+
+            async def track_children() -> None:
+                while True:
+                    children.update(await asyncio.to_thread(command_children))
+                    await asyncio.sleep(0.1)
+
+            tracker = asyncio.create_task(track_children())
+            try:
+                stdout, _ = await asyncio.wait_for(
+                    process.communicate(), timeout=MUMU_SH_TIMEOUT
+                )
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                tracker.cancel()
+                await asyncio.gather(tracker, return_exceptions=True)
+                children.update(await asyncio.to_thread(command_children))
+                for child in children:
+                    with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                        child.kill()
+                with suppress(ProcessLookupError):
+                    process.kill()
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(process.communicate(), timeout=3)
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(process.wait(), timeout=3)
+                if children:
+                    await asyncio.to_thread(
+                        psutil.wait_procs, list(children), timeout=3
+                    )
+                raise
+            finally:
+                tracker.cancel()
+                await asyncio.gather(tracker, return_exceptions=True)
         except asyncio.TimeoutError:
             logger.warning(
                 f"MuMu 实例 {idx} 的 root shell 超过 {MUMU_SH_TIMEOUT:.0f} 秒没有返回，"
-                f"清理残留的 {MUMU_SH_HELPER_IMAGE}"
+                "已清理本次命令"
             )
-            await self._kill_sh_helpers()
             return None
         except Exception as e:  # noqa: BLE001 - 见 docstring
             logger.warning(f"MuMu 实例 {idx} 的 root shell 执行失败: {e}")
             return None
-        if result.returncode != 0:
+        output = decode_bytes(stdout)
+        if process.returncode != 0:
             logger.warning(
-                f"MuMu 实例 {idx} 的 root shell 返回 {result.returncode}: {result.stdout.strip()}"
+                f"MuMu 实例 {idx} 的 root shell 返回 {process.returncode}: {output.strip()}"
             )
             return None
-        return str(result.stdout or "")
-
-    async def _kill_sh_helpers(self) -> None:
-        """清掉超时后留下的 ``NemuShell.exe``。"""
-        try:
-            await ProcessRunner.run_process(
-                "taskkill",
-                "/F",
-                "/IM",
-                MUMU_SH_HELPER_IMAGE,
-                timeout=10,
-                if_merge_std=True,
-            )
-        except Exception as e:  # noqa: BLE001 - 清不掉只记一笔
-            logger.warning(f"清理 {MUMU_SH_HELPER_IMAGE} 失败: {e}")
+        return output
 
     async def _restart_launcher(self, idx: str) -> None:
         """重启安卓桌面，让已禁用的 widget 从桌面上消失。前台应用不受影响。"""

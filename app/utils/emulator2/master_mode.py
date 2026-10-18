@@ -60,9 +60,6 @@ MUMU_LAUNCHER_PACKAGE = "app.lawnchair"
 #: 见过一次卡死，所以必须带超时；正常一批 pm 命令一两秒就完。
 MUMU_SH_TIMEOUT = 20.0
 
-#: ``MuMuManager sh`` 超时后要顺手清掉的孤儿进程名。
-MUMU_SH_HELPER_IMAGE = "NemuShell.exe"
-
 
 def is_master_mode_enabled() -> bool:
     """从旧版全局开关读取「大雷主人模式」状态，读取失败按关闭处理。"""

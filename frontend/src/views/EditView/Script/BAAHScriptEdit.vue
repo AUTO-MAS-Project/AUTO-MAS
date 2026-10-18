@@ -300,6 +300,7 @@ import {
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { Service, type ComboBoxItem } from '@/api'
@@ -322,7 +323,7 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 
 interface BAAHInfoForm {
@@ -396,20 +397,19 @@ const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/,
 
 // 局部更新：只提交变更的那个字段，不整体覆盖脚本配置
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const loadScript = async () => {
@@ -484,8 +484,10 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  await handleChange('Emulator', 'Id', emulatorId)
-  await handleChange('Emulator', 'Index', '')
+  await Promise.all([
+    handleChange('Emulator', 'Id', emulatorId),
+    handleChange('Emulator', 'Index', ''),
+  ])
 }
 
 onMounted(() => {

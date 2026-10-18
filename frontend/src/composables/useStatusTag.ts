@@ -1,5 +1,3 @@
-import { computed, type ComputedRef } from 'vue'
-
 /**
  * 状态标签接口定义
  */
@@ -9,15 +7,13 @@ interface StatusTag {
 }
 
 /**
- * 通用状态标签解析和管理 Composable
+ * 状态标签解析工具
  *
- * 该模块提供了一套完整的状态标签（Status Tag）管理方案，用于解析、序列化和显示状态标签。
+ * 用于解析和显示后端返回的状态标签。
  * 状态标签通常由后端以JSON字符串格式返回，格式为：{"text": "标签文本", "color": "颜色"}
  *
  * 主要功能：
  * - 解析单个或多个状态标签
- * - 序列化标签为JSON字符串
- * - 提供Vue响应式的composable函数
  * - 自动适配深色模式（通过Ant Design Vue的Tag组件）
  *
  * 使用示例：
@@ -31,25 +27,7 @@ interface StatusTag {
  * // 返回: { text: '运行中', color: 'green' }
  * ```
  *
- * 2. 在组件中使用（推荐）：
- * ```vue
- * <script setup>
- * import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
- *
- * const statusTag = useStatusTag(
- *   () => config.value.Status,
- *   createStatusTag('未启用', 'default')
- * )
- * </script>
- *
- * <template>
- *   <a-tag v-if="statusTag" :color="statusTag.color">
- *     {{ statusTag.text }}
- *   </a-tag>
- * </template>
- * ```
- *
- * 3. 解析标签列表：
+ * 2. 解析标签列表：
  * ```typescript
  * import { parseStatusTagList } from '@/composables/useStatusTag'
  *
@@ -148,30 +126,4 @@ export function parseStatusTagList(
   } catch {
     return defaultTags
   }
-}
-
-/**
- * 使用状态标签的Composable
- * @param statusGetter - 获取状态字符串的函数
- * @param defaultTag - 默认标签
- * @returns 计算属性，返回解析后的StatusTag或null
- */
-export function useStatusTag(
-  statusGetter: () => string | null | undefined,
-  defaultTag: StatusTag | null = null
-): ComputedRef<StatusTag | null> {
-  return computed(() => parseStatusTag(statusGetter(), defaultTag))
-}
-
-/**
- * 创建状态标签对象
- * @param text - 标签文本
- * @param color - 标签颜色（支持Ant Design预设颜色或自定义颜色）
- * @returns StatusTag对象
- * @example
- * createStatusTag('运行中', 'green')
- * createStatusTag('已停止', '#ff0000')
- */
-export function createStatusTag(text: string, color: string): StatusTag {
-  return { text, color }
 }
