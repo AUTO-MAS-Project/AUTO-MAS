@@ -442,7 +442,7 @@
             </a-alert>
 
             <a-alert
-              v-if="formData.Info.Mode === '脚本'"
+              v-if="formData.Info.Base === 'shared'"
               type="info"
               show-icon
               class="mode-guide-alert config-flow-hint"
@@ -1418,9 +1418,7 @@ const bettergiConfigModeOptions: Array<{
     description: t('edit.useSharedScriptLevel'),
     value: 'shared',
     icon: 'file',
-    // 「共享」运行时与「独立」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
-    disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    // 「共享」运行时读写脚本级共享的一条龙编排（本专项已实现），与「独立」一样可选
   },
   {
     title: t('edit.perUserConfiguration'),
