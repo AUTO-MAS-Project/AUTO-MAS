@@ -32,6 +32,7 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'bluearchive',
   'arknights',
   'stellasora',
+  'infinitynikki',
 ]
 
 /** 已接入日常便笺的游戏，提供首页社区信息的独立开关。 */

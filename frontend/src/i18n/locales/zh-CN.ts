@@ -3529,6 +3529,7 @@ export default {
       reverse1999: '重返未来：1999活动信息',
       bluearchive: '碧蓝档案活动信息',
       stellasora: '星塔旅人活动信息',
+      infinitynikki: '无限暖暖活动信息',
       arknights: '明日方舟活动信息',
       activities: '游戏活动轮播',
     },
@@ -3542,6 +3543,7 @@ export default {
       reverse1999: '重返未来：1999',
       bluearchive: '碧蓝档案',
       stellasora: '星塔旅人',
+      infinitynikki: '无限暖暖',
       arknights: '明日方舟',
     },
     carousel: {
@@ -3579,6 +3581,7 @@ export default {
       nte: '暂无进行中的异环活动',
       reverse1999: '暂无进行中的重返未来：1999 活动',
       stellasora: '暂无进行中的星塔旅人活动',
+      infinitynikki: '暂无进行中的无限暖暖活动',
       noData: '无数据',
     },
     stella: {

@@ -13,6 +13,7 @@ export type HomeModuleKey =
   | 'reverse1999'
   | 'bluearchive'
   | 'stellasora'
+  | 'infinitynikki'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -191,6 +192,8 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
+  /** 活动详情在主图右侧展示；未设置时沿用下方横排 */
+  detailPlacement?: 'right'
   /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
   version?: string
   /** 版本名或当期活动名 */

@@ -3665,6 +3665,7 @@ export default {
       reverse1999: 'Reverse: 1999 events',
       bluearchive: 'Blue Archive events',
       stellasora: 'Stella Sora events',
+      infinitynikki: 'Infinity Nikki events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -3678,6 +3679,7 @@ export default {
       reverse1999: 'Reverse: 1999',
       bluearchive: 'Blue Archive',
       stellasora: 'Stella Sora',
+      infinitynikki: 'Infinity Nikki',
       arknights: 'Arknights',
     },
     carousel: {
@@ -3715,6 +3717,7 @@ export default {
       nte: 'No Neverness to Everness events running',
       reverse1999: 'No Reverse: 1999 events running',
       stellasora: 'No Stella Sora events running',
+      infinitynikki: 'No Infinity Nikki events running',
       noData: 'No data',
     },
     stella: {

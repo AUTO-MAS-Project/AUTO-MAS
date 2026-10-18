@@ -11,6 +11,7 @@ export const HOME_ACTIVITY_ACCENTS: Record<string, string> = {
   reverse1999: '#f2a0c0',
   bluearchive: '#3ba9ee',
   stellasora: '#2b9fff',
+  infinitynikki: '#f2a0c0',
   arknights: '#9fb4cc',
 }
 
