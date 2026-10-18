@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import {
@@ -172,6 +172,10 @@ async function initializeScene(): Promise<void> {
     if (disposed || staticMode.value || !canvas.value) return
     scene = new ThreeStarScene(canvas.value, hardware, isDark.value)
     fallback.value = false
+    // 降级会隐藏 canvas；等它重新显示后再测量，不能沿用隐藏时的 1×1 尺寸。
+    await nextTick()
+    if (disposed || staticMode.value || !scene) return
+    scene.resize()
     drawStill()
     if (!blocked.value) {
       session.solver.resume()
