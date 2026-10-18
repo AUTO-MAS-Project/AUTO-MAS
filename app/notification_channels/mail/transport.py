@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import ssl
 import traceback
 from collections.abc import Sequence
 from email.header import Header
@@ -194,6 +195,9 @@ class Sender:
                     smtp_server,
                     465,
                     timeout=SMTP_TIMEOUT_SECONDS,
+                    # 显式传入校验证书的默认上下文：Python 3.12 的 smtplib 在
+                    # 未传 context 时不再强制校验服务端证书，授权码会裸奔。
+                    context=ssl.create_default_context(),
                 ) as smtp_obj:
                     stage = "握手"
                     if not smtp_obj.local_hostname.isascii():

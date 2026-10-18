@@ -44,6 +44,10 @@ from app.utils import (  # noqa: E402
     resource_path,
     sanitize_log_message,
 )
+from app.utils.origin import (  # noqa: E402
+    ALLOWED_LITERAL_ORIGINS,
+    ALLOWED_ORIGIN_REGEX,
+)
 from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
 
 logger = get_logger("主程序")
@@ -538,7 +542,9 @@ def main():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 允许所有域名跨域访问
+        # 只放行本机界面（file://）与回环开发服务器，不再允许任意网站跨源读取。
+        allow_origins=list(ALLOWED_LITERAL_ORIGINS),
+        allow_origin_regex=ALLOWED_ORIGIN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
         allow_headers=["*"],  # 允许所有请求头
@@ -582,7 +588,9 @@ def main():
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
             app,
-            host="0.0.0.0",
+            # 只监听回环：桌面应用仅服务本机界面，绑到所有网卡会让同网段机器
+            # 无需认证即可读取备份、操作任务。
+            host="127.0.0.1",
             port=http_port,
             log_level="info",
             log_config=None,

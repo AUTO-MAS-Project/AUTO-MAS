@@ -36,6 +36,7 @@ from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import *
 from app.services import System
 from app.utils import get_logger, is_backend_dev_mode, is_supervised
+from app.utils.origin import is_allowed_origin
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -131,6 +132,10 @@ MainConnection.on_connect(Config.flush_startup_notices)
 async def connect_websocket(websocket: WebSocket):
     """主 WebSocket 端点，接入后整体交给 MainConnection 管理。"""
 
+    # WebSocket 不受 CORS 约束：必须自己核对 Origin，拒绝非本机界面来源。
+    if not is_allowed_origin(websocket.headers.get("origin")):
+        await websocket.close(code=1008)
+        return
     await MainConnection.serve(websocket)
 
 
