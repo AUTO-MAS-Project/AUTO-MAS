@@ -4137,6 +4137,10 @@ export default {
     toast: {
       packageNoResponse: '打包日志功能未响应，请检查程序',
       packageExported: '日志压缩包导出成功',
+      packageIncomplete: '日志压缩包导出成功，以下文件未能导出：{paths}',
+      windowUnavailable: '窗口未初始化，无法打包日志',
+      directoryMissing: '日志目录不存在',
+      noFiles: '日志目录为空，没有可导出的文件',
       packageFailed: '日志打包失败',
       packageError: '打包日志异常: {error}',
       openFolderFailed: '无法打开压缩包所在文件夹',
