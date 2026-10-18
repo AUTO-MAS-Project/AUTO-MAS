@@ -34,6 +34,9 @@ async def capture_adb(adb_path: Path | str, address: str) -> "Image.Image | None
             address=address,
             screencap_methods=MaaAdbScreencapMethodEnum.Encode,
             input_methods=MaaAdbInputMethodEnum.AdbShell,
+            # SDK 重连默认 kill-server；补截不得重启其他任务共用的 ADB 服务。
+            # version 只读客户端版本，不连接服务；空命令会使 SDK 配置解析失败。
+            config={"command": {"KillServer": ["{ADB}", "version"]}},
         )
     )
 
