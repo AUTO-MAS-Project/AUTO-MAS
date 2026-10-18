@@ -2443,10 +2443,10 @@ export default {
     baahConfigNamePlaceholder: 'Pick the config used normally',
     baahStageMode: 'Stage plan',
     baahStageModeHint:
-      'Schedule which stages to run each day from a plan; "Fixed" keeps the stage settings you made inside BAAH. A plan runs either the same stages every day or a weekly schedule',
+      'Schedule stages with global, weekly, or rotating plans. "Fixed" keeps BAAH settings. Configure event stages in BAAH.',
     baahIfEventFirst: 'Event stages first',
     baahIfEventFirstHint:
-      'While Blue Archive has an ongoing event, the event-stage task is moved to the front and turned on; with no event, or when the event schedule cannot be fetched, your task order is left untouched',
+      'During an event, skip the plan and run only event raids configured in BAAH; other raids are disabled. Without an event, use the plan. Other daily tasks stay unchanged; if the schedule is unavailable, keep the existing plan.',
     baahActivityLineType: 'Event schedule server',
     baahActivityLineTypeHint:
       'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on. "Event stages first" also uses the server picked here',
@@ -4099,9 +4099,10 @@ export default {
         nine: 'No. 9',
         ten: 'No. 10',
       },
-      unsavedHint: 'You have unsaved parameters. Save or cancel editing first.',
+      unsavedHint: 'Auto-save failed. Change the parameters or retry before leaving.',
       savingHint: 'Saving parameters. Please wait.',
       saveFailed: 'Could not save. Your parameters have been kept; please try again.',
+      retry: 'Retry',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',
