@@ -283,6 +283,7 @@ const {
   activityNotesVisible,
   hiddenActivityNotes,
   loadHomeLayout,
+  loadManagedActivityModules,
   reorderHomeModules,
   reorderActivityModules,
   setHomeModuleShown,
@@ -474,6 +475,7 @@ const greeting = computed(() => {
 })
 
 const loadHomeData = async () => {
+  void loadManagedActivityModules()
   await restoreSelectedHomeTaskIds()
   fetchSchedulerTaskOptions({ quiet: true })
   fetchOverviewData()

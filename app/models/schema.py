@@ -1710,6 +1710,10 @@ class ScriptIndexItem(BaseModel):
         "MSSConfig",
     ] = Field(..., description="配置类型")
 
+    activityGame: str | None = Field(
+        default=None, description="对应的游戏活动标识，无游戏归属时为空"
+    )
+
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")

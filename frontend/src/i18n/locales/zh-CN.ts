@@ -3677,6 +3677,7 @@ export default {
       scrollHint: '滚动提示',
       scrollHintVisibility: '滚动提示显示状态',
       activityGroup: '轮播中的游戏',
+      activityDefaults: '默认显示已托管脚本对应的游戏，手动开关优先。',
       carouselAutoplay: '自动轮播',
       carouselAutoplayVisibility: '活动轮播自动播放',
       activityNotesGroup: '首页签到情况与便笺',

@@ -46,6 +46,7 @@
             :class="{ 'is-muted': !module.visible }"
           >
             <div class="home-layout-children-hint">{{ t('home.layout.activityGroup') }}</div>
+            <div class="home-layout-master-hint">{{ t('home.layout.activityDefaults') }}</div>
 
             <draggable
               :model-value="activityModules"
