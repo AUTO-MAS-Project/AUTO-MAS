@@ -1,6 +1,6 @@
 # 星空素材
 
-\`starmap_4k.jpg\`：NASA SVS **Deep Star Maps**（2012），4096×2048，原始 JPEG。
+`starmap_4k.jpg`：NASA SVS **Deep Star Maps**（2012），4096×2048，原始 JPEG。
 来源：https://svs.gsfc.nasa.gov/3895/
 下载：https://svs.gsfc.nasa.gov/vis/a000000/a003800/a003895/starmap_4k.jpg
 

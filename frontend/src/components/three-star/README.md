@@ -72,7 +72,7 @@ rtol = 1e-9, atol = 1e-11
 它的 xy 平面速度及四邻域压力 shader 不支持真实 xyz 体积，鼠标输入和全屏生命周期
 也不适用。本次保留原光标完整代码，用相同的 stable-fluids 思路独立编写六邻域
 三维 stencil，没有挂载光标、复制鼠标喷射或保留无消费者的公共 shader 抽象。
-未复制上游软件源码；可对照 [GPU Gems 38](https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu)
+未复制上游软件源码；可对照 [GPU Gems 38](https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-simulation-gpu)
 的半拉格朗日平流/投影方法。其教材二维公式按 xyz 扩展，不宣称高精度流体求解。
 
 `fluid3dShaders.ts` 存储 48³ 三维体素，以 8×6 切片 atlas（384×288）打包；
@@ -140,7 +140,7 @@ IntersectionObserver、媒体查询、可见性和 task listener，卸载分别�
 初次交付及评审修复遵照用户「仅核对逻辑，别执行测试」的要求，只做静态逻辑核对
 和独立代码审查，未执行测试、lint、类型检查、构建或应用。之后按用户单独要求，
 通过 `dev:fullstack` 启动开发前后端与 Electron（包含正常的主进程开发编译），
-只确认服务就绪；未执行自动化 E2E、数值测试或 GPU 画面验收。视觉与倍速调整
+只确认服务就绪；未执行自动化 E2E、数值测试或 GPU 画面验收。三维、星图与倍速调整
 仍仅做静态复审，以下验证窗口和阈值仍是待执行计划，不是已获得的结果：
 
 | 项目 | 窗口与门槛 | 依据 |

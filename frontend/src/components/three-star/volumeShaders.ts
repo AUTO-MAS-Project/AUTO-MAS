@@ -61,15 +61,15 @@ export const volumeFragment = `${viewRay}
     // 粗步走体素，日冕局部细步；空白区直接跳到下一有效区间。
     for(int stepIndex=0;stepIndex<288;stepIndex++) {
       if(t>=last||alpha>.92) break;
-      bool active=false,nearCorona=false;float boundary=last,nextEntry=last;
+      bool insideVolume=false,nearCorona=false;float boundary=last,nextEntry=last;
       for(int i=0;i<4;i++) {
         if(ranges[i].y<=ranges[i].x) continue;
         if(t>=ranges[i].x&&t<ranges[i].y) {
-          active=true;boundary=min(boundary,ranges[i].y);
+          insideVolume=true;boundary=min(boundary,ranges[i].y);
           if(i>0) nearCorona=true;
         } else if(ranges[i].x>t) nextEntry=min(nextEntry,ranges[i].x);
       }
-      if(!active) { t=nextEntry;continue; }
+      if(!insideVolume) { t=nextEntry;continue; }
       float ds=min(nearCorona?.018:.09,min(boundary,nextEntry)-t);
       // 边界舍入导致零步时只推进显示采样，不触碰物理积分器。
       if(ds<1e-5) {t+=1e-5;continue;}
