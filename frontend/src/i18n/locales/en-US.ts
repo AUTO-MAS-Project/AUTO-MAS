@@ -3614,7 +3614,7 @@ export default {
       taskPaused: 'Effects paused during tasks; select Resume to continue',
       paused: 'Paused · select Resume',
       budget: 'Compute budget reached; simulation slowed',
-      fluid: 'Newtonian three-body · artistic corona · 2D visual fluid',
+      fluid: 'Newtonian three-body · 3D corona and visual fluid · sky NASA/GSFC/SVS',
     },
     satelliteEffectsPaused: 'Effects paused · click to resume',
     satelliteEgg: {

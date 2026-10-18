@@ -1,59 +1,34 @@
 import {
   Color,
   HalfFloatType,
+  LinearFilter,
   Mesh,
-  NearestFilter,
   OrthographicCamera,
   PlaneGeometry,
   Scene,
   ShaderMaterial,
-  Vector2,
   Vector3,
+  Vector4,
   WebGLRenderer,
   WebGLRenderTarget,
   type Texture,
 } from 'three'
-import {
-  advectionFragmentShaderSource,
-  curlFragmentShaderSource,
-  divergenceFragmentShaderSource,
-  gradientSubtractFragmentShaderSource,
-  pressureFragmentShaderSource,
-  vorticityFragmentShaderSource,
-} from '@/components/inspira/fluidShaders'
 import { FLUID_DT, STAR_COLORS, type FluidSplat } from './visualState'
+import {
+  ATLAS_COLUMNS,
+  ATLAS_ROWS,
+  GRID_SIZE,
+  advect3d,
+  divergence3d,
+  fluidVertex,
+  inject3d,
+  pressure3d,
+  project3d,
+} from './fluid3dShaders'
 
-const VELOCITY_SIZE = 96
-const DYE_SIZE = 256
 const PRESSURE_ITERATIONS = 12
 
-const vertexShader = `
-  varying vec2 vUv;
-  varying vec2 vL; varying vec2 vR; varying vec2 vT; varying vec2 vB;
-  uniform vec2 texelSize;
-  void main() {
-    vUv = uv;
-    vL = uv - vec2(texelSize.x, 0.0); vR = uv + vec2(texelSize.x, 0.0);
-    vT = uv + vec2(0.0, texelSize.y); vB = uv - vec2(0.0, texelSize.y);
-    gl_Position = vec4(position.xy, 0.0, 1.0);
-  }
-`
-const splatShader = `
-  varying vec2 vUv;
-  uniform sampler2D uTarget;
-  uniform vec2 point;
-  uniform vec3 impulse;
-  uniform float aspectRatio;
-  uniform float limit;
-  void main() {
-    vec2 p = vUv - point; p.x *= aspectRatio;
-    float weight = exp(-dot(p,p) / 0.0004);
-    vec3 result = texture2D(uTarget, vUv).xyz + impulse * weight;
-    gl_FragColor = vec4(clamp(result, vec3(-limit), vec3(limit)), 1.0);
-  }
-`
-
-/** 单向、屏幕空间视觉流体。复用光标的纯 shader，不持有输入或动画循环。 */
+/** 真正的三维速度/染料场；atlas 只改变存储布局，不把 xyz 投影到屏幕。 */
 export class StarFluid {
   private readonly targets: WebGLRenderTarget[] = []
   private readonly materials: ShaderMaterial[] = []
@@ -65,43 +40,33 @@ export class StarFluid {
   private readonly dye: WebGLRenderTarget[]
   private readonly pressure: WebGLRenderTarget[]
   private readonly divergence: WebGLRenderTarget
-  private readonly curlTarget: WebGLRenderTarget
   private readonly advect: ShaderMaterial
+  private readonly inject: ShaderMaterial
   private readonly diverge: ShaderMaterial
-  private readonly solvePressure: ShaderMaterial
+  private readonly solve: ShaderMaterial
   private readonly project: ShaderMaterial
-  private readonly splat: ShaderMaterial
-  private readonly curl: ShaderMaterial
-  private readonly vorticity: ShaderMaterial
   private disposed = false
 
   constructor(private readonly renderer: WebGLRenderer) {
-    this.advect = this.material(advectionFragmentShaderSource, { MANUAL_FILTERING: 1 })
-    this.diverge = this.material(divergenceFragmentShaderSource)
-    this.solvePressure = this.material(pressureFragmentShaderSource)
-    this.project = this.material(gradientSubtractFragmentShaderSource)
-    this.splat = this.material(splatShader)
-    this.curl = this.material(curlFragmentShaderSource)
-    this.vorticity = this.material(vorticityFragmentShaderSource, { BOUNDED_VELOCITY: 1 })
-    this.quad = new Mesh(this.geometry, this.splat)
+    this.advect = this.material(advect3d)
+    this.inject = this.material(inject3d)
+    this.diverge = this.material(divergence3d)
+    this.solve = this.material(pressure3d)
+    this.project = this.material(project3d)
+    this.quad = new Mesh(this.geometry, this.advect)
     this.quad.frustumCulled = false
     this.scene.add(this.quad)
     try {
       const gl = renderer.getContext()
-      if (
-        !gl.getExtension('EXT_color_buffer_float') ||
-        gl.getParameter(gl.MAX_TEXTURE_SIZE) < DYE_SIZE
-      )
-        throw new Error('Float framebuffer unavailable')
-      this.velocity = [this.target(VELOCITY_SIZE), this.target(VELOCITY_SIZE)]
-      this.dye = [this.target(DYE_SIZE), this.target(DYE_SIZE)]
-      this.pressure = [this.target(VELOCITY_SIZE), this.target(VELOCITY_SIZE)]
-      this.divergence = this.target(VELOCITY_SIZE)
-      this.curlTarget = this.target(VELOCITY_SIZE)
+      if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float field unavailable')
+      this.velocity = [this.target(), this.target()]
+      this.dye = [this.target(), this.target()]
+      this.pressure = [this.target(), this.target()]
+      this.divergence = this.target()
       for (const target of this.targets) {
         renderer.setRenderTarget(target)
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-          throw new Error('Incomplete float framebuffer')
+          throw new Error('Incomplete 3D field framebuffer')
       }
       renderer.setRenderTarget(null)
       this.clear()
@@ -128,48 +93,39 @@ export class StarFluid {
     this.renderer.setClearColor(color, alpha)
   }
 
-  update(dt: number, sources: readonly FluidSplat[], aspect: number): void {
+  update(dt: number, sources: readonly FluidSplat[]): void {
     if (this.disposed || !Number.isFinite(dt) || dt <= 0) return
     const time = Math.min(dt, FLUID_DT)
     const previous = this.renderer.getRenderTarget()
-    // 平流速度后再注入、投影；压力每次归零，防止旧解无限累积。
     this.advection(this.velocity, this.velocity[0].texture, time, 1.2)
-    for (const source of sources.slice(0, 3 * 8)) {
-      const u = this.splat.uniforms
-      u.point.value.set(source.x, source.y)
-      u.aspectRatio.value = aspect
-      u.limit.value = 48
-      u.impulse.value.set(
-        source.vx * 96 * source.amount * 18,
-        source.vy * 96 * source.amount * 18,
-        0
-      )
-      this.ping(this.splat, this.velocity, { uTarget: this.velocity[0].texture })
-      const color = new Color(STAR_COLORS[source.star])
-      const intensity = source.amount * (5 + Math.min(3, Math.hypot(source.vx, source.vy) * 8))
-      u.limit.value = 2
-      u.impulse.value.set(color.r, color.g, color.b).multiplyScalar(intensity)
-      this.ping(this.splat, this.dye, { uTarget: this.dye[0].texture })
+    const splats = sources.slice(0, 24)
+    const u = this.inject.uniforms
+    u.sourceCount.value = splats.length
+    for (let i = 0; i < splats.length; i++) {
+      const point = splats[i]
+      u.points.value[i].set(point.x, point.y, point.z, point.amount)
+      u.momenta.value[i].set(point.vx, point.vy, point.vz)
+      u.colors.value[i].setHex(STAR_COLORS[point.star])
     }
-    this.pass(this.curl, this.curlTarget, { uVelocity: this.velocity[0].texture })
-    this.vorticity.uniforms.dt.value = time
-    this.ping(this.vorticity, this.velocity, {
-      uVelocity: this.velocity[0].texture,
-      uCurl: this.curlTarget.texture,
-    })
-    this.pass(this.diverge, this.divergence, { uVelocity: this.velocity[0].texture })
+    if (splats.length) {
+      u.dyeMode.value = 0
+      this.ping(this.inject, this.velocity, { source: this.velocity[0].texture })
+      u.dyeMode.value = 1
+      this.ping(this.inject, this.dye, { source: this.dye[0].texture })
+    }
+    this.pass(this.diverge, this.divergence, { velocity: this.velocity[0].texture })
     for (const target of this.pressure) {
       this.renderer.setRenderTarget(target)
       this.renderer.clear()
     }
     for (let i = 0; i < PRESSURE_ITERATIONS; i++)
-      this.ping(this.solvePressure, this.pressure, {
-        uPressure: this.pressure[0].texture,
-        uDivergence: this.divergence.texture,
+      this.ping(this.solve, this.pressure, {
+        pressure: this.pressure[0].texture,
+        divergence: this.divergence.texture,
       })
     this.ping(this.project, this.velocity, {
-      uPressure: this.pressure[0].texture,
-      uVelocity: this.velocity[0].texture,
+      pressure: this.pressure[0].texture,
+      velocity: this.velocity[0].texture,
     })
     this.advection(this.dye, this.velocity[0].texture, time, 0.55)
     this.renderer.setRenderTarget(previous)
@@ -185,39 +141,34 @@ export class StarFluid {
     this.scene.clear()
   }
 
-  private material(fragmentShader: string, defines = {}): ShaderMaterial {
+  private material(fragmentShader: string): ShaderMaterial {
     const material = new ShaderMaterial({
-      vertexShader,
+      vertexShader: fluidVertex,
       fragmentShader,
-      defines,
       depthTest: false,
       depthWrite: false,
       uniforms: {
-        texelSize: { value: new Vector2(1 / VELOCITY_SIZE, 1 / VELOCITY_SIZE) },
-        dyeTexelSize: { value: new Vector2() },
+        velocity: { value: null },
+        source: { value: null },
+        pressure: { value: null },
+        divergence: { value: null },
         dt: { value: 0 },
         dissipation: { value: 0 },
-        uVelocity: { value: null },
-        uSource: { value: null },
-        uTarget: { value: null },
-        uPressure: { value: null },
-        uDivergence: { value: null },
-        uCurl: { value: null },
-        curl: { value: 3 },
-        point: { value: new Vector2() },
-        impulse: { value: new Vector3() },
-        limit: { value: 2 },
-        aspectRatio: { value: 1 },
+        dyeMode: { value: 0 },
+        sourceCount: { value: 0 },
+        points: { value: Array.from({ length: 24 }, () => new Vector4()) },
+        momenta: { value: Array.from({ length: 24 }, () => new Vector3()) },
+        colors: { value: Array.from({ length: 24 }, () => new Color()) },
       },
     })
     this.materials.push(material)
     return material
   }
-  private target(size: number): WebGLRenderTarget {
-    const target = new WebGLRenderTarget(size, size, {
+  private target(): WebGLRenderTarget {
+    const target = new WebGLRenderTarget(GRID_SIZE * ATLAS_COLUMNS, GRID_SIZE * ATLAS_ROWS, {
       type: HalfFloatType,
-      minFilter: NearestFilter,
-      magFilter: NearestFilter,
+      minFilter: LinearFilter,
+      magFilter: LinearFilter,
       depthBuffer: false,
       stencilBuffer: false,
     })
@@ -250,7 +201,6 @@ export class StarFluid {
   ): void {
     this.advect.uniforms.dt.value = dt
     this.advect.uniforms.dissipation.value = dissipation
-    this.advect.uniforms.dyeTexelSize.value.set(1 / pair[0].width, 1 / pair[0].height)
-    this.ping(this.advect, pair, { uVelocity: velocity, uSource: pair[0].texture })
+    this.ping(this.advect, pair, { velocity, source: pair[0].texture })
   }
 }

@@ -2978,7 +2978,7 @@ export default {
       taskPaused: 'タスク実行中のため停止中。「再開」で続行できます',
       paused: '一時停止中 ·「再開」で続行',
       budget: '計算予算の上限によりシミュレーションを減速中',
-      fluid: 'ニュートン三体 · 芸術的コロナ · 2D 視覚流体',
+      fluid: 'ニュートン三体 · 3D コロナと視覚流体 · 星空 NASA/GSFC/SVS',
     },
     satelliteEffectsPaused: 'エフェクト一時停止中 · クリックで再開',
     satelliteEgg: {

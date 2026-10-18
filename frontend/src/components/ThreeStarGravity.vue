@@ -26,6 +26,7 @@ const connection = connectionState()
 const canvas = ref<HTMLCanvasElement | null>(null)
 const root = ref<HTMLDivElement | null>(null)
 const fallback = ref(false)
+const sceneReady = ref(false)
 const reducedMotion = ref(false)
 const documentHidden = ref(document.hidden)
 const inViewport = ref(true)
@@ -51,6 +52,7 @@ const staticMode = computed(() => performanceStore.lowPerformanceMode || reduced
 const blocked = computed(
   () =>
     staticMode.value ||
+    !sceneReady.value ||
     fallback.value ||
     documentHidden.value ||
     !inViewport.value ||
@@ -61,7 +63,7 @@ const blocked = computed(
 )
 let scene: ThreeStarScene | null = null
 let disposed = false
-let initializing = false
+let initialization = 0
 let resizeObserver: ResizeObserver | null = null
 let intersectionObserver: IntersectionObserver | null = null
 let removeTaskListener: (() => void) | null = null
@@ -155,6 +157,8 @@ function stop(): void {
   }
 }
 function releaseScene(): void {
+  initialization++
+  sceneReady.value = false
   scene?.dispose()
   scene = null
 }
@@ -164,28 +168,32 @@ function degrade(): void {
   releaseScene()
 }
 async function initializeScene(): Promise<void> {
-  if (disposed || staticMode.value || initializing || scene || !canvas.value) return
-  initializing = true
+  if (disposed || staticMode.value || scene || !canvas.value) return
+  const generation = ++initialization
   try {
     // 旧 preload / 浏览器没有该能力时，再以 renderer 字符串保守判断。
     const hardware =
       (await window.electronAPI?.getGraphicsAcceleration?.().catch(() => false)) ?? null
-    if (disposed || staticMode.value || !canvas.value) return
+    if (disposed || staticMode.value || generation !== initialization || !canvas.value) return
     scene = new ThreeStarScene(canvas.value, hardware, isDark.value)
+    const loadingScene = scene
+    await loadingScene.ready
+    if (disposed || staticMode.value || generation !== initialization || scene !== loadingScene)
+      return
     fallback.value = false
     // 降级会隐藏 canvas；等它重新显示后再测量，不能沿用隐藏时的 1×1 尺寸。
     await nextTick()
-    if (disposed || staticMode.value || !scene) return
+    if (disposed || staticMode.value || generation !== initialization || scene !== loadingScene)
+      return
     scene.resize()
+    sceneReady.value = true
     drawStill()
     if (!blocked.value) {
       session.solver.resume()
       requestFrame()
     }
   } catch {
-    degrade()
-  } finally {
-    initializing = false
+    if (generation === initialization) degrade()
   }
 }
 function requestFrame(): void {
@@ -226,7 +234,14 @@ function renderFrame(now: number): void {
   }
 }
 function drawStill(): void {
-  if (!scene || disposed || documentHidden.value || performanceStore.isBackgrounded) return
+  if (
+    !sceneReady.value ||
+    !scene ||
+    disposed ||
+    documentHidden.value ||
+    performanceStore.isBackgrounded
+  )
+    return
   try {
     labels.value = scene.render(session.solver.snapshot())
   } catch {
@@ -365,6 +380,7 @@ function pointerMove(event: PointerEvent): void {
   height: 340px;
   position: relative;
   overflow: hidden;
+  border-radius: 8px;
 }
 .three-star-canvas,
 .three-star-static {

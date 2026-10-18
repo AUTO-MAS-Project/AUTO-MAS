@@ -3478,7 +3478,7 @@ export default {
       taskPaused: '任务期间动效已暂停，可点击继续',
       paused: '已暂停 · 点击继续',
       budget: '计算预算已满，模拟正在减速',
-      fluid: '牛顿三体 · 艺术星冕 · 二维视觉流体',
+      fluid: '牛顿三体 · 三维星冕与流体 · 星空 NASA/GSFC/SVS',
     },
     satelliteEffectsPaused: '动效已暂停 · 点击继续',
     satelliteEgg: {
