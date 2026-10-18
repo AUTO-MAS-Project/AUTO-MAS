@@ -31,34 +31,49 @@ export const starFragment = `
   ${stellarNoise}
   void main() {
     vec3 p = normalize(vPosition);
-    vec3 flow = p*6.0 + vec3(time*.14, -time*.09, time*.06);
-    float convection = noise3(flow + noise3(p*3.0-time*.09)*1.8);
-    float granules = noise3(flow*3.5 + convection);
-    float hot = smoothstep(.28,.82,convection*.65+granules*.35);
+    vec3 drift = vec3(time*.11,-time*.07,time*.05);
+    float warp = noise3(p*3.4-drift*.7);
+    vec3 flow = p*5.5 + drift + vec3(warp,-warp,warp*.6)*1.6;
+    float field = noise3(flow) + noise3(flow*2.1+4.7)*.22;
+    float branch = noise3(flow*1.7-2.3);
+    // 噪声等值线构成球面的能量丝，屏幕导数控制细线宽度，避免硬阈值闪烁。
+    float seam = 1.0-smoothstep(.0,max(.008,fwidth(field)*.65),abs(field-.58));
+    float fine = 1.0-smoothstep(.0,max(.006,fwidth(branch)*.5),abs(branch-.49));
+    float threads = min(1.0,seam + fine*smoothstep(.4,.7,field)*.55);
     float facing = max(0.0,dot(normalize(vNormal),normalize(-vViewPosition)));
-    float limb = pow(facing,.38);
-    vec3 surface = mix(color*.24,mix(color,vec3(1.0),.7),hot);
-    surface *= (.28 + .72*limb)*mix(.94,1.0,dark);
-    surface += color*pow(1.0-facing,3.0)*.32 + color*flash*.18;
-    gl_FragColor = vec4(clamp(surface,0.0,1.0),1.0);
+    float fresnel = pow(1.0-facing,2.6);
+    vec3 core = mix(vec3(.003,.008,.02),color*.055,.3+facing*.7);
+    vec3 electric = mix(color,vec3(.82,.95,1.0),.18);
+    vec3 surface = core + electric*threads*(.35+facing*.4) + color*fresnel*.8;
+    surface += mix(color,vec3(1.0),.45)*pow(threads,4.0)*.22;
+    surface += color*flash*.12;
+    gl_FragColor = vec4(clamp(surface*mix(.94,1.0,dark),0.0,1.0),1.0);
     #include <colorspace_fragment>
   }
 `
 export const coronaFragment = `
   varying vec2 vUv;
   uniform vec3 color; uniform float time; uniform float dark; uniform float flash;
+  ${stellarNoise}
   void main() {
     vec2 p = vUv*2.0-1.0;
     float r=length(p); float angle=atan(p.y,p.x);
-    float tongue = sin(angle*7.0-time*.55+sin(angle*11.0+time*.24));
-    float filaments = .5+.5*sin(angle*37.0 + sin(angle*13.0-time*.4)*2.0-r*28.0);
-    float rim = .46 + .012*sin(angle*19.0+time*.38);
-    float halo = exp(-max(0.0,r-rim)*8.0)*smoothstep(.39,.47,r);
-    float threads = pow(max(0.0,tongue),4.0)*filaments*exp(-abs(r-.56)*13.0);
-    float thinRim = exp(-abs(r-rim)*75.0);
-    float alpha = min(.62,(halo*.2+threads*.42+thinRim*.3+flash*halo*.12)*mix(.92,1.0,dark));
-    vec3 corona = mix(color,vec3(1.0),thinRim*.4);
-    gl_FragColor=vec4(corona,alpha*(1.0-smoothstep(.78,1.0,r)));
+    float turbulence = noise3(vec3(p*13.0,time*.15));
+    float ribbons = 1.0-smoothstep(.0,max(.012,fwidth(turbulence)*.65),abs(turbulence-.52));
+    float tongue = .55+.45*sin(angle*7.0-time*.4+sin(angle*11.0+time*.2));
+    float rim = .46 + .006*sin(angle*19.0+time*.3);
+    float thinRim = exp(-abs(r-rim)*85.0);
+    float halo = exp(-max(0.0,r-rim)*8.0)*smoothstep(.4,.47,r);
+    float streams = ribbons*exp(-abs(r-.53)*13.0)*tongue;
+    vec2 scatter = p*13.0+vec2(sin(time*.1),cos(time*.08))*.3;
+    vec2 cell = floor(scatter);
+    vec2 offset = vec2(hash31(vec3(cell,2)),hash31(vec3(cell,7)))*.7+.15;
+    vec2 dustDelta = fract(scatter)-offset;
+    float dust = exp(-dot(dustDelta,dustDelta)*110.0)*step(.97,hash31(vec3(cell,11)));
+    dust *= smoothstep(.54,.68,r);
+    float alpha = min(.68,(halo*.17+streams*.65+thinRim*.48+dust*.5+flash*halo*.12)*mix(.92,1.0,dark));
+    vec3 corona = mix(color,vec3(.85,.97,1.0),min(.65,thinRim*.45+dust*.3));
+    gl_FragColor=vec4(corona,alpha*(1.0-smoothstep(.8,1.0,r)));
     #include <colorspace_fragment>
   }
 `
