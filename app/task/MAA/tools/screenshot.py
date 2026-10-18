@@ -38,10 +38,14 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
+from PIL import Image
+
 from app.tools.error_screenshot import save_error_screenshot
 from app.utils import get_logger
 
 logger = get_logger("MAA 失败截图")
+
+type AdbCapture = Callable[[Path | str, str], Awaitable[Image.Image | None]]
 
 _FAILURE_IMAGE_SUFFIXES = frozenset({".png"})
 
@@ -99,6 +103,7 @@ async def capture_current_screen(
     *,
     adb_path: Path | str | None,
     adb_address: str,
+    capture_adb: AdbCapture,
     png_reader: Callable[[], Awaitable[bytes]] | None = None,
 ) -> Path | None:
     """通过 adb 补截当前画面并保存为诊断图片，上游没留图时的兜底。
@@ -118,8 +123,6 @@ async def capture_current_screen(
 
     if png_reader is not None:
         try:
-            from PIL import Image
-
             data = await png_reader()
             image = await asyncio.to_thread(lambda: Image.open(io.BytesIO(data)).copy())
             low, high = image.convert("L").getextrema()
@@ -138,23 +141,18 @@ async def capture_current_screen(
     if not adb_path or adb_address in ("", "Unknown"):
         return None
     try:
-        # 冷导入放在事件循环上完成，再进线程跑阻塞 IO
-        from app.utils.OCR.OCRtool import OCRTool
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"加载 ADB 截图工具失败，通知不带图: {exc}")
-        return None
-
-    def _capture() -> Path | None:
-        image = OCRTool.get_screenshot_with_adb(str(adb_path), adb_address)
+        image = await capture_adb(adb_path, adb_address)
+        if image is None:
+            return None
         low, high = image.convert("L").getextrema()
         if high - low < 8:
             raise RuntimeError("截图为纯色画面（疑似未取到游戏渲染层），放弃")
-        return save_error_screenshot(
-            image=image, dir_name="maa-failure", file_prefix="failure"
+        return await asyncio.to_thread(
+            save_error_screenshot,
+            image=image,
+            dir_name="maa-failure",
+            file_prefix="failure",
         )
-
-    try:
-        return await asyncio.to_thread(_capture)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"MAA 补截当前画面失败，通知不带图: {exc}")
         return None

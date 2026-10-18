@@ -131,7 +131,11 @@ from .tools.cultivate import (
     summarize_achievements,
     takeover_notice_patch_value,
 )
-from .tools.screenshot import capture_current_screen, collect_maa_failure_image
+from .tools.screenshot import (
+    AdbCapture,
+    capture_current_screen,
+    collect_maa_failure_image,
+)
 from .tools.software_package import read_pending_update, save_deferred_update
 from .tools.software_update import (
     compare_versions,
@@ -1154,6 +1158,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         user_config: MultipleConfig[MaaUserConfig],
         emulator_manager: DeviceBase,
         *,
+        capture_adb: AdbCapture,
         game_update_result: GameUpdateResult | None = None,
     ):
         super().__init__()
@@ -1166,6 +1171,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.capture_adb = capture_adb
+        self._failure_capture_task: asyncio.Task[Path | None] | None = None
         self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
@@ -2983,6 +2990,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
+    def _on_finalize_cancel_requested(self) -> None:
+        self.stopped_manually = True
+        if self._failure_capture_task is not None:
+            self._failure_capture_task.cancel()
+
     async def _take_failure_shot(self) -> Path | None:
         """取一张失败现场画面：上游 debug/interface 图优先，adb 补截兜底。
 
@@ -2997,11 +3009,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.maa_root_path,
                 not_before=self.log_start_time,
             )
-            if shot is None:
+            if shot is None and not self.stopped_manually:
                 # 魔改 AVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）
                 host_adb = await resolve_host_adb(self)
-                shot = await asyncio.wait_for(
+                if self.stopped_manually:
+                    return None
+                self._failure_capture_task = asyncio.create_task(
                     capture_current_screen(
+                        capture_adb=self.capture_adb,
                         adb_path=self.emulator_manager.get_adb_path(),
                         adb_address=self.emulator_info.adb_address
                         if self.emulator_info is not None
@@ -3010,11 +3025,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         if host_adb is not None
                         else None,
                     ),
-                    timeout=60,
                 )
+                shot = await asyncio.wait_for(self._failure_capture_task, timeout=60)
+                if self.stopped_manually:
+                    return None
+        except asyncio.CancelledError:
+            if not self.stopped_manually:
+                raise
+            return None
         except Exception as e:
             logger.warning(f"获取失败画面失败: {e}")
             return None
+        finally:
+            self._failure_capture_task = None
         return shot
 
     async def final_task(self):
@@ -3052,9 +3075,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
 
         # 失败画面：失败尝试路径已在关模拟器前留下的优先；否则现在取
-        # （用户手动中止等未走失败清理的路径，模拟器此时仍开着）。成功轮不取。
+        # （如总时限中止，模拟器此时仍开着）。成功轮不取，手动停止只保留已有图。
         failure_shot: Path | None = self._failure_shot
-        if not if_success and failure_shot is None:
+        if not if_success and failure_shot is None and not self.stopped_manually:
             failure_shot = await self._take_failure_shot()
 
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
