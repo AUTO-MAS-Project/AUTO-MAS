@@ -102,6 +102,15 @@ interface EndfieldPoolItem {
 }
 
 export interface EndfieldActivityOverview {
+  /** SRA 同一版本记录，不能由卡池结束时间推断。 */
+  VersionName?: string
+  VersionCover?: string
+  VersionStartTime?: string
+  VersionEndTime?: string
+  VersionStale?: boolean
+  PoolStale?: boolean
+  PoolMessage?: string
+  PoolLoading?: boolean
   Available: boolean
   Stale: boolean
   Message: string
@@ -194,8 +203,8 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
-  /** 活动详情在主图右侧展示；未设置时沿用下方横排 */
-  detailPlacement?: 'right'
+  /** 可选的点击跳转地址 */
+  url?: string
   /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
   version?: string
   /** 版本名或当期活动名 */
@@ -207,4 +216,68 @@ export interface ActivityBannerItem {
   loading: boolean
   available: boolean
   stale: boolean
+}
+
+export interface HomeActivityAction {
+  label: string
+  disabled?: boolean
+  loading?: boolean
+}
+
+export type HomeActivityLayout = 'horizontal' | 'resource' | 'activity'
+
+/** 展示条目不携带游戏类型或接口结构；交互通过 id 回传给业务层。 */
+export interface HomeActivityEntry {
+  id: string
+  name: string
+  image?: string
+  imageFit?: 'cover' | 'contain'
+  fallbackImage?: string
+  url?: string
+  tags?: string[]
+  description?: string
+  startTime?: string
+  endTime?: string
+  countdownDaysOnly?: boolean
+  countdownLabel?: boolean
+  status?: { label: string; color?: string }
+  completed?: boolean
+  progress?: number
+  action?: HomeActivityAction
+}
+
+export interface HomeActivitySection {
+  id: string
+  title: string
+  /** 未指定时使用活动卡片；下方分组由数据层选择展示模式。 */
+  layout?: HomeActivityLayout
+  completable?: boolean
+  accent?: string
+  source?: { label: string; url: string }
+  loading: boolean
+  available: boolean
+  stale?: boolean
+  emptyText: string
+  timeZone?: string
+  timeZoneLabel?: string
+  items: HomeActivityEntry[]
+  alerts?: Array<{
+    id: string
+    message: string
+    description?: string
+    type: 'warning' | 'error'
+    closable?: boolean
+    action?: HomeActivityAction
+  }>
+  choices?: {
+    label: string
+    selected: string
+    options: Array<{ value: string; label: string }>
+  }
+}
+
+export interface HomeActivityPanel extends ActivityBannerItem {
+  activities: HomeActivitySection
+  /** 空数组不渲染下方区域；加载态和失败态也由分组数据表达。 */
+  extraSections: HomeActivitySection[]
 }
