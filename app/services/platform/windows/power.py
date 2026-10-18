@@ -39,6 +39,7 @@ class WindowsDisplayHold:
         self.owner = owner
         self._on_release = on_release
         self._released = threading.Event()
+        self._release_lock = threading.Lock()
         self._thread = threading.Thread(
             target=self._run, name=f"display-hold:{owner}", daemon=True
         )
@@ -51,20 +52,28 @@ class WindowsDisplayHold:
         self._thread.start()
 
     def _run(self) -> None:
+        # 线程还没跑起来就被撤了（比如紧接着要关机）：不再请求、也不再叫醒。
+        if self._released.is_set():
+            return
         kernel32 = ctypes.windll.kernel32
         if not kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED):
             logger.warning(f"请求保持显示开启失败（{self.owner}）")
-        try:
-            _wake_display()
-        except Exception as exc:
-            logger.warning(f"唤醒显示失败（{self.owner}）: {exc}")
+            # 没生效就别装作生效：`active` 变假，桌面保障下一轮会重新请求。
+            self.release()
+            return
+        if not self._released.is_set():
+            try:
+                _wake_display()
+            except Exception as exc:
+                logger.warning(f"唤醒显示失败（{self.owner}）: {exc}")
         self._released.wait()
         kernel32.SetThreadExecutionState(ES_CONTINUOUS)
 
     def release(self) -> None:
-        if self._released.is_set():
-            return
-        self._released.set()
+        with self._release_lock:
+            if self._released.is_set():
+                return
+            self._released.set()
         self._on_release(self)
 
 
