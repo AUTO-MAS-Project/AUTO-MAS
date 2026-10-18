@@ -24,6 +24,7 @@ export interface DesktopMascotData {
   animation?: {
     imageUrl: string
     columns: number
+    frameCount: number
     idleFps: number
     workingFps: number
     lookImageUrl?: string

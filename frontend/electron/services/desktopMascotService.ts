@@ -26,6 +26,34 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
   return mask
 }
 
+/** 各动作占连续的行，末行未用的格子不参与显示和鼠标命中。 */
+function cropAnimationFrames(
+  sheet: NativeImage,
+  columns: number,
+  frameCount: number,
+  actions: number
+): NativeImage[] {
+  const { width, height } = sheet.getSize()
+  const rows = Math.ceil(frameCount / columns)
+  const frameWidth = width / columns
+  const frameHeight = height / (rows * actions)
+  if (sheet.isEmpty() || !Number.isInteger(frameWidth) || !Number.isInteger(frameHeight)) return []
+  const frames: NativeImage[] = []
+  for (let action = 0; action < actions; action++) {
+    for (let frame = 0; frame < frameCount; frame++) {
+      frames.push(
+        sheet.crop({
+          x: (frame % columns) * frameWidth,
+          y: (action * rows + Math.floor(frame / columns)) * frameHeight,
+          width: frameWidth,
+          height: frameHeight,
+        })
+      )
+    }
+  }
+  return frames
+}
+
 export class DesktopMascotService implements DesktopMascotRuntime {
   private disposed = false
   private window: BrowserWindow | null = null
@@ -216,25 +244,10 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     const image = this.decodedImage?.image ?? nativeImage.createFromDataURL(appearance.mascotUrl)
     const frames: NativeImage[] = []
     const animation = appearance.mascot?.animation
+    const frameCount = animation?.frameCount ?? animation?.columns ?? 0
     if (animation && appearance.mascotAnimationUrl) {
       const sheet = nativeImage.createFromDataURL(appearance.mascotAnimationUrl)
-      const sheetSize = sheet.getSize()
-      const frameWidth = sheetSize.width / animation.columns
-      const frameHeight = sheetSize.height / 2
-      if (!sheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              sheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(sheet, animation.columns, frameCount, 2))
     }
     const hasAnimation = frames.length > 0
     const needsImageDecode =
@@ -248,37 +261,14 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     }
     if (hasAnimation && animation && appearance.mascotResultUrl) {
       const resultSheet = nativeImage.createFromDataURL(appearance.mascotResultUrl)
-      const size = resultSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      const frameHeight = size.height / 2
-      if (!resultSheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              resultSheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(resultSheet, animation.columns, frameCount, 2))
     }
     let hasDrag = false
     if (hasAnimation && animation && appearance.mascotDragUrl) {
       const dragSheet = nativeImage.createFromDataURL(appearance.mascotDragUrl)
-      const size = dragSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      if (!dragSheet.isEmpty() && Number.isInteger(frameWidth)) {
-        hasDrag = true
-        for (let column = 0; column < animation.columns; column++) {
-          frames.push(
-            dragSheet.crop({ x: column * frameWidth, y: 0, width: frameWidth, height: size.height })
-          )
-        }
-      }
+      const dragFrames = cropAnimationFrames(dragSheet, animation.columns, frameCount, 1)
+      hasDrag = dragFrames.length > 0
+      frames.push(...dragFrames)
     }
     let hasLook = false
     if (hasAnimation && appearance.mascotLookUrl) {
@@ -367,6 +357,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
             animation: {
               imageUrl: appearance.mascotAnimationUrl!,
               columns: animation.columns,
+              frameCount,
               idleFps: animation.idleFps ?? 4,
               workingFps: animation.workingFps ?? 8,
               ...(hasLook ? { lookImageUrl: appearance.mascotLookUrl } : {}),
