@@ -130,6 +130,7 @@ const handleBoundary = (time: number) => {
   padding: 12px 0;
 }
 .activity-section :deep(.ant-card-head-title) {
+  flex-basis: auto;
   padding: 0;
 }
 .activity-section :deep(.ant-card-extra) {
