@@ -3881,6 +3881,9 @@ export default {
       internalErrorNotice:
         'This is an internal problem; retrying will not help. Please report it with the log.',
       contactSupportNotice: 'Please report this problem to the developers with the log.',
+      exportLogsHint:
+        'Still stuck? Package the debug folder as a ZIP and share it in the QQ group for help.',
+      joinGroup: 'Join the QQ group for help',
       openLogFailed: 'Could not open the log: {error}',
       doctorEmpty: 'Nothing was checked',
       doctorFailed: 'The environment check failed: {error}',
@@ -4269,6 +4272,10 @@ export default {
     toast: {
       packageNoResponse: 'Packaging logs did not respond. Check the app.',
       packageExported: 'Log archive exported',
+      packageIncomplete: 'Log archive exported. These files could not be exported: {paths}',
+      windowUnavailable: 'Could not package logs because the window is not initialized',
+      directoryMissing: 'The log folder does not exist',
+      noFiles: 'The log folder is empty. There are no files to export',
       packageFailed: 'Could not package logs',
       packageError: 'Error packaging logs: {error}',
       openFolderFailed: 'Could not open the archive folder',

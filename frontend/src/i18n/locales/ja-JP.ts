@@ -3225,6 +3225,9 @@ export default {
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
       contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      exportLogsHint:
+        '解決しない場合は、debug フォルダーを ZIP にまとめて QQ グループで共有し、調査を依頼できます。',
+      joinGroup: 'QQ グループで相談',
       openLogFailed: 'ログを開けませんでした: {error}',
       doctorEmpty: '確認できた項目がありません',
       doctorFailed: '実行環境の確認に失敗しました: {error}',
@@ -3616,6 +3619,11 @@ export default {
     toast: {
       packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
       packageExported: 'ログのアーカイブを書き出しました',
+      packageIncomplete:
+        'ログのアーカイブを書き出しました。次のファイルは書き出せませんでした: {paths}',
+      windowUnavailable: 'ウィンドウが初期化されていないため、ログを書き出せません',
+      directoryMissing: 'ログフォルダーが存在しません',
+      noFiles: 'ログフォルダーが空のため、書き出せるファイルがありません',
       packageFailed: 'ログの書き出しに失敗しました',
       packageError: 'ログの書き出しでエラーが発生しました: {error}',
       openFolderFailed: 'アーカイブの保存先フォルダーを開けませんでした',
