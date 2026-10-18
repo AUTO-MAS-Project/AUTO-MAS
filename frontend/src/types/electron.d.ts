@@ -66,7 +66,7 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
-export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart' | 'connection'
+export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
 
 export type RuntimeUpdateRetryAction =
   | 'bootstrap'
@@ -95,7 +95,6 @@ export interface RuntimeUpdateProgress {
 
 export interface RuntimeUpdateOutcome {
   success: boolean
-  deferred?: boolean
   phase?: RuntimeUpdatePhase
   error?: string
   code?: string
@@ -499,7 +498,6 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   backendStart: () => Promise<InstallStageResult>
   backendRestart: () => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
-  applyStagedBackendUpdate: () => Promise<RuntimeUpdateOutcome>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
     staged?: boolean

@@ -314,8 +314,7 @@ def main():
                 """执行一个初始化步骤，失败时返回「步骤名（异常）」，成功返回 None。"""
 
                 try:
-                    with TaskManager.backend_operation():
-                        await step()
+                    await step()
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
@@ -375,14 +374,13 @@ def main():
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        with TaskManager.backend_operation():
-                            await Config.migrate_maafw_embedded_copies_to_payloads()
-                            await Config.clean_maafw_agent_venvs()
-                            await Config.clean_maafw_embedded_copies()
-                            await Config.clean_maafw_runtime_blobs()
-                            await Config.clean_maafw_update_cache()
-                            # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                            await Config.clean_maafw_runtime_pool()
+                        await Config.migrate_maafw_embedded_copies_to_payloads()
+                        await Config.clean_maafw_agent_venvs()
+                        await Config.clean_maafw_embedded_copies()
+                        await Config.clean_maafw_runtime_blobs()
+                        await Config.clean_maafw_update_cache()
+                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
+                        await Config.clean_maafw_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -451,9 +449,6 @@ def main():
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
             from app.services import Matomo, System, Updater
-
-            # closing 已封住新入口；先结清断线后仍受保护的写入，再拆它依赖的服务。
-            await TaskManager.drain_backend_operations(timeout=10)
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -533,7 +528,6 @@ def main():
         tools_router,
         update_router,
     )
-    from app.api.update import BackendOperationMiddleware
 
     app = FastAPI(
         title="AUTO-MAS",
@@ -541,8 +535,6 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
-
-    app.add_middleware(BackendOperationMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

@@ -1,7 +1,5 @@
 <template>
   <a-layout
-    :inert="hotUpdateBlocked || undefined"
-    :aria-busy="hotUpdateBlocked"
     style="
       position: relative;
       z-index: 1;
@@ -62,7 +60,6 @@
 
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
-import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import {
   BugOutlined,
   CalendarOutlined,
@@ -86,7 +83,6 @@ import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 
 const { t } = useI18n()
-const { running: hotUpdateBlocked } = useBackendRuntimeUpdate()
 
 const SIDER_WIDTH = 160
 

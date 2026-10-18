@@ -52,13 +52,6 @@ logger = get_logger("通知编排")
 
 _PENDING_TASK_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[Any]] = set()
 
-
-def track_community_notification(task: asyncio.Task[Any]) -> None:
-    """手动签到的慢渠道同样交给关闭/热更前的补发等待。"""
-    _PENDING_TASK_COMMUNITY_NOTIFICATIONS.add(task)
-    task.add_done_callback(_PENDING_TASK_COMMUNITY_NOTIFICATIONS.discard)
-
-
 EmptyPolicy = Literal["send", "warn", "skip"]
 
 

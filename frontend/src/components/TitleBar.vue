@@ -13,15 +13,6 @@
             <LoadingOutlined />
             {{ t('comp.backendStarting') }}
           </span>
-          <button
-            v-if="isAutomaticUpdate && updateOutcome && !updateOutcome.success"
-            class="backend-recovery-button"
-            :title="t('comp.backendHotUpdateDetails')"
-            @click="updateModalVisible = true"
-          >
-            <ExclamationCircleOutlined />
-            {{ t('comp.backendHotUpdateDetails') }}
-          </button>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
           </span>
@@ -40,11 +31,20 @@
             {{ t('comp.backendUpdateDevUnsupported') }}
           </span>
           <span
-            v-else-if="backendUpdateInfo?.if_need_update && !isRuntimeManaged"
+            v-else-if="
+              runtimeBackendUpdateAvailable ||
+              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+            "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            {{ t('comp.backendUpdateAvailableClick') }}
+            {{
+              t(
+                runtimeBackendUpdateAvailable
+                  ? 'comp.backendUpdateReady'
+                  : 'comp.backendUpdateAvailableClick'
+              )
+            }}
           </span>
         </span>
       </div>
@@ -85,11 +85,7 @@
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
       v-model:open="updateModalVisible"
-      :title="
-        isAutomaticUpdate
-          ? t('comp.backendHotUpdateDetails')
-          : t('comp.backendUpdateTitle', { version: updateTargetVersion })
-      "
+      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
       :footer="null"
       :mask-closable="false"
@@ -140,21 +136,12 @@
               {{ retryActionLabel(action) }}
             </a-button>
             <a-button
-              v-if="
-                !updateActions.showContactSupport &&
-                (updateActions.showRestartBackend || updateOutcome.phase === 'connection')
-              "
+              v-if="updateActions.showRestartBackend"
               type="primary"
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
             >
-              {{
-                t(
-                  updateOutcome.phase === 'connection'
-                    ? 'comp.backendHotUpdateReconnect'
-                    : 'comp.backendUpdateRestartBackend'
-                )
-              }}
+              {{ t('comp.backendUpdateRestartBackend') }}
             </a-button>
             <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
           </div>
@@ -171,7 +158,12 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import {
+  updateInfo,
+  backendUpdateInfo,
+  runtimeBackendUpdateAvailable,
+  runtimeBackendUpdateCommitMessage,
+} from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
@@ -181,13 +173,12 @@ import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
 import {
   BorderOutlined,
   CloseOutlined,
-  ExclamationCircleOutlined,
   LoadingOutlined,
   MinusOutlined,
   SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
@@ -215,13 +206,13 @@ const {
   isRuntimeDevelopment,
   modalVisible: updateModalVisible,
   running: updateRunning,
-  isAutomatic: isAutomaticUpdate,
   cancelling: updateCancelling,
   restartingBackend: updateRestartingBackend,
   targetVersion: updateTargetVersion,
   currentMessage: updateCurrentMessage,
   overallPercent: updateOverallPercent,
   outcome: updateOutcome,
+  start: startRuntimeUpdate,
   retry: retryUpdate,
   cancel: cancelUpdate,
   restartBackend: restartBackendAfterUpdate,
@@ -245,7 +236,6 @@ const updateAlertMessage = computed(() => {
 
   if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
   if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
-  if (result.phase === 'connection') return t('comp.backendHotUpdateFailedConnection')
   return t('comp.backendUpdateFailedBootstrap')
 })
 
@@ -306,16 +296,56 @@ const handleAppUpdateClick = () => {
   showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
+/**
+ * Runtime 链路的目标版本。
+ *
+ * `/api/update/check` 返回的 `latest_version` 就是发布标签；还没查到时退回应用自身版本，
+ * 主进程会再做一次规范化与合法性校验。
+ */
+const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version
+
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
-  if (isRuntimeManaged.value || isRuntimeDevelopment.value) return
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t('comp.backendAboutUpdateWhich'),
+    content:
+      runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
+        ? h('div', [
+            h('p', t('comp.backendUpdateReadyConfirm')),
+            h('strong', t('comp.backendUpdateLatestCommit')),
+            h(
+              'div',
+              {
+                style: {
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                },
+              },
+              runtimeBackendUpdateCommitMessage.value
+            ),
+          ])
+        : t(
+            runtimeBackendUpdateAvailable.value
+              ? 'comp.backendUpdateReadyConfirm'
+              : 'comp.backendAboutUpdateWhich'
+          ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
+      // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
+      if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {
+        await window.electronAPI.appRestart()
+        return
+      }
+      // 跨版本更新仍走完整的 Runtime 更新编排。
+      if (isRuntimeManaged.value) {
+        await startRuntimeUpdate(resolveRuntimeUpdateVersion())
+        return
+      }
+
       // 关后端到初始化流程重新拉起它之间的断开是计划内的：先打好标记，
       // 否则生命周期协调器会当成事故——提示用户断线，并 taskkill 后抢着起一个后端
       beginIntentionalBackendRestart('标题栏触发后端更新')
@@ -495,20 +525,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.backend-recovery-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--ant-color-warning-text);
-  font: inherit;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
 .title-bar {
   height: 32px;
   background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));

@@ -243,9 +243,6 @@ export default {
     backendUpdateDevUnsupported: '检测到后端更新，开发模式不支持自动更新',
     backendUpdateTitle: '更新后端到 {version}',
     backendUpdateSucceeded: '后端已更新并重新启动',
-    backendHotUpdateDetails: '后端更新恢复',
-    backendHotUpdateReconnect: '重新连接',
-    backendHotUpdateFailedConnection: '新后端已启动，但未能恢复连接；当前页面与草稿已保留',
     backendUpdateCancelled: '更新已取消，后端保持原版本',
     backendUpdateFailedShutdown: '未能停止当前后端，更新没有开始，可以继续使用当前版本',
     backendUpdateFailedBootstrap: '源码或依赖同步失败，可用下面的方式重试',
@@ -4976,10 +4973,6 @@ export default {
       updateSection: '更新配置',
       checkUpdate: '检查更新',
       pauseUpdates: '暂停更新',
-      hotUpdateAvoidMinutes: '定时任务避让时间',
-      hotUpdateAvoidMinutesTip:
-        '定时任务将在设定时间内开始时，暂缓自动重启后端。0 分钟表示不避让，默认 5 分钟，上限 60 分钟。',
-      hotUpdateMinutes: '分钟',
       pauseUpdatesTip:
         '选择截止日期后暂停自动更新检查，最短 1 天、最长 35 天；期间手动检查更新会立即恢复。',
       pausePlaceholder: '选择暂停截止日期',

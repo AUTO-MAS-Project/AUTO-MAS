@@ -10,7 +10,6 @@
  */
 
 import { computed, ref } from 'vue'
-import { translate as t } from '@/i18n'
 
 import type {
   RuntimeLaunchMode,
@@ -55,16 +54,9 @@ const currentStage = ref<RuntimeUpdateStage | null>(null)
 const completedStages = ref<RuntimeUpdateStage[]>([])
 const outcome = ref<RuntimeUpdateOutcome | null>(null)
 const restartingBackend = ref(false)
-const automatic = ref(false)
 
+/** 供应用作用域与桌宠宿主判断「正在更新后端」，避免在重启期间抢先启动任务。 */
 export const isBackendRuntimeUpdating = (): boolean => running.value
-
-export function finishBackendRuntimeReconnect(): void {
-  if (!running.value && outcome.value?.phase === 'connection') {
-    outcome.value = { success: true }
-    modalVisible.value = false
-  }
-}
 
 let progressListenerAttached = false
 
@@ -109,58 +101,25 @@ function resetProgress(): void {
 }
 
 /** 更新成功后把连接与版本信息拉回来，不必跳初始化页。 */
-async function refreshAfterUpdate(): Promise<boolean> {
+async function refreshAfterUpdate(): Promise<void> {
   try {
-    if (!(await reconnectNow('后端更新完成'))) return false
-    return (await getBackendVersion()) !== false
+    await reconnectNow('后端更新完成')
+    await getBackendVersion()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`更新后刷新后端状态失败: ${errorMsg}`)
-    return false
   }
 }
 
 async function settle(result: RuntimeUpdateOutcome): Promise<void> {
-  try {
-    outcome.value = result.deferred ? null : result
-    if (result.deferred) modalVisible.value = false
-    if (result.success && !(await refreshAfterUpdate())) {
-      outcome.value = {
-        success: false,
-        phase: 'connection',
-        error: t('comp.backendHotUpdateFailedConnection'),
-      }
-      modalVisible.value = true
-    }
-  } finally {
-    running.value = false
-    cancelling.value = false
-    detachProgressListener()
-    endIntentionalBackendRestart('Runtime 后端更新结束')
-  }
-}
-
-export async function applyStagedBackendUpdate(): Promise<void> {
-  if (running.value || outcome.value?.success === false) return
-  if ((await ensureLaunchMode()) !== 'managed' || running.value) return
-  resetProgress()
-  automatic.value = true
-  running.value = true
-  modalVisible.value = false
-  beginIntentionalBackendRestart('自动后端更新')
-  try {
-    const result = await window.electronAPI.applyStagedBackendUpdate()
-    if (result.deferred || result.cancelled) {
-      await settle(result)
-      outcome.value = null
-      return
-    }
-    if (!result.success) modalVisible.value = true
-    await settle(result)
-  } catch (error) {
-    modalVisible.value = true
-    await settle({ success: false, phase: 'restart', error: String(error) })
-  }
+  outcome.value = result
+  running.value = false
+  cancelling.value = false
+  detachProgressListener()
+  if (result.success) await refreshAfterUpdate()
+  // 成功路径上 refreshAfterUpdate 的 reconnectNow 通常已经结束了窗口，这里兜住失败
+  // 与取消：后端可能真的没起来，得把事故路径还给协调器。
+  endIntentionalBackendRestart('Runtime 后端更新结束')
 }
 
 export function useBackendRuntimeUpdate() {
@@ -179,7 +138,6 @@ export function useBackendRuntimeUpdate() {
     if (running.value) return
 
     resetProgress()
-    automatic.value = false
     targetVersion.value = version
     modalVisible.value = true
     running.value = true
@@ -235,33 +193,23 @@ export function useBackendRuntimeUpdate() {
 
   /** `restart` 结局下的兜底：源码与依赖都已就位，只是后端没起来，再拉一次。 */
   async function restartBackend(): Promise<void> {
-    if (outcome.value?.phase === 'connection') {
-      if (await refreshAfterUpdate()) finishBackendRuntimeReconnect()
-      return
-    }
-    if (automatic.value) {
-      await retry('bootstrap')
-      return
-    }
-    if (running.value || restartingBackend.value) return
     restartingBackend.value = true
-    running.value = true
-    beginIntentionalBackendRestart('Runtime 更新后重新启动后端')
     try {
       const result = await window.electronAPI.backendStart()
       if (result.success) {
-        await settle({ success: true })
+        outcome.value = { success: true }
+        await refreshAfterUpdate()
         return
       }
-      await settle({
+      outcome.value = {
         success: false,
         phase: 'restart',
         error: result.error,
         logs: result.logs,
-      })
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      await settle({ success: false, phase: 'restart', error: errorMsg })
+      outcome.value = { success: false, phase: 'restart', error: errorMsg }
     } finally {
       restartingBackend.value = false
     }
@@ -270,7 +218,6 @@ export function useBackendRuntimeUpdate() {
   function close(): void {
     if (running.value) return
     modalVisible.value = false
-    if (automatic.value && outcome.value?.success === false) return
     resetProgress()
   }
 
@@ -281,7 +228,6 @@ export function useBackendRuntimeUpdate() {
     isRuntimeDevelopment,
     modalVisible,
     running,
-    isAutomatic: automatic,
     cancelling,
     restartingBackend,
     targetVersion,
