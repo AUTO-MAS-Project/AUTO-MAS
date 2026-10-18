@@ -2277,7 +2277,8 @@ export default {
     bettergiServerTwHkMo: 'TW/HK/MO',
     bettergiTaskConfigHint:
       "Tick the built-in OneDragon groups to run. In native mode, BetterGI's own settings decide, and this section is read-only",
-    bettergiScriptModeShared: 'Script configuration: the setup is shared by every user on this source',
+    bettergiScriptModeShared:
+      'Script configuration: the setup is shared by every user on this source',
     bettergiScriptModeSharedHint:
       'Under this source the OneDragon setup (queue, built-in and custom groups, teams, combat strategies and task settings) is a single script-level copy, so changes here affect every user on this source. User-level settings (name, account, UID, notes, …) stay separate.',
     bettergiDirectModeAlert:
