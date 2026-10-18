@@ -12,17 +12,13 @@ export type MaaUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 配置来源（脚本共享、用户独立、直控使用脚本原生配置）
+     * base 来源（shared=共享、independent=独立、native=使用脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | '直控' | null);
+    Base?: ('shared' | 'independent' | 'native' | null);
     /**
      * 是否启用快速配置（与配置来源独立）
      */
     IfQuickConfig?: (boolean | null);
-    /**
-     * 关卡配置模式
-     */
-    StageMode?: (string | null);
     /**
      * 服务器
      */
@@ -35,22 +31,6 @@ export type MaaUserConfig_Info = {
      * 剩余天数
      */
     RemainedDay?: (number | null);
-    /**
-     * 剿灭模式
-     */
-    Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
-    /**
-     * 剿灭开始星期
-     */
-    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
-    /**
-     * 基建模式
-     */
-    InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
-    /**
-     * 基建方案名称
-     */
-    InfrastName?: (string | null);
     /**
      * 密码
      */
@@ -75,34 +55,6 @@ export type MaaUserConfig_Info = {
      * 备注
      */
     Notes?: (string | null);
-    /**
-     * 吃理智药数量
-     */
-    MedicineNumb?: (number | null);
-    /**
-     * 连战次数
-     */
-    SeriesNumb?: ('0' | '6' | '5' | '4' | '3' | '2' | '1' | '-1' | null);
-    /**
-     * 关卡选择
-     */
-    Stage?: (string | null);
-    /**
-     * 备选关卡 - 1
-     */
-    Stage_1?: (string | null);
-    /**
-     * 备选关卡 - 2
-     */
-    Stage_2?: (string | null);
-    /**
-     * 备选关卡 - 3
-     */
-    Stage_3?: (string | null);
-    /**
-     * 剩余理智关卡
-     */
-    Stage_Remain?: (string | null);
     /**
      * 状态标签列表
      */

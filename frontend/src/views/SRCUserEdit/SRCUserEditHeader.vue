@@ -17,12 +17,19 @@
     </div>
 
     <a-space size="middle">
+      <a-button v-if="props.userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button
-        v-if="userMode === '用户' && !showSrcConfigMask"
+        v-if="userMode === 'independent' && !showSrcConfigMask"
         type="primary"
         ghost
         size="large"
         :loading="srcConfigLoading"
+        :disabled="configLocked"
         @click="$emit('handleSRCConfig')"
       >
         <template #icon>
@@ -31,7 +38,7 @@
         {{ t('edit.srcConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode === '用户' && showSrcConfigMask"
+        v-if="userMode === 'independent' && showSrcConfigMask"
         type="default"
         size="large"
         disabled
@@ -54,11 +61,12 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   scriptId: string
   scriptName: string
   isEdit: boolean
@@ -66,12 +74,21 @@ defineProps<{
   srcConfigLoading: boolean
   showSrcConfigMask: boolean
   loading: boolean
+  configLocked: boolean
+  userId?: string
 }>()
 
 defineEmits<{
   handleSRCConfig: []
   handleCancel: []
 }>()
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  if (!props.userId) return
+  await openUserConfigFolder(props.scriptId, props.userId)
+}
 </script>
 
 <style scoped>

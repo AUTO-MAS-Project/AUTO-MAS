@@ -71,7 +71,7 @@ class LogMonitor:
         self.callback = callback
         self.except_logs = except_logs or []
         self.parse_log = parse_log
-        # 日志处理钩子：日志行进入日志内容前逐行预处理（改写）或丢弃
+        # 日志预处理：日志行进入日志内容前逐行预处理（改写）或丢弃
         self.line_hook = line_hook
         self.last_callback_time: datetime = datetime.now()
         # 节流判定用的单调时钟读数。last_callback_time 还要充当 strptime 的
@@ -91,12 +91,18 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         log_start_time: datetime,
+        initial_offset: int | None = None,
     ):
         """监控日志文件
 
         ``log_file_path_resolver`` 每轮循环重新解析路径。用于监控按日期滚动
         的日志（如 M9A 的 ``logs/log-YYYYMMDD.log``）：任务跨过本地午夜时，
         被监控脚本会写入新文件，固定路径会导致再也读不到新行。
+
+        ``initial_offset`` 是首个监控文件的起始字节偏移，供追加写且跨运行
+        保留的日志使用：被监控进程由调用方启动时，把启动前的文件长度传进来，
+        本次运行之前的历史内容就不会被摄入（起始判定只看时间戳，无法分辨
+        历史内容里时间戳更晚的旧行）。
         """
 
         current_path = log_file_path_resolver()
@@ -107,11 +113,11 @@ class LogMonitor:
         if_mtime_checked = False
         warned_mtime_date: date | None = None
         if_log_start = False
-        offset = 0
+        offset = initial_offset if initial_offset is not None else 0
         log_contents = []
         # 按路径记忆读取偏移：时钟回拨可能让解析出的路径倒退回昨天，
         # 若一律从 0 重读会把整份旧日志重复摄入。
-        read_offsets: dict[Path, int] = {current_path: 0}
+        read_offsets: dict[Path, int] = {current_path: offset}
         drain_failures = 0
 
         while True:
@@ -243,6 +249,9 @@ class LogMonitor:
 
             except (FileNotFoundError, PermissionError) as e:
                 logger.warning(f"文件访问错误: {e}")
+                # 日志尚未创建或被短暂锁定时也要推进回调；否则调用方的
+                # 停滞超时永远没有机会判定，任务会无限等待。
+                await self.do_callback()
                 await asyncio.sleep(5)
                 continue
 
@@ -276,6 +285,12 @@ class LogMonitor:
                 # 超时后调用回调函数
                 await self.do_callback()
                 continue
+            except ValueError:
+                # 单行超过 StreamReader 的读取上限（默认 64 KiB）时 readline 抛
+                # ValueError；已读入的超限部分在抛出前被丢弃，下一次 readline 可以接着读，
+                # 该行尚未到达的剩余部分会作为一条新行继续处理。
+                logger.warning("进程输出中有一行超过读取上限，已丢弃超限部分")
+                continue
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 
@@ -308,12 +323,12 @@ class LogMonitor:
             logger.error(f"回调函数执行失败: {e}")
 
     def append_line(self, log_contents: list[str], line: str) -> None:
-        """经日志处理钩子后把日志行写入日志内容
+        """经日志预处理后把日志行写入日志内容
 
-        执行顺序：日志起始判定与时间戳活跃度跟踪读取原始行 → 钩子（丢弃/改写）
-        → 日志内容。因此被钩子丢弃的行不会进入任务日志、推送日志采集与成功/
+        执行顺序：日志起始判定与时间戳活跃度跟踪读取原始行 → 预处理（丢弃/改写）
+        → 日志内容。因此被预处理丢弃的行不会进入任务日志、推送日志采集与成功/
         失败标志判定，但不影响 latest_time，过滤噪声行不会造成误判超时。
-        未挂钩子时行为与直接 append 完全一致。
+        未启用预处理时行为与直接 append 完全一致。
         """
         if self.line_hook is None:
             log_contents.append(line)
@@ -321,7 +336,7 @@ class LogMonitor:
         try:
             hooked = self.line_hook(line)
         except Exception as e:
-            logger.warning(f"日志处理钩子执行失败: {e}")
+            logger.warning(f"日志预处理执行失败: {e}")
             log_contents.append(line)
             return
         if hooked is not None:
@@ -479,6 +494,7 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         start_time: datetime,
+        initial_offset: int | None = None,
     ) -> None:
         """
         开始监控日志文件
@@ -487,6 +503,9 @@ class LogMonitor:
             log_file_path_resolver (Callable[[], Path]): 返回日志文件路径的方法；
                 每轮循环重新解析，用于按日期滚动的日志
             start_time (datetime): 日志时间戳起始时间
+            initial_offset (int | None): 首个监控文件的起始字节偏移，用于追加写
+                且跨运行保留的日志：传入被监控进程启动前的文件长度，只有本次
+                运行新写的行会被读取；为 None 时从文件头开始读
         """
 
         probe_path = log_file_path_resolver()
@@ -497,7 +516,7 @@ class LogMonitor:
             await self.stop()
 
         self.task = asyncio.create_task(
-            self.monitor_file(log_file_path_resolver, start_time)
+            self.monitor_file(log_file_path_resolver, start_time, initial_offset)
         )
         logger.info(f"日志文件监控已启动: {probe_path}")
 

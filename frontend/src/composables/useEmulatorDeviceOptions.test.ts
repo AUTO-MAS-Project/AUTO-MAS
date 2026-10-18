@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const loadDevicesRequest = vi.fn()
+const loadEmulatorRequest = vi.fn()
 const showError = vi.fn()
 
 vi.mock('@/api', () => ({
   Service: {
     getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost: loadDevicesRequest,
+    getEmulatorApiEmulatorGetPost: loadEmulatorRequest,
   },
 }))
 
@@ -151,6 +153,18 @@ describe('useEmulatorDeviceOptions', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('does not query the backend for the unselected placeholder', async () => {
+    const { emulatorDeviceLoading, emulatorDeviceOptions, loadEmulatorDeviceOptions } =
+      await import('./useEmulatorDeviceOptions').then(module => module.useEmulatorDeviceOptions())
+
+    await loadEmulatorDeviceOptions('-')
+
+    expect(loadDevicesRequest).not.toHaveBeenCalled()
+    expect(loadEmulatorRequest).not.toHaveBeenCalled()
+    expect(emulatorDeviceLoading.value).toBe(false)
+    expect(emulatorDeviceOptions.value).toEqual([])
   })
 
   it('settles empty and failed responses', async () => {

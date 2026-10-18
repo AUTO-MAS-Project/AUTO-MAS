@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
 import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
+import type { BetterGIGameInfoOut } from '../models/BetterGIGameInfoOut';
 import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
 import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
 import type { BetterGIGlobalStygianSettingsIn } from '../models/BetterGIGlobalStygianSettingsIn';
@@ -49,7 +50,7 @@ export class BetterGiService {
      *
      * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
      * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+     * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
      * @param configName
@@ -366,8 +367,10 @@ export class BetterGiService {
      * 按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
      *
      * 步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
-     * 「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
-     * 一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+     * 「后名」解耦，改名不会丢设置。本接口只写 Plan（不改原生副本文件），但它是前端
+     * 队列行的启停开关：运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层，
+     * 且 AutoProxy 会把 Plan 中配过实例的战斗组整体从原生副本剔除——因此 enabled=false
+     * 的最终语义是「本次不跑」，而不是「退回原生一条龙跑」。
      *
      * 步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
      * 后端无步骤可写，刷新后回退。
@@ -403,7 +406,7 @@ export class BetterGiService {
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -431,7 +434,7 @@ export class BetterGiService {
     }
     /**
      * 保存 BetterGI 全局 config.json 的秘境刷取配置段
-     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -454,7 +457,7 @@ export class BetterGiService {
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -482,7 +485,7 @@ export class BetterGiService {
     }
     /**
      * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
-     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -530,7 +533,9 @@ export class BetterGiService {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -543,6 +548,33 @@ export class BetterGiService {
             url: '/api/scripts/bettergi/script-group/save',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取游戏客户端信息（路径 + 渠道，用户页透传展示）
+     * 读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
+     *
+     * ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
+     * 为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+     * @param scriptId
+     * @param detectPath
+     * @returns BetterGIGameInfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
+        scriptId: string,
+        detectPath: string = '',
+    ): CancelablePromise<BetterGIGameInfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/game-info',
+            query: {
+                'scriptId': scriptId,
+                'detectPath': detectPath,
+            },
             errors: {
                 422: `Validation Error`,
             },

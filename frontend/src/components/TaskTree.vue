@@ -28,7 +28,15 @@
 
         <!-- 用户列表 -->
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
-          <div v-if="!script.user_list || script.user_list.length === 0" class="no-users">
+          <div v-if="isWaitingWithoutUsers(script)" class="user-item last-item">
+            <div class="user-content">
+              <span class="user-name">{{ t('scheduler.overview.userNotLoaded') }}</span>
+              <a-tag :color="getStatusColor('等待')" size="small" class="status-tag">
+                {{ statusLabel('等待') }}
+              </a-tag>
+            </div>
+          </div>
+          <div v-else-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
               <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
             </div>
@@ -58,6 +66,7 @@ import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
 import { useStatusLabel } from '@/i18n/status'
+import { isWaitingWithoutUsers } from './taskTreePresentation'
 
 const { t } = useI18n()
 

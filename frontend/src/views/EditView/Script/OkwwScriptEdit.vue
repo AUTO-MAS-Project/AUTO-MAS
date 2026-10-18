@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ok-ww</a-tag>
@@ -133,9 +133,7 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换"
-                  >
+                  <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -152,6 +150,9 @@
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
+                <span class="control-hint">
+                  {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
+                </span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -177,6 +178,15 @@
                   <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
                   <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
+                <span
+                  v-if="
+                    okwwConfig.Game.Type === 'Client' &&
+                    (!okwwConfig.Game.Path || okwwConfig.Game.Path === '.')
+                  "
+                  class="control-hint"
+                >
+                  {{ t('edit.autoUpdateNeedsLauncher') }}
+                </span>
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -230,10 +240,29 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameLauncher') }}
-                    <span class="label-hint">{{ t('edit.officialWutheringWavesLauncher') }}</span>
-                  </span>
+                  <div class="launch-type-label">
+                    <span class="form-label">
+                      {{ t('edit.launchType') }}
+                      <a-tooltip :title="t('edit.launchTypeHint')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                    <a-radio-group
+                      :value="okwwConfig.Game.Type"
+                      class="launch-type-toggle"
+                      size="small"
+                      button-style="solid"
+                      @change="handleLaunchTypeChange($event.target.value)"
+                      :disabled="!okwwConfig.Game.Enabled"
+                    >
+                      <a-radio-button value="Client">
+                        {{ t('edit.launchDirectly') }}
+                      </a-radio-button>
+                      <a-radio-button value="Launcher">
+                        {{ t('edit.launchViaLauncher') }}
+                      </a-radio-button>
+                    </a-radio-group>
+                  </div>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -276,6 +305,47 @@
                   show-icon
                   class="path-validation-alert"
                 />
+                <div class="derived-client-row">
+                  <span class="label-hint">
+                    {{ t('edit.gameClientPathLabel') }}
+                    <a-tooltip
+                      v-if="okwwConfig.Game.Type === 'Launcher'"
+                      :title="t('edit.clientPathOptionalHint')"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      :value="okwwConfig.Game.ClientPath || derivedClientPath"
+                      :placeholder="t('edit.clientPathPending')"
+                      size="large"
+                      class="path-input"
+                      readonly
+                      :disabled="!okwwConfig.Game.Enabled"
+                    />
+                    <a-button
+                      size="large"
+                      class="path-button"
+                      :disabled="!okwwConfig.Game.Enabled || isSaving"
+                      @click="selectClientPath"
+                    >
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      {{ t('edit.selectFile') }}
+                    </a-button>
+                    <a-button
+                      v-if="okwwConfig.Game.ClientPath"
+                      size="large"
+                      class="path-button"
+                      :disabled="!okwwConfig.Game.Enabled || isSaving"
+                      @click="resetClientPath"
+                    >
+                      {{ t('edit.resetAutoLocate') }}
+                    </a-button>
+                  </a-input-group>
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -326,6 +396,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="okwwConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', okwwConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -391,11 +465,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 
   <a-modal
     v-model:open="updateModal.open"
-    :title="updateModal.running ? '鸣潮更新进度' : '检查鸣潮更新'"
+    :title="updateModal.running ? t('edit.okwwUpdateProgress') : t('edit.okwwCheckUpdateTitle')"
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
     :footer="updateModal.running ? null : undefined"
@@ -445,6 +519,8 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
@@ -502,7 +578,9 @@ interface OkwwInfoForm {
 interface OkwwGameForm {
   Enabled: boolean
   AccountSwitch: boolean
+  Type: 'Launcher' | 'Client'
   Path: string
+  ClientPath: string
   Arguments: string
   WaitTime: number
   IfAutoUpdate: boolean
@@ -510,6 +588,7 @@ interface OkwwGameForm {
 }
 
 interface OkwwRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
@@ -536,13 +615,15 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
   Game: {
     Enabled: false,
     AccountSwitch: false,
+    Type: 'Client',
     Path: '.',
+    ClientPath: '',
     Arguments: '',
     WaitTime: 60,
     IfAutoUpdate: true,
     UpdateFullSyncLimit: 30,
   },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
+  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })
 
 const rules = {
@@ -551,6 +632,9 @@ const rules = {
 }
 
 const WUWA_LAUNCHER_EXECUTABLE = 'launcher.exe'
+// 直启客户端的进程名，与 app/task/Okww/AutoProxy.py 的 _WUWA_CLIENT_PROCESS 逐字一致
+// （后端按进程名精确匹配，大小写不同会被拒绝）
+const WUWA_CLIENT_EXECUTABLE = 'Client-Win64-Shipping.exe'
 
 type DiscoveryKind = 'okww' | 'game'
 type PathValidationStatus = 'unknown' | 'valid' | 'invalid'
@@ -567,6 +651,18 @@ const gamePathValidation = reactive({
   status: 'unknown' as PathValidationStatus,
   message: '',
 })
+
+// 直启模式下展示的客户端 exe 路径（由后端解码启动器得到，仅展示不落盘）
+const derivedClientPath = ref('')
+
+// 已持久化的启动方式：保存失败时回滚到它
+let persistedLaunchType: 'Launcher' | 'Client' | null = null
+// 已持久化的路径字段：保存失败时回滚到它。锚在「最近一次保存成功的值」上而不是
+// 调用时的快照——同字段并发保存时，早先请求的快照可能正是另一个尚未落盘的中间值，
+// 两次都失败会把界面留在从未持久化的值上
+let persistedRootPath = ''
+let persistedGamePath = ''
+let persistedClientPath = ''
 
 interface UpdateUserOption {
   uid: string
@@ -804,9 +900,31 @@ const validateGamePath = async (launcherPath: string) => {
   }
 
   gamePathValidation.status = 'valid'
-  gamePathValidation.message = `当前游戏路径合法：已找到 ${executable}`
+  // 只说明启动器文件本身在；客户端能否定位由下方「游戏客户端」行单独反馈，
+  // 别在这里给「路径合法」的全局保证，两个结论会打架
+  gamePathValidation.message = `已找到 ${executable}`
   return true
 }
+
+const saveField = (
+  data: Record<string, Record<string, unknown>>,
+  restore: () => void | Promise<unknown>,
+  successMessage?: string
+) =>
+  enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, data)
+      if (success) {
+        if (successMessage) message.success(successMessage)
+      } else {
+        await restore()
+      }
+      return success
+    } catch (error) {
+      await restore()
+      throw error
+    }
+  })
 
 const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww 根目录已保存') => {
   if (!rootPath || rootPath === '.') {
@@ -814,50 +932,37 @@ const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww �
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  const previousPath = okwwConfig.Info.RootPath
   okwwConfig.Info.RootPath = norm
 
-  return enqueue(async () => {
-    try {
-      const success = await updateScript(scriptId, {
-        Info: { RootPath: norm },
-      })
-      if (success) {
-        message.success(successMessage)
-        return true
-      }
-      okwwConfig.Info.RootPath = previousPath
-      return false
-    } catch (error) {
-      okwwConfig.Info.RootPath = previousPath
-      throw error
-    }
-  })
+  const success = await saveField(
+    { Info: { RootPath: norm } },
+    () => {
+      okwwConfig.Info.RootPath = persistedRootPath
+    },
+    successMessage
+  )
+  if (success) persistedRootPath = norm
+  return success
 }
 
 const saveGamePath = async (launcherPath: string, successMessage: string) => {
   const normalized = launcherPath.replace(/\\/g, '/')
   if (!(await validateGamePath(normalized))) return false
-  const previousPath = okwwConfig.Game.Path
   okwwConfig.Game.Path = normalized
-  return enqueue(async () => {
-    try {
-      const success = await updateScript(scriptId, {
-        Game: { Path: normalized },
-      })
-      if (success) {
-        message.success(successMessage)
-        return true
-      }
-      okwwConfig.Game.Path = previousPath
-      await validateGamePath(previousPath)
-      return false
-    } catch (error) {
-      okwwConfig.Game.Path = previousPath
-      await validateGamePath(previousPath)
-      throw error
-    }
-  })
+  const success = await saveField(
+    { Game: { Path: normalized } },
+    async () => {
+      okwwConfig.Game.Path = persistedGamePath
+      await validateGamePath(persistedGamePath)
+    },
+    successMessage
+  )
+  if (success) {
+    persistedGamePath = normalized
+    // 启动器路径变了，客户端路径展示需要重新解码（两种启动方式都展示该行）
+    await refreshDerivedClientPath()
+  }
+  return success
 }
 
 const loadScript = async () => {
@@ -883,6 +988,12 @@ const loadScript = async () => {
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {
       await validateGamePath(okwwConfig.Game.Path)
     }
+    // 两种启动方式都展示客户端路径：启动器态它是可选项，解不出时也在此提示
+    await refreshDerivedClientPath()
+    persistedLaunchType = okwwConfig.Game.Type
+    persistedRootPath = okwwConfig.Info.RootPath
+    persistedGamePath = okwwConfig.Game.Path
+    persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
     message.error(t('edit.couldNotLoadScript'))
   } finally {
@@ -1014,6 +1125,104 @@ const selectGameRootPath = async () => {
   )
 }
 
+// 客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正要用的 exe 由后端
+// 自行解码，不落盘配置。两种启动方式都拉取：启动器态它是可选项，且解不出时
+// 这条提示是用户唯一的知情渠道（后端会在收尾时退回按进程名匹配）
+// 已手动指定 ClientPath 时展示值不来自解码，跳过调用避免无谓的失败提示
+const refreshDerivedClientPath = async () => {
+  if (okwwConfig.Game.ClientPath) return
+  if (!okwwConfig.Game.Path || okwwConfig.Game.Path === '.') {
+    derivedClientPath.value = ''
+    return
+  }
+  try {
+    const result = await Service.getOkwwClientPathApiApiScriptsOkwwClientPathGet(scriptId)
+    if (result.code === 200) {
+      derivedClientPath.value = result.client_path
+    } else {
+      derivedClientPath.value = ''
+      message.warning(t('edit.clientPathLocateFailed', { message: result.message }))
+    }
+  } catch (error) {
+    logger.error(`解码鸣潮客户端路径失败: ${error instanceof Error ? error.message : error}`)
+    derivedClientPath.value = ''
+    message.warning(t('edit.clientPathLocateFailedHint'))
+  }
+}
+
+// 切换只改变拉起方式。回滚赋值不触发 change，不会产生二次保存。
+const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
+  if (isInitializing.value) return
+  okwwConfig.Game.Type = value
+  const rollback = () => {
+    if (persistedLaunchType === null) return
+    okwwConfig.Game.Type = persistedLaunchType
+  }
+  // 队列内更新持久值；上一请求失败后，下一请求仍应显示并保存自己的目标。
+  const success = await enqueue(async () => {
+    okwwConfig.Game.Type = value
+    try {
+      const ok = await updateScript(scriptId, {
+        Game: { Type: value },
+      })
+      if (ok) persistedLaunchType = value
+      else rollback()
+      return ok
+    } catch (error) {
+      rollback()
+      throw error
+    }
+  }).catch(() => false)
+  if (!success) {
+    message.error(t('edit.launchTypeSaveFailed'))
+    return
+  }
+  await refreshDerivedClientPath()
+}
+
+// 手动指定客户端：留空（恢复自动）时由启动器路径解码定位；两种启动方式都可用，
+// 启动器态指定后已运行检测与收尾按精确路径进行
+const saveClientPath = async (clientPath: string) => {
+  okwwConfig.Game.ClientPath = clientPath
+  const success = await saveField(
+    { Game: { ClientPath: clientPath } },
+    () => {
+      okwwConfig.Game.ClientPath = persistedClientPath
+    },
+    t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset')
+  )
+  if (success) {
+    persistedClientPath = clientPath
+    if (!clientPath) {
+      // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
+      await refreshDerivedClientPath()
+    }
+  }
+  return success
+}
+
+const selectClientPath = async () => {
+  if (!okwwConfig.Game.Enabled) return
+  const paths = await window.electronAPI.selectFile([
+    { name: '可执行文件', extensions: ['exe'] },
+    { name: '所有文件', extensions: ['*'] },
+  ])
+  const picked = paths?.[0]
+  if (!picked) return
+  const normalized = picked.replace(/\\/g, '/')
+  // 与后端 check() 同口径：按进程名精确匹配（大小写不同会被后端拒绝）
+  const executable = normalized.split('/').pop()
+  if (executable !== WUWA_CLIENT_EXECUTABLE) {
+    showPathRejectModal(t('edit.invalidClientFileTitle'), t('edit.invalidClientFileContent'))
+    return
+  }
+  await saveClientPath(normalized)
+}
+
+const resetClientPath = async () => {
+  await saveClientPath('')
+}
+
 onMounted(loadScript)
 
 onUnmounted(() => {
@@ -1114,6 +1323,14 @@ onUnmounted(() => {
   color: var(--ant-color-text-tertiary);
 }
 
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+}
+
 .label-hint strong {
   font-weight: 600;
   color: var(--ant-color-text-secondary);
@@ -1155,6 +1372,21 @@ onUnmounted(() => {
 }
 
 .path-validation-alert {
+  margin-top: 8px;
+}
+
+.launch-type-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.derived-client-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 8px;
 }
 

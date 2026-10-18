@@ -11,6 +11,10 @@ export type ScriptIndexItem = {
      * 配置类型
      */
     type: ScriptIndexItem.type;
+    /**
+     * 对应的游戏活动标识，无游戏归属时为空
+     */
+    activityGame?: (string | null);
 };
 export namespace ScriptIndexItem {
     /**
@@ -29,6 +33,8 @@ export namespace ScriptIndexItem {
         BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
         BAAHCONFIG = 'BAAHConfig',
+        WHIMBOX_CONFIG = 'WhimboxConfig',
+        MSSCONFIG = 'MSSConfig',
     }
 }
 

@@ -321,6 +321,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import { OknteService } from '@/api/services/OknteService'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
 
@@ -372,6 +373,7 @@ const emit = defineEmits<{
 }>()
 
 const logger = window.electronAPI.getLogger('OK-NTE配置编辑')
+const { configLocked } = useScriptConfigLock(() => props.scriptId)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -610,6 +612,11 @@ const loadConfigs = async () => {
 }
 
 const persistChanges = async (silent: boolean): Promise<boolean> => {
+  if (configLocked.value) {
+    if (!hasChanges.value) return true
+    message.error(t('edit.configLocked'))
+    return false
+  }
   if (!hasChanges.value) return true
   saving.value = true
   emit('savingChange', true)

@@ -42,5 +42,33 @@ export type ZzzOdUserConfig_Game = {
      * 自定义窗口标题
      */
     CustomWinTitle?: (string | null);
+    /**
+     * 一条龙游戏启动参数总开关（关闭时一条龙启动游戏不带任何参数）
+     */
+    LaunchArgument?: (boolean | null);
+    /**
+     * 窗口尺寸（一条龙启动参数）
+     */
+    ScreenSize?: ('1920x1080' | '2560x1440' | '3840x2160' | null);
+    /**
+     * 全屏模式：0=窗口化 1=全屏（一条龙启动参数）
+     */
+    FullScreen?: ('0' | '1' | null);
+    /**
+     * 无边框窗口（一条龙启动参数 -popupwindow）
+     */
+    PopupWindow?: (boolean | null);
+    /**
+     * DX12 启动（注入时把 -use-d3d12 合并进一条龙高级参数，勾选框为唯一权威）
+     */
+    Dx12?: (boolean | null);
+    /**
+     * 显示器序号（一条龙启动参数）
+     */
+    Monitor?: ('1' | '2' | '3' | '4' | null);
+    /**
+     * 高级参数（原样透传给一条龙拼接，上游不解析）
+     */
+    LaunchArgumentAdvance?: (string | null);
 };
 

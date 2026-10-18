@@ -19,7 +19,25 @@
 #   Contact: DLmaster_361@163.com
 
 
+from importlib import import_module
+
 from .account_switch import replace_account_switch_task
 from .notify import push_notification
 
-__all__ = ["push_notification", "replace_account_switch_task"]
+_LAZY_EXPORTS = {"login": (".login", "login")}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attribute_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_LAZY_EXPORTS))
+
+
+__all__ = ["login", "push_notification", "replace_account_switch_task"]

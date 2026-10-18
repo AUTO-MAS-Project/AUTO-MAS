@@ -18,19 +18,19 @@ export type ZzzOdUserConfig_Info = {
      */
     Status?: (boolean | null);
     /**
-     * 配置来源（脚本/用户/直控）
+     * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | '直控' | null);
+    Base?: ('shared' | 'independent' | 'native' | null);
     /**
      * 是否启用快速配置（与配置来源独立）
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配并持久注册 MAS-{用户名} 实例）
+     * 绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配，取 1001 起的高位段以避开一条龙原生实例的升序找号；槽目录 config/{idx:02d} 持久保留，注册表只在运行/会话窗口以合成视图出现）
      */
     SlotIdx?: (number | null);
     /**
-     * 一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）
+     * 一条龙启动器（原生/独立两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）
      */
     LauncherMode?: ('自动' | '原始' | '集成' | null);
     /**

@@ -93,8 +93,16 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /** 版本号降序（最新在前） */
+/** 合并即入账的暂存段：不是版本号，比任何已发布版本都新，排最前 */
+const UNRELEASED_VERSION = '未发布'
+
 export function sortVersionsDesc(versions: string[]): string[] {
-  return [...versions].sort((a, b) => compareVersions(b, a))
+  return [...versions].sort((a, b) => {
+    if (a === UNRELEASED_VERSION || b === UNRELEASED_VERSION) {
+      return a === b ? 0 : a === UNRELEASED_VERSION ? -1 : 1
+    }
+    return compareVersions(b, a)
+  })
 }
 
 /**

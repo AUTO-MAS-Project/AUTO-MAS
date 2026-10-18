@@ -17,6 +17,12 @@
     </div>
 
     <a-space size="middle">
+      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -26,13 +32,19 @@
     </a-space>
   </div>
 
-  <div class="user-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
             <h3>{{ t('edit.basicInfo') }}</h3>
+            <div class="section-header-actions">
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </div>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
@@ -109,14 +121,109 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
+                <a-select
                   v-model:value="formData.Info.ConfigName"
                   :placeholder="t('edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
+                  :loading="configNamesLoading"
+                  :options="configNameOptions"
                   size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
+                  show-search
+                  option-filter-prop="label"
+                  style="width: 100%"
+                  @dropdown-visible-change="
+                    (open: boolean) => {
+                      if (open) void loadConfigNames()
+                    }
+                  "
+                  @change="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
                 />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <!-- 关卡计划表与活动关优先：本次运行按它们改写 BAAH 的关卡与任务顺序 -->
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item name="stageMode">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahStageModeHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahStageMode') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.StageMode"
+                  :disabled="loading"
+                  :options="stageModeOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.StageMode', formData.Info.StageMode)"
+                />
+                <a-button
+                  v-if="isStagePlanMode"
+                  type="link"
+                  size="small"
+                  class="go-plan-button"
+                  @click="handleGoToPlans"
+                >
+                  <template #icon><CalendarOutlined /></template>
+                  {{ t('edit.goPlan') }}
+                </a-button>
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifEventFirst">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahIfEventFirstHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahIfEventFirst') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.IfEventFirst"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <!-- 活动排期服务器：「活动关优先」也按它判断所选服当前有没有进行中的活动 -->
+            <a-col :span="8">
+              <a-form-item name="activityLineType">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahActivityLineType') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ActivityLineType"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
+                >
+                  <a-select-option value="CN">
+                    {{ t('edit.baahActivityLineCN') }}
+                  </a-select-option>
+                  <a-select-option value="JP">
+                    {{ t('edit.baahActivityLineJP') }}
+                  </a-select-option>
+                  <a-select-option value="Globle">
+                    {{ t('edit.baahActivityLineGloble') }}
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -169,7 +276,7 @@
           <a-row :gutter="24">
             <a-col :span="24">
               <GeneralConfigModeSelector
-                :model-value="formData.Info.Mode"
+                :model-value="formData.Info.Base"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
                 :alert-message="t('edit.configSourceHintBase')"
@@ -217,21 +324,78 @@
         <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
+
+  <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
+  <ConfigRestoreSection
+    v-model:open="restoreOpen"
+    :disabled="configLocked"
+    :script-name="BAAH_DISPLAY_NAME"
+    :targets="restoreTargets"
+    :api="restoreApi"
+    :user-desc="t('edit.baahConfigRestoreUserDesc')"
+    :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+    :on-restored="handleRestored"
+  >
+    <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
+    <template #preview="{ raw }">
+      <a-empty
+        v-if="!previewSections(raw).length"
+        :description="t('edit.configRestorePreviewEmpty')"
+      />
+      <div v-else>
+        <template v-for="s in previewSections(raw)" :key="s.name">
+          <h4 class="baah-preview-title">{{ s.label }}</h4>
+          <a-descriptions
+            v-if="s.rows && s.rows.length"
+            :column="1"
+            size="small"
+            bordered
+            class="baah-preview-box"
+          >
+            <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+              {{ row.value }}
+            </a-descriptions-item>
+          </a-descriptions>
+          <div v-for="g in s.groups ?? []" :key="`${s.name}-${g.name}`" class="baah-preview-group">
+            <div class="baah-preview-group-name">{{ g.name }}</div>
+            <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
+              <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </div>
+        </template>
+      </div>
+    </template>
+  </ConfigRestoreSection>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  CalendarOutlined,
+  FolderOpenOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
+import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { BaahService, type ComboBoxItem } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn'
+import { navigateTo } from '@/router'
 
 const { t } = useI18n()
 
@@ -239,7 +403,14 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -249,8 +420,14 @@ const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId) return
+  await openUserConfigFolder(scriptId, userId)
+}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -260,9 +437,13 @@ const getDefaultBAAHUserData = () => ({
   Info: {
     Name: '',
     Status: true,
-    Mode: '用户',
+    Base: 'independent',
     RemainedDay: -1,
     ConfigName: '',
+    // Fixed 表示按 BAAH 自己的关卡配置运行，其余取值是关卡计划表 uid
+    StageMode: 'Fixed',
+    ActivityLineType: 'CN',
+    IfEventFirst: false,
     Notes: '',
     Tag: '',
   },
@@ -287,6 +468,46 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultBAAHUserData(),
 })
+
+// 配置名下拉候选：由后端按主程序路径实时读取 BAAH_CONFIGS，两份配置名共用
+const configNameOptions = ref<{ label: string; value: string }[]>([])
+const configNamesLoading = ref(false)
+const loadConfigNames = async () => {
+  configNamesLoading.value = true
+  try {
+    const resp = await BaahService.getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(scriptId)
+    configNameOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    configNamesLoading.value = false
+  }
+}
+
+// 关卡计划表下拉候选：后端按消费方 baah 返回 BAAH 计划表；「固定」始终排在第一项
+// 用本地词表的固定项，保证在英文/日文界面下也是自己的语言
+const stageModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.fixed'), value: 'Fixed' },
+])
+const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
+const loadStageModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.BAAH,
+    })
+    if (response?.code === 200 && response.data) {
+      const planOptions = response.data
+        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
+        .filter(item => item.value !== 'Fixed')
+        .map(item => ({ label: item.label, value: item.value }))
+      stageModeOptions.value = [{ label: t('edit.fixed'), value: 'Fixed' }, ...planOptions]
+    }
+  } catch (error) {
+    logger.error(`加载关卡计划表失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
@@ -322,42 +543,53 @@ watch(
   }
 )
 
-// 配置来源两态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+// 配置来源两态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+// 「共享」置灰：BAAH 运行始终按用户独立配置注入（任务模块不消费 Info.Base），
+// 选了也不生效——禁用并悬停说明原因
 const baahConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'database' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
 
-// 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
+// 配置来源切换：校验 value ∈ options → 赋值 Info.Base → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await handleFieldSave('Info.Base', formData.Info.Base)
+}
+
+// 直接跳到当前选中的关卡计划表，省去在计划管理里再找一遍
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.StageMode } })
 }
 
 // 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
@@ -419,6 +651,8 @@ const loadScriptInfo = async () => {
 
 // 新增模式下立即创建用户
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {
@@ -491,14 +725,103 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-onMounted(() => {
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：BAAH 统一叫「baah」
+const BAAH_DISPLAY_NAME = 'baah'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户字段（在前）、BAAH 原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+const openRestoreModal = () => {
+  restoreOpen.value = true
+}
+
+// 预览响应原文（unknown）收敛为分区视图：泛用组件的 raw 插槽不带专项类型
+interface BAAHPreviewRow {
+  key: string
+  value: string
+}
+interface BAAHPreviewSection {
+  name: string
+  label: string
+  rows?: BAAHPreviewRow[]
+  groups?: Array<{ name: string; rows: BAAHPreviewRow[] }>
+}
+const previewSections = (raw: unknown): BAAHPreviewSection[] =>
+  (raw as { sections?: BAAHPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（当前仅 ConfigName），native 恢复写
+// BAAH 配置文件——ConfigName 未变无需刷新表单
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    isInitializing.value = true
+    try {
+      await loadUserData()
+    } finally {
+      // 加载失败也要复位：否则按钮永久转圈
+      isInitializing.value = false
+    }
+  }
+}
+
+// 编辑界面归档（进入/退出时机，指纹去重）：进入归档 BAAH 原生配置当前状态
+// （用户可能刚在 BAAH jsoneditor 里改过），退出归档 MAS 编辑页字段终态；
+// 运行前归档挂在 AutoProxy.prepare（托管写入前）
+const ensureBAAHBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
+onMounted(async () => {
   if (!scriptId) {
     message.error(t('edit.missingScriptIdParameter'))
     handleCancel()
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
+  // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
+  await loadScriptInfo()
+  await loadStageModeOptions()
+  await nextTick()
+  void ensureBAAHBackup('native')
+})
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 编辑页字段终态（BAAH 无遮罩会话，无需停会话）
+  void ensureBAAHBackup('mas')
 })
 </script>
 
@@ -554,6 +877,42 @@ onMounted(() => {
   margin-bottom: 6px;
   padding-bottom: 8px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
+.baah-preview-title {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.baah-preview-title:first-of-type {
+  margin-top: 0;
+}
+
+.baah-preview-group {
+  margin-top: 12px;
+}
+
+.baah-preview-group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.baah-preview-box {
+  width: 100%;
 }
 
 .section-header h3 {
@@ -617,6 +976,10 @@ onMounted(() => {
   gap: 6px;
   align-items: center;
   min-height: 40px;
+}
+
+.go-plan-button {
+  padding-inline: 0;
 }
 
 .cancel-button {

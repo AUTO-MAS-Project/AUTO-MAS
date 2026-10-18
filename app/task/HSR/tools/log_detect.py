@@ -39,20 +39,35 @@ HSR_EOW_COMPLETE_MARKERS: tuple[str, ...] = (
     "历战余响尚未刷新",
 )
 HSR_EOW_REWARD_COUNT_RE = re.compile(r"历战余响本周可领取奖励次数[:：]\s*(\d+)\s*/\s*3")
+# 现行 M7A / SRA 都不再打这句（M7A 走上一条「可领取奖励次数」），留作旧版兼容。
 HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
 HSR_EOW_M7A_START_RE = re.compile(r"开始刷历战余响.*?每轮包含\s*(\d+)\s*次")
-# 「将执行 N 次」只在 SRA 体力自动分配路径打印，手动副本任务没有这行。
+# 「将执行 N 次」只在 SRA 体力自动分配路径打印，手动副本任务没有这行；
+# SRA v2.21.0 起历战余响自动检测也改走手动副本固定 3 连战，这行不再出现。
 HSR_EOW_SRA_PLAN_RE = re.compile(r"任务\s+历战余响.*?将执行\s*(\d+)\s*次")
 HSR_EOW_SRA_DONE_MARKER = "任务完成：历战余响"
+# battle() 每个任务以「执行任务：」开场；没有计划行时靠它圈定历战余响战斗块。
+HSR_EOW_SRA_START_MARKER = "执行任务：历战余响"
+# wait_battle_end 60 分钟没等到战斗结束会先打这行 ERROR 再返回 -1；
+# battle_start 对 -1 与正常结束同路处理，仍会走到「任务完成」。
+HSR_EOW_SRA_BATTLE_TIMEOUT_MARKER = "等待战斗结束超时"
 # SRA 打不过或点不中关卡时也会打印「任务完成」，只有战斗失败会单独留痕；
 # 排除同样含该子串的「退出战斗失败」，那只是收尾点击没成功。
 HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
 
+# SRA 界面语言为英文时的失败文案（SRACore/localization/resource_en-us.json）：
+# task.taskFailed / task.noSuchTask / config.fileNotFound。SRA-cli 的退出码
+# 恒为 0，这几条漏掉就会把失败判成成功。
+# 最后一项是 cmd2 吞掉命令内异常时打的尾行（debug 关闭时恒有），异常类型不定，
+# 锚这行而不是某一种异常名。
 HSR_ENGLISH_FAILURE_RE = re.compile(
     r"(Traceback \(most recent call last\):|Failed to execute script|"
-    r"Fatal error|SRAError\(|Exception:)"
+    r"Fatal error|SRAError\(|Exception:|"
+    r"failed\. Stopping further execution|No such task|"
+    r"Could not find config file|"
+    r"To enable full traceback, run the following command)"
 )
 HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     # 审计 HSR-外部脚本日志语义审计.md §4.2：原通用项（任务失败 / 执行失败 /
@@ -64,14 +79,21 @@ HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     "强制退出",
     "未识别到战斗按钮",
     "MemoryOfChaos 主循环失败",
-    # ---- SRA 货币战争 final_failure（参考 HSR-外部脚本日志语义审计.md 2.5）----
-    "[页面定位] 检测超时",  # CurrencyWars.py:159
-    "等待挑战结束超时",  # CurrencyWars.py:708
-    "货币战争开拓者名称为空",  # CosmicStrifeTask.py:34
-    "旷宇纷争-货币战争任务失败",  # CosmicStrifeTask.py:63
-    "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:50
+    # ---- SRA 货币战争 final_failure（参考 HSR-外部脚本日志语义审计.md 2.5；
+    # 行号按 SRA 2.21.0 tasks/ 源码）----
+    "[页面定位] 检测超时",  # currency_wars/CurrencyWars.py:186
+    "等待挑战结束超时",  # currency_wars/CurrencyWars.py:763
+    "货币战争开拓者名称为空",  # CosmicStrifeTask.py:38
+    "旷宇纷争-货币战争任务失败",  # CosmicStrifeTask.py:69
+    "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:56
     # ---- M7A 切换游戏界面失败（对应日志「发生错误 无法切换到指定游戏界面」）----
     "无法切换到指定游戏界面",
+    # ---- SRA 前置失败：任务名不存在 / 配置文件读不到，走不到「停止进一步执行」
+    # （SRACore/thread/task_process.py、SRACore/util/data_persister.py）----
+    "没有此任务",
+    "找不到文件",
+    # ---- M7A 首次运行闸门：打这行后 exit(0)（main.py 的 first_run）----
+    "首次使用请先打开图形界面",
 )
 HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "未找到匹配文字",
@@ -133,13 +155,146 @@ _BACKSLASH_U_RE = re.compile(
     r"\\u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})"
     r"|\\u([0-9a-fA-F]{4})"
 )
-# loguru 默认前缀「2026-09-12 02:14:35,242 | ERROR | 」，摘要里只留级别。
-_LOGURU_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,.]\d{3}\s*\|\s*")
+# 日志时间前缀，摘要里只留级别：M7A 用标准库 logging
+# 「%(asctime)s | %(levelname)s | 」→「2026-09-12 02:14:35,242 | ERROR | 」；
+# SRA 用 loguru「{time:HH:mm:ss} | {level:5} | 」→「02:14:35 | ERROR | 」。
+_LOG_TIME_PREFIX_RE = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2} )?\d{2}:\d{2}:\d{2}(?:[,.]\d{3})?\s*\|\s*"
+)
 _LOG_LEVEL_RE = re.compile(r"\|\s*(ERROR|CRITICAL)\s*\|")
 HSR_FAILURE_SUMMARY_KEEP_MARKERS: tuple[str, ...] = (
     "错误截图已保存",
     "Traceback",
 )
+
+
+# ---- 云·星穹铁道（三月七 module/game/cloud.py 与 tasks/game/__init__.py 原文，
+# 见 docs/测试证据/HSR-云星铁调研-20260922/cloud-m7a.md §3）----
+# 不可重试：补跑只会再等一遍登录 / 再排一遍队 / 再撞一次时长为 0。三月七自己
+# 会在一次运行里重试 3 遍，所以只在模块已判失败时才按这些词归类；「进入云游戏
+# 失败」之后第二遍成功的，模块本身就是成功，不归类。
+HSR_CLOUD_NON_RETRYABLE_MARKERS: tuple[str, ...] = (
+    "等待云游戏登录超时",  # cloud.py:508
+    "云游戏剩余时长为 0，停止运行",  # cloud.py:1172/1189
+    "排队超时",  # cloud.py:647
+    "进入云游戏失败",  # tasks/game/__init__.py:189、cloud.py:1185
+    "检测到付费时长耗尽弹窗",  # cloud.py:681
+    "云游戏付费时长已耗尽",  # cloud.py:689（SystemExit 消息，走 stderr）
+    "启动或连接浏览器失败",  # tasks/game/__init__.py:186、cloud.py:1104
+    "浏览器启动失败",  # cloud.py:338/352/354/355；也覆盖 MAS 的「云浏览器启动失败」
+)
+# 需人工：不判失败，转调度台提示与用户通知。有窗口模式下三月七先打「未登录」，
+# 再打「请在浏览器中完成登录操作，超时时间：N 分钟」后在窗口里等人。
+HSR_CLOUD_LOGIN_REQUIRED_MARKER = "请在浏览器中完成登录操作，超时时间"
+HSR_CLOUD_NOT_LOGGED_IN_MESSAGE = "未登录"
+HSR_CLOUD_LOGIN_TIMEOUT_RE = re.compile(
+    r"请在浏览器中完成登录操作，超时时间：(\d+) 分钟"
+)
+# 已登录的正向信号：据此记 Cloud.LastLogin。
+HSR_CLOUD_LOGIN_SUCCESS_MARKERS: tuple[str, ...] = (
+    "检测到登录成功",  # cloud.py:1138
+    "进入云游戏成功",  # cloud.py:1169/1179
+)
+HSR_CLOUD_REMAINING_RE = re.compile(
+    r"云游戏剩余时长：(\d+) 分钟（付费：(\d+) 分钟，免费：(\d+) 分钟）"
+)  # cloud.py:1174
+HSR_CLOUD_REMAINING_WARN_MINUTES = 60
+_M7A_LOG_MESSAGE_RE = re.compile(
+    r"\|\s*(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)\s*\|\s*(.*)$"
+)
+
+
+# 三月七控制台日志可能带 ANSI 颜色码（未实跑核实过原始字节），残留在级别或正文
+# 两侧会让前后缀匹配静默失效，解析前先剥掉。
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    """去掉 ANSI 颜色码（``ESC[...m``）。"""
+
+    return _ANSI_SGR_RE.sub("", text) if "\x1b" in text else text
+
+
+def _m7a_log_message(line: str) -> str:
+    """去掉三月七日志行的颜色码与「时间 | 级别 | 」前缀，只留消息正文。"""
+
+    line = strip_ansi(line)
+    match = _M7A_LOG_MESSAGE_RE.search(line)
+    return (match.group(1) if match else line).strip()
+
+
+# cloud.py:311 `self.log_info(f"正在启动 {browser_type} 浏览器")`：三月七找不到 MAS
+# 的浏览器、准备自建时打这行（它的启动重试先 stop_game() 杀掉了所有带标记的
+# 浏览器）。自建的浏览器不在 MAS 的按用户 profile 里，必须立刻拦下。
+HSR_CLOUD_SELF_BROWSER_PREFIX = "正在启动 "
+HSR_CLOUD_SELF_BROWSER_SUFFIX = " 浏览器"
+
+
+def is_m7a_self_browser_start(line: str) -> bool:
+    """这一行是否是三月七准备自己新建浏览器。"""
+
+    message = _m7a_log_message(line)
+    return message.startswith(HSR_CLOUD_SELF_BROWSER_PREFIX) and message.endswith(
+        HSR_CLOUD_SELF_BROWSER_SUFFIX
+    )
+
+
+# 进游戏的正向信号：之前的失败词都是三月七进程内重试里已经翻过篇的。
+HSR_CLOUD_IN_GAME_MARKERS: tuple[str, ...] = (
+    "进入云游戏成功",  # cloud.py:1169/1179
+    "已在游戏中",  # cloud.py:528
+)
+
+
+def find_cloud_non_retryable_marker(*texts: str) -> str | None:
+    """返回输出里第一条云·星穹铁道不可重试失败词；没有则 None。
+
+    三月七一次运行内会重试进入 3 遍：前一遍「排队超时 / 进入云游戏失败」、后一遍
+    进了游戏，之后任务本身失败，是普通可重试失败。所以只看**最后一次**「进入云
+    游戏成功」或「已在游戏中」之后的输出；全程没有这两行时才看整段。多段文本按
+    传入顺序（stdout 在前）拼起来再判定。
+    """
+
+    full = strip_ansi("\n".join(text for text in texts if text))
+    cut = max((full.rfind(marker) for marker in HSR_CLOUD_IN_GAME_MARKERS), default=-1)
+    if cut >= 0:
+        line_end = full.find("\n", cut)
+        full = "" if line_end < 0 else full[line_end + 1 :]
+    for marker in HSR_CLOUD_NON_RETRYABLE_MARKERS:
+        if marker in full:
+            return marker
+    return None
+
+
+def detect_cloud_login_required(line: str) -> tuple[bool, int | None]:
+    """这一行是否是三月七在等人登录；返回 (是否需人工, 超时分钟数或 None)。"""
+
+    line = strip_ansi(line)
+    match = HSR_CLOUD_LOGIN_TIMEOUT_RE.search(line)
+    if match:
+        return True, int(match.group(1))
+    if HSR_CLOUD_LOGIN_REQUIRED_MARKER in line:
+        return True, None
+    if _m7a_log_message(line).endswith(HSR_CLOUD_NOT_LOGGED_IN_MESSAGE):
+        return True, None
+    return False, None
+
+
+def is_cloud_login_success(line: str) -> bool:
+    """这一行是否说明当前云浏览器已处于登录态。"""
+
+    line = strip_ansi(line)
+    return any(marker in line for marker in HSR_CLOUD_LOGIN_SUCCESS_MARKERS)
+
+
+def parse_cloud_remaining(line: str) -> tuple[int, int, int] | None:
+    """解析「云游戏剩余时长：N 分钟（付费：P 分钟，免费：F 分钟）」。"""
+
+    match = HSR_CLOUD_REMAINING_RE.search(strip_ansi(line))
+    if match is None:
+        return None
+    total, paid, free = (int(value) for value in match.groups())
+    return total, paid, free
 
 
 def unescape_backslash_u(text: str) -> str:
@@ -181,7 +336,7 @@ def select_failure_summary_lines(lines: list[str], limit: int = 8) -> list[str]:
     ]
     if not any(_LOG_LEVEL_RE.search(line) for line in picked):
         picked = list(lines)
-    picked = [_LOGURU_PREFIX_RE.sub("", line) for line in picked]
+    picked = [_LOG_TIME_PREFIX_RE.sub("", line) for line in picked]
     if len(picked) > limit:
         picked = picked[-limit:]
     return picked
@@ -208,10 +363,11 @@ HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
 # 歧义由 detect_weekly_completion 的 module_key 消除：
 # sra_overrides（task_mapping.py）确保同一轮只启用其中一个，
 # 调用方传入的 module_key 决定查哪组 marker。
-HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "Mission accomplished",  # DivergentUniverse.py:39
-    "当前积分奖励: 18000/18000",  # DivergentUniverse.py:216
-    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
+HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str | re.Pattern[str], ...] = (
+    "Mission accomplished",  # DivergentUniverse.py:40
+    # OCR 可能把「18000/18000」切断或混入噪声，SRA 自己也按 ^18000.*18000$ 判
+    re.compile(r"当前积分奖励: 18000.*18000"),  # DivergentUniverse.py:231-232
+    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:29 / :71  ⚠️需配合 sra_overrides
 )
 
 HSR_CURRENCY_WARS_FINAL_SUCCESS_M7A: tuple[str, ...] = (
@@ -297,15 +453,12 @@ def result_text(result: object) -> str:
 def detect_echo_of_war_completion(
     result: object,
     script: str,
-    dedicated_run: bool = False,
 ) -> tuple[bool, str]:
     """根据 M7A/SRA 输出判断本周历战余响是否已完成。
 
     Args:
         result: 外部脚本执行结果。
         script: 本次执行的引擎。
-        dedicated_run: 本次外部脚本只按 3 连战跑了历战余响一项。SRA 手动副本
-            任务不打印体力分配计划，这时以任务完成日志作为完成依据。
     """
 
     text = result_text(result)
@@ -336,7 +489,7 @@ def detect_echo_of_war_completion(
             # 「副本任务完成」字面量，移除该前置条件；保留 attempts>=remaining
             # 作为 M7A 计划数匹配。
             return True, (
-                f"M7A 日志显示本次执行 {m7a_attempts} 次，"
+                f"三月七日志显示本次执行 {m7a_attempts} 次，"
                 f"已覆盖剩余 {remaining} 次历战余响"
             )
         return False, (
@@ -346,9 +499,8 @@ def detect_echo_of_war_completion(
     if any(marker in text for marker in HSR_EOW_COMPLETE_MARKERS):
         return True, "外部脚本日志显示历战余响体力计划已完成"
 
-    if any(marker in text for marker in HSR_EOW_INCOMPLETE_MARKERS):
-        return False, "外部脚本日志显示历战余响未完成或体力不足"
-
+    # SRA 的完成判定先于通用未完成标记：历战余响战斗块没有失败痕迹即完成，
+    # 块外其他体力任务的「体力不足」不能反过来否定它（它们共享同一管体力）。
     sra_attempts = _parse_max_int(HSR_EOW_SRA_PLAN_RE, text)
     if str(script).upper() == "SRA" and HSR_EOW_SRA_DONE_MARKER in text:
         if (
@@ -356,8 +508,13 @@ def detect_echo_of_war_completion(
             and sra_attempts >= HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT
         ):
             return True, f"SRA 日志显示历战余响已执行 {sra_attempts} 次"
-        if dedicated_run and not HSR_EOW_SRA_BATTLE_FAILED_RE.search(text):
-            return True, "SRA 单独执行历战余响完成，本周次数已一次挑战用尽"
+        # 没有计划行才走战斗块兜底（v2.21.0+ 混跑与单独执行）；计划行还在的
+        # 旧版保持按计划数判定，低体力只分配到部分次数的周不被误记完成。
+        if sra_attempts is None and _sra_last_eow_battle_clean(text):
+            return True, "SRA 日志显示历战余响战斗结束且无战斗失败，视为本周完成"
+
+    if any(marker in text for marker in HSR_EOW_INCOMPLETE_MARKERS):
+        return False, "外部脚本日志显示历战余响未完成或体力不足"
 
     return False, "未从外部脚本日志确认历战余响已完成"
 
@@ -370,6 +527,27 @@ def _parse_max_int(pattern: re.Pattern[str], text: str) -> int | None:
         except (TypeError, ValueError):
             continue
     return max(values) if values else None
+
+
+def _sra_last_eow_battle_clean(text: str) -> bool:
+    """判断最后一段历战余响战斗块内没有失败痕迹。
+
+    SRA v2.21.0 起历战余响不再打印「将执行 N 次」计划行，改以
+    「执行任务：历战余响」到最近一次「任务完成：历战余响」圈定战斗块；
+    battle() 在战斗失败或等待战斗结束超时（-1）时同样会打印「任务完成」，
+    所以块内出现「战斗失败」（不含「退出战斗失败」）或「等待战斗结束超时」
+    都算没打完，块外的失败属于其他体力任务，不影响本判定。
+    """
+
+    done_pos = text.rfind(HSR_EOW_SRA_DONE_MARKER)
+    if done_pos < 0:
+        return False
+    start_pos = text.rfind(HSR_EOW_SRA_START_MARKER, 0, done_pos)
+    # 找不到开场行时从头算起：块只会偏大，方向是漏判而非误判。
+    segment = text[start_pos:done_pos] if start_pos >= 0 else text[:done_pos]
+    if HSR_EOW_SRA_BATTLE_TIMEOUT_MARKER in segment:
+        return False
+    return not HSR_EOW_SRA_BATTLE_FAILED_RE.search(segment)
 
 
 def detect_weekly_completion(
@@ -391,7 +569,7 @@ def detect_weekly_completion(
 
     upper_script = str(script).upper()
     if module_key == "DivergentUniverse":
-        candidate_sets: tuple[tuple[str, tuple[str, ...]], ...] = (
+        candidate_sets: tuple[tuple[str, tuple[str | re.Pattern[str], ...]], ...] = (
             ("M7A", HSR_DIVERGENT_FINAL_SUCCESS_M7A),
             ("SRA", HSR_DIVERGENT_FINAL_SUCCESS_SRA),
         )
@@ -405,10 +583,14 @@ def detect_weekly_completion(
 
     matched = next(
         (
-            (label, marker)
+            (label, marker.pattern if isinstance(marker, re.Pattern) else marker)
             for label, markers in candidate_sets
             for marker in markers
-            if marker in text
+            if (
+                marker.search(text)
+                if isinstance(marker, re.Pattern)
+                else marker in text
+            )
         ),
         None,
     )

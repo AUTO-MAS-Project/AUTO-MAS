@@ -16,10 +16,6 @@ export type HSRCapabilityAdapter = {
      */
     version?: (string | null);
     /**
-     * 支持的运行模式
-     */
-    supported_modes?: Array<string>;
-    /**
      * 引擎能力集合
      */
     capabilities?: Record<string, any>;

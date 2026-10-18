@@ -8,9 +8,11 @@ def _unsupported(*args, **kwargs):
 get_window_handles = _unsupported
 get_main_window_handle = _unsupported
 is_visible = _unsupported
+is_window = _unsupported
 show_window = _unsupported
 hide_window = _unsupported
 minimize_window = _unsupported
+close_window = _unsupported
 activate_window = _unsupported
 get_dpi_scaling = _unsupported
 find_window_by_title = _unsupported

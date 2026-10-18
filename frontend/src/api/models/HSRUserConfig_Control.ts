@@ -4,15 +4,11 @@
 /* eslint-disable */
 export type HSRUserConfig_Control = {
     /**
-     * 托管或直连模式
-     */
-    Mode?: ('managed' | 'direct' | null);
-    /**
-     * 是否允许 SRA
+     * 原生来源时是否运行 SRA
      */
     SRA?: (boolean | null);
     /**
-     * 是否允许 M7A
+     * 原生来源时是否运行三月七
      */
     M7A?: (boolean | null);
 };

@@ -46,6 +46,31 @@
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
 }
 
+/* 嵌在表单分区内部的子配置块标题（如 日志预处理）：
+   级别介于 .section-header（20px + 通栏分隔线）与表单标签（14px）之间；
+   不带通栏分隔线——子块后面紧跟着普通表单行时，不会被误读进子块的范围 */
+.sub-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.sub-section-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
 /* 开关右侧的补充说明文案 */
 .switch-description {
   margin-left: 12px;

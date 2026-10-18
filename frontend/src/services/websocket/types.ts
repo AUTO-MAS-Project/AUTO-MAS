@@ -25,7 +25,6 @@ export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
 export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
-export const WS_ID_ARKNIGHTS_PC_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -34,6 +33,8 @@ export const WS_TASK_INFO_UPDATED = 'task.info.updated'
 export const WS_TASK_LOG_UPDATED = 'task.log.updated'
 export const WS_TASK_NOTICE = 'task.notice'
 export const WS_TASK_COMPLETED = 'task.completed'
+/** 配置会话结束、本次改动被丢弃（id 为任务 UUID） */
+export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
@@ -41,6 +42,8 @@ export const WS_TASK_CREATED = 'task.created'
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
 export const WS_FRONTEND_CLOSE_REQUESTED = 'frontend.close.requested'
+// 与上一条同理，只是收尾后由 Electron 重新拉起：队列的「完成后操作」选了重启软件
+export const WS_FRONTEND_RESTART_REQUESTED = 'frontend.restart.requested'
 export const WS_POWER_COUNTDOWN_UPDATED = 'power.countdown.updated'
 export const WS_POWER_COUNTDOWN_CANCELLED = 'power.countdown.cancelled'
 export const WS_POWER_SIGN_UPDATED = 'power.sign.updated'
@@ -53,16 +56,24 @@ export const WS_UPDATE_CANCELLED = 'update.cancelled'
 
 // MFW 运行环境准备（id=<scriptId>）
 export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
+// MFW 项目手动更新过程：检查 / 下载 / 覆盖 / 校验与逐行日志（id=<scriptId>）
+export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 
-// 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+// 通用错误提示（id=EmulatorManager）
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
-export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
+
+// 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
+export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
+export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
+
+// 系统通知（id=Main）：后端启动期攒下的通知（如 M9A 配置迁移结果），主连接建立后发一次
+export const WS_SYSTEM_NOTICE = 'system.notice'
 
 // ==================== 关键消息数据类型 ====================
 
@@ -70,6 +81,12 @@ export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
   message: string
+  messageKey?: string | null
+}
+
+/** 配置会话改动被丢弃的数据 (type=task.config.discarded)：正文由前端按语言本地化 */
+export interface WSTaskConfigDiscardedData {
+  reason: 'structure' | 'unreadable' | 'not_written'
 }
 
 export interface WSTaskUserInfoData {
@@ -119,6 +136,8 @@ export interface WSTaskLogUpdatedData {
   log: string
   seq: number
   append: boolean
+  /** log 第一行在完整日志里的行号；append 为 true 时忽略，界面接着已有行号往后数 */
+  firstLine?: number
 }
 
 /** 任务完成消息数据 (type=task.completed) */
@@ -162,6 +181,35 @@ interface WSMaaFWEnvPrepareProgressData {
   log?: string | null
 }
 
+/** MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress) */
+export interface WSMaaFWProjectUpdateProgressData {
+  /** checking / downloading / downloaded / extracting / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
+  stage: string
+  /** running / success / failed */
+  status: string
+  message: string
+  /** 本次事件附带的新增日志行 */
+  log?: string | null
+  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
+  logLevel?: string | null
+  /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
+  percent?: number | null
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+  /** 下载速度 (B/s)，由后端按时间差算好 */
+  speedBytesPerSec?: number | null
+  /** full 全量 / incremental 增量 */
+  packageKind?: string | null
+  appliedFiles?: number | null
+  totalFiles?: number | null
+  /** 解压阶段：已解压 / 总文件数（不含目录条目） */
+  extractedFiles?: number | null
+  extractTotalFiles?: number | null
+  /** 解压阶段：已写出 / 解压后总字节 */
+  extractedBytes?: number | null
+  extractTotalBytes?: number | null
+}
+
 /** 更新下载进度数据 (id=Update, type=update.progress) */
 export interface WSUpdateProgressData {
   downloaded_size: number
@@ -199,6 +247,34 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
+/** 一块显示器的工作区（去掉任务栏），物理像素、桌面坐标 */
+export interface WSDisplayMonitorRectData {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * 真实显示器回来了但有任务在跑，问用户要不要拆虚拟屏 (id=Main, type=display.detach.prompt)
+ *
+ * 虚拟屏是主显示器，回来的真实屏只是第二块，任务栏和主窗口都留在看不见的那块上，
+ * 所以弹窗必须放到 monitor 指的那块屏上（右下角）。monitor 为空时由主进程自行挑一块非主显示器。
+ */
+export interface WSDisplayDetachPromptData {
+  /** 回来的真实显示设备名列表 */
+  returned: string[]
+  monitor?: WSDisplayMonitorRectData | null
+}
+
+/** 系统通知数据 (type=system.notice, id=Main) */
+export interface WSSystemNoticeData {
+  level: 'info' | 'warning' | 'error'
+  title: string
+  /** 正文，每项一行 */
+  lines: string[]
+}
+
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
@@ -207,9 +283,11 @@ interface WSMessageDataMap {
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
   [WS_TASK_COMPLETED]: WSTaskCompletedData
+  [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
+  [WS_FRONTEND_RESTART_REQUESTED]: WSEmptyData
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
@@ -218,10 +296,13 @@ interface WSMessageDataMap {
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
   [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
+  [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
-  [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
+  [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
+  [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
+  [WS_SYSTEM_NOTICE]: WSSystemNoticeData
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

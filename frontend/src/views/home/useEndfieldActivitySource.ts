@@ -1,4 +1,4 @@
-import { onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   buildEndfieldOverview,
@@ -7,98 +7,89 @@ import {
   type AkedataManifest,
   type EndfieldSourceData,
 } from './endfieldActivityTransform'
+import { parseEndfieldSraData } from './endfieldSraTransform'
+import { withEndfieldActivityImages } from './endfieldActivityImages'
 import { createEmptyEndfieldActivityOverview, type EndfieldActivityOverview } from '@/types/home'
-
-const logger = window.electronAPI.getLogger('活动数据')
+import { useHomeActivitySource } from './useHomeActivitySource'
 
 const AKEDATA_BASE_URL = 'https://data.akedata.wiki'
 const AKEDATA_MANIFEST_URL = AKEDATA_BASE_URL + '/manifest.json'
-/** 六张表并行下载（gzip 合计约 5.75MB），仅版本更新时触发，慢网放宽至 60s */
-const FETCH_TIMEOUT_MS = 60_000
-/** 失败重试节奏与 SRA 直连源一致 */
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
 const SNAPSHOT_KEY = 'auto-mas.home.endfield-snapshot'
+const SRA_SNAPSHOT_KEY = 'auto-mas.home.endfield-sra-snapshot'
+const SRA_ACTIVITY_URL = 'https://starrailassistant.top/api/v1/activity/end.json'
 
-const loadSnapshot = (): EndfieldSourceData | null => {
-  try {
-    const raw = localStorage.getItem(SNAPSHOT_KEY)
-    if (!raw) {
-      return null
-    }
-    return restoreEndfieldSourceData(JSON.parse(raw))
-  } catch {
-    return null
-  }
-}
-
-/**
- * 终末地活动卡的直连数据源（首页全前端化收官）。
- * 与后端 EndfieldActivityService 职责对齐：manifest（1.8KB）检查版本，
- * 版本变化才并行下载数据表并构建活动/卡池，解析结果存入本地快照；
- * 带超时、失败退避重试与独立失败态——本卡异常不影响其它卡片。
- */
+/** SRA 版本/活动与 AKEData 卡池独立加载，慢表不会挡住主卡片。 */
 export const useEndfieldActivitySource = () => {
   const { t } = useI18n()
-  const overview = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
-  const loading = ref(false)
-  let sourceData = loadSnapshot()
-  let retryTimer: number | null = null
-  let retryCount = 0
-  let disposed = false
-  let hasData = false
+  const akeOverview = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
+  const sraOverview = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
+  const now = ref(Date.now())
+  let sourceData: EndfieldSourceData | null = null
+  let generation = 0
+  let started = false
+  let active = false
+  let clock: number | null = null
+  let refreshedAt = Date.now()
+  const controllers = new Set<AbortController>()
 
-  // 启动先用上次快照填卡片，不等网络
-  if (sourceData !== null) {
-    overview.value = buildEndfieldOverview(sourceData, new Date()) as EndfieldActivityOverview
-    hasData = true
-  } else {
-    loading.value = true
-  }
-
-  const applySuccess = (data: EndfieldSourceData) => {
-    overview.value = buildEndfieldOverview(data, new Date()) as EndfieldActivityOverview
-    hasData = true
-  }
-
-  const saveSnapshot = (data: EndfieldSourceData) => {
-    try {
-      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(data))
-    } catch {
-      // 本地存储不可用时仅跳过快照缓存
-    }
-  }
-
+  // 公共骨架负责超时/退避；本模块负责隐藏或卸载时中止所有正在下载的表。
   const fetchJson = async (url: string, signal: AbortSignal): Promise<unknown> => {
-    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } })
-    if (!response.ok) {
-      throw new Error('HTTP ' + response.status)
-    }
-    return response.json()
-  }
-
-  const stripSlashes = (value: string): string => {
-    let start = 0
-    let end = value.length
-    while (start < end && value[start] === '/') {
-      start += 1
-    }
-    while (end > start && value[end - 1] === '/') {
-      end -= 1
-    }
-    return value.slice(start, end)
-  }
-
-  const load = async () => {
-    if (disposed) {
-      return
-    }
     const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    controllers.add(controller)
     try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      })
+      if (!response.ok) throw new Error('HTTP ' + response.status)
+      return await response.json()
+    } finally {
+      signal.removeEventListener('abort', abort)
+      controllers.delete(controller)
+    }
+  }
+  const stripSlashes = (value: string) => value.replace(/^\/+|\/+$/g, '')
+  const invalidate = () => {
+    generation += 1
+    controllers.forEach(controller => controller.abort())
+    controllers.clear()
+  }
+
+  const ake = useHomeActivitySource<EndfieldSourceData>({
+    label: () => 'AKEData',
+    timeoutMs: 60_000,
+    requestTag: () => generation,
+    isObsolete: tag => tag !== generation,
+    restoreSnapshot: () => {
+      try {
+        const raw = localStorage.getItem(SNAPSHOT_KEY)
+        const restored = raw ? restoreEndfieldSourceData(JSON.parse(raw)) : null
+        if (!restored) return false
+        sourceData = restored
+        akeOverview.value = {
+          ...buildEndfieldOverview(restored, new Date()),
+          Stale: true,
+          Message: t('home.endfield.poolStaleMessage'),
+        } as EndfieldActivityOverview
+        return true
+      } catch {
+        return false
+      }
+    },
+    saveSnapshot: data => {
+      try {
+        localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(data))
+      } catch {
+        // 沿用既有 AKE 快照；存储不可用不影响当次数据。
+      }
+    },
+    fetchData: async signal => {
       const manifest = (await fetchJson(
         `${AKEDATA_MANIFEST_URL}?t=${Date.now()}`,
-        controller.signal
+        signal
       )) as AkedataManifest
       const latest = manifest.latest
       const version = (manifest.versions ?? []).find(item => item.id === latest)
@@ -106,25 +97,23 @@ export const useEndfieldActivitySource = () => {
         throw new Error('manifest 未包含最新版本')
       }
 
-      if (sourceData !== null && sourceData.versionId === latest) {
-        if (sourceData.sourceUpdatedAt !== (manifest.updatedAt ?? '')) {
-          sourceData = { ...sourceData, sourceUpdatedAt: manifest.updatedAt ?? '' }
-          saveSnapshot(sourceData)
-        }
-        applySuccess(sourceData)
-        retryCount = 0
-        return
+      if (
+        sourceData !== null &&
+        sourceData.versionId === latest &&
+        sourceData.sourceUpdatedAt === (manifest.updatedAt ?? '')
+      ) {
+        return sourceData
       }
 
       const tableRoot = AKEDATA_BASE_URL + '/' + stripSlashes(version.tableCfgPath)
       const [activities, timeRanges, activityTags, textTable, pools, characters] =
         (await Promise.all([
-          fetchJson(tableRoot + '/ActivityTable.json', controller.signal),
-          fetchJson(tableRoot + '/TimeRangeTable.json', controller.signal),
-          fetchJson(tableRoot + '/ActivityTagTable.json', controller.signal),
-          fetchJson(tableRoot + '/I18nTextTable_CN.json', controller.signal),
-          fetchJson(tableRoot + '/GachaCharPoolTable.json', controller.signal),
-          fetchJson(tableRoot + '/CharacterTable.json', controller.signal),
+          fetchJson(tableRoot + '/ActivityTable.json', signal),
+          fetchJson(tableRoot + '/TimeRangeTable.json', signal),
+          fetchJson(tableRoot + '/ActivityTagTable.json', signal),
+          fetchJson(tableRoot + '/I18nTextTable_CN.json', signal),
+          fetchJson(tableRoot + '/GachaCharPoolTable.json', signal),
+          fetchJson(tableRoot + '/CharacterTable.json', signal),
         ])) as unknown as [unknown, unknown, unknown, unknown, unknown, unknown]
       const resolved = resolveEndfieldSourceData({
         activities,
@@ -134,99 +123,160 @@ export const useEndfieldActivitySource = () => {
         pools,
         characters,
       })
-      sourceData = {
+      return {
         versionId: latest,
         sourceUpdatedAt: manifest.updatedAt ?? '',
         ...resolved,
       }
-      saveSnapshot(sourceData)
-      applySuccess(sourceData)
-      retryCount = 0
-    } catch (requestError) {
-      if (disposed) {
-        return
+    },
+    applyData: data => {
+      sourceData = data
+      akeOverview.value = buildEndfieldOverview(data, new Date()) as EndfieldActivityOverview
+    },
+    markStale: () => {
+      akeOverview.value = {
+        ...akeOverview.value,
+        Stale: true,
+        Message: t('home.endfield.poolStaleMessage'),
       }
-      const errorMessage =
-        requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取终末地活动数据失败: ' + errorMessage)
-      if (hasData) {
-        overview.value = {
-          ...overview.value,
+    },
+    markUnavailable: () => {
+      akeOverview.value = {
+        ...createEmptyEndfieldActivityOverview(),
+        Message: t('home.endfield.poolUnavailable'),
+      }
+    },
+  })
+
+  const sra = useHomeActivitySource<unknown>({
+    label: () => 'SRA',
+    timeoutMs: 20_000,
+    requestTag: () => generation,
+    isObsolete: tag => tag !== generation,
+    restoreSnapshot: () => {
+      try {
+        const raw = localStorage.getItem(SRA_SNAPSHOT_KEY)
+        if (!raw) return false
+        sraOverview.value = {
+          ...parseEndfieldSraData(JSON.parse(raw)),
           Stale: true,
-          Message: t('home.endfield.staleMessage'),
+          Message: t('home.sra.staleMessage'),
         }
-      } else {
-        overview.value = {
-          ...createEmptyEndfieldActivityOverview(),
-          Message: t('home.endfield.unavailable'),
-        }
+        return true
+      } catch {
+        return false
       }
-      if (retryCount < MAX_RETRIES) {
-        retryCount += 1
-        if (active) {
-          scheduleRetry()
-        } else {
-          // 模块隐藏期间不重试，重新可见时补一次
-          retryPending = true
-        }
+    },
+    saveSnapshot: data => {
+      try {
+        localStorage.setItem(SRA_SNAPSHOT_KEY, JSON.stringify(data))
+      } catch {
+        // 仅缓存已通过解析的数据，存储不可用不影响当前展示。
       }
-    } finally {
-      window.clearTimeout(timer)
-      if (!disposed) {
-        loading.value = false
+    },
+    fetchData: signal => fetchJson(SRA_ACTIVITY_URL, signal),
+    applyData: data => {
+      sraOverview.value = parseEndfieldSraData(data)
+    },
+    markStale: () => {
+      sraOverview.value = {
+        ...sraOverview.value,
+        Stale: true,
+        Message: t('home.sra.staleMessage'),
       }
+    },
+    markUnavailable: () => {
+      sraOverview.value = {
+        ...createEmptyEndfieldActivityOverview(),
+        Message: t('home.endfield.unavailable'),
+      }
+    },
+  })
+
+  const overview = computed<EndfieldActivityOverview>(() => {
+    const sraData = sraOverview.value
+    const sraHasContent =
+      new Date(sraData.VersionEndTime ?? '').getTime() > now.value ||
+      sraData.Activities.some(item => new Date(item.EndTime).getTime() > now.value)
+    const primary =
+      sraData.Available && (!sraData.Stale || sraHasContent) ? sraData : akeOverview.value
+    const isPending = (item: { EndTime: string }) => new Date(item.EndTime).getTime() > now.value
+    const versionEnd = new Date(primary.VersionEndTime ?? '').getTime()
+    const versionValid = versionEnd > now.value
+    return {
+      ...primary,
+      // 不把过期版本宣传图当作当期版本，也不拿 AKE 卡池时间拼版本倒计时。
+      Version: versionValid ? primary.Version : '',
+      VersionName: versionValid ? primary.VersionName : '',
+      VersionCover: versionValid ? primary.VersionCover : '',
+      VersionStartTime: versionValid ? primary.VersionStartTime : '',
+      VersionEndTime: versionValid ? primary.VersionEndTime : '',
+      VersionStale: sraOverview.value.Stale,
+      Activities: (primary === sraData
+        ? withEndfieldActivityImages(primary.Activities, sourceData?.activities ?? [])
+        : primary.Activities
+      ).filter(isPending),
+      Pools: akeOverview.value.Pools.filter(isPending),
+      PoolStale: akeOverview.value.Stale,
+      PoolMessage: akeOverview.value.Message,
+      PoolLoading: ake.loading.value,
+      Message: primary.Available
+        ? primary === akeOverview.value && primary.Stale
+          ? t('home.endfield.staleMessage')
+          : primary.Message
+        : sraOverview.value.Message,
     }
+  })
+
+  const refresh = async () => {
+    invalidate()
+    now.value = Date.now()
+    refreshedAt = now.value
+    sra.loading.value = true
+    ake.loading.value = true
+    await Promise.all([sra.refresh(), ake.refresh()])
   }
-
-  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
-  let active = false
-  let started = false
-  let retryPending = false
-
-  const scheduleRetry = () => {
-    retryTimer = window.setTimeout(() => {
-      retryTimer = null
-      void load()
-    }, RETRY_DELAY_MS)
-  }
-
-  const start = () => {
-    if (disposed) return
-    active = true
-    if (!started) {
-      started = true
-      void load()
-    } else if (retryPending) {
-      retryPending = false
-      void load()
-    }
-  }
-
   const stop = () => {
     active = false
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-      retryPending = true
-    }
+    invalidate()
+    sra.stop()
+    ake.stop()
+    if (clock !== null) window.clearInterval(clock)
+    clock = null
   }
-
+  const onVisibilityChange = () => {
+    if (active && document.visibilityState === 'visible') refresh()
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange)
   onScopeDispose(() => {
-    disposed = true
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-    }
+    stop()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   })
 
   return {
     overview,
-    loading,
-    start,
-    stop,
-    refresh: () => {
-      retryCount = 0
-      void load()
+    // 卡池加载不会挡住已可用的版本和活动。
+    loading: computed(() => !overview.value.Available && sra.loading.value),
+    versionArt: computed(() => overview.value.VersionCover ?? ''),
+    versionName: computed(() => overview.value.VersionName ?? ''),
+    start: () => {
+      if (active) return
+      active = true
+      now.value = Date.now()
+      if (clock === null) {
+        clock = window.setInterval(() => {
+          now.value = Date.now()
+          if (document.visibilityState === 'visible' && now.value - refreshedAt >= 15 * 60_000) {
+            refresh()
+          }
+        }, 60_000)
+      }
+      sra.start()
+      ake.start()
+      if (started) refresh()
+      started = true
     },
+    stop,
+    refresh,
   }
 }

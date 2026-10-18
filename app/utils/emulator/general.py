@@ -21,23 +21,26 @@
 
 
 import asyncio
-import json
 import re
 import shlex
-
-from app.utils.platform import IS_WINDOWS
-
-if IS_WINDOWS:
-    import keyboard
-    import win32gui
 import time
 from pathlib import Path
 from typing import Dict
 
+import psutil
+
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import get_logger
-from app.utils.ProcessManager import ProcessManager
+from app.utils.emulator.tools import (
+    AudioMuteRecord,
+    apply_launch_audio_mute,
+    apply_window_visibility,
+    resolve_main_window,
+    restore_audio_before_close,
+)
+from app.utils.platform import IS_WINDOWS
+from app.utils.ProcessManager import ProcessManager, get_main_window_handle
 
 logger = get_logger("通用模拟器管理")
 
@@ -58,6 +61,8 @@ class GeneralDeviceManager(DeviceBase):
         self.config = config
         self.emulator_path = Path(config.get("Info", "Path"))
         self.process_managers: Dict[str, ProcessManager] = {}
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, AudioMuteRecord] = {}
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
@@ -81,9 +86,28 @@ class GeneralDeviceManager(DeviceBase):
         # 等待进程启动
         await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
 
+        await apply_launch_audio_mute(
+            states_store=self._audio_mute_states,
+            idx=idx,
+            resolve_pids=lambda: asyncio.to_thread(self._resolve_audio_pids, idx),
+        )
+
         return (await self.getInfo(idx))[idx]
 
+    def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """实例主进程及其后代进程：模拟器主程序往往再拉起子进程渲染声音。"""
+        manager = self.process_managers.get(idx)
+        pid = manager.main_pid if manager else None
+        if pid is None:
+            return []
+        try:
+            children = psutil.Process(pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            return []
+        return [pid, *(child.pid for child in children)]
+
     async def close(self, idx: str) -> DeviceStatus:
+        await restore_audio_before_close(self._audio_mute_states, idx)
 
         status = await self.getStatus(idx)
         if status == DeviceStatus.OFFLINE:
@@ -139,29 +163,41 @@ class GeneralDeviceManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
-        while time.monotonic() < deadline:
-            # 检查窗口可见性是否符合预期
-            if self.process_managers[idx].main_pid is not None and (
-                win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
-                == is_visible
-            ):
-                return status
+        # 先解析出该实例自己的窗口句柄：老板键不带实例信息，多开时会把别的实例
+        # 一起翻过去（#948），而把 PID 当句柄传给 IsWindowVisible 的判据恒为假。
+        hwnd = await resolve_main_window(
+            idx, lambda: asyncio.to_thread(self._resolve_target_hwnd, idx)
+        )
+        await apply_window_visibility(
+            hwnd, idx, is_visible, self.config.get("Info", "MaxWaitTime")
+        )
+        return status
 
-            try:
-                keyboard.press_and_release(
-                    "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
-                    )
-                )  # 老板键
-            except Exception as e:
-                logger.error(f"发送BOSS键失败: {e}")
+    def _resolve_target_hwnd(self, idx: str) -> int | None:
+        """取该实例主窗口句柄: 主进程优先, 主窗口在子进程时再遍历后代进程。
 
-            await asyncio.sleep(0.5)
+        口径与 _resolve_audio_pids 一致(主进程 + 后代)。进程已退出或本身没有
+        顶层窗口时返回 None, 由调用方决定如何处理。
+        """
+        manager = self.process_managers.get(idx)
+        pid = manager.main_pid if manager else None
+        if pid is None:
+            return None
 
-        else:
-            raise RuntimeError(f"隐藏设备{idx}窗口超时")
+        hwnd = manager.main_hwnd
+        if hwnd:
+            return hwnd
+
+        try:
+            children = psutil.Process(pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            return None
+
+        for child in children:
+            hwnd = get_main_window_handle(child.pid)
+            if hwnd:
+                return hwnd
+        return None
 
     def parse_index(self, idx: str):
 
@@ -195,6 +231,11 @@ class GeneralDeviceManager(DeviceBase):
         清理所有资源
         """
         logger.info("开始清理设备管理器资源")
+
+        # 先停跟随任务并还原音频，此时进程还在，还原才有意义；
+        # 记录不留给后续流程（管理器就此销毁）
+        for idx in list(self._audio_mute_states):
+            await restore_audio_before_close(self._audio_mute_states, idx)
 
         for idx, pm in self.process_managers.items():
             try:

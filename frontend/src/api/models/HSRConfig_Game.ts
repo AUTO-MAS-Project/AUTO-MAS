@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type HSRConfig_Game = {
     /**
+     * 游戏平台：本地客户端 / 云·星穹铁道
+     */
+    Platform?: ('Client' | 'Cloud' | null);
+    /**
      * 是否由 MAS 管理游戏
      */
     Enabled?: (boolean | null);

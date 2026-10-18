@@ -41,7 +41,27 @@ import yaml
 from .logger import get_logger
 from .tools import decode_bytes
 
+# 原生配置快照指纹算法版本。指纹口径变更时递增: 旧版本写下的快照无法与当前
+# 目录比较, 恢复流程只保留现场, 不按指纹判定归属。
+NATIVE_CONFIG_FINGERPRINT_VERSION = 2
+
 logger = get_logger("路径迁移")
+
+
+class ConfigCorruptedError(ValueError):
+    """配置文件内容损坏到无法安全读取（解析失败 / 根节点非映射）。
+
+    结构完整性（必备键、列表非空等）由调用方在返回的映射上自行校验,
+    判为损坏时抛出本异常。继承 ``ValueError``: API 层未特别识别时按
+    400 + 可读 message 返回; 恢复入口识别后转为「需用户确认」的 409。
+    ``path`` 供报错文案给出损坏位置。读上游私有文件做枚举/守卫时的约定见
+    ``.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md``。
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        super().__init__(f"配置文件已损坏，无法安全读取：{self.path}")
+
 
 # YAML 解析器拒绝的控制字符(除 \t \n \r): 映射为 None 即 translate 时丢弃
 # \t \n \r 是 YAML 结构换行/缩进, 删除会把健康的多行文档压成一行导致解析失败
@@ -141,7 +161,14 @@ def force_rmtree(path: Path) -> None:
 
     for attempt in range(_RMTREE_RETRIES):
         try:
-            shutil.rmtree(path, onexc=remove_readonly)
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_junction():
+                path.rmdir()
+            elif not path.exists():
+                return
+            else:
+                shutil.rmtree(path, onexc=remove_readonly)
             return
         except OSError:
             if attempt == _RMTREE_RETRIES - 1:
@@ -171,9 +198,9 @@ def replace_dir(src: Path, dst: Path) -> None:
 
 def dir_fingerprint(path: Path) -> str:
     """
-    对目录树做轻量指纹, 用于判断配置是否被改动过
+    对目录树做内容指纹, 用于判断配置是否被改动过
 
-    只取相对路径与文件大小, 不读内容: 只需区分「与某次已知状态是否一致」。
+    记录相对路径与文件内容, 避免同长度的用户改动被误判为原内容。
 
     Args:
         path: 目录路径, 不存在时返回空串指纹。
@@ -189,12 +216,14 @@ def dir_fingerprint(path: Path) -> str:
     for entry in sorted(path.rglob("*")):
         if not entry.is_file():
             continue
-        try:
-            stat_result = entry.stat()
-        except OSError:
-            continue
         digest.update(str(entry.relative_to(path)).encode("utf-8", "surrogatepass"))
-        digest.update(str(stat_result.st_size).encode("ascii"))
+        try:
+            with entry.open("rb") as file:
+                while chunk := file.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError:
+            # 读取失败时让恢复流程保留快照, 不把未知现场当成安全状态。
+            raise
     return digest.hexdigest()
 
 
@@ -208,12 +237,14 @@ class NativeConfigSnapshot:
         original_exists: 快照时原生配置目录是否存在。
         baseline: 原始配置指纹, 用于识别「尚未被 MAS 改动」。
         injected: MAS 注入后的预期指纹, None 表示本次运行未注入。
+        fingerprint_version: 写快照时的指纹算法版本, 与当前版本不符即不可比较。
     """
 
     script_id: str
     original_exists: bool
     baseline: str
     injected: str | None = None
+    fingerprint_version: int = 0
 
 
 def _snapshot_ready_path(snapshot_path: Path) -> Path:
@@ -257,6 +288,7 @@ def write_native_config_snapshot(
             "original_exists": original_exists,
             "baseline": baseline,
             "injected": injected,
+            "fingerprint_version": NATIVE_CONFIG_FINGERPRINT_VERSION,
         },
     )
 
@@ -292,11 +324,15 @@ def read_native_config_snapshot(
         return None
 
     injected = state.get("injected")
+    fingerprint_version = state.get("fingerprint_version")
     return NativeConfigSnapshot(
         script_id=script_id,
         original_exists=bool(state.get("original_exists", False)),
         baseline=str(state.get("baseline") or ""),
         injected=injected if isinstance(injected, str) else None,
+        fingerprint_version=(
+            fingerprint_version if isinstance(fingerprint_version, int) else 0
+        ),
     )
 
 
@@ -322,7 +358,7 @@ def mark_native_config_injected(
     """
     记录 MAS 注入后的原生配置指纹, 供崩溃恢复区分污染与用户改动
 
-    MAS 把配置写进原生目录后调用; 未注入(直控)时不调用, 快照保持 injected
+    MAS 把配置写进原生目录后调用; 未注入(原生来源)时不调用, 快照保持 injected
     为 None, 恢复时现场与基线一致即视为无污染。
 
     Args:
@@ -403,7 +439,7 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     force_rmtree(backup_path)
     shutil.copytree(src, staging_path)
     dst_moved = False
-    if dst.exists():
+    if dst.exists() or dst.is_symlink() or dst.is_junction():
         dst.rename(backup_path)
         dst_moved = True
     try:
@@ -415,6 +451,33 @@ def swap_in_dir(src: Path, dst: Path) -> None:
     finally:
         force_rmtree(staging_path)
         force_rmtree(backup_path)
+
+
+def _preserve_legacy_snapshot(snapshot_path: Path) -> Path:
+    """
+    把指纹版本不符的旧快照改名留存
+
+    旧快照里的原始配置仍是用户的数据, 但它的指纹由旧算法生成, 无法与当前目录
+    比较。改名留存后, 下一次提交快照不会把它覆盖掉。
+
+    Args:
+        snapshot_path: 快照目录。
+
+    Returns:
+        改名后的快照目录。
+    """
+
+    index = 0
+    while True:
+        suffix = "" if index == 0 else f".{index}"
+        target = snapshot_path.with_name(f"{snapshot_path.name}.legacy{suffix}")
+        if not target.exists() and not _snapshot_ready_path(target).exists():
+            break
+        index += 1
+    snapshot_path.rename(target)
+    with suppress(OSError):
+        _snapshot_ready_path(snapshot_path).rename(_snapshot_ready_path(target))
+    return target
 
 
 def recover_native_config(
@@ -434,13 +497,15 @@ def recover_native_config(
     - 其它指纹: 用户在崩溃后手动改过原生配置, 只清理快照不覆盖, 避免把
       用户的新改动吃掉。
 
+    快照由旧版本的指纹算法写下时无法比较, 一律改名留存并返回 legacy。
+
     Args:
         snapshot_path: 快照目录(与提交标记配套)。
         live_path: 脚本原生配置目录。
         expected_script_id: 期望归属的脚本, 不符则只清理不恢复。
 
     Returns:
-        处置结果: restored / intact / skipped / cleared。
+        处置结果: restored / intact / skipped / cleared / legacy。
     """
 
     staging_path, backup_path = _snapshot_swap_paths(live_path)
@@ -450,28 +515,32 @@ def recover_native_config(
     state = read_native_config_snapshot(
         snapshot_path, expected_script_id=expected_script_id
     )
-    try:
-        if state is None:
-            return "cleared"
-
-        if not live_path.exists():
-            if state.original_exists:
-                swap_in_dir(snapshot_path, live_path)
-                return "restored"
-            return "cleared"
-
+    if state is None:
+        result = "cleared"
+    elif state.fingerprint_version != NATIVE_CONFIG_FINGERPRINT_VERSION:
+        _preserve_legacy_snapshot(snapshot_path)
+        return "legacy"
+    elif not live_path.exists():
+        if state.original_exists:
+            swap_in_dir(snapshot_path, live_path)
+            result = "restored"
+        else:
+            result = "cleared"
+    else:
         live = dir_fingerprint(live_path)
         if state.injected is not None and live == state.injected:
             if state.original_exists:
                 swap_in_dir(snapshot_path, live_path)
             else:
                 force_rmtree(live_path)
-            return "restored"
-        if live == state.baseline:
-            return "intact"
-        return "skipped"
-    finally:
-        clear_native_config_snapshot(snapshot_path)
+            result = "restored"
+        elif live == state.baseline:
+            result = "intact"
+        else:
+            result = "skipped"
+
+    clear_native_config_snapshot(snapshot_path)
+    return result
 
 
 def atomic_write(path: Path, data: bytes) -> None:
@@ -504,13 +573,17 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
-def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
+def read_file(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> dict[str, Any] | str:
     """
     按后缀读取配置文件, 传 ``format`` 可强制改用指定后缀的解析器
 
     Args:
         path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
         format: 强制使用的解析器后缀 (含点), 忽略 ``path`` 实际后缀; 默认 ``None`` 按后缀推断
+        raw: 预读的文件字节内容; 传入时不再重复读盘, 供 :func:`read_dict_file`
+            复用首次读取结果, 避免同一文件读两次
 
     Returns:
         dict[str, Any] | str: 已知格式解析后的结构; 未知格式返回原始字符串; 不存在返回空 ``{}``
@@ -519,9 +592,97 @@ def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
         return {}
     _suffix = (format or path.suffix).lower()
     codec = _CODECS.get(_ALIASES.get(_suffix, _suffix))
+    content = path.read_bytes() if raw is None else raw
     if codec is None:
-        return decode_bytes(path.read_bytes())
-    return codec[1](path.read_bytes())
+        return decode_bytes(content)
+    return codec[1](content)
+
+
+def _is_empty_yaml_document(
+    path: Path, *, format: str | None = None, raw: bytes | None = None
+) -> bool:
+    """区分真正的空 YAML 文档与显式 ``null``。
+
+    ``yaml.safe_load`` 对这两种内容都返回 ``None``，但配置文件只应把空白、
+    注释和文档标记视为空文档；显式 ``null`` 仍然是错误的根节点。
+    """
+
+    suffix = (format or path.suffix).lower()
+    normalized = _ALIASES.get(suffix, suffix)
+    if normalized not in (".yaml", ".sanitized.yaml"):
+        return False
+    content = decode_bytes(path.read_bytes() if raw is None else raw)
+    if normalized == ".sanitized.yaml":
+        content = content.translate(_INVALID_YAML_CHARS)
+    try:
+        events = list(yaml.parse(content))
+    except Exception:  # noqa: BLE001 - safe_load 已经给出统一损坏错误
+        return False
+
+    scalar_events = [
+        event for event in events if isinstance(event, yaml.events.ScalarEvent)
+    ]
+    if not scalar_events:
+        # 空白和注释没有文档节点；safe_load 已确认内容为空。
+        return True
+    if len(scalar_events) != 1:
+        return False
+
+    # PyYAML 把「---」表示为隐式空标量；显式 null、标签及锚点也可能
+    # 使用同一节点值，需按解析事件区分，避免把坏配置当空文件覆盖。
+    event = scalar_events[0]
+    return event.value == "" and event.tag is None and event.anchor is None
+
+
+def read_dict_file(
+    path: Path, *, format: str | None = None, allow_empty: bool = False
+) -> dict[str, Any]:
+    """
+    严格读取映射型配置文件: 解析失败或根节点非映射时抛 ``ConfigCorruptedError``
+
+    ``allow_empty=True`` 时，空白、注释和文档标记组成的空 YAML 文档返回
+    ``{}``；显式 ``null``、列表和标量仍按损坏处理。默认值保持严格语义，
+    供需要区分「没有配置」与「配置损坏」的调用方使用。
+
+    与 :func:`read_file` 的区别: 坏档显式失败而非静默返回原始值, 供备份
+    拦截、恢复二次确认等需要区分「读不到」与「没有」的调用方使用, 杜绝
+    ``read_file(x).get(...)`` 对未知后缀退回原始字符串再炸
+    ``AttributeError`` 的事故形态 (#877 根因)。
+
+    Args:
+        path: 文件路径, 未显式指定 ``format`` 时以其后缀决定解析格式
+        format: 强制使用的解析器后缀 (含点); 读上游非原子写落盘的 YAML
+            (进程被杀/断电可能残留 NUL 填充) 建议传 ``.sanitized.yaml``
+        allow_empty: 是否把真正的空 YAML 文档视为 ``{}``；显式 ``null``
+            不受此选项放宽
+
+    Returns:
+        dict[str, Any]: 解析后的映射; 文件不存在返回空 ``{}``
+
+    Raises:
+        ConfigCorruptedError: 文件存在但解析失败或根节点非映射
+
+    文件锁 / 竞态删除等读取失败（``OSError``）不是内容损坏, 原样上抛交调用
+    方按读取失败处理, 不进入 409/强制恢复决策分支误导用户对好文件确认。
+    """
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_bytes()
+        data = read_file(path, format=format, raw=raw)
+    except OSError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 解析层任何失败都按损坏上报
+        raise ConfigCorruptedError(path) from exc
+    if isinstance(data, dict):
+        return data
+    if (
+        data is None
+        and allow_empty
+        and _is_empty_yaml_document(path, format=format, raw=raw)
+    ):
+        return {}
+    raise ConfigCorruptedError(path)
 
 
 def write_file(

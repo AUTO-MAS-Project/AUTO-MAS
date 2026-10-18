@@ -28,7 +28,12 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.task.proxy_helpers import read_config_source, user_uses_quick_config
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+    user_uses_quick_config,
+)
 from app.utils import ProcessManager, get_logger
 from app.utils.io import mark_native_config_injected, swap_in_dir
 
@@ -91,9 +96,9 @@ class ScriptConfigTask(TaskExecuteBase):
                     self.cur_user_item.user_id,
                     script_config,
                 )
-            elif read_config_source(cfg) == "直控":
+            elif read_config_base(cfg) == CONFIG_BASE_NATIVE:
                 self.mas_config_dir = None
-            elif read_config_source(cfg) == "脚本":
+            elif read_config_base(cfg) == CONFIG_BASE_SHARED:
                 self.mas_config_dir = mas_config_dir(
                     self.script_info.script_id, "Default"
                 )
@@ -176,7 +181,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if self.mas_config_dir is None:
-            # 直控 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
+            # 原生来源 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
             self.cur_user_item.status = "完成"
             return
 

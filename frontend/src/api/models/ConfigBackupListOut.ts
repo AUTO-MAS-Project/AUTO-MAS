@@ -20,5 +20,9 @@ export type ConfigBackupListOut = {
      * 备份列表（时间倒序）
      */
     data: Array<ConfigBackupItemOut>;
+    /**
+     * 当前 base 来源（shared/independent/native）；无来源概念（非 base 专项）为 null
+     */
+    base?: (string | null);
 };
 

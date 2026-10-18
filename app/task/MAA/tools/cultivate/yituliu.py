@@ -35,6 +35,9 @@ from typing import Any, Mapping
 
 import httpx
 
+from app.utils import get_logger
+from app.utils.io import write_file
+
 from .types import (
     CultivateDataSet,
     DemandEntry,
@@ -43,6 +46,8 @@ from .types import (
     Recipe,
     StageMeta,
 )
+
+logger = get_logger("一图流养成数据源")
 
 # 一图流现架构为"静态 COS + 前端本地计算"，旧 API（/stage/t3 等）已 404
 _DEMAND_URL = (
@@ -86,6 +91,35 @@ _FIXED_SOURCE_STAGES: dict[str, str] = {
     "4006": "wk_toxic_5",  # 采购凭证 ← AP-5
     "4001": "wk_melee_6",  # 龙门币   ← CE-6
 }
+
+# 芯片配方：一图流 composite 表不收芯片条目（实测 2026-09-15 线上表零条），
+# 但游戏内双芯片由「对应职业芯片组×2 + 芯片助剂×1」在加工站合成。本地补齐
+# 这 8 条边后：双芯片从"不可获取"变为"可合成"，需求自动折算到芯片组（PR
+# 芯片关可刷，开放日在 _PERMANENT_STAGES）。
+_CHIP_CATALYST_ITEM_ID = "32001"
+_CHIP_RECIPES: tuple[Recipe, ...] = tuple(
+    Recipe(
+        result_item_id=double_id,
+        ingredients={group_id: 2, _CHIP_CATALYST_ITEM_ID: 1},
+    )
+    for group_id, double_id in (
+        ("3212", "3213"),  # 先锋
+        ("3222", "3223"),  # 近卫
+        ("3232", "3233"),  # 重装
+        ("3242", "3243"),  # 狙击
+        ("3252", "3253"),  # 术师
+        ("3262", "3263"),  # 医疗
+        ("3272", "3273"),  # 辅助
+        ("3282", "3283"),  # 特种
+    )
+)
+
+# 凭证兑换：芯片助剂在凭证交易所以采购凭证×90 兑换（composite 表同样不收，
+# 本地补齐）。采购凭证是固定产出材料，选路层按 0 中性成本当可获取处理，
+# 于是助剂折算为"刷 AP-5 攒采购凭证"，理智不可估算；月度限购不在建模范围。
+_VOUCHER_RECIPES: tuple[Recipe, ...] = (
+    Recipe(result_item_id=_CHIP_CATALYST_ITEM_ID, ingredients={"4006": 90}),
+)
 
 # 实测 matrix 0 条直掉关且不在 MAA 排除表（2026-09-11）：模组凭证类属
 # "不可获取"，绝不进 PlanList，否则 MaxTimes=∞ 无限刷。龙门币（4001）与
@@ -133,7 +167,8 @@ def _positive_items(raw: Any) -> dict[str, int]:
 def parse_demand_table(raw: Mapping[str, Any]) -> dict[str, tuple[DemandEntry, ...]]:
     """解析干员养成需求表（character_table_simple.v2.json）。
 
-    elite 按相位下标即目标等级；skills 的 skillLevelUpCost 为专精 1..3 档
+    elite 按相位下标即目标等级；allSkill 为普通技能 2..7 级消耗；
+    skills 的 skillLevelUpCost 为专精 1..3 档
     （可能为 null，表示该技能无专精）；equip 的 itemCost 为模组 1..3 档。
     """
 
@@ -148,6 +183,15 @@ def parse_demand_table(raw: Mapping[str, Any]) -> dict[str, tuple[DemandEntry, .
             items = _positive_items(cost)
             if level > 0 and items:
                 entries.append(DemandEntry("elite", "", level, items))
+
+        # 普通技能等级为干员共用档位；首项是从 1 升至 2 的消耗。
+        skill_costs = entry.get("allSkill")
+        for level, cost in enumerate(
+            skill_costs[:6] if isinstance(skill_costs, list) else [], start=2
+        ):
+            items = _positive_items(cost)
+            if items:
+                entries.append(DemandEntry("skill", "", level, items))
 
         # 专精：每个技能 1..3 档，skillLevelUpCost 可为 null
         for skill in entry.get("skills") or []:
@@ -298,6 +342,18 @@ def parse_recipes(raw: Any) -> tuple[Recipe, ...]:
     )
 
 
+def _with_local_recipes(recipes: tuple[Recipe, ...]) -> tuple[Recipe, ...]:
+    """合并本地补充配方（一图流未收录的芯片链/凭证兑换）；表中已有同结果条目时以表为准。"""
+
+    existing = {recipe.result_item_id for recipe in recipes}
+    local = tuple(
+        recipe
+        for recipe in (*_CHIP_RECIPES, *_VOUCHER_RECIPES)
+        if recipe.result_item_id not in existing
+    )
+    return recipes + local
+
+
 def build_material_class(
     demands: Mapping[str, tuple[DemandEntry, ...]],
     drops: tuple[DropEntry, ...],
@@ -415,7 +471,7 @@ def normalize_dataset(
     demands = parse_demand_table(demand_raw)
     drops = parse_drop_matrix(matrix_raw)
     stages = parse_stage_info(stage_raw)
-    recipes = parse_recipes(recipe_raw)
+    recipes = _with_local_recipes(parse_recipes(recipe_raw))
     excluded_stage_ids = _excluded_stage_ids(stage_raw)
     drops = tuple(
         drop
@@ -537,6 +593,7 @@ def dataset_to_json(dataset: CultivateDataSet) -> dict[str, Any]:
     """契约数据集 → JSON 可序列化结构（快照存储用）。"""
 
     return {
+        "schema_version": 2,
         "data_version": dataset.data_version,
         "demands": {
             char_id: [
@@ -585,52 +642,60 @@ def dataset_from_json(raw: Mapping[str, Any]) -> CultivateDataSet:
 
     快照可能写于剔除规则生效之前，故加载时同样剔除 MAA 无法导航的别传常驻
     关：stageType 不进快照，按 _perm 后缀判定（与 stageType 等价，见上方常量）。
+    配方合并本地补充（旧快照缺芯片链）后按当前规则**重算**material_class——
+    快照里存的是写入时代的分类结果，直接沿用会让新增配方/规则失效。
     """
 
-    return CultivateDataSet(
-        demands={
-            char_id: tuple(
-                DemandEntry(
-                    kind=entry["kind"],
-                    target_id=entry["target_id"],
-                    level=entry["level"],
-                    items=entry["items"],
-                )
-                for entry in raw.get("demands", {}).get(char_id, [])
+    demands = {
+        char_id: tuple(
+            DemandEntry(
+                kind=entry["kind"],
+                target_id=entry["target_id"],
+                level=entry["level"],
+                items=entry["items"],
             )
-            for char_id in raw.get("demands", {})
-        },
-        drops=tuple(
-            DropEntry(
-                stage_id=drop["stage_id"],
-                item_id=drop["item_id"],
-                expected_per_run=drop["expected_per_run"],
-                start_ms=drop["start_ms"],
-                end_ms=drop["end_ms"],
-            )
-            for drop in raw.get("drops", [])
-            if not drop["stage_id"].endswith(_EXCLUDED_STAGE_ID_SUFFIXES)
-        ),
-        stages={
-            meta["stage_id"]: StageMeta(
-                stage_id=meta["stage_id"],
-                stage_code=meta["stage_code"],
-                ap_cost=meta["ap_cost"],
-                open_weekdays=tuple(meta["open_weekdays"])
-                if meta["open_weekdays"] is not None
-                else None,
-                composite=meta.get("composite", 0.0),
-            )
-            for meta in raw.get("stages", [])
-        },
-        recipes=tuple(
+            for entry in raw.get("demands", {}).get(char_id, [])
+        )
+        for char_id in raw.get("demands", {})
+    }
+    drops = tuple(
+        DropEntry(
+            stage_id=drop["stage_id"],
+            item_id=drop["item_id"],
+            expected_per_run=drop["expected_per_run"],
+            start_ms=drop["start_ms"],
+            end_ms=drop["end_ms"],
+        )
+        for drop in raw.get("drops", [])
+        if not drop["stage_id"].endswith(_EXCLUDED_STAGE_ID_SUFFIXES)
+    )
+    stages = {
+        meta["stage_id"]: StageMeta(
+            stage_id=meta["stage_id"],
+            stage_code=meta["stage_code"],
+            ap_cost=meta["ap_cost"],
+            open_weekdays=tuple(meta["open_weekdays"])
+            if meta["open_weekdays"] is not None
+            else None,
+            composite=meta.get("composite", 0.0),
+        )
+        for meta in raw.get("stages", [])
+    }
+    recipes = _with_local_recipes(
+        tuple(
             Recipe(
                 result_item_id=recipe["result"],
                 ingredients=recipe["ingredients"],
             )
             for recipe in raw.get("recipes", [])
-        ),
-        material_class=dict(raw.get("material_class", {})),
+        )
+    )
+    return CultivateDataSet(
+        demands=demands,
+        drops=drops,
+        stages=stages,
+        recipes=recipes,
+        material_class=build_material_class(demands, drops, stages, recipes),
         fixed_source_stages=dict(raw.get("fixed_source_stages", {})),
         item_value=dict(raw.get("item_value", {})),
         data_version=raw.get("data_version", ""),
@@ -673,11 +738,43 @@ async def download_dataset(
     )
 
 
+def _max_cost_level(costs: Any, *, start: int) -> int:
+    """消耗档位列表里"非空消耗的最高档"：可达档位上限（决策 40）。
+
+    与 parse_demand_table 同判据（非空消耗才成档），保证选择器给出的档位
+    一定能在需求层展开；全空/字段缺失返回 0（该维度无可达档位）。
+    """
+
+    if not isinstance(costs, list):
+        return 0
+    reachable = 0
+    for level, cost in enumerate(costs, start=start):
+        items = _positive_items(
+            {
+                item.get("id"): item.get("count")
+                for item in cost or []
+                if isinstance(item, dict)
+            }
+            if isinstance(cost, list)
+            else cost
+        )
+        if items:
+            reachable = max(reachable, level)
+    return reachable
+
+
 def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """解析干员选择器目录：id/名称/稀有度/职业（一图流全量表，决策 11）。
+    """解析干员选择器目录：id/名称/稀有度/职业 + 技能/模组名称（决策 11/38）。
 
     只取展示字段，不进内核契约（CultivateDataSet 保持中性领域词汇）；
+    技能/模组名称供目标编辑行展示（一图流原表自带，R4 起随目录透传）；
     排序为稀有度降序、名称升序。
+
+    同时给出各维度可达档位上限（决策 40）：``maxElite`` 为该干员表中非空
+    消耗的最高精英化档（1/2/3★ 与上游缺数据者恒 0，另用 ``dataMissing``
+    区分"本就没有精英化"与"上游数据缺失"）；``maxSkillLevel`` 为普通技能等级
+    上限；``skills``/``modules`` 每个选项
+    带 ``maxLevel``，无可达档位的项不进入目录——选择器不给出刷不到的档位。
     """
 
     catalog: list[dict[str, Any]] = []
@@ -688,17 +785,73 @@ def parse_operator_catalog(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not char_id or not isinstance(name, str) or not name:
             continue
         rarity = entry.get("rarity")
+        rarity = rarity if isinstance(rarity, int) else 0
         profession = entry.get("profession")
+        max_elite = _max_cost_level(entry.get("elite"), start=0)
+        skill_costs = entry.get("allSkill")
+        max_skill_level = _max_cost_level(
+            skill_costs[:6] if isinstance(skill_costs, list) else [], start=2
+        )
+        skills: list[dict[str, Any]] = []
+        # 培养任务按技能序号指定专精，过滤无专精消耗的技能时保留原始序号。
+        for skill_index, skill in enumerate(entry.get("skills") or [], start=1):
+            if (
+                not isinstance(skill, dict)
+                or not skill.get("skillId")
+                or not skill.get("skillName")
+            ):
+                continue
+            max_level = _max_cost_level(skill.get("skillLevelUpCost"), start=1)
+            if max_level <= 0:
+                continue
+            skills.append(
+                {
+                    "value": str(skill["skillId"]),
+                    "label": str(skill["skillName"]),
+                    "maxLevel": max_level,
+                    "skillIndex": skill_index,
+                }
+            )
+        modules: list[dict[str, Any]] = []
+        for equip in entry.get("equip") or []:
+            if (
+                not isinstance(equip, dict)
+                or not equip.get("uniEquipId")
+                or not equip.get("uniEquipName")
+            ):
+                continue
+            max_level = _max_cost_level(equip.get("itemCost"), start=1)
+            if max_level <= 0:
+                continue
+            modules.append(
+                {
+                    "value": str(equip["uniEquipId"]),
+                    "label": (
+                        f"{equip['uniEquipName']}（{equip['typeName2']}）"
+                        if equip.get("typeName2")
+                        else str(equip["uniEquipName"])
+                    ),
+                    "maxLevel": max_level,
+                }
+            )
         catalog.append(
             {
                 "value": char_id,
                 "label": name,
-                "rarity": rarity if isinstance(rarity, int) else 0,
+                "rarity": rarity,
                 "profession": profession if isinstance(profession, str) else "",
+                "maxElite": max_elite,
+                "maxSkillLevel": max_skill_level,
+                "dataMissing": max_elite == 0 and rarity >= 4,
+                "skills": skills,
+                "modules": modules,
             }
         )
     catalog.sort(key=lambda item: (-item["rarity"], item["label"]))
     return catalog
+
+
+_operator_catalog_tasks: dict[Path, asyncio.Task[list[dict[str, Any]]]] = {}
 
 
 async def load_operator_catalog(
@@ -706,18 +859,73 @@ async def load_operator_catalog(
     proxy: httpx.Proxy | str | None = None,
     *,
     timeout: float = 30.0,
+    max_age_hours: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """加载干员选择器目录：快照直读，缺失则拉取需求表并并回快照。
+    """加载干员目录：独立缓存一小时，过期或缺失时拉取需求表。
 
-    目录存在快照的 ``operators`` 键，与数据集共用保鲜机制；数据集刷新
-    （write_snapshot 重写快照）会丢弃该键，下次调用自动重拉自愈。拉取
-    失败抛 YituliuDataError，由调用方兜底。
+    目录与材料数据共用快照文件，各自记录更新时间。刷新失败时回退兼容
+    目录且不延长有效期；没有兼容目录时抛 YituliuDataError。在途请求共享
+    本轮结果，一个等待者取消不影响其他等待者。
     """
+
+    task = _operator_catalog_tasks.get(cache_dir)
+    if task is None:
+        task = asyncio.create_task(
+            _load_operator_catalog(
+                cache_dir=cache_dir,
+                proxy=proxy,
+                timeout=timeout,
+                max_age_hours=max_age_hours,
+            )
+        )
+        _operator_catalog_tasks[cache_dir] = task
+
+        def finish(completed: asyncio.Task[list[dict[str, Any]]]) -> None:
+            _operator_catalog_tasks.pop(cache_dir, None)
+            # 等待者全部取消时仍回收异常，避免后台任务留下未读取异常。
+            if not completed.cancelled():
+                completed.exception()
+
+        task.add_done_callback(finish)
+    return await asyncio.shield(task)
+
+
+async def _load_operator_catalog(
+    *,
+    cache_dir: Path,
+    proxy: httpx.Proxy | str | None,
+    timeout: float,
+    max_age_hours: float,
+) -> list[dict[str, Any]]:
+    """执行本轮目录加载，缓存判断、下载和写回由所有等待者共享。"""
 
     snapshot = read_snapshot(cache_dir)
     operators = snapshot.get("operators") if isinstance(snapshot, dict) else None
-    if isinstance(operators, list) and operators:
+    has_catalog = (
+        isinstance(operators, list)
+        and bool(operators)
+        and isinstance(operators[0], dict)
+        and "skills" in operators[0]
+        and "maxElite" in operators[0]
+        and "maxSkillLevel" in operators[0]
+        and all(
+            "skillIndex" in skill
+            for operator in operators
+            for skill in operator.get("skills", [])
+        )
+    )
+    if (
+        has_catalog
+        and snapshot is not None
+        and _is_fresh(
+            snapshot=snapshot,
+            max_age_hours=max_age_hours,
+            now=time.time(),
+            timestamp_key="operators_saved_at",
+        )
+    ):
         return operators
+    # 旧目录缺少维度或可达上限时重拉，避免新目标因缓存缺字段而不可选。
 
     try:
         async with httpx.AsyncClient(
@@ -726,19 +934,26 @@ async def load_operator_catalog(
             response = await client.get(_DEMAND_URL)
             response.raise_for_status()
             raw = response.json()
+        if not isinstance(raw, Mapping):
+            raise YituliuDataError("干员目录数据格式异常（根不是对象）")
+        catalog = parse_operator_catalog(raw)
+        if not catalog:
+            raise YituliuDataError("干员目录数据为空")
     except Exception as e:
+        if has_catalog:
+            logger.warning(f"干员目录刷新失败，使用旧缓存: {e}")
+            return operators
         raise YituliuDataError(f"干员目录拉取失败: {e}") from e
-    if not isinstance(raw, Mapping):
-        raise YituliuDataError("干员目录数据格式异常（根不是对象）")
 
-    catalog = parse_operator_catalog(raw)
+    # 下载期间材料数据可能已刷新，写回前重读，避免覆盖新数据。
+    snapshot = read_snapshot(cache_dir)
     payload = snapshot if isinstance(snapshot, dict) else {}
     payload["operators"] = catalog
-    payload.setdefault("saved_at", time.time())
+    payload["operators_saved_at"] = time.time()
     path = snapshot_path(cache_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        write_file(path, payload)
     except OSError:
         pass  # 目录只是缓存，写失败不影响本次返回
     return catalog
@@ -763,23 +978,32 @@ def read_snapshot(cache_dir: Path) -> dict[str, Any] | None:
 
 
 def write_snapshot(cache_dir: Path, dataset: CultivateDataSet) -> None:
-    """写入快照；失败不抛出（快照只是缓存，写失败不影响本次结果）。"""
+    """写入材料快照并保留目录缓存；写失败不影响本次结果。"""
 
     path = snapshot_path(cache_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "saved_at": time.time(),
-            "dataset": dataset_to_json(dataset),
-        }
-        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        snapshot = read_snapshot(cache_dir)
+        payload = snapshot if isinstance(snapshot, dict) else {}
+        payload["saved_at"] = time.time()
+        payload["dataset"] = dataset_to_json(dataset)
+        write_file(path, payload)
     except OSError:
         pass
 
 
-def _is_fresh(snapshot: Mapping[str, Any], max_age_hours: float, now: float) -> bool:
-    saved_at = snapshot.get("saved_at")
-    return isinstance(saved_at, (int, float)) and now - saved_at < max_age_hours * 3600
+def _is_fresh(
+    snapshot: Mapping[str, Any],
+    max_age_hours: float,
+    now: float,
+    *,
+    timestamp_key: str = "saved_at",
+) -> bool:
+    saved_at = snapshot.get(timestamp_key)
+    return (
+        isinstance(saved_at, (int, float))
+        and 0 <= now - saved_at < max_age_hours * 3600
+    )
 
 
 async def load_dataset(
@@ -789,7 +1013,7 @@ async def load_dataset(
     max_age_hours: float = 24.0,
     now: float | None = None,
 ) -> CultivateDataSet:
-    """加载数据集：新鲜快照直读，过期/缺失则下载，失败回退旧快照。
+    """加载数据集：新鲜快照直读，过期/缺失则下载，失败仅回退兼容快照。
 
     Args:
         cache_dir: 快照缓存目录（MAS 配置目录）。
@@ -801,24 +1025,29 @@ async def load_dataset(
         内核契约数据集。
 
     Raises:
-        YituliuDataError: 下载失败且没有可回退的快照。
+        YituliuDataError: 下载失败且没有兼容的快照可回退。
     """
 
     current = time.time() if now is None else now
     snapshot = read_snapshot(cache_dir)
-    if snapshot is not None and _is_fresh(snapshot, max_age_hours, current):
-        raw = snapshot.get("dataset")
-        if isinstance(raw, Mapping):
-            try:
-                return dataset_from_json(raw)
-            except (KeyError, TypeError, ValueError):
-                pass  # 快照结构损坏：当作无快照处理，走下载路径
+    raw = snapshot.get("dataset") if snapshot is not None else None
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 2:
+        raw = None
+    if (
+        snapshot is not None
+        and raw is not None
+        and _is_fresh(snapshot, max_age_hours, current)
+    ):
+        try:
+            return dataset_from_json(raw)
+        except (KeyError, TypeError, ValueError):
+            pass  # 快照结构损坏：当作无快照处理，走下载路径
     try:
         dataset = await download_dataset(proxy)
     except Exception as e:
-        if snapshot is not None and isinstance(snapshot.get("dataset"), Mapping):
+        if raw is not None:
             try:
-                return dataset_from_json(snapshot["dataset"])
+                return dataset_from_json(raw)
             except (KeyError, TypeError, ValueError):
                 pass  # 回退快照同样损坏：只能报错
         raise YituliuDataError(f"一图流数据不可用且无快照可回退: {e}") from e

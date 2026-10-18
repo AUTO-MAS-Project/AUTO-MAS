@@ -47,10 +47,20 @@ SerialSource = Literal["verified", "recovered", "formula"]
 #: 只收 ``device`` 状态——``offline`` / ``unauthorized`` 的连不上，认了也没用。
 _DEVICE_LINE = re.compile(r"^(\S+)\s+device\s*$")
 
+#: 雷电实例在 ``adb devices`` 里只会是 ``emulator-NNNN``：adb 自己扫回环上的模拟器端口
+#: 认出来的。``host:port`` 形态的是别人 ``adb connect`` 进来的设备——MuMu 的
+#: ``127.0.0.1:16384`` 就是——无论如何都不可能是雷电的实例。
+_LD_SERIAL = re.compile(r"^emulator-\d+$")
+
 
 def candidate_serial(native_index: str | int) -> str:
     """按雷电的约定推一个候选序列号。"""
     return f"emulator-{5554 + int(native_index) * 2}"
+
+
+def looks_like_ld_serial(serial: str) -> bool:
+    """这个序列号有没有可能是一台雷电实例。"""
+    return bool(_LD_SERIAL.match(serial))
 
 
 def parse_adb_devices(output: str) -> list[str]:
@@ -83,7 +93,10 @@ def resolve_serial(
 
     1. **核对通过**：公式推出来的那个就在 ``adb devices`` 里 —— 绝大多数情况走这条
     2. **认领回来**：公式那个不在，但排掉其他实例各自的候选之后，正好只剩一个没人认领的
-       设备 —— 那它只能是我们要找的。这条是为「两条安装撞号」和「端口被占走」准备的
+       **雷电形态**（``emulator-NNNN``）设备 —— 那它只能是我们要找的。这条是为
+       「两条安装撞号」和「端口被占走」准备的。``host:port`` 形态的一概不认领：
+       那是 ``adb connect`` 进来的别家设备，2026-09-18 生产上 MuMu 的 ``127.0.0.1:16384``
+       就这样被认给了一台正在冷启动的雷电实例，随后被判外来、地址置空，MAA 直接连接失败
     3. **只能按公式**：设备列表是空的（adb 没起来 / 实例没开完），或者剩下不止一个、
        无法确定是哪个 —— 这时**照样返回公式值，但标明没核过**，不去猜
 
@@ -100,7 +113,11 @@ def resolve_serial(
 
     # 其他实例各自的候选先排掉，剩下的才是可能属于我们的
     claimed = {candidate_serial(other) for other in (other_indexes or [])}
-    unclaimed = [serial for serial in serials if serial not in claimed]
+    unclaimed = [
+        serial
+        for serial in serials
+        if serial not in claimed and looks_like_ld_serial(serial)
+    ]
 
     if len(unclaimed) == 1:
         return SerialResolution(unclaimed[0], "recovered")

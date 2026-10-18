@@ -13,16 +13,18 @@ MXU 可对接任意符合 PI V2 的 Maa 项目；本仓 `MaaEnd` 类型指「按
 
 **MAS 不实现识别节点，也不打包 MXU 应用**——只负责进程、目录、`mxu-*.json` 读写、`runtime_bridge`。任务逻辑在上游资源与 agent 中。
 
-## 与 MFAA 线（M9A）的分界（选型关键）
+## 与 MFAA 线的分界（选型关键）
 
-| 维度 | MXU 线（MaaEnd） | MFAA 线（M9A） |
+MFAA 线目前没有在役专项：M9A 原是这条线的例子，已并入 MFW，成为 MaaFW 的特调类型，不再是专项。下表右列是这条线的设计口径。
+
+| 维度 | MXU 线（MaaEnd） | MFAA 线 |
 | --- | --- | --- |
 | 外置 GUI | MXU（Tauri + React，PI V2） | MFAAvalonia（Avalonia，C#） |
 | 自动跑 | 在 `mxu-*.json` 写 autoRun 类字段再启 exe；可对照壳 CLI 决定是否拼启动参数 | 写任务 JSON 后启 exe，**不依赖 CLI 传队列** |
 | 用户改配置 | **ScriptConfig 遮罩**拉起本体保存复杂项，其余 Section 写用户目录 / `runtime_bridge` | 仅 Vue + 后端写配置，**不调 Avalonia 壳做配置会话** |
 | 用户页 | 遮罩 + 多 Section | 队列 + draggable，无典型遮罩 |
 
-**新专项若外置 GUI 是 MFAAvalonia 而非 MXU，别套 MXU 遮罩流程**，改看 [examples-m9a.md](./examples-m9a.md)。
+**新专项若外置 GUI 是 MFAAvalonia 而非 MXU，别套 MXU 遮罩流程**；带 `interface.json` 的项目先用通用 MaaFW 类型，见 [examples-m9a.md](./examples-m9a.md)。
 
 ## 落点线索（搜代码用）
 
@@ -36,6 +38,16 @@ MXU 可对接任意符合 PI V2 的 Maa 项目；本仓 `MaaEnd` 类型指「按
 - **上游发版后核对 `mxu-*.json` 字段与 `__MXU_*` 任务名是否变更**——协议漂移不会报错，会静默跑错任务。
 - 配置遮罩语义与在 MXU 里手动改 `config/` 目的一致、入口不同；不要两边各写一份逻辑。
 - 用户级配置与脚本级 `Default/ConfigFile` 的来源语义要与 MXU `config/` 对齐。
+
+## 配置恢复接入要求
+
+已接入通用配置恢复（mas/native 双池 + 快速配置侧车 + viewOnly 查看会话），机制见 [config-restore.md](config-restore.md)；后续改动**必须符合**：
+
+- **三态池**：脚本态=共享 `Default`、用户态=独立目录、**直控无 MAS 配置目录**——mas 池对直控用户为空（列表空、恢复报错），native 池不受影响。
+- **会话包络与运行下发同 owner**：`ScriptConfigTask` 的下发源/回写目标用 `maaend_mas_config_dir`（owner 制），session 前归档该目录；运行前归档在 AutoProxy `set_maaend`（直控跳过）。
+- **快速配置覆盖层侧车**：任务开关/理智任务选项/送货/采集等字段存在 UserData.Task、运行时才覆盖进 mxu 配置——mas 池用侧车承载并回填表单（对齐 ok-ww）。
+- **直控会话的保留判定**：manager `_keep_script_config_changes` 必须排除 viewOnly（查看结束还原任务前快照，不保留 GUI 写回）。
+- **预览词表固化、零本体运行时依赖**：任务名/基质刷取模式/地区等标签取自上游源码 zh_cn 词表摘录（`locales/interface/zh_cn.json`、`tasks/*/*.json` 的 option cases），固化进 MAS 侧；**不要读本体资源或调本体加载器做预览**。任务名缺失回退 `customName` → 原名；目标武器名数量大且随版本漂移，展示已选数量。
 
 ## 同框架新专项
 

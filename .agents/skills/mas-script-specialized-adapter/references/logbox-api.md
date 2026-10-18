@@ -51,6 +51,12 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text, ts)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
+  节点详情上调度台有两条通用通道，都不在 sink 里做：① 运行期——manager 报告聚合后调
+  `app/tools/push_log.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
+  把报告正文整块镜像进调度台日志；② 完成后——任务完成事件的结果文本由 task_manager
+  用 `build_task_result_text` 组装（前端完成时会用这段文本整体替换日志面板，
+  **这是任务结束后的最终展示面**）。两者与推送报告同一份 `build_user_result_text`
+  渲染、同一套 PushLogMode 与「失败」过滤，未配置推送的用户也能看到同样详情。
 - **宿主 = 用户脚本子进程**（`from app.log_box import log_box`）：不注入 sink，
   box 把处理结果渲染为 `@@LOGBOX@@` 受控 stdout 标记回传，MAS 侧
   `check_log` 嗅探后写入 `cur_user_item.push_log`。
@@ -69,10 +75,12 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 ```python
 col = log_box.get_collect(
-    paths=["workdir/logs/ok-script.log"],  # str | Path | 可迭代；None → 环境变量 MAS_SCRIPT_LOG_PATH
-    sink=None,                             # MAS 宿主注入 push_log 回调；缺省走 @@LOGBOX@@ 回传
-    start_from_end=True,                   # 从文件末尾起始采集，仅采会话内新增
-    rotated_name=None,                     # 轮转文件名 strftime 模板（见下节「日志轮转补偿」）
+    paths=[
+        "workdir/logs/ok-script.log"
+    ],  # str | Path | 可迭代；None → 环境变量 MAS_SCRIPT_LOG_PATH
+    sink=None,  # MAS 宿主注入 push_log 回调；缺省走 @@LOGBOX@@ 回传
+    start_from_end=True,  # 从文件末尾起始采集，仅采会话内新增
+    rotated_name=None,  # 轮转文件名 strftime 模板（见下节「日志轮转补偿」）
 )
 ```
 
@@ -245,6 +253,7 @@ def fn_suffix(text: str, args: list[Arg]) -> str:
     """suffix(str) — 追加后缀"""
     return text + (str(args[0]) if args else "")
 
+
 FUNCTIONS["suffix"] = fn_suffix  # 注册后表达式可用 .suffix(" 剩余电量")
 ```
 
@@ -269,12 +278,12 @@ from app.log_box import log_box, LogType
 
 self.log_collect = log_box.get_collect(
     paths=[self.script_log_path],  # 相对 RootPath 派生，不硬编码绝对路径
-    sink=self._append_push_log,    # 注入到 cur_user_item.push_log
+    sink=self._append_push_log,  # 注入到 cur_user_item.push_log
     start_from_end=True,
-    rotated_name=...,              # 仅无 inode 文件系统生效（日期式滚动唯一兜底）
+    rotated_name=...,  # 仅无 inode 文件系统生效（日期式滚动唯一兜底）
 )
-self.log_collect.open(translator.translate)          # 前置翻译
-for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态标记规则）
+self.log_collect.open(translator.translate)  # 前置翻译
+for match_re, expr, log_type in PUSH_RULES:  # 喂规则参数（状态标记规则）
     self.log_collect.collect(match_re, expr, log_type)
 # 结束时机（如进程关闭判定 / final_task）：col.close(resolve)
 ```
@@ -288,7 +297,9 @@ for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态�
 
 ```python
 import re
+
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
+
 
 def resolve(results):
     """输入/输出均为 (log_type, text, ts) 元组，日志类型与时间戳随元组一并保留"""
@@ -324,8 +335,8 @@ push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type,
   紧跟该用户的节点详情，多账号任务时各用户节点归属清晰；「失败」类型条目仅在
   任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。节点详情按用户级
   `push_log_mode`（`Notify.PushLogMode`）三态呈现：关闭 = 不输出；逐条 = 逐条带
-  采集时间戳（HH:MM）前缀；汇总 = 按（账号, 状态）聚合为一行；未设置模式的用户
-  （如通用脚本）保持逐条原样输出。
+  采集时间戳（HH:MM）前缀；汇总 = 按（账号, 状态）聚合为一行；未设置
+  `push_log_mode` 属性的对象按逐条输出（`UserItem` 字段默认「汇总」）。
 - 注入端点 = **专项 `manager.final_task` 汇总**：用它替代原 result 拼接，产物写入
   报告的 `result` 字段，随后 `push_notification("代理结果")` 交
   `app/task/notify_core.py` 的 `push_proxy_result` 推送。现行参考实现：okww 与
@@ -346,9 +357,9 @@ user_result_text = build_user_result_text(self.script_info.user_list, has_uncomp
 from app.log_box import log_box, LogType
 
 col = log_box.get_collect(paths=["workdir/logs/xxx.log"])
-col.open()                        # 记录起始位置（可选，close 收尾会自动兜底）
+col.open()  # 记录起始位置（可选，close 收尾会自动兜底）
 col.collect(r"DailyTask:open_daily", '"完成"')
-col.close()   # 脚本正常退出时 atexit 也会自动收尾
+col.close()  # 脚本正常退出时 atexit 也会自动收尾
 ```
 
 接通后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`

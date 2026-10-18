@@ -43,11 +43,14 @@
       :activity-modules="homeActivityModules"
       :scroll-hint-hidden="scrollHintHidden"
       :carousel-autoplay="carouselAutoplay"
+      :activity-notes-visible="activityNotesVisible"
+      :hidden-activity-notes="hiddenActivityNotes"
       @reorder="reorderHomeModules"
       @reorder-activities="reorderActivityModules"
       @visibility-change="setHomeModuleShown"
       @scroll-hint-change="setScrollHintHidden"
       @autoplay-change="setCarouselAutoplay"
+      @activity-note-visibility-change="setActivityNoteShown"
     />
 
     <div v-if="layoutReady" class="home-content">
@@ -72,7 +75,13 @@
           <HomeQuickActionsCard v-else-if="moduleKey === 'quick'" />
 
           <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
-            <SatelliteAnimation v-show="!performanceStore.isBackgrounded" />
+            <template v-if="homeSatelliteStore.initialized">
+              <SatelliteClassic
+                v-if="homeSatelliteStore.style === 'classic'"
+                v-show="!performanceStore.isBackgrounded"
+              />
+              <SatelliteAnimation v-else v-show="!performanceStore.isBackgrounded" />
+            </template>
           </section>
 
           <HomeProxyCard
@@ -81,92 +90,21 @@
             :proxy-data="proxyData"
           />
 
-          <!-- 各游戏活动卡收进一个 banner 轮播：顶部横幅兼作切换器，下方只渲染当前游戏 -->
+          <!-- 各游戏共用主视觉与活动侧栏，卡池、资源关卡等补充内容按需放在下方。 -->
           <HomeActivityCarousel
             v-else-if="moduleKey === 'activities'"
-            :items="activityBanners"
+            :items="activities.panels.value"
             :autoplay="carouselAutoplay"
+            @refresh="activities.refresh"
+            @select="activities.select"
+            @action="activities.action"
+            @dismiss="clearOverviewError"
           >
-            <template #detail="{ moduleKey: gameKey }">
-              <HomeEndfieldOverview
-                v-if="gameKey === 'endfield'"
-                :loading="endfieldSource.loading.value"
-                :overview="endfieldSource.overview.value"
-                @refresh="endfieldSource.refresh"
-              />
-
-              <HomeArknightsOverview
-                v-else-if="gameKey === 'arknights'"
-                :loading="loading"
-                :error="error"
-                :activity-data="activityData"
-                :resource-data="resourceData"
-                @refresh="fetchOverviewData"
-                @clear-error="clearOverviewError"
-              />
-
-              <HomeSraActivityOverview
-                v-else-if="gameKey === 'starrail'"
-                :title="t('home.module.starrail')"
-                :accent="getActivityAccent('starrail')"
-                :empty-text="t('home.empty.starrail')"
-                :loading="starRailSource.loading.value"
-                :overview="starRailSource.overview.value"
-                @refresh="starRailSource.refresh"
-              />
-
-              <HomeSraActivityOverview
-                v-else-if="gameKey === 'genshin'"
-                :title="t('home.module.genshin')"
-                :accent="getActivityAccent('genshin')"
-                :empty-text="t('home.empty.genshin')"
-                :loading="genshinSource.loading.value"
-                :overview="genshinSource.overview.value"
-                @refresh="genshinSource.refresh"
-              />
-
-              <HomeSraActivityOverview
-                v-else-if="gameKey === 'zenless'"
-                :title="t('home.module.zenless')"
-                :accent="getActivityAccent('zenless')"
-                :empty-text="t('home.empty.zenless')"
-                :loading="zenlessSource.loading.value"
-                :overview="zenlessSource.overview.value"
-                @refresh="zenlessSource.refresh"
-              />
-
-              <HomeSraActivityOverview
-                v-else-if="gameKey === 'wutheringwaves'"
-                :title="t('home.module.wutheringwaves')"
-                :accent="getActivityAccent('wutheringwaves')"
-                :empty-text="t('home.empty.wutheringwaves')"
-                :loading="wutheringWavesSource.loading.value"
-                :overview="wutheringWavesSource.overview.value"
-                @refresh="wutheringWavesSource.refresh"
-              />
-
-              <HomeSraActivityOverview
-                v-else-if="gameKey === 'nte'"
-                :title="t('home.module.nte')"
-                :accent="getActivityAccent('nte')"
-                :empty-text="t('home.empty.nte')"
-                :loading="nevernessToEvernessSource.loading.value"
-                :overview="nevernessToEvernessSource.overview.value"
-                @refresh="nevernessToEvernessSource.refresh"
-              />
-
-              <HomeReverse1999Overview
-                v-else-if="gameKey === 'reverse1999'"
-                :loading="reverse1999Source.loading.value"
-                :overview="reverse1999Source.overview.value"
-              />
-
-              <HomeBlueArchiveOverview
-                v-else-if="gameKey === 'bluearchive'"
-                :servers="blueArchiveSource.servers.value"
-                :selected="blueArchiveSource.selectedServer.value"
-                :loading-by-server="blueArchiveSource.loadingByServer"
-                @select="blueArchiveSource.selectServer"
+            <template #community="{ moduleKey: gameKey }">
+              <!-- 社区信息紧跟游戏切换条，两者都不吸顶，跟着页面一起滚 -->
+              <HomeActivityNotes
+                v-if="activityNotesVisible && isActivityNoteVisible(gameKey)"
+                :active-key="gameKey"
               />
             </template>
           </HomeActivityCarousel>
@@ -185,37 +123,23 @@ import { computed, onMounted, watch } from 'vue'
 import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
+import SatelliteClassic from '@/components/SatelliteClassic.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
-import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
-import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
-import HomeBlueArchiveOverview from '@/views/home/components/HomeBlueArchiveOverview.vue'
+import HomeActivityNotes from '@/views/home/components/HomeActivityNotes.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
-import HomeEndfieldOverview from '@/views/home/components/HomeEndfieldOverview.vue'
 import HomeLayoutDrawer from '@/views/home/components/HomeLayoutDrawer.vue'
 import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
-import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
-import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
-import {
-  arknightsActivityBanner,
-  endfieldActivityBanner,
-  getActivityAccent,
-  sraActivityBanner,
-} from '@/views/home/activityBanner'
+import { useHomeActivities } from '@/views/home/useHomeActivities'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
-import { useSraActivitySource } from '@/views/home/useSraActivitySource'
-import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
-import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
-import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
-import { createEmptySraActivityOverview } from '@/types/home'
-import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
 
 defineOptions({
   name: 'HomeView',
@@ -223,6 +147,9 @@ defineOptions({
 
 const { isBootstrapping } = useAppInitialization()
 const performanceStore = usePerformanceStore()
+// 卫星样式读到之前先不出卫星，免得先按默认建一遍再换成用户选的那种
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
 const {
   layoutReady,
   layoutDrawerOpen,
@@ -232,12 +159,17 @@ const {
   visibleActivityKeys,
   scrollHintHidden,
   carouselAutoplay,
+  activityNotesVisible,
+  hiddenActivityNotes,
   loadHomeLayout,
+  loadManagedActivityModules,
   reorderHomeModules,
   reorderActivityModules,
   setHomeModuleShown,
   setScrollHintHidden,
   setCarouselAutoplay,
+  setActivityNoteShown,
+  isActivityNoteVisible,
   isHomeModuleVisible,
 } = useHomeLayout()
 const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =
@@ -261,7 +193,7 @@ const {
   loading,
   error,
   hasSnapshot,
-  activityData,
+  /** 今日开放的资源收集关卡，给明日方舟卡片用 */
   resourceData,
   proxyData,
   clearOverviewError,
@@ -270,100 +202,15 @@ const {
 
 const { t } = useI18n()
 
-// 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
-const starRailSource = useSraActivitySource('sr', t('home.module.starrail'))
-const genshinSource = useSraActivitySource('ys', t('home.module.genshin'))
-const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
-const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
-const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
-const reverse1999Source = useReverse1999ActivitySource()
-const blueArchiveSource = useBlueArchiveActivitySource()
-const endfieldSource = useEndfieldActivitySource()
+const activities = useHomeActivities({
+  visibleKeys: visibleActivityKeys,
+  resources: resourceData,
+  resourceError: error,
+})
 
-const sraSourceFor = (key: HomeModuleKey) => {
-  switch (key) {
-    case 'starrail':
-      return starRailSource
-    case 'genshin':
-      return genshinSource
-    case 'zenless':
-      return zenlessSource
-    case 'wutheringwaves':
-      return wutheringWavesSource
-    case 'nte':
-      return nevernessToEvernessSource
-    case 'reverse1999':
-      return reverse1999Source
-    default:
-      return null
-  }
-}
-
-// 轮播只展示没被单独关掉的游戏；顺序跟着「编辑布局」里的排序走
-const activityBanners = computed<ActivityBannerItem[]>(() =>
-  visibleActivityKeys.value.map(key => {
-    const base = {
-      key,
-      title: t(`home.game.${key}`),
-      accent: getActivityAccent(key),
-    }
-
-    if (key === 'endfield') {
-      return {
-        ...base,
-        loading: endfieldSource.loading.value,
-        ...endfieldActivityBanner(endfieldSource.overview.value),
-      }
-    }
-
-    if (key === 'arknights') {
-      return {
-        ...base,
-        loading: loading.value,
-        ...arknightsActivityBanner(activityData.value),
-      }
-    }
-
-    if (key === 'bluearchive') {
-      const selectedServer = blueArchiveSource.servers.value.find(
-        server => server.key === blueArchiveSource.selectedServer.value
-      )
-      return {
-        ...base,
-        loading: blueArchiveSource.loadingByServer[blueArchiveSource.selectedServer.value],
-        ...sraActivityBanner(
-          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
-        ),
-        cover:
-          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
-            .cover || '',
-      }
-    }
-
-    const source = sraSourceFor(key)
-    return {
-      ...base,
-      loading: source?.loading.value ?? false,
-      ...sraActivityBanner(source?.overview.value ?? createEmptySraActivityOverview()),
-    }
-  })
-)
-
-// 只有模块可见时才拉活动数据；布局要等 loadHomeLayout 读回来才知道哪些模块被隐藏，
-// 所以以 layoutReady 为闸；隐藏时停掉重试定时器，卸载时由各源的 onScopeDispose 收尾
-const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: () => void }]> = [
-  ['starrail', starRailSource],
-  ['genshin', genshinSource],
-  ['zenless', zenlessSource],
-  ['wutheringwaves', wutheringWavesSource],
-  ['nte', nevernessToEvernessSource],
-  ['reverse1999', reverse1999Source],
-  ['bluearchive', blueArchiveSource],
-  ['endfield', endfieldSource],
-]
-for (const [moduleKey, source] of activitySourcesByModule) {
+// 布局加载后只启动可见模块；隐藏或卸载时由各数据源停止重试与请求。
+for (const [moduleKey, source] of activities.sources) {
   watch(
-    // 各游戏活动源现在都收在「活动轮播」模块里：整个轮播被隐藏时同样不拉数据
     () => layoutReady.value && isHomeModuleVisible('activities') && isHomeModuleVisible(moduleKey),
     visible => (visible ? source.start() : source.stop()),
     { immediate: true }
@@ -386,6 +233,7 @@ const greeting = computed(() => {
 })
 
 const loadHomeData = async () => {
+  void loadManagedActivityModules()
   await restoreSelectedHomeTaskIds()
   fetchSchedulerTaskOptions({ quiet: true })
   fetchOverviewData()
@@ -419,7 +267,7 @@ onMounted(async () => {
 
 <style scoped>
 .home-page {
-  max-width: 1480px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 

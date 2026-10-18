@@ -27,6 +27,18 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
+import { registerMascotHandlers } from './ipc/mascotHandlers'
+import {
+  createDesktopMascotHost,
+  type DesktopMascotHostPreferences,
+} from './services/desktopMascotHost'
+import { DesktopMascotService } from './services/desktopMascotService'
+import { DesktopMascotMenuService } from './services/desktopMascotMenuService'
+import { createMasDesktopMascotCapabilities } from './services/masDesktopMascotCapabilities'
+import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
+import { getAppearance } from './services/appearanceService'
+import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -34,13 +46,25 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { decideRendererRecovery } from './rendererCrashRecovery'
+import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
+import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { createMaaIssueReport } from './services/maaIssueReportService'
+import {
+  createM9AIssueReport,
+  createMSSIssueReport,
+  createMaaFWIssueReport,
+  listMaaFWIssueReportScripts,
+  maafwIssueReportFileNamePrefix,
+} from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
+import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -199,6 +223,9 @@ let forceQuitInProgress = false
 let quitRequestInFlight = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
+let quitPreparationSequence = 0
+let activeQuitPreparation: number | null = null
+let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let rendererCrashes: number[] = []
@@ -206,7 +233,7 @@ let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
-interface AppConfig {
+interface AppConfig extends DesktopMascotHostPreferences {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -471,6 +498,17 @@ function clearQuitFallback(): void {
   }
 }
 
+function cancelQuitRequest(token?: number): void {
+  if (coordinatedQuit || forceQuitInProgress) return
+  if (token !== undefined && token !== activeQuitPreparation) return
+  clearQuitFallback()
+  activeQuitPreparation = null
+  quitPreparationExpired = false
+  quitRequestInFlight = false
+  relaunchAfterQuit = false
+  showMainWindow()
+}
+
 function finishCoordinatedQuit(): void {
   if (coordinatedQuit) return
   coordinatedQuit = true
@@ -519,14 +557,14 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
       coordinatedQuit,
       forceQuitInProgress,
       quitRequestInFlight,
+      relaunchAfterQuit,
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
-    dialog.showErrorBox(
-      'AUTO-MAS 无法安全退出',
-      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
-    )
-    if ((!mainWindow || mainWindow.isDestroyed()) && app.isReady()) {
+    relaunchAfterQuit = retryableState.relaunchAfterQuit
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showMainWindow()
+    } else if (app.isReady()) {
       try {
         createWindow()
       } catch (windowError) {
@@ -535,6 +573,10 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
         logger.error(`强制清理失败后重建窗口失败: ${windowErrorMsg}`)
       }
     }
+    dialog.showErrorBox(
+      'AUTO-MAS 无法安全退出',
+      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
+    )
   }
 }
 
@@ -548,6 +590,9 @@ function requestRendererClose(reason: string): void {
   }
 
   quitRequestInFlight = true
+  // 先让用户看到窗口已经关闭，renderer 保留在后台继续完成后端清理。
+  win.setSkipTaskbar(true)
+  win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
   win.webContents.send('app-close-requested')
   quitFallbackTimer = setTimeout(() => {
@@ -591,18 +636,50 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
+const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
+  patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), patch, defaultConfig)
+}
+const mascotCapabilities = createMasDesktopMascotCapabilities({
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  onPreferencesChanged: () => desktopMascot.syncPreferences(),
+})
+const desktopMascot = createDesktopMascotHost({
+  createRuntime: options => new DesktopMascotService(options),
+  createMenuRuntime: options => new DesktopMascotMenuService(options),
+  capabilities: mascotCapabilities,
+  defaultMenu: DEFAULT_MASCOT_MENU,
+  registerHandlers: mascotCapabilities.register,
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  resolveAssets: ({ desktopMascotId, appearanceId }) =>
+    desktopMascotId
+      ? getMascot(app.getPath('userData'), desktopMascotId)
+      : appearanceId
+        ? getAppearance(app.getPath('userData'), appearanceId)
+        : null,
+})
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
@@ -741,6 +818,7 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
@@ -750,6 +828,8 @@ function createWindow() {
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
+    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
+    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -793,9 +873,11 @@ function createWindow() {
   let restoreToMaximized = Boolean(config.UI.maximized)
   win.on('maximize', () => {
     restoreToMaximized = true
+    win.webContents.send('window-maximized-changed', true)
   })
   win.on('unmaximize', () => {
     restoreToMaximized = false
+    win.webContents.send('window-maximized-changed', false)
   })
   win.on('restore', () => {
     notifyWindowActivity('visible')
@@ -956,6 +1038,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
@@ -1115,6 +1198,166 @@ function createLogWindow(file?: LogWindowFile) {
   })
 }
 
+// ==================== 虚拟显示器询问弹窗 ====================
+// 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
+// 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
+// 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
+// 拆不拆由弹窗自己调后端接口。
+
+interface VirtualDisplayPromptPayload {
+  /** 回来的真实显示设备名 */
+  returned: string[]
+  /** 回来那块屏的工作区，物理像素；后端读不到时为空 */
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
+}
+
+let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+
+const VDD_PROMPT_WIDTH = 460
+const VDD_PROMPT_HEIGHT = 240
+const VDD_PROMPT_MARGIN = 16
+
+function isVirtualDisplayPromptPayload(value: unknown): value is VirtualDisplayPromptPayload {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<VirtualDisplayPromptPayload>
+  if (!Array.isArray(candidate.returned)) return false
+  const monitor = candidate.monitor
+  if (monitor == null) return true
+  return (
+    typeof monitor === 'object' &&
+    ['left', 'top', 'right', 'bottom'].every(
+      key => typeof (monitor as Record<string, unknown>)[key] === 'number'
+    )
+  )
+}
+
+/**
+ * 弹窗该落在哪块屏。
+ * 后端给的矩形是物理像素，Electron 的屏幕坐标是 DIP，Windows 上要先换算再找屏；
+ * 没给矩形就挑一块非主显示器——虚拟屏是在无输出时挂上的，此刻一定是主显示器。
+ */
+function resolveVirtualDisplayPromptDisplay(payload: VirtualDisplayPromptPayload): Display {
+  const rect = payload.monitor
+  if (rect) {
+    const physicalCenter = {
+      x: Math.round((rect.left + rect.right) / 2),
+      y: Math.round((rect.top + rect.bottom) / 2),
+    }
+    const dipCenter =
+      process.platform === 'win32' && typeof screen.screenToDipPoint === 'function'
+        ? screen.screenToDipPoint(physicalCenter)
+        : physicalCenter
+    return screen.getDisplayNearestPoint(dipCenter)
+  }
+  const primary = screen.getPrimaryDisplay()
+  return screen.getAllDisplays().find(display => display.id !== primary.id) ?? primary
+}
+
+function virtualDisplayPromptBounds(display: Display): Rectangle {
+  const area = display.workArea
+  return {
+    x: area.x + area.width - VDD_PROMPT_WIDTH - VDD_PROMPT_MARGIN,
+    y: area.y + area.height - VDD_PROMPT_HEIGHT - VDD_PROMPT_MARGIN,
+    width: VDD_PROMPT_WIDTH,
+    height: VDD_PROMPT_HEIGHT,
+  }
+}
+
+function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
+  virtualDisplayPromptPayload = payload
+  const display = resolveVirtualDisplayPromptDisplay(payload)
+  const bounds = virtualDisplayPromptBounds(display)
+
+  if (virtualDisplayPromptWindow && !virtualDisplayPromptWindow.isDestroyed()) {
+    virtualDisplayPromptWindow.setBounds(bounds)
+    virtualDisplayPromptWindow.webContents.send('vdd-prompt:data', payload)
+    virtualDisplayPromptWindow.showInactive()
+    return
+  }
+
+  logger.info(
+    `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
+  )
+
+  const win = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    title: '虚拟显示器 - AUTO-MAS',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    autoHideMenuBar: true,
+  })
+  virtualDisplayPromptWindow = win
+  win.setMenuBarVisibility(false)
+
+  const hash = '/vdd-prompt'
+  const devServer = process.env.VITE_DEV_SERVER_URL
+  if (devServer) {
+    win.loadURL(`${devServer}#${hash}`)
+  } else {
+    win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'), { hash })
+  }
+
+  win.once('ready-to-show', () => {
+    if (win.isDestroyed()) return
+    // 创建时给的 bounds 可能被 DPI 折算挪动，显示前再摆一次
+    win.setBounds(bounds)
+    // 不抢焦点：正在跑的脚本可能靠键盘操作游戏，焦点一走就打断
+    win.showInactive()
+  })
+
+  win.on('closed', () => {
+    if (virtualDisplayPromptWindow === win) {
+      virtualDisplayPromptWindow = null
+      virtualDisplayPromptPayload = null
+    }
+    logger.info('虚拟显示器询问弹窗已关闭')
+  })
+}
+
+function closeVirtualDisplayPrompt(): void {
+  const win = virtualDisplayPromptWindow
+  virtualDisplayPromptWindow = null
+  virtualDisplayPromptPayload = null
+  if (win && !win.isDestroyed()) {
+    win.close()
+  }
+}
+
+ipcMain.handle('vdd-prompt:show', (_event, payload: unknown) => {
+  if (!isVirtualDisplayPromptPayload(payload)) {
+    logger.warn(`虚拟显示器询问弹窗收到无法识别的数据: ${JSON.stringify(payload)}`)
+    return { success: false, error: 'invalid payload' }
+  }
+  try {
+    showVirtualDisplayPrompt(payload)
+    return { success: true }
+  } catch (error) {
+    logger.error('打开虚拟显示器询问弹窗失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+ipcMain.handle('vdd-prompt:close', () => {
+  closeVirtualDisplayPrompt()
+})
+
+// 弹窗页面挂载后自己来取：主进程在 did-finish-load 时推送会早于 Vue 组件注册监听
+ipcMain.handle('vdd-prompt:get', () => virtualDisplayPromptPayload)
+
 // 日志系统 IPC 处理器
 ipcMain.handle(
   'log:write',
@@ -1171,8 +1414,15 @@ ipcMain.handle('log:export', async () => {
 
     const zipPath = result.filePath
 
-    // 创建 ZIP 文件
+    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
     const zip = new AdmZip()
+    const state: CollectorState = {
+      zip,
+      entries: [],
+      archiveBytes: 0,
+      maxEntryBytes: Number.POSITIVE_INFINITY,
+      maxArchiveBytes: Number.POSITIVE_INFINITY,
+    }
 
     // 读取 debug 目录下的所有文件
     const files = fs.readdirSync(debugDir)
@@ -1187,11 +1437,19 @@ ipcMain.handle('log:export', async () => {
       const stat = fs.statSync(filePath)
 
       if (stat.isFile()) {
-        zip.addLocalFile(filePath)
-        logger.info(`添加文件到压缩包: ${file}`)
-      } else if (stat.isDirectory() && file === 'maaend-login') {
-        zip.addLocalFolder(filePath, 'maaend-login')
-        logger.info('添加 MaaEnd 登录错误截图到压缩包')
+        addDiagnosticFile(state, filePath, file)
+      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
+        addDirectory(state, filePath, file)
+      }
+    }
+
+    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+    const skipped = state.entries.filter(entry => entry.status === 'skipped')
+    for (const entry of state.entries) {
+      if (entry.status === 'skipped') {
+        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+      } else {
+        logger.info(`添加文件到压缩包: ${entry.path}`)
       }
     }
 
@@ -1201,7 +1459,10 @@ ipcMain.handle('log:export', async () => {
 
     return {
       success: true,
-      message: '日志压缩包导出成功',
+      message:
+        skipped.length > 0
+          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+          : '日志压缩包导出成功',
       zipPath: zipPath,
     }
   } catch (error) {
@@ -1213,30 +1474,55 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
+interface IssueReportResult {
+  success: boolean
+  message?: string
+  zipPath?: string
+  error?: string
+}
+
+// scriptId 只有按脚本导出的问题包（MFW）才用，其余导出函数不接这个参数
 function registerIssueReportExporter(
   ipcChannel: string,
   title: string,
-  fileNamePrefix: string,
+  fileNamePrefix: string | ((appRoot: string, scriptId: string) => string),
   create: (
     appRoot: string,
-    zipPath: string
-  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+    zipPath: string,
+    scriptId: string
+  ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
-  ipcMain.handle(ipcChannel, async () => {
+  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
     try {
       if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
+      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
+      const appRoot = getAppRoot()
+      const prefix =
+        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
       const result = await dialog.showSaveDialog(mainWindow, {
-        title,
-        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
+        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
       })
 
       if (result.canceled || !result.filePath) {
         return { success: false, error: '用户取消' }
       }
 
-      return create(getAppRoot(), result.filePath)
+      return await create(appRoot, result.filePath, scriptId)
     } catch (error) {
       logger.error(`${title}失败:`, error)
       return {
@@ -1248,10 +1534,16 @@ function registerIssueReportExporter(
 }
 
 registerIssueReportExporter(
+  'maa:exportIssueReport',
+  '导出 MAA 问题包',
+  'MAA-logs',
+  createMaaIssueReport
+)
+registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
   'MaaEnd-logs',
-  createMaaEndIssueReport
+  (appRoot, zipPath) => createMaaEndIssueReport(appRoot, zipPath, getLocalApiEndpoint())
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
@@ -1271,6 +1563,43 @@ registerIssueReportExporter(
   'ZZZ-OD-logs',
   createZzzOdIssueReport
 )
+registerIssueReportExporter(
+  'whimbox:exportIssueReport',
+  '导出 Whimbox 问题包',
+  'Whimbox-logs',
+  createWhimboxIssueReport
+)
+registerIssueReportExporter(
+  'bettergi:exportIssueReport',
+  '导出 BetterGI 问题包',
+  'BetterGI-logs',
+  createBetterGIIssueReport
+)
+registerIssueReportExporter(
+  'maafw:exportIssueReport',
+  '导出 MFW 问题包',
+  maafwIssueReportFileNamePrefix,
+  createMaaFWIssueReport
+)
+registerIssueReportExporter(
+  'm9a:exportIssueReport',
+  '导出 M9A 问题包',
+  'M9A-logs',
+  createM9AIssueReport
+)
+registerIssueReportExporter(
+  'mss:exportIssueReport',
+  '导出 MSS 问题包',
+  'MSS-logs',
+  createMSSIssueReport
+)
+
+ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+  const types = Array.isArray(configTypes)
+    ? configTypes.filter((type): type is string => typeof type === 'string')
+    : []
+  return listMaaFWIssueReportScripts(getAppRoot(), types)
+})
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined
@@ -1421,6 +1750,39 @@ ipcMain.handle('window-focus', () => {
   }
 })
 
+// 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
+// 只调 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的关机/休眠。
+const POWER_WARNING_TOPMOST_MS = 120000
+let powerWarningTopmostTimer: ReturnType<typeof setTimeout> | undefined
+
+function releasePowerWarningTopmost(): void {
+  if (powerWarningTopmostTimer) {
+    clearTimeout(powerWarningTopmostTimer)
+    powerWarningTopmostTimer = undefined
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(false)
+  }
+}
+
+ipcMain.handle('power-warning:start', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  showMainWindow()
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.moveTop()
+
+  // 渲染进程崩溃或撤回事件丢失时不能让窗口永久置顶，兜底时限取一次 60 秒倒计时的两倍
+  if (powerWarningTopmostTimer) clearTimeout(powerWarningTopmostTimer)
+  powerWarningTopmostTimer = setTimeout(releasePowerWarningTopmost, POWER_WARNING_TOPMOST_MS)
+
+  logger.info('电源操作倒计时警示: 窗口已置顶')
+})
+
+ipcMain.handle('power-warning:end', () => {
+  releasePowerWarningTopmost()
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
@@ -1428,9 +1790,57 @@ ipcMain.handle('app-restart', () => {
   requestRendererClose('应用重启')
 })
 
+// 后端请求的重启：只置「这次退出后重新拉起」，退出本身仍走 app-quit 那条已协调好的路。
+// 这里不调 requestRendererClose：调用它的收尾流程已经把连接关了，再发一次窗口关闭请求
+// 只会等渲染进程确认，等不到就落进强制退出兜底，反而把重启变成超时。
+ipcMain.handle('app-restart-on-quit', () => {
+  logger.info('已标记退出后重新启动应用')
+  relaunchAfterQuit = true
+})
+
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
+})
+
+ipcMain.handle('app-prepare-quit', () => {
+  if (coordinatedQuit || forceQuitInProgress) return null
+  if (activeQuitPreparation !== null) return activeQuitPreparation
+  clearQuitFallback()
+  quitRequestInFlight = true
+  const token = ++quitPreparationSequence
+  activeQuitPreparation = token
+  quitPreparationExpired = false
+  quitFallbackTimer = setTimeout(() => {
+    quitFallbackTimer = null
+    quitPreparationExpired = true
+    logger.warn('退出前保存超时，撤销本次退出并等待页面保存完成')
+    // 保存请求不能撤回，保留请求锁，避免重复退出重新启动强制清理计时。
+    showMainWindow()
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return token
+})
+
+ipcMain.handle('app-confirm-quit', (_event, token: number) => {
+  if (
+    activeQuitPreparation === null ||
+    token !== activeQuitPreparation ||
+    quitPreparationExpired ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  activeQuitPreparation = null
+  clearQuitFallback()
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout('renderer 保存完成后关闭超时')
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return true
+})
+
+// 页面尚未保存时，后端还未进入关闭流程，允许取消主进程发出的退出请求。
+ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
+  cancelQuitRequest(token)
 })
 
 // 添加进程管理相关的 IPC 处理器
@@ -1589,22 +1999,35 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', async (_event, config) => {
+ipcMain.handle('save-config', (_event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
+    desktopMascot.configChanged(patch)
+
+    if (
+      patch &&
+      typeof patch === 'object' &&
+      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
+    ) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('theme-config-changed', {
+            themeMode: config.themeMode,
+            themeColor: config.themeColor,
+            appearanceId: config.appearanceId ?? null,
+          })
+        }
+      }
+    }
+
     // 如果是UI配置更新，需要更新托盘状态
-    if (config.UI) {
+    if (patch && typeof patch === 'object' && 'UI' in patch && config.UI) {
       updateTrayVisibility(config)
       if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
         rebuildTrayMenu(config.UI.TrayItems)
@@ -1822,6 +2245,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
 
@@ -1846,6 +2270,11 @@ app.whenReady().then(async () => {
   // 注册文件操作处理器（在窗口创建之前注册）
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
+
+  registerAppearanceHandlers({ onChanged: desktopMascot.sync })
+  registerMascotHandlers(desktopMascot.sync)
+  desktopMascot.mount()
+  logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
@@ -1876,7 +2305,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
       app.quit()
-    } else if (!forceQuitInProgress) {
+    } else if (!forceQuitInProgress && !quitRequestInFlight) {
       void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
     }
   }

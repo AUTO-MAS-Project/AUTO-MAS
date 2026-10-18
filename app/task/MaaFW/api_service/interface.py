@@ -1,0 +1,218 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of the
+#   License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+#   Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+"""读项目内容的端点背后的业务：interface 预览、游戏包名推断、项目内图片资源。"""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Any
+
+from app.models.schema import MaaFWGamePackageData, MaaFWInterfacePreviewData
+from app.task.MaaFW.api_service.common import (
+    MaaFWApiReply,
+    logger,
+    maafw_effective_root,
+    maafw_script_config,
+)
+from app.task.MaaFW.tools.core.interface.loader import (
+    MaaFWInterfaceLoadError,
+    load_interface_model_cached,
+)
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.preview import (
+    build_interface_preview_data,
+)
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    embedded_projects_root,
+    is_embedded_copy_dir_name,
+)
+from app.task.MaaFW.tools.embedded.flavor import (
+    flavor_for_project,
+    no_default_fallback_inputs,
+    resolve_flavor,
+    unselectable_entries,
+)
+from app.task.MaaFW.tools.embedded.game_package import (
+    resolve_game_package,
+    resource_paths_for,
+)
+
+
+async def resolve_project_game_package(
+    script_id: str | None, path: str, resource: str
+) -> MaaFWApiReply:
+    """``/maafw/game-package``：按所选 resource 的 pipeline 推断安卓游戏包名。"""
+
+    # 与 preview / prepare 同一口径：带 scriptId 就按脚本解析有效根（内嵌脚本读的是
+    # 副本，来源目录可能已经不在了），path 只在没有脚本时兜底。
+    root_path, error = await maafw_effective_root(script_id, path)
+    if root_path is None:
+        return MaaFWApiReply.error(400, error)
+    try:
+        root_path = root_path.resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        paths = await asyncio.to_thread(
+            resource_paths_for, root_path, interface, resource
+        )
+        resolution = await asyncio.to_thread(resolve_game_package, paths)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWApiReply.error(400, str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
+        )
+        return MaaFWApiReply.error(500, f"推断游戏包名失败: {exc}")
+    return MaaFWApiReply(
+        data=MaaFWGamePackageData(
+            reason=resolution.reason,
+            package=resolution.package,
+            candidates=list(resolution.candidates),
+        )
+    )
+
+
+async def preview_project_interface(script_id: str | None, path: str) -> MaaFWApiReply:
+    """``/maafw/preview``：读取项目 interface，返回 controller/resource/task 摘要。"""
+
+    root_path, error = await maafw_effective_root(script_id, path)
+    if root_path is None:
+        return MaaFWApiReply.error(400, error)
+    try:
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        preview = await asyncio.to_thread(
+            build_interface_preview_data,
+            root_path,
+            interface,
+        )
+        payload = preview.model_dump(mode="json")
+        flavor = _preview_flavor(script_id, interface)
+        _mark_unselectable_tasks(payload["tasks"], unselectable_entries(flavor))
+        _clear_no_fallback_defaults(
+            payload["options"], no_default_fallback_inputs(flavor)
+        )
+        data = MaaFWInterfacePreviewData.model_validate(payload)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWApiReply.error(400, str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"preview_maafw_interface失败: {type(exc).__name__}: {exc}"
+        )
+        return MaaFWApiReply.error(500, f"MFW interface 预览失败: {exc}")
+
+    return MaaFWApiReply(
+        message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
+        data=data,
+    )
+
+
+def _preview_flavor(script_id: str | None, interface: MaaFWInterface) -> Any:
+    """预览按哪个特调补标记：有脚本按脚本的特调（与运行期同一个），否则按认领项目的特调。
+
+    核心包的预览不认识特调，标记在这一层补上（契约见 ``tools/embedded/flavor.py``）。
+    """
+
+    if script_id:
+        try:
+            return resolve_flavor(maafw_script_config(script_id))
+        except (KeyError, ValueError, TypeError):
+            return None
+    return flavor_for_project(interface)
+
+
+def _mark_unselectable_tasks(
+    tasks: list[dict[str, Any]], entries: dict[str, str]
+) -> None:
+    for task in tasks:
+        task["unselectableReason"] = entries.get(str(task.get("entry") or ""))
+
+
+def _clear_no_fallback_defaults(
+    options: list[dict[str, Any]], fields: frozenset[tuple[str, str]]
+) -> None:
+    """特调声明不回落的字符串字段（``no_default_fallback_inputs``），预览里的 ``default`` 置空。
+
+    运行器对它们没填时下发空串、不回落 default；用户页把没填的字段显示成 default（与运行器回落
+    同口径），不置空的话 M9A 的自定义兑换码框里会显示「占位」，运行时实际却是空串。default 在
+    前端只用于显示与数字字段的空值校验，这几个都是字符串字段，置空只影响显示。
+    """
+
+    if not fields:
+        return
+    for option in options:
+        option_name = str(option.get("name") or "")
+        for input_item in option.get("inputs") or []:
+            if (option_name, str(input_item.get("name") or "")) in fields:
+                input_item["default"] = None
+
+
+_MAAFW_IMAGE_SUFFIXES = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".webp",
+}
+"""允许外发的图片后缀。
+
+白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，只能靠「root 必须是某个脚本的
+视图」+「必须在 root 内」+「必须是图片」三道闸门把它收窄成「读项目内的图片」。放开成
+任意后缀就变成了任意文件读取。
+"""
+
+
+def maafw_asset_file_path(root: str, asset_path: str) -> Path:
+    """把 (项目根, 项目内相对路径) 解析成一个可安全外发的图片绝对路径。
+
+    ``/maafw/asset`` 的安全边界就在这里：``FileNotFoundError`` 由端点映射成 404，
+    ``ValueError`` 映射成 400。root 只认 ``data/mfw/<12hex>`` 视图——有效项目根永远是它
+    （前端传的是带 scriptId 预览返回的 ``path``）；任意 root 加上全局 CORS，别的网页就能
+    读本机任意已知路径下的图片。
+    """
+
+    root_path = Path(root).resolve()
+    views_root = embedded_projects_root().resolve()
+    if root_path.parent != views_root or not is_embedded_copy_dir_name(root_path.name):
+        raise ValueError("只能读取 MFW 项目副本里的图片")
+    if not root_path.is_dir():
+        raise ValueError("MFW 项目目录不存在")
+
+    normalized_asset_path = asset_path.replace("\\", "/").strip()
+    relative_path = Path(normalized_asset_path)
+    if (
+        not normalized_asset_path
+        or relative_path.is_absolute()
+        or ".." in relative_path.parts
+    ):
+        raise ValueError("MFW 资源路径非法")
+
+    file_path = (root_path / relative_path).resolve()
+    # 逐段比对而不是比字符串前缀：符号链接与 ..（上面已挡）之外，
+    # 大小写与短路径名的差异也会让前缀比较判错。
+    if root_path not in file_path.parents:
+        raise ValueError("MFW 资源路径越界")
+    if file_path.suffix.casefold() not in _MAAFW_IMAGE_SUFFIXES:
+        raise ValueError("仅支持 MFW 图片资源")
+    if not file_path.is_file():
+        raise FileNotFoundError("MFW 图片资源不存在")
+    return file_path

@@ -18,6 +18,12 @@
       </div>
 
       <a-space size="middle">
+        <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+          <template #icon>
+            <FolderOpenOutlined />
+          </template>
+          {{ t('comp.openConfigFolder') }}
+        </a-button>
         <a-tooltip
           v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
           placement="bottom"
@@ -32,7 +38,7 @@
             ghost
             size="large"
             :loading="bettergiConfigLoading"
-            :disabled="pageLoading || !userId"
+            :disabled="pageLoading || !userId || configLocked"
             @click="handleBettergiConfig"
           >
             <template #icon>
@@ -47,7 +53,7 @@
           ghost
           size="large"
           :loading="bettergiConfigLoading"
-          :disabled="pageLoading || !userId"
+          :disabled="pageLoading || !userId || configLocked"
           @click="handleBettergiConfig"
         >
           <template #icon>
@@ -70,33 +76,44 @@
       </a-space>
     </div>
 
-    <teleport to="body">
-      <div v-if="showBettergiConfigMask" class="bettergi-config-mask">
-        <div class="mask-content">
-          <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-          </div>
-          <h2 class="mask-title">{{ t('edit.bettergiConfiguringTitle') }}</h2>
-          <p class="mask-description">
-            {{ t('edit.bettergiConfiguringDesc') }}
-            <br />
-            {{ t('edit.bettergiConfiguringDesc2') }}
-          </p>
-          <div class="mask-actions">
-            <a-button
-              v-if="bettergiWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveBettergiConfig"
-            >
-              {{ t('edit.saveSettings') }}
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+    <!-- ══ BetterGI 配置/查看会话遮罩（配置会话保存设置、查看会话只读）══ -->
+    <GuiSessionMask
+      :open="showBettergiConfigMask"
+      :icon="SettingOutlined"
+      :title="t('edit.bettergiConfiguringTitle')"
+      :description="`${t('edit.bettergiConfiguringDesc')}\n${t('edit.bettergiConfiguringDesc2')}`"
+    >
+      <template #actions>
+        <a-button
+          v-if="bettergiWebsocketId"
+          type="primary"
+          size="large"
+          :loading="stoppingBettergiConfig"
+          @click="handleSaveBettergiConfig"
+        >
+          {{ t('edit.saveSettings') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
+    <GuiSessionMask
+      :open="showBettergiViewMask"
+      :icon="EyeOutlined"
+      :title="t('edit.bettergiViewingTitle')"
+      :description="`${t('edit.bettergiViewingDesc')}\n${t('edit.bettergiViewingDesc2')}`"
+    >
+      <template #actions>
+        <a-button
+          type="primary"
+          size="large"
+          :loading="stoppingBettergiConfig"
+          @click="handleSaveBettergiConfig"
+        >
+          {{ t('edit.bettergiViewClose') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -245,7 +262,7 @@
                     v-model:value="formData.Switch.Resource"
                     size="large"
                     class="modern-select"
-                    @change="saveField('Switch.Resource', formData.Switch.Resource)"
+                    @change="handleResourceChange"
                   >
                     <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
                     <a-select-option value="B服">{{
@@ -268,24 +285,99 @@
               </a-col>
             </a-row>
 
+            <!-- 游戏客户端（用户级覆盖）：官服/B服/国际服是三个互相隔离的客户端；
+                 渠道可识别时自动联动游戏服务器，无法识别或不一致时气泡提醒 -->
             <a-row :gutter="24">
               <a-col :span="24">
+                <div class="game-client-row">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        {{ t('edit.bettergiGameClient') }}
+                        <a-tooltip :title="t('edit.bettergiGameClientHint')">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-input-group compact class="path-input-group">
+                      <a-input
+                        v-model:value="gamePathInput"
+                        :placeholder="gamePathPlaceholder"
+                        size="large"
+                        class="path-input"
+                        @blur="handleGamePathSaved"
+                      />
+                      <a-button size="large" class="path-button" @click="selectGameClient">
+                        <template #icon>
+                          <FolderOpenOutlined />
+                        </template>
+                        {{ t('edit.pickFile') }}
+                      </a-button>
+                      <a-button
+                        size="large"
+                        class="path-button"
+                        :disabled="!gamePathInput"
+                        @click="clearGameClient"
+                      >
+                        {{ t('edit.bettergiGameClientRestore') }}
+                      </a-button>
+                    </a-input-group>
+                  </a-form-item>
+                  <a-tooltip
+                    :title="updateUnsupported ? t('edit.bettergiUpdateUnsupportedHint') : ''"
+                  >
+                    <span class="game-client-check">
+                      <a-button
+                        size="large"
+                        :disabled="updateCheckDisabled"
+                        @click="handleCheckUpdate"
+                      >
+                        <template #icon>
+                          <ThunderboltOutlined />
+                        </template>
+                        {{ t('edit.checkUpdates') }}
+                      </a-button>
+                    </span>
+                  </a-tooltip>
+                </div>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <!-- 快速配置开关已隐藏：按配置来源派生（原生来源 = 关，共享 / 独立 = 开），
+                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。
+                     派生值仍交给选择器只读展示，让「本次任务生效的配置」与实际运行一致。 -->
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
+                  :model-value="formData.Info.Base"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-readonly="true"
                   @change="handleConfigModeChange"
                 />
-                <a-form-item v-if="!masConfigEnabled" :label="t('edit.bettergiOneDragonName')">
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :xs="24" :sm="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.collectNodeDetails') }}
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
                   <a-select
-                    v-model:value="formData.Task.OneDragonConfigName"
-                    :options="oneDragonConfigOptions"
-                    :disabled="pageLoading || isSaving"
-                    @dropdown-visible-change="(open: boolean) => open && loadOneDragonConfigs()"
-                    @change="
-                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
-                    "
+                    v-model:value="formData.Notify.PushLogMode"
+                    :options="pushLogModeOptions"
+                    size="large"
+                    class="modern-select"
+                    :disabled="pageLoading"
+                    @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
@@ -312,21 +404,43 @@
         </a-form>
       </a-card>
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.taskConfiguration') }}</h3>
-        <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
+      <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
+            <a-flex
+              class="section-header"
+              justify="space-between"
+              align="center"
+              wrap="wrap"
+              gap="small"
+            >
+              <h3>
+                {{ t('edit.taskConfiguration') }}
+                <a-tooltip :title="t('edit.bettergiTaskConfigHint')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </h3>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </a-flex>
+
+            <a-alert
+              v-if="formData.Info.Base === 'native'"
+              type="info"
+              show-icon
+              class="mode-guide-alert"
+            >
+              <template #message>
+                <span class="mode-guide-message">
+                  {{ t('edit.bettergiDirectModeAlert') }}
+                </span>
+              </template>
+            </a-alert>
+
             <a-alert
               v-if="formData.Info.Mode === '脚本'"
               type="info"
@@ -402,7 +516,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <!-- 独立配置模式：领取奖励队伍；脚本直控模式：配置 BetterGI（打开 BGI 原生界面） -->
+              <!-- 独立配置模式：领取奖励队伍；原生来源模式：配置 BetterGI（打开 BGI 原生界面） -->
               <a-col :span="12">
                 <a-form-item v-if="masConfigEnabled">
                   <template #label>
@@ -609,7 +723,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="另存为新配置组"
+                              :aria-label="t('edit.bettergiDuplicateAsNew')"
                               @click.stop="openDuplicateModal(item)"
                             >
                               <template #icon><SaveOutlined /></template>
@@ -621,7 +735,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
-                              aria-label="修改配置组名称"
+                              :aria-label="t('edit.bettergiRenameAsNew')"
                               @click.stop="openRenameModal(item)"
                             >
                               <template #icon><EditOutlined /></template>
@@ -633,7 +747,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="复制相同配置组"
+                              :aria-label="t('edit.bettergiCopySameAs')"
                               @click.stop="duplicateSameGroup(item)"
                             >
                               <template #icon><CopyOutlined /></template>
@@ -858,7 +972,7 @@
             v-model:open="addModal.open"
             :title="addModalTitle"
             :ok-text="addModalOkText"
-            :ok-button-props="{ disabled: !addModal.items.length && !addModal.draft.trim() }"
+            :ok-button-props="addModalOkButtonProps"
             :cancel-text="t('edit.cancel')"
             width="920px"
             :z-index="1200"
@@ -1122,91 +1236,87 @@
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.notificationSettings') }}</h3>
-            </div>
-            <a-row :gutter="24" align="middle">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.enableNotifications') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-switch
-                  v-model:checked="formData.Notify.Enabled"
-                  @change="saveField('Notify.Enabled', formData.Notify.Enabled)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <span style="font-weight: 500">{{ t('edit.notificationContent') }}</span>
-              </a-col>
-              <a-col :span="18">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendStatistic"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
-                >
-                  {{ t('edit.notifyStatistics') }}
-                </a-checkbox>
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfSendMail"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfSendMail', formData.Notify.IfSendMail)"
-                >
-                  {{ t('edit.notifyMail') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ToAddress"
-                  :placeholder="t('edit.enterRecipientAddress')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                  size="large"
-                  @blur="saveField('Notify.ToAddress', formData.Notify.ToAddress)"
-                />
-              </a-col>
-            </a-row>
-
-            <a-row :gutter="24" style="margin-top: 16px">
-              <a-col :span="6">
-                <a-checkbox
-                  v-model:checked="formData.Notify.IfServerChan"
-                  :disabled="!formData.Notify.Enabled"
-                  @change="saveField('Notify.IfServerChan', formData.Notify.IfServerChan)"
-                >
-                  {{ t('edit.notifyServerChan') }}
-                </a-checkbox>
-              </a-col>
-              <a-col :span="18">
-                <a-input
-                  v-model:value="formData.Notify.ServerChanKey"
-                  :placeholder="t('edit.enterSendkey')"
-                  :disabled="!formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                  size="large"
-                  @blur="saveField('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
-                />
-              </a-col>
-            </a-row>
-
-            <div style="margin-top: 16px">
-              <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" />
-            </div>
-          </div>
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="pageLoading"
+            :script-id="scriptId"
+            :user-id="userId"
+            show-drop-statistics
+            @save="saveField"
+          />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、BetterGI 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="BETTERGI_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.bettergiConfigRestoreUserDesc')"
+      :script-desc="t('edit.bettergiConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+      :on-detail="handleRestoreView"
+    >
+      <!-- mas 备份为字段侧车分区 + 副本文件摘要、native 备份为文件粒度 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="bettergi-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="bettergi-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
+
+    <a-modal
+      v-model:open="updateModal.open"
+      :title="
+        updateModal.running
+          ? t('edit.bettergiUpdateProgressTitle')
+          : t('edit.bettergiCheckUpdateTitle')
+      "
+      :confirm-loading="updateModal.starting"
+      :mask-closable="!updateModal.running"
+      :footer="updateModal.running || updateModal.done ? null : undefined"
+      @ok="startUpdate"
+      @cancel="handleUpdateModalCancel"
+    >
+      <!-- 出结论后也要留着日志：后端专门推的「已是最新 / 更新完成 x -> y」就在里面 -->
+      <template v-if="updateModal.running || updateModal.done">
+        <div class="update-log-area">
+          <pre class="update-log-content">{{
+            updateModal.log || t('edit.bettergiUpdateConnecting')
+          }}</pre>
+        </div>
+      </template>
+      <template v-else>
+        <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
+      </template>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
@@ -1218,17 +1328,21 @@ import {
   CopyOutlined,
   EditOutlined,
   DownOutlined,
+  EyeOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
+  HistoryOutlined,
   HolderOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   SaveOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import {
   BetterGiService,
+  Service,
   type BetterGIDomainCatalogItem,
   type BetterGIPathingNode,
   type ComboBoxItem,
@@ -1248,24 +1362,44 @@ import {
   saveGlobalStygianSettings,
   saveOneDragonSettings,
 } from '@/composables/useBettergiOneDragonSettings'
-import WebhookManager from '@/components/WebhookManager.vue'
+import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import GuiSessionMask from '@/components/GuiSessionMask.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import BettergiDragonGroupSettings from './BettergiDragonGroupSettings.vue'
 import BettergiGroupProjectEditor from './BettergiGroupProjectEditor.vue'
 import BettergiTeamSettings from './BettergiTeamSettings.vue'
+import { useBetterGIUpdate } from './useBetterGIUpdate'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
+const {
+  addUser,
+  getUsers,
+  updateUser,
+  error: userApiError,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId.value) return
+  await openUserConfigFolder(scriptId, userId.value)
+}
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+// 「检查更新」只针对当前用户：游戏客户端是用户级配置，uid 在新建用户保存后才补上
+const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useBetterGIUpdate(
+  () => userId.value
+)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -1276,27 +1410,34 @@ const bettergiConfigModeOptions: Array<{
   description: string
   value: string
   icon: 'database' | 'file' | 'setting'
+  disabled?: boolean
+  disabledReason?: string
 }> = [
   {
-    title: t('edit.scriptConfiguration'),
-    description: t('edit.scriptConfiguration'),
-    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
+    value: 'shared',
     icon: 'file',
+    // 「共享」运行时与「独立」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
+    disabled: true,
+    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     title: t('edit.perUserConfiguration'),
     description: t('edit.perUserConfiguration'),
-    value: '用户',
+    value: 'independent',
     icon: 'database',
   },
   {
     title: t('edit.scriptDirectControl'),
-    description: t('edit.nativeConfigSourceDescription'),
-    value: '直控',
+    description: t('edit.useScriptSCurrent'),
+    value: 'native',
     icon: 'setting',
   },
 ]
-const masConfigEnabled = computed(() => formData.Info.IfQuickConfig)
+// 面板可见性由**配置来源**决定（维护者决策：放弃把快速配置当作来源开关）：原生来源 = 用 BGI
+// 所选原生配置（显示原生「一条龙名称」与「配置 BetterGI」，MAS 不接管）；脚本/用户 = MAS 面板。
+const masConfigEnabled = computed(() => formData.Info.Base !== 'native')
 
 type FormSection<T> = { [K in keyof T]-?: NonNullable<T[K]> }
 
@@ -1324,6 +1465,13 @@ const ONE_DRAGON_GROUPS = [
   { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
 ]
 
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+]
+
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Info: {
     Name: '',
@@ -1331,7 +1479,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     RemainedDay: -1,
-    Mode: '用户',
+    Base: 'independent',
     IfQuickConfig: true,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -1347,6 +1495,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Switch: {
     Resource: '官服',
     Uid: '',
+    GamePath: '',
   },
   OneDragon: {
     Groups: ONE_DRAGON_GROUPS.map(group => group.value),
@@ -1364,6 +1513,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Notify: {
     Enabled: false,
     IfSendStatistic: false,
+    IfSendDropStatistics: true,
+    PushLogMode: '汇总',
     IfSendMail: false,
     ToAddress: '',
     IfServerChan: false,
@@ -1378,6 +1529,8 @@ const formData = reactive<BetterGIUserFormData>({
 
 // saveField 需在自定义配置组 composable 之前定义（后者在 persist/toggle 中调用它）
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     message.error(userApiError.value || t('edit.couldNotCreateUser'))
@@ -1433,27 +1586,179 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   return enqueue(persist)
 }
 
-const handleQuickConfigChange = async (value: boolean) => {
-  if (!value) {
-    if (dragonGroupAutoSaveTimer) {
-      clearTimeout(dragonGroupAutoSaveTimer)
-      dragonGroupAutoSaveTimer = null
-    }
-    while (
-      dragonSettingsDirty.value ||
-      globalDomainSettingsDirty.value ||
-      globalStygianSettingsDirty.value
-    ) {
-      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
-    }
-  }
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await saveField('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
+// ══ 游戏客户端（用户级覆盖）：透传 BetterGI 配置 + config.ini 渠道识别 ══
+// 输入框直接以 BGI 维护的路径为默认值（可编辑）；存值规则：输入值与 BGI 当前
+// 路径一致 → 存空（跟随语义，BGI 改了自动跟），否则存显式覆盖值。
+// 渠道可识别时自动联动「游戏服务器」（国际服分不出区服，弹提示手选）；
+// 渠道无法识别、或手选服务器与识别渠道不一致时气泡提醒（check() 运行时仍硬拦截）。
+const gameClientInfo = ref<{
+  installPath: string
+  globalPath: string
+  channel: string
+} | null>(null)
+
+const gamePathInput = ref('')
+
+// BGI 全局路径缺失时的兜底提示（正常情况输入框默认值直接显示 BGI 路径）
+const gamePathPlaceholder = computed(
+  () => gameClientInfo.value?.globalPath || t('edit.bettergiGameClientPlaceholder')
+)
+
+const normalizePath = (path: string) =>
+  path.replace(/\\/g, '/').replace(/\/+$/, '').trim().toLowerCase()
+
+/** 用户服务器（Switch.Resource）→ 应使用的客户端渠道（与后端校验同口径） */
+const RESOURCE_EXPECTED_CHANNEL: Record<string, string> = {
+  官服: '官服',
+  B服: 'B服',
+  亚服: '国际服',
+  欧服: '国际服',
+  美服: '国际服',
+  港澳台服: '国际服',
+}
+
+const channelLabel = (channel: string) => {
+  switch (channel) {
+    case '官服':
+      return t('edit.bettergiChannelOfficial')
+    case 'B服':
+      return t('edit.bettergiChannelBili')
+    case '国际服':
+      return t('edit.bettergiChannelGlobal')
+    default:
+      return channel
   }
 }
 
+// 「检查更新」只在官服/国际服客户端上可用：后端对 B 服硬拒（版本节奏与官服
+// 不同，用官服清单更新会写坏客户端）。以实际识别到的客户端为准，识别不出时
+// 退回用户选的服务器推断。
+const updateUnsupported = computed(() => {
+  const channel =
+    gameClientInfo.value?.channel || RESOURCE_EXPECTED_CHANNEL[formData.Switch.Resource] || ''
+  return channel === 'B服'
+})
+
+const updateCheckDisabled = computed(
+  () => pageLoading.value || !userId.value || configLocked.value || updateUnsupported.value
+)
+
+const syncGamePathInput = () => {
+  gamePathInput.value = formData.Switch.GamePath || gameClientInfo.value?.globalPath || ''
+}
+
+/**
+ * 渠道可识别时联动「游戏服务器」：
+ * - 官服/B服客户端 → 自动切换（弹气泡告知）；
+ * - 国际服客户端分不出区服 → 不猜，当前不是四服之一时提示手动指定；
+ * - 渠道无法识别 → 提示手动指定区服。
+ */
+const syncResourceWithChannel = async () => {
+  const channel = gameClientInfo.value?.channel
+  if (!channel) {
+    message.warning(t('edit.bettergiGameClientUnknownWarning'))
+    return
+  }
+  if (channel === '国际服') {
+    const intlServers = ['亚服', '欧服', '美服', '港澳台服']
+    if (!intlServers.includes(formData.Switch.Resource)) {
+      message.warning(t('edit.bettergiGameClientIntlWarning'))
+    }
+    return
+  }
+  if (formData.Switch.Resource !== channel) {
+    formData.Switch.Resource = channel
+    await saveField('Switch.Resource', channel)
+    message.success(
+      t('edit.bettergiGameClientSynced', {
+        server: channel === '官服' ? t('edit.bettergiServerCn') : t('edit.bettergiServerBili'),
+      })
+    )
+  }
+}
+
+const loadGameClientInfo = async () => {
+  try {
+    const resp = await BetterGiService.getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
+      scriptId,
+      formData.Switch.GamePath || ''
+    )
+    if (resp.status === 'success') {
+      gameClientInfo.value = {
+        installPath: resp.installPath || '',
+        globalPath: resp.globalPath || '',
+        channel: resp.channel || '',
+      }
+    } else {
+      gameClientInfo.value = null
+    }
+  } catch {
+    // 展示旁路：识别失败不影响配置编辑
+    gameClientInfo.value = null
+  }
+  // 输入框默认值：用户配置优先，否则直接显示 BGI 维护的路径（可编辑）
+  syncGamePathInput()
+}
+
+const handleGamePathSaved = async () => {
+  const input = (gamePathInput.value || '').trim()
+  const globalPath = gameClientInfo.value?.globalPath || ''
+  // 输入值与 BGI 当前路径一致 → 存空（跟随），否则存显式覆盖
+  const followsGlobal = !!globalPath && normalizePath(input) === normalizePath(globalPath)
+  const next = followsGlobal ? '' : input
+  if (next !== formData.Switch.GamePath) {
+    formData.Switch.GamePath = next
+    await saveField('Switch.GamePath', next)
+  }
+  await loadGameClientInfo()
+  await syncResourceWithChannel()
+}
+
+/** 弹出文件选择并校验为原神主程序，取消/选错返回 null */
+const pickGenshinExe = async (): Promise<string | null> => {
+  const paths = await window.electronAPI?.selectFile([
+    {
+      name: 'YuanShen.exe / GenshinImpact.exe',
+      extensions: ['exe'],
+    },
+  ])
+  const path = paths?.[0]
+  if (!path) return null
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
+  if (fileName !== 'yuanshen.exe' && fileName !== 'genshinimpact.exe') {
+    message.error(t('edit.bettergiGameClientInvalid'))
+    return null
+  }
+  return path
+}
+
+const selectGameClient = async () => {
+  const path = await pickGenshinExe()
+  if (!path) return
+  gamePathInput.value = path
+  await handleGamePathSaved()
+}
+
+const clearGameClient = async () => {
+  gamePathInput.value = gameClientInfo.value?.globalPath || ''
+  await handleGamePathSaved()
+}
+
+const handleResourceChange = async (value: string) => {
+  await saveField('Switch.Resource', value)
+  const channel = gameClientInfo.value?.channel
+  const expected = RESOURCE_EXPECTED_CHANNEL[value]
+  if (!channel || !expected || expected === channel) return
+  message.warning(
+    t('edit.bettergiServerMismatchWarning', {
+      server: channelLabel(value),
+      channel: channelLabel(channel),
+    })
+  )
+}
+
+// 快速配置开关已隐藏（按配置来源派生），原先「关闭前先落盘一条龙组设置」的处理
+// 移到了 handleConfigModeChange：切到原生来源时 MAS 面板会隐藏，效果等同。
 const toggleGroup = (value: string) => {
   if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
@@ -1663,7 +1968,7 @@ const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
   if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
   if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
-  // JS 脚本与现有自定义组同属「脚本」来源（按需求：JS 的 tag 改为脚本）
+  // JS 脚本与现有自定义组同属「共享」来源（按需求：JS 的 tag 改为脚本）
   return t('edit.bettergiGroupKindCustom')
 }
 
@@ -1692,6 +1997,12 @@ const scriptGroupOptions = ref<{ label: string; value: string }[]>([])
 // CustomGroups 中某名字是否命中 BetterGI ScriptGroup 配置组目录
 const isScriptGroupName = (name: string): boolean =>
   scriptGroupOptions.value.some(o => o.value === name)
+
+// MAS 自建的配置组：运行期物化产物（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N）
+// 与切号组（MAS切换账号）、执行层资源模板组（MAS一条龙）。它们只应存在于运行期或
+// BGI 副本目录，不该出现在「添加配置组」弹窗的「配置组」候选里。
+const isMasOwnGroup = (name: string): boolean =>
+  name.startsWith('MAS-') || name === 'MAS切换账号' || name === 'MAS一条龙'
 
 // BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
 const keyMouseOptions = ref<{ label: string; value: string }[]>([])
@@ -1831,7 +2142,7 @@ const updatePlanStepEnabled = (name: string, enabled: boolean) => {
 
 // 调用后端：按步骤名翻转 Plan 中某战斗实例的启用状态
 const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void> => {
-  if (!scriptId || !userId.value) return
+  if (!scriptId || !userId.value || configLocked.value) return
   try {
     const resp =
       await BetterGiService.setOneDragonPlanStepEnabledApiScriptsBettergiOneDragonPlanStepEnabledPost(
@@ -2166,13 +2477,17 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
 }
 
 // ---- 添加：把配置组加入一条龙（放到队列末尾）----
-const addToDragon = (item: ConfigGroupIdentity) => {
-  if (!groupsEditable.value) return
-  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return
+const addToDragon = (item: ConfigGroupIdentity): boolean => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
+  if (!groupsEditable.value) return false
+  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return false
   // 体力作战开启时刷取类官方内置组被冻结，禁止再次加入一条龙（防止把被接管的组写回后端 Groups）
   if (item.kind === 'builtin' && isGroupFrozen(item)) {
     message.warning(t('edit.bettergiGroupFrozenTip'))
-    return
+    return false
   }
   if (item.kind === 'builtin') {
     if (!formData.OneDragon.Groups.includes(item.key)) {
@@ -2196,6 +2511,7 @@ const addToDragon = (item: ConfigGroupIdentity) => {
   const alias = dragonList.value.find(i => i.kind === item.kind && i.key === item.key)?.displayName
   dragonList.value.push(makeDragonRow(alias ? { ...item, displayName: alias } : item))
   persistDragonQueue()
+  return true
 }
 
 // 队列中是否仍存在同类配置组（删除某实例后判断是否还保留后端启用）
@@ -2205,6 +2521,10 @@ const hasSameKindRow = (item: ConfigGroupIdentity, exceptUid?: number): boolean 
 // ---- 右键删除：从一条龙移除（按行实例 uid，一次只删一行）----
 const removeFromDragon = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (item.kind === 'builtin') {
     if (isGroupFrozen(item)) return // 冻结中不可删除
     dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
@@ -2359,7 +2679,8 @@ const STYGIAN_BOSS_NUM_OPTIONS = [
 ]
 
 // 讨伐首领候选（按地区分组事实源）：BGI AutoBossData.CountryToBosses
-// （蒙德/璃月/稻妻/须弥/枫丹/纳塔/挪德卡莱 共 41 个，无至冬分组）。
+// （蒙德/璃月/稻妻/须弥/枫丹/纳塔/挪德卡莱/至冬 共 44 个；至冬组为 2026-10 上游新增）。
+// 上游目录是 C# 硬编码字典（无磁盘名录可扫描），新增首领需手动同步此处。
 // 二级弹窗（地区 → 首领）由此目录驱动；value 存首领名（BGI AutoBossName 语义，
 // 留空=不指定，由 BGI 按配置决定默认），显示「首领名称-地区」便于区分同名首领。
 const AUTO_BOSS_CATALOG: { region: string; name: string; label: string }[] = [
@@ -2411,6 +2732,10 @@ const AUTO_BOSS_CATALOG: { region: string; name: string; label: string }[] = [
   { region: '挪德卡莱', name: '霜夜巡天灵主', label: '霜夜巡天灵主-挪德卡莱' },
   { region: '挪德卡莱', name: '蕴光月幻蝶', label: '蕴光月幻蝶-挪德卡莱' },
   { region: '挪德卡莱', name: '重拳出击鸭', label: '重拳出击鸭-挪德卡莱' },
+  // 至冬
+  { region: '至冬', name: '不灭衍生造物', label: '不灭衍生造物-至冬' },
+  { region: '至冬', name: '嵌合翼骏狮', label: '嵌合翼骏狮-至冬' },
+  { region: '至冬', name: '游雪的护刃', label: '游雪的护刃-至冬' },
 ]
 
 // 周日/限时奖励序号候选：与 BGI 原生下拉（SundaySelectedValueList = ["", "1", "2", "3"]）一致。
@@ -3098,6 +3423,10 @@ const globalDomainSettingsDirty = ref(false)
 // 全局 config.json 幽境危战段设置（刷取战场/队伍/策略/次数与树脂；autoStygianOnslaughtConfig 段）
 const globalStygianSettings = ref<Record<string, unknown>>({})
 const globalStygianSettingsDirty = ref(false)
+const hasDragonGroupSettingsDirty = computed(
+  () =>
+    dragonSettingsDirty.value || globalDomainSettingsDirty.value || globalStygianSettingsDirty.value
+)
 // 当前选中内置组是否有设置 schema（含每周秘境周表等非 fields 形态的分组）
 const hasGroupSettingFields = computed<boolean>(() =>
   currentGroupSettingSections.value.some(
@@ -3214,6 +3543,13 @@ const saveDragonGroupSettings = (
 ): Promise<boolean> => {
   const sel = selOverride ?? selectedGroupIdentity.value
   const run = dragonGroupSaveChain.then(async () => {
+    if (configLocked.value) {
+      if (hasDragonGroupSettingsDirty.value) {
+        message.error(t('edit.configLocked'))
+        return false
+      }
+      return true
+    }
     if (!sel || sel.kind !== 'builtin' || !userId.value) return false
     const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
@@ -3279,7 +3615,7 @@ watch(
     if (dragonGroupAutoSaveTimer) {
       clearTimeout(dragonGroupAutoSaveTimer)
       dragonGroupAutoSaveTimer = null
-      await saveDragonGroupSettings(true, dragonGroupSaveSel)
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
     }
     await loadDragonGroupSettings()
   }
@@ -3502,10 +3838,13 @@ const addModalTitle = computed<string>(() =>
 const addModalOkText = computed<string>(() =>
   addModal.addToGroupMode ? t('edit.bettergiAddScriptToGroupOk') : t('edit.bettergiAddToDragonOk')
 )
+const addModalOkButtonProps = computed(() => ({
+  disabled: configLocked.value || (!addModal.items.length && !addModal.draft.trim()),
+}))
 
 // 配置组编辑器 ref：确认「添加脚本」后把选中的 JS/路径追加进当前配置组 json
 const groupProjectEditorRef = ref<{
-  addProjects: (rows: unknown[]) => Promise<void>
+  addProjects: (rows: unknown[]) => Promise<boolean>
   reload: () => Promise<void>
 } | null>(null)
 
@@ -3779,10 +4118,18 @@ const buildCandidates = () => {
     groupTaken.add(STAMINA_COMBAT_KEY)
   }
   for (const opt of scriptGroupOptions.value) {
-    if (!groupTaken.has(opt.value)) {
-      groupItems.push({ kind: 'scriptgroup', key: opt.value })
-      groupTaken.add(opt.value)
-    }
+    if (groupTaken.has(opt.value)) continue
+    // 「配置组」候选只应有三类：默认组、专项组、BGI User/ScriptGroup 里真实存在的配置组。
+    // 后端为识别队列行会把该用户的 per-user 副本名一并返回，其中：
+    //   1) 「脚本/录制」类自定义项的副本名与脚本目录名/录制名同名（OCRCountResin、
+    //      提瓦特记事本DHXYHO…）——它们归属「脚本」「录制」标签页，不是配置组；
+    //   2) MAS 自建组（MAS-{短id}-自定义配置组N / MAS-{短id}-执行层段N / MAS切换账号 /
+    //      MAS一条龙）——运行期物化产物，用户不该在这里看到。
+    // 二者在此剔除（2026-09-16 实机：添加自定义配置组后它们会冒进候选列表）。
+    if (isMasOwnGroup(opt.value)) continue
+    if (isJsScriptName(opt.value) || isKeyMouseName(opt.value)) continue
+    groupItems.push({ kind: 'scriptgroup', key: opt.value })
+    groupTaken.add(opt.value)
   }
   addModal.groupCandidates = groupItems
 }
@@ -4136,15 +4483,16 @@ const handleAddDraftKeydown = (e: KeyboardEvent) => {
 
 // 确认：加入一条龙 或（配置组模式）作为项目写入当前配置组 json
 const confirmAddToDragon = async () => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (addModal.draft.trim() && !commitAddDraft()) return
   if (!addModal.items.length) {
     message.warning(t('edit.bettergiPickCandidateFirst'))
     return
   }
   const items = [...addModal.items]
-  addModal.items = []
-  addModal.draft = ''
-  clearChipSelection()
   // 配置组模式：把 JS/路径转成 project 行，交给右栏编辑器追加并保存
   if (addModal.addToGroupMode) {
     const editor = groupProjectEditorRef.value
@@ -4152,25 +4500,36 @@ const confirmAddToDragon = async () => {
       .map(toScriptGroupProjectRow)
       .filter((r): r is Record<string, unknown> => r !== null)
     if (!rows.length) {
+      addModal.items = []
+      addModal.draft = ''
+      clearChipSelection()
       addModal.addToGroupMode = false
       addModal.open = false
       message.warning(t('edit.bettergiAddScriptUnsupported'))
       return
     }
-    addModal.addToGroupMode = false
-    addModal.open = false
     try {
-      await editor?.addProjects(rows)
+      const added = (await editor?.addProjects(rows)) ?? false
+      if (!added) return
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+      return
     }
+    addModal.items = []
+    addModal.draft = ''
+    clearChipSelection()
+    addModal.addToGroupMode = false
+    addModal.open = false
     return
   }
-  addModal.open = false
   for (const item of items) {
-    addToDragon({ kind: item.kind, key: item.key })
+    if (!addToDragon({ kind: item.kind, key: item.key })) return
   }
+  addModal.items = []
+  addModal.draft = ''
+  clearChipSelection()
+  addModal.open = false
 }
 
 // ---- 行尾双操作 ----
@@ -4319,20 +4678,40 @@ watch(
 )
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   if (
     isInitializing.value ||
     configModeSaving.value ||
     !userId.value ||
-    formData.Info.Mode === value
+    formData.Info.Base === value
   )
     return
-  const previousValue = formData.Info.Mode
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  const previousValue = formData.Info.Base
+  const previousQuickConfig = formData.Info.IfQuickConfig
+  // 快速配置按来源派生（开关已隐藏）：原生来源 = 关，共享 / 独立 = 开
+  const nextQuickConfig = value !== 'native'
+  if (!nextQuickConfig) {
+    // 切到原生来源后 MAS 面板会隐藏：先把未落盘的一条龙组设置刷下去，避免改动丢失
+    // （原「关闭快速配置」开关的同款处理）
+    if (dragonGroupAutoSaveTimer) {
+      clearTimeout(dragonGroupAutoSaveTimer)
+      dragonGroupAutoSaveTimer = null
+    }
+    while (hasDragonGroupSettingsDirty.value) {
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
+    }
+  }
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  formData.Info.IfQuickConfig = nextQuickConfig
   configModeSaving.value = true
   try {
-    const saved = await updateUser(scriptId, userId.value, { Info: { Mode: formData.Info.Mode } })
-    if (!saved) formData.Info.Mode = previousValue
+    const saved = await updateUser(scriptId, userId.value, {
+      Info: { Base: formData.Info.Base, IfQuickConfig: nextQuickConfig },
+    })
+    if (!saved) {
+      formData.Info.Base = previousValue
+      formData.Info.IfQuickConfig = previousQuickConfig
+    }
   } finally {
     configModeSaving.value = false
   }
@@ -4343,6 +4722,9 @@ const {
   bettergiConfigLoading,
   bettergiWebsocketId,
   showBettergiConfigMask,
+  showBettergiViewMask,
+  currentSessionViewOnly,
+  stoppingBettergiConfig,
   startSession,
   saveSession,
   stopSession,
@@ -4350,16 +4732,22 @@ const {
 } = useBettergiGuiSession()
 
 const handleBettergiConfig = () => {
+  if (configLocked.value) return
   if (!userId.value) return
   void startSession(userId.value)
 }
 
 const handleSaveBettergiConfig = async () => {
+  // 查看会话：只读关闭，不冲刷右栏配置（避免写盘）
+  if (currentSessionViewOnly.value) {
+    await saveSession()
+    return
+  }
   // 整体保存前先冲刷未决的右栏自动保存，确保不丢编辑
   if (dragonGroupAutoSaveTimer) {
     clearTimeout(dragonGroupAutoSaveTimer)
     dragonGroupAutoSaveTimer = null
-    await saveDragonGroupSettings(true, dragonGroupSaveSel)
+    if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
   }
   await saveSession()
 }
@@ -4367,6 +4755,141 @@ const handleSaveBettergiConfig = async () => {
 const handleCancel = async () => {
   await stopSession()
   await router.push('/scripts')
+}
+
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：BetterGI 统一叫「bettergi」
+const BETTERGI_DISPLAY_NAME = 'bettergi'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户配置（在前）、BetterGI 原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
+      scriptId,
+      userId.value,
+      time,
+      target
+    ),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId: userId.value,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
+}
+
+interface BettergiPreviewRow {
+  key: string
+  value: string
+}
+interface BettergiPreviewSection {
+  name: string
+  label: string
+  rows?: BettergiPreviewRow[]
+}
+const previewSections = (raw: unknown): BettergiPreviewSection[] =>
+  (raw as { sections?: BettergiPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填页面字段（OneDragon 段等），需重拉表单；
+// native 恢复写 BGI 全局 config.json，MAS 表单不受影响
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    await loadUser()
+  }
+}
+
+// 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
+// mas 备份：恢复到 per-user 副本后启动用户级查看会话（BGI GUI 所见即
+// 副本）；原生备份：恢复到 BGI 全局后启动脚本级查看会话（打开 BGI 看
+// 原生配置）。查看会话结束不回写（BetterGI 配置会话本就无回写）。
+const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: BETTERGI_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
+            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
+            await loadUser()
+            await startSession(userId.value, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
+        }
+      },
+      onCancel: () => resolve(false),
+    })
+  })
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：与运行物化前的双池归档
+// （AutoProxy）配合——进入归档 BGI 全局配置当前状态（MAS 触碰前原始态），
+// 退出归档 MAS 用户配置终态（per-user 副本 + 页面字段，编辑会话包络）
+const ensureBettergiBackup = async (target: 'mas' | 'native') => {
+  if (!userId.value) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId: userId.value,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
 }
 
 const loadScriptInfo = async (): Promise<boolean> => {
@@ -4403,6 +4926,9 @@ const loadUser = async () => {
       OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
+    // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「原生来源 + 开」），
+    // 以 Mode 为准归一，与保存路径（handleConfigModeChange）及后端 BetterGIUserConfig.load 一致。
+    formData.Info.IfQuickConfig = formData.Info.Base !== 'native'
     // 一条龙名称为必填：历史空值归一为「默认配置」
     if (!formData.Task.OneDragonConfigName) {
       formData.Task.OneDragonConfigName = '默认配置'
@@ -4445,11 +4971,20 @@ onMounted(async () => {
       loadOneDragonConfigs(),
     ])
     await loadUser()
+    // 游戏客户端信息（生效路径 + 渠道标注）：用户数据就绪后按用户路径识别
+    await loadGameClientInfo()
+    // 编辑界面进入：归档 BGI 全局配置当前状态（须在 userId 就绪后）
+    void ensureBettergiBackup('native')
   }
 })
 
 onUnmounted(() => {
-  disposeGuiSession()
+  // 退出编辑页：先停会话再归档 MAS 用户配置终态——并行会与 final_task 的
+  // 收尾撞车、归档到半程状态；会话未开时 dispose 立即返回，不影响归档时机
+  void (async () => {
+    await disposeGuiSession()
+    await ensureBettergiBackup('mas')
+  })()
 })
 </script>
 
@@ -4697,45 +5232,16 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.bettergi-config-mask {
-  position: fixed;
-  inset: 32px 0 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.mask-content {
-  width: 100%;
-  max-width: 480px;
-  padding: 24px;
-  text-align: center;
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.mask-icon {
-  margin-bottom: 16px;
-}
-
-.mask-title {
-  margin: 0 0 8px;
-  font-size: 18px;
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.bettergi-preview-title {
+  font-size: 15px;
   font-weight: 600;
+  margin: 12px 0 8px;
   color: var(--ant-color-text);
 }
 
-.mask-description {
-  margin: 0 0 24px;
-  color: var(--ant-color-text-secondary);
-}
-
-.mask-actions {
-  display: flex;
-  justify-content: center;
+.bettergi-preview-box {
+  margin-bottom: 8px;
 }
 
 @media (max-width: 768px) {
@@ -5497,5 +6003,66 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 游戏客户端路径（用户级覆盖）：输入组与信息行 */
+.path-input-group {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.path-button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+/* 「检查更新」独立于路径输入组：输入框与它共占一行，按钮贴右并与输入框底对齐 */
+.game-client-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.game-client-row :deep(.ant-form-item) {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.game-client-check {
+  flex-shrink: 0;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 </style>

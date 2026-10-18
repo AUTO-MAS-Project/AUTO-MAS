@@ -19,10 +19,13 @@
 
 #   Contact: DLmaster_361@163.com
 
+from collections.abc import Sequence
+from dataclasses import replace
+from functools import cache
+
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     NotifyTarget,
     dispatch,
     global_target,
@@ -30,17 +33,36 @@ from app.core.notify import (
     user_target,
 )
 from app.models.config import MaaUserConfig
+from app.models.notification import (
+    NotificationImage,
+    NotifyPayload,
+    image_reference,
+)
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
+from app.utils.paths import resource_path
 
 logger = get_logger("MAA 通知工具")
 
 # MAA 的签名只空一行, 与其余脚本不同
 SIGNATURE_SEP = "\n"
 
+# 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
+SIX_STAR_IMAGE_ID = "maa-six-star"
+SIX_STAR_IMAGE_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Resource/arknights-six-star/download"
+
+
+@cache
+def _six_star_image() -> bytes | None:
+    try:
+        return resource_path("images", "notification", "six_star.png").read_bytes()
+    except OSError as exc:
+        logger.warning(f"读取喜报配图失败，通知将使用可用的替代图片来源: {exc}")
+        return None
+
 
 def _statistic_text(message: dict) -> str:
-    """拼装掉落、招募与养成达成统计的纯文本正文。"""
+    """拼装掉落、招募、培养进展与养成达成统计的纯文本正文。"""
 
     formatted = []
     if "drop_statistics" in message:
@@ -56,6 +78,11 @@ def _statistic_text(message: dict) -> str:
             formatted.append(f"  {star}: {count}")
     recruit_text = "\n".join(formatted)
 
+    progress_text = (
+        f"培养进展: {message['cultivate_progress']}\n"
+        if message.get("cultivate_progress")
+        else ""
+    )
     # 本轮有干员达成养成目标时附一行；无则不占位
     cultivate_text = (
         f"养成达成: {message['cultivate_achievement']}\n"
@@ -69,6 +96,7 @@ def _statistic_text(message: dict) -> str:
         f"理智剩余: {message.get('sanity', '未知')}\n"
         f"回复时间: {message.get('sanity_full_at', '未知')}\n"
         f"MAA执行结果: {message['maa_result']}\n"
+        f"{progress_text}"
         f"{cultivate_text}"
         f"{recruit_text}\n"
         f"{drop_text}"
@@ -87,7 +115,34 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
         and user_config.get("Notify", "IfSendSixStar")
     ):
         targets.append(user_target(user_config))
-    return targets
+    # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。
+    return [
+        replace(
+            target,
+            channels=tuple(
+                (
+                    (
+                        channel,
+                        replace(
+                            channel_target,
+                            capabilities=replace(
+                                channel_target.capabilities,
+                                formats=("text",),
+                                double_text_newlines=(
+                                    "markdown" in channel_target.capabilities.formats
+                                    or channel_target.capabilities.double_text_newlines
+                                ),
+                            ),
+                        ),
+                    )
+                    if channel.key == "webhook"
+                    else (channel, channel_target)
+                )
+                for channel, channel_target in target.channels
+            ),
+        )
+        for target in targets
+    ]
 
 
 async def push_notification(
@@ -96,8 +151,14 @@ async def push_notification(
     message: dict,
     user_config: MaaUserConfig | None,
     task_info: object | None = None,
+    *,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。
+
+    ``images`` 只在「统计信息」模式下随报告附带（失败截图），模板通过
+    资源 ID 引用对应图片。
+    """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
@@ -108,6 +169,7 @@ async def push_notification(
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,
+            images=images,
         )
 
     if mode == "统计信息":
@@ -119,6 +181,7 @@ async def push_notification(
                 text=_statistic_text(message),
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=images,
             ),
             statistic_targets(user_config),
         )
@@ -127,12 +190,23 @@ async def push_notification(
         # 喜报正文是固定文案, message 只用于渲染 HTML
         template = Config.notify_env.get_template("MAA_six_star.html")
 
+        image = _six_star_image()
+
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text="好羡慕~",
+                markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=(
+                    NotificationImage(
+                        id=SIX_STAR_IMAGE_ID,
+                        data=image,
+                        url=SIX_STAR_IMAGE_URL,
+                        alt="喜报",
+                    ),
+                ),
             ),
             _six_star_targets(user_config),
         )

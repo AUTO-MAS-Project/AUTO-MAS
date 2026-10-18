@@ -6,9 +6,10 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   Installation,
-  addDiagnosticFile,
+  addDebugDirectory,
   addDirectory,
   addLatestMasHistoryLog,
+  addPerInstallationFile,
   addSanitizedJsonFile,
   discoverInstallations,
   resolveDataRoots,
@@ -18,30 +19,6 @@ const logger = getLogger('ZZZ-OD问题包')
 
 // 与 app/task/ZzzOd/AutoProxy.py 的 _ZZZOD_REL_LOG 保持同步
 const ZZZOD_REL_LOG_FILE = '.log/log.txt'
-
-function addLatestZzzOdScriptLog(state: CollectorState, installations: Installation[]): void {
-  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
-
-  for (const installation of installations) {
-    const logPath = path.join(installation.rootPath, ...ZZZOD_REL_LOG_FILE.split('/'))
-    try {
-      const mtimeMs = fs.statSync(logPath).mtimeMs
-      if (!latest || mtimeMs > latest.mtimeMs) {
-        latest = {
-          sourcePath: logPath,
-          archivePath: `zzzod/${installation.label}/log.txt`,
-          mtimeMs,
-        }
-      }
-    } catch (error) {
-      logger.debug(`读取 log.txt 失败: ${logPath}, ${String(error)}`)
-    }
-  }
-
-  if (latest) {
-    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
-  }
-}
 
 function addZzzOdConfigs(state: CollectorState, installations: Installation[]): void {
   for (const installation of installations) {
@@ -70,7 +47,7 @@ export function createZzzOdIssueReport(appRoot: string, zipPath: string): ZzzOdI
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
       index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'
@@ -83,7 +60,7 @@ export function createZzzOdIssueReport(appRoot: string, zipPath: string): ZzzOdI
     addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
   }
 
-  addLatestZzzOdScriptLog(state, installations)
+  addPerInstallationFile(state, installations, ZZZOD_REL_LOG_FILE, 'zzzod')
   addZzzOdConfigs(state, installations)
 
   try {

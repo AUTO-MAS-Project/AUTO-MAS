@@ -57,8 +57,15 @@ from .project_path import normalize_project_path
 
 logger = get_logger("MFW 运行环境缓存")
 
-# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。
-CACHE_FORMAT_VERSION = 2
+# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。MAS 自己的准备规则变了也在
+# 这里递增——指纹只看项目文件，规则变了项目没动，旧缓存会一直命中。
+# 3：没有 requirements.txt 的 Python agent 开始在隔离 venv 里装 maafw（FOS 类项目），
+#    此前按旧规则备好的 venv 里没有 binding，必须重备一次。
+# 4：运行池改成唯一 base venv + 按版本存放的 binding / native 目录，结果里多了
+#    bindingDir / bindingVersion / nativeDir；旧缓存指向的是 maafw 装在 venv 里的旧
+#    布局，整体作废、每脚本重备一次。指纹同时纳入项目自带 DLL 的版本（见
+#    project_environment_fingerprint）：DLL 换了、interface 没变时不能命中旧 binding。
+CACHE_FORMAT_VERSION = 4
 
 
 def _host_python_identity() -> dict[str, str]:
@@ -95,6 +102,15 @@ def _paths_still_present(result: Mapping[str, Any]) -> bool:
 
     venv_path = str(runtime.get("venvPath") or "")
     if venv_path and not Path(venv_path).is_dir():
+        return False
+
+    # binding / native 目录不只看在不在：清单文件与 DLL 本体都得在（目录被回收
+    # 到一半、或 rename-first 只挪走了一部分时，is_dir 还是真的）。
+    binding_dir = str(runtime.get("bindingDir") or "")
+    if not binding_dir or not (Path(binding_dir) / "binding.json").is_file():
+        return False
+    native_dir = str(runtime.get("nativeDir") or "")
+    if native_dir and not (Path(native_dir) / "MaaFramework.dll").is_file():
         return False
 
     agents = result.get("agents")
@@ -198,6 +214,36 @@ def store_prepared_environment(
             pass
 
 
+def has_prepared_environment(
+    project_path: str | Path, fingerprint: str | None = None
+) -> bool:
+    """这个项目此前准备过、而且这次是「更新」吗。
+
+    只用来给界面分「运行环境准备完成」与「运行环境更新完成」两句话。不给
+    ``fingerprint`` 时只看缓存文件在不在。给了的话，上次记下的输入（项目指纹、宿主解释器、
+    缓存格式）与这次完全相同就不算更新：强制重新准备一个没变过的项目，什么都没重装，
+    显示「更新完成」会和日志里的「依赖清单未变化，跳过 pip install」对不上。缓存读不出、
+    坏了都按「准备过」算，不深究——那些交给 ``load_prepared_environment``。
+    """
+
+    path = _cache_path(project_path)
+    if not path.is_file():
+        return False
+    if not fingerprint:
+        return True
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 只影响一句提示
+        return True
+    if not isinstance(payload, Mapping):
+        return True
+    return not (
+        payload.get("version") == CACHE_FORMAT_VERSION
+        and payload.get("fingerprint") == fingerprint
+        and payload.get("host") == _host_python_identity()
+    )
+
+
 def discard_prepared_environment(project_path: str | Path) -> None:
     """丢掉缓存，让下次调用走完整准备。"""
 
@@ -210,6 +256,7 @@ def discard_prepared_environment(project_path: str | Path) -> None:
 __all__ = [
     "CACHE_FORMAT_VERSION",
     "discard_prepared_environment",
+    "has_prepared_environment",
     "load_prepared_environment",
     "store_prepared_environment",
 ]

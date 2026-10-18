@@ -22,10 +22,26 @@ export type QueueConfig_Info = {
     /**
      * 完成后操作
      */
-    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'Logoff' | null);
+    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | 'RestartSelf' | 'Logoff' | null);
     /**
      * 完成后操作的延时时长(分钟)
      */
     AfterAccomplishDelay?: (number | null);
+    /**
+     * 是否在队列运行前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 队列运行前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在队列运行后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 队列运行后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
 };
 

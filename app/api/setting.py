@@ -22,25 +22,34 @@
 
 
 import asyncio
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
-from app.core import Config
+from app.core import Config, notify_channels
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
     GlobalConfig,
+    NotifyChannelFieldOut,
+    NotifyChannelOptionOut,
+    NotifyChannelOut,
+    NotifyChannelsOut,
+    ObsReplayCheckOut,
+    ObsReplaySaveOut,
     OutBase,
     PatternDebugIn,
     PatternDebugOut,
     PatternDebugResultItem,
+    ReplayRecord,
     SettingGetOut,
     SettingUpdateIn,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
+    VirtualDisplayDetachOut,
     Webhook,
     WebhookCreateOut,
     WebhookDeleteIn,
@@ -57,6 +66,50 @@ from app.utils import debug_pattern, get_logger
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
+
+
+@router.post(
+    "/obs/check",
+    tags=["Get"],
+    response_model=ObsReplayCheckOut,
+    operation_id="check_obs_replay_api_setting_obs_check_post",
+    summary="检查 OBS 回放缓冲",
+)
+async def check_obs_replay() -> ObsReplayCheckOut:
+    from app.services.obs_replay import ObsReplay
+
+    try:
+        return await ObsReplay.check(Config.obs_replay_options())
+    except Exception as error:
+        return ObsReplayCheckOut(
+            code=500,
+            status="error",
+            message=str(error),
+            directory=str(ObsReplay.directory),
+        )
+
+
+@router.post(
+    "/obs/save",
+    tags=["Action"],
+    response_model=ObsReplaySaveOut,
+    operation_id="save_obs_replay_api_setting_obs_save_post",
+    summary="试存 OBS 回放",
+)
+async def save_obs_replay() -> ObsReplaySaveOut:
+    from app.services.obs_replay import ObsReplay
+
+    try:
+        record = ReplayRecord(
+            replayId=str(uuid.uuid4()),
+            scriptName="手动测试",
+            failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            reason="试存 OBS 回放",
+        )
+        replay = await ObsReplay.save(Config.obs_replay_options(), record)
+        return ObsReplaySaveOut(replay=replay)
+    except Exception as error:
+        return ObsReplaySaveOut(code=500, status="error", message=str(error))
 
 
 @router.get(
@@ -168,7 +221,75 @@ async def test_notify() -> OutBase:
             status="error",
             message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
-    return OutBase()
+    if result.attempted == 0:
+        return OutBase(
+            code=400,
+            status="error",
+            message="没有已启用的通知渠道，请先完成绑定并开启通知",
+        )
+    return OutBase(message=f"测试通知已提交至：{'、'.join(result.succeeded)}")
+
+
+@router.get(
+    "/notify/channels",
+    tags=["Get"],
+    summary="查询通知渠道描述",
+    response_model=NotifyChannelsOut,
+    status_code=200,
+)
+async def get_notify_channels() -> NotifyChannelsOut:
+    """返回通知渠道描述表，仅展示元数据，不含任何配置值。"""
+
+    try:
+        channels = [
+            NotifyChannelOut(
+                key=channel.key,
+                nameKey=channel.name_key,
+                descKey=channel.desc_key,
+                icon=channel.icon,
+                group=channel.group,
+                order=channel.order,
+                docUrl=channel.doc_url,
+                scopes=sorted(channel.scopes),
+                kind=channel.kind,
+                customBlock=channel.custom_block,
+                enableField=list(channel.enable_field)
+                if channel.enable_field
+                else None,
+                summaryKey=channel.summary_key,
+                summaryFields=list(channel.summary_fields),
+                fields={
+                    scope: [
+                        NotifyChannelFieldOut(
+                            group=item.group,
+                            name=item.name,
+                            labelKey=item.label_key,
+                            control=item.control,
+                            options=[
+                                NotifyChannelOptionOut(value=value, labelKey=label_key)
+                                for value, label_key in item.options
+                            ],
+                            placeholderKey=item.placeholder_key,
+                            tipKey=item.tip_key,
+                        )
+                        for item in items
+                    ]
+                    for scope, items in channel.fields.items()
+                },
+            )
+            for channel in notify_channels.get_notify_channels()
+        ]
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_notify_channels失败: {type(e).__name__}: {e}"
+        )
+        return NotifyChannelsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            channels=[],
+        )
+    return NotifyChannelsOut(channels=channels)
 
 
 @router.post(
@@ -353,6 +474,36 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
                 )
             ],
         )
+
+
+@router.post(
+    "/virtual-display/detach",
+    tags=["Action"],
+    summary="立即拆除虚拟显示器",
+    response_model=VirtualDisplayDetachOut,
+    status_code=200,
+)
+async def detach_virtual_display() -> VirtualDisplayDetachOut:
+    """用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+
+    任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+    的话下一轮会重新挂上——要彻底停用得关开关。
+    """
+
+    from app.core.desktop_guard import DesktopGuard
+
+    try:
+        detached = await DesktopGuard.detach_now("用户手动拆除")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"detach_virtual_display失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayDetachOut(
+            code=500, status="error", message=f"拆除失败: {str(e)}"
+        )
+    if not detached:
+        return VirtualDisplayDetachOut(message="当前没有挂载虚拟显示器")
+    return VirtualDisplayDetachOut(detached=True, message="已拆除虚拟显示器")
 
 
 @router.post(

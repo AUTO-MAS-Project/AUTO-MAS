@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import { Service } from '@/api'
 import type {
   UserInBase,
@@ -8,8 +9,11 @@ import type {
   UserDeleteIn,
   UserGetIn,
   UserReorderIn,
+  UserConfigDirIn,
 } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 
 const logger = window.electronAPI.getLogger('用户API')
 
@@ -27,6 +31,14 @@ export function useUserApi() {
     scriptId: string,
     options: AddUserOptions = {}
   ): Promise<UserCreateOut | null> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      addUserErrorCode.value = null
+      if (options.showError ?? true) message.warning(errorMsg)
+      return null
+    }
+
     loading.value = true
     error.value = null
     addUserErrorCode.value = null
@@ -68,6 +80,13 @@ export function useUserApi() {
     userId: string,
     userData: UserUpdateIn['data']
   ): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -136,6 +155,13 @@ export function useUserApi() {
 
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -172,6 +198,13 @@ export function useUserApi() {
 
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     // loading.value = true
     error.value = null
 
@@ -202,6 +235,48 @@ export function useUserApi() {
     }
   }
 
+  // 打开用户配置目录
+  const openUserConfigFolder = async (scriptId: string, userId: string): Promise<boolean> => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const requestData: UserConfigDirIn = {
+        scriptId,
+        userId,
+      }
+
+      const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '获取用户配置目录失败'
+        throw new Error(errorMsg)
+      }
+
+      if (!response.path) {
+        throw new Error('获取用户配置目录失败')
+      }
+
+      const result = await window.electronAPI.openFile(response.path)
+      if (!result.success) {
+        const openError = result.error || '打开用户配置目录失败'
+        logger.error(`打开用户配置目录失败: ${openError}`)
+        throw new Error(openError)
+      }
+
+      return true
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '打开用户配置目录失败'
+      error.value = errorMsg
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
@@ -211,5 +286,6 @@ export function useUserApi() {
     updateUser,
     deleteUser,
     reorderUser,
+    openUserConfigFolder,
   }
 }

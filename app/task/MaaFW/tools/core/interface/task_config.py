@@ -1,0 +1,1102 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+
+import copy
+import json
+from collections.abc import Collection
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .models import (
+    DUPLICATE_TASK_SUFFIX_SEPARATOR,
+    SUPPORTED_OPTION_TYPES,
+    MaaFWInterface,
+    MaaFWOption,
+    MaaFWPreset,
+    MaaFWPresetOptionValue,
+    MaaFWTask,
+    MaaFWTaskOptionsByTask,
+    MaaFWTaskOptionValue,
+    build_duplicate_task_id,
+    build_pretask_task_name,
+    is_pretask_task_name,
+    iter_pretasks,
+    resolve_task_instance_name,
+    task_repeat_count,
+)
+
+CUSTOM_PRESET_NAME = "__auto_mas_custom_preset__"
+
+
+class MaaFWTaskPresetSnapshot(BaseModel):
+    taskOrder: list[str] = Field(default_factory=list)
+    taskChecked: dict[str, bool] = Field(default_factory=dict)
+    taskOptions: MaaFWTaskOptionsByTask = Field(default_factory=dict)
+    # 全局选项（interface 的 global_option 及其 case 下挂的子选项）每个用户只存一份，
+    # 所有任务共用；taskOptions 里不再有它们。
+    globalOptions: dict[str, MaaFWTaskOptionValue] = Field(default_factory=dict)
+    # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
+    # 运行与项目更新匹配仍按实例 id / 任务 name。
+    taskLabels: dict[str, str] = Field(default_factory=dict)
+
+
+class MaaFWTaskConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    selectedPreset: str = CUSTOM_PRESET_NAME
+    presets: dict[str, MaaFWTaskPresetSnapshot] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_raw_config(cls, value: Any):
+        if not isinstance(value, dict):
+            return value
+
+        selected_preset = _normalize_preset_name(value.get("selectedPreset"))
+        raw_presets = value.get("presets")
+        normalized_presets: dict[str, dict[str, Any]] = {}
+        if isinstance(raw_presets, dict):
+            for preset_name, snapshot in raw_presets.items():
+                if isinstance(preset_name, str):
+                    normalized_presets[preset_name] = _normalize_raw_snapshot(snapshot)
+
+        return {
+            "selectedPreset": selected_preset,
+            "presets": normalized_presets,
+        }
+
+
+def normalize_task_config(
+    config: MaaFWTaskConfig,
+    interface_model: MaaFWInterface,
+) -> MaaFWTaskConfig:
+    preset_snapshots: dict[str, MaaFWTaskPresetSnapshot] = {}
+    custom_snapshot = config.presets.get(CUSTOM_PRESET_NAME)
+    preset_snapshots[CUSTOM_PRESET_NAME] = normalize_snapshot(
+        custom_snapshot,
+        interface_model,
+    )
+
+    for preset in interface_model.preset:
+        persisted_snapshot = config.presets.get(preset.name)
+        snapshot = persisted_snapshot or build_interface_preset_snapshot(
+            interface_model,
+            preset,
+        )
+        preset_snapshots[preset.name] = normalize_snapshot(snapshot, interface_model)
+
+    selected_preset = _normalize_preset_name(config.selectedPreset)
+    if selected_preset not in preset_snapshots:
+        selected_preset = CUSTOM_PRESET_NAME
+
+    return MaaFWTaskConfig(
+        selectedPreset=selected_preset,
+        presets=preset_snapshots,
+    )
+
+
+def normalize_snapshot(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    interface_model: MaaFWInterface,
+) -> MaaFWTaskPresetSnapshot:
+    default_task_order = _build_default_task_order(interface_model)
+    pretask_task_order = [
+        build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
+    ]
+    all_task_ids = [*pretask_task_order, *default_task_order]
+    valid_task_names = _build_valid_task_names(interface_model)
+    normalized_order: list[str] = []
+    seen_task_ids: set[str] = set()
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+
+    # 同一个任务可以被重复加入队列，队列元素是“实例 id”而不是任务名：
+    # 首份沿用裸任务名，第二份起是 ``<任务名>__MAS_DUP__<后缀>``。
+    raw_task_order = [
+        task_id
+        for task_id in raw_snapshot["taskOrder"]
+        if resolve_task_instance_name(task_id, valid_task_names) in valid_task_names
+    ]
+    partitioned_task_order = [
+        task_id for task_id in raw_task_order if is_pretask_task_name(task_id)
+    ] + [task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)]
+    for task_id in partitioned_task_order:
+        if task_id not in seen_task_ids:
+            normalized_order.append(task_id)
+            seen_task_ids.add(task_id)
+
+    for task_id in default_task_order:
+        if task_id not in seen_task_ids:
+            normalized_order.append(task_id)
+
+    normalized_checked = {task_id: False for task_id in all_task_ids}
+    for task_id in normalized_order:
+        normalized_checked.setdefault(task_id, False)
+    for task_id, checked in raw_snapshot["taskChecked"].items():
+        if task_id in normalized_checked:
+            normalized_checked[task_id] = bool(checked)
+
+    normalized_options = normalize_task_options_by_task(
+        raw_snapshot["taskOptions"],
+        normalized_order,
+        interface_model,
+    )
+    normalized_order_set = set(normalized_order)
+    normalized_labels = {
+        task_id: label
+        for task_id, label in raw_snapshot["taskLabels"].items()
+        if task_id in normalized_order_set
+    }
+    return MaaFWTaskPresetSnapshot(
+        taskOrder=normalized_order,
+        taskChecked=normalized_checked,
+        taskOptions=normalized_options,
+        globalOptions=normalize_global_options(
+            _migrate_global_option_values(raw_snapshot, interface_model),
+            interface_model,
+        ),
+        taskLabels=normalized_labels,
+    )
+
+
+def normalize_global_options(
+    raw_global_options: Any,
+    interface_model: MaaFWInterface,
+) -> dict[str, MaaFWTaskOptionValue]:
+    """用户的全局选项表按 interface 归一：全局选项一个不缺（没设的取默认），取值不合法的退回默认，
+    interface 已不再是全局选项的键丢掉。"""
+
+    option_map = build_global_option_map(interface_model)
+    defaults, value_types = _build_option_defaults(option_map)
+    return _normalize_options_for_task(
+        raw_global_options,
+        option_map,
+        defaults,
+        value_types,
+        _build_option_case_name_sets(option_map),
+    )
+
+
+def _migrate_global_option_values(
+    raw_snapshot: dict[str, Any],
+    interface_model: MaaFWInterface,
+) -> dict[str, MaaFWTaskOptionValue]:
+    """旧配置兼容：全局选项表里缺的（或是坏值的）项，从各任务实例的选项里取一份。
+
+    以前全局选项按任务分别存（``taskOptions[实例][选项]``）。全局表里某项没有合法值时（缺、
+    ``null``、数字、不存在的 case……先丢掉），按队列顺序取第一个**勾选的**、带合法值的任务
+    实例的值；没有再取第一个未勾选的；都没有就留给归一取默认值。只看这一项对该实例来说
+    「只属于全局」的实例：任务 / 资源 / 控制器自己也引用了它的（``build_task_option_maps``
+    里有它），任务上的值是任务自己的、按 PI 顺序盖在全局之上，不迁、也不剥。前置任务
+    （pretask）与 interface 里已没有的任务不看。前端 ``maafwGlobalOptions.ts`` 按同一口径
+    迁移，改一处要同步另一处。
+    """
+
+    option_map = build_global_option_map(interface_model)
+    values = {
+        name: value
+        for name, value in raw_snapshot["globalOptions"].items()
+        if name not in option_map or _is_valid_option_value(option_map[name], value)
+    }
+    missing = [name for name in option_map if name not in values]
+    if not missing:
+        return values
+
+    task_option_maps = _build_task_option_maps(interface_model)
+    valid_task_names = {task.name for task in interface_model.task}
+    candidates = [
+        (task_id, resolve_task_instance_name(task_id, valid_task_names))
+        for task_id in raw_snapshot["taskOrder"]
+        if not is_pretask_task_name(task_id)
+    ]
+    candidates = [
+        (task_id, task_name)
+        for task_id, task_name in candidates
+        if task_name in valid_task_names
+    ]
+    checked = raw_snapshot["taskChecked"]
+    ordered = [item for item in candidates if checked.get(item[0], False)] + [
+        item for item in candidates if not checked.get(item[0], False)
+    ]
+    task_options = raw_snapshot["taskOptions"]
+    for option_name in missing:
+        option = option_map[option_name]
+        for task_id, task_name in ordered:
+            if option_name in task_option_maps.get(task_name, {}):
+                continue
+            options = task_options.get(task_id)
+            if not isinstance(options, dict) or option_name not in options:
+                continue
+            if _is_valid_option_value(option, options[option_name]):
+                values[option_name] = options[option_name]
+                break
+    return values
+
+
+def _is_valid_option_value(option: MaaFWOption, value: Any) -> bool:
+    """取值的形状对得上选项类型（select 类还要是声明过的 case），与归一时收不收同一口径。"""
+
+    if option.type in {"select", "scan_select", "switch"}:
+        return isinstance(value, str) and value in {
+            case.name for case in option.cases or []
+        }
+    if option.type == "checkbox":
+        return isinstance(value, list)
+    if option.type in {"input", "hotkey"}:
+        return isinstance(value, dict)
+    return False
+
+
+def normalize_task_options_by_task(
+    raw_task_options: dict[str, Any] | None,
+    task_ids: list[str],
+    interface_model: MaaFWInterface,
+    *,
+    controller_name: str | None = None,
+    resource_name: str | None = None,
+) -> MaaFWTaskOptionsByTask:
+    task_option_maps = _build_task_option_maps(
+        interface_model,
+        controller_name=controller_name,
+        resource_name=resource_name,
+    )
+    valid_task_names = _build_valid_task_names(interface_model)
+    normalized: MaaFWTaskOptionsByTask = {}
+
+    # 选项按实例 id 存放：同一个任务的两份副本各自持有独立的一套选项值。
+    for task_id in [item for item in task_ids if isinstance(item, str)]:
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
+        option_map = task_option_maps.get(task_name, {})
+        defaults, value_types = _build_option_defaults(option_map)
+        case_name_sets = _build_option_case_name_sets(option_map)
+        raw_options_for_task = (
+            raw_task_options.get(task_id)
+            if isinstance(raw_task_options, dict)
+            else None
+        )
+        normalized[task_id] = _normalize_options_for_task(
+            raw_options_for_task,
+            option_map,
+            defaults,
+            value_types,
+            case_name_sets,
+        )
+
+    return normalized
+
+
+def normalize_task_execution_payload(
+    raw_task_list: Any,
+    raw_task_options: Any,
+    interface_model: MaaFWInterface,
+    *,
+    controller_name: str | None = None,
+    resource_name: str | None = None,
+) -> tuple[list[str], MaaFWTaskOptionsByTask]:
+    valid_task_names = _build_valid_task_names(interface_model)
+    normalized_task_list: list[str] = []
+    seen_task_ids: set[str] = set()
+
+    if isinstance(raw_task_list, list):
+        for task_id in raw_task_list:
+            if not isinstance(task_id, str):
+                continue
+            if task_id in seen_task_ids:
+                continue
+            if (
+                resolve_task_instance_name(task_id, valid_task_names)
+                not in valid_task_names
+            ):
+                continue
+            normalized_task_list.append(task_id)
+            seen_task_ids.add(task_id)
+
+    normalized_task_list = [
+        task_id for task_id in normalized_task_list if is_pretask_task_name(task_id)
+    ] + [
+        task_id for task_id in normalized_task_list if not is_pretask_task_name(task_id)
+    ]
+
+    normalized_task_options = normalize_task_options_by_task(
+        raw_task_options if isinstance(raw_task_options, dict) else None,
+        normalized_task_list,
+        interface_model,
+        controller_name=controller_name,
+        resource_name=resource_name,
+    )
+    return normalized_task_list, normalized_task_options
+
+
+def mirror_global_options_to_tasks(
+    snapshot: Any, interface_model: MaaFWInterface
+) -> Any:
+    """保存前的降级兼容双写：只属于全局的选项把全局表的值抄一份到每个任务实例上。
+
+    旧版本（全局选项按任务存）读这份快照时，运行期直接用任务上的副本；旧版用户页保存一次
+    会把 ``globalOptions`` 丢掉，再升级回来时 ``_migrate_global_option_values`` 从副本把值
+    找回。新版运行期与用户页对这类选项只看全局表，副本不生效、不显示（归一时丢掉）。
+
+    只在快照带 ``globalOptions`` 时做（没有全局表的是旧形状，任务上的值本来就是迁移的来源，
+    原样不动）。对 ``taskOrder`` 里每个 interface 认得的非前置任务实例：对它只属于全局的
+    选项，全局表里有合法值就写成那个值，没有就去掉副本——副本永远与全局表一致（从别的用户
+    导入的队列带来的副本，保存一次就换成本用户的值）。任务 / 资源 / 控制器自己也引用的选项
+    是任务自己的值，不碰。密码字段原样抄（之后的加密一并处理任务上的副本）。
+
+    接受 JSON 字符串或 dict，返回同一种；没有改动时原样返回入参。
+    """
+
+    parsed = snapshot
+    if isinstance(snapshot, str):
+        try:
+            parsed = json.loads(snapshot)
+        except (TypeError, ValueError):
+            return snapshot
+    if not isinstance(parsed, dict) or not isinstance(
+        parsed.get("globalOptions"), dict
+    ):
+        return snapshot
+    global_option_map = build_global_option_map(interface_model)
+    if not global_option_map:
+        return snapshot
+
+    raw_global = parsed["globalOptions"]
+    values = {
+        name: raw_global[name]
+        for name, option in global_option_map.items()
+        if name in raw_global and _is_valid_option_value(option, raw_global[name])
+    }
+    task_option_maps = _build_task_option_maps(interface_model)
+    valid_task_names = {task.name for task in interface_model.task}
+    raw_task_options = parsed.get("taskOptions")
+    task_options = dict(raw_task_options) if isinstance(raw_task_options, dict) else {}
+    changed = False
+    raw_order = parsed.get("taskOrder")
+    for task_id in dict.fromkeys(raw_order if isinstance(raw_order, list) else []):
+        if not isinstance(task_id, str) or is_pretask_task_name(task_id):
+            continue
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
+        if task_name not in valid_task_names:
+            continue
+        own_option_map = task_option_maps.get(task_name, {})
+        current = task_options.get(task_id)
+        before = current if isinstance(current, dict) else {}
+        options = dict(before)
+        for name in global_option_map:
+            if name in own_option_map:
+                continue
+            if name in values:
+                options[name] = copy.deepcopy(values[name])
+            else:
+                options.pop(name, None)
+        if options != before:
+            task_options[task_id] = options
+            changed = True
+    if not changed:
+        return snapshot
+
+    mirrored = {**parsed, "taskOptions": task_options}
+    if isinstance(snapshot, str):
+        return json.dumps(mirrored, ensure_ascii=False)
+    return mirrored
+
+
+def extract_task_global_overrides(
+    raw_task_options: Any,
+    task_ids: list[str],
+    interface_model: MaaFWInterface,
+) -> MaaFWTaskOptionsByTask:
+    """各任务实例的选项里写着的、对它来说「只属于全局」的选项值（合法的、已归一）。
+
+    ``{实例: {选项: 值}}``，只收这一实例的选项表里没有、全局表里有的选项。用户快照归一后的
+    任务选项里不会有这种值（``normalize_task_options_by_task`` 把它们丢掉了），出现了就是
+    特调在 ``decorate_selection`` 里写进去的：建计划时这一实例用它盖过用户的全局表，不让
+    特调的改写被全局表静默顶掉。
+
+    「只属于全局」必须与快照归一用同一张表——不按当前 controller / resource 过滤的
+    ``build_task_option_maps``。按当前上下文过滤的话，一个全局选项只要还被**没选中的**资源 /
+    控制器引用，归一就会给任务补上它的默认值，这里又判它只属于全局，补出来的默认值就被当成
+    特调写入、盖掉用户的全局值。
+    """
+
+    if not isinstance(raw_task_options, dict):
+        return {}
+    global_option_map = build_global_option_map(interface_model)
+    if not global_option_map:
+        return {}
+    task_option_maps = _build_task_option_maps(interface_model)
+    valid_task_names = _build_valid_task_names(interface_model)
+    overrides: MaaFWTaskOptionsByTask = {}
+    for task_id in task_ids:
+        raw_options = raw_task_options.get(task_id)
+        if is_pretask_task_name(task_id) or not isinstance(raw_options, dict):
+            continue
+        own_option_map = task_option_maps.get(
+            resolve_task_instance_name(task_id, valid_task_names), {}
+        )
+        option_map = {
+            name: global_option_map[name]
+            for name, value in raw_options.items()
+            if name in global_option_map
+            and name not in own_option_map
+            and _is_valid_option_value(global_option_map[name], value)
+        }
+        if not option_map:
+            continue
+        defaults, value_types = _build_option_defaults(option_map)
+        overrides[task_id] = _normalize_options_for_task(
+            raw_options,
+            option_map,
+            defaults,
+            value_types,
+            _build_option_case_name_sets(option_map),
+        )
+    return overrides
+
+
+def find_missing_task_names(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    interface_model: MaaFWInterface,
+) -> list[str]:
+    """用户快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
+
+    项目更新改了任务 ``name`` 时旧 id 就对不上了。归一化会把它从执行列表里滤掉，
+    界面把它留成虚影；这里把它找出来，建计划时记成跳过，运行日志里才看得到。
+    重复实例 id 只报任务名（去掉 ``__MAS_DUP__`` 后缀）。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    valid_task_names = _build_valid_task_names(interface_model)
+    missing: list[str] = []
+    for task_id in raw_snapshot["taskOrder"]:
+        if not raw_snapshot["taskChecked"].get(task_id, False):
+            continue
+        if resolve_task_instance_name(task_id, valid_task_names) in valid_task_names:
+            continue
+        head, separator, _ = task_id.rpartition(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+        missing.append(head if separator and head else task_id)
+    return missing
+
+
+def build_interface_preset_snapshot(
+    interface_model: MaaFWInterface,
+    preset: MaaFWPreset,
+    *,
+    task_order: list[str] | None = None,
+    task_option_maps: dict[str, dict[str, MaaFWOption]] | None = None,
+    include_default_options: bool = True,
+) -> MaaFWTaskPresetSnapshot:
+    task_order = task_order or _build_default_task_order(interface_model)
+    task_checked = {task_name: False for task_name in task_order}
+    task_option_maps = task_option_maps or _build_task_option_maps(interface_model)
+    task_options_by_task: MaaFWTaskOptionsByTask = {}
+    interface_task_names = {task.name for task in interface_model.task}
+    # 预设任务里写的「只属于全局」的选项值进全局表（按预设顺序先写的为准），不再落到那个
+    # 任务上；任务 / 资源 / 控制器自己也引用的选项照常是那个任务的值
+    global_option_map = build_global_option_map(interface_model)
+    global_options: dict[str, MaaFWTaskOptionValue] = {}
+
+    if include_default_options:
+        # task_order 里可能有同名任务第二次出现的实例 id，选项表按任务名取
+        for task_name in task_order:
+            defaults, _ = _build_option_defaults(
+                task_option_maps.get(
+                    resolve_task_instance_name(task_name, interface_task_names), {}
+                )
+            )
+            task_options_by_task[task_name] = defaults
+
+    ordered_preset_tasks: list[str] = []
+    seen_task_names: set[str] = set()
+    occurrences: dict[str, int] = {}
+    valid_task_names = interface_task_names & set(task_checked)
+    task_definitions: dict[str, MaaFWTask] = {}
+    for task in interface_model.task:
+        task_definitions.setdefault(task.name, task)
+    for preset_task in preset.task or []:
+        if preset_task.name not in valid_task_names:
+            continue
+
+        # 同一任务在预设里出现多次（MRA「周常配置」把「自动出征」排了 9 次，每次选项
+        # 不同）：第二次起映射成重复任务实例，与用户在队列里手动复制任务同一口径。
+        # 后缀按出现次序确定，同一份预设每次展开得到同一组实例 id。
+        occurrence = occurrences.get(preset_task.name, 0) + 1
+        occurrences[preset_task.name] = occurrence
+        task_id = preset_task.name
+        if occurrence > 1:
+            suffix = f"preset{occurrence}"
+            task_id = build_duplicate_task_id(preset_task.name, suffix)
+            while task_id in task_checked:
+                suffix += "x"
+                task_id = build_duplicate_task_id(preset_task.name, suffix)
+
+        # 任务声明了 repeatable / repeat_count（MFAA 私有扩展）：这一次出现展开成
+        # repeat_count 份，每份都带预设给的这一套选项，之后在队列里各自独立。
+        instance_ids = build_repeat_instance_ids(
+            task_id,
+            preset_task.name,
+            task_repeat_count(task_definitions[preset_task.name]),
+            taken={*interface_task_names, *ordered_preset_tasks},
+        )
+        option_map = task_option_maps.get(preset_task.name, {})
+        for option_name, option_value in (preset_task.option or {}).items():
+            if (
+                option_name in global_option_map
+                and option_name not in option_map
+                and option_name not in global_options
+            ):
+                _apply_preset_option_value(
+                    option_name, option_value, global_option_map, global_options
+                )
+        for instance_id in instance_ids:
+            if include_default_options and instance_id not in task_options_by_task:
+                defaults, _ = _build_option_defaults(option_map)
+                task_options_by_task[instance_id] = defaults
+
+            ordered_preset_tasks.append(instance_id)
+            seen_task_names.add(instance_id)
+            task_checked[instance_id] = bool(
+                True if preset_task.enabled is None else preset_task.enabled
+            )
+
+            target_options = task_options_by_task.setdefault(instance_id, {})
+            for option_name, option_value in (preset_task.option or {}).items():
+                if option_name not in option_map:
+                    continue
+                _apply_preset_option_value(
+                    option_name,
+                    option_value,
+                    option_map,
+                    target_options,
+                )
+
+    normalized_order = ordered_preset_tasks + [
+        task_name for task_name in task_order if task_name not in seen_task_names
+    ]
+    return MaaFWTaskPresetSnapshot(
+        taskOrder=normalized_order,
+        taskChecked=task_checked,
+        taskOptions=task_options_by_task,
+        globalOptions=(
+            normalize_global_options(global_options, interface_model)
+            if include_default_options
+            else global_options
+        ),
+    )
+
+
+def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
+    if isinstance(snapshot, MaaFWTaskPresetSnapshot):
+        return {
+            "taskOrder": [item for item in snapshot.taskOrder if isinstance(item, str)],
+            "taskChecked": {
+                task_id: bool(checked)
+                for task_id, checked in snapshot.taskChecked.items()
+                if isinstance(task_id, str)
+            },
+            "taskOptions": _normalize_raw_task_options(snapshot.taskOptions),
+            "globalOptions": _normalize_raw_option_values(snapshot.globalOptions),
+            "taskLabels": _normalize_raw_task_labels(snapshot.taskLabels),
+        }
+
+    if not isinstance(snapshot, dict):
+        return {
+            "taskOrder": [],
+            "taskChecked": {},
+            "taskOptions": {},
+            "globalOptions": {},
+            "taskLabels": {},
+        }
+
+    task_order = snapshot.get("taskOrder")
+    task_checked = snapshot.get("taskChecked")
+    return {
+        "taskOrder": (
+            [item for item in task_order if isinstance(item, str)]
+            if isinstance(task_order, list)
+            else []
+        ),
+        "taskChecked": (
+            {
+                task_id: bool(checked)
+                for task_id, checked in task_checked.items()
+                if isinstance(task_id, str)
+            }
+            if isinstance(task_checked, dict)
+            else {}
+        ),
+        "taskOptions": _normalize_raw_task_options(snapshot.get("taskOptions")),
+        "globalOptions": _normalize_raw_option_values(snapshot.get("globalOptions")),
+        "taskLabels": _normalize_raw_task_labels(snapshot.get("taskLabels")),
+    }
+
+
+def _normalize_raw_task_labels(value: Any) -> dict[str, str]:
+    """实例显示名只留键值都是字符串、去首尾空白后非空的。"""
+
+    if not isinstance(value, dict):
+        return {}
+    return {
+        task_id: label.strip()
+        for task_id, label in value.items()
+        if isinstance(task_id, str) and isinstance(label, str) and label.strip()
+    }
+
+
+def _normalize_raw_task_options(
+    value: Any,
+) -> dict[str, dict[str, MaaFWTaskOptionValue]]:
+    normalized: dict[str, dict[str, MaaFWTaskOptionValue]] = {}
+    if not isinstance(value, dict):
+        return normalized
+
+    for task_id, option_map in value.items():
+        if not isinstance(task_id, str) or not isinstance(option_map, dict):
+            continue
+        normalized[task_id] = _normalize_raw_option_values(option_map)
+
+    return normalized
+
+
+def _normalize_raw_option_values(value: Any) -> dict[str, MaaFWTaskOptionValue]:
+    normalized_options: dict[str, MaaFWTaskOptionValue] = {}
+    if not isinstance(value, dict):
+        return normalized_options
+
+    for option_name, option_value in value.items():
+        if not isinstance(option_name, str):
+            continue
+        normalized_value = _normalize_option_value_for_storage(option_value)
+        if normalized_value is not None:
+            normalized_options[option_name] = normalized_value
+    return normalized_options
+
+
+def _normalize_option_value_for_storage(value: Any) -> MaaFWTaskOptionValue | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    if isinstance(value, dict):
+        return {
+            key: item
+            for key, item in value.items()
+            if isinstance(key, str) and isinstance(item, str)
+        }
+    return None
+
+
+def _normalize_preset_name(value: Any) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return CUSTOM_PRESET_NAME
+
+
+def build_default_task_instances(
+    interface_model: MaaFWInterface,
+) -> list[tuple[str, MaaFWTask]]:
+    """interface 任务表按出现位置展开成 ``(实例 id, 任务定义)``。
+
+    任务表里同名任务出现多次（MaaGFNeuralCloud 的「收集任务奖励」一前一后两次，
+    只有前一次 default_check）是合法写法：第一次沿用裸任务名，第 k 次起映射成重复
+    任务实例 ``<任务名>__MAS_DUP__task<k>``，与用户手动复制同一口径，默认队列里两次
+    都在、各按自己的 default_check。后缀按出现次序确定，每次展开得到同一组 id。
+    声明了 repeatable / repeat_count 的任务，每次出现再展开成 N 份
+    （``build_repeat_instance_ids``）。
+    """
+
+    task_names = {task.name for task in interface_model.task}
+    occurrences: dict[str, int] = {}
+    instances: list[tuple[str, MaaFWTask]] = []
+    used: set[str] = set()
+    for task in interface_model.task:
+        occurrence = occurrences.get(task.name, 0) + 1
+        occurrences[task.name] = occurrence
+        task_id = task.name
+        if occurrence > 1:
+            suffix = f"task{occurrence}"
+            task_id = build_duplicate_task_id(task.name, suffix)
+            while task_id in task_names or task_id in used:
+                suffix += "x"
+                task_id = build_duplicate_task_id(task.name, suffix)
+        # repeatable / repeat_count（MFAA 私有扩展）：默认队列里展开成 N 份
+        for instance_id in build_repeat_instance_ids(
+            task_id,
+            task.name,
+            task_repeat_count(task),
+            taken={*task_names, *used},
+        ):
+            used.add(instance_id)
+            instances.append((instance_id, task))
+    return instances
+
+
+def build_repeat_instance_ids(
+    task_id: str,
+    task_name: str,
+    count: int,
+    *,
+    taken: Collection[str] = (),
+) -> list[str]:
+    """一份任务实例按 ``repeat_count`` 展开成 ``count`` 份实例 id。
+
+    原实例在前，其后是 ``<任务名>__MAS_DUP__<原后缀>repeat<k>``（k 从 2 起；原实例是
+    裸任务名时原后缀为空）。后缀由位置决定，同一份 interface 每次展开得到同一组 id；
+    撞上 ``taken`` 里的 id 时补 ``x``。
+    """
+
+    if count <= 1:
+        return [task_id]
+    separator_index = task_id.rfind(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+    base_suffix = (
+        task_id[separator_index + len(DUPLICATE_TASK_SUFFIX_SEPARATOR) :]
+        if task_id != task_name and separator_index >= 0
+        else ""
+    )
+    instance_ids = [task_id]
+    # 成员判断走集合：列表逐个比是平方复杂度（count=30000 要 2.4 s）。
+    seen = {task_id}
+    taken_set = taken if isinstance(taken, (set, frozenset)) else set(taken)
+    for copy_index in range(2, count + 1):
+        suffix = f"{base_suffix}repeat{copy_index}"
+        instance_id = build_duplicate_task_id(task_name, suffix)
+        while instance_id in taken_set or instance_id in seen:
+            suffix += "x"
+            instance_id = build_duplicate_task_id(task_name, suffix)
+        instance_ids.append(instance_id)
+        seen.add(instance_id)
+    return instance_ids
+
+
+def build_task_option_maps(
+    interface_model: MaaFWInterface,
+) -> dict[str, dict[str, MaaFWOption]]:
+    """每个任务可配的选项表 ``{任务名: {选项名: 定义}}``。
+
+    与快照归一、预设展开用的是同一张表：任务自身的选项加 resource / controller 选项，
+    case 下挂的嵌套选项逐层展开。``global_option`` 不并进来：只出现在全局里的选项（对这个
+    任务而言）值只存在用户的全局表里；任务 / 资源 / 控制器自己也引用的选项照常在表里，
+    按 PI 的覆盖顺序在全局之上再叠一层任务自己的值。pretask 伪任务按伪任务名给出，只含它
+    自己声明的选项。
+    """
+
+    return _build_task_option_maps(interface_model)
+
+
+def build_global_option_map(interface_model: MaaFWInterface) -> dict[str, MaaFWOption]:
+    """全局选项表 ``{选项名: 定义}``：``global_option`` 加上各 case 下挂的子选项，逐层展开。
+
+    这些选项的值每个用户只存一份（快照的 ``globalOptions``），参与所有任务的覆盖；不按当前
+    controller / resource 过滤（换了控制方式值也还在），适用性在建覆盖时判断。
+    """
+
+    collected: dict[str, MaaFWOption] = {}
+    _collect_task_options(
+        interface_model.global_option or [], interface_model.option, collected
+    )
+    return collected
+
+
+def _build_default_task_order(interface_model: MaaFWInterface) -> list[str]:
+    return [task_id for task_id, _ in build_default_task_instances(interface_model)]
+
+
+def _build_valid_task_names(interface_model: MaaFWInterface) -> set[str]:
+    """ProjectInterface 声明的全部任务名（含 pretask 伪任务名）。"""
+
+    return {
+        *(
+            build_pretask_task_name(pretask)
+            for pretask in iter_pretasks(interface_model)
+        ),
+        *(task.name for task in interface_model.task),
+    }
+
+
+def _build_task_option_maps(
+    interface_model: MaaFWInterface,
+    *,
+    controller_name: str | None = None,
+    resource_name: str | None = None,
+) -> dict[str, dict[str, MaaFWOption]]:
+    option_map = interface_model.option
+    task_option_maps: dict[str, dict[str, MaaFWOption]] = {}
+    common_option_names = _build_common_option_names(
+        interface_model,
+        controller_name=controller_name,
+        resource_name=resource_name,
+    )
+
+    # global_option 不在这里（见 build_global_option_map）：它的值在用户的全局表里。同一个
+    # 选项也被任务 / 资源 / 控制器自己引用时照常收进来，任务上存一份自己的值
+    for task in interface_model.task:
+        collected: dict[str, MaaFWOption] = {}
+        _collect_task_options(common_option_names, option_map, collected)
+        _collect_task_options(task.option or [], option_map, collected)
+        task_option_maps[task.name] = collected
+
+    for pretask in iter_pretasks(interface_model):
+        if (
+            controller_name is not None
+            and pretask.controller
+            and controller_name not in pretask.controller
+        ):
+            continue
+        if (
+            resource_name is not None
+            and pretask.resource
+            and resource_name not in pretask.resource
+        ):
+            continue
+        collected: dict[str, MaaFWOption] = {}
+        _collect_task_options(pretask.option or [], interface_model.option, collected)
+        task_option_maps[build_pretask_task_name(pretask)] = collected
+
+    return task_option_maps
+
+
+def _build_common_option_names(
+    interface_model: MaaFWInterface,
+    *,
+    controller_name: str | None = None,
+    resource_name: str | None = None,
+) -> list[str]:
+    option_names: list[str] = []
+
+    for resource in interface_model.resource:
+        if resource_name is not None and resource.name != resource_name:
+            continue
+        option_names.extend(resource.option or [])
+
+    for controller in interface_model.controller:
+        if controller_name is not None and controller.name != controller_name:
+            continue
+        option_names.extend(controller.option or [])
+
+    return option_names
+
+
+def _collect_task_options(
+    option_names: list[str],
+    option_map: dict[str, MaaFWOption],
+    target: dict[str, MaaFWOption],
+) -> None:
+    for option_name in option_names:
+        if option_name in target:
+            continue
+        option = option_map.get(option_name)
+        if option is None or option.type not in SUPPORTED_OPTION_TYPES:
+            continue
+
+        target[option_name] = option
+        for case in option.cases or []:
+            if case.option:
+                _collect_task_options(case.option, option_map, target)
+
+
+def _build_option_defaults(
+    option_map: dict[str, MaaFWOption],
+) -> tuple[dict[str, MaaFWTaskOptionValue], dict[str, str]]:
+    defaults: dict[str, MaaFWTaskOptionValue] = {}
+    value_types: dict[str, str] = {}
+
+    for option_name, option in option_map.items():
+        if option.type in {"select", "scan_select", "switch"}:
+            default_value = option.default_case
+            if not isinstance(default_value, str):
+                default_value = option.cases[0].name if option.cases else ""
+            defaults[option_name] = default_value
+            value_types[option_name] = "string"
+            continue
+
+        if option.type == "checkbox":
+            selected_values = (
+                set(option.default_case)
+                if isinstance(option.default_case, list)
+                else set()
+            )
+            defaults[option_name] = [
+                case.name for case in option.cases or [] if case.name in selected_values
+            ]
+            value_types[option_name] = "string_list"
+            continue
+
+        if option.type == "input":
+            # 快照里 input 没填就存空串，不在这里写 default：default 是字段初值，但回落在
+            # 建覆盖时做（runner/pipeline_override 的 _string_input_fallback，数字 / 布尔在
+            # _coerce_input_value），存量快照里的空串也走同一条回落、不用迁移。password 字段与
+            # 特调声明的例外（M9A 的自定义兑换码，default 是字面量「占位」）不回落。
+            input_defaults: dict[str, str] = {}
+            for input_case in option.inputs or []:
+                input_defaults[input_case.name] = ""
+            defaults[option_name] = input_defaults
+            value_types[option_name] = "object"
+            continue
+
+        if option.type == "hotkey":
+            hotkey_defaults: dict[str, str] = {}
+            for hotkey_case in option.hotkeys or []:
+                hotkey_defaults[hotkey_case.name] = hotkey_case.default or ""
+            defaults[option_name] = hotkey_defaults
+            value_types[option_name] = "object"
+
+    return defaults, value_types
+
+
+def _build_option_case_name_sets(
+    option_map: dict[str, MaaFWOption],
+) -> dict[str, set[str]]:
+    case_name_sets: dict[str, set[str]] = {}
+
+    for option_name, option in option_map.items():
+        if option.type in {"select", "scan_select", "switch", "checkbox"}:
+            case_name_sets[option_name] = {case.name for case in option.cases or []}
+
+    return case_name_sets
+
+
+def _normalize_options_for_task(
+    raw_options_for_task: Any,
+    option_map: dict[str, MaaFWOption],
+    defaults: dict[str, MaaFWTaskOptionValue],
+    value_types: dict[str, str],
+    case_name_sets: dict[str, set[str]],
+) -> dict[str, MaaFWTaskOptionValue]:
+    normalized_options = {
+        key: _clone_option_value(value) for key, value in defaults.items()
+    }
+    if not isinstance(raw_options_for_task, dict):
+        return normalized_options
+
+    for option_key, option_value in raw_options_for_task.items():
+        if not isinstance(option_key, str) or option_key not in option_map:
+            continue
+
+        expected_type = value_types.get(option_key)
+        if expected_type is None:
+            normalized_value = _normalize_option_value_for_storage(option_value)
+            if normalized_value is not None:
+                normalized_options[option_key] = normalized_value
+            continue
+
+        if expected_type == "string" and isinstance(option_value, str):
+            allowed_cases = case_name_sets.get(option_key)
+            if allowed_cases is not None and option_value not in allowed_cases:
+                continue
+            normalized_options[option_key] = option_value
+            continue
+
+        if expected_type == "string_list" and isinstance(option_value, list):
+            normalized_items = [item for item in option_value if isinstance(item, str)]
+            allowed_cases = case_name_sets.get(option_key)
+            if allowed_cases is not None:
+                normalized_items = [
+                    item for item in normalized_items if item in allowed_cases
+                ]
+            normalized_options[option_key] = normalized_items
+            continue
+
+        if expected_type == "object" and isinstance(option_value, dict):
+            option = option_map.get(option_key)
+            if option is None or option.type not in {"input", "hotkey"}:
+                continue
+            existing_value = normalized_options.get(option_key)
+            normalized_fields = (
+                {
+                    key: item
+                    for key, item in existing_value.items()
+                    if isinstance(key, str) and isinstance(item, str)
+                }
+                if isinstance(existing_value, dict)
+                else {}
+            )
+            field_names = (
+                [input_case.name for input_case in option.inputs or []]
+                if option.type == "input"
+                else [hotkey_case.name for hotkey_case in option.hotkeys or []]
+            )
+            for field_name in field_names:
+                field_value = option_value.get(field_name)
+                if isinstance(field_value, str):
+                    normalized_fields[field_name] = field_value
+            normalized_options[option_key] = normalized_fields
+
+    return normalized_options
+
+
+def _clone_option_value(value: MaaFWTaskOptionValue) -> MaaFWTaskOptionValue:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    if isinstance(value, dict):
+        return {
+            key: item
+            for key, item in value.items()
+            if isinstance(key, str) and isinstance(item, str)
+        }
+    return value
+
+
+def _apply_preset_option_value(
+    option_name: str,
+    value: MaaFWPresetOptionValue,
+    option_map: dict[str, MaaFWOption],
+    target_options: dict[str, MaaFWTaskOptionValue],
+) -> None:
+    option = option_map.get(option_name)
+    if option is None:
+        return
+
+    if option.type in {"input", "hotkey"}:
+        if not isinstance(value, dict):
+            return
+        existing_value = target_options.get(option_name)
+        normalized_fields: dict[str, str] = (
+            {
+                key: item
+                for key, item in existing_value.items()
+                if isinstance(key, str) and isinstance(item, str)
+            }
+            if isinstance(existing_value, dict)
+            else {}
+        )
+        field_names = (
+            [input_case.name for input_case in option.inputs or []]
+            if option.type == "input"
+            else [hotkey_case.name for hotkey_case in option.hotkeys or []]
+        )
+        for field_name in field_names:
+            field_value = value.get(field_name)
+            if isinstance(field_value, str):
+                normalized_fields[field_name] = field_value
+        target_options[option_name] = normalized_fields
+        return
+
+    if option.type == "checkbox":
+        if isinstance(value, list):
+            target_options[option_name] = [
+                item for item in value if isinstance(item, str)
+            ]
+        return
+
+    if isinstance(value, str):
+        target_options[option_name] = value
+        return
+
+    normalized_value = _normalize_option_value_for_storage(value)
+    if normalized_value is not None:
+        target_options[option_name] = normalized_value

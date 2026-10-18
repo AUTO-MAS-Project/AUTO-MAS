@@ -1,14 +1,27 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
+import type { ScriptType } from '@/types/script'
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
+import { useMaaIssueReport } from '@/composables/useMaaIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
+import { useWhimboxIssueReport } from '@/composables/useWhimboxIssueReport'
+import { useBetterGIIssueReport } from '@/composables/useBetterGIIssueReport'
+import { useMaaFWIssueReport } from '@/composables/useMaaFWIssueReport'
+import { useM9AIssueReport } from '@/composables/useM9AIssueReport'
+import { useMSSIssueReport } from '@/composables/useMSSIssueReport'
+import { useScriptApi } from '@/composables/useScriptApi'
+import {
+  maafwScriptTypeByConfigType,
+  resolveMaaFWFlavor,
+  type MaaFWFlavor,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -20,9 +33,69 @@ const logger = window.electronAPI.getLogger('日志管理')
 const exportingLogs = ref(false)
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+const { exporting: exportingMaaLogs, exportMaaIssueReport } = useMaaIssueReport(logger)
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
+const { exporting: exportingWhimboxLogs, exportWhimboxIssueReport } = useWhimboxIssueReport(logger)
+const { exporting: exportingBetterGILogs, exportBetterGIIssueReport } =
+  useBetterGIIssueReport(logger)
+const { exporting: exportingMaaFWLogs, exportMaaFWIssueReport } = useMaaFWIssueReport(logger)
+const { exporting: exportingM9ALogs, exportM9AIssueReport } = useM9AIssueReport(logger)
+const { exporting: exportingMSSLogs, exportMSSIssueReport } = useMSSIssueReport(logger)
+
+const { getScripts, error: scriptApiError } = useScriptApi()
+/** 已添加的脚本类型：设置页只显示这些专项的导出按钮 */
+const addedScriptTypes = ref<Set<ScriptType>>(new Set())
+/** 脚本列表没读到：这时按「全都显示」处理，免得一次读取失败把所有导出入口都藏掉 */
+const addedScriptTypesUnknown = ref(false)
+
+const loadAddedScriptTypes = async () => {
+  try {
+    // 不接管 loading：这里只决定按钮显不显示，不该让整个设置页跟着转圈
+    const scripts = await getScripts(false)
+    // getScripts 读失败时不抛错，只把原因写进 error 并返回空数组，照收会误判成「一个专项都没加」
+    if (scriptApiError.value) throw new Error(scriptApiError.value)
+    addedScriptTypes.value = new Set(scripts.map(script => script.type))
+    addedScriptTypesUnknown.value = false
+  } catch (error) {
+    addedScriptTypesUnknown.value = true
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取已添加脚本失败: ${errorMsg}`)
+  }
+}
+
+/** 添加过其中任一专项才显示对应的导出按钮 */
+const hasScriptType = (...types: ScriptType[]): boolean =>
+  addedScriptTypesUnknown.value || types.some(type => addedScriptTypes.value.has(type))
+
+// MFW 问题包按脚本导出：下拉里列出 MaaFW 与各特调的脚本，点哪个导哪个
+const maafwScriptTypes = maafwScriptTypeByConfigType()
+const maafwReportScripts = ref<Array<{ uid: string; name: string; flavor: MaaFWFlavor }>>([])
+
+const loadMaaFWReportScripts = async () => {
+  try {
+    const scripts = await window.electronAPI?.listMaaFWIssueReportScripts?.(
+      Object.keys(maafwScriptTypes)
+    )
+    maafwReportScripts.value = (scripts ?? []).map(script => ({
+      uid: script.uid,
+      name: script.name,
+      flavor: resolveMaaFWFlavor(maafwScriptTypes[script.type]),
+    }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取 MFW 脚本列表失败: ${errorMsg}`)
+  }
+}
+
+const handleMaaFWMenuOpenChange = (open: boolean) => {
+  if (open) void loadMaaFWReportScripts()
+}
+
+const handleMaaFWMenuClick = ({ key }: { key: string | number }) => {
+  void exportMaaFWIssueReport(String(key))
+}
 
 // Runtime 灰度开关：持久化设置 + 当前生效值（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -85,6 +158,8 @@ const handleRuntimeLaunchModeChange = async (value: unknown) => {
 
 onMounted(() => {
   void loadRuntimeLaunchMode()
+  void loadMaaFWReportScripts()
+  void loadAddedScriptTypes()
 })
 
 const exportLogsZip = async () => {
@@ -186,6 +261,18 @@ const exportDataBackup = async () => {
         <a-col :span="24">
           <a-space size="large" wrap>
             <a-button
+              v-if="hasScriptType('MAA')"
+              type="primary"
+              :loading="exportingMaaLogs"
+              @click="exportMaaIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportMaa') }}
+            </a-button>
+            <a-button
+              v-if="hasScriptType('MaaEnd')"
               type="primary"
               :loading="exportingMaaEndLogs"
               @click="exportMaaEndIssueReport"
@@ -195,23 +282,109 @@ const exportDataBackup = async () => {
               </template>
               {{ t('setting.advanced.exportMaaEnd') }}
             </a-button>
-            <a-button type="primary" :loading="exportingOkwwLogs" @click="exportOkwwIssueReport">
+            <a-button
+              v-if="hasScriptType('Okww')"
+              type="primary"
+              :loading="exportingOkwwLogs"
+              @click="exportOkwwIssueReport"
+            >
               <template #icon>
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportOkww') }}
             </a-button>
-            <a-button type="primary" :loading="exportingOkNteLogs" @click="exportOkNteIssueReport">
+            <a-button
+              v-if="hasScriptType('OkNte')"
+              type="primary"
+              :loading="exportingOkNteLogs"
+              @click="exportOkNteIssueReport"
+            >
               <template #icon>
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportOkNte') }}
             </a-button>
-            <a-button type="primary" :loading="exportingZzzOdLogs" @click="exportZzzOdIssueReport">
+            <a-button
+              v-if="hasScriptType('ZzzOd')"
+              type="primary"
+              :loading="exportingZzzOdLogs"
+              @click="exportZzzOdIssueReport"
+            >
               <template #icon>
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportZzzOd') }}
+            </a-button>
+            <a-button
+              v-if="hasScriptType('Whimbox')"
+              type="primary"
+              :loading="exportingWhimboxLogs"
+              @click="exportWhimboxIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportWhimbox') }}
+            </a-button>
+            <a-button
+              v-if="hasScriptType('BetterGI')"
+              type="primary"
+              :loading="exportingBetterGILogs"
+              @click="exportBetterGIIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportBetterGI') }}
+            </a-button>
+            <a-dropdown
+              v-if="hasScriptType('MaaFW', 'M9A', 'MSS')"
+              :trigger="['click']"
+              :disabled="exportingMaaFWLogs"
+              @open-change="handleMaaFWMenuOpenChange"
+            >
+              <a-button type="primary" :loading="exportingMaaFWLogs">
+                <template #icon>
+                  <DownloadOutlined />
+                </template>
+                {{ t('setting.advanced.exportMaaFW') }}
+                <DownOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu @click="handleMaaFWMenuClick">
+                  <a-menu-item v-for="script in maafwReportScripts" :key="script.uid">
+                    {{ script.name }}
+                    <a-tag :color="script.flavor.typeTagColor" class="maafw-report-tag">
+                      {{ script.flavor.typeTagLabel }}
+                    </a-tag>
+                  </a-menu-item>
+                  <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
+                    {{ t('setting.advanced.exportMaaFWEmpty') }}
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+            <a-button
+              v-if="hasScriptType('M9A')"
+              type="primary"
+              :loading="exportingM9ALogs"
+              @click="exportM9AIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportM9A') }}
+            </a-button>
+            <a-button
+              v-if="hasScriptType('MSS')"
+              type="primary"
+              :loading="exportingMSSLogs"
+              @click="exportMSSIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportMSS') }}
             </a-button>
           </a-space>
         </a-col>
@@ -283,6 +456,11 @@ const exportDataBackup = async () => {
   line-height: 1.6;
   flex: 1 1 360px;
   min-width: 240px;
+}
+
+.maafw-report-tag {
+  margin-inline-start: 8px;
+  margin-inline-end: 0;
 }
 
 .runtime-mode-hint {

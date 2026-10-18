@@ -1,4 +1,22 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
+import type {
+  DesktopMascotHostAPI,
+  DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
+} from '@/types/desktopMascot'
+import type {
+  AppearanceCleanupResult,
+  AppearanceImportResult,
+  InstalledAppearance,
+  LocalAppearanceInspectResult,
+  OnlineAppearanceCoverResult,
+  OnlineAppearanceDetailResult,
+  OnlineAppearanceInstallResult,
+  OnlineAppearanceListResult,
+  OnlineAppearancePrepareResult,
+  OnlineAppearanceQuery,
+} from '@/types/appearance'
 
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
@@ -51,6 +69,7 @@ export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
 
 export type RuntimeUpdateRetryAction =
+  | 'bootstrap'
   | 'workspace-sync'
   | 'dependencies-sync'
   | 'dependencies-rebuild'
@@ -178,7 +197,18 @@ export interface RuntimeLaunchModeState {
   source: RuntimeLaunchModeSource
 }
 
-export interface ElectronAPI {
+/** 真实显示器回来了但有任务在跑时，后端发来的询问数据（与 WSDisplayDetachPromptData 一致） */
+export interface VirtualDisplayPromptPayload {
+  returned: string[]
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
+}
+
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  listMascots?: () => Promise<MascotSummary[]>
+  importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
+  removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
+  /** 不带选择状态时表示资源列表变化。 */
+  onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
@@ -191,9 +221,22 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   appRestart: () => Promise<void>
+  /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
+  appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
+  /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
+  powerWarningStart?: () => Promise<void>
+  /** 倒计时结束或取消：撤回置顶 */
+  powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
+  appPrepareQuit?: () => Promise<number | null>
+  /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
+  appConfirmQuit?: (token: number) => Promise<boolean>
+  /** 页面保存失败：撤销协调退出，取消兜底计时并重新显示窗口。 */
+  appCancelQuit?: (token?: number) => Promise<void>
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
@@ -220,7 +263,8 @@ export interface ElectronAPI {
   stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 配置文件操作
-  saveConfig: (config: unknown) => Promise<void>
+  // 仅覆盖 config 中的字段；defaults 只补齐文件中缺失的字段。
+  saveConfig: (config: unknown, defaults?: unknown) => Promise<void>
   loadConfig: () => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 
@@ -252,6 +296,15 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+    errorCode?: 'no-installation' | 'no-files' | 'export-failed'
+    collectedCount?: number
+    incompleteCount?: number
+  }>
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string
@@ -276,6 +329,45 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportWhimboxIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportBetterGIIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
+  listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
+    Array<{
+      uid: string
+      type: string
+      name: string
+      projectLabel: string
+    }>
+  >
+  exportMaaFWIssueReport: (scriptId: string) => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportM9AIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportMSSIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string
@@ -293,6 +385,17 @@ export interface ElectronAPI {
   onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
   removeLogSelectFileListener?: () => void
 
+  // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程另开窗口放到真实屏右下角
+  showVirtualDisplayPrompt?: (
+    payload: VirtualDisplayPromptPayload
+  ) => Promise<{ success: boolean; error?: string }>
+  closeVirtualDisplayPrompt?: () => Promise<void>
+  /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
+  getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
+  onVirtualDisplayPromptData?: (
+    callback: (payload: VirtualDisplayPromptPayload) => void
+  ) => () => void
+
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {
     debug: (...args: unknown[]) => Promise<void>
@@ -306,8 +409,53 @@ export interface ElectronAPI {
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
+  /** 按 base64 读二进制文件（音频等）；渲染进程用它拼 data URL */
+  readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
+
+  // 自定义外观包
+  listAppearances?: () => Promise<InstalledAppearance[]>
+  getAppearance?: (id: string) => Promise<InstalledAppearance | null>
+  importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
+  removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
+  clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
+  listOnlineAppearances?: (
+    query?: OnlineAppearanceQuery,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (
+    fileKey: string,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceDetailResult>
+  prepareOnlineAppearance?: (
+    fileKey: string,
+    versionNo: number,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearancePrepareResult>
+  installOnlineAppearance?: (
+    token: string,
+    replace?: boolean,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceInstallResult>
+  discardOnlineAppearance?: (
+    token: string,
+    category?: AppearanceCategory
+  ) => Promise<{ success: boolean }>
+  getOnlineAppearanceCover?: (
+    fileKey: string,
+    versionNo?: number,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceCoverResult>
+  inspectLocalAppearance?: (
+    zipPath: string,
+    category?: AppearanceCategory
+  ) => Promise<LocalAppearanceInspectResult>
+  inspectAppearanceCover?: (
+    imagePath: string
+  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  onAppearanceChanged?: (callback: () => void) => () => void
+  onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
   // ==================== 初始化 API ====================
 
@@ -355,6 +503,7 @@ export interface ElectronAPI {
     staged?: boolean
     currentCommit?: string
     remoteCommit?: string
+    commitMessage?: string
     error?: string
   }>
 

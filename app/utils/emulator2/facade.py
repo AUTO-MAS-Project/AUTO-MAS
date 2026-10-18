@@ -43,21 +43,27 @@ from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
+from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
+from .avd.manager import AvdManager
+from .avd.manager import build_manager as build_avd_manager
 from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
+from .master_mode import apply_host_mode, is_master_mode_enabled
 from .mumu6 import MuMu6Manager
 from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
 from .slots import PathRecord, SlotRecord, SlotTable
 
-#: 一条安装的后端管理器。两家各自继承旧实现, 对门面暴露同一组方法。
-Backend = LDPlayer14Manager | MuMu6Manager
+#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 魔改 AVD（avd）自己驱动
+#: emulator.exe, 三家对门面暴露同一组方法。
+Backend = LDPlayer14Manager | MuMu6Manager | AvdManager
 
 #: 类型 -> 构造函数。加一家模拟器只要在这里加一行。
 _BACKEND_BUILDERS = {
     "ldplayer": build_ldplayer_manager,
     "mumu": build_mumu_manager,
+    "avd": build_avd_manager,
 }
 
 logger = get_logger("Emulator2 设备管理")
@@ -224,14 +230,34 @@ class Emulator2Manager(DeviceBase):
         logger.info(f"设备 #{slot} {when}发现配置偏离基准，已还原: {changes}")
         return list(changes)
 
-    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+    async def open(
+        self,
+        idx: str,
+        package_name: str = "",
+        *,
+        manual: bool = False,
+        allow_mod_avd: bool = False,
+    ) -> DeviceInfo:
         """启动设备；``package_name`` 非空时在设备就绪后把该应用也拉起来。
+
+        ``manual``：用户在模拟器页手动点的启动（任务路径不传）。只有魔改 AVD 用得上——它开机时就要
+        定有没有窗口，手动启动带窗口，任务拉起跟「静默模式」走；雷电 / MuMu 不收这个参数。
+
+        ``allow_mod_avd``：调用方能用魔改 AVD（MaaFW 脚本——通用项目与各特调——与 MAA）。
+        魔改 AVD 目前只支持这两类：设备是魔改 AVD、又不是手动启动、调用方也没放行时直接拒绝，不开机。
+        雷电 / MuMu 不看它。
 
         应用那一步由后端的 :class:`~.applaunch.AppLaunchMixin` 走纯 adb 完成，
         **模拟器本来就开着时同样生效**——两家原生的带包启动参数在那种情况下会被
-        整条吞掉，见 :mod:`.applaunch`。拉不起来只记警告，不影响本方法的返回。
+        整条吞掉，见 :mod:`.applaunch`。拉不起来只记警告，不影响本方法的返回；
+        只有等不到安卓系统启动完成时抛 ``RuntimeError``，见 ``AppLaunchMixin.open``。
+        后端返回的 ``DeviceInfo``（含拉应用结果 ``app_launch``）原样返回。
         """
         manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager) and not (manual or allow_mod_avd):
+            raise RuntimeError(MOD_AVD_UNSUPPORTED_MESSAGE)
+
+        self._apply_host_mode()
 
         # 守卫先于稳定模式：两者管的字段不重叠，但都要在实例真正起来之前写完
         await self.enforce_baseline(idx, "启动前")
@@ -247,7 +273,30 @@ class Emulator2Manager(DeviceBase):
             except Exception as e:  # noqa: BLE001 - 压不住不该拦住启动
                 logger.warning(f"设备 #{idx} 应用稳定模式失败，继续启动: {e}")
 
+        if isinstance(manager, AvdManager):
+            return await manager.open(native_index, package_name, manual=manual)
         return await manager.open(native_index, package_name)
+
+    def _apply_host_mode(self) -> None:
+        """起任一台设备前，按「大雷主人模式」对齐这条配置下**所有安装**的宿主层。
+
+        宿主层跟着安装走，不跟着实例走：MuMu 的小程序弹窗由常驻的多开器在它自己启动时弹，
+        雷电的加载页轮播由 ``dnplayer.exe`` 读安装目录的渠道配置，都和这次起的是哪台无关。
+        只在有实例要起时做，是因为这时用户明确在用这条配置；处理失败只记警告，不拦启动。
+        安卓端那层（雷电 ``cleanmode``、MuMu 桌面组件）仍由各后端在自己的启动钩子里做。
+        """
+        enabled = is_master_mode_enabled()
+        for path in self.paths:
+            label = path.alias or path.install_path
+            try:
+                changed = apply_host_mode(path.type, self._manager_exe(path), enabled)
+            except Exception as e:  # noqa: BLE001 - 见 docstring
+                logger.warning(f"{label} 的「大雷主人模式」宿主层处理失败: {e}")
+                continue
+            if changed:
+                logger.info(
+                    f"{label} 的「大雷主人模式」宿主层已{'应用' if enabled else '还原'}"
+                )
 
     async def launch_app(self, idx: str, package_name: str) -> AppLaunchResult:
         """在**已经在线**的设备上把应用拉起来，不重开模拟器。
@@ -257,6 +306,15 @@ class Emulator2Manager(DeviceBase):
         """
         manager, native_index = await self._dispatch(idx)
         return await manager.launch_app(native_index, package_name)
+
+    async def host_adb(self, idx: str):
+        """设备是魔改 AVD 实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
+        ``get_adb_path()`` 与设备地址。"""
+        manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager):
+            return manager.host_adb(native_index)
+        return None
 
     async def open_store(self, idx: str) -> AppLaunchResult:
         """打开设备所属模拟器自带的游戏中心，不重开模拟器。

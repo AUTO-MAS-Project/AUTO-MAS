@@ -34,6 +34,7 @@ class XxxConfig(BaseModel):
     Run: XxxConfig_Run | None
     Emulator: XxxConfig_Emulator | None  # only if emulator semantics exist
 
+
 class XxxUserConfig(BaseModel):
     Info: XxxUserConfig_Info | None
     Data: XxxUserConfig_Data | None

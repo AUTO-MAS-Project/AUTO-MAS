@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section form-section-alt">
+  <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.controlModeGameResource') }}</h3>
     </div>
@@ -9,12 +9,7 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwControllerThat')">
-              <span class="form-label">
-                {{ t('edit.controlMode') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.controlMode') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Controller"
@@ -63,13 +58,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <a-alert
-      v-if="unsupportedControllerOptions.length"
-      class="control-strategy-alert"
-      type="info"
-      show-icon
-      :message="unsupportedControllerMessage"
-    />
 
     <Transition name="control-fade" mode="out-in">
       <div v-if="isAdbController" key="adb">
@@ -77,22 +65,16 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwAdbControllerUses')">
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.emulator') }}</span>
               </template>
               <a-select
-                v-model:value="maafwConfig.Emulator.Id"
+                v-model:value="emulatorIdValue"
                 size="large"
                 :placeholder="t('edit.pickEmulator')"
                 :loading="emulatorLoading"
                 :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
               >
-                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorOptions"
                   :key="item.value"
@@ -106,12 +88,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.pickEmulatorInstancePassed')">
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.emulatorInstance') }}</span>
               </template>
               <a-input
                 v-if="
@@ -120,7 +97,7 @@
                   maafwConfig.Emulator.Id &&
                   maafwConfig.Emulator.Id !== '-'
                 "
-                v-model:value="maafwConfig.Emulator.Index"
+                v-model:value="emulatorIndexValue"
                 size="large"
                 :placeholder="t('edit.enterEmulatorInstanceIndex')"
                 class="modern-input"
@@ -129,7 +106,7 @@
               />
               <a-select
                 v-else
-                v-model:value="maafwConfig.Emulator.Index"
+                v-model:value="emulatorIndexValue"
                 size="large"
                 :placeholder="t('edit.pickEmulatorFirst')"
                 :loading="emulatorDeviceLoading"
@@ -141,11 +118,11 @@
                 "
                 @change="(value: string | number) => emit('change', 'Emulator', 'Index', value)"
               >
-                <a-select-option value="-">{{ t('edit.unspecified') }}</a-select-option>
                 <a-select-option
                   v-for="item in emulatorDeviceOptions"
                   :key="item.value"
                   :value="item.value"
+                  :disabled="item.disabled"
                 >
                   {{ item.label }}
                 </a-select-option>
@@ -154,85 +131,106 @@
           </a-col>
         </a-row>
 
+        <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
+        <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
+          <a-col :span="12">
+            <!-- 包名、特调在包名旁登记的组件（插入点 besidePackageName）、等待时间依次两两并排，
+                 窄屏上下排 -->
+            <a-row :gutter="16">
+              <a-col :xs="24" :xl="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                      <span class="form-label">
+                        {{ t('edit.mfwGamePackageName') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="maafwConfig.Game.PackageName"
+                    :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    size="large"
+                    allow-clear
+                    @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
+                <slot name="besidePackageName" />
+              </a-col>
+              <a-col :xs="24" :xl="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                      <span class="form-label">
+                        {{ t('edit.waitTimeSeconds') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maafwConfig.Game.WaitTime"
+                    :min="0"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-col>
+          <!-- 控制策略表放在包名右边：截图 / 输入两行，撑满整列高度 -->
+          <a-col :span="12" class="control-strategy-col">
+            <a-descriptions :column="1" size="small" bordered class="control-strategy-summary">
+              <a-descriptions-item
+                v-for="item in adbControlStrategyItems"
+                :key="item.label"
+                :label="item.label"
+              >
+                {{ item.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-col>
+        </a-row>
+      </div>
+
+      <div v-else-if="isDesktopController" key="win32">
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 键位映射 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
-                  <span class="form-label">{{ t('edit.mfwGamePackageName') }}</span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
               </template>
-              <a-input
-                v-model:value="maafwConfig.Game.PackageName"
-                :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
-                allow-clear
-                @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
-              />
+              <!-- 收起时只显示标题（option-label-prop），说明只在展开的选项里出现 -->
+              <a-select
+                v-model:value="maafwConfig.Game.LaunchMode"
+                size="large"
+                style="width: 100%"
+                option-label-prop="label"
+                @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
+              >
+                <a-select-option value="DirectExe" :label="t('edit.letMasLaunchGame')">
+                  <div class="launch-option">
+                    <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
+                    <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
+                  </div>
+                </a-select-option>
+                <a-select-option value="AttachOnly" :label="t('edit.launchGameOtherWay')">
+                  <div class="launch-option">
+                    <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
+                    <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
+                  </div>
+                </a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
-
-        <a-alert
-          class="control-strategy-alert"
-          type="info"
-          show-icon
-          :message="adbControlStrategyMessage"
-        />
-        <a-descriptions :column="3" size="small" bordered class="control-strategy-summary">
-          <a-descriptions-item
-            v-for="item in adbControlStrategyItems"
-            :key="item.label"
-            :label="item.label"
-          >
-            {{ item.value }}
-          </a-descriptions-item>
-        </a-descriptions>
-      </div>
-
-      <div v-else-if="isDesktopController" key="win32">
-        <a-alert
-          class="control-strategy-alert"
-          type="info"
-          show-icon
-          :message="t('edit.win32ControlMethodCan')"
-        />
-
-        <a-form-item>
-          <template #label>
-            <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
-          </template>
-          <a-select
-            v-model:value="maafwConfig.Game.LaunchMode"
-            size="large"
-            style="width: 100%"
-            @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
-          >
-            <a-select-option value="AttachOnly">
-              <div class="launch-option">
-                <span class="launch-option-title">{{ t('edit.iLaunchGameMyself') }}</span>
-                <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
-              </div>
-            </a-select-option>
-            <a-select-option value="DirectExe">
-              <div class="launch-option">
-                <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
-                <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
-              </div>
-            </a-select-option>
-          </a-select>
-          <div class="field-help">{{ launchModeDescription }}</div>
-        </a-form-item>
-
-        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="12">
+          <a-col v-if="launchMode === 'DirectExe'" :span="12">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.actualGameExeMas')">
-                  <span class="form-label">
-                    {{ t('edit.gameExecutable') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
+                <span class="form-label">{{ t('edit.gameExecutable') }}</span>
               </template>
               <a-input-group compact class="path-input-group">
                 <a-input
@@ -251,15 +249,44 @@
               </a-input-group>
             </a-form-item>
           </a-col>
-          <a-col :span="6">
+          <!-- 由脚本自身控制游戏时第二行整行隐藏，键位映射挪到启动方式右边 -->
+          <MaaFWHotkeyField
+            v-if="launchMode !== 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
+        </a-row>
+
+        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
+          <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.commandLineArgumentsPassed')">
+                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
                   <span class="form-label">
-                    {{ t('edit.launchArguments') }}
+                    {{ t('edit.mfwUnityResolution') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
+              </template>
+              <a-select
+                v-model:value="maafwConfig.Game.UnityResolution"
+                size="large"
+                style="width: 100%"
+                :options="unityResolutionOptions"
+                @change="
+                  (value: string | number) => emit('change', 'Game', 'UnityResolution', value)
+                "
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="directExeColSpan">
+            <a-form-item>
+              <template #label>
+                <span class="form-label">{{ t('edit.launchArguments') }}</span>
               </template>
               <a-input
                 v-model:value="maafwConfig.Game.Arguments"
@@ -270,12 +297,12 @@
               />
             </a-form-item>
           </a-col>
-          <a-col :span="6">
+          <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.howLongWaitReal')">
+                <a-tooltip :title="t('edit.mfwWaitTimeTip')">
                   <span class="form-label">
-                    {{ t('edit.waitTime') }}
+                    {{ t('edit.waitTimeSeconds') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -290,27 +317,15 @@
               />
             </a-form-item>
           </a-col>
-        </a-row>
-
-        <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('edit.onlyProcessesStartedBy')">
-                  <span class="form-label">
-                    {{ t('edit.closeLaunchedProcessAfterwards') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-switch
-                v-model:checked="maafwConfig.Game.CloseOnFinish"
-                :checked-children="t('edit.on2')"
-                :un-checked-children="t('edit.off')"
-                @change="emit('change', 'Game', 'CloseOnFinish', maafwConfig.Game.CloseOnFinish)"
-              />
-            </a-form-item>
-          </a-col>
+          <MaaFWHotkeyField
+            v-if="launchMode === 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
         </a-row>
       </div>
     </Transition>
@@ -321,71 +336,75 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComboBoxItem } from '@/api'
-import { isDirectControllerType, type EmulatorType } from '@/composables/useMaaFWScriptConfig'
+import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
-  MaaFWControllerInfo,
-  MaaFWInterfacePreviewData,
-  MaaFWResourceInfo,
-  MaaFWLaunchMode,
-  MaaFWScriptConfig,
-} from '@/types/script'
+  MaaFWScriptControlSectionEmits,
+  MaaFWScriptControlSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
+import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
+import { collectHotkeyOptions } from './hotkeyOptions'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  emulatorLoading: boolean
-  emulatorOptionsReady: boolean
-  emulatorDeviceLoading: boolean
-  emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
-  emulatorTypeById: Record<string, EmulatorType>
-  controllerOptions: MaaFWControllerInfo[]
-  effectiveControllerName: string
-  effectiveControllerType: string
-  isAdbController: boolean
-  isDesktopController: boolean
-  resourceOptions: MaaFWResourceInfo[]
-  unsupportedControllerOptions: MaaFWControllerInfo[]
-  unsupportedControllerMessage: string
-  adbControlStrategyMessage: string
-  adbControlStrategyItems: Array<{ label: string; value: string }>
-  selectedEmulatorLabel: string
-  interfaceDependentDisabled: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptControlSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'controller-change': []
-  'resource-change': []
-  'emulator-select-change': [emulatorId: string]
-  'select-launch-path': []
-}>()
+const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
-const launchModeDescription = computed(() => {
-  switch (launchMode.value) {
-    case 'DirectExe':
-      return 'MAS 会启动你选的游戏 exe，运行结束后按下方设置决定是否关闭它。'
-    default:
-      return 'MAS 不会启动任何程序，只等你把游戏开起来后接管它。'
-  }
+
+// 模拟器 / 实例下拉的「未选择」（值为 -）由后端列表自带，这里不再另加一项。列表还没到时
+// （加载中、加载失败、没选模拟器时实例列表为空）选项里没有它，框里会直接露出「-」，改显示占位文字；
+// 扫不到实例改手动输入时同理
+const shownWhenListed = (value: string, options: Array<{ value: string | null }>) =>
+  value === '-' && !options.some(item => item.value === '-') ? undefined : value
+
+const emulatorIdValue = computed({
+  get: () => shownWhenListed(props.maafwConfig.Emulator.Id, props.emulatorOptions),
+  set: (value: string | undefined) => {
+    props.maafwConfig.Emulator.Id = value ?? '-'
+  },
 })
+
+const emulatorIndexValue = computed({
+  get: () => shownWhenListed(props.maafwConfig.Emulator.Index, props.emulatorDeviceOptions),
+  set: (value: string | undefined) => {
+    props.maafwConfig.Emulator.Index = value ?? '-'
+  },
+})
+
+// 「让 MAS 启动游戏」的第二行：键位映射格只在 interface 有对当前控制器 / 资源生效的 hotkey option
+// 时才渲染（与 MaaFWHotkeyField 同一判据），没有它时其余三格各占三分之一，不在右边空出一格
+const hasHotkeyField = computed(
+  () =>
+    collectHotkeyOptions(
+      props.previewData,
+      props.effectiveControllerName,
+      props.effectiveResourceName
+    ).length > 0
+)
+const directExeColSpan = computed(() => (hasHotkeyField.value ? 6 : 8))
+
+// 键位映射弹窗保存：先改草稿再走页面的自动保存通道
+const handleHotkeysSave = (value: string) => {
+  props.maafwConfig.Game.Hotkeys = value
+  emit('change', 'Game', 'Hotkeys', value)
+}
+
+// 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
+const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
+  () => [
+    { label: t('edit.mfwUnityResolutionOff'), value: 'Off' },
+    { label: '1920×1080', value: '1920x1080' },
+    { label: '1280×720', value: '1280x720' },
+  ]
+)
 </script>
 
 <style scoped>
 .form-section {
   margin-bottom: 40px;
-}
-
-.form-section-alt {
-  margin: 0 -24px;
-  padding: 24px 24px 32px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
 }
 
 .section-header {
@@ -445,13 +464,6 @@ const launchModeDescription = computed(() => {
   opacity: 0.65;
 }
 
-.field-help {
-  margin-top: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .path-input-group {
   display: flex;
   border-radius: 8px;
@@ -483,12 +495,40 @@ const launchModeDescription = computed(() => {
   margin-top: 16px;
 }
 
-.control-strategy-alert {
-  margin-bottom: 12px;
+/* 右列整体是 flex，表格撑满列高（列高 = 左边 a-form-item 的标签 + 输入框 + 底距），再减去
+   与 a-form-item 相同的底距（本项目全局把它定成 20px），上下边就与左边对齐；两行均分高度 */
+.control-strategy-col {
+  display: flex;
 }
 
 .control-strategy-summary {
-  margin-top: 8px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+
+/* view 也做成 flex 列，表格作为 flex 项被拉到满高（height:100% 在这里解析不出来，差 3px） */
+.control-strategy-summary :deep(.ant-descriptions-view) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-view table) {
+  flex: 1;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-item-label),
+.control-strategy-summary :deep(.ant-descriptions-item-content) {
+  padding: 4px 12px !important;
+  font-size: 13px;
+}
+
+.control-strategy-summary :deep(.ant-descriptions-item-label) {
+  width: 28%;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-fade-enter-active,

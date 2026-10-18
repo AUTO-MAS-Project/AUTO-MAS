@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="`发现新版本 ${latestVersion || ''}`"
+    :title="t('comp.foundNewVersion', { version: latestVersion || '' })"
     :width="800"
     :footer="null"
     :mask-closable="false"
@@ -11,7 +11,7 @@
     <div class="update-container">
       <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
-        <ChangelogView :data="updateData" />
+        <ChangelogView :data="updateData" :empty-text="t('comp.changelog.loadFailed')" />
       </div>
 
       <!-- 操作按钮 -->
@@ -85,7 +85,10 @@ const handleCancel = () => {
 </script>
 
 <style scoped>
-.update-modal :deep(.ant-modal-body) {
+/* 弹窗壳由 Ant Design 渲染，使用专属类定位传送到 body 的节点。 */
+:global(.update-modal .ant-modal-body) {
+  display: flex;
+  flex-direction: column;
   padding: 16px 24px;
   max-height: 70vh;
   overflow: hidden;
@@ -95,10 +98,12 @@ const handleCancel = () => {
   display: flex;
   flex-direction: column;
   height: 60vh;
+  min-height: 0;
 }
 
 .update-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 12px;
 }
@@ -137,6 +142,7 @@ const handleCancel = () => {
 
 .update-footer {
   display: flex;
+  flex-shrink: 0;
   justify-content: flex-end;
   margin-top: 16px;
   border-top: 1px solid var(--ant-color-border);

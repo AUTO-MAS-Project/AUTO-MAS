@@ -36,7 +36,7 @@ export interface AccountGroup {
 }
 
 /** 后端返回的签到结果：社区名 -> 账号组列表 */
-interface PlatformResult {
+export interface PlatformResult {
   [platform: string]: AccountGroup[]
 }
 

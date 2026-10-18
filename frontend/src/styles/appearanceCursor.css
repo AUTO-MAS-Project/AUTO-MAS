@@ -1,0 +1,99 @@
+:root {
+  --app-appearance-cursor-default: auto;
+  --app-appearance-cursor-pointer: pointer;
+  --app-appearance-cursor-text: text;
+}
+
+html.appearance-cursor-custom,
+html.appearance-cursor-custom body,
+html.appearance-cursor-custom #app {
+  cursor: var(--app-appearance-cursor-default);
+}
+
+html.appearance-cursor-custom a,
+html.appearance-cursor-custom button,
+html.appearance-cursor-custom select,
+html.appearance-cursor-custom
+  [role='button']:not(
+    :where(.plan-drag-handle, .home-layout-drag-handle, .home-layout-sub-drag-handle)
+  ),
+html.appearance-cursor-custom .ant-menu-item,
+html.appearance-cursor-custom .ant-menu-submenu-title,
+html.appearance-cursor-custom .ant-select-selector,
+html.appearance-cursor-custom .ant-select:not(.ant-select-disabled),
+html.appearance-cursor-custom .ant-checkbox,
+html.appearance-cursor-custom .ant-checkbox-wrapper,
+html.appearance-cursor-custom
+  .ant-checkbox-wrapper:not(.ant-checkbox-wrapper-disabled)
+  .ant-checkbox-input,
+html.appearance-cursor-custom .ant-radio,
+html.appearance-cursor-custom .ant-radio-wrapper,
+html.appearance-cursor-custom .ant-radio-wrapper:not(.ant-radio-wrapper-disabled) .ant-radio-input,
+html.appearance-cursor-custom .ant-switch,
+html.appearance-cursor-custom .ant-input-number-handler,
+html.appearance-cursor-custom .ant-input-number-handler-wrap,
+html.appearance-cursor-custom .ant-input-clear-icon,
+html.appearance-cursor-custom .ant-select-arrow,
+html.appearance-cursor-custom .ant-select-clear,
+html.appearance-cursor-custom .control-button,
+html.appearance-cursor-custom .update-hint.clickable {
+  cursor: var(--app-appearance-cursor-pointer);
+}
+
+html.appearance-cursor-custom input[type='text'],
+html.appearance-cursor-custom input:not([type]),
+html.appearance-cursor-custom input[type='search'],
+html.appearance-cursor-custom input[type='email'],
+html.appearance-cursor-custom input[type='url'],
+html.appearance-cursor-custom input[type='password'],
+html.appearance-cursor-custom input[type='number'],
+html.appearance-cursor-custom textarea,
+html.appearance-cursor-custom [contenteditable='true'],
+html.appearance-cursor-custom .ant-input,
+html.appearance-cursor-custom .ant-input-number-input,
+html.appearance-cursor-custom .ant-select-selection-search-input:not([readonly]) {
+  cursor: var(--app-appearance-cursor-text);
+}
+
+/* Select uses a readonly search input even when its visible field is clickable. */
+html.appearance-cursor-custom .ant-select:not(.ant-select-disabled) .ant-select-selector,
+html.appearance-cursor-custom
+  .ant-select:not(.ant-select-disabled)
+  .ant-select-selector
+  .ant-select-selection-search-input[readonly] {
+  cursor: var(--app-appearance-cursor-pointer);
+}
+
+html.appearance-cursor-custom
+  .ant-select.ant-select-show-search:not(.ant-select-disabled)
+  .ant-select-selector,
+html.appearance-cursor-custom
+  .ant-select:not(.ant-select-disabled)
+  .ant-select-selector
+  .ant-select-selection-search-input:not([readonly]) {
+  cursor: var(--app-appearance-cursor-text);
+}
+
+html.appearance-cursor-custom button:disabled,
+html.appearance-cursor-custom button:disabled *,
+html.appearance-cursor-custom input:disabled,
+html.appearance-cursor-custom textarea:disabled,
+html.appearance-cursor-custom select:disabled,
+html.appearance-cursor-custom [aria-disabled='true'],
+html.appearance-cursor-custom [aria-disabled='true'] *,
+html.appearance-cursor-custom .ant-select-disabled,
+html.appearance-cursor-custom .ant-select-disabled .ant-select-selector,
+html.appearance-cursor-custom .ant-select-disabled *,
+html.appearance-cursor-custom .ant-input-number-disabled,
+html.appearance-cursor-custom .ant-input-number-disabled *,
+html.appearance-cursor-custom .ant-menu-item-disabled,
+html.appearance-cursor-custom .ant-menu-item-disabled *,
+html.appearance-cursor-custom .ant-checkbox-wrapper-disabled,
+html.appearance-cursor-custom .ant-checkbox-wrapper-disabled *,
+html.appearance-cursor-custom .ant-radio-wrapper-disabled,
+html.appearance-cursor-custom .ant-radio-wrapper-disabled *,
+html.appearance-cursor-custom .ant-switch-disabled,
+html.appearance-cursor-custom .ant-switch-disabled *,
+html.appearance-cursor-custom .update-hint.disabled {
+  cursor: not-allowed;
+}

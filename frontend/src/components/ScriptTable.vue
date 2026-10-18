@@ -45,10 +45,11 @@
                     alt="MaaEnd"
                     class="script-logo"
                   />
+                  <!-- MaaFW 与各特调的图标取自特调注册表 -->
                   <img
-                    v-else-if="script.type === 'M9A'"
-                    src="@/assets/M9A.png"
-                    alt="M9A"
+                    v-else-if="isMaaFWFamily(script.type)"
+                    :src="resolveMaaFWFlavor(script.type).logo"
+                    :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
                     class="script-logo"
                   />
                   <img
@@ -70,12 +71,6 @@
                     class="script-logo"
                   />
                   <img
-                    v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/maafw.png"
-                    alt="MFW"
-                    class="script-logo"
-                  />
-                  <img
                     v-else-if="script.type === 'BetterGI'"
                     src="@/assets/bettergi.ico"
                     alt="BetterGI"
@@ -93,12 +88,18 @@
                     alt="BAAH"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'Whimbox'"
+                    src="@/assets/whimbox.png"
+                    alt="Whimbox"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
-                    {{ getScriptTypeLabel(script.type) }}
+                    {{ getScriptTypeLabel(script) }}
                   </a-tag>
                 </div>
               </div>
@@ -199,6 +200,30 @@
                   </template>
                   {{ t('comp.configuring') }}
                 </a-button>
+                <a-button
+                  v-if="script.type === 'Whimbox' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  @click="handleStartWhimboxConfig(script)"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  {{ t('comp.configureWhimbox') }}
+                </a-button>
+                <a-button
+                  v-if="script.type === 'Whimbox' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  {{ t('comp.configuring') }}
+                </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
@@ -255,7 +280,9 @@
                     size="middle"
                     class="action-button"
                     :disabled="props.searching"
-                    :aria-label="isUsersCollapsed(script.id) ? '展开用户' : '收起用户'"
+                    :aria-label="
+                      isUsersCollapsed(script.id) ? t('comp.expandUsers') : t('comp.collapseUsers')
+                    "
                     @click="toggleUsersCollapsed(script.id)"
                   >
                     <template #icon>
@@ -319,16 +346,7 @@
                             }}
                           </a-tag>
 
-                          <!-- M9A 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="script.type === 'M9A'"
-                            :color="getM9AServerTagColor(user.Info.Resource)"
-                            class="server-tag"
-                          >
-                            {{ user.Info.Resource || '官服' }}
-                          </a-tag>
-
-                          <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
+                          <!-- ZzzOd 脚本显示配置来源标签（独立来源/原生来源） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
                             :color="getZzzOdModeTagColor(user)"
@@ -337,7 +355,7 @@
                             {{ getZzzOdModeLabel(user) }}
                           </a-tag>
 
-                          <!-- ZzzOd 用户模式显示区服/账号（直控事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
+                          <!-- ZzzOd 独立来源显示区服/账号（原生来源的事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
                           <template v-if="script.type === 'ZzzOd' && isZzzOdUserMode(user)">
                             <a-tag color="blue" class="server-tag">
                               {{ getZzzOdRegionLabel(user) }}
@@ -386,6 +404,26 @@
                           >
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
+
+                          <!-- 当前配置来源与覆写状态：跟在账号标签之后，与账号名同行左对齐，弱化显示 -->
+                          <div
+                            v-if="getConfigSource(script, user)"
+                            class="user-config-summary"
+                            :class="{ 'is-overlay-on': getOverlayState(script, user) }"
+                          >
+                            <span class="user-config-summary__label">{{
+                              t('comp.currentConfig', { source: getConfigSource(script, user) })
+                            }}</span>
+                            <template v-if="getOverlayState(script, user) !== null">
+                              <span class="user-config-summary__sep" aria-hidden="true">·</span>
+                              <span class="user-config-summary__dot" aria-hidden="true"></span>
+                              {{
+                                getOverlayState(script, user)
+                                  ? t('comp.configOverrideEnabled')
+                                  : t('comp.configOverrideDisabled')
+                              }}
+                            </template>
+                          </div>
                         </div>
 
                         <!-- 用户详细信息 - MAA和SRC脚本用户 -->
@@ -415,50 +453,14 @@
                             script.type === 'Okww' ||
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
-                            script.type === 'MaaFW' ||
+                            isMaaFWFamily(script.type) ||
                             script.type === 'ZzzOd' ||
-                            script.type === 'BAAH'
+                            script.type === 'BAAH' ||
+                            script.type === 'Whimbox'
                           "
                           class="user-info-tags"
                         >
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - M9A脚本用户 -->
-                        <div v-if="script.type === 'M9A'" class="user-info-tags">
-                          <!-- 显示备注（仅当有值时）-->
-                          <a-tag
-                            v-if="
-                              user.Info.Notes &&
-                              user.Info.Notes !== '无' &&
-                              user.Info.Notes.trim() !== ''
-                            "
-                            color="geekblue"
-                            class="info-tag"
-                            :title="user.Info.Notes"
-                          >
-                            {{ truncateText(user.Info.Notes, 10) }}
-                          </a-tag>
-
-                          <a-tag
-                            v-for="(tag, index) in getM9AOnceStatusTags(script, user)"
-                            :key="`m9a-once-${index}`"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-
-                          <!-- 后端提供的Tag字段 -->
                           <a-tag
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
                             :key="index"
@@ -496,36 +498,6 @@
                       </div>
 
                       <div class="user-actions">
-                        <a-tooltip
-                          v-if="shouldShowMaaEndUserConfigButton(script, user)"
-                          :title="t('comp.configurePerUserMaaend')"
-                        >
-                          <a-button
-                            v-if="!props.activeConnections.has(user.id)"
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleStartMaaEndUserConfig(script, user)"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configureMaaend') }}
-                          </a-button>
-                          <a-button
-                            v-else
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            disabled
-                            style="color: #52c41a; border-color: #52c41a"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configuring') }}
-                          </a-button>
-                        </a-tooltip>
                         <a-tooltip :title="t('comp.editUserConfiguration')">
                           <a-button
                             type="default"
@@ -577,8 +549,8 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { Script, User } from '../types/script'
-import type { M9AConfig, MaaEndConfig } from '@/api'
+import type { MaaFWScriptConfig, Script, User } from '../types/script'
+import type { MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -595,8 +567,29 @@ import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import {
+  isMaaFWFamily,
+  resolveMaaFWFlavor,
+  type MaaFWFlavorType,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
+
+const CONFIG_SOURCE_KEYS: Record<string, string> = {
+  shared: 'comp.configSourceShared',
+  independent: 'comp.configSourceIndependent',
+  native: 'comp.configSourceNative',
+}
+
+const OVERLAY_SCRIPT_TYPES = new Set([
+  'MAA',
+  'SRC',
+  'MaaEnd',
+  'Okww',
+  'OkNte',
+  'BetterGI',
+  'Whimbox',
+])
 
 interface Props {
   scripts: Script[]
@@ -624,18 +617,14 @@ interface Emits {
 
   (e: 'startMaaEndConfig', script: Script): void
 
-  (e: 'startMaaEndUserConfig', script: Script, user: User): void
-
   (e: 'startOkwwConfig', script: Script): void
+
+  (e: 'startWhimboxConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
-
-const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
-const M9A_LIMBO_NAMES = ['自动深眠']
-const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
@@ -756,50 +745,76 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
-const handleStartMaaEndUserConfig = (script: Script, user: User) => {
-  emit('startMaaEndUserConfig', script, user)
-}
-
 const isMaaEndPresetSupported = (script: Script) => {
   const controllerType =
     script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
-const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
+const getConfigSource = (script: Script, user: User): string => {
+  let mode = user.Info.Base
+  // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
+  if (isMaaFWFamily(script.type)) mode = 'independent'
+  else if (script.type === 'BAAH') mode = 'native'
+  // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
+  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
+    mode = 'independent'
+  const sourceKey = CONFIG_SOURCE_KEYS[mode]
+  return sourceKey ? t(sourceKey) : ''
 }
+
+// null 表示该专项没有覆写层或状态未知，此时不显示覆写段。
+const getOverlayState = (script: Script, user: User): boolean | null =>
+  OVERLAY_SCRIPT_TYPES.has(script.type) && user.Info.IfQuickConfig !== undefined
+    ? user.Info.IfQuickConfig
+    : null
 
 const handleStartOkwwConfig = (script: Script) => {
   emit('startOkwwConfig', script)
+}
+
+const handleStartWhimboxConfig = (script: Script) => {
+  emit('startWhimboxConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getScriptTypeLabel = (type: Script['type']) => {
+const getScriptTypeLabel = (script: Script) => {
+  const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示
+  // 类型标签（MFW / M9A …，不是内部类型名 MaaFW）
+  if (isMaaFWFamily(type)) {
+    return (
+      (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() ||
+      resolveMaaFWFlavor(type).typeTagLabel
+    )
+  }
   return type
 }
 
-const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+// MaaFW 与各特调的标签颜色取自特调注册表
+const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, string> = {
   MAA: 'blue',
   SRC: 'purple',
   MaaEnd: 'blue',
-  M9A: 'cyan',
-  MaaFW: 'geekblue',
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',
   BetterGI: 'gold',
   ZzzOd: 'volcano',
   BAAH: 'magenta',
+  Whimbox: 'pink',
   General: 'green',
 }
 
-const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
+const getScriptTypeTagColor = (type: Script['type']) =>
+  isMaaFWFamily(type)
+    ? resolveMaaFWFlavor(type).typeTagColor
+    : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
@@ -964,19 +979,14 @@ const getServerDisplayName = (server: string): string => {
   }
 }
 
-// M9A服务器标签颜色映射
-const getM9AServerTagColor = (_resource: string): string => {
-  return 'blue'
-}
-
-// ZzzOd：配置来源标签（用户模式/直控模式）
+// ZzzOd：配置来源标签（独立模式/原生模式）
 const getZzzOdModeLabel = (user: User): string =>
-  user.Info.Mode === '直控' ? '直控模式' : '用户模式'
+  user.Info.Base === 'native' ? '原生模式' : '独立模式'
 
-const getZzzOdModeTagColor = (user: User): string => (user.Info.Mode === '直控' ? 'gold' : 'blue')
+const getZzzOdModeTagColor = (user: User): string => (user.Info.Base === 'native' ? 'gold' : 'blue')
 
-// ZzzOd：字段类标签仅在用户模式展示（直控的事实源是一条龙原生配置）
-const isZzzOdUserMode = (user: User): boolean => user.Info.Mode !== '直控'
+// ZzzOd：字段类标签仅在独立来源展示（原生来源的事实源是一条龙原生配置）
+const isZzzOdUserMode = (user: User): boolean => user.Info.Base !== 'native'
 
 const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
 
@@ -1025,65 +1035,6 @@ const getZzzOdAccountText = (user: User): string => {
   }
   // 收起状态：只显示 4 位尾号以压缩卡片内展示宽度（账号本就明文可见，非脱敏）
   return accountValue ? accountValue.slice(-4) : '账号: 未设置'
-}
-
-const getM9ATodayString = (): string => {
-  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
-}
-
-const getM9ACurrentMonthString = (): string => {
-  return getM9ATodayString().slice(0, 7)
-}
-
-const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
-  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
-  if (typeof queue !== 'string') return []
-
-  try {
-    const parsed = JSON.parse(queue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
-  return queue.some(item => item.name && names.includes(item.name))
-}
-
-const getM9AOnceStatusTags = (script: Script, user: User) => {
-  if (script.type !== 'M9A') return []
-
-  const runConfig = (script.config as M9AConfig).Run ?? {}
-  const queue = parseM9ATaskQueue(user.Task?.Queue)
-  const data = user.Data ?? {}
-  const tags: Array<{ text: string; color: string }> = []
-
-  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
-    const completed = data.LastPsychubeDate === getM9ATodayString()
-    tags.push({
-      text: `每日心相：${completed ? '已完成' : '未完成'}`,
-      color: completed ? 'green' : 'orange',
-    })
-  }
-
-  if (runConfig.IfSleepDreamMonthlyOnce) {
-    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
-    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
-    if (hasLimbo || hasLucidscape) {
-      const currentMonth = getM9ACurrentMonthString()
-      const completed =
-        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
-        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
-
-      tags.push({
-        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
-        color: completed ? 'green' : 'orange',
-      })
-    }
-  }
-
-  return tags
 }
 
 const { reorderScript } = useScriptApi()
@@ -1403,6 +1354,36 @@ const onUserDragEnd = async (script: Script) => {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.user-config-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+}
+
+.user-config-summary__label {
+  color: var(--ant-color-text-tertiary);
+}
+
+.user-config-summary__sep {
+  color: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary.is-overlay-on .user-config-summary__dot {
+  background: var(--ant-color-success);
 }
 
 .info-tag {

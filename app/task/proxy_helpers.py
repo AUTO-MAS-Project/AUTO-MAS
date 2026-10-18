@@ -35,28 +35,54 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 import psutil
+
+from app.services import System
+from app.utils import get_logger
+from app.utils.constants import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    normalize_base_source,
+)
+
+logger = get_logger("专项进程清理")
 
 __all__ = [
     "append_push_log",
     "find_pids_by_name",
+    "kill_pids",
+    "kill_pids_by_name",
     "push_dispatch_log",
     "quick_config_takeover",
-    "read_config_source",
-    "resolve_config_source",
+    "read_config_base",
+    "resolve_config_base",
     "split_args",
-    "user_uses_direct_control",
+    "user_uses_native_base",
     "user_uses_quick_config",
 ]
 
 
 def split_args(raw: object) -> list[str]:
-    """按 shell 规则拆分启动参数（保留 Windows 风格引号，空串返回空列表）。"""
+    """按 shell 规则拆分启动参数（引号只用于分组，反斜杠原样保留，空串返回空列表）。
+
+    ``shlex.split(posix=False)`` 会把引号留在词元里（``"a b"`` 拆成 ``'"a b"'``），
+    交给 CreateProcess 后游戏收到的是一个带引号的参数，多半当无效参数丢掉；而配置
+    校验用的 ``ArgumentValidator`` 走的是 posix 模式，界面上看着一切正常，于是这类
+    参数只在运行时静默失效。这里改成 posix 解析但关掉转义处理——Windows 路径里的
+    反斜杠不能被当转义符吃掉。
+    """
 
     value = str(raw or "").strip()
-    return shlex.split(value, posix=False) if value else []
+    if not value:
+        return []
+
+    lexer = shlex.shlex(value, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ""
+    return list(lexer)
 
 
 def find_pids_by_name(process_name: str) -> list[int]:
@@ -70,6 +96,26 @@ def find_pids_by_name(process_name: str) -> list[int]:
         except psutil.Error:
             continue
     return pids
+
+
+async def kill_pids(pids: Iterable[int]) -> int:
+    """逐个结束已确认归属的进程，返回失败数；单个失败不阻断后续清理。"""
+
+    failed = 0
+    for pid in pids:
+        try:
+            if not await System.kill_process_by_pid(pid):
+                failed += 1
+        except Exception as exc:
+            failed += 1
+            logger.opt(exception=True).warning(f"结束进程失败 PID: {pid}, {exc}")
+    return failed
+
+
+async def kill_pids_by_name(process_name: str) -> int:
+    """在线程中按名收集 PID，再结束进程并返回失败数。"""
+
+    return await kill_pids(await asyncio.to_thread(find_pids_by_name, process_name))
 
 
 async def push_dispatch_log(script_info: object, line: str) -> None:
@@ -87,50 +133,58 @@ def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) 
     cur_user_item.push_log.append((log_type, text, ts))
 
 
-# ── 配置来源三态（脚本 / 用户 / 直控）与快速配置 ────────────────────────────
-# 来源决定「谁拥有本次运行的配置」：脚本=脚本级共享配置，用户=MAS 侧按用户
-# 独立配置，直控=直接用脚本安装目录里的原生配置。快速配置（Info.IfQuickConfig）
-# 是**独立于来源**的用户级开关：按用户保存、不随来源派生，任何来源下都可开关。
-# 开启时把该用户面板值覆盖到所选来源，关闭时保留来源配置；必要的启动、
-# 模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
-# （旧版「简洁/详细/自定义」由模型层 ConfigSourceValidator 加载时归一。）
+# ── base 来源三态（shared / independent / native）与快速配置 ───────────────
+# 来源决定「谁拥有本次运行的配置」：shared=脚本级共享配置，independent=MAS 侧
+# 按用户独立配置，native=直接用脚本安装目录里的原生配置。快速配置
+# （Info.IfQuickConfig）是**独立于来源**的用户级开关：按用户保存、不随来源派生，
+# 任何来源下都可开关。开启时把该用户面板值覆盖到所选 base，关闭时保留 base 配置；
+# 必要的启动、模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
+# （旧字面量 脚本/用户/直控 与更早的「简洁/详细/自定义」由模型层
+# BaseSourceValidator 加载时归一，见 app/models/config.py。）
+#
+# 例外：BetterGI 用户页已隐藏该开关，改由 Info.Base 派生（native=关，
+# shared/independent=开），见 app/models/config.py 的 BetterGIUserConfig.load。
+# 即 native 下它恒为关 ⇒ AutoProxy 的 writes_native_config 不可达
+# （保留实现，将来恢复开关可直接复用）。
 
-CONFIG_SOURCE_SCRIPT = "脚本"
-CONFIG_SOURCE_USER = "用户"
-CONFIG_SOURCE_DIRECT = "直控"
+# 取值只在 app.utils.constants 定义一处，这里按专项层习惯名再导出
+CONFIG_BASE_SHARED = BASE_SHARED
+CONFIG_BASE_INDEPENDENT = BASE_INDEPENDENT
+CONFIG_BASE_NATIVE = BASE_NATIVE
 
 
-def read_config_source(config: object, default: str = CONFIG_SOURCE_USER) -> str:
-    """读取用户配置的 Info.Mode，未知值回落到脚本/用户（绝不回落成直控）。
+def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> str:
+    """读取用户配置的 Info.Base，未知值回落到 shared/independent（绝不回落成 native）。
 
-    直控跳过 MAS 来源导入，因此未知值不能静默解释成直控。
+    native 跳过 MAS 来源导入，因此未知值不能静默解释成 native。
     """
 
     if config is None:
         return default
     try:
-        raw = config.get("Info", "Mode")  # type: ignore[attr-defined]
+        raw = config.get("Info", "Base")  # type: ignore[attr-defined]
     except (AttributeError, KeyError, TypeError):
         return default
-    mode = str(raw or "").strip()
-    if mode in (CONFIG_SOURCE_SCRIPT, CONFIG_SOURCE_USER, CONFIG_SOURCE_DIRECT):
-        return mode
+    # 存量配置里可能还是旧来源字面量（脚本/用户/直控），一并归一
+    base = normalize_base_source(raw)
+    if base in (CONFIG_BASE_SHARED, CONFIG_BASE_INDEPENDENT, CONFIG_BASE_NATIVE):
+        return base
     return default
 
 
-def resolve_config_source(
-    config: object, default: str = CONFIG_SOURCE_USER
+def resolve_config_base(
+    config: object, default: str = CONFIG_BASE_INDEPENDENT
 ) -> tuple[str, bool]:
-    """返回 (配置来源, 是否直控)，供各专项在同一处同时判定两件事。"""
+    """返回 (base 来源, 是否原生)，供各专项在同一处同时判定两件事。"""
 
-    mode = read_config_source(config, default)
-    return mode, mode == CONFIG_SOURCE_DIRECT
+    base = read_config_base(config, default)
+    return base, base == CONFIG_BASE_NATIVE
 
 
-def user_uses_direct_control(config: object) -> bool:
-    """该用户是否使用外侧原生配置作为来源。"""
+def user_uses_native_base(config: object) -> bool:
+    """该用户是否使用外侧原生配置作为 base。"""
 
-    return read_config_source(config, CONFIG_SOURCE_SCRIPT) == CONFIG_SOURCE_DIRECT
+    return read_config_base(config, CONFIG_BASE_SHARED) == CONFIG_BASE_NATIVE
 
 
 def user_uses_quick_config(config: object, default: bool = True) -> bool:

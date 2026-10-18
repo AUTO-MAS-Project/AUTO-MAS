@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   buildChangelogSections,
   compareVersions,
@@ -24,6 +24,14 @@ describe('changelog 版本排序', () => {
     ])
     expect(compareVersions('v5.5.0-beta.2', 'v5.5.0-beta.10')).toBeLessThan(0)
     expect(compareVersions('v5.5.0', '5.5.0')).toBe(0)
+  })
+
+  it('合并即入账的「未发布」段不是版本号，排在最前', () => {
+    expect(sortVersionsDesc(['v5.5.0-beta.6', '未发布', 'v5.4.0'])).toEqual([
+      '未发布',
+      'v5.5.0-beta.6',
+      'v5.4.0',
+    ])
   })
 })
 

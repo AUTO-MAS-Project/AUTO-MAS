@@ -8,8 +8,10 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
-import { GetService } from '@/api'
-import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
+import { ActionService, GetService } from '@/api'
+import { openExternalUrl } from '@/utils/openExternal'
+import { navigateTo } from '@/router'
+import FailureReplaySettings from './components/FailureReplaySettings.vue'
 
 const { t } = useI18n()
 
@@ -31,16 +33,21 @@ const virtualDisplayModeOptions = computed(() => [
 // 或者配置被同步到另一台机器，而实时问一次永远是对的。
 const vddDriverReady = ref<boolean | null>(null)
 const vddDriverMessage = ref('')
+// 守卫此刻挂着的那块屏（设备名与模式），没挂时为 null。只是打开设置页时的一次快照，
+// 「立即拆除」按钮不按它禁用——守卫几秒一轮，快照很快就旧了，点了没挂后端会说没挂。
+const vddHolding = ref<string | null>(null)
 
 async function refreshVirtualDisplayStatus() {
   try {
     const res = await GetService.virtualDisplayStatusApiSettingVirtualDisplayStatusPost()
     vddDriverReady.value = (res.results ?? []).every(item => item.passed)
     vddDriverMessage.value = res.message ?? ''
+    vddHolding.value = res.holding ?? null
   } catch {
     // 探测不出来就不拦——宁可让用户开着不生效，也不要因为一次查询失败把功能锁死。
     vddDriverReady.value = null
     vddDriverMessage.value = ''
+    vddHolding.value = null
   }
 }
 
@@ -75,6 +82,31 @@ async function runVirtualDisplayCheck() {
     message.error(t('setting.display.checkFailed'))
   } finally {
     vddChecking.value = false
+  }
+}
+
+// 手动拆除：真实显示器回来时的询问弹窗之外的兜底入口——弹窗被关掉、或者用户想在任务
+// 结束前把屏拆掉，都从这里走。任务在不在跑都照拆，那是用户的决定。
+const vddDetaching = ref(false)
+
+async function runVirtualDisplayDetach() {
+  vddDetaching.value = true
+  try {
+    const res = await ActionService.detachVirtualDisplayApiSettingVirtualDisplayDetachPost()
+    if (res.code !== 200) {
+      message.error(`${t('setting.display.detachFailed')}: ${res.message}`)
+      return
+    }
+    if (res.detached) {
+      message.success(t('setting.display.detachDone'))
+    } else {
+      message.info(t('setting.display.detachNothing'))
+    }
+    await refreshVirtualDisplayStatus()
+  } catch {
+    message.error(t('setting.display.detachFailed'))
+  } finally {
+    vddDetaching.value = false
   }
 }
 
@@ -203,7 +235,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </a-col>
       </a-row>
       <a-row :gutter="24">
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.func.telemetry') }}</span>
@@ -224,59 +256,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
             </a-select>
           </div>
         </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.biliPolicy') }}</span>
-              <a-tooltip>
-                <template #title>
-                  <div style="max-width: 300px">
-                    <p>{{ t('setting.func.biliIntro') }}</p>
-                    <ul style="margin: 8px 0; padding-left: 16px">
-                      <li>
-                        <a
-                          href="https://www.bilibili.com/protocal/licence.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliTerms') }}</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliPrivacy') }}</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          href="https://game.bilibili.com/yhxy"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >{{ t('setting.func.biliGame') }}</a
-                        >
-                      </li>
-                    </ul>
-                  </div>
-                </template>
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="settings.Function?.IfAgreeBilibili"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
-              "
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.func.blockAds') }}</span>
@@ -358,6 +338,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
       </a-row>
     </div>
 
+    <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
+
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('setting.display.section') }}</h3>
@@ -374,7 +356,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </template>
       </a-alert>
       <a-row :gutter="24">
-        <a-col :span="8">
+        <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.display.enable') }}</span>
@@ -396,7 +378,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
             </a-select>
           </div>
         </a-col>
-        <a-col :span="8">
+        <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.display.mode') }}</span>
@@ -414,7 +396,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
             />
           </div>
         </a-col>
-        <a-col :span="8">
+        <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.display.check') }}</span>
@@ -431,6 +413,37 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               {{ t('setting.display.checkAction') }}
             </a-button>
           </div>
+        </a-col>
+        <a-col :span="6">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.display.detach') }}</span>
+              <a-tooltip :title="t('setting.display.detachTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-button
+              danger
+              size="large"
+              style="width: 100%"
+              :disabled="!settings.Display?.IfEnableVirtualDisplay"
+              :loading="vddDetaching"
+              @click="runVirtualDisplayDetach"
+            >
+              {{ t('setting.display.detachAction') }}
+            </a-button>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row v-if="settings.Display?.IfEnableVirtualDisplay" :gutter="24" class="vdd-result-row">
+        <a-col :span="24">
+          <p class="vdd-holding">
+            {{
+              vddHolding
+                ? t('setting.display.holdingNow', { holding: vddHolding })
+                : t('setting.display.holdingNone')
+            }}
+          </p>
         </a-col>
       </a-row>
       <a-row v-if="vddWarning" :gutter="24" class="vdd-result-row">
@@ -477,10 +490,29 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </a-col>
       </a-row>
     </div>
+    <!-- 个人版编排的「并非神秘入口」已移入神秘入口，这里只留群友的「神秘入口」一个入口 -->
+    <div class="flavor-entries">
+      <div class="mystery-entry">
+        <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
+          {{ t('mystery.entry') }}
+        </a-button>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.flavor-entries {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.flavor-entries :deep(.ant-btn) {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
 .vdd-alert {
   margin-bottom: 16px;
 }
@@ -514,6 +546,12 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 .vdd-monitors {
   margin: 8px 0 0;
   word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.vdd-holding {
+  margin: 0;
+  font-size: 13px;
   color: var(--ant-color-text-secondary);
 }
 </style>

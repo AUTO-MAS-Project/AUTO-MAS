@@ -8,12 +8,7 @@
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <a-tooltip :title="t('edit.giveProjectNameYou')">
-              <span class="form-label">
-                {{ t('edit.scriptName') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.scriptName') }}</span>
           </template>
           <a-input
             v-model:value="formData.name"
@@ -27,64 +22,156 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwProjectDirectory')">
+            <a-tooltip :title="directoryHint">
               <span class="form-label">
-                {{ t('edit.localProjectDirectory') }}
+                {{ sourceDirectoryLabel || t('edit.localProjectDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
+          <!-- 导入完成后目录就固定在副本位置（运行、更新都在那里），字段与按钮一起锁死；
+               要换项目请新建脚本。来源目录只在导入前选一次，之后只在运行环境日志里体现。 -->
           <a-input-group compact class="path-input-group">
             <a-input
-              v-model:value="formData.path"
-              :placeholder="t('edit.pickActualMfwProject')"
+              :value="displayedPath"
+              :placeholder="sourcePlaceholder || t('edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
               aria-readonly="true"
             />
-            <a-button
-              size="large"
-              class="path-button"
-              :disabled="interfaceLoading || updateApplying"
-              @click="emit('select-path')"
-            >
-              <template #icon>
-                <FolderOpenOutlined />
-              </template>
-              {{ t('edit.pickLocalDirectory') }}
-            </a-button>
-            <a-button
-              size="large"
-              class="path-button"
-              :loading="interfaceLoading"
-              :disabled="!maafwConfig.Info.Path || updateApplying"
-              @click="emit('preview-interface')"
-            >
-              <template #icon>
-                <FileSearchOutlined />
-              </template>
-              {{ t('edit.readInterface') }}
-            </a-button>
+            <a-tooltip :title="directoryLocked ? t('edit.maafwDirectoryLockedHint') : ''">
+              <a-button
+                size="large"
+                class="path-button"
+                :disabled="directoryLocked || interfaceLoading || updateApplying || embeddedBusy"
+                @click="emit('select-path')"
+              >
+                <template #icon>
+                  <FolderOpenOutlined />
+                </template>
+                {{ t('edit.pickProjectDirectory') }}
+              </a-button>
+            </a-tooltip>
           </a-input-group>
+          <!-- 导入几十到几百 MB 时进度条顶在字段下面，别让用户对着一个转圈干等。
+               首次导入时下面的引导卡片把按钮换成同一条进度条，这里就不再重复一条 -->
+          <div v-if="embeddedBusy && !guideOwnsImport" class="import-progress">
+            <a-progress
+              :percent="importPercent ?? 0"
+              :status="importPercent === 100 ? 'success' : 'active'"
+              size="small"
+            />
+            <span class="import-progress-text">{{
+              importMessage || t('edit.maafwImportingCopy')
+            }}</span>
+          </div>
+          <div v-else-if="importError && !guideOwnsImport" class="import-error">
+            {{ importError }}
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
 
-    <div v-if="previewData" class="interface-summary">
-      <div class="interface-project-bar">
-        <span class="project-bar-name">{{ previewProjectTitle }}</span>
-        <span v-if="previewData.project.version" class="project-bar-meta">
-          {{ previewData.project.version }}
-          <template v-if="previewData.project?.description">
-            · {{ previewData.project.description }}
-          </template>
-        </span>
+    <!-- 跟随来源目录（开发者模式）：项目导入之后才有意义，与目录字段放在一起。开着时状态行
+         写清跟随哪个目录、上次什么时候从它同步过（运行前自动同步，「立即同步」手动强制重导）。
+         源码形态的项目始终跟随来源目录，开关锁在开着 -->
+    <div v-if="directoryLocked" class="follow-source">
+      <div class="follow-source-head">
+        <a-switch
+          :checked="followSource"
+          size="small"
+          :disabled="sourceForm || interfaceLoading || updateApplying || embeddedBusy"
+          @change="handleFollowSourceChange"
+        />
+        <!-- 说明只在问号里（源码形态换成源码形态那句），开关下面不留说明行 -->
+        <a-tooltip
+          :title="sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint')"
+        >
+          <span class="form-label">
+            {{ t('edit.maafwFollowSource') }}
+            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+          </span>
+        </a-tooltip>
+        <a-tag v-if="sourceForm" color="processing" class="follow-source-tag">
+          {{ t('edit.maafwSourceFormTag') }}
+        </a-tag>
       </div>
-      <div class="interface-stat-grid">
-        <div v-for="item in interfaceStats" :key="item.label" class="interface-stat-card">
-          <div class="interface-stat-value">{{ item.value }}</div>
-          <div class="interface-stat-label">{{ item.label }}</div>
+      <div v-if="followSource" class="follow-source-status">
+        <span>{{ followSourceStatus }}</span>
+        <span v-if="!embeddedStatus.sourceExists" class="follow-source-missing">
+          {{ t('edit.maafwFollowSourceMissing') }}
+        </span>
+        <a-button
+          size="small"
+          class="follow-source-sync"
+          :loading="embeddedBusy"
+          :disabled="interfaceLoading || updateApplying || embeddedBusy"
+          @click="emit('sync-source')"
+        >
+          {{ t('edit.maafwFollowSourceSyncNow') }}
+        </a-button>
+      </div>
+    </div>
+
+    <!-- 左边 interface 概览表（表头是项目名与简介），右边运行环境准备面板：
+         结论直接作为日志的最后一行用强调色写出来，不另起状态行 -->
+    <div v-if="previewData" class="interface-body">
+      <a-descriptions bordered size="small" :column="2" class="interface-table">
+        <template #title>
+          <div class="interface-table-head">
+            <span class="interface-table-title">{{ previewProjectTitle }}</span>
+            <!-- 版本与简介各自有就显示：没写 version 的老项目照样显示简介 -->
+            <span v-if="projectSubtitle" class="interface-table-subtitle">
+              {{ projectSubtitle }}
+            </span>
+          </div>
+        </template>
+        <a-descriptions-item v-for="item in interfaceStats" :key="item.label" :label="item.label">
+          {{ item.value }}
+        </a-descriptions-item>
+      </a-descriptions>
+      <div class="env-panel">
+        <div class="env-panel-header">
+          <span class="env-panel-title">{{ t('edit.envPanelTitle') }}</span>
+          <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
+               重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
+          <a-button
+            size="small"
+            :loading="interfaceLoading || envPreparing"
+            :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
+            @click="emit('preview-interface')"
+          >
+            <template #icon>
+              <ToolOutlined />
+            </template>
+            {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
+          </a-button>
+        </div>
+        <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
+             日志再多也不会把面板撑高，底边永远和表格齐 -->
+        <div class="env-log-wrap">
+          <div ref="envLogBoxRef" class="env-log-box">
+            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
+              {{ t('edit.envPanelPlaceholder') }}
+            </div>
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+              {{ line }}
+            </div>
+            <div
+              v-if="envTone !== 'idle'"
+              class="env-log-status"
+              :class="`env-log-status--${envTone}`"
+            >
+              <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
+              <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
+              <CloseCircleOutlined v-else class="env-log-status-icon" />
+              <span>{{ envStatusText }}</span>
+              <div v-if="envTone === 'failed'" class="env-log-status-hint">
+                {{ t('edit.envFailedHint') }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -98,11 +185,33 @@
         />
       </a-spin>
     </div>
+    <!-- 已导入（目录锁定）却没读到 interface：项目还在，只是这次没读出来。给出原因和「重试」，
+         不给选目录——那会绕开目录锁把副本换成别的项目 -->
+    <div v-else-if="directoryLocked" class="interface-guide-card">
+      <WarningOutlined
+        class="interface-guide-icon interface-guide-icon--warning"
+        aria-hidden="true"
+      />
+      <h3>{{ t('edit.maafwPreviewFailed') }}</h3>
+      <p v-if="previewError" class="interface-guide-error">{{ previewError }}</p>
+      <a-button
+        type="primary"
+        size="large"
+        :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
+        @click="emit('preview-interface')"
+      >
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        {{ t('edit.envRetry') }}
+      </a-button>
+    </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
       <h3>{{ t('edit.pickMfwProject') }}</h3>
       <p>{{ t('edit.pickProjectDirectoryContaining') }}</p>
       <a-button
+        v-if="!embeddedBusy"
         type="primary"
         size="large"
         :disabled="interfaceLoading || updateApplying"
@@ -113,44 +222,233 @@
         </template>
         {{ t('edit.pickProjectDirectory') }}
       </a-button>
+      <div v-else class="import-progress import-progress--guide">
+        <a-progress
+          :percent="importPercent ?? 0"
+          :status="importPercent === 100 ? 'success' : 'active'"
+          size="small"
+        />
+        <span class="import-progress-text">{{
+          importMessage || t('edit.maafwImportingCopy')
+        }}</span>
+      </div>
+      <p v-if="!embeddedBusy && (importError || previewError)" class="interface-guide-error">
+        {{ importError || previewError }}
+      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
-  FileSearchOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   FolderOpenOutlined,
   InboxOutlined,
+  LoadingOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
+  ToolOutlined,
+  WarningOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
+import type {
+  MaaFWScriptBasicInfoSectionEmits,
+  MaaFWScriptBasicInfoSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  formData: { type: ScriptType; name: string; path: string }
-  rules: { name: unknown[]; path: unknown[] }
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  previewProjectTitle: string
-  interfaceStats: Array<{ label: string; value: number }>
-  /** 项目更新正在落盘：此时读 interface 会读到半成品，按钮一律禁用。 */
-  updateApplying: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptBasicInfoSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'select-path': []
-  'preview-interface': []
-}>()
+const emit = defineEmits<MaaFWScriptBasicInfoSectionEmits>()
+
+// 副本一旦建好，目录就固定在副本位置：字段里显示副本路径而不是来源目录，按钮锁死。
+// 副本还没建（新脚本刚建、或副本丢了来源也没了）时才允许选目录。
+const directoryLocked = computed(() => props.embeddedStatus.copyHealthy)
+const displayedPath = computed(() =>
+  directoryLocked.value ? props.embeddedStatus.copyPath : props.formData.path
+)
+// 还没导入、引导卡片在显示：导入进度与失败原因都放在卡片里（按钮就在那），字段下面不再重复
+const guideOwnsImport = computed(
+  () => !props.previewData && !props.interfaceLoading && !directoryLocked.value
+)
+const directoryHint = computed(() =>
+  directoryLocked.value
+    ? t('edit.maafwDirectoryLockedHint')
+    : props.sourceHint || t('edit.pickMfwProjectDirectory')
+)
+
+// 跟随来源目录（开发者模式）：开关只落盘配置，同步在下一次运行前由后端做（或点「立即同步」）。
+// 源码形态的项目始终跟随（后端按导入报告认），开关显示为开着且不可改。
+const sourceForm = computed(() => Boolean(props.embeddedStatus.sourceForm))
+const followSource = computed(
+  () => sourceForm.value || Boolean(props.maafwConfig.Embedded?.FollowSource)
+)
+const followSourceStatus = computed(() => {
+  const path = props.embeddedStatus.sourcePath || props.maafwConfig.Info.Path
+  const syncedAt = props.embeddedStatus.followSourceSyncedAt
+  if (!syncedAt) return t('edit.maafwFollowSourceNotSynced', { path })
+  return t('edit.maafwFollowSourceStatus', {
+    path,
+    time: syncedAt.slice(0, 16).replace('T', ' '),
+  })
+})
+const handleFollowSourceChange = (checked: boolean | string | number) => {
+  const value = Boolean(checked)
+  props.maafwConfig.Embedded.FollowSource = value
+  emit('change', 'Embedded', 'FollowSource', value)
+}
+
+const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
+  if (props.envPreparing) return 'running'
+  if (props.envFailed) return 'failed'
+  if (props.envReady) return 'success'
+  return 'idle'
+})
+
+// 状态词就是结论本身：准备完成 / 更新完成 / 无需更新 / 失败，不再另起一条绿色 alert
+const envPhaseLabel = computed(() => {
+  switch (envTone.value) {
+    case 'running': {
+      const label = t('edit.envStatusPreparing')
+      return props.envPercent === null ? label : `${label} ${Math.round(props.envPercent)}%`
+    }
+    case 'failed':
+      return t('edit.envStatusFailed')
+    case 'success':
+      if (props.envOutcome === 'cached') return t('edit.envStatusCached')
+      if (props.envOutcome === 'updated') return t('edit.envStatusUpdated')
+      return t('edit.envStatusPrepared')
+    default:
+      return ''
+  }
+})
+
+// 表头副标题：版本 · 简介，哪个没有就省掉哪个
+const projectSubtitle = computed(() => {
+  const project = props.previewData?.project
+  return [project?.version, project?.description]
+    .map(value => value?.trim())
+    .filter(Boolean)
+    .join(' · ')
+})
+
+// Agent 运行时类型（后端的内部枚举）→ 给人看的叫法；不认识的值原样显示
+const RUNTIME_KIND_LABEL_KEYS: Record<string, string> = {
+  isolated_venv: 'edit.envRuntimeIsolatedVenv',
+  project_python: 'edit.envRuntimeProjectPython',
+  project_binary: 'edit.envRuntimeProjectBinary',
+  shared_runtime: 'edit.envRuntimeSharedRuntime',
+  external: 'edit.envRuntimeExternal',
+}
+const runtimeKindLabel = (kind: string | null | undefined) => {
+  if (!kind) return t('common.unknown')
+  const key = RUNTIME_KIND_LABEL_KEYS[kind]
+  return key ? t(key) : kind
+}
+
+// 整行一个颜色：状态词 · MaaFramework 版本 · 已就绪的 Agent；失败时后端那句原因就是整行
+const envStatusText = computed(() => {
+  if (envTone.value === 'failed') return props.envMessage || envPhaseLabel.value
+  const parts: string[] = [envPhaseLabel.value]
+  if (props.envMessage) parts.push(props.envMessage)
+  if (envTone.value === 'success' && props.envAgents.length) {
+    const agents = [...new Set(props.envAgents.map(a => runtimeKindLabel(a.runtimeKind)))].join(
+      t('edit.maafwListSeparator')
+    )
+    parts.push(`${t('edit.envReadyAgents')}: ${agents}`)
+  }
+  return parts.filter(Boolean).join('  ·  ')
+})
+
+// 新日志或结论行变了就贴到底部；用户手动往上翻时不打断
+const envLogBoxRef = ref<HTMLElement | null>(null)
+watch(
+  () => [props.envLogs.length, envTone.value, envStatusText.value],
+  async () => {
+    const box = envLogBoxRef.value
+    if (!box) return
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40
+    await nextTick()
+    if (nearBottom) box.scrollTop = box.scrollHeight
+  }
+)
 </script>
 
 <style scoped>
 .form-section {
   margin-bottom: 40px;
+}
+
+.import-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.import-progress :deep(.ant-progress) {
+  flex: 1;
+  margin: 0;
+}
+
+.import-progress-text {
+  white-space: nowrap;
+}
+
+.import-progress--guide {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.import-error {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ant-color-error);
+  overflow-wrap: anywhere;
+}
+
+.follow-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -8px 0 16px;
+}
+
+.follow-source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.follow-source-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-primary);
+  overflow-wrap: anywhere;
+}
+
+.follow-source-tag {
+  margin-inline-end: 0;
+}
+
+.follow-source-sync {
+  font-size: 12px;
+}
+
+.follow-source-missing {
+  color: var(--ant-color-warning);
 }
 
 .section-header {
@@ -226,66 +524,152 @@ const emit = defineEmits<{
   font-weight: 600;
 }
 
-.interface-summary {
+/* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */
+.path-button:disabled,
+.path-button.ant-btn-disabled {
+  color: var(--ant-color-text-disabled);
+  background: var(--ant-color-bg-container-disabled);
+  cursor: not-allowed;
+}
+
+/* 左边 interface 概览表（四列：两组「项 / 值」），右边运行环境面板；两边等高，面板里的日志框撑满 */
+.interface-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 2fr) 3fr;
+  gap: 12px;
+  align-items: stretch;
   margin-top: 8px;
 }
 
-.interface-project-bar {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
+.interface-table {
+  min-width: 0;
 }
 
-.project-bar-name {
-  max-width: 300px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.interface-table :deep(.ant-descriptions-header) {
+  margin-bottom: 8px;
+}
+
+/* 六个数字而已，用不着 small 档默认的 8px 16px 内距，压紧一点。
+   antd 自己的选择器比 scoped :deep 更具体，不加 !important 压不过去 */
+.interface-table :deep(.ant-descriptions-item-label),
+.interface-table :deep(.ant-descriptions-item-content) {
+  padding: 4px 12px !important;
+  font-size: 13px;
+}
+
+.interface-table :deep(.ant-descriptions-item-label) {
+  width: 22%;
+  color: var(--ant-color-text-secondary);
+}
+
+.interface-table :deep(.ant-descriptions-item-content) {
+  width: 28%;
+}
+
+/* 表头一行：项目名在左，版本 · 简介跟在右边 */
+.interface-table-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  white-space: normal;
+}
+
+.interface-table-title {
   font-size: 16px;
   font-weight: 700;
   color: var(--ant-color-text);
-}
-
-.project-bar-meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.interface-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-}
-
-.interface-stat-card {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-}
-
-.interface-stat-value {
-  color: var(--ant-color-text);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
-.interface-stat-label {
-  margin-top: 6px;
-  color: var(--ant-color-text-secondary);
+.interface-table-subtitle {
+  min-width: 0;
   font-size: 13px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* 面板本身不画框：标题 + 日志框就够了，外面再套一层边框显得重 */
+.env-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 与左边表头同高（24px）同下距（8px），日志框顶边才能和表格顶边齐 */
+.env-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+  margin-bottom: 8px;
+}
+
+/* 与左边概览表的表头同一字号字重，两边标题齐平 */
+.env-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--ant-color-text);
+}
+
+/* 面板标题行与表头等高（24px + 8px 下距），下面剩的高度全给日志框 */
+.env-log-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.env-log-box {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  font-family: var(--ant-font-family-code, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.env-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+
+.env-log-line--empty {
+  color: var(--ant-color-text-tertiary);
+}
+
+/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色 */
+.env-log-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.env-log-status--running {
+  color: var(--ant-color-primary);
+}
+
+.env-log-status--success {
+  color: var(--ant-color-success);
+}
+
+.env-log-status--failed {
+  color: var(--ant-color-error);
+}
+
+.env-log-status-hint {
+  flex-basis: 100%;
+  color: var(--ant-color-text-secondary);
 }
 
 .interface-guide-card {
@@ -320,6 +704,15 @@ const emit = defineEmits<{
   font-size: 64px;
 }
 
+.interface-guide-icon--warning {
+  color: var(--ant-color-warning);
+}
+
+.interface-guide-card p.interface-guide-error {
+  color: var(--ant-color-error);
+  overflow-wrap: anywhere;
+}
+
 .interface-loading {
   margin-top: 8px;
   padding: 16px;
@@ -330,8 +723,13 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 768px) {
-  .interface-stat-grid {
-    grid-template-columns: repeat(3, 1fr);
+  .interface-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* 折成上下两块后没有左边表格做参照，给日志框一个固定高度 */
+  .env-log-wrap {
+    min-height: 160px;
   }
 }
 </style>

@@ -8,10 +8,10 @@ import type {
   OkNteConfig,
   SrcConfig,
   MaaEndConfig,
-  M9AConfig,
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
+  WhimboxConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -37,6 +37,8 @@ export type ScriptType =
   | 'BetterGI'
   | 'ZzzOd'
   | 'BAAH'
+  | 'Whimbox'
+  | 'MSS'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -45,6 +47,7 @@ export interface MAAScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     ADBSearchRange: number
@@ -58,6 +61,10 @@ export interface MAAScriptConfig {
   Emulator: {
     Id: string
     Index: string
+  }
+  Update: {
+    TakeoverEnabled: boolean
+    MirrorChyanCDK: string
   }
   SubConfigsInfo: {
     UserData: {
@@ -85,6 +92,7 @@ export interface GeneralScriptConfig {
     RootPath: string
   }
   Run: {
+    HardTimeLimit: number
     ProxyTimesLimit: number
     RunTimeLimit: number
     RunTimesLimit: number
@@ -127,10 +135,14 @@ export interface SRCScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    IfCheckGameUpdate: boolean
+    IfAutoInstallGameApk: boolean
+    GameUpdateTimeLimit: number
   }
   Emulator: {
     Id: string
@@ -166,6 +178,7 @@ export interface MaaEndScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -174,51 +187,45 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
+    LaunchMode: 'Client' | 'Launcher' | 'MAS' | 'MaaEnd'
     Path: string
+    LauncherPath: string
     Arguments: string
     WaitTime: number
     EmulatorId: string
     EmulatorIndex: string
+    SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution: 'Off' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
+    RestoreDisplayType: 'Window' | 'Fullscreen'
+    RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
+    IfAutoUpdate: boolean
+    UpdateTimeLimit: number
   }
 }
 
-// M9A脚本配置
-export interface M9AScriptConfig {
-  Info: {
-    Name: string
-    Path: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfAutoUpdateAfterQueue: boolean
-    IfPsychubeDailyOnce: boolean
-    IfSleepDreamMonthlyOnce: boolean
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
-  }
-}
+// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
+// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
+export type M9AScriptConfig = MaaFWScriptConfig
+
+// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
+// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
+export type MSSScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
 
 // MaaFramework 项目脚本配置（宿主 Config v1；托管字段仍保留兼容读取）
-export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
+export type MaaFWLaunchMode = 'DirectExe' | 'AttachOnly'
+/** 启动 Unity 游戏前临时改成的窗口分辨率；Off 不修改。 */
+export type MaaFWUnityResolution = 'Off' | '1920x1080' | '1280x720'
 
 /** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
 export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
+
+/** 游戏客户端更新：不检查 / 只检查（落后时本次失败并提示手动更新）/ 自动下载安装。 */
+export type MaaFWGameUpdateMode = 'Off' | 'Check' | 'AutoInstall'
 
 export interface MaaFWScriptConfig {
   Info: {
@@ -246,13 +253,21 @@ export interface MaaFWScriptConfig {
     PlayCoverUuid: string
   }
   Game: {
+    /** DirectExe：MAS 启动并在结束后关闭（默认）；AttachOnly：其他方式启停，MAS 只接管。 */
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
     /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
     PackageName: string
     Arguments: string
     WaitTime: number
-    CloseOnFinish: boolean
+    /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
+    /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
+    UnityResolution: MaaFWUnityResolution
+    /**
+     * PI v2.8 hotkey 键位映射（仅 Win32）：JSON 文本 `{option 名: {字段名: 组合键}}`，
+     * 只存与 interface 默认不同的字段；读写见 views/EditView/Script/MaaFWScriptEdit/hotkeyOptions.ts。
+     */
+    Hotkeys: string
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */
@@ -264,37 +279,32 @@ export interface MaaFWScriptConfig {
     /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
     /**
+     * 只对这个项目生效的网络代理，`host:port` 或带协议；更新包下载与运行环境安装走它。
+     * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
+     */
+    ProxyAddress: string
+    /**
      * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
      * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
      */
     IfAutoUpdate?: boolean
   }
-  Managed: {
-    Enabled: boolean
-    ProjectId: string
-    StoreId: string
-    Version: string
-    RuntimeConstraint: string
-    ProjectManifest: string
-    CheckoutPath: string
-    PendingUpgrade: string
-    LastOperation: string
-  }
-  ManagedRuntime: {
-    RuntimeId: string
-    PoolId: string
-    PythonExecutable: string
-    VenvPath: string
-    RuntimeBinding: string
-  }
-  ManagedRemote: {
-    Source: 'MirrorChyan' | 'GitHub'
-    Channel: 'stable' | 'beta'
-    MirrorChyanRID: string
-    MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+  /**
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
+   * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
+   */
+  Embedded: {
+    /** 导入时来源的 interface 版本，仅展示。 */
+    SourceVersion: string
+    /** 导入时间，仅展示。 */
+    ImportedAt: string
+    /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
+    Report: string
+    /**
+     * 跟随来源目录（开发者模式）：开着时每次运行前来源目录有变化就重新导入，不做项目更新，
+     * 不与同项目其它脚本共用版本。唯一的开关。
+     */
+    FollowSource: boolean
   }
   Run: {
     ProxyTimesLimit: number
@@ -303,6 +313,14 @@ export interface MaaFWScriptConfig {
     DailyOnceTasks: string | string[]
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
+    /** 单任务时限（分钟），0 表示不限。 */
+    TaskTimeLimit: number
+    /** 按任务名覆盖的单任务时限（分钟）的 JSON 文本，值 0 表示该任务不限。 */
+    TaskTimeLimitOverrides: string | Record<string, number>
+    /** 原地打转检测（实验性，默认关）：同一串节点短周期反复执行、识别结果不变时停掉该任务。 */
+    LoopGuard: boolean
+    /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
+    GameUpdateMode: MaaFWGameUpdateMode
   }
   /**
    * 阶段性保留：manager.py 仍从 Selection.* 读取运行范围。
@@ -313,28 +331,62 @@ export interface MaaFWScriptConfig {
     Resource?: string | string[] | null
     Tasks?: string | string[] | null
   }
+  /**
+   * 用户页任务队列的自定义模板（同一脚本的用户共用），JSON 文本；
+   * 读写见 views/EditView/User/maafwQueueSource.ts。脚本页不读不写。
+   */
+  Task?: {
+    Templates?: string
+  }
 }
 
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
 
 /**
- * 三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
+ * 前三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
  * 首份的 id 就是裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
  */
 export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /**
+   * 全局选项（interface 的 global_option 及其子选项）的值：每个用户一份、所有任务共用，
+   * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。
+   */
+  globalOptions?: Record<string, MaaFWTaskOptionValue>
+  /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
+  taskLabels?: Record<string, string>
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
 export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
-  /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  missing?: false
+  /** 用户给这一份起的显示名；没有时显示任务的 label / name */
+  customLabel?: string
+  /**
+   * 同一基础名（显示名，没有就是任务的 label / name）的副本中的序号，从 1 起；
+   * 仅在 `copyTotal > 1` 时需要显示
+   */
   copyIndex: number
   copyTotal: number
 }
+
+/** 队列里 interface 已经没有的任务（项目更新改了 name）：留成虚影，由用户自己删。 */
+export interface MaaFWMissingQueuedTask {
+  id: string
+  missing: true
+  /** 实例 id 去掉副本后缀后的原任务名 */
+  name: string
+  /** 成为虚影前用户给这一份起的显示名；有就优先显示它 */
+  customLabel?: string
+  copyIndex: number
+  copyTotal: number
+}
+
+export type MaaFWQueueEntry = MaaFWQueuedTaskItem | MaaFWMissingQueuedTask
 
 export interface MaaFWUserConfig {
   Info: {
@@ -350,9 +402,13 @@ export interface MaaFWUserConfig {
     Account: string
     Password: string
     Resource?: string
-    Mode?: '脚本' | '用户' | '直控'
+    Base?: 'shared' | 'independent' | 'native'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
+    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
+    PlanMode?: string
+    /** 仅 MSS 用户携带：队列里没加活动任务时，是否在活动期间自动加入并排到最前 */
+    IfActivityFirst?: boolean | null
   }
   Task: {
     SelectedPreset: string
@@ -440,6 +496,13 @@ export interface MaaFWTaskInfo {
   resource: string[]
   option: string[]
   defaultCheck: boolean
+  /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
+  repeatCount?: number
+  /**
+   * 特调声明不可选时的原因（后端 `unselectable_entries`）：不进「添加任务」与预设模板，
+   * 已在队列里的照常显示，运行时跳过。可选任务为空
+   */
+  unselectableReason?: string | null
 }
 
 export interface MaaFWOptionCaseInfo {
@@ -460,6 +523,8 @@ export interface MaaFWOptionInputInfo {
   verify?: string | null
   verifyError?: string | null
   patternMsg?: string | null
+  /** PI v2.10.0：密码 / 密钥字段，掩码输入，保存后只拿得到密文 */
+  password?: boolean
 }
 
 export interface MaaFWOptionInfo {
@@ -477,8 +542,13 @@ export interface MaaFWOptionInfo {
     label?: string | null
     description?: string | null
     default?: string | null
+    /** 项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键 */
+    modifierCount?: number
   }>
   defaultCase?: string | string[] | null
+  /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */
+  minCount?: number | null
+  maxCount?: number | null
 }
 
 export interface MaaFWAdbEmulatorExtraCapabilityInfo {
@@ -553,11 +623,11 @@ export interface Script {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
+    | WhimboxConfig
   users: User[]
 }
 
@@ -567,19 +637,15 @@ export interface User {
   name: string
   Data: {
     LastProxyDate: string
-    LastPsychubeDate?: string
-    LastLimboMonth?: string
-    LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    StaminaPipelineVersion?: number
+    StaminaPipelineBackup?: string
   }
   Info: {
-    Annihilation: string
     Id: string
-    InfrastMode: string
-    InfrastName: string
-    MedicineNumb: number
-    Mode: string
+    Base: string
+    IfQuickConfig?: boolean
     Name: string
     SanityMode?: string
     Notes: string
@@ -587,16 +653,20 @@ export interface User {
     Resource?: string
     RemainedDay: number
     IfUseMasConfig?: boolean
-    SeriesNumb: string
     Server: string
-    Stage: string
-    StageMode: string
-    Stage_1: string
-    Stage_2: string
-    Stage_3: string
-    Stage_Remain: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
+  }
+  /** 关卡区：MAA（关卡/理智药/连战）、SRC（关卡通道与材料）等专项按需携带 */
+  Stage?: {
+    StageMode?: string
+    MedicineNumb?: number
+    SeriesNumb?: string
+    Stage?: string
+    Stage_1?: string
+    Stage_2?: string
+    Stage_3?: string
+    [key: string]: unknown
   }
   Notify: {
     Enabled: boolean
@@ -616,13 +686,11 @@ export interface User {
     BilibiliAccountName?: string | null
   }
   Task: {
-    IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
     IfMall: boolean
     IfAward: boolean
     IfSwitchTheme: boolean
-    IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
     Queue?: unknown
@@ -630,8 +698,13 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
-    IfGreenTicketStore?: boolean
     DepotMaintainPlans?: string
+    IfEventDepotMaintain?: boolean
+    EventDepotMaintainPlans?: string
+    IfGreenTicketStore?: boolean
+    Annihilation?: string
+    InfrastMode?: string
+    InfrastName?: string
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
@@ -663,12 +736,15 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
+    | 'WhimboxConfig'
+    | 'MSSConfig'
 }
 
 // 脚本详情（用于前端展示）
 export interface ScriptDetail {
   uid: string
   type: ScriptType
+  activityGame?: string | null
   name: string
   config:
     | MaaConfig
@@ -677,27 +753,12 @@ export interface ScriptDetail {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
+    | WhimboxConfig
   users?: User[]
   createTime?: string
-}
-
-// M9A 任务选项类型
-export interface M9ATaskOption {
-  name: string
-  index: number
-  sub_options?: M9ATaskOption[]
-  input_values?: Record<string, string | number>
-  selected_cases?: string[]
-}
-
-// M9A 任务队列项类型
-export interface M9ATaskQueueItem {
-  name: string
-  options: M9ATaskOption[]
 }

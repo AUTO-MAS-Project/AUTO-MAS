@@ -36,11 +36,11 @@
 
 **第二种故障：修复工具把运行时修残**（同日实测）。用户在实例还开着时点「修复」，修复工具
 走「全量重装」：删 ``ldplayer9box`` 时被占用的文件删不掉，往 Program Files 解压又失败
-（``unzip vbox error = 1015``），退而解压到 ``<雷电目录>\vbox\``——但 COM 注册和 dnplayer
+（``unzip vbox error = 1015``），退而解压到 ``<雷电目录>\\vbox\\``——但 COM 注册和 dnplayer
 仍从 ``ldplayer9box`` 拉虚拟机。结果那里只剩删不掉的核心文件，缺了 ``libOpenglRender2.dll``
 ``fastpipe2.dll`` ``GLES_V2.dll`` 这一整套 GPU 库：VBox.log ``fastpipe: load host failed err=126``，
 客户机一开始画图 ``Ld9BoxHeadless.exe`` 就以 ``0x80000003`` 中止，MAS 这边看到的又是 ADB 异常。
-运行时里缺的文件雷电自己的安装目录都有（``vbox64\`` 随安装自带，``vbox\`` 是修复工具解压
+运行时里缺的文件雷电自己的安装目录都有（``vbox64\\`` 随安装自带，``vbox\\`` 是修复工具解压
 出来的），启动前查一眼、缺了就补回去，只补不覆盖。
 """
 

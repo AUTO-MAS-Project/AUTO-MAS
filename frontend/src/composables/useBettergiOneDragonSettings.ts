@@ -107,7 +107,7 @@ export const fetchGlobalStygianSettings = async (
 }
 
 /**
- * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+ * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源）写 BGI 全局 config.json。
  */
 export const saveGlobalStygianSettings = async (
   scriptId: string,
@@ -157,7 +157,7 @@ export const fetchDomainCatalog = async (
 }
 
 /**
- * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+ * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源）写 BGI 全局 config.json。
  */
 export const saveGlobalDomainSettings = async (
   scriptId: string,

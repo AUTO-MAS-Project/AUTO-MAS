@@ -38,6 +38,37 @@
         </div>
       </div>
 
+      <div v-if="showDropStatistics" class="notify-channel-item">
+        <div class="notify-channel-header">
+          <span class="notify-channel-name">{{ t('edit.notifyDropStatistics') }}</span>
+          <a-switch
+            v-model:checked="notify.IfSendDropStatistics"
+            :disabled="loading || !notify.Enabled"
+            @change="emitSave('Notify.IfSendDropStatistics', notify.IfSendDropStatistics)"
+          />
+        </div>
+      </div>
+
+      <!-- 节点详情推送模式（任务报告分步节点）：仅 BetterGI 用户编辑页启用 -->
+      <div v-if="showPushLogMode" class="notify-channel-item">
+        <div class="notify-channel-header">
+          <span class="notify-channel-name">
+            {{ t('edit.collectNodeDetails') }}
+            <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
+          </span>
+        </div>
+        <div class="notify-channel-config">
+          <a-select
+            v-model:value="notify.PushLogMode"
+            :options="pushLogModeOptions"
+            size="large"
+            @change="emitSave('Notify.PushLogMode', notify.PushLogMode)"
+          />
+        </div>
+      </div>
+
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
@@ -98,6 +129,7 @@
 </template>
 
 <script setup lang="ts">
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
 
@@ -105,6 +137,8 @@ type UserNotifyConfigData = {
   Enabled?: boolean | null
   IfSendStatistic?: boolean | null
   IfSendSixStar?: boolean | null
+  IfSendDropStatistics?: boolean | null
+  PushLogMode?: string | null
   IfSendMail?: boolean | null
   ToAddress?: string | null
   IfServerChan?: boolean | null
@@ -112,6 +146,13 @@ type UserNotifyConfigData = {
 }
 
 const { t } = useI18n()
+
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+]
 
 const notify = defineModel<UserNotifyConfigData>({ required: true })
 
@@ -121,6 +162,10 @@ withDefaults(
     scriptId?: string | null
     userId?: string | null
     showSixStar?: boolean
+    // 掉落统计开关（BGI「奖励识别」汇总）：仅 BetterGI 用户编辑页启用
+    showDropStatistics?: boolean
+    // 节点详情推送模式（任务报告分步节点）：仅 BetterGI 用户编辑页启用
+    showPushLogMode?: boolean
     // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
     hideSectionHeader?: boolean
   }>(),
@@ -129,6 +174,8 @@ withDefaults(
     scriptId: null,
     userId: null,
     showSixStar: false,
+    showDropStatistics: false,
+    showPushLogMode: false,
     hideSectionHeader: false,
   }
 )
@@ -176,6 +223,17 @@ const emitSave = (key: string, value: unknown) => emit('save', key, value)
 
 .notify-channel-config :deep(.ant-form-item) {
   margin-bottom: 0;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
 }
 
 .webhook-manager {

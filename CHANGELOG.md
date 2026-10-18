@@ -6,274 +6,632 @@
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
 <!--
-  本文件由 scripts/changelog.py 在发版时从 changelog.d/ 里的碎片编译生成，平时不要手改，
+  本文件由 scripts/changelog.py 从 changelog.d/ 里的碎片编译生成，平时不要手改，
   也不要手改 res/version.json 等生成物。
 
   - 要登记一条更新日志，在 changelog.d/ 下新建一个碎片文件，见 changelog.d/README.md，
-    或运行 `python scripts/changelog.py add <分类> "<一句话>"`。一条 PR 只放一个碎片。
-  - 文件顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号。发版 PR 由「准备发版」工作流
-    创建，是唯一会改动本文件与各处版本号的地方。
-  - 条目写成一行，从用户视角描述这次改动带来了什么；署名在发版时按碎片的提交作者自动补，
-    不要手写。
+    或运行 `python scripts/changelog.py add <分类> <项目键> "<一句话>"`。一条 PR 只放一个碎片。
+  - 带碎片的提交进了 dev 或 release 分支，「入账更新日志碎片」工作流就把它编译进顶部的
+    `## [未发布]` 段并删掉碎片；「准备发版」再把未发布段改成 `## [vX.Y.Z] - 日期`。
+    文件顶部第一个带版本号的标题就是仓库当前的版本号，发版 PR 是唯一改动版本号的地方。
+  - 条目写成一行 `【项目】做了什么（仅公测） (#PR 号) by @作者`：项目、PR 号与署名都由脚本
+    按碎片与其提交自动补，不要手写；`（仅公测）` 表示这条只进公测公告，转正汇总时自动丢掉。
 
-  分类含义（中间六类来自 Keep a Changelog）：
+  分类含义（中间五类来自 Keep a Changelog）：
 
   - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
-  - 本次亮点：这一版最值得一看的三五条，由维护者在发版 PR 里挑选。
+  - 本次亮点：这一版最值得一看的几条。维护者给碎片加一行 `highlight: true`，编译时这条
+    就进这里而不是原分类。
   - 新增：新添加的功能。
   - 变更：对现有功能的变更，含优化与调整。
-  - 弃用：已经不建议使用、即将移除的功能。
-  - 移除：已经移除的功能。
+  - 移除：已经移除或不再建议使用、即将移除的功能。
   - 修复：对 bug 的修复。
   - 安全：对安全性的改进。
-  - 开发流程：只影响贡献者、用户看不见的改动。
+  - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [v5.5.0-beta.6] - 未发布
-
-### 破坏性变更
-
-- 绝区零一条龙升级后，旧版本保存在脚本目录下的「一条龙原生配置」备份不再显示在配置恢复列表中（数据未删除，确需找回请手动迁移） by [@AthenaHibou](https://github.com/AthenaHibou)
+## [未发布]
 
 ### 新增
 
-- OK-NTE 专项接入「配置恢复」：可浏览历史备份、预览配置摘要并一键恢复（进入编辑页即自动备份 ok-nte 原生配置，各留最近 10 份） by [@AthenaHibou](https://github.com/AthenaHibou)
-
-### 修复
-
-- BAAH 专项 修复配置页多出一个「结束后关闭模拟器」开关的问题：其他专项都没有这个选项，BAAH 一并按「任务结束后关闭模拟器」执行 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 修复模拟器关闭动作缺少超时、关闭失败时仍可能让任务收尾长时间卡住的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 修复脚本配置目录被脚本进程占用或含只读文件时，任务收尾复原配置失败、配置目录停留在半删状态的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 开发流程：收敛各专项重复的日志推送与启动参数拆分实现，避免同类逻辑在多处各存一份 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 开发流程：恢复 tzdata 依赖——Windows 上没有系统时区数据库，移除后会导致时区查询失败 by [@1w1w11w1](https://github.com/1w1w11w1)
-
-## [v5.5.0-beta.5] - 2026-09-12
-
-### 新增
-
-- BAAH专项 新增碧蓝档案爱丽丝助手脚本支持，可集中管理多个账号的配置并自动完成每日任务 by [@audiencegeg-glitch](https://github.com/audiencegeg-glitch)
-- MAA专项 日常调度新增「更换主题」开关，勾选后计划运行时执行 MAA 里配好的界面主题更换（多个主题随机切换，需 MAA v6.17.3 及以上）；库存保持的关卡下拉只显示真正掉落该材料的关卡、按「刷一件要多少理智」从省到贵排序，并新增库存列显示当前仓库数量 by [@jinghero](https://github.com/jinghero)
-- MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计、一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi)
-- 模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi)
-- 初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源 by [@qiyinxi](https://github.com/qiyinxi)
-- 星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新可回滚，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到；脚本正开着窗口时跳过本轮 by [@qiyinxi](https://github.com/qiyinxi)
+- 【设置】桌宠支持自定义右键菜单并修正留言框箭头位置（仅公测） (#1466) by @jinghero
 
 ### 变更
 
-- 性能与清理 编辑页连续改动不再丢失，配置文件损坏时保留副本而不是静默清空；日志页、模拟器页、签到页与工具页不再高频轮询，任务日志改为增量推送，MAA 起步不再卡顿一秒，运行日志不再被访问记录撑大；并移除前端从不使用的 9 个接口（MCP 同名工具一并消失）与约两万行无用代码 by [@qiyinxi](https://github.com/qiyinxi)
-
-### 修复
-
-- 绝区零一条龙 修复「快速导入配置」没有带入所选实例的按键配置（键盘/手柄按键、后台模式、输入方式等），导入后按键仍是默认值的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
-- 模拟器 2.0 修复雷电 VBox 服务卡住时（窗口开了、虚拟机起不来、MAA 报 ADB 连接异常且反复重试）的启动问题：会自动关掉空窗口并重启该服务再试一次，但只要还有实例在运行或正在启动就不碰、改为提示先关闭它们；启动前还会检查 VBox 运行时是否被修复工具修残（缺 GPU 库导致虚拟机启动几十秒后崩溃），缺了就从雷电安装目录补回，补不回时明确报错；MuMu 实例启动失败或超时时报错附上 MuMu 自己给出的错误码、错误信息和实例状态 by [@qiyinxi](https://github.com/qiyinxi)
-- 修复社区通知重复发送、标题重复及同名 Webhook 漏发签到摘要的问题；修复库街区签到失败及凭据兼容问题，分别显示游戏与库洛币的签到结果、奖励和失败原因
-- MAA专项 修复 MAA 内配置方案与新版配置文件不一致时脚本设置、自动代理与 MAA 更新任务直接报错中断，理智不足时剿灭被误记为本周已完成、当周剩余剿灭不再执行，以及本周剿灭已完成时仍被判定为部分任务执行失败并反复重跑的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- MAA专项 修复活动关优先失败但后续理智作战完成时整轮仍被判失败的问题
-- 调度中心 修复任务完成后没有执行设定的关机、重启等电源操作、倒计时结束后只有软件退出，以及任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 修复绝区零一条龙运行记录被写坏时整个任务直接异常、无法继续运行的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- HSR专项 修复三月七助手的输出在日志与通知里全是 `\uXXXX` 乱码、失败原因只截到一条 WARNING，以及识屏超时自己关掉游戏却被报成「若是用户主动关闭游戏」的问题；通知 Webhook 被钉钉/企微/飞书/OneBot 拒收时不再记成推送成功，会在任务页提示失败原因 by [@qiyinxi](https://github.com/qiyinxi)
-- MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」（现按镜像依次重试并提示失败原因）；beta.4 下脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru；agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本导致每次都卡在「AgentClient 连接超时」（已装错的环境会自动重建一次）；首次更新自行解压的项目时不清理旧版残留文件导致资源加载失败；以及运行环境准备与脚本运行被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题，依赖解析只按 MAS 选定的下载源进行，脚本与 Agent 不再继承宿主的 Python 环境变量 by [@qiyinxi](https://github.com/qiyinxi)
-- 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1)
-- 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-
-## [v5.5.0-beta.4] - 2026-09-10
-
-### 新增
-
-- MAA 专项 日常调度新增「更换主题」开关：勾选后 MAS 计划运行时会执行 MAA 里配好的界面主题更换（多个主题随机切换），主题名称仍在 MAA 中配置，需要 MAA v6.17.3 及以上版本 by [@jinghero](https://github.com/jinghero) by [@HarcoChen](https://github.com/HarcoChen)
-- 绝区零一条龙专项 用户卡片新增「用户模式/直控模式」来源、区服、账号尾号与一条龙任务数标签，并修复 MaaFW 专项用户卡片不显示任何标签的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
-- MFW专项 使用模拟器时可顺带把游戏一起打开（包名自动识别或手动填写），任务前后自定义脚本改为每用户各跑一次、不再随重试重复 by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计，一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新采用可回滚的事务方式，中途失败会还原到原版本，你自己的配置文件和另存的自定义策略不会被动到（与上游同名的模板文件会随更新覆盖）；脚本正开着窗口时会跳过本轮而不是强行关掉它 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-
-### 变更
-
-- 全局设置 虚拟显示器改为常驻监测：运行期间检测不到真实显示输出自动挂上，恢复后自动拆掉（任务运行中等结束再拆）；说明里可直接点开 Parsec 驱动下载页 by [@qiyinxi](https://github.com/qiyinxi)
-- 日志清理 MFW 项目的 MaaFramework 原生日志备份改为按保留天数一并清理，不再无限堆积
-- 性能与清理 编辑页连续改动不再丢失，配置文件损坏时保留副本而不是静默清空；日志页、模拟器页、签到页与工具页不再高频轮询，任务日志改为增量推送，MAA 起步不再卡顿一秒，运行日志不再被访问记录撑大；并移除前端从不使用的 9 个接口（MCP 同名工具一并消失）与约两万行无用代码 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-
-### 修复
-
-- 模拟器 2.0 修复雷电实例在关机或启动中时被误判为「别家模拟器」、上线后 ADB 地址被清空、MAA 直接报 ADB 连接异常的问题（beta.5 首日生产实测） by [@qiyinxi](https://github.com/qiyinxi)
-- 模拟器 2.0 雷电的 VBox 服务卡住时（窗口开了、虚拟机起不来、MAA 报 ADB 连接异常且反复重试），启动会自动关掉空窗口并重启该服务再试一次；只在所有实例都异常时才动手，只要还有任何一台实例在运行或正在启动就不碰，改为明确提示先关闭它们或运行雷电修复工具 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 模拟器 2.0 的 MuMu 实例启动失败或超时时，报错里附上 MuMu 自己给出的启动错误码、错误信息和实例状态，不再只有一句「启动超时」 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复社区通知重复发送、标题重复及同名 Webhook 漏发签到摘要的问题。 by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复 MAA 内配置方案与新版配置文件不一致时，脚本设置、自动代理与 MAA 更新任务直接报错中断的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复库街区签到失败及凭据兼容问题，分别显示游戏与库洛币的签到结果、奖励和失败原因。 by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复理智不足时剿灭被误记为本周已完成、当周剩余剿灭不再执行的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复本周剿灭已完成时仍被判定为部分任务执行失败并反复重跑的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复活动关优先失败但后续理智作战完成时整轮仍被判失败的问题 by [@HarcoChen](https://github.com/HarcoChen)
-- 调度队列 修复任务完成后没有执行设定的关机、重启等电源操作，倒计时结束后只有软件退出的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复绝区零一条龙由 MAS 启动时报「运行环境同步失败」，且自动模式失败后不切换启动器的问题
-- MaaEnd 专项 适配 MaaEnd 2.28：基质刷取可按模式（随机/地区/目标）选择地点与目标武器，应急理智加强剂并入理智任务设置，任务不再因「没有启用的任务」或已被上游移除的旧任务而反复失败 by [@HarcoChen](https://github.com/HarcoChen)
-- 修复绝区零一条龙运行记录被写坏时整个任务直接异常、无法继续运行的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复配了网络代理的用户初始化下载仍直连、卡在「程序文件」一步的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- HSR专项 修复系统区域非中文时三月七助手每个模块被判失败、整轮重复运行的问题 by [@HarcoChen](https://github.com/HarcoChen)
-- HSR专项 修复系统区域非中文时三月七助手的输出在日志与通知里全是 `\uXXXX` 乱码、失败原因只截到一条 WARNING、三月七助手识屏超时自己关掉游戏却被报成「若是用户主动关闭游戏」的问题；通知 Webhook 被钉钉/企微/飞书/OneBot 拒收（关键词、签名、群不存在等）时不再记成推送成功，会在任务页提示失败原因 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复 MFW、M9A、HSR 与主页的一批问题：多项设置从未生效、MFW 更新不上、HSR 周常与历战余响提前翻页、重返未来 1999 倒计时偏移、国内下载源缺分支导致初始化失败
-- 修复后端就绪前退出时只能反复重试的问题，现同时提供「重建运行环境」入口 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复未返回分服关卡数据时用户配置页打不开的问题 by [@qiyinxi](https://github.com/qiyinxi)
-- 模拟器管理 修复部分 MuMu 因命令输出混有日志而无法读取信息的问题 by [@qiyinxi](https://github.com/qiyinxi)
-- MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题 by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次 by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 修复首次更新「自己解压好、再指给 MAS」的项目时不清理资源目录里的旧版残留文件，新版挪走或删掉的文件留在原地导致资源加载失败、项目彻底跑不起来的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 修复运行环境准备与脚本运行会被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题：依赖解析只按 MAS 自己选定的下载源进行，脚本与 Agent 不再继承宿主的 PYTHONPATH、PYTHONWARNINGS 等变量 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复日志文件在运行过程中被重建或删除时，日志监控会静默失效、该趟任务再也不会被正常判定（卡到超时或误报异常）的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-
-### 开发流程
-
-- 首页卫星图标改从全局图标表取，新增专项时不再漏掉主页卫星
-
-## [v5.5.0-beta.3] - 2026-09-09
-
-### 破坏性变更
-
-- 森空岛获取凭据改为扫码登录，完善社区签到、云游戏时长与日常便笺 by [@Lance0174](https://github.com/Lance0174) by [@HarcoChen](https://github.com/HarcoChen)
-- MFW 项目新增自动更新时机设置，**已有脚本默认「运行前更新」**，不需要可改为「不更新」；可选下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- HSR 脚本页「游戏启动参数」已移除，**旧配置下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA 代理接管时**强制开启账号切换开关**以确保按配置切号；未填账号时不切号 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA、SRC、MaaEnd 与 OK-NTE 用户页配置模式**由「简洁/详细」更名为「脚本/用户」**，含义不变，自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA 计划表不再强制关闭「库存保持」；此前开启过的升级后自动生效，**库存保持先于理智作战执行** by [@jinghero](https://github.com/jinghero) by [@HarcoChen](https://github.com/HarcoChen)
-
-### 本次亮点
-
-- 新增绝区零一条龙（ZZZ-OD）专项，支持独立模式与直控模式 by [@HarcoChen](https://github.com/HarcoChen)
-- 模拟器管理新增「Emulator 2.0」：一条配置纳管多个雷电 14 / MuMu 6 实例 by [@HarcoChen](https://github.com/HarcoChen)
-- 调度队列新增循环队列，任务可按固定时间或间隔持续运行 by [@HarcoChen](https://github.com/HarcoChen)
-- 启动速度大幅优化，启动与初始化等待画面重做 by [@HarcoChen](https://github.com/HarcoChen)
-- 通知系统支持微信 Claw 与 QQ 官方机器人接收任务通知 by [@HarcoChen](https://github.com/HarcoChen)
-
-### 新增
-
-- 模拟器管理 新增「Emulator 2.0」：一条配置纳管多个雷电 14 / MuMu 6 实例，支持新建删除、分辨率/CPU/内存/帧率批量设置与「配置守卫」自动还原 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaEnd专项 新增脚本直控模式与每日仅执行一次，抢委托送货与自动采集独立为可单独配置的阶段 by [@HarcoChen](https://github.com/HarcoChen) [@TCddddd](https://github.com/TCddddd)
-- 绝区零一条龙（ZZZ-OD）专项适配：支持用户独立模式与直控模式 by [@AthenaHibou](https://github.com/AthenaHibou) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 调度队列 新增循环队列（固定时间或间隔重复运行）；选中脚本后可指定单用户单独运行；完成后操作支持自定义延时 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-NTE专项 支持按手机号后 4 位切换登录账号，支持经启动器拉起异环游戏，新增问题包一键导出 by [@AthenaHibou](https://github.com/AthenaHibou) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知 by [@HarcoChen](https://github.com/HarcoChen) [@TCddddd](https://github.com/TCddddd)
-- HSR专项 用户配置页新增「额外脚本」，可在任务前后各执行一个自定义脚本 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 新增绿票商店开关；托管结束后保存 MAA 每日状态，同一天多次托管不再重复执行 by [@qiyinxi](https://github.com/qiyinxi) [@1w1w11w1](https://github.com/1w1w11w1) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 首页 快速启动支持多选并记住上次选择 by [@Craun718](https://github.com/Craun718) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 全局设置 新增虚拟显示器：无真实显示输出时临时挂 1920×1080 虚拟屏，任务结束即拆除；更新提示改为按版本分区块展示，可在设置页随时查看更新日志 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- BetterGI专项 用户编辑页一条龙配置改为可视化拖拽队列，战斗四项各支持多个独立实例 by [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-
-### 变更
-
-- 启动界面 等待画面重做，出错给出一句话原因和主要操作，取消自动重试；大幅优化前端加载与启动速度 by [@qiyinxi](https://github.com/qiyinxi) [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
-- HSR专项 脚本直控不再要求先导入快照，新增 SRA 配置档案下拉，管控任务配置项补齐中文名；用户页文案接入多语言词表 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 后端更新 自动在后台下载并于下次启动生效；Runtime 接入后由 auto-mas-runtime.exe 统一完成初始化与监督 by [@ClozyA](https://github.com/ClozyA) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 首页 弱网下活动数据异常不再拖累所有请求；快速启动后自动跳转调度中心 by [@1w1w11w1](https://github.com/1w1w11w1) [@Craun718](https://github.com/Craun718) by [@HarcoChen](https://github.com/HarcoChen)
-- MFW专项 进入项目配置页不再每次等运行环境确认；通用脚本未填配置路径时任务前直接提示 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 帮助入口 计划管理、模拟器管理等页面增加直达文档入口；自动清理 OCR 图片 by [@1w1w11w1](https://github.com/1w1w11w1) [@HarcoChen](https://github.com/HarcoChen) by [@HarcoChen](https://github.com/HarcoChen)
-- 代码清理 统一导入排序、合并重复逻辑、清理死代码与无用组件；前端类型治理清理 any；OK-WW 清理无效选项；BetterGI 编辑页接入 i18n 词表 by [@1w1w11w1](https://github.com/1w1w11w1) [@HarcoChen](https://github.com/HarcoChen) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MFW】模拟器上按读盘判断游戏是否加载完再开始第一个任务，通用默认等待时间改成 120 秒 (#1437) by @qiyinxi
+- 【调度】移除运行模式选择，循环队列固定循环并隐藏续跑入口，其他任务固定自动代理 (#1470) by @jinghero
+- 【设置】统一桌宠设置布局与问号说明，帧率支持常用档位下拉选择（仅公测） (#1448) by @jinghero
 
 ### 移除
 
-- 移除米游币获取任务，保留米游社各游戏签到 by [@Lance0174](https://github.com/Lance0174)
+- 【工具】移除已退役的明日方舟 PC 工具，下线工具页面 (#1475) by @1w1w11w1
 
 ### 修复
 
-- BetterGI专项 修复一条龙配置级联退化与保存报错、跨零点日志误判、重试报告重复、GUI 残留配置、切号误删仓库与设置事件接收等问题 by [@TCddddd](https://github.com/TCddddd) [@1w1w11w1](https://github.com/1w1w11w1) [@Craun718](https://github.com/Craun718) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- Emulator 2.0 修复模拟器已运行时不打开游戏、雷电与 MuMu 同时运行时操作打到另一台的问题 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- HSR专项 修复任务配置文本项输入被清空、开启培养目标后历战余响不刷、三月七自行关游戏导致误判失败、脚本升级后覆盖配置让表单消失等问题 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复日常任务误用剿灭队列、剿灭体力耗尽误判完成、v6.14 后不切号等问题 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaFW专项 修复 Python 运行时损坏延迟报错、受限网络无镜像、环境不可用反复重启模拟器、建项向导跳过环境检查等问题 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-WW与OK-NTE专项 修复多用户切号窗口定位与退出残留、体力报告误显与任务推送失败等问题 by [@AthenaHibou](https://github.com/AthenaHibou) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复启动界面日志窗口空白、深色模式标题栏变暗、双窗口抢连接、渲染崩溃黑屏等 UI 问题 by [@qiyinxi](https://github.com/qiyinxi) [@ClozyA](https://github.com/ClozyA) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复后端断连立即弹窗阻塞（改为非阻塞提示）与更新后端时误报失去连接的问题 by [@qiyinxi](https://github.com/qiyinxi) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- 日志与签到 修复日志跨零点后运行历史丢失、社区签到重复推送与首页日期格式异常黑屏等问题 by [@AthenaHibou](https://github.com/AthenaHibou) [@Lance0174](https://github.com/Lance0174) [@1w1w11w1](https://github.com/1w1w11w1) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaEnd专项 修复更新后已完成任务被误判失败并重试的问题 by [@HarcoChen](https://github.com/HarcoChen) [@TCddddd](https://github.com/TCddddd)
-- 通用脚本 修复直控配置模式下文件占用时配置目录被部分删除且不还原的问题；修复明日方舟 PC 工具连接失败后每秒重试 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MAA】修复活动关均衡理智误触发临期理智药配置冲突（仅公测） (#1443) by @1w1w11w1
+- 【bgi】BetterGI 启动后立即退出时要空等约 1 分钟才提示失败（仅公测） (#1464) by @1w1w11w1
+- 【绝区零一条龙】恢复一条龙原生配置时，个别实例目录可能只删掉一半并报错（仅公测） (#1463) by @1w1w11w1
+- 【MFW】重试时会重新执行项目的运行前设置（如 MaaEnd 启动游戏），不再因游戏已关闭而直接失败 (#1467) by @qiyinxi
+- 【通知】修复部分中文计算机名环境下邮件通知发送失败的问题 (#1469) by @jinghero
 
-### 开发流程
-
-- 新增 GitHub Issue 模板；清理未达规范的测试文件并重新生成前端接口代码；禁止 AI 助手协助 force push by [@qiyinxi](https://github.com/qiyinxi) [@1w1w11w1](https://github.com/1w1w11w1) [@Craun718](https://github.com/Craun718)
-
-## [v5.5.0-beta.2] - 2026-08-31
+## [v5.7.0-beta.5] - 2026-10-17
 
 ### 新增
 
-- 前端i18n 新增日本語与英文界面选项，首次启动跟随系统语言；主要页面界面文案与状态标签接入词表 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 日志处理 新增日志处理钩子层（成功/失败标志正则匹配），日志采集 API 落地为通用 log_box 组件；OK-WW 首个接入运行日志节点推送 by [@qiyinxi](https://github.com/qiyinxi) [@AthenaHibou](https://github.com/AthenaHibou) [@TCddddd](https://github.com/TCddddd) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-WW专项 支持启动前按手机号后 4 位切换登录账号并新增问题包导出；自行接管鸣潮游戏更新（多 CDN 断点续传、增量补丁优先、校验后原子替换） by [@1w1w11w1](https://github.com/1w1w11w1) [@AthenaHibou](https://github.com/AthenaHibou) [@TCddddd](https://github.com/TCddddd) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-NTE专项 运行日志关键节点注入任务报告；OK-WW 与 OK-NTE 任务报告详情可选关闭/逐条/汇总三种模式 by [@AthenaHibou](https://github.com/AthenaHibou) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaFW专项 新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目（ADB 模拟器与 Win32 两条链路）；自定义 Webhook 新增 {gamedate} 变量 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 调度队列 新增每日首次启动运行队列；托盘图标右键菜单支持自定义；BetterGI 专项新增原神脚本适配与一条龙自动代理 by [@luo-luo-o](https://github.com/luo-luo-o) [@1w1w11w1](https://github.com/1w1w11w1) [@TCddddd](https://github.com/TCddddd) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【end】新增三种游戏启动方式，按支持情况限制设置并明确启动失败原因。（仅公测） (#1414) by @AthenaHibou
+- 【调度】鸣潮、异环服务器维护时自动跳过本轮代理，不再空转重试，并发送维护通知（仅公测） (#1415) by @AthenaHibou
+- 【模拟器】魔改 AVD 支持所有 MFW 脚本，截图走模拟器截图加速（仅公测） (#1425) by @qiyinxi
+- 【Runtime】后端可在空闲时静默更新并重连，支持定时任务避让与失败修复 (#1413) by @1w1w11w1
 
 ### 变更
 
-- 架构优化 新增 utils/services 平台层；接入主进程与渲染进程错误上报，抑制无异常日志并遮蔽本机用户名 by [@HarcoChen](https://github.com/HarcoChen) [@ClozyA](https://github.com/ClozyA) [@qiyinxi](https://github.com/qiyinxi)
-- MaaFW项目 interface 解析接上闲置缓存（用户页进入耗时 5.5s→0.12s）；单独运行脚本不再受单日代理次数上限约束；任务成败判定改用协议中的机器可读字段 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 通知系统 各类通知统一走同一渠道分发层；MaaFW 运行日志记录实际加载版本与来源，版本不一致或架构不匹配时给出提示 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MAA】自动培养每轮按材料总达成率选择最多十名干员（仅公测） (#1412) by @jinghero
+- 【MFW】MFW 电脑端启动方式「游戏已经开着，MAS 只连接窗口」改名为「由脚本自身控制游戏」 (#1409) by @qiyinxi
+- 【调度】计划表支持多天轮换；BAAH 关卡表改为六类混打、每类可开关或交给 BAAH (#1332) by @beichen24a1
+- 【调度】历史记录日期列表按托管分组、记录倒序展示，成功与失败次数改用图标加数字（仅公测） (#1423) by @1w1w11w1
+- 【模拟器】魔改 AVD 提升终末地等 Vulkan 游戏的帧率与稳定性，实例帧率可选 30 或 60（仅公测） (#1426) by @qiyinxi
+- 【设置】未单独配置菜单图标时可使用外观包默认图标（仅公测） (#1410) by @jinghero
+- 【设置】桌宠设置集中展示，帧率可跟随动画包或自定义至 120 FPS，输入不再中断（仅公测） (#1431) by @jinghero
 
 ### 修复
 
-- 前端i18n 修复含「|」的说明文案被 vue-i18n 截断的问题；修复接入词表后 MaaEnd 与 HSR 编辑页无法加载、HSR 只填三月七路径时任务被分配给 SRA、未配 SRA 路径时多用户静默跑同一账号的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新失败、系统通知标题过长推送失败、自定义 Webhook 推送本地目标绕过代理的问题 by [@qiyinxi](https://github.com/qiyinxi) [@ArmedHelicopter](https://github.com/ArmedHelicopter) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复任务生成覆盖用户原生高级配置、HSR 托管开关报错、剿灭队列与库存保持并修复移除生息演算的问题 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复 M9A 任务跨午夜后日志监控读取前一天文件、队列「每日首次」跨日前十秒冷启动漏跑或重跑、日志文件被替换后监控读不到新内容、系统时钟跳变导致任务误判超时与历史偏移的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaFW专项 修复 Win32 窗口定位超时类型不符失败、MXU 项目识别不出家族导致更新包选不出、内置运行未加载项目自带 MaaFramework、Python 绑定版本不符、运行期间界面日志停更与停止无响应、旧环境永久占用磁盘、中止后 Agent 残留、单任务失败不即时提示、游戏启动失败后空转到超时、用户级通知配置无效、调试日志轮转只保存后半段的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MAA】修复养成达成通知中干员名称显示为编号的问题（仅公测） (#1403) by @jinghero
+- 【MAA】修复培养未完成时反复重启及重试遗漏普通库存目标的问题（仅公测） (#1422) by @jinghero
+- 【MAA】修复接管更新未自动启用、失败后无法更新及更新影响后续账号的问题（仅公测） (#1417) by @jinghero
+- 【end】修复测试版任务无法开始及未按所选方式启动游戏的问题（仅公测） (#1408) by @AthenaHibou
+- 【end】修复启动器自更新与安装校验阶段可能卡住或误报超时的问题（仅公测） (#1400) by @AthenaHibou
+- 【end】修复游戏内下载、编译着色器及更新重启时账号切换超时的问题 (#1401) by @AthenaHibou
+- 【MFW】修复 MFW 项目更新时解压目录被杀软占用就判失败，以及版本记录丢失后每次运行都更新失败 (#1398) by @qiyinxi
+- 【设置】修复桌宠拖动越界、停手晃动及松手跳位的问题（仅公测） (#1427) by @ClozyA
+- 【设置】修复桌宠关闭重建后的显示和鼠标交互异常（仅公测） (#1419) by @jinghero
 
-### 开发流程
+## [v5.7.0-beta.4] - 2026-10-15
 
-- 开发环境改用独立端口与 userData，可与正式版同时运行；前端检查与格式化迁移至 oxlint/oxfmt；添加 pyproject 和 ruff 配置 by [@qiyinxi](https://github.com/qiyinxi) [@Craun718](https://github.com/Craun718) [@HarcoChen](https://github.com/HarcoChen)
+### 本次亮点
 
-## [v5.5.0-beta.1] - 2026-08-28
+- 【MAA】设置干员养成目标后，自动刷取所缺材料并完成精英化、技能升级和专精 by @jinghero
+- 【设置】新增可互动桌宠，支持独立导入、任务动画及资源商店下载与分享。（仅公测） (#1385) by @jinghero
 
 ### 新增
 
-- MAA专项 支持启动前检查并更新明日方舟客户端 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-WW专项 支持启动前自动更新鸣潮客户端 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 日志采集 支持将运行节点推送至任务报告 by [@AthenaHibou](https://github.com/AthenaHibou) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 调度队列 支持每日首次启动时运行队列 by [@luo-luo-o](https://github.com/luo-luo-o) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 界面设置 支持自定义托盘菜单及任务控制命令；支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【end】终末地默认经官方启动器启动：自动识别启动器路径，代点开始游戏与更新确认 (#1394) by @AthenaHibou
+- 【end】任务报告新增采集物与失败原因明细，周期跳过的任务改为显示跳过 (#1357) by @AthenaHibou
+- 【HSR】HSR 专项支持设置账号单日代理次数上限，达到上限的用户当天自动跳过 (#1314) by @beichen24a1
+- 【调度】队列的「完成后操作」新增重启软件 (#1319) by @beichen24a1
+- 【模拟器】魔改 AVD 支持 MAA，截图走模拟器截图加速（仅公测） (#1360) by @qiyinxi
+- 【设置】主页中心图标可按压播放音效，内置两套音效并可导入自定义音频 (#1313) by @beichen24a1
 
 ### 变更
 
-- MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MAA】同意哔哩哔哩用户协议的开关移至神秘入口 by @ClozyA
+- 【MAA】养成与库存设置改为居中弹窗，支持养成目标搜索、分页和批量删除 (#1365) by @jinghero
+- 【MAA】整合三段理智与活动预设，保留养成后常备库存，缺练度目标独立延期并改善编辑。（仅公测） (#1393) by @jinghero by @1w1w11w1
+- 【ok-ww】鸣潮/异环切号遇游戏进程持续退出时快速报错，不再空等一分钟 (#1397) by @AthenaHibou
+- 【MFW】更新源选 GitHub 时，没接入 Mirror 酱的项目也能检查和安装更新 (#1372) by @qiyinxi
+- 【MFW】更新源选 GitHub 时也查 GitHub 上的新版本，Mirror 酱没同步时不再漏掉更新 (#1371) by @qiyinxi
+- 【主页】活动提醒仅覆盖已启用的托管账号，不再受首页显示设置影响。（仅公测） (#1343) by @jinghero
+- 【调度】任务未运行时显示待加载账号行和等待状态（仅公测） (#1363) by @1w1w11w1
+- 【调度】MAA 与 ok-ww 账号设置页补齐配置来源面板与配置操作；ok-ww 导入前自动备份、失败回滚（仅公测） (#1369) by @1w1w11w1
+- 【调度】调度日志应用外观时跟随主题色，内置主题默认使用对应的深浅色（仅公测） (#1368) by @jinghero
 
 ### 修复
 
-- SRC专项 修复任务结束后的进程与配置清理问题 by [@Craun718](https://github.com/Craun718) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen) [@qiyinxi](https://github.com/qiyinxi)
-- HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 修复开机自启动后台任务异常未记录、通知服务延迟加载导致错误的问题 by [@1w1w11w1](https://github.com/1w1w11w1) [@AthenaHibou](https://github.com/AthenaHibou) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- 日志采集 修复多用户节点详情被合并推送的问题；统一推送配置区样式，修复新增/删除规则时过早弹出缺字段提示的问题 by [@AthenaHibou](https://github.com/AthenaHibou) [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- 【MAA】修复自动培养成功后统计报告缺少培养进展的问题（仅公测） (#1356) by @jinghero
+- 【MAA】修复升级后通知渠道反复增加、同一消息重复推送的问题 (#1361) by @jinghero
+- 【MAA】修复养成干员、技能和模组选项长期不更新的问题 (#1367) by @jinghero
+- 【MAA】修复干员养成标签错位和窄窗口下选择框被挤出的问题（仅公测） (#1362) by @jinghero
+- 【MAA】修复公招中止时历史记录保存失败，并减少识别档案重复保存。 (#1358) by @jinghero
+- 【end】修复国服游戏更新后无法自动启动的问题，支持配置鹰角官方启动器路径 by @HarcoChen
+- 【end】修复启动前检查失败或跳过时只显示“未开始运行”、看不出原因的问题 (#1392) by @jinghero
+- 【bgi】修复多账号切换可能失败、游戏退出后切号空等及停止任务等待过久的问题 (#1370) by @AthenaHibou
+- 【MFW】修复运行、项目更新、外壳配置导入与编辑页的多处问题 (#1359) by @qiyinxi
+- 【MFW】修复历史记录把停服维护跳过显示成失败的问题，改为灰色「跳过」且不计入失败数 (#1383) by @qiyinxi
+- 【MFW】新用户的任务队列显示实际会运行的默认任务，运行后自动更新的日志写入历史记录 (#1384) by @qiyinxi
+- 【主页】修复终末地首页横幅的大图经常加载不出来的问题 (#1306) by @beichen24a1
+- 【调度】修复存在 MAA 账号时无法删除关卡计划表的问题 (#1389) by @jinghero
+- 【调度】修复自动签到时任务启动等待、总览空白及迟到签到结果漏发的问题 (#1379) by @jinghero
+- 【调度】修复编辑配置后因文件短暂占用导致自动备份失败的问题 (#1366) by @AthenaHibou
+- 【工具】修复森空岛签到偶发中断并误报程序内部异常的问题 by @Lance0174
+- 【设置】修复多个页面的弹窗遮挡标题栏及低窗口高度下内容超出窗口的问题 by @ClozyA
+- 【设置】修复外观预览和确认弹窗被标题栏遮挡的问题（仅公测） by @ClozyA
+
+## [v5.7.0-beta.3] - 2026-10-13
+
+### 新增
+
+- 【MAA】干员养成支持技能与专精联动、剪贴板导入及自动培养，绑定森空岛后跳过干员识别 (#1307) by @jinghero
+- 【MAA】新增活动库存保持，可添加预设并自动跟随当期活动材料关。 by @jinghero
+- 【end】PC 版终末地客户端按官方增量包更新，自动与手动都可触发 (#1310) by @1004452714
+- 【bgi】首领讨伐新增至冬首领，自动秘境支持按提升指南选择秘境 (#1349) by @AthenaHibou
+- 【MFW】脚本编辑页显示 Mirror 酱 CDK 剩余天数，CDK 有问题时给出提示 (#1330) by @qiyinxi
+- 【主页】有脚本运行时主页卫星动效自动暂停以降低显卡占用，可在设置中关闭 (#1325) by @AthenaHibou
+- 【调度】调度日志默认跟随主题色，并支持手动切换深色或浅色。 (#1335) by @ClozyA
+- 【调度】账号列表新增当前配置来源与覆写状态提示 (#1327) by @jinghero
+
+### 变更
+
+- 【绝区零一条龙】任务报告在体力刷本等被游戏拦截但误报成功时，以 ⚠ 异常行提示原因 (#1339) by @AthenaHibou
+- 【MSS】个人版 MSS 编排开关移入神秘入口，设置页不再单独展示 by @ClozyA
+- 【调度】配置来源术语统一为共享/独立/原生，旧备份仍可正常恢复 (#1338) by @1w1w11w1
+- 【调度】「本次运行范围」改为浮层展开，并列出未启用的账号（仅公测） (#1334) by @1w1w11w1
+- 【模拟器】实例设置改为分辨率、帧率、CPU、内存档位选择，魔改 AVD 并入同一设置入口 (#1347) by @qiyinxi
+- 【模拟器】不同模拟器来源使用不同标签颜色，便于区分实例 (#1348) by @qiyinxi
+- 【工具】诊断文件不再跟随历史记录保留时间，统一按 15 天清理；历史记录与 MFW 原生日志改为每日清理 (#1292) by @AthenaHibou
+- 【设置】失败回放设置的启用开关改为是/否下拉框，不再显示为整列长条（仅公测） (#1329) by @qiyinxi
+- 【设置】设置页只显示已添加专项的问题包导出按钮 (#1333) by @beichen24a1
+- 【Runtime】更新运行时至 v0.1.22。 by @ClozyA
+
+### 移除
+
+- 【end】移除托管管理中账号行的重复配置按钮，统一从编辑页配置账号。 (#1341) by @jinghero
+
+### 修复
+
+- 【MAA】修复每日代理满额账号仍启动任务及检查未通过后收尾报错的问题 (#1318) by @jinghero
+- 【绝区零一条龙】修复 zzz-od 刚开始运行就被误报已完成并跳过的问题 (#1324) by @AthenaHibou
+- 【ok-ww】修复鼠标停在屏幕四角时鸣潮、异环等专项的自动切号与启动必然失败的问题 (#1328) by @AthenaHibou
+- 【ok-ww】修复未连上游戏或中途退出时被误记为任务完成的问题 (#1340) by @1w1w11w1
+- 【MFW】模拟器和实例下拉框不再同时出现「不指定」和「未选择」两个相同选项 (#1331) by @qiyinxi
+- 【MFW】个人版未启用时，MSS 用户页不再显示灾变防线那一块（仅公测） (#1309) by @beichen24a1
+- 【主页】深色模式下主页 3D 卫星不再显示星空和星云背景（仅公测） by @ClozyA
+- 【主页】修复终末地版本宣传图与版本标题不显示的问题 (#1305) by @jinghero
+- 【主页】主页「换一句」的提示不再残留，刷新按钮也不再随作者名长短左右移动 (#1315) by @beichen24a1
+- 【调度】修复调度日志过长时高亮消失的问题。 (#1336) by @ClozyA
+- 【模拟器】修复未选模拟器的脚本打开编辑页时，后端日志出现模拟器读取失败的警告（仅公测） (#1345) by @qiyinxi
+- 【工具】修复代理或时间偏差导致社区签到失败及误报凭据失效、凭据解码失败误报长度错误的问题 by @Lance0174
+- 【工具】修复终末地已签到误报失败及森空岛活动查询异常中断的问题 by @Lance0174
+- 【工具】修复森空岛签到在系统时间不准时仍可能失败的问题 by @Lance0174
+- 【工具】修复控制台输出中断后程序反复报错的问题 (#1354) by @jinghero
+- 【设置】修复主题商店外观弹窗紧贴标题栏的问题（仅公测） by @ClozyA
+- 【设置】修复登录分享站后立刻掉线、主题商店和配置上传用不了的问题 (#1316) by @qiyinxi
+- 【设置】修复窗口最大化或还原后标题栏按钮图标与提示未同步的问题 (#1350) by @jinghero
+
+## [v5.7.0-beta.2] - 2026-10-10
+
+### 新增
+
+- 【MAA】开启脚本的更新接管并填好 Mirror 酱 Key 后，本体与资源更新由 MAS 统一处理 (#1298) by @jinghero
+- 【MAA】新增专项日志与失败截图导出，便于反馈问题 (#1289) by @jinghero
+- 【bgi】任务报告新增一条龙分步节点详情，可按用户开关展示 (#1283) by @AthenaHibou
+- 【MFW】全局选项每个用户只设一次；新增开发者模式（跟随来源目录、立即同步），可直接导入源码形态项目 (#1294) by @qiyinxi
+- 【MFW】任务队列支持右键复制任务、修改显示名和删除任务 (#1301) by @qiyinxi
+- 【主页】主页卫星新增可拖动的 3D 星系样式（设置里切换，默认仍是经典），带状态光效与彩蛋 (#1257) by @qiyinxi
+- 【主页】新增游戏活动开始当天与结束前三天提醒，仅推送首页显示的游戏 by @HarcoChen
+- 【调度】游戏维护期间跳过代理，游戏与资源更新照常进行 by @HarcoChen
+- 【调度】历史记录各项目旁显示成功与失败次数 (#1233) by @anlan1027
+- 【调度】自动代理失败时可保存 OBS 回放并从历史记录查看 (#1225) by @qiyinxi
+- 【模拟器】支持魔改 AVD 模拟器（内测，暂只支持 M9A，需另行获取模拟器内测包） (#1238) by @qiyinxi
+
+### 变更
+
+- 【bgi】统一账号切换部分的 UI，移入游戏配置区 (#1282) by @AthenaHibou
+- 【ok-nte】已有脚本保持原启动方式不变，选项改名为「静默启动 / 启动器界面启动」（仅公测） (#1280) by @AthenaHibou
+
+### 修复
+
+- 【MAA】修复活动开始后「刷活动关」仍提示当前无可刷活动关的问题 (#1293) by @1w1w11w1
+- 【MAA】修复并行更新游戏时误报需手动更新、停止任务不生效的问题 (#1291) by @jinghero
+- 【MAA】修复多用户共用安装时库存保持误用其他账号库存缓存的问题 (#1267) by @jinghero
+- 【end】修复任务结束后脚本未退出时误报超时并重复执行的问题 by @HarcoChen
+- 【绝区零一条龙】修复从自身配置槽导入失败并可能提前覆盖配置的问题 (#1243) by @anlan1027
+- 【ok-nte】修复异环更新卡住不报错及点击更新无响应 (#1173) by @qiyinxi
+- 【ok-nte】修复 ok-nte 配置编辑页基本设置等页面配置项显示英文的问题 (#1274) by @AthenaHibou
+- 【MFW】失败重试后运行日志开头写明上一次失败的原因 (#1295) by @qiyinxi
+- 【MFW】单任务超时后下一个任务不再直接失败；重试不补跑已完成任务；M9A 关闭游戏失败不重跑、小游戏不可选 (#1296) by @qiyinxi
+- 【通用脚本】修复各专项任务前后脚本在重试时重复执行或遗漏的问题 (#1273) by @1w1w11w1
+- 【主页】修复升级后已隐藏的活动区重新出现，并统一活动封面与常驻活动排序 by @HarcoChen
+- 【调度】修复运行中删除队列后任务结束时报错的问题 by @ClozyA
+- 【调度】修复队列启动即报错、任务总览无法正常结束的问题（仅公测） by @ClozyA
+- 【工具】修复专项问题包混入其他专项失败截图（如 MAA 失败截图）的问题 (#1290) by @AthenaHibou
+- 【设置】修复切换到背景图较大的外观包后，背景仍显示上一个包的问题（仅公测） (#1277) by @qiyinxi
+- 【Runtime】一键导出日志包含 Runtime 日志 by @ClozyA
+
+## [v5.7.0-beta.1] - 2026-10-08
+
+### 新增
+
+- 【MAA】使用 Mirror酱和 Key 后，每日最多下载一次资源并在任务前同步各实例 (#1135) by @jinghero
+- 【MFW】用户页新增从外壳导入队列的入口，脚本建好之后也能把外壳里的任务队列再同步过来 (#1195) by @beichen24a1
+- 【MFW】「按任务设置时限」里新增「原地打转检测（实验性）」，默认关；节点反复循环、画面不变时提前停下任务 (#1223) by @qiyinxi
+- 【MFW】用户任务队列可从同脚本其他用户导入，并可存为模板在多套配置间切换 (#1260) by @qiyinxi
+- 【调度】调度台运行任务时可勾选本次要运行的账号（默认全选、可收起），原「运行账号」下拉已并入 (#1220) by @1w1w11w1
+- 【调度】队列设置调整为3+2排列，并支持在整个队列运行前后各执行一次自定义脚本 (#1232) by @qiyinxi
+- 【设置】支持导入自定义外观包，定制全窗背景、透明表面、菜单图标和光标 (#1244) by @qiyinxi
+
+### 变更
+
+- 【ok-ww】改进游戏路径定位与设置保存，游戏进程未能结束时提示手动关闭 (#1171) by @AthenaHibou by @qiyinxi
+- 【ok-nte】异环任务前启动游戏改为启动器静默启动，并新增「启动方式」选择 (#1226) by @1w1w11w1
+- 【奇想盒】降低大量日志时的处理开销，避免收尾误判和报告多余空行 (#1265) by @jinghero
+- 【调度】统一计划选择的拖拽图标与其他列表的点阵样式 (#1214) by @qiyinxi
+- 【设置】匿名遥测新增各脚本运行次数、公开 MFW 项目与每日活跃计数，不含设备标识 (#1247) by @qiyinxi
+
+### 移除
+
+- 【MFW】撤下脚本页的 ADB 地址框：只填地址时连不上设备，仍需选择模拟器 (#1215) by @qiyinxi
+
+### 修复
+
+- 【MAA】修复 MAA 原生界面删掉任务后，该任务的设置重新打开变成占位符的问题 (#1208) by @1w1w11w1
+- 【MAA】修复 MAA 配置偶发保存失败、重新打开后高级设置恢复原样的问题。 (#1217) by @1w1w11w1
+- 【MAA】修复 MAA 设置里只改任务开关也被整份丢弃、且丢弃后仍提示已保存的问题 (#1251) by @1w1w11w1
+- 【bgi】修复任务前后脚本执行过晚、遗漏或在重试时重复执行的问题 (#1264) by @ClozyA
+- 【绝区零一条龙】修复绝区零配置损坏时恢复误覆盖与并发保存丢字段问题 (#1192) by @qiyinxi
+- 【绝区零一条龙】修复用户模式下部分任务进度（体力计划、周常、兑换码）不累计、每次任务都从头刷的问题 (#1204) by @AthenaHibou
+- 【MFW】重新导入选到系统目录或 AUTO-MAS 自己的目录时直接提示不能用，不再报网络错误 (#1258) by @qiyinxi
+- 【调度】修复用户名含点时历史记录不显示、统计可能重复计数的问题 (#1239) by @jinghero
+- 【调度】电源操作下拉不再截断，「不执行任何操作」统一改回「无动作」 (#1250) by @1w1w11w1
+- 【模拟器】修复模拟器已启动却被误判启动失败的问题 (#1229) by @jinghero
+- 【工具】新装后首次启动不再因明日方舟 PC 工具加载过慢而报后端健康检查超时 (#1259) by @qiyinxi
+- 【设置】修复窗口关闭或切换显示状态时偶发的异常弹窗 (#1253) by @Areium
+
+## [v5.6.2] - 2026-10-04
+
+### 破坏性变更
+
+- 【BAAH】碧蓝档案可按周安排关卡计划表，活动关优先取代原来的活动适配与活动期配置文件名 (#994) by @beichen24a1
+
+### 新增
+
+- 【MAA】失败时通知附带现场截图，便于定位卡在哪一步 (#1123) by @jinghero
+- 【end】采集送货每天成功执行一次、禁用结束进程，问题包按原生格式导出 (#1158) by @HarcoChen
+- 【MSS】新增对星塔旅人个人版等衍生项目版本的识别，导入后同样支持活动编排与计划表 (#1141) by @beichen24a1
+- 【MFW】GitHub 源更新只下载有变化的文件，导入 CFA 热更新过的项目不再报错 (#1157) by @qiyinxi
+- 【MFW】脚本页新增「键位映射」，游戏里改过按键时可同步给脚本（仅 PC 端） (#1174) by @qiyinxi
+- 【MFW】MAAFW 可限制单个任务耗时，卡住的任务不再吃掉整轮时间 (#1180) by @1w1w11w1
+- 【通用脚本】新增按 taskId 查询任务状态接口；流水线权限收窄 (#1178) by @1w1w11w1
+- 【主页】星塔旅人活动的数据来源改用国服官网公告，首页补上与其它游戏一致的活动卡片 (#1129) by @beichen24a1
+- 【主页】首页活动卡片改版：碧蓝档案改用 GameKee 数据源，明日方舟、终末地补齐活动与版本图 (#1087) by @beichen24a1
+- 【调度】除 MFW 系列和 HSR 外，支持配置单账号运行总时限，默认 120 分钟 (#1161) by @HarcoChen
+- 【调度】调度台支持多选运行账号，默认运行全部可用账号，并可在任务结束后直接再次运行。 by @anlan1027
+- 【设置】新增可用密钥解锁的神秘入口 (#1164) by @ClozyA
+
+### 变更
+
+- 【end】理智任务独立显示，可直接配置并跳转计划表 (#1168) by @HarcoChen
+- 【MFW】资源 hash 与项目声明对不上时不再在运行日志里告警，只记在详细日志 (#1151) by @qiyinxi
+- 【调度】配置来源与覆写合并为 3×2 选择器，界面术语与说明文案改为用户能直读的说法 (#1134) by @1w1w11w1
+- 【调度】修复奇想盒归档偏移，并让同安装目录或模拟器槽位的重叠任务串行 (#1170) by @1w1w11w1
+- 【模拟器】修复雷电页签轮询反复写去广告配置；填 ADB 地址即可直连真机 (#1176) by @1w1w11w1
+- 【工具】精简 MCP 工具，支持已安装脚本配置、调度编排和运行结果查询 (#1138) by @HarcoChen
+- 【工具】Token 获取统一移至神秘入口，库街区凭据改用 BMT 获取 by @ClozyA
+
+### 修复
+
+- 【MAA】修复 MAA 新版本部分任务出错时无法识别任务完成的问题 (#1175) by @jinghero
+- 【MAA】修复恢复公测版期间留下的用户配置备份时失败、设置无法回填的问题 (#981) by @qiyinxi
+- 【MAA】修复连续编辑、恢复配置及退出时修改丢失和开关状态错乱的问题 (#1156) by @jinghero
+- 【end】修复未配置路径时反复提示资源损坏的问题 (#1158) by @HarcoChen
+- 【end】修复更新下载拖住后续任务的问题，并支持复用全局镜像 CDK by @HarcoChen
+- 【ok-ww】修复新版鸣潮启动器下自动定位游戏客户端失败、导致任务无法启动的问题 (#1154) by @AthenaHibou
+- 【SRC】修复 SRC 遗器关卡选择梦潜之径或幽冥之径后被静默重置为禁用的问题 (#1119) by @jinghero
+- 【MFW】修复 M9A、星塔旅人运行前调整任务队列的提示在运行日志里看不到 (#1197) by @qiyinxi
+- 【主页】活动时间跟随界面语言显示，碧蓝档案卡片补上即将开始的活动 (#1194) by @beichen24a1
+- 【调度】修复窗口在托盘或最小化时看不到电源操作倒计时、错过取消时机的问题 (#1159) by @1w1w11w1
+- 【调度】修复队列未运行脚本显示虚假账号的问题 by @qiyinxi
+- 【模拟器】修复关闭 MuMu 报错、模拟器窗口隐藏无效，以及 MAA 新建配置、备份恢复与鸣潮更新重下的问题 (#1169) by @1w1w11w1
+- 【模拟器】修复 MuMu 失败重试或切换用户时重开模拟器后一直连不上设备的问题 (#1201) by @qiyinxi
+- 【通知】修复手动签到不提示渠道失败；社区请求不再走系统代理；时钟偏差过大时提示校准 (#1177) by @1w1w11w1
+- 【通知】修复自定义推送使用 JSON 数组、数字、布尔值或空值模板时通知失败的问题 (#1189) by @jinghero
+- 【Runtime】启动时校验前后端版本一致，不再静默复用旧版本后端 (#1193) by @1w1w11w1
+- 【Runtime】修复运行时被安全软件移除后自动恢复误启旧版后端的问题 by @ClozyA
+
+## [v5.6.1] - 2026-10-01
+
+### 新增
+
+- 【end】新增阶段间自动更新，下载与首阶段任务并行 (#1041) by @HarcoChen
+- 【bgi】启动前可自动更新原神客户端，也可手动检查并应用增量更新 (#1072) by @1004452714 by @AthenaHibou
+- 【ok-ww】鸣潮游戏更新时实时显示下载进度与速度 (#1132) by @1w1w11w1
+- 【MFW】识别到游戏停服维护时跳过本次运行，需要更新游戏客户端时不再反复重试，并发送通知 (#1091) by @qiyinxi
+- 【MFW】项目更新改了任务名后，队列留旧任务虚影、任务报告提示失效；新任务在添加菜单里标 NEW (#1147) by @qiyinxi
+- 【调度】调度中心的日志现在也会显示任务节点详情，未配置推送也能看到 (#1108) by @AthenaHibou
+- 【更新】支持暂停更新1~35天，期间不再自动检查，手动检查即恢复 by @Shasnow
+
+### 变更
+
+- 【ok-ww】鸣潮支持选择游戏启动方式（默认直启客户端），更新弹窗与账号切换全程自动处理；异环启动器点击被遮挡后可自动恢复 (#1139) by @AthenaHibou
+- 【MFW】临时设置 Unity 分辨率的日志改为「已尝试」，游戏按自身设置覆盖时不再像已生效 (#1146) by @qiyinxi
+- 【通用脚本】日志预处理更名并默认折叠，规则不再误弹提示；时间戳录入区更紧凑，计数文案接入多语言 (#1081) by @AthenaHibou
+- 【主页】新增一条首页轮换文案 (#1131) by @qiyinxi
+- 【主页】支持按界面语言加载 SRA 活动数据，回退默认中文档 by @Shasnow
+- 【调度】切换账号设置处新增非 16:9 屏幕可能切号失败的提示与分辨率参数指引 (#1121) by @AthenaHibou
+- 【模拟器】静默模式下模拟器启动后自动静音，任务结束后还原 (#1097) by @jinghero
+- 【Runtime】初始化失败时可加群求助，断网时跳过更新检查并使用已有环境启动 by @ClozyA
+
+### 修复
+
+- 【MAA】修复 MAA 连不上 MuMu 模拟器、每轮任务刚开始就中止的问题 (#1085) by @1w1w11w1
+- 【MAA】MAA 队列里认不出库存保持或理智作战任务时给出提示，不再静默按默认设置运行 (#1093) by @qiyinxi
+- 【MAA】修复 MAA 用户编辑页不显示「打开配置文件夹」，海外服计划表周模式预览仍按国服换日 (#1095) by @qiyinxi
+- 【MAA】修复 MAA 旧日志残留导致任务刚启动就被判定失败，模拟器反复重启 (#1124) by @1w1w11w1
+- 【MAA】修复编辑页卡顿闪烁与输入失焦，库存保持支持拖拽排序，过期接管提示不再残留 (#1113) by @jinghero
+- 【M9A】修复部分 M9A 报「项目 Python 或 MaaFW Agent 模块不可用」无法运行的问题 (#1082) by @qiyinxi
+- 【M9A】修复 M9A 更新到 v4.11.0 后每次卡在等待 Agent 启动、10 分钟后超时 (#1140) by @qiyinxi
+- 【M9A】修复 M9A 目录里残留旧版原生库时仍卡在等待 Agent 启动直到超时 (#1143) by @qiyinxi
+- 【ok-ww】修复鸣潮游戏更新完成后 OK-WW 直接结束、不重启任务继续每日的问题 (#1125) by @AthenaHibou
+- 【MFW】运行前环境检查失败时，日志和问题包里能看到具体原因 (#1088) by @qiyinxi
+- 【MFW】修复发行包同时带多种架构的原生插件时 MFW 整轮运行失败 (#1102) by @qiyinxi
+- 【MFW】修复 MaaFgo v2.0.03 等项目代码中名为 runtime 的子目录被漏装导致无法运行 (#1104) by @qiyinxi
+- 【MFW】项目更新解压有进度且能及时停止，更新日志逐段显示用时，忙碌提示区分正在更新与正在运行 (#1106) by @qiyinxi
+- 【MFW】运行前自动补回 v5.6.0 旧规则下漏装的 MFW 项目文件 (#1110) by @qiyinxi
+- 【MFW】MFW 只剔确认的外壳并补回漏装文件，保留 debug 状态、另存项目日志，更新拦下缺模块的版本 (#1117) by @qiyinxi
+- 【MFW】修复换过外壳的本地导入项目更新后仍带着旧原生库，每次运行都卡到连接超时 (#1144) by @qiyinxi
+- 【调度】调度台日志的行号不再从 1 重数，与完整日志对齐 (#1048) by @beichen24a1
+- 【模拟器】修复 Emulator 2.0 静默模式下雷电启动时窗口一直显示，且多开时隐藏会把其他实例翻出来 (#1003) by @qiyinxi
+- 【模拟器】雷电 14 静默模式下，辅助屏等弹窗随主窗口一起隐藏，不再单独留在屏幕上 (#1136) by @qiyinxi
+
+## [v5.6.0] - 2026-09-27
+
+### 新增
+
+- 【M9A】新增游戏客户端更新检查：官服版本落后时提示手动更新或自动下载安装 (#1010) by @qiyinxi
+- 【bgi】新增 MAS 切号方式与用户级游戏客户端配置，新脚本默认 MAS、老脚本保持不变 (#988) by @AthenaHibou
+- 【bgi】设置页新增 BetterGI 问题包导出 (#1057) by @AthenaHibou
+- 【奇想盒】新增专项，定时托管无限暖暖一条龙日常 (#998) by @jinghero
+- 【MSS】新增星塔旅人脚本类型，支持悬赏试炼计划表与活动编排 (#959) by @beichen24a1
+- 【MFW】MFW 改在副本上运行、同项目多脚本共用文件，M9A 并入 MFW 自动迁移，兼容更多 MFW 项目 (#973) by @qiyinxi
+- 【MFW】新建脚本引导最后一步可从 MFAAvalonia、MXU、MFW-PyQt6 的配置直接导入用户 (#997) by @qiyinxi
+- 【MFW】设置页新增 MFW 与 M9A 问题包导出，MFW 可按脚本选择 (#1039) by @qiyinxi
+- 【主页】主页中心图标支持按压反馈，连点后有机会变成炫彩形态 (#1063) by @beichen24a1
+- 【调度】用户编辑页新增打开配置文件夹的快捷入口 (#755) by @TianHengZhuang
+- 【模拟器】MuMu 新增启动前强力清理开关，避免已有实例导致无法以管理员身份启动 (#683) by @qiyinxi
+- 【通知】企业微信群机器人通知会在正文后补发失败截图等图片 (#1054) by @qiyinxi
+- 【Runtime】初始化与本体更新前先按目标版本核对并更新 Runtime，不再需要为它重装整包 (#609) by @qiyinxi
+
+### 变更
+
+- 【MAA】修复 MAA 模拟器绑定迁移重置及日志缺失时任务超时卡住的问题。 (#1049) by @1w1w11w1
+- 【MAA】MAA 专项预设默认启用 MuMu 12 截图增强，并由模拟器管理模块注入运行时路径和实例索引。 (#1066) by @1w1w11w1
+- 【end】关闭快速配置后按 MaaEnd 原配置一次运行全部任务 (#987) by @HarcoChen
+- 【HSR】修复 SRA 刷错关卡与非中文系统假成功；配置来源改为三态并移除直控快照；新增云·星穹铁道 (#974) by @qiyinxi
+- 【MFW】新建脚本引导最后一步可直接创建第一个用户，脚本名与标签改用项目实际名称 (#993) by @qiyinxi
+- 【MFW】重试时每次尝试单独记录日志和历史，不再混在一起 (#1011) by @qiyinxi
+- 【通用脚本】通用脚本的模板下载与配置分享改用新版配置中心，分享前需在浏览器登录一次 (#630) by @qiyinxi
+- 【主页】终末地活动列表改为按结束时间升序，最先结束的排在最前。 (#1062) by @Misyra
+- 【主页】活动横幅新增版本号与活动起止时间展示 by @Shasnow
+- 【调度】定时和快速开始的任务沿用上次的调度台，不再每次新建一个 (#1021) by @qiyinxi
+- 【通知】通知设置页改为渠道卡片，未启用渠道点开弹窗即可配置 (#929) by @jinghero
+- 【工具】专项问题包不再混入其他专项诊断，失败截图压缩并按专项限量自动清理 (#1052) by @AthenaHibou
+- 【设置】托盘菜单自定义区域充分利用设置页宽度 by @ClozyA
+- 【更新】后端更新提示现在会显示最新一条提交说明 by @ClozyA
+
+### 移除
+
+- 【通知】移除无法稳定主动推送通知的微信 Claw 渠道 (#976) by @HarcoChen
+
+### 修复
+
+- 【MAA】修复美服、日服、韩服用户的每日代理次数、剿灭与绿票记录及计划表未按本服换日时间切换 (#1007) by @qiyinxi
+- 【MAA】公招出六星的喜报在邮件、Server 酱与 Webhook 里重新带上喜报图 (#1056) by @qiyinxi
+- 【MAA】修复 MAA 部分任务出错时无法识别任务完成的问题 (#1001) by @jinghero
+- 【MAA】修复 MAA 任务准备阶段被停止或失败后脚本配置一直被锁，无法编辑和再次启动，需重启主程序 (#1055) by @jinghero
+- 【MAA】修复 MAA 模拟器连接、截图增强及任务超时问题 (#1071) by @1w1w11w1
+- 【end】修复运行中输出超长日志行时任务被判为日志读取失败的问题 (#980) by @qiyinxi
+- 【HSR】任务配置改为定高双栏且只露出会生效的设置，修复体力计划抢体力、直控周常重跑与兑换码失效 (#1038) by @qiyinxi
+- 【绝区零一条龙】统一「是否采集节点详情」的名称与问号提示，英文、日文界面不再显示中文 (#1042) by @AthenaHibou
+- 【绝区零一条龙】修复刚启动后端时打开绝区零一条龙页面偶发接口报错的问题 (#1067) by @AthenaHibou
+- 【ok-ww】修复任务报告剩余体力漏算最后一次刷本消耗、战令与已弃置声骸状态误报的问题 (#1027) by @AthenaHibou
+- 【MFW】修复项目带多种架构运行库时选错架构无法运行，以及运行环境反复准备失败的问题 (#1024) by @qiyinxi
+- 【MFW】修复 MFW 雷电重试重开模拟器后截图连接失败，第 2、3 次尝试直接作废 (#1028) by @qiyinxi
+- 【MFW】修复部分项目（如 M9A v4.10.0）第一个任务开始就被自身分辨率检查停止的问题 (#1029) by @qiyinxi
+- 【MFW】窗口较窄时，用户编辑页的任务队列不再溢出盖住下方设置 (#1037) by @qiyinxi
+- 【MFW】修复真机和无线 ADB 设备无法连接的问题 (#1064) by @HarcoChen
+- 【调度】修复多 Windows 账户共用安装时密码被反复改写成乱码的问题 (#729) by @qiyinxi
+- 【调度】修复定时队列跑完后脚本管理页仍显示未代理的问题 (#983) by @qiyinxi
+- 【调度】后台服务启动时某一项出错会导致定时队列整晚不触发且界面无提示 (#1004) by @qiyinxi
+- 【调度】修复夏令时切换或电脑短暂睡眠时定时启动漏跑、重复运行及历史记录时间偏移 (#1006) by @qiyinxi
+- 【调度】修复断线时关闭软件要空等半分钟、停止全部任务会漏停、后端反复崩溃时无限自动重启等问题 (#1008) by @qiyinxi
+- 【调度】修复有用户失败时调度中心与系统通知仍提示任务完成的问题 (#1022) by @qiyinxi
+- 【模拟器】模拟器系统迟迟未启动完成时仍继续执行脚本，随后报 ADB 连接异常 (#978) by @qiyinxi
+- 【模拟器】模拟器操作失败时提示里带上具体错误原因 (#833) by @beichen24a1
+- 【通知】修复 QQ 官方机器人通知：链接导致发送失败、扫码遇未知状态中断、网关误报绑定失败 (#1026) by @jinghero
+- 【通知】修复通知内容丢失、签名粘连及邮件图片显示异常的问题 (#1061) by @HarcoChen
+- 【Runtime】修复初始化或更新期间关闭窗口偶发导致程序崩溃退出的问题 (#669) by @qiyinxi
+- 【Runtime】修复初始化中途失败后重试卡在依赖段、「重建环境」也反复失败的问题 (#984) by @qiyinxi
+- 【Runtime】修复「重建环境」与修复运行环境必然失败的问题 (#999) by @qiyinxi
+- 【MAA】修复 MAA 连接 MuMu 模拟器时任务提前中止的问题 by @1w1w11w1
+- 【工具】多安装时专项问题包改为收录每个安装各自的最新日志 (#1073) by @AthenaHibou
+
+### 安全
+
+- 【工具】日志与日志包里不再出现企业微信、Server 酱等推送地址中的密钥 (#1053) by @qiyinxi
 
 ### 开发流程
 
-- 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 统一 Python 与文档代码块格式，前端新增格式检查脚本 (#970) by @Craun718
+
+## [v5.5.0] - 2026-09-24
+
+### 破坏性变更
+
+- 【MAA】代理接管时强制开启账号切换开关以确保按配置切号；未填账号时不切号 by @1w1w11w1
+- 【MAA】计划表不再强制关闭「库存保持」，此前开启过的升级后自动生效并先于理智作战执行 by @jinghero
+- 【HSR】脚本页「游戏启动参数」已移除，旧配置下次保存自动清除；窗口大小改由开关控制 by @qiyinxi
+- 【调度】MAA、SRC、MaaEnd 与 OK-NTE 用户页配置模式由「简洁/详细」更名为「脚本/用户」 by @1w1w11w1
+- 【工具】森空岛获取凭据改为扫码登录，完善社区签到、云游戏时长与日常便笺 by @Lance0174
+
+### 本次亮点
+
+- 【专项接入】新增绝区零一条龙、BetterGI、碧蓝档案爱丽丝助手，并支持托管 MaaFramework 项目，扩展 AUTO-MAS 可管理的自动化项目范围
+- 【调度与配置】任务队列支持指定用户和限定星期执行，并可设置完成后的延时操作；各专项统一配置来源，支持查看和恢复历史配置
+- 【模拟器管理】Emulator 2.0 支持通过一条配置管理多个雷电与 MuMu 实例，集中完成实例设置，并与自动化任务协同运行
+- 【启动与更新】Runtime 统一负责启动、初始化和后端更新，缩短启动等待时间，提供更明确的故障提示；后端更新可在后台下载、下次启动时生效
+- 【通知与诊断】新增微信 Claw、QQ 官方机器人及中国移动 5G 短信通知；任务报告汇集运行节点与执行结果，失败截图和问题包帮助定位异常
+- 【专项体验】MAA 新增干员养成目标和客户端更新，HSR 支持任务前后运行额外脚本，OK-WW 与 OK-NTE 支持按手机号后 4 位切换账号，MaaEnd 提供任务结果明细
+
+### 新增
+
+- 【MAA】支持启动前检查并更新明日方舟客户端 by @1w1w11w1 by @qiyinxi
+- 【MAA】新增绿票商店开关；托管结束后保存每日状态，同一天多次托管不再重复执行 by @qiyinxi by @1w1w11w1 by @TCddddd
+- 【MAA】日常调度新增「更换主题」开关；库存保持关卡下拉只列真正掉落的关卡并显示库存 by @jinghero
+- 【MAA】用户配置新增干员养成目标，按材料缺口自动刷取，达成后自动移除并通知 (#721) by @jinghero
+- 【end】新增脚本直控模式与每日仅执行一次，抢委托送货与自动采集独立为可单独配置的阶段 by @HarcoChen by @TCddddd
+- 【end】任务报告新增各任务执行结果明细，展示方式可调 (#850) by @AthenaHibou
+- 【HSR】用户配置页新增「额外脚本」，可在任务前后各执行一个自定义脚本 by @qiyinxi by @TCddddd
+- 【HSR】可自动更新三月七助手与 SRA：默认关闭，开启后任务跑完检查安装，失败自动回滚 (#681) by @qiyinxi
+- 【bgi】新增 bgi 专项，支持原神一条龙自动代理 by @TCddddd
+- 【ok-ww】支持启动前自动更新鸣潮客户端 by @1w1w11w1 by @qiyinxi
+- 【ok-ww】支持启动前按手机号后 4 位切换登录账号并导出问题包；自行接管鸣潮游戏更新 by @1w1w11w1 by @AthenaHibou by @TCddddd by @qiyinxi
+- 【ok-nte】运行日志关键节点注入任务报告；OK-WW 与 OK-NTE 任务报告可选关闭 / 逐条 / 汇总 by @AthenaHibou by @qiyinxi
+- 【ok-nte】支持按手机号后 4 位切换登录账号，支持经启动器拉起异环，新增问题包一键导出 by @AthenaHibou by @TCddddd
+- 【BAAH】新增碧蓝档案爱丽丝助手专项，可集中管理多个账号并自动完成每日任务 (#697) by @audiencegeg-glitch
+- 【SRC】代理前自动检查并更新游戏客户端，避免强制更新卡死 (#854) by @1004452714
+- 【MFW】新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目（模拟器与 Win32） by @qiyinxi
+- 【MFW】任务失败时自动截图，随代理结果与统计通知内嵌进邮件或 Webhook 发出 (#841) by @qiyinxi
+- 【MFW】编辑页整改：PC 游戏默认由 MAS 启停、可临时改 Unity 分辨率，运行环境与更新改为日志面板 (#843) by @qiyinxi
+- 【主页】快速启动支持多选并记住上次选择 by @Craun718 by @TCddddd
+- 【主页】八张游戏活动卡合并为 banner 轮播并兼作游戏切换器，可按游戏或整体开关 (#654, #762, #775) by @qiyinxi by @HarcoChen by @1w1w11w1
+- 【主页】每日一句旁新增「换一句」按钮 (#704) by @beichen24a1
+- 【调度】支持每日首次启动时运行队列 by @luo-luo-o by @qiyinxi
+- 【调度】新增每日首次启动运行队列；托盘右键菜单可自定义 by @luo-luo-o by @1w1w11w1 by @TCddddd by @qiyinxi
+- 【调度】所有专项统一支持脚本、用户、直控三种配置来源，并可独立启用快速配置 (#735, #801, #815, #751) by @1w1w11w1 by @AthenaHibou
+- 【调度】全部专项接入「配置恢复」：可浏览历史备份、预览摘要并一键恢复，各留最近 10 份 (#799) by @AthenaHibou
+- 【调度】计划管理页的计划表支持拖拽排序，标签上可直接重命名 (#763) by @beichen24a1
+- 【调度】调度队列的每个脚本任务可单独限定运行周几 (#770) by @qiyinxi
+- 【模拟器】为 MuMu 启动、外部命令超时和任务收尾补充诊断日志 (#811) by @Craun718
+- 【通知】支持将运行节点推送至任务报告 by @AthenaHibou by @qiyinxi
+- 【通知】新增日志处理钩子层（成功 / 失败标志正则匹配），日志采集落地为通用组件 by @qiyinxi by @AthenaHibou by @TCddddd
+- 【通知】支持通过免费的中国移动 5G 短信接收任务通知（仅限中国移动手机号） (#774) by @ClozyA
+- 【设置】支持自定义托盘菜单及任务控制命令；支持一键备份数据 by @1w1w11w1 by @qiyinxi
+- 【设置】新增日本語与英文界面选项，首次启动跟随系统语言；主要页面文案接入词表 by @qiyinxi
+- 【设置】新增虚拟显示器：无真实显示输出时临时挂 1920×1080 虚拟屏；更新提示按版本分区块展示 by @qiyinxi by @TCddddd
+
+### 变更
+
+- 【MAA】重构用户配置页面 by @1w1w11w1 by @qiyinxi
+- 【MAA】MAA 配置页直接编辑 base，队列交还 MAA，删除剩余理智任务 (#927) by @1w1w11w1
+- 【MAA】库存保持的计划列表重新支持在 MAS 配置页直接编辑 (#958) by @1w1w11w1
+- 【end】改用内置切号与游戏启动设置，结束关闭游戏时可恢复预设或自定义分辨率 (#748) by @HarcoChen
+- 【end】用户页重新整理：分离基本信息与配置来源，简化任务分类并收起低频设置 (#764) by @HarcoChen
+- 【end】可按需开启启动时分辨率设置，并支持关闭游戏后恢复为全屏 (#845) by @HarcoChen
+- 【end】新建脚本时的类型说明改为写明「明日方舟：终末地」，并可按游戏名搜索到 (#924) by @qiyinxi
+- 【HSR】脚本直控不再要求先导入快照，新增 SRA 配置档案下拉，管控任务配置项补齐中文名 by @qiyinxi
+- 【MFW】运行前检查更新时不再重复提示「Mirror 酱 CDK 未配置」 (#838) by @qiyinxi
+- 【MFW】用户页整改：队列与配置两栏等高滚动、队列行只留任务名、启用改下拉，脚本页自动识别游戏包名 (#855) by @qiyinxi
+- 【主页】弱网下活动数据异常不再拖累所有请求；快速启动后自动跳转调度中心 by @1w1w11w1 by @Craun718
+- 【调度】专项任务移除人工排查模式并统一签到入口 by @1w1w11w1 by @qiyinxi
+- 【模拟器】「大雷主人模式」也会拦下雷电在桌面右下角定时弹出的推广窗口 (#836) by @qiyinxi
+- 【通知】各类通知统一走同一渠道分发层；MaaFW 运行日志记录实际加载版本与来源 by @1w1w11w1 by @qiyinxi
+- 【设置】统一编辑页样式并优化状态管理 by @ClozyA by @qiyinxi
+- 【设置】接入主进程与渲染进程错误上报，抑制无异常日志并遮蔽本机用户名 by @HarcoChen by @ClozyA by @qiyinxi
+- 【设置】计划管理、模拟器管理等页面增加直达文档入口；自动清理 OCR 图片 by @1w1w11w1 by @HarcoChen
+- 【设置】编辑页连续改动不再丢失、配置损坏时保留副本；各页面不再高频轮询，日志改增量推送 (#696) by @qiyinxi
+- 【更新】后端更新自动在后台下载并于下次启动生效；Runtime 接入后统一完成初始化与监督 by @ClozyA by @qiyinxi
+
+### 移除
+
+- 【通用脚本】移除通用脚本的「快速配置」开关，直控模式直接使用脚本自身配置运行 (#757) by @1w1w11w1
+- 【工具】移除米游币获取任务，保留米游社各游戏签到 by @Lance0174
+
+### 修复
+
+- 【MAA】修复任务生成覆盖用户原生高级配置、HSR 托管开关报错、剿灭队列与库存保持等问题 by @1w1w11w1 by @qiyinxi
+- 【MAA】修复日常任务误用剿灭队列、剿灭体力耗尽误判完成、v6.14 后不切号等问题 by @1w1w11w1 by @qiyinxi by @TCddddd
+- 【MAA】修复未返回分服关卡数据时用户配置页打不开的问题 by @qiyinxi
+- 【MAA】修复配置方案与新版配置文件不一致时任务直接中断、剿灭被误记完成或反复重跑的问题 by @1w1w11w1
+- 【MAA】修复活动关优先失败但后续理智作战完成时整轮仍被判失败的问题
+- 【MAA】修复剿灭周完成与绿票商店月完成状态跨周 / 跨月后不刷新的问题 (#739) by @jinghero
+- 【MAA】修复每周剿灭因理智不足空跑时反复重启重试的问题，理智不足时跳过本次剿灭 (#760) by @1w1w11w1
+- 【MAA】修复库存保持任务刷到的材料未计入掉落统计的问题 (#734) by @jinghero
+- 【MAA】修复自定义基建排班无法手动选班次、换班始终同一班的问题，带时间段的按时间段换班 (#772) by @jinghero
+- 【MAA】修复 MAA 里开启的临期理智药等理智作战选项不生效，并移除自动肉鸽开关 (#875) by @1w1w11w1
+- 【MAA】修复 MAA 托管会话后任务队列被改回默认、部分任务设置丢失的问题 (#907) by @1w1w11w1
+- 【MAA】修复静默模式下 MAA 仍弹出公告与更新弹窗的问题 (#918) by @jinghero
+- 【MAA】修复脚本模式下多个自定义基建用户共用班次指针、重试时提前换到下一班的问题 (#939) by @qiyinxi
+- 【MAA】修复 MAA 内存不足误报超时、掉落少记，及 ok-ww 体力不推送、MaaEnd 无任务误判的问题 (#926) by @jinghero
+- 【MAA】修复静默模式下 MAA 启动后仍显示窗口的问题 (#953) by @1w1w11w1
+- 【end】修复脚本退出后任务持续等待问题 by @HarcoChen by @qiyinxi
+- 【end】修复更新后已完成任务被误判失败并重试的问题 by @HarcoChen by @TCddddd
+- 【end】修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题 (#672) by @1w1w11w1
+- 【end】修复脚本设置在 MaaEnd 配置目录缺失时额外报「配置换入的源目录不存在」的问题 (#752) by @Taimer0721
+- 【end】修复指定理智关卡可能不生效的问题，并按安装版本动态显示自动采集路线 (#745) by @HarcoChen
+- 【end】修复游戏退出后再次启动时误报失败并浪费一次重试的问题 by @HarcoChen
+- 【end】修复重试时带入失效任务、无可执行任务时等待超时的问题 by @HarcoChen
+- 【end】问题包包含最近三次失败记录，并自动清理超过 10MB 的登录截图。 (#905) by @HarcoChen
+- 【HSR】修复 M7A 切换界面失败未重启任务问题 by @1w1w11w1 by @qiyinxi
+- 【HSR】修复接入词表后 MaaEnd 与 HSR 编辑页无法加载、只填三月七路径时任务被分给 SRA 等问题 by @qiyinxi
+- 【HSR】修复任务配置文本项被清空、开启培养目标后历战余响不刷、脚本升级后表单消失等问题 by @qiyinxi by @TCddddd
+- 【HSR】修复系统区域非中文时三月七助手每个模块被判失败、整轮重复运行的问题 (#639) by @qiyinxi
+- 【HSR】修复三月七助手输出在日志与通知里全是乱码、失败原因只截一条的问题；Webhook 被拒收时提示 by @qiyinxi
+- 【HSR】修复在 MAS 中改 M7A 配置后时间被写成整数、M7A 无法启动的问题 (#782) by @ColinHouse
+- 【HSR】SRA 2.22.0 后「日常与奖励」不再让整个用户的任务启动前中止，兑换码开关按新版配置生效 (#808) by @Taimer0721
+- 【HSR】修复 SRA 历战余响混跑日常时漏记完成、战斗超时后又误记为完成的问题 (#791) by @jinghero
+- 【HSR】修复脚本直控忽略日常/周常超时设置、固定 120 分钟后才终止卡住脚本的问题 (#935) by @qiyinxi
+- 【ok-ww】修复 OK-WW 与 OK-NTE 多用户切号窗口定位与退出残留、体力报告误显与任务推送失败 by @AthenaHibou by @TCddddd
+- 【ok-ww】修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 (#695) by @1w1w11w1
+- 【ok-ww】修复 ok-ww 任务结束后启动器设置未还原、设置会话把「游戏退出时关闭应用」永久写入的问题 (#903) by @1w1w11w1
+- 【ok-ww】修复 ok-ww 更新源被游戏区服设置静默切换，并移除面板中已由账号切换取代的多账号日常任务选项 (#904) by @1w1w11w1
+- 【SRC】修复任务结束后的进程与配置清理问题 by @Craun718 by @qiyinxi
+- 【MFW】修复由 MAS 启动桌面游戏后十几秒就报识别异常失败的问题，新增「启动后再等」可调 (#857) by @qiyinxi
+- 【MFW】Agent 连不上时说清自带 Python 的 maafw 与原生库协议不匹配，不再只报连接超时 (#885) by @qiyinxi
+- 【MFW】修复 FOS 等没有 requirements.txt 的 Python agent 启动即退出 (#884) by @qiyinxi
+- 【通用脚本】修复直控模式下文件占用时配置目录被部分删除且不还原；明日方舟 PC 工具连接失败每秒重试 by @qiyinxi
+- 【通用脚本】修复配置备份静默失败，以及 M9A 通知版本号截断、掉落统计丢失的问题 (#822) by @jinghero
+- 【通用脚本】修复通用用户无法启动通用配置的问题 by @HarcoChen
+- 【通用脚本】修复通用脚本配置文件缺失时任务报错中断的问题 (#829) by @beichen24a1
+- 【主页】修复启动过程中弹出无意义的 Network Error 提示、首页卫星动画不显示的问题 by @1w1w11w1
+- 【调度】修复开机自启动后台任务异常未记录、通知服务延迟加载导致错误的问题 by @1w1w11w1 by @AthenaHibou by @qiyinxi
+- 【调度】修复 M9A 跨午夜后监控读旧日志、「每日首次」跨日漏跑或重跑、时钟跳变误判超时等问题 by @qiyinxi
+- 【调度】修复任务完成后没有执行关机 / 重启等电源操作，以及日志被重复订阅记录刷屏的问题 by @1w1w11w1
+- 【调度】修复脚本配置目录含只读文件（如 .git）时，收尾复原配置失败、整单被记为异常的问题 (#693) by @1w1w11w1
+- 【调度】修复脚本配置目录被占用或含只读文件时，收尾复原配置失败、目录半删的问题 by @1w1w11w1
+- 【调度】修复复制脚本或任务结束后，用户配置修改只在当前会话生效、重启回退的问题 (#736) by @qiyinxi
+- 【调度】修复任务异常中断后脚本原有配置丢失、再次打开变成旧配置或空白的问题 (#728) by @1w1w11w1
+- 【调度】修复快速配置开关无法可靠保存、关闭后仍影响任务的问题 (#781) by @1w1w11w1
+- 【调度】修复删除脚本或用户时因数据目录里有只读文件而失败、目录残留的问题 (#824) by @beichen24a1
+- 【调度】修复任务运行中仍可修改或恢复相关脚本配置的问题，运行期间会自动锁定 (#844) by @Craun718
+- 【模拟器】修复部分 MuMu 因命令输出混有日志而无法读取信息的问题 by @qiyinxi
+- 【模拟器】修复雷电 VBox 服务卡住时的启动问题：自动重启服务再试，并补回被修残的运行时 by @qiyinxi
+- 【模拟器】修复模拟器关闭动作缺少超时、关闭失败时任务收尾长时间卡住的问题 by @1w1w11w1
+- 【通知】修复多用户节点详情被合并推送的问题；新增 / 删除规则时不再过早提示缺字段 by @AthenaHibou by @qiyinxi
+- 【通知】修复社区通知重复发送、同名 Webhook 漏发签到摘要，以及库街区签到失败的问题
+- 【工具】修复日志跨零点后运行历史丢失、社区签到重复推送与首页日期格式异常黑屏等问题 by @AthenaHibou by @Lance0174 by @1w1w11w1 by @TCddddd
+- 【工具】游戏已在运行时提示启动参数本轮不会生效 (#867) by @beichen24a1
+- 【工具】修复启动参数含引号或空格时不生效的问题 (#866) by @beichen24a1
+- 【设置】修复 MFW、M9A、HSR 与主页的一批问题：多项设置从未生效、HSR 周常提前翻页等 by @qiyinxi
+- 【更新】修复 Mirror 酱一次性下载地址被缓存复用导致更新失败、系统通知标题过长推送失败等问题 by @qiyinxi by @ArmedHelicopter
+- 【更新】修复后端断连立即弹窗阻塞（改为非阻塞提示）与更新后端时误报失去连接的问题 by @qiyinxi by @TCddddd
+- 【更新】修复更新日志过长时检查更新失败、新版本提示不显示的问题 (#818) by @beichen24a1
+- 【更新】检查更新在更新日志异常时不再失败，仍会正常提示新版本 (#820) by @beichen24a1
+- 【Runtime】修复了关闭应用时需要等待后端退出后窗口才消失的问题。 (#910) by @ClozyA
+
+### 开发流程
+
+- 修复前端类型与 lint 检查问题 by @1w1w11w1
+- 清理无用前端资源、依赖及后端冗余代码 by @1w1w11w1 by @qiyinxi
+- 开发环境改用独立端口与 userData，可与正式版同时运行；前端检查迁至 oxlint by @qiyinxi by @Craun718 by @HarcoChen
+- 新增 GitHub Issue 模板；清理未达规范的测试文件；禁止 AI 协助 force push by @qiyinxi by @1w1w11w1 by @Craun718
+- 首页卫星图标改从全局图标表取，新增专项时不再漏掉主页卫星 (#642) by @qiyinxi
+- 收敛各专项重复的日志推送与启动参数拆分实现 by @1w1w11w1
+- 恢复 tzdata 依赖：Windows 上没有系统时区数据库，移除后时区查询会失败 by @1w1w11w1
+- 修复开发环境前端无法启动的问题 (#778) by @1w1w11w1
+- 开发环境未通过 yarn dev 启动时直接报错退出，不再静默加载陈旧的构建产物 (#777) by @1w1w11w1
+- 补上 MaaFW 引擎的 AGENTS.md，修正专项适配 skill 里两处说明 (#785) by @qiyinxi
+- 更新日志改为每个 PR 在 changelog.d/ 放碎片，发版时统一编译并推进版本号 (#713) by @qiyinxi
+- 更新日志碎片改为「项目 + 50 字」，公告按项目排序、署名不带链接，首行 JSON 设预算 (#861) by @qiyinxi
+- 去掉雷电 VBox 自愈模块导入时的 SyntaxWarning (#934) by @qiyinxi
 
 ## [v5.4.0] - 2026-08-26
 
 ### 变更
 
-- MaaEnd专项 增强账号切换 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 增强账号切换 by @qiyinxi
 
 ### 修复
 
-- OK-WW专项 修复任务在日志产生前手动终止时历史记录误显示未捕获到日志的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
-- MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
+- OK-WW专项 修复任务在日志产生前手动终止时历史记录误显示未捕获到日志的问题 by @qiyinxi by @HarcoChen
+- OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
+- MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...dev
-[v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5
-[v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...v5.5.0-beta.4
-[v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...v5.5.0-beta.3
-[v5.5.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.1...v5.5.0-beta.2
-[v5.5.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0-beta.1
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.5...dev
+[v5.7.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.4...v5.7.0-beta.5
+[v5.7.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.3...v5.7.0-beta.4
+[v5.7.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.2...v5.7.0-beta.3
+[v5.7.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0-beta.1...v5.7.0-beta.2
+[v5.7.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0-beta.1
+[v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
+[v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
+[v5.6.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0
+[v5.5.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0
 [v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0

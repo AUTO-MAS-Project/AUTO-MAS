@@ -24,20 +24,26 @@ OCR 复用通用工具集 `app.tools.ocr`。
 
 流程::
 
-    找到游戏窗口 → 返回登录界面（已登录时 ESC → 终端 → 返回登录）
+    找到游戏窗口 → 等待可执行登录态（公告弹窗按 ESC 关闭、游戏内下载/编译
+    着色器持续等待、「更新完成，游戏即将重启」提示跟随重启换新窗口、
+    标题「进入游戏」界面点击进入）
+    → 返回登录界面（已登录时 ESC → 终端 → 返回登录）
     → 按手机号后 4 位识别掩码账号 → 展开账号下拉选择目标 → 点击登录
     → 等待登录页消失（登录成功）
 """
 
+# ⚠️ 黑箱红线：本模块是【临时补位】——账号切换属上游领域（游戏内操作），上游
+# 已有等效入口 ok-wuthering-waves/src/task/MultiAccountDailyTask.py 的
+# _select_and_login_account（多账号日常任务自带切换）。上游入口在当前发行版
+# 不可用（模板特征匹配失效）时由 MAS 补位；上游修复后移除本模块并改为复用
+# 上游入口（见 blackbox-boundary.md）。
+
 import asyncio
-import ctypes
 import inspect
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -45,9 +51,11 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
+from app.utils import get_logger, is_process_alive
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -85,6 +93,11 @@ _WUWA_PROCESS = "Client-Win64-Shipping.exe"
 _GAME_WINDOW_WAIT_SECONDS = 60.0
 # 窗口轮询间隔。
 _WINDOW_POLL_INTERVAL = 1.0
+# 切号入口的进程消失宽限期：游戏自更新/启动交接会「旧进程退出→数秒后新进程
+# 出现」（_wait_game_restart 等旧窗口退出最长 120s，交接是真实且可达分钟级的
+# 流程），进程消失后不得立即判死。持续消失超过该宽限期仍无进程也无窗口，才判
+# 永久退出快速失败；长交接（>宽限期）原本也会因窗口宽限超时而失败，报错更准确。
+_PROCESS_GONE_GRACE_SECONDS = 30.0
 # 启动界面稳定等待：窗口已出现但尚未进入可执行登录态（仍停在警告/加载/游戏内更新
 # 过渡帧）时，在硬上限内轮询等待「登录页」或「已登录主菜单」出现。鸣潮更新由 MAS
 # 启动前预更新，游戏内更新概率较低，但仍以「进展续延」应答长加载：界面仍在变化时
@@ -94,6 +107,30 @@ _IN_GAME_UPDATE_TIMEOUT = 1800.0
 _IN_GAME_STALL_SECONDS = 60.0
 # 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
 _IN_GAME_POLL_INTERVAL = 3.0
+# 游戏内更新完成提示重启：弹窗正文「更新完成，游戏即将重启。」。判据只认
+# 高区分度的「游戏即将重启」——「更新完成」较通用（公告正文可能含），两短语
+# 同屏 AND 又会因 OCR 切分/截断漏触发，单选高区分度短语兼顾两侧。
+_RESTART_PROMPT_TEXTS = ("游戏即将重启",)
+# 点「确认」后等旧窗口退出的时限。
+_RESTART_WINDOW_WAIT_SECONDS = 120.0
+# 游戏内公告弹窗特征：弹窗顶部「推荐/公告/资讯」页签中的「资讯」——标题画面
+# 右侧竖排仅「公告」按钮，不会与之混淆；已实测 ESC 可关闭该弹窗。
+_ANNOUNCEMENT_POPUP_TEXTS = ("资讯",)
+# 公告弹窗 ESC 尝试次数上限：正常关闭 1-2 次即消失，反复命中说明关不掉
+_ANNOUNCEMENT_ESCAPE_LIMIT = 5
+# 游戏内忙碌态：内部下载与编译着色器的底部进度行（「正在下载： x/x」「正在编译
+# 着色器 xx%」）。识别后跳过静止卡死判定（进度会动但速度可能长时间接近 0），
+# 改用自该态首见起 60 分钟硬上限防意外；阶段切换（下载→编译着色器）时重新计时。
+_IN_GAME_BUSY_TEXTS = ("正在下载", "正在编译着色器")
+_IN_GAME_BUSY_LIMIT_SECONDS = 3600.0
+# 忙碌态阶段切换次数上限：正常「下载→编译着色器」只切换一次，反复横跳说明
+# 识别不稳或环境异常，超过后按未知状态走兜底
+_BUSY_PHASE_SWITCH_LIMIT = 6
+# 跟随游戏自重启的次数上限：正常「游戏内更新→重启」只发生一次，超出视为异常。
+_MAX_GAME_RESTARTS = 3
+# 点击标题「进入游戏」后等待可执行登录态的时限：已登录时游戏会直接进入主场景
+# （非登录态），超时后交由返回登录流程兜底登出，不等满 30 分钟。
+_TITLE_FOLLOW_SECONDS = 90.0
 # 长等待期诊断 OCR 的落盘节流：更新可能耗时数十分钟，若每个轮询都全量写诊断文件，
 # 单次切换会累积数千行；改为每 N 次轮询（≈ N*3s）写一次，既能保留过渡帧采样又不膨胀。
 _DIAGNOSTIC_DUMP_EVERY_POLLS = 10
@@ -112,26 +149,6 @@ _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 # 掩码账号形如 123****5678
 _MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
 _MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
@@ -153,7 +170,7 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _find_game_hwnd(*, wait: bool = True, fail_on_exit: bool = False) -> int:
     """按窗口类 + 所属进程名定位鸣潮主窗口。
 
     用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
@@ -162,11 +179,19 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             以吸收进程拉起后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        fail_on_exit: 切号入口专用。为 True 时，等待期间观察到鸣潮进程先出现后
+            全部消失，且持续 ``_PROCESS_GONE_GRACE_SECONDS`` 仍无进程也无窗口
+            （窗口不会再出现）才抛错；消失宽限期容忍游戏自更新/启动交接的短暂
+            缺席。从未观察到进程（启动延迟）不触发，保持宽限轮询。默认 False：
+            重启换新窗口等进程缺席属预期的调用方维持原语义。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到鸣潮游戏窗口；或 ``fail_on_exit`` 且
+            鸣潮进程先出现后持续消失超过宽限期。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    seen_alive = False
+    gone_since: float | None = None
     while True:
         candidates: list[int] = []
 
@@ -188,6 +213,24 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
+        if fail_on_exit:
+            if is_process_alive(_WUWA_PROCESS):
+                seen_alive = True
+                gone_since = None
+            elif seen_alive:
+                # 进程先出现后消失：先容忍更新/启动交接的短暂缺席（消失期间窗口
+                # 若先回来，下一轮 EnumWindows 会直接命中），持续消失超过宽限期
+                # 仍无进程也无窗口才判永久退出，如实快速失败。从未观察到进程
+                # （启动延迟）与权限不足读不到提权进程名（退化为原宽限轮询）
+                # 都不在此列。
+                now = time.monotonic()
+                if gone_since is None:
+                    gone_since = now
+                elif now - gone_since >= _PROCESS_GONE_GRACE_SECONDS:
+                    raise RuntimeError(
+                        f"鸣潮游戏进程已退出（{_WUWA_PROCESS}），窗口不会再出现，"
+                        "请确认游戏已由 MAS 成功启动"
+                    )
         logger.info(
             f"鸣潮游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
@@ -240,7 +283,7 @@ def _activate_window(hwnd: int) -> None:
 def _client_size(hwnd: int) -> tuple[int, int]:
     _, _, width, height = win32gui.GetClientRect(hwnd)
     if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮游戏窗口尺寸异常")
+        raise RuntimeError("鸣潮游戏窗口已失效或尺寸异常，可能游戏已被关闭或崩溃")
     if abs(width / height - 16 / 9) > 0.02:
         logger.warning(f"鸣潮窗口非 16:9（{width}x{height}），账号切换坐标可能偏移")
     return width, height
@@ -429,15 +472,82 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
-def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """等待进入可执行的登录态（登录页或已登录主菜单）。
+def _find_busy_keyword(items: list[OCRItem]) -> str | None:
+    """识别游戏内忙碌态（内部下载/编译着色器）的关键词；未识别返回 None。"""
+    for text, _ in items:
+        for keyword in _IN_GAME_BUSY_TEXTS:
+            if keyword in text:
+                return keyword
+    return None
+
+
+def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
+    """定位标题界面的「进入游戏」入口（重启后游戏会停在标题界面）。
+
+    登录态标题顶部栏为「账号掩码 + 进入游戏」（OCR 可能合并成一条，如
+    ``130****6220进入游戏``，也可能拆开），以「画面中出现掩码账号」为标题
+    上下文判据，避免把调度台日志里的「进入游戏」字样误认成标题界面。
+    """
+    if not any(_MASKED_ACCOUNT.search(text) for text, _ in items):
+        return None
+    return _find_text(items, ("进入游戏",))
+
+
+def _has_restart_prompt(items: list[OCRItem]) -> bool:
+    """重启提示判定：只认高区分度短语「游戏即将重启」，避免误报与漏报。"""
+    return _find_text(items, _RESTART_PROMPT_TEXTS) is not None
+
+
+def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
+    """点「确认」重启后：等旧窗口退出，再等一个**不同**的新窗口出现并返回。
+
+    旧窗口等待超时（游戏卡在自重启中，或确认未真正触发重启）时不接受旧窗口
+    冒充新窗口：明确抛错交由调度重试，避免继续操作一个语义上已「即将重启」的
+    旧进程。
+    """
+    exit_deadline = time.monotonic() + _RESTART_WINDOW_WAIT_SECONDS
+    while time.monotonic() < exit_deadline and win32gui.IsWindow(hwnd):
+        time.sleep(1)
+    if win32gui.IsWindow(hwnd):
+        raise RuntimeError(
+            f"点击确认重启后游戏窗口在 {_RESTART_WINDOW_WAIT_SECONDS:g}s 内"
+            "仍未退出，重启可能未生效，请人工确认游戏状态"
+        )
+    on_log("游戏窗口已退出，正在等待游戏重启...")
+    # 复用窗口宽限轮询等新窗口亮相；句柄必须不同于旧窗口，防止把尚未退出的
+    # 旧窗口（或其残影）当成重启后的新窗口
+    restart_deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    while True:
+        new_hwnd = _find_game_hwnd(wait=False)
+        if new_hwnd is not None and new_hwnd != hwnd:
+            break
+        if time.monotonic() >= restart_deadline:
+            raise RuntimeError(
+                f"游戏重启后 {_GAME_WINDOW_WAIT_SECONDS:g}s 内未出现新的游戏窗口，"
+                "请人工确认游戏状态"
+            )
+        logger.info(f"游戏重启后新窗口暂未出现，{_WINDOW_POLL_INTERVAL:g} 秒后重试...")
+        time.sleep(_WINDOW_POLL_INTERVAL)
+    # 后续截图与点击均不激活窗口，先置前一次保证落点正确
+    _activate_window(new_hwnd)
+    return new_hwnd
+
+
+def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
+    """等待进入可执行的登录态（登录页或已登录主菜单），返回（可能重启后的）窗口句柄。
 
     游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、游戏内更新、自动登录等），
-    此时登录页与主菜单两态都不命中。若立即按 ESC 走返回登录，可能落在不匹配的画面上。
-    故采用「进展续延」语义等待两态之一出现：
+    此时登录页与主菜单两态都不命中。故按以下优先级处理过渡态：
 
     - 命中任意态 → 返回，由调用方按对应态执行（登录页→选择登录，主菜单→登出）；
-    - 界面仍在变化（有更新/加载进展）→ 持续顺延，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
+    - 「更新完成，游戏即将重启」提示 → 点「确认」，等游戏自重启后换新窗口，
+      **继续留在本循环等待**（重启后还要经过启动画面/标题界面，提前返回会让
+      返回登录兜底的盲点点击落在标题画面上，把游戏点进主场景跳过切号）；
+    - 游戏内忙碌态（内部下载/编译着色器）→ 跳过静止卡死判定持续等待，
+      自该态首见起最多 ``_IN_GAME_BUSY_LIMIT_SECONDS``（防意外硬上限）；
+    - 公告弹窗（「资讯」页签特征）→ ESC 关闭后继续等待；
+    - 标题「进入游戏」界面（顶部栏含账号掩码）→ 点击进入游戏：已登录时游戏
+      直接进主场景，短等待内未出现登录态即交由返回登录流程兜底登出；
     - 界面持续 ``_IN_GAME_STALL_SECONDS`` 无任何进展且仍非登录态 → 判卡死，交还调用方
       走「ESC→终端→返回登录」兜底（覆盖已直接进入游戏主场景的情形）。
 
@@ -448,6 +558,11 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None
     last_sig: int | None = None
     items_full: list[OCRItem] = []
     on_login_page = False
+    busy_seen: tuple[str, float] | None = None
+    busy_switches = 0
+    restart_count = 0
+    announcement_escapes = 0
+    title_clicked_at: float | None = None
     iter_count = 0
     while time.monotonic() < deadline:
         frame = _capture_window(hwnd, activate=False)
@@ -463,7 +578,103 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
             _dump_ocr_items(items_full)
         if on_login_page or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None:
-            return
+            return hwnd
+        # 游戏内更新完成提示重启：点「确认」后游戏自行重启，换新窗口后继续在
+        # 本循环等待可执行登录态
+        if _has_restart_prompt(items_full):
+            confirm_box = _find_text(items_full, ("确认",))
+            if confirm_box is not None:
+                if restart_count >= _MAX_GAME_RESTARTS:
+                    on_log(
+                        "游戏重启次数超出预期，停止跟随重启，按未知状态走返回登录流程"
+                    )
+                    break
+                restart_count += 1
+                on_log("检测到「更新完成，游戏即将重启」提示，点击确认重启游戏...")
+                _click_box(hwnd, confirm_box, after_sleep=2)
+                hwnd = _wait_game_restart(hwnd, on_log)
+                # 新窗口从头走启动画面：重置判定基准并重新给足等待窗口
+                last_sig = None
+                items_full = []
+                on_login_page = False
+                busy_seen = None
+                busy_switches = 0
+                announcement_escapes = 0
+                title_clicked_at = None
+                last_progress = time.monotonic()
+                deadline = max(deadline, time.monotonic() + _IN_GAME_UPDATE_TIMEOUT)
+                continue
+        # 游戏内忙碌态：内部下载/编译着色器进行中，跳过静止卡死判定持续等待；
+        # 优先级高于公告弹窗（弹窗背后的下载条仍可见，此时不能误按 ESC）
+        busy_keyword = _find_busy_keyword(items_full)
+        if busy_keyword is not None:
+            now = time.monotonic()
+            if busy_seen is None:
+                busy_seen = (busy_keyword, now)
+                deadline = max(deadline, now + _IN_GAME_BUSY_LIMIT_SECONDS)
+                on_log(
+                    f"检测到游戏内「{busy_keyword}」，将持续等待"
+                    f"（自首见起最多 {_IN_GAME_BUSY_LIMIT_SECONDS / 60:g} 分钟）..."
+                )
+            elif busy_seen[0] != busy_keyword:
+                # 阶段切换（下载→编译着色器）重新计时；次数设上限防反复横跳
+                # 绕过硬上限
+                busy_switches += 1
+                if busy_switches > _BUSY_PHASE_SWITCH_LIMIT:
+                    on_log(
+                        "游戏内忙碌态阶段反复切换，停止等待，按未知状态走返回登录流程"
+                    )
+                    break
+                busy_seen = (busy_keyword, now)
+                deadline = max(deadline, now + _IN_GAME_BUSY_LIMIT_SECONDS)
+                on_log(f"游戏内进入「{busy_keyword}」阶段，重新计时...")
+            elif now - busy_seen[1] >= _IN_GAME_BUSY_LIMIT_SECONDS:
+                on_log(
+                    f"游戏内「{busy_keyword}」超过 "
+                    f"{_IN_GAME_BUSY_LIMIT_SECONDS / 60:g} 分钟仍未完成，按卡死处理"
+                )
+                break
+            if iter_count % 5 == 0:
+                on_log(f"游戏内「{busy_keyword}」进行中，等待完成...")
+            iter_count += 1
+            time.sleep(_IN_GAME_POLL_INTERVAL)
+            continue
+        busy_seen = None
+        # 公告弹窗：已实测 ESC 可关闭，关掉后继续等待登录态；但要设次数上限——
+        # 本分支在 stall 判定之前 continue，若 ESC 关不掉会绕过静止卡死保护
+        if _find_text(items_full, _ANNOUNCEMENT_POPUP_TEXTS) is not None:
+            announcement_escapes += 1
+            if announcement_escapes > _ANNOUNCEMENT_ESCAPE_LIMIT:
+                on_log("公告弹窗多次 ESC 未能关闭，停止等待，按未知状态走返回登录流程")
+                break
+            on_log("检测到游戏内公告弹窗，按 ESC 关闭后继续等待...")
+            _press_escape(hwnd)
+            time.sleep(1)
+            continue
+        # 标题「进入游戏」界面：重启后必经。合并条目「130****6220进入游戏」中
+        # 按钮在右半段，偏右点击避开账号文本；已登录时点击后直接进主场景
+        title_box = _find_title_enter_box(items_full)
+        if title_box is not None:
+            # 只记首次点击时刻并自带上限：反复点击仍停在标题时停止，不让本分支
+            # 的 continue 绕过下面的标题超时判定
+            if title_clicked_at is None:
+                title_clicked_at = time.monotonic()
+            elif time.monotonic() - title_clicked_at >= _TITLE_FOLLOW_SECONDS:
+                on_log("标题「进入游戏」多次点击未推进，按未知状态走返回登录流程")
+                break
+            on_log("检测到标题「进入游戏」界面，点击进入游戏...")
+            x, y, width, height = title_box
+            _click_point(hwnd, x + round(width * 0.8), y + height // 2, after_sleep=3)
+            last_sig = None
+            last_progress = time.monotonic()
+            continue
+        # 点「进入游戏」后既非登录页也非已登录主菜单（多半已进入主场景），
+        # 交由返回登录流程兜底登出，不再等满 30 分钟
+        if (
+            title_clicked_at is not None
+            and time.monotonic() - title_clicked_at >= _TITLE_FOLLOW_SECONDS
+        ):
+            break
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:
@@ -472,23 +683,24 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None
             )
         iter_count += 1
         time.sleep(_IN_GAME_POLL_INTERVAL)
-    on_log(
-        "等待进入可执行登录态超时或长时间无进展"
-        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），按未知状态走返回登录流程"
-    )
+    on_log("等待进入可执行登录态超时或长时间无进展，按未知状态走返回登录流程")
+    return hwnd
 
 
-def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
-    """回到登录界面；已处于登录页直接返回，主菜单走登出，其余（含游戏主场景）走游戏内返回。"""
-    _wait_for_actionable_state(hwnd, on_log)
+def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> int:
+    """回到登录界面；已处于登录页直接返回，主菜单走登出，其余（含游戏主场景）走游戏内返回。
+
+    窗口可能在等待期间被游戏自重启替换，返回最新窗口句柄。
+    """
+    hwnd = _wait_for_actionable_state(hwnd, on_log)
 
     if _on_login_page(hwnd):
         on_log("已处于登录界面，跳过返回登录")
-        return
+        return hwnd
     if _on_logged_in_menu(hwnd):
         _logout_from_menu(hwnd, on_log)
         if _on_login_page(hwnd):
-            return
+            return hwnd
         on_log("登出后仍未出现登录输入框，继续走游戏内返回登录流程")
 
     on_log("正在返回登录界面")
@@ -526,6 +738,7 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
             "可能误入了游戏内画面，请人工确认后重试"
         )
     on_log("已返回登录界面")
+    return hwnd
 
 
 def _detect_current_account(hwnd: int) -> str | None:
@@ -625,15 +838,13 @@ def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> 
 
 
 def _save_error_screenshot(hwnd: int) -> None:
-    """保存切换失败时的原始窗口截图，便于排查 OCR 文本漂移。"""
+    """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        screenshot_dir = Path.cwd() / "debug" / "okww-account-switch"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot_path = screenshot_dir / (
-            f"switch-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
+        save_error_screenshot(
+            _capture_window_image(hwnd, activate=False),
+            "okww-account-switch",
+            "switch-error",
         )
-        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
-        logger.warning(f"账号切换错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始切换异常
         logger.warning(f"账号切换错误截图保存失败: {error}")
@@ -660,6 +871,11 @@ def account_switch(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("OK-WW 账号切换仅支持 Windows 平台")
+    # 关闭四角 fail-safe：MAS 属无人值守托管运行，光标停在主屏四角时任何鼠标/
+    # 键盘操作都会在真实移动发生前抛 FailSafeException，重试轮次无法自愈；紧急
+    # 停止由 MAS 的任务停止入口承担；
+    # failSafeCheck 每次调用实时读该全局，赋值即生效）
+    pyautogui.FAILSAFE = False
     account_id = str(account_id or "").strip()
     if len(account_id) < 4:
         raise RuntimeError("账号不足四位，无法按手机号后 4 位匹配登录账号")
@@ -680,9 +896,9 @@ def account_switch(
 
     _on_log(f"开始切换鸣潮账号：****{suffix}")
     try:
-        hwnd = _find_game_hwnd()
+        hwnd = _find_game_hwnd(fail_on_exit=True)
         _activate_window(hwnd)
-        _switch_to_login(hwnd, _on_log)
+        hwnd = _switch_to_login(hwnd, _on_log)
         _select_and_login(hwnd, suffix, _on_log)
     except Exception:
         try:

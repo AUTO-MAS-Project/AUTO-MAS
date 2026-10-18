@@ -1,0 +1,480 @@
+"""按 exe 路径反查 Unity 游戏的注册表，临时改成指定尺寸的窗口分辨率并可靠恢复。
+
+Unity 播放器把 PlayerPrefs 存在 ``HKCU\\Software\\<公司名>\\<产品名>``，两个名字就写在
+``<exe 同名>_Data\\app.info`` 的前两行——所以只要用户选了游戏本体的 exe，就能反查到
+它的注册表键，不需要为每个游戏单独维护路径表。分辨率相关的几个 ``Screenmanager *``
+值是 Unity 播放器自己的，名字（含 ``_h<hash>`` 后缀）在所有 Unity 游戏里都一样，
+本机实测 原神 / 星穹铁道 / 终末地 三个游戏的键名完全一致。
+
+已知边界：
+
+- 只对 Unity 引擎的游戏有效。没有 ``app.info`` 的 exe（UE 等引擎、或选的是启动器）
+  直接返回 None，由调用方决定是否提示。
+- 部分游戏在 Unity 的这几个值之外还有一层自己的图形设置（星穹铁道的
+  ``GraphicsSettings_PCResolution``、终末地的 ``video_resolution_*``），启动后可能
+  按自己那层重新套一遍分辨率。这里**只改 Unity 那层**，游戏自有层的键名与语义各不
+  相同，未经实机验证不写；HSR 专项的 ``HSRGameResolutionOverride`` 是那种做法的例子。
+  终末地实测（2026-09-30）：自有层 ``video_full_screen=1`` 时照样按显示器全屏，三次覆盖
+  失效两次。
+- **这个通用选项不做逐游戏适配**，定位是能跑就行（2026-10-04 定）。理由：只有 Win32
+  控制方式会用到它，MaaFW 项目绝大多数走模拟器 ADB，分辨率由模拟器决定；真正走 PC 的
+  Unity 项目寥寥，而且项目自己往往带了改分辨率的预任务（MaaEnd 的 GameSetting 两层都写）。
+  别往这里加游戏专属的键表。某个游戏确有需要时，由它的特调或专项自己调：专项参照
+  ``HSRGameResolutionOverride``、MaaEnd 专项的 ``Game.SetResolution``；特调目前没有
+  启动游戏前的钩子，需要时在 ``flavor.py`` 按 ``ensure_game_updated`` 的样子加一个可选钩子。
+- 游戏正常退出时 Unity 会把当时的分辨率写回这些值，所以恢复不能只删自己写的那几个，
+  必须按快照把原值与原类型整表写回、原本不存在的删掉。
+- 快照写目标值之前先落盘（``data/maafw_resolution_journal/<键路径哈希>.json``），恢复成功才删。
+  MAS 中途崩溃、被强杀时游戏还开着、退出时把目标值写回注册表；下次 ``apply`` 看到残留的
+  快照就先按它恢复原值、再重新快照，否则改过的值会被当成原值，用户的分辨率再也回不来。
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+try:
+    import winreg as _winreg
+except ImportError:  # pragma: no cover - PC 端游戏只在 Windows 上跑
+    _winreg = None
+
+
+UNITY_APP_INFO_NAME = "app.info"
+
+# Unity 播放器的分辨率键。后缀是键名的哈希，跨游戏、跨 Unity 版本稳定。
+_WIDTH_VALUE = "Screenmanager Resolution Width_h182942802"
+_HEIGHT_VALUE = "Screenmanager Resolution Height_h2627697771"
+_USE_NATIVE_VALUE = "Screenmanager Resolution Use Native_h1405027254"
+# Unity 2018.1+ 的 FullScreenMode 枚举：0 独占全屏 / 1 全屏窗口 / 2 最大化窗口 / 3 窗口
+_FULLSCREEN_MODE_VALUE = "Screenmanager Fullscreen mode_h3630240806"
+# 更老的 Unity 只有布尔全屏开关（原神仍是这一代）
+_LEGACY_IS_FULLSCREEN_VALUE = "Screenmanager Is Fullscreen mode_h3981298716"
+# 新版 Unity 在全屏时另存一份窗口模式下的尺寸，切回窗口时按它恢复
+_WINDOW_WIDTH_VALUE = "Screenmanager Resolution Window Width_h2524650974"
+_WINDOW_HEIGHT_VALUE = "Screenmanager Resolution Window Height_h1684712807"
+
+_FULLSCREEN_MODE_WINDOWED = 3
+
+# 受管键：写入时全部 REG_DWORD，恢复时按快照回写、原本不存在的删掉，多写无害。
+MANAGED_VALUES: tuple[str, ...] = (
+    _WIDTH_VALUE,
+    _HEIGHT_VALUE,
+    _WINDOW_WIDTH_VALUE,
+    _WINDOW_HEIGHT_VALUE,
+    _USE_NATIVE_VALUE,
+    _FULLSCREEN_MODE_VALUE,
+    _LEGACY_IS_FULLSCREEN_VALUE,
+)
+
+#: 脚本配置 ``Game.UnityResolution`` 的可选值 → (宽, 高)。``Off`` 不在表里，表示不改。
+RESOLUTION_PRESETS: dict[str, tuple[int, int]] = {
+    "1920x1080": (1920, 1080),
+    "1280x720": (1280, 720),
+}
+
+
+def parse_resolution_option(value: object) -> tuple[int, int] | None:
+    """把 ``Game.UnityResolution`` 的配置值解析成 (宽, 高)；``Off`` / 空 / 未知返回 None。"""
+
+    return RESOLUTION_PRESETS.get(str(value or "").strip())
+
+
+def read_unity_resolution(
+    exe_path: Path,
+    registry_module: Any | None = None,
+) -> tuple[int, int] | None:
+    """读取 Unity 播放器当前保存的分辨率。
+
+    路径和键名沿用 :class:`UnityGameResolutionOverride` 的注册表实现；这里只做只读
+    查询，不申请写权限，也不会创建或修改任何键。无法反查 Unity 路径、运行在非
+    Windows 系统、注册表键/值不存在或值不是正整数时返回 ``None``。
+    """
+
+    registry_path = resolve_unity_registry_path(exe_path)
+    registry = registry_module if registry_module is not None else _winreg
+    if registry_path is None or registry is None:
+        return None
+
+    try:
+        with registry.OpenKey(
+            registry.HKEY_CURRENT_USER,
+            registry_path,
+            0,
+            registry.KEY_QUERY_VALUE,
+        ) as key:
+            width, _ = registry.QueryValueEx(key, _WIDTH_VALUE)
+            height, _ = registry.QueryValueEx(key, _HEIGHT_VALUE)
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return None
+
+    try:
+        width = int(width)
+        height = int(height)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def read_unity_display_type(
+    exe_path: Path,
+    registry_module: Any | None = None,
+    *,
+    preferred_value_name: str | None = None,
+) -> str | None:
+    """读取游戏保存的显示模式；可优先读取调用方提供的布尔全屏值。"""
+
+    registry_path = resolve_unity_registry_path(exe_path)
+    registry = registry_module if registry_module is not None else _winreg
+    if registry_path is None or registry is None:
+        return None
+
+    try:
+        with registry.OpenKey(
+            registry.HKEY_CURRENT_USER,
+            registry_path,
+            0,
+            registry.KEY_QUERY_VALUE,
+        ) as key:
+            candidates = (
+                ((preferred_value_name, {0, 1}),) if preferred_value_name else ()
+            ) + (
+                (_FULLSCREEN_MODE_VALUE, {0, 1, 2, 3}),
+                (_LEGACY_IS_FULLSCREEN_VALUE, {0, 1}),
+            )
+            for name, valid_values in candidates:
+                try:
+                    value, _ = registry.QueryValueEx(key, name)
+                    mode = int(value)
+                except (FileNotFoundError, OSError, TypeError, ValueError):
+                    continue
+                if mode in valid_values:
+                    if name == _FULLSCREEN_MODE_VALUE:
+                        return (
+                            "Window"
+                            if mode == _FULLSCREEN_MODE_WINDOWED
+                            else "Fullscreen"
+                        )
+                    return "Fullscreen" if mode == 1 else "Window"
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _target_values(width: int, height: int) -> tuple[tuple[str, int], ...]:
+    return (
+        (_WIDTH_VALUE, width),
+        (_HEIGHT_VALUE, height),
+        (_WINDOW_WIDTH_VALUE, width),
+        (_WINDOW_HEIGHT_VALUE, height),
+        (_USE_NATIVE_VALUE, 0),
+        (_FULLSCREEN_MODE_VALUE, _FULLSCREEN_MODE_WINDOWED),
+        (_LEGACY_IS_FULLSCREEN_VALUE, 0),
+    )
+
+
+# 同一个注册表键同时只能有一个覆盖者，否则后者的快照会把前者写入的目标值当原值恢复。
+# 按键路径而不是全局互斥：不同 MFW 脚本可能同时跑不同的游戏。
+_ACTIVE_GUARD = threading.RLock()
+_ACTIVE_OWNERS: dict[str, int] = {}
+
+
+@dataclass(frozen=True, slots=True)
+class _RegistryValueSnapshot:
+    exists: bool
+    value: Any = None
+    value_type: int | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        if not self.exists:
+            return {"exists": False}
+        value = self.value
+        if isinstance(value, bytes):
+            return {
+                "exists": True,
+                "type": self.value_type,
+                "bytes": base64.b64encode(value).decode("ascii"),
+            }
+        return {"exists": True, "type": self.value_type, "value": value}
+
+    @classmethod
+    def from_json(cls, data: Any) -> _RegistryValueSnapshot:
+        if not isinstance(data, dict) or not data.get("exists"):
+            return cls(exists=False)
+        if "bytes" in data:
+            value: Any = base64.b64decode(str(data["bytes"]))
+        else:
+            value = data.get("value")
+        return cls(exists=True, value=value, value_type=int(data["type"]))
+
+
+def _default_journal_dir() -> Path:
+    return Path.cwd() / "data" / "maafw_resolution_journal"
+
+
+def resolve_unity_registry_path(exe_path: Path) -> str | None:
+    """从游戏 exe 反查 Unity PlayerPrefs 所在的 HKCU 相对路径。
+
+    读 ``<exe 同名>_Data\\app.info``：第一行公司名、第二行产品名。文件不存在或
+    内容不完整都视为「不是 Unity 游戏」返回 None，不抛错。
+    """
+
+    exe_path = Path(exe_path)
+    info_path = exe_path.parent / f"{exe_path.stem}_Data" / UNITY_APP_INFO_NAME
+    try:
+        raw = info_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return None
+    lines = [line.strip() for line in raw.splitlines()]
+    if len(lines) < 2 or not lines[0] or not lines[1]:
+        return None
+    company, product = lines[0], lines[1]
+    if "\\" in company or "\\" in product:
+        # 名字里带反斜杠会拆成多级键，Unity 自己也不支持，视为不可反查
+        return None
+    return rf"Software\{company}\{product}"
+
+
+class UnityGameResolutionOverride:
+    """在 MAS 启动游戏前临时写入指定尺寸的窗口模式，游戏关闭后恢复全部原值和类型。"""
+
+    def __init__(
+        self,
+        registry_path: str,
+        width: int,
+        height: int,
+        registry_module: Any | None = None,
+        journal_dir: Path | None = None,
+    ) -> None:
+        self.registry_path = registry_path
+        self.width = int(width)
+        self.height = int(height)
+        self._registry = registry_module if registry_module is not None else _winreg
+        self._journal_dir = journal_dir
+        self._snapshot: dict[str, _RegistryValueSnapshot] = {}
+        self._active = False
+        self._owner = id(self)
+
+    @classmethod
+    def for_executable(
+        cls,
+        exe_path: Path,
+        width: int,
+        height: int,
+        registry_module: Any | None = None,
+        journal_dir: Path | None = None,
+    ) -> UnityGameResolutionOverride | None:
+        """按 exe 反查注册表路径；不是 Unity 游戏返回 None。"""
+
+        registry_path = resolve_unity_registry_path(exe_path)
+        if registry_path is None:
+            return None
+        return cls(
+            registry_path,
+            width,
+            height,
+            registry_module=registry_module,
+            journal_dir=journal_dir,
+        )
+
+    @property
+    def label(self) -> str:
+        return f"{self.width}×{self.height}"
+
+    def apply(self) -> bool:
+        """首次调用先快照再写目标值，返回 True；已生效时只重写目标值，返回 False。"""
+
+        registry = self._require_registry()
+        with _ACTIVE_GUARD:
+            self._claim_owner()
+            if self._active:
+                self._write_targets(registry)
+                return False
+
+            try:
+                if not self._key_exists(registry):
+                    raise RuntimeError(
+                        f"未找到注册表键 HKCU\\{self.registry_path}，"
+                        "游戏可能尚未首次运行过"
+                    )
+                # 上一次覆盖没恢复就断了（MAS 崩溃 / 被强杀）：先按落盘的快照还原原值，
+                # 再快照，否则改过的值会被当成原值
+                self._recover_from_journal(registry)
+                self._snapshot = self._snapshot_key(registry)
+                self._write_journal()
+                self._write_targets(registry)
+                self._active = True
+            except Exception:
+                if self._snapshot:
+                    if not self._restore_snapshot(registry):
+                        self._remove_journal()
+                self._snapshot = {}
+                self._release_owner()
+                raise
+        return True
+
+    def restore(self) -> bool:
+        """恢复所有原始值；原本不存在的值会被删除。未生效时返回 False。"""
+
+        registry = self._require_registry()
+        with _ACTIVE_GUARD:
+            if not self._snapshot:
+                self._active = False
+                self._release_owner()
+                return False
+
+            errors = self._restore_snapshot(registry)
+            if errors:
+                # 落盘的快照留着：下次 apply 前还会按它再恢复一次
+                raise RuntimeError("；".join(errors))
+            self._remove_journal()
+            self._snapshot = {}
+            self._active = False
+            self._release_owner()
+        return True
+
+    def _journal_path(self) -> Path:
+        directory = (
+            self._journal_dir
+            if self._journal_dir is not None
+            else _default_journal_dir()
+        )
+        digest = hashlib.sha256(self.registry_path.casefold().encode("utf-8"))
+        return directory / f"{digest.hexdigest()[:16]}.json"
+
+    def _write_journal(self) -> None:
+        """写目标值之前把快照落盘；写不进去就不改注册表（崩溃后原值就找不回来了）。"""
+
+        path = self._journal_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "registryPath": self.registry_path,
+            "values": {
+                name: snapshot.to_json() for name, snapshot in self._snapshot.items()
+            },
+        }
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, path)
+
+    def _remove_journal(self) -> None:
+        try:
+            self._journal_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _recover_from_journal(self, registry: Any) -> None:
+        path = self._journal_path()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"读取上次临时分辨率的原值记录失败（{path}）：{exc}"
+            ) from exc
+        if not isinstance(data, dict) or data.get("registryPath") != self.registry_path:
+            return
+        values = data.get("values")
+        if not isinstance(values, dict):
+            return
+        self._snapshot = {
+            str(name): _RegistryValueSnapshot.from_json(item)
+            for name, item in values.items()
+            if str(name) in MANAGED_VALUES
+        }
+        errors = self._restore_snapshot(registry)
+        self._snapshot = {}
+        if errors:
+            raise RuntimeError("上次临时改过的分辨率没恢复成功：" + "；".join(errors))
+        self._remove_journal()
+
+    def _require_registry(self) -> Any:
+        if self._registry is None:
+            raise RuntimeError("当前系统不支持 Windows 注册表，无法临时设置分辨率")
+        return self._registry
+
+    def _claim_owner(self) -> None:
+        owner = _ACTIVE_OWNERS.get(self.registry_path)
+        if owner not in (None, self._owner):
+            raise RuntimeError(
+                f"已有其他任务正在临时管理 HKCU\\{self.registry_path} 的分辨率"
+            )
+        _ACTIVE_OWNERS[self.registry_path] = self._owner
+
+    def _release_owner(self) -> None:
+        if _ACTIVE_OWNERS.get(self.registry_path) == self._owner:
+            _ACTIVE_OWNERS.pop(self.registry_path, None)
+
+    def _key_exists(self, registry: Any) -> bool:
+        try:
+            with registry.OpenKey(registry.HKEY_CURRENT_USER, self.registry_path):
+                return True
+        except FileNotFoundError:
+            return False
+
+    def _open_key(self, registry: Any) -> Any:
+        access = registry.KEY_QUERY_VALUE | registry.KEY_SET_VALUE
+        return registry.OpenKey(
+            registry.HKEY_CURRENT_USER, self.registry_path, 0, access
+        )
+
+    def _snapshot_key(self, registry: Any) -> dict[str, _RegistryValueSnapshot]:
+        snapshot: dict[str, _RegistryValueSnapshot] = {}
+        with self._open_key(registry) as key:
+            for name in MANAGED_VALUES:
+                try:
+                    value, value_type = registry.QueryValueEx(key, name)
+                    snapshot[name] = _RegistryValueSnapshot(
+                        exists=True, value=value, value_type=value_type
+                    )
+                except FileNotFoundError:
+                    snapshot[name] = _RegistryValueSnapshot(exists=False)
+        return snapshot
+
+    def _write_targets(self, registry: Any) -> None:
+        with self._open_key(registry) as key:
+            for name, value in _target_values(self.width, self.height):
+                registry.SetValueEx(key, name, 0, registry.REG_DWORD, value)
+
+    def _restore_snapshot(self, registry: Any) -> list[str]:
+        """按快照整表写回；返回失败项（调用方决定抛不抛、留不留落盘的快照）。"""
+
+        errors: list[str] = []
+        try:
+            with self._open_key(registry) as key:
+                for name, snapshot in self._snapshot.items():
+                    try:
+                        if snapshot.exists:
+                            assert snapshot.value_type is not None
+                            registry.SetValueEx(
+                                key, name, 0, snapshot.value_type, snapshot.value
+                            )
+                        else:
+                            try:
+                                registry.DeleteValue(key, name)
+                            except FileNotFoundError:
+                                pass
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(f"恢复注册表值 {name} 失败：{exc}")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"打开注册表 HKCU\\{self.registry_path} 失败：{exc}")
+        return errors
+
+
+__all__ = [
+    "MANAGED_VALUES",
+    "RESOLUTION_PRESETS",
+    "UnityGameResolutionOverride",
+    "parse_resolution_option",
+    "read_unity_resolution",
+    "resolve_unity_registry_path",
+]

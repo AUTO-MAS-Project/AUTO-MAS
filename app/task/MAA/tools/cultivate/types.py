@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
-GoalKind = Literal["elite", "mastery", "module"]
+GoalKind = Literal["elite", "skill", "mastery", "module"]
 
 GoalState = Literal[
     "not_started",  # 攒材料等待（材料已齐或尚未开刷）
@@ -48,11 +48,11 @@ ProgressionSource = Literal["skland", "local", "manual", "default"]
 
 @dataclass(frozen=True)
 class Goal:
-    """实例级养成目标（精英化 1 条；技能按 skillId；模组按 uniEquipId）。"""
+    """干员养成目标（精英化与技能等级各 1 条；专精与模组按 ID）。"""
 
     kind: GoalKind
-    target_id: str  # mastery=skillId；module=uniEquipId；elite 固定 ""
-    to_level: int  # elite: 1|2；mastery/module: 1..3
+    target_id: str  # mastery=skillId；module=uniEquipId；elite/skill 固定 ""
+    to_level: int  # elite: 1|2；skill: 2..7；mastery/module: 1..3
     state: GoalState = "not_started"
 
 
@@ -81,6 +81,7 @@ class Progression:
     level: int
     masteries: Mapping[str, int]  # skillId -> 专精等级
     modules: Mapping[str, int]  # uniEquipId -> 模组等级
+    skill_level: int | None = None  # 普通技能等级 1..7；None 表示未观测
 
     @staticmethod
     def default() -> "Progression":
@@ -127,6 +128,7 @@ class CultivatePlan:
     entries: tuple[FarmEntry, ...]  # 已按刷取优先级排序（见 engine 排序不变量）
     demands: tuple[Requirement, ...] = ()  # 完整材料清单（含不可直刷/不可获取，供 UI）
     unobtainable: tuple[Requirement, ...] = ()  # 不可获取类子集（UI 单列"需另行获取"）
+    reservations: tuple[Requirement, ...] = ()  # 完整培养消耗，含合成时将消耗的原料
 
 
 @dataclass(frozen=True)
@@ -145,12 +147,17 @@ class ProviderContext:
 
     ``file_cache`` 供 provider 在单次编排内缓存识别文件解析结果（同目录
     多干员多次取数只读一次磁盘）；provider 不跨调用持有状态，缓存随
-    context 生命周期走。
+    context 生命周期走。森空岛整表快照由异步驱动层（cultivate/skland.py）
+    拉取后注入，skland 适配器只做同步查表（决策 38）。
     """
 
     maa_data_dir: Path | None = None  # MAA 安装目录 data/，local 适配器读取用
     manual_progressions: Mapping[str, Progression] = field(default_factory=dict)
     file_cache: dict[str, Any] = field(default_factory=dict)
+    skland_progressions: Mapping[str, Progression] = field(
+        default_factory=dict
+    )  # player/info 整表解析结果；空映射 = 未拉取/不可用，链短路落 local
+    skland_captured_at: int = 0  # 快照拉取时刻（epoch 秒）
 
 
 @runtime_checkable

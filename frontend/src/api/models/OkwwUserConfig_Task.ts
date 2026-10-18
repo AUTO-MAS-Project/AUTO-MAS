@@ -4,10 +4,6 @@
 /* eslint-disable */
 export type OkwwUserConfig_Task = {
     /**
-     * 启动任务：1=DailyTask，7=MultiAccountDailyTask
-     */
-    TaskIndex?: (1 | 7 | null);
-    /**
      * 每日任务体力用途
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);

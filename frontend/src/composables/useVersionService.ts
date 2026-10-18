@@ -7,13 +7,14 @@
 
 import { ref } from 'vue'
 import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
-import { requestUpdateCheck } from './useUpdateChecker'
+import { readUpdatePauseState, requestUpdateCheck } from './useUpdateChecker'
 const logger = window.electronAPI.getLogger('版本服务')
 
 // ========== 标题栏版本信息相关 ==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
 export const runtimeBackendUpdateAvailable = ref(false)
+export const runtimeBackendUpdateCommitMessage = ref('')
 
 const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
 let titlebarPollTimer: number | null = null
@@ -49,8 +50,13 @@ export const getBackendVersion = async () => {
 export const checkRuntimeBackendUpdate = async () => {
   try {
     const result = await window.electronAPI.checkRuntimeBackendUpdate?.()
-    if (result?.staged === true) runtimeBackendUpdateAvailable.value = true
-    else if (result && !result.error) runtimeBackendUpdateAvailable.value = false
+    if (result?.staged === true) {
+      runtimeBackendUpdateAvailable.value = true
+      runtimeBackendUpdateCommitMessage.value = result.commitMessage ?? ''
+    } else if (result && !result.error) {
+      runtimeBackendUpdateAvailable.value = false
+      runtimeBackendUpdateCommitMessage.value = ''
+    }
     return result
   } catch (error) {
     logger.debug(
@@ -68,6 +74,20 @@ const pollTitlebarVersionOnce = async () => {
   isTitlebarPolling.value = true
 
   try {
+    // 暂停更新期间不发起任何更新检查，并清掉暂停前的旧提示
+    // （本体"检测到更新"与后端"检测到后端更新"随之消失，到期后下个 tick 自动恢复）
+    // 读取失败视为状态未知：同样跳过检查但不动现有提示（失败关闭，下个 tick 重试）
+    const pauseState = await readUpdatePauseState()
+    if (pauseState !== false) {
+      if (pauseState === true) {
+        updateInfo.value = null
+        backendUpdateInfo.value = null
+        runtimeBackendUpdateAvailable.value = false
+        runtimeBackendUpdateCommitMessage.value = ''
+      }
+      return
+    }
+
     const [appRes, backendRes, runtimeRes] = await Promise.allSettled([
       getAppVersion(),
       getBackendVersion(),
@@ -94,14 +114,19 @@ const pollTitlebarVersionOnce = async () => {
 
 /**
  * 启动标题栏版本信息定时检查（10分钟一次）
+ * 暂停更新期间定时器照常待命（每次 tick 由 getAppVersion 门控跳过），到期后自动恢复
  */
-export const startTitlebarVersionCheck = () => {
+export const startTitlebarVersionCheck = async () => {
   if (titlebarPollTimer) {
     logger.warn('标题栏版本检查定时器已存在，跳过启动')
     return
   }
 
-  logger.info('启动标题栏版本信息定时检查（每10分钟）')
+  if ((await readUpdatePauseState()) === true) {
+    logger.info('更新已暂停，标题栏版本信息检查待命（暂停期内不检查，到期后自动恢复）')
+  } else {
+    logger.info('启动标题栏版本信息定时检查（每10分钟）')
+  }
 
   // 首次检查在后台执行，不阻塞应用进入主页
   void pollTitlebarVersionOnce()

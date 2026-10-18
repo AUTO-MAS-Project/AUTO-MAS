@@ -21,23 +21,24 @@
 
 
 import asyncio
-import json
-
-import psutil
-
-from app.utils.platform import IS_WINDOWS
-
-if IS_WINDOWS:
-    import keyboard
-    import win32gui
 import time
 from pathlib import Path
 
+import psutil
 from pydantic import BaseModel
 
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
+from app.utils.emulator.tools import (
+    AudioMuteRecord,
+    apply_launch_audio_mute,
+    apply_window_visibility,
+    resolve_main_window,
+    restore_audio_before_close,
+)
+from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 logger = get_logger("雷电模拟器管理")
 
@@ -76,6 +77,9 @@ class LDManager(DeviceBase):
         self.config = config
 
         self.emulator_path = Path(config.get("Info", "Path"))
+
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, AudioMuteRecord] = {}
 
     def _get_instance_key(self, idx: str) -> tuple[str, str]:
         return str(self.emulator_path.resolve()).casefold(), str(idx)
@@ -173,6 +177,34 @@ class LDManager(DeviceBase):
         async with self._get_instance_lock(idx):
             return await self._open_locked(idx, package_name)
 
+    async def _apply_cleanmode(self) -> None:
+        """启动前把安装级的去广告开关写一次。
+
+        ``globalsetting --cleanmode`` 管的是**整个安装**的安卓桌面，宿主只在 VM 冷启动时
+        生效，所以放在实例启动前、每次都设：开着设 1、关着设 0。写不上只记警告，不拦启动，
+        失败原因带上 returncode、stdout 与 stderr，免得只留一句「命令执行失败」。
+        """
+        # 延迟导入：本模块是 2.0 的基类，模块加载期导入 emulator2 会形成导入环
+        from app.utils.emulator2.master_mode import (
+            is_master_mode_enabled,
+            ldplayer_clean_mode_args,
+        )
+
+        enabled = is_master_mode_enabled()
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                *ldplayer_clean_mode_args(enabled),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 去广告失败不该拦住启动
+            logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
+            return
+        if result.returncode != 0:
+            logger.warning(f"设置模拟器去广告失败: {result.failure_detail()}")
+
     async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
@@ -190,6 +222,7 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
         await self._capture_instance_config(idx)
+        await self._apply_cleanmode()
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
@@ -204,7 +237,7 @@ class LDManager(DeviceBase):
         # 参考命令 dnconsole.exe launch --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
@@ -220,6 +253,11 @@ class LDManager(DeviceBase):
 
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_ads_via_adb(idx)
+                await apply_launch_audio_mute(
+                    states_store=self._audio_mute_states,
+                    idx=idx,
+                    resolve_pids=lambda: self._resolve_audio_pids(idx),
+                )
                 return (await self.getInfo(idx))[idx]
 
             await asyncio.sleep(0.1)
@@ -228,11 +266,17 @@ class LDManager(DeviceBase):
                 raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
+    async def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """窗口进程与虚拟机进程都可能持有该实例的音频会话。"""
+        device = (await self.get_device_info(idx)).get(idx)
+        return [pid for pid in (device.pid, device.vbox_pid) if pid] if device else []
+
     async def close(self, idx: str) -> DeviceStatus:
         async with self._get_instance_lock(idx):
             return await self._close_locked(idx)
 
     async def _close_locked(self, idx: str) -> DeviceStatus:
+        await restore_audio_before_close(self._audio_mute_states, idx)
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
@@ -252,7 +296,7 @@ class LDManager(DeviceBase):
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
@@ -322,28 +366,24 @@ class LDManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        result = (await self.get_device_info(idx))[idx]
+        hwnd = await resolve_main_window(idx, lambda: self._resolve_target_hwnd(idx))
+        await apply_window_visibility(
+            hwnd, idx, is_visible, self.config.get("Info", "MaxWaitTime")
+        )
+        return status
 
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
-        while time.monotonic() < deadline:
-            # 检查窗口可见性是否符合预期
-            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
-                return status
+    async def _resolve_target_hwnd(self, idx: str) -> int | None:
+        """取该实例的顶层窗口句柄：``list2`` 报的句柄为 0 或已失效时返回 None。
 
-            try:
-                keyboard.press_and_release(
-                    "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
-                    )
-                )  # 老板键
-            except Exception as e:
-                logger.error(f"发送BOSS键失败: {e}")
+        一次只读一次 ``list2``（判据与 ``ldplayer14.setVisible`` 一致），句柄没建
+        出来交给调用方重试：反复读会白跑十几次子进程调用。句柄是否有效按
+        :func:`app.utils.platform.window.is_window` 判定，不直接碰 ``win32gui``。
+        """
 
-            await asyncio.sleep(0.5)
-
-        else:
-            raise RuntimeError(f"隐藏设备{idx}窗口超时")
+        device = (await self.get_device_info(idx)).get(idx)
+        if device is None or device.top_hwnd <= 0:
+            return None
+        return device.top_hwnd if platform_window.is_window(device.top_hwnd) else None
 
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
@@ -357,7 +397,7 @@ class LDManager(DeviceBase):
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(f"命令执行失败: {result.failure_detail()}")
         emulators: dict[str, LDPlayerDevice] = {}
         data = result.stdout.strip()
 

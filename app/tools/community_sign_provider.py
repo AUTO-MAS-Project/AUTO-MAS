@@ -24,11 +24,13 @@
 
 import time
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from typing import Awaitable, Callable, Protocol
 
 import httpx
 
 from app.core import Config
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
@@ -44,6 +46,8 @@ logger = get_logger("游戏社区签到")
 
 _system_time_checked_at = 0.0
 _SYSTEM_TIME_CHECK_INTERVAL = 300.0
+_SYSTEM_TIME_WARN_SECONDS = 300.0
+_last_system_time_offset: float | None = None
 _TAYGEDO_COMMUNITY_DETAIL_GAMES = frozenset(("幻塔社区", "异环社区", "塔吉多社区"))
 
 
@@ -84,38 +88,59 @@ class _CommunitySignProvider:
     error_game: ErrorGameResolver
 
 
-async def check_community_system_time(*, time_source: _TimeSource = time) -> None:
+async def check_community_system_time(
+    *, time_source: _TimeSource = time
+) -> float | None:
     """检查系统时间偏差并提示用户，不阻断签到流程。
 
-    时间源不可信或不可用时（服务退役、被劫持的网络等）仅记录日志；
-    真正对时间敏感的只有米游社 DS 签名，其容差远大于此处阈值，
-    因此偏差过大时也只告警，由具体平台的签到结果反映实际影响。
-    """
-    global _system_time_checked_at
-    now = time_source.monotonic()
-    if now - _system_time_checked_at < _SYSTEM_TIME_CHECK_INTERVAL:
-        return
-    # 无论时间服务成功与否，都缓存本次尝试，避免网络异常时每次签到重复等待。
-    _system_time_checked_at = now
+    复用社区 HTTPS 响应的 Date，时间源不可用时仅记录日志并返回 None，
+    不缓存失败或沿用上次偏差；森空岛在适配器内另行校正自己的签名时间。
 
+    Returns:
+        本次测得的偏差绝对值（秒）；时间源不可用或返回无效数据时为 None。
+    """
+    global _last_system_time_offset, _system_time_checked_at
+    now = time_source.monotonic()
+    if (
+        _last_system_time_offset is not None
+        and now - _system_time_checked_at < _SYSTEM_TIME_CHECK_INTERVAL
+    ):
+        return _last_system_time_offset
+    # 只有跑完的时间检查才写缓存。签到先结束时该任务会被取消，若取消前就已
+    # 打点，接下来一个检查周期都会命中缓存并返回 None，偏差提示再也不出现。
+    offset: float | None = None
     try:
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            resp = await client.get(
-                "https://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
+        async with create_community_client(proxy=Config.proxy) as client:
+            resp = await client.head(
+                "https://zonai.skland.com/",
+                headers={"Cache-Control": "no-cache"},
+                timeout=5,
             )
-        api_time = resp.json().get("unixtime", 0)
-        if not api_time:
-            return
-        local_time = time_source.time()
-        offset = abs(api_time - local_time)
-        if offset > 300:
-            logger.warning(
-                f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
-            )
-        elif offset > 30:
-            logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
+        if int(resp.headers.get("Age", "0")) == 0:
+            api_time = parsedate_to_datetime(resp.headers["Date"])
+            if api_time.tzinfo is not None:
+                offset = abs(api_time.timestamp() - time_source.time())
     except Exception as e:
         logger.debug(f"时间校准跳过: {e}")
+    _last_system_time_offset = offset
+    if offset is None:
+        return None
+    _system_time_checked_at = now
+    if offset > _SYSTEM_TIME_WARN_SECONDS:
+        logger.warning(
+            f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
+        )
+    elif offset > 30:
+        logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
+    return offset
+
+
+def last_system_time_offset() -> float | None:
+    """返回最近一次自检得到的系统时间偏差（秒）；未测到有效偏差时为 None。"""
+
+    if time.monotonic() - _system_time_checked_at >= _SYSTEM_TIME_CHECK_INTERVAL:
+        return None
+    return _last_system_time_offset
 
 
 def _empty_platform_result(

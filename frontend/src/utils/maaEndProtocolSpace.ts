@@ -60,17 +60,6 @@ export const MAAEND_PLAN_WEEKDAY_KEYS: PlanWeekdayKey[] = MAAEND_PLAN_TIME_KEYS.
   (key): key is PlanWeekdayKey => key !== 'ALL'
 )
 
-export const MAAEND_PLAN_TIME_LABELS: Record<PlanTimeKey, string> = {
-  ALL: '全局',
-  Monday: '周一',
-  Tuesday: '周二',
-  Wednesday: '周三',
-  Thursday: '周四',
-  Friday: '周五',
-  Saturday: '周六',
-  Sunday: '周日',
-}
-
 export const SANITY_TASK_TYPE_OPTIONS = [
   ...PROTOCOL_SPACE_OPTIONS,
   { label: '基质刷取', value: 'Essence' },
@@ -177,9 +166,9 @@ export const MAAEND_TASK_GROUPS = [
 
 export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']
 
-type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs'
+type MaaEndDailyOnceTask = MaaEndTaskSwitch
 
-// 自动采集由自身的路线周期独立管理，不纳入每日仅执行一次任务。
+// 送货、自动采集阶段固定每日一次，这里只提供日常任务选项。
 export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
   name: MaaEndDailyOnceTask
   label: string
@@ -190,7 +179,6 @@ export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
       options.push({ name: task.name, label: task.label })
     }
   }
-  options.push({ name: 'SeizeDeliveryJobs', label: '🚚 抢委托送货' })
   return options
 })()
 

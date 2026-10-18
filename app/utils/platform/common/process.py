@@ -43,6 +43,14 @@ from .process_runner import (  # noqa: F401  # 兼容 re-export：ProcessManager
 
 logger = get_logger("进程管理")
 
+# 后继进程改绑的搜索窗口（秒）: 覆盖引导式启动器自更新/接力换进程的间隙
+_RESEEK_TIMEOUT_SECONDS = 5.0
+
+# 接力后继的最长「年龄」（秒）: 合法后继在原进程退出前后数秒内创建, 而检测到
+# 原进程退出最多晚一个日志空闲回调周期（60s）, 留足余量后仍能把运行期间早已
+# 存在的同 exe 无关实例（如用户手动打开的启动器 GUI）挡在改绑之外
+_RESEEK_MAX_SUCCESSOR_AGE_SECONDS = 180.0
+
 
 @dataclass
 class ProcessInfo:
@@ -133,7 +141,10 @@ class ProcessManager:
     """进程监视器类, 用于跟踪主进程及其所有子进程的状态"""
 
     def __init__(
-        self, window_title: str | None = None, window_class_name: str | None = None
+        self,
+        window_title: str | None = None,
+        window_class_name: str | None = None,
+        reseek_target: bool = False,
     ):
         super().__init__()
 
@@ -141,6 +152,11 @@ class ProcessManager:
         self.target_process: psutil.Process | None = None
         self.window_title = window_title
         self.window_class_name = window_class_name
+        # 引导式启动器（自更新/接力时会更换进程实例）场景: 跟踪进程退出后按
+        # 目标信息重新搜索后继实例改绑, 而不是直接判定运行结束
+        self.reseek_target = reseek_target
+        self._target_info: ProcessInfo | None = None
+        self._target_create_time: float | None = None
         self._drain_tasks: list[asyncio.Task[None]] = []
 
     @property
@@ -349,7 +365,7 @@ class ProcessManager:
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
         """
 
-        def _scan() -> psutil.Process | None:
+        def _scan() -> tuple[psutil.Process, float | None] | None:
             for proc in psutil.process_iter(
                 ["pid", "name", "exe", "cmdline", "create_time"]
             ):
@@ -360,28 +376,76 @@ class ProcessManager:
                     create_time is None or create_time < min_create_time - 2
                 ):
                     continue
-                return proc
+                return proc, create_time
             return None
 
         # 全量进程扫描放到线程里, 避免阻塞事件循环
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            proc = await asyncio.to_thread(_scan)
-            if proc is not None:
+            found = await asyncio.to_thread(_scan)
+            if found is not None:
+                proc, create_time = found
                 self.target_process = proc
+                # 记录目标信息与创建时间, 供 reseek_target 改绑后继进程。
+                # 创建时间取扫描阶段已读到的值, 不重新查询: 进程可能在扫描后
+                # 退出而抛异常, 受保护进程的创建时间也可能读不到
+                self._target_info = target_process
+                self._target_create_time = create_time
                 return
             await asyncio.sleep(0.1)
         else:
             raise RuntimeError("未能在限定时间内找到目标进程")
 
     async def is_running(self) -> bool:
-        """检查当前管理的进程是否仍在运行"""
+        """检查当前管理的进程是否仍在运行
+
+        ``reseek_target`` 为 True 时, 跟踪进程退出先按启动时的目标信息搜索
+        创建更晚的同名后继进程（引导式启动器自更新/接力换进程）, 命中则改绑
+        跟踪并视为仍在运行, 找不到才判定结束。
+        """
 
         if self.target_process is not None:
-            return self.target_process.is_running()
+            if self.target_process.is_running():
+                return True
+            if self.reseek_target and await self._reseek_target():
+                return True
+            return False
         if self.process is not None:
             return self.process.returncode is None
         return False
+
+    async def _reseek_target(self) -> bool:
+        """搜索跟踪目标的后继进程（同目标信息、创建更晚且足够新）, 命中则改绑。
+
+        后继进程由原进程接力派出, 创建时间必然晚于原进程, 以原进程创建时间为
+        下限可排除早于本次启动的残留实例; 再叠加「近期创建」下限, 把运行期间
+        早已存在的同 exe 无关实例（用户手动打开的启动器 GUI、指向同安装的并行
+        任务）挡在改绑之外。匹配毕竟只按目标信息（name/exe）进行, 同期新起的
+        同 exe 实例仍可能命中, 误改绑只会拉长等待——最终由调用方的运行超时
+        判定与按路径收尾兜底。搜索窗口覆盖接力换进程的间隙。
+        """
+
+        if self._target_info is None or self._target_create_time is None:
+            return False
+        successor = ProcessInfo(
+            name=self._target_info.name,
+            exe=self._target_info.exe,
+            cmdline=self._target_info.cmdline,
+        )
+        min_successor_create_time = max(
+            self._target_create_time,
+            time.time() - _RESEEK_MAX_SUCCESSOR_AGE_SECONDS,
+        )
+        try:
+            await self.search_process(
+                successor,
+                _RESEEK_TIMEOUT_SECONDS,
+                min_create_time=min_successor_create_time,
+            )
+        except RuntimeError:
+            return False
+        logger.info(f"原跟踪进程已退出, 改绑后继进程 PID: {self.target_process.pid}")
+        return True
 
     async def kill(self) -> None:
         """停止监视器并中止所有跟踪的进程"""
@@ -426,6 +490,8 @@ class ProcessManager:
 
         self.process = None
         self.target_process = None
+        self._target_info = None
+        self._target_create_time = None
 
     async def is_visible(self) -> bool:
         """检查主进程窗口是否可见
@@ -505,3 +571,16 @@ class ProcessManager:
             return window.activate_window(hwnd)
         except Exception:
             return False
+
+    async def close(self) -> None:
+        """请被管理进程自行退出，等它走完退出时的配置保存
+
+        启动瞬间主窗口可能还是临时的启动画面, 关闭消息打不到真正的窗口上,
+        所以每轮按当前句柄再请求一次, 直到进程退出。
+        """
+
+        while await self.is_running():
+            hwnd = self.main_hwnd
+            if hwnd is None or not window.close_window(hwnd):
+                return
+            await asyncio.sleep(0.2)

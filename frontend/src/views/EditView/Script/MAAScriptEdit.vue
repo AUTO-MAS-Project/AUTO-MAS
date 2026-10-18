@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.maaScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
@@ -172,6 +172,7 @@
                     v-for="item in emulatorDeviceOptions"
                     :key="item.value"
                     :value="item.value"
+                    :disabled="item.disabled"
                   >
                     {{ item.label }}
                   </a-select-option>
@@ -186,6 +187,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="maaConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', maaConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
@@ -382,12 +387,59 @@
             </a-col>
           </a-row>
         </div>
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.updateTakeover') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.updateTakeoverTip')">
+                    <span class="form-label">
+                      {{ t('edit.updateTakeoverSwitch') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="maaConfig.Update.TakeoverEnabled"
+                  size="large"
+                  @change="handleChange('Update', 'TakeoverEnabled', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.updateTakeoverCdkTip')">
+                    <span class="form-label">
+                      {{ t('edit.updateTakeoverCdk') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-password
+                  v-model:value="maaConfig.Update.MirrorChyanCDK"
+                  :placeholder="t('edit.updateTakeoverCdkPlaceholder')"
+                  size="large"
+                  class="modern-input"
+                  autocomplete="off"
+                  :disabled="!maaConfig.Update.TakeoverEnabled"
+                  @blur="handleChange('Update', 'MirrorChyanCDK', maaConfig.Update.MirrorChyanCDK)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import DocLink from '@/components/DocLink.vue'
@@ -418,7 +470,7 @@ const {
   emulatorDeviceOptions,
   clearEmulatorDeviceOptions,
   loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
+} = useEmulatorDeviceOptions({ allowModAvd: true })
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -445,6 +497,7 @@ const maaConfig = reactive<MAAScriptConfig>({
     Path: '.',
   },
   Run: {
+    HardTimeLimit: 120,
     TaskTransitionMethod: 'ExitEmulator',
     ProxyTimesLimit: 0,
     ADBSearchRange: 0,
@@ -458,6 +511,10 @@ const maaConfig = reactive<MAAScriptConfig>({
   Emulator: {
     Id: '',
     Index: '',
+  },
+  Update: {
+    TakeoverEnabled: false,
+    MirrorChyanCDK: '',
   },
   SubConfigsInfo: {
     UserData: {

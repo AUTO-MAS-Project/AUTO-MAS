@@ -66,6 +66,10 @@ export const HOME_GREETING_MESSAGES: HomeGreetingMessage[] = [
   { text: '您的请求正在被接受，还剩10...000年进行应答', author: '人' },
   { text: '关注DLmaster_361喵，关注DLmaster_361谢谢喵', author: '匿名' },
   { text: '也许在10086年以后MAS就能管理运行所有脚本', author: '匿名' },
+  { text: '这个automas有人用吗？', author: '匿名' },
+  { text: '很好的bug！香香软软的小bug，嘿嘿嘿.......', author: 'aafei' },
+  { text: '由SRA强力支持！', author: '' },
+  { text: '一个bug是bug，一堆bug能work', author: '凉白开' },
 ]
 
 /**

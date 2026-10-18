@@ -8,6 +8,7 @@
 
       <p v-if="message" class="failure-message">{{ message }}</p>
       <p v-if="noticeText" class="failure-notice">{{ noticeText }}</p>
+      <p class="failure-message">{{ t('init.failure.joinGroupHint') }}</p>
 
       <div class="failure-actions">
         <a-button
@@ -21,6 +22,10 @@
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
           {{ t('init.backend.viewDocs') }}
+        </a-button>
+        <a-button class="failure-help" @click="handleJoinGroup">
+          <template #icon><TeamOutlined /></template>
+          {{ t('init.failure.joinGroup') }}
         </a-button>
       </div>
 
@@ -77,6 +82,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { message as feedback } from 'ant-design-vue'
+import { TeamOutlined } from '@ant-design/icons-vue'
 import type { RuntimeDoctorCheck } from '@/types/electron'
 import type { MirrorConfig } from '@/types/mirror'
 import type {
@@ -127,6 +134,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const SUPPORT_GROUP_URL = 'https://qm.qq.com/q/DEG4a3p0FG'
 
 const noticeText = computed(() => {
   switch (props.failureNotice) {
@@ -145,6 +153,17 @@ const hasDetails = computed(
 )
 
 const detailsOpen = ref(false)
+
+async function handleJoinGroup() {
+  const logger = window.electronAPI.getLogger('初始化求助')
+  try {
+    const result = await window.electronAPI.openUrl(SUPPORT_GROUP_URL)
+    if (!result.success) throw new Error(String(result.error))
+  } catch (error) {
+    logger.error(`打开初始化求助群失败: ${error instanceof Error ? error.message : String(error)}`)
+    feedback.error(t('comp.couldNotOpenLink'))
+  }
+}
 
 // 「检查运行环境」的结果就落在这个折叠里，跑完不自动展开的话点了等于没反应。
 watch(
@@ -214,6 +233,24 @@ watch(
   align-items: center;
   gap: 8px;
   margin-top: 22px;
+}
+
+.launch-failure .failure-help {
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-border);
+}
+
+.launch-failure .failure-help:hover,
+.launch-failure .failure-help:focus-visible {
+  color: var(--ant-color-primary-hover);
+  background: var(--ant-color-primary-bg-hover);
+  border-color: var(--ant-color-primary-hover);
+}
+
+:global(html.dark .launch-failure .failure-help) {
+  color: var(--ant-color-primary-hover);
+  border-color: var(--ant-color-primary);
 }
 
 .failure-mirrors {

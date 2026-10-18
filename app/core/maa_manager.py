@@ -107,22 +107,34 @@ class _MaaFWManager:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
         """
 
-        target_port = (
-            int(raw_info.adb_address.removeprefix("127.0.0.1:"))
-            if raw_info.adb_address.startswith("127.0.0.1:")
-            else int(raw_info.adb_address.removeprefix("emulator-")) + 1
-        )
+        def get_emulator_adb_port(address: str) -> int | None:
+            offset = 0
+            if address.startswith("127.0.0.1:"):
+                raw_port = address.removeprefix("127.0.0.1:")
+            elif address.startswith("emulator-"):
+                raw_port = address.removeprefix("emulator-")
+                offset = 1
+            else:
+                return None
 
-        for emulator in Toolkit.find_adb_devices():
-            emulator_port = (
-                int(emulator.address.removeprefix("127.0.0.1:"))
-                if emulator.address.startswith("127.0.0.1:")
-                else int(emulator.address.removeprefix("emulator-")) + 1
-            )
-            if target_port == emulator_port:
-                return emulator
-        else:
-            raise RuntimeError("无法找到指定设备")
+            try:
+                return int(raw_port) + offset
+            except ValueError:
+                return None
+
+        devices = Toolkit.find_adb_devices()
+        for device in devices:
+            if device.address == raw_info.adb_address:
+                return device
+
+        target_port = get_emulator_adb_port(raw_info.adb_address)
+        if target_port is not None:
+            for device in devices:
+                device_port = get_emulator_adb_port(device.address)
+                if device_port is not None and target_port == device_port:
+                    return device
+
+        raise RuntimeError("无法找到指定设备")
 
     async def get_adb_tasker(
         self,

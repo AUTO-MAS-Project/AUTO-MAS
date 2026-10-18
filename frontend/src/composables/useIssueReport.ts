@@ -1,6 +1,8 @@
 import { message } from 'ant-design-vue'
 import { ref } from 'vue'
 
+import { translate as t } from '@/i18n'
+
 import { showIssueReportGuide } from '@/utils/issueReportGuide'
 
 export interface ReportLogger {
@@ -13,33 +15,41 @@ interface IssueReportResult {
   message?: string
   zipPath?: string
   error?: string
+  incompleteCount?: number
 }
 
-interface IssueReportOptions {
+interface IssueReportOptions<Args extends unknown[]> {
   /** 产品展示名，如 'OK-WW' / 'MaaEnd' */
   label: string
   /** 问题包文件名兜底前缀，如 'OK-WW-logs-*.zip' */
   fallbackName: string
-  /** 触发导出的 IPC 方法 */
-  exportFn: () => Promise<IssueReportResult | undefined> | undefined
+  /** 触发导出的 IPC 方法；按脚本导出的（MFW）带脚本 ID */
+  exportFn: (...args: Args) => Promise<IssueReportResult | undefined> | undefined
 }
 
-export function useIssueReport(logger: ReportLogger, options: IssueReportOptions) {
+export function useIssueReport<Args extends unknown[] = []>(
+  logger: ReportLogger,
+  options: IssueReportOptions<Args>
+) {
   const exporting = ref(false)
 
-  const exportIssueReport = async () => {
+  const exportIssueReport = async (...args: Args) => {
+    if (exporting.value) return
     exporting.value = true
     try {
-      const result = await options.exportFn()
+      const result = await options.exportFn(...args)
 
       if (!result) {
-        message.error('导出功能未响应，请检查程序')
+        message.error(t('misc.exportDidNotRespond'))
         logger.error(`导出 ${options.label} 问题包失败: 未收到响应`)
         return
       }
 
       if (result.success) {
-        message.success(result.message || `${options.label} 问题包导出成功`)
+        const successMessage =
+          result.message || t('misc.issueReportSuccess', { label: options.label })
+        if (result.incompleteCount) message.warning(successMessage)
+        else message.success(successMessage)
         logger.info(`导出 ${options.label} 问题包成功: ${result.zipPath || '路径未知'}`)
         if (result.zipPath) {
           await window.electronAPI?.showItemInFolder?.(result.zipPath)
@@ -48,13 +58,18 @@ export function useIssueReport(logger: ReportLogger, options: IssueReportOptions
         return
       }
 
-      const errorMsg = result.error || `${options.label} 问题包导出失败`
+      // 在保存对话框里点了取消（主进程 registerIssueReportExporter 的约定），不算失败
+      if (result.error === '用户取消') {
+        return
+      }
+
+      const errorMsg = result.error || t('misc.issueReportFailed', { label: options.label })
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
       message.error(errorMsg)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`导出 ${options.label} 问题包失败: ${errorMsg}`)
-      message.error(`导出问题包异常: ${errorMsg}`)
+      message.error(t('misc.couldNotExportIssue', { p0: errorMsg }))
     } finally {
       exporting.value = false
     }

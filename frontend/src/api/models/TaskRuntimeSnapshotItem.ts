@@ -57,6 +57,10 @@ export type TaskRuntimeSnapshotItem = {
      * 已推送日志对应的推送序号
      */
     logSeq?: number;
+    /**
+     * 快照日志首行在完整日志里的行号
+     */
+    logFirstLine?: number;
 };
 export namespace TaskRuntimeSnapshotItem {
     /**

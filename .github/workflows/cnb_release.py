@@ -38,14 +38,14 @@ CNB Release Uploader
 pip install requests tqdm
 """
 
-import os
-import json
-import requests
-import time
-import sys
 import argparse
-from typing import List, Dict, Optional
-from pathlib import Path
+import json
+import os
+import sys
+import time
+from typing import Dict, List, Optional
+
+import requests
 from tqdm import tqdm
 
 
@@ -145,7 +145,7 @@ class CNBReleaseUploader:
             response.raise_for_status()
 
             upload_info = response.json()
-            print(f"✅ 获取上传URL成功")
+            print("✅ 获取上传URL成功")
             return upload_info
 
         except requests.exceptions.RequestException as e:

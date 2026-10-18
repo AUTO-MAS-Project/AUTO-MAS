@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type HSRConfig_Run = {
     /**
+     * 每日代理次数限制
+     */
+    ProxyTimesLimit?: (number | null);
+    /**
      * 失败任务最大尝试次数
      */
     RunTimesLimit?: (number | null);

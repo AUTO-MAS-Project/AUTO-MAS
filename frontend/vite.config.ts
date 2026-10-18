@@ -1,11 +1,14 @@
-import { defineConfig } from 'vite'
+import { configDefaults, defineConfig } from 'vite-plus'
 import vue from '@vitejs/plugin-vue'
-import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 
 // 读取主程序版本号
 const versionJson = require('../res/version.json')
+const lintConfig = require('./.oxlintrc.json')
+const formatConfig = require('./.oxfmtrc.json')
+delete lintConfig.$schema
+delete formatConfig.$schema
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
 const sentryOrg = process.env.SENTRY_ORG
 const sentryProject = process.env.SENTRY_PROJECT
@@ -57,7 +60,9 @@ export default defineConfig(({ command }) => {
     (command === 'serve' ? DEV_HTTP_PORT : DEFAULT_HTTP_PORT)
 
   return {
-    plugins: [vue(), tailwindcss(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
+    lint: lintConfig,
+    fmt: formatConfig,
+    plugins: [vue(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
     base: './',
     resolve: {
       extensions: ['.js', '.ts', '.vue', '.json'],
@@ -72,6 +77,10 @@ export default defineConfig(({ command }) => {
       'import.meta.env.VITE_APP_CHANGELOG': JSON.stringify(
         versionJson.version_info?.[versionJson.version] ?? {}
       ),
+      // 合并即入账的条目先放在「未发布」段，开发构建里一并展示；发布构建来自 tag，没有这一段
+      'import.meta.env.VITE_APP_CHANGELOG_UNRELEASED': JSON.stringify(
+        versionJson.version_info?.['未发布'] ?? {}
+      ),
       // 渲染进程兜底端点用，正常仍以 Electron 下发的端点为准
       'import.meta.env.VITE_AUTO_MAS_HTTP_PORT': JSON.stringify(String(backendPort)),
     },
@@ -83,15 +92,35 @@ export default defineConfig(({ command }) => {
       port: DEV_SERVER_PORT,
       // 端口被占用时直接失败，避免静默换端口后 Electron 仍加载另一实例的页面
       strictPort: true,
+      // dev 模块响应禁用一切 HTTP 缓存：no-cache 仍允许浏览器存储旧响应、部分场景
+      // 不回源校验，曾导致渲染层加载陈旧模块（页面结构与最新代码拼接的诡异状态）
+      headers: { 'Cache-Control': 'no-store' },
       watch: {
-        // 只排除构建产物，environment 不会被 Vite 监听（因为没有被 import）
+        // E2E 临时目录由 runner 放在 frontend 外；这里仅排除构建产物。
         ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
       },
     },
     build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          mascot: path.resolve(__dirname, 'mascot.html'),
+          mascotMenu: path.resolve(__dirname, 'mascot-menu.html'),
+        },
+      },
       // 优化构建性能
       chunkSizeWarningLimit: 5000, // 提高到 5MB，适合 Electron 应用
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用
+    },
+    test: {
+      // Vitest v4 compatibility: preserve mock call history.
+      // Remove after tests no longer rely on calls from setup or earlier tests.
+      // https://viteplus.dev/guide/vitest-v5#remove-unneeded-compatibility-settings
+      // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
+      clearMocks: false,
+      // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
+      // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
+      exclude: [...configDefaults.exclude, '**/dist-electron/**'],
     },
   }
 })

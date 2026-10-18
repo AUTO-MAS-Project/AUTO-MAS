@@ -45,7 +45,7 @@ description: >-
 | 文件 | 职责 |
 | --- | --- |
 | `app/tools/game_sign.py` | 注册表、锁、编排、结果归一、`format_sign_results` / `merge_sign_results` |
-| `app/tools/skland.py` | 森空岛：凭据校验、角色发现、签到、账号密码登录 |
+| `app/tools/skland.py` | 森空岛：凭据校验、角色发现、签到、账号密码登录；绑定列表与玩家整表数据（`player/info`）的公共拉取（`fetch_skland_bindings` / `fetch_skland_player_info`），供签到与养成练度源共用 |
 | `app/tools/skland_response.py` | 森空岛响应形状判定（如 `is_skland_already_signed`），与请求逻辑分离 |
 | `app/tools/miyoushe.py` | 米游社：DS 签名、多游戏签到 |
 | `app/tools/miyoushe_qr.py` | 米游社扫码登录状态机 |
@@ -104,6 +104,8 @@ description: >-
 
 两把锁都是**快速失败**而非等待：`if lock.locked(): raise`。API 层把 `GameSignInProgressError` 映射为 `code=409`；`timer` 层降级为 `logger.info` 后跳过本次触发。新增触发入口时必须选一种处理，不要静默 `await` 到锁释放。
 
+森空岛另有模块级 `_skland_sign_lock`（公共别名 `skland_sign_lock`，`skland.py`）：签到全流程与**养成练度源**（`app/task/MAA/tools/cultivate/skland.py`）共用，互斥签名 token 的两个独立轮换写者。练度源的凭据回写走注入的 `save_credential` 回调（`core/config.py`），不进 `_ProviderRun.credential_updates`——它不是注册表 runner；改这两条链路时必须保住这把互斥锁，否则会把对方刚回写的 token 作废（`community_sign.py` 收尾回写前重读存量、发现已被轮换即跳过，也是防同一件事）。
+
 通知**必须在流程锁外**发送。慢渠道会阻塞后续操作，这是锁边界画在落盘之后的原因。
 
 **日期标记有两层**，不要混用：
@@ -151,13 +153,13 @@ reason        失败原因
 
 | 入口 | 特点 |
 | --- | --- |
-| `POST /api/tools/sign`（`manual_game_sign`） | `force=True`；通知走 `_dispatch_game_sign_notification`，`asyncio.shield` + 0.1s 超时后转后台，不阻塞响应 |
+| `POST /api/tools/sign`（`manual_game_sign`） | `force=True`；通知走 `_dispatch_community_notification`，`asyncio.shield` + 1.1s（`NOTIFICATION_FAST_PATH_WAIT_SECONDS`）超时后转后台，不阻塞响应；渠道级失败另有系统提示兜底 |
 | `timer._execute_game_sign(source=...)` | `force=False`；`source` 在 `_TASK_GAME_SIGN_SOURCES` 内时结果交由**任务完成通知**消费，其余自动来源单独推送 |
 | `timer.try_game_sign_for_task` | MAS 任务前置签到 |
 
-`GameSign.NotifyEnabled` 是通知总开关，两条路径都要检查。后台通知任务必须持有强引用（`_PENDING_GAME_SIGN_NOTIFICATIONS`）并挂 `add_done_callback` 记录失败，否则任务可能被 GC。
+`GameSign.NotifyEnabled` 是通知总开关，两条路径都要检查。后台通知任务必须持有强引用（`_PENDING_COMMUNITY_NOTIFICATIONS`）并挂 `add_done_callback`，否则任务可能被 GC；渠道级失败由 `push_community_notification` 另发一条系统提示（`Config.push_system_notice`），不只写日志。
 
-`_check_system_time()` 只告警不阻断，且**不占签到锁**（在 `run_all_sign_in` 里以独立 task 起、finally 里取消）。时间源不可用时静默 `debug`。不要把它改成阻断条件。
+`check_community_system_time()` 只告警不阻断，且**不占签到锁**（在 `run_community_sign_in` 里以独立 task 起、finally 里取消）。时间源不可用时静默 `debug`。被取消的那一次不写检查缓存（只在跑完后打点），否则接下来一个检查周期都会命中缓存、偏差提示不再出现。不要把它改成阻断条件。
 
 ## 已知不一致（改动时留意，不要照抄）
 
@@ -187,7 +189,7 @@ reason        失败原因
 
 按 `tests/AGENTS.md`，开发时在 `tests/tools/` 下编写签到测试用于本地验证（`test_game_sign.py`、`test_game_sign_notification.py`、`test_miyoushe_qr.py`、`test_miyoushe_retry.py`、`test_contracts.py` 等）。
 
-提交或提 PR 时，功能/bug 边界测试不提交，仅提交重要公共测试或纯逻辑测试（如 `test_skland_response.py`）。
+提交或提 PR 时，测试文件的取舍见根目录 `AGENTS.md`「分支与 PR」。
 
 前端改动只运行实际受影响的 `*.test.ts`。有缺口就在结果里说明，不编造验证结果。
 

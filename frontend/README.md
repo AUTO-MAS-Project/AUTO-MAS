@@ -65,15 +65,16 @@ yarn build
 - **UI 组件库**: Ant Design Vue 4.x
 - **图标**: @ant-design/icons-vue
 - **路由**: Vue Router 4
-- **构建工具**: Vite
+- **前端工具链**: Vite+（Vite、Vitest、Oxlint、Oxfmt）
 - **桌面端**: Electron
 - **包管理**: Yarn
 
-oxlint + oxfmt 代码规范相关
+Vite+ 检查与测试命令
 
 ```bash
 yarn lint          # 查看问题
 yarn lint:fix      # 自动修复
-yarn format        # 仅 oxfmt 全量改格式（非必须）
+yarn format        # Oxfmt 全量格式化（非必须）
 yarn typecheck     # 检查 Vue renderer 类型
+yarn test          # 运行 Vitest 测试
 ```

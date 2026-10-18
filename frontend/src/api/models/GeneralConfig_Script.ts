@@ -60,11 +60,11 @@ export type GeneralConfig_Script = {
      */
     LogTimeFormat?: (string | null);
     /**
-     * 日志处理钩子启用开关
+     * 日志预处理启用开关
      */
     LogHookEnabled?: (boolean | null);
     /**
-     * 日志处理钩子规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行
+     * 日志预处理规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行
      */
     LogHookRules?: (string | null);
     /**

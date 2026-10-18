@@ -27,8 +27,10 @@ zzz-od 的 YAML 是唯一事实源，本模块只做最小封装（读-改-写 +
 
 MAS 用户配置（MaaEnd 式字段化）：账号/区服/任务编排存于
 ``ZzzOdUserConfig`` 的 ConfigItem 字段（web 直接编辑），运行时由字段生成
-game_account.yml 与 one_dragon/_group.yml 写入当前活跃实例槽（备份 →
-写入并清运行记录 → 恢复，MAS 不留痕迹）；「直控」模式全程不写槽。
+game_account.yml 与 one_dragon/_group.yml 写入各用户绑定槽（备份 →
+写入并清运行记录 → 恢复；保留类应用的周期进度与计划进度属运行产物，
+不参与清空，整目录还原后按快照原样回写，见
+:data:`PERSISTENT_RUN_RECORD_APPS`）；「原生」模式全程不写槽。
 """
 
 import shutil
@@ -36,7 +38,13 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app.utils.io import read_file, replace_dir, write_file
+from app.utils.io import (
+    atomic_write,
+    read_dict_file,
+    read_file,
+    swap_in_dir,
+    write_file,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger("绝区零一条龙配置")
@@ -89,18 +97,55 @@ DEFAULT_GAME_ACCOUNT: dict[str, Any] = {
 # 实例目录内的运行态目录：不属于配置包，注入/回读时排除、注入前清理
 _RUN_RECORD_DIR = "app_run_record"
 
-# 运行记录里的脏字节：一条龙用 non-atomic 写落盘，进程被杀/断电会在文件里留下
-# NUL 填充；YAML 解析器遇到 NUL 直接抛 ReaderError。读侧只取 run_status，
-# 丢掉这些不可见字符即可，不因一个坏文件让整个任务崩掉
-_INVALID_YAML_CHARS = dict.fromkeys(range(0x20), None)
+# 带周期进度的运行记录（app_id）。上游把周期进度写进 app_run_record/<app_id>.yml，
+# 并按 dt（跨天）与周日界（跨周）自行重置（见上游 base/operation/
+# application_run_record.py 与各 app 的 *RunRecord）。这些应用**不参与**注入前的
+# 清空与收尾的整目录还原：进度清掉就再回不来，周挑战剩余次数、每日/每周计划次数、
+# 每周经验目标、已用兑换码等周期语义会整体失效，表现为每次任务都从头刷。
+# 其余应用的记录只有 run_status/dt/run_time，清空即「本轮重跑」，符合 MAS 设计。
+PERSISTENT_RUN_RECORD_APPS: frozenset[str] = frozenset(
+    {
+        "charge_plan",  # 体力计划：current_charge_power_snapshot（体力估算）
+        "notorious_hunt",  # 恶名狩猎：left_times（周挑战剩余次数）
+        "lost_void",  # 迷失之地：daily/weekly_run_times + 悬赏/业绩/周期奖励达标标记
+        "withered_domain",  # 枯萎之都：daily/weekly_run_times + no_eval_point 等
+        "intel_board",  # 情报板：progress_complete / 计数 / base_exp（每周经验目标）
+        "world_patrol",  # 锄大地：finished / completed_rounds / routes_per_round
+        "life_on_line",  # 生活行动：daily_run_times
+        "redemption_code",  # 兑换码：used_code_list（已兑换过的码）
+        "shiyu_defense",  # 式舆防卫战：critical_history（当日节点进度）
+    }
+)
+
+# 一条龙用 non-atomic 写落盘，进程被杀/断电会在 YAML 里留下 NUL 填充，YAML
+# 解析器遇到 NUL 直接抛 ReaderError；读侧一律按 ``.sanitized.yaml`` 容错读
+# （见 ``app.utils.io``），把这类残留当正常可读回，不因一个坏文件让整个任务崩掉
 
 # 进程内读-改-写串行锁：write_file 只保证单次写原子，读-改-写整体在此串行，
-# 避免切实例 / 写任务编排 / 写账号并发交错丢更新
-_YAML_LOCK = threading.Lock()
+# 避免切实例 / 写任务编排 / 写账号并发交错丢更新。使用可重入锁：直控保存等
+# 「外层持锁完成 读快照→算补丁」后仍需调用本模块的 write_* 原语落盘。
+_YAML_LOCK = threading.RLock()
 
 
 def _one_dragon_file(root: Path) -> Path:
     return root / "config" / "one_dragon.yml"
+
+
+def _read_registry(root: Path) -> dict[str, Any]:
+    """读当前生效的 ``config/one_dragon.yml`` 全文。
+
+    与备份口径的 ``read_native_registry`` 是同一份文件的两个视角：本函数读
+    **现场文件**（会话/运行窗口内即 MAS 合成视图），备份读 sidecar 原件。
+
+    上游 non-atomic 写残留的 NUL 属正常可读回，按 ``.sanitized.yaml`` 容错读；
+    其余坏档由 :func:`read_dict_file` 抛 :class:`ConfigCorruptedError`（带路径），
+    不再让解析器的原始异常或「退回原始字符串」在调用方炸出与内容无关的错误。
+
+    Raises:
+        ConfigCorruptedError: 文件存在但解析失败或根节点非映射。
+    """
+
+    return read_dict_file(_one_dragon_file(root), format=".sanitized.yaml")
 
 
 def instance_dir(root: Path, idx: int) -> Path:
@@ -141,9 +186,13 @@ def validate_root(root: Path) -> None:
 
 
 def list_instances(root: Path) -> list[dict]:
-    """读取实例（账号）列表，元素含 idx/name/active/active_in_od 等原生字段。"""
+    """读取实例（账号）列表，元素含 idx/name/active/active_in_od 等原生字段。
 
-    data = read_file(_one_dragon_file(root)) or {}
+    列表为空是合法答案（尚未建实例 / 已删光），不做结构判据；文件读不动时
+    ``_read_registry`` 会抛 :class:`ConfigCorruptedError`，不按空列表蒙混。
+    """
+
+    data = _read_registry(root)
     return [
         dict(item)
         for item in (data.get("instance_list") or [])
@@ -163,29 +212,100 @@ def find_active_instance(root: Path) -> dict | None:
 def read_instance_run(root: Path) -> str | None:
     """读取 instance_run 原值（仅运行当前 / 全部实例）。"""
 
-    data = read_file(_one_dragon_file(root)) or {}
+    data = _read_registry(root)
     value = data.get("instance_run")
     return str(value) if value is not None else None
+
+
+def instance_run_is_all(root: Path) -> bool:
+    """上游口径：本次运行目标是否为「全部实例」。
+
+    镜像上游 ``one_dragon_config.instance_run`` 属性的
+    ``data.get('instance_run', 默认值)`` 与 ``handle_init`` 的 ``== 全部实例``
+    判定：**只有键缺失**才回落默认「全部实例」；键存在但值为 null / 空串等
+    非法值时，上游走单实例分支。:func:`read_instance_run` 返回原值（键缺失
+    与值为 null 都是 ``None``），区分不了这两种情况，故单列本判定。
+    """
+
+    return _read_registry(root).get("instance_run", INSTANCE_RUN_ALL) == (
+        INSTANCE_RUN_ALL
+    )
+
+
+def read_after_done(root: Path) -> str:
+    """读取 after_done 原值（无/关闭游戏/关机）。
+
+    键缺失回落「无」——对齐上游 ``one_dragon_config.after_done`` 的 get 默认。
+    会话窗口内读的是合成视图（视图由会话注入该键），还原后读的是原生值。
+    """
+
+    data = _read_registry(root)
+    return str(data.get("after_done") or "无")
+
+
+def write_after_done(root: Path, value: str) -> None:
+    """落盘 after_done（直控页直写原生设置；白名单校验由 native_config 层负责）。"""
+
+    with _YAML_LOCK:
+        data = _read_registry(root)
+        data["after_done"] = value
+        write_file(_one_dragon_file(root), data)
 
 
 def write_instance_run(root: Path, value: str) -> None:
     """落盘 instance_run（配合 ``--instance`` 注入运行临时切换，结束后恢复）。"""
 
     with _YAML_LOCK:
-        data = read_file(_one_dragon_file(root)) or {}
+        data = _read_registry(root)
         data["instance_run"] = value
         write_file(_one_dragon_file(root), data)
 
 
-def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int:
-    """返回最小空闲实例 idx。
+MAS_SLOT_BASE = 1001
+"""MAS 用户槽的起始槽号（``config/1001`` 起）。
+
+一条龙的「新增实例」（``create_new_instance``）只在自己的注册表里找最小空号，
+**不扫盘上的 ``config/NN``**；而 MAS 槽刻意不进原生注册表（只在运行/会话窗口
+以合成视图出现），所以低号段随时可能被一条龙抢走并覆盖。把 MAS 槽固定在远高于
+任何实际原生实例数的高位段，一条龙的升序找号就够不到它们，低号段整体交还给
+一条龙。
+
+直控页新建的**原生**实例仍走 :func:`find_free_instance_idx` 的默认起点 1，与
+一条龙自己新增实例的口径一致（它在注册表里，不会被抢）。
+"""
+
+MAS_SLOT_MAX = 9999
+"""MAS 用户槽的槽号上限（与用户配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
+
+越过上限的号会与绑定号校验范围脱节：``SlotIdx`` 被静默夹到上限、槽目录名却是
+原值，读写错位。回收池恢复的 ``targetSlot`` 同样受此约束。
+"""
+
+
+def find_free_instance_idx(
+    root: Path,
+    used_idxs: set[int] | None = None,
+    *,
+    base: int = 1,
+    limit: int | None = None,
+) -> int:
+    """返回不小于 ``base`` 的最小空闲实例 idx。
 
     占位集合（按以下顺序合并，确保新槽不与任何已有槽冲突）：
     1. 原生 ``instance_list`` 的 idx
     2. 盘上 ``config/NN`` 目录（覆盖 finalize 失败导致 deepcopy 未回写、
        但实例目录已创建的情况——保证后续用户不会分配到同一槽）
     3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 用户已绑定的槽）
-    对齐 zzz-od ``create_new_instance`` 的最小正整数规则。
+
+    ``base=1`` 对齐 zzz-od ``create_new_instance`` 的最小正整数规则（原生实例
+    用）；MAS 用户槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
+
+    ``limit`` 给出上限时，超出即报错而不是返回越界号：MAS 槽号要写进
+    ``Info.SlotIdx``，越过 :data:`MAS_SLOT_MAX` 会被 ``RangeValidator`` 静默
+    夹到上限，槽目录名与绑定号错位。原生实例不传（一条龙自身对 idx 无上限）。
+
+    Raises:
+        ValueError: 号段已用满（``limit`` 内找不到空号）。
     """
 
     used: set[int] = set()
@@ -198,9 +318,11 @@ def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int
             used.add(int(child.name))
     if used_idxs:
         used |= {int(i) for i in used_idxs}
-    idx = 1
+    idx = max(1, int(base))
     while idx in used:
         idx += 1
+    if limit is not None and idx > int(limit):
+        raise ValueError(f"实例槽号段已用满（{base}~{limit}）")
     return idx
 
 
@@ -208,7 +330,7 @@ def _registry_rmw(root: Path, mutator: Callable[[list[dict]], None]) -> None:
     """锁内读-改-写 one_dragon.yml 的 instance_list（保留其他原生字段）。"""
 
     with _YAML_LOCK:
-        data = read_file(_one_dragon_file(root)) or {}
+        data = _read_registry(root)
         entries = [
             dict(item)
             for item in (data.get("instance_list") or [])
@@ -377,6 +499,7 @@ def write_instance_view(
     active_idx: int | None = None,
     instance_run: str = INSTANCE_RUN_ALL,
     force_login: bool = False,
+    after_done: str | None = None,
 ) -> None:
     """把 one_dragon.yml 替换为合成视图（仅含给定 MAS 槽）。
 
@@ -411,10 +534,16 @@ def write_instance_view(
         for idx, name in slots
     ]
     with _YAML_LOCK:
-        write_file(
-            original,
-            {"instance_list": entries, "instance_run": instance_run},
-        )
+        payload: dict[str, Any] = {
+            "instance_list": entries,
+            "instance_run": instance_run,
+        }
+        # 会话注入 MAS 侧「游戏结束后操作」：视图期间 GUI 读的就是这份文件，
+        # 带 guarantees GUI 所见即 MAS 下拉；关闭时经 read_after_done 回读。
+        # None（查看会话/运行）不写该键，GUI 按上游默认显示。
+        if after_done is not None:
+            payload["after_done"] = after_done
+        write_file(original, payload)
 
 
 def restore_instance_view(root: Path) -> None:
@@ -435,8 +564,7 @@ def restore_instance_view(root: Path) -> None:
 def read_game_account(config_dir: Path) -> dict:
     """读取账号配置（区服/游戏路径/账密/语言）。"""
 
-    data = read_file(config_dir / "game_account.yml") or {}
-    return dict(data)
+    return read_dict_file(config_dir / "game_account.yml", allow_empty=True)
 
 
 def write_game_account(config_dir: Path, patch: dict) -> dict:
@@ -444,7 +572,7 @@ def write_game_account(config_dir: Path, patch: dict) -> dict:
 
     path = config_dir / "game_account.yml"
     with _YAML_LOCK:
-        data = read_file(path) or {}
+        data = read_dict_file(path, allow_empty=True)
         data.update(patch)
         write_file(path, data)
         return data
@@ -478,6 +606,93 @@ def user_field_patch(user_config) -> dict[str, Any]:
     return patch
 
 
+# zzz-od game.yml 启动参数的默认结构（与上游 BasicGameConfig 默认值一致；
+# 全屏/显示器上游落盘为字符串，照抄不转数字）。
+DEFAULT_GAME_LAUNCH_ARGS: dict[str, Any] = {
+    "launch_argument": False,
+    "screen_size": "1920x1080",
+    "full_screen": "0",
+    "popup_window": False,
+    "monitor": "1",
+    "launch_argument_advance": "",
+}
+
+# 启动参数直传字段（MAS 字段 → game.yml 键，顺序即回读/patch 组装顺序）；
+# Dx12 不是 game.yml 字段（上游无独立键），由 launch_args_patch 合并进
+# launch_argument_advance，见 :func:`split_dx12_argument` / :func:`merge_dx12_argument`
+LAUNCH_ARGS_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("launch_argument", "Game", "LaunchArgument"),
+    ("screen_size", "Game", "ScreenSize"),
+    ("full_screen", "Game", "FullScreen"),
+    ("popup_window", "Game", "PopupWindow"),
+    ("monitor", "Game", "Monitor"),
+    ("launch_argument_advance", "Game", "LaunchArgumentAdvance"),
+)
+
+# DX12 启动参数（上游 open_game 原样拼进命令行，无独立配置键）
+DX12_ARGUMENT = "-use-d3d12"
+
+
+def split_dx12_argument(advance: str) -> tuple[bool, str]:
+    """把高级参数拆成（是否含 DX12 参数, 其余参数）。
+
+    按空白词元精确匹配，不误伤包含该串的其他参数。
+    """
+
+    tokens = [token for token in str(advance or "").split() if token]
+    has_dx12 = DX12_ARGUMENT in tokens
+    rest = " ".join(token for token in tokens if token != DX12_ARGUMENT)
+    return has_dx12, rest
+
+
+def merge_dx12_argument(advance: str, dx12: bool) -> str:
+    """把 DX12 开关合并回高级参数（其余参数原样保留，词元去重）。"""
+
+    _, rest = split_dx12_argument(advance)
+    if dx12:
+        rest = f"{rest} {DX12_ARGUMENT}".strip()
+    return rest
+
+
+def read_game(config_dir: Path) -> dict:
+    """读取游戏配置（启动参数等）。"""
+
+    return read_dict_file(config_dir / "game.yml", allow_empty=True)
+
+
+def write_game(config_dir: Path, patch: dict) -> dict:
+    """按 patch 更新游戏配置（读-改-写，保留未知字段），返回更新后的完整配置。"""
+
+    path = config_dir / "game.yml"
+    with _YAML_LOCK:
+        data = read_dict_file(path, allow_empty=True)
+        data.update(patch)
+        write_file(path, data)
+        return data
+
+
+def launch_args_patch(user_config) -> dict[str, Any]:
+    """MAS 用户字段 → ``game.yml`` 启动参数 patch（整组下发）。
+
+    与 :func:`user_field_patch` 的「留空沿用槽值」不同：启动参数整组都是
+    本页字段的事实源，用户清空/关闭也要覆盖槽值（bool False 同样下发）。
+    Dx12 开关在注入面合并进 ``launch_argument_advance``（上游无独立字段）。
+    """
+
+    patch: dict[str, Any] = {}
+    for yaml_key, section, field in LAUNCH_ARGS_FIELDS:
+        value = user_config.get(section, field)
+        if isinstance(value, bool):
+            patch[yaml_key] = bool(value)
+        else:
+            patch[yaml_key] = str(value or "").strip()
+    patch["launch_argument_advance"] = merge_dx12_argument(
+        str(patch["launch_argument_advance"]),
+        bool(user_config.get("Game", "Dx12")),
+    )
+    return patch
+
+
 def normalize_app_group_entries(items: list) -> list[dict]:
     """把任务编排条目归一化为 ``{"app_id": str, "enabled": bool}``（剔空）。
 
@@ -494,7 +709,7 @@ def normalize_app_group_entries(items: list) -> list[dict]:
 def read_app_group(config_dir: Path) -> list[dict]:
     """读取一条龙任务编排（app_list，顺序即执行顺序，元素含 app_id/enabled）。"""
 
-    data = read_file(config_dir / "one_dragon" / "_group.yml") or {}
+    data = read_dict_file(config_dir / "one_dragon" / "_group.yml", allow_empty=True)
     return [
         dict(item) for item in (data.get("app_list") or []) if isinstance(item, dict)
     ]
@@ -512,7 +727,7 @@ def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
 def read_team_list(config_dir: Path) -> list[dict]:
     """读取预备编队原始持久化条目（team.yml 的 team_list）。"""
 
-    data = read_file(config_dir / "team.yml") or {}
+    data = read_dict_file(config_dir / "team.yml", allow_empty=True)
     return [
         dict(item) for item in (data.get("team_list") or []) if isinstance(item, dict)
     ]
@@ -656,31 +871,81 @@ def diff_run_records(
 
 
 def clear_run_records(root: Path, idx: int) -> None:
-    """清空实例运行记录，让 zzz-od 把所有任务视为未完成（每用户独立跑）。
+    """清空实例运行记录，让 zzz-od 把任务视为未完成（每用户独立跑）。
 
     注入用户配置后调用：清空后快照即为全零基准，跑完 diff 出的即本用户
-    本次结果。
+    本次结果。:data:`PERSISTENT_RUN_RECORD_APPS` 的记录原样保留——它们承载
+    上游的周期进度，清掉后收尾还会整目录还原，进度再也回不来。
     """
 
-    shutil.rmtree(instance_dir(root, idx) / _RUN_RECORD_DIR, ignore_errors=True)
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    if not record_dir.is_dir():
+        return
+    keep = {f"{app_id}.yml" for app_id in PERSISTENT_RUN_RECORD_APPS}
+    for path in record_dir.iterdir():
+        if path.is_file() and path.name not in keep:
+            path.unlink(missing_ok=True)
+
+
+def snapshot_run_record_files(root: Path, idx: int) -> dict[str, bytes | None]:
+    """快照保留类应用的运行记录文件（文件名 → 原文；读取失败记 ``None``）。
+
+    这些记录由上游在运行中更新，属运行产物；收尾的整目录还原会把它们一起
+    回滚，故恢复前先取快照、恢复后原样写回（见 :func:`restore_run_record_files`）。
+
+    读取容错：单文件读失败（被占用等）记为 ``None`` 而不是丢掉该键。丢掉会让
+    判定侧把「注入时读取失败」误当成「注入时不存在、本轮新写」而采信陈旧终态
+    （幻影 diff）；记 ``None`` 才能让 :func:`restore_run_record_files` 与判定
+    侧都把这类文件按「未知 = 本轮未跑」处理，同时不阻断整目录恢复。
+    """
+
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    if not record_dir.is_dir():
+        return {}
+    snapshot: dict[str, bytes | None] = {}
+    for app_id in sorted(PERSISTENT_RUN_RECORD_APPS):
+        path = record_dir / f"{app_id}.yml"
+        if not path.is_file():
+            continue
+        try:
+            snapshot[path.name] = path.read_bytes()
+        except OSError as exc:
+            logger.warning(f"运行记录快照读取失败，本轮按未跑处理：{path.name}: {exc}")
+            snapshot[path.name] = None
+    return snapshot
+
+
+def restore_run_record_files(
+    root: Path, idx: int, snapshot: dict[str, bytes | None]
+) -> None:
+    """把运行记录快照写回实例（恢复现场后进行）。
+
+    快照里的 ``None``（读取失败、状态未知）不写回——宁可不写，也不拿未知内容
+    覆盖上游刚写的记录。
+    """
+
+    if not snapshot:
+        return
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    for name, payload in snapshot.items():
+        if payload is not None:
+            atomic_write(record_dir / name, payload)
 
 
 # ── 实例槽备份 / 恢复（运行与配置会话的现场保护）──
 
 
 def _atomic_copytree(source: Path, target: Path) -> None:
-    """目录整体替换, 覆盖目标已有内容（先清后拷, 不再走 tmp + rename）。"""
+    """目录整体替换，目标旧目录先改名留底再换入。"""
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    replace_dir(source, target)
+    swap_in_dir(source, target)
 
 
 def backup_instance(root: Path, idx: int, backup_dir: Path) -> None:
     """把实例目录整体备份（注入前调用，供 restore_instance 原样恢复）。"""
 
-    shutil.rmtree(backup_dir, ignore_errors=True)
-    backup_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(instance_dir(root, idx), backup_dir)
+    _atomic_copytree(instance_dir(root, idx), backup_dir)
 
 
 def restore_instance(root: Path, idx: int, backup_dir: Path) -> None:

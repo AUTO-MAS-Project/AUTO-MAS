@@ -20,6 +20,7 @@ import httpx
 
 from app.utils.logger import get_logger
 
+from ...task_mapping import engine_label
 from .apply import (
     HSRUpdateApplyError,
     apply_package,
@@ -109,7 +110,7 @@ async def update_engine_if_needed(
 
     log = send_log or _noop
     spec = get_spec(engine)
-    label = spec.display_name
+    label = engine_label(engine, left=False)
 
     if not install_root.is_dir():
         return UpdateOutcome(engine, checked=False, updated=False)
@@ -124,11 +125,11 @@ async def update_engine_if_needed(
             proxy=proxy,
         )
     except HSRUpdateError as exc:
-        log(f"{label} 更新检查失败，按现有版本继续：{exc}")
+        log(f"{label}更新检查失败，按现有版本继续：{exc}")
         return UpdateOutcome(engine, checked=False, updated=False, message=str(exc))
     except Exception as exc:  # noqa: BLE001 - 检查失败绝不能拖垮任务
-        logger.opt(exception=True).warning(f"HSR 更新：{label} 检查更新时出错")
-        log(f"{label} 更新检查异常，按现有版本继续：{exc}")
+        logger.opt(exception=True).warning(f"HSR 更新：{label}检查更新时出错")
+        log(f"{label}更新检查异常，按现有版本继续：{exc}")
         return UpdateOutcome(engine, checked=False, updated=False, message=str(exc))
 
     base = {
@@ -140,12 +141,12 @@ async def update_engine_if_needed(
     }
 
     if not result.update_available:
-        log(f"{label} 已是最新版本（{result.current_version or '未知'}）")
+        log(f"{label}已是最新版本（{result.current_version or '未知'}）")
         return UpdateOutcome(**base, updated=False)
 
     if result.blocked_reason:
         log(
-            f"{label} 有新版本 {result.latest_version}，但无法安装：{result.blocked_reason}"
+            f"{label}有新版本 {result.latest_version}，但无法安装：{result.blocked_reason}"
         )
         return UpdateOutcome(**base, updated=False, message=result.blocked_reason)
 
@@ -160,10 +161,10 @@ async def update_engine_if_needed(
         await asyncio.to_thread(check_writable, install_root),
     ):
         if failure:
-            log(f"{label} 跳过更新：{failure.reason}")
+            log(f"{label}跳过更新：{failure.reason}")
             return UpdateOutcome(**base, updated=False, message=failure.reason)
 
-    log(f"{label} 发现新版本 {candidate.latest_version}，开始下载")
+    log(f"{label}发现新版本 {candidate.latest_version}，开始下载")
 
     package = (
         download_dir
@@ -180,10 +181,10 @@ async def update_engine_if_needed(
             should_abort=should_abort,
         )
     except HSRUpdateAborted as exc:
-        log(f"{label} {exc}")
+        log(f"{label}{exc}")
         return UpdateOutcome(**base, updated=False, message=str(exc))
     except HSRUpdateError as exc:
-        log(f"{label} 下载失败，按现有版本继续：{exc}")
+        log(f"{label}下载失败，按现有版本继续：{exc}")
         return UpdateOutcome(**base, updated=False, message=str(exc))
 
     if package is None:
@@ -203,10 +204,10 @@ async def update_engine_if_needed(
                 expanded_bytes=expanded,
             )
             if failure:
-                log(f"{label} 跳过更新：{failure.reason}")
+                log(f"{label}跳过更新：{failure.reason}")
                 return UpdateOutcome(**base, updated=False, message=failure.reason)
 
-    log(f"{label} 下载完成，开始应用更新")
+    log(f"{label}下载完成，开始应用更新")
     try:
         applied = await asyncio.to_thread(
             apply_package,
@@ -218,7 +219,7 @@ async def update_engine_if_needed(
             seven_zip=find_seven_zip(install_root),
         )
     except HSRUpdateApplyError as exc:
-        log(f"{label} 更新失败：{exc}")
+        log(f"{label}更新失败：{exc}")
         return UpdateOutcome(
             **base,
             updated=False,
@@ -226,12 +227,12 @@ async def update_engine_if_needed(
             blocking=not exc.rolled_back,
         )
     except HSRUpdateError as exc:
-        log(f"{label} 更新失败，目录未改动：{exc}")
+        log(f"{label}更新失败，目录未改动：{exc}")
         return UpdateOutcome(**base, updated=False, message=str(exc))
     finally:
         _discard(package)
 
-    message = f"{label} 已更新到 {applied.to_version}（{applied.changed_files} 个文件）"
+    message = f"{label}已更新到 {applied.to_version}（{applied.changed_files} 个文件）"
     log(message)
     logger.success(f"HSR 更新：{message}")
     return UpdateOutcome(
@@ -317,7 +318,7 @@ def _coerce_source(spec: EngineSpec, source: str) -> str:
     if value in spec.sources:
         return value
     logger.warning(
-        f"HSR 更新：{spec.display_name} 不支持下载源 {value!r}，回退到 {spec.sources[0]}"
+        f"HSR 更新：{engine_label(spec.engine, left=False)}不支持下载源 {value!r}，回退到 {spec.sources[0]}"
     )
     return spec.sources[0]
 

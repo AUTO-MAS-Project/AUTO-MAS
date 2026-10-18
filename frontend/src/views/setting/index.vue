@@ -1,21 +1,28 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
-import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPreset } from '@/types/pressSound'
+import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
+import { clearCustomSoundCache, playPressSound } from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
+import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import { usePressSoundStore } from '@/stores/pressSound'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
+import { useAppearanceSettings } from './useAppearanceSettings'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -29,11 +36,32 @@ import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
 const { t } = useI18n()
-const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
+const {
+  themeMode,
+  themeColor,
+  appearances,
+  appearanceId,
+  activeAppearance,
+  modalContextHolder,
+  appearanceBusy,
+  themeModeOptions,
+  appearanceValue,
+  appearanceOptions,
+  themeColorOptions,
+  handleThemeModeChange,
+  handleThemeColorChange,
+  handleAppearanceChange,
+  handleAppearanceImport,
+  handleAppearanceRemove,
+} = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
+const pressSoundStore = usePressSoundStore()
+void pressSoundStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -43,7 +71,8 @@ const {
 } = useUpdateChecker()
 
 // 活动标签
-const activeKey = ref('basic')
+const route = useRoute()
+const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
 const version = computed(() => import.meta.env.VITE_APP_VERSION || t('setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
@@ -60,13 +89,6 @@ const historyRetentionOptions = computed(() => [
   { label: t('setting.retention.d180'), value: 180 },
   { label: t('setting.retention.d365'), value: 365 },
   { label: t('setting.retention.forever'), value: 0 },
-])
-
-// value 是后端 Notify.SendTaskResultTime 的配置值，只译 label
-const sendTaskResultTimeOptions = computed(() => [
-  { label: t('setting.pushTime.never'), value: '不推送' },
-  { label: t('setting.pushTime.always'), value: '任何时刻' },
-  { label: t('setting.pushTime.failOnly'), value: '仅失败时' },
 ])
 
 const updateSourceOptions = computed(() => [
@@ -86,24 +108,21 @@ const voiceTypeOptions = computed(() => [
   { label: t('setting.voice.noisy'), value: 'noisy' },
 ])
 
-const themeModeOptions = computed(() => [
-  { label: t('setting.themeMode.system'), value: 'system' },
-  { label: t('setting.themeMode.light'), value: 'light' },
-  { label: t('setting.themeMode.dark'), value: 'dark' },
-])
-
-const themeColorOptions = computed(() =>
-  Object.entries(themeColors).map(([key, color]) => ({
-    label: t(`setting.color.${key}`),
-    value: key,
-    color,
-  }))
-)
-
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
   { label: t('setting.cursor.none'), value: 'none' },
   { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
   { label: t('setting.cursor.fluid'), value: 'fluid' },
+])
+
+const pressSoundOptions = computed<{ label: string; value: PressSoundPreset }[]>(() => [
+  { label: t('setting.pressSound.duck'), value: 'duck' },
+  { label: t('setting.pressSound.fx1'), value: 'fx1' },
+  {
+    label: pressSoundStore.customName
+      ? t('setting.pressSound.customNamed', { name: pressSoundStore.customName })
+      : t('setting.pressSound.custom'),
+    value: 'custom',
+  },
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
@@ -116,10 +135,9 @@ const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
 
 // 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
 const NORMALIZED_SETTING_KEYS = new Set([
+  'Replay.Password',
   'Notify.KoishiServerAddress',
-  'Notify.OpenClawWeixinServerAddress',
   'Notify.OpenClawQQClientSecret',
-  'Notify.OpenClawWeixinBotToken',
   'Notify.AuthorizationCode',
   'Update.MirrorChyanCDK',
 ])
@@ -127,11 +145,13 @@ const NORMALIZED_SETTING_KEYS = new Set([
 const syncConfigToElectron = async (data: GlobalConfig) => {
   try {
     if (window.electronAPI?.syncBackendConfig) {
+      // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
+      // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
       await window.electronAPI.syncBackendConfig({
-        UI: data.UI,
-        Start: data.Start,
-        Update: data.Update,
-        Function: data.Function,
+        UI: toRaw(data.UI),
+        Start: toRaw(data.Start),
+        Update: toRaw(data.Update),
+        Function: toRaw(data.Function),
       })
       logger.info('配置已同步到 Electron')
     }
@@ -197,6 +217,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   const success = await saveSettings(category, changes)
 
   if (!success) {
+    if (category === 'Replay') throw new Error(t('setting.toast.saveFailed'))
     return
   }
 
@@ -235,14 +256,11 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
       message.error(t('setting.toast.updateCheckFailed'))
     }
   }
-}
 
-// 主题
-const handleThemeModeChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeMode(value as ThemeMode)
-}
-const handleThemeColorChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeColor(value as ThemeColor)
+  // 暂停状态变化时立即清掉标题栏的"检测到更新"旧提示
+  if (category === 'Update' && key === 'PauseUntil') {
+    updateInfo.value = null
+  }
 }
 
 const confirmFluidCursor = () =>
@@ -290,12 +308,121 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
   }
 }
 
+const handlePauseHomeEffectsWhenRunningChange = async (enabled: boolean) => {
+  try {
+    await performanceStore.setPauseHomeEffectsWhenRunning(enabled)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存脚本运行暂停主页动效失败: ${errorMsg}`)
+    message.error(t('setting.toast.pauseHomeEffectsSaveFailed'))
+  }
+}
+
+const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
+  try {
+    await homeSatelliteStore.setStyle(style)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存主页卫星样式失败: ${errorMsg}`)
+    message.error(t('setting.toast.homeSatelliteSaveFailed'))
+  }
+}
+
+const reportPressSoundError = (action: string, error: unknown): void => {
+  const errorMsg = error instanceof Error ? error.message : String(error)
+  logger.error(`${action}失败: ${errorMsg}`)
+  message.error(t('setting.toast.pressSoundSaveFailed'))
+}
+
+const handlePressSoundEnabledChange = async (enabled: boolean) => {
+  try {
+    await pressSoundStore.persist({ enabled })
+  } catch (error) {
+    reportPressSoundError('保存按压音效开关', error)
+  }
+}
+
+const handlePressSoundPresetChange = async (value: SelectValue) => {
+  if (typeof value !== 'string') {
+    return
+  }
+
+  // 还没导入过自定义音效时选它没有意义，不落盘
+  if (value === 'custom' && !pressSoundStore.customPath) {
+    message.warning(t('setting.toast.pressSoundCustomMissing'))
+    return
+  }
+
+  try {
+    await pressSoundStore.persist({ preset: value as PressSoundPreset })
+  } catch (error) {
+    reportPressSoundError('保存按压音效种类', error)
+  }
+}
+
+const handlePressSoundVolumeChange = async (volume: number) => {
+  try {
+    await pressSoundStore.persist({ volume })
+  } catch (error) {
+    reportPressSoundError('保存按压音效音量', error)
+  }
+}
+
+const handlePressSoundImport = async () => {
+  try {
+    const files = await window.electronAPI.selectFile([
+      { name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] },
+    ])
+    if (files.length === 0) {
+      return
+    }
+
+    const filePath = files[0]
+    // 上限交给主进程把关：超了它只回大小、不读内容，不会为了拒绝而先把整个文件读进内存。
+    // 大小用它 stat 出来的真实字节数，不拿 base64 长度反推——那样会把 padding 当成文件内容
+    const { base64, size } = await window.electronAPI.readFileBase64(
+      filePath,
+      MAX_PRESS_SOUND_BYTES
+    )
+    if (size > MAX_PRESS_SOUND_BYTES) {
+      message.error(t('setting.toast.pressSoundTooLarge'))
+      return
+    }
+    if (!base64) {
+      message.error(t('setting.toast.pressSoundReadFailed'))
+      return
+    }
+    // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
+    clearCustomSoundCache(filePath)
+
+    await pressSoundStore.persist({
+      preset: 'custom',
+      customPath: filePath,
+      customName: filePath.split(/[\\/]/).pop() ?? filePath,
+      enabled: true,
+    })
+    message.success(t('setting.toast.pressSoundImported'))
+  } catch (error) {
+    reportPressSoundError('导入按压音效', error)
+  }
+}
+
+const handlePressSoundPreview = () => {
+  void playPressSound(pressSoundStore.preset, pressSoundStore.volume, pressSoundStore.customPath)
+}
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
   logger.info('使用全局更新检查器进行手动检查')
+
+  // 手动检查立即恢复：先终止暂停、清空截止日期，再做完整检查
+  if (settings.Update?.PauseUntil) {
+    await handleSettingChange('Update', 'PauseUntil', '')
+  }
+
   logger.info(`检查前状态:{
     updateVisible: ${updateVisible.value},
     updateData: ${updateData.value},
@@ -337,7 +464,7 @@ const testNotify = async () => {
     const res = await Service.testNotifyApiSettingTestNotifyPost()
     if (res?.code && res.code !== 200)
       message.warning(res?.message || t('setting.toast.testUnknown'))
-    else message.success(t('setting.toast.testSent'))
+    else message.success(res?.message || t('setting.toast.testSent'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`测试通知发送失败: ${errorMsg}`)
@@ -357,6 +484,7 @@ onMounted(() => {
 
 <template>
   <div class="settings-container">
+    <component :is="modalContextHolder" />
     <div class="settings-header">
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
@@ -366,17 +494,40 @@ onMounted(() => {
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
+            :appearance-value="appearanceValue"
+            :appearance-options="appearanceOptions"
             :theme-color="themeColor"
+            :theme-color-disabled="Boolean(activeAppearance)"
+            :appearance-busy="appearanceBusy"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"
             :cursor-effect-options="cursorEffectOptions"
             :low-performance-mode="performanceStore.lowPerformanceMode"
             :low-performance-mode-saving="performanceStore.saving"
+            :pause-home-effects-when-running="performanceStore.pauseHomeEffectsWhenRunning"
+            :pause-home-effects-when-running-saving="performanceStore.saving"
+            :home-satellite-style="homeSatelliteStore.style"
+            :home-satellite-style-saving="homeSatelliteStore.saving"
+            :press-sound-enabled="pressSoundStore.enabled"
+            :press-sound-preset="pressSoundStore.preset"
+            :press-sound-options="pressSoundOptions"
+            :press-sound-volume="pressSoundStore.volume"
+            :press-sound-saving="pressSoundStore.saving"
+            :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
+            :handle-press-sound-preset-change="handlePressSoundPresetChange"
+            :handle-press-sound-volume-change="handlePressSoundVolumeChange"
+            :handle-press-sound-import="handlePressSoundImport"
+            :handle-press-sound-preview="handlePressSoundPreview"
+            :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
             :handle-theme-mode-change="handleThemeModeChange"
+            :handle-appearance-change="handleAppearanceChange"
+            :handle-appearance-import="handleAppearanceImport"
+            :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+            :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
@@ -391,7 +542,6 @@ onMounted(() => {
         <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
           <TabNotify
             :settings="settings"
-            :send-task-result-time-options="sendTaskResultTimeOptions"
             :handle-setting-change="handleSettingChange"
             :test-notify="testNotify"
             :testing-notify="testingNotify"

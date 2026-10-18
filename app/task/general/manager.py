@@ -22,6 +22,7 @@
 
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -29,9 +30,11 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -54,10 +57,15 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class GeneralManager(TaskExecuteBase):
+class GeneralManager(ScriptManagerBase):
     """通用脚本控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -68,6 +76,7 @@ class GeneralManager(TaskExecuteBase):
         self.check_result = "-"
         self.external_config_exists = False
         self.external_config_snapshot_ready = False
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
@@ -165,7 +174,7 @@ class GeneralManager(TaskExecuteBase):
             try:
                 self.script_config_path.unlink()
             except OSError as e:
-                logger.opt(exception=True).warning(f"清理脚本直控配置失败: {e}")
+                logger.opt(exception=True).warning(f"清理脚本原生配置失败: {e}")
         return not self.script_config_path.exists()
 
     def _recover_previous_run(self) -> None:
@@ -178,13 +187,17 @@ class GeneralManager(TaskExecuteBase):
         )
         if result == "restored":
             logger.info("已恢复上次中断前的通用脚本原始配置")
+        elif result == "legacy":
+            logger.warning(
+                "检测到上次中断残留的 通用脚本 原生配置快照由旧版本生成, 已改名保留以便手动恢复"
+            )
         elif result == "skipped":
             logger.warning(
                 "检测到通用脚本原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
             )
 
     def _snapshot_external_config(self) -> None:
-        """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
+        """保存脚本原生来源配置，作为用户切换和任务结束时的恢复基线。"""
         self.external_config_exists = self.script_config_path.exists()
 
         if self.external_config_exists:
@@ -201,12 +214,16 @@ class GeneralManager(TaskExecuteBase):
         self.external_config_snapshot_ready = True
 
     def _restore_external_config(self) -> None:
-        """恢复脚本直控配置，隔离 MAS 用户配置的运行结果。"""
+        """恢复脚本原生来源配置，隔离 MAS 用户配置的运行结果。"""
         if not self.external_config_snapshot_ready:
             return
 
         if not self.external_config_exists:
-            logger.info("脚本直控配置不存在，保持配置路径为空")
+            # 任务前原生配置不存在: 现场内容只可能是本任务注入的 MAS 配置
+            # (查看会话恢复的备份 / 非原生来源用户的下发), 删除即恢复「不存在」
+            # 原状——混合用户时原生来源用户也因此拿到干净的原始现场
+            self._remove_script_config()
+            logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
@@ -217,7 +234,7 @@ class GeneralManager(TaskExecuteBase):
             # 否则用户目录会停在半删状态
             if not self._remove_script_config():
                 logger.warning(
-                    f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
+                    f"脚本原生来源配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
                 )
             self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
@@ -233,8 +250,8 @@ class GeneralManager(TaskExecuteBase):
         if user_id == "Default":
             return True
         user_config = self.user_config[uuid.UUID(user_id)]
-        # 直控=不写；脚本/用户来源都写面板值
-        return read_config_source(user_config) != CONFIG_SOURCE_DIRECT
+        # 原生来源=不写；shared/independent 来源都写面板值
+        return read_config_base(user_config) != CONFIG_BASE_NATIVE
 
     async def prepare(self):
         """运行前准备"""
@@ -258,7 +275,10 @@ class GeneralManager(TaskExecuteBase):
                 )
                 == "Emulator"
             ):
-                self.emulator_manager = await EmulatorManager.get_emulator_instance(
+                device_provider = (
+                    self._device_provider or EmulatorManager.get_emulator_instance
+                )
+                self.emulator_manager = await device_provider(
                     self.script_config.get("Game", "EmulatorId")
                 )
 
@@ -275,22 +295,28 @@ class GeneralManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
 
-        logger.info(f"记录脚本直控配置: {self.script_config_path}")
+        logger.info(f"记录脚本原生来源配置: {self.script_config_path}")
         self._recover_previous_run()
         self._snapshot_external_config()
+
+        # 任务级一次性归档脚本原生配置（脚本级池，指纹去重，失败不阻断
+        # 任务）：此刻 ConfigPath 仍是任务动手前的完整现场，必须在任何
+        # 换入/写入前归档
+        from .tools.backup_archive import archive_native_backup
+
+        with suppress(Exception):
+            archive_native_backup(
+                self.script_info.script_id,
+                self.script_config_path,
+                self.script_config.get("Script", "ConfigPathMode"),
+            )
 
     async def main_task(self):
 
@@ -311,11 +337,19 @@ class GeneralManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是通用脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             use_mas_config = self._user_uses_mas_config()
             user_id = self.script_info.user_list[self.script_info.current_index].user_id
             logger.info(
                 f"用户 {user_id} 配置来源: "
-                f"{'MAS 独立配置' if use_mas_config else '脚本直控配置'}"
+                f"{'MAS 独立配置' if use_mas_config else '脚本原生来源配置'}"
             )
             if not use_mas_config:
                 self._restore_external_config()
@@ -336,9 +370,13 @@ class GeneralManager(TaskExecuteBase):
             )
 
             try:
-                await self.spawn(task)
+                await self.run_user_task(current_user, task)
             finally:
-                if not use_mas_config:
+                # 查看会话（viewOnly）不重拍快照：用户级查看会把该用户
+                # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
+                # 污染的原生存成新快照、覆盖 prepare 时的真实原状，收尾
+                # 还原时原生就被固定成备份内容
+                if not use_mas_config and not self.task_info.view_only:
                     self._snapshot_external_config()
 
     async def final_task(self):
@@ -362,34 +400,18 @@ class GeneralManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_count = sum(
-                1 for u in self.script_info.user_list if u.status == "异常"
-            )
-            over_count = sum(
-                1 for u in self.script_info.user_list if u.status == "完成"
-            )
-            wait_count = sum(
-                1 for u in self.script_info.user_list if u.status == "等待"
-            )
+            summary = self.collect_user_results()
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             # 按用户交错组装「用户结果行 + 该用户进程信息」：
             # 多账号任务时各用户信息归属清晰，不再全部平铺。
             # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
             # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
-            has_uncompleted = error_count + wait_count > 0
+            has_uncompleted = summary.uncompleted_count > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
-            result = {
-                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                "script_name": self.script_info.name or "空白",
-                "start_time": self.begin_time,
-                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": over_count,
-                "uncompleted_count": error_count + wait_count,
-                "result": user_result_text,
-            }
+            result = self.build_proxy_report(result_text=user_result_text)
 
             try:
                 await push_notification(
@@ -419,7 +441,9 @@ class GeneralManager(TaskExecuteBase):
             self._restore_external_config()
             self._cleanup_external_config_snapshot()
         except Exception as restore_error:
-            logger.opt(exception=True).warning(f"恢复脚本直控配置失败: {restore_error}")
+            logger.opt(exception=True).warning(
+                f"恢复脚本原生来源配置失败: {restore_error}"
+            )
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

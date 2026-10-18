@@ -39,8 +39,10 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
+from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LogMonitor,
     ProcessInfo,
@@ -53,12 +55,11 @@ from app.utils import (
     load_patterns,
     strptime,
 )
-from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
-from .tools import execute_script_task, push_notification
+from .tools import push_notification
 
 logger = get_logger("通用脚本自动代理")
 
@@ -109,7 +110,7 @@ def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
     return re.compile("^" + "".join(parts))  # 不加 $ → re.match 做前缀匹配
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     def __init__(
@@ -132,9 +133,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
-        self.config_mode = read_config_source(self.cur_user_config)
-        # 是否写 MAS 侧配置：直控=不写，脚本/用户来源都写面板值。
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
+        self.config_base = read_config_base(self.cur_user_config)
+        # 是否写 MAS 侧配置：原生来源=不写，shared/independent 来源都写面板值。
+        self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
         self.check_result = "-"
 
     async def check(self) -> str:
@@ -154,11 +155,15 @@ class AutoProxyTask(TaskExecuteBase):
             and not (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
+            ).is_dir()
         ):
-            self.cur_user_item.status = "异常"
-            return (
-                "未找到用户的通用脚本配置文件，请先在用户配置页完成 「通用配置」 步骤"
+            # MAS 侧还没为该用户存过配置（新建用户后直接跑自动代理）：不判异常、
+            # 不阻断任务，只提示。下发环节会跳过、让脚本用它自己已有的配置，与
+            # ScriptConfig.set_general 同口径 —— 这里一旦 return，跳过逻辑就永远
+            # 走不到，用户看到的仍是「未找到配置文件」的死结。
+            logger.warning(
+                "MAS 中尚未保存该用户的通用脚本配置，本次将使用脚本自身已有配置；"
+                "如需由 MAS 下发配置，请先在用户配置页完成 「通用配置」 步骤"
             )
         return "Pass"
 
@@ -251,7 +256,7 @@ class AutoProxyTask(TaskExecuteBase):
         for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
             if matcher.invalid:
                 logger.warning(f"通用脚本{name}日志正则语法错误，该标志将不会命中")
-        # 日志处理钩子：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
+        # 日志预处理：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
         self.log_line_hook = (
             make_line_hook(self.script_config.get("Script", "LogHookRules"))
             if self.script_config.get("Script", "LogHookEnabled")
@@ -282,6 +287,13 @@ class AutoProxyTask(TaskExecuteBase):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
+    def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            logger.info(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
+
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -305,6 +317,8 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         await self.prepare()
+        # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
+        await self.run_user_scripts_before()
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
@@ -330,13 +344,6 @@ class AutoProxyTask(TaskExecuteBase):
                 if _reset is not None:
                     _reset()
 
-            # 执行任务前脚本
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
@@ -349,6 +356,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(2)
                             else:
                                 logger.info(
@@ -367,6 +375,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 logger.info(
                                     f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
                                 )
+                                self._note_launch_arguments_skipped()
                                 await asyncio.sleep(
                                     self.script_config.get("Game", "WaitTime")
                                 )
@@ -525,12 +534,6 @@ class AutoProxyTask(TaskExecuteBase):
                 ):
                     await self.update_config()
 
-            # 执行任务后脚本
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
-                )
             await asyncio.sleep(3)
 
     async def handle_pre_script_error(
@@ -568,27 +571,47 @@ class AutoProxyTask(TaskExecuteBase):
     async def update_config(self):
 
         if not self.use_mas_config:
-            logger.info("脚本直控配置：跳过回写用户独立配置")
+            logger.info("脚本原生配置：跳过回写用户独立配置")
             return
 
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
+
+        # 源是用户填的脚本配置位置，可能不存在或类型与模式不符（路径填错、脚本
+        # 还没生成过配置）。按模式校验类型、不匹配就跳过：既要挡住 rmtree /
+        # copytree / copy 抛异常，也必须先判后动 —— 清空 MAS 侧副本在判断之后，
+        # 否则会先把唯一一份副本删掉再发现源不可用。
+        if config_path_mode == "Folder":
+            if not self.script_config_path.is_dir():
+                logger.warning(
+                    f"跳过配置回写: {self.script_config_path} 不是目录, "
+                    "无法按 「目录」 模式复制"
+                )
+                return
             shutil.rmtree(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 ignore_errors=True,
             )
             shutil.copytree(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 dirs_exist_ok=True,
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif config_path_mode == "File":
+            if not self.script_config_path.is_file():
+                logger.warning(
+                    f"跳过配置回写: {self.script_config_path} 不是文件, "
+                    "无法按 「文件」 模式复制"
+                )
+                return
+            # Folder 分支靠 copytree 自建目标目录，File 分支的 copy 不会，补上
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
+                mas_config_dir / self.script_config_path.name,
             )
         logger.success("通用脚本配置文件已更新")
 
@@ -625,14 +648,45 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.script_exe_path)
 
         if not self.use_mas_config:
-            logger.info("脚本直控配置：跳过写入脚本配置")
+            logger.info("脚本原生来源配置：跳过写入脚本配置")
             return
 
-        # 导入配置文件
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        # 下发前归档 MAS 配置到用户池（下发源，运行回写 update_config 会覆盖
+        # 它；指纹去重，失败不阻断运行）。General 的 ConfigFile 恒按用户
+        from .tools.backup_archive import archive_mas_runtime_backup
+
+        archive_mas_runtime_backup(
+            self.script_info.script_id,
+            str(self.cur_user_uid),
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+        )
+
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
+        config_path_mode = self.script_config.get("Script", "ConfigPathMode")
+
+        # 导入配置文件。MAS 侧还没为这个用户存过配置时（新建用户后直接跑自动代理）
+        # 跳过下发、让脚本用它自己的配置 —— 与 ScriptConfig.set_general 同口径，
+        # 否则 swap_in_dir / copy 会直接抛异常，把任务判成失败。源与目标都按
+        # ConfigPathMode 校验类型：源不存在或类型不符即跳过，不阻断任务。
+        if config_path_mode == "Folder":
+            if not mas_config_dir.is_dir():
+                logger.warning("MAS 中尚无该用户的配置, 跳过配置下发")
+                return
+            if (
+                self.script_config_path.exists()
+                and not self.script_config_path.is_dir()
+            ):
+                logger.warning(
+                    f"跳过配置下发: {self.script_config_path} 不是目录, "
+                    "无法按 「目录」 模式换入"
+                )
+                return
             swap_in_dir(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                mas_config_dir,
                 self.script_config_path,
             )
             mark_native_config_injected(
@@ -640,11 +694,19 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif config_path_mode == "File":
+            mas_config_file = mas_config_dir / self.script_config_path.name
+            if not mas_config_file.is_file():
+                logger.warning("MAS 中尚无该用户的配置文件, 跳过配置下发")
+                return
+            if self.script_config_path.is_dir():
+                logger.warning(
+                    f"跳过配置下发: {self.script_config_path} 是目录, "
+                    "无法按 「文件」 模式复制"
+                )
+                return
             shutil.copy(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
+                mas_config_file,
                 self.script_config_path,
             )
 

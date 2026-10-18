@@ -19,9 +19,33 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * 支持 MaaEnd 原生启动的控制器
+     */
+    launchGameControllers?: Array<string>;
+    /**
+     * 支持独立游戏显示设置的控制器
+     */
+    gameSettingControllers?: Array<string>;
+    /**
+     * MaaEnd 资源声明的项目名称
+     */
+    projectName?: string;
+    /**
+     * MaaEnd 资源声明的项目版本
+     */
+    projectVersion?: string;
+    /**
      * MaaEnd 自动采集地区与分类
      */
     autoCollectGroups?: Array<MaaEndAutoCollectGroup>;
+    /**
+     * 从游戏 Unity 注册表读取的原始分辨率
+     */
+    originalResolution?: (string | null);
+    /**
+     * 从游戏注册表读取的原始显示模式
+     */
+    originalDisplayType?: ('Window' | 'Fullscreen' | null);
     /**
      * MaaEnd 控制器选项
      */

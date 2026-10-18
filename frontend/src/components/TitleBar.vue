@@ -65,10 +65,11 @@
         </button>
         <button
           class="control-button maximize-button"
-          :title="isMaximized ? '还原' : '最大化'"
+          :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
-          <BorderOutlined />
+          <SwitcherOutlined v-if="isMaximized" />
+          <BorderOutlined v-else />
         </button>
         <button
           v-if="!hideCloseButton"
@@ -154,7 +155,6 @@
 import { useI18n } from 'vue-i18n'
 import {
   beginIntentionalBackendRestart,
-  closeApp,
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
@@ -162,6 +162,7 @@ import {
   updateInfo,
   backendUpdateInfo,
   runtimeBackendUpdateAvailable,
+  runtimeBackendUpdateCommitMessage,
 } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
@@ -169,15 +170,15 @@ import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
   LoadingOutlined,
   MinusOutlined,
+  SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
@@ -189,8 +190,8 @@ const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
-const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
+let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -243,6 +244,7 @@ const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.v
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
+  bootstrap: t('comp.backendUpdateRetryBootstrap'),
   'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
   'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
   'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
@@ -306,11 +308,29 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 const handleBackendUpdateClick = () => {
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t(
-      runtimeBackendUpdateAvailable.value
-        ? 'comp.backendUpdateReadyConfirm'
-        : 'comp.backendAboutUpdateWhich'
-    ),
+    content:
+      runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
+        ? h('div', [
+            h('p', t('comp.backendUpdateReadyConfirm')),
+            h('strong', t('comp.backendUpdateLatestCommit')),
+            h(
+              'div',
+              {
+                style: {
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                },
+              },
+              runtimeBackendUpdateCommitMessage.value
+            ),
+          ])
+        : t(
+            runtimeBackendUpdateAvailable.value
+              ? 'comp.backendUpdateReadyConfirm'
+              : 'comp.backendAboutUpdateWhich'
+          ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,
@@ -380,18 +400,17 @@ const minimizeWindow = async () => {
 const toggleMaximize = async () => {
   try {
     await window.electronAPI?.windowMaximize()
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`切换最大化状态失败: ${errorMsg}`)
   }
 }
 
-// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
+// 先由主进程隐藏窗口，再让生命周期协调器在后台执行关闭流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-    await closeApp()
+    await window.electronAPI?.windowClose()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -456,16 +475,7 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
-const handleTrayStartTask = (taskId?: string, label?: string) => {
-  if (!taskId) {
-    logger.warn('托盘启动任务缺少任务 ID，忽略')
-    return
-  }
-  void startTaskById(taskId, label)
-}
-
-// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
   action: 'quit' | 'restart' | 'startTask'
   taskId?: string
@@ -475,14 +485,24 @@ const handleTrayActionRequest = (request: {
     handleTrayRestart()
   } else if (request.action === 'quit') {
     handleTrayQuit()
-  } else {
-    handleTrayStartTask(request.taskId, request.label)
   }
 }
 
 onMounted(async () => {
-  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  // 监听托盘退出和重启请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
+  // 双击标题栏或系统快捷键也会改变窗口状态。
+  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
+    isMaximized.value = maximized
+  })
+
+  try {
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
+  }
 
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
@@ -494,26 +514,21 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取界面设置失败: ${errorMsg}`)
   }
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
+  removeWindowMaximizedListener?.()
+  removeWindowMaximizedListener = undefined
 })
 </script>
 
 <style scoped>
 .title-bar {
   height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -525,8 +540,8 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark {
-  background: #1f1f1f;
-  border-bottom: 1px solid #333;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .title-bar-left {
@@ -581,7 +596,7 @@ onBeforeUnmount(() => {
 .title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--ant-color-text);
   position: relative;
   z-index: 1;
 }
@@ -596,7 +611,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .title-text {
-  color: #fff;
+  color: var(--ant-color-text);
 }
 
 .startup-status {
@@ -608,7 +623,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .version-text {
-  color: #ffffff;
+  color: var(--ant-color-text);
 }
 
 .title-bar-center {
@@ -641,13 +656,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: #666;
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
 
 .title-bar-dark .control-button {
-  color: #ccc;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-button:hover {

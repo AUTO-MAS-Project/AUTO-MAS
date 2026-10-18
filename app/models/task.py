@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
+from app.utils.logger import get_logger
+
+logger = get_logger("任务执行")
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -60,14 +63,19 @@ class UserItem:
     push_log_mode: str = field(
         default="汇总"
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
+    # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
+    maintenance_skipped: bool = field(default=False, repr=False)
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
+        previous = getattr(self, name, None)
         super().__setattr__(name, value)
         # 监听所有字段变化
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
+                if name == "status" and previous != value:
+                    ti.on_status_changed(self, previous, value)
                 ti.schedule_on_change()
 
     @property
@@ -91,9 +99,13 @@ class ScriptItem:
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
+    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
+    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
+    log_first_line: int = 1
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
+        previous = getattr(self, name, None)
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定
@@ -102,6 +114,8 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
+            if name == "status" and previous != value:
+                self.task_info.on_status_changed(self, previous, value)
             self.task_info.schedule_on_change()
 
     @property
@@ -132,12 +146,17 @@ class TaskItem(ABC):
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
     user_id: str | None  # 执行的用户ID
+    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
+    # 队列任务按脚本限定的本次运行用户；未列出的脚本不限，空集合表示该脚本本次整项跳过
+    user_ids_by_script: dict[str, frozenset[str]] | None = None
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
-    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
+    instance_idx: int | None = (
+        None  # 配置会话（原生来源）：会话窗口临时切换到的原生实例
+    )
     cycle_next_list: List[dict] = field(
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
@@ -148,8 +167,11 @@ class TaskItem(ABC):
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
-    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
     _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _last_pushed_log_first_line: int = field(
+        default=1, init=False, repr=False, compare=False
+    )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
@@ -193,6 +215,17 @@ class TaskItem(ABC):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
 
+    def on_status_changed(
+        self, item: UserItem | ScriptItem, previous: str | None, status: str
+    ) -> None:
+        """同步报告状态变化；副作用由宿主调度层实现。"""
+
+    def on_user_execution_started(self, script: ScriptItem) -> None:
+        """账号执行开始，区分重试中的状态与最终结果。"""
+
+    def on_user_execution_finished(self, script: ScriptItem) -> None:
+        """账号执行及收尾完成。"""
+
     def schedule_on_change(self) -> None:
         """合并高频字段变化，并由应用任务注册表持有异步通知。"""
 
@@ -221,6 +254,19 @@ class TaskItem(ABC):
         return self.queue_id is not None
 
     @property
+    def current_script_id(self) -> str | None:
+        """当前正在执行的脚本ID；未开始或下标越界时为 None"""
+        if 0 <= self.current_index < len(self.script_list):
+            return self.script_list[self.current_index].script_id
+        return None
+
+    def script_user_scope(self, script_id: str) -> frozenset[str] | None:
+        """队列任务中该脚本本次要运行的用户；None 表示该脚本不限"""
+        if self.user_ids_by_script is None:
+            return None
+        return self.user_ids_by_script.get(script_id)
+
+    @property
     def target_user_id(self) -> str | None:
         """单独运行时指定的用户ID；未指定或非自动代理时为 None。
 
@@ -239,8 +285,18 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，队列任务指定了本次
+            运行范围时仅匹配当前脚本范围内的用户，指定 user_id 时仅匹配该用户；
+            均未指定或非 AutoProxy 模式时恒为 True。
         """
+
+        if self.mode == "AutoProxy":
+            scope = self.user_ids
+            if self.user_ids_by_script is not None:
+                # 队列任务按当前脚本取范围；未列入的脚本不受本次勾选影响
+                scope = self.script_user_scope(self.current_script_id or "")
+            if scope is not None:
+                return user_id in scope
 
         target = self.target_user_id
         return target is None or user_id == target
@@ -264,21 +320,6 @@ class TaskItem(ABC):
             }
             for script_item in self.script_list
         ]
-
-    @property
-    def result(self) -> str:
-        """任务执行情况的简要结果"""
-
-        if not self.script_list:
-            return "任务未加载"
-        return "\n\n\n".join(
-            [
-                f"{script.name}：\n\n"
-                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
-                f"    {script.result.replace('\n', '\n    ')}"
-                for script in self.script_list
-            ]
-        )
 
 
 @dataclass
@@ -333,10 +374,13 @@ class TaskExecuteBase(ABC):
     @abstractmethod
     async def on_crash(self, e): ...
 
+    async def _run_main_task(self) -> None:
+        await self.main_task()
+
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
         try:
-            await self.main_task()
+            await self._run_main_task()
         except asyncio.CancelledError:
             self.stopped_manually = True
             raise
@@ -345,6 +389,8 @@ class TaskExecuteBase(ABC):
         finally:
             self._task_group = None
             try:
+                started_at = time.monotonic()
+                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
                 if self.wait_for_finalizer_on_cancel:
                     await self._run_final_task()
                 else:
@@ -353,12 +399,28 @@ class TaskExecuteBase(ABC):
                     except Exception as e:
                         await self.on_crash(e)
             finally:
+                logger.info(
+                    f"任务收尾完成: {type(self).__name__} - 用时: "
+                    f"{time.monotonic() - started_at:.3f}秒"
+                )
                 self.accomplish.set()
+
+    async def _finalize_task(self) -> None:
+        """收尾主体；由 _run_final_task 放进屏蔽取消的独立任务里执行。"""
+
+        await self.final_task()
+
+    def _on_finalize_cancel_requested(self) -> None:
+        """收尾进行中又收到取消（用户点了停止）时调一次；收尾本身不会被取消。
+
+        默认什么都不做。收尾里有耗时步骤、需要提前停下的子类覆写它（置令牌），
+        不要在这里 await 或抛异常。
+        """
 
     async def _run_final_task(self) -> None:
         """推迟外层取消，直到收尾协程真正结束。"""
 
-        finalizer = asyncio.create_task(self.final_task())
+        finalizer = asyncio.create_task(self._finalize_task())
         current_task = asyncio.current_task()
         if current_task is None:
             raise RuntimeError("无法获取当前任务")
@@ -379,6 +441,7 @@ class TaskExecuteBase(ABC):
                 cancellation = e
                 while current_task.cancelling():
                     current_task.uncancel()
+                self._on_finalize_cancel_requested()
             except Exception:
                 break
 
@@ -395,7 +458,22 @@ class TaskExecuteBase(ABC):
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
-        return self._task_group.create_task(child._execute_task(self._task_group))
+        # 脚本管理器的子任务是账号执行；根调度器的子任务是脚本管理器。
+        # 在真正收尾后报告终态，避免把重试期间临时的「异常」当作最终失败。
+        script = getattr(self, "script_info", None)
+        owner = script.task_info if isinstance(script, ScriptItem) else None
+        if owner is not None:
+            owner.on_user_execution_started(script)
+        task_group = self._task_group
+
+        async def run_child() -> None:
+            try:
+                await child._execute_task(task_group)
+            finally:
+                if owner is not None:
+                    owner.on_user_execution_finished(script)
+
+        return task_group.create_task(run_child())
 
     def execute(self):
         if self.task is not None and not self.task.done():

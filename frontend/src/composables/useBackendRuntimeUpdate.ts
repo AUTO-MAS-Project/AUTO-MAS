@@ -55,6 +55,9 @@ const completedStages = ref<RuntimeUpdateStage[]>([])
 const outcome = ref<RuntimeUpdateOutcome | null>(null)
 const restartingBackend = ref(false)
 
+/** 供应用作用域与桌宠宿主判断「正在更新后端」，避免在重启期间抢先启动任务。 */
+export const isBackendRuntimeUpdating = (): boolean => running.value
+
 let progressListenerAttached = false
 
 /** 只查一次：灰度开关是进程启动时定下的，一个生命周期内不会变。 */

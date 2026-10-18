@@ -26,10 +26,11 @@ from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.tools.push_log import build_user_result_text
+from app.models.task import ScriptItem, UserItem
+from app.task.manager_base import ScriptManagerBase
+from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
@@ -38,7 +39,7 @@ from .tools import push_notification
 logger = get_logger("ZZZ-OD 调度器")
 
 
-class ZzzOdManager(TaskExecuteBase):
+class ZzzOdManager(ScriptManagerBase):
     """ZZZ-OD 控制器（zzz-od 线）"""
 
     def __init__(self, script_info: ScriptItem):
@@ -51,7 +52,6 @@ class ZzzOdManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.user_config: MultipleConfig[ZzzOdUserConfig] | None = None
-        self.begin_time = ""
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
@@ -82,19 +82,10 @@ class ZzzOdManager(TaskExecuteBase):
         # AutoProxy 模式只做用户列表可用性校验；逐用户实例绑定检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
-            if (not self.script_info.user_list) or (
-                self.script_info.user_list
-                and self.script_info.user_list[0].name == "暂未加载"
-            ):
-                self.script_info.user_list = [
-                    UserItem(
-                        user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                    )
-                    for uid, config in Config.ScriptConfig[script_uid].UserData.items()
-                    if config.get("Info", "Status")
-                    and config.get("Info", "RemainedDay") != 0
-                    and self.task_info.is_target_user(str(uid))
-                ]
+            if not self.script_info.user_list:
+                self.script_info.user_list = self.build_proxy_user_list(
+                    Config.ScriptConfig[script_uid].UserData.items()
+                )
             if not self.script_info.user_list:
                 return "当前没有可执行的用户，请先添加并启用用户"
 
@@ -129,17 +120,9 @@ class ZzzOdManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid),
-                    name=config.get("Info", "Name"),
-                    status="等待",
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -168,27 +151,43 @@ class ZzzOdManager(TaskExecuteBase):
             )
             return
 
-        # 按配置来源分派：用户模式 → 注入运行；直控模式 → 原生裸跑。
-        # 直控用户绝不进入注入名单（直控=MAS 零注入零干涉）
+        # 按 base 来源分派：shared/independent → 注入运行；native → 原生裸跑。
+        # 原生来源用户绝不进入注入名单（原生来源=MAS 零注入零干涉）
         inject_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") != "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
+            != BASE_NATIVE
         ]
         direct_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode") == "直控"
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
+            == BASE_NATIVE
         ]
         account_switch = str(
             self.script_config.get("Game", "AccountSwitch") or "单实例切换"
         )
 
-        # 「多实例切换」（不推荐）：用户模式用户合并为一轮多账号注入运行
-        # （一条龙内部切换账号），直控用户在其后逐个原生裸跑。
+        # 「多实例切换」（不推荐）：注入模式用户合并为一轮多账号注入运行
+        # （一条龙内部切换账号），原生来源用户在其后逐个原生裸跑。
         # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
         # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
         if self.script_config.get("Game", "AccountSwitch") == "多实例切换":
+            inject_users = [
+                user
+                for user in inject_users
+                if await self.check_user_before_run(
+                    user, self.user_config[uuid.UUID(user.user_id)]
+                )
+            ]
+            direct_users = [
+                user
+                for user in direct_users
+                if await self.check_user_before_run(
+                    user, self.user_config[uuid.UUID(user.user_id)]
+                )
+            ]
             ran_any = False
             if inject_users:
                 self.script_info.current_index = 0
@@ -210,7 +209,9 @@ class ZzzOdManager(TaskExecuteBase):
                     )
                 else:
                     ran_any = True
-                    await self.spawn(method)
+                    for user in inject_users[1:]:
+                        self.record_user_run_start(user)
+                    await self.run_user_task(inject_users[0], method)
             for direct_user in direct_users:
                 self.script_info.current_index = 0
                 method = AutoProxyTask(
@@ -221,16 +222,10 @@ class ZzzOdManager(TaskExecuteBase):
                 )
                 sub_check = await method.check()
                 if sub_check != "Pass":
-                    if direct_user.status == "等待":
-                        direct_user.status = "异常"
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="error", message=sub_check),
-                    )
+                    await self.notify_user_check_failure(direct_user, sub_check)
                     continue
                 ran_any = True
-                await self.spawn(method)
+                await self.run_user_task(direct_user, method)
             if not ran_any:
                 self.check_result = "当前没有可执行的用户"
                 self.script_info.status = "异常"
@@ -258,6 +253,13 @@ class ZzzOdManager(TaskExecuteBase):
         ran_any = False
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
 
             method = AutoProxyTask(
                 script_info=self.script_info,
@@ -267,17 +269,11 @@ class ZzzOdManager(TaskExecuteBase):
 
             sub_check = await method.check()
             if sub_check != "Pass":
-                if current_user.status == "等待":
-                    current_user.status = "异常"
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=sub_check),
-                )
+                await self.notify_user_check_failure(current_user, sub_check)
                 continue
 
             ran_any = True
-            await self.spawn(method)
+            await self.run_user_task(current_user, method)
 
         if not ran_any:
             self.check_result = "当前没有可执行的用户"
@@ -317,21 +313,7 @@ class ZzzOdManager(TaskExecuteBase):
                 self.script_info.status = "完成"
 
             if self.task_info.mode == "AutoProxy":
-                error_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "异常"
-                ]
-                over_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "完成"
-                ]
-                wait_user = [
-                    user.name
-                    for user in self.script_info.user_list
-                    if user.status == "等待"
-                ]
+                summary = self.collect_user_results()
                 task_mode = TASK_MODE_ZH[self.task_info.mode]
                 title = (
                     f"{datetime.now().strftime('%m-%d')} | "
@@ -341,17 +323,11 @@ class ZzzOdManager(TaskExecuteBase):
                 # （ScriptItem.result 是只读计算属性，报告正文用局部变量承载）
                 user_result_text = build_user_result_text(
                     self.script_info.user_list,
-                    has_uncompleted=bool(error_user or wait_user),
+                    has_uncompleted=summary.uncompleted_count > 0,
                 )
-                result = {
-                    "title": f"{task_mode}任务报告",
-                    "script_name": self.script_info.name or "空白",
-                    "start_time": self.begin_time,
-                    "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "completed_count": len(over_user),
-                    "uncompleted_count": len(error_user) + len(wait_user),
-                    "result": user_result_text,
-                }
+                # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+                mirror_report_to_dispatch(self.script_info, user_result_text)
+                result = self.build_proxy_report(result_text=user_result_text)
 
                 # 系统通知由 push_notification 内部的全局目标统一发送
                 # （include_system=True），此处不再直接 push_plyer 以免重复

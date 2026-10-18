@@ -10,6 +10,8 @@ import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
+import whimboxIcon from '@/assets/whimbox.png'
+import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
@@ -22,13 +24,15 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
   MAA: maaIcon,
   MaaEnd: maaEndIcon,
   MaaFW: maafwIcon,
+  MSS: mssIcon,
   OkNte: okNteIcon,
   Okww: okwwIcon,
   SRC: srcIcon,
+  Whimbox: whimboxIcon,
   ZzzOd: zzzOdIcon,
 }
 
-/** 脚本类型 → 展示名，用于图片 alt 与标签文案 */
+/** 脚本类型 → 展示名（图片 alt；可见名称走 i18n 词表） */
 export const SCRIPT_LABELS: Record<ScriptType, string> = {
   BAAH: 'BAAH',
   BetterGI: 'BetterGI',
@@ -38,8 +42,10 @@ export const SCRIPT_LABELS: Record<ScriptType, string> = {
   MAA: 'MAA',
   MaaEnd: 'MaaEnd',
   MaaFW: 'MFW',
+  MSS: 'MSS',
   OkNte: 'OK-NTE',
   Okww: 'ok-ww',
   SRC: 'SRC',
+  Whimbox: 'Whimbox',
   ZzzOd: 'ZZZ-OD',
 }

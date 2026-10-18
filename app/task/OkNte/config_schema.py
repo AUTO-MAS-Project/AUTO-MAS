@@ -28,8 +28,6 @@ OK-NTE 配置文件 Schema 定义
 from __future__ import annotations
 
 import json
-import re
-import struct
 from copy import deepcopy
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -39,6 +37,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app.utils import get_logger
+from app.utils.i18n import parse_mo, parse_po
 
 logger = get_logger("OK-NTE 配置 Schema")
 
@@ -46,64 +45,21 @@ logger = get_logger("OK-NTE 配置 Schema")
 
 _OKNTE_CONFIG_WRITE_LOCK = Lock()
 
-_PO_ENTRY_RE = re.compile(
-    r'^msgid\s+"((?:[^"\\]|\\.)*)"\s*\nmsgstr\s+"((?:[^"\\]|\\.)*)"',
-    re.MULTILINE,
-)
-
 
 def _parse_po_file(po_path: Path) -> dict[str, str]:
     """解析 .po 翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels: dict[str, str] = {}
     try:
-        text = po_path.read_text(encoding="utf-8")
-        for match in _PO_ENTRY_RE.finditer(text):
-            msgid = match.group(1)
-            msgstr = match.group(2)
-            if msgid and msgstr:
-                labels[msgid] = msgstr
+        return parse_po(po_path)
     except Exception as e:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
-    return labels
+        return {}
 
 
 def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels: dict[str, str] = {}
-    try:
-        data = mo_path.read_bytes()
-        if len(data) < 20:
-            return labels
-
-        magic, _rev, n_strings, orig_off, trans_off = struct.unpack_from(
-            "<IIIII", data, 0
-        )
-
-        if magic not in (0x950412DE, 0xDE120495):
-            return labels
-
-        le = magic == 0x950412DE
-        fmt = "<II" if le else ">II"
-
-        def read_strings(table_offset: int) -> list[str]:
-            strings: list[str] = []
-            for i in range(n_strings):
-                length, offset = struct.unpack_from(fmt, data, table_offset + i * 8)
-                if length > 0:
-                    s = data[offset : offset + length]
-                    strings.append(s.decode("utf-8", errors="replace"))
-                else:
-                    strings.append("")
-            return strings
-
-        orig_strings = read_strings(orig_off)
-        trans_strings = read_strings(trans_off)
-
-        for orig, trans in zip(orig_strings, trans_strings):
-            if orig and trans:
-                labels[orig] = trans
-    except Exception as e:
-        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path} ({e})")
+    labels = parse_mo(mo_path)
+    if not labels:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path}")
     return labels
 
 
@@ -128,9 +84,43 @@ def _parse_ts_file(ts_path: Path) -> dict[str, str]:
     return labels
 
 
-# 标签解析缓存: 安装目录 -> (实际解析过的文件及其 mtime_ns, 标签); 每次请求重解析 .mo/.ts 太慢
+def _translation_candidates(root: Path) -> tuple[list[Path], list[Path]]:
+    """按优先级返回 gettext 与 ok-script 框架 .ts 翻译文件候选路径。"""
+    app_root = root / "data" / "apps" / "ok-nte"
+    gettext_candidates: list[Path] = []
+    for i18n_dir in (
+        root / "i18n",
+        root / "_internal" / "i18n",
+        app_root / "repo" / "i18n",
+        app_root / "working" / "i18n",
+    ):
+        lc_messages = i18n_dir / "zh_CN" / "LC_MESSAGES"
+        gettext_candidates.append(lc_messages / "ok.mo")
+        gettext_candidates.append(lc_messages / "ok.po")
+
+    ts_candidates = [
+        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
+        app_root / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        app_root / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
+    ]
+    return gettext_candidates, ts_candidates
+
+
+def _file_state(path: Path) -> tuple[Path, int | None]:
+    """候选文件的缓存状态：存在记 mtime_ns，不存在记 None。"""
+    try:
+        return (path, path.stat().st_mtime_ns)
+    except OSError:
+        return (path, None)
+
+
+# 标签解析缓存: 安装目录 -> (全部候选文件的存在性/mtime 快照, 标签); 每次请求重解析 .mo/.ts 太慢
+# 快照必须覆盖所有候选而非仅命中的文件——ok-nte 自更新带来新翻译文件时才能触发重扫
 _OPTION_LABELS_CACHE: dict[
-    Path, tuple[tuple[tuple[Path, int], ...], dict[str, str]]
+    Path, tuple[tuple[tuple[Path, int | None], ...], dict[str, str]]
 ] = {}
 
 
@@ -138,58 +128,42 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
     """从 OK-NTE 安装目录自动加载选项的英文→中文翻译映射。
 
     搜索优先级：ok.mo > ok.po，同时补充 ok-script 框架的 zh_CN.ts。
-    解析结果按实际读取过的文件 mtime 缓存。
+    解析结果按全部候选文件的存在性与 mtime 快照缓存，候选出现、更新或删除都会重扫。
     """
     root = Path(root_path)
+    gettext_candidates, ts_candidates = _translation_candidates(root)
+    snapshot = tuple(
+        _file_state(path) for path in (*gettext_candidates, *ts_candidates)
+    )
+
     cached = _OPTION_LABELS_CACHE.get(root)
-    if cached is not None and all(
-        f.is_file() and f.stat().st_mtime_ns == mtime for f, mtime in cached[0]
-    ):
+    if cached is not None and cached[0] == snapshot:
         return cached[1]
 
     labels: dict[str, str] = {}
-    used_files: list[tuple[Path, int]] = []
+    found = False
 
-    i18n_candidates = [
-        root / "i18n",
-        root / "_internal" / "i18n",
-        root / "data" / "apps" / "ok-nte" / "repo" / "i18n",
-        root / "data" / "apps" / "ok-nte" / "working" / "i18n",
-    ]
+    for path in gettext_candidates:
+        if not path.is_file():
+            continue
+        loaded = _parse_mo_file(path) if path.suffix == ".mo" else _parse_po_file(path)
+        if loaded:
+            labels.update(loaded)
+            found = True
+            break
 
-    for i18n_dir in i18n_candidates:
-        mo_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.mo"
-        if mo_file.is_file():
-            loaded = _parse_mo_file(mo_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((mo_file, mo_file.stat().st_mtime_ns))
-                break
-
-        po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
-        if po_file.is_file():
-            loaded = _parse_po_file(po_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((po_file, po_file.stat().st_mtime_ns))
-                break
-
-    ts_candidates = [
-        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "data" / "apps" / "ok-nte" / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-    ]
-    for ts_file in ts_candidates:
-        if ts_file.is_file():
-            loaded = _parse_ts_file(ts_file)
-            if loaded:
-                labels.update(loaded)
-                used_files.append((ts_file, ts_file.stat().st_mtime_ns))
-                break
+    for path in ts_candidates:
+        if not path.is_file():
+            continue
+        loaded = _parse_ts_file(path)
+        if loaded:
+            labels.update(loaded)
+            found = True
+            break
 
     # 没读到任何文件时不缓存, 否则安装完成后也不会再去找
-    if used_files:
-        _OPTION_LABELS_CACHE[root] = (tuple(used_files), labels)
+    if found:
+        _OPTION_LABELS_CACHE[root] = (snapshot, labels)
     return labels
 
 

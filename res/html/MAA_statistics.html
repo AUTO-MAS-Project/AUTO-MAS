@@ -195,6 +195,10 @@
                 {% endif %}
             </p>
 
+            {% if cultivate_progress %}
+            <p><strong>培养进展：</strong>{{ cultivate_progress | e }}</p>
+            {% endif %}
+
             {% if cultivate_achievement %}
             <p><strong>养成达成：</strong>{{ cultivate_achievement }}</p>
             {% endif %}
@@ -230,6 +234,15 @@
                 </tr>
                 {% endfor %}
             </table>
+            {% endfor %}
+            {% endif %}
+
+            {% if screenshots %}
+            <p class="result-label">失败截图</p>
+            {% for shot in screenshots %}
+            <p>{{ shot.label | e }}</p>
+            <img src="{{ shot.image_ref }}" alt="{{ shot.label | e }}"
+                style="max-width: 100%; border: 1px solid #ddd; border-radius: 8px;">
             {% endfor %}
             {% endif %}
         </div>

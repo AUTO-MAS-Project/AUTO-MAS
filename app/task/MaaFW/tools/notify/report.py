@@ -1,13 +1,17 @@
 """MaaFW 任务报告推送。"""
 
+from collections.abc import Sequence
 from typing import Any
 
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     dispatch,
     statistic_targets,
+)
+from app.models.notification import (
+    NotificationImage,
+    NotifyPayload,
 )
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
@@ -21,6 +25,8 @@ async def push_notification(
     message: dict,
     task_info: object | None = None,
     user_config: Any | None = None,
+    images: Sequence[NotificationImage] = (),
+    include_system: bool = True,
 ) -> DispatchResult:
     """通过统一通知编排推送 MaaFW 任务报告。
 
@@ -34,21 +40,30 @@ async def push_notification(
               task_details
         task_info: 任务信息，代理结果模式用于签到汇总的渠道级重试。
         user_config: 用户配置，统计信息模式用于发送用户独立通知。
+        images: 随报告附带的失败截图；模板通过资源 ID 引用对应图片。
+        include_system: 代理结果是否弹系统通知；本轮已有信号通知弹过时传 False。
     """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
         return await push_proxy_result(
-            title=title, message=message, task_info=task_info
+            title=title,
+            message=message,
+            task_info=task_info,
+            images=images,
+            include_system=include_system,
         )
     if mode == "统计信息":
-        return await _push_statistics(title, message, user_config)
+        return await _push_statistics(title, message, user_config, images)
     return DispatchResult()
 
 
 async def _push_statistics(
-    title: str, message: dict, user_config: Any | None
+    title: str,
+    message: dict,
+    user_config: Any | None,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 
@@ -76,6 +91,7 @@ async def _push_statistics(
             title=title,
             text=message_text,
             html=template.render(message),
+            images=tuple(images),
         ),
         statistic_targets(user_config),
     )

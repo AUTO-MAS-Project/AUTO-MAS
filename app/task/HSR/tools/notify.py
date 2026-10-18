@@ -22,11 +22,11 @@
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     dispatch,
     statistic_targets,
 )
 from app.models.config import HSRUserConfig
+from app.models.notification import NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
@@ -61,6 +61,13 @@ async def push_notification(
 
         return await dispatch(
             NotifyPayload(title=title, text=message_text, html=message_html),
+            statistic_targets(user_config),
+        )
+
+    if mode == "云登录提醒":
+        # 需人工介入的即时提醒：用户不在电脑前时靠它知道要去扫码/登录。
+        return await dispatch(
+            NotifyPayload(title=title, text=str(message.get("message", ""))),
             statistic_targets(user_config),
         )
 

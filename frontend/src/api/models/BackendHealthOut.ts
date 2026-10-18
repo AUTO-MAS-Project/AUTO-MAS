@@ -19,6 +19,10 @@ export type BackendHealthOut = {
      */
     backgroundError?: (string | null);
     /**
+     * 后台初始化中失败但不影响就绪的可选步骤，每项为「步骤名（异常）」
+     */
+    backgroundWarnings?: Array<string>;
+    /**
      * 后端自身支持的健康检查协议版本
      */
     protocol: number;

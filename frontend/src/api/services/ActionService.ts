@@ -6,6 +6,8 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
+import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -16,14 +18,21 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
+import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
+import type { ShareAppearanceDescriptionOut } from '../models/ShareAppearanceDescriptionOut';
+import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
+import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -41,7 +50,7 @@ export class ActionService {
         });
     }
     /**
-     * 上传脚本配置到网络
+     * 分享脚本配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -213,6 +222,26 @@ export class ActionService {
         });
     }
     /**
+     * 在魔改 AVD 实例里安装 APK
+     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
+     * @param requestBody
+     * @returns Emulator2AvdApkInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
+        requestBody: Emulator2AvdApkInstallIn,
+    ): CancelablePromise<Emulator2AvdApkInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加任务
      * @param requestBody
      * @returns TaskCreateOut Successful Response
@@ -293,6 +322,17 @@ export class ActionService {
         });
     }
     /**
+     * 试存 OBS 回放
+     * @returns ObsReplaySaveOut Successful Response
+     * @throws ApiError
+     */
+    public static saveObsReplayApiSettingObsSavePost(): CancelablePromise<ObsReplaySaveOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/save',
+        });
+    }
+    /**
      * 测试通知
      * 测试通知
      * @returns OutBase Successful Response
@@ -340,6 +380,81 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/test',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns VirtualDisplayDetachOut Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
+        });
+    }
+    /**
+     * 发起配置中心浏览器授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static startShareAuthApiShareAuthStartPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/start',
+        });
+    }
+    /**
+     * 取消等待中的配置中心授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelShareAuthApiShareAuthCancelPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/cancel',
+        });
+    }
+    /**
+     * 上传外观包到分享站
+     * @param requestBody
+     * @returns ShareAppearanceUploadOut Successful Response
+     * @throws ApiError
+     */
+    public static uploadShareAppearanceApiShareAppearanceUploadPost(
+        requestBody: ShareAppearanceUploadIn,
+    ): CancelablePromise<ShareAppearanceUploadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改自己外观的描述
+     * @param requestBody
+     * @returns ShareAppearanceDescriptionOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost(
+        requestBody: ShareAppearanceDescriptionIn,
+    ): CancelablePromise<ShareAppearanceDescriptionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/description',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section form-section-alt">
+  <div class="form-section">
     <div class="section-header">
       <h3>{{ t('edit.runConfiguration') }}</h3>
     </div>
@@ -50,12 +50,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneToday') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneToday') }}</span>
           </template>
           <a-select
             :value="dailyOnceTasks"
@@ -66,7 +61,6 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'DailyOnceTasks', value)"
           />
         </a-form-item>
@@ -74,12 +68,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally2')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis') }}</span>
           </template>
           <a-select
             :value="weeklyOnceTasks"
@@ -90,7 +79,6 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'WeeklyOnceTasks', value)"
           />
         </a-form-item>
@@ -98,12 +86,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.onceTaskCompletesNormally3')">
-              <span class="form-label">
-                {{ t('edit.skipOnceDoneThis2') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.skipOnceDoneThis2') }}</span>
           </template>
           <a-select
             :value="monthlyOnceTasks"
@@ -114,10 +97,37 @@
             option-filter-prop="label"
             show-search
             :max-tag-count="'responsive'"
-            :placeholder="t('edit.readInterfaceFirstThen')"
             @change="(value: string[]) => emit('period-task-change', 'MonthlyOnceTasks', value)"
           />
         </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24" class="task-time-limit-row">
+      <a-col :span="12">
+        <a-form-item :label="t('edit.singleTaskTimeLimit')">
+          <a-input-number
+            v-model:value="maafwConfig.Run.TaskTimeLimit"
+            :min="0"
+            :max="9999"
+            size="large"
+            class="modern-number-input"
+            style="width: 100%"
+            @blur="emit('change', 'Run', 'TaskTimeLimit', maafwConfig.Run.TaskTimeLimit)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串；
+             原地打转检测（Run.LoopGuard）的开关也在这个弹窗里 -->
+        <MaaFWTaskTimeLimitField
+          :value="maafwConfig.Run.TaskTimeLimitOverrides"
+          :loop-guard="Boolean(maafwConfig.Run.LoopGuard)"
+          :tasks="periodTaskOptions"
+          :default-minutes="maafwConfig.Run.TaskTimeLimit ?? 0"
+          :disabled="interfaceDependentDisabled || periodTaskOptions.length === 0"
+          @save="handleTaskTimeLimitOverridesSave"
+        />
       </a-col>
     </a-row>
   </div>
@@ -125,39 +135,32 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { MaaFWScriptConfig } from '@/types/script'
+import type {
+  MaaFWScriptRunSectionEmits,
+  MaaFWScriptRunSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
+import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'
 
 const { t } = useI18n()
 
-defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  dailyOnceTasks: string[]
-  weeklyOnceTasks: string[]
-  monthlyOnceTasks: string[]
-  periodTaskOptions: Array<{ label: string; value: string }>
-  interfaceDependentDisabled: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptRunSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'period-task-change': [
-    key: 'DailyOnceTasks' | 'WeeklyOnceTasks' | 'MonthlyOnceTasks',
-    values: string[],
-  ]
-}>()
+const emit = defineEmits<MaaFWScriptRunSectionEmits>()
+
+const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => {
+  props.maafwConfig.Run.TaskTimeLimitOverrides = value
+  emit('change', 'Run', 'TaskTimeLimitOverrides', value)
+  if (loopGuard !== Boolean(props.maafwConfig.Run.LoopGuard)) {
+    props.maafwConfig.Run.LoopGuard = loopGuard
+    emit('change', 'Run', 'LoopGuard', loopGuard)
+  }
+}
 </script>
 
 <style scoped>
 .form-section {
   margin-bottom: 40px;
-}
-
-.form-section-alt {
-  margin: 0 -24px;
-  padding: 24px 24px 32px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
 }
 
 .section-header {
@@ -202,6 +205,10 @@ const emit = defineEmits<{
 }
 
 .period-task-row {
+  margin-top: 8px;
+}
+
+.task-time-limit-row {
   margin-top: 8px;
 }
 </style>

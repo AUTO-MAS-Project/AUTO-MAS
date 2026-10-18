@@ -59,7 +59,23 @@ export const summarizeActivity = (options: {
   return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
 }
 
-export const summarizeDepot = (enabled: boolean, plansJson: string) => {
+export const summarizeCultivate = (
+  options: { enabled: boolean; targetsJson: string; autoRaise: boolean },
+  t: (key: string, values?: { count: number }) => string
+) => {
+  if (!options.enabled) return ''
+  const count = parseCultivateTargets(options.targetsJson).length
+  return [
+    count ? t('edit.maaCultivateOperatorCount', { count }) : t('edit.maaCultivateEmpty'),
+    t(options.autoRaise ? 'edit.maaCultivateAutoRaiseOn' : 'edit.maaCultivateAutoRaiseOff'),
+  ].join(' · ')
+}
+
+export const summarizeDepot = (
+  enabled: boolean,
+  plansJson: string,
+  t: (key: string, values?: { count: number }) => string
+) => {
   if (!enabled) return ''
   let count = 0
   try {
@@ -68,13 +84,7 @@ export const summarizeDepot = (enabled: boolean, plansJson: string) => {
   } catch {
     count = 0
   }
-  return count ? `${count} 项计划` : '尚未添加计划'
-}
-
-export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
-  if (!enabled) return ''
-  const count = parseCultivateTargets(targetsJson).length
-  return count ? `${count} 名干员` : '尚未添加养成目标'
+  return count ? t('edit.maaDepotPlanCount', { count }) : t('edit.maaDepotEmpty')
 }
 
 export const INFRAST_MODE_OPTIONS = [
@@ -99,7 +109,6 @@ export const summarizeFight = (options: {
   stage: string
   series: string
   medicine: number
-  remain: string
 }) => {
   if (!options.enabled) return ''
   const parts = [
@@ -107,8 +116,5 @@ export const summarizeFight = (options: {
     `连战 ${seriesLabel(options.series)}`,
     `理智药 ${options.medicine}`,
   ]
-  if (options.remain && options.remain !== '-') {
-    parts.push(`剩余理智 ${options.remain}`)
-  }
   return options.planLabel ? `${options.planLabel} · ${parts.join(' · ')}` : parts.join(' · ')
 }

@@ -4,6 +4,16 @@
       <h3>{{ t('scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
+          <a-select
+            v-model:value="logThemeMode"
+            size="small"
+            class="log-theme-select"
+            :aria-label="t('scheduler.log.theme')"
+          >
+            <a-select-option value="theme">{{ t('scheduler.log.followTheme') }}</a-select-option>
+            <a-select-option value="dark">{{ t('comp.darkTheme') }}</a-select-option>
+            <a-select-option value="light">{{ t('comp.lightTheme') }}</a-select-option>
+          </a-select>
           <a-button
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
@@ -14,16 +24,18 @@
         </a-space>
       </div>
     </div>
-    <div ref="logContentRef" class="log-content" :class="{ 'log-locked': logMode === 'follow' }">
+    <div
+      ref="logContentRef"
+      class="log-content"
+      :class="{ 'log-locked': logMode === 'follow', 'log-dark': logIsDark }"
+      :style="{ backgroundColor: logBackground, color: logForeground }"
+    >
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
             <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
           </div>
         </div>
-      </div>
-      <div v-else-if="usePlainLog" ref="plainLogContainerRef" class="plain-log-container">
-        <pre class="log-text">{{ logContent }}</pre>
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -42,7 +54,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
+import { useTheme } from '@/composables/useTheme'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { useLocalStorage } from '@vueuse/core'
+import { message, theme } from 'ant-design-vue'
 import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
 
 const { t } = useI18n()
@@ -50,29 +65,68 @@ const { t } = useI18n()
 interface Props {
   logContent: string
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
+  // 日志首行在完整日志里的行号。后端只推最近一段日志，行号得接着完整日志排。
+  // 调用方（scheduler/index.vue）保证一定给值，这里不再做第二层兜底。
+  firstLine: number
 }
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
+type LogThemeMode = 'theme' | 'dark' | 'light'
 
 const props = defineProps<Props>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
 const { logContent } = toRefs(props)
-const LARGE_LOG_MONACO_THRESHOLD = 60000
-const usePlainLog = computed(() => logContent.value.length > LARGE_LOG_MONACO_THRESHOLD)
 
-// 使用日志高亮 composable
-const { registerLogLanguage, editorTheme, editorConfig } = useLogHighlight()
+const { isDark } = useTheme()
+const { token } = theme.useToken()
+const logger = window.electronAPI.getLogger('调度日志')
+// 只保存日志面板的本地显示偏好，不改变应用主题。
+const logThemeMode = useLocalStorage<LogThemeMode>('auto-mas.scheduler.log-theme', 'theme', {
+  serializer: {
+    read: value => (value === 'dark' || value === 'light' ? value : 'theme'),
+    write: value => value,
+  },
+  onError: error => {
+    logger.error(`保存日志主题失败: ${String(error)}`)
+    message.error(t('scheduler.log.saveThemeFailed'))
+  },
+})
+const logIsDark = computed(() =>
+  logThemeMode.value === 'theme' ? isDark.value : logThemeMode.value === 'dark'
+)
+const logBackground = computed(() =>
+  logThemeMode.value === 'theme'
+    ? token.value.colorPrimaryBg
+    : logIsDark.value
+      ? '#1e1e1e'
+      : '#ffffff'
+)
+const logForeground = computed(() => (logIsDark.value ? '#d4d4d4' : '#333333'))
+const editorColors = computed(() => ({
+  'editor.background': logBackground.value,
+  'editor.foreground': logForeground.value,
+  'editorGutter.background': logBackground.value,
+}))
+
+// 使用独立主题名，保留其他日志页面的配色。
+const { registerLogLanguage, editorTheme, editorConfig, lightColors, darkColors, styles } =
+  useLogHighlight({ name: 'scheduler-log', isDark: logIsDark, colors: editorColors })
 
 const logContentRef = ref<HTMLElement | null>(null)
-const plainLogContainerRef = ref<HTMLElement | null>(null)
 
 // 在编辑器挂载前注册语言
-const handleBeforeMount = (monaco: any) => {
+let monacoInstance: typeof import('monaco-editor') | null = null
+const handleBeforeMount = (monaco: typeof import('monaco-editor')) => {
+  monacoInstance = monaco
   registerLogLanguage(monaco)
 }
 const logMode = ref<LogMode>('follow')
+
+watch([editorColors, lightColors, darkColors, styles], () => {
+  if (monacoInstance) registerLogLanguage(monacoInstance)
+})
 
 // 监听外部控制的日志模式变化
 watch(
@@ -87,12 +141,6 @@ watch(
   }
 )
 
-watch(usePlainLog, plain => {
-  if (plain) {
-    editorInstance = null
-  }
-})
-
 // Monaco Editor 实例
 let editorInstance: any = null
 
@@ -104,7 +152,9 @@ const editorOptions = computed(() => ({
   fontSize: editorConfig.value.fontSize,
   fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
-  lineNumbers: 'on' as const,
+  // 显示真实行号：后端只推最近一段日志，但编号要接着完整日志往下排，
+  // 否则每轮都从 1 重数，和存下来的日志对不上
+  lineNumbers: (lineNumber: number) => String(lineNumber + props.firstLine - 1),
   wordWrap: 'on' as const,
   automaticLayout: true,
   scrollbar: {
@@ -157,8 +207,6 @@ const scrollToBottom = () => {
       editorInstance.revealLine(lineCount)
       editorInstance.setScrollTop(editorInstance.getScrollHeight())
     }
-  } else if (plainLogContainerRef.value) {
-    plainLogContainerRef.value.scrollTop = plainLogContainerRef.value.scrollHeight
   } else if (logContentRef.value) {
     logContentRef.value.scrollTop = logContentRef.value.scrollHeight
   }
@@ -177,6 +225,7 @@ watch(
 
 onUnmounted(() => {
   editorInstance = null
+  monacoInstance = null
 })
 </script>
 
@@ -194,6 +243,8 @@ onUnmounted(() => {
 
 .scheduler-panel-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
   align-items: center;
   width: 100%;
@@ -213,7 +264,13 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.log-theme-select {
+  width: 136px;
+}
+
 .log-content {
+  --app-scrollbar-thumb: rgba(0, 0, 0, 0.28);
+  --app-scrollbar-thumb-hover: rgba(0, 0, 0, 0.45);
   flex: 1;
   overflow: hidden;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
@@ -222,16 +279,15 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 
+/* 日志可以独立于应用切换深浅色，复用全局滚动条规则。 */
+.log-content.log-dark {
+  --app-scrollbar-thumb: rgba(255, 255, 255, 0.28);
+  --app-scrollbar-thumb-hover: rgba(255, 255, 255, 0.45);
+}
+
 .monaco-container {
   height: 100%;
   width: 100%;
-}
-
-.plain-log-container {
-  height: 100%;
-  overflow: auto;
-  padding: 12px 16px;
-  background: var(--ant-color-bg-container);
 }
 
 .monaco-container :deep(.monaco-editor) {
@@ -246,14 +302,6 @@ onUnmounted(() => {
 .log-locked::-webkit-scrollbar-thumb {
   background-color: var(--ant-color-primary) !important;
   border-radius: 6px;
-}
-
-.log-text {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text);
-  font: inherit;
 }
 
 .empty-state-mini {

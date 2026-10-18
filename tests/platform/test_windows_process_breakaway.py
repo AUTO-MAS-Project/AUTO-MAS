@@ -21,7 +21,6 @@ import subprocess
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     os.name != "nt", reason="Job Object 脱离仅 Windows 概念"
 )

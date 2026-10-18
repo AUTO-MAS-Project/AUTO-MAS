@@ -43,5 +43,13 @@ export type MaaFWTaskInfo = {
      * 是否默认勾选
      */
     defaultCheck?: boolean;
+    /**
+     * 加入任务队列时展开成几份（interface 的 repeatable / repeat_count）
+     */
+    repeatCount?: number;
+    /**
+     * 特调声明该任务不可选时的原因（不进「添加任务」与预设，运行时跳过）；可选任务为 null
+     */
+    unselectableReason?: (string | null);
 };
 

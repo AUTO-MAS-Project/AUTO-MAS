@@ -107,6 +107,10 @@ def is_visible(hwnd: int) -> bool:
     return bool(win32gui.IsWindowVisible(hwnd))
 
 
+def is_window(hwnd: int) -> bool:
+    return bool(win32gui.IsWindow(hwnd))
+
+
 def show_window(hwnd: int) -> bool:
     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
     return True
@@ -119,6 +123,16 @@ def hide_window(hwnd: int) -> bool:
 
 def minimize_window(hwnd: int) -> bool:
     win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+    return True
+
+
+def close_window(hwnd: int) -> bool:
+    """发送 WM_CLOSE 请求窗口关闭，由应用自行走退出保存流程"""
+
+    try:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+    except Exception:
+        return False
     return True
 
 

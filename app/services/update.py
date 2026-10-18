@@ -31,8 +31,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import aiofiles
-import httpx
 from packaging import version
 
 from app.core.ws import Publisher, protocol
@@ -43,10 +41,10 @@ from app.models.schema import (
     WSUpdateProgressData,
 )
 from app.utils import LazyProxy, ProcessRunner, get_logger
-from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.platform.process import platform_process
 
 from .system import System
+from .update_transport import download_file, request_mirror_resource
 
 logger = get_logger("更新服务")
 
@@ -64,22 +62,87 @@ class _DownloadJob:
     download_url: Optional[str]
 
 
+def _describe_version_section_error(section: object) -> Optional[str]:
+    """返回版本段不合法的原因，合法时返回 None。
+
+    版本段必须是「分类名 -> 字符串列表」的映射。更新日志会原样交给
+    `/update/check` 的响应模型，形状不对的版本段会让响应校验抛异常，
+    用户连「检测到更新」都看不到，因此形状不对的版本段进不了响应。
+    """
+
+    if not isinstance(section, dict):
+        return "版本段不是字典"
+
+    for category, notes in section.items():
+        if not isinstance(notes, list):
+            return f"分类 {category!r} 的内容不是列表"
+        if not all(isinstance(note, str) for note in notes):
+            return f"分类 {category!r} 的列表里混有非字符串内容"
+
+    return None
+
+
 def select_newer_version_info(
-    version_info: Dict[str, Dict[str, List[str]]], current_version: str
+    version_info: Dict[str, Any], current_version: str
 ) -> Dict[str, Dict[str, List[str]]]:
     """挑出比当前版本新的版本段，按版本号降序排列，保留每段的分类归属。
 
     版本号用 packaging 比较而不是字符串比较，否则 beta.10 会排到 beta.2 前面。
+    认不出是版本号的键、或内部形状不是「分类名 -> 字符串列表」的版本段直接跳过：
+    更新日志来自 Mirror 酱，内容坏掉时只该丢日志，不该让整条更新检查失败。
     """
 
     current = version.parse(current_version)
-    newer = [
-        (version.parse(ver), ver, info)
-        for ver, info in version_info.items()
-        if version.parse(ver) > current
-    ]
+    newer = []
+    for raw_version, info in version_info.items():
+        try:
+            parsed = version.parse(raw_version)
+        except version.InvalidVersion:
+            logger.warning(f"更新日志里的版本号无法识别, 已跳过: {raw_version!r}")
+            continue
+        section_error = _describe_version_section_error(info)
+        if section_error is not None:
+            logger.warning(
+                f"更新日志的版本段结构异常, 已跳过 {raw_version!r}: {section_error}"
+            )
+            continue
+        if parsed > current:
+            newer.append((parsed, raw_version, info))
+
     newer.sort(key=lambda item: item[0], reverse=True)
     return {ver: info for _, ver, info in newer}
+
+
+def parse_release_note(release_note: object) -> Dict[str, Any]:
+    """解析 Mirror 酱返回的更新日志。
+
+    只保证解析出 JSON 对象，不保证版本段的内部形状，形状校验留给
+    `select_newer_version_info`，避免同一处坏数据被记两次警告。
+
+    日志正文是 release_note 首行里一条被 HTML 注释包裹的 JSON。Mirror 酱对
+    release_note 有长度上限，日志过长时它返回的首行是截断过的、不完整的 JSON，
+    此时只丢掉更新日志本身：「检测到更新」这个结论必须留住，否则用户连新版本
+    提示都看不到。
+    """
+
+    if not isinstance(release_note, str) or not release_note.strip():
+        logger.warning("Mirror 酱未返回更新日志")
+        return {}
+
+    first_line = release_note.splitlines()[0].strip()
+    try:
+        parsed = json.loads(re.sub(r"^<!--\s*(.*?)\s*-->$", r"\1", first_line))
+    except json.JSONDecodeError as error:
+        logger.warning(
+            f"更新日志无法解析, 本次只提示更新: {type(error).__name__}: {error}"
+        )
+        return {}
+
+    if not isinstance(parsed, dict):
+        logger.warning("更新日志不是预期的版本字典格式, 本次只提示更新")
+        return {}
+
+    return parsed
 
 
 class _UpdateHandler:
@@ -289,7 +352,7 @@ class _UpdateHandler:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
         if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         if source == "MirrorChyan":
             mirror_url = (
@@ -299,14 +362,14 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+                return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
 
         if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
@@ -324,7 +387,8 @@ class _UpdateHandler:
 
         try:
             version_info = await self._request_version_info(self.current_version)
-            download_url = version_info["data"].get("url")
+            data = version_info.get("data")
+            download_url = data.get("url") if isinstance(data, dict) else None
         except Exception as error:
             logger.warning(
                 f"刷新 Mirror 酱下载地址失败: {type(error).__name__}: {error}"
@@ -349,22 +413,19 @@ class _UpdateHandler:
             Exception: Mirror 酱返回业务错误码或无法识别的响应时抛出。
         """
 
-        # 使用 httpx 异步请求
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True
-        ) as client:
-            response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
-            )
-
-        if response.status_code == 200:
-            return response.json()
-
-        result = response.json()
-        if result["code"] in MIRROR_ERROR_INFO:
-            raise Exception(f"获取版本信息时出错: {MIRROR_ERROR_INFO[result['code']]}")
-        raise Exception(
-            "获取版本信息时出错: 意料之外的错误, 请及时联系项目组以获取来自 Mirror 酱的技术支持"
+        return await request_mirror_resource(
+            "AUTO_MAS",
+            params={
+                "os": "win",
+                "arch": "x64",
+                "current_version": current_version,
+                "cdk": Config.get("Update", "MirrorChyanCDK")
+                if Config.get("Update", "Source") == "MirrorChyan"
+                else "",
+                "channel": Config.get("Update", "Channel"),
+            },
+            proxy=Config.proxy,
+            timeout=5,
         )
 
     async def check_update(
@@ -390,23 +451,19 @@ class _UpdateHandler:
         logger.success("获取版本信息成功")
         self.last_check_time = datetime.now()
 
-        self.remote_version = version_info["data"]["version_name"]
+        data = version_info.get("data")
+        if not isinstance(data, dict):
+            raise Exception("Mirror 酱返回的数据不完整, 请稍后重试")
+
+        self.remote_version = data.get("version_name")
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        self.mirror_chyan_download_url = version_info["data"].get("url")
+        self.mirror_chyan_download_url = data.get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
-            # 版本更新信息
-            version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
-                re.sub(
-                    r"^<!--\s*(.*?)\s*-->$",
-                    r"\1",
-                    version_info["data"]["release_note"].splitlines()[0].strip(),
-                )
-            )
-
+            # 版本更新信息: 更新日志读取失败只丢日志, 不影响「需要更新」这个结论
             self.update_version_info = select_newer_version_info(
-                version_info_json, current_version
+                parse_release_note(data.get("release_note")), current_version
             )
 
             result = (True, self.remote_version, self.update_version_info)
@@ -472,6 +529,25 @@ class _UpdateHandler:
 
         logger.info(f"开始下载: {download_url}")
 
+        async def report_progress(downloaded: int, total: int, speed: float) -> None:
+            self._update_download_snapshot(
+                status="downloading",
+                downloaded_size=downloaded,
+                file_size=total,
+                speed=speed,
+                source=source,
+            )
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_PROGRESS,
+                data=WSUpdateProgressData(
+                    downloaded_size=downloaded,
+                    file_size=total,
+                    speed=speed,
+                    source=source,
+                ),
+            )
+
         check_times = 3
         while check_times != 0:
             try:
@@ -481,70 +557,12 @@ class _UpdateHandler:
 
                 start_time = time.time()
 
-                # 使用 httpx 异步流式下载
-                async with httpx.AsyncClient(follow_redirects=True) as client:
-                    async with client.stream(
-                        "GET", download_url, timeout=30.0
-                    ) as response:
-                        status_code = response.status_code
-
-                        if status_code not in [200, 206]:
-                            if check_times != -1:
-                                check_times -= 1
-
-                            logger.warning(
-                                f"连接失败: {download_url}, 状态码: {status_code}, 剩余重试次数: {check_times}"
-                            )
-                            await asyncio.sleep(1)
-                            continue
-
-                        logger.info(f"连接成功: {download_url}, 状态码: {status_code}")
-
-                        file_size = int(response.headers.get("content-length", 0) or 0)
-                        downloaded_size = 0
-                        last_download_size = 0
-                        speed = 0
-                        last_time = time.time()
-
-                        # 使用 aiofiles 异步写入临时文件
-                        async with aiofiles.open(
-                            Path.cwd() / "download.temp", "wb"
-                        ) as f:
-                            async for chunk in response.aiter_bytes(chunk_size=8192):
-                                if not chunk:
-                                    continue
-                                await f.write(chunk)
-                                downloaded_size += len(chunk)
-
-                                # 更新指定线程的下载进度, 每秒更新一次
-                                if time.time() - last_time >= 1.0:
-                                    elapsed = time.time() - last_time
-                                    if elapsed <= 0:
-                                        elapsed = 1.0
-                                    speed = (
-                                        downloaded_size - last_download_size
-                                    ) / elapsed
-                                    last_download_size = downloaded_size
-                                    last_time = time.time()
-
-                                    self._update_download_snapshot(
-                                        status="downloading",
-                                        downloaded_size=downloaded_size,
-                                        file_size=file_size,
-                                        speed=speed,
-                                        source=source,
-                                    )
-
-                                    await Publisher.send(
-                                        id=protocol.ID_UPDATE,
-                                        type=protocol.UPDATE_PROGRESS,
-                                        data=WSUpdateProgressData(
-                                            downloaded_size=downloaded_size,
-                                            file_size=file_size,
-                                            speed=speed,
-                                            source=source,
-                                        ),
-                                    )
+                downloaded_size = await download_file(
+                    download_url,
+                    Path.cwd() / "download.temp",
+                    timeout=30,
+                    progress=report_progress,
+                )
 
                 # 重命名临时文件为最终包
                 final_path = Path.cwd() / f"UpdatePack_{download_version}.zip"
@@ -578,7 +596,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "已有更新任务在进行中, 请勿重复操作"},
+                data=WSUpdateFailedData(message="已有更新任务在进行中, 请勿重复操作"),
             )
             return None
 
@@ -596,7 +614,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "未检测到更新包, 请先下载更新"},
+                data=WSUpdateFailedData(message="未检测到更新包, 请先下载更新"),
             )
             self.is_locked = False
             return None
@@ -613,7 +631,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": f"解压失败, {type(e).__name__}: {e}"},
+                data=WSUpdateFailedData(message=f"解压失败, {type(e).__name__}: {e}"),
             )
             self.is_locked = False
             return None

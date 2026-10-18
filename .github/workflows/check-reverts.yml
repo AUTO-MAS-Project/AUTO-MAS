@@ -1,0 +1,74 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+name: 检查误回退
+
+# 在旧分支上改好文件、同步到新 dev 时整份带过去，会把这期间别人合入的改动一并盖掉，
+# git 与类型检查都拦不住（#1043 就这样回退了 #755、#1007）。这里对 PR 删掉的行做 blame，
+# 删的是最近 14 天内别人合入的行就在 PR 的「Files changed」里标出来，并写进作业摘要。
+# 只提示不拦截：改别人刚合入的代码也可能是有意的，由作者和审阅者确认。实现见 scripts/check_reverts.py。
+# 发版 PR 本来就要改上一版写入的版本号，不检查。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-reverts-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-reverts:
+    name: 检查是否删掉了他人近期合入的代码
+    if: ${{ !startsWith(github.event.pull_request.title, 'Release v') }}
+    runs-on: ubuntu-latest
+    steps:
+      # blame 要追溯被删行的来源提交，需要完整历史
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 拉取目标分支
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-recurse-submodules origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 检查误回退
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          python scripts/check_reverts.py \
+            --base "origin/${BASE_REF}" \
+            --head "${HEAD_SHA}" \
+            --author "${PR_AUTHOR}"

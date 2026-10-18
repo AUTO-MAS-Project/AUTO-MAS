@@ -1,0 +1,479 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of the
+#   License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+#   Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+"""特调类型钩子：MaaFW 引擎认识的唯一一种"专项差异"。
+
+某些 MaaFW 项目值得给一个自己的脚本类型（图标、创建卡、默认名，以及一点点运行前的
+队列装饰——比如 M9A 的首尾任务与切号绑定）。这些类型是 ``MaaFWConfig`` 的同形子类，
+用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
+
+引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
+``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型（换了类型时取可选的
+换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的
+快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
+
+可选钩子 ``sanitize_task_snapshot``（写用户任务快照前整理）的契约：
+
+- **可选**：同样不进协议，``resolve_snapshot_sanitizer`` 按 ``getattr`` 探测。
+- **何时调**：``Config.update_user``（用户页保存、导入外壳配置建用户都走它）与配置恢复回填
+  用户字段时，只要这次写入带 ``Task.TaskSnapshot``，就在加密密码字段之前经
+  ``sanitize_user_task_update`` 调一次。读不到 interface（视图还没建）时不调、原样写入。
+- **签名**：``sanitize_task_snapshot(self, interface_model, snapshot, *, script_config,
+  resource_name, user_info) -> tuple[dict, dict]``。``snapshot`` 是解析好的 ``{taskOrder,
+  taskChecked, taskOptions}``；``resource_name`` 是运行时实际生效的资源（与建运行计划同一个
+  ``resolve_run_selection``，脚本资源留空时按控制器回落，特调不要自己再回落）；``user_info`` 是
+  这次写入之后该用户 ``Info`` 的样子（``Account`` / ``Notes``）。返回整理后的快照与要一并写进
+  ``Info`` 的字段（没有就空字典）。不改入参。
+- **用途**：特调把某些任务收归自己管（队列里不该有它们）时，保存入口据此把它们剔掉或换算
+  成用户字段，与运行期、启动整理同一口径。
+
+可选钩子 ``ensure_game_updated``（游戏客户端更新）的契约：
+
+- **可选**：不写进 ``MaaFWFlavor`` 协议——``runtime_checkable`` 的协议会把缺它的特调判成
+  不满足协议、整个退回通用 MaaFW。引擎用 ``resolve_game_update_hook`` 按 ``getattr`` 探测，
+  没实现的特调与通用 MaaFW 行为完全不变。
+- **何时调**：脚本 ``Run.GameUpdateMode`` 不是 ``Off``、特调实现了钩子、本次 controller 是
+  ADB 时，在 MAS 启动模拟器（连带拉起游戏）之后、第一个任务下发之前，每个用户每次运行只调
+  一次（重试重新开模拟器时不再调）。在事件循环里 ``await``，不在工作线程里。
+- **签名**：``async def ensure_game_updated(self, *, script_config, resource_name,
+  package_name, adb_path, adb_address, if_auto_install, progress) -> GameUpdateResult``。
+  ``resource_name`` 是运行计划的资源名；``package_name`` 是这次随模拟器拉起的包名（空串
+  表示没拉起游戏）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``if_auto_install``
+  对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
+  返回 ``app.utils.game_update.GameUpdateResult``。
+- **结果**：``NeedManualUpdate`` → 本用户本次运行判失败，失败原因就是 ``message``，发错误
+  通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
+- **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
+  （用户停止）必须照常向上传——钩子里的下载 / 安装都要能被取消打断，不能在线程里死等。
+
+可选属性 ``abort_round_entries``（关键任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 这个任务失败时报给用户的话（如 M9A 的
+  ``{"SwitchAccount": "切换账号失败"}``）。同样按 ``getattr`` 探测，不进协议。
+- **效果**：建运行计划后由 ``runner_task._mark_abort_round_tasks`` 标到对应任务的
+  ``abortRoundMessage`` 上；这些任务失败或单任务超时时本轮直接结束（不再跑后面的任务），
+  按普通失败结算、宿主照常重试。普通任务失败仍是记失败后继续。
+
+可选属性 ``nonfatal_entries``（收尾任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 这个任务失败时接在日志后的说明（如 M9A 的
+  ``{"Close1999": "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}``）。同样按 ``getattr``
+  探测，不进协议。
+- **效果**：建运行计划后由 ``runner_task._mark_nonfatal_tasks`` 标到对应任务的
+  ``nonFatalMessage`` 上；这些任务失败、单任务超时或原地打转时照常截图（只留在 history，
+  本轮成功时不进通知），写一行日志接上这句说明，不计入本轮失败、不触发重试，然后继续。
+  单任务超时后若后面还有任务，与普通任务一样先等停止生效再继续，等满仍没停下就按失败跳过本轮剩余
+  任务；排在队尾时不等。
+  被脚本侧强停（不论回报成功还是失败）时同样截图记一行、不计入失败，并照旧跳过本轮剩余任务。
+  单任务超时或原地打转停下时恰好又被脚本侧强停，同样按这条跳过本轮剩余任务、不计入失败。
+  同轮别的任务失败时本轮仍判失败。用户停止、整轮时限、信号节点、游戏没能启动
+  （``start_app`` 失败）都先于放过处理，不在放过之列。
+- **优先级**：放过优先于「计划里第一个任务超时 / 打转就结束本轮」；同一个 entry 同时声明在
+  ``abort_round_entries`` 与 ``nonfatal_entries`` 里时按收尾任务处理。
+
+可选属性 ``skip_on_retry_entries``（重试不补跑）的契约：
+
+- **形状**：``frozenset[str]``，任务 entry 的集合。同样按 ``getattr`` 探测，不进协议；没声明
+  等于空集，行为与以前完全一样。不用另两个声明的 ``dict[entry, 说明]``：这里没有逐任务的
+  话要说，跳过原因统一是「前面的尝试已完成」，写成字典只会多出一列没人读的值。
+- **效果**：本轮有任务失败或超时、要进入下一次尝试时，``runner_task`` 在周期任务过滤重建计划
+  之后，把这些 entry 里**本次运行任一次尝试已完成过**的任务剔出计划（记进 ``skippedTasks``，
+  原因「前面的尝试已完成」），每次重试开头按当前计划的 ``skippedTasks`` 写一行列出跳过了哪些
+  （worker 崩溃后沿用原计划的那次也照写）。累计所有拿到结果的尝试，按任务名判断；同名任务
+  在计划里有多份时全部重跑（runner 只回报任务名，分不清完成的是哪一份），重试开头写一行说明，
+  只有一份的照常剔。没声明的任务照旧全部补跑；
+  声明了但这次没完成（失败、超时、没轮到）的照跑。worker 崩溃、拿不到结果的那次尝试不知道
+  完成了什么，不据它剔。剔完计划为空时按「剩余任务都已完成」结束本轮、算作完成。
+- **该列什么**：只列重跑纯属浪费、且不依赖本轮前面步骤状态的任务（领取、收菜这类做完就没了
+  的）。启动 / 关闭游戏、切换账号这类每次尝试都要重做的受管任务不要列。
+
+可选属性 ``unselectable_entries``（不可选任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 为什么不能选（如 M9A 小游戏的「需手动进入对应页面
+  （M9A 没有自动导航）」）。同样按 ``getattr`` 探测，不进协议；没声明等于空表，行为完全不变。
+- **用途**：项目里有、但 MAS 无人值守跑不了的任务（要用户先手动停在某个页面之类）。
+- **界面**：``/maafw/preview`` 按脚本的特调（没有脚本时按项目认领的特调）给这些任务填
+  ``unselectableReason``（就是这里的原因），其余任务为 ``None``；用户页据此把它们挡在「添加任务」
+  与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写用户配置。
+- **运行**：``runner_task`` 归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
+  按原因合并写一行用户日志（「已跳过「任务甲」「任务乙」：原因」，同名任务只列一次，顺序按队列）。
+  剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
+- **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
+  ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
+
+可选属性 ``no_default_fallback_inputs``（字符串字段不回落 default 的例外）的契约：
+
+- **形状**：``frozenset[tuple[str, str]]``，元素是 ``(选项名, 字段名)``。同样按 ``getattr`` 探测，
+  不进协议；没声明等于空集，行为完全不变。
+- **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
+  （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
+  ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
+  没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
+  ``unselectableReason`` 同一处）：用户页把没填的字段显示成 default，不置空就会显示一个运行时
+  并不下发的值。
+- **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
+  「占位」）。能跑的 default 别列。
+
+可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
+
+- **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
+- **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
+  换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
+- **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
+  ``has_users`` 是脚本此刻有没有用户——只对已有用户说的话（「把账号栏改掉」之类）没有用户时
+  不要返回。
+- **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
+  标题里的类型名取 ``type_key``。
+
+魔改 AVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
+``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
+``app.utils.emulator2.service.mod_avd_binding_error`` 按脚本类型（``MaaFWConfig`` / MAA）判。
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
+
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.utils import get_logger
+from app.utils.game_update import GameUpdateResult
+
+logger = get_logger("MaaFW 特调")
+
+_FLAVOR_CACHE: dict[str, Any] = {}
+
+
+@runtime_checkable
+class MaaFWFlavor(Protocol):
+    """一个特调类型要提供的全部东西。"""
+
+    type_key: str
+    """脚本类型键（``CLASS_BOOK`` 的键），日志与通知里用。"""
+
+    def matches_project(self, interface_model: MaaFWInterface) -> bool:
+        """这个 interface 是不是本特调对应的项目（导入后据此决定脚本类型）。"""
+
+    def decorate_selection(
+        self,
+        interface_model: MaaFWInterface,
+        task_ids: list[str],
+        task_options: dict[str, Any],
+        *,
+        script_config: Any,
+        user_config: Any,
+        resource_name: str | None,
+        send_log: Callable[[str], None] | None,
+    ) -> tuple[list[str], dict[str, Any]]:
+        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。"""
+
+
+def _load_flavor(spec: str) -> Any | None:
+    if spec in _FLAVOR_CACHE:
+        return _FLAVOR_CACHE[spec]
+    module_name, _, attribute = spec.partition(":")
+    try:
+        flavor = getattr(importlib.import_module(module_name), attribute or "FLAVOR")
+    except Exception as exc:  # noqa: BLE001 - 特调加载失败只能退回通用行为
+        logger.warning(f"MaaFW 特调 {spec} 加载失败，按通用 MaaFW 处理：{exc}")
+        flavor = None
+    if flavor is not None and not isinstance(flavor, MaaFWFlavor):
+        logger.warning(f"MaaFW 特调 {spec} 不满足协议，按通用 MaaFW 处理")
+        flavor = None
+    _FLAVOR_CACHE[spec] = flavor
+    return flavor
+
+
+def resolve_flavor(script_config: Any) -> MaaFWFlavor | None:
+    """脚本配置对应的特调对象；通用 MaaFW（``FLAVOR`` 为 None）返回 None。"""
+
+    spec = getattr(type(script_config), "FLAVOR", None)
+    if not spec:
+        return None
+    return _load_flavor(str(spec))
+
+
+_UNSELECTABLE_DEFAULT_REASON = "MAS 无人值守运行不了这个任务"
+
+
+def unselectable_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的不可选任务：entry → 原因，契约见模块说明。没声明（或不是特调）返回空表。"""
+
+    declared = (
+        getattr(flavor, "unselectable_entries", None) if flavor is not None else None
+    )
+    if not isinstance(declared, dict):
+        return {}
+    return {
+        str(entry): str(reason or "").strip() or _UNSELECTABLE_DEFAULT_REASON
+        for entry, reason in declared.items()
+        if str(entry or "").strip()
+    }
+
+
+def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
+    """特调声明的不回落 default 的字符串字段，契约见模块说明。没声明（或不是特调）返回空集。"""
+
+    declared = (
+        getattr(flavor, "no_default_fallback_inputs", None)
+        if flavor is not None
+        else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(
+        (str(item[0]), str(item[1]))
+        for item in declared
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+
+
+def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
+    """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
+
+    hook = getattr(flavor, "retype_notice_lines", None) if flavor is not None else None
+    if not callable(hook):
+        return []
+    try:
+        lines = hook(entering=entering, has_users=has_users)
+    except Exception as exc:  # noqa: BLE001 - 通知文案出错不该挡住换类型
+        logger.warning(f"MaaFW 特调生成换类型说明失败：{exc}")
+        return []
+    return [str(line).strip() for line in lines or () if str(line or "").strip()]
+
+
+def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
+    """认领这个项目的特调对象（与 ``decide_project_config_class`` 同一口径）；没有返回 None。"""
+
+    config_class = decide_project_config_class(interface_model)
+    spec = getattr(config_class, "FLAVOR", None)
+    return _load_flavor(str(spec)) if spec else None
+
+
+GameUpdateHook = Callable[..., Awaitable[GameUpdateResult]]
+"""特调可选的游戏更新钩子，契约见模块说明"""
+
+
+def resolve_game_update_hook(script_config: Any) -> GameUpdateHook | None:
+    """脚本对应特调的游戏更新钩子；通用 MaaFW 或特调没实现时返回 None。"""
+
+    flavor = resolve_flavor(script_config)
+    hook = getattr(flavor, "ensure_game_updated", None) if flavor is not None else None
+    return hook if callable(hook) else None
+
+
+SnapshotSanitizer = Callable[..., tuple[dict[str, Any], dict[str, Any]]]
+"""特调可选的任务快照整理钩子，契约见模块说明"""
+
+
+def resolve_snapshot_sanitizer(script_config: Any) -> SnapshotSanitizer | None:
+    """脚本对应特调的任务快照整理钩子；通用 MaaFW 或特调没实现时返回 None。"""
+
+    flavor = resolve_flavor(script_config)
+    hook = (
+        getattr(flavor, "sanitize_task_snapshot", None) if flavor is not None else None
+    )
+    return hook if callable(hook) else None
+
+
+def sanitize_user_task_update(
+    script_id: str,
+    script_config: Any,
+    user_config: Any,
+    data: dict[str, Any],
+) -> bool:
+    """写用户配置前：``data`` 带 ``Task.TaskSnapshot`` 时交给特调整理，原地改 ``data``。
+
+    ``data`` 是 ``{分组: {字段: 值}}``（``update_user`` 与配置恢复的形状）。快照是 JSON 串就写回
+    JSON 串、是字典就写回字典；特调要求一并改的 ``Info`` 字段并进 ``data["Info"]``。
+    返回有没有改动。读不到 interface、快照解析不了都原样放行：运行期还会按同一口径再处理一遍。
+    """
+
+    hook = resolve_snapshot_sanitizer(script_config)
+    task = data.get("Task")
+    if hook is None or not isinstance(task, dict) or "TaskSnapshot" not in task:
+        return False
+    raw = task["TaskSnapshot"]
+    try:
+        snapshot = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return False
+    if not isinstance(snapshot, dict):
+        return False
+
+    try:
+        from app.task.MaaFW.tools.core.interface.loader import (
+            load_interface_model_cached,
+        )
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            resolve_maafw_project_root,
+        )
+
+        root = Path(resolve_maafw_project_root(script_id, script_config))
+        if not root.is_dir():
+            return False
+        interface_model = load_interface_model_cached(root)
+    except Exception as exc:  # noqa: BLE001 - 读不出 interface 不该挡住保存
+        logger.debug(f"保存任务配置时读取 interface 失败，未按特调整理：{exc}")
+        return False
+
+    from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
+
+    _, resource_name = resolve_run_selection(
+        interface_model,
+        configured_controller=str(
+            _config_value(script_config, "Info", "Controller") or ""
+        ),
+        emulator_selected=_config_value(script_config, "Emulator", "Id") != "-",
+        configured_resource=str(_config_value(script_config, "Info", "Resource") or ""),
+    )
+    incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}
+    user_info = {
+        name: incoming_info[name]
+        if name in incoming_info
+        else _config_value(user_config, "Info", name)
+        for name in ("Account", "Notes")
+    }
+    try:
+        settled, info_updates = hook(
+            interface_model,
+            snapshot,
+            script_config=script_config,
+            resource_name=resource_name,
+            user_info=user_info,
+        )
+    except Exception as exc:  # noqa: BLE001 - 特调整理失败按原样保存
+        logger.warning(f"MaaFW 特调整理任务快照失败，按原样保存：{exc}")
+        return False
+
+    changed = False
+    if settled != snapshot:
+        task["TaskSnapshot"] = (
+            json.dumps(settled, ensure_ascii=False) if isinstance(raw, str) else settled
+        )
+        changed = True
+    if info_updates:
+        info = data.get("Info")
+        if not isinstance(info, dict):
+            info = data["Info"] = {}
+        info.update(info_updates)
+        changed = True
+    return changed
+
+
+def _config_value(config: Any, group: str, name: str) -> Any:
+    try:
+        return config.get(group, name)
+    except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
+        return None
+
+
+def flavored_config_classes() -> list[tuple[type, MaaFWFlavor]]:
+    """``CLASS_BOOK`` 里所有声明了特调的 MaaFW 子类，按登记顺序。"""
+
+    from app.models.config import CLASS_BOOK, MaaFWConfig
+
+    found: list[tuple[type, MaaFWFlavor]] = []
+    for config_class in CLASS_BOOK.values():
+        if not (
+            isinstance(config_class, type) and issubclass(config_class, MaaFWConfig)
+        ):
+            continue
+        spec = getattr(config_class, "FLAVOR", None)
+        if not spec:
+            continue
+        flavor = _load_flavor(str(spec))
+        if flavor is not None:
+            found.append((config_class, flavor))
+    return found
+
+
+def decide_project_config_class(interface_model: MaaFWInterface) -> type:
+    """按项目决定脚本类型：第一个认领它的特调，否则通用 ``MaaFWConfig``。"""
+
+    from app.models.config import MaaFWConfig
+
+    for config_class, flavor in flavored_config_classes():
+        try:
+            if flavor.matches_project(interface_model):
+                return config_class
+        except Exception as exc:  # noqa: BLE001 - 识别失败不该挡住导入
+            logger.warning(f"MaaFW 特调 {flavor.type_key} 识别项目失败：{exc}")
+    return MaaFWConfig
+
+
+def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
+    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
+
+    顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
+    （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
+    空的才补，用户配过的不动。
+    """
+
+    user_type_name = config_class.USER_CONFIG_CLASS.__name__
+    default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
+
+    def transform(payload: dict) -> dict:
+        # ConfigBase.toDict 把子配置放在 SubConfigsInfo 下，用户表是其中的 UserData。
+        user_data = (payload.get("SubConfigsInfo") or {}).get("UserData")
+        if isinstance(user_data, dict):
+            for instance in user_data.get("instances") or []:
+                if isinstance(instance, dict):
+                    instance["type"] = user_type_name
+        run = payload.get("Run")
+        if (
+            default_overrides
+            and isinstance(run, dict)
+            and _is_empty_json_object(run.get("TaskTimeLimitOverrides"))
+        ):
+            run["TaskTimeLimitOverrides"] = default_overrides
+        return payload
+
+    return transform
+
+
+def _is_empty_json_object(value: Any) -> bool:
+    if isinstance(value, dict):
+        return not value
+    if not isinstance(value, str):
+        return value is None
+    try:
+        return json.loads(value or "{}") == {}
+    except ValueError:
+        return False
+
+
+__all__ = [
+    "GameUpdateHook",
+    "MaaFWFlavor",
+    "SnapshotSanitizer",
+    "no_default_fallback_inputs",
+    "decide_project_config_class",
+    "flavor_for_project",
+    "flavored_config_classes",
+    "resolve_flavor",
+    "resolve_game_update_hook",
+    "resolve_snapshot_sanitizer",
+    "retype_notice_lines",
+    "sanitize_user_task_update",
+    "unselectable_entries",
+    "user_config_type_transform",
+]

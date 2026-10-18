@@ -12,14 +12,22 @@ export type HomeModuleKey =
   | 'nte'
   | 'reverse1999'
   | 'bluearchive'
+  | 'stellasora'
+  | 'infinitynikki'
   | 'arknights'
 
 export interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
   hiddenModules: HomeModuleKey[]
+  /** 手动开启的游戏活动；其余未隐藏的游戏默认随托管脚本显示 */
+  shownActivityModules?: HomeModuleKey[]
   hideScrollHint?: boolean
   /** 活动轮播是否自动播放；未设置按开启处理 */
   carouselAutoplay?: boolean
+  /** 首页轮播下方是否显示当前游戏的日常便笺；由游戏社区设置里的总开关控制，默认关闭 */
+  activityNotesVisible?: boolean
+  /** 首页便笺被单独关闭的游戏；在「编辑布局」里控制 */
+  hiddenActivityNotes?: HomeModuleKey[]
 }
 
 export interface HomeModuleDescriptor {
@@ -58,6 +66,8 @@ interface StageOption {
 }
 
 interface StageOverview {
+  ActivityStatus?: 'ready' | 'empty' | 'stale' | 'unavailable'
+  ActivityUpdatedAt?: string | number | null
   Activity: ActivityItem[]
   Resource: ResourceItem[]
   Options: StageOption[]
@@ -76,6 +86,8 @@ interface EndfieldActivityItem {
   StartTime: string
   EndTime: string
   ImageUrl: string
+  /** 活动背景大图（游戏原生素材，走本软件后端缩放后使用），取不到时为空串 */
+  CoverUrl: string
   Tags: string[]
 }
 
@@ -90,6 +102,15 @@ interface EndfieldPoolItem {
 }
 
 export interface EndfieldActivityOverview {
+  /** SRA 同一版本记录，不能由卡池结束时间推断。 */
+  VersionName?: string
+  VersionCover?: string
+  VersionStartTime?: string
+  VersionEndTime?: string
+  VersionStale?: boolean
+  PoolStale?: boolean
+  PoolMessage?: string
+  PoolLoading?: boolean
   Available: boolean
   Stale: boolean
   Message: string
@@ -119,6 +140,11 @@ export interface SraActivityItem {
   startTime: string
   endTime: string
   cover?: string
+  /**
+   * 数据源自己的活动分类：碧蓝档案给的是 Event（限时活动）与总力战一类的战斗玩法，
+   * 星塔旅人给的是「版本活动」这类；横幅按它挑要报的那一类
+   */
+  kind?: string
 }
 
 export interface SraActivityOverview {
@@ -177,11 +203,82 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
+  /** 可选的点击跳转地址 */
+  url?: string
+  /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
+  version?: string
   /** 版本名或当期活动名 */
   subtitle: string
+  /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
+  startTime: string
   /** 倒计时终点，取不到时为空串 */
   endTime: string
   loading: boolean
   available: boolean
   stale: boolean
+}
+
+export interface HomeActivityAction {
+  label: string
+  disabled?: boolean
+  loading?: boolean
+}
+
+export type HomeActivityLayout = 'horizontal' | 'resource' | 'activity'
+
+/** 展示条目不携带游戏类型或接口结构；交互通过 id 回传给业务层。 */
+export interface HomeActivityEntry {
+  id: string
+  name: string
+  image?: string
+  imageFit?: 'cover' | 'contain'
+  fallbackImage?: string
+  url?: string
+  tags?: string[]
+  description?: string
+  startTime?: string
+  endTime?: string
+  countdownDaysOnly?: boolean
+  countdownLabel?: boolean
+  status?: { label: string; color?: string }
+  completed?: boolean
+  progress?: number
+  action?: HomeActivityAction
+}
+
+export interface HomeActivitySection {
+  id: string
+  title: string
+  /** 未指定时使用活动卡片；下方分组由数据层选择展示模式。 */
+  layout?: HomeActivityLayout
+  completable?: boolean
+  accent?: string
+  source?: { label: string; url: string }
+  refresh?: HomeActivityAction
+  loading: boolean
+  available: boolean
+  stale?: boolean
+  emptyText: string
+  timeZone?: string
+  timeZoneLabel?: string
+  items: HomeActivityEntry[]
+  alerts?: Array<{
+    id: string
+    message: string
+    description?: string
+    type: 'warning' | 'error'
+    closable?: boolean
+    action?: HomeActivityAction
+  }>
+  choices?: {
+    label: string
+    selected: string
+    options: Array<{ value: string; label: string }>
+  }
+}
+
+export interface HomeActivityPanel extends ActivityBannerItem {
+  activities: HomeActivitySection
+  /** 空数组不渲染下方区域；加载态和失败态也由分组数据表达。 */
+  extraSections: HomeActivitySection[]
 }

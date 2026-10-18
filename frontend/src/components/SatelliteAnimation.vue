@@ -1,1296 +1,179 @@
 <template>
-  <div ref="container" class="satellite-container">
+  <div
+    ref="container"
+    class="satellite-container"
+    :class="{ 'is-pointing': pointingSatellite, 'is-dragging': dragging, 'is-storm': stormTint }"
+    @pointerdown="handlePointerDown"
+    @pointermove="handlePointerMove"
+    @pointerup="handlePointerUp"
+    @pointercancel="cancelPress"
+    @pointerleave="handlePointerLeave"
+  >
     <div v-if="loading" class="loading-spinner"></div>
+    <img v-if="staticImage" class="satellite-static" :src="staticImage" alt="" />
+    <SatelliteHoverLabel
+      ref="hoverLabel"
+      :name="hoveredModule?.label ?? null"
+      :status="hoveredStatus"
+    />
+    <!-- 低性能模式下没有实时场景，谈不上恢复 -->
+    <SatelliteEffectsPausedChip
+      v-if="effectsPaused && !performanceStore.lowPerformanceMode"
+      @resume="performanceStore.homeEffectsManuallyResumed = true"
+    />
+    <SatelliteFloatLayer ref="floatLayer" />
+    <SatelliteEggStage
+      ref="eggStage"
+      :launcher="!loading && !performanceStore.lowPerformanceMode"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
-import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
-import type { ScriptType } from '@/types/script'
+import {
+  buildOrbitModules,
+  centerIconUrl,
+  orbitKeysByScriptId,
+  type OrbitModule,
+} from '@/composables/satellite-config'
+import { useSatelliteStatus } from '@/composables/useSatelliteStatus'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
-import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
-import {
-  createExplosionFragmentMotion,
-  getExplosionEffectProgress,
-  getExplosionPhase,
-  SATELLITE_EXPLOSION_CONFIG,
-  type ExplosionFragmentMotion,
-} from './satelliteExplosion'
-import * as THREE from 'three'
+import { consumeFirstVisit } from './satellite/eggs'
+import type { FloatTextVariant } from './satellite/floatText'
+import { createAnimationFrameScheduler } from './satellite/frameScheduler'
+import type { CenterGlowMode } from './satellite/motion'
+import SatelliteEggStage from './satellite/SatelliteEggStage.vue'
+import SatelliteFloatLayer from './satellite/SatelliteFloatLayer.vue'
+import SatelliteHoverLabel from './satellite/SatelliteHoverLabel.vue'
+import { INTRO_IGNITE_MS, SatelliteScene, type ScreenPoint } from './satellite/satelliteScene'
+import { useSatelliteEggs } from './satellite/useSatelliteEggs'
+import { useSatellitePointer } from './satellite/useSatellitePointer'
+import { useSatelliteStill } from './satellite/useSatelliteStill'
+import SatelliteEffectsPausedChip from './satellite/SatelliteEffectsPausedChip.vue'
+import { usePressSound } from './satellite/usePressSound'
+
+/** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
+const STATUS_POLL_INTERVAL = 10000
 
 const logger = window.electronAPI.getLogger('卫星动画')
-
-const CONFIG = {
-  containerHeight: 400,
-  orbitRadiusX: 400,
-  orbitRadiusY: 170,
-  orbitTilt: 0.35,
-  orbitOpacity: 0.4,
-  centerCardSize: 90,
-  centerCardDepth: 10,
-  satelliteCardSize: 60,
-  satelliteCardDepth: 8,
-  satelliteOrbitSpeed: 0.0006,
-  satelliteFloatAmplitude: 10,
-  satelliteFloatSpeed: 1.2,
-  centerFloatAmplitude: 4,
-  centerFloatSpeed: 0.8,
-  cameraFov: 50,
-  cardAppearDelay: 150,
-  cardAppearDuration: 400,
-  glowSizeMultiplier: 3.5,
-  activityGlowZOffset: -5,
-  errorGlowZOffset: -3,
-  statusUpdateInterval: 10000,
-}
-
-const container = ref<HTMLDivElement | null>(null)
-const loading = ref(true)
-
-let orbitScene: THREE.Scene | null = null
-let glowScene: THREE.Scene | null = null
-let cardScene: THREE.Scene | null = null
-let camera: THREE.PerspectiveCamera | null = null
-let orbitRenderer: THREE.WebGLRenderer | null = null
-let glowRenderer: THREE.WebGLRenderer | null = null
-let cardRenderer: THREE.WebGLRenderer | null = null
-let appearAnimationFrameId: number | null = null
-let allowLowPowerFrame = false
-let isUnmounted = false
-const animationFrameScheduler = createAnimationFrameScheduler(
-  requestAnimationFrame,
-  cancelAnimationFrame
-)
-
-type CardMesh = THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>
-
-let satellites: CardMesh[] = []
-let orbitLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
-let centerCard: CardMesh | null = null
-
-interface SatelliteState {
-  type: ScriptType
-  activityGlowSprite: THREE.Sprite | null
-  errorGlowSprite: THREE.Sprite | null
-  status: SatelliteModuleStatus
-}
-// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
-const { statuses: satelliteStatuses, refresh: refreshSatelliteStatuses } = useSatelliteStatus()
-
-let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
-let centerGlowSprite: THREE.Sprite | null = null
-let glowTexture: THREE.CanvasTexture | null = null
-let updateInterval: ReturnType<typeof setInterval> | null = null
-const centerGlowMode = ref<'rainbow' | 'green'>('green')
-const raycaster = new THREE.Raycaster()
-const pointer = new THREE.Vector2()
-
-interface ExplosionFragment {
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
-  motion: ExplosionFragmentMotion
-  origin: THREE.Vector3
-}
-
-interface SatelliteExplosion {
-  group: THREE.Group
-  effectScene: THREE.Scene
-  fragments: ExplosionFragment[]
-  flashSprite: THREE.Sprite
-  ringMesh: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
-  startTime: number
-  originalOpacity: number
-  originalScale: THREE.Vector3
-  originalVisible: boolean
-}
-
-const satelliteExplosions = new Map<CardMesh, SatelliteExplosion>()
-type PointerLikeEvent = Pick<MouseEvent, 'clientX' | 'clientY'>
-
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
+// 中心图标的按压音效：经典卫星与 3D 星系共用同一套设置与播放逻辑
+const { playPress: playCenterPressSound, playRelease: playCenterReleaseSound } = usePressSound()
+// 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
+const {
+  statuses: satelliteStatuses,
+  setScriptKeys: setSatelliteScriptKeys,
+  refresh: refreshSatelliteStatuses,
+} = useSatelliteStatus()
 
-function stopAnimation() {
-  animationFrameScheduler.cancel()
-}
+const container = ref<HTMLDivElement | null>(null)
+const hoverLabel = ref<InstanceType<typeof SatelliteHoverLabel> | null>(null)
+const eggStage = ref<InstanceType<typeof SatelliteEggStage> | null>(null)
+const floatLayer = ref<InstanceType<typeof SatelliteFloatLayer> | null>(null)
+const loading = ref(true)
+/** 1999 暴雨期间画面泛黄，像老照片 */
+const stormTint = ref(false)
+/** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
+const pointingSatellite = ref(false)
+const hoveredSatellite = ref<number | null>(null)
+const hoveredModule = shallowRef<OrbitModule | null>(null)
 
-function startAnimation() {
-  if (isUnmounted || !camera || performanceStore.isLowPower) {
-    return
-  }
-
-  animationFrameScheduler.request(animate)
-}
-
-function stopAppearAnimation() {
-  if (appearAnimationFrameId === null) {
-    return
-  }
-
-  cancelAnimationFrame(appearAnimationFrameId)
-  appearAnimationFrameId = null
-}
-
-function stopStatusPolling() {
-  if (updateInterval === null) {
-    return
-  }
-
-  clearInterval(updateInterval)
-  updateInterval = null
-}
-
-function startStatusPolling() {
-  if (
-    performanceStore.isBackgrounded ||
-    updateInterval !== null ||
-    connectionState().value === 'open'
-  ) {
-    return
-  }
-
-  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
-  updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
-}
-
-// 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
-// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+/** 实时场景；低性能模式下为 null，所有动画、交互、彩蛋都跟着它一起没有 */
+let scene: SatelliteScene | null = null
+let liveLoading = false
+/** 上轨道的卫星：挂载时按用户建过的脚本算一次 */
+let visibleModules: OrbitModule[] | null = null
+let centerGlowMode: CenterGlowMode = 'green'
+let isUnmounted = false
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let disposeBackendReadyListener: (() => void) | null = null
-
-function waitBackendReady(): Promise<void> {
-  if (connectionState().value === 'open') return Promise.resolve()
-  return new Promise(resolve => {
-    disposeBackendReadyListener = onConnected(() => {
-      disposeBackendReadyListener = null
-      resolve()
-    })
-  })
-}
-
-function showCardsImmediately() {
-  if (centerCard) {
-    const frontMaterial = getCardFrontMaterial(centerCard)
-    if (frontMaterial) frontMaterial.opacity = 1
-    centerCard.scale.set(1, 1, 1)
-  }
-
-  satellites.forEach(sat => {
-    const frontMaterial = getCardFrontMaterial(sat)
-    if (frontMaterial) frontMaterial.opacity = 1
-    sat.scale.set(1, 1, 1)
-  })
-}
-
-function renderCurrentFrame() {
-  if (!camera || performanceStore.isBackgrounded) {
-    return
-  }
-
-  allowLowPowerFrame = true
-  animate()
-}
-
-function removeCardInteraction() {
-  if (!cardRenderer) {
-    return
-  }
-
-  cardRenderer.domElement.removeEventListener('click', handleSatelliteClick)
-  cardRenderer.domElement.removeEventListener('pointermove', handleSatellitePointerMove)
-  cardRenderer.domElement.removeEventListener('pointerleave', resetSatelliteCursor)
-}
-
-function disposeScene() {
-  stopAnimation()
-  stopAppearAnimation()
-  stopStatusPolling()
-  removeCardInteraction()
-  clearSatelliteExplosions()
-
-  disposeSceneResources(orbitScene)
-  disposeSceneResources(glowScene)
-  disposeSceneResources(cardScene)
-
-  const disposedRenderers = new Set<THREE.WebGLRenderer>()
-  for (const renderer of [orbitRenderer, glowRenderer, cardRenderer]) {
-    if (renderer && !disposedRenderers.has(renderer)) {
-      disposedRenderers.add(renderer)
-      disposeRenderer(renderer)
-    }
-  }
-
-  glowTexture?.dispose()
-  glowTexture = null
-
-  orbitScene = null
-  glowScene = null
-  cardScene = null
-  camera = null
-  orbitRenderer = null
-  glowRenderer = null
-  cardRenderer = null
-  satellites = []
-  orbitLine = null
-  centerCard = null
-  centerGlowSprite = null
-  satelliteStates.clear()
-  allowLowPowerFrame = false
-}
-
-function disposeCardMesh(card: CardMesh) {
-  const disposedMaterials = new Set<THREE.Material>()
-  const disposedTextures = new Set<THREE.Texture>()
-  card.geometry.dispose()
-  card.material.forEach(material => disposeMaterial(material, disposedMaterials, disposedTextures))
-}
-
-onUnmounted(() => {
-  isUnmounted = true
-  disposeBackendReadyListener?.()
-  window.removeEventListener('resize', handleResize)
-  disposeScene()
+let lastFrameAt: number | null = null
+const frameScheduler = createAnimationFrameScheduler(requestAnimationFrame, cancelAnimationFrame)
+/** 低性能模式下只放这张静态图，没有实时场景 */
+const {
+  image: staticImage,
+  render: renderStill,
+  schedule: scheduleStill,
+  clear: clearStill,
+} = useSatelliteStill({
+  getContainer: () => container.value,
+  getModules: () => visibleModules,
+  getStatuses: () => satelliteStatuses.value,
+  getCenterGlowMode: () => centerGlowMode,
+  isDark: () => isDark.value,
+  isWanted: () => !isUnmounted && performanceStore.lowPerformanceMode,
+})
+const eggs = useSatelliteEggs({
+  getScene: () => scene,
+  getStage: () => eggStage.value,
+  spawnText,
+  getContainerSize: () =>
+    container.value
+      ? { width: container.value.clientWidth, height: container.value.clientHeight }
+      : null,
+  setStormTint: on => {
+    stormTint.value = on
+  },
+  requestRender,
+})
+const {
+  dragging,
+  handlePointerDown,
+  handlePointerMove,
+  handlePointerUp,
+  handlePointerLeave,
+  cancelPress,
+  updateCoreCharge,
+} = useSatellitePointer({
+  getScene: () => scene,
+  getContainer: () => container.value,
+  isBackgrounded: () => performanceStore.isBackgrounded,
+  setHovered,
+  spawnText,
+  requestRender,
+  onCenterTap: eggs.pokeCenter,
+  onCenterPress: playCenterPressSound,
+  onCenterRelease: playCenterReleaseSound,
+  onSatelliteTap: handleSatelliteTap,
+  onEmptyPress: eggs.tryCatchMeteor,
 })
 
-function disposeRenderer(renderer: THREE.WebGLRenderer | null): void {
-  if (!renderer) return
-  const el = renderer.domElement
-  if (el.parentElement) {
-    el.parentElement.removeChild(el)
-  }
-  renderer.dispose()
-}
-
-function setSatelliteEffectsVisible(sat: CardMesh, visible: boolean) {
-  const state = satelliteStates.get(sat)
-  if (!state) {
-    return
-  }
-
-  state.activityGlowSprite && (state.activityGlowSprite.visible = visible)
-  state.errorGlowSprite && (state.errorGlowSprite.visible = visible)
-}
-
-function setupCardInteraction() {
-  if (!cardRenderer) {
-    return
-  }
-
-  removeCardInteraction()
-  const element = cardRenderer.domElement
-  element.setAttribute('aria-label', '脚本卫星互动区域')
-  element.style.cursor = 'default'
-  element.style.touchAction = 'manipulation'
-  element.addEventListener('click', handleSatelliteClick)
-  element.addEventListener('pointermove', handleSatellitePointerMove)
-  element.addEventListener('pointerleave', resetSatelliteCursor)
-}
-
-function getSatelliteAtPointer(event: PointerLikeEvent): CardMesh | null {
-  if (!cardRenderer || !camera || performanceStore.isBackgrounded) {
-    return null
-  }
-
-  const bounds = cardRenderer.domElement.getBoundingClientRect()
-  if (bounds.width <= 0 || bounds.height <= 0) {
-    return null
-  }
-
-  pointer.set(
-    ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
-    -((event.clientY - bounds.top) / bounds.height) * 2 + 1
-  )
-  raycaster.setFromCamera(pointer, camera)
-
-  const hit = raycaster.intersectObjects(satellites, false)[0]
-  if (!hit || !hit.object.visible) {
-    return null
-  }
-
-  const sat = hit.object as CardMesh
-  const frontMaterial = getCardFrontMaterial(sat)
-  if (!frontMaterial || frontMaterial.opacity <= 0.05 || sat.scale.x <= 0.05) {
-    return null
-  }
-
-  return sat
-}
-
-function handleSatellitePointerMove(event: PointerEvent) {
-  if (!cardRenderer) {
-    return
-  }
-
-  const sat = getSatelliteAtPointer(event)
-  cardRenderer.domElement.style.cursor = sat ? 'pointer' : 'default'
-}
-
-function resetSatelliteCursor() {
-  if (cardRenderer) {
-    cardRenderer.domElement.style.cursor = 'default'
-  }
-}
-
-function handleSatelliteClick(event: MouseEvent) {
-  const sat = getSatelliteAtPointer(event)
-  if (!sat || satelliteExplosions.has(sat)) {
-    return
-  }
-
-  startSatelliteExplosion(sat)
-}
-
-function disposeMaterial(
-  material: THREE.Material,
-  disposedMaterials: Set<THREE.Material>,
-  disposedTextures: Set<THREE.Texture>
-): void {
-  if (disposedMaterials.has(material)) return
-  disposedMaterials.add(material)
-
-  const materialWithMap = material as THREE.Material & { map?: THREE.Texture | null }
-  if (materialWithMap.map && !disposedTextures.has(materialWithMap.map)) {
-    disposedTextures.add(materialWithMap.map)
-    materialWithMap.map.dispose()
-  }
-  material.dispose()
-}
-
-function disposeSceneResources(scene: THREE.Scene | null): void {
-  if (!scene) return
-  const disposedGeometries = new Set<THREE.BufferGeometry>()
-  const disposedMaterials = new Set<THREE.Material>()
-  const disposedTextures = new Set<THREE.Texture>()
-
-  scene.traverse(object => {
-    const objectWithResources = object as THREE.Object3D & {
-      geometry?: THREE.BufferGeometry
-      material?: THREE.Material | THREE.Material[]
-    }
-
-    if (objectWithResources.geometry && !disposedGeometries.has(objectWithResources.geometry)) {
-      disposedGeometries.add(objectWithResources.geometry)
-      objectWithResources.geometry.dispose()
-    }
-
-    const { material } = objectWithResources
-    if (Array.isArray(material)) {
-      material.forEach(mat => disposeMaterial(mat, disposedMaterials, disposedTextures))
-    } else if (material) {
-      disposeMaterial(material, disposedMaterials, disposedTextures)
-    }
-  })
-
-  scene.clear()
-}
-
-function createGlowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
-  const ctx = canvas.getContext('2d')!
-  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
-  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)')
-  gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.55)')
-  gradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.2)')
-  gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.05)')
-  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 128, 128)
-  return new THREE.CanvasTexture(canvas)
-}
-
-async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement> {
-  return new Promise(resolve => {
-    const img = new Image()
-    let settled = false
-    const finish = (canvas: HTMLCanvasElement) => {
-      if (settled) return
-      settled = true
-      resolve(canvas)
-    }
-    const fallback = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 64
-      canvas.height = 64
-      const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = '#888888'
-      ctx.fillRect(0, 0, 64, 64)
-      finish(canvas)
-    }
-    const timer = window.setTimeout(fallback, 5000)
-    img.onload = () => {
-      window.clearTimeout(timer)
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0)
-      finish(canvas)
-    }
-    img.onerror = () => {
-      window.clearTimeout(timer)
-      fallback()
-    }
-    img.src = url
-  })
-}
-
-function getThemeColors() {
-  if (isDark.value) {
-    return {
-      sideColor: '#2a2a2a',
-      ambientColor: 0x404040,
-      light1Color: 0x999999,
-      light2Color: 0x777777,
-      orbitColor: 0x555555,
-    }
-  }
-  return {
-    sideColor: '#f0f0f0',
-    ambientColor: 0xffffff,
-    light1Color: 0xffffff,
-    light2Color: 0xdddddd,
-    orbitColor: 0xbbbbbb,
-  }
-}
-
-function getRendererPixelRatio() {
-  return Math.min(window.devicePixelRatio || 1, performanceStore.isLowPower ? 1 : 2)
-}
-
-function updateRendererPixelRatio() {
-  const pixelRatio = getRendererPixelRatio()
-  orbitRenderer?.setPixelRatio(pixelRatio)
-  glowRenderer?.setPixelRatio(pixelRatio)
-  cardRenderer?.setPixelRatio(pixelRatio)
-}
-
-function createSceneRenderer(zIndex: string, pointerEvents = true): THREE.WebGLRenderer | null {
-  if (!container.value) {
-    return null
-  }
-
-  const renderer = new THREE.WebGLRenderer({
-    antialias: !performanceStore.lowPerformanceMode,
-    alpha: true,
-    powerPreference: performanceStore.lowPerformanceMode ? 'low-power' : 'high-performance',
-  })
-  renderer.setSize(Math.max(1, container.value.clientWidth), CONFIG.containerHeight)
-  renderer.setPixelRatio(getRendererPixelRatio())
-  renderer.setClearColor(0x000000, 0)
-  renderer.domElement.style.position = 'absolute'
-  renderer.domElement.style.top = '0'
-  renderer.domElement.style.left = '0'
-  renderer.domElement.style.zIndex = zIndex
-  if (!pointerEvents) {
-    renderer.domElement.style.pointerEvents = 'none'
-  }
-  container.value.appendChild(renderer.domElement)
-  return renderer
-}
-
-function recreateMainRenderers() {
-  if (!container.value || !orbitScene || !cardScene) {
-    return
-  }
-
-  clearSatelliteExplosions()
-  removeCardInteraction()
-  disposeRenderer(orbitRenderer)
-  disposeRenderer(cardRenderer)
-  orbitRenderer = createSceneRenderer('1')
-  cardRenderer = createSceneRenderer('2')
-  setupCardInteraction()
-}
-
-function createGlowRenderer(force = false) {
-  if (!container.value || !glowScene || glowRenderer || (performanceStore.isLowPower && !force)) {
-    return
-  }
-
-  const w = Math.max(1, container.value.clientWidth)
-  glowRenderer = new THREE.WebGLRenderer({
-    antialias: true,
-    alpha: true,
-    powerPreference: 'high-performance',
-  })
-  glowRenderer.setSize(w, CONFIG.containerHeight)
-  glowRenderer.setPixelRatio(getRendererPixelRatio())
-  glowRenderer.setClearColor(0x000000, 0)
-  glowRenderer.domElement.style.position = 'absolute'
-  glowRenderer.domElement.style.top = '0'
-  glowRenderer.domElement.style.left = '0'
-  glowRenderer.domElement.style.zIndex = '1.5'
-  glowRenderer.domElement.style.pointerEvents = 'none'
-  container.value.appendChild(glowRenderer.domElement)
-}
-
-function disposeGlowRenderer() {
-  if (!glowRenderer) {
-    return
-  }
-
-  disposeRenderer(glowRenderer)
-  glowRenderer = null
-}
-
-async function createCard(size: number, depth: number, imageUrl: string): Promise<CardMesh> {
-  const canvas = await loadImageToCanvas(imageUrl)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.needsUpdate = true
-  texture.colorSpace = THREE.SRGBColorSpace
-
-  const colors = getThemeColors()
-  const frontMat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 0,
-  })
-  const sideMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(colors.sideColor),
-    roughness: 0.9,
-    metalness: 0,
-  })
-
-  const materials: THREE.Material[] = [sideMat, sideMat, sideMat, sideMat, frontMat, sideMat]
-  const box = new THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>(
-    new THREE.BoxGeometry(size, size, depth),
-    materials
-  )
-  box.scale.set(0.01, 0.01, 0.01)
-  box.castShadow = false
-  box.receiveShadow = false
-  return box
-}
-
-function createEllipticalOrbit(): THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> {
-  const curve = new THREE.EllipseCurve(
-    0,
-    0,
-    CONFIG.orbitRadiusX,
-    CONFIG.orbitRadiusY,
-    0,
-    2 * Math.PI,
-    false,
-    0
-  )
-  const points = curve.getPoints(128)
-  const geometry = new THREE.BufferGeometry().setFromPoints(points)
-  const colors = getThemeColors()
-  const material = new THREE.LineBasicMaterial({
-    color: colors.orbitColor,
-    transparent: true,
-    opacity: CONFIG.orbitOpacity,
-  })
-  const line = new THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>(geometry, material)
-  line.rotation.x = CONFIG.orbitTilt
-  return line
-}
-
-function getCardFrontMaterial(card: CardMesh): THREE.MeshBasicMaterial | null {
-  const material = card.material[4]
-  return material instanceof THREE.MeshBasicMaterial ? material : null
-}
-
-function getCardImageCanvas(card: CardMesh): HTMLCanvasElement | null {
-  const image = getCardFrontMaterial(card)?.map?.image
-  if (!(image instanceof HTMLCanvasElement) || image.width <= 0 || image.height <= 0) {
-    return null
-  }
-  return image
-}
-
-function createFragmentTexture(
-  source: HTMLCanvasElement,
-  column: number,
-  row: number
-): THREE.CanvasTexture {
-  const columns = SATELLITE_EXPLOSION_CONFIG.fragmentColumns
-  const rows = SATELLITE_EXPLOSION_CONFIG.fragmentRows
-  const sourceWidth = source.width / columns
-  const sourceHeight = source.height / rows
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.ceil(sourceWidth))
-  canvas.height = Math.max(1, Math.ceil(sourceHeight))
-  const context = canvas.getContext('2d')!
-  context.drawImage(
-    source,
-    column * sourceWidth,
-    row * sourceHeight,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  )
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-  return texture
-}
-
-function disposeExplosionResources(explosion: SatelliteExplosion) {
-  cardScene?.remove(explosion.group)
-  explosion.effectScene.remove(explosion.flashSprite, explosion.ringMesh)
-
-  explosion.fragments.forEach(fragment => {
-    fragment.mesh.geometry.dispose()
-    fragment.mesh.material.map?.dispose()
-    fragment.mesh.material.dispose()
-  })
-  explosion.flashSprite.material.dispose()
-  explosion.ringMesh.material.dispose()
-  explosion.group.clear()
-}
-
-function restoreSatelliteAfterExplosion(sat: CardMesh, explosion: SatelliteExplosion) {
-  const frontMaterial = getCardFrontMaterial(sat)
-  if (frontMaterial) {
-    frontMaterial.opacity = explosion.originalOpacity
-  }
-  sat.scale.copy(explosion.originalScale)
-  sat.visible = explosion.originalVisible
-  setSatelliteEffectsVisible(sat, true)
-}
-
-function clearSatelliteExplosions() {
-  satelliteExplosions.forEach((explosion, sat) => {
-    restoreSatelliteAfterExplosion(sat, explosion)
-    disposeExplosionResources(explosion)
-  })
-  satelliteExplosions.clear()
-}
-
-function startSatelliteExplosion(sat: CardMesh) {
-  if (!cardScene || !glowScene || !glowTexture || satelliteExplosions.has(sat)) {
-    return
-  }
-
-  const source = getCardImageCanvas(sat)
-  const frontMaterial = getCardFrontMaterial(sat)
-  if (!source || !frontMaterial) {
-    return
-  }
-
-  const columns = SATELLITE_EXPLOSION_CONFIG.fragmentColumns
-  const rows = SATELLITE_EXPLOSION_CONFIG.fragmentRows
-  const fragmentWidth = CONFIG.satelliteCardSize / columns
-  const fragmentHeight = CONFIG.satelliteCardSize / rows
-  const group = new THREE.Group()
-  group.position.copy(sat.position)
-  group.quaternion.copy(sat.quaternion)
-  group.scale.copy(sat.scale)
-  group.renderOrder = 2
-
-  const fragments: ExplosionFragment[] = []
-  for (let row = 0; row < rows; row++) {
-    for (let column = 0; column < columns; column++) {
-      const texture = createFragmentTexture(source, column, row)
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-      const mesh = new THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>(
-        new THREE.PlaneGeometry(fragmentWidth, fragmentHeight),
-        material
-      )
-      const origin = new THREE.Vector3(
-        (column + 0.5 - columns / 2) * fragmentWidth,
-        (rows / 2 - row - 0.5) * fragmentHeight,
-        CONFIG.satelliteCardDepth / 2 + 0.4
-      )
-      mesh.position.copy(origin)
-      group.add(mesh)
-      fragments.push({
-        mesh,
-        motion: createExplosionFragmentMotion(
-          row * columns + column,
-          columns * rows,
-          Number(sat.userData.index ?? 0) + 17
-        ),
-        origin,
-      })
-    }
-  }
-
-  const flashMaterial = new THREE.SpriteMaterial({
-    map: glowTexture,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    color: new THREE.Color(0x8ce7ff),
-    opacity: 1,
-  })
-  const flashSprite = new THREE.Sprite(flashMaterial)
-  flashSprite.position.copy(sat.position)
-  flashSprite.scale.setScalar(CONFIG.satelliteCardSize * 1.2)
-  flashSprite.renderOrder = 3
-
-  const ringMaterial = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(0x6ce0ff),
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    opacity: 0.9,
-  })
-  const ringMesh = new THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>(
-    new THREE.RingGeometry(26, 31, 48),
-    ringMaterial
-  )
-  ringMesh.position.copy(sat.position)
-  ringMesh.quaternion.copy(sat.quaternion)
-  ringMesh.scale.setScalar(0.2)
-  ringMesh.renderOrder = 2
-
-  const effectScene = performanceStore.isLowPower ? cardScene : glowScene
-
-  const explosion: SatelliteExplosion = {
-    group,
-    effectScene,
-    fragments,
-    flashSprite,
-    ringMesh,
-    startTime: Date.now(),
-    originalOpacity: frontMaterial.opacity,
-    originalScale: sat.scale.clone(),
-    originalVisible: sat.visible,
-  }
-
-  cardScene.add(group)
-  effectScene.add(flashSprite, ringMesh)
-  satelliteExplosions.set(sat, explosion)
-  sat.visible = false
-  setSatelliteEffectsVisible(sat, false)
-
-  if (performanceStore.isLowPower) {
-    renderCurrentFrame()
-  }
-}
-
-function updateSatelliteExplosions(time: number): boolean {
-  if (satelliteExplosions.size === 0) {
-    return false
-  }
-
-  satelliteExplosions.forEach((explosion, sat) => {
-    const elapsed = Math.max(0, time - explosion.startTime)
-    const phase = getExplosionPhase(elapsed)
-    const flightSeconds = Math.min(elapsed, SATELLITE_EXPLOSION_CONFIG.fragmentDuration) / 1000
-
-    explosion.group.position.copy(sat.position)
-    explosion.group.quaternion.copy(sat.quaternion)
-    explosion.flashSprite.position.copy(sat.position)
-    explosion.ringMesh.position.copy(sat.position)
-    explosion.ringMesh.quaternion.copy(sat.quaternion)
-
-    explosion.fragments.forEach(fragment => {
-      const { mesh, motion, origin } = fragment
-      const explodedPosition = new THREE.Vector3(
-        origin.x + motion.velocityX * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000),
-        origin.y +
-          motion.velocityY * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000) -
-          0.5 *
-            SATELLITE_EXPLOSION_CONFIG.fragmentGravity *
-            (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000) ** 2,
-        origin.z + motion.velocityZ * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000)
-      )
-      const explodedRotation = new THREE.Euler(
-        motion.rotationX +
-          motion.rotationSpeedX * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000),
-        motion.rotationY +
-          motion.rotationSpeedY * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000),
-        motion.rotationZ +
-          motion.rotationSpeedZ * (SATELLITE_EXPLOSION_CONFIG.fragmentDuration / 1000)
-      )
-
-      if (phase.isReassembling) {
-        const progress = easeOutCubic(phase.progress)
-        mesh.position.lerpVectors(explodedPosition, origin, progress)
-        mesh.rotation.x = THREE.MathUtils.lerp(explodedRotation.x, 0, progress)
-        mesh.rotation.y = THREE.MathUtils.lerp(explodedRotation.y, 0, progress)
-        mesh.rotation.z = THREE.MathUtils.lerp(explodedRotation.z, 0, progress)
-        mesh.material.opacity = progress
-        return
-      }
-
-      mesh.position.set(
-        origin.x + motion.velocityX * flightSeconds,
-        origin.y +
-          motion.velocityY * flightSeconds -
-          0.5 * SATELLITE_EXPLOSION_CONFIG.fragmentGravity * flightSeconds ** 2,
-        origin.z + motion.velocityZ * flightSeconds
-      )
-      mesh.rotation.set(
-        motion.rotationX + motion.rotationSpeedX * flightSeconds,
-        motion.rotationY + motion.rotationSpeedY * flightSeconds,
-        motion.rotationZ + motion.rotationSpeedZ * flightSeconds
-      )
-      mesh.material.opacity =
-        1 - getExplosionEffectProgress(elapsed, SATELLITE_EXPLOSION_CONFIG.fragmentDuration)
-    })
-
-    const flashProgress = getExplosionEffectProgress(
-      elapsed,
-      SATELLITE_EXPLOSION_CONFIG.flashDuration
-    )
-    explosion.flashSprite.material.opacity = 1 - flashProgress
-    explosion.flashSprite.scale.setScalar(CONFIG.satelliteCardSize * (1.2 + flashProgress * 0.8))
-
-    const ringProgress = getExplosionEffectProgress(
-      elapsed,
-      SATELLITE_EXPLOSION_CONFIG.ringDuration
-    )
-    explosion.ringMesh.material.opacity = (1 - ringProgress) * 0.9
-    explosion.ringMesh.scale.setScalar(0.2 + ringProgress * 1.35)
-
-    if (phase.complete) {
-      restoreSatelliteAfterExplosion(sat, explosion)
-      disposeExplosionResources(explosion)
-      satelliteExplosions.delete(sat)
-    }
-  })
-
-  const hasActiveExplosions = satelliteExplosions.size > 0
-  if (!hasActiveExplosions && performanceStore.isLowPower) {
-    disposeGlowRenderer()
-  }
-  return hasActiveExplosions
-}
-
-function updateAllThemeColors() {
-  const colors = getThemeColors()
-  const sideColor = new THREE.Color(colors.sideColor)
-  const orbitColor = new THREE.Color(colors.orbitColor)
-
-  cardScene?.traverse((obj: any) => {
-    if (obj.isMesh && obj.material) {
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
-      for (const mat of mats) {
-        if (mat.isMeshStandardMaterial && !mat.map) {
-          mat.color.copy(sideColor)
-        }
-      }
-    }
-    if (obj.isAmbientLight) obj.color.setHex(colors.ambientColor)
-    if (obj.isDirectionalLight) {
-      obj.color.setHex(obj === obj.parent?.children[1] ? colors.light1Color : colors.light2Color)
-    }
-  })
-
-  orbitScene?.traverse((obj: any) => {
-    if (obj.isLine && obj.material) {
-      obj.material.color.copy(orbitColor)
-    }
-  })
-}
-
-async function initScene(): Promise<void> {
-  if (!container.value || isUnmounted) return
-  try {
-    await initSceneInternal()
-  } catch (err) {
-    disposeScene()
-    logger.error(`初始化场景失败: ${String(err)}`)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function initSceneInternal(): Promise<void> {
-  if (!container.value || isUnmounted) return
-
-  let userScripts: Awaited<ReturnType<typeof getScripts>> = []
-  try {
-    userScripts = await getScripts()
-  } catch (err) {
-    logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
-  }
-
-  if (!container.value || isUnmounted) return
-
-  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
-  const enabledModules = satelliteModules.filter(
-    m => m.enabled && userScriptTypes.has(m.scriptType)
-  )
-  const numSatellites = enabledModules.length
-
-  if (numSatellites === 0) {
-    logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
-  }
-
-  const w = container.value.clientWidth
-
-  camera = new THREE.PerspectiveCamera(CONFIG.cameraFov, w / CONFIG.containerHeight, 0.1, 5000)
-  camera.position.set(0, 80, 500)
-  camera.lookAt(0, 0, 0)
-
-  orbitScene = new THREE.Scene()
-  glowScene = new THREE.Scene()
-  cardScene = new THREE.Scene()
-  recreateMainRenderers()
-  createGlowRenderer()
-
-  const colors = getThemeColors()
-  const ambient = new THREE.AmbientLight(colors.ambientColor, 0.6)
-  cardScene.add(ambient)
-  const dl1 = new THREE.DirectionalLight(colors.light1Color, 0.5)
-  dl1.position.set(200, 300, 400)
-  cardScene.add(dl1)
-  const dl2 = new THREE.DirectionalLight(colors.light2Color, 0.3)
-  dl2.position.set(-200, -100, 200)
-  cardScene.add(dl2)
-
-  orbitLine = createEllipticalOrbit()
-  orbitScene.add(orbitLine)
-
-  glowTexture = createGlowTexture()
-
-  const createdCenterCard = await createCard(
-    CONFIG.centerCardSize,
-    CONFIG.centerCardDepth,
-    centerIconUrl
-  )
-  if (!container.value || isUnmounted) {
-    disposeCardMesh(createdCenterCard)
-    disposeScene()
-    return
-  }
-
-  centerCard = createdCenterCard
-  centerCard.position.set(0, 0, 0)
-  cardScene.add(centerCard)
-
-  const centerGlowMaterial = new THREE.SpriteMaterial({
-    map: glowTexture,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    color: new THREE.Color(0xffaa66),
-    opacity: 0,
-  })
-  const centerGlow = new THREE.Sprite(centerGlowMaterial)
-  centerGlow.scale.set(
-    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
-    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
-    1
-  )
-  centerGlowSprite = centerGlow
-  glowScene.add(centerGlow)
-
-  for (let i = 0; i < numSatellites; i++) {
-    const module = enabledModules[i]
-    const sat = await createCard(
-      CONFIG.satelliteCardSize,
-      CONFIG.satelliteCardDepth,
-      module.iconUrl
-    )
-    if (!container.value || isUnmounted) {
-      disposeCardMesh(sat)
-      disposeScene()
-      return
-    }
-
-    sat.userData.angle = (i / numSatellites) * Math.PI * 2
-    sat.userData.index = i
-    satellites.push(sat)
-    cardScene.add(sat)
-
-    const activityGlowMaterial = new THREE.SpriteMaterial({
-      map: glowTexture,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      color: new THREE.Color(0x6ce08a),
-      opacity: 0,
-    })
-    const activityGlowSprite = new THREE.Sprite(activityGlowMaterial)
-    activityGlowSprite.scale.set(
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
-      1
-    )
-    glowScene.add(activityGlowSprite)
-
-    const errorGlowMaterial = new THREE.SpriteMaterial({
-      map: glowTexture,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      color: new THREE.Color(0xff5a5f),
-      opacity: 0,
-    })
-    const errorGlowSprite = new THREE.Sprite(errorGlowMaterial)
-    errorGlowSprite.scale.set(
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
-      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
-      1
-    )
-    glowScene.add(errorGlowSprite)
-
-    satelliteStates.set(sat, {
-      type: module.scriptType,
-      activityGlowSprite,
-      errorGlowSprite,
-      status: {
-        queued: false,
-        running: false,
-        lastFailed: false,
-      },
-    })
-  }
-
-  loading.value = false
-
-  if (performanceStore.isLowPower) {
-    disposeGlowRenderer()
-    showCardsImmediately()
-    renderCurrentFrame()
-  } else {
-    animateAppear()
-  }
-}
-
-function animateAppear() {
-  const appearStart = Date.now()
-  const totalDuration = CONFIG.cardAppearDelay * (satellites.length + 1) + CONFIG.cardAppearDuration
-
-  function step() {
-    if (isUnmounted || performanceStore.isLowPower) return
-
-    const elapsed = Date.now() - appearStart
-    if (elapsed > totalDuration) {
-      showCardsImmediately()
-      return
-    }
-
-    const centerProgress = Math.min(1, elapsed / CONFIG.cardAppearDuration)
-    const easedCenter = easeOutCubic(centerProgress)
-    if (centerCard) {
-      const frontMaterial = getCardFrontMaterial(centerCard)
-      if (frontMaterial) frontMaterial.opacity = easedCenter
-      centerCard.scale.set(easedCenter, easedCenter, easedCenter)
-    }
-
-    satellites.forEach((sat, i) => {
-      const delay = CONFIG.cardAppearDelay * (i + 1)
-      const progress = Math.min(1, (elapsed - delay) / CONFIG.cardAppearDuration)
-      const eased = easeOutCubic(Math.max(0, progress))
-      const frontMaterial = getCardFrontMaterial(sat)
-      if (frontMaterial) frontMaterial.opacity = eased
-      sat.scale.set(eased, eased, eased)
-    })
-
-    appearAnimationFrameId = requestAnimationFrame(step)
-  }
-
-  appearAnimationFrameId = requestAnimationFrame(step)
-}
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3)
-}
-
-function animate(): void {
-  const shouldRenderLowPowerFrame = allowLowPowerFrame
-  allowLowPowerFrame = false
-
-  if (
-    isUnmounted ||
-    !camera ||
-    performanceStore.isBackgrounded ||
-    (!shouldRenderLowPowerFrame && performanceStore.isLowPower)
-  ) {
-    return
-  }
-
-  const time = Date.now()
-  const numSatellites = satellites.length
-
-  for (let i = 0; i < numSatellites; i++) {
-    const sat = satellites[i]
-    const angle = sat.userData.angle + time * CONFIG.satelliteOrbitSpeed
-    const x = Math.cos(angle) * CONFIG.orbitRadiusX
-    const y = Math.sin(angle) * CONFIG.orbitRadiusY
-    const tiltedY = y * Math.cos(CONFIG.orbitTilt)
-    const z = y * Math.sin(CONFIG.orbitTilt)
-    const floatOffset =
-      Math.sin(time * CONFIG.satelliteFloatSpeed * 0.001 + i * ((Math.PI * 2) / numSatellites)) *
-      CONFIG.satelliteFloatAmplitude
-
-    sat.position.set(x, tiltedY + floatOffset, z)
-    sat.lookAt(camera.position)
-    sat.rotation.z = 0
-  }
-
-  if (centerCard) {
-    centerCard.lookAt(camera.position)
-    centerCard.rotation.z = 0
-    const centerFloat =
-      Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * CONFIG.centerFloatAmplitude
-    centerCard.position.y = centerFloat
-  }
-
-  const hasActiveExplosions = updateSatelliteExplosions(time)
-
-  if (performanceStore.isLowPower) {
-    if (orbitRenderer && orbitScene) orbitRenderer.render(orbitScene, camera)
-    if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
-    if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
-    if (hasActiveExplosions && !performanceStore.isBackgrounded) {
-      animationFrameScheduler.request(animate)
-    }
-    return
-  }
-
-  satelliteStates.forEach((state, sat) => {
-    if (state.activityGlowSprite) {
-      state.activityGlowSprite.position.set(
-        sat.position.x,
-        sat.position.y,
-        sat.position.z + CONFIG.activityGlowZOffset
-      )
-
-      const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
-      if (state.status.lastFailed) {
-        state.activityGlowSprite.material.opacity = 0
-      } else if (state.status.running) {
-        const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
-        const pulseFactor = 1 + breathe * 0.12
-        state.activityGlowSprite.material.color.setHex(0x6ce08a)
-        state.activityGlowSprite.material.opacity = 0.4 + breathe * 0.55
-        state.activityGlowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
-      } else if (state.status.queued) {
-        state.activityGlowSprite.material.color.setHex(0x6ce08a)
-        state.activityGlowSprite.material.opacity = 0.62
-        state.activityGlowSprite.scale.set(baseScale, baseScale, 1)
-      } else {
-        state.activityGlowSprite.material.opacity = 0
-      }
-    }
-
-    if (state.errorGlowSprite) {
-      state.errorGlowSprite.position.set(
-        sat.position.x,
-        sat.position.y,
-        sat.position.z + CONFIG.errorGlowZOffset
-      )
-
-      if (state.status.lastFailed) {
-        const faintPulse = state.status.running
-          ? 0.5 + 0.5 * Math.sin(time * 0.003)
-          : 0.5 + 0.5 * Math.sin(time * 0.0016)
-        const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08
-        const pulseFactor = state.status.running ? 1 + faintPulse * 0.12 : 1 + faintPulse * 0.04
-        state.errorGlowSprite.material.color.setHex(state.status.running ? 0xffc247 : 0xff5a5f)
-        state.errorGlowSprite.material.opacity = state.status.running
-          ? 0.4 + faintPulse * 0.32
-          : 0.42
-        state.errorGlowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
-      } else {
-        state.errorGlowSprite.material.opacity = 0
-      }
-    }
-  })
-
-  if (centerGlowSprite && centerCard) {
-    centerGlowSprite.position.set(
-      centerCard.position.x,
-      centerCard.position.y,
-      centerCard.position.z + CONFIG.activityGlowZOffset
-    )
-
-    if (centerGlowMode.value === 'rainbow') {
-      const hue = (time * 0.0008) % 1
-      const flash = 0.5 + 0.5 * Math.sin(time * 0.006)
-      centerGlowSprite.material.color.setHSL(hue, 0.75, 0.6)
-      centerGlowSprite.material.opacity = 0.58 + flash * 0.34
-      centerGlowSprite.scale.setScalar(
-        CONFIG.centerCardSize * (CONFIG.glowSizeMultiplier * 0.82 + flash * 0.1)
-      )
-    } else {
-      centerGlowSprite.material.color.setHex(0x6ce08a)
-      centerGlowSprite.material.opacity = 0.85
-      centerGlowSprite.scale.setScalar(CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.85)
-    }
-  }
-
-  if (orbitRenderer && orbitScene) orbitRenderer.render(orbitScene, camera)
-  if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
-  if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
-
-  if (!performanceStore.isLowPower) {
-    animationFrameScheduler.request(animate)
-  }
-}
-
-function handleResize(): void {
-  if (!container.value || !camera) return
-  const w = container.value.clientWidth
-  if (w <= 0) return
-  camera.aspect = w / CONFIG.containerHeight
-  camera.position.set(0, 80, 500)
-  camera.updateProjectionMatrix()
-  updateRendererPixelRatio()
-  if (orbitRenderer) orbitRenderer.setSize(w, CONFIG.containerHeight)
-  if (glowRenderer) glowRenderer.setSize(w, CONFIG.containerHeight)
-  if (cardRenderer) cardRenderer.setSize(w, CONFIG.containerHeight)
-  if (performanceStore.isLowPower) renderCurrentFrame()
-}
-
-watch(isDark, () => {
-  updateAllThemeColors()
-  if (performanceStore.isLowPower) renderCurrentFrame()
+const hoveredStatus = computed(() =>
+  hoveredModule.value ? satelliteStatuses.value.get(hoveredModule.value.key) : undefined
+)
+
+/** 脚本运行期间动效自动暂停；手动恢复状态在 performance store 里（随本轮任务生效），任务清零后由 store 复位 */
+const effectsPaused = computed(
+  () => performanceStore.homeEffectsPaused && !performanceStore.homeEffectsManuallyResumed
+)
+
+// ==================== 监听 ====================
+
+watch(isDark, dark => {
+  scene?.setDark(dark)
+  requestRender()
+  scheduleStill()
 })
-
-function updateSatelliteStates() {
-  if (isUnmounted) return
-
-  const statusByType = satelliteStatuses.value
-  satelliteStates.forEach(state => {
-    state.status = statusByType.get(state.type) ?? {
-      queued: false,
-      running: false,
-      lastFailed: false,
-    }
-  })
-
-  if (performanceStore.isLowPower && !performanceStore.isBackgrounded) {
-    renderCurrentFrame()
-  }
-}
 
 // 常驻订阅推送新状态时同步刷新展示
-watch(satelliteStatuses, () => updateSatelliteStates())
+watch(satelliteStatuses, statuses => {
+  scene?.setStatuses(statuses)
+  eggs.onStatusesChange(statuses)
+  requestRender()
+  scheduleStill()
+})
 
+// 低性能模式只留一张静态图：切进去就拆掉实时场景拍一张，切回来再搭实时场景
 watch(
   () => performanceStore.lowPerformanceMode,
-  lowPerformanceMode => {
-    recreateMainRenderers()
-
-    if (lowPerformanceMode) {
-      stopAnimation()
-      stopAppearAnimation()
-      disposeGlowRenderer()
-      showCardsImmediately()
-      if (!performanceStore.isBackgrounded) {
-        renderCurrentFrame()
-      }
-      return
-    }
-
-    if (!performanceStore.isBackgrounded) {
-      createGlowRenderer()
-      startAnimation()
-    }
-  }
+  () => void applyMode()
 )
 
 // WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
@@ -1308,26 +191,24 @@ watch(
   () => performanceStore.isBackgrounded,
   async isBackgrounded => {
     if (isBackgrounded) {
-      stopAnimation()
-      stopAppearAnimation()
+      frameScheduler.cancel()
       stopStatusPolling()
-      clearSatelliteExplosions()
-      disposeGlowRenderer()
+      cancelPress()
+      scene?.clearExplosions()
+      scene?.clearEffects()
       return
     }
 
     await nextTick()
     if (isUnmounted) return
 
-    handleResize()
-    showCardsImmediately()
-    if (performanceStore.lowPerformanceMode) {
-      renderCurrentFrame()
-    } else {
-      createGlowRenderer()
-      startAnimation()
+    if (scene) {
+      scene.resize()
+      scene.skipAppear()
+      scene.setStatuses(satelliteStatuses.value)
     }
-    updateSatelliteStates()
+    lastFrameAt = null
+    requestRender()
     void waitBackendReady().then(() => {
       if (isUnmounted || performanceStore.isBackgrounded) return
       void refreshSatelliteStatuses()
@@ -1336,47 +217,283 @@ watch(
   }
 )
 
+// 脚本运行暂停不用硬停：帧循环画完闲置帧后在 drawFrame 里自然停；
+// 暂停时关掉背景流星（不然每次补帧都撞上过期的 nextMeteorAt，卫星冻着流星照飞）；
+// 恢复（任务清零或点了继续）时补一帧重新拉起循环
+watch(effectsPaused, paused => {
+  scene?.setMeteorsEnabled(!paused)
+  if (paused) return
+  lastFrameAt = null
+  requestRender()
+})
+
+// ==================== 生命周期 ====================
+
 onMounted(async () => {
-  isUnmounted = false
   await waitBackendReady()
   if (isUnmounted) return
+
   try {
-    await initScene()
-  } catch (e) {
-    logger.error(`init failed: ${String(e)}`)
+    visibleModules = await loadVisibleModules()
+    await applyMode()
+  } catch (err) {
+    logger.error(`初始化场景失败: ${String(err)}`)
+  } finally {
+    loading.value = false
   }
   if (isUnmounted) return
 
-  if (performanceStore.isLowPower) {
-    renderCurrentFrame()
-  } else {
-    startAnimation()
-  }
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', eggs.handleKeydown)
 
-  updateSatelliteStates()
   void refreshSatelliteStatuses()
   startStatusPolling()
 
-  // 检查更新状态
+  // 有新版本时中心光晕换成彩虹
   try {
     const updateRes = await requestUpdateCheck(false)
-    if (updateRes.code === 200 && updateRes.if_need_update) {
-      if (isUnmounted) return
-      centerGlowMode.value = 'rainbow'
+    if (updateRes.code === 200 && updateRes.if_need_update && !isUnmounted) {
+      centerGlowMode = 'rainbow'
+      scene?.setCenterGlowMode('rainbow')
+      requestRender()
+      scheduleStill()
     }
   } catch {
     // 静默失败，保持绿色
   }
 })
+
+onUnmounted(() => {
+  isUnmounted = true
+  disposeBackendReadyListener?.()
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', eggs.handleKeydown)
+  stopStatusPolling()
+  clearStill()
+  teardownLive()
+})
+
+// ==================== 场景 ====================
+
+// 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
+// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+function waitBackendReady(): Promise<void> {
+  if (connectionState().value === 'open') return Promise.resolve()
+  return new Promise(resolve => {
+    disposeBackendReadyListener = onConnected(() => {
+      disposeBackendReadyListener = null
+      resolve()
+    })
+  })
+}
+
+/** 只有用户建过的脚本才上轨道：每种脚本类型一颗，通用 MFW 每个项目一颗 */
+async function loadVisibleModules(): Promise<OrbitModule[]> {
+  let userScripts: Awaited<ReturnType<typeof getScripts>> = []
+  try {
+    userScripts = await getScripts()
+  } catch (err) {
+    logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
+  }
+
+  const modules = buildOrbitModules(userScripts)
+  setSatelliteScriptKeys(orbitKeysByScriptId(modules))
+  if (modules.length === 0) {
+    logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
+  }
+  return modules
+}
+
+/** 按当前性能模式摆出实时场景或静态图 */
+async function applyMode(): Promise<void> {
+  if (isUnmounted || !visibleModules) return
+
+  if (performanceStore.lowPerformanceMode) {
+    teardownLive()
+    await renderStill()
+    return
+  }
+
+  clearStill()
+  if (!scene && !liveLoading) {
+    await startLive()
+  }
+}
+
+async function startLive(): Promise<void> {
+  if (!container.value || !visibleModules) return
+
+  liveLoading = true
+  const created = new SatelliteScene(container.value, { isDark: isDark.value })
+  try {
+    const loaded = await created.load(
+      centerIconUrl,
+      visibleModules,
+      () => isUnmounted || performanceStore.lowPerformanceMode
+    )
+    if (!loaded) {
+      created.dispose()
+      return
+    }
+  } catch (err) {
+    created.dispose()
+    throw err
+  } finally {
+    liveLoading = false
+  }
+
+  scene = created
+  // 加载图片期间主题、状态可能已经变了，watcher 那时还够不着场景
+  scene.setDark(isDark.value)
+  scene.setStatuses(satelliteStatuses.value)
+  scene.setCenterGlowMode(centerGlowMode)
+  // 挂载时已在暂停中就别放背景流星（watcher 只在变化时触发，这里补初始状态）
+  scene.setMeteorsEnabled(!effectsPaused.value)
+  // 记下此刻已经在跑的脚本：之后看着它开跑才喊「启动」
+  eggs.onStatusesChange(satelliteStatuses.value)
+
+  const now = Date.now()
+  if (performanceStore.isBackgrounded || effectsPaused.value) {
+    scene.skipAppear()
+  } else if (consumeFirstVisit()) {
+    // 本次启动应用后第一次进主页：曲速跃迁进场，星核点燃时卫星再甩出来
+    scene.startIntro(now)
+    scene.startAppear(now + INTRO_IGNITE_MS)
+  } else {
+    scene.startAppear(now)
+  }
+  lastFrameAt = null
+  requestRender()
+}
+
+/** 拆掉实时场景连同它的帧循环、手势、彩蛋和浮字 */
+function teardownLive(): void {
+  frameScheduler.cancel()
+  cancelPress()
+  setHovered(null)
+  eggs.dispose()
+  floatLayer.value?.clear()
+  scene?.dispose()
+  scene = null
+}
+
+/** 实时场景逐帧连续画；脚本运行暂停期间只把在飞的动效放完，闲置就停，状态推送时补一帧 */
+function drawFrame(): void {
+  if (isUnmounted || !scene || performanceStore.isBackgrounded) return
+
+  const now = Date.now()
+  // 系统时间被往回调时帧间隔会是负的，按 0 算
+  const dt = lastFrameAt === null ? 16 : Math.min(100, Math.max(0, now - lastFrameAt))
+  lastFrameAt = now
+  updateCoreCharge()
+  eggs.checkDizzy(dt, now)
+
+  const busy = scene.renderFrame(now)
+  updateLabelPosition()
+  if (!effectsPaused.value || busy) {
+    frameScheduler.request(drawFrame)
+  }
+}
+
+function requestRender(): void {
+  if (isUnmounted || !scene || performanceStore.isBackgrounded) return
+  frameScheduler.request(drawFrame)
+}
+
+function handleResize(): void {
+  scene?.resize()
+  requestRender()
+  scheduleStill()
+}
+
+function stopStatusPolling(): void {
+  if (statusPollTimer === null) return
+  clearInterval(statusPollTimer)
+  statusPollTimer = null
+}
+
+function startStatusPolling(): void {
+  if (
+    performanceStore.isBackgrounded ||
+    statusPollTimer !== null ||
+    connectionState().value === 'open'
+  ) {
+    return
+  }
+
+  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
+  statusPollTimer = setInterval(() => void refreshSatelliteStatuses(), STATUS_POLL_INTERVAL)
+}
+
+// ==================== 悬停标签 ====================
+
+function setHovered(index: number | null): void {
+  if (hoveredSatellite.value === index) return
+  hoveredSatellite.value = index
+  hoveredModule.value = index === null ? null : (visibleModules?.[index] ?? null)
+  pointingSatellite.value = index !== null
+  scene?.setHovered(index)
+  eggs.onHoverChange(index)
+  requestRender()
+}
+
+function updateLabelPosition(): void {
+  const index = hoveredSatellite.value
+  if (index === null || !scene) return
+  const point = scene.projectSatellite(index)
+  if (point) hoverLabel.value?.moveTo(point)
+}
+
+// ==================== 交互 ====================
+
+function handleSatelliteTap(index: number, now: number): void {
+  if (!scene) return
+  if (!scene.explode(index, now)) {
+    scene.ping(index, now)
+  }
+  eggs.pokeSatellite(index)
+}
+
+function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant): void {
+  if (isUnmounted) return
+  floatLayer.value?.spawn(point, text, variant)
+}
 </script>
 
 <style scoped>
 .satellite-container {
   width: 100%;
-  height: 400px;
+  /* 窗口越宽卫星区域越高：450 起步，宽屏上给星系多一点纵深 */
+  height: clamp(450px, 36vw, 580px);
   position: relative;
   overflow: hidden;
+  user-select: none;
+}
+
+.satellite-container.is-pointing {
+  cursor: pointer;
+}
+
+.satellite-container.is-dragging {
+  cursor: grabbing;
+}
+
+/* 1999 暴雨：画面褪成老照片的颜色 */
+.satellite-container :deep(canvas) {
+  transition: filter 900ms ease;
+}
+
+.satellite-container.is-storm :deep(canvas) {
+  filter: sepia(0.75) saturate(0.8) contrast(1.05);
+}
+
+/* 低性能模式的静态图，和实时画布一样铺满 */
+.satellite-static {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .loading-spinner {

@@ -36,10 +36,6 @@ export type GlobalConfig_Notify = {
      */
     KoishiToken?: (string | null);
     /**
-     * 是否启用微信 Claw 通知
-     */
-    IfOpenClawWeixin?: (boolean | null);
-    /**
      * 是否启用 QQ 官方机器人通知
      */
     IfOpenClawQQ?: (boolean | null);

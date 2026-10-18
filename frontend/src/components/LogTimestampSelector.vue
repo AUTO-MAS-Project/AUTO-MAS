@@ -1,14 +1,20 @@
 <template>
   <div class="log-timestamp-selector">
-    <!-- 切换视图模式 -->
-    <a-radio-group v-model:value="viewMode" style="margin-bottom: 16px" @change="onViewModeChange">
+    <!-- 切换视图模式：large 尺寸与右列大号输入框等高，保持两列观感齐平 -->
+    <a-radio-group
+      v-model:value="viewMode"
+      size="large"
+      class="view-mode-group"
+      @change="onViewModeChange"
+    >
       <a-radio-button value="input">{{ t('comp.textInput') }}</a-radio-button>
       <a-radio-button value="visual">{{ t('comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
     <div v-if="viewMode === 'input'">
-      <a-row :gutter="16">
+      <!-- gutter 与外层分区保持一致，子列边界才能和外层两列对齐 -->
+      <a-row :gutter="24">
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
@@ -334,6 +340,11 @@ const applySelection = async () => {
 <style scoped>
 .log-timestamp-selector {
   width: 100%;
+}
+
+/* 间距沿用 16px；large 尺寸让模式切换与右列大号输入框等高，保持两列观感齐平 */
+.view-mode-group {
+  margin-bottom: 16px;
 }
 
 .visual-mode-container {

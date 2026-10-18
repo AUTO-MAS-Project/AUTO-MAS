@@ -22,181 +22,52 @@
 """统一通知编排。
 
 脚本和业务模块负责生成正文，本模块负责读取通知配置、选择目标渠道、失败隔离与重试；
-``app.services.notification`` 只保留具体渠道的传输实现。
+``app.services.notification`` 持有已装配发送器，具体传输由各渠道实现。
 """
 
 import asyncio
-import json
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Literal
-from urllib.parse import urlsplit
+from typing import Any, Literal, Protocol
 
 from app.core.config import Config
-from app.models.config import Webhook
-from app.services.notification import DEFAULT_WEBHOOK_TEMPLATE, Notify
+from app.core.notify_channels import (
+    ChannelTarget,
+    NotifyChannel,
+    TargetConfigView,
+    get_notify_channel_failures,
+    get_notify_channels,
+)
+from app.core.notify_render import render_for_target
+from app.models.notification import (
+    NotificationImage,
+    NotifyPayload,
+    WebhookTargetSnapshot,
+)
+from app.runtime_tasks import RuntimeTasks
+from app.services.notification import Notification, Notify
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
 
-SIGNATURE = "AUTO-MAS 敬上"
+_PENDING_TASK_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[Any]] = set()
 
-MailMode = Literal["文本", "网页"]
 EmptyPolicy = Literal["send", "warn", "skip"]
 
 
 @dataclass(frozen=True)
-class NotifyPayload:
-    """一份已经完成业务渲染的通知正文。"""
-
-    title: str
-    text: str
-    html: str | None = None
-    signature_sep: str = "\n\n"
-    append_signature: bool = True
-    email_mode: MailMode = "网页"
-    serverchan_text: str | None = None
-    webhook_text: str | None = None
-    markdown_text: str | None = None
-    webhook_image_base64: str | None = None
-    koishi_text: str | None = None
-    koishi_msgtype: Literal["text", "html", "picture"] = "text"
-    system_title: str | None = None
-    system_message: str | None = None
-    system_ticker: str | None = None
-    system_timeout: int = 5
-    standalone_title: str | None = None
-
-    @property
-    def signed_text(self) -> str:
-        """返回默认的纯文本渠道正文。"""
-
-        if not self.append_signature:
-            return self.text
-        return f"{self.text}{self.signature_sep}{SIGNATURE}"
-
-    @property
-    def email_content(self) -> str:
-        """返回邮件正文。"""
-
-        if self.email_mode == "网页" and self.html is not None:
-            return self.html
-        return self.text
-
-    @property
-    def serverchan_content(self) -> str:
-        """返回 ServerChan 正文。"""
-
-        if self.serverchan_text is not None:
-            return self.serverchan_text
-        if self.markdown_text is not None:
-            return self.markdown_text
-        text = self.text.replace("\n", "\n\n")
-        if not self.append_signature:
-            return text
-        return f"{text}{self.signature_sep}{SIGNATURE}"
-
-    @property
-    def webhook_content(self) -> str:
-        """返回 Webhook 正文。"""
-
-        if self.webhook_text is not None:
-            return self.webhook_text
-        if self.markdown_text is not None:
-            return self.markdown_text
-        return self.signed_text
-
-    def webhook_content_for(self, webhook: Webhook) -> str:
-        """按模板选择正文格式；仅正文模板需要补上独立通知标题。"""
-
-        if not self.standalone_title and (
-            self.webhook_text is not None or self.markdown_text is None
-        ):
-            return self.webhook_content
-        template_text = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
-        content = self.webhook_content
-        markdown = False
-        if self.webhook_text is None and self.markdown_text is not None:
-            try:
-                template = json.loads(template_text)
-                host = urlsplit(webhook.get("Data", "Url")).hostname
-            except (ValueError, TypeError):
-                content = self.signed_text
-            else:
-                markdown = (
-                    isinstance(template, dict)
-                    and (
-                        template.get("msgtype") == "markdown"
-                        or template.get("template") == "markdown"
-                        or "desp" in template
-                    )
-                ) or host in {
-                    "discord.com",
-                    "discordapp.com",
-                    "canary.discord.com",
-                    "ptb.discord.com",
-                }
-                content = self.markdown_text if markdown else self.signed_text
-        if self.standalone_title and "{title}" not in template_text:
-            heading = (
-                f"**{self.standalone_title}**" if markdown else self.standalone_title
-            )
-            return f"{heading}\n\n{content}"
-        return content
-
-    @property
-    def koishi_content(self) -> str:
-        """返回 Koishi 正文。"""
-
-        if self.koishi_text is not None:
-            return self.koishi_text
-        return f"{self.title}\n\n{self.signed_text}"
-
-    @property
-    def openclaw_weixin_content(self) -> str:
-        """返回微信（iLink）正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
-    def openclaw_qq_content(self) -> str:
-        """返回 QQ 官方机器人正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
-    def cmcc_newmsg_content(self) -> str:
-        """返回中国移动新消息正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
-    def system_content(self) -> str:
-        """返回系统通知正文。"""
-
-        return self.text
-
-
-@dataclass(frozen=True)
 class NotifyTarget:
-    """一组通知渠道及其配置来源。"""
+    """一组通知渠道及其配置来源。
 
-    name: str
-    system: bool = False
-    mail_to: str | None = None
-    serverchan_key: str | None = None
-    cmcc_newmsg_api_key: str | None = None
-    webhooks: Iterable[tuple[str, Any]] = ()
-    koishi: bool = False
-    openclaw_weixin: bool = False
-    openclaw_qq: bool = False
+    ``channels`` 是「渠道 + 已解析目标」的配对：发送方法是渠道的、空值策略在
+    目标上，两个都要带得出来。构造时现读一次配置并固定为快照，分发全程不再
+    读配置。
+    """
+
+    channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
     empty_policy: EmptyPolicy = "send"
+    # 声明损坏时无法确定目标；只记目录未确认，不计作一次实际投递。
+    catalog_failures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -206,6 +77,7 @@ class DispatchResult:
     ``attempted`` 是本次实际尝试投递的渠道数（被跳过的渠道不计入）；
     ``succeeded`` / ``failed`` 分别是成功与失败的渠道名。零目标或全跳过时
     ``attempted`` 为 0，切勿把该状态当作「已送达」。
+    ``failed`` 也保留无法确认的渠道目录；这类错误不增加 ``attempted``。
     """
 
     attempted: int = 0
@@ -215,66 +87,172 @@ class DispatchResult:
     succeeded_ids: tuple[str, ...] = ()
 
 
-def _webhooks(config: Any) -> tuple[tuple[str, Any], ...]:
-    """读取配置中已启用的 Webhook，并保留可识别的 ID。"""
+class TaskCommunitySignNotification:
+    """接收后台签到完成事件，串行协调报告合并和迟到结果补发。"""
 
-    return tuple(
-        (str(uid), webhook)
-        for uid, webhook in config.items()
-        if bool(webhook.get("Info", "Enabled"))
-    )
+    def __init__(self, task_info: Any) -> None:
+        self.task_info = task_info
+        self.completed = asyncio.Event()
+        self.lock = asyncio.Lock()
+        self.targets: list[NotifyTarget] | None = None
+        self.report_sent = False
+        self.wait_expired = False
+        self.result_unavailable = False
+        self.task_finished = False
+        self.delivery_task: asyncio.Task[None] | None = None
+
+    def receive(self, results: list[dict[str, object]] | None) -> None:
+        """先保存结果再发布完成事件；报告等待超时不会取消签到。"""
+
+        from app.tools.community_notify import filter_community_notification_results
+
+        self.result_unavailable = results is None
+        # 占位项不参与实际通知，先统一过滤，确保空结果也能结清待确认提示。
+        self.task_info.community_results = filter_community_notification_results(
+            results or []
+        )
+        self.completed.set()
+        self.schedule_supplement()
+
+    @property
+    def completion_notice(self) -> str:
+        """异常不能推断实际签到失败，正常空结果只结清已发出的待确认提示。"""
+
+        from app.tools.community_notify import (
+            COMMUNITY_SIGN_EMPTY_RESULT_TEXT,
+            COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT,
+        )
+
+        if self.result_unavailable:
+            return COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT
+        if (
+            self.wait_expired
+            and self.completed.is_set()
+            and not self.task_info.community_results
+        ):
+            return COMMUNITY_SIGN_EMPTY_RESULT_TEXT
+        return ""
+
+    def finish(self) -> None:
+        """没有脚本报告（如预检失败或手动停止）时也保留签到通知出口。"""
+
+        self.task_finished = True
+        self.schedule_supplement()
+
+    def schedule_supplement(self) -> None:
+        if not self.completed.is_set() or not (
+            self.task_finished or (self.report_sent and self.wait_expired)
+        ):
+            return
+        if not self.task_info.community_results and not self.completion_notice:
+            return
+        if self.delivery_task is not None and not self.delivery_task.done():
+            return
+        self.delivery_task = RuntimeTasks.spawn(
+            self._send_supplement(),
+            name=f"task-community-notification:{self.task_info.task_id}",
+        )
+        if self.delivery_task is not None:
+            _PENDING_TASK_COMMUNITY_NOTIFICATIONS.add(self.delivery_task)
+            self.delivery_task.add_done_callback(
+                _PENDING_TASK_COMMUNITY_NOTIFICATIONS.discard
+            )
+
+    async def _send_supplement(self) -> None:
+        from app.tools.community_notify import (
+            dispatch_community_notification,
+            report_community_notification_failure,
+        )
+
+        # 与报告投递共用锁：即使结果在报告发送中到达，也只补发未收到摘要的渠道。
+        async with self.lock:
+            if self.task_info.community_summary_consumed or not Config.ToolsConfig.get(
+                "GameSign", "NotifyEnabled"
+            ):
+                return
+            delivered = set(getattr(self.task_info, "game_sign_summary_delivered", ()))
+            result = await dispatch_community_notification(
+                self.task_info.community_results,
+                targets=self.targets,
+                skip_channel_ids=delivered,
+                completion_notice=self.completion_notice,
+            )
+            delivered.update(result.succeeded_ids)
+            self.task_info.game_sign_summary_delivered = delivered
+            self.task_info.game_sign_summary_pending = result.failed
+            if result.attempted and not result.failed:
+                self.task_info.community_summary_consumed = True
+            if result.failed:
+                await report_community_notification_failure(
+                    list(result.failed),
+                    results_saved=bool(self.task_info.community_results),
+                )
+
+
+async def drain_task_community_notifications(timeout: float) -> bool:
+    """电源动作前有限等待签到补发，超时只停止等待，不取消投递。"""
+
+    deadline = asyncio.get_running_loop().time() + timeout
+    while tasks := {
+        task for task in _PENDING_TASK_COMMUNITY_NOTIFICATIONS if not task.done()
+    }:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return False
+        _, pending = await asyncio.wait(tasks, timeout=remaining)
+        if pending:
+            return False
+    return True
+
+
+async def shutdown_community_notifications() -> None:
+    """退出时取消并等待仍由手动签到持有的通知，然后才能释放共享连接。"""
+
+    tasks = [task for task in _PENDING_TASK_COMMUNITY_NOTIFICATIONS if not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def global_target(
     *,
     include_system: bool = False,
     empty_policy: EmptyPolicy = "send",
+    system_timeout_seconds: int | None = None,
 ) -> NotifyTarget:
     """按全局配置构造通知目标。"""
 
+    # 构造时现读一次配置并固定为快照；扫码解绑等运行期写入只对之后构造的目标可见。
+    pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
+    for channel in get_notify_channels():
+        # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
+        if channel.key == "system" and not include_system:
+            continue
+        for target in channel.targets(TargetConfigView(Config), scope="global"):
+            if channel.key == "system" and system_timeout_seconds is not None:
+                target = replace(target, timeout_seconds=system_timeout_seconds)
+            pairs.append((channel, target))
     return NotifyTarget(
-        name="全局",
-        system=include_system and bool(Config.get("Notify", "IfPushPlyer")),
-        mail_to=(
-            Config.get("Notify", "ToAddress")
-            if Config.get("Notify", "IfSendMail")
-            else None
-        ),
-        serverchan_key=(
-            Config.get("Notify", "ServerChanKey")
-            if Config.get("Notify", "IfServerChan")
-            else None
-        ),
-        cmcc_newmsg_api_key=(
-            Config.get("Notify", "CMCCNewMsgApiKey")
-            if Config.get("Notify", "IfCMCCNewMsg")
-            else None
-        ),
-        webhooks=_webhooks(Config.Notify_CustomWebhooks),
-        koishi=bool(Config.get("Notify", "IfKoishiSupport")),
-        openclaw_weixin=bool(Config.get("Notify", "IfOpenClawWeixin")),
-        openclaw_qq=bool(Config.get("Notify", "IfOpenClawQQ")),
+        channels=tuple(pairs),
         empty_policy=empty_policy,
+        catalog_failures=get_notify_channel_failures(),
     )
 
 
 def user_target(user_config: Any) -> NotifyTarget:
     """按用户配置构造独立通知目标。"""
 
+    pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
+    for channel in get_notify_channels():
+        pairs.extend(
+            (channel, target)
+            for target in channel.targets(TargetConfigView(user_config), scope="user")
+        )
     return NotifyTarget(
-        name="用户",
-        mail_to=(
-            user_config.get("Notify", "ToAddress")
-            if user_config.get("Notify", "IfSendMail")
-            else None
-        ),
-        serverchan_key=(
-            user_config.get("Notify", "ServerChanKey")
-            if user_config.get("Notify", "IfServerChan")
-            else None
-        ),
-        webhooks=_webhooks(user_config.Notify_CustomWebhooks),
+        channels=tuple(pairs),
         empty_policy="warn",
+        catalog_failures=get_notify_channel_failures(),
     )
 
 
@@ -288,6 +266,13 @@ def should_send_result(message: dict, *, task_info: object | None = None) -> boo
         from app.tools.community_notify import append_task_community_summary
 
         if append_task_community_summary(task_info, ""):
+            return True
+        community_sign = getattr(task_info, "community_sign_notification", None)
+        if (
+            community_sign is not None
+            and not community_sign.completed.is_set()
+            and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+        ):
             return True
 
     result_time = Config.get("Notify", "SendTaskResultTime")
@@ -313,6 +298,7 @@ def statistic_targets(
     user_config: Any | None,
     *,
     global_empty_policy: EmptyPolicy = "send",
+    compact_summary: bool = False,
 ) -> list[NotifyTarget]:
     """返回全局与用户级统计通知目标。"""
 
@@ -320,48 +306,23 @@ def statistic_targets(
     if Config.get("Notify", "IfSendStatistic"):
         targets.append(global_target(empty_policy=global_empty_policy))
     targets.extend(user_statistic_targets(user_config))
+    if compact_summary:
+        targets = [_prefer_webhook_summaries(target) for target in targets]
     return targets
 
 
-def _webhook_name(uid: str, webhook: Any) -> str:
-    """返回便于定位失败配置的 Webhook 名称。"""
+def _prefer_webhook_summaries(target: NotifyTarget) -> NotifyTarget:
+    """为明确提供紧凑摘要的统计消息设置 Webhook 摘要偏好。"""
 
-    try:
-        return str(webhook.get("Info", "Name") or uid)
-    except (AttributeError, KeyError):
-        return uid
-
-
-def _target_channels(target: NotifyTarget) -> dict[str, str]:
-    """枚举目标的投递 ID 和显示名称，避免同名 Webhook 共用补发记录。"""
-
-    channels = {}
-    if target.system:
-        channel = f"{target.name}系统"
-        channels[channel] = channel
-    if target.mail_to is not None:
-        channel = f"{target.name}邮件"
-        channels[channel] = channel
-    if target.serverchan_key is not None:
-        channel = f"{target.name} ServerChan"
-        channels[channel] = channel
-    if target.cmcc_newmsg_api_key is not None:
-        channel = f"{target.name} 中国移动5G短信"
-        channels[channel] = channel
-    for uid, webhook in target.webhooks:
-        channels[f"{target.name} Webhook {uid}"] = (
-            f"{target.name} Webhook {_webhook_name(uid, webhook)}"
-        )
-    if target.koishi:
-        channel = f"{target.name} Koishi"
-        channels[channel] = channel
-    if target.openclaw_weixin:
-        channel = f"{target.name} 微信（iLink）"
-        channels[channel] = channel
-    if target.openclaw_qq:
-        channel = f"{target.name} QQ（官方机器人）"
-        channels[channel] = channel
-    return channels
+    channels = []
+    for channel, channel_target in target.channels:
+        if channel.key == "webhook":
+            channel_target = replace(channel_target, summary_policy="preferred")
+        channels.append((channel, channel_target))
+    return replace(
+        target,
+        channels=tuple(channels),
+    )
 
 
 async def _send(
@@ -381,9 +342,9 @@ async def _send(
             return True
         except Exception as exc:
             if attempt == attempts:
-                logger.warning(f"{channel}通知发送失败: {exc}")
+                logger.warning(f"{channel}通知发送失败: {type(exc).__name__}")
                 break
-            logger.warning(f"{channel}通知发送失败，将重试: {exc}")
+            logger.warning(f"{channel}通知发送失败，将重试: {type(exc).__name__}")
             if retry_delay > 0:
                 await asyncio.sleep(retry_delay)
     return False
@@ -406,6 +367,57 @@ def _recipient_action(
     return False, False
 
 
+class Notifier(Protocol):
+    """渠道适配器需要的发送面，测试可直接注入同一接口。
+
+    生产通过 Notify 按渠道取出已装配的发送器。按 ``_send`` 的判定，返回
+    ``False`` 表示该渠道发送失败，``None`` 表示成功。
+    """
+
+    async def push_plyer(
+        self, title: str, message: str, ticker: str, t: int
+    ) -> bool | None: ...
+
+    async def send_mail(
+        self,
+        mode: Literal["文本", "网页"],
+        title: str,
+        content: str,
+        to_address: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> bool | None: ...
+
+    async def ServerChanPush(
+        self, title: str, content: str, send_key: str
+    ) -> bool | None: ...
+
+    async def send_cmcc_newmsg(
+        self, title: str, content: str, api_key: str
+    ) -> bool | None: ...
+
+    async def WebhookPush(
+        self,
+        title: str,
+        content: str,
+        webhook: WebhookTargetSnapshot,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> bool | None: ...
+
+    async def send_koishi(
+        self, message: str, msgtype: str = "text", client_name: str = "Koishi"
+    ) -> bool | None: ...
+
+    async def send_openclaw_qq(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> bool | None: ...
+
+
 async def dispatch(
     payload: NotifyPayload,
     targets: Iterable[NotifyTarget],
@@ -414,16 +426,20 @@ async def dispatch(
     retry_delay: float = 0,
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
+    notifier: Notifier | Notification | None = None,
 ) -> DispatchResult:
     """向所有目标分发通知，返回实际尝试/成功/失败渠道。
 
     ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于签到汇总
     等场景只向尚未送达的渠道重试，避免已成功渠道收到重复内容。
     ``skip_channel_ids`` 按稳定 ID 跳过，不受 Webhook 同名或改名影响。
+    ``notifier`` 缺省用全局 Notify 单例，注入面供测试与渠道扩展替换。
     """
 
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
+
+    sender = Notify if notifier is None else notifier
 
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
@@ -431,10 +447,12 @@ async def dispatch(
     succeeded_ids: list[str] = []
     failed: list[str] = []
     attempted = 0
+    catalog_failures: list[str] = []
 
     async def attempt(
         channel: str,
-        send: Callable[[], Awaitable[Any]],
+        channel_impl: NotifyChannel,
+        channel_target: ChannelTarget,
         *,
         channel_id: str | None = None,
     ) -> None:
@@ -443,6 +461,25 @@ async def dispatch(
         if channel in skip or delivery_id in skip_ids:
             return
         attempted += 1
+        try:
+            rendered = render_for_target(
+                payload,
+                channel_target.capabilities,
+                summary_policy=channel_target.summary_policy,
+                use_summary_title=channel_target.use_summary_title,
+            )
+        except Exception as exc:
+            logger.warning(f"{channel}通知内容准备失败: {exc}")
+            failed.append(channel)
+            return
+        for diagnostic in rendered.diagnostics:
+            logger.warning(f"{channel}通知内容降级: {diagnostic}")
+
+        async def send() -> Any:
+            if isinstance(sender, Notification):
+                return await sender.send_channel(channel_impl, channel_target, rendered)
+            return await channel_impl.send(sender, channel_target, rendered)
+
         if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
             succeeded_ids.append(delivery_id)
@@ -457,125 +494,35 @@ async def dispatch(
         failed.append(channel)
 
     for target in targets:
-        if target.system:
-            await attempt(
-                f"{target.name}系统",
-                lambda: Notify.push_plyer(
-                    title=payload.system_title or payload.title,
-                    message=payload.system_message or payload.system_content,
-                    ticker=payload.system_ticker or payload.title,
-                    t=payload.system_timeout,
-                ),
-            )
-
-        if target.mail_to is not None:
-            channel = f"{target.name}邮件"
-            should_send, missing = _recipient_action(
-                target.mail_to,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}邮箱地址",
-            )
-            if missing:
-                miss(channel)
+        # 跳过已送达 ID 不能消除目录不完整；不伪造目标、发送或递增尝试数。
+        for failure in target.catalog_failures:
+            if failure not in catalog_failures:
+                catalog_failures.append(failure)
+        for channel, ct in target.channels:
+            should_send = True
+            # None 表示该渠道不做空值判定（系统通知 / Koishi / QQ / Webhook），
+            # 不能进 _recipient_action：None 与空串同判真值会把它们在 warn 下误记失败。
+            if ct.empty_recipient is not None:
+                should_send, missing = _recipient_action(
+                    ct.empty_recipient,
+                    target.empty_policy,
+                    channel=ct.label,
+                    hint=ct.empty_hint,
+                )
+                if missing:
+                    miss(ct.label)
             if should_send:
                 await attempt(
+                    ct.label,
                     channel,
-                    lambda t=target: Notify.send_mail(
-                        mode=payload.email_mode,
-                        title=payload.title,
-                        content=payload.email_content,
-                        to_address=t.mail_to,
-                    ),
+                    ct,
+                    channel_id=ct.id,
                 )
-
-        if target.serverchan_key is not None:
-            channel = f"{target.name} ServerChan"
-            should_send, missing = _recipient_action(
-                target.serverchan_key,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}ServerChan 密钥",
-            )
-            if missing:
-                miss(channel)
-            if should_send:
-                await attempt(
-                    channel,
-                    lambda t=target: Notify.ServerChanPush(
-                        title=payload.title,
-                        content=payload.serverchan_content,
-                        send_key=t.serverchan_key,
-                    ),
-                )
-
-        if target.cmcc_newmsg_api_key is not None:
-            channel = f"{target.name} 中国移动5G短信"
-            should_send, missing = _recipient_action(
-                target.cmcc_newmsg_api_key,
-                target.empty_policy,
-                channel=channel,
-                hint=f"{target.name}中国移动5G短信 API Key",
-            )
-            if missing:
-                miss(channel)
-            if should_send:
-                await attempt(
-                    channel,
-                    lambda t=target: Notify.send_cmcc_newmsg(
-                        title=payload.title,
-                        content=payload.cmcc_newmsg_content,
-                        api_key=t.cmcc_newmsg_api_key,
-                    ),
-                )
-
-        for uid, webhook in target.webhooks:
-            await attempt(
-                f"{target.name} Webhook {_webhook_name(uid, webhook)}",
-                lambda w=webhook: Notify.WebhookPush(
-                    title=payload.title,
-                    content=payload.webhook_content_for(w),
-                    image_base64=payload.webhook_image_base64 or "",
-                    webhook=w,
-                ),
-                channel_id=f"{target.name} Webhook {uid}",
-            )
-
-        if target.koishi:
-            await attempt(
-                f"{target.name} Koishi",
-                lambda: (
-                    Notify.send_koishi(
-                        payload.koishi_content,
-                        msgtype=payload.koishi_msgtype,
-                    )
-                    if payload.koishi_msgtype != "text"
-                    else Notify.send_koishi(payload.koishi_content)
-                ),
-            )
-
-        if target.openclaw_weixin:
-            await attempt(
-                f"{target.name} 微信（iLink）",
-                lambda: Notify.send_openclaw_weixin(
-                    title=payload.title,
-                    content=payload.openclaw_weixin_content,
-                ),
-            )
-
-        if target.openclaw_qq:
-            await attempt(
-                f"{target.name} QQ（官方机器人）",
-                lambda: Notify.send_openclaw_qq(
-                    title=payload.title,
-                    content=payload.openclaw_qq_content,
-                ),
-            )
 
     return DispatchResult(
         attempted=attempted,
         succeeded=tuple(succeeded),
-        failed=tuple(failed),
+        failed=tuple((*failed, *catalog_failures)),
         succeeded_ids=tuple(succeeded_ids),
     )
 
@@ -588,6 +535,91 @@ async def dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
+    notifier: Notifier | Notification | None = None,
+) -> DispatchResult:
+    """报告只短暂等待签到事件，超时照常投递，迟到结果在后台补发。"""
+
+    community_sign = getattr(task_info, "community_sign_notification", None)
+    if community_sign is None:
+        return await _dispatch_task_report(
+            payload=payload,
+            targets=targets,
+            task_info=task_info,
+            summary_text=summary_text,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            notifier=notifier,
+        )
+
+    from app.tools.community_notify import (
+        NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+        append_community_summary_html,
+    )
+
+    async with community_sign.lock:
+        community_sign.targets = targets
+        notify_enabled = Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+        if (
+            notify_enabled
+            and not community_sign.completed.is_set()
+            and not community_sign.wait_expired
+        ):
+            try:
+                await asyncio.wait_for(
+                    community_sign.completed.wait(),
+                    timeout=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                community_sign.wait_expired = True
+                logger.info("签到结果尚未返回，先发送任务报告，完成后补发签到结果")
+        if notify_enabled and not community_sign.completed.is_set():
+            pending_text = "社区签到结果待确认，完成后另行通知。"
+            payload = replace(
+                payload,
+                text=f"{payload.text}\n\n{pending_text}",
+                html=(
+                    append_community_summary_html(payload.html, pending_text)
+                    if payload.html is not None
+                    else None
+                ),
+                markdown=f"{payload.markdown or payload.text}\n\n{pending_text}",
+                summary=(
+                    replace(
+                        payload.summary,
+                        text=f"{payload.summary.text}\n\n{pending_text}",
+                        overflow_text=(
+                            f"{payload.summary.overflow_text or payload.text}"
+                            f"\n\n{pending_text}"
+                        ),
+                    )
+                    if payload.summary is not None
+                    else None
+                ),
+            )
+        try:
+            return await _dispatch_task_report(
+                payload=payload,
+                targets=targets,
+                task_info=task_info,
+                summary_text=summary_text,
+                attempts=attempts,
+                retry_delay=retry_delay,
+                notifier=notifier,
+            )
+        finally:
+            community_sign.report_sent = True
+            community_sign.schedule_supplement()
+
+
+async def _dispatch_task_report(
+    payload: NotifyPayload,
+    targets: list[NotifyTarget],
+    task_info: object | None,
+    *,
+    summary_text: str = "",
+    attempts: int = 1,
+    retry_delay: float = 0,
+    notifier: Notifier | Notification | None = None,
 ) -> DispatchResult:
     """统一附加社区结果，并按渠道维护任务报告的投递状态。
 
@@ -599,12 +631,25 @@ async def dispatch_task_report(
     from app.tools.community_notify import (
         append_community_summary_html,
         append_task_community_summary,
-        detect_community_notification_format,
         mark_task_community_summary_consumed,
     )
 
     delivered = set(getattr(task_info, "game_sign_summary_delivered", ()))
     if summary_text:
+        markdown_summary = (
+            append_task_community_summary(
+                task_info, "", output_format="markdown"
+            ).strip()
+            if task_info is not None
+            else summary_text
+        )
+        markdown = payload.markdown or payload.text
+        if markdown_summary and markdown_summary not in markdown:
+            markdown = (
+                markdown.replace(summary_text, markdown_summary)
+                if summary_text in markdown
+                else f"{markdown}\n\n{markdown_summary}"
+            )
         clean_payload = replace(
             payload,
             text=payload.text.replace(summary_text, "").rstrip(),
@@ -613,7 +658,26 @@ async def dispatch_task_report(
                 if payload.html is not None
                 else None
             ),
+            summary=(
+                replace(
+                    payload.summary,
+                    text=payload.summary.text.replace(summary_text, "").rstrip(),
+                    overflow_text=(
+                        payload.summary.overflow_text.replace(summary_text, "").rstrip()
+                        if payload.summary.overflow_text is not None
+                        else None
+                    ),
+                )
+                if payload.summary is not None
+                else None
+            ),
+            markdown=(
+                payload.markdown.replace(markdown_summary, "").rstrip()
+                if payload.markdown is not None
+                else payload.text.replace(summary_text, "").rstrip()
+            ),
         )
+        payload = replace(payload, markdown=markdown)
     else:
         clean_payload = payload
         if task_info is not None:
@@ -622,15 +686,9 @@ async def dispatch_task_report(
             summary_markdown = append_task_community_summary(
                 task_info, "", output_format="markdown"
             ).strip()
-            serverchan_body = payload.serverchan_content
-            serverchan_summary = summary_markdown
-            if payload.serverchan_text is None and payload.markdown_text is None:
-                # 默认签名仍放在整份报告末尾，社区摘要只负责自己的格式。
-                serverchan_body = replace(
-                    payload, append_signature=False
-                ).serverchan_content
-                if payload.append_signature:
-                    serverchan_summary += f"{payload.signature_sep}{SIGNATURE}"
+            markdown = payload.markdown or payload.text
+            if summary_markdown:
+                markdown = f"{markdown}\n\n{summary_markdown}"
             payload = replace(
                 payload,
                 text=f"{payload.text}\n\n{summary_text}",
@@ -639,52 +697,38 @@ async def dispatch_task_report(
                     if payload.html is not None
                     else None
                 ),
-                serverchan_text=f"{serverchan_body}\n\n{serverchan_summary}",
-                markdown_text=(
-                    f"{payload.markdown_text}\n\n{summary_markdown}"
-                    if payload.markdown_text is not None
-                    else None
-                ),
-                webhook_text=(
-                    f"{payload.webhook_text}\n\n"
-                    + (
-                        summary_markdown
-                        if detect_community_notification_format(payload.webhook_text)
-                        == "markdown"
-                        else summary_text
+                markdown=markdown,
+                summary=(
+                    replace(
+                        payload.summary,
+                        text=f"{payload.summary.text}\n\n{summary_text}",
+                        overflow_text=(
+                            f"{payload.summary.overflow_text or payload.text}"
+                            f"\n\n{summary_text}"
+                        ),
                     )
-                    if payload.webhook_text is not None
-                    else None
-                ),
-                koishi_text=(
-                    append_community_summary_html(payload.koishi_text, summary_text)
-                    if payload.koishi_text is not None
-                    and payload.koishi_msgtype == "html"
-                    else f"{payload.koishi_text}\n\n{summary_text}"
-                    if payload.koishi_text is not None
-                    else None
-                ),
-                system_message=(
-                    f"{payload.system_message}\n\n{summary_text}"
-                    if payload.system_message is not None
+                    if payload.summary is not None
                     else None
                 ),
             )
 
     if not summary_text:
         result = await dispatch(
-            payload, targets, attempts=attempts, retry_delay=retry_delay
+            payload,
+            targets,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            notifier=notifier,
         )
     else:
-        channels = {
-            channel for target in targets for channel in _target_channels(target)
-        }
+        channels = {ct.id for target in targets for _, ct in target.channels}
         with_summary = await dispatch(
             payload,
             targets,
             attempts=attempts,
             retry_delay=retry_delay,
             skip_channel_ids=delivered,
+            notifier=notifier,
         )
         # 只给本轮开始前已送达摘要的渠道发原始报告，避免同一轮发送两次。
         without_summary = (
@@ -694,6 +738,7 @@ async def dispatch_task_report(
                 attempts=attempts,
                 retry_delay=retry_delay,
                 skip_channel_ids=channels - delivered,
+                notifier=notifier,
             )
             if delivered & channels
             else DispatchResult()
@@ -704,10 +749,18 @@ async def dispatch_task_report(
             setattr(task_info, "game_sign_summary_pending", with_summary.failed)
             if delivered & channels and not with_summary.failed:
                 mark_task_community_summary_consumed(task_info)
+        catalog_failures = {
+            failure for target in targets for failure in target.catalog_failures
+        }
         result = DispatchResult(
             attempted=with_summary.attempted + without_summary.attempted,
             succeeded=with_summary.succeeded + without_summary.succeeded,
-            failed=with_summary.failed + without_summary.failed,
+            failed=with_summary.failed
+            + tuple(
+                failure
+                for failure in without_summary.failed
+                if failure not in catalog_failures
+            ),
             succeeded_ids=with_summary.succeeded_ids + without_summary.succeeded_ids,
         )
 
@@ -754,10 +807,12 @@ async def send_test_notification() -> DispatchResult:
             title="AUTO-MAS测试通知",
             text=text,
             append_signature=False,
-            email_mode="文本",
-            koishi_text=text,
-            system_ticker="测试通知",
-            system_timeout=3,
         ),
-        [global_target(include_system=True, empty_policy="warn")],
+        [
+            global_target(
+                include_system=True,
+                empty_policy="warn",
+                system_timeout_seconds=3,
+            )
+        ],
     )

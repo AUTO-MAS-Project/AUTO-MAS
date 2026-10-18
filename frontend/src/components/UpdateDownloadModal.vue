@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="modalVisible"
-    :title="`下载更新 ${latestVersion}`"
+    :title="t('comp.downloadUpdateVersion', { version: latestVersion })"
     :width="600"
     :footer="null"
     :mask-closable="false"

@@ -25,6 +25,7 @@ yituliu 为输入适配器，service 为应用编排层与组合根。调用方
 （AutoProxy / API）只 import 本包出口，不直接触碰内核内部模块。
 """
 
+from .clipboard import CultivateImportError, parse_clipboard_targets
 from .engine import (
     aggregate,
     apply_achievements,
@@ -37,12 +38,13 @@ from .engine import (
     synthesize,
 )
 from .providers import (
+    SklandProgressionProvider,
     has_oper_box_data,
-    load_oper_box_index,
     load_oper_box_names,
     parse_depot_payload,
     parse_oper_box_names,
     parse_oper_box_payload,
+    parse_player_info_payload,
     resolve_inventory,
     resolve_progression,
 )
@@ -50,11 +52,18 @@ from .service import (
     DepotCultivateService,
     depot_cultivate_service,
     dump_cultivate_targets,
-    filter_catalog_by_elite,
+    filter_observed_cultivate_targets,
     get_certifying_chain,
     get_inventory_chain,
     get_progression_chain,
     parse_cultivate_targets,
+    takeover_notice_patch_value,
+)
+from .skland import (
+    SklandAccountRef,
+    clear_skland_progression_cache,
+    fetch_skland_progression,
+    fetch_skland_role_entries,
 )
 from .types import (
     Achievement,
@@ -88,7 +97,10 @@ from .yituliu import (
 
 __all__ = [
     "Achievement",
+    "SklandAccountRef",
+    "SklandProgressionProvider",
     "CultivateDataSet",
+    "CultivateImportError",
     "CultivatePlan",
     "DemandEntry",
     "DepotCultivateService",
@@ -109,6 +121,9 @@ __all__ = [
     "YituliuDataError",
     "aggregate",
     "apply_achievements",
+    "clear_skland_progression_cache",
+    "fetch_skland_progression",
+    "fetch_skland_role_entries",
     "build_plan",
     "build_requirements",
     "dataset_from_json",
@@ -116,7 +131,7 @@ __all__ = [
     "dataset_to_json",
     "download_dataset",
     "dump_cultivate_targets",
-    "filter_catalog_by_elite",
+    "filter_observed_cultivate_targets",
     "get_dataset_cached",
     "get_certifying_chain",
     "get_inventory_chain",
@@ -125,12 +140,14 @@ __all__ = [
     "has_oper_box_data",
     "judge_achievements",
     "load_dataset",
-    "load_oper_box_index",
     "load_oper_box_names",
     "parse_cultivate_targets",
+    "parse_clipboard_targets",
     "parse_depot_payload",
     "parse_oper_box_names",
     "parse_oper_box_payload",
+    "takeover_notice_patch_value",
+    "parse_player_info_payload",
     "recommend_stages",
     "resolve_inventory",
     "resolve_progression",

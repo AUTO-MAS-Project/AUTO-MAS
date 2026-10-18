@@ -12,14 +12,6 @@
       class="task-alert"
     />
 
-    <a-alert
-      v-if="activityStageError"
-      :message="activityStageError"
-      type="warning"
-      show-icon
-      class="task-alert"
-    />
-
     <div class="task-list">
       <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
       <!-- 绿票商店：任务链只认主界面、跑完也停在商店页，所以自己占一次启动，排在剿灭之前 -->
@@ -46,7 +38,7 @@
           <a-button
             size="small"
             :disabled="loading"
-            @click="emitSave('Data.GreenTicketStoreMonth', currentMonthMarker())"
+            @click="emitSave('Data.GreenTicketStoreMonth', serverMonthMarker())"
           >
             {{ t('edit.markAsDone2') }}
           </a-button>
@@ -65,10 +57,10 @@
           <a-col :xs="24" :md="12">
             <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
               <a-select
-                :value="formData.Info.Annihilation"
+                :value="formData.Task.Annihilation"
                 :options="annihilationStageOptions"
                 :disabled="loading"
-                @change="emitSave('Info.Annihilation', $event)"
+                @change="emitSave('Task.Annihilation', $event)"
               />
             </a-form-item>
           </a-col>
@@ -81,10 +73,10 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.AnnihilationStartWeekday || 'Monday'"
+                :value="formData.Task.AnnihilationStartWeekday || 'Monday'"
                 :options="annihilationWeekdayOptions"
                 :disabled="loading"
-                @change="emitSave('Info.AnnihilationStartWeekday', $event)"
+                @change="emitSave('Task.AnnihilationStartWeekday', $event)"
               />
             </a-form-item>
           </a-col>
@@ -104,7 +96,7 @@
               <a-button
                 size="small"
                 :disabled="loading"
-                @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker())"
+                @click="emitSave('Data.AnnihilationCompletedWeek', serverWeekMarker())"
               >
                 {{ t('edit.markAsDone2') }}
               </a-button>
@@ -114,118 +106,40 @@
       </PipelineRow>
 
       <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
-      <PipelineRow
-        :name="t('edit.maaEventFirst')"
-        :summary="activitySummary"
-        :checked="activityFirst"
-        :disabled="loading"
-        :hint="t('edit.maaEventFirstHint')"
-        @change="handleActivityToggle"
+      <StaminaPipelineSection
+        v-model:form-data="formData"
+        :loading="loading"
+        :stage-options="stageOptions"
+        :activity-stages="activityStages"
+        :activity-stage-loading="activityStageLoading"
+        :activity-stage-error="activityStageError"
+        :depot-item-options="depotItemOptions"
+        :depot-item-options-loading="depotItemOptionsLoading"
+        :depot-item-options-error="depotItemOptionsError"
+        :depot-stage-candidates="depotStageCandidates"
+        :depot-stage-candidates-loading="depotStageCandidatesLoading"
+        :depot-inventory="depotInventory"
+        :depot-inventory-time="depotInventoryTime"
+        :depot-plan-editor="depotPlanEditor"
+        :event-depot-plan-editor="eventDepotPlanEditor"
+        :cultivate-operator-catalog="cultivateOperatorCatalog"
+        :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
+        :cultivate-operator-options-error="cultivateOperatorOptionsError"
+        :skland-role-options="sklandRoleOptions"
+        :skland-role-loading="sklandRoleLoading"
+        :skland-role-error="sklandRoleError"
+        :load-skland-role-options="loadSklandRoleOptions"
+        :cultivate-preview="cultivatePreview"
+        :cultivate-preview-loading="cultivatePreviewLoading"
+        :cultivate-preview-error="cultivatePreviewError"
+        :load-cultivate-preview="loadCultivatePreview"
+        :import-cultivate-targets="importCultivateTargets"
+        :fight-summary="fightSummary"
+        @save="emitSave"
+        @retry-activity="emit('retryActivity')"
       >
-        <a-row :gutter="16">
-          <a-col :xs="24" :md="16">
-            <a-form-item class="detail-item">
-              <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaEventStage')"
-                  :hint="t('edit.maaEventStageHint')"
-                />
-              </template>
-              <a-select
-                :value="displayActivityStageIndex"
-                :options="activityStageOptions"
-                :loading="activityStageLoading"
-                :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
-                :placeholder="
-                  activityStageOptions.length
-                    ? t('edit.maaPickEventStage')
-                    : t('edit.maaNoEventStage')
-                "
-                show-search
-                option-filter-prop="label"
-                @change="handleActivityStageChange"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :xs="24" :md="8">
-            <a-form-item class="detail-item">
-              <template #label>
-                <LabelWithHint
-                  :text="t('edit.maaEventPotion')"
-                  :hint="t('edit.maaEventPotionHint')"
-                />
-              </template>
-              <a-input-number
-                :value="formData.Task.ActivityMedicineNumb"
-                :min="0"
-                :max="9999"
-                :disabled="loading"
-                placeholder="0"
-                class="full-width"
-                @change="emitSave('Task.ActivityMedicineNumb', $event ?? 0)"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </PipelineRow>
-
-      <!-- 干员养成：一次性目标（PR2 仅精英化），排活动关优先之后、库存保持之前（队列 #3） -->
-      <PipelineRow
-        :name="t('edit.maaCultivate')"
-        :summary="cultivateSummary"
-        :checked="formData.Task.IfCultivate"
-        :disabled="loading"
-        :hint="t('edit.maaCultivateHint')"
-        @change="emitSave('Task.IfCultivate', $event)"
-      >
-        <CultivateTargetEditor
-          :form-data="formData"
-          :loading="loading"
-          :operator-options="cultivateOperatorOptions"
-          :operator-options-loading="cultivateOperatorOptionsLoading"
-          :operator-options-error="cultivateOperatorOptionsError"
-          :item-options="depotItemOptions"
-          :cultivate-preview="cultivatePreview"
-          :cultivate-preview-loading="cultivatePreviewLoading"
-          :cultivate-preview-error="cultivatePreviewError"
-          :load-cultivate-preview="loadCultivatePreview"
-          @save="emitSave"
-        />
-      </PipelineRow>
-
-      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
-      <PipelineRow
-        :name="t('edit.maaDepot')"
-        :summary="depotSummary"
-        :checked="formData.Task.IfDepotMaintain"
-        :disabled="loading"
-        @change="emitSave('Task.IfDepotMaintain', $event)"
-      >
-        <DepotMaintainPlanEditor
-          :form-data="formData"
-          :loading="loading"
-          :stage-options="stageOptions"
-          :item-options="depotItemOptions"
-          :item-options-loading="depotItemOptionsLoading"
-          :item-options-error="depotItemOptionsError"
-          :stage-candidates="depotStageCandidates"
-          :stage-candidates-loading="depotStageCandidatesLoading"
-          :inventory="depotInventory"
-          :load-stage-candidates="loadDepotStageCandidates"
-          @save="emitSave"
-        />
-      </PipelineRow>
-
-      <!-- 理智作战 -->
-      <PipelineRow
-        :name="t('edit.maaCombat')"
-        :summary="fightSummary"
-        :checked="formData.Task.IfFight"
-        :disabled="loading"
-        @change="emitSave('Task.IfFight', $event)"
-      >
-        <slot name="fight-detail" />
-      </PipelineRow>
+        <template #fight-detail><slot name="fight-detail" /></template>
+      </StaminaPipelineSection>
 
       <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
@@ -245,15 +159,15 @@
                 />
               </template>
               <a-select
-                :value="formData.Info.InfrastMode"
+                :value="formData.Task.InfrastMode"
                 :options="INFRAST_MODE_OPTIONS"
                 :disabled="loading"
-                @change="emitSave('Info.InfrastMode', $event)"
+                @change="emitSave('Task.InfrastMode', $event)"
               />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="16">
+        <a-row v-if="formData.Task.InfrastMode === 'Custom'" :gutter="16">
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
@@ -264,7 +178,7 @@
               </template>
               <div class="detail-inline">
                 <a-input
-                  :value="formData.Info.InfrastName"
+                  :value="formData.Task.InfrastName"
                   :placeholder="t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
@@ -320,16 +234,6 @@
         </template>
       </PipelineRow>
 
-      <!-- 只有一个开关，不必套一层详情面板 -->
-      <PipelineRow
-        :name="t('edit.maaRoguelike')"
-        :summary="formData.Task.IfRoguelike ? t('edit.maaRoguelikeHint') : ''"
-        :checked="formData.Task.IfRoguelike"
-        :disabled="loading"
-        :has-detail="false"
-        @change="emitSave('Task.IfRoguelike', $event)"
-      />
-
       <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
       <PipelineRow
         :name="t('edit.maaSwitchTheme')"
@@ -348,18 +252,21 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
-import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
-import CultivateTargetEditor from './CultivateTargetEditor.vue'
+import StaminaPipelineSection from './StaminaPipelineSection.vue'
+import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
+
+import type {
+  CultivateOperatorCatalogEntry as OperatorCatalogEntry,
+  CultivateImportResult,
+} from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
-import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
+import type { ActivityItem } from '@/types/home'
+import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
   INFRAST_MODE_OPTIONS,
-  summarizeActivity,
   summarizeAnnihilation,
-  summarizeCultivate,
-  summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
 
@@ -374,23 +281,30 @@ const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
   loading: boolean
   stageOptions: any[]
-  activityStageOptions: Array<{ label: string; value: number }>
+  activityStages: ActivityItem[]
   activityStageLoading: boolean
   activityStageError: string
-  displayActivityStageIndex?: number
   depotItemOptions: SelectOption[]
+  depotPlanEditor: DepotMaintainPlanEditorState
+  eventDepotPlanEditor: DepotMaintainPlanEditorState
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
   /** 按物品缓存的关卡候选（含每理智效率，来自一图流数据层；[] 表示已加载但无候选） */
   depotStageCandidates: Record<string, SelectOption[]>
   /** 正在加载候选的物品 ID 列表 */
   depotStageCandidatesLoading: string[]
-  /** 仓库库存映射（itemId → 数量，安装级） */
+  /** 仓库库存映射（itemId → 数量，当前用户识别档案） */
   depotInventory: Record<string, number>
-  /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
-  loadDepotStageCandidates: (itemId: string) => Promise<void>
-  /** 干员目录（一图流全量表；[] 表示已加载但为空） */
-  cultivateOperatorOptions: SelectOption[]
+  /** 库存档案的最近识别时间（本地格式；空串=未识别） */
+  depotInventoryTime: string
+  /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
+  cultivateOperatorCatalog: OperatorCatalogEntry[]
+  /** 森空岛绑定下拉：合并所有已配置凭据账号组的角色 */
+  sklandRoleOptions: SelectOption[]
+  sklandRoleLoading: boolean
+  sklandRoleError: string
+  /** 按需加载角色列表（下拉展开时触发，父级负责请求） */
+  loadSklandRoleOptions: () => Promise<void>
   cultivateOperatorOptionsLoading: boolean
   cultivateOperatorOptionsError: string
   /** 养成需求预览（后端纯计算结果） */
@@ -399,12 +313,13 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
+  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
   infrastructureOptions: InfrastPlanOption[]
   infrastructureOptionsLoading: boolean
-  /** 当前基建班次索引（-1=按时段自动；来自 MAA 配置，MAA 原生推进） */
+  /** 当前基建班次索引（时段表恒为 -1；无时段表是下次开始的班，由 MAS 推进） */
   infrastPlanSelect: number
   /** 排班表时段形态（后端判定: period/rotate/mixed/empty） */
   infrastPlanState: string
@@ -414,6 +329,7 @@ const emit = defineEmits<{
   save: [key: string, value: any]
   selectInfrastPlan: [index: number, label: string]
   selectAndImportInfrastructureConfig: []
+  retryActivity: []
 }>()
 const emitSave = (key: string, value: any) => emit('save', key, value)
 
@@ -423,47 +339,34 @@ const dailyTasks = [
   { key: 'IfAward', label: t('edit.claimRewards') },
 ] as const
 
-const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')
+const annihilationEnabled = computed(() => formData.value.Task.Annihilation !== 'Close')
+
+// 剿灭周 / 绿票月标记按用户区服的游戏日换日，与后端 AutoProxy 一致
+const gameDayOffset = () => getGameDayOffset(formData.value.Info.Server)
+const serverWeekMarker = () => currentWeekMarker(new Date(), gameDayOffset())
+const serverMonthMarker = () => currentMonthMarker(new Date(), gameDayOffset())
 
 const annihilationCompletedThisWeek = computed(
-  () => formData.value.Data?.AnnihilationCompletedWeek === currentWeekMarker()
+  () => formData.value.Data?.AnnihilationCompletedWeek === serverWeekMarker()
 )
 
 // 关闭时记住原关卡，重新打开直接恢复，省掉一次下拉选择
 let lastAnnihilationStage = 'Annihilation'
 const handleAnnihilationToggle = (checked: boolean) => {
   if (checked) {
-    emitSave('Info.Annihilation', lastAnnihilationStage)
+    emitSave('Task.Annihilation', lastAnnihilationStage)
   } else {
-    lastAnnihilationStage = formData.value.Info.Annihilation || 'Annihilation'
-    emitSave('Info.Annihilation', 'Close')
+    lastAnnihilationStage = formData.value.Task.Annihilation || 'Annihilation'
+    emitSave('Task.Annihilation', 'Close')
   }
 }
 
 const annihilationSummary = computed(() =>
   summarizeAnnihilation(
-    formData.value.Info.Annihilation,
-    formData.value.Info.AnnihilationStartWeekday || 'Monday',
+    formData.value.Task.Annihilation,
+    formData.value.Task.AnnihilationStartWeekday || 'Monday',
     annihilationCompletedThisWeek.value
   )
-)
-
-const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
-
-const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
-
-const handleActivityStageChange = (value: number) => emitSave('Task.ActivityStageIndex', value)
-
-const activitySummary = computed(() =>
-  summarizeActivity({
-    enabled: activityFirst.value,
-    loading: props.activityStageLoading,
-    optionCount: props.activityStageOptions.length,
-    stageLabel: props.activityStageOptions.find(
-      option => option.value === props.displayActivityStageIndex
-    )?.label,
-    medicine: formData.value.Task.ActivityMedicineNumb ?? 0,
-  })
 )
 
 // 自动换班随表型带上语义（时段表=按钟点选班；无时段表=从第一班起轮换）
@@ -479,11 +382,13 @@ const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
     ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
     : option.label
 
+// 时段表由 MAA 按钟点选班，班次只展示不可选；无时段表可手选起始班
 const infrastSelectOptions = computed(() => [
   { label: infrastAutoLabel.value, value: '-1' },
   ...props.infrastructureOptions.map(option => ({
     label: infrastLabelWithPeriod(option),
     value: option.value,
+    disabled: props.infrastPlanState === 'period',
   })),
 ])
 
@@ -519,26 +424,18 @@ const infrastHint = computed(() => {
 })
 
 const infrastSummary = computed(() => {
-  const customLabel = [formData.value.Info.InfrastName, infrastSelectLabel.value]
+  const customLabel = [formData.value.Task.InfrastName, infrastSelectLabel.value]
     .filter(Boolean)
     .join(' · ')
   return summarizeInfrast(
     formData.value.Task.IfInfrast,
-    formData.value.Info.InfrastMode,
+    formData.value.Task.InfrastMode,
     customLabel
   )
 })
 
-const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
-)
-
-const cultivateSummary = computed(() =>
-  summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
-)
-
 const greenTicketStoreDoneThisMonth = computed(
-  () => formData.value.Data?.GreenTicketStoreMonth === currentMonthMarker()
+  () => formData.value.Data?.GreenTicketStoreMonth === serverMonthMarker()
 )
 
 const greenTicketStoreSummary = computed(() => {
@@ -560,6 +457,7 @@ const greenTicketStoreSummary = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .section-header h3 {

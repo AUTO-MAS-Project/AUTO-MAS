@@ -36,6 +36,7 @@ interface EmulatorInfo {
   max_wait_time: number
   boss_keys: string[]
   force_kill_on_close: boolean
+  force_kill_before_launch: boolean
   stable_mode: boolean
   config_guard: boolean
 }
@@ -273,6 +274,7 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   max_wait_time: configData?.Info?.MaxWaitTime || 300,
   boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
   force_kill_on_close: configData?.Info?.ForceKillOnClose === true,
+  force_kill_before_launch: configData?.Info?.ForceKillBeforeLaunch === true,
   stable_mode: configData?.Info?.StableMode === true,
   config_guard: configData?.Info?.ConfigGuard === true,
 })
@@ -427,6 +429,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { ConfigGuard: value } }
     } else if (key === 'force_kill_on_close') {
       configData = { Info: { ForceKillOnClose: value } }
+    } else if (key === 'force_kill_before_launch') {
+      configData = { Info: { ForceKillBeforeLaunch: value } }
     }
 
     const response = await Service.updateEmulatorApiEmulatorUpdatePost({
@@ -1152,6 +1156,20 @@ const handleBossKeyInputChange = (uuid: string) => {
                         :checked-children="t('emulator.on')"
                         :un-checked-children="t('emulator.off')"
                         @change="handleSaveChange(element.uid, 'force_kill_on_close', $event)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
+                      <template #label>
+                        <span>{{ t('emulator.forceCleanLaunchLabel') }}</span>
+                        <a-tooltip :title="t('emulator.forceCleanLaunchTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        v-model:checked="getEditingData(element.uid).force_kill_before_launch"
+                        :checked-children="t('emulator.on')"
+                        :un-checked-children="t('emulator.off')"
+                        @change="handleSaveChange(element.uid, 'force_kill_before_launch', $event)"
                       />
                     </a-descriptions-item>
                   </a-descriptions>

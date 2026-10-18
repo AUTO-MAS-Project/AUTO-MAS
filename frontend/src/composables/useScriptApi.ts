@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   type ScriptUpdateIn,
+  type ScriptGetOut,
   type HSRStageOptionsData,
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
@@ -16,8 +17,14 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
 
 const logger = window.electronAPI.getLogger('脚本API')
+
+// 首页卫星与活动区共用在途的列表请求，完成后释放，后续读取仍取最新数据。
+let scriptListRequest: Promise<ScriptGetOut> | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
 type ScriptWithUsers = ScriptDetail & { users: User[] }
@@ -44,6 +51,8 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  Whimbox: ScriptCreateIn.type.WHIMBOX,
+  MSS: ScriptCreateIn.type.MSS,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -53,12 +62,13 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkwwConfig: 'Okww',
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
-  M9AConfig: 'M9A',
-  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  WhimboxConfig: 'Whimbox',
+  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  ...maafwScriptTypeByConfigType(),
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -88,6 +98,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       // 播放添加脚本成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_script_instance')
@@ -120,7 +131,13 @@ export function useScriptApi() {
     }
 
     try {
-      const response = await Service.getScriptApiScriptsGetPost({})
+      if (!scriptListRequest) {
+        const request = Service.getScriptApiScriptsGetPost({}).finally(() => {
+          if (scriptListRequest === request) scriptListRequest = null
+        })
+        scriptListRequest = request
+      }
+      const response = await scriptListRequest
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本列表失败'
@@ -132,6 +149,7 @@ export function useScriptApi() {
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
         type: resolveScriptType(indexItem.type),
+        activityGame: indexItem.activityGame,
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -184,11 +202,8 @@ export function useScriptApi() {
                             ? maaUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Mode: maaUserData.Info?.Mode !== undefined ? maaUserData.Info.Mode : '脚本',
-                        StageMode:
-                          maaUserData.Info?.StageMode !== undefined
-                            ? maaUserData.Info.StageMode
-                            : 'Fixed',
+                        Base:
+                          maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
                         Server:
                           maaUserData.Info?.Server !== undefined
                             ? maaUserData.Info.Server
@@ -199,41 +214,38 @@ export function useScriptApi() {
                           maaUserData.Info?.RemainedDay !== undefined
                             ? maaUserData.Info.RemainedDay
                             : -1,
-                        Annihilation:
-                          maaUserData.Info?.Annihilation !== undefined
-                            ? maaUserData.Info.Annihilation
-                            : 'Annihilation',
-                        InfrastMode:
-                          maaUserData.Info?.InfrastMode !== undefined
-                            ? maaUserData.Info.InfrastMode
-                            : 'Normal',
-                        InfrastName:
-                          maaUserData.Info?.InfrastName !== undefined
-                            ? maaUserData.Info.InfrastName
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
+                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                      },
+                      Stage: {
+                        StageMode:
+                          maaUserData.Stage?.StageMode !== undefined
+                            ? maaUserData.Stage.StageMode
+                            : 'Fixed',
                         MedicineNumb:
-                          maaUserData.Info?.MedicineNumb !== undefined
-                            ? maaUserData.Info.MedicineNumb
+                          maaUserData.Stage?.MedicineNumb !== undefined
+                            ? maaUserData.Stage.MedicineNumb
                             : 0,
                         SeriesNumb:
-                          maaUserData.Info?.SeriesNumb !== undefined
-                            ? maaUserData.Info.SeriesNumb
+                          maaUserData.Stage?.SeriesNumb !== undefined
+                            ? maaUserData.Stage.SeriesNumb
                             : '0',
-                        Stage: maaUserData.Info?.Stage !== undefined ? maaUserData.Info.Stage : '-',
+                        Stage:
+                          maaUserData.Stage?.Stage !== undefined ? maaUserData.Stage.Stage : '-',
                         Stage_1:
-                          maaUserData.Info?.Stage_1 !== undefined ? maaUserData.Info.Stage_1 : '-',
-                        Stage_2:
-                          maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
-                        Stage_3:
-                          maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Stage_Remain:
-                          maaUserData.Info?.Stage_Remain !== undefined
-                            ? maaUserData.Info.Stage_Remain
+                          maaUserData.Stage?.Stage_1 !== undefined
+                            ? maaUserData.Stage.Stage_1
                             : '-',
-                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
+                        Stage_2:
+                          maaUserData.Stage?.Stage_2 !== undefined
+                            ? maaUserData.Stage.Stage_2
+                            : '-',
+                        Stage_3:
+                          maaUserData.Stage?.Stage_3 !== undefined
+                            ? maaUserData.Stage.Stage_3
+                            : '-',
                       },
                       Task: {
                         IfStartUp:
@@ -258,18 +270,12 @@ export function useScriptApi() {
                           maaUserData.Task?.IfSwitchTheme !== undefined
                             ? maaUserData.Task.IfSwitchTheme
                             : false,
-                        IfRoguelike:
-                          maaUserData.Task?.IfRoguelike !== undefined
-                            ? maaUserData.Task.IfRoguelike
-                            : false,
-                        IfReclamation:
-                          maaUserData.Task?.IfReclamation !== undefined
-                            ? maaUserData.Task.IfReclamation
-                            : false,
                         IfDepotMaintain:
                           maaUserData.Task?.IfDepotMaintain !== undefined
                             ? maaUserData.Task.IfDepotMaintain
                             : false,
+                        IfEventDepotMaintain: maaUserData.Task?.IfEventDepotMaintain ?? false,
+                        EventDepotMaintainPlans: maaUserData.Task?.EventDepotMaintainPlans ?? '[]',
                         IfActivityFirst:
                           maaUserData.Task?.IfActivityFirst !== undefined
                             ? maaUserData.Task.IfActivityFirst
@@ -278,14 +284,22 @@ export function useScriptApi() {
                           maaUserData.Task?.ActivityStageIndex !== undefined
                             ? maaUserData.Task.ActivityStageIndex
                             : 1,
-                        ActivityMedicineNumb:
-                          maaUserData.Task?.ActivityMedicineNumb !== undefined
-                            ? maaUserData.Task.ActivityMedicineNumb
-                            : (maaUserData.Info?.MedicineNumb ?? 0),
                         DepotMaintainPlans:
                           maaUserData.Task?.DepotMaintainPlans !== undefined
                             ? maaUserData.Task.DepotMaintainPlans
                             : '[]',
+                        Annihilation:
+                          maaUserData.Task?.Annihilation !== undefined
+                            ? maaUserData.Task.Annihilation
+                            : 'Annihilation',
+                        InfrastMode:
+                          maaUserData.Task?.InfrastMode !== undefined
+                            ? maaUserData.Task.InfrastMode
+                            : 'Normal',
+                        InfrastName:
+                          maaUserData.Task?.InfrastName !== undefined
+                            ? maaUserData.Task.InfrastName
+                            : '',
                       },
                       Notify: {
                         Enabled:
@@ -318,6 +332,8 @@ export function useScriptApi() {
                             : '',
                       },
                       Data: {
+                        StaminaPipelineVersion: maaUserData.Data?.StaminaPipelineVersion ?? 1,
+                        StaminaPipelineBackup: maaUserData.Data?.StaminaPipelineBackup ?? '{}',
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
@@ -341,7 +357,8 @@ export function useScriptApi() {
                         Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
                         Password:
                           srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '脚本',
+                        Base:
+                          srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
                         Server:
                           srcUserData.Info?.Server !== undefined
                             ? srcUserData.Info.Server
@@ -525,10 +542,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Password !== undefined
                             ? maaEndUserData.Info.Password
                             : '',
-                        Mode:
-                          maaEndUserData.Info?.Mode !== undefined
-                            ? maaEndUserData.Info.Mode
-                            : '脚本',
+                        Base:
+                          maaEndUserData.Info?.Base !== undefined
+                            ? maaEndUserData.Info.Base
+                            : 'shared',
                         SanityMode:
                           maaEndUserData.Info?.SanityMode !== undefined
                             ? maaEndUserData.Info.SanityMode
@@ -721,96 +738,6 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'M9AUserConfig' && userData) {
-                    const m9aUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          m9aUserData.Info?.Name !== undefined
-                            ? m9aUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          m9aUserData.Info?.Status !== undefined ? m9aUserData.Info.Status : true,
-                        RemainedDay:
-                          m9aUserData.Info?.RemainedDay !== undefined
-                            ? m9aUserData.Info.RemainedDay
-                            : -1,
-                        Notes: m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
-                        Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
-                        Resource:
-                          m9aUserData.Info?.Resource !== undefined
-                            ? m9aUserData.Info.Resource
-                            : '官服',
-                        Account:
-                          m9aUserData.Info?.Account !== undefined ? m9aUserData.Info.Account : '',
-                        EmulatorId:
-                          m9aUserData.Info?.EmulatorId !== undefined
-                            ? m9aUserData.Info.EmulatorId
-                            : '',
-                        EmulatorIndex:
-                          m9aUserData.Info?.EmulatorIndex !== undefined
-                            ? m9aUserData.Info.EmulatorIndex
-                            : 0,
-                      },
-                      Task: {
-                        AvailableTasks:
-                          m9aUserData.Task?.AvailableTasks !== undefined
-                            ? m9aUserData.Task.AvailableTasks
-                            : '[]',
-                        Queue:
-                          m9aUserData.Task?.Queue !== undefined ? m9aUserData.Task.Queue : '[]',
-                      },
-                      Notify: {
-                        Enabled:
-                          m9aUserData.Notify?.Enabled !== undefined
-                            ? m9aUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          m9aUserData.Notify?.IfSendStatistic !== undefined
-                            ? m9aUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          m9aUserData.Notify?.IfSendMail !== undefined
-                            ? m9aUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          m9aUserData.Notify?.ToAddress !== undefined
-                            ? m9aUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          m9aUserData.Notify?.IfServerChan !== undefined
-                            ? m9aUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          m9aUserData.Notify?.ServerChanKey !== undefined
-                            ? m9aUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          m9aUserData.Data?.LastProxyDate !== undefined
-                            ? m9aUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        LastPsychubeDate:
-                          m9aUserData.Data?.LastPsychubeDate !== undefined
-                            ? m9aUserData.Data.LastPsychubeDate
-                            : '',
-                        LastLimboMonth:
-                          m9aUserData.Data?.LastLimboMonth !== undefined
-                            ? m9aUserData.Data.LastLimboMonth
-                            : '',
-                        LastLucidscapeMonth:
-                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
-                            ? m9aUserData.Data.LastLucidscapeMonth
-                            : '',
-                        ProxyTimes:
-                          m9aUserData.Data?.ProxyTimes !== undefined
-                            ? m9aUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
                   } else if (
                     (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
                     userData
@@ -832,8 +759,8 @@ export function useScriptApi() {
                           okwwUserData.Info?.Password !== undefined
                             ? okwwUserData.Info.Password
                             : '',
-                        Mode:
-                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '脚本',
+                        Base:
+                          okwwUserData.Info?.Base !== undefined ? okwwUserData.Info.Base : 'shared',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig
@@ -920,7 +847,8 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'MaaFWUserConfig' && userData) {
+                  } else if (maafwUserConfigTypes().has(userIndex.type) && userData) {
+                    // 特调（M9A / MSS ……）的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
@@ -1140,6 +1068,106 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (userIndex.type === 'WhimboxUserConfig' && userData) {
+                    const whimboxUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: whimboxUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          whimboxUserData.Info?.Name !== undefined
+                            ? whimboxUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          whimboxUserData.Info?.Status !== undefined
+                            ? whimboxUserData.Info.Status
+                            : true,
+                        Base:
+                          whimboxUserData.Info?.Base !== undefined
+                            ? whimboxUserData.Info.Base
+                            : 'shared',
+                        RemainedDay:
+                          whimboxUserData.Info?.RemainedDay !== undefined
+                            ? whimboxUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          whimboxUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          whimboxUserData.Info?.ScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          whimboxUserData.Info?.IfScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          whimboxUserData.Info?.ScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          whimboxUserData.Info?.Notes !== undefined
+                            ? whimboxUserData.Info.Notes
+                            : '',
+                        Tag:
+                          whimboxUserData.Info?.Tag !== undefined ? whimboxUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        Tasks:
+                          whimboxUserData.Task?.Tasks !== undefined
+                            ? whimboxUserData.Task.Tasks
+                            : '{ }',
+                        Options:
+                          whimboxUserData.Task?.Options !== undefined
+                            ? whimboxUserData.Task.Options
+                            : '{ }',
+                      },
+                      Notify: {
+                        Enabled:
+                          whimboxUserData.Notify?.Enabled !== undefined
+                            ? whimboxUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          whimboxUserData.Notify?.IfSendStatistic !== undefined
+                            ? whimboxUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          whimboxUserData.Notify?.IfSendMail !== undefined
+                            ? whimboxUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          whimboxUserData.Notify?.ToAddress !== undefined
+                            ? whimboxUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          whimboxUserData.Notify?.IfServerChan !== undefined
+                            ? whimboxUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          whimboxUserData.Notify?.ServerChanKey !== undefined
+                            ? whimboxUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          whimboxUserData.Notify?.CustomWebhooks !== undefined
+                            ? whimboxUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          whimboxUserData.Data?.LastProxyDate !== undefined
+                            ? whimboxUserData.Data.LastProxyDate
+                            : '2000-01-01',
+                        ProxyTimes:
+                          whimboxUserData.Data?.ProxyTimes !== undefined
+                            ? whimboxUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          whimboxUserData.Data?.LastProxyStatus !== undefined
+                            ? whimboxUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
                   } else if (userIndex.type === 'ZzzOdUserConfig' && userData) {
                     const zzzodUserData = userData as unknown as ZzzOdUserConfig
                     return {
@@ -1154,8 +1182,10 @@ export function useScriptApi() {
                           zzzodUserData.Info?.Status !== undefined
                             ? zzzodUserData.Info.Status
                             : true,
-                        Mode:
-                          zzzodUserData.Info?.Mode !== undefined ? zzzodUserData.Info.Mode : '用户',
+                        Base:
+                          zzzodUserData.Info?.Base !== undefined
+                            ? zzzodUserData.Info.Base
+                            : 'independent',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay
@@ -1277,6 +1307,10 @@ export function useScriptApi() {
                           baahUserData.Info?.ConfigName !== undefined
                             ? baahUserData.Info.ConfigName
                             : '',
+                        ActivityLineType:
+                          baahUserData.Info?.ActivityLineType != null
+                            ? baahUserData.Info.ActivityLineType
+                            : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
                         Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
@@ -1323,6 +1357,22 @@ export function useScriptApi() {
                   return null
                 })
                 .filter((user): user is User => user !== null)
+                .map(user => {
+                  const info = userResponse.data[user.id]?.Info
+                  return {
+                    ...user,
+                    Info: {
+                      ...user.Info,
+                      Base: info?.Base ?? user.Info.Base,
+                      IfQuickConfig:
+                        info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
+                          ? info.IfQuickConfig
+                          : typeof user.Info.IfQuickConfig === 'boolean'
+                            ? user.Info.IfQuickConfig
+                            : undefined,
+                    },
+                  }
+                })
 
               return {
                 ...script,
@@ -1385,6 +1435,7 @@ export function useScriptApi() {
       return {
         uid: item.uid,
         type: scriptType,
+        activityGame: item.activityGame,
         name: config?.Info?.Name || `${item.type}脚本`,
         config,
       }
@@ -1422,9 +1473,13 @@ export function useScriptApi() {
   }
 
   // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
-  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+  const previewMaaFWInterface = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWInterfacePreviewOut | null> => {
     try {
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+      // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
@@ -1478,6 +1533,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       // 播放删除脚本成功音频
       const { playSound } = useAudioPlayer()
       await playSound('delete_script_instance')
@@ -1500,6 +1556,13 @@ export function useScriptApi() {
     scriptId: string,
     data: Record<string, unknown>
   ): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 
@@ -1519,6 +1582,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
@@ -1550,6 +1614,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      scriptListRequest = null
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
@@ -1564,7 +1629,12 @@ export function useScriptApi() {
   }
 
   const importScriptConfigFile = (scriptId: string, userId: string | null) =>
-    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId }).then(
+      response => {
+        if (response.code === 200) scriptListRequest = null
+        return response
+      }
+    )
 
   return {
     loading,

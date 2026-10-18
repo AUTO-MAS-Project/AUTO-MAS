@@ -6,9 +6,9 @@ export type MaaFWAgentEnvPrepareIn = {
     /**
      * MFW 项目根目录，应包含 interface.json
      */
-    path: string;
+    path?: string;
     /**
-     * 脚本 ID，仅用于日志定位
+     * 脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空
      */
     scriptId?: (string | null);
     /**

@@ -18,6 +18,7 @@ from packaging.version import InvalidVersion, Version
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.logger import get_logger
 
+from ...task_mapping import engine_label
 from .engines import EngineSpec, SourceId, select_asset_name
 
 logger = get_logger("HSR 更新发现")
@@ -146,7 +147,9 @@ async def discover(
         if not url:
             return DiscoveryResult(
                 **base,
-                blocked_reason=f"{spec.display_name} 未提供 AUTO-MAS 下载站渠道",
+                blocked_reason=(
+                    f"{engine_label(spec.engine, left=False)}未提供 AUTO-MAS 下载站渠道"
+                ),
             )
         sha = await _fetch_station_sha256(url, proxy=proxy)
         return DiscoveryResult(
@@ -208,7 +211,7 @@ async def _query_latest(
     except Exception as exc:  # noqa: BLE001 - 网络层异常形态很多，统一降级
         if source != "GitHub":
             raise HSRUpdateError(
-                f"查询 {spec.display_name} 最新版本失败：{exc}"
+                f"查询{engine_label(spec.engine)}最新版本失败：{exc}"
             ) from exc
         logger.warning(
             f"HSR 更新：Mirror 酱不可达（{exc}），"
@@ -252,7 +255,8 @@ async def _query_mirrorchyan(
         # CDK 有问题但版本号照给：保留版本，下载地址必然为空，由调用方
         # 转成 blocked_reason，用户才知道是 CDK 的事。
         logger.warning(
-            f"HSR 更新：{spec.display_name} Mirror 酱 CDK 异常 {code}"
+            f"HSR 更新：{engine_label(spec.engine, left=False, right=False)} "
+            f"Mirror 酱 CDK 异常 {code}"
             f"（{MIRROR_ERROR_INFO.get(code, '未知错误')}）"
         )
         if not version:
@@ -292,7 +296,9 @@ async def _github_latest_tag(
             response.raise_for_status()
             releases = response.json() or []
             if not releases:
-                raise HSRUpdateError(f"{spec.display_name} 没有可用的 GitHub 发行版")
+                raise HSRUpdateError(
+                    f"{engine_label(spec.engine, left=False)}没有可用的 GitHub 发行版"
+                )
             return str(releases[0].get("tag_name") or "")
         response = await client.get(
             f"{_GITHUB_API}/repos/{spec.github_repo}/releases/latest",
@@ -327,7 +333,7 @@ async def _github_asset(
             break
 
     if not payload:
-        raise HSRUpdateError(f"GitHub 上没有 {spec.display_name} 的发行版 {tag}")
+        raise HSRUpdateError(f"GitHub 上没有{engine_label(spec.engine)}的发行版 {tag}")
 
     for asset in payload.get("assets") or []:
         if str(asset.get("name")) != asset_name:

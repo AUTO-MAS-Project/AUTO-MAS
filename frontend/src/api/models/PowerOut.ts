@@ -32,6 +32,7 @@ export namespace PowerOut {
         HIBERNATE = 'Hibernate',
         SLEEP = 'Sleep',
         KILL_SELF = 'KillSelf',
+        RESTART_SELF = 'RestartSelf',
         LOGOFF = 'Logoff',
     }
 }

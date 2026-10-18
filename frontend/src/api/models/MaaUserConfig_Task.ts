@@ -16,9 +16,25 @@ export type MaaUserConfig_Task = {
      */
     IfInfrast?: (boolean | null);
     /**
+     * 基建模式
+     */
+    InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
+    /**
+     * 基建方案名称
+     */
+    InfrastName?: (string | null);
+    /**
      * 理智作战
      */
     IfFight?: (boolean | null);
+    /**
+     * 剿灭模式
+     */
+    Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
+    /**
+     * 剿灭开始星期
+     */
+    AnnihilationStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
     /**
      * 信用收支
      */
@@ -32,17 +48,21 @@ export type MaaUserConfig_Task = {
      */
     IfSwitchTheme?: (boolean | null);
     /**
-     * 自动肉鸽
-     */
-    IfRoguelike?: (boolean | null);
-    /**
-     * 生息演算
-     */
-    IfReclamation?: (boolean | null);
-    /**
      * 库存保持
      */
     IfDepotMaintain?: (boolean | null);
+    /**
+     * 活动关均衡理智
+     */
+    IfEventDepotMaintain?: (boolean | null);
+    /**
+     * 动态活动库存目标 JSON（all/material/activity/orundum）
+     */
+    EventDepotMaintainPlans?: (string | null);
+    /**
+     * 库存保持计划 JSON
+     */
+    DepotMaintainPlans?: (string | null);
     /**
      * 绿票商店
      */
@@ -60,10 +80,6 @@ export type MaaUserConfig_Task = {
      */
     ActivityMedicineNumb?: (number | null);
     /**
-     * 库存保持计划 JSON
-     */
-    DepotMaintainPlans?: (string | null);
-    /**
      * 干员养成
      */
     IfCultivate?: (boolean | null);
@@ -72,6 +88,10 @@ export type MaaUserConfig_Task = {
      */
     CultivateTargets?: (string | null);
     /**
+     * 自动培养干员（注入 MAA 原生培养任务）
+     */
+    CultivateAutoRaise?: (boolean | null);
+    /**
      * 活动期间跳过养成计划
      */
     CultivateSkipDuringActivity?: (boolean | null);
@@ -79,5 +99,13 @@ export type MaaUserConfig_Task = {
      * 资源收集期跳过养成计划
      */
     CultivateSkipDuringResourceCollection?: (boolean | null);
+    /**
+     * 森空岛绑定的签到账号组 UUID（空=未绑定）
+     */
+    CultivateSklandAccount?: (string | null);
+    /**
+     * 森空岛绑定角色的游戏 uid（非森空岛 userId）
+     */
+    CultivateSklandUid?: (string | null);
 };
 

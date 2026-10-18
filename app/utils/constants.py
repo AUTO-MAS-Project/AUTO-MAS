@@ -46,11 +46,34 @@ TYPE_BOOK = {
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
     "BAAHConfig": "BAAH",
+    "WhimboxConfig": "奇想盒",
+    "MSSConfig": "MSS",
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maa", "maaend")
-"""计划表消费方列表"""
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah", "mss")
+"""计划表消费方列表；PLAN_BOOK 按下标引用此项，往中间插入会把已有类型指到别的
+消费方，所以新消费方只能追加到末尾（baah 早于 mss 加入，因此排在它前面）"""
+
+MSS_TRIBULATION_STAGES = (
+    "基础试炼",
+    "晋升试炼-怪诞舞者",
+    "晋升试炼-终宵萤辉",
+    "晋升试炼-热嘟噜噗男爵",
+    "技巧试炼-节奏游戏卡带",
+    "技巧试炼-射击游戏卡带",
+    "技巧试炼-格斗游戏卡带",
+    "纹章试炼-好市民点数",
+    "纹章试炼-协会贡献证",
+    "纹章试炼-恩赐消费券",
+)
+"""MSS 悬赏试炼关卡：与外壳 interface 的 `悬赏试炼关卡` 选项逐一对应（v1.4.4 共 10 项）
+
+**上游加关卡或改名时必须同步这里**，否则计划表里存的旧关卡会被折算回默认值。
+"""
+
+MSS_DEFAULT_TRIBULATION_STAGE = MSS_TRIBULATION_STAGES[0]
+"""MSS 悬赏试炼的默认关卡"""
 
 MAA_RUN_MOOD_BOOK = {
     "GreenTicketStore": "绿票商店",
@@ -93,23 +116,25 @@ MAA_TASKS = [
     "Recruit",
     "Mall",
     "Award",
-    "Roguelike",
     "SwitchTheme",
 ]
-"""MAA任务列表"""
+"""MAS 托管的 MAA 任务类型
+
+只列 MAS 会接管开关与配置的任务。上游还有的类型（自动肉鸽、生息演算、自定义
+任务等）对 MAS 是未知任务：队列里遇到就原样透传，不合成、不接管、不判定。
+"""
 
 MAA_TASKS_ZH = [
     "开始唤醒",
-    "库存保持",
-    "理智作战",
+    "库存保持与干员养成",
+    "理智任务",
     "基建换班",
     "自动公招",
     "信用收支",
     "领取奖励",
-    "自动肉鸽",
     "更换主题",
 ]
-"""MAA任务列表"""
+"""MAA_TASKS 对应的中文任务名（与 MAA_TASKS 逐位对齐）"""
 
 MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "3213",
@@ -154,7 +179,6 @@ MAA_STAGE_KEY = [
     "Stage_1",
     "Stage_2",
     "Stage_3",
-    "Stage_Remain",
 ]
 """MAA关卡键表"""
 
@@ -167,6 +191,36 @@ ARKNIGHTS_PACKAGE_NAME = {
     "txwy": "tw.txwy.and.arknights",
 }
 """明日方舟包名映射表"""
+
+ARKNIGHTS_GAME_DAY_TZ = {
+    "Official": UTC4,
+    "Bilibili": UTC4,
+    "txwy": UTC4,
+    "YoStarEN": timezone(timedelta(hours=-11)),
+    "YoStarJP": timezone(timedelta(hours=5)),
+    "YoStarKR": timezone(timedelta(hours=5)),
+}
+"""明日方舟各区服的游戏日时区：服务器当地 04:00 换日，即服务器时区减 4 小时
+
+来源 MAA `src/MaaWpfGui/Extensions/DateTimeExtension.cs`：`_clientTypeTimezone`
+中 Official / Bilibili / txwy 为 UTC+8，YoStarEN 为 UTC-7（固定偏移，不随夏令时），
+YoStarJP / YoStarKR 为 UTC+9；`YjDayStartHour = 4`。
+前端 `frontend/src/views/MAAUserEdit/periodMarkers.ts` 的 ARKNIGHTS_GAME_DAY_OFFSET
+是同一张表，改动时两边同步。
+"""
+
+
+def get_game_day_tz(server: str | None) -> timezone:
+    """按明日方舟区服取游戏日时区，未知或空区服回落到东4区。"""
+
+    return ARKNIGHTS_GAME_DAY_TZ.get(server or "", UTC4)
+
+
+def game_now(server: str | None) -> datetime:
+    """按明日方舟区服的游戏日时区取当前时间，其日期即当前游戏日。"""
+
+    return datetime.now(tz=get_game_day_tz(server))
+
 
 ARKNIGHTS_VERSION_API_SERVER = {
     "Official": "official",
@@ -190,84 +244,26 @@ MAA_TASK_TRANSITION_METHOD_BOOK = {
 
 MAA_ANNIHILATION_FIGHT_BASE = {
     "$type": "FightTask",
-    "UseMedicine": False,
-    "MedicineCount": 0,
-    "UseStone": False,
-    "StoneCount": 0,
-    "EnableTargetDrop": False,
-    "DropId": "",
-    "DropCount": 0,
-    "IsInventoryTarget": False,
-    "EnableTimesLimit": False,
-    "TimesLimit": 999,
-    "Series": 0,
-    "StagePlan": ["Annihilation"],
-    "IsDrGrandet": False,
-    "UseExpiringMedicine": True,
-    "UseExpireMedicineForActivity": False,
-    "UseCustomAnnihilation": True,
-    "AnnihilationStage": "Annihilation",
-    "HideUnavailableStage": True,
-    "IsStageManually": False,
-    "UseOptionalStage": False,
-    "UseStoneAllowSave": False,
-    "HideSeries": False,
-    "UseWeeklySchedule": False,
-    "WeeklySchedule": {
-        "Sunday": True,
-        "Monday": True,
-        "Tuesday": True,
-        "Wednesday": True,
-        "Thursday": True,
-        "Friday": True,
-        "Saturday": True,
-    },
     "Name": "剿灭作战",
     "IsEnable": True,
     "TaskType": "Fight",
-}
-"""MAA剿灭作战基础配置"""
-
-
-MAA_REMAIN_FIGHT_BASE = {
-    "$type": "FightTask",
+    "StagePlan": ["Annihilation"],
+    "Series": 0,
+    "IsStageManually": False,
     "UseMedicine": False,
     "MedicineCount": 0,
-    "UseStone": False,
-    "StoneCount": 0,
-    "EnableTargetDrop": False,
-    "DropId": "",
-    "DropCount": 0,
-    "IsInventoryTarget": False,
     "EnableTimesLimit": False,
     "TimesLimit": 999,
-    "Series": 0,
-    "StagePlan": [""],
-    "IsDrGrandet": False,
-    "UseExpiringMedicine": False,
-    "UseExpireMedicineForActivity": False,
-    "UseCustomAnnihilation": False,
+    "UseCustomAnnihilation": True,
     "AnnihilationStage": "Annihilation",
-    "HideUnavailableStage": True,
-    "IsStageManually": True,
-    "UseOptionalStage": False,
-    "UseStoneAllowSave": False,
-    "HideSeries": False,
-    "UseWeeklySchedule": False,
-    "WeeklySchedule": {
-        "Sunday": True,
-        "Monday": True,
-        "Tuesday": True,
-        "Wednesday": True,
-        "Thursday": True,
-        "Friday": True,
-        "Saturday": True,
-    },
-    "Name": "剩余理智",
-    "IsEnable": True,
-    "TaskType": "Fight",
 }
-"""MAA剩余理智作战基础配置"""
+"""MAA剿灭作战托管补丁
+
+**出现在这里的键即 MAS 声明接管，未出现的一律由 MAA 原生配置透传**——
+用户在上游界面里设的临期药、源石、博朗台、周计划、指定材料/次数、隐藏项等
+高级设置原样生效，MAS 不经手。反过来说：只要 MAS 不消费某个字段，就不得写进
+本表，写了既会覆盖用户在原生界面里的选择，又会在上游新增字段时静默失效。
+"""
 
 MAA_GREEN_TICKET_STORE_TASK = {
     "$type": "CustomTask",
@@ -407,6 +403,53 @@ MAAEND_SANITY_TASK_FIELDS = (
     "AutoEssenceTargetWeapons",
 )
 """MaaEnd理智任务字段列表"""
+
+ENDFIELD_SERVER_PRESETS: dict[tuple[str, str, str], dict[str, str]] = {
+    ("6LL0KJuqHBVz33WK", "1", "1"): {
+        "label": "官服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "1",
+        "sub_channel": "1",
+        "seq": "5",
+    },
+    ("6LL0KJuqHBVz33WK", "2", "2"): {
+        "label": "B服",
+        "api_url": "https://launcher.hypergryph.com/api/proxy/batch_proxy",
+        "appcode": "6LL0KJuqHBVz33WK",
+        "launcher_appcode": "abYeZZ16BPluCFyT",
+        "channel": "2",
+        "sub_channel": "2",
+        "seq": "5",
+    },
+    ("YDUTE5gscDZ229CW", "6", "6"): {
+        "label": "国际服",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "6",
+        "seq": "3",
+    },
+    ("YDUTE5gscDZ229CW", "6", "802"): {
+        "label": "国际服（Google Play）",
+        "api_url": "https://launcher.gryphline.com/api/proxy/batch_proxy",
+        "appcode": "YDUTE5gscDZ229CW",
+        "launcher_appcode": "YDUTE5gscDZ229CW",
+        "channel": "6",
+        "sub_channel": "802",
+        "seq": "3",
+    },
+}
+"""终末地 PC 客户端的四套服务器参数，按渠道区分。
+
+键是客户端 `config.ini` 里登记的 `(appcode, channel, sub_channel)`, 用来选出官服、B服、国际服与国际服
+
+MAS 没有选服入口，只按登记值匹配这四套；匹配不到就不碰客户端，绝不拿官服参数去顶。
+
+`channel` / `sub_channel` / `seq` / `version` 在请求里必须是 JSON 字符串：给成数字会被判400，版本串带首尾空格会被判 500。
+"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {
@@ -710,6 +753,23 @@ STARRAIL_PACKAGE_NAME = {
     "OVERSEA-TWHKMO": "com.HoYoverse.hkrpgoversea",
 }
 """崩坏·星穹铁道包名映射表"""
+
+STARRAIL_CN_UPDATE_LINK_URL = (
+    "https://act-api-takumi.mihoyo.com/event/download_porter/link"
+    "/hkrpg_cn/official/android_default"
+)
+"""崩坏·星穹铁道国服官服安卓更新入口，302 跳转至 CDN 上的真实安装包地址"""
+
+STARRAIL_UPDATE_LINK_SERVER = {
+    "CN-Official": STARRAIL_CN_UPDATE_LINK_URL,
+}
+"""崩坏·星穹铁道各服务器的更新入口映射表
+
+入口的跳转地址同时提供版本号与安装包，因此版本号与将安装的包必然一致。
+目前只有国服官服放出了安卓安装包直链，其余服务器还没有公开可用的安卓入口。
+
+不在此表中的服务器会跳过客户端版本检查。
+"""
 
 STARRAIL_STAGE_BOOK = {
     "-": "禁用",
@@ -1297,3 +1357,40 @@ CYCLE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 CYCLE_EMPTY_TIME = "2000-01-01 00:00:00"
 """循环队列时间字段的空值哨兵，表示「尚未推算」而非某个真实时刻"""
+
+BASE_SHARED = "shared"
+"""base 来源：脚本级共享配置（旧字面量「脚本」/「简洁」）"""
+
+BASE_INDEPENDENT = "independent"
+"""base 来源：用户独立配置（旧字面量「用户」/「详细」/「自定义」）"""
+
+BASE_NATIVE = "native"
+"""base 来源：脚本原生配置（旧字面量「直控」）"""
+
+LEGACY_BASE_SOURCES = {
+    "脚本": BASE_SHARED,
+    "用户": BASE_INDEPENDENT,
+    "直控": BASE_NATIVE,
+    "简洁": BASE_SHARED,
+    "详细": BASE_INDEPENDENT,
+    "自定义": BASE_INDEPENDENT,
+}
+"""旧配置来源字面量 → base 来源：只出现在存量数据与旧备份里，读取时归一"""
+
+
+def normalize_base_source(value: object) -> str:
+    """把配置来源值归一为 base 来源三态（shared / independent / native）。
+
+    无法识别的值原样返回，由调用方决定是否回落；空值返回空串。
+    """
+
+    text = str(value or "").strip()
+    return LEGACY_BASE_SOURCES.get(text, text)
+
+
+BASE_SOURCE_LABELS = {
+    BASE_SHARED: "共享",
+    BASE_INDEPENDENT: "独立",
+    BASE_NATIVE: "原生",
+}
+"""base 来源三态的展示词表（后端预览等无前端 i18n 处使用）"""

@@ -10,7 +10,6 @@ import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
 import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
 import type { ZzzOdInstanceAddIn } from '../models/ZzzOdInstanceAddIn';
-import type { ZzzOdInstanceDeleteIn } from '../models/ZzzOdInstanceDeleteIn';
 import type { ZzzOdInstanceFlagIn } from '../models/ZzzOdInstanceFlagIn';
 import type { ZzzOdInstanceForceLoginIn } from '../models/ZzzOdInstanceForceLoginIn';
 import type { ZzzOdInstanceRenameIn } from '../models/ZzzOdInstanceRenameIn';
@@ -19,6 +18,8 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -149,7 +150,7 @@ export class ZzzOdService {
         });
     }
     /**
-     * 设置运行实例（直控；one_dragon.yml 全局 instance_run）
+     * 设置运行实例（原生来源；one_dragon.yml 全局 instance_run）
      * 白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。
      * @param requestBody
      * @returns OutBase Successful Response
@@ -169,20 +170,45 @@ export class ZzzOdService {
         });
     }
     /**
-     * 删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）
-     * 删除注册表条目与实例目录，返回更新后的实例列表。
-     * @param requestBody
-     * @returns ZzzOdInstancesOut Successful Response
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
      * @throws ApiError
      */
-    public static deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost(
-        requestBody: ZzzOdInstanceDeleteIn,
-    ): CancelablePromise<ZzzOdInstancesOut> {
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/instances/delete',
-            body: requestBody,
-            mediaType: 'application/json',
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -312,7 +338,7 @@ export class ZzzOdService {
     }
     /**
      * 保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）
-     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。
+     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。
      * @param requestBody
      * @returns ZzzOdAppConfigOut Successful Response
      * @throws ApiError
@@ -355,8 +381,8 @@ export class ZzzOdService {
         });
     }
     /**
-     * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError
@@ -376,7 +402,7 @@ export class ZzzOdService {
     }
     /**
      * 获取一条龙两种启动器的安装情况与默认项
-     * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
+     * 渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。
      * @param scriptId
      * @returns ZzzOdLauncherOut Successful Response
      * @throws ApiError

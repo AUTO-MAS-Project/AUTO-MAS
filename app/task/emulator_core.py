@@ -24,9 +24,12 @@ MAA / M9A / BAAH / MaaEnd / MaaFW / SRC 在任务收尾与各条失败分支上�
 本次接管的模拟器实例，原本各自内联调用、失败日志各写一份，且多数漏了超时与
 判空。这里只做「取实例索引 → 限时关闭 → 记录结果」这一件事：是否要关、以及
 关闭失败算不算异常，由调用方自己决定。
+
+另有魔改 AVD 实例上用的几个小工具：门面 ``open`` 的放行参数、脚本进程的 adb 环境、宿主 adb 通道。
 """
 
 import asyncio
+import time
 from typing import Any
 
 from app.utils import get_logger
@@ -35,6 +38,86 @@ logger = get_logger("模拟器管理")
 
 # 模拟器可能已无响应，关闭动作不能无限期挂住任务收尾
 EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
+
+
+def mod_avd_open_kwargs(manager: Any, *, allowed: bool) -> dict[str, Any]:
+    """给设备管理器 ``open`` 的额外参数：Emulator 2.0 门面要知道调用方能不能用魔改 AVD（不能时
+    设备是魔改 AVD 就拒绝开机）；旧式模拟器管理器不收这个参数，返回空字典。"""
+    from app.utils.emulator2.facade import Emulator2Manager
+
+    if isinstance(manager, Emulator2Manager):
+        return {"allow_mod_avd": allowed}
+    return {}
+
+
+def resolve_device_ref(manager: Any, index: Any) -> Any | None:
+    """设备号 → ``DeviceRef``（Emulator 2.0 才有；旧式管理器、查不到都返回 ``None``）。"""
+    resolve_device = getattr(manager, "resolve_device", None)
+    if resolve_device is None or index in (None, "", "-"):
+        return None
+    try:
+        return resolve_device(str(index))
+    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
+        logger.debug(f"解析设备 {index} 失败，按普通模拟器处理: {e}")
+        return None
+
+
+async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
+    """为某台设备起脚本进程时要用的环境：魔改 AVD 实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
+    = 脚本专用端口（``scriptAdbServerPort``，默认 20049）」，其余返回 ``None``（照旧继承 MAS 的环境）。
+
+    脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。
+    """
+    device_ref = resolve_device_ref(manager, index)
+    if device_ref is None or getattr(device_ref, "emulator_type", None) != "avd":
+        return None
+    import os
+
+    from app.utils.emulator2.avd import host
+    from app.utils.emulator2.avd.components import (
+        root_from_manager_exe,
+        script_adb_env,
+    )
+
+    root = root_from_manager_exe(device_ref.manager_path)
+    env = dict(os.environ)
+    env.update(script_adb_env(root))
+    try:
+        # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
+        await host.ensure_script_adb_server(root)
+    except host.ScriptAdbPortConflict:
+        raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
+    except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
+        logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
+    logger.info(
+        f"设备 {index} 是魔改 AVD 实例：脚本的 adb 走专用 server（端口 "
+        f"{env['ANDROID_ADB_SERVER_PORT']}）"
+    )
+    return env
+
+
+async def resolve_host_adb(
+    owner: Any, *, index: str | None = None, config_key: str = "Emulator"
+) -> Any | None:
+    """owner 接管的设备是魔改 AVD 实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
+    ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
+
+    魔改 AVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
+    会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
+    ``get_adb_path()`` + 设备地址。查不到只当作不是魔改 AVD。
+    """
+
+    emulator_manager = getattr(owner, "emulator_manager", None)
+    host_adb = getattr(emulator_manager, "host_adb", None)
+    if host_adb is None:
+        return None
+    if index is None:
+        index = owner.script_config.get(config_key, "Index")
+    try:
+        return await host_adb(index)
+    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
+        logger.debug(f"查询实例 {index} 的宿主 adb 通道失败，按普通模拟器处理: {e}")
+        return None
 
 
 async def close_emulator(
@@ -53,7 +136,7 @@ async def close_emulator(
     Args:
         owner: 提供 emulator_manager 与 script_config 的任务对象。
         index: 模拟器实例索引；省略时按 config_key 段的 "Index" 读取。
-        config_key: 读取实例索引的配置段，MaaEnd 为 "Game"。
+        config_key: 省略 index 时读取 "Index" 的配置段。特殊键名应显式传入 index。
         timeout: 关闭动作的超时秒数。
         log_failure: 失败时是否记录警告日志。
     """
@@ -65,11 +148,23 @@ async def close_emulator(
     if index is None:
         index = owner.script_config.get(config_key, "Index")
 
+    started_at = time.monotonic()
+    logger.info(
+        f"开始关闭模拟器: {type(emulator_manager).__name__} - 实例 {index} - "
+        f"超时: {timeout}秒"
+    )
     try:
         await asyncio.wait_for(emulator_manager.close(index), timeout=timeout)
-        logger.success("模拟器已关闭")
+        logger.success(
+            f"模拟器已关闭: {type(emulator_manager).__name__} - 实例 {index} - "
+            f"用时: {time.monotonic() - started_at:.3f}秒"
+        )
         return True
     except Exception as e:
         if log_failure:
-            logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+            logger.opt(exception=True).warning(
+                f"关闭模拟器失败: {type(emulator_manager).__name__} - "
+                f"实例 {index} - 用时: "
+                f"{time.monotonic() - started_at:.3f}秒 - {e}"
+            )
         return False

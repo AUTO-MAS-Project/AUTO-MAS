@@ -1,12 +1,9 @@
-import { onScopeDispose, ref } from 'vue'
+import { ref } from 'vue'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
+import { useHomeActivitySource } from './useHomeActivitySource'
 
-const logger = window.electronAPI.getLogger('活动数据')
-
-/** 与后端 Reverse1999ActivityService 对齐的请求超时与失败重试节奏 */
+/** 与后端 Reverse1999ActivityService 对齐的请求超时 */
 const FETCH_TIMEOUT_MS = 20_000
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
 
 const SOURCE_URL = 'https://api.1999.fan/api/data/activity/cn.json'
 const DISPLAY_NAME = '1999'
@@ -36,6 +33,12 @@ interface RawVersion {
   start_time?: number
   end_time?: number
   activity?: Record<string, RawActivity>
+}
+
+/** 快照里存的是原始数据与当时选中的版本，恢复时重新算一遍概览 */
+interface SnapshotPayload {
+  versionId: string
+  data: Record<string, RawVersion>
 }
 
 const parseTime = (value: unknown): Date | null => {
@@ -71,6 +74,17 @@ const selectVersion = (data: Record<string, RawVersion>): RawVersion | null => {
   if (ended.length > 0)
     return ended.sort((a, b) => (b.e?.getTime() ?? 0) - (a.e?.getTime() ?? 0))[0].version
   return null
+}
+
+/** 当前该报哪个版本：先找进行中的那个键，都没有就退回第一个 */
+const pickVersionId = (data: Record<string, RawVersion>): string => {
+  const now = Date.now()
+  for (const [key, version] of Object.entries(data)) {
+    const s = parseTime(version?.start_time)
+    const e = parseTime(version?.end_time)
+    if (s && e && s.getTime() <= now && now <= e.getTime()) return key
+  }
+  return Object.keys(data)[0] ?? ''
 }
 
 const formatActivity = (activity: RawActivity, key: string): SraActivityItem => ({
@@ -119,142 +133,68 @@ const buildOverview = (
   }
 }
 
-const snapshotKey = 'auto-mas.home.reverse1999-snapshot'
+const SNAPSHOT_KEY = 'auto-mas.home.reverse1999-snapshot'
 
-/** 1999 活动数据的直连数据源（首页全前端化）。与后端职责对齐，带快照与独立失败态。 */
+/**
+ * 1999 活动数据的直连数据源（首页全前端化）。
+ *
+ * 取数带超时、失败退避重试、本地快照与独立失败态，这些节奏交给公共骨架；
+ * 这里只负责取数、挑版本与字段收口。
+ */
 export const useReverse1999ActivitySource = () => {
   const overview = ref<SraActivityOverview>(buildOverview({}, ''))
-  const loading = ref(false)
-  const hasData = ref(false)
-  let retryTimer: number | null = null
-  let retryCount = 0
-  let disposed = false
 
-  try {
-    const raw = localStorage.getItem(snapshotKey)
-    if (raw) {
-      const cached = JSON.parse(raw) as { versionId: string; data: Record<string, RawVersion> }
-      overview.value = buildOverview(cached.data, cached.versionId)
-      hasData.value = true
-    }
-  } catch {
-    // 快照损坏按无缓存处理
-  }
-  if (!hasData.value) {
-    loading.value = true
-  }
-
-  const load = async () => {
-    if (disposed) return
-    try {
-      const controller = new AbortController()
-      const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-      let response: Response
+  const source = useHomeActivitySource<SnapshotPayload>({
+    label: () => DISPLAY_NAME,
+    timeoutMs: FETCH_TIMEOUT_MS,
+    restoreSnapshot: () => {
       try {
-        response = await fetch(SOURCE_URL, {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        })
-      } finally {
-        window.clearTimeout(timer)
+        const raw = localStorage.getItem(SNAPSHOT_KEY)
+        if (!raw) return false
+        const cached = JSON.parse(raw) as SnapshotPayload
+        overview.value = buildOverview(cached.data, cached.versionId)
+        return true
+      } catch {
+        // 快照损坏按无缓存处理
+        return false
       }
+    },
+    saveSnapshot: payload => {
+      try {
+        localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(payload))
+      } catch {
+        // 存储写不进去就算了，下次照常从网络取
+      }
+    },
+    fetchData: async signal => {
+      const response = await fetch(SOURCE_URL, {
+        signal,
+        headers: { Accept: 'application/json' },
+      })
       if (!response.ok) throw new Error('HTTP ' + response.status)
       const data = (await response.json()) as Record<string, RawVersion>
-      const versionId = (() => {
-        const now = Date.now()
-        for (const [key, v] of Object.entries(data)) {
-          const s = parseTime(v?.start_time),
-            e = parseTime(v?.end_time)
-          if (s && e && s.getTime() <= now && now <= e.getTime()) return key
-        }
-        return Object.keys(data)[0] ?? ''
-      })()
-      overview.value = buildOverview(data, versionId)
-      hasData.value = true
-      retryCount = 0
-      try {
-        localStorage.setItem(snapshotKey, JSON.stringify({ versionId, data }))
-      } catch {
-        /* 跳过快照 */
+      return { versionId: pickVersionId(data), data }
+    },
+    applyData: payload => {
+      overview.value = buildOverview(payload.data, payload.versionId)
+    },
+    markStale: () => {
+      overview.value = {
+        ...overview.value,
+        Stale: true,
+        Message: '正在使用上次成功获取的活动数据',
       }
-    } catch (requestError) {
-      if (disposed) return
-      const errorMessage =
-        requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取' + DISPLAY_NAME + '活动数据失败: ' + errorMessage)
-      if (hasData.value) {
-        overview.value = {
-          ...overview.value,
-          Stale: true,
-          Message: '正在使用上次成功获取的活动数据',
-        }
-      } else {
-        overview.value = buildOverview({}, '')
-        overview.value.Message = DISPLAY_NAME + '活动数据暂不可用'
-      }
-      if (retryCount < MAX_RETRIES) {
-        retryCount += 1
-        if (active) {
-          scheduleRetry()
-        } else {
-          // 模块隐藏期间不重试，重新可见时补一次
-          retryPending = true
-        }
-      }
-    } finally {
-      if (!disposed) loading.value = false
-    }
-  }
-
-  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
-  let active = false
-  let started = false
-  let retryPending = false
-
-  const scheduleRetry = () => {
-    retryTimer = window.setTimeout(() => {
-      retryTimer = null
-      void load()
-    }, RETRY_DELAY_MS)
-  }
-
-  const start = () => {
-    if (disposed) return
-    active = true
-    if (!started) {
-      started = true
-      void load()
-    } else if (retryPending) {
-      retryPending = false
-      void load()
-    }
-  }
-
-  const stop = () => {
-    active = false
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-      retryPending = true
-    }
-  }
-
-  onScopeDispose(() => {
-    disposed = true
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-    }
+    },
+    markUnavailable: () => {
+      overview.value = { ...buildOverview({}, ''), Message: DISPLAY_NAME + '活动数据暂不可用' }
+    },
   })
 
   return {
     overview,
-    loading,
-    start,
-    stop,
-    refresh: () => {
-      retryCount = 0
-      void load()
-    },
+    loading: source.loading,
+    start: source.start,
+    stop: source.stop,
+    refresh: source.refresh,
   }
 }

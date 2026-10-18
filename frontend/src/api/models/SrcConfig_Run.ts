@@ -4,9 +4,25 @@
 /* eslint-disable */
 export type SrcConfig_Run = {
     /**
+     * 单账号运行总时限（分钟），包含等待和全部重试
+     */
+    HardTimeLimit?: (number | null);
+    /**
      * 任务切换方式
      */
     TaskTransitionMethod?: ('ExitGame' | 'ExitEmulator' | null);
+    /**
+     * 登录游戏前检查游戏更新
+     */
+    IfCheckGameUpdate?: (boolean | null);
+    /**
+     * 自动下载并安装游戏安装包（仅国服官服）
+     */
+    IfAutoInstallGameApk?: (boolean | null);
+    /**
+     * 游戏更新超时限制
+     */
+    GameUpdateTimeLimit?: (number | null);
     /**
      * 代理次数限制
      */

@@ -15,6 +15,10 @@ import {
   disposeSchedulerSubscriptions,
 } from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
+import {
+  bootstrapVirtualDisplayPrompt,
+  disposeVirtualDisplayPrompt,
+} from '@/services/virtualDisplayPrompt'
 
 let registered = false
 
@@ -40,6 +44,10 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('system-notices', {
       bootstrap: bootstrapSystemNotices,
       dispose: disposeSystemNotices,
+    })
+    registerResidentResource('virtual-display-prompt', {
+      bootstrap: bootstrapVirtualDisplayPrompt,
+      dispose: disposeVirtualDisplayPrompt,
     })
     registered = true
   }

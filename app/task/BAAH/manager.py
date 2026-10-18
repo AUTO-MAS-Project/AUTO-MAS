@@ -31,11 +31,12 @@ from app.core.emulator_manager import EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem
 from app.task.emulator_core import close_emulator
-from app.tools.push_log import build_user_result_text
+from app.task.manager_base import ScriptManagerBase
+from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -49,10 +50,15 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
 }
 
 
-class BAAHManager(TaskExecuteBase):
+class BAAHManager(ScriptManagerBase):
     """BAAH 控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -62,6 +68,7 @@ class BAAHManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.emulator_manager: DeviceBase | None = None
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 BAAH 脚本配置是否可用"""
@@ -93,20 +100,17 @@ class BAAHManager(TaskExecuteBase):
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id} 已锁定, BAAH 脚本配置提取完成")
 
-        self.script_info.user_list = [
-            UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
-            for uid, config in self.user_config.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-            and self.task_info.is_target_user(str(uid))
-        ]
+        self.script_info.user_list = self.build_proxy_user_list(
+            self.user_config.items()
+        )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
 
         # 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度,
         # BAAH 自身不再负责拉起模拟器
-        self.emulator_manager: DeviceBase = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager: DeviceBase = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
 
@@ -129,13 +133,21 @@ class BAAHManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 BAAH 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
             )
-            await self.spawn(task)
+            await self.run_user_task(current_user, task)
 
     async def final_task(self):
         """运行结束后的收尾工作"""
@@ -156,15 +168,7 @@ class BAAHManager(TaskExecuteBase):
             ].UserData.load(await self.user_config.toDict())
             await Config.ScriptConfig.save()
 
-            error_count = sum(
-                1 for u in self.script_info.user_list if u.status == "异常"
-            )
-            over_count = sum(
-                1 for u in self.script_info.user_list if u.status == "完成"
-            )
-            wait_count = sum(
-                1 for u in self.script_info.user_list if u.status == "等待"
-            )
+            summary = self.collect_user_results()
 
             title = (
                 f"{datetime.now().strftime('%m-%d')} | "
@@ -173,19 +177,13 @@ class BAAHManager(TaskExecuteBase):
             )
             ## 按用户交错组装「用户结果行 + 该用户节点详情」，
             ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
-            has_uncompleted = error_count + wait_count > 0
+            has_uncompleted = summary.uncompleted_count > 0
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
-            result = {
-                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-                "script_name": self.script_info.name or "空白",
-                "start_time": self.begin_time,
-                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "completed_count": over_count,
-                "uncompleted_count": error_count + wait_count,
-                "result": user_result_text,
-            }
+            # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+            mirror_report_to_dispatch(self.script_info, user_result_text)
+            result = self.build_proxy_report(result_text=user_result_text)
 
             try:
                 await push_notification(
