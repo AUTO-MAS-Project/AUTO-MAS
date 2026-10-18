@@ -1,33 +1,26 @@
 /**
- * Runtime 可执行文件随本体一起更新
+ * Runtime 可执行文件对齐到线上最新版
  *
- * `auto-mas-runtime.exe` 由安装包捆绑进 `resources/`，此前只能靠重装整包升级：本体源码
- * （`repo/`）能被 `bootstrap --version` 换成新版本，Runtime 却停在装机那天的版本，于是
- * 「新本体 + 旧 Runtime」这种从未联调过的组合会在用户机器上出现。
- *
- * 这里把 Runtime 的版本钉扎在本体源码里（`res/runtime-version.txt`），让它跟着源码走：
- *
- * 1. 发布 CI 从仓库根的 `res/runtime-version.txt` 读版本，下载该 Release 的 exe、按同一
- *    Release 的 `SHA256SUMS.txt` 校验后捆绑进安装包；
- * 2. **第 0 步**：首次初始化与本体更新在跑 `bootstrap` 之前，先到目标发布分支
- *    （`release/<版本>`）上读远端的 `res/runtime-version.txt`，与磁盘上那个 exe 自报的版本
- *    对一遍，不一致就先把 exe 换成钉扎的那一版，再交给它去 bootstrap
- *    （{@link alignRuntimeBinaryWithVersion}）。这样克隆源码的已经是配套的 Runtime，
- *    而不是装机那天的旧版本；
- * 3. 每次经 Runtime 启动后端时（`bootstrap --if-needed` 之后、`supervise` 之前）再按
- *    `<app-root>/repo/res/runtime-version.txt` 兜底核对一次，不联网、失败不阻断
- *    （{@link syncRuntimeBinary}）。
+ * `auto-mas-runtime.exe` 由安装包捆绑进 `resources/`，而 Runtime 有自己的发布节奏：修复版
+ * 发布后，用户是否用上它不该取决于本体是否发版。完整初始化（首次安装、本体更新及初始化
+ * 重试）在跑 `bootstrap` 之前，先解析线上最新版本，比磁盘上的 exe 新就下载、
+ * 校验后原地替换，再交给它去 bootstrap（{@link alignRuntimeBinaryWithLatest}）。
  *
  * 几条刻意的取舍：
  *
- * - **判据是版本号相等，不是「钉扎的更新才换」。** 本体回退到旧版本时 Runtime 必须跟着退
- *   回去，否则回退这条路仍然会得到没联调过的组合。
+ * - **只升不降。** 本地版本更高（开发者手换、镜像列表滞后、本体回退）时保留本地，绝不拿
+ *   旧版覆盖。旧实现是「版本号相等才算对齐」，会把用户本机更高的版本降回钉扎值——修复版
+ *   因此被本体钉扎抵消，这正是本次改动要解决的问题。
+ * - **日常直接启动不检查、不更新。** 那次启动只跑 `bootstrap --if-needed` 与 `supervise`，
+ *   版本对齐只发生在完整初始化链路里，启动路径上不多一次联网。
  * - **判身份用自报版本，不用文件哈希；哈希只用来校验下载物。** 理由见
  *   {@link readInstalledRuntimeVersion}。
- * - **仓库里只钉版本号，哈希取自 Release 自带的 `SHA256SUMS.txt`，而且清单只从项目自己
- *   控制的 GitHub / CNB 取。** 与发布 CI、本地打包脚本同一份清单、同一种校验；仓库不再抄一份
- *   哈希，也就没有「版本改了哈希没改」的失败面。gh-proxy 一类第三方代理只负责下 exe：让同一个
- *   代理同时给出文件和信任依据，它被入侵时就能配一组互相匹配的恶意文件与哈希，校验形同虚设。
+ * - **哈希取自 Release 自带的 `SHA256SUMS.txt`，而且清单只从项目自己控制的 GitHub / CNB 取。**
+ *   与发布 CI、本地打包脚本同一份清单、同一种校验；仓库不再抄一份哈希，也就没有「版本改了
+ *   哈希没改」的失败面。gh-proxy 一类第三方代理只负责下 exe：让同一个代理同时给出文件和
+ *   信任依据，它被入侵时就能配一组互相匹配的恶意文件与哈希，校验形同虚设。
+ * - **安装包内置的版本只用于打包。** `res/runtime-version.txt` 由构建 CI 与本地打包脚本
+ *   读取，决定装机时捆绑哪一版；运行时不再读它，运行时目标是线上最新版。
  * - **原地替换，不做多版本并存。** 校验通过的新文件直接换到原路径，`resolveRuntimeExecutable()`
  *   与所有持有旧路径字符串的地方都不用动——`RuntimeClient` 每条命令都是重新 spawn 同一个
  *   路径。旧文件先改名为 `<exe>.old` 让路，新文件确认跑得起来才清掉备份，见
@@ -35,9 +28,9 @@
  * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 顺序自己实现，不复用
  *   `MirrorRotationService`：后者的 `sortMirrors()` 会把 key 里含 `github` 的源提到最前
  *   （为初始化拉源码的测试版场景加的），套到这里正好把国内用户最连不上的官方源排到第一个。
- * - **第 0 步失败通常停下，启动时的兜底核对失败不阻断。** 远端钉扎的全部来源均因网络
- *   失败时，初始化编排器可用 `bootstrap --if-needed` 复用已就绪的本地环境，供断网开机
- *   自启使用；切换目标版本的更新流程仍然必须先完成核对。
+ * - **对齐失败通常停下，但网络不可用时可复用本地环境。** 解析不到最新版本时初始化编排器
+ *   可用 `bootstrap --if-needed` 复用已就绪的本地环境，供断网开机自启使用；切换目标版本的
+ *   更新流程仍然必须先完成对齐。
  */
 
 import * as crypto from 'crypto'
@@ -52,143 +45,48 @@ import {
   createRuntimeClient,
   recoverRuntimeBackup,
 } from './runtime'
+import {
+  RUNTIME_RELEASE_REPO,
+  RUNTIME_VERSION_PATTERN,
+  isNewerRuntimeVersion,
+  resolveLatestRuntimeVersionCached,
+  type LatestRuntimeVersionLookup,
+  type RuntimeReleaseChannel,
+} from './runtimeReleaseService'
 
 const logger = getLogger('Runtime二进制')
 
-// ==================== 钉扎 ====================
+// ==================== 远端小文本（校验清单） ====================
 
-/**
- * 钉扎文件在源码树里的相对路径，仓库根与受管 `repo/` 下同名同位。
- *
- * 与发布 CI（`.github/workflows/build-app.yml`）、本地打包脚本
- * （`scripts/build-local-package.ps1`）读的是同一个文件：一行版本号，例如 `v0.1.7`。
- */
-export const RUNTIME_PIN_RELATIVE_PATH = path.join('res', 'runtime-version.txt')
+/** 文本文件的大小上限：校验清单只有几十字节，超过说明读到的不是它。 */
+const MAX_TEXT_FILE_BYTES = 64 * 1024
 
-/** 钉扎文件在仓库里的 URL 路径段，远端读取时拼在分支名后面。 */
-const RUNTIME_PIN_URL_PATH = 'res/runtime-version.txt'
-
-/** 钉扎文件的大小上限：它只有一行版本号，超过说明读到的不是它。 */
-const MAX_PIN_FILE_BYTES = 64 * 1024
-
-/**
- * 版本号的合法形态：`v` 加点分数字，可跟一段预发布/构建后缀。
- *
- * 与发布 CI、本地打包脚本和 `runtimeUpdateService` 里那条同源——版本号会被拼进下载 URL，
- * 带 `/` 或空白的值必须在这里挡掉，不能指望远端返回 404。
- */
-const RUNTIME_VERSION_PATTERN = /^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$/
-
+/** SHA-256 的小写十六进制形态。 */
 const SHA256_PATTERN = /^[0-9a-f]{64}$/
 
-/** 本体对 Runtime 版本的钉扎。 */
-export interface RuntimeBinaryPin {
-  /** 发布标签，同时是 Release 的 tag 与资产名里的版本段，例如 `v0.1.7`。 */
-  version: string
-}
+/** 单个文本来源的时长上限：文件不到一百字节，超过这个时间就是这条路不通。 */
+export const RUNTIME_TEXT_FETCH_TIMEOUT_MS = 15 * 1000
 
-/** 把钉扎文件的正文解析成版本号；空白、非法形态返回 null。 */
-export function parseRuntimeBinaryPin(text: string): RuntimeBinaryPin | null {
-  const version = text.trim()
-  return RUNTIME_VERSION_PATTERN.test(version) ? { version } : null
-}
-
-/**
- * 读取并校验受管源码里的钉扎文件（启动时兜底核对用）。
- *
- * 文件缺失、为空、版本号非法一律返回 null（调用方按「本体没有钉扎」处理而不是报错）：
- * 携带该文件之前发布的本体版本本来就没有它，回退到那些版本时不该把启动流程弄失败。
- */
-export function readRuntimeBinaryPin(sourceRoot: string): RuntimeBinaryPin | null {
-  const pinPath = path.join(sourceRoot, RUNTIME_PIN_RELATIVE_PATH)
-  try {
-    const stat = fs.statSync(pinPath)
-    if (!stat.isFile() || stat.size > MAX_PIN_FILE_BYTES) return null
-
-    const text = fs.readFileSync(pinPath, 'utf8')
-    const pin = parseRuntimeBinaryPin(text)
-    if (!pin) {
-      logger.warn(`${pinPath} 的版本号非法，忽略该钉扎: ${JSON.stringify(text.trim())}`)
-    }
-    return pin
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.warn(
-        `读取 ${pinPath} 失败，按未钉扎处理: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
-    return null
-  }
-}
-
-// ==================== 远端钉扎（第 0 步） ====================
-
-/** 本体仓库：远端钉扎从它的发布分支上读。与 `mirrorService` 的 `repo` 源指向同一个仓库。 */
-const APP_REPO = 'AUTO-MAS-Project/AUTO-MAS'
-
-/**
- * 目标版本对应的发布分支。
- *
- * 与 Runtime `internal/gitrepo/target.go` 的 `releasePrefix + version` 同一条规则：
- * bootstrap 克隆的就是这条分支，第 0 步读的钉扎必须来自同一条分支，两边才是同一份文件。
- */
-export function runtimeReleaseBranch(version: string): string {
-  return `release/${version}`
-}
-
-/** 一个只读文本的远端来源（钉扎文件、校验清单）。 */
+/** 一个只读文本的远端来源（校验清单）。 */
 export interface RuntimeTextSource {
   key: string
   name: string
   url: string
 }
 
-/**
- * 远端钉扎的两个来源：CNB 与 GitHub，同时发起、先拿到的先用。
- *
- * 只要这两个：CNB 是上游每次 push 都镜像过去的官方镜像（`sync-cnb.yml`），GitHub 是原件；
- * 两者都是仓库自己的地址，没有第三方代理的缓存与改写。文件只有一行，不值得再引入
- * gh-proxy 家族——它们对 raw 内容的缓存会让钉扎落后于分支。
- */
-export function buildRuntimePinSources(version: string): RuntimeTextSource[] {
-  const branch = runtimeReleaseBranch(version)
-  return [
-    {
-      key: 'cnb',
-      name: 'CNB',
-      url: `https://cnb.cool/${APP_REPO}/-/git/raw/${branch}/${RUNTIME_PIN_URL_PATH}`,
-    },
-    {
-      key: 'github',
-      name: 'GitHub',
-      url: `https://raw.githubusercontent.com/${APP_REPO}/${branch}/${RUNTIME_PIN_URL_PATH}`,
-    },
-  ]
-}
-
-/** 单个文本来源的时长上限：文件不到一百字节，超过这个时间就是这条路不通。 */
-export const RUNTIME_TEXT_FETCH_TIMEOUT_MS = 15 * 1000
-
-/** 远端读取的三种结局。 */
-export type RemoteRuntimePinLookup =
-  | { status: 'pinned'; pin: RuntimeBinaryPin; source: string }
-  /** 两个来源都明确回答 404：该版本发布时还没有这个机制，按未钉扎处理。 */
-  | { status: 'unpinned' }
-  /** 没有一个来源给出结论：网络不通、代理改写了正文、一个 404 另一个失败等。 */
-  | { status: 'unavailable'; error: string; networkUnavailable?: true }
-
 /** 单个来源的抓取结果，供 {@link fetchFirstValidText} 归并。 */
-export type RuntimePinFetchOutcome =
+export type RuntimeTextFetchOutcome =
   | { kind: 'text'; text: string }
   | { kind: 'missing' }
   | { kind: 'failed'; error: string; networkUnavailable?: true }
 
-export type RuntimePinFetcher = (url: string, timeoutMs: number) => Promise<RuntimePinFetchOutcome>
+export type RuntimeTextFetcher = (
+  url: string,
+  timeoutMs: number
+) => Promise<RuntimeTextFetchOutcome>
 
 /** 默认抓取：跟随重定向，只认 2xx；404 单独区分出来，其余状态码与网络错误都算失败。 */
-const defaultFetchText: RuntimePinFetcher = async (url, timeoutMs) => {
+const defaultFetchText: RuntimeTextFetcher = async (url, timeoutMs) => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -199,7 +97,7 @@ const defaultFetchText: RuntimePinFetcher = async (url, timeoutMs) => {
     if (response.status === 404) return { kind: 'missing' }
     if (!response.ok) return { kind: 'failed', error: `HTTP ${response.status}` }
     const text = await response.text()
-    if (text.length > MAX_PIN_FILE_BYTES) return { kind: 'failed', error: '返回的内容过大' }
+    if (text.length > MAX_TEXT_FILE_BYTES) return { kind: 'failed', error: '返回的内容过大' }
     return { kind: 'text', text }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -213,10 +111,10 @@ const defaultFetchText: RuntimePinFetcher = async (url, timeoutMs) => {
   }
 }
 
-export interface FetchRemoteRuntimeBinaryPinOptions {
+export interface FetchRuntimeTextOptions {
   timeoutMs?: number
   /** 测试注入；默认用全局 `fetch`。 */
-  fetchText?: RuntimePinFetcher
+  fetchText?: RuntimeTextFetcher
 }
 
 type FirstValidTextOutcome<T> =
@@ -238,7 +136,7 @@ function fetchFirstValidText<T>(
   sources: RuntimeTextSource[],
   parse: (text: string) => T | null,
   invalidReason: string,
-  options: FetchRemoteRuntimeBinaryPinOptions
+  options: FetchRuntimeTextOptions
 ): Promise<FirstValidTextOutcome<T>> {
   const fetchText = options.fetchText ?? defaultFetchText
   const timeoutMs = options.timeoutMs ?? RUNTIME_TEXT_FETCH_TIMEOUT_MS
@@ -269,7 +167,7 @@ function fetchFirstValidText<T>(
       fetchText(source.url, timeoutMs)
         .then(
           outcome => outcome,
-          (error): RuntimePinFetchOutcome => ({
+          (error): RuntimeTextFetchOutcome => ({
             kind: 'failed',
             error: error instanceof Error ? error.message : String(error),
           })
@@ -300,42 +198,7 @@ function fetchFirstValidText<T>(
   })
 }
 
-/**
- * 到目标发布分支上读 Runtime 钉扎：两个来源并行，先拿到合法版本号的那个胜出。
- *
- * 只有两个来源都明确回答 404 才算「目标分支没有钉扎」；归并规则见 {@link fetchFirstValidText}。
- */
-export async function fetchRemoteRuntimeBinaryPin(
-  version: string,
-  options: FetchRemoteRuntimeBinaryPinOptions = {}
-): Promise<RemoteRuntimePinLookup> {
-  const outcome = await fetchFirstValidText(
-    'Runtime 钉扎',
-    buildRuntimePinSources(version),
-    parseRuntimeBinaryPin,
-    '返回的内容不是版本号',
-    options
-  )
-  switch (outcome.kind) {
-    case 'found':
-      logger.info(`${runtimeReleaseBranch(version)} 钉扎 Runtime ${outcome.value.version}`)
-      return { status: 'pinned', pin: outcome.value, source: outcome.source }
-    case 'missing':
-      logger.info(`${runtimeReleaseBranch(version)} 上没有 ${RUNTIME_PIN_URL_PATH}，按未钉扎处理`)
-      return { status: 'unpinned' }
-    case 'unavailable':
-      return {
-        status: 'unavailable',
-        error: outcome.error,
-        ...(outcome.networkUnavailable ? { networkUnavailable: true as const } : {}),
-      }
-  }
-}
-
 // ==================== 下载源 ====================
-
-/** Runtime 发布仓库，与发布 CI 的 `gh release download -R` 同一个；CNB 上同名镜像。 */
-const RUNTIME_RELEASE_REPO = 'AUTO-MAS-Project/AUTO-MAS-Runtime'
 
 /** Release 资产的下载前缀：`<prefix>/<version>/<asset>`。 */
 interface RuntimeReleaseSource {
@@ -419,7 +282,7 @@ export function buildRuntimeBinarySources(version: string): RuntimeBinarySource[
  * 校验清单的来源：只有项目自己控制的 CNB 与 GitHub。
  *
  * 信任依据必须与被校验的文件来自不同的信任域：代理只能拿到 exe，拿不到「这份 exe 该长什么样」
- * 的话语权。清单几十字节，两个来源并行、先到先用，与钉扎同一套读取逻辑。
+ * 的话语权。清单几十字节，两个来源并行、先到先用，沿用远端小文本的归并规则。
  */
 export function buildRuntimeSumsSources(version: string): RuntimeTextSource[] {
   return RUNTIME_RELEASE_SOURCES.filter(source => source.trusted).map(source => ({
@@ -453,14 +316,14 @@ export type TrustedRuntimeHashLookup =
   | { status: 'unavailable'; error: string }
 
 /**
- * 从可信来源取钉扎版本 exe 的期望 SHA-256。
+ * 从可信来源取某个 Runtime 版本的期望 SHA-256。
  *
  * 两个来源都 404 意味着该 Release 没有清单（或没有这个资产），同样按取不到处理：没有可信
  * 的哈希就不能装任何东西。
  */
 export async function fetchTrustedRuntimeHash(
   version: string,
-  options: FetchRemoteRuntimeBinaryPinOptions = {}
+  options: FetchRuntimeTextOptions = {}
 ): Promise<TrustedRuntimeHashLookup> {
   const asset = runtimeAssetName(version)
   const outcome = await fetchFirstValidText(
@@ -522,6 +385,12 @@ async function readInstalledRuntimeVersion(
 
 // ==================== 同步结果 ====================
 
+/** 本轮要对齐到的 Runtime 版本，例如线上最新的 `v0.1.23`。 */
+export interface RuntimeBinaryTarget {
+  /** 发布标签，同时是 Release 的 tag 与资产名里的版本段，例如 `v0.1.23`。 */
+  version: string
+}
+
 export type RuntimeBinarySyncStatus = 'current' | 'upgraded' | 'skipped' | 'failed' | 'cancelled'
 
 export const RUNTIME_BINARY_DOWNLOAD_FAILED = 'RUNTIME_BINARY_DOWNLOAD_FAILED'
@@ -531,14 +400,14 @@ export const RUNTIME_BINARY_CANCELLED = 'OPERATION_CANCELLED'
 
 export interface RuntimeBinarySyncResult {
   /**
-   * - `current`：磁盘上的 exe 自报的版本就是钉扎的那一版；
-   * - `upgraded`：已经换成钉扎的那一版；
+   * - `current`：磁盘上的 exe 已经是线上最新版（或比它更新，见 {@link runSync}）；
+   * - `upgraded`：已经换成线上最新版；
    * - `skipped`：`AUTO_MAS_RUNTIME_EXE` 指定了自带的 Runtime，不去动开发者的文件；
    * - `failed`：需要换但没换成，`error` 是给用户看的一句话，`code` 供界面分流；
    * - `cancelled`：调用方在中途要求取消，exe 保持原样。
    */
   status: RuntimeBinarySyncStatus
-  pin: RuntimeBinaryPin
+  target: RuntimeBinaryTarget
   error?: string
   code?: string
 }
@@ -578,7 +447,7 @@ export interface RuntimeBinarySyncOptions {
   /** 传给 Runtime 的 `--app-root`，这里只用于问它自己的版本。 */
   appRoot: string
   /** 要对齐到的版本。 */
-  pin: RuntimeBinaryPin
+  target: RuntimeBinaryTarget
   onProgress?: (progress: RuntimeBinarySyncProgress) => void
   /**
    * 调用方的取消判据：每换一个源、每下完一个文件都问一次，为真就不再往下走。
@@ -593,7 +462,7 @@ export interface RuntimeBinarySyncOptions {
   /** 测试注入；默认用真实下载器。 */
   download?: RuntimeBinaryDownloader
   /** 测试注入；校验清单的抓取，默认用全局 `fetch`。 */
-  fetchText?: RuntimePinFetcher
+  fetchText?: RuntimeTextFetcher
   /** 测试注入；默认真的去跑 `auto-mas-runtime.exe version`。 */
   readVersion?: (runtimePath: string, appRoot: string) => Promise<string | null>
 }
@@ -635,7 +504,7 @@ const defaultDownload: RuntimeBinaryDownloader = (url, savePath, onProgress) =>
 /** 正在进行的那一次同步；后来者复用它的结果而不是再开一份下载。 */
 interface SyncFlight {
   promise: Promise<RuntimeBinarySyncResult>
-  pin: RuntimeBinaryPin
+  target: RuntimeBinaryTarget
   /** 所有等着这次同步的调用方的进度回调，后来者也能看到进度。 */
   listeners: Set<(progress: RuntimeBinarySyncProgress) => void>
 }
@@ -643,25 +512,24 @@ interface SyncFlight {
 let inFlight: SyncFlight | null = null
 
 /**
- * 让磁盘上的 Runtime 与给定钉扎一致。
+ * 让磁盘上的 Runtime 对齐到给定目标版本（只升不降）。
  *
- * 只在没有任何进程持有 exe 时调用：第 0 步在 bootstrap 之前（此时后端已停或尚未启动），
- * 启动兜底在 `bootstrap --if-needed` 之后、`supervise` 之前。
+ * 只在没有任何进程持有 exe 时调用：完整初始化的第 0 步在 bootstrap 之前（此时后端已停或
+ * 尚未启动）。
  *
- * 同一时刻只允许一次同步在途：两个挂接点之间隔着有意重启标志，正常界面操作不会撞上，
- * 但开发者工具里的重启按钮与 `backend-start` IPC 能在更新链路的同步还没结束时再触发一次
- * 启动。两份下载各写各的临时文件不会互相污染，但会白拉一份十几兆并把同一个 exe 换两次，
- * 所以后来者直接等前一次的结果。
+ * 同一时刻只允许一次同步在途：正常界面操作不会撞上，但初始化与更新链路可能在
+ * 同步还没结束时再触发一次。两份下载各写各的临时文件不会互相污染，但会白拉一份十几兆并
+ * 把同一个 exe 换两次，所以后来者直接等前一次的结果。
  */
 export function syncRuntimeBinary(
   options: RuntimeBinarySyncOptions
 ): Promise<RuntimeBinarySyncResult> {
   if (inFlight) {
-    if (inFlight.pin.version !== options.pin.version) {
-      // 要的不是同一版（启动兜底按本地钉扎、第 0 步按远端钉扎，两者可能不同步）：拿前一次的
-      // 结果当自己的会让第 0 步误判「已一致」放行 bootstrap，所以等它落地后再按本次要求同步。
+    if (inFlight.target.version !== options.target.version) {
+      // 要的不是同一版：拿前一次的结果当自己的会让调用方误判「已一致」放行 bootstrap，
+      // 所以等它落地后再按本次要求同步。
       logger.info(
-        `已有一次到 ${inFlight.pin.version} 的 Runtime 同步在进行，等它结束后再同步到 ${options.pin.version}`
+        `已有一次到 ${inFlight.target.version} 的 Runtime 同步在进行，等它结束后再同步到 ${options.target.version}`
       )
       const previous = inFlight.promise
       const rerun = (): Promise<RuntimeBinarySyncResult> => syncRuntimeBinary(options)
@@ -682,22 +550,22 @@ export function syncRuntimeBinary(
   }).finally(() => {
     if (inFlight?.promise === promise) inFlight = null
   })
-  inFlight = { promise, pin: options.pin, listeners }
+  inFlight = { promise, target: options.target, listeners }
   return promise
 }
 
-/** 开发者用 `AUTO_MAS_RUNTIME_EXE` 指到自己编译的那份时，绝不能被线上钉扎覆盖掉。 */
+/** 开发者用 `AUTO_MAS_RUNTIME_EXE` 指到自己编译的那份时，绝不跟着线上最新版换。 */
 export function isDeveloperRuntime(runtimePath: string): boolean {
   const configured = process.env[RUNTIME_EXE_ENV]?.trim()
   return Boolean(configured) && path.resolve(configured as string) === path.resolve(runtimePath)
 }
 
 async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> {
-  const { runtimePath, appRoot, pin } = options
+  const { runtimePath, appRoot, target } = options
 
   if (isDeveloperRuntime(runtimePath)) {
-    logger.info(`${RUNTIME_EXE_ENV} 指定了 Runtime，跳过随本体更新`)
-    return { status: 'skipped', pin }
+    logger.info(`${RUNTIME_EXE_ENV} 指定了 Runtime，跳过随线上最新版更新`)
+    return { status: 'skipped', target }
   }
 
   const readVersion = options.readVersion ?? readInstalledRuntimeVersion
@@ -706,37 +574,48 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   // 上次替换半途而废（新文件没挪进来、旧文件也改不回去）会只剩 `.old`：先把它找回来。
   // 定位 exe 时已经做过一次（resolveRuntimeExecutable），这里再做是为了显式传入的路径。
   recoverRuntimeBackup(runtimePath)
-  // 上次被打断（应用退出、断电）留下的半截下载在这里统一清掉，不等到真要替换时才清：
-  // 版本一直对得上时那条路根本不会走到，十几兆就会一直留在安装目录里。
+  // 上次被打断（应用退出、断电）留下的半截下载在这里统一清掉，不等到真要替换时才清。
   removeStaleDownloads(runtimePath)
 
   let installed = await readVersion(runtimePath, appRoot)
-  if (installed === null && fs.existsSync(backupPath)) {
-    // exe 跑不起来而备份还在（上次换上的新文件跑不起来、换回去又没成功）：备份是最后一份
-    // 能跑的，先把它换回来再谈更新。换不回来（坏文件被占用）就让它留着，下面替换时也不会
-    // 拿坏文件去覆盖它。
-    if (restoreBackup(runtimePath, backupPath)) installed = await readVersion(runtimePath, appRoot)
+  if (fs.existsSync(backupPath) && installed !== target.version) {
+    // 备份还在而当前文件未通过版本验收：即使能运行、且自报更高版本，也可能是上次拒绝后
+    // 没换回去的文件。先恢复备份；恢复失败就按未知版本继续，不能放行或拿它覆盖旧备份。
+    installed = restoreBackup(runtimePath, backupPath)
+      ? await readVersion(runtimePath, appRoot)
+      : null
   }
-  // 备份只在正式 exe 存在且跑得起来之后才清：它是替换失败时唯一能救回来的东西。
-  if (installed !== null) removeQuietly(backupPath)
+  // 当前文件自报版本与目标一致才算验收完成，不能仅因能运行就删除回滚备份。
+  if (installed === target.version) removeQuietly(backupPath)
 
-  if (installed === pin.version) {
-    logger.debug(`Runtime 已是本体要求的 ${pin.version}`)
-    return { status: 'current', pin }
+  // 只有「已安装且版本号合法」才谈得上升级判断：自报 `dev`、空串或非法形态都按「需要换」
+  // 处理——一个连版本号都不是的 exe 没资格被当成最新版留在盘上。
+  const installedVersion =
+    installed !== null && RUNTIME_VERSION_PATTERN.test(installed) ? installed : null
+  if (installedVersion !== null && !isNewerRuntimeVersion(target.version, installedVersion)) {
+    // 相等或本地更高都不动本地文件。本地更高只可能来自开发者手换或镜像列表滞后，用它启动
+    // 即可；绝不为了「对齐版本号」把用户手里更新的版本降回去。
+    if (installedVersion === target.version) {
+      logger.debug(`Runtime 已是线上最新 ${target.version}`)
+    } else {
+      logger.warn(`本地 Runtime ${installedVersion} 高于线上最新 ${target.version}，保留本地版本`)
+    }
+    return { status: 'current', target }
   }
-  if (options.isCancelled?.()) return { status: 'cancelled', pin, code: RUNTIME_BINARY_CANCELLED }
+  if (options.isCancelled?.())
+    return { status: 'cancelled', target, code: RUNTIME_BINARY_CANCELLED }
 
-  logger.info(`现有 Runtime ${installed ?? '版本未知'}，本体要求 ${pin.version}，开始下载并替换`)
+  logger.info(`现有 Runtime ${installed ?? '版本未知'}，线上最新 ${target.version}，开始下载并替换`)
 
-  const downloaded = await downloadPinned(pin, runtimePath, options)
+  const downloaded = await downloadTarget(target, runtimePath, options)
   if (downloaded.status === 'cancelled') {
-    return { status: 'cancelled', pin, code: RUNTIME_BINARY_CANCELLED }
+    return { status: 'cancelled', target, code: RUNTIME_BINARY_CANCELLED }
   }
   if (downloaded.status === 'failed') {
     return {
       status: 'failed',
-      pin,
-      error: describeDownloadFailure(pin, runtimePath, downloaded.error),
+      target,
+      error: describeDownloadFailure(target, runtimePath, downloaded.error),
       code: RUNTIME_BINARY_DOWNLOAD_FAILED,
     }
   }
@@ -750,7 +629,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     removeQuietly(downloaded.downloadPath)
     return {
       status: 'failed',
-      pin,
+      target,
       error: describeReplaceFailure(runtimePath, error),
       code: RUNTIME_BINARY_REPLACE_FAILED,
     }
@@ -760,7 +639,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   // （安全软件拦截、缺运行库）。跑不起来就把旧文件换回去，别让用户手里连一个能用的都没有。
   const verified = await readVersion(runtimePath, appRoot)
   if (verified === null) {
-    logger.error(`下载到的 Runtime ${pin.version} 无法运行${backedUp ? '，恢复原文件' : ''}`)
+    logger.error(`下载到的 Runtime ${target.version} 无法运行${backedUp ? '，恢复原文件' : ''}`)
     const backup: BackupOutcome = !backedUp
       ? 'none'
       : restoreBackup(runtimePath, backupPath)
@@ -768,37 +647,47 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
         : 'kept'
     return {
       status: 'failed',
-      pin,
-      error: describeUnrunnableReplacement(pin, runtimePath, backup),
+      target,
+      error: describeUnrunnableReplacement(target, runtimePath, backup),
+      code: RUNTIME_BINARY_REPLACE_FAILED,
+    }
+  }
+  if (verified !== target.version) {
+    // Release 资产自报版本与 tag 不一致：文件按可信清单验过，但装上去后「是否最新」永远
+    // 不成立，每次完整初始化都会重复下载。按失败处理并恢复原文件，宁可继续用旧版本。
+    logger.error(
+      `Runtime ${target.version} 的可执行文件自报版本为 ${verified}，与 Release 标签不一致`
+    )
+    const backup: BackupOutcome = !backedUp
+      ? 'none'
+      : restoreBackup(runtimePath, backupPath)
+        ? 'restored'
+        : 'kept'
+    return {
+      status: 'failed',
+      target,
+      error: describeVersionMismatch(target, verified, runtimePath, backup),
       code: RUNTIME_BINARY_REPLACE_FAILED,
     }
   }
   if (backedUp) removeQuietly(backupPath)
-  if (verified !== pin.version) {
-    // Release 里的文件自报的版本与 tag 不一致，是发布侧的问题；文件本身按可信清单验过，
-    // 照常放行。后果是「版本相等」永远不成立：每次启动兜底与每次第 0 步都会再下载、再换
-    // 一遍，直到发布侧修正——有意为之，宁可多下也不装来路不明的东西。
-    logger.warn(
-      `Runtime ${pin.version} 的可执行文件自报版本为 ${verified}，与 tag 不一致；在发布侧修正之前每次核对都会重新下载`
-    )
-  }
 
-  logger.info(`Runtime 已随本体更新到 ${pin.version}`)
-  options.onProgress?.({ progress: 100, message: `Runtime 已更新到 ${pin.version}` })
-  return { status: 'upgraded', pin }
+  logger.info(`Runtime 已更新到线上最新 ${target.version}`)
+  options.onProgress?.({ progress: 100, message: `Runtime 已更新到 ${target.version}` })
+  return { status: 'upgraded', target }
 }
 
 // ==================== 给人看的失败原因 ====================
 
 /** 下载失败：告诉用户先做什么、实在不行怎么手动补上。 */
 function describeDownloadFailure(
-  pin: RuntimeBinaryPin,
+  target: RuntimeBinaryTarget,
   runtimePath: string,
   detail: string
 ): string {
-  const manual = buildRuntimeBinarySources(pin.version)[0].url
+  const manual = buildRuntimeBinarySources(target.version)[0].url
   return (
-    `没能下载到本版本需要的 Runtime ${pin.version}（${detail}）。` +
+    `没能下载到线上最新的 Runtime ${target.version}（${detail}）。` +
     `请检查网络后重试；如果多次都不行，可以手动下载 ${manual} ，` +
     `重命名为 ${path.basename(runtimePath)} 后放到 ${path.dirname(runtimePath)} 覆盖原文件。`
   )
@@ -821,28 +710,44 @@ function describeReplaceFailure(runtimePath: string, error: unknown): string {
 /** 新文件跑不起来之后原文件的下落：已换回 / 仍在 `.old` 里等下次启动恢复 / 本来就没有。 */
 type BackupOutcome = 'restored' | 'kept' | 'none'
 
+function describeBackupOutcome(backup: BackupOutcome, runtimePath: string): string {
+  return {
+    restored: '已恢复原来的文件。',
+    kept: `原来的文件仍保留在 ${runtimePath}${BACKUP_SUFFIX}，下次启动会自动换回。`,
+    none: `本机没有可回退的旧版本，${path.basename(runtimePath)} 暂时是新下载的那份。`,
+  }[backup]
+}
+
 /** 新文件挪进来了却跑不起来。 */
 function describeUnrunnableReplacement(
-  pin: RuntimeBinaryPin,
+  target: RuntimeBinaryTarget,
   runtimePath: string,
   backup: BackupOutcome
 ): string {
-  const tail = {
-    restored: '已恢复原来的文件。',
-    kept: `原来的文件仍保留在 ${runtimePath}${BACKUP_SUFFIX}，下次启动会自动换回。`,
-    none: `原来的文件已不在，${path.basename(runtimePath)} 现在是新下载的那份。`,
-  }[backup]
   return (
-    `下载到的 Runtime ${pin.version} 校验无误但无法运行（${runtimePath}），${tail}` +
-    `请检查安全软件是否拦截了它，放行后重试。`
+    `下载到的 Runtime ${target.version} 校验无误但无法运行（${runtimePath}），` +
+    `${describeBackupOutcome(backup, runtimePath)}请检查安全软件是否拦截了它，放行后重试。`
   )
 }
 
-/** 钉扎取不到：只剩网络这一种原因。 */
-function describePinUnavailable(version: string, detail: string): string {
+/** 下载到的文件自报版本与 Release 标签不一致：按失败处理，不让它反复触发重下。 */
+function describeVersionMismatch(
+  target: RuntimeBinaryTarget,
+  verified: string,
+  runtimePath: string,
+  backup: BackupOutcome
+): string {
   return (
-    `无法确认 ${version} 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果（${detail}）。` +
-    `请检查网络后重试；如果开了代理或安全软件，请确认没有拦截 cnb.cool 与 raw.githubusercontent.com。`
+    `下载到的 Runtime 自报版本为 ${verified}，与线上最新 ${target.version} 不一致，` +
+    `${describeBackupOutcome(backup, runtimePath)}请稍后重试；仍然失败时请带上日志反馈。`
+  )
+}
+
+/** 解析不到线上最新版本：只剩网络与发布列表两种可能。 */
+function describeLatestUnavailable(detail: string): string {
+  return (
+    `无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果（${detail}）。` +
+    `请检查网络后重试；如果开了代理或安全软件，请确认没有拦截 cnb.cool 与 api.github.com。`
   )
 }
 
@@ -857,22 +762,22 @@ type DownloadOutcome =
  * 先从可信来源拿到期望哈希，再逐个源下 exe 并比对；任一源拿到正确文件即返回该文件的路径。
  * exe 下载失败、对不上哈希，都只是换下一个源；拿不到可信哈希则一个源都不试。
  */
-async function downloadPinned(
-  pin: RuntimeBinaryPin,
+async function downloadTarget(
+  target: RuntimeBinaryTarget,
   runtimePath: string,
   options: RuntimeBinarySyncOptions
 ): Promise<DownloadOutcome> {
   const download = options.download ?? defaultDownload
   const isCancelled = options.isCancelled ?? (() => false)
-  const asset = runtimeAssetName(pin.version)
-  const sources = buildRuntimeBinarySources(pin.version)
+  const asset = runtimeAssetName(target.version)
+  const sources = buildRuntimeBinarySources(target.version)
   const failures: string[] = []
   const deadline = Date.now() + (options.budgetMs ?? RUNTIME_BINARY_SYNC_BUDGET_MS)
   const sourceTimeoutMs = options.sourceTimeoutMs ?? RUNTIME_BINARY_SOURCE_TIMEOUT_MS
 
   // 第一步：可信来源的校验清单。它的进度不往上报——几十字节瞬间到 100% 再回到 0 只会让界面跳动。
-  options.onProgress?.({ progress: 0, message: `正在获取 Runtime ${pin.version} 的校验信息` })
-  const trusted = await fetchTrustedRuntimeHash(pin.version, {
+  options.onProgress?.({ progress: 0, message: `正在获取 Runtime ${target.version} 的校验信息` })
+  const trusted = await fetchTrustedRuntimeHash(target.version, {
     fetchText: options.fetchText,
     timeoutMs: Math.min(Math.max(deadline - Date.now(), 1), RUNTIME_TEXT_FETCH_TIMEOUT_MS),
   })
@@ -894,10 +799,10 @@ async function downloadPinned(
     if (budgetExhausted()) break
 
     const label = `${source.name}（${index + 1}/${sources.length}）`
-    const message = `正在从 ${label} 下载 Runtime ${pin.version}`
+    const message = `正在从 ${label} 下载 Runtime ${target.version}`
     options.onProgress?.({ progress: 0, message, item: asset, source: source.key })
 
-    logger.info(`尝试从 ${label} 下载 Runtime ${pin.version}: ${source.url}`)
+    logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
     const downloadPath = nextDownloadPath(runtimePath)
     const result = await downloadWithTimeout(
       download,
@@ -1066,7 +971,7 @@ function replaceRuntimeBinary(
   const hadBackup = fs.existsSync(backupPath)
   let discarded: string | null = null
   if (hadExisting && hadBackup) {
-    // 备份还在，说明现在这份 exe 已经被判定跑不起来、且换不回去：它不配当备份，按半截
+    // 备份还在，说明现在这份 exe 未通过验收、且换不回去：它不配当备份，按半截
     // 下载的命名挪开（挪不走就清不掉，下次当残留再清），别拿它覆盖最后一份能跑的。
     discarded = nextDownloadPath(runtimePath)
     fs.renameSync(runtimePath, discarded)
@@ -1110,80 +1015,90 @@ function removeQuietly(target: string): void {
   }
 }
 
-// ==================== 第 0 步：按目标版本对齐 ====================
+// ==================== 第 0 步：对齐线上最新版 ====================
 
-export const RUNTIME_PIN_UNAVAILABLE = 'RUNTIME_PIN_UNAVAILABLE'
+export const RUNTIME_LATEST_UNAVAILABLE = 'RUNTIME_LATEST_UNAVAILABLE'
 /** 第 0 步自己抛了异常（不该发生）：编排器用它把这种失败也归到「整条重来」。 */
 export const RUNTIME_BINARY_ALIGN_ERROR = 'RUNTIME_BINARY_ALIGN_ERROR'
 
-export type RuntimeBinaryAlignStatus = RuntimeBinarySyncStatus | 'unpinned'
+export type RuntimeBinaryAlignStatus = RuntimeBinarySyncStatus
 
 export interface RuntimeBinaryAlignResult {
-  /**
-   * 在 {@link RuntimeBinarySyncResult} 的五种之上多一种 `unpinned`：目标发布分支上没有
-   * 钉扎文件（该版本发布时还没有这个机制），什么都不做。
-   */
   status: RuntimeBinaryAlignStatus
-  pin?: RuntimeBinaryPin
-  /** 钉扎来自哪个来源的 key（`cnb` / `github`）。 */
-  pinSource?: string
+  /** 本次对齐到的目标版本；解析失败时没有。 */
+  target?: RuntimeBinaryTarget
+  /** 目标版本来自哪个发布来源的 key（`cnb` / `github`）。 */
+  targetSource?: string
   /** 给用户看的一句话。 */
   error?: string
   code?: string
-  /** 远端钉扎的全部来源均因网络失败，初始化时可尝试复用本地环境。 */
+  /** 线上最新版本的全部来源均因网络失败，初始化时可尝试复用本地环境。 */
   networkUnavailable?: true
 }
 
+/** 解析线上最新版本的注入点。 */
+export type LatestRuntimeVersionResolver = (
+  channel: RuntimeReleaseChannel
+) => Promise<LatestRuntimeVersionLookup>
+
+function defaultLatestResolver(
+  channel: RuntimeReleaseChannel
+): Promise<LatestRuntimeVersionLookup> {
+  return resolveLatestRuntimeVersionCached({ channel })
+}
+
 export interface RuntimeBinaryAlignOptions {
-  /** 目标版本（`v` 开头），决定去哪条发布分支读钉扎。 */
-  version: string
   runtimePath: string
   appRoot: string
+  /** Runtime 通道：本体是预发布版时也接受 Runtime 预发布版。 */
+  channel: RuntimeReleaseChannel
   onProgress?: (progress: RuntimeBinarySyncProgress) => void
   isCancelled?: () => boolean
   /** 测试注入。 */
-  fetchPin?: (version: string) => Promise<RemoteRuntimePinLookup>
+  fetchLatest?: LatestRuntimeVersionResolver
   sync?: (options: RuntimeBinarySyncOptions) => Promise<RuntimeBinarySyncResult>
 }
 
 /**
- * 第 0 步：在 bootstrap 之前，把 Runtime 对齐到目标版本的发布分支所钉扎的那一版。
+ * 第 0 步：在 bootstrap 之前，把 Runtime 对齐到线上最新版。
  *
- * 钉扎从远端读而不是本地 `repo/`：首次安装时 `repo/` 还不存在，更新时它里面是旧版本的
- * 钉扎——两种情形下本地都没有「目标版本要什么」这个答案。读到钉扎后与 exe 自报的版本
- * 比对，不一致就下载替换；这一步做完，接下来克隆源码的才是配套的 Runtime。
+ * 用线上发布列表而不是安装包内置版本：Runtime 有独立发布节奏，修复版不该等本体发版才生效。
+ * 解析到最新版后与 exe 自报版本比对，比它新才下载替换（只升不降）；这一步做完，接下来克隆
+ * 源码、跑 bootstrap 的已经是线上最新 Runtime。
  *
- * 钉扎取不到按失败返回（`RUNTIME_PIN_UNAVAILABLE`），理由见模块头。开发者自带的 Runtime
- * （`AUTO_MAS_RUNTIME_EXE`）连钉扎都不读：读了也不会替换，没必要为它联一次网。
+ * 解析不到最新版本按失败返回（`RUNTIME_LATEST_UNAVAILABLE`），理由见模块头；网络不可用时
+ * 初始化编排器可改用 `bootstrap --if-needed` 复用本地环境。开发者自带的 Runtime
+ * （`AUTO_MAS_RUNTIME_EXE`）连版本都不解析：解析了也不会替换，没必要为它联一次网。
  */
-export async function alignRuntimeBinaryWithVersion(
+export async function alignRuntimeBinaryWithLatest(
   options: RuntimeBinaryAlignOptions
 ): Promise<RuntimeBinaryAlignResult> {
-  const { version, runtimePath, appRoot } = options
+  const { runtimePath, appRoot, channel } = options
 
   if (isDeveloperRuntime(runtimePath)) {
     logger.info(`${RUNTIME_EXE_ENV} 指定了 Runtime，第 0 步跳过`)
     return { status: 'skipped' }
   }
 
-  options.onProgress?.({ progress: 0, message: `正在确认 ${version} 需要的 Runtime 版本` })
-  const lookup = await (options.fetchPin ?? fetchRemoteRuntimeBinaryPin)(version)
-  if (lookup.status === 'unpinned') return { status: 'unpinned' }
+  options.onProgress?.({ progress: 0, message: '正在获取线上最新的 Runtime 版本' })
+  const lookup = await (options.fetchLatest ?? defaultLatestResolver)(channel)
   if (lookup.status === 'unavailable') {
-    const error = describePinUnavailable(version, lookup.error)
+    const error = describeLatestUnavailable(lookup.error)
     logger.warn(error)
     return {
       status: 'failed',
       error,
-      code: RUNTIME_PIN_UNAVAILABLE,
+      code: RUNTIME_LATEST_UNAVAILABLE,
       ...(lookup.networkUnavailable ? { networkUnavailable: true as const } : {}),
     }
   }
+
+  const target: RuntimeBinaryTarget = { version: lookup.version }
   if (options.isCancelled?.()) {
     return {
       status: 'cancelled',
-      pin: lookup.pin,
-      pinSource: lookup.source,
+      target,
+      targetSource: lookup.source,
       code: RUNTIME_BINARY_CANCELLED,
     }
   }
@@ -1191,9 +1106,9 @@ export async function alignRuntimeBinaryWithVersion(
   const outcome = await (options.sync ?? syncRuntimeBinary)({
     runtimePath,
     appRoot,
-    pin: lookup.pin,
+    target,
     onProgress: options.onProgress,
     isCancelled: options.isCancelled,
   })
-  return { ...outcome, pinSource: lookup.source }
+  return { ...outcome, targetSource: lookup.source }
 }
