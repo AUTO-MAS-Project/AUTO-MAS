@@ -31,7 +31,7 @@ import type {
 import type { MirrorConfig, MirrorSource } from './mirrorService'
 import {
   RUNTIME_BINARY_CANCELLED,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   type RuntimeBinaryAlignOptions,
   type RuntimeBinaryAlignResult,
 } from './runtimeBinaryService'
@@ -180,7 +180,7 @@ function fakeMirrorService(): MirrorLookup {
  */
 const alignStub = {
   calls: [] as RuntimeBinaryAlignOptions[],
-  result: { status: 'current', pin: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult,
+  result: { status: 'current', target: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult,
   hold: null as Promise<void> | null,
   throws: null as unknown,
   async run(options: RuntimeBinaryAlignOptions): Promise<RuntimeBinaryAlignResult> {
@@ -245,7 +245,7 @@ beforeEach(() => {
   FakeRuntimeClient.calls = []
   FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
   alignStub.calls = []
-  alignStub.result = { status: 'current', pin: { version: 'v0.1.7' } }
+  alignStub.result = { status: 'current', target: { version: 'v0.1.7' } }
   alignStub.hold = null
   alignStub.throws = null
 })
@@ -964,9 +964,13 @@ describe('bootstrap', () => {
 // ==================== 第 0 步：Runtime 对齐 ====================
 
 describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
-  it('按目标版本、当前 exe 与 app-root 调用对齐，且在 bootstrap 命令之前', async () => {
+  it('按目标版本的发布通道、当前 exe 与 app-root 调用对齐，且在 bootstrap 命令之前', async () => {
     const order: string[] = []
-    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' }, pinSource: 'cnb' }
+    alignStub.result = {
+      status: 'upgraded',
+      target: { version: 'v0.1.10' },
+      targetSource: 'cnb',
+    }
     const service = new RuntimeInitializationService({
       launchConfig: {
         mode: 'managed',
@@ -991,14 +995,14 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
     expect(order).toEqual(['align', 'client'])
     expect(alignStub.calls).toHaveLength(1)
     expect(alignStub.calls[0]).toMatchObject({
-      version: 'v5.5.0-beta.3',
+      channel: 'prerelease',
       runtimePath: RUNTIME_PATH,
       appRoot: APP_ROOT,
     })
     expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
   })
 
-  it('更新流程给的目标版本同样传给第 0 步', async () => {
+  it('更新流程给的目标版本决定第 0 步的发布通道', async () => {
     const service = new RuntimeInitializationService({
       launchConfig: {
         mode: 'managed',
@@ -1014,12 +1018,14 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
 
     await service.bootstrap(() => undefined)
 
-    expect(alignStub.calls[0].version).toBe('v5.6.0')
+    // v5.6.0 是正式版：更新流程不把 Runtime 预发布版推给用户。
+    expect(alignStub.calls[0].channel).toBe('stable')
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.6.0'])
   })
 
   it('第 0 步的进度挂在「运行环境」段上，下载细节只进网络细节行、不推进百分比', async () => {
     const updates: BootstrapProgressUpdate[] = []
-    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' } }
+    alignStub.result = { status: 'upgraded', target: { version: 'v0.1.10' } }
     const service = new RuntimeInitializationService({
       launchConfig: {
         mode: 'managed',
@@ -1030,7 +1036,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       mirrorService: fakeMirrorService(),
       createClient: options => new FakeRuntimeClient(options) as never,
       alignRuntimeBinary: async options => {
-        options.onProgress?.({ progress: 0, message: '正在确认 v5.5.0-beta.3 需要的 Runtime 版本' })
+        options.onProgress?.({ progress: 0, message: '正在获取线上最新的 Runtime 版本' })
         options.onProgress?.({
           progress: 60,
           message: '正在从 CNB（1/5） 下载 Runtime v0.1.10',
@@ -1054,7 +1060,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       status: 'started',
       runtimeStage: RUNTIME_BINARY_CHECK_STAGE,
       indeterminate: true,
-      message: '正在确认 v5.5.0-beta.3 需要的 Runtime 版本',
+      message: '正在获取线上最新的 Runtime 版本',
     })
     expect(python[1]).toMatchObject({
       status: 'running',
@@ -1079,8 +1085,8 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
   })
 
   it.each([
-    ['unpinned', { status: 'unpinned' } as RuntimeBinaryAlignResult],
-    ['current', { status: 'current', pin: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult],
+    ['current', { status: 'current', target: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult],
+    ['upgraded', { status: 'upgraded', target: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult],
     ['skipped', { status: 'skipped' } as RuntimeBinaryAlignResult],
   ])('第 0 步结果为 %s 时照常 bootstrap', async (_label, result) => {
     alignStub.result = result
@@ -1095,16 +1101,16 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
     const updates: BootstrapProgressUpdate[] = []
     alignStub.result = {
       status: 'failed',
-      code: RUNTIME_PIN_UNAVAILABLE,
-      error: '无法确认 v5.5.0-beta.3 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
     }
 
     const outcome = await createService().bootstrap(update => updates.push(update))
 
     expect(outcome).toEqual({
       success: false,
-      error: '无法确认 v5.5.0-beta.3 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
-      code: RUNTIME_PIN_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      code: RUNTIME_LATEST_UNAVAILABLE,
       retryable: true,
       remediation: ['retry', 'open-log'],
       failedStage: 'python',
@@ -1115,6 +1121,56 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       status: 'failed',
       message: outcome.error,
     })
+  })
+
+  it('解析不到最新版且网络不可用时退回 bootstrap --if-needed 复用本地环境', async () => {
+    const updates: BootstrapProgressUpdate[] = []
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      networkUnavailable: true,
+    }
+
+    const outcome = await createService().bootstrap(update => updates.push(update))
+
+    expect(outcome.success).toBe(true)
+    expect(FakeRuntimeClient.calls[0].command).toEqual([
+      'bootstrap',
+      '--version',
+      'v5.5.0-beta.3',
+      '--if-needed',
+    ])
+    expect(
+      updates.find(update => update.message === '网络不可用，跳过更新检查，正在检查本地运行环境')
+    ).toBeDefined()
+  })
+
+  it('更新流程显式给了目标版本时，网络不可用也不复用本地环境', async () => {
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      networkUnavailable: true,
+    }
+    const service = new RuntimeInitializationService({
+      launchConfig: {
+        mode: 'managed',
+        runtimePath: RUNTIME_PATH,
+        appRoot: APP_ROOT,
+        dataRoot: APP_ROOT,
+      },
+      mirrorService: fakeMirrorService(),
+      createClient: options => new FakeRuntimeClient(options) as never,
+      alignRuntimeBinary: options => alignStub.run(options),
+      targetVersion: 'v5.6.0',
+    })
+
+    const outcome = await service.bootstrap(() => undefined)
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe(RUNTIME_LATEST_UNAVAILABLE)
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
   })
 
   it('第 0 步自己抛异常时按可重试失败处理，不让 bootstrap 裸抛', async () => {
@@ -1157,7 +1213,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       release = resolve
     })
     // 对齐桩照常返回 current（真实实现在版本相等时不查取消判据，就会这样返回）。
-    alignStub.result = { status: 'current', pin: { version: 'v0.1.7' } }
+    alignStub.result = { status: 'current', target: { version: 'v0.1.7' } }
     const service = createService()
 
     const pending = service.bootstrap(() => undefined)
@@ -1208,7 +1264,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
     alignStub.result = {
       status: 'failed',
       code: 'RUNTIME_BINARY_DOWNLOAD_FAILED',
-      error: '没能下载到本版本需要的 Runtime v0.1.10',
+      error: '没能下载到线上最新的 Runtime v0.1.10',
     }
 
     const outcome = await createService().retryStage('python', () => undefined)
