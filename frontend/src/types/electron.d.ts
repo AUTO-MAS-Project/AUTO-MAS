@@ -308,10 +308,12 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{
+  exportLogs: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
+    skippedPaths?: string[]
+    errorCode?: 'window-unavailable' | 'directory-missing' | 'no-files'
     error?: string
   }>
   exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
