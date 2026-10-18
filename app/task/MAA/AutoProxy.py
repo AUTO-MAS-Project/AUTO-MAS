@@ -358,22 +358,13 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
     return current
 
 
-_MAA_GUI_SKELETON: dict[str, dict] = {
-    "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
-    "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
-}
-"""MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
-
-托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
-TaskQueue 由 MAA 内存默认值填充。
-"""
-
-
 def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
-    """读 MAA 配置文件；缺失或损坏时退回骨架（任务内容交 MAA 内存默认填充）。
+    """读 MAA 配置文件；缺失或损坏时退回随包预设。
 
     损坏但存在 ``.bak`` 时优先用 MAA 自己的备份——那是 MAA 上一次成功落盘的
-    完整现场，比骨架少丢用户数据。返回的 dict 由调用方独立持有，改动不落盘。
+    完整现场，比预设少丢用户数据。都没有时用随包预设（结构完整、含根级
+    ``Gui`` / ``Timers``），不再用只含容器路径的骨架：缺根级 ``Gui`` 时 MAA
+    会把这次启动当首次运行，直接弹新手引导。返回的 dict 由调用方独立持有，改动不落盘。
     """
 
     path = maa_set_path / name
@@ -386,14 +377,14 @@ def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
         return doc
     if path.exists():
         # 文件存在但读不出内容（损坏）：优先用 MAA 自己的 .bak——那是 MAA
-        # 上一次成功落盘的完整现场，比骨架少丢用户数据。（.bak 后缀不在
+        # 上一次成功落盘的完整现场，比预设少丢用户数据。（.bak 后缀不在
         # read_file 的编解码器表里，须显式指定 .json 解析）
         bak = read_file(path.with_suffix(path.suffix + ".bak"), format=".json")
         if isinstance(bak, dict) and bak:
             logger.warning(f"MAA 配置损坏, 采用 MAA 自带备份({name}.bak)")
             return bak
-    logger.warning(f"MAA 配置缺失, 以骨架下发, 任务队列由 MAA 默认值生成({name})")
-    return deepcopy(_MAA_GUI_SKELETON.get(name, {}))
+    logger.warning(f"MAA 配置缺失, 以随包预设下发({name})")
+    return get_maa_base_preset(name)
 
 
 def _merge_task_queue(

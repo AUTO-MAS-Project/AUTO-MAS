@@ -52,6 +52,21 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
+def _fill_missing(target: dict, defaults: dict) -> None:
+    """把 ``defaults`` 里 ``target`` 缺失的键补进去；已有值一律不动。"""
+
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = deepcopy(value)
+        elif isinstance(target[key], dict) and isinstance(value, dict):
+            _fill_missing(target[key], value)
+
+
+# 随包预设里由 MAA 自己维护、MAS 不该代填的根级键：配置版本与迁移元数据一旦写错
+# 会触发 MAA 的旧格式迁移器，反而把整份配置判成不可解析。
+_MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
+
+
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     """Fold the current configuration into ``Default`` and guarantee both sides.
 
@@ -61,6 +76,10 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     already be ``Default``. Folding and the fallback must therefore run
     unconditionally, or the later hard indexing of ``Global`` /
     ``Configurations["Default"]`` raises ``KeyError``.
+
+    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
     """
 
     if not isinstance(gui_set.get("Global"), dict):
@@ -86,6 +105,13 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
         if current in configurations:
             configurations["Default"] = configurations[current]
         gui_set["Current"] = "Default"
+
+    for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
+        preset = get_maa_base_preset(name)
+        for key, value in preset.items():
+            if key in _MAA_ROOT_KEYS_NOT_FILLED:
+                continue
+            _fill_missing(doc, {key: value})
 
 
 def maa_task_identity(task: object) -> tuple[str, str] | None:
