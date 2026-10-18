@@ -177,7 +177,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作
-  exportLogs: () => ipcRenderer.invoke('log:export'),
+  exportLogs: (dialogLabels?: { title: string; zipFilterName: string }) =>
+    ipcRenderer.invoke('log:export', dialogLabels),
   exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) =>
     ipcRenderer.invoke('maa:exportIssueReport', undefined, dialogLabels),
   exportMaaEndIssueReport: () => ipcRenderer.invoke('maaend:exportIssueReport'),
