@@ -8,7 +8,6 @@
 
       <p v-if="message" class="failure-message">{{ message }}</p>
       <p v-if="noticeText" class="failure-notice">{{ noticeText }}</p>
-      <p class="failure-message">{{ t('init.failure.joinGroupHint') }}</p>
       <p v-if="updateHint" class="failure-message">{{ updateHint }}</p>
 
       <div class="failure-actions">
@@ -32,10 +31,6 @@
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
           {{ t('init.backend.viewDocs') }}
-        </a-button>
-        <a-button class="failure-help" @click="handleJoinGroup">
-          <template #icon><TeamOutlined /></template>
-          {{ t('init.failure.joinGroup') }}
         </a-button>
       </div>
 
@@ -89,6 +84,20 @@
         <pre v-if="failureLogs" class="failure-log">{{ failureLogs }}</pre>
       </details>
 
+      <div class="failure-support">
+        <p class="support-hint">{{ t('init.failure.exportLogsHint') }}</p>
+        <a-space wrap>
+          <a-button :loading="exportingLogs" @click="packageLogs">
+            <template #icon><FileZipOutlined /></template>
+            {{ t('logs.package') }}
+          </a-button>
+          <a-button class="failure-help" @click="handleJoinGroup">
+            <template #icon><TeamOutlined /></template>
+            {{ t('init.failure.joinGroup') }}
+          </a-button>
+        </a-space>
+      </div>
+
       <p v-if="showSkipButton" class="failure-skip">
         <button type="button" :disabled="updating" @click="emit('skip')">
           {{ t('init.step.skip') }}
@@ -103,7 +112,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
-import { TeamOutlined } from '@ant-design/icons-vue'
+import { FileZipOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { useLogExport } from '@/composables/useLogExport'
 import type { RuntimeDoctorCheck, RuntimeInitMode } from '@/types/electron'
 import { useRuntimeBinaryUpdate } from '../useRuntimeBinaryUpdate'
 import type { MirrorConfig } from '@/types/mirror'
@@ -158,6 +168,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { exportingLogs, packageLogs } = useLogExport()
 const {
   updating,
   updateMessage,
@@ -276,6 +287,19 @@ watch(
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-border);
+}
+
+.failure-support {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.support-hint {
+  margin: 0 0 12px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
 }
 
 .launch-failure .failure-help:hover,

@@ -50,7 +50,7 @@ import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
-import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
@@ -1424,23 +1424,12 @@ ipcMain.handle('log:export', async () => {
       maxArchiveBytes: Number.POSITIVE_INFINITY,
     }
 
-    // 读取 debug 目录下的所有文件
-    const files = fs.readdirSync(debugDir)
-
-    if (files.length === 0) {
+    // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+    const hasFiles = addDirectory(state, debugDir, '', {
+      includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+    })
+    if (!hasFiles) {
       return { success: false, error: '日志目录为空，没有可导出的文件' }
-    }
-
-    // 将所有日志文件添加到 ZIP
-    for (const file of files) {
-      const filePath = path.join(debugDir, file)
-      const stat = fs.statSync(filePath)
-
-      if (stat.isFile()) {
-        addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
-        addDirectory(state, filePath, file)
-      }
     }
 
     // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
