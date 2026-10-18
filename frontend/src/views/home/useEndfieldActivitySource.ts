@@ -15,6 +15,7 @@ import { useHomeActivitySource } from './useHomeActivitySource'
 const AKEDATA_BASE_URL = 'https://data.akedata.wiki'
 const AKEDATA_MANIFEST_URL = AKEDATA_BASE_URL + '/manifest.json'
 const SNAPSHOT_KEY = 'auto-mas.home.endfield-snapshot'
+const SRA_SNAPSHOT_KEY = 'auto-mas.home.endfield-sra-snapshot'
 const SRA_ACTIVITY_URL = 'https://starrailassistant.top/api/v1/activity/end.json'
 
 /** SRA 版本/活动与 AKEData 卡池独立加载，慢表不会挡住主卡片。 */
@@ -147,14 +148,35 @@ export const useEndfieldActivitySource = () => {
     },
   })
 
-  const sra = useHomeActivitySource<EndfieldActivityOverview>({
+  const sra = useHomeActivitySource<unknown>({
     label: () => 'SRA',
     timeoutMs: 20_000,
     requestTag: () => generation,
     isObsolete: tag => tag !== generation,
-    fetchData: async signal => parseEndfieldSraData(await fetchJson(SRA_ACTIVITY_URL, signal)),
+    restoreSnapshot: () => {
+      try {
+        const raw = localStorage.getItem(SRA_SNAPSHOT_KEY)
+        if (!raw) return false
+        sraOverview.value = {
+          ...parseEndfieldSraData(JSON.parse(raw)),
+          Stale: true,
+          Message: t('home.sra.staleMessage'),
+        }
+        return true
+      } catch {
+        return false
+      }
+    },
+    saveSnapshot: data => {
+      try {
+        localStorage.setItem(SRA_SNAPSHOT_KEY, JSON.stringify(data))
+      } catch {
+        // 仅缓存已通过解析的数据，存储不可用不影响当前展示。
+      }
+    },
+    fetchData: signal => fetchJson(SRA_ACTIVITY_URL, signal),
     applyData: data => {
-      sraOverview.value = data
+      sraOverview.value = parseEndfieldSraData(data)
     },
     markStale: () => {
       sraOverview.value = {
