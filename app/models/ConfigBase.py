@@ -912,6 +912,8 @@ class ConfigBase(ABC):
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
         self._save_lock = asyncio.Lock()
+        # 上一次提交是否失败、磁盘仍是旧值：置位后即使重设同一值也要再落盘一次
+        self._pending_save = False
 
         # 配置项索引
         self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
@@ -984,10 +986,17 @@ class ConfigBase(ABC):
         await asyncio.gather(*(save_method() for save_method in unique_save_methods))
 
     async def _commit_changes(self):
-        """统一变更提交：本地保存一次 + 广播保存回调一次。"""
+        """统一变更提交：本地保存一次 + 广播保存回调一次。
+
+        写盘失败时保留待保存标记：内存里的值已经更新，但磁盘还是旧的。
+        之后即使把同一个值再设一遍（``setValue`` 返回未变化），也要重试持久化，
+        否则「保存失败后重试」会被当成未改动而跳过，重启后配置回退。
+        """
+        self._pending_save = True
         if self.file:
             await self.save()
         await self._run_save_methods()
+        self._pending_save = False
 
     async def load(self, data: dict) -> bool:
         """
@@ -1099,13 +1108,13 @@ class ConfigBase(ABC):
             raise ValueError("配置已锁定, 无法修改")
 
         is_changed = self._config_item_index[group][name].setValue(value)
-        if not is_changed:
+        if not is_changed and not self._pending_save:
             return False
 
         if commit:
             await self._commit_changes()
 
-        return True
+        return is_changed
 
     async def update(self, data: dict[str, dict[str, Any]]) -> None:
         """
@@ -1123,7 +1132,7 @@ class ConfigBase(ABC):
                 if await self.set(group, name, value, commit=False):
                     is_changed = True
 
-        if is_changed:
+        if is_changed or self._pending_save:
             await self._commit_changes()
 
     def bind(self, group: str, name: str, slot: Callable[[Any], Any]):

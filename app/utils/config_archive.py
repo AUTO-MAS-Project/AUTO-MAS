@@ -39,7 +39,7 @@ from time import sleep
 
 from app.utils import get_logger
 from app.utils.constants import normalize_base_source
-from app.utils.io import force_rmtree
+from app.utils.io import atomic_write, force_rmtree, swap_in_dir
 from app.utils.platform import IS_WINDOWS, is_long_path_supported
 
 logger = get_logger("配置归档")
@@ -67,6 +67,9 @@ LEGACY_BASE_FILE_NAME = "_mas_mode"
 
 META_FILE_NAMES = frozenset({BASE_FILE_NAME, LEGACY_BASE_FILE_NAME})
 """归档元数据文件：不是配置内容，不进指纹对比、不落目标目录。"""
+
+_RESTORE_STAGING_SUFFIX = ".mas-restore"
+"""恢复暂存目录后缀：内容先铺到这里，再整体换入目标，避免先删后拷的空窗。"""
 
 _PARTIAL_SUFFIX = ".partial"
 """归档暂存目录后缀：复制期间为 <时间戳>.partial，全部写完后改名为时间戳目录。
@@ -206,6 +209,32 @@ def _staging_dir(dest: Path) -> Path:
     """归档暂存目录：``<时间戳>.partial``（同名字段见 :data:`_PARTIAL_SUFFIX`）。"""
 
     return dest.with_name(dest.name + _PARTIAL_SUFFIX)
+
+
+def _stage_subtree(files: Mapping[str, Path], staging: Path) -> None:
+    """把「相对路径 → 源文件」铺进暂存目录，供目录整体换入。
+
+    Args:
+        files: 暂存目录内的相对路径 → 归档内的源文件。
+        staging: 与目标同卷的暂存目录，已存在内容会被先清空。
+    """
+
+    force_rmtree(staging)
+    for rel, source in files.items():
+        dest = staging / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest)
+
+
+def _stage_and_swap(files: Mapping[str, Path], target: Path) -> None:
+    """把内容铺进目标同卷暂存目录后整体换入，目标不存在也能一次就位。"""
+
+    staging = target.with_name(target.name + _RESTORE_STAGING_SUFFIX)
+    try:
+        _stage_subtree(files, staging)
+        swap_in_dir(staging, target)
+    finally:
+        force_rmtree(staging)
 
 
 def _ensure_path_length(target: Path) -> None:
@@ -429,7 +458,7 @@ def get_backup_dir(store_root: Path, ts: str) -> Path | None:
 
 
 def restore_dir(store_root: Path, ts: str, target: Path) -> None:
-    """把归档整目录恢复到 ``target``（先删后拷，与源完全一致）。
+    """把归档整目录恢复到 ``target``（原子换入，与源完全一致）。
 
     恢复前归档当前配置由调用方负责（在调用前以 ``force=True`` 归档当前
     内容，保证误恢复可找回）；本原语不隐含归档。
@@ -454,18 +483,12 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     if not restored:
         raise ValueError(f"备份内容为空: {ts}")
     target = Path(target)
-    # 长路径预检要在 force_rmtree 之前：「先删后拷」一旦写不回去，用户目录已经没了，
-    # 比归档失败贵得多；预检让这种情况在删除之前就报错。
+    # 长路径预检要在动目标之前：写不回去时用户目录必须还在，预检让这种情况提前报错。
     for rel in restored:
         _ensure_path_length(target / rel)
-    # 先清再拷，逐文件写回：目标残留目录被占用时不再「部分已删、备份一个
-    # 没拷回」；删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）
-    # 时普通 rmtree 删不掉，残留会让随后的写回失败。
-    force_rmtree(target)
-    for rel, path in restored.items():
-        dest = target / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, dest)
+    # 内容先铺进目标同卷的暂存目录，再整体换入：换入前目标始终完整，磁盘错误
+    # 不会留下「已删除、未写回」的空配置目录。
+    _stage_and_swap(restored, target)
 
 
 def read_backup_text(
@@ -557,14 +580,14 @@ def restore_files(
     路径 = ``dir_map.get(顶级键, target_root)`` 下对应位置（未传 ``dir_map``
     时恒为 ``target_root / rel``，专项内相对键与目标路径同构的常规场景）。
 
-    写回前先清理受管键管辖的既有内容，杜绝跨恢复残留：
+    受管键的新内容先铺进同卷暂存目录再原子换入/替换，中途失败不会留下空目录，
+    且恢复后受管键下与备份完全一致，杜绝跨恢复残留：
 
     - 未走 ``dir_map`` 的顶级键若是目录前缀（如 ``OneDragon/``、``config/``），
-      它是 target_root 下的专用子目录，整棵子树先删再写（残留的同前缀文件
-      一并移除，恢复后该键下与备份完全一致）；根级文件（如 ``config.json``）
-      只删该文件；
+      它是 target_root 下的专用子目录，整棵子树换入（残留的同前缀文件一并移除，
+      恢复后该键下与备份完全一致）；根级文件（如 ``config.json``）原子替换；
     - 走 ``dir_map`` 的顶级键（HSR 的 ``M7A/``、``SRA/`` 对应外部引擎根）：
-      目标根是共享目录，绝不整根删除，只删备份内出现的相对路径文件，以及
+      目标根是共享目录，绝不整根替换，只换入备份内出现的相对路径文件，以及
       备份内出现的子目录（整棵，如 ``SRA/configs/``）。
 
     target_root 内未被管理的其它内容（备份外的用户数据）原样保留。
@@ -595,33 +618,37 @@ def restore_files(
         top, _, _ = rel.partition("/")
         top_keys.setdefault(top, []).append(rel)
 
-    # 先清理受管键管辖的既有内容
+    # 先把受管内容铺进同卷暂存目录，再原子换入或逐文件替换：目标在内容就位前
+    # 始终完整，磁盘错误不会留下「已删除、未写回」的空配置。
     for top, rels in top_keys.items():
         if dir_map and top in dir_map:
-            # dir_map 映射：目标根是共享目录，只删备份内出现的路径/子目录
+            # dir_map 映射：目标根是共享目录，只替换备份内出现的路径/子目录
             base = dir_map[top]
-            heads: dict[str, bool] = {}
+            heads: dict[str, list[str]] = {}
+            sub_heads: set[str] = set()
             for rel in rels:
-                suffix = rel[len(top) + 1 :]
-                head, _, rest = suffix.partition("/")
-                heads[head] = heads.get(head, False) or bool(rest)
-            for head, has_sub in heads.items():
+                head, _, rest = rel[len(top) + 1 :].partition("/")
+                heads.setdefault(head, []).append(rel)
+                if rest:
+                    sub_heads.add(head)
+            for head, head_rels in heads.items():
                 target = base / head
-                if has_sub:  # 备份内含该子树全部文件（如 SRA/configs/）
-                    force_rmtree(target)
+                if head in sub_heads:
+                    # 备份内含该子树全部文件（如 SRA/configs/），整棵换入
+                    prefix = len(top) + len(head) + 2
+                    _stage_and_swap(
+                        {rel[prefix:]: backup_dir / rel for rel in head_rels},
+                        target,
+                    )
                 else:
-                    target.unlink(missing_ok=True)
+                    atomic_write(target, (backup_dir / head_rels[0]).read_bytes())
         elif any("/" in rel for rel in rels):
-            # 默认映射 + 目录前缀：该子树完全由备份管理，整棵替换
-            force_rmtree(target_root / top)
+            # 默认映射 + 目录前缀：该子树完全由备份管理，整棵换入
+            _stage_and_swap(
+                {rel[len(top) + 1 :]: backup_dir / rel for rel in rels},
+                target_root / top,
+            )
         else:
-            (target_root / top).unlink(missing_ok=True)
-
-    # 再按相对键逐文件写回
-    for rel in managed:
-        if dir_map and (top := rel.partition("/")[0]) in dir_map:
-            target = dir_map[top] / rel[len(top) + 1 :]
-        else:
-            target = target_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(backup_dir / rel, target)
+            # 顶级单文件：同目录临时文件 + 原子替换
+            for rel in rels:
+                atomic_write(target_root / rel, (backup_dir / rel).read_bytes())
