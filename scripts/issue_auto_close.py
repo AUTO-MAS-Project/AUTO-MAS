@@ -205,11 +205,10 @@ def process_issue(
     policy_started_at: datetime,
     include_history: bool = False,
     now: datetime | None = None,
-    issue_snapshot: dict | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
     endpoint = f"repos/{repo}/issues/{number}"
-    issue = issue_snapshot if issue_snapshot is not None else github_api(endpoint)
+    issue = github_api(endpoint)
     if issue["state"] != "open" or "pull_request" in issue:
         return
     if any(label["name"] == "skip-auto-close" for label in issue["labels"]):
@@ -347,11 +346,11 @@ def main() -> None:
     workflow = github_api(f"repos/{repo}/actions/workflows/issue-auto-close.yml")
     policy_started_at = parse_time(workflow["created_at"])
     if event.get("issue"):
-        candidates = [(event["issue"]["number"], None)]
+        numbers = [event["issue"]["number"]]
     else:
         # 列表已包含正文和标签；无关反馈无需再读取详情与评论。
-        candidates = [
-            (issue["number"], issue)
+        numbers = [
+            issue["number"]
             for page in github_api(
                 f"repos/{repo}/issues?state=open&per_page=100", paginate=True
             )
@@ -360,7 +359,7 @@ def main() -> None:
             and (is_bug(issue) or unread_checked(issue.get("body") or ""))
         ]
     failed = []
-    for number, issue in candidates:
+    for number in numbers:
         try:
             process_issue(
                 repo,
@@ -368,7 +367,6 @@ def main() -> None:
                 event=event,
                 policy_started_at=policy_started_at,
                 include_history=include_history,
-                issue_snapshot=issue,
             )
         except (subprocess.CalledProcessError, ValueError) as error:
             # 一个 Issue 的权限/网络错误不阻断其余反馈，但最后仍让 CI 报失败。
