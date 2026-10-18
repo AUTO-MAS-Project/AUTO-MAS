@@ -8,12 +8,16 @@ import pytest
 
 from app.api.scripts import _bettergi_owner_config, _bettergi_uses_script_source
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.task.proxy_helpers import CONFIG_SOURCE_SCRIPT
+from app.task.proxy_helpers import (
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+)
 
 
-def _user_config(mode: str) -> BetterGIUserConfig:
+def _user_config(base: str) -> BetterGIUserConfig:
     config = BetterGIUserConfig()
-    asyncio.run(config.set("Info", "Mode", mode))
+    asyncio.run(config.set("Info", "Base", base))
     return config
 
 
@@ -34,10 +38,10 @@ def test_script_and_user_one_dragon_sections_stay_in_sync() -> None:
     assert script_section == user_section
 
 
-@pytest.mark.parametrize("mode", ["用户", "直控"])
-def test_non_script_source_keeps_user_config(mode: str) -> None:
+@pytest.mark.parametrize("base", [CONFIG_BASE_INDEPENDENT, CONFIG_BASE_NATIVE])
+def test_non_script_source_keeps_user_config(base: str) -> None:
     user_id = str(uuid.uuid4())
-    user_cfg = _user_config(mode)
+    user_cfg = _user_config(base)
     script_cfg = _fake_script_config(user_id, user_cfg)
 
     assert _bettergi_uses_script_source(script_cfg, user_id) is False
@@ -46,7 +50,7 @@ def test_non_script_source_keeps_user_config(mode: str) -> None:
 
 def test_script_source_routes_to_script_level_section() -> None:
     user_id = str(uuid.uuid4())
-    user_cfg = _user_config(CONFIG_SOURCE_SCRIPT)
+    user_cfg = _user_config(CONFIG_BASE_SHARED)
     script_cfg = _fake_script_config(user_id, user_cfg)
 
     assert _bettergi_uses_script_source(script_cfg, user_id) is True

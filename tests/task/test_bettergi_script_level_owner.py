@@ -7,40 +7,40 @@ import pytest
 
 from app.task.BetterGI.tools import one_dragon
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
-    CONFIG_SOURCE_SCRIPT,
-    CONFIG_SOURCE_USER,
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
 )
 
 
 def test_script_source_uses_script_level_owner() -> None:
     user_id = str(uuid.uuid4())
     assert (
-        one_dragon.owner_user_id(user_id, CONFIG_SOURCE_SCRIPT)
+        one_dragon.owner_user_id(user_id, CONFIG_BASE_SHARED)
         == one_dragon.SCRIPT_LEVEL_OWNER
     )
 
 
-@pytest.mark.parametrize("mode", [CONFIG_SOURCE_USER, CONFIG_SOURCE_DIRECT])
-def test_other_sources_keep_the_user_owner(mode: str) -> None:
+@pytest.mark.parametrize("base", [CONFIG_BASE_INDEPENDENT, CONFIG_BASE_NATIVE])
+def test_other_sources_keep_the_user_owner(base: str) -> None:
     user_id = str(uuid.uuid4())
-    assert one_dragon.owner_user_id(user_id, mode) == user_id
+    assert one_dragon.owner_user_id(user_id, base) == user_id
 
 
 def test_script_level_copy_is_shared_while_user_copy_is_not() -> None:
-    """一条链路的本质：选「脚本」的两个用户命中同一份副本，选「用户」的各归各。"""
+    """一条链路的本质：选「共享」的两个用户命中同一份副本，选「独立」的各归各。"""
 
     script_id = str(uuid.uuid4())
     user_a, user_b = str(uuid.uuid4()), str(uuid.uuid4())
 
     shared_a = one_dragon.per_user_script_group_path(
-        script_id, one_dragon.owner_user_id(user_a, CONFIG_SOURCE_SCRIPT), "我的组"
+        script_id, one_dragon.owner_user_id(user_a, CONFIG_BASE_SHARED), "我的组"
     )
     shared_b = one_dragon.per_user_script_group_path(
-        script_id, one_dragon.owner_user_id(user_b, CONFIG_SOURCE_SCRIPT), "我的组"
+        script_id, one_dragon.owner_user_id(user_b, CONFIG_BASE_SHARED), "我的组"
     )
     own_a = one_dragon.per_user_script_group_path(
-        script_id, one_dragon.owner_user_id(user_a, CONFIG_SOURCE_USER), "我的组"
+        script_id, one_dragon.owner_user_id(user_a, CONFIG_BASE_INDEPENDENT), "我的组"
     )
 
     assert shared_a == shared_b
