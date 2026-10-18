@@ -205,10 +205,11 @@ def process_issue(
     policy_started_at: datetime,
     include_history: bool = False,
     now: datetime | None = None,
+    issue_snapshot: dict | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
     endpoint = f"repos/{repo}/issues/{number}"
-    issue = github_api(endpoint)
+    issue = issue_snapshot if issue_snapshot is not None else github_api(endpoint)
     if issue["state"] != "open" or "pull_request" in issue:
         return
     if any(label["name"] == "skip-auto-close" for label in issue["labels"]):
@@ -231,8 +232,13 @@ def process_issue(
         policy_started_at, now - CATCH_UP
     )
     previous_body = event.get("changes", {}).get("body", {}).get("from")
+    # 评论编辑的 changes.body 是旧评论，不参与 Issue 正文的勾选比较。
     newly_checked = (
-        checked and previous_body is not None and not unread_checked(previous_body)
+        action == "edited"
+        and "comment" not in event
+        and checked
+        and previous_body is not None
+        and not unread_checked(previous_body)
     )
     enroll = new_issue or newly_labeled or include_history
     # 巡检补回丢失的 opened 事件，历史 Issue 只在新操作或手动启用时登记。
@@ -341,18 +347,20 @@ def main() -> None:
     workflow = github_api(f"repos/{repo}/actions/workflows/issue-auto-close.yml")
     policy_started_at = parse_time(workflow["created_at"])
     if event.get("issue"):
-        numbers = [event["issue"]["number"]]
+        candidates = [(event["issue"]["number"], None)]
     else:
-        numbers = [
-            issue["number"]
+        # 列表已包含正文和标签；无关反馈无需再读取详情与评论。
+        candidates = [
+            (issue["number"], issue)
             for page in github_api(
                 f"repos/{repo}/issues?state=open&per_page=100", paginate=True
             )
             for issue in page
             if "pull_request" not in issue
+            and (is_bug(issue) or unread_checked(issue.get("body") or ""))
         ]
     failed = []
-    for number in numbers:
+    for number, issue in candidates:
         try:
             process_issue(
                 repo,
@@ -360,6 +368,7 @@ def main() -> None:
                 event=event,
                 policy_started_at=policy_started_at,
                 include_history=include_history,
+                issue_snapshot=issue,
             )
         except (subprocess.CalledProcessError, ValueError) as error:
             # 一个 Issue 的权限/网络错误不阻断其余反馈，但最后仍让 CI 报失败。
