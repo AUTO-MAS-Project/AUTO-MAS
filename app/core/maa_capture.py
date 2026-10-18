@@ -1,6 +1,7 @@
 """MAS 自持的轻量 MaaFramework 截图，不加载 Resource / Tasker。"""
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event, Lock
 from typing import TYPE_CHECKING
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING
 from app.utils import get_logger
 
 if TYPE_CHECKING:
+    from maa.controller import Controller
     from PIL import Image
 
 logger = get_logger("MaaFramework 截图")
@@ -25,6 +27,44 @@ async def capture_adb(adb_path: Path | str, address: str) -> "Image.Image | None
     # 冷导入留在事件循环，阻塞的 SDK 调用才进入执行器。
     from maa.controller import AdbController
     from maa.define import MaaAdbInputMethodEnum, MaaAdbScreencapMethodEnum
+
+    return await _capture_controller(
+        lambda: AdbController(
+            adb_path=adb_path,
+            address=address,
+            screencap_methods=MaaAdbScreencapMethodEnum.Encode,
+            input_methods=MaaAdbInputMethodEnum.AdbShell,
+        )
+    )
+
+
+async def capture_win32(hwnd: int) -> "Image.Image | None":
+    """以 FramePool 截取专项已确认归属的窗口，不回退到桌面截图。
+
+    SDK 会将最小化窗口临时透明还原（不激活），销毁 Controller 时恢复状态。
+    FramePool 不可用时放弃截图；调用方应传入仍属于本次任务的有效 HWND。
+    """
+
+    if not hwnd:
+        return None
+    from maa.controller import Win32Controller
+    from maa.define import MaaWin32InputMethodEnum, MaaWin32ScreencapMethodEnum
+
+    return await _capture_controller(
+        lambda: Win32Controller(
+            hWnd=hwnd,
+            screencap_method=MaaWin32ScreencapMethodEnum.FramePool,
+            mouse_method=MaaWin32InputMethodEnum.SendMessage,
+            keyboard_method=MaaWin32InputMethodEnum.SendMessage,
+        )
+    )
+
+
+async def _capture_controller(
+    create_controller: Callable[[], "Controller"],
+) -> "Image.Image | None":
+    """两种目标共用原生等待与所有权；工厂只能使用调用方已导入的 SDK。"""
+
     from PIL import Image
 
     if not _CAPTURE_BUSY.acquire(blocking=False):
@@ -37,12 +77,7 @@ async def capture_adb(adb_path: Path | str, address: str) -> "Image.Image | None
         try:
             if abandoned.is_set():
                 return None
-            controller = AdbController(
-                adb_path=adb_path,
-                address=address,
-                screencap_methods=MaaAdbScreencapMethodEnum.Encode,
-                input_methods=MaaAdbInputMethodEnum.AdbShell,
-            )
+            controller = create_controller()
             if not controller.post_connection().wait().succeeded:
                 raise RuntimeError("连接设备失败")
             if abandoned.is_set():
