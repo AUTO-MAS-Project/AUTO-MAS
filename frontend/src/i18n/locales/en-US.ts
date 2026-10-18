@@ -3742,6 +3742,7 @@ export default {
       startsAt: 'Starts {time}',
       endsAt: 'Ends {time}',
       schedule: 'Event schedule',
+      refresh: 'Refresh event schedule',
       permanentGameplay: 'Permanent modes',
       running: 'Ongoing',
       upcoming: 'Upcoming',

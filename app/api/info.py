@@ -102,34 +102,6 @@ async def set_activity_completion(
         return OutBase(code=500, status="error", message="保存活动完成状态失败")
 
 
-@router.get(
-    "/endfield/activity/completions",
-    tags=["Get"],
-    summary="获取终末地已完成活动",
-    response_model=GameCalendarActivitiesOut,
-)
-async def get_endfield_activity_completions() -> GameCalendarActivitiesOut:
-    return await get_activity_completions(
-        scope=GameCalendarActivityScopeIn(game="endfield")
-    )
-
-
-@router.post(
-    "/endfield/activity/completions",
-    tags=["Set"],
-    summary="设置终末地活动完成状态",
-    response_model=OutBase,
-)
-async def set_endfield_activity_completion(
-    payload: GameCalendarActivityUpdateIn,
-) -> OutBase:
-    return await set_activity_completion(
-        payload=GameCalendarActivityCompletionIn(
-            game="endfield", **payload.model_dump()
-        )
-    )
-
-
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，
 ## 少了会返回 {"code": 403, "msg": "缺少游戏信息"}；它同时给三个服，
 ## 每条带封面图与中文分类（活动 / 总力大决 / 爬塔 / 多倍活动 …）。

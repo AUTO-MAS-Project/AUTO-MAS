@@ -3607,6 +3607,7 @@ export default {
       startsAt: '{time} 开始',
       endsAt: '{time} 结束',
       schedule: '活动日程',
+      refresh: '刷新活动日程',
       permanentGameplay: '常驻玩法',
       running: '进行中',
       upcoming: '未开始',

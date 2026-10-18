@@ -33,8 +33,10 @@ export const useActivityCompletionApi = (scope: ActivityCompletionScope) => {
   const isSaving = (item: GameCalendarActivityInfo) => savingKeys.value.has(activityKey(item))
 
   const load = async () => {
-    if (loading.value) return
+    if (loading.value || savingKeys.value.size) return
     loading.value = true
+    // 读取与保存互斥，避免较早的读取结果覆盖刚保存的完成状态。
+    ready.value = false
     errorMessage.value = ''
     try {
       const response = await GetService.getActivityCompletionsApiInfoActivityCompletionsGet(

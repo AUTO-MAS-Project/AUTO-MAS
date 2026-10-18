@@ -12,6 +12,18 @@
           >{{ section.source.label }}</a-typography-link
         >
         <a-tag v-if="section.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+        <a-button
+          v-if="section.refresh"
+          type="text"
+          size="small"
+          :aria-label="section.refresh.label"
+          :title="section.refresh.label"
+          :loading="section.refresh.loading"
+          :disabled="section.refresh.disabled"
+          @click="emit('refresh')"
+        >
+          <template #icon><ReloadOutlined /></template>
+        </a-button>
       </div>
     </template>
     <div
@@ -82,6 +94,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { ReloadOutlined } from '@ant-design/icons-vue'
 import type { HomeActivitySection } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
 import HomeActivityEntry from './HomeActivityEntry.vue'

@@ -206,16 +206,13 @@ export const useEndfieldActivitySource = () => {
     }
   })
 
-  const refresh = () => {
+  const refresh = async () => {
     invalidate()
     now.value = Date.now()
     refreshedAt = now.value
     sra.loading.value = true
     ake.loading.value = true
-    sra.resetRetry()
-    ake.resetRetry()
-    sra.resume()
-    ake.resume()
+    await Promise.all([sra.refresh(), ake.refresh()])
   }
   const stop = () => {
     active = false

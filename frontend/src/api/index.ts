@@ -137,7 +137,6 @@ export type { EmulatorUpdateIn } from './models/EmulatorUpdateIn';
 export type { GameCalendarActivitiesOut } from './models/GameCalendarActivitiesOut';
 export { GameCalendarActivityCompletionIn } from './models/GameCalendarActivityCompletionIn';
 export type { GameCalendarActivityInfo } from './models/GameCalendarActivityInfo';
-export type { GameCalendarActivityUpdateIn } from './models/GameCalendarActivityUpdateIn';
 export type { GameSignAccountCreateOut } from './models/GameSignAccountCreateOut';
 export type { GameSignAccountDataOut } from './models/GameSignAccountDataOut';
 export type { GameSignAccountDeleteIn } from './models/GameSignAccountDeleteIn';

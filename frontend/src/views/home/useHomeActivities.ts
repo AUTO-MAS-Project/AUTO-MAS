@@ -19,6 +19,7 @@ export const useHomeActivities = ({
 }) => {
   const { t } = useI18n()
   const modules = createHomeActivityModules({ t, resources, resourceError })
+  const refreshing = ref(new Set<HomeModuleKey>())
   const defaultServer = GameCalendarActivityCompletionIn.server.CN
   const completions = new Map<string, ReturnType<typeof useActivityCompletionApi>>()
   for (const module of modules.values()) {
@@ -69,7 +70,13 @@ export const useHomeActivities = ({
       return {
         ...panel,
         activities: withActivityCompletion({
-          section: panel.activities,
+          section: {
+            ...panel.activities,
+            refresh: {
+              label: t('home.activity.refresh'),
+              loading: refreshing.value.has(panel.key),
+            },
+          },
           completion,
           now: now.value,
           t,
@@ -84,9 +91,17 @@ export const useHomeActivities = ({
     })
   )
 
-  const refresh = (key: HomeModuleKey) => {
+  const refresh = async (key: HomeModuleKey) => {
+    if (refreshing.value.has(key)) return
     now.value = Date.now()
-    sources.get(key)?.refresh()
+    refreshing.value = new Set(refreshing.value).add(key)
+    try {
+      await modules.get(key)?.source.refresh()
+    } finally {
+      const pending = new Set(refreshing.value)
+      pending.delete(key)
+      refreshing.value = pending
+    }
   }
   const select = (key: HomeModuleKey, value: string) => modules.get(key)?.select?.(value)
   const action = async (key: HomeModuleKey, id: string) => {

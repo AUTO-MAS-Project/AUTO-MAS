@@ -122,17 +122,6 @@ export class GetService {
         });
     }
     /**
-     * 获取终末地已完成活动
-     * @returns GameCalendarActivitiesOut Successful Response
-     * @throws ApiError
-     */
-    public static getEndfieldActivityCompletionsApiInfoEndfieldActivityCompletionsGet(): CancelablePromise<GameCalendarActivitiesOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/info/endfield/activity/completions',
-        });
-    }
-    /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response
      * @throws ApiError

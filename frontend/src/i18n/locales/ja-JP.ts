@@ -3090,6 +3090,7 @@ export default {
       startsAt: '{time} 開始',
       endsAt: '{time} 終了',
       schedule: 'イベント日程',
+      refresh: 'イベント日程を更新',
       permanentGameplay: '常設コンテンツ',
       running: '開催中',
       upcoming: '開催前',

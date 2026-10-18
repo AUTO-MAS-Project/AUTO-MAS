@@ -46,7 +46,6 @@ import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
-import type { GameCalendarActivityUpdateIn } from '../models/GameCalendarActivityUpdateIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
@@ -308,36 +307,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/activity/completions',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取终末地已完成活动
-     * @returns GameCalendarActivitiesOut Successful Response
-     * @throws ApiError
-     */
-    public static getEndfieldActivityCompletionsApiInfoEndfieldActivityCompletionsGet(): CancelablePromise<GameCalendarActivitiesOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/info/endfield/activity/completions',
-        });
-    }
-    /**
-     * 设置终末地活动完成状态
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static setEndfieldActivityCompletionApiInfoEndfieldActivityCompletionsPost(
-        requestBody: GameCalendarActivityUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/endfield/activity/completions',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

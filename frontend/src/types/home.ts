@@ -254,6 +254,7 @@ export interface HomeActivitySection {
   completable?: boolean
   accent?: string
   source?: { label: string; url: string }
+  refresh?: HomeActivityAction
   loading: boolean
   available: boolean
   stale?: boolean
