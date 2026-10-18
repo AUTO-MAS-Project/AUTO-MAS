@@ -111,6 +111,9 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
         for key, value in preset.items():
             if key in _MAA_ROOT_KEYS_NOT_FILLED:
                 continue
+            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
+            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
+                continue
             _fill_missing(doc, {key: value})
 
 
