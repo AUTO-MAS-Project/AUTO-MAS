@@ -2,6 +2,12 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 
+const ERROR_KEYS = {
+  'window-unavailable': 'logs.toast.windowUnavailable',
+  'directory-missing': 'logs.toast.directoryMissing',
+  'no-files': 'logs.toast.noFiles',
+} as const
+
 /** 初始化失败时后端可能还没启动，直接通过 Electron 导出日志。 */
 export function useLogExport() {
   const { t } = useI18n()
@@ -13,7 +19,10 @@ export function useLogExport() {
     const logger = window.electronAPI.getLogger('日志导出')
     exportingLogs.value = true
     try {
-      const result = await window.electronAPI.exportLogs?.()
+      const result = await window.electronAPI.exportLogs?.({
+        title: t('logs.package'),
+        zipFilterName: t('misc.zipArchive'),
+      })
       if (!result) {
         message.error(t('logs.toast.packageNoResponse'))
         logger.error('打包日志失败: 未收到响应')
@@ -22,10 +31,19 @@ export function useLogExport() {
       if (!result.success) {
         // 保存对话框取消统一返回该中文文案，静默即可。
         if (result.error === '用户取消') return
+        if (result.errorCode) {
+          logger.error(`打包日志失败: ${result.error}`)
+          message.error(t(ERROR_KEYS[result.errorCode]))
+          return
+        }
         throw new Error(result.error || t('logs.toast.packageFailed'))
       }
 
-      message.success(result.message || t('logs.toast.packageExported'))
+      message.success(
+        result.skippedPaths?.length
+          ? t('logs.toast.packageIncomplete', { paths: result.skippedPaths.join(', ') })
+          : t('logs.toast.packageExported')
+      )
       logger.info(`日志打包成功: ${result.zipPath}`)
       if (result.zipPath) {
         try {
