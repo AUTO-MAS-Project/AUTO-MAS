@@ -26,7 +26,7 @@
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
@@ -40,12 +40,11 @@ from app.core.notify_channels import (
 )
 from app.core.notify_render import render_for_target
 from app.models.notification import (
-    NotificationImage,
     NotifyPayload,
-    WebhookTargetSnapshot,
+    RenderedNotification,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.services.notification import Notification, Notify
+from app.services.notification import Notify
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -226,11 +225,10 @@ def global_target(
     # 构造时现读一次配置并固定为快照；扫码解绑等运行期写入只对之后构造的目标可见。
     pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
     for channel in get_notify_channels():
-        # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
-        if channel.key == "system" and not include_system:
-            continue
         for target in channel.targets(TargetConfigView(Config), scope="global"):
-            if channel.key == "system" and system_timeout_seconds is not None:
+            if target.is_local and not include_system:
+                continue
+            if target.is_local and system_timeout_seconds is not None:
                 target = replace(target, timeout_seconds=system_timeout_seconds)
             pairs.append((channel, target))
     return NotifyTarget(
@@ -307,17 +305,19 @@ def statistic_targets(
         targets.append(global_target(empty_policy=global_empty_policy))
     targets.extend(user_statistic_targets(user_config))
     if compact_summary:
-        targets = [_prefer_webhook_summaries(target) for target in targets]
+        targets = [_prefer_compact_summaries(target) for target in targets]
     return targets
 
 
-def _prefer_webhook_summaries(target: NotifyTarget) -> NotifyTarget:
-    """为明确提供紧凑摘要的统计消息设置 Webhook 摘要偏好。"""
+def _prefer_compact_summaries(target: NotifyTarget) -> NotifyTarget:
+    """按渠道目标声明应用业务提供的紧凑摘要偏好。"""
 
     channels = []
     for channel, channel_target in target.channels:
-        if channel.key == "webhook":
-            channel_target = replace(channel_target, summary_policy="preferred")
+        if channel_target.compact_summary_policy is not None:
+            channel_target = replace(
+                channel_target, summary_policy=channel_target.compact_summary_policy
+            )
         channels.append((channel, channel_target))
     return replace(
         target,
@@ -368,53 +368,13 @@ def _recipient_action(
 
 
 class Notifier(Protocol):
-    """渠道适配器需要的发送面，测试可直接注入同一接口。
+    """统一投递面；渠道内部的传输方法不进入公共协议。"""
 
-    生产通过 Notify 按渠道取出已装配的发送器。按 ``_send`` 的判定，返回
-    ``False`` 表示该渠道发送失败，``None`` 表示成功。
-    """
-
-    async def push_plyer(
-        self, title: str, message: str, ticker: str, t: int
-    ) -> bool | None: ...
-
-    async def send_mail(
+    async def send_channel(
         self,
-        mode: Literal["文本", "网页"],
-        title: str,
-        content: str,
-        to_address: str,
-        *,
-        images: Sequence[NotificationImage] = (),
-    ) -> bool | None: ...
-
-    async def ServerChanPush(
-        self, title: str, content: str, send_key: str
-    ) -> bool | None: ...
-
-    async def send_cmcc_newmsg(
-        self, title: str, content: str, api_key: str
-    ) -> bool | None: ...
-
-    async def WebhookPush(
-        self,
-        title: str,
-        content: str,
-        webhook: WebhookTargetSnapshot,
-        *,
-        images: Sequence[NotificationImage] = (),
-    ) -> bool | None: ...
-
-    async def send_koishi(
-        self, message: str, msgtype: str = "text", client_name: str = "Koishi"
-    ) -> bool | None: ...
-
-    async def send_openclaw_qq(
-        self,
-        title: str,
-        content: str,
-        *,
-        images: Sequence[NotificationImage] = (),
+        channel: NotifyChannel,
+        target: ChannelTarget,
+        rendered: RenderedNotification,
     ) -> bool | None: ...
 
 
@@ -426,7 +386,7 @@ async def dispatch(
     retry_delay: float = 0,
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
-    notifier: Notifier | Notification | None = None,
+    notifier: Notifier | None = None,
 ) -> DispatchResult:
     """向所有目标分发通知，返回实际尝试/成功/失败渠道。
 
@@ -476,9 +436,7 @@ async def dispatch(
             logger.warning(f"{channel}通知内容降级: {diagnostic}")
 
         async def send() -> Any:
-            if isinstance(sender, Notification):
-                return await sender.send_channel(channel_impl, channel_target, rendered)
-            return await channel_impl.send(sender, channel_target, rendered)
+            return await sender.send_channel(channel_impl, channel_target, rendered)
 
         if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
@@ -535,7 +493,7 @@ async def dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
-    notifier: Notifier | Notification | None = None,
+    notifier: Notifier | None = None,
 ) -> DispatchResult:
     """报告只短暂等待签到事件，超时照常投递，迟到结果在后台补发。"""
 
@@ -619,7 +577,7 @@ async def _dispatch_task_report(
     summary_text: str = "",
     attempts: int = 1,
     retry_delay: float = 0,
-    notifier: Notifier | Notification | None = None,
+    notifier: Notifier | None = None,
 ) -> DispatchResult:
     """统一附加社区结果，并按渠道维护任务报告的投递状态。
 

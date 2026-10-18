@@ -29,28 +29,33 @@ class ChannelConfig(Protocol):
     def Notify_CustomWebhooks(self) -> Any: ...
 
 
-@dataclass(frozen=True)
-class MailTransport:
-    smtp_server: str
-    from_address: str
-    authorization_code: str = field(repr=False)
+class ChannelRuntimeConfig(Protocol):
+    """沿用现有 Notify 配置的读写与变更订阅，不暴露全局 Config。"""
+
+    def get(self, name: str) -> Any: ...
+
+    async def update(self, values: Mapping[str, Any]) -> None: ...
+
+    def bind(self, name: str, callback: Callable[[Any], Any]) -> None: ...
+
+
+CommandExecutor = Callable[[str, dict[str, Any] | None], Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
 class ChannelDependencies:
     """宿主装配的传输能力；读取器在每次尝试开始时返回当前配置。"""
 
-    read_mail: Callable[[], MailTransport]
+    config: ChannelRuntimeConfig
     read_proxy: Callable[[], str | Proxy | None]
-    system_enabled: Callable[[], bool]
     smtp_factory: Callable[..., Any]
     http_factory: Callable[..., Any]
+    websocket_connect: Callable[..., Any]
+    websocket_manager_factory: Callable[..., Any]
     system_notify: Callable[..., Any] | None
     system_icon: str
-    get_client: Callable[[str], Any]
-    send_qq: Callable[..., Awaitable[bool | None]]
-    send_cmcc: Callable[..., Awaitable[None]]
     logger: Any
+    command_executor: CommandExecutor | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,8 @@ class ChannelTarget:
     summary_policy: SummaryPolicy = "never"
     use_summary_title: bool = False
     capabilities: NotificationCapabilities = NotificationCapabilities()
+    is_local: bool = False
+    compact_summary_policy: SummaryPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +107,9 @@ class NotifyChannel:
     target_builder: Callable[..., tuple[ChannelTarget, ...]] | None = None
     send_adapter: Callable[..., Awaitable[bool | None]] | None = None
     sender_factory: Callable[[ChannelDependencies], Any] | None = None
+    start_adapter: Callable[[Any], Awaitable[None]] | None = None
+    stop_adapter: Callable[[Any], Awaitable[None]] | None = None
+    lifecycle_order: int = 0
 
     def targets(
         self, config: ChannelConfig, *, scope: str

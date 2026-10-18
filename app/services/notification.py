@@ -50,10 +50,19 @@ class Notification:
             raise RuntimeError("通知渠道已装配")
         self._channels = channels
 
-    def _sender(self, key: str) -> Any:
+    def channel_sender(self, key: str) -> Any:
         if self._channels is None:
             raise RuntimeError("通知渠道尚未装配")
         return self._channels.sender(key)
+
+    async def start(self) -> None:
+        if self._channels is None:
+            raise RuntimeError("通知渠道尚未装配")
+        await self._channels.start()
+
+    async def stop(self) -> None:
+        if self._channels is not None:
+            await self._channels.stop()
 
     async def send_channel(
         self,
@@ -61,10 +70,10 @@ class Notification:
         target: ChannelTarget,
         rendered: RenderedNotification,
     ) -> bool | None:
-        return await channel.send(self._sender(channel.key), target, rendered)
+        return await channel.send(self.channel_sender(channel.key), target, rendered)
 
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
-        return await self._sender("system").push_plyer(
+        return await self.channel_sender("system").push_plyer(
             title=title, message=message, ticker=ticker, t=t
         )
 
@@ -76,7 +85,7 @@ class Notification:
         *,
         images: Sequence[NotificationImage] = (),
     ) -> None:
-        return await self._sender("webhook").WebhookPush(
+        return await self.channel_sender("webhook").WebhookPush(
             title=title, content=content, webhook=webhook, images=images
         )
 
