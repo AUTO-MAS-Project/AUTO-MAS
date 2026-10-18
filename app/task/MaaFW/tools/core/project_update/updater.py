@@ -134,7 +134,7 @@ class MaaFWProjectUpdateCandidate:
     # 只查版本时为真：有新版本且来源可用，但尚未去换下载地址。
     url_deferred: bool = False
     # 当前版本是项目发错的高主版本号，这次按权威源回到更低的版本（见
-    # :func:`_is_misnumbered_current`）：登记时不比版本、直接成为组的 latest。
+    # :func:`_is_misnumbered_current`）：登记时顶替组里那个发错的 latest。
     misnumbered_rollback: bool = False
 
     @property
@@ -712,6 +712,12 @@ async def update_maafw_project_if_needed(
     if discovery is None:
         if version_check is not None:
             message = f"MaaFW 项目已是最新版本: {current_version}"
+            if skipped_reason and _is_misnumbered_current(
+                version_check.superseded_by or version_check.version_name,
+                current_version,
+            ):
+                # 发错的高主版本号，自动更新不回退：结论行说清要手动更新。
+                message = skipped_reason
             status = "no_update"
         else:
             message = skipped_reason or "MaaFW 项目未配置可用更新源，跳过更新"
@@ -1022,7 +1028,7 @@ async def _discover_project_update_detailed(
     ``allow_misnumbered_rollback``：当前版本是项目发错的高主版本号（见
     :func:`_is_misnumbered_current`）时按权威源的版本返回更新，候选包标
     ``misnumbered_rollback``、日志带 :data:`ALERT_LOG_PREFIX`。不传（自动更新）时
-    不回退，只记一行说明，按已是最新返回。
+    不回退：记一行说明，返回 ``None``，原因是「自动更新不回退」那句结论。
     """
 
     def stop_if_cancelled() -> None:
@@ -1167,11 +1173,13 @@ async def _discover_project_update_detailed(
             return None, version_check, reason
         found = f"当前 {current} 主版本号高于 {version_label} 最新 {latest}"
         if not allow_misnumbered_rollback:
-            send_update_log(
-                f"{found}，可能是项目发错了版本号；自动更新不回退，"
-                f"可在脚本编辑页点「更新」回到 {latest}"
+            send_update_log(f"{found}，可能是项目发错了版本号")
+            # 调用方拿它当结论行，别再说成「已是最新」。
+            return (
+                None,
+                version_check,
+                f"自动更新不回退发错的版本号，可在脚本编辑页点「更新」回到 {latest}",
             )
-            return None, version_check, reason
         misnumbered = True
         send_update_log(
             f"{ALERT_LOG_PREFIX}{found}，按项目发错版本号处理，"
@@ -1737,8 +1745,9 @@ async def apply_maafw_project_update(
                 # 发现阶段已按 _is_remote_newer 确认目标比组版本新：沿用同一口径前进，
                 # 否则非 PEP 440 版本号的更新登记了却推不动 latest、每次运行重来一遍。
                 version_checked=True,
-                # 发错版本号的回退目标比组版本旧，按版本比永远推不动 latest：直接顶上去。
-                always_advance=candidate.misnumbered_rollback,
+                # 发错版本号的回退目标比组版本旧，按版本比永远推不动 latest；只顶替发错的
+                # 那个高主版本号，下载期间别人登记的同主版本新版本不会被它盖掉。
+                misnumbered_rollback=candidate.misnumbered_rollback,
             )
         )
     except PayloadCancelled as exc:

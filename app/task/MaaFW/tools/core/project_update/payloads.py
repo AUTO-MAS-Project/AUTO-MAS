@@ -347,6 +347,21 @@ def version_newer(candidate: str, current: str) -> bool:
         return remote != local
 
 
+def _misnumbered_above(latest_version: str, version: str) -> bool:
+    """组的 latest 是不是比 ``version`` 主版本号高的正式版（项目发错的高主版本号）。
+
+    与更新器 ``_is_misnumbered_current`` 同一口径：两边都要解析得出版本号，latest 是
+    预发布时不算。
+    """
+
+    try:
+        latest_parsed = Version(str(latest_version or "").strip().lstrip("vV"))
+        parsed = Version(str(version or "").strip().lstrip("vV"))
+    except InvalidVersion:
+        return False
+    return not latest_parsed.is_prerelease and latest_parsed.major > parsed.major
+
+
 _RELEASE_PREFIX_RE = re.compile(r"^[vV]?(\d+(?:\.\d+)*)")
 
 
@@ -986,6 +1001,7 @@ def register(
     projection_revision: int = 0,
     always_advance: bool = False,
     version_checked: bool = False,
+    misnumbered_rollback: bool = False,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -1002,10 +1018,14 @@ def register(
 
     ``projection_revision``：这份载荷按哪版投影规则算完整，记进清单；0 不记（旧规则）。
 
-    ``always_advance``：不比版本，这次登记的就是 ``latest[channel]``。两处用：开发者模式的
-    脚本私有渠道（宿主侧 ``dev:<视图名>``，组里只有那一个脚本、来源目录就是真相，版本号
-    不变的本地修改也要换上去）；手动更新把项目发错的高主版本号拉回权威源的版本（更新器
-    ``misnumbered_rollback``，目标比组版本旧）。其余一律不传，上面几条语义不变。
+    ``always_advance``：不比版本，这次登记的就是 ``latest[channel]``。只给开发者模式的脚本
+    私有渠道用（宿主侧 ``dev:<视图名>``，组里只有那一个脚本、来源目录就是真相，版本号
+    不变的本地修改也要换上去）；其余渠道一律不传，上面几条语义不变。
+
+    ``misnumbered_rollback``：手动更新把项目发错的高主版本号拉回权威源的版本（更新器的
+    ``misnumbered_rollback`` 候选包）。这份比组版本旧，按版本比推不动 latest；只在 latest
+    正是那种发错的版本——主版本号比这份高、且不是预发布——时顶替它。下载期间别人登记了
+    同一主版本里更新的版本，照常不倒退。
 
     「版本更高」的比法：``version_checked``（更新器传：它已按 ``_is_remote_newer`` 确认
     目标比组版本新）沿用 :func:`version_newer`；其余（导入、采纳、补齐）用
@@ -1127,6 +1147,10 @@ def register(
                 )
                 advanced = (
                     newer
+                    or (
+                        misnumbered_rollback
+                        and _misnumbered_above(current_version, version)
+                    )
                     or _replaces_unloadable_latest(
                         latest_dir,
                         target,
@@ -1148,7 +1172,10 @@ def register(
                 # latest 指的目录丢了（或只剩目录、清单没了 / 读不出——同样建不了视图、当不了
                 # 更新基准）：只有新登记的不比它旧才顶上去，否则组会后退；保留原 latest，缺失的
                 # 载荷由自愈 / 迁移处理。
-                advanced = not version_newer(current_version, version)
+                advanced = not version_newer(current_version, version) or (
+                    misnumbered_rollback
+                    and _misnumbered_above(current_version, version)
+                )
                 if not advanced:
                     logger.warning(
                         "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机或不完整，新登记的 %s 更旧，"
