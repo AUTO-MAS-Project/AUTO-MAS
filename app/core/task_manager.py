@@ -1816,8 +1816,6 @@ class _TaskManager:
                 raise RuntimeError(
                     f"循环队列 {Config.QueueConfig[uid].get('Info', 'Name')} 已在运行"
                 )
-            # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
-            Config.running_cycle_queue_ids.add(uid)
 
         selected_user_ids: frozenset[str] | None = None
         selected_user_scope: dict[str, frozenset[str]] | None = None
@@ -1888,6 +1886,12 @@ class _TaskManager:
             ):
                 raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
             reservation_acquired = True
+
+        # 占用标记放在同步校验之后：账号被禁用等校验失败不会留下「已运行」脏标记，
+        # 否则后续合法重试与队列编辑都会被挡住直到重启。这段校验全程没有 await，
+        # 重复启动检查与占用仍在同一同步段内，并发两次启动照样只放行一次。
+        if is_cycle:
+            Config.running_cycle_queue_ids.add(uid)
 
         self._creating_tasks += 1
         self._creating_tasks_idle.clear()

@@ -106,6 +106,7 @@ from app.utils.constants import (
     BASE_INDEPENDENT,
     BASE_NATIVE,
     BASE_SHARED,
+    CYCLE_EMPTY_TIME,
     RESOURCE_STAGE_DATE_TEXT,
     RESOURCE_STAGE_DROP_INFO,
     RESOURCE_STAGE_INFO,
@@ -3541,6 +3542,20 @@ class AppConfig(GlobalConfig):
         # 与队列对不上号，必须拦住。
         if "Info" in data:
             self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
+
+        schedule = data.get("Schedule")
+        if isinstance(schedule, dict) and "NextRunAt" not in schedule:
+            # 调度条件变了，已落盘的下次运行时间就作废了，否则改时间/星期/模式后
+            # 仍会按旧时刻触发；显式「立即运行一次」会自带 NextRunAt，不在此清空。
+            if {
+                "Enabled",
+                "Mode",
+                "Days",
+                "Time",
+                "IntervalMinutes",
+                "IntervalAnchor",
+            } & schedule.keys():
+                data = {**data, "Schedule": {**schedule, "NextRunAt": CYCLE_EMPTY_TIME}}
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
