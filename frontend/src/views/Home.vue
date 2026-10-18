@@ -128,6 +128,7 @@
                 :empty-text="t('home.empty.starrail')"
                 :loading="starRailSource.loading.value"
                 :overview="starRailSource.overview.value"
+                :permanent-names="STARRAIL_PERMANENT_MODES"
                 @refresh="starRailSource.refresh"
               />
 
@@ -339,6 +340,16 @@ const endfieldSource = useEndfieldActivitySource()
 
 /** 星塔旅人的活动数据取自国服官网的活动公告 */
 const STELLA_NEWS_URL = 'https://stellasora.yostar.cn/news'
+
+/** 崩铁按周期轮换的常驻玩法，名字就是这几类打头；SRA 的英文档另给一套英文名 */
+const STARRAIL_PERMANENT_MODES = [
+  '虚构叙事',
+  '混沌回忆',
+  '末日幻影',
+  'Pure Fiction',
+  'Memory of Chaos',
+  'Apocalyptic Shadow',
+]
 
 const sraSourceFor = (key: HomeModuleKey) => {
   switch (key) {

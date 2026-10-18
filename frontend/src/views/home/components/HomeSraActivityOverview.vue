@@ -71,6 +71,51 @@
 
     <a-empty v-else-if="!loading && overview.Available" :description="emptyText" />
   </a-card>
+
+  <!-- 常驻玩法单独一张卡：虚构叙事、混沌回忆这类长期轮换的内容，不跟着版本活动排，
+       与星塔旅人的常驻栏同一排法 -->
+  <a-card
+    v-if="permanentActivities.length"
+    :title="t('home.sra.permanent')"
+    class="sra-permanent-card"
+    :class="{ 'is-plain': activityPlain }"
+    :style="cardStyle"
+  >
+    <div class="activity-list" :class="{ 'is-plain': activityPlain }">
+      <div v-for="activity in permanentActivities" :key="activity.name" class="activity-card">
+        <div class="activity-item" :class="{ 'is-fallback': !getActivityImage(activity) }">
+          <img
+            v-if="getActivityImage(activity)"
+            :src="getActivityImage(activity)"
+            :alt="activity.name"
+            class="activity-image"
+            referrerpolicy="no-referrer"
+            @error="handleImageError(activity.name)"
+          />
+          <div class="activity-overlay" />
+          <div class="activity-content">
+            <div class="activity-name">{{ activity.name }}</div>
+            <div v-if="activity.description" class="activity-desc">{{ activity.description }}</div>
+            <div class="activity-meta">
+              <a-statistic-countdown
+                :value="getCountdownValue(activity.endTime)"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownStyle"
+                @finish="emit('refresh')"
+              />
+              <div class="activity-end-time">
+                {{
+                  t('home.sra.endedAt', {
+                    time: formatActivityTime(activity.endTime, locale),
+                  })
+                }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </a-card>
 </template>
 
 <script setup lang="ts">
@@ -96,12 +141,15 @@ const props = withDefaults(
     plainActivities?: boolean
     /** 活动在主图右侧时竖排，沿用原有活动卡片 */
     vertical?: boolean
+    /** 名字以这些前缀开头的算常驻玩法，单独一栏展示 */
+    permanentNames?: string[]
     sourceName?: string
     sourceUrl?: string
   }>(),
   {
     plainActivities: false,
     vertical: false,
+    permanentNames: () => [],
     sourceName: 'SRA',
     sourceUrl: 'https://starrailassistant.top',
   }
@@ -118,16 +166,29 @@ const cardStyle = computed<CSSProperties>(
     }) as CSSProperties
 )
 
+/** 名字以常驻玩法名开头的算常驻，比如「虚构叙事•立界开篇」 */
+const isPermanent = (activity: SraActivityOverview['activities'][number]) =>
+  props.permanentNames.some(name => activity.name.startsWith(name))
+
 const activeActivities = computed(() => {
   const now = Date.now()
   return props.overview.activities
     .filter(activity => {
       return (
-        getCountdownValue(activity.startTime) <= now && getCountdownValue(activity.endTime) > now
+        !isPermanent(activity) &&
+        getCountdownValue(activity.startTime) <= now &&
+        getCountdownValue(activity.endTime) > now
       )
     })
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
 })
+
+/** 常驻玩法另起一栏，同样只留没结束的，按结束时间排 */
+const permanentActivities = computed(() =>
+  props.overview.activities
+    .filter(activity => isPermanent(activity) && getCountdownValue(activity.endTime) > Date.now())
+    .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
+)
 
 // 版本封面本身不再渲染，只用来给没有自带图的活动卡片兜底，并决定活动列表用哪套样式
 const versionCover = computed(
@@ -164,6 +225,18 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
 }
 
 .sra-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* 常驻玩法跟着主卡排，只多一条上边距把它和上面那张分开 */
+.sra-permanent-card {
+  margin-top: 16px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.sra-permanent-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
 }

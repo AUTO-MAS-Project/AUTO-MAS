@@ -3103,6 +3103,7 @@ export default {
       staleMessage: '前回取得したイベント情報を表示しています',
       unavailable: '{name}のイベント情報を一時的に取得できません',
       endedAt: '{time} 終了',
+      permanent: '常設モード',
     },
     bluearchive: {
       endsAt: '{time} 終了',

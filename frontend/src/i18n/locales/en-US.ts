@@ -3755,6 +3755,7 @@ export default {
       staleMessage: 'Using the last successfully fetched event data',
       unavailable: '{name} event data is temporarily unavailable',
       endedAt: 'Ends {time}',
+      permanent: 'Permanent modes',
     },
     bluearchive: {
       endsAt: 'Ends {time}',

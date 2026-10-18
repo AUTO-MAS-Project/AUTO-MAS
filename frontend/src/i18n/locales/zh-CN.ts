@@ -3620,6 +3620,7 @@ export default {
       staleMessage: '正在使用上次成功获取的活动数据',
       unavailable: '{name}活动数据暂不可用',
       endedAt: '结束于 {time}',
+      permanent: '常驻玩法',
     },
     bluearchive: {
       endsAt: '{time} 结束',
