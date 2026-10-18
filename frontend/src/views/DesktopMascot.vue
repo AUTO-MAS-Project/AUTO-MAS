@@ -74,21 +74,25 @@ const spriteStyle = computed(() => {
   if (!data.value?.animation) return {}
   const { animation, state, reaction } = data.value
   const columns = looking.value ? 3 : animation.columns
-  const rows = dragSprite.value ? 1 : looking.value ? 3 : 2
-  const column = looking.value
-    ? lookFrame.value! % 3
+  const actionRows = Math.ceil(animation.frameCount / animation.columns)
+  const rows = looking.value ? 3 : actionRows * (dragSprite.value ? 1 : 2)
+  const currentFrame = looking.value
+    ? lookFrame.value!
     : stopped.value
-      ? Math.min(2, animation.columns - 1)
+      ? Math.min(2, animation.frameCount - 1)
       : frame.value
-  const row = looking.value
-    ? Math.floor(lookFrame.value! / 3)
-    : reacting.value
-      ? reaction === 'success'
-        ? 1
-        : 0
-      : stopped.value || (!dragging.value && state === 'working')
-        ? 1
-        : 0
+  const action =
+    looking.value || dragSprite.value
+      ? 0
+      : reacting.value
+        ? reaction === 'success'
+          ? 1
+          : 0
+        : stopped.value || (!dragging.value && state === 'working')
+          ? 1
+          : 0
+  const column = currentFrame % columns
+  const row = action * actionRows + Math.floor(currentFrame / columns)
   return {
     width: `${columns * 100}%`,
     height: `${rows * 100}%`,
@@ -167,7 +171,7 @@ watch(
       customFps ??
       (isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps)
     frameTimer = setInterval(() => {
-      frame.value = (frame.value + 1) % animation.columns
+      frame.value = (frame.value + 1) % animation.frameCount
     }, 1000 / fps)
   }
 )
