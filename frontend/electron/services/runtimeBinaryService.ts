@@ -1146,6 +1146,73 @@ export interface RuntimeBinaryAlignOptions {
   sync?: (options: RuntimeBinarySyncOptions) => Promise<RuntimeBinarySyncResult>
 }
 
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'unpinned' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  pin?: RuntimeBinaryPin
+  error?: string
+}
+
+export interface RuntimeBinaryCheckOptions {
+  version: string
+  runtimePath: string
+  appRoot: string
+  fetchPin?: RuntimeBinaryAlignOptions['fetchPin']
+  readVersion?: RuntimeBinarySyncOptions['readVersion']
+}
+
+/** 失败页只提示升级；第 0 步仍保留随应用回退到配套版本的能力。 */
+function isNewerRuntimeVersion(target: string, installed: string): boolean {
+  const parse = (value: string) => {
+    const [core, prerelease] = value.replace(/^v/, '').split('+')[0].split(/-(.*)/)
+    return { numbers: core.split('.').map(Number), prerelease }
+  }
+  const next = parse(target)
+  const current = parse(installed)
+  for (let index = 0; index < Math.max(next.numbers.length, current.numbers.length); index++) {
+    const difference = (next.numbers[index] ?? 0) - (current.numbers[index] ?? 0)
+    if (difference !== 0) return difference > 0
+  }
+  if (next.prerelease === current.prerelease) return false
+  if (!next.prerelease) return true
+  if (!current.prerelease) return false
+  const nextParts = next.prerelease.split('.')
+  const currentParts = current.prerelease.split('.')
+  for (let index = 0; index < Math.max(nextParts.length, currentParts.length); index++) {
+    const left = nextParts[index]
+    const right = currentParts[index]
+    if (left === right) continue
+    if (left === undefined) return false
+    if (right === undefined) return true
+    const leftNumeric = /^\d+$/.test(left)
+    const rightNumeric = /^\d+$/.test(right)
+    if (leftNumeric && rightNumeric) return Number(left) > Number(right)
+    if (leftNumeric !== rightNumeric) return !leftNumeric
+    return left > right
+  }
+  return false
+}
+
+/** 读取已安装版本和同一发布分支的配套版本，不下载或替换文件。 */
+export async function checkRuntimeBinaryWithVersion(
+  options: RuntimeBinaryCheckOptions
+): Promise<RuntimeBinaryUpdateCheck> {
+  if (isDeveloperRuntime(options.runtimePath)) return { status: 'skipped' }
+  const [currentVersion, lookup] = await Promise.all([
+    (options.readVersion ?? readInstalledRuntimeVersion)(options.runtimePath, options.appRoot),
+    (options.fetchPin ?? fetchRemoteRuntimeBinaryPin)(options.version),
+  ])
+  if (lookup.status === 'unpinned') return { status: 'unpinned', currentVersion }
+  if (lookup.status === 'unavailable') {
+    return { status: 'unavailable', currentVersion, error: lookup.error }
+  }
+  const available =
+    currentVersion === null ||
+    !RUNTIME_VERSION_PATTERN.test(currentVersion) ||
+    isNewerRuntimeVersion(lookup.pin.version, currentVersion)
+  return { status: available ? 'available' : 'current', currentVersion, pin: lookup.pin }
+}
+
 /**
  * 第 0 步：在 bootstrap 之前，把 Runtime 对齐到目标版本的发布分支所钉扎的那一版。
  *

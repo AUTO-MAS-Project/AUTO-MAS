@@ -21,7 +21,11 @@ import {
   RUNTIME_BINARY_CANCELLED,
   RuntimeBinaryAlignOptions,
   RuntimeBinaryAlignResult,
+  RuntimeBinarySyncProgress,
+  RuntimeBinaryCheckOptions,
+  RuntimeBinaryUpdateCheck,
   alignRuntimeBinaryWithVersion,
+  checkRuntimeBinaryWithVersion,
 } from './runtimeBinaryService'
 import {
   CreateRuntimeClientOptions,
@@ -625,6 +629,7 @@ export interface RuntimeInitializationOptions {
   targetVersion?: string
   /** 第 0 步的实现，测试注入；默认真的联网读钉扎、下载替换。 */
   alignRuntimeBinary?: (options: RuntimeBinaryAlignOptions) => Promise<RuntimeBinaryAlignResult>
+  checkRuntimeBinary?: (options: RuntimeBinaryCheckOptions) => Promise<RuntimeBinaryUpdateCheck>
 }
 
 // 走统一工厂而不是裸 new RuntimeClient：遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient
@@ -665,6 +670,57 @@ export class RuntimeInitializationService {
   /** 本实例的目标版本；省略时退回应用自身版本。 */
   get targetVersion(): string {
     return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+  }
+
+  get isBusy(): boolean {
+    return this.activeControl !== null || this.aligning
+  }
+
+  async checkRuntimeBinaryUpdate(): Promise<RuntimeBinaryUpdateCheck> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) return { status: 'skipped' }
+    try {
+      return await (this.options.checkRuntimeBinary ?? checkRuntimeBinaryWithVersion)({
+        version: this.targetVersion,
+        runtimePath,
+        appRoot,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`检查 Runtime 更新失败: ${message}`)
+      return { status: 'unavailable', error: message }
+    }
+  }
+
+  /** 失败页只重做第 0 步，保留源码、依赖与上一次失败的处置动作。 */
+  async updateRuntimeBinary(
+    onProgress: (progress: RuntimeBinarySyncProgress) => void
+  ): Promise<RuntimeBinaryAlignResult> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) {
+      return { status: 'failed', error: '当前运行模式无法更新 Runtime，请重新安装完整程序。' }
+    }
+    if (this.isBusy) {
+      return { status: 'failed', error: '运行环境操作尚未结束，请稍后再试。' }
+    }
+
+    this.cancelRequested = false
+    this.aligning = true
+    try {
+      return await this.alignRuntimeBinary({
+        version: this.targetVersion,
+        runtimePath,
+        appRoot,
+        onProgress,
+        isCancelled: () => this.cancelRequested,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`更新 Runtime 失败: ${message}`)
+      return { status: 'failed', error: message, code: RUNTIME_BINARY_ALIGN_ERROR }
+    } finally {
+      this.aligning = false
+    }
   }
 
   /**
@@ -794,6 +850,22 @@ export class RuntimeInitializationService {
       }
     }
     let outcome = await this.execute(command, mirror, bridge)
+    if (
+      !outcome.success &&
+      this.options.launchConfig.mode === 'managed' &&
+      stage === 'dependency' &&
+      [
+        'LOCKFILE_MISSING',
+        'LOCKFILE_OUTDATED',
+        'LOCKFILE_INVALID',
+        'LOCKFILE_CHECK_FAILED',
+      ].includes(outcome.code ?? '') &&
+      !this.cancelRequested
+    ) {
+      logger.info('锁文件检查失败，自动恢复受管程序文件并重新准备环境')
+      // bootstrap 自身不回到 retryStage，因此每次局部重试最多自动恢复一次。
+      return this.bootstrap(onProgress)
+    }
     if (
       !outcome.success &&
       stage === 'dependency' &&

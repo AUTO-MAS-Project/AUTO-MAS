@@ -9,6 +9,7 @@
       <p v-if="message" class="failure-message">{{ message }}</p>
       <p v-if="noticeText" class="failure-notice">{{ noticeText }}</p>
       <p class="failure-message">{{ t('init.failure.joinGroupHint') }}</p>
+      <p v-if="updateHint" class="failure-message">{{ updateHint }}</p>
 
       <div class="failure-actions">
         <a-button
@@ -16,9 +17,18 @@
           :key="action.kind"
           :type="index === 0 ? 'primary' : 'text'"
           :loading="action.kind === 'run-doctor' && doctorRunning"
+          :disabled="updating && action.kind !== 'open-log'"
           @click="emit('action', action.kind)"
         >
           {{ t(action.labelKey) }}
+        </a-button>
+        <a-button
+          v-if="runtimeMode === 'managed' && canUpdateRuntime"
+          :loading="updating"
+          :disabled="doctorRunning"
+          @click="updateRuntime"
+        >
+          {{ t('init.failure.updateRuntime') }}
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
           {{ t('init.backend.viewDocs') }}
@@ -28,6 +38,13 @@
           {{ t('init.failure.joinGroup') }}
         </a-button>
       </div>
+
+      <p v-if="updateMessage" class="failure-message" role="status">{{ updateMessage }}</p>
+      <a-progress
+        v-if="updating && updateProgress !== undefined"
+        :percent="updateProgress"
+        size="small"
+      />
 
       <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
         <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
@@ -39,6 +56,7 @@
           :class="{ selected: selectedMirror === mirror.key }"
           role="radio"
           :aria-checked="selectedMirror === mirror.key"
+          :disabled="updating"
           @click="emit('update:selected-mirror', mirror.key)"
         >
           <span class="mirror-radio" aria-hidden="true"></span>
@@ -72,7 +90,9 @@
       </details>
 
       <p v-if="showSkipButton" class="failure-skip">
-        <button type="button" @click="emit('skip')">{{ t('init.step.skip') }}</button>
+        <button type="button" :disabled="updating" @click="emit('skip')">
+          {{ t('init.step.skip') }}
+        </button>
         {{ t('init.step.skipConsequence') }}
       </p>
     </div>
@@ -80,11 +100,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
 import { TeamOutlined } from '@ant-design/icons-vue'
-import type { RuntimeDoctorCheck } from '@/types/electron'
+import type { RuntimeDoctorCheck, RuntimeInitMode } from '@/types/electron'
+import { useRuntimeBinaryUpdate } from '../useRuntimeBinaryUpdate'
 import type { MirrorConfig } from '@/types/mirror'
 import type {
   FailureAction,
@@ -107,6 +128,7 @@ interface Props {
   selectedMirror?: string
   doctorChecks?: RuntimeDoctorCheck[] | null
   doctorRunning?: boolean
+  runtimeMode?: RuntimeInitMode
   showSkipButton?: boolean
   /** 有排障文档可看时给出链接，目前只有后端启动段有。 */
   docsUrl?: string
@@ -122,6 +144,7 @@ const props = withDefaults(defineProps<Props>(), {
   selectedMirror: '',
   doctorChecks: null,
   doctorRunning: false,
+  runtimeMode: 'off',
   showSkipButton: false,
   docsUrl: '',
 })
@@ -131,9 +154,19 @@ const emit = defineEmits<{
   'update:selected-mirror': [value: string]
   skip: []
   'open-docs': []
+  'runtime-updated': []
 }>()
 
 const { t } = useI18n()
+const {
+  updating,
+  updateMessage,
+  updateProgress,
+  updateHint,
+  canUpdateRuntime,
+  checkForUpdate,
+  updateRuntime,
+} = useRuntimeBinaryUpdate(() => emit('runtime-updated'))
 const SUPPORT_GROUP_URL = 'https://qm.qq.com/q/DEG4a3p0FG'
 
 const noticeText = computed(() => {
@@ -153,6 +186,10 @@ const hasDetails = computed(
 )
 
 const detailsOpen = ref(false)
+
+onMounted(() => {
+  if (props.runtimeMode === 'managed') void checkForUpdate()
+})
 
 async function handleJoinGroup() {
   const logger = window.electronAPI.getLogger('初始化求助')
@@ -286,6 +323,12 @@ watch(
 
 .mirror-option:hover {
   background: var(--ant-color-fill-quaternary);
+}
+
+.mirror-option:disabled,
+.failure-skip button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .mirror-radio {

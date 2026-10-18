@@ -65,6 +65,24 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 /** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
 export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 
+export interface RuntimeBinaryUpdateResult {
+  status: 'upgraded' | 'current' | 'unpinned' | 'skipped' | 'cancelled' | 'failed'
+  pin?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'unpinned' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  pin?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryProgress {
+  progress: number
+  message: string
+}
+
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
 
@@ -477,6 +495,10 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
   /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
   getRuntimeInitContext?: () => Promise<RuntimeInitContext>
+  updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
+  checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
+  onRuntimeBinaryProgress: (callback: (progress: RuntimeBinaryProgress) => void) => void
+  removeRuntimeBinaryProgressListener: () => void
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
