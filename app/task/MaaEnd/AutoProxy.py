@@ -45,7 +45,6 @@ from app.utils import (
     ProcessManager,
     get_logger,
     is_backend_dev_mode,
-    is_process_running,
 )
 from app.utils.constants import (
     MAAEND_AUTO_COLLECT_TASK,
@@ -76,6 +75,12 @@ from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_value
 from .update_takeover import snapshot_mxu_logs, update_maaend_after_stage
 
 logger = get_logger("MaaEnd 自动代理")
+
+# 正式版临时停用 MAS 切号；恢复前需重新验证与上游启动流程的兼容性。
+_MAS_ACCOUNT_SWITCH_DISABLED = (
+    "v5.6.2 已临时停用 MAS 自建账号切换。"
+    "请在 MaaEnd 脚本设置中将账号切换方式改为 MAAEND 内置切号，并核对用户账号ID后重试。"
+)
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
 _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
@@ -325,12 +330,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.auto_collect_routes: dict[str, list[str]] = {}
 
     def _account_switch_method(self) -> str:
-        """读取账号切换方式；缺失或非法值沿用 MaaEnd 默认入口。"""
+        """拒绝已停用的 MAS 切号；缺失或非法值沿用 MaaEnd 默认入口。"""
 
         method = str(self.script_config.get("Run", "AccountSwitchMethod") or "")
-        return method if method in {"MAS", "MAAEND"} else "MAAEND"
+        if method == "MAS":
+            if self.cur_user_item.log_record:
+                record = self.cur_user_item.log_record[
+                    max(self.cur_user_item.log_record)
+                ]
+                record.status = _MAS_ACCOUNT_SWITCH_DISABLED
+                record.content = [_MAS_ACCOUNT_SWITCH_DISABLED]
+            raise RuntimeError(_MAS_ACCOUNT_SWITCH_DISABLED)
+        return "MAAEND"
 
     async def check(self) -> str:
+
+        if self.script_config.get("Run", "AccountSwitchMethod") == "MAS":
+            self.cur_user_item.status = "异常"
+            return _MAS_ACCOUNT_SWITCH_DISABLED
 
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
@@ -344,13 +361,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
         account_switch_method = self._account_switch_method()
-        if (
-            account_switch_method == "MAS"
-            and account_id
-            and self.emulator_manager is not None
-        ):
-            self.cur_user_item.status = "异常"
-            return "MAS 自建账号切换暂不支持模拟器，请改用 MAAEND 内置账号切换"
         if account_switch_method == "MAAEND" and account_id:
             if len(account_id) < 4 or not account_id[-4:].isdigit():
                 self.cur_user_item.status = "异常"
@@ -933,6 +943,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
 
+            # 前置脚本前后都复查，防止运行中改回已停用的 MAS 切号。
+            self._account_switch_method()
+
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
                 await execute_script_task(
@@ -941,34 +954,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
 
             self.script_info.log = "正在启动游戏..."
-            account_switch_method = self._account_switch_method()
-            use_mas_account_switch = account_switch_method == "MAS"
-            # MAAEND 入口由 MXU 的预任务和前置程序启动游戏；MAS 兼容入口
-            # 必须先让游戏进入可交互状态，再交给旧的游戏内登录流程。
+            self._account_switch_method()
             try:
                 if self.emulator_manager is None:
-                    if use_mas_account_switch:
-                        if is_process_running("Endfield.exe"):
-                            logger.info(
-                                "检测到终末地客户端已运行，准备由 MAS 执行账号切换"
-                            )
-                        else:
-                            await self.game_process_manager.kill()
-                            logger.info(
-                                f"启动终末地: {self.script_config.get('Game', 'Path')}"
-                            )
-                            await self.game_process_manager.open_process(
-                                self.script_config.get("Game", "Path"),
-                                *str(self.script_config.get("Game", "Arguments")).split(
-                                    " "
-                                ),
-                            )
-                            await asyncio.sleep(
-                                self.script_config.get("Game", "WaitTime")
-                            )
-                    else:
-                        # Win32 游戏由 MXU 的预任务和前置程序负责启动。
-                        logger.info("终末地将由 MaaEnd 前置程序启动")
+                    # Win32 游戏由 MXU 的预任务和前置程序负责启动。
+                    logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
                     logger.info(
@@ -988,18 +978,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 continue
 
             account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-            if use_mas_account_switch and account_id:
-                try:
-                    from .tools.login import login
-
-                    self.script_info.log = "正在由 MAS 自建流程切换账号..."
-                    await login(account_id, emulator_info)
-                except Exception as error:
-                    await self.handle_pre_maaend_error("MAS 自建账号切换失败", error)
-                    continue
-                logger.info(f"用户 {self.cur_user_item.user_id} MAS 自建账号切换成功")
-                self.script_info.log = "MAS 自建账号切换完成"
-            elif account_id:
+            if account_id:
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 将由 MAAEND 内置任务切换账号"
                 )
@@ -1008,11 +987,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = (
-                    "将由 MAS 启动游戏，未配置账号，跳过账号切换"
-                    if use_mas_account_switch
-                    else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
-                )
+                self.script_info.log = "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
 
             if (
                 self.emulator_manager is None
@@ -2292,3 +2267,4 @@ class AutoProxyTask(ScriptAutoProxyBase):
             type=protocol.TASK_NOTICE,
             data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )
+
