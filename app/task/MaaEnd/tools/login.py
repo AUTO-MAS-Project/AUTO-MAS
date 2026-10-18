@@ -198,15 +198,19 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
-def _save_error_screenshot(hwnd: int) -> None:
+def _save_error_screenshot(
+    hwnd: int, *, on_error_screenshot: Callable[[Path], None] | None = None
+) -> None:
     """保存登录失败时未标注的游戏窗口截图，由共享工具压缩落盘。"""
 
     try:
-        save_error_screenshot(
+        screenshot_path = save_error_screenshot(
             _capture_window_image(hwnd, activate=False),
             "maaend-login",
             "login-error",
         )
+        if screenshot_path is not None and on_error_screenshot is not None:
+            on_error_screenshot(screenshot_path)
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始登录异常
         logger.warning(f"终末地登录错误截图保存失败: {error}")
@@ -613,6 +617,7 @@ async def login(
     emulator_info: DeviceInfo | None = None,
     *,
     restart_game: Callable[[], Awaitable[None]] | None = None,
+    on_error_screenshot: Callable[[Path], None] | None = None,
 ) -> bool:
     """切换到终末地客户端已保存的最近账号。
 
@@ -620,6 +625,7 @@ async def login(
         id: 待切换的账号 Id，按客户端最近账号列表匹配。
         emulator_info: 模拟器设备信息，终末地暂未支持模拟器登录。
         restart_game: 资源更新确认后按原启动方式重新拉起游戏的回调。
+        on_error_screenshot: 将本次保存的失败截图交给任务报告。
     """
     if not IS_WINDOWS:
         raise RuntimeError("终末地账号切换仅支持 Windows 平台")
@@ -666,7 +672,9 @@ async def login(
     except Exception as error:
         _write_diagnostic(f"账号切换失败: {type(error).__name__}: {error}")
         hwnd = win32gui.FindWindow("UnityWndClass", "Endfield")
-        await asyncio.to_thread(_save_error_screenshot, hwnd)
+        await asyncio.to_thread(
+            _save_error_screenshot, hwnd, on_error_screenshot=on_error_screenshot
+        )
         raise
 
     logger.success(f"终末地账号切换成功: {masked_id}")
