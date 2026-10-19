@@ -166,7 +166,7 @@ jobs:
         shell: pwsh
 
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.18.0"
 
@@ -193,13 +193,13 @@ jobs:
 
       - name: 上传未签名主程序
         id: upload-unsigned-main-program
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AUTO-MAS
           path: AUTO-MAS.exe
 
       - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -211,7 +211,7 @@ jobs:
           output-artifact-directory: 'frontend\dist\win-unpacked'
 
       - name: 构建安装包
-        uses: Minionguyjpro/Inno-Setup-Action@36abc9fdddc244a69f4895566fa5b2d8d5854e43 # v1.2.7
+        uses: Minionguyjpro/Inno-Setup-Action@ec985ef724d1fb4a05bfbc1a8e49930dc76d2b0c # v1.2.9
         env:
           VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         with:
@@ -226,14 +226,14 @@ jobs:
       - name: 上传未签名安装程序
         if: steps.generate_version_info.outputs.is_prerelease != 'true'
         id: upload-unsigned-setup-program
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: AUTO-MAS-Unsigned-Setup
           path: AUTO-MAS-Setup.exe
 
       - name: 签名安装程序
         if: steps.generate_version_info.outputs.is_prerelease != 'true'
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -256,7 +256,7 @@ jobs:
         shell: pwsh
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-artifacts
           path: AUTO-MAS-*-x64.zip
@@ -277,7 +277,7 @@ jobs:
           persist-credentials: false
 
       - name: 下载构建产物
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-artifacts
           path: artifacts
@@ -309,7 +309,7 @@ jobs:
           gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
@@ -454,7 +454,7 @@ jobs:
           python-version: "3.12"
 
       - name: 下载构建产物
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-artifacts
           path: .
