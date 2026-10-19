@@ -222,6 +222,7 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  isMacOS: boolean
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -249,6 +250,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
+  appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
   appPrepareQuit?: () => Promise<number | null>
   /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
@@ -258,7 +261,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
-  onAppCloseRequested?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: (confirmRunningTasks: boolean) => void) => () => void
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
