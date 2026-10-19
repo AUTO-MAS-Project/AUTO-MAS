@@ -1,5 +1,7 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
@@ -7,9 +9,10 @@ import { expect, test } from './fixtures'
 //   新建并配置一条全局自定义 Webhook —— POST /api/setting/webhook/add、/webhook/update
 //   界面「发送测试通知」        —— POST /api/setting/test_notify → send_test_notification()
 //                                  → dispatch() → webhook 渠道发送
-// 断言都落在「本地接收端真的收到/没收到测试通知」上：系统通知默认未启用
-// （Notify.IfPushPlyer 默认 False，渠道在 targets() 阶段就被 enable_field 排除），
-// 因此 test_notify 的返回码单独不能证明 Webhook 送达。
+// 系统通知渠道另有一条用例：它没有 HTTP 回执，只能从后端日志确认走到系统渠道
+// （Notify.IfPushPlyer 默认 False，渠道在 targets() 阶段就被 enable_field 排除，
+// app/models/notification_channel.py:119），因此 test_notify 的返回码单独不能证明
+// Webhook 送达，Webhook 用例一律以接收端的实际收包为准。
 
 const backendUrl = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? '36174'}`
 const apiUrl = (path: string) => `${backendUrl}${path}`
@@ -126,5 +129,46 @@ test.describe('@notify webhook channel', () => {
     expect(body.code, JSON.stringify(body)).toBe(400)
     expect(String(body.message)).toContain('没有已启用的通知渠道')
     expect(receiver.bodies.length).toBe(0)
+  })
+})
+
+/** 后端日志：系统通知没有回执，只能靠它在 app/core 与 system 渠道里留下的痕迹判断。 */
+const readBackendLog = async () => {
+  const dataRoot = process.env.AUTO_MAS_E2E_DATA_ROOT
+  if (!dataRoot) throw new Error('缺少 AUTO_MAS_E2E_DATA_ROOT，读不到后端日志')
+  return readFile(path.join(dataRoot, 'debug', 'app.log'), 'utf8').catch(() => '')
+}
+
+test.describe('@notify system channel', () => {
+  test('pushes the test notification to the Windows system channel', async ({ app, page }) => {
+    // 该用例会真的弹出一次 Windows 通知，这正是被测行为。
+    test.skip(process.platform !== 'win32', '系统通知渠道只有 Windows 实现')
+
+    const enabled = await postApi(page, '/api/setting/update', {
+      data: { Notify: { IfPushPlyer: true } },
+    })
+    expect(enabled, JSON.stringify(enabled)).toMatchObject({ code: 200 })
+    try {
+      const body = await clickSendTest(app, page)
+
+      // 全程没有 HTTP 回执，只有系统渠道成功才会进 succeeded 列表
+      expect(body.code, JSON.stringify(body)).toBe(200)
+      expect(String(body.message)).toContain('系统')
+
+      // 系统渠道的发送日志（app/notification_channels/system/transport.py:82）证明
+      // 确实派发到了系统通知，而不是被空目标或异常吞掉。
+      await expect
+        .poll(async () => (await readBackendLog()).includes(`推送系统通知: ${testTitle}`), {
+          timeout: 15_000,
+        })
+        .toBe(true)
+
+      await app.evidence('notify-system-sent')
+    } finally {
+      const restored = await postApi(page, '/api/setting/update', {
+        data: { Notify: { IfPushPlyer: false } },
+      })
+      expect(restored, JSON.stringify(restored)).toMatchObject({ code: 200 })
+    }
   })
 })
