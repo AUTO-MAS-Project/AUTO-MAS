@@ -17,15 +17,18 @@ const {
   activeAppearance,
   customBackgroundPath,
   customBackgroundUrl,
+  customBackgroundLoadFailed,
   customSurfaceOpacity,
   setCustomBackground,
   clearCustomBackground,
+  retryCustomBackground,
   previewCustomSurfaceOpacity,
   setCustomSurfaceOpacity,
 } = useTheme()
 
 const importing = ref(false)
 const clearing = ref(false)
+const retrying = ref(false)
 const hasAppearanceBackground = computed(() => Boolean(activeAppearance.value?.backgroundUrl))
 const {
   displayedValue: displayedSurfaceOpacity,
@@ -39,7 +42,8 @@ const {
 })
 
 const customBackgroundFileName = computed(() => {
-  return customBackgroundPath.value.split(/[\\/]/).pop() ?? customBackgroundPath.value
+  const path = typeof customBackgroundPath.value === 'string' ? customBackgroundPath.value : ''
+  return path.split(/[\\/]/).pop() ?? path
 })
 
 const handleImport = async (): Promise<void> => {
@@ -75,8 +79,12 @@ const handleImport = async (): Promise<void> => {
 
     await setCustomBackground(filePath, base64)
     message.success(t('setting.basic.customBackgroundImported'))
-  } catch {
-    message.error(t('setting.basic.customBackgroundImportFailed'))
+  } catch (error) {
+    message.error(
+      error instanceof Error && error.message === '自定义背景尺寸过大或图片无效'
+        ? t('setting.basic.customBackgroundDimensionsUnsupported')
+        : t('setting.basic.customBackgroundImportFailed')
+    )
   } finally {
     importing.value = false
   }
@@ -91,6 +99,15 @@ const handleClear = async (): Promise<void> => {
     message.error(t('setting.basic.customBackgroundRemoveFailed'))
   } finally {
     clearing.value = false
+  }
+}
+
+const handleRetry = async (): Promise<void> => {
+  retrying.value = true
+  try {
+    await retryCustomBackground()
+  } finally {
+    retrying.value = false
   }
 }
 </script>
@@ -119,7 +136,7 @@ const handleClear = async (): Promise<void> => {
           <div class="background-controls">
             <a-button
               :loading="importing"
-              :disabled="importing || clearing || hasAppearanceBackground"
+              :disabled="importing || clearing"
               @click="handleImport"
             >
               <template #icon><UploadOutlined /></template>
@@ -129,7 +146,7 @@ const handleClear = async (): Promise<void> => {
               v-if="customBackgroundPath"
               danger
               :loading="clearing"
-              :disabled="importing || clearing || hasAppearanceBackground"
+              :disabled="importing || clearing"
               :aria-label="t('setting.basic.customBackgroundClear')"
               @click="handleClear"
             >
@@ -143,6 +160,12 @@ const handleClear = async (): Promise<void> => {
               {{ customBackgroundFileName }}
             </span>
             <span v-else>{{ t('setting.basic.customBackgroundEmpty') }}</span>
+          </div>
+          <div v-if="customBackgroundLoadFailed" class="background-load-error">
+            <span>{{ t('setting.basic.customBackgroundLoadFailed') }}</span>
+            <a-button size="small" :loading="retrying" @click="handleRetry">
+              {{ t('setting.basic.customBackgroundRetry') }}
+            </a-button>
           </div>
         </div>
       </a-col>
@@ -206,6 +229,15 @@ const handleClear = async (): Promise<void> => {
 
 .background-state-icon {
   flex: 0 0 auto;
+}
+
+.background-load-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--ant-color-error);
+  font-size: 12px;
 }
 
 .opacity-controls {

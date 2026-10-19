@@ -38,6 +38,7 @@ const activeAppearance = ref<InstalledAppearance | null>(null)
 const appearances = ref<InstalledAppearance[]>([])
 const customBackgroundPath = ref('')
 const customBackgroundUrl = ref('')
+const customBackgroundLoadFailed = ref(false)
 const customSurfaceOpacity = ref(1)
 const customSurfaceOpacityPreview = ref<number | null>(null)
 const displayedCustomSurfaceOpacity = computed(
@@ -536,17 +537,20 @@ function getThemeConfig() {
 const antdTheme = computed(getThemeConfig)
 
 const readCustomBackground = async (path: string, revision: number): Promise<void> => {
+  if (revision === customBackgroundRevision) customBackgroundLoadFailed.value = false
   try {
     const { base64 } = await window.electronAPI.readFileBase64(path, CUSTOM_BACKGROUND_MAX_BYTES)
     if (revision !== customBackgroundRevision) return
     customBackgroundUrl.value = createCustomBackgroundDataUrl(base64, path) ?? ''
+    customBackgroundLoadFailed.value = !customBackgroundUrl.value
     if (!customBackgroundUrl.value) {
-      logger.warn(`自定义背景格式不受支持，已按无背景处理: ${path}`)
+      logger.warn(`自定义背景无法加载，已按无背景处理: ${path}`)
     }
     updateTheme()
   } catch (error) {
     if (revision !== customBackgroundRevision) return
     customBackgroundUrl.value = ''
+    customBackgroundLoadFailed.value = true
     updateTheme()
     logger.warn(`读取自定义背景失败: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -726,13 +730,18 @@ export function useTheme() {
       if (path && !hasCustomBackgroundExtension(path)) {
         throw new Error('自定义背景格式不受支持')
       }
+      const nextUrl =
+        path && base64 !== undefined ? (createCustomBackgroundDataUrl(base64, path) ?? '') : ''
+      if (path && base64 !== undefined && !nextUrl) {
+        throw new Error('自定义背景尺寸过大或图片无效')
+      }
 
       const revision = ++customBackgroundRevision
       const previousPath = customBackgroundPath.value
       const previousUrl = customBackgroundUrl.value
       customBackgroundPath.value = path
-      customBackgroundUrl.value =
-        path && base64 !== undefined ? (createCustomBackgroundDataUrl(base64, path) ?? '') : ''
+      customBackgroundUrl.value = nextUrl
+      customBackgroundLoadFailed.value = false
       if (path && !customBackgroundUrl.value) {
         logger.warn(`自定义背景格式不受支持，已按无背景处理: ${path}`)
       }
@@ -757,6 +766,15 @@ export function useTheme() {
     })
 
   const clearCustomBackground = (): Promise<void> => setCustomBackground('')
+
+  const retryCustomBackground = async (): Promise<void> => {
+    if (!customBackgroundPath.value || activeAppearance.value?.backgroundUrl) return
+    const revision = ++customBackgroundRevision
+    customBackgroundUrl.value = ''
+    customBackgroundLoadFailed.value = false
+    updateTheme()
+    await readCustomBackground(customBackgroundPath.value, revision)
+  }
 
   // 拖动只刷新本地外观；真正写入配置留给 afterChange，避免一次拖动产生大量 IPC。
   const previewCustomSurfaceOpacity = (value: number): void => {
@@ -854,6 +872,7 @@ export function useTheme() {
       configRevision += 1
       const config = rawConfig as Partial<FrontendConfig> & {
         customBackgroundUpdated?: boolean
+        customSurfaceOpacityUpdated?: boolean
       }
       if (
         config.themeMode === 'system' ||
@@ -872,16 +891,20 @@ export function useTheme() {
       const cached = appearanceId.value
         ? appearances.value.find(item => item.id === appearanceId.value)
         : null
-      if (
-        config.customBackgroundPath !== undefined &&
-        (config.customBackgroundPath !== customBackgroundPath.value ||
-          config.customBackgroundUpdated === true)
-      ) {
-        ++customBackgroundRevision
-        customBackgroundPath.value = config.customBackgroundPath
-        customBackgroundUrl.value = ''
+      if (config.customBackgroundPath !== undefined) {
+        const nextPath =
+          typeof config.customBackgroundPath === 'string' ? config.customBackgroundPath : ''
+        if (
+          nextPath !== customBackgroundPath.value ||
+          config.customBackgroundUpdated === true
+        ) {
+          ++customBackgroundRevision
+          customBackgroundPath.value = nextPath
+          customBackgroundUrl.value = ''
+        }
       }
       if (config.customSurfaceOpacity !== undefined) {
+        if (config.customSurfaceOpacityUpdated === true) ++customSurfaceRevision
         customSurfaceOpacity.value = clampCustomSurfaceOpacity(config.customSurfaceOpacity)
       }
       commitPersistedThemeSnapshot()
@@ -917,7 +940,8 @@ export function useTheme() {
     }
     appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
     if (config.customBackgroundPath !== undefined) {
-      customBackgroundPath.value = config.customBackgroundPath
+      customBackgroundPath.value =
+        typeof config.customBackgroundPath === 'string' ? config.customBackgroundPath : ''
     }
     if (config.customSurfaceOpacity !== undefined) {
       customSurfaceOpacity.value = clampCustomSurfaceOpacity(config.customSurfaceOpacity)
@@ -939,6 +963,7 @@ export function useTheme() {
     activeAppearance: computed(() => activeAppearance.value),
     customBackgroundPath: computed(() => customBackgroundPath.value),
     customBackgroundUrl: computed(() => customBackgroundUrl.value),
+    customBackgroundLoadFailed: computed(() => customBackgroundLoadFailed.value),
     customSurfaceOpacity: computed(() => displayedCustomSurfaceOpacity.value),
     syncAntTokens: (tokens: AntTokens) => {
       resolvedAntTokens.value = tokens
@@ -949,6 +974,7 @@ export function useTheme() {
     setAppearance,
     setCustomBackground,
     clearCustomBackground,
+    retryCustomBackground,
     previewCustomSurfaceOpacity,
     setCustomSurfaceOpacity,
     loadAppearances,

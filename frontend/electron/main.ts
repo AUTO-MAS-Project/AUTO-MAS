@@ -2058,6 +2058,8 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
             customBackgroundPath: config.customBackgroundPath ?? '',
             customBackgroundUpdated:
               'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
+            customSurfaceOpacityUpdated:
+              'customSurfaceOpacity' in patch && window.webContents.id !== event.sender.id,
             customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
           })
         }
