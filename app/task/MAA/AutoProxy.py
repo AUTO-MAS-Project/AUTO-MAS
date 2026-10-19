@@ -228,6 +228,9 @@ def _current_week_marker(now: datetime) -> str:
 def _current_month_marker(now: datetime) -> str:
     """按 UTC+4 返回月份标记。"""
 
+    # TODO: 动态时区适配时按账号 Info.Server 的 get_game_day_tz() 判断绿票月份；
+    # 同步 GreenTicketStoreMonth 的时区声明及前端完成态，保留完整 UTC 时间存储。
+    # 固定 UTC+4 在 EN、JP/KR 的月界存在误判，待上述适配统一处理。
     return now.astimezone(UTC4).strftime("%Y-%m")
 
 

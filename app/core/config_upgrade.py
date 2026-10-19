@@ -60,6 +60,14 @@ def convert_legacy(
     if type(node).__name__ == "HSRUserConfig":
         from app.task.HSR.tools.stage_runtime import migrate_sra_legacy_stage_labels
 
+        # 旧直控模式优先于 Info.Base，迁移后仍按原生模式运行。
+        control = source.get("Control", {})
+        if (
+            isinstance(control, dict)
+            and str(control.get("Mode") or "").strip().lower() == "direct"
+        ):
+            source["Info"]["Base"] = "native"
+
         stage = source.get("Stage", {})
         if isinstance(stage, dict):
             for name in ("ScriptStage", "ScriptEchoOfWar"):
