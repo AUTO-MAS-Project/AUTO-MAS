@@ -30,10 +30,14 @@ export interface FrontendConfig {
   pressSoundEnabled?: boolean
   pressSoundPreset?: PressSoundPreset
   pressSoundVolume?: number
-  /** 用户导入音频的绝对路径；preset 为 custom 时使用 */
+  /** 用户导入音频的绝对路径（两个文件时是「按下」那个）；preset 为 custom / customPair 时使用 */
   pressSoundCustomPath?: string
   /** 用户导入音频的显示名，仅用于界面 */
   pressSoundCustomName?: string
+  /** 自定义两个文件时「松开」音频的绝对路径，preset 为 customPair 时使用 */
+  pressSoundCustomReleasePath?: string
+  /** 「松开」音频的显示名，仅用于界面 */
+  pressSoundCustomReleaseName?: string
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -74,6 +78,8 @@ const DEFAULT_CONFIG: FrontendConfig = {
   pressSoundVolume: 0.6,
   pressSoundCustomPath: '',
   pressSoundCustomName: '',
+  pressSoundCustomReleasePath: '',
+  pressSoundCustomReleaseName: '',
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

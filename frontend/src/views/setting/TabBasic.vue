@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   DeleteOutlined,
-  PlayCircleOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
   SkinOutlined,
@@ -15,12 +14,13 @@ import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
-import type { PressSoundPreset } from '@/types/pressSound'
+import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
 import MascotSettings from './components/MascotSettings.vue'
+import PressSoundSettings from './components/PressSoundSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -43,14 +43,17 @@ interface TabBasicProps {
   homeSatelliteStyleSaving: boolean
   pressSoundEnabled: boolean
   pressSoundPreset: PressSoundPreset
-  pressSoundOptions: { label: string; value: PressSoundPreset }[]
+  pressSoundCustomPath: string
+  pressSoundCustomName: string
+  pressSoundCustomReleasePath: string
+  pressSoundCustomReleaseName: string
   pressSoundVolume: number
   pressSoundSaving: boolean
   handlePressSoundEnabledChange(_enabled: boolean): Promise<void>
   handlePressSoundPresetChange(value: SelectValue): Promise<void>
   handlePressSoundVolumeChange(_volume: number): Promise<void>
-  handlePressSoundImport(): Promise<void>
-  handlePressSoundPreview(): void
+  handlePressSoundImport(kind?: 'single' | 'press' | 'release'): Promise<void>
+  handlePressSoundPreview(phase?: PressSoundPhase): void
   handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
   handleThemeModeChange(value: SelectValue): Promise<void>
   handleAppearanceChange(value: SelectValue): Promise<void>
@@ -85,7 +88,10 @@ const {
   homeSatelliteStyleSaving,
   pressSoundEnabled,
   pressSoundPreset,
-  pressSoundOptions,
+  pressSoundCustomPath,
+  pressSoundCustomName,
+  pressSoundCustomReleasePath,
+  pressSoundCustomReleaseName,
   pressSoundVolume,
   pressSoundSaving,
   handlePressSoundEnabledChange,
@@ -233,92 +239,21 @@ const handleLocaleChange = (value: unknown): void => {
 
     <MascotSettings />
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('setting.basic.pressSoundSection') }}</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pressSoundEnabled') }}</span>
-              <a-tooltip :title="t('setting.basic.pressSoundEnabledTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              :value="pressSoundEnabled"
-              :disabled="pressSoundSaving"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handlePressSoundEnabledChange(value === true)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pressSoundPreset') }}</span>
-              <a-tooltip :title="t('setting.basic.pressSoundPresetTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <div class="press-sound-row">
-              <a-select
-                :value="pressSoundPreset"
-                :options="pressSoundOptions"
-                :disabled="pressSoundSaving"
-                size="large"
-                style="flex: 1"
-                @change="handlePressSoundPresetChange"
-              />
-              <a-button size="large" :disabled="pressSoundSaving" @click="handlePressSoundImport">
-                <template #icon><UploadOutlined /></template>
-                {{ t('setting.basic.pressSoundImport') }}
-              </a-button>
-            </div>
-          </div>
-        </a-col>
-      </a-row>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pressSoundVolume') }}</span>
-              <a-tooltip :title="t('setting.basic.pressSoundVolumeTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <div class="press-sound-row">
-              <a-slider
-                :value="pressSoundVolume"
-                :min="0"
-                :max="1"
-                :step="0.05"
-                :disabled="pressSoundSaving"
-                style="flex: 1"
-                @change="(value: number) => handlePressSoundVolumeChange(value)"
-              />
-              <span class="press-sound-percent">{{ Math.round(pressSoundVolume * 100) }}%</span>
-            </div>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pressSoundPreview') }}</span>
-            </div>
-            <a-button size="large" :disabled="pressSoundSaving" @click="handlePressSoundPreview">
-              <template #icon><PlayCircleOutlined /></template>
-              {{ t('setting.basic.pressSoundPreviewAction') }}
-            </a-button>
-          </div>
-        </a-col>
-      </a-row>
-    </div>
+    <PressSoundSettings
+      :enabled="pressSoundEnabled"
+      :preset="pressSoundPreset"
+      :volume="pressSoundVolume"
+      :saving="pressSoundSaving"
+      :custom-path="pressSoundCustomPath"
+      :custom-name="pressSoundCustomName"
+      :custom-release-path="pressSoundCustomReleasePath"
+      :custom-release-name="pressSoundCustomReleaseName"
+      @enabled-change="handlePressSoundEnabledChange"
+      @preset-change="handlePressSoundPresetChange"
+      @volume-change="handlePressSoundVolumeChange"
+      @import="handlePressSoundImport"
+      @preview="handlePressSoundPreview"
+    />
 
     <div class="form-section">
       <div class="section-header">
@@ -504,20 +439,6 @@ const handleLocaleChange = (value: unknown): void => {
 </template>
 
 <style scoped>
-.press-sound-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.press-sound-percent {
-  flex: 0 0 auto;
-  min-width: 44px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .appearance-controls {
   display: flex;
   flex-wrap: wrap;
