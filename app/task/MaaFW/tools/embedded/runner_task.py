@@ -664,7 +664,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             # 项目被占用不逐个弹窗：所有用户撞的是同一件事，10 个用户就弹 10 次、响 10 次
             # 提示音。与 embedded_manager._check 那条「整个脚本一句话跳过，别让每个用户在
-            # runner_task 里各报一遍」同一用意；「异常」状态、本用户日志、history 与统计
+            # runner_task 里各报一遍」同一用意；「异常」状态、本用户日志与统计
             # 照常记（见下面与 final_task），汇总与「仅失败时」推送照常带上它。
             if self.cur_user_item.status == "异常" and not self.project_busy_skipped:
                 await Publisher.send(
@@ -680,8 +680,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
             if self.maintenance_skipped or self.project_busy_skipped:
                 # 同一资源已确认在维护、或项目被占用没跑成：记一份本用户的日志，让代理
-                # 结果汇总、统计信息与 history 都写明原因（其他跳过原因照旧不记）。
-                # 前面拿到的运行前更新日志也随这份日志进 history，不丢。
+                # 结果汇总与统计信息写明原因（其他跳过原因照旧不记），未派发用户不建历史。
+                # 前面拿到的运行前更新日志也随这份内存日志保留。
                 # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
                 # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
@@ -916,14 +916,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._shutdown_runner()
         if self.check_result != "Pass":
             if self.maintenance_skipped:
-                # 维护连带跳过：同样是跳过不是失败，代理次数不动；上次状态、history
+                # 维护连带跳过：同样是跳过不是失败，代理次数不动；上次状态
                 # 与统计信息都写明原因。
                 self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
                 await self.cur_user_config.commit()
                 await self._save_user_history()
                 await self._push_user_statistics()
             elif self.project_busy_skipped:
-                # 没跑成：history 与统计信息写明原因；代理次数与上次状态不动。
+                # 没跑成：统计信息写明原因；代理次数与上次状态不动。
                 await self._save_user_history()
                 await self._push_user_statistics()
             await self._release_project_path()
@@ -3111,6 +3111,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._history_saved:
             return
         self._history_saved = True
+        # 预检未派发的用户只保留当前报告；实际执行后遇到维护仍归档 skipped。
+        if self.check_result != "Pass":
+            return
         try:
             await self._freeze_notification_images()
         except Exception as error:
