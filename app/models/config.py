@@ -26,7 +26,7 @@ import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.utils import get_logger
 from app.utils.constants import (
@@ -71,7 +71,6 @@ from .ConfigBase import (
     FileValidator,
     FolderValidator,
     JSONValidator,
-    KeyValidator,
     MultipleConfig,
     MultipleOptionsValidator,
     MultipleUIDValidator,
@@ -911,17 +910,12 @@ def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
                 plan["LegacyIndex"] = True
                 plans.append(plan)
     if old_task.get("IfActivityFirst", True):
-        medicine = old_task.get(
-            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
-        )
         plans.append(
             {
                 "StageType": "activity",
                 "StageIndex": old_task.get("ActivityStageIndex", 1),
                 "DropCount": 999,
                 "OrundumDropCount": 9999,
-                "UseMedicine": medicine > 0,
-                "MedicineCount": medicine,
                 "LegacyActivityFirst": True,
             }
         )
@@ -2997,6 +2991,9 @@ class MaaFWConfig(ConfigBase):
     FLAVOR: str | None = None
     ## Run.TaskTimeLimitOverrides 的默认值（JSON 字符串，任务名 → 分钟）；通用 MaaFW 不内置
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = "{ }"
+    ## Game.WaitTime（启动等待时间，秒）的默认值；特调可按自己的游戏改。120：模拟器上终末地
+    ## 冷启动到标题要 76~96s（2026-10-16 实测），上限要盖得住；平常靠读盘判断提前下发
+    DEFAULT_GAME_WAIT_TIME = 120
 
     def __init__(self) -> None:
 
@@ -3100,7 +3097,12 @@ class MaaFWConfig(ConfigBase):
         ## 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满；
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
-        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 模拟器（Adb controller）上没有「等窗口」这一段：MAS 随模拟器冷启动游戏后最多等
+        ## 这么久，画面有内容且客体读盘连续 8 秒低于 1 MB/s（游戏加载完）就提前下发；等满
+        ## 还是黑屏才继续等。游戏进程已在（不论在不在前台）时不等。
+        self.Game_WaitTime = ConfigItem(
+            "Game", "WaitTime", self.DEFAULT_GAME_WAIT_TIME, RangeValidator(0, 9999)
+        )
         ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
         ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
         ## 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。
@@ -3297,7 +3299,7 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限，以及运行前的队列装饰
+    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限、启动等待时间默认值，以及运行前的队列装饰
     （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
@@ -3311,6 +3313,9 @@ class M9AConfig(MaaFWConfig):
     DEFAULT_TASK_TIME_LIMIT_OVERRIDES = (
         '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
     )
+    ## 1999 冷启动后不用等那么久，特调直接默认 15 秒（用户 2026-10-16 定）。只影响新建的
+    ## 脚本：已有脚本的 ScriptConfig.json 里存着自己的值。
+    DEFAULT_GAME_WAIT_TIME = 15
 
 
 class MSSUserConfig(MaaFWUserConfig):
@@ -5333,34 +5338,6 @@ class ToolsConfig(ConfigBase):
 
     def __init__(self) -> None:
 
-        self.ArknightsPC_Enabled = ConfigItem(
-            "ArknightsPC", "Enabled", False, BoolValidator()
-        )
-        self.ArknightsPC_PauseKey = ConfigItem(
-            "ArknightsPC", "PauseKey", "f10", KeyValidator("f10")
-        )
-        self.ArknightsPC_SelectDeployedKey = ConfigItem(
-            "ArknightsPC", "SelectDeployedKey", "w", KeyValidator("w")
-        )
-        self.ArknightsPC_UseSkillKey = ConfigItem(
-            "ArknightsPC", "UseSkillKey", "r", KeyValidator("r")
-        )
-        self.ArknightsPC_RetreatKey = ConfigItem(
-            "ArknightsPC", "RetreatKey", "t", KeyValidator("t")
-        )
-        self.ArknightsPC_NextFrameKey = ConfigItem(
-            "ArknightsPC", "NextFrameKey", "f", KeyValidator("f")
-        )
-        self.ArknightsPC_AnotherQuitKey = ConfigItem(
-            "ArknightsPC", "AnotherQuitKey", "space", KeyValidator("space")
-        )
-        self.ArknightsPC_Status = ConfigItem(
-            "ArknightsPC",
-            "Status",
-            "-",
-            VirtualConfigValidator(self.arknights_pc_status),
-        )
-
         ## GameSign - 启用签到
         self.GameSign_Enabled = ConfigItem(
             "GameSign", "Enabled", False, BoolValidator()
@@ -5402,44 +5379,9 @@ class ToolsConfig(ConfigBase):
             VirtualConfigValidator(self.game_sign_result),
         )
 
-        self.arknights_pc_running = False
-        self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
         self._game_sign_result_data: dict = {}
 
         super().__init__()
-
-    @property
-    def arknights_pc_connected(self) -> bool:
-
-        return self.arknights_pc_get_connected()
-
-    def arknights_pc_status(self) -> str:
-
-        if not self.get("ArknightsPC", "Enabled"):
-            return TagItem(text="未启用", color="gray").model_dump_json()
-        else:
-            if self.arknights_pc_running:
-                if self.arknights_pc_connected:
-                    return TagItem(text="运行中", color="green").model_dump_json()
-                else:
-                    return TagItem(text="未连接", color="red").model_dump_json()
-            else:
-                return TagItem(text="已暂停", color="yellow").model_dump_json()
-
-    @property
-    def arknights_pc_keys(self) -> list[str]:
-        """获取明日方舟 PC 按键配置"""
-
-        return [
-            self.get("ArknightsPC", _)
-            for _ in (
-                "SelectDeployedKey",
-                "UseSkillKey",
-                "RetreatKey",
-                "NextFrameKey",
-                "AnotherQuitKey",
-            )
-        ]
 
     def game_sign_status(self) -> str:
         """游戏社区状态标签"""
@@ -5452,16 +5394,6 @@ class ToolsConfig(ConfigBase):
         """游戏社区结果 JSON"""
 
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
-
-
-class HotUpdateAvoidMinutesValidator(ValidatorBase):
-    """热更避让只接受整数；旧配置或非法值回到默认五分钟。"""
-
-    def validate(self, value: Any) -> bool:
-        return type(value) is int and 0 <= value <= 60
-
-    def correct(self, value: Any) -> int:
-        return min(60, max(0, value)) if type(value) is int else 5
 
 
 class GlobalConfig(ConfigBase):
@@ -5647,10 +5579,6 @@ class GlobalConfig(ConfigBase):
         )
         ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
         self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
-        ## 后端热更提前避让定时任务的分钟数；0 仍让已到点的任务优先。
-        self.Update_HotUpdateAvoidMinutes = ConfigItem(
-            "Update", "HotUpdateAvoidMinutes", 5, HotUpdateAvoidMinutesValidator()
-        )
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",

@@ -42,18 +42,22 @@ _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp"})
 
 def collect_recent_error_images(
     maaend_root_path: str | Path,
+    *,
+    started_at_ns: int,
+    ended_at_ns: int,
+    diagnostic_paths: Sequence[Path] = (),
 ) -> tuple[NotificationImage, ...]:
-    """读取 MaaEnd 最近保存的错误截图，作为通知图片原样传递。"""
+    """读取本轮 MaaEnd 错误截图与 MAS 实际保存的诊断图，原样附到通知。"""
 
     # MaaEnd 的日志根目录是 debug/，save_on_error 截图保存在其 on_error/ 子目录。
     error_dir = Path(maaend_root_path) / "debug" / "on_error"
+    entries = list(diagnostic_paths)
     try:
-        entries = tuple(error_dir.iterdir())
+        entries.extend(error_dir.iterdir())
     except FileNotFoundError:
-        return ()
+        pass
     except OSError as exc:
         logger.warning(f"读取 MaaEnd 错误截图目录失败: {exc}")
-        return ()
 
     candidates: list[tuple[int, Path]] = []
     for image_path in entries:
@@ -61,7 +65,9 @@ def collect_recent_error_images(
             continue
         try:
             if image_path.is_file():
-                candidates.append((image_path.stat().st_mtime_ns, image_path))
+                modified_at_ns = image_path.stat().st_mtime_ns
+                if started_at_ns <= modified_at_ns <= ended_at_ns:
+                    candidates.append((modified_at_ns, image_path))
         except OSError as exc:
             logger.warning(f"读取 MaaEnd 错误截图信息失败: {image_path.name} - {exc}")
 

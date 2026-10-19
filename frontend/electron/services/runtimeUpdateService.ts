@@ -8,9 +8,9 @@
  *    （backendService 的 `stopBackend()` 已封装）——`workspace sync` 发现后端仍在跑会
  *    直接返回 `BACKEND_STILL_RUNNING`，所以这一步必须真的等到退出；
  * 2. `bootstrap --version v<新版本>`：临时目录浅克隆 `release/<新版本>`、校验通过后整体
- *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先按目标版本的发布分支
- *    把 `auto-mas-runtime.exe` 换成配套的那一版（第 0 步，见 `runtimeBinaryService`），
- *    这时旧监督进程已退出、新的还没起来，是唯一能安全替换 exe 的窗口；
+ *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先把 `auto-mas-runtime.exe`
+ *    对齐到线上最新版（第 0 步，见 `runtimeBinaryService`），这时旧监督进程已退出、新的还没
+ *    起来，是唯一能安全替换 exe 的窗口；
  * 3. 重新 `backend supervise`（backendService 的 `startBackend()`）。
  *
  * 三步各自的失败后果完全不同，所以失败结果里带 `phase`，界面据此给出不同的处置入口，
@@ -18,13 +18,7 @@
  * （runtimeInitializationService），这里只做编排，不重写一套。
  */
 
-import { randomUUID } from 'node:crypto'
-import type {
-  BackendService,
-  BackendStartOptions,
-  BackendStartResult,
-  BackendStopResult,
-} from './backendService'
+import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
@@ -32,7 +26,7 @@ import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
 } from './runtimeBinaryService'
 import {
   InitializationRunStage,
@@ -101,9 +95,9 @@ const RETRY_ACTION_MAP: Readonly<
   repair: { stage: 'python', mode: 'rebuild' },
 }
 
-/** 第 0 步（Runtime 对齐）的失败码：它们发生在源码被动之前。 */
+/** 第 0 步（Runtime 对齐到线上最新版）的失败码：它们发生在源码被动之前。 */
 const RUNTIME_BINARY_FAILURE_CODES: ReadonlySet<string> = new Set([
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -111,8 +105,6 @@ const RUNTIME_BINARY_FAILURE_CODES: ReadonlySet<string> = new Set([
 
 export interface RuntimeUpdateOutcome {
   success: boolean
-  /** 忙、暂停或未暂存目标，本轮静默跳过。 */
-  deferred?: boolean
   /** 失败时必有；成功时不写。 */
   phase?: RuntimeUpdatePhase
   error?: string
@@ -142,7 +134,7 @@ export interface RuntimeUpdateOutcome {
 /** 更新流程只用到 backendService 的这两个方法，测试直接给桩。 */
 export interface BackendUpdateController {
   stopBackend(): Promise<BackendStopResult>
-  startBackend(options?: BackendStartOptions): Promise<BackendStartResult>
+  startBackend(): Promise<BackendStartResult>
 }
 
 export interface RuntimeUpdateDependencies {
@@ -198,17 +190,6 @@ interface UpdateSession {
   abortedForShutdown: boolean
   /** 在途的 bootstrap 或单步重试，退出清场要等它落地。 */
   inFlight: Promise<unknown> | null
-  stagedUpdate?: {
-    backend: Pick<
-      BackendService,
-      | 'restartBackend'
-      | 'verifyHotUpdateTarget'
-      | 'cancelHotUpdateAdmission'
-      | 'cancelHotUpdatePreparation'
-    >
-    options: NonNullable<BackendStartOptions['hotUpdate']>
-    phase: RuntimeUpdatePhase
-  }
 }
 
 let session: UpdateSession | null = null
@@ -245,7 +226,6 @@ export async function abortRuntimeUpdateForShutdown(
 
   current.cancelRequested = true
   current.abortedForShutdown = true
-  await cancelStagedSession(current)
   const forwarded = current.runtimeService.cancel()
 
   let settled = true
@@ -285,124 +265,6 @@ const RESTART_MESSAGE = '正在重新启动后端'
 const RESTART_DONE_MESSAGE = '后端已重新启动'
 const RUNTIME_UPDATE_UNSUPPORTED_CODE = 'RUNTIME_UPDATE_UNSUPPORTED'
 const RUNTIME_UPDATE_INVALID_VERSION_CODE = 'INVALID_VERSION'
-
-/** 同分支更新只重启，源码和依赖仍由原有启动 bootstrap 消费暂存。 */
-export async function applyStagedBackendUpdate(
-  onProgress: (update: RuntimeUpdateProgress) => void,
-  deps: RuntimeUpdateDependencies & {
-    backend: Pick<
-      BackendService,
-      | 'getStagedBackendUpdate'
-      | 'restartBackend'
-      | 'verifyHotUpdateTarget'
-      | 'cancelHotUpdateAdmission'
-      | 'cancelHotUpdatePreparation'
-    >
-  },
-  isClosing: () => boolean = () => false
-): Promise<RuntimeUpdateOutcome> {
-  const target = deps.backend.getStagedBackendUpdate()
-  if (
-    deps.launchConfig.mode !== 'managed' ||
-    isClosing() ||
-    !target?.staged ||
-    !target.version ||
-    !target.currentCommit ||
-    !target.remoteCommit
-  )
-    return { success: false, deferred: true }
-  const current: UpdateSession = {
-    version: target.version,
-    runtimeService: (deps.createRuntimeService ?? defaultRuntimeServiceFactory)({
-      launchConfig: deps.launchConfig,
-      targetVersion: target.version,
-      mirrorService: new MirrorService(deps.launchConfig.appRoot),
-    }),
-    backend: deps.backend,
-    cancelRequested: false,
-    abortedForShutdown: false,
-    inFlight: null,
-  }
-  current.stagedUpdate = {
-    backend: deps.backend,
-    phase: 'shutdown',
-    options: {
-      operationId: randomUUID(),
-      version: target.version,
-      baseCommit: target.currentCommit,
-      targetCommit: target.remoteCommit,
-      isCancelled: () => current.cancelRequested,
-      onPhase: phase => {
-        current.stagedUpdate!.phase = phase
-      },
-    },
-  }
-  session = current
-  return trackStagedOperation(current, restartStagedBackend(current, onProgress))
-}
-
-/** 保存页面前等待静默重启完成；失败保留修复会话，由页面取消退出。 */
-export async function prepareRuntimeUpdateForClose(): Promise<boolean> {
-  const current = session
-  if (!current?.stagedUpdate) {
-    await abortRuntimeUpdateForShutdown()
-    return true
-  }
-  const inFlight = current.inFlight
-  if (!inFlight) return false
-  try {
-    await inFlight
-  } catch {
-    return false
-  }
-  return session !== current
-}
-
-/** 安装器进入前让静默重启落地，再由调用方的安装队列执行后续操作。 */
-export async function abortStagedBackendUpdate(): Promise<void> {
-  if (session?.stagedUpdate) await abortRuntimeUpdateForShutdown()
-}
-
-async function cancelStagedSession(current: UpdateSession): Promise<void> {
-  const staged = current.stagedUpdate
-  if (!staged) return
-  if (staged.phase === 'shutdown') {
-    const { operationId, baseCommit, targetCommit } = staged.options
-    await staged.backend.cancelHotUpdateAdmission(operationId, baseCommit, targetCommit)
-  } else if (current.inFlight) {
-    await staged.backend.cancelHotUpdatePreparation()
-  }
-}
-
-async function restartStagedBackend(
-  current: UpdateSession,
-  onProgress: (update: RuntimeUpdateProgress) => void
-): Promise<RuntimeUpdateOutcome> {
-  const staged = current.stagedUpdate!
-  staged.phase = 'shutdown'
-  onProgress({ stage: 'shutdown', status: 'started', progress: 0, message: STOP_MESSAGE })
-  const result = await trackInFlight(
-    current,
-    staged.backend.restartBackend({ hotUpdate: staged.options })
-  )
-  if (result.success || result.deferred || result.cancelled) {
-    if (session === current) session = null
-    return result
-  }
-  const supportRequired = requiresSupport(result)
-  return {
-    ...result,
-    phase: staged.phase,
-    supportRequired,
-    retryActions: supportRequired
-      ? []
-      : staged.phase === 'shutdown' || result.code === 'HOT_UPDATE_STOP_FAILED'
-        ? ['bootstrap']
-        : staged.phase === 'bootstrap'
-          ? resolveRetryActions(result.failedStage, result.code)
-          : [],
-  }
-}
 
 /**
  * 走 Runtime 链路更新后端：停机 → bootstrap → 重新监督。
@@ -509,16 +371,7 @@ export async function updateBackendViaRuntime(
  * 必须在同一次更新会话内调用——重试用的目标版本与「上次失败要不要重建环境」都存在
  * 那个会话的编排器实例里。
  */
-export function retryBackendUpdate(
-  action: RuntimeUpdateRetryAction,
-  onProgress: (update: RuntimeUpdateProgress) => void
-): Promise<RuntimeUpdateOutcome> {
-  const current = session
-  const pending = retryBackendUpdateInternal(action, onProgress)
-  return current?.stagedUpdate ? trackStagedOperation(current, pending) : pending
-}
-
-async function retryBackendUpdateInternal(
+export async function retryBackendUpdate(
   action: RuntimeUpdateRetryAction,
   onProgress: (update: RuntimeUpdateProgress) => void
 ): Promise<RuntimeUpdateOutcome> {
@@ -530,10 +383,6 @@ async function retryBackendUpdateInternal(
   }
 
   current.cancelRequested = false
-
-  if (current.stagedUpdate?.phase === 'shutdown') return restartStagedBackend(current, onProgress)
-  if (current.stagedUpdate?.phase === 'restart' && action === 'bootstrap')
-    return restartBackend(current, onProgress)
 
   if (action === 'bootstrap') {
     // 第 0 步失败后重来：后端仍然停着、源码一动没动，与首次进入 bootstrap 的处境完全一样，
@@ -593,9 +442,6 @@ export function cancelBackendUpdate(): { accepted: boolean; forwarded: boolean }
   if (!current) return { accepted: false, forwarded: false }
 
   current.cancelRequested = true
-  void cancelStagedSession(current).catch(error =>
-    logger.warn(`取消静默重启失败: ${String(error)}`)
-  )
   const forwarded = current.runtimeService.cancel()
   logger.info(`已受理更新取消请求${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { accepted: true, forwarded }
@@ -616,21 +462,12 @@ function unsupported(message: string): RuntimeUpdateOutcome {
 
 /** 记下在途的 Runtime 命令，供退出清场等待；落地后清掉。 */
 async function trackInFlight<T>(current: UpdateSession, task: Promise<T>): Promise<T> {
-  if (!current.inFlight) current.inFlight = task
+  current.inFlight = task
   try {
     return await task
   } finally {
     if (current.inFlight === task) current.inFlight = null
   }
-}
-
-/** 静默重启与重试均等待整次动作，不能在单步 bootstrap 与 start 之间提前允许保存。 */
-function trackStagedOperation<T>(current: UpdateSession, task: Promise<T>): Promise<T> {
-  const pending = task.finally(() => {
-    if (current.inFlight === pending) current.inFlight = null
-  })
-  current.inFlight = pending
-  return pending
 }
 
 /** Runtime 受理了取消：源码没动。 */
@@ -681,28 +518,7 @@ async function restartBackend(
 ): Promise<RuntimeUpdateOutcome> {
   onProgress({ stage: 'restart', status: 'started', progress: 0, message: RESTART_MESSAGE })
 
-  if (current.abortedForShutdown) return { success: false, phase: 'restart', cancelled: true }
-  const startResult = await trackInFlight(
-    current,
-    current.backend.startBackend(
-      current.stagedUpdate ? { hotUpdate: current.stagedUpdate.options } : undefined
-    )
-  )
-  if (
-    startResult.success &&
-    current.stagedUpdate &&
-    !(await current.stagedUpdate.backend.verifyHotUpdateTarget(
-      current.stagedUpdate.options.targetCommit
-    ))
-  ) {
-    return {
-      success: false,
-      phase: 'restart',
-      code: 'HOT_UPDATE_TARGET_MISMATCH',
-      error: '后端未运行本次更新的目标提交',
-      retryable: true,
-    }
-  }
+  const startResult = await current.backend.startBackend()
   if (!startResult.success) {
     const message = startResult.error ?? '后端启动失败'
     logger.error(`更新后重新启动后端失败: ${message}`)
@@ -726,7 +542,6 @@ async function restartBackend(
     message: RESTART_DONE_MESSAGE,
   })
   logger.info(`后端已更新到 ${current.version} 并重新启动`)
-  if (current.stagedUpdate && session === current) session = null
   return { success: true }
 }
 
@@ -758,8 +573,8 @@ function buildBootstrapFailure(
 /**
  * 失败段到重试入口。
  *
- * 第 0 步（Runtime 对齐）失败时什么都还没动，整条重来即可；仓库段失败时旧 `repo/` 仍在，
- * 只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
+ * 第 0 步（Runtime 对齐到线上最新版）失败时什么都还没动，整条重来即可；仓库段失败时旧
+ * `repo/` 仍在，只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
  * `environment_broken`，退不回去，只能重试同步、重建依赖或整体修复。
  */
 export function resolveRetryActions(

@@ -1,3 +1,4 @@
+import type { DesktopMascotTaskHostAPI } from '@/types/desktopMascot'
 import type { ElectronAPI } from '@/types/electron'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 
@@ -41,7 +42,18 @@ const getLogger = (moduleName: string): Logger => {
   }
 }
 
+// 浏览器预览没有原生桌宠：菜单桥接整体空实现。useDesktopMascotTaskActions 在 setup 阶段无条件调用这三个
+// 监听器（:141-151），缺成员会抛 TypeError 使整页白屏；satisfies 保证接口新增成员而这里没补时 typecheck 失败。
+const desktopMascotTaskBridge = {
+  onDesktopMascotTaskMenuRequest: () => () => undefined,
+  onDesktopMascotTaskAction: () => () => undefined,
+  onDesktopMascotTaskMenuClosed: () => () => undefined,
+  setDesktopMascotTaskMenu: async () => undefined,
+  setDesktopMascotTaskActionResult: async () => undefined,
+} satisfies DesktopMascotTaskHostAPI
+
 const browserDevElectronAPI = {
+  ...desktopMascotTaskBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,

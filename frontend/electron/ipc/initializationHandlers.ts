@@ -8,6 +8,7 @@ import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
+import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
 import type { ApiEndpoints, MirrorConfig } from '../services/mirrorService'
 import type { RuntimeLaunchMode } from '../services/runtime'
 import { resolveRuntimeLaunchConfig, resolveRuntimeLaunchMode } from '../services/runtime'
@@ -26,8 +27,6 @@ import type {
   RuntimeUpdateRetryAction,
 } from '../services/runtimeUpdateService'
 import {
-  abortStagedBackendUpdate,
-  applyStagedBackendUpdate,
   cancelBackendUpdate,
   retryBackendUpdate,
   updateBackendViaRuntime,
@@ -63,23 +62,7 @@ const isRetryAction = (value: unknown): value is RuntimeUpdateRetryAction =>
 // 全局实例
 let initService: InitializationService | null = null
 let backendService: BackendService | null = null
-let activeInstallations = 0
-let installationTail: Promise<unknown> = Promise.resolve()
-let isClosing = () => false
-let initializationWindow: BrowserWindow | null = null
-
-function coordinateInstallation<T>(operation: () => Promise<T>, cancelStaged = true): Promise<T> {
-  activeInstallations++
-  const cancelled = cancelStaged ? abortStagedBackendUpdate() : Promise.resolve()
-  const result = installationTail.then(async () => {
-    await cancelled
-    return operation()
-  })
-  installationTail = result.catch(() => undefined)
-  return result.finally(() => {
-    activeInstallations--
-  })
-}
+let runtimeBinaryUpdating = false
 
 /**
  * 向发起 IPC 调用的渲染进程回推事件。
@@ -172,16 +155,14 @@ async function runStageViaRuntime(
   rebuild?: boolean
 ): Promise<RuntimeStageOutcome | null> {
   const initService = getInitService()
-  return coordinateInstallation(() =>
-    initService.retryStageViaRuntime(
-      stage,
-      progress => {
-        if (progress.stage !== stage) return
-        sendToSender(event, progressChannel, progress)
-      },
-      selectedMirror,
-      toRetryMode(rebuild)
-    )
+  return initService.retryStageViaRuntime(
+    stage,
+    progress => {
+      if (progress.stage !== stage) return
+      sendToSender(event, progressChannel, progress)
+    },
+    selectedMirror,
+    toRetryMode(rebuild)
   )
 }
 
@@ -233,12 +214,7 @@ export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck
 /**
  * 注册所有初始化相关的 IPC 处理器
  */
-export function registerInitializationHandlers(
-  _mainWindow: BrowserWindow,
-  closing: () => boolean = () => false
-) {
-  isClosing = closing
-  initializationWindow = _mainWindow
+export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   if (isRegistered) {
     logger.info('初始化处理器已经注册，跳过重复注册')
     return
@@ -282,7 +258,7 @@ export function registerInitializationHandlers(
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PythonInstaller } = await import('../services/environmentService')
+    const { PythonInstaller } = await import('../services/environmentService.js')
     const installer = new PythonInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -316,7 +292,7 @@ export function registerInitializationHandlers(
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PipInstaller } = await import('../services/environmentService')
+    const { PipInstaller } = await import('../services/environmentService.js')
     const installer = new PipInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -350,7 +326,7 @@ export function registerInitializationHandlers(
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { GitInstaller } = await import('../services/environmentService')
+    const { GitInstaller } = await import('../services/environmentService.js')
     const installer = new GitInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -387,7 +363,7 @@ export function registerInitializationHandlers(
       const initService = getInitService(targetBranch)
       const mirrorService = initService.getMirrorService()
 
-      const { RepositoryService } = await import('../services/repositoryService')
+      const { RepositoryService } = await import('../services/repositoryService.js')
       const repoService = new RepositoryService(appRoot, mirrorService, targetBranch)
 
       const result = await repoService.pullRepository(progress => {
@@ -424,7 +400,7 @@ export function registerInitializationHandlers(
       const initService = getInitService()
       const mirrorService = initService.getMirrorService()
 
-      const { DependencyService } = await import('../services/dependencyService')
+      const { DependencyService } = await import('../services/dependencyService.js')
       const depService = new DependencyService(appRoot, mirrorService)
 
       const result = await depService.installDependencies(progress => {
@@ -468,12 +444,10 @@ export function registerInitializationHandlers(
 
       const initService = getInitService(targetBranch)
 
-      const result = await coordinateInstallation(() =>
-        initService.initialize(progress => {
-          // 发送进度到渲染进程
-          sendToSender(event, 'initialization-progress', progress)
-        }, startBackend)
-      )
+      const result = await initService.initialize(progress => {
+        // 发送进度到渲染进程
+        sendToSender(event, 'initialization-progress', progress)
+      }, startBackend)
 
       if (result.success) {
         // 保存后端服务实例
@@ -494,6 +468,44 @@ export function registerInitializationHandlers(
   )
 
   // ==================== 仅更新模式 ====================
+
+  ipcMain.handle('check-runtime-binary-update', async () => {
+    const runtime = getInitService().getRuntimeService()
+    return runtime ? runtime.checkRuntimeBinaryUpdate() : { status: 'skipped' }
+  })
+
+  ipcMain.handle('update-runtime-binary', async (event): Promise<RuntimeBinaryAlignResult> => {
+    const init = getInitService()
+    const runtime = init.getRuntimeService()
+    if (!runtime || runtime.launchConfig.mode !== 'managed') {
+      return { status: 'failed', error: '当前运行模式不支持更新 Runtime。' }
+    }
+    if (runtimeBinaryUpdating || runtime.isBusy) {
+      return { status: 'failed', error: '运行环境操作尚未结束，请稍后再试。' }
+    }
+
+    runtimeBinaryUpdating = true
+    try {
+      return await runtime.updateRuntimeBinary(
+        progress => sendToSender(event, 'runtime-binary-progress', progress),
+        async () => {
+          // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
+          for (const backend of new Set([getBackendService(), init.getBackendService()])) {
+            const result = await backend.stopBackend()
+            if (!result.success) {
+              throw new Error(result.error || '无法停止后端，请重启程序后重试。')
+            }
+          }
+        }
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`更新 Runtime 失败: ${message}`)
+      return { status: 'failed', error: message }
+    } finally {
+      runtimeBinaryUpdating = false
+    }
+  })
 
   // ==================== 后端服务管理 ====================
 
@@ -557,24 +569,6 @@ export function registerInitializationHandlers(
     return getBackendService().checkRuntimeBackendUpdate()
   })
 
-  ipcMain.handle('apply-staged-backend-update', async (event): Promise<RuntimeUpdateOutcome> => {
-    if (
-      event.sender !== initializationWindow?.webContents ||
-      isClosing() ||
-      activeInstallations > 0
-    )
-      return { success: false, deferred: true }
-    return coordinateInstallation(
-      () =>
-        applyStagedBackendUpdate(
-          progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
-          { backend: getBackendService(), launchConfig: resolveRuntimeLaunchConfig(getAppRoot()) },
-          isClosing
-        ),
-      false
-    )
-  })
-
   // ==================== Runtime 链路的后端更新 ====================
 
   // 标题栏更新入口走哪条链路由 `get-runtime-launch-mode` 决定（off 走原有下载安装包流程，
@@ -585,15 +579,13 @@ export function registerInitializationHandlers(
     async (event, targetVersion: unknown): Promise<RuntimeUpdateOutcome> => {
       logger.info(`收到 Runtime 后端更新请求，目标版本: ${String(targetVersion)}`)
 
-      const result = await coordinateInstallation(() =>
-        updateBackendViaRuntime(
-          typeof targetVersion === 'string' ? targetVersion : '',
-          progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
-          {
-            backend: getBackendService(),
-            launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
-          }
-        )
+      const result = await updateBackendViaRuntime(
+        typeof targetVersion === 'string' ? targetVersion : '',
+        progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+        {
+          backend: getBackendService(),
+          launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
+        }
       )
 
       if (!result.success) {
@@ -609,12 +601,8 @@ export function registerInitializationHandlers(
       if (!isRetryAction(action)) throw new TypeError(`不支持的重试入口: ${String(action)}`)
 
       logger.info(`重试 Runtime 后端更新: ${action}`)
-      const result = await coordinateInstallation(
-        () =>
-          retryBackendUpdate(action, progress =>
-            sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
-          ),
-        false
+      const result = await retryBackendUpdate(action, progress =>
+        sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
       )
 
       if (!result.success) {

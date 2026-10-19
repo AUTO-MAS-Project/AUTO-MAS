@@ -2,32 +2,30 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { RUNTIME_EXE_ENV } from './runtime'
 import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_RELATIVE_PATH,
-  RUNTIME_PIN_UNAVAILABLE,
-  alignRuntimeBinaryWithVersion,
+  RUNTIME_LATEST_UNAVAILABLE,
+  alignRuntimeBinaryWithLatest,
   buildRuntimeBinarySources,
-  buildRuntimePinSources,
   buildRuntimeSumsSources,
-  fetchRemoteRuntimeBinaryPin,
   fetchTrustedRuntimeHash,
   hashFileSha256,
   parseRuntimeSums,
-  readRuntimeBinaryPin,
   runtimeAssetName,
   syncRuntimeBinary,
-  type RemoteRuntimePinLookup,
+  type RuntimeBinaryAlignOptions,
   type RuntimeBinarySyncOptions,
   type RuntimeBinarySyncProgress,
-  type RuntimePinFetchOutcome,
-  type RuntimePinFetcher,
+  type RuntimeBinarySyncResult,
+  type RuntimeTextFetchOutcome,
+  type RuntimeTextFetcher,
 } from './runtimeBinaryService'
+import type { LatestRuntimeVersionLookup } from './runtimeReleaseService'
 
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
 /**
@@ -71,16 +69,17 @@ vi.mock('./logger', () => ({
 const OLD_BINARY = 'old-runtime-binary'
 const NEW_BINARY = 'new-runtime-binary'
 const INSTALLED_VERSION = 'v0.1.4'
-const PINNED_VERSION = 'v0.1.5'
+/** 线上最新版：旧实现里是「钉扎」，现在由发布列表解析得到。 */
+const TARGET_VERSION = 'v0.1.5'
 
 function sha256(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex')
 }
 
-const PINNED_ASSET = runtimeAssetName(PINNED_VERSION)
+const TARGET_ASSET = runtimeAssetName(TARGET_VERSION)
 
 /** 照着真实 Release 的 `SHA256SUMS.txt` 造：`<hash>  <asset>`，CRLF 结尾。 */
-function sumsFor(content: string, asset = PINNED_ASSET): string {
+function sumsFor(content: string, asset = TARGET_ASSET): string {
   return `${sha256(content)}  ${asset}\r\n`
 }
 
@@ -91,18 +90,10 @@ const isProxyUrl = (url: string) => url.includes('gh-proxy.com')
 /** 每个用例一套独立的安装目录与受管源码目录。 */
 let workspace: string
 let runtimePath: string
-let sourceRoot: string
 /** 磁盘上那个 exe 自报的版本，用例按需改写。 */
 let installedVersion: string | null
 /** 换上新文件之后它自报的版本；设成 null 模拟「新文件跑不起来」。 */
 let newBinaryVersion: string | null
-
-/** 写钉扎文件；传版本号时照 CI 提交的样子加一个换行，传其他文本时原样写入。 */
-function writePin(text: string, raw = false): void {
-  const pinPath = path.join(sourceRoot, RUNTIME_PIN_RELATIVE_PATH)
-  fs.mkdirSync(path.dirname(pinPath), { recursive: true })
-  fs.writeFileSync(pinPath, raw ? text : `${text}\n`, 'utf8')
-}
 
 type DownloadPlan = (url: string) => { success: boolean; content?: string; error?: string }
 
@@ -122,7 +113,7 @@ function createDownload(plan: DownloadPlan) {
   return { download, urls }
 }
 
-type SumsPlan = (url: string) => RuntimePinFetchOutcome
+type SumsPlan = (url: string) => RuntimeTextFetchOutcome
 
 /**
  * 可信来源的校验清单桩：缺省 CNB 与 GitHub 都按 NEW_BINARY 的哈希照真实格式返回；
@@ -130,7 +121,7 @@ type SumsPlan = (url: string) => RuntimePinFetchOutcome
  */
 function createSums(plan: SumsPlan = () => ({ kind: 'text', text: sumsFor(NEW_BINARY) })) {
   const urls: string[] = []
-  const fetchText: RuntimePinFetcher = vi.fn(async (url: string) => {
+  const fetchText: RuntimeTextFetcher = vi.fn(async (url: string) => {
     urls.push(url)
     return plan(url)
   })
@@ -150,13 +141,13 @@ const readVersion = vi.fn(async (target: string) => {
   return installedVersion
 })
 
-const PIN = { version: PINNED_VERSION }
+const TARGET = { version: TARGET_VERSION }
 
 function syncOptions(extra: Partial<RuntimeBinarySyncOptions> = {}): RuntimeBinarySyncOptions {
   return {
     runtimePath,
     appRoot: workspace,
-    pin: PIN,
+    target: TARGET,
     readVersion,
     fetchText: createSums().fetchText,
     ...extra,
@@ -168,9 +159,8 @@ const installDir = () => fs.readdirSync(path.dirname(runtimePath))
 beforeEach(() => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-mas-runtime-binary-'))
   runtimePath = path.join(workspace, 'resources', 'auto-mas-runtime.exe')
-  sourceRoot = path.join(workspace, 'repo')
   installedVersion = INSTALLED_VERSION
-  newBinaryVersion = PINNED_VERSION
+  newBinaryVersion = TARGET_VERSION
   readVersion.mockClear()
   fs.mkdirSync(path.dirname(runtimePath), { recursive: true })
   fs.writeFileSync(runtimePath, OLD_BINARY, 'utf8')
@@ -185,64 +175,24 @@ afterEach(() => {
   fs.rmSync(workspace, { recursive: true, force: true })
 })
 
-// ==================== 钉扎文件 ====================
-
-describe('readRuntimeBinaryPin', () => {
-  it('读出一行版本号，忽略前后空白与换行', () => {
-    writePin(`  ${PINNED_VERSION}\r\n`, true)
-
-    expect(readRuntimeBinaryPin(sourceRoot)).toEqual({ version: PINNED_VERSION })
-  })
-
-  it('接受带预发布后缀的版本号', () => {
-    writePin('v0.2.0-beta.1')
-
-    expect(readRuntimeBinaryPin(sourceRoot)).toEqual({ version: 'v0.2.0-beta.1' })
-  })
-
-  it('文件不存在时按未钉扎处理', () => {
-    expect(readRuntimeBinaryPin(sourceRoot)).toBeNull()
-  })
-
-  it.each([
-    ['文件为空', ''],
-    ['只有空白', ' \r\n\n'],
-    ['版本号带路径分隔符', 'v0.1.5/../evil'],
-    ['版本号没有 v 前缀', '0.1.5'],
-    ['版本号带空白', 'v0.1 .5'],
-    ['写了不止一行', `${PINNED_VERSION}\nv0.1.6`],
-    ['写成了旧的 JSON 钉扎', JSON.stringify({ version: PINNED_VERSION, sha256: 'a'.repeat(64) })],
-  ])('%s 时按未钉扎处理', (_label, text) => {
-    writePin(text, true)
-
-    expect(readRuntimeBinaryPin(sourceRoot)).toBeNull()
-  })
-
-  it('文件大得离谱时按未钉扎处理', () => {
-    writePin(`${PINNED_VERSION}${' '.repeat(64 * 1024)}`, true)
-
-    expect(readRuntimeBinaryPin(sourceRoot)).toBeNull()
-  })
-})
-
 // ==================== 校验清单 ====================
 
 describe('parseRuntimeSums', () => {
   it('按资产名取出对应行的哈希，容忍 CRLF 与大写', () => {
-    const text = `${'A'.repeat(64)}  other.exe\r\n${sha256(NEW_BINARY).toUpperCase()}  ${PINNED_ASSET}\r\n`
+    const text = `${'A'.repeat(64)}  other.exe\r\n${sha256(NEW_BINARY).toUpperCase()}  ${TARGET_ASSET}\r\n`
 
-    expect(parseRuntimeSums(text, PINNED_ASSET)).toBe(sha256(NEW_BINARY))
+    expect(parseRuntimeSums(text, TARGET_ASSET)).toBe(sha256(NEW_BINARY))
   })
 
   it.each([
     ['清单为空', ''],
     ['清单里没有这个资产', sumsFor(NEW_BINARY, 'auto-mas-runtime-v9.9.9.exe')],
-    ['哈希长度不对', `abc123  ${PINNED_ASSET}\n`],
-    ['哈希含非十六进制字符', `${'z'.repeat(64)}  ${PINNED_ASSET}\n`],
+    ['哈希长度不对', `abc123  ${TARGET_ASSET}\n`],
+    ['哈希含非十六进制字符', `${'z'.repeat(64)}  ${TARGET_ASSET}\n`],
     ['只有哈希没有文件名', `${sha256(NEW_BINARY)}\n`],
     ['拿到的是错误页', '<html><body>404 Not Found</body></html>'],
   ])('%s 时返回 null', (_label, text) => {
-    expect(parseRuntimeSums(text, PINNED_ASSET)).toBeNull()
+    expect(parseRuntimeSums(text, TARGET_ASSET)).toBeNull()
   })
 })
 
@@ -250,7 +200,7 @@ describe('parseRuntimeSums', () => {
 
 describe('buildRuntimeBinarySources', () => {
   it('CNB 排第一，随后是代理源，官方源永远兜底在最后', () => {
-    const sources = buildRuntimeBinarySources(PINNED_VERSION)
+    const sources = buildRuntimeBinarySources(TARGET_VERSION)
 
     expect(sources.map(source => source.key)).toEqual([
       'cnb',
@@ -270,7 +220,7 @@ describe('buildRuntimeBinarySources', () => {
 
 describe('buildRuntimeSumsSources', () => {
   it('校验清单只从 CNB 与 GitHub 取，代理源一个都没有', () => {
-    const sources = buildRuntimeSumsSources(PINNED_VERSION)
+    const sources = buildRuntimeSumsSources(TARGET_VERSION)
 
     expect(sources.map(source => source.key)).toEqual(['cnb', 'github'])
     expect(sources[0].url).toBe(
@@ -293,7 +243,7 @@ describe('fetchTrustedRuntimeHash', () => {
         : { kind: 'text', text: sumsFor(NEW_BINARY) }
     )
 
-    const lookup = await fetchTrustedRuntimeHash(PINNED_VERSION, { fetchText })
+    const lookup = await fetchTrustedRuntimeHash(TARGET_VERSION, { fetchText })
 
     expect(lookup).toEqual({ status: 'found', hash: sha256(NEW_BINARY), source: 'github' })
     expect(urls).toHaveLength(2)
@@ -303,7 +253,7 @@ describe('fetchTrustedRuntimeHash', () => {
   it('该 Release 没有清单（两源都 404）时按取不到处理', async () => {
     const { fetchText } = createSums(() => ({ kind: 'missing' }))
 
-    const lookup = await fetchTrustedRuntimeHash(PINNED_VERSION, { fetchText })
+    const lookup = await fetchTrustedRuntimeHash(TARGET_VERSION, { fetchText })
 
     expect(lookup.status).toBe('unavailable')
     if (lookup.status !== 'unavailable') return
@@ -317,29 +267,29 @@ describe('fetchTrustedRuntimeHash', () => {
         : { kind: 'text', text: sumsFor(NEW_BINARY, 'auto-mas-runtime-v0.1.4.exe') }
     )
 
-    const lookup = await fetchTrustedRuntimeHash(PINNED_VERSION, { fetchText })
+    const lookup = await fetchTrustedRuntimeHash(TARGET_VERSION, { fetchText })
 
     expect(lookup.status).toBe('unavailable')
     if (lookup.status !== 'unavailable') return
-    expect(lookup.error).toContain(`清单里没有 ${PINNED_ASSET} 的有效 SHA-256`)
+    expect(lookup.error).toContain(`清单里没有 ${TARGET_ASSET} 的有效 SHA-256`)
   })
 })
 
 // ==================== 同步 ====================
 
 describe('syncRuntimeBinary', () => {
-  it('exe 自报的版本就是钉扎那一版时不下载', async () => {
-    installedVersion = PINNED_VERSION
+  it('exe 自报的版本就是线上最新版时不下载', async () => {
+    installedVersion = TARGET_VERSION
     const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
     const outcome = await syncRuntimeBinary(syncOptions({ download }))
 
-    expect(outcome.status).toBe('current')
+    expect(outcome).toEqual({ status: 'current', target: TARGET })
     expect(download).not.toHaveBeenCalled()
   })
 
   it('文件字节被动过但版本没变时同样判为已一致，不会每次启动都重下', async () => {
-    installedVersion = PINNED_VERSION
+    installedVersion = TARGET_VERSION
     // 重签名之类的后处理会改字节，此时文件哈希与发布资产必然不同。
     fs.writeFileSync(runtimePath, `${NEW_BINARY}-resigned`, 'utf8')
     const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
@@ -347,10 +297,11 @@ describe('syncRuntimeBinary', () => {
     const outcome = await syncRuntimeBinary(syncOptions({ download }))
 
     expect(outcome.status).toBe('current')
+    expect(outcome.target).toEqual(TARGET)
     expect(download).not.toHaveBeenCalled()
   })
 
-  it('版本不一致时先取可信清单，再下载钉扎版本并替换', async () => {
+  it('版本较旧时先取可信清单，再下载线上最新版并替换', async () => {
     const { download, urls } = createDownload(() => ({ success: true, content: NEW_BINARY }))
     const sums = createSums()
     const progress: RuntimeBinarySyncProgress[] = []
@@ -364,16 +315,40 @@ describe('syncRuntimeBinary', () => {
     )
 
     expect(outcome.status).toBe('upgraded')
-    expect(outcome.pin).toEqual({ version: PINNED_VERSION })
+    expect(outcome.target).toEqual(TARGET)
     // 清单只问了 CNB 与 GitHub；exe 第一个源就成功，不该继续往下试。
     expect(sums.urls.every(url => isCnbUrl(url) || isGithubUrl(url))).toBe(true)
-    const [first] = buildRuntimeBinarySources(PINNED_VERSION)
+    const [first] = buildRuntimeBinarySources(TARGET_VERSION)
     expect(urls).toEqual([first.url])
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
     expect(progress.at(-1)).toEqual({
       progress: 100,
-      message: `Runtime 已更新到 ${PINNED_VERSION}`,
+      message: `Runtime 已更新到 ${TARGET_VERSION}`,
     })
+  })
+
+  it('装的是比线上最新旧的一版：下载并替换成线上最新', async () => {
+    installedVersion = INSTALLED_VERSION
+    const { download, urls } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+    const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+    expect(outcome.status).toBe('upgraded')
+    expect(outcome.target).toEqual(TARGET)
+    expect(urls).toEqual([buildRuntimeBinarySources(TARGET_VERSION)[0].url])
+    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+  })
+
+  it('装的是比线上最新更新的一版：保留本地，不下载也不降级', async () => {
+    installedVersion = 'v0.9.0'
+    const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+    const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+    expect(outcome).toEqual({ status: 'current', target: TARGET })
+    expect(download).not.toHaveBeenCalled()
+    expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+    expect(installDir()).toEqual(['auto-mas-runtime.exe'])
   })
 
   it('版本问不出来时按需要更换处理', async () => {
@@ -386,9 +361,9 @@ describe('syncRuntimeBinary', () => {
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
   })
 
-  it('本体回退时 Runtime 跟着退回旧版本', async () => {
-    // 装的是比钉扎更新的一版，同样要换回钉扎那版。
-    installedVersion = 'v0.9.0'
+  it.each(['dev', 'nightly'])('自报版本不合法（%s）时同样按需要更换处理', async version => {
+    // 开发者本地构建自报 `dev`：不能当成「本地更高」放过，否则会一直不更新。
+    installedVersion = version
     const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
     const outcome = await syncRuntimeBinary(syncOptions({ download }))
@@ -472,7 +447,7 @@ describe('syncRuntimeBinary', () => {
     )
 
     expect(outcome.status).toBe('upgraded')
-    expect(stub.urls).toEqual([buildRuntimeBinarySources(PINNED_VERSION)[0].url])
+    expect(stub.urls).toEqual([buildRuntimeBinarySources(TARGET_VERSION)[0].url])
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
   })
 
@@ -503,7 +478,7 @@ describe('syncRuntimeBinary', () => {
     expect(outcome.error).toContain('连接超时')
     // 给人看的部分：先检查网络，实在不行手动下载 CNB 那份放到安装目录。
     expect(outcome.error).toContain('请检查网络后重试')
-    expect(outcome.error).toContain(buildRuntimeBinarySources(PINNED_VERSION)[0].url)
+    expect(outcome.error).toContain(buildRuntimeBinarySources(TARGET_VERSION)[0].url)
     expect(outcome.error).toContain(path.dirname(runtimePath))
     expect(stub.urls).toHaveLength(5)
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
@@ -534,7 +509,7 @@ describe('syncRuntimeBinary', () => {
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
   })
 
-  it('exe 不存在时也能装上钉扎版本', async () => {
+  it('exe 不存在时也能装上线上最新版', async () => {
     installedVersion = null
     fs.rmSync(runtimePath)
     const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
@@ -596,7 +571,7 @@ describe('syncRuntimeBinary', () => {
       expect(secondProgress.at(-1)).toEqual(firstProgress.at(-1))
     })
 
-    it('在途的是另一个版本时，等它结束后再按本次钉扎同步一次，不拿它的结果冒充', async () => {
+    it('在途的是另一个版本时，等它结束后再按本次目标核对一次，不拿它的结果冒充', async () => {
       const OTHER_VERSION = 'v0.1.9'
       const OTHER_BINARY = 'other-runtime-binary'
       let finishOther: (() => void) | undefined
@@ -623,11 +598,11 @@ describe('syncRuntimeBinary', () => {
           ? { kind: 'text', text: sumsFor(OTHER_BINARY, runtimeAssetName(OTHER_VERSION)) }
           : { kind: 'text', text: sumsFor(NEW_BINARY) }
       )
-      // 另一版换上后自报 v0.1.9，本次要的是 v0.1.5，所以后来者必须再换一次。
+      // 另一版换上后自报 v0.1.9，本次要的是 v0.1.5：只升不降，第二次核对后保留本地。
       const versionOf = vi.fn(async (target: string) => {
         const content = fs.readFileSync(target, 'utf8')
         if (content === OTHER_BINARY) return OTHER_VERSION
-        if (content === NEW_BINARY) return PINNED_VERSION
+        if (content === NEW_BINARY) return TARGET_VERSION
         return INSTALLED_VERSION
       })
 
@@ -636,7 +611,7 @@ describe('syncRuntimeBinary', () => {
           download,
           fetchText,
           readVersion: versionOf,
-          pin: { version: OTHER_VERSION },
+          target: { version: OTHER_VERSION },
         })
       )
       const second = syncRuntimeBinary(syncOptions({ download, fetchText, readVersion: versionOf }))
@@ -645,11 +620,11 @@ describe('syncRuntimeBinary', () => {
 
       const [firstOutcome, secondOutcome] = await Promise.all([first, second])
 
-      expect(firstOutcome).toMatchObject({ status: 'upgraded', pin: { version: OTHER_VERSION } })
-      expect(secondOutcome).toMatchObject({ status: 'upgraded', pin: { version: PINNED_VERSION } })
-      // 两轮各一份 exe，最终落盘的是后来者要的那一版。
-      expect(download).toHaveBeenCalledTimes(2)
-      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(firstOutcome).toMatchObject({ status: 'upgraded', target: { version: OTHER_VERSION } })
+      // 后来者没有被前一次的结果冒充：它按本次目标重新核对，发现本地更高就保留。
+      expect(secondOutcome).toMatchObject({ status: 'current', target: TARGET })
+      expect(download).toHaveBeenCalledTimes(1)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OTHER_BINARY)
     })
 
     it('上一次结束后再调用会重新核对，而不是复用旧结果', async () => {
@@ -668,7 +643,7 @@ describe('syncRuntimeBinary', () => {
   describe('慢源上限', () => {
     /** 前 `stallCount` 个 exe 源永远不结束，直到测试自己放行；其余请求立刻成功。 */
     function createStallingDownload(stallCount = 1) {
-      const sources = buildRuntimeBinarySources(PINNED_VERSION)
+      const sources = buildRuntimeBinarySources(TARGET_VERSION)
       const urls: string[] = []
       let releaseStalled: (() => void) | undefined
       const stalled = new Promise<void>(resolve => {
@@ -716,11 +691,11 @@ describe('syncRuntimeBinary', () => {
     })
 
     it('一个可信来源的清单停滞时用另一个的，不等它', async () => {
-      const never = new Promise<RuntimePinFetchOutcome>(() => {})
+      const never = new Promise<RuntimeTextFetchOutcome>(() => {})
       const fetchText = vi.fn((url: string) =>
         isCnbUrl(url)
           ? never
-          : Promise.resolve<RuntimePinFetchOutcome>({ kind: 'text', text: sumsFor(NEW_BINARY) })
+          : Promise.resolve<RuntimeTextFetchOutcome>({ kind: 'text', text: sumsFor(NEW_BINARY) })
       )
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
       const startedAt = Date.now()
@@ -753,7 +728,7 @@ describe('syncRuntimeBinary', () => {
 
   describe('取消', () => {
     it('版本一致时不看取消判据，直接判已一致', async () => {
-      installedVersion = PINNED_VERSION
+      installedVersion = TARGET_VERSION
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
       const outcome = await syncRuntimeBinary(syncOptions({ download, isCancelled: () => true }))
@@ -882,6 +857,24 @@ describe('syncRuntimeBinary', () => {
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
     })
 
+    it('下载到的 exe 自报版本与目标版本不一致：按失败处理并还原旧文件', async () => {
+      // Release 资产自报的版本和 tag 对不上：文件哈希没错，但装上去「是否最新」永远不成立。
+      newBinaryVersion = 'v0.9.9'
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+      const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+      expect(outcome.status).toBe('failed')
+      expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
+      expect(outcome.error).toContain('自报版本为 v0.9.9')
+      expect(outcome.error).toContain(`与线上最新 ${TARGET_VERSION} 不一致`)
+      expect(outcome.error).toContain('已恢复原来的文件')
+      // 不匹配的新文件不能成为最终状态。
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+      expect(fs.existsSync(`${runtimePath}.old`)).toBe(false)
+      expect(installDir()).toEqual(['auto-mas-runtime.exe'])
+    })
+
     it('新文件跑不起来又被占用换不回去：备份留在 .old，提示下次启动会换回', async () => {
       newBinaryVersion = null
       const newInPlace = () => {
@@ -918,7 +911,7 @@ describe('syncRuntimeBinary', () => {
 
       expect(outcome.status).toBe('failed')
       expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
-      expect(outcome.error).toContain('原来的文件已不在')
+      expect(outcome.error).toContain('本机没有可回退的旧版本')
       expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
     })
 
@@ -946,14 +939,15 @@ describe('syncRuntimeBinary', () => {
       expect(renameHook.calls.filter(([from, to]) => isRestore(from, to))).toHaveLength(2)
     })
 
-    it('exe 能跑时才清陈旧备份', async () => {
+    it('exe 自报版本与目标一致时才清陈旧备份', async () => {
       fs.writeFileSync(`${runtimePath}.old`, '上次留下的备份', 'utf8')
-      installedVersion = PINNED_VERSION
+      installedVersion = TARGET_VERSION
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
       const outcome = await syncRuntimeBinary(syncOptions({ download }))
 
       expect(outcome.status).toBe('current')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
       expect(installDir()).toEqual(['auto-mas-runtime.exe'])
     })
 
@@ -964,7 +958,7 @@ describe('syncRuntimeBinary', () => {
       const versionOf = vi.fn(async (target: string) => {
         const content = fs.readFileSync(target, 'utf8')
         if (content === OLD_BINARY) return INSTALLED_VERSION
-        if (content === NEW_BINARY) return PINNED_VERSION
+        if (content === NEW_BINARY) return TARGET_VERSION
         return null
       })
       const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
@@ -1031,252 +1025,170 @@ describe('hashFileSha256', () => {
   })
 })
 
-// ==================== 远端钉扎（第 0 步） ====================
+// ==================== 第 0 步：对齐线上最新版 ====================
 
-describe('buildRuntimePinSources', () => {
-  it('CNB 与 GitHub 各一个，都指向目标版本的发布分支上的 res/runtime-version.txt', () => {
-    const sources = buildRuntimePinSources('v5.5.0-beta.6')
-
-    expect(sources.map(source => source.key)).toEqual(['cnb', 'github'])
-    expect(sources[0].url).toBe(
-      'https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/git/raw/release/v5.5.0-beta.6/res/runtime-version.txt'
-    )
-    expect(sources[1].url).toBe(
-      'https://raw.githubusercontent.com/AUTO-MAS-Project/AUTO-MAS/release/v5.5.0-beta.6/res/runtime-version.txt'
-    )
-  })
-})
-
-describe('fetchRemoteRuntimeBinaryPin', () => {
-  const TARGET = 'v5.5.0-beta.6'
-  const isCnb = (url: string) => url.includes('cnb.cool')
-
-  /** 按 URL 决定每个来源的回答；`delayMs` 让某个来源慢一点，验证「先到先用」。 */
-  function fetcher(
-    plan: (url: string) => RuntimePinFetchOutcome,
-    delayMs: (url: string) => number = () => 0
-  ) {
-    const calls: string[] = []
-    const fetchText = vi.fn(async (url: string) => {
-      calls.push(url)
-      const delay = delayMs(url)
-      if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
-      return plan(url)
-    })
-    return { fetchText, calls }
-  }
-
-  it('两个来源同时发起，先给出合法版本号的那个胜出，不等另一个', async () => {
-    const slow = new Promise<RuntimePinFetchOutcome>(() => {})
-    const fetchText = vi.fn((url: string) =>
-      isCnb(url)
-        ? slow
-        : Promise.resolve<RuntimePinFetchOutcome>({ kind: 'text', text: 'v0.1.10\n' })
-    )
-
-    const lookup = await fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })
-
-    expect(lookup).toEqual({ status: 'pinned', pin: { version: 'v0.1.10' }, source: 'github' })
-    expect(fetchText).toHaveBeenCalledTimes(2)
-  })
-
-  it('一个来源慢、一个来源快时用快的那个，版本号前后空白与换行都忽略', async () => {
-    const { fetchText } = fetcher(
-      url => ({ kind: 'text', text: isCnb(url) ? '  v0.1.9\r\n' : 'v0.1.10\n' }),
-      url => (isCnb(url) ? 0 : 50)
-    )
-
-    const lookup = await fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })
-
-    expect(lookup).toEqual({ status: 'pinned', pin: { version: 'v0.1.9' }, source: 'cnb' })
-  })
-
-  it('一个来源 404、另一个网络失败时按取不到处理，不能当成没有钉扎', async () => {
-    const { fetchText } = fetcher(url =>
-      isCnb(url) ? { kind: 'missing' } : { kind: 'failed', error: 'ECONNRESET' }
-    )
-
-    const lookup = await fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })
-
-    expect(lookup.status).toBe('unavailable')
-    if (lookup.status !== 'unavailable') return
-    expect(lookup.error).toContain('CNB: HTTP 404')
-    expect(lookup.error).toContain('GitHub: ECONNRESET')
-  })
-
-  it('两个来源都明确回答 404 时才按未钉扎处理', async () => {
-    const { fetchText } = fetcher(() => ({ kind: 'missing' }))
-
-    await expect(fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })).resolves.toEqual({
-      status: 'unpinned',
-    })
-  })
-
-  it('两个来源都失败时报取不到，原因里两个来源都点名', async () => {
-    const { fetchText } = fetcher(url => ({
-      kind: 'failed',
-      error: isCnb(url) ? '15 秒内没有响应' : 'ECONNREFUSED',
-    }))
-
-    const lookup = await fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })
-
-    expect(lookup.status).toBe('unavailable')
-    if (lookup.status !== 'unavailable') return
-    expect(lookup.error).toContain('CNB: 15 秒内没有响应')
-    expect(lookup.error).toContain('GitHub: ECONNREFUSED')
-  })
-
-  it('返回 200 但正文不是版本号（门户页、代理错误页）时算失败而不是 404', async () => {
-    const { fetchText } = fetcher(url =>
-      isCnb(url) ? { kind: 'text', text: '<html>login required</html>' } : { kind: 'missing' }
-    )
-
-    const lookup = await fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })
-
-    expect(lookup.status).toBe('unavailable')
-    if (lookup.status !== 'unavailable') return
-    expect(lookup.error).toContain('CNB: 返回的内容不是版本号')
-  })
-
-  it('抓取函数抛异常时按该来源失败处理，不让整个查询挂掉', async () => {
-    const fetchText = vi.fn((url: string) =>
-      isCnb(url)
-        ? Promise.reject(new Error('boom'))
-        : Promise.resolve<RuntimePinFetchOutcome>({ kind: 'text', text: 'v0.1.10' })
-    )
-
-    await expect(fetchRemoteRuntimeBinaryPin(TARGET, { fetchText })).resolves.toEqual({
-      status: 'pinned',
-      pin: { version: 'v0.1.10' },
-      source: 'github',
-    })
-  })
-})
-
-describe('alignRuntimeBinaryWithVersion', () => {
-  const TARGET = 'v5.5.0-beta.6'
-
+describe('alignRuntimeBinaryWithLatest', () => {
   function alignOptions(
-    lookup: RemoteRuntimePinLookup,
-    extra: Partial<Parameters<typeof alignRuntimeBinaryWithVersion>[0]> = {}
+    lookup: LatestRuntimeVersionLookup,
+    extra: Partial<RuntimeBinaryAlignOptions> = {}
   ) {
-    const fetchPin = vi.fn(async () => lookup)
-    const sync = vi.fn(async (options: RuntimeBinarySyncOptions) => ({
-      status: 'upgraded' as const,
-      pin: options.pin,
-    }))
-    return {
-      fetchPin,
+    const fetchLatest = vi.fn(
+      async (_channel: string): Promise<LatestRuntimeVersionLookup> => lookup
+    )
+    const sync = vi.fn(
+      async (options: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> => ({
+        status: 'upgraded',
+        target: options.target,
+      })
+    )
+    const options: RuntimeBinaryAlignOptions = {
+      runtimePath,
+      appRoot: workspace,
+      channel: 'stable',
+      fetchLatest,
       sync,
-      options: { version: TARGET, runtimePath, appRoot: workspace, fetchPin, sync, ...extra },
+      ...extra,
     }
+    return { fetchLatest, sync, options }
   }
 
-  it('按目标版本读远端钉扎，再按钉扎同步 exe，结果带上钉扎来源', async () => {
-    const { fetchPin, sync, options } = alignOptions({
-      status: 'pinned',
-      pin: PIN,
+  it('解析线上最新版后按目标版本同步 exe，结果带上目标与来源', async () => {
+    const { fetchLatest, sync, options } = alignOptions({
+      status: 'resolved',
+      version: TARGET_VERSION,
       source: 'cnb',
     })
     const progress: RuntimeBinarySyncProgress[] = []
 
-    const result = await alignRuntimeBinaryWithVersion({
+    const result = await alignRuntimeBinaryWithLatest({
       ...options,
       onProgress: update => progress.push(update),
     })
 
-    expect(fetchPin).toHaveBeenCalledWith(TARGET)
+    expect(fetchLatest).toHaveBeenCalledWith('stable')
     expect(sync).toHaveBeenCalledTimes(1)
-    expect(sync.mock.calls[0][0]).toMatchObject({ runtimePath, appRoot: workspace, pin: PIN })
-    expect(result).toEqual({ status: 'upgraded', pin: PIN, pinSource: 'cnb' })
-    expect(progress[0]).toEqual({ progress: 0, message: `正在确认 ${TARGET} 需要的 Runtime 版本` })
+    expect(sync.mock.calls[0][0]).toMatchObject({
+      runtimePath,
+      appRoot: workspace,
+      target: TARGET,
+    })
+    expect(result).toEqual({ status: 'upgraded', target: TARGET, targetSource: 'cnb' })
+    expect(progress[0]).toEqual({ progress: 0, message: '正在获取线上最新的 Runtime 版本' })
   })
 
-  it('目标分支没有钉扎文件时什么都不做', async () => {
-    const { sync, options } = alignOptions({ status: 'unpinned' })
+  it('同步结果为 current 时原样带回，并附上目标来源', async () => {
+    const { options } = alignOptions({
+      status: 'resolved',
+      version: TARGET_VERSION,
+      source: 'github',
+    })
+    const currentSync = vi.fn(
+      async (syncOptions: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> => ({
+        status: 'current',
+        target: syncOptions.target,
+      })
+    )
 
-    await expect(alignRuntimeBinaryWithVersion(options)).resolves.toEqual({ status: 'unpinned' })
-    expect(sync).not.toHaveBeenCalled()
+    const result = await alignRuntimeBinaryWithLatest({ ...options, sync: currentSync })
+
+    expect(result).toEqual({ status: 'current', target: TARGET, targetSource: 'github' })
+    expect(currentSync).toHaveBeenCalledWith(expect.objectContaining({ target: TARGET }))
   })
 
-  it('钉扎取不到时按失败返回，原因是一句能照着做的话', async () => {
-    const { sync, options } = alignOptions({
-      status: 'unavailable',
-      error: 'CNB: 15 秒内没有响应；GitHub: ECONNREFUSED',
+  it('AUTO_MAS_RUNTIME_EXE 指定的 Runtime 连最新版本都不解析', async () => {
+    process.env[RUNTIME_EXE_ENV] = runtimePath
+    const { fetchLatest, sync, options } = alignOptions({
+      status: 'resolved',
+      version: TARGET_VERSION,
+      source: 'cnb',
     })
 
-    const result = await alignRuntimeBinaryWithVersion(options)
-
-    expect(result.status).toBe('failed')
-    expect(result.code).toBe(RUNTIME_PIN_UNAVAILABLE)
-    expect(result.error).toContain(TARGET)
-    expect(result.error).toContain('请检查网络后重试')
-    expect(result.error).toContain('ECONNREFUSED')
+    await expect(alignRuntimeBinaryWithLatest(options)).resolves.toEqual({ status: 'skipped' })
+    expect(fetchLatest).not.toHaveBeenCalled()
     expect(sync).not.toHaveBeenCalled()
   })
 
-  it('AUTO_MAS_RUNTIME_EXE 指定的 Runtime 连钉扎都不读', async () => {
-    process.env[RUNTIME_EXE_ENV] = runtimePath
-    const { fetchPin, sync, options } = alignOptions({ status: 'pinned', pin: PIN, source: 'cnb' })
-
-    await expect(alignRuntimeBinaryWithVersion(options)).resolves.toEqual({ status: 'skipped' })
-    expect(fetchPin).not.toHaveBeenCalled()
-    expect(sync).not.toHaveBeenCalled()
-  })
-
-  it('读到钉扎之后已被取消时不再同步', async () => {
-    const { sync, options } = alignOptions(
-      { status: 'pinned', pin: PIN, source: 'github' },
+  it('解析到最新版之后已被取消时不再同步', async () => {
+    const { fetchLatest, sync, options } = alignOptions(
+      { status: 'resolved', version: TARGET_VERSION, source: 'github' },
       { isCancelled: () => true }
     )
 
-    const result = await alignRuntimeBinaryWithVersion(options)
+    const result = await alignRuntimeBinaryWithLatest(options)
 
     expect(result).toEqual({
       status: 'cancelled',
-      pin: PIN,
-      pinSource: 'github',
+      target: TARGET,
+      targetSource: 'github',
       code: RUNTIME_BINARY_CANCELLED,
     })
+    expect(fetchLatest).toHaveBeenCalledTimes(1)
+    expect(sync).not.toHaveBeenCalled()
+  })
+
+  it('解析不到线上最新版时按失败返回，原因是一句能照着做的话，网络不可用标记原样带回', async () => {
+    const { fetchLatest, sync, options } = alignOptions({
+      status: 'unavailable',
+      error: 'CNB: 15 秒内没有响应；GitHub: ECONNREFUSED',
+      networkUnavailable: true,
+    })
+
+    const result = await alignRuntimeBinaryWithLatest(options)
+
+    expect(result.status).toBe('failed')
+    expect(result.code).toBe(RUNTIME_LATEST_UNAVAILABLE)
+    expect(result.networkUnavailable).toBe(true)
+    expect(result.target).toBeUndefined()
+    expect(result.error).toContain('请检查网络后重试')
+    expect(result.error).toContain('ECONNREFUSED')
+    expect(fetchLatest).toHaveBeenCalledTimes(1)
     expect(sync).not.toHaveBeenCalled()
   })
 
   it('同步失败的原因与结果码原样带回', async () => {
-    const { options } = alignOptions({ status: 'pinned', pin: PIN, source: 'cnb' })
-    const sync = vi.fn(async () => ({
-      status: 'failed' as const,
-      pin: PIN,
-      error: '没能下载到本版本需要的 Runtime v0.1.5（…）。请检查网络后重试',
-      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
-    }))
+    const { options } = alignOptions({
+      status: 'resolved',
+      version: TARGET_VERSION,
+      source: 'cnb',
+    })
+    const sync = vi.fn(
+      async (syncOptions: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> => ({
+        status: 'failed',
+        target: syncOptions.target,
+        error: `没能下载到线上最新的 Runtime ${TARGET_VERSION}（…）。请检查网络后重试`,
+        code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      })
+    )
 
-    const result = await alignRuntimeBinaryWithVersion({ ...options, sync })
+    const result = await alignRuntimeBinaryWithLatest({ ...options, sync })
 
     expect(result).toMatchObject({
       status: 'failed',
       code: RUNTIME_BINARY_DOWNLOAD_FAILED,
-      pinSource: 'cnb',
+      target: TARGET,
+      targetSource: 'cnb',
     })
     expect(result.error).toContain('请检查网络后重试')
   })
 
-  it('默认实现真的走 syncRuntimeBinary：钉扎版本与 exe 一致时判已一致', async () => {
-    installedVersion = PINNED_VERSION
-    const fetchPin = vi.fn(async (): Promise<RemoteRuntimePinLookup> => ({
-      status: 'pinned',
-      pin: PIN,
+  it('默认实现真的走 syncRuntimeBinary：目标版本与 exe 一致时判已一致', async () => {
+    installedVersion = TARGET_VERSION
+    const fetchLatest = vi.fn(async (): Promise<LatestRuntimeVersionLookup> => ({
+      status: 'resolved',
+      version: TARGET_VERSION,
       source: 'cnb',
     }))
 
-    const result = await alignRuntimeBinaryWithVersion({
-      version: TARGET,
+    const result = await alignRuntimeBinaryWithLatest({
       runtimePath,
       appRoot: workspace,
-      fetchPin,
+      channel: 'stable',
+      fetchLatest,
+      // 对齐本身不暴露 readVersion；这里通过 sync 包装把它注入真实同步实现，exe 仍是测试目录里的文本文件。
       sync: options => syncRuntimeBinary({ ...options, readVersion }),
     })
 
-    expect(result).toEqual({ status: 'current', pin: PIN, pinSource: 'cnb' })
+    expect(result).toEqual({ status: 'current', target: TARGET, targetSource: 'cnb' })
     expect(readVersion).toHaveBeenCalledTimes(1)
   })
 })

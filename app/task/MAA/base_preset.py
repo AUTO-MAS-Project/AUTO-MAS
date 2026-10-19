@@ -4,10 +4,10 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from app.utils.io import read_file, write_file
+from app.utils.io import write_file
 
 MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
-"""已收起的活动优先原生任务原文；仅随 MAS owner 配置保存，不下发给 MAA。"""
+"""历史活动优先侧车文件；保留时不复制到 MAA 运行目录。"""
 
 _MAA_STAMINA_TASK_ALIASES = {
     ("DepotMaintain", "活动库存保持"): ("DepotMaintain", "活动关均衡理智"),
@@ -52,69 +52,19 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
-def capture_maa_legacy_activity_sources(
-    config_dir: Path,
-    gui_new_set: dict,
-    *,
-    current_configuration: str = "Default",
-) -> None:
-    """收起旧活动优先入口前，按配置方案保留其完整原生高级设置。"""
+def _fill_missing(target: dict, defaults: dict) -> None:
+    """把 ``defaults`` 里 ``target`` 缺失的键补进去；已有值一律不动。"""
 
-    configurations = gui_new_set.get("Configurations")
-    if not isinstance(configurations, dict):
-        return
-    path = config_dir / MAA_STAMINA_LEGACY_FILENAME
-    sources = read_file(path) if path.exists() else {}
-    if not isinstance(sources, dict):
-        sources = {}
-    changed = False
-    for name, configuration in configurations.items():
-        if not isinstance(configuration, dict):
-            continue
-        queue = configuration.get("TaskQueue")
-        if not isinstance(queue, list):
-            continue
-        source = next(
-            (
-                task
-                for task in queue
-                if maa_task_identity(task) == ("Fight", "活动关优先")
-            ),
-            None,
-        )
-        if source is not None and sources.get(name) != source:
-            sources[name] = deepcopy(source)
-            changed = True
-    if current_configuration != "Default" and isinstance(
-        configurations.get(current_configuration), dict
-    ):
-        # 当前方案会折叠成 Default；保留来源也必须随之对齐，不能继承旧 Default。
-        selected = sources.get(current_configuration)
-        if selected is not None and sources.get("Default") != selected:
-            sources["Default"] = deepcopy(selected)
-            changed = True
-        elif selected is None and "Default" in sources:
-            del sources["Default"]
-            changed = True
-    if changed:
-        write_file(path, sources)
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = deepcopy(value)
+        elif isinstance(target[key], dict) and isinstance(value, dict):
+            _fill_missing(target[key], value)
 
 
-def load_maa_stamina_legacy_task(
-    config_dir: Path, configuration: str = "Default"
-) -> dict | None:
-    """从当前 MAS owner 读取已收起的活动优先来源，不读取安装目录残留。"""
-
-    path = config_dir / MAA_STAMINA_LEGACY_FILENAME
-    if not path.exists():
-        return None
-    sources = read_file(path)
-    if not isinstance(sources, dict):
-        return None
-    task = sources.get(configuration)
-    return (
-        deepcopy(task) if maa_task_identity(task) == ("Fight", "活动关优先") else None
-    )
+# 随包预设里由 MAA 自己维护、MAS 不该代填的根级键：配置版本与迁移元数据一旦写错
+# 会触发 MAA 的旧格式迁移器，反而把整份配置判成不可解析。
+_MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
 
 
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
@@ -126,6 +76,10 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     already be ``Default``. Folding and the fallback must therefore run
     unconditionally, or the later hard indexing of ``Global`` /
     ``Configurations["Default"]`` raises ``KeyError``.
+
+    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
     """
 
     if not isinstance(gui_set.get("Global"), dict):
@@ -151,6 +105,16 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
         if current in configurations:
             configurations["Default"] = configurations[current]
         gui_set["Current"] = "Default"
+
+    for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
+        preset = get_maa_base_preset(name)
+        for key, value in preset.items():
+            if key in _MAA_ROOT_KEYS_NOT_FILLED:
+                continue
+            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
+            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
+                continue
+            _fill_missing(doc, {key: value})
 
 
 def maa_task_identity(task: object) -> tuple[str, str] | None:

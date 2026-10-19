@@ -1,40 +1,15 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
+import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import type { NativeImage, Point, Size, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
   DesktopMascotUpdate,
   DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
-import type { MascotAssets } from '../../src/types/mascotPack'
 import { getMascotLayout, getMascotSize, isMascotVisible } from './desktopMascotGeometry'
-
-export interface DesktopMascotPreferences {
-  appearanceId?: string | null
-  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
-  desktopMascotId?: string | null
-  desktopMascotEnabled?: boolean
-  /** 为空时使用动画包的帧率。 */
-  desktopMascotFps?: number | null
-  desktopMascotAnimationPaused?: boolean
-  desktopMascotIdleMessagePaused?: boolean
-  desktopMascotPosition?: Point
-}
-
-interface DesktopMascotOptions {
-  readPreferences(): DesktopMascotPreferences
-  resolveAssets(
-    selection: Pick<DesktopMascotPreferences, 'appearanceId' | 'desktopMascotId'>
-  ): MascotAssets | null
-  savePosition(position: Point): void
-  saveAnimationPaused(paused: boolean): void
-  saveIdleMessagePaused(paused: boolean): void
-  getMainWindow(): BrowserWindow | null
-  onError(error: unknown): void
-}
+import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
 
@@ -51,7 +26,35 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
   return mask
 }
 
-export class DesktopMascotService {
+/** 各动作占连续的行，末行未用的格子不参与显示和鼠标命中。 */
+function cropAnimationFrames(
+  sheet: NativeImage,
+  columns: number,
+  frameCount: number,
+  actions: number
+): NativeImage[] {
+  const { width, height } = sheet.getSize()
+  const rows = Math.ceil(frameCount / columns)
+  const frameWidth = width / columns
+  const frameHeight = height / (rows * actions)
+  if (sheet.isEmpty() || !Number.isInteger(frameWidth) || !Number.isInteger(frameHeight)) return []
+  const frames: NativeImage[] = []
+  for (let action = 0; action < actions; action++) {
+    for (let frame = 0; frame < frameCount; frame++) {
+      frames.push(
+        sheet.crop({
+          x: (frame % columns) * frameWidth,
+          y: (action * rows + Math.floor(frame / columns)) * frameHeight,
+          width: frameWidth,
+          height: frameHeight,
+        })
+      )
+    }
+  }
+  return frames
+}
+
+export class DesktopMascotService implements DesktopMascotRuntime {
   private disposed = false
   private window: BrowserWindow | null = null
   private data: DesktopMascotData | null = null
@@ -69,7 +72,6 @@ export class DesktopMascotService {
   private animationPaused = false
   private idleMessagePaused = false
   private motionOverride = false
-  private menuLabels: DesktopMascotMenuLabels | null = null
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
@@ -81,10 +83,9 @@ export class DesktopMascotService {
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
-  setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void {
+  setReady(ready: boolean, colors?: DesktopMascotColors): void {
     if (this.disposed) return
     this.ready = ready
-    if (labels) this.menuLabels = labels
     if (colors) this.colors = colors
     if (ready && this.window && this.data) {
       if (colors) this.updateData({ colors })
@@ -242,10 +243,7 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const appearance = this.options.resolveAssets({
-      appearanceId: preferences.appearanceId,
-      desktopMascotId: preferences.desktopMascotId,
-    })
+    const appearance = this.options.resolveAssets()
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
@@ -254,25 +252,10 @@ export class DesktopMascotService {
     const image = this.decodedImage?.image ?? nativeImage.createFromDataURL(appearance.mascotUrl)
     const frames: NativeImage[] = []
     const animation = appearance.mascot?.animation
+    const frameCount = animation?.frameCount ?? animation?.columns ?? 0
     if (animation && appearance.mascotAnimationUrl) {
       const sheet = nativeImage.createFromDataURL(appearance.mascotAnimationUrl)
-      const sheetSize = sheet.getSize()
-      const frameWidth = sheetSize.width / animation.columns
-      const frameHeight = sheetSize.height / 2
-      if (!sheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              sheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(sheet, animation.columns, frameCount, 2))
     }
     const hasAnimation = frames.length > 0
     const needsImageDecode =
@@ -286,37 +269,14 @@ export class DesktopMascotService {
     }
     if (hasAnimation && animation && appearance.mascotResultUrl) {
       const resultSheet = nativeImage.createFromDataURL(appearance.mascotResultUrl)
-      const size = resultSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      const frameHeight = size.height / 2
-      if (!resultSheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              resultSheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(resultSheet, animation.columns, frameCount, 2))
     }
     let hasDrag = false
     if (hasAnimation && animation && appearance.mascotDragUrl) {
       const dragSheet = nativeImage.createFromDataURL(appearance.mascotDragUrl)
-      const size = dragSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      if (!dragSheet.isEmpty() && Number.isInteger(frameWidth)) {
-        hasDrag = true
-        for (let column = 0; column < animation.columns; column++) {
-          frames.push(
-            dragSheet.crop({ x: column * frameWidth, y: 0, width: frameWidth, height: size.height })
-          )
-        }
-      }
+      const dragFrames = cropAnimationFrames(dragSheet, animation.columns, frameCount, 1)
+      hasDrag = dragFrames.length > 0
+      frames.push(...dragFrames)
     }
     let hasLook = false
     if (hasAnimation && appearance.mascotLookUrl) {
@@ -342,7 +302,7 @@ export class DesktopMascotService {
     }
 
     const currentBounds = this.window?.getBounds()
-    const mainBounds = this.options.getMainWindow()?.getBounds()
+    const mainBounds = this.options.getInitialBounds()
     const saved = currentBounds
       ? {
           x: currentBounds.x + (this.data?.offsetX ?? 0),
@@ -420,6 +380,7 @@ export class DesktopMascotService {
             animation: {
               imageUrl: appearance.mascotAnimationUrl!,
               columns: animation.columns,
+              frameCount,
               idleFps: animation.idleFps ?? 4,
               workingFps: animation.workingFps ?? 8,
               ...(hasLook ? { lookImageUrl: appearance.mascotLookUrl } : {}),
@@ -454,7 +415,9 @@ export class DesktopMascotService {
       })
       this.window = win
       const createdWindow = win
-      win.webContents.on('context-menu', () => this.showContextMenu(createdWindow))
+      win.webContents.on('context-menu', () => {
+        if (this.window === createdWindow) this.options.onContextMenu(screen.getCursorScreenPoint())
+      })
       const cancelRendererDrag = (): void => {
         if (this.window !== createdWindow) return
         this.layoutRevision++
@@ -507,6 +470,7 @@ export class DesktopMascotService {
     this.finishDrag(true)
     const win = this.window
     this.window = null
+    if (win) this.options.onClosed()
     this.data = null
     this.decodedImage = null
     this.maskSource = null
@@ -632,48 +596,6 @@ export class DesktopMascotService {
       if (wasDragging && this.window && !this.window.isDestroyed())
         this.updateData({ dragging: false, dragSession: this.data?.dragSession })
     }
-  }
-
-  private showContextMenu(win: BrowserWindow): void {
-    const labels = this.menuLabels
-    if (this.window !== win || !labels) return
-    const animationPaused =
-      this.animationPaused ||
-      (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
-    Menu.buildFromTemplate([
-      {
-        label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !this.idleMessagePaused
-          try {
-            this.options.saveIdleMessagePaused(paused)
-            this.idleMessagePaused = paused
-            if (this.data) {
-              this.updateData({ idleMessage: paused ? undefined : this.idleMessage })
-            }
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-      {
-        label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
-        click: () => {
-          if (this.window !== win) return
-          const paused = !animationPaused
-          try {
-            this.options.saveAnimationPaused(paused)
-            this.animationPaused = paused
-            this.motionOverride = true
-            this.updateData({ motionOverride: true })
-            this.setActivity(this.working, this.animate)
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-    ]).popup({ window: win })
   }
 
   private updateData(update: DesktopMascotUpdate): void {

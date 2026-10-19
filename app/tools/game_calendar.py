@@ -24,6 +24,7 @@ CALENDAR_GAMES = {
     "bluearchive": ("ba-cn", "碧蓝档案"),
     "arknights": ("ak", "明日方舟"),
     "stellasora": ("xtlr", "星塔旅人"),
+    "infinitynikki": ("infinitynikki", "无限暖暖"),
 }
 BLUEARCHIVE_SERVERS = {
     "cn": ("ba-cn", "国服"),

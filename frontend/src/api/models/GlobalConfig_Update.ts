@@ -12,10 +12,6 @@ export type GlobalConfig_Update = {
      */
     PauseUntil?: (string | null);
     /**
-     * 后端热更定时任务避让分钟数，默认 5，0 仍优先执行已到点任务
-     */
-    HotUpdateAvoidMinutes?: (number | null);
-    /**
      * 更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源
      */
     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | 'CNB' | null);

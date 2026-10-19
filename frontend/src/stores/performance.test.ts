@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { getConfig, saveConfig } from '@/utils/config'

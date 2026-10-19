@@ -1,5 +1,5 @@
 // 「配置会话改动被丢弃」的共用判定与文案测试（不挂载组件，直接测分支行为）。
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import { translate } from '@/i18n'
 

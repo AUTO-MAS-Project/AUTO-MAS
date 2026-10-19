@@ -482,6 +482,7 @@ async def preview_delete_instance(emulator_id: str, slot: str) -> dict:
 _STORE_OPEN_MESSAGES: dict[str, str] = {
     "launched": "游戏中心已打开",
     "already-running": "游戏中心已在前台",
+    "resumed": "游戏中心已切回前台",
     "no-store": "这个模拟器没有游戏中心",
     "not-installed": "这台模拟器里没有游戏中心",
     "no-adb": "设备没有可用的 ADB 地址，无法打开游戏中心",

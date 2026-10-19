@@ -188,7 +188,7 @@ function isExistingFile(candidate: string): boolean {
 }
 
 /**
- * Runtime 随本体更新时给旧 exe 让路用的备份后缀（`runtimeBinaryService`）。
+ * Runtime 更新（替换线上最新版）时给旧 exe 让路用的备份后缀（`runtimeBinaryService`）。
  *
  * 定义在这里而不是那边：定位 exe 的人要认识它才能在 exe 缺失时把备份找回来，而
  * `runtimeBinaryService` 依赖本模块，反向引用会成环。
@@ -198,7 +198,7 @@ export const RUNTIME_BACKUP_SUFFIX = '.old'
 /**
  * exe 缺失而备份 `<exe>.old` 还在时，把备份改回正式路径。
  *
- * 只有一种情形会留下这个状态：随本体更新替换 exe 时，旧文件已改名让路、新文件没挪进来、
+ * 只有一种情形会留下这个状态：更新 Runtime 替换 exe 时，旧文件已改名让路、新文件没挪进来、
  * 把旧文件改回去也失败（多半是安全软件正抓着它）。此时目录里没有 `auto-mas-runtime.exe`，
  * 任何依赖定位的路径（启动、第 0 步）都进不去，只有定位这一步能救——所以恢复放在这里，
  * 而不是等同步逻辑再来清理。返回是否真的恢复了。
@@ -225,7 +225,7 @@ export function recoverRuntimeBackup(runtimePath: string): boolean {
  * 定位 `auto-mas-runtime.exe`。
  *
  * 优先用环境变量显式指定的路径，其次查安装包捆绑位置 `process.resourcesPath`；捆绑位置
- * 缺失但留有随本体更新的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
+ * 缺失但留有上次更新 Runtime 的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
  * 尚未捆绑时返回 null，由调用方转成 `RUNTIME_NOT_FOUND`。
  */
 export function resolveRuntimeExecutable(): string | null {

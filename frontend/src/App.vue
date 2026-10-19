@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ConfigProvider, message } from 'ant-design-vue'
+import { ConfigProvider } from 'ant-design-vue'
 import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
@@ -19,20 +19,24 @@ import AppearanceDecoration from './components/AppearanceDecoration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
-import { useHomeGreetingStore } from './stores/homeGreeting'
-import { getTaskRuntimeStates, onTaskRuntimeEvent } from './composables/useTaskRuntimeState'
 import { useLocale } from './composables/useLocale.ts'
-import { useDesktopMascot } from './composables/useDesktopMascot'
+import { useDesktopMascotHost } from './composables/useDesktopMascotHost'
+import { useTrayTaskActions } from './composables/useTrayTaskActions'
+import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
+import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
+import { TaskCreateIn } from './api'
 
 const logger = window.electronAPI.getLogger('App组件')
 
 // 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
-const DebugPanel = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
-  : null
+const DebugPanel =
+  import.meta.env.DEV &&
+  (window as Window & { __AUTO_MAS_E2E__?: boolean }).__AUTO_MAS_E2E__ !== true
+    ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
+    : null
 
 const route = useRoute()
-const { antdTheme, activeAppearance, antTokens } = useTheme()
+const { antdTheme } = useTheme()
 const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
@@ -40,7 +44,6 @@ const { playSound } = useAudioPlayer()
 const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
-const homeGreetingStore = useHomeGreetingStore()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -50,53 +53,22 @@ const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
 )
 
-useDesktopMascot(
-  {
-    isStandalonePage,
-    isAppReady,
-    ready: computed(
-      () => isAppReady.value && performanceStore.initialized && !isInitializationPage.value
-    ),
-    colors: computed(() => {
-      // 同主题包切换一样触发同步，即使最终颜色相同也保留原有接线。
-      void activeAppearance.value
-      const tokens = antTokens.value
-      return tokens
-        ? {
-            background: tokens.colorBgElevated,
-            text: tokens.colorText,
-            border: tokens.colorBorder,
-            radius: tokens.borderRadius,
-          }
-        : undefined
+const { trackStartedTask } = useSchedulerLogic()
+useDesktopMascotHost({ isStandalonePage, isInitializationPage, playSound, trackStartedTask })
+useTrayTaskActions({
+  active: computed(
+    () =>
+      !isStandalonePage.value &&
+      (isInitializationPage.value || (isAppReady.value && performanceStore.initialized))
+  ),
+  canStart: () => !isBackendRuntimeUpdating(),
+  onStarted: task =>
+    trackStartedTask({
+      ...task,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      modeLabel: t('scheduler.mode.autoProxy'),
     }),
-    menuLabels: computed(() => {
-      void antdLocale.value
-      return {
-        pauseAnimation: t('setting.basic.mascotPauseAnimation'),
-        resumeAnimation: t('setting.basic.mascotResumeAnimation'),
-        pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
-        resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
-      }
-    }),
-    greeting: computed(() => homeGreetingStore.greeting),
-    working: computed(() => performanceStore.anyScriptRunning),
-    animate: computed(() => !performanceStore.lowPerformanceMode),
-  },
-  {
-    api: {
-      setDesktopMascotReady: window.electronAPI.setDesktopMascotReady,
-      setDesktopMascotActivity: window.electronAPI.setDesktopMascotActivity,
-      setDesktopMascotIdleMessage: window.electronAPI.setDesktopMascotIdleMessage,
-      showDesktopMascotNotice: window.electronAPI.showDesktopMascotNotice,
-      onDesktopMascotError: window.electronAPI.onDesktopMascotError,
-    },
-    tasks: { snapshot: getTaskRuntimeStates, subscribe: onTaskRuntimeEvent },
-    translate: t,
-    reportError: (text, error) => logger.error(text, error),
-    showError: () => message.error(t('setting.basic.desktopMascotFailed')),
-  }
-)
+})
 
 onMounted(async () => {
   logger.info('App组件已挂载')

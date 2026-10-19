@@ -46,9 +46,7 @@ import ctypes
 import re
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from threading import Event
 
@@ -62,6 +60,7 @@ from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -160,26 +159,6 @@ _START_CLICK_INTERVAL_SECONDS = 12.0
 # 以按钮长时间停留原状（未被下载 UI 取代）为被吞判据；自更新「更新」补点共用该节奏
 _UPDATE_CLICK_RETRY_SECONDS = 15.0
 _UPDATE_CLICK_RETRY_LIMIT = 3
-
-
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
 
 
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
@@ -561,7 +540,11 @@ def dismiss_screensaver(*, stop_event: Event | None = None) -> None:
             pyautogui.moveTo(*original_position)
 
 
-def _save_error_screenshot(launcher_path: Path) -> None:
+def _save_error_screenshot(
+    launcher_path: Path,
+    *,
+    on_error_screenshot: Callable[[Path], None] | None = None,
+) -> None:
     """保存启动失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
         target = _find_launcher_hwnd(launcher_path)
@@ -569,11 +552,13 @@ def _save_error_screenshot(launcher_path: Path) -> None:
             target = _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        screenshot_path = save_error_screenshot(
             _capture_window_image(target, activate=False),
             "maaend-launcher-start",
             "launcher-error",
         )
+        if screenshot_path is not None and on_error_screenshot is not None:
+            on_error_screenshot(screenshot_path)
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始启动异常
         logger.warning(f"启动器启动错误截图保存失败: {error}")
@@ -586,6 +571,7 @@ def start_game_via_launcher(
     launcher_path: Path,
     *,
     on_log: Callable[[str], None] | None = None,
+    on_error_screenshot: Callable[[Path], None] | None = None,
     stop_event: Event | None = None,
 ) -> bool:
     """通过官方启动器拉起终末地，直到 Endfield.exe 窗口出现（停在标题界面）。
@@ -606,6 +592,7 @@ def start_game_via_launcher(
     Args:
         launcher_path: 自动识别或手动指定的启动器 exe 路径。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
+        on_error_screenshot: 将本次保存的失败截图交给任务报告。
         stop_event: 异步任务取消时置位，交互线程在下一次操作前退出。
 
     Returns:
@@ -1000,20 +987,27 @@ def start_game_via_launcher(
     except Exception as error:
         _write_diagnostic(f"启动失败: {type(error).__name__}: {error}")
         # 失败留启动器/游戏原图，供排查 OCR 文本漂移
-        _save_error_screenshot(launcher_path)
+        _save_error_screenshot(launcher_path, on_error_screenshot=on_error_screenshot)
         raise
     finally:
         pyautogui.FAILSAFE = previous_failsafe
 
 
 async def async_start_game_via_launcher(
-    launcher_path: Path, *, on_log: Callable[[str], None] | None = None
+    launcher_path: Path,
+    *,
+    on_log: Callable[[str], None] | None = None,
+    on_error_screenshot: Callable[[Path], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
     stop_event = Event()
     worker = asyncio.create_task(
         asyncio.to_thread(
-            start_game_via_launcher, launcher_path, on_log=on_log, stop_event=stop_event
+            start_game_via_launcher,
+            launcher_path,
+            on_log=on_log,
+            on_error_screenshot=on_error_screenshot,
+            stop_event=stop_event,
         )
     )
     try:

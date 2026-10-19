@@ -11,16 +11,6 @@ export default {
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
     legacyFallback:
       'A legacy event index is outside the current range. This run uses the previous first-stage fallback; the saved choice is retained.',
-    budgetConflict:
-      'Overlapping legacy event targets use the custom goal and its existing medicine and Originium allowances. The other allowances remain in the pre-migration backup.',
-    legacySeriesFallback:
-      'The old event battle multiplier cannot be carried over exactly. This run uses single battles; the original setting is retained.',
-    legacyExpiryFallback:
-      'The old custom or event-based expiring-medicine policy cannot be carried over exactly. Expiring medicine is disabled this run; the original setting is retained.',
-    legacyCommonConflict:
-      'The old event sources have different battle-multiplier or expiring-medicine settings. This run uses the more conservative settings; originals are retained.',
-    budgetGateConflict:
-      'The old event stock task disabled medicine or Originium. This restriction is retained, and the corresponding old event-priority allowance is not used this run.',
     name: 'Balanced event farming',
     hint: 'Meet current event stock targets first, then continue with stock keeping and cultivation when targets are met or no stages are available.',
     scopeHint:
@@ -41,8 +31,6 @@ export default {
     staleData:
       'Event data could not be refreshed. Showing the last successfully loaded stages; saved targets are unchanged.',
     summary: 'Current event · {n} stages · stock ratio order',
-    medicineHint:
-      'This potion allowance is assigned to one event plan only. Unused allowance is not transferred to other plans.',
   },
   maaStaminaPipeline: {
     inventoryCultivate: 'Stock keeping and cultivation',
@@ -115,7 +103,6 @@ export default {
     string: 'String',
     fullFilePath: 'Full file path',
     fullDateTime: 'Full date and time',
-    tools: 'Tools',
     themeStore: 'Resource store',
     boolean: 'Boolean',
     fileNameExtension: 'File name with extension',
@@ -261,10 +248,6 @@ export default {
       'A backend update is available — automatic updates are off in development mode',
     backendUpdateTitle: 'Updating the backend to {version}',
     backendUpdateSucceeded: 'The backend has been updated and restarted',
-    backendHotUpdateDetails: 'Backend update recovery',
-    backendHotUpdateReconnect: 'Reconnect',
-    backendHotUpdateFailedConnection:
-      'The updated backend started, but reconnection failed. Your page and drafts have been kept.',
     backendUpdateCancelled: 'The update was cancelled; the backend is unchanged',
     backendUpdateFailedShutdown:
       'The running backend could not be stopped, so the update never started. The current version still works.',
@@ -369,9 +352,6 @@ export default {
       'Saved by position in the list. After an event update the stage at the same position is picked; if that position is gone, it falls back to the first one.',
     maaPickEventStage: 'Pick an event stage',
     maaNoEventStage: 'No event stages to farm right now',
-    maaEventPotion: 'Event stage potions',
-    maaEventPotionHint:
-      'How many sanity potions the event-stage task may use. Normal sanity combat is unaffected.',
     maaCultivate: 'Operator cultivation',
     maaCultivateSettings: 'Cultivation settings',
     maaCultivateShowModules: 'Show module targets',
@@ -1934,7 +1914,7 @@ export default {
       'This project is not listed on MirrorChyan (interface.json has no mirrorchyan_rid), so MAS cannot check it for updates',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
-      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
+      'When MAS has just launched the game, the first task waits before starting; MaaFW initialisation runs in parallel. Desktop games: MAS waits for the window to appear and then for the screen to settle, each for at most this long, and starts early once the screen settles; no wait if the game window is already open. Emulators: after cold-starting the game along with the emulator, MAS waits at most this long, and starts early once the screen shows content and the game has stopped reading from disk, and keeps waiting if the screen is still black at that point; no wait if the game process is already running, in the foreground or not. Freshly started games are usually still loading, and posting tasks too early makes the script report a recognition failure or a stuck game.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     mfwHotkey: 'Key bindings',
@@ -3681,6 +3661,7 @@ export default {
       reverse1999: 'Reverse: 1999 events',
       bluearchive: 'Blue Archive events',
       stellasora: 'Stella Sora events',
+      infinitynikki: 'Infinity Nikki events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -3694,6 +3675,7 @@ export default {
       reverse1999: 'Reverse: 1999',
       bluearchive: 'Blue Archive',
       stellasora: 'Stella Sora',
+      infinitynikki: 'Infinity Nikki',
       arknights: 'Arknights',
     },
     carousel: {
@@ -3731,6 +3713,7 @@ export default {
       nte: 'No Neverness to Everness events running',
       reverse1999: 'No Reverse: 1999 events running',
       stellasora: 'No Stella Sora events running',
+      infinitynikki: 'No Infinity Nikki events running',
       noData: 'No data',
     },
     stella: {
@@ -3755,7 +3738,26 @@ export default {
       noActivity: 'No events',
       unavailable: 'Arknights event data is unavailable',
     },
+    activity: {
+      startsAt: 'Starts {time}',
+      endsAt: 'Ends {time}',
+      schedule: 'Event schedule',
+      refresh: 'Refresh event schedule',
+      permanentGameplay: 'Permanent modes',
+      running: 'Ongoing',
+      upcoming: 'Upcoming',
+      completed: 'Completed',
+      markCompleted: 'Mark “{name}” as completed and stop reminders',
+      undoCompletion: 'Undo completion of “{name}” and resume reminders',
+      completionUnavailable: 'Completion status is unavailable. Events can still be viewed.',
+      completionSaveFailed: 'Failed to save event completion. Please try again.',
+      retryCompletion: 'Retry',
+    },
     endfield: {
+      pools: 'Headhunting',
+      noPools: 'No open headhunting pools',
+      poolStaleMessage: 'Using the last successfully fetched headhunting data',
+      poolUnavailable: 'Headhunting data is unavailable. Event information is unaffected.',
       stale: 'Cached',
       staleMessage: 'Using the last successfully fetched event data',
       unavailable: 'Endfield event data is temporarily unavailable',
@@ -3825,6 +3827,8 @@ export default {
       scrollHint: 'Scroll hint',
       scrollHintVisibility: 'Show the scroll hint',
       activityGroup: 'Games in the carousel',
+      activityDefaults:
+        'Games with managed scripts are shown by default. Manual choices take priority.',
       carouselAutoplay: 'Auto-rotate',
       carouselAutoplayVisibility: 'Auto-rotate the event carousel',
       activityNotesGroup: 'Sign-in status and daily notes on home',
@@ -3877,6 +3881,9 @@ export default {
       internalErrorNotice:
         'This is an internal problem; retrying will not help. Please report it with the log.',
       contactSupportNotice: 'Please report this problem to the developers with the log.',
+      exportLogsHint:
+        'Still stuck? Package the debug folder as a ZIP and share it in the QQ group for help.',
+      joinGroup: 'Join the QQ group for help',
       openLogFailed: 'Could not open the log: {error}',
       doctorEmpty: 'Nothing was checked',
       doctorFailed: 'The environment check failed: {error}',
@@ -4124,46 +4131,6 @@ export default {
       nameDuplicate: 'That plan name is already taken',
     },
   },
-  tools: {
-    title: 'Tools',
-    arknightsPC: 'Arknights PC',
-    statusDisabled: 'Off',
-    statusInvalid: 'The tool status response was invalid',
-    ark: {
-      introTitle: 'What this does',
-      introText:
-        'Arknights lets you deploy while paused, but selecting an operator and stepping frames still is not possible. This tool adds that, for frame-perfect play.',
-      requirementTitle: 'Requirements',
-      reqScale: 'Game UI scale set to',
-      reqRatio: 'Screen ratio',
-      reqRatioHint: '(1280x720 / 1920x1080 recommended)',
-      performanceTitle: 'Performance',
-      perfLabel: 'Precision:',
-      perfValue: '2 effective actions per frame',
-      basicSection: 'Basics',
-      enable: 'Arknights PC frame stepping',
-      enableTip: 'Turn the Arknights PC frame-stepping tool on or off',
-      keySection: 'Key bindings',
-      pressKey: 'Press a key...',
-      clickRecord: 'Click Record to change',
-      record: 'Record',
-      pause: 'Pause the tool',
-      pauseTip: 'Key that pauses the frame-stepping tool',
-      selectDeployed: 'Select a deployed operator',
-      selectDeployedTip:
-        'While the game is paused, hover a deployed operator and press this key to select them',
-      useSkill: 'Use skill',
-      useSkillTip:
-        'While the game is paused, hover a deployed operator and press this key to trigger their skill',
-      retreat: 'Retreat operator',
-      retreatTip:
-        'While the game is paused, hover a deployed operator and press this key to retreat them',
-      nextFrame: 'Next frame',
-      nextFrameTip: 'Advance the game by one frame',
-      anotherQuit: 'Custom quit / pause',
-      anotherQuitTip: 'A custom quit/pause key; only active during a battle',
-    },
-  },
   queue: {
     title: 'Queues',
     loading: 'Loading...',
@@ -4305,6 +4272,10 @@ export default {
     toast: {
       packageNoResponse: 'Packaging logs did not respond. Check the app.',
       packageExported: 'Log archive exported',
+      packageIncomplete: 'Log archive exported. These files could not be exported: {paths}',
+      windowUnavailable: 'Could not package logs because the window is not initialized',
+      directoryMissing: 'The log folder does not exist',
+      noFiles: 'The log folder is empty. There are no files to export',
       packageFailed: 'Could not package logs',
       packageError: 'Error packaging logs: {error}',
       openFolderFailed: 'Could not open the archive folder',
@@ -4337,7 +4308,6 @@ export default {
     },
     control: {
       taskPlaceholder: 'Pick a task',
-      modePlaceholder: 'Pick a mode',
       taskLabel: 'Task:',
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific managed script (defaults to the first)',
@@ -4400,7 +4370,8 @@ export default {
       needRunUsers: 'Select at least one account to run',
       needQueueRunUsers: 'Select at least one account to run',
       loadQueueRunUsersFailed: 'Queue accounts are still loading. Try again later',
-      needTaskAndMode: 'Pick both a task and a mode',
+      needTask: 'Pick a task',
+      loadTaskModeFailed: 'Could not determine how to run this task. Please retry',
       taskOptionsUnavailable: 'Tasks are not loaded yet. Please retry shortly',
       taskStarted: 'Task started',
       startTaskFailed: 'Could not start the task',
@@ -4637,7 +4608,6 @@ export default {
     category: 'Category',
     categories: { all: 'All', theme: 'Themes', mascot: 'Pets' },
     uploadTheme: 'Upload theme',
-    uploadMascot: 'Upload pet',
     title: 'Resource store',
     account: {
       login: 'Sign in to the share site',
@@ -4811,7 +4781,7 @@ export default {
       mascotFpsPackage: 'Follow animation package',
       mascotFpsCustom: 'Custom',
       mascotFpsTip:
-        'Use the package rate or set 1–120 FPS. Press Enter or leave the input to save; the packaged frames loop at the selected rate.',
+        'Follow the animation package or choose 8, 16, 24, 30, 60, or 120 FPS. Changes are saved automatically.',
       importMascot: 'Import pet',
       removeMascot: 'Remove pet',
       mascotImportTip:
@@ -4839,10 +4809,21 @@ export default {
       appearanceAnimationInvalid:
         'Invalid pet animation. Check the PNG sprite sheet layout and frame dimensions.',
       mascotTask: 'Task',
+      mascotQuickStart: 'Quick start',
+      mascotStopTask: 'Stop task',
+      mascotNoTasks: 'No tasks available',
+      mascotNoRunningTasks: 'No running tasks',
+      mascotTasksUnavailable: 'Tasks unavailable. Try again later.',
+      mascotLoadingTasks: 'Loading tasks…',
+      mascotCapabilityUnavailable: 'This action is currently unavailable',
+      mascotStartingTask: 'Starting task…',
+      mascotStoppingTask: 'Stopping task…',
       mascotPauseAnimation: 'Pause animation',
       mascotResumeAnimation: 'Resume animation',
       mascotPauseIdleMessage: 'Pause idle messages',
       mascotResumeIdleMessage: 'Resume idle messages',
+      mascotRefreshIdleMessage: 'Refresh idle message',
+      mascotRefreshUnavailable: 'Unavailable while working or idle messages are paused',
       mascotTaskStarted: 'Getting to work: {name}',
       mascotTaskCompleted: 'All done: {name}',
       mascotTaskFailed: 'Something went wrong. Check task details: {name}',
@@ -5035,11 +5016,8 @@ export default {
       recruit: 'Send top-tier recruitment alerts',
       recruitTip: 'Push an alert when recruitment shows the Senior Operator tag',
       systemSection: 'System notifications',
-      systemEnable: 'Enable system notifications',
       systemTip: 'Sent as system notifications; they do not stay in the action center',
       mailSection: 'Email notifications',
-      mailDoc: 'Open the email configuration docs',
-      mailEnable: 'Enable email notifications',
       mailEnableTip: 'Push notifications by email',
       smtp: 'SMTP server',
       smtpTip: 'SMTP server of the sending mailbox',
@@ -5055,15 +5033,10 @@ export default {
       toTip: 'Mailbox that receives the notifications',
       toPlaceholder: 'Enter the receiving address',
       serverChanSection: 'ServerChan',
-      serverChanDoc: 'Open the ServerChan configuration docs',
-      serverChanEnable: 'Enable ServerChan notifications',
       serverChanTip: 'Push notifications through ServerChan',
       serverChanKey: 'ServerChan key',
       serverChanKeyTip: 'The ServerChan SendKey — see the docs for how to get one',
       serverChanPlaceholder: 'Enter the ServerChan SendKey',
-      cmccNewMsgSection: 'China Mobile 5G messaging (free, China Mobile numbers only)',
-      cmccNewMsgDoc: 'Open the notification guide',
-      cmccNewMsgEnable: 'Enable China Mobile 5G messaging notifications',
       cmccNewMsgTip:
         'Receive task notifications free through China Mobile 5G New Messaging (RCS); China Mobile numbers only',
       cmccNewMsgApiKey: 'Channel API key',
@@ -5071,15 +5044,12 @@ export default {
         'Provided by the China Mobile 5G messaging Channel administrator; starts with ak_ or app_',
       cmccNewMsgApiKeyPlaceholder: 'Enter the China Mobile 5G messaging Channel API key',
       koishiSection: 'Koishi',
-      koishiEnable: 'Enable Koishi notifications',
       koishiTip: 'Push notifications through Koishi',
       koishiWs: 'Koishi WebSocket address',
       koishiWsTip: 'Koishi WebSocket server address; ws:// and wss:// are both supported',
       koishiTokenTip: 'Koishi access token',
       koishiTokenPlaceholder: 'Enter the Koishi token',
       openclawQqSection: 'QQ Official Bot notifications',
-      openclawQqDoc: 'Open the QQ Official Bot guide',
-      openclawQqEnable: 'Enable QQ notifications',
       openclawQqTip: 'Push notifications through the QQ Official Bot',
       openclawQqSetupHint:
         'After scanning the QR code, add the bot as a friend in the same QQ account before testing notifications. Login details are saved automatically.',
@@ -5092,7 +5062,6 @@ export default {
       openclawQqConnecting: 'Connecting',
       openclawQqReconnecting: 'Reconnecting',
       openclawQqUnbound: 'Not bound',
-      openclawQqBindSuccess: 'QQ Official Bot bound successfully',
       openclawQqUnbindSuccess: 'QQ Official Bot unbound',
       openclawQqLoginTitle: 'Bind QQ Official Bot with QR code',
       openclawQqQrAlt: 'QQ Official Bot login QR code',
@@ -5101,8 +5070,6 @@ export default {
       openclawQqQrInvalid: 'The QR code response was invalid. Try again later.',
       openclawQqQrError: 'QR-code login failed. Try again later.',
       openclawQqQrRetry: 'Get a new QR code',
-      webhookSection: 'Custom webhooks',
-      webhookDoc: 'Open the custom webhook configuration docs',
     },
     advanced: {
       backupSection: 'Data backup',
@@ -5140,10 +5107,6 @@ export default {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
       pauseUpdates: 'Pause updates',
-      hotUpdateAvoidMinutes: 'Scheduled task buffer',
-      hotUpdateAvoidMinutesTip:
-        'Defer automatic backend restarts when a scheduled task starts within this window. 0 disables the buffer; default: 5 minutes; maximum: 60 minutes.',
-      hotUpdateMinutes: 'minutes',
       pauseUpdatesTip:
         'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
       pausePlaceholder: 'Select pause end date',

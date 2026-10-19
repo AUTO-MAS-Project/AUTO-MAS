@@ -744,6 +744,7 @@ export interface ScriptIndexItem {
 export interface ScriptDetail {
   uid: string
   type: ScriptType
+  activityGame?: string | null
   name: string
   config:
     | MaaConfig

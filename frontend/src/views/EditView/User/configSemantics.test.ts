@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { createI18n } from 'vue-i18n'
 import zhCN from '../../../i18n/locales/zh-CN'
 import { composeConfigSemantics, type Translate } from './configSemantics'

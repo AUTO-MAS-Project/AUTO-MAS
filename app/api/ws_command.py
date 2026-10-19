@@ -42,8 +42,6 @@ from typing import Any, Callable, Dict, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
-from app.core import TaskManager
-from app.core.lifecycle import BackendBusyError
 from app.utils.logger import get_logger
 
 logger = get_logger("WS命令")
@@ -104,8 +102,9 @@ async def execute_ws_command(
         return {"success": False, "message": f"未找到命令: {endpoint}", "code": 404}
 
     try:
-        param_instance = None
-        if command.params_model is not None:
+        if command.params_model is None:
+            result = await command.func()
+        else:
             try:
                 param_instance = command.params_model(**(params or {}))
             except (TypeError, ValidationError) as e:
@@ -117,16 +116,7 @@ async def execute_ws_command(
                     "message": f"参数错误: {str(e)}",
                     "code": 400,
                 }
-        if endpoint == "core.close":
-            result = await command.func()
-        else:
-            result = await TaskManager.run_backend_operation(
-                lambda: (
-                    command.func(param_instance)
-                    if command.params_model is not None
-                    else command.func()
-                )
-            )
+            result = await command.func(param_instance)
 
         # 归一化返回结果，保持既有对外契约
         if isinstance(result, BaseModel):
@@ -143,8 +133,6 @@ async def execute_ws_command(
             "message": result_dict.get("message"),
         }
 
-    except BackendBusyError as error:
-        return {"success": False, "message": str(error), "code": 409}
     except Exception as e:
         logger.opt(exception=True).error(
             f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}"

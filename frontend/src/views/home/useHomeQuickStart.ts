@@ -15,11 +15,13 @@ import {
 } from '@/views/home/homeQuickStartTasks'
 import { useHomeGreetingStore } from '@/stores/homeGreeting'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
+import { useTaskApi } from '@/composables/useTaskApi'
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
   const { playSound } = useAudioPlayer()
   const { trackStartedTask } = useSchedulerLogic()
+  const { startTask } = useTaskApi()
 
   const homeGreeting = useHomeGreetingStore()
   const commandTitle = computed(() => homeGreeting.greeting.text)
@@ -146,7 +148,7 @@ export const useHomeQuickStart = () => {
         fallbackLabel: t('home.quickStart.fallbackLabel'),
         failureReason: t('home.quickStart.startFailed'),
         startTask: taskId =>
-          Service.addTaskApiDispatchStartPost({
+          startTask({
             taskId,
             mode: selectedHomeMode.value,
           }),

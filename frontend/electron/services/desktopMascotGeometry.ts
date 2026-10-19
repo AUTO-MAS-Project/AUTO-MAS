@@ -88,7 +88,7 @@ export function getMascotLayout(
   const height = size.height + noticeHeight
   const preferredLeft = Math.max(
     area.x,
-    Math.min(x - (width - size.width), area.x + area.width - width)
+    Math.min(x - (width - size.width) / 2, area.x + area.width - width)
   )
   const left = Math.max(x + size.width - width, Math.min(preferredLeft, x))
   const top = noticeBelow ? y : y - noticeHeight

@@ -44,6 +44,8 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
+import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
@@ -54,8 +56,6 @@ import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
-import type { HotUpdatePrepareIn } from '../models/HotUpdatePrepareIn';
-import type { HotUpdatePrepareOut } from '../models/HotUpdatePrepareOut';
 import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
 import type { HSRCloudLoginIn } from '../models/HSRCloudLoginIn';
 import type { HSRCloudLoginOut } from '../models/HSRCloudLoginOut';
@@ -270,6 +270,48 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
+        });
+    }
+    /**
+     * 获取游戏已完成活动
+     * @param game
+     * @param server
+     * @returns GameCalendarActivitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getActivityCompletionsApiInfoActivityCompletionsGet(
+        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki',
+        server: 'cn' | 'jp' | 'global' = 'cn',
+    ): CancelablePromise<GameCalendarActivitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/activity/completions',
+            query: {
+                'game': game,
+                'server': server,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置游戏活动完成状态
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setActivityCompletionApiInfoActivityCompletionsPost(
+        requestBody: GameCalendarActivityCompletionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/activity/completions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -4255,33 +4297,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
-        });
-    }
-    /**
-     * 后端热更协调准入
-     * 申请或撤销后端热更保护。
-     *
-     * prepare: 检查空闲、避让窗口，准入后进入更新状态；
-     * drain: 复核同一准备操作并完成关闭清理，不退出进程；
-     * cancel: 撤销对应操作的保护。
-     *
-     * 忙、临近定时、暂停是正常的延期决策，不产生用户失败通知；
-     * 参数或执行异常仍走现有 OutBase 错误契约。
-     * @param requestBody
-     * @returns HotUpdatePrepareOut Successful Response
-     * @throws ApiError
-     */
-    public static prepareHotUpdateApiUpdateHotUpdatePost(
-        requestBody: HotUpdatePrepareIn,
-    ): CancelablePromise<HotUpdatePrepareOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/hot-update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**

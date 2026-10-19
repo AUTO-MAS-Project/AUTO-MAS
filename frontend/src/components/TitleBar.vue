@@ -1,5 +1,5 @@
 <template>
-  <div class="title-bar" :class="{ 'title-bar-dark': isDark }">
+  <div class="title-bar" :class="{ 'title-bar-dark': isDark, 'title-bar-macos': isMacOS }">
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
@@ -13,15 +13,6 @@
             <LoadingOutlined />
             {{ t('comp.backendStarting') }}
           </span>
-          <button
-            v-if="isAutomaticUpdate && updateOutcome && !updateOutcome.success"
-            class="backend-recovery-button"
-            :title="t('comp.backendHotUpdateDetails')"
-            @click="updateModalVisible = true"
-          >
-            <ExclamationCircleOutlined />
-            {{ t('comp.backendHotUpdateDetails') }}
-          </button>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
           </span>
@@ -40,11 +31,20 @@
             {{ t('comp.backendUpdateDevUnsupported') }}
           </span>
           <span
-            v-else-if="backendUpdateInfo?.if_need_update && !isRuntimeManaged"
+            v-else-if="
+              runtimeBackendUpdateAvailable ||
+              (backendUpdateInfo?.if_need_update && !isRuntimeManaged)
+            "
             class="update-hint clickable"
             @click="handleBackendUpdateClick"
           >
-            {{ t('comp.backendUpdateAvailableClick') }}
+            {{
+              t(
+                runtimeBackendUpdateAvailable
+                  ? 'comp.backendUpdateReady'
+                  : 'comp.backendUpdateAvailableClick'
+              )
+            }}
           </span>
         </span>
       </div>
@@ -54,7 +54,7 @@
     <div class="title-bar-center drag-region"></div>
 
     <!-- 右侧：窗口控制按钮 -->
-    <div class="title-bar-right">
+    <div v-if="!isMacOS" class="title-bar-right">
       <div class="window-controls">
         <button
           class="control-button minimize-button"
@@ -85,11 +85,7 @@
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
       v-model:open="updateModalVisible"
-      :title="
-        isAutomaticUpdate
-          ? t('comp.backendHotUpdateDetails')
-          : t('comp.backendUpdateTitle', { version: updateTargetVersion })
-      "
+      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
       :footer="null"
       :mask-closable="false"
@@ -140,21 +136,12 @@
               {{ retryActionLabel(action) }}
             </a-button>
             <a-button
-              v-if="
-                !updateActions.showContactSupport &&
-                (updateActions.showRestartBackend || updateOutcome.phase === 'connection')
-              "
+              v-if="updateActions.showRestartBackend"
               type="primary"
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
             >
-              {{
-                t(
-                  updateOutcome.phase === 'connection'
-                    ? 'comp.backendHotUpdateReconnect'
-                    : 'comp.backendUpdateRestartBackend'
-                )
-              }}
+              {{ t('comp.backendUpdateRestartBackend') }}
             </a-button>
             <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
           </div>
@@ -171,24 +158,31 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
-import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import {
+  updateInfo,
+  backendUpdateInfo,
+  runtimeBackendUpdateAvailable,
+  runtimeBackendUpdateCommitMessage,
+} from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import {
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
-  ExclamationCircleOutlined,
   LoadingOutlined,
   MinusOutlined,
   SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
@@ -196,11 +190,11 @@ import type { RuntimeUpdateRetryAction } from '@/types/electron'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
+const isMacOS = window.electronAPI.isMacOS
 const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
-const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
 let removeWindowMaximizedListener: (() => void) | undefined
 
@@ -217,13 +211,13 @@ const {
   isRuntimeDevelopment,
   modalVisible: updateModalVisible,
   running: updateRunning,
-  isAutomatic: isAutomaticUpdate,
   cancelling: updateCancelling,
   restartingBackend: updateRestartingBackend,
   targetVersion: updateTargetVersion,
   currentMessage: updateCurrentMessage,
   overallPercent: updateOverallPercent,
   outcome: updateOutcome,
+  start: startRuntimeUpdate,
   retry: retryUpdate,
   cancel: cancelUpdate,
   restartBackend: restartBackendAfterUpdate,
@@ -247,7 +241,6 @@ const updateAlertMessage = computed(() => {
 
   if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
   if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
-  if (result.phase === 'connection') return t('comp.backendHotUpdateFailedConnection')
   return t('comp.backendUpdateFailedBootstrap')
 })
 
@@ -278,23 +271,6 @@ const downloadHint = computed(() => {
   return ''
 })
 
-// 检查是否有运行中的队列任务
-const hasRunningTasks = (): boolean => {
-  try {
-    const saved = sessionStorage.getItem('scheduler-tabs-session')
-    if (saved) {
-      const tabs = JSON.parse(saved)
-      if (Array.isArray(tabs)) {
-        return tabs.some((tab: any) => tab.status === '运行')
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`检查运行任务状态失败: ${errorMsg}`)
-  }
-  return false
-}
-
 const { isDark } = useTheme()
 const isMaximized = ref(false)
 
@@ -308,16 +284,56 @@ const handleAppUpdateClick = () => {
   showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
+/**
+ * Runtime 链路的目标版本。
+ *
+ * `/api/update/check` 返回的 `latest_version` 就是发布标签；还没查到时退回应用自身版本，
+ * 主进程会再做一次规范化与合法性校验。
+ */
+const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_version || version
+
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
-  if (isRuntimeManaged.value || isRuntimeDevelopment.value) return
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t('comp.backendAboutUpdateWhich'),
+    content:
+      runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
+        ? h('div', [
+            h('p', t('comp.backendUpdateReadyConfirm')),
+            h('strong', t('comp.backendUpdateLatestCommit')),
+            h(
+              'div',
+              {
+                style: {
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                },
+              },
+              runtimeBackendUpdateCommitMessage.value
+            ),
+          ])
+        : t(
+            runtimeBackendUpdateAvailable.value
+              ? 'comp.backendUpdateReadyConfirm'
+              : 'comp.backendAboutUpdateWhich'
+          ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,
     onOk: async () => {
+      // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
+      if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {
+        await window.electronAPI.appRestart()
+        return
+      }
+      // 跨版本更新仍走完整的 Runtime 更新编排。
+      if (isRuntimeManaged.value) {
+        await startRuntimeUpdate(resolveRuntimeUpdateVersion())
+        return
+      }
+
       // 关后端到初始化流程重新拉起它之间的断开是计划内的：先打好标记，
       // 否则生命周期协调器会当成事故——提示用户断线，并 taskkill 后抢着起一个后端
       beginIntentionalBackendRestart('标题栏触发后端更新')
@@ -390,23 +406,7 @@ const doCloseWindow = async () => {
 }
 
 const closeWindow = async () => {
-  // 检查是否有运行中的队列任务
-  if (hasRunningTasks()) {
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    // 没有运行中的任务，直接关闭
-    await doCloseWindow()
-  }
+  if (await confirmCloseIfRunningTasks()) await doCloseWindow()
 }
 
 // 托盘触发退出：与窗口关闭按钮走同一套确认流程
@@ -414,20 +414,10 @@ const handleTrayQuit = () => {
   if (hasRunningTasks()) {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
     window.electronAPI?.windowFocus?.()
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    void doCloseWindow()
   }
+  void confirmCloseIfRunningTasks().then(confirmed => {
+    if (confirmed) return doCloseWindow()
+  })
 }
 
 // 托盘触发重启：统一确认窗风格（与关闭确认一致）
@@ -447,17 +437,7 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
-const handleTrayStartTask = (taskId?: string, label?: string) => {
-  if (updateRunning.value) return
-  if (!taskId) {
-    logger.warn('托盘启动任务缺少任务 ID，忽略')
-    return
-  }
-  void startTaskById(taskId, label)
-}
-
-// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
   action: 'quit' | 'restart' | 'startTask'
   taskId?: string
@@ -467,13 +447,11 @@ const handleTrayActionRequest = (request: {
     handleTrayRestart()
   } else if (request.action === 'quit') {
     handleTrayQuit()
-  } else {
-    handleTrayStartTask(request.taskId, request.label)
   }
 }
 
 onMounted(async () => {
-  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  // 监听托盘退出和重启请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   // 双击标题栏或系统快捷键也会改变窗口状态。
@@ -509,20 +487,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.backend-recovery-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--ant-color-warning-text);
-  font: inherit;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
 .title-bar {
   height: 32px;
   background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
@@ -549,6 +513,10 @@ onBeforeUnmount(() => {
   min-width: 64px;
   height: 100%;
   -webkit-app-region: drag;
+}
+
+.title-bar-macos .title-bar-left {
+  padding-left: 80px;
 }
 
 .logo-section {

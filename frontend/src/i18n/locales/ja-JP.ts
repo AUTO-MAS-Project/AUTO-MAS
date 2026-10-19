@@ -13,16 +13,6 @@ export default {
       '一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。',
     legacyFallback:
       '旧イベントの選択番号が当期の範囲外のため、今回は旧仕様どおり最初のステージを使用します。元の選択は保持されます。',
-    budgetConflict:
-      '旧イベント目標が重複する場合はカスタム目標と既存の理性剤・純正源石枠を使用します。もう一方の枠は移行前バックアップに残ります。',
-    legacySeriesFallback:
-      '旧イベントの連続周回倍率を同じ形で引き継げないため、今回は単回周回を使用します。元の設定は保持されます。',
-    legacyExpiryFallback:
-      '旧イベントの独自・動的な期限間近の理性剤設定を同じ形で引き継げないため、今回は使用を停止します。元の設定は保持されます。',
-    legacyCommonConflict:
-      '旧イベント設定間で連続周回や期限間近の理性剤の指定が異なるため、今回は消費を抑える設定を使用します。元の設定は保持されます。',
-    budgetGateConflict:
-      '旧イベント在庫では理性剤または純正源石が無効のため、その制限を維持し、対応する旧イベント優先枠は今回は使用しません。',
     name: 'イベント均衡周回',
     hint: '当期イベントの在庫目標を優先し、達成済みか周回可能なステージがなければ在庫維持と育成へ進みます。',
     scopeHint:
@@ -44,8 +34,6 @@ export default {
     staleData:
       'イベント情報を更新できませんでした。前回取得したステージを表示しています。保存済みの目標は変更されません。',
     summary: '当期イベント · {n} ステージ · 在庫達成率順',
-    medicineHint:
-      'この理性回復剤の上限は一つのイベント計画だけに割り当てます。未使用分はほかの計画に移しません。',
   },
   maaStaminaPipeline: {
     inventoryCultivate: '在庫維持とオペレーター育成',
@@ -117,7 +105,6 @@ export default {
     string: '文字列',
     fullFilePath: 'フルパス',
     fullDateTime: '日付と時刻',
-    tools: 'ツール',
     themeStore: 'リソースストア',
     boolean: '真偽値',
     fileNameExtension: '拡張子付きのファイル名',
@@ -264,10 +251,6 @@ export default {
       'バックエンドの更新があります。開発モードでは自動更新に対応していません',
     backendUpdateTitle: 'バックエンドを {version} に更新します',
     backendUpdateSucceeded: 'バックエンドを更新して再起動しました',
-    backendHotUpdateDetails: 'バックエンド更新の復旧',
-    backendHotUpdateReconnect: '再接続',
-    backendHotUpdateFailedConnection:
-      '更新後のバックエンドは起動しましたが、再接続できませんでした。ページと下書きは保持されています。',
     backendUpdateCancelled: '更新をキャンセルしました。バックエンドは元のままです',
     backendUpdateFailedShutdown:
       '実行中のバックエンドを停止できず、更新は開始されていません。現在のバージョンはそのまま使用できます',
@@ -374,9 +357,6 @@ export default {
       'リスト内の順番で保存します。イベント更新後は同じ順番のステージが自動で選ばれ、その順番が無くなった場合は先頭に戻ります',
     maaPickEventStage: 'イベントステージを選択してください',
     maaNoEventStage: '現在、周回できるイベントステージはありません',
-    maaEventPotion: 'イベントステージの理性回復薬',
-    maaEventPotionHint:
-      'イベントステージ優先タスクで使う理性回復薬の数です。通常の理性作戦には影響しません',
     maaCultivate: 'オペレーター育成',
     maaCultivateSettings: '育成設定',
     maaCultivateShowModules: 'モジュール目標を表示',
@@ -1815,7 +1795,7 @@ export default {
     updateResultSource: 'ダウンロード元',
     mfwUnityResolutionOff: '変更しない',
     mfwWaitTimeTip:
-      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
+      'MAS がゲームを起動した直後、最初のタスクを送る前に待機します。MaaFW の初期化は並行して進みます。PC ゲーム：ウィンドウの表示と画面の安定をそれぞれ最大この時間待ち、画面が安定すれば早めに開始します。ゲームのウィンドウが既にある場合は待ちません。エミュレーター：エミュレーターと一緒にゲームをコールド起動した後、最大この時間待ち、画面が表示されゲームのディスク読み込みが止まれば早めに開始します。その時点でまだ黒画面なら、画面が出るまで待ち続けます。ゲームのプロセスが既に動いている場合は（前面かどうかを問わず）待ちません。起動直後のゲームは読み込み中のことが多く、早すぎるとスクリプト側で認識異常やフリーズと判定されます。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     mfwHotkey: 'キー割り当て',
@@ -3045,6 +3025,7 @@ export default {
       reverse1999: 'リバース：1999 のイベント情報',
       bluearchive: 'ブルーアーカイブのイベント情報',
       stellasora: 'ステラソラのイベント情報',
+      infinitynikki: 'インフィニティニキのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -3058,6 +3039,7 @@ export default {
       reverse1999: 'リバース：1999',
       bluearchive: 'ブルーアーカイブ',
       stellasora: 'ステラソラ',
+      infinitynikki: 'インフィニティニキ',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -3079,6 +3061,7 @@ export default {
       nte: '開催中の Neverness to Everness のイベントはありません',
       reverse1999: '開催中のリバース：1999 のイベントはありません',
       stellasora: '開催中のステラソラのイベントはありません',
+      infinitynikki: '開催中のインフィニティニキのイベントはありません',
       noData: 'データなし',
     },
     stella: {
@@ -3103,7 +3086,26 @@ export default {
       noActivity: 'イベントはありません',
       unavailable: 'アークナイツのイベント情報を取得できません',
     },
+    activity: {
+      startsAt: '{time} 開始',
+      endsAt: '{time} 終了',
+      schedule: 'イベント日程',
+      refresh: 'イベント日程を更新',
+      permanentGameplay: '常設コンテンツ',
+      running: '開催中',
+      upcoming: '開催前',
+      completed: '完了済み',
+      markCompleted: '「{name}」を完了済みにして通知を停止',
+      undoCompletion: '「{name}」の完了を取り消して通知を再開',
+      completionUnavailable: '完了状態を取得できません。イベント情報は表示できます。',
+      completionSaveFailed: 'イベントの完了状態を保存できませんでした。再試行してください。',
+      retryCompletion: '再試行',
+    },
     endfield: {
+      pools: 'スカウト',
+      noPools: '開催中のスカウトはありません',
+      poolStaleMessage: '前回取得したスカウト情報を表示しています',
+      poolUnavailable: 'スカウト情報を取得できません。イベント情報は引き続き表示できます。',
       stale: 'キャッシュ',
       staleMessage: '前回取得したイベント情報を表示しています',
       unavailable: 'エンドフィールドのイベント情報を一時的に取得できません',
@@ -3173,6 +3175,8 @@ export default {
       scrollHint: 'スクロールのヒント',
       scrollHintVisibility: 'スクロールのヒントを表示',
       activityGroup: 'カルーセルに入るゲーム',
+      activityDefaults:
+        '管理中のスクリプトに対応するゲームを初期表示します。手動設定が優先されます。',
       carouselAutoplay: '自動切り替え',
       carouselAutoplayVisibility: 'イベントカルーセルの自動切り替え',
     },
@@ -3221,6 +3225,9 @@ export default {
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
       contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      exportLogsHint:
+        '解決しない場合は、debug フォルダーを ZIP にまとめて QQ グループで共有し、調査を依頼できます。',
+      joinGroup: 'QQ グループで相談',
       openLogFailed: 'ログを開けませんでした: {error}',
       doctorEmpty: '確認できた項目がありません',
       doctorFailed: '実行環境の確認に失敗しました: {error}',
@@ -3470,44 +3477,6 @@ export default {
       nameDuplicate: 'そのプラン名はすでに使われています',
     },
   },
-  tools: {
-    title: 'ツール',
-    arknightsPC: 'アークナイツ PC 版',
-    statusDisabled: '無効',
-    statusInvalid: 'ツールの状態レスポンスが不正です',
-    ark: {
-      introTitle: 'このツールについて',
-      introText:
-        'アークナイツには一時停止中の配置機能がありますが、オペレーターの選択とフレーム送りはまだできません。本ツールはそこを補い、フレーム単位の操作を可能にします。',
-      requirementTitle: '動作条件',
-      reqScale: 'ゲーム UI の拡大率を次に設定',
-      reqRatio: '画面比率',
-      reqRatioHint: '（1280×720 / 1920×1080 推奨）',
-      performanceTitle: '性能',
-      perfLabel: '操作精度：',
-      perfValue: '1 フレームあたり 2 回の有効操作',
-      basicSection: '基本設定',
-      enable: 'アークナイツ PC 版フレーム送り',
-      enableTip: 'アークナイツ PC 版のフレーム送りツールを有効にするかどうか',
-      keySection: 'キー設定',
-      pressKey: 'キーを押してください...',
-      clickRecord: '「記録」を押して変更',
-      record: '記録',
-      pause: 'ツールの一時停止',
-      pauseTip: 'フレーム送りツールを一時停止するキー',
-      selectDeployed: '配置済みオペレーターを選択',
-      selectDeployedTip: '一時停止中に配置済みオペレーターへカーソルを合わせ、このキーで選択します',
-      useSkill: 'スキル発動',
-      useSkillTip:
-        '一時停止中に配置済みオペレーターへカーソルを合わせ、このキーでスキルを発動します',
-      retreat: 'オペレーターを撤退',
-      retreatTip: '一時停止中に配置済みオペレーターへカーソルを合わせ、このキーで撤退させます',
-      nextFrame: '次のフレーム',
-      nextFrameTip: 'ゲームを 1 フレーム進めます',
-      anotherQuit: 'カスタム終了 / 一時停止',
-      anotherQuitTip: '終了・一時停止用のカスタムキー。戦闘中のみ有効です',
-    },
-  },
   queue: {
     title: 'キュー管理',
     loading: '読み込み中です...',
@@ -3650,6 +3619,11 @@ export default {
     toast: {
       packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
       packageExported: 'ログのアーカイブを書き出しました',
+      packageIncomplete:
+        'ログのアーカイブを書き出しました。次のファイルは書き出せませんでした: {paths}',
+      windowUnavailable: 'ウィンドウが初期化されていないため、ログを書き出せません',
+      directoryMissing: 'ログフォルダーが存在しません',
+      noFiles: 'ログフォルダーが空のため、書き出せるファイルがありません',
       packageFailed: 'ログの書き出しに失敗しました',
       packageError: 'ログの書き出しでエラーが発生しました: {error}',
       openFolderFailed: 'アーカイブの保存先フォルダーを開けませんでした',
@@ -3685,7 +3659,6 @@ export default {
     },
     control: {
       taskPlaceholder: 'タスクを選択',
-      modePlaceholder: 'モードを選択',
       taskLabel: 'タスク：',
       modeLabel: 'モード：',
       resumePlaceholder: '指定したマネージドスクリプトから再開（既定は先頭）',
@@ -3746,7 +3719,8 @@ export default {
       needRunUsers: '実行するアカウントを1つ以上選択してください',
       needQueueRunUsers: '実行するアカウントを1つ以上選択してください',
       loadQueueRunUsersFailed: 'キューのアカウントを読み込み中です。しばらくして再試行してください',
-      needTaskAndMode: 'タスクと実行モードの両方を選んでください',
+      needTask: 'タスクを選んでください',
+      loadTaskModeFailed: 'タスクの実行方式を確認できませんでした。再試行してください',
       taskOptionsUnavailable: 'タスク一覧を読み込み中です。少し待ってから再試行してください',
       taskStarted: 'タスクを開始しました',
       startTaskFailed: 'タスクを開始できませんでした',
@@ -3986,7 +3960,6 @@ export default {
     category: 'カテゴリ',
     categories: { all: 'すべて', theme: 'テーマ', mascot: 'ペット' },
     uploadTheme: 'テーマをアップロード',
-    uploadMascot: 'ペットをアップロード',
     title: 'リソースストア',
     account: {
       login: '共有サイトにログイン',
@@ -4182,7 +4155,7 @@ export default {
       mascotFpsPackage: 'アニメーションパックに合わせる',
       mascotFpsCustom: 'カスタム',
       mascotFpsTip:
-        '既定ではパックに合わせます。1～120 FPS を指定し、Enter キーを押すか入力欄から離れると保存され、その速度でアニメーションを繰り返し再生します。',
+        '既定ではパックに合わせます。カスタムでは 8、16、24、30、60、120 FPS から選択でき、変更は自動保存されます。',
       importMascot: 'ペットをインポート',
       removeMascot: 'ペットを削除',
       mascotImportTip:
@@ -4210,10 +4183,21 @@ export default {
       appearanceAnimationInvalid:
         'ペットのアニメーションが無効です。PNGスプライトシートの行列の配置とフレームサイズを確認してください。',
       mascotTask: 'タスク',
+      mascotQuickStart: 'クイック開始',
+      mascotStopTask: 'タスクを中止',
+      mascotNoTasks: '選択できるタスクはありません',
+      mascotNoRunningTasks: '実行中のタスクはありません',
+      mascotTasksUnavailable: 'タスクを利用できません。後でもう一度お試しください。',
+      mascotLoadingTasks: 'タスクを読み込み中…',
+      mascotCapabilityUnavailable: 'この操作は現在利用できません',
+      mascotStartingTask: 'タスクを開始しています…',
+      mascotStoppingTask: 'タスクを中止しています…',
       mascotPauseAnimation: 'アニメーションを一時停止',
       mascotResumeAnimation: 'アニメーションを再開',
       mascotPauseIdleMessage: '待機中のメッセージを一時停止',
       mascotResumeIdleMessage: '待機中のメッセージを再開',
+      mascotRefreshIdleMessage: '待機中のメッセージを更新',
+      mascotRefreshUnavailable: '作業中またはメッセージ停止中は更新できません',
       mascotTaskStarted: '作業を始めます：{name}',
       mascotTaskCompleted: '完了しました：{name}',
       mascotTaskFailed: 'エラーが発生しました。タスクの詳細を確認してください：{name}',
@@ -4386,11 +4370,8 @@ export default {
       recruit: '公開求人の高レア通知',
       recruitTip: '公開求人に『上級エリート』のタグが出たときに通知します',
       systemSection: 'システム通知',
-      systemEnable: 'システム通知を有効にする',
       systemTip: 'OS 標準の通知機能を使います。アクションセンターには残りません',
       mailSection: 'メール通知',
-      mailDoc: 'メール設定のドキュメントを開く',
-      mailEnable: 'メール通知を有効にする',
       mailEnableTip: 'メールで通知を送信します',
       smtp: 'SMTP サーバー',
       smtpTip: '送信元メールアドレスの SMTP サーバー',
@@ -4406,16 +4387,10 @@ export default {
       toTip: '通知を受け取るメールアドレス',
       toPlaceholder: '宛先アドレスを入力してください',
       serverChanSection: 'ServerChan',
-      serverChanDoc: 'ServerChan の設定ドキュメントを開く',
-      serverChanEnable: 'ServerChan 通知を有効にする',
       serverChanTip: 'ServerChan で通知を送信します',
       serverChanKey: 'ServerChan キー',
       serverChanKeyTip: 'ServerChan の SendKey です。取得方法はドキュメントをご覧ください',
       serverChanPlaceholder: 'ServerChan の SendKey を入力してください',
-      cmccNewMsgSection:
-        'チャイナモバイル（China Mobile）5G メッセージ通知（無料・チャイナモバイル回線限定）',
-      cmccNewMsgDoc: '通知機能ガイドを開く',
-      cmccNewMsgEnable: 'チャイナモバイル 5G メッセージ通知を有効にする',
       cmccNewMsgTip:
         'チャイナモバイルの 5G New Messaging（RCS）でタスク通知を無料受信できます。チャイナモバイルの番号限定です',
       cmccNewMsgApiKey: 'Channel API キー',
@@ -4424,15 +4399,12 @@ export default {
       cmccNewMsgApiKeyPlaceholder:
         'チャイナモバイル 5G メッセージ Channel API キーを入力してください',
       koishiSection: 'Koishi',
-      koishiEnable: 'Koishi 通知を有効にする',
       koishiTip: 'Koishi で通知を送信します',
       koishiWs: 'Koishi の WebSocket アドレス',
       koishiWsTip: 'Koishi の WebSocket サーバーアドレス。ws:// と wss:// のどちらにも対応します',
       koishiTokenTip: 'Koishi のアクセストークン',
       koishiTokenPlaceholder: 'Koishi のトークンを入力してください',
       openclawQqSection: 'QQ 公式ボット通知',
-      openclawQqDoc: 'QQ 公式ボットの使い方を開く',
-      openclawQqEnable: 'QQ 通知を有効にする',
       openclawQqTip: 'QQ 公式ボットで通知を送信します',
       openclawQqSetupHint:
         'QR コードで連携した後、スキャンに使用した QQ アカウントでボットを友だちに追加してから通知をテストしてください。ログイン情報は自動保存されます。',
@@ -4446,7 +4418,6 @@ export default {
       openclawQqConnecting: '接続中',
       openclawQqReconnecting: '再接続中',
       openclawQqUnbound: '未連携',
-      openclawQqBindSuccess: 'QQ 公式ボットを連携しました',
       openclawQqUnbindSuccess: 'QQ 公式ボットの連携を解除しました',
       openclawQqLoginTitle: 'QR コードで QQ 公式ボットと連携',
       openclawQqQrAlt: 'QQ 公式ボットのログイン QR コード',
@@ -4455,8 +4426,6 @@ export default {
       openclawQqQrInvalid: 'QR コードの応答が無効です。後でもう一度お試しください。',
       openclawQqQrError: 'QR コードログインに失敗しました。後でもう一度お試しください。',
       openclawQqQrRetry: 'QR コードを再取得',
-      webhookSection: 'カスタム Webhook',
-      webhookDoc: 'カスタム Webhook の設定ドキュメントを開く',
     },
     advanced: {
       backupSection: 'データのバックアップ',
@@ -4492,10 +4461,6 @@ export default {
       updateSection: '更新',
       checkUpdate: '更新を確認',
       pauseUpdates: '更新を一時停止',
-      hotUpdateAvoidMinutes: '定時タスク回避時間',
-      hotUpdateAvoidMinutesTip:
-        '設定時間内に定時タスクが開始する場合、バックエンドの自動再起動を延期します。0 分は回避なし、既定は 5 分、上限は 60 分です。',
-      hotUpdateMinutes: '分',
       pauseUpdatesTip:
         '終了日を選ぶと自動更新チェックが一時停止します（1〜35日間）。手動で更新を確認すると即座に再開します。',
       pausePlaceholder: '一時停止の終了日を選択',

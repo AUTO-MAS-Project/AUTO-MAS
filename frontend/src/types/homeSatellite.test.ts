@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { DEFAULT_HOME_SATELLITE_STYLE, normalizeHomeSatelliteStyle } from './homeSatellite'
 
 describe('home satellite style', () => {

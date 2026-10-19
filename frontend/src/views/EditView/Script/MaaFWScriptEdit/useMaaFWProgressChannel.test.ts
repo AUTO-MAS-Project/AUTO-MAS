@@ -1,5 +1,5 @@
 import { effectScope } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const mocks = vi.hoisted(() => ({
   handler: null as ((message: { data: { stage: string } }) => void) | null,

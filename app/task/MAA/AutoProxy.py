@@ -96,10 +96,8 @@ from . import api_service as maa_api
 from .base_preset import (
     MAA_STAMINA_LEGACY_FILENAME,
     canonical_maa_task_identity,
-    capture_maa_legacy_activity_sources,
     ensure_maa_default_configuration,
     get_maa_base_preset,
-    load_maa_stamina_legacy_task,
     maa_task_identity,
     seed_maa_base_config,
 )
@@ -360,22 +358,13 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
     return current
 
 
-_MAA_GUI_SKELETON: dict[str, dict] = {
-    "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
-    "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
-}
-"""MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
-
-托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
-TaskQueue 由 MAA 内存默认值填充。
-"""
-
-
 def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
-    """读 MAA 配置文件；缺失或损坏时退回骨架（任务内容交 MAA 内存默认填充）。
+    """读 MAA 配置文件；缺失或损坏时退回随包预设。
 
     损坏但存在 ``.bak`` 时优先用 MAA 自己的备份——那是 MAA 上一次成功落盘的
-    完整现场，比骨架少丢用户数据。返回的 dict 由调用方独立持有，改动不落盘。
+    完整现场，比预设少丢用户数据。都没有时用随包预设（结构完整、含根级
+    ``Gui`` / ``Timers``），不再用只含容器路径的骨架：缺根级 ``Gui`` 时 MAA
+    会把这次启动当首次运行，直接弹新手引导。返回的 dict 由调用方独立持有，改动不落盘。
     """
 
     path = maa_set_path / name
@@ -388,14 +377,14 @@ def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
         return doc
     if path.exists():
         # 文件存在但读不出内容（损坏）：优先用 MAA 自己的 .bak——那是 MAA
-        # 上一次成功落盘的完整现场，比骨架少丢用户数据。（.bak 后缀不在
+        # 上一次成功落盘的完整现场，比预设少丢用户数据。（.bak 后缀不在
         # read_file 的编解码器表里，须显式指定 .json 解析）
         bak = read_file(path.with_suffix(path.suffix + ".bak"), format=".json")
         if isinstance(bak, dict) and bak:
             logger.warning(f"MAA 配置损坏, 采用 MAA 自带备份({name}.bak)")
             return bak
-    logger.warning(f"MAA 配置缺失, 以骨架下发, 任务队列由 MAA 默认值生成({name})")
-    return deepcopy(_MAA_GUI_SKELETON.get(name, {}))
+    logger.warning(f"MAA 配置缺失, 以随包预设下发({name})")
+    return get_maa_base_preset(name)
 
 
 def _merge_task_queue(
@@ -880,9 +869,6 @@ def _build_event_depot_maintain_task(
     plans_json: str,
     activity_stages: list[dict],
     source_task: dict | None,
-    *,
-    medicine_count: int = 0,
-    priority_source: dict | None = None,
 ) -> tuple[dict | None, list[tuple[str, str]]]:
     """解析活动目标，保留原生任务身份与高级参数。"""
 
@@ -890,76 +876,14 @@ def _build_event_depot_maintain_task(
     plans, notices = resolve_activity_inventory_plans(
         plans_json,
         activity_stages,
-        medicine_count=medicine_count,
         source_plans=source_task.get("PlanList", []),
-        priority_source=priority_source,
     )
     if not plans:
         return None, notices
-    origins = {plan.pop("_ActivityOrigin") for plan in plans}
-    settings = {}
-    if origins & {"priority", "mixed"}:
-        priority_source = priority_source or {}
-        series = priority_source.get("Series", 0)
-        priority_series = series == 0
-        if series not in (0, 1):
-            notices.append(
-                (
-                    "eventDepotPreview.legacySeriesFallback",
-                    "旧活动优先的连战次数无法在均衡任务中沿用，本轮改为单次代理，原设置保留",
-                )
-            )
-        priority_expiry = (
-            priority_source.get("UseExpiringMedicine", False)
-            and priority_source.get("MedicineExpireDays", 2) == 2
-            and not priority_source.get("UseExpireMedicineForActivity", False)
-        )
-        if (
-            priority_source.get("UseExpiringMedicine", False)
-            and priority_source.get("MedicineExpireDays", 2) != 2
-        ) or priority_source.get("UseExpireMedicineForActivity", False):
-            notices.append(
-                (
-                    "eventDepotPreview.legacyExpiryFallback",
-                    "旧活动优先的自定义或活动临期药策略无法在均衡任务中沿用，本轮不扩大用药范围，原设置保留",
-                )
-            )
-        settings.update(
-            UseAutoSeries=priority_series,
-            UseExpiringMedicine=priority_expiry,
-        )
-        if origins & {"inventory", "mixed"}:
-            depot_series = source_task.get("UseAutoSeries", False)
-            depot_expiry = source_task.get("UseExpiringMedicine", False)
-            settings.update(
-                UseAutoSeries=priority_series and depot_series,
-                UseExpiringMedicine=priority_expiry and depot_expiry,
-            )
-            if depot_series != priority_series or depot_expiry != priority_expiry:
-                notices.append(
-                    (
-                        "eventDepotPreview.legacyCommonConflict",
-                        "两份旧活动设置不同，本轮统一采用较保守的连战与临期药设置，原配置保留",
-                    )
-                )
-            if (not source_task.get("UseMedicine", True) and medicine_count > 0) or (
-                not source_task.get("UseStone", True)
-                and priority_source.get("UseStone") is True
-                and priority_source.get("StoneCount", 0) > 0
-            ):
-                notices.append(
-                    (
-                        "eventDepotPreview.budgetGateConflict",
-                        "原活动库存关闭了药剂或源石，本轮保留该限制，旧活动优先的相应额度暂不使用",
-                    )
-                )
-        else:
-            settings.update(UseMedicine=True, UseStone=True)
     return (
         _with_type_first(
             {
                 **deepcopy(source_task),
-                **settings,
                 "Name": "活动关均衡理智",
                 "IsEnable": True,
                 "TaskType": "DepotMaintain",
@@ -2161,13 +2085,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
             seed_maa_base_config(archive_dir)
-            if self.cur_user_config.get("Info", "IfQuickConfig"):
-                archive_gui = read_maa_config_with_fallback(archive_dir, "gui.new.json")
-                capture_maa_legacy_activity_sources(
-                    archive_dir,
-                    archive_gui,
-                    current_configuration=maa_scheme_name(archive_dir, archive_gui),
-                )
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
@@ -2386,17 +2303,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             }
 
         annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
-        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
-        if activity_source is None:
-            # 旧活动优先从可见队列收敛后仍由当前来源 owner 保留其原生高级设置。
-            archive_dir = self._config_archive_dir()
-            if archive_dir is not None and archive_dir.is_dir():
-                archive = read_maa_config_with_fallback(archive_dir, "gui.new.json")
-                activity_source = load_maa_stamina_legacy_task(
-                    archive_dir,
-                    configuration=maa_scheme_name(archive_dir, archive),
-                )
-
         # 吃药 / 碎石类任务取不到原生配置就只剩默认值，用户在 MAA 里设的选项
         # 全部失效却看不出来，必须提示。剿灭作战没有同名任务时本就
         # 沿用理智作战，只有理智作战也缺失才会落到默认值
@@ -2609,8 +2515,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_config.get("Task", "EventDepotMaintainPlans"),
                 activity_stages,
                 source_task=event_depot_source,
-                medicine_count=self.cur_user_config.get("Task", "ActivityMedicineNumb"),
-                priority_source=activity_source or fight_source,
             )
             for notice_key, notice in activity_notices:
                 logger.warning(notice)

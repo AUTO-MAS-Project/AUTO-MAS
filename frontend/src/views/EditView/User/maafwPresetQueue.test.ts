@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { MaaFWTaskInfo, MaaFWTaskOptionValue } from '@/types/script'
 import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
 

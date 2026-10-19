@@ -249,6 +249,9 @@ export type RuntimeKnownErrorCode =
   | 'PYTHON_VERSION_MISMATCH'
   | 'LOCKFILE_MISSING'
   | 'LOCKFILE_OUTDATED'
+  | 'LOCKFILE_INVALID'
+  | 'LOCKFILE_CHECK_FAILED'
+  | 'WORKSPACE_RESTORE_FAILED'
   | 'DEPENDENCY_SYNC_FAILED'
   | 'ENVIRONMENT_BROKEN'
   | 'ENVIRONMENT_REBUILD_FAILED'
@@ -570,6 +573,27 @@ const ERROR_DEFINITION_LIST: readonly RuntimeErrorDefinition[] = [
     retryable: false,
     remediation: ['contact-support'],
     summary: 'uv.lock 与 pyproject.toml 不同步',
+  },
+  {
+    code: 'LOCKFILE_INVALID',
+    exitCode: 20,
+    retryable: false,
+    remediation: ['contact-support'],
+    summary: '项目锁文件格式损坏',
+  },
+  {
+    code: 'LOCKFILE_CHECK_FAILED',
+    exitCode: 50,
+    retryable: true,
+    remediation: ['retry-sync', 'open-log'],
+    summary: '项目锁文件检查失败',
+  },
+  {
+    code: 'WORKSPACE_RESTORE_FAILED',
+    exitCode: 40,
+    retryable: true,
+    remediation: ['retry-sync', 'open-log'],
+    summary: '程序文件恢复失败',
   },
   {
     code: 'DEPENDENCY_SYNC_FAILED',

@@ -1,7 +1,5 @@
 <template>
   <a-layout
-    :inert="hotUpdateBlocked || undefined"
-    :aria-busy="hotUpdateBlocked"
     style="
       position: relative;
       z-index: 1;
@@ -62,7 +60,6 @@
 
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
-import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import {
   BugOutlined,
   CalendarOutlined,
@@ -74,7 +71,6 @@ import {
   HomeOutlined,
   SettingOutlined,
   SkinOutlined,
-  ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { computed } from 'vue'
@@ -87,7 +83,6 @@ import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 
 const { t } = useI18n()
-const { running: hotUpdateBlocked } = useBackendRuntimeUpdate()
 
 const SIDER_WIDTH = 160
 
@@ -140,7 +135,6 @@ const devMenuItems = computed(() => [
 const bottomMenuItems = computed(() => [
   { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/tools', label: t('comp.tools'), icon: icon('tools', ToolOutlined) },
   { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
   { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
 ])

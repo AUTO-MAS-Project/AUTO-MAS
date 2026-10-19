@@ -11,9 +11,9 @@ import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import {
-  isBackendRuntimeUpdating,
-  finishBackendRuntimeReconnect,
-} from '@/composables/useBackendRuntimeUpdate'
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -133,7 +133,7 @@ const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTi
 const isClosing = (): boolean => backendClosing
 
 // 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
-const isIntentionalRestart = (): boolean => intentionalRestartActive || isBackendRuntimeUpdating()
+const isIntentionalRestart = (): boolean => intentionalRestartActive
 
 // ==================== 常驻订阅 ====================
 
@@ -288,7 +288,6 @@ const handleConnected = async (): Promise<void> => {
   dismissRestartFailure()
   backendStatus.value = 'running'
   endIntentionalBackendRestart('后端已重新连上')
-  finishBackendRuntimeReconnect()
   dismissDisconnectIncident()
   // 后端重启/重连后关卡数据可能已变，让计划页下次重新拉关卡选项
   clearStageOptionsCache()
@@ -758,7 +757,6 @@ export function beginIntentionalBackendRestart(reason: string): void {
   intentionalRestartTimer = window.setTimeout(() => {
     intentionalRestartTimer = undefined
     if (!intentionalRestartActive) return
-    if (isBackendRuntimeUpdating()) return
     intentionalRestartActive = false
     logger.warn('后端有意重启窗口超时未结束，恢复断开提示与自动恢复')
   }, INTENTIONAL_RESTART_TIMEOUT)
@@ -771,7 +769,6 @@ export function beginIntentionalBackendRestart(reason: string): void {
  * @param reason 记入日志的结束原因
  */
 export function endIntentionalBackendRestart(reason: string): void {
-  if (isBackendRuntimeUpdating()) return
   if (intentionalRestartTimer !== undefined) {
     window.clearTimeout(intentionalRestartTimer)
     intentionalRestartTimer = undefined
@@ -980,8 +977,21 @@ export function initializeAppLifecycle(): void {
   })
   if (disposeSystemResume) lifecycleDisposers.push(disposeSystemResume)
 
-  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(() => {
-    void closeApp()
+  const disposeCloseRequested = window.electronAPI?.onAppCloseRequested?.(confirmRunningTasks => {
+    void (async () => {
+      if (confirmRunningTasks && hasRunningTasks()) {
+        if (!(await window.electronAPI?.appWaitForQuitConfirmation?.())) return
+        await window.electronAPI?.windowFocus?.()
+        if (!(await confirmCloseIfRunningTasks())) {
+          await window.electronAPI?.appCancelQuit?.()
+          return
+        }
+      }
+      await closeApp()
+    })().catch(async error => {
+      logger.error(`处理关闭请求失败: ${error instanceof Error ? error.message : String(error)}`)
+      await window.electronAPI?.appCancelQuit?.()
+    })
   })
   if (disposeCloseRequested) lifecycleDisposers.push(disposeCloseRequested)
 

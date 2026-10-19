@@ -23,6 +23,7 @@ import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from time import time_ns
 
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
@@ -94,6 +95,8 @@ class MaaEndManager(ScriptManagerBase):
         self.had_original_script_config = False
         self.script_config_base = BASE_SHARED
         self._device_provider = device_provider
+        self.error_image_start_ns: int | None = None
+        self.error_screenshot_paths: list[Path] = []
 
     async def check(self) -> str:
         # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
@@ -279,6 +282,10 @@ class MaaEndManager(ScriptManagerBase):
         )
         if result == "restored":
             logger.info("已恢复上次中断前的 MaaEnd 原始配置")
+        elif result == "legacy":
+            logger.warning(
+                "检测到上次中断残留的 MaaEnd 原生配置快照由旧版本生成, 已改名保留以便手动恢复"
+            )
         elif result == "skipped":
             logger.warning(
                 "检测到 MaaEnd 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
@@ -383,6 +390,8 @@ class MaaEndManager(ScriptManagerBase):
             )
             return
 
+        # 通知收图使用未取整的时间，避免带入同一秒内上一轮留下的截图。
+        self.error_image_start_ns = time_ns()
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
@@ -436,6 +445,8 @@ class MaaEndManager(ScriptManagerBase):
             if self.task_info.mode == "ScriptConfig":
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
+            elif self.task_info.mode == "AutoProxy":
+                kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
                 await self.run_user_task(current_user, task)
@@ -490,8 +501,13 @@ class MaaEndManager(ScriptManagerBase):
             # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
             mirror_report_to_dispatch(self.script_info, user_result_text)
             error_images = (
-                collect_recent_error_images(self.script_config.get("Info", "Path"))
-                if error_count
+                collect_recent_error_images(
+                    self.script_config.get("Info", "Path"),
+                    started_at_ns=self.error_image_start_ns,
+                    ended_at_ns=time_ns(),
+                    diagnostic_paths=self.error_screenshot_paths,
+                )
+                if error_count and self.error_image_start_ns is not None
                 else ()
             )
             result = self.build_proxy_report(result_text=user_result_text)

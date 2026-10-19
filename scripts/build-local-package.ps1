@@ -51,7 +51,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "未找到 Node.js，请先安装项目要求的 Node.js 环境。"
 }
 if (-not (Get-Command yarn -ErrorAction SilentlyContinue)) {
-    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.9.1 --activate"
+    throw "未找到 Yarn，请先执行：corepack prepare yarn@4.18.1 --activate"
 }
 
 # 版本一致性由 scripts/changelog.py 判定，这里需要一个可用的 Python。
@@ -107,9 +107,10 @@ try {
         $localRuntime = (Resolve-Path -LiteralPath $LocalRuntimePath -ErrorAction Stop).Path
         $expectedRuntimeHash = (Get-FileHash -LiteralPath $localRuntime -Algorithm SHA256).Hash
         Copy-Item -LiteralPath $localRuntime -Destination $runtimePath
-        # 桌面端按 repo/res/runtime-version.txt 的钉扎核对 exe 自报版本，本地构建的 Runtime 对不上就会
-        # 在首次 managed 启动时被发布版覆盖；安装包不带钉扎文件，这里改不了它，只能提醒。
-        Write-Warning "本地 Runtime 与 res/runtime-version.txt 钉扎的 $runtimeVersion 不同：运行打出来的包之前必须设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则桌面端会在首次启动时把它换成 $runtimeVersion（见 scripts/README.md）。"
+        # 桌面端在完整初始化时会解析线上最新 Runtime 并替换 exe；本地构建的 Runtime 自报 dev，
+        # 不设置 AUTO_MAS_RUNTIME_EXE 就会被线上最新版覆盖（安装包内置的 pin 只决定兜底版本），
+        # 运行打出来的包之前必须设置它。
+        Write-Warning "正在使用本地构建的 Runtime（自报 dev，与内置的 $runtimeVersion 无关）：运行打出来的包之前必须设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则桌面端会在下次完整初始化时把它换成线上最新版（见 scripts/README.md）。"
     } else {
         Write-Host "正在下载 Runtime……"
         Invoke-WebRequest -Uri "$releaseBaseUrl/$runtimeAssetName" -OutFile $runtimePath
@@ -262,7 +263,7 @@ try {
     Write-Host "安装包 SHA-256：$installerHash"
     Write-Host "Runtime SHA-256：$expectedRuntimeHash"
     if ($LocalRuntimePath) {
-        Write-Warning "运行前请先设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则本地 Runtime 会在首次启动时被换成钉扎的 $runtimeVersion。"
+        Write-Warning "运行前请先设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则本地 Runtime 会在下次完整初始化时被换成线上最新版。"
     }
 } finally {
     foreach ($name in $savedEnvironment.Keys) {
