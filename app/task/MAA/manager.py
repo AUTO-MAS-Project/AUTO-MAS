@@ -571,10 +571,6 @@ class MaaManager(ScriptManagerBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
         try:
-            # spawn 已等待 MAA 子任务停止并收尾；剩余步骤不再读取资源。
-            # prepare 未完成、异常或主动取消也统一释放安装访问锁。
-            self._resource_access.close()
-
             if not self.prepared or not self.has_proxy_run:
                 for update_task in self._game_update_tasks:
                     await update_task.close_owned_emulator()
@@ -634,12 +630,6 @@ class MaaManager(ScriptManagerBase):
                             level="error", message=f"推送代理结果时出现异常: {e}"
                         ),
                     )
-
-            # 还原配置：原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），
-            # 其余按任务前快照还原
-            if (self.temp_path).exists() and not self._keep_script_config_changes():
-                swap_in_dir(self.temp_path, self.maa_set_path)
-            clear_native_config_snapshot(self.temp_path)
 
             self.script_info.status = (
                 "跳过" if self.all_users_maintenance_skipped else "完成"
