@@ -100,6 +100,7 @@
     "@guolao/vue-monaco-editor": "^1.6.0",
     "@playwright/test": "1.64.0",
     "@sentry/vite-plugin": "^5.4.0",
+    "@tanstack/vue-query": "^5.104.4",
     "@types/adm-zip": "^0.5.8",
     "@types/markdown-it": "^14.1.2",
     "@types/matter-js": "^0",
