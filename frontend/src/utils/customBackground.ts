@@ -72,7 +72,7 @@ function readImageDimensions(bytes: Uint8Array): { width: number; height: number
         height: bytes[20] | (bytes[21] << 8),
       }
     }
-    if (headerSize >= 40 && bytes.length >= 26) {
+    if (headerSize >= 40 || [16, 20, 24, 28, 32, 36].includes(headerSize)) {
       return {
         width: Math.abs(readInt32LE(bytes, 18)),
         height: Math.abs(readInt32LE(bytes, 22)),
@@ -95,13 +95,13 @@ function readImageDimensions(bytes: Uint8Array): { width: number; height: number
           height: 1 + bytes[offset + 15] + (bytes[offset + 16] << 8) + (bytes[offset + 17] << 16),
         }
       }
-      if (chunkType === 'VP8L' && offset + 25 <= bytes.length && bytes[offset + 8] === 0x2f) {
+      if (chunkType === 'VP8L' && offset + 13 <= bytes.length && bytes[offset + 8] === 0x2f) {
         const b1 = bytes[offset + 9]
         const b2 = bytes[offset + 10]
         const b3 = bytes[offset + 11]
         const b4 = bytes[offset + 12]
         return {
-          width: 1 + (b1 & 0x3f) + ((b2 & 0x3f) << 6),
+          width: 1 + b1 + ((b2 & 0x3f) << 8),
           height: 1 + ((b2 >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10)),
         }
       }
