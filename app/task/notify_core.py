@@ -63,11 +63,10 @@ async def push_task_notice(
     task_info: object | None = None,
     *,
     statistics_text: Callable[[], str],
-    statistics_template: str = "general_statistics.html",
 ) -> DispatchResult:
     """按 ``mode`` 分发任务报告；未识别的模式返回空结果。
 
-    各专项的 ``notify`` 模块只声明统计信息的正文与模板，模式分发、模板渲染与
+    各专项的 ``notify`` 模块只声明统计信息的正文，模式分发、模板渲染与
     投递目标（全局渠道 + 用户独立渠道）都在这里统一，免得每个专项各写一份。
 
     Args:
@@ -78,7 +77,6 @@ async def push_task_notice(
         task_info: 任务信息，代理结果模式用于签到汇总。
         statistics_text: 统计信息的纯文本正文。只在统计信息模式下调用，
             代理结果的消息缺少这些字段也不会触发。
-        statistics_template: 统计信息的 HTML 模板，少数专项有自己的模板。
     """
 
     if mode == "代理结果":
@@ -89,7 +87,9 @@ async def push_task_notice(
     if mode != "统计信息":
         return DispatchResult()
 
-    message_html = Config.notify_env.get_template(statistics_template).render(message)
+    message_html = Config.notify_env.get_template("general_statistics.html").render(
+        message
+    )
     return await dispatch(
         NotifyPayload(title=title, text=statistics_text(), html=message_html),
         statistic_targets(user_config),
