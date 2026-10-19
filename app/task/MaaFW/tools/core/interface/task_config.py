@@ -175,7 +175,8 @@ def normalize_snapshot(
             interface_model,
         ),
         taskLabels=normalized_labels,
-        keepUnchecked=raw_snapshot["keepUnchecked"],
+        # 不带 keepUnchecked：这里按 interface 补齐了全部任务（未勾选），已不是用户的
+        # 显式队列；红灯判断与跳过记录只认调用方给的原始快照。
     )
 
 

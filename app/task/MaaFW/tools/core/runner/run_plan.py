@@ -465,9 +465,14 @@ def _build_queue_skipped_tasks(
     }
     labels = raw["taskLabels"]
     skipped: list[MaaFWSkippedTaskPlan] = []
+    seen_ids: set[str] = set()
     for task_id in raw["taskOrder"]:
         if not isinstance(task_id, str) or raw["taskChecked"].get(task_id) is not False:
             continue
+        # 同一实例 id 重复出现只记一次（运行归一化同样按实例 id 去重）
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
         task_name = resolve_task_instance_name(task_id, valid_task_names)
         if task_name not in valid_task_names:
             continue
