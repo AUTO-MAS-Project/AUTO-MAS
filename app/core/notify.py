@@ -38,7 +38,6 @@ from app.core.notify_channels import (
     get_notify_channel_failures,
     get_notify_channels,
 )
-from app.core.notify_render import render_for_target
 from app.models.notification import (
     NotifyPayload,
     RenderedNotification,
@@ -46,6 +45,7 @@ from app.models.notification import (
 from app.runtime_tasks import RuntimeTasks
 from app.services.notification import Notify
 from app.utils import get_logger
+from app.utils.notification_render import render_for_target
 
 logger = get_logger("通知编排")
 
