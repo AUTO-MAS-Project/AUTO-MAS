@@ -2,65 +2,58 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * OK-WW 用户信息（复用通用字段）
- */
 export type OkwwUserConfig_Info = {
-    /**
-     * 用户名
-     */
-    Name?: (string | null);
-    /**
-     * 用户状态
-     */
-    Status?: (boolean | null);
-    /**
-     * 剩余天数
-     */
-    RemainedDay?: (number | null);
     /**
      * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 兼容旧版用户独立配置开关
+     * 账号
      */
-    IfUseMasConfig?: (boolean | null);
+    Id?: (string | null);
     /**
-     * 是否在任务前执行脚本
+     * 是否启用 MAS 快速配置覆盖高频任务字段
      */
-    IfScriptBeforeTask?: (boolean | null);
-    /**
-     * 任务前脚本路径
-     */
-    ScriptBeforeTask?: (string | null);
+    IfQuickConfig?: (boolean | null);
     /**
      * 是否在任务后执行脚本
      */
     IfScriptAfterTask?: (boolean | null);
     /**
-     * 任务后脚本路径
+     * 是否在任务前执行脚本
      */
-    ScriptAfterTask?: (string | null);
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 用户名
+     */
+    Name?: (string | null);
     /**
      * 备注
      */
     Notes?: (string | null);
     /**
-     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     * 剩余天数
      */
-    Tag?: (string | null);
-    /**
-     * 账号
-     */
-    Id?: (string | null);
-    /**
-     * 是否启用快速配置覆盖 OK-WW 高频任务字段
-     */
-    IfQuickConfig?: (boolean | null);
+    RemainedDay?: (number | null);
     /**
      * 游戏资源
      */
     Resource?: ('官服' | '国际服' | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 用户状态
+     */
+    Status?: (boolean | null);
+    /**
+     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     */
+    readonly Tag?: (string | null);
 };
 

@@ -26,11 +26,11 @@
 import uuid
 from datetime import datetime
 
+from app.config import config_manager
 from app.core import Config
 from app.core.emulator_manager import EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.config import BAAHConfig, BAAHUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.config import BAAHConfig
 from app.models.emulator import DeviceBase, DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem
@@ -80,13 +80,14 @@ class BAAHManager(ScriptManagerBase):
         if not isinstance(script_config, BAAHConfig):
             return "脚本配置类型错误, 不是 BAAH 脚本类型"
 
-        if script_config.get("Emulator", "Id") == "-" or script_config.get(
-            "Emulator", "Index"
-        ) in ["", "-"]:
+        if script_config.Emulator.Id == "-" or script_config.Emulator.Index in [
+            "",
+            "-",
+        ]:
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
 
         ## 程序目录、配置目录与日志目录都由 BAAHPath 派生，只需校验它
-        if not str(script_config.get("Script", "BAAHPath")).strip():
+        if not str(script_config.Script.BAAHPath or "").strip():
             return "未填写 BAAH 主程序路径, 请检查脚本配置中的主程序路径设置！"
 
         return "Pass"
@@ -94,10 +95,11 @@ class BAAHManager(ScriptManagerBase):
     async def prepare(self):
         """运行前准备"""
 
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
+        self.config_locks[
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
+        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        self.user_config = MultipleConfig([BAAHUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
+        self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定, BAAH 脚本配置提取完成")
 
         self.script_info.user_list = self.build_proxy_user_list(
@@ -111,7 +113,7 @@ class BAAHManager(ScriptManagerBase):
         # BAAH 自身不再负责拉起模拟器
         device_provider = self._device_provider or EmulatorManager.get_emulator_instance
         self.emulator_manager: DeviceBase = await device_provider(
-            self.script_config.get("Emulator", "Id")
+            self.script_config.Emulator.Id
         )
 
     async def main_task(self):
@@ -151,59 +153,59 @@ class BAAHManager(ScriptManagerBase):
 
     async def final_task(self):
         """运行结束后的收尾工作"""
+        try:
+            if self.check_result != "Pass":
+                self.script_info.status = "异常"
+                return self.check_result
 
-        if self.check_result != "Pass":
-            self.script_info.status = "异常"
-            return self.check_result
+            logger.info("BAAH 任务已结束, 开始执行后续操作")
 
-        logger.info("BAAH 任务已结束, 开始执行后续操作")
+            if self.task_info.mode == "AutoProxy":
+                await close_emulator(self)
+                await config_manager.flush()
 
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
-        logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
+                summary = self.collect_user_results()
 
-        if self.task_info.mode == "AutoProxy":
-            await close_emulator(self)
-            await Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
-
-            summary = self.collect_user_results()
-
-            title = (
-                f"{datetime.now().strftime('%m-%d')} | "
-                f"{self.script_info.name or '空白'}的"
-                f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            )
-            ## 按用户交错组装「用户结果行 + 该用户节点详情」，
-            ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
-            has_uncompleted = summary.uncompleted_count > 0
-            user_result_text = build_user_result_text(
-                self.script_info.user_list, has_uncompleted
-            )
-            # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
-            mirror_report_to_dispatch(self.script_info, user_result_text)
-            result = self.build_proxy_report(result_text=user_result_text)
-
-            try:
-                await push_notification(
-                    mode="代理结果",
-                    title=title,
-                    message=result,
-                    user_config=None,
-                    task_info=self.task_info,
+                title = (
+                    f"{datetime.now().strftime('%m-%d')} | "
+                    f"{self.script_info.name or '空白'}的"
+                    f"{TASK_MODE_ZH[self.task_info.mode]}任务报告"
                 )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="error", message=f"推送代理结果时出现异常: {e}"
-                    ),
+                ## 按用户交错组装「用户结果行 + 该用户节点详情」，
+                ## 失败类型条目仅在本次任务存在未完成用户时纳入报告
+                has_uncompleted = summary.uncompleted_count > 0
+                user_result_text = build_user_result_text(
+                    self.script_info.user_list, has_uncompleted
                 )
+                # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+                mirror_report_to_dispatch(self.script_info, user_result_text)
+                result = self.build_proxy_report(result_text=user_result_text)
 
-        self.script_info.status = "完成"
+                try:
+                    await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                    )
+                except Exception as e:
+                    logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error", message=f"推送代理结果时出现异常: {e}"
+                        ),
+                    )
+
+            self.script_info.status = "完成"
+        finally:
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
 

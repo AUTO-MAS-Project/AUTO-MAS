@@ -248,7 +248,13 @@ class OpenClawQQManager:
 
         if self._hooks_bound:
             return
-        Config.bind("Notify", "IfOpenClawQQ", self._on_enabled_changed)
+
+        async def on_enabled_changed(sender, event):
+            await self._on_enabled_changed(event.value)
+
+        self._config_receiver = Config.setting.connect(
+            on_enabled_changed, phase="runtime", group="Notify", field="IfOpenClawQQ"
+        )
         self._hooks_bound = True
 
     async def start(self) -> None:
@@ -276,7 +282,7 @@ class OpenClawQQManager:
 
     def _enabled(self) -> bool:
         try:
-            return bool(Config.get("Notify", "IfOpenClawQQ"))
+            return bool(Config.setting.Notify.IfOpenClawQQ)
         except (AttributeError, RuntimeError):
             return False
 
@@ -284,7 +290,7 @@ class OpenClawQQManager:
         """读取内部配置；平台不支持密文时按未保存处理。"""
 
         try:
-            return Config.get("Notify", name)
+            return getattr(Config.setting.Notify, name)
         except Exception as exc:
             if platform_secret.is_secret_storage_error(exc):
                 return default
@@ -584,7 +590,10 @@ class OpenClawQQManager:
             if self._can_persist_secrets():
                 values["OpenClawQQClientSecret"] = ""
             async with self._config_lock:
-                await Config.update({"Notify": values})
+                await Config.setting.update(
+                    type(Config.setting).model_validate({"Notify": values}),
+                    check_visibility=False,
+                )
 
     async def _start_gateway(self, app_id: str, client_secret: str) -> None:
         """使用当前凭据启动唯一的 QQ 网关连接任务。"""
@@ -980,20 +989,26 @@ class OpenClawQQManager:
         async with self._config_lock:
             if self._can_persist_secrets():
                 try:
-                    await Config.update(
-                        {
-                            "Notify": {
-                                **values,
-                                "OpenClawQQClientSecret": normalized.client_secret,
+                    await Config.setting.update(
+                        type(Config.setting).model_validate(
+                            {
+                                "Notify": {
+                                    **values,
+                                    "OpenClawQQClientSecret": normalized.client_secret,
+                                }
                             }
-                        }
+                        ),
+                        check_visibility=False,
                     )
                 except Exception as exc:
                     if not platform_secret.is_secret_storage_error(exc):
                         raise
                     self._secret_storage_available = False
             if not self._can_persist_secrets():
-                await Config.update({"Notify": values})
+                await Config.setting.update(
+                    type(Config.setting).model_validate({"Notify": values}),
+                    check_visibility=False,
+                )
                 logger.warning(
                     "当前平台不支持 Windows DPAPI，QQ 凭据仅保存在本次运行内；"
                     "应用重启后需要重新扫码"

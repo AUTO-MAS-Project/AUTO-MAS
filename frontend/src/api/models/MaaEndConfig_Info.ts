@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type MaaEndConfig_Info = {
     /**
-     * 脚本名称
+     * MaaEnd 脚本名称
      */
     Name?: (string | null);
     /**
-     * 脚本路径
+     * MaaEnd 路径
      */
     Path?: (string | null);
 };

@@ -2,10 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BAAHPlanConfig } from './BAAHPlanConfig';
-import type { MaaEndPlanConfig } from './MaaEndPlanConfig';
-import type { MaaPlanConfig } from './MaaPlanConfig';
-import type { MSSPlanConfig } from './MSSPlanConfig';
+import type { PlanConfigData } from './PlanConfigData';
 export type PlanCreateOut = {
     /**
      * 状态码
@@ -26,6 +23,6 @@ export type PlanCreateOut = {
     /**
      * 计划配置数据
      */
-    data: (MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig);
+    data: PlanConfigData;
 };
 

@@ -8,11 +8,11 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, overload
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.ConfigBase import ConfigBase
+from app.models.config import UserConfigType
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, TaskItem, UserItem
 from app.task.maintenance import (
@@ -43,6 +43,9 @@ class UserRunSummary:
 
 
 class ScriptManagerBase(TaskExecuteBase):
+    # 收尾仍持有配置 X 锁，取消后也须等待完成再让调度器切换任务。
+    wait_for_finalizer_on_cancel = True
+
     # 分组只消费专项已经给出的状态；成功口径可由专项声明。
     completed_user_statuses = frozenset({"完成"})
 
@@ -55,27 +58,37 @@ class ScriptManagerBase(TaskExecuteBase):
         self.begin_time = ""
         self._executed_user_ids: set[str] = set()
 
-    def is_user_selected(self, user_id: uuid.UUID | str, user: ConfigBase) -> bool:
+    def is_user_selected(self, user_id: uuid.UUID | str, user: UserConfigType) -> bool:
         return (
-            bool(user.get("Info", "Status"))
-            and user.get("Info", "RemainedDay") != 0
+            bool(user.Info.Status)
+            and user.Info.RemainedDay != 0
             and self.task_info.is_target_user(str(user_id))
         )
 
+    @overload
+    def selected_user_configs[U: UserConfigType](
+        self, items: Iterable[tuple[uuid.UUID, U]]
+    ) -> list[tuple[uuid.UUID, U]]: ...
+
+    @overload
     def selected_user_configs(
-        self, items: Iterable[tuple[uuid.UUID, ConfigBase]] | None = None
-    ) -> list[tuple[uuid.UUID, ConfigBase]]:
+        self, items: None = None
+    ) -> list[tuple[uuid.UUID, UserConfigType]]: ...
+
+    def selected_user_configs(
+        self, items: Iterable[tuple[uuid.UUID, UserConfigType]] | None = None
+    ) -> list[tuple[uuid.UUID, UserConfigType]]:
         if items is None:
             script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
             items = script_config.UserData.items()
         return [(uid, user) for uid, user in items if self.is_user_selected(uid, user)]
 
     def build_proxy_user_list(
-        self, items: Iterable[tuple[uuid.UUID, ConfigBase]] | None = None
+        self, items: Iterable[tuple[uuid.UUID, UserConfigType]] | None = None
     ) -> list[UserItem]:
-        """只生成运行列表；用于写回的配置副本始终保留全部账号。"""
+        """只筛选运行列表，原配置集合保留全部账号。"""
         return [
-            UserItem(str(uid), user.get("Info", "Name"), "等待")
+            UserItem(str(uid), user.Info.Name, "等待")
             for uid, user in self.selected_user_configs(items)
         ]
 
@@ -112,6 +125,8 @@ class ScriptManagerBase(TaskExecuteBase):
     async def run_user_task(self, user: UserItem, task: TaskExecuteBase) -> None:
         if self.task_info.mode == "AutoProxy":
             self.record_user_run_start(user)
+        # 子任务收尾仍可能修改原配置，反复取消也须等待其结束后再释放脚本 X 锁。
+        task.wait_for_finalizer_on_cancel = True
         await self.spawn(task)
 
     def build_proxy_report(
@@ -170,7 +185,7 @@ class ScriptManagerBase(TaskExecuteBase):
         """专项按现有配置更新游戏；脚本本体更新继续由各专项自己的流程处理。"""
 
     async def skip_maintenance_user(
-        self, user: UserItem, user_config: ConfigBase
+        self, user: UserItem, user_config: UserConfigType
     ) -> bool:
         window = await get_user_maintenance(user_config, proxy=Config.proxy)
         if window is None:
@@ -181,7 +196,7 @@ class ScriptManagerBase(TaskExecuteBase):
     async def check_user_before_run(
         self,
         user: UserItem,
-        user_config: ConfigBase,
+        user_config: UserConfigType,
         *,
         game_update_result: GameUpdateResult | None = None,
     ) -> bool:

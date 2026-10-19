@@ -62,8 +62,8 @@ def _user_guard(ctx: RestoreContext) -> None:
 def _native_config_path(ctx: RestoreContext) -> tuple[Path | None, str]:
     """原生配置路径与模式（Folder/File）；未配置路径返回 None。"""
 
-    raw = str(ctx.script_config.get("Script", "ConfigPath") or "").strip()
-    mode = str(ctx.script_config.get("Script", "ConfigPathMode") or "Folder")
+    raw = str(ctx.script_config.Script.ConfigPath or "").strip()
+    mode = str(ctx.script_config.Script.ConfigPathMode or "Folder")
     return (Path(raw) if raw else None, mode)
 
 
@@ -94,7 +94,7 @@ def _preview_payload(ctx: RestoreContext, ts: str, backup: Path | None) -> dict:
 
     if backup is None:
         raise ValueError(f"备份不存在: {ts}")
-    root_path = str(ctx.script_config.get("Info", "RootPath") or "")
+    root_path = str(ctx.script_config.Info.RootPath or "")
     labels = load_oknte_option_labels(root_path) if root_path else {}
     keep = (DAILY_ROUTINE_TASK_FILE, DAILY_ROUTINE_CONFIGS_FILE)
     files = [f for f in build_backup_file_summary(backup, labels) if f["name"] in keep]

@@ -10,7 +10,7 @@ const { t } = useI18n()
 const props = defineProps<{
   open: boolean
   pattern: PushLogPattern | null
-  logPath?: string
+  logPath?: string | null
 }>()
 
 const emit = defineEmits<{

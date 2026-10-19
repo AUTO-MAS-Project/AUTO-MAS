@@ -144,7 +144,7 @@ def _build_src_manager(
     )
 
 
-# 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigBase），
+# 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigEntry），
 # 按 type 精确查表；新增脚本类型在这里注册一条即可。工厂体内经 task 包
 # 惰性取类，维持 app/task/__init__.py 为 worker 子进程设的导入隔离。
 _MANAGER_BOOK: dict[
@@ -284,7 +284,7 @@ def _exclusive_resources(
 
     roots: tuple[Path, ...] = ()
     if isinstance(script_config, (MaaConfig, SrcConfig, MaaEndConfig)):
-        raw = str(script_config.get("Info", "Path") or "").strip()
+        raw = str(script_config.Info.Path or "").strip()
         roots = (Path(raw),) if raw else ()
     return roots, _emulator_key(script_config)
 
@@ -294,24 +294,22 @@ def _emulator_key(script_config: object) -> str | None:
 
     if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
         # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
-        emulator_id = script_config.get("Emulator", "Id")
-        index = script_config.get("Emulator", "Index")
+        emulator_id = script_config.Emulator.Id
+        index = script_config.Emulator.Index
     elif isinstance(script_config, MaaEndConfig):
         # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
         # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
         # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
-        emulator_id = script_config.get("Game", "EmulatorId")
-        index = script_config.get("Game", "EmulatorIndex")
+        emulator_id = script_config.Game.EmulatorId
+        index = script_config.Game.EmulatorIndex
     elif isinstance(script_config, GeneralConfig):
         # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
         # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
         # 也不占实例键，免得把合法并发压成串行。
-        if not script_config.get("Game", "Enabled") or (
-            script_config.get("Game", "Type") != "Emulator"
-        ):
+        if not script_config.Game.Enabled or script_config.Game.Type != "Emulator":
             return None
-        emulator_id = script_config.get("Game", "EmulatorId")
-        index = script_config.get("Game", "EmulatorIndex")
+        emulator_id = script_config.Game.EmulatorId
+        index = script_config.Game.EmulatorIndex
     else:
         return None
     if str(emulator_id or "") in ("", "-") or str(index or "") in ("", "-"):
@@ -420,7 +418,7 @@ class TaskInfo(TaskItem):
         if self.mode != "AutoProxy" or self.replay_cancelled:
             return
         try:
-            if not Config.get("Replay", "Enabled"):
+            if not Config.setting.Replay.Enabled:
                 return
             script_id = script.script_id if script else "scheduler"
             run_id = self._replay_runs.setdefault(script_id, str(uuid.uuid4()))
@@ -672,18 +670,12 @@ class Task(TaskExecuteBase):
             ScriptItem(
                 script_id=script_id,
                 status="等待",
-                name=Config.ScriptConfig[uuid.UUID(script_id)].get("Info", "Name"),
-                # AutoProxy 的真实用户由对应 manager 在轮到该脚本时加载；提前
-                # 播种占位项会把未轮到的脚本伪装成已有一个用户。
-                user_list=(
-                    []
-                    if self.task_info.mode == "AutoProxy"
-                    else [
-                        UserItem(
-                            user_id=str(uuid.uuid4()), name="暂未加载", status="等待"
-                        )
-                    ]
-                ),
+                name=Config.ScriptConfig[uuid.UUID(script_id)].Info.Name,
+                user_list=[]
+                if self.task_info.mode == "AutoProxy"
+                else [
+                    UserItem(user_id=str(uuid.uuid4()), name="暂未加载", status="等待")
+                ],
             )
             for script_id in script_ids
         ]
@@ -852,10 +844,17 @@ class Task(TaskExecuteBase):
         # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
         for entry in entries:
             queue_item = queue.QueueItem[uuid.UUID(entry.queue_item_id)]
-            stored = parse_cycle_time(queue_item.get("Schedule", "NextRunAt"))
+            stored = parse_cycle_time(queue_item.Schedule.NextRunAt)
             if is_empty_cycle_time(stored) and entry.next_run_at > now:
-                await queue_item.set(
-                    "Schedule", "NextRunAt", format_cycle_time(entry.next_run_at)
+                await queue_item.update(
+                    type(queue_item).model_validate(
+                        {
+                            "Schedule": {
+                                "NextRunAt": format_cycle_time(entry.next_run_at)
+                            }
+                        }
+                    ),
+                    check_visibility=False,
                 )
 
         await self._publish_cycle_preview(entries)
@@ -1000,20 +999,30 @@ class Task(TaskExecuteBase):
 
         self.task_info.begin_script_run(script_item)
         started_at = datetime.now()
-        previous_started_at = queue_item.get("Data", "LastCycleStartedAt")
+        previous_started_at = queue_item.Data.LastCycleStartedAt
         success = False
         # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
         # 用户主动停止走的是 CancelledError，不在这里拦。
         try:
-            await queue_item.set(
-                "Data", "LastCycleStartedAt", format_cycle_time(started_at)
+            await queue_item.update(
+                type(queue_item).model_validate(
+                    {"Data": {"LastCycleStartedAt": format_cycle_time(started_at)}}
+                ),
+                check_visibility=False,
             )
             # 先按开始时间排下一轮：万一这轮崩了，下次运行时间也不会停在过去。
-            if queue_item.get("Schedule", "IntervalAnchor") == "start":
-                await queue_item.set(
-                    "Schedule",
-                    "NextRunAt",
-                    format_next_run(next_after_start(queue_item, started_at)),
+            if queue_item.Schedule.IntervalAnchor == "start":
+                await queue_item.update(
+                    type(queue_item).model_validate(
+                        {
+                            "Schedule": {
+                                "NextRunAt": format_next_run(
+                                    next_after_start(queue_item, started_at)
+                                )
+                            }
+                        }
+                    ),
+                    check_visibility=False,
                 )
 
             task_item = self._build_task_item(
@@ -1055,21 +1064,34 @@ class Task(TaskExecuteBase):
             and script_item.user_list
             and all(user.maintenance_skipped for user in script_item.user_list)
         ):
-            await queue_item.set("Data", "LastCycleStartedAt", previous_started_at)
+            await queue_item.update(
+                type(queue_item).model_validate(
+                    {"Data": {"LastCycleStartedAt": previous_started_at}}
+                ),
+                check_visibility=False,
+            )
             await self._advance_cycle_after_maintenance(queue_item)
             return "skipped"
 
         # 成败都要把下次运行时间推到未来，否则失败的条目会立刻再被挑中。
         finished_at = datetime.now()
-        await queue_item.set(
-            "Data", "LastCycleFinishedAt", format_cycle_time(finished_at)
+        await queue_item.update(
+            type(queue_item).model_validate(
+                {"Data": {"LastCycleFinishedAt": format_cycle_time(finished_at)}}
+            ),
+            check_visibility=False,
         )
-        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+        if queue_item.Schedule.IntervalAnchor == "start":
             # 跑得比间隔还久时往后顺延，别一结束就立刻再来一轮。
             next_run_at = next_after_start(queue_item, started_at, after=finished_at)
         else:
             next_run_at = next_after_finish(queue_item, finished_at)
-        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
+        await queue_item.update(
+            type(queue_item).model_validate(
+                {"Schedule": {"NextRunAt": format_next_run(next_run_at)}}
+            ),
+            check_visibility=False,
+        )
 
         if not success:
             logger.warning(f"循环任务未成功: {entry.script_name}")
@@ -1078,11 +1100,16 @@ class Task(TaskExecuteBase):
     async def _advance_cycle_after_maintenance(self, queue_item) -> None:
         """仅消费本次排期，不记录代理执行，也不安排维护结束补跑。"""
         skipped_at = datetime.now()
-        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+        if queue_item.Schedule.IntervalAnchor == "start":
             next_run_at = next_after_start(queue_item, skipped_at)
         else:
             next_run_at = next_after_finish(queue_item, skipped_at)
-        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
+        await queue_item.update(
+            type(queue_item).model_validate(
+                {"Schedule": {"NextRunAt": format_next_run(next_run_at)}}
+            ),
+            check_visibility=False,
+        )
 
     async def _spawn_with_preview(
         self,
@@ -1217,10 +1244,10 @@ class Task(TaskExecuteBase):
         if queue_uid not in Config.QueueConfig:
             return False
         queue_config = Config.QueueConfig[queue_uid]
-        if not queue_config.get("Info", if_key):
+        if not getattr(queue_config.Info, if_key):
             return False
 
-        script_path = str(queue_config.get("Info", path_key) or "").strip()
+        script_path = str(getattr(queue_config.Info, path_key) or "").strip()
         if not script_path:
             return False
 
@@ -1450,11 +1477,9 @@ class Task(TaskExecuteBase):
                     logger.info(f"队列 {queue_uid} 已删除，跳过完成后操作")
                     return
                 queue_config = Config.QueueConfig[queue_uid]
-                Config.power_sign = queue_config.get("Info", "AfterAccomplish")
+                Config.power_sign = queue_config.Info.AfterAccomplish
                 # 队列可为完成后操作单独设定延时, 延时期间不弹出倒计时窗口
-                Config.power_delay = (
-                    queue_config.get("Info", "AfterAccomplishDelay") * 60
-                )
+                Config.power_delay = queue_config.Info.AfterAccomplishDelay * 60
                 await Publisher.send(
                     id=protocol.ID_MAIN,
                     type=protocol.POWER_SIGN_UPDATED,
@@ -1518,9 +1543,9 @@ class _TaskManager:
         """返回队列中实际引用的脚本 ID 及该队列项限定的运行周几。"""
 
         return [
-            (uuid.UUID(script_id), list(queue_item.get("Schedule", "Days")))
+            (uuid.UUID(script_id), list(queue_item.Schedule.Days))
             for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
-            if (script_id := str(queue_item.get("Info", "ScriptId") or "").strip())
+            if (script_id := str(queue_item.Info.ScriptId or "").strip())
             and script_id != "-"
         ]
 
@@ -1546,13 +1571,15 @@ class _TaskManager:
         identities: dict[uuid.UUID, WSTaskScriptIdentityData] = {}
         for queue_id, queue in Config.QueueConfig.items():
             # 循环队列不走定时唤起，与 timed_start 口径一致
-            if queue.get("Info", "CycleEnabled"):
+            if queue.Info.CycleEnabled:
                 continue
-            if not queue.get("Info", "TimeEnabled"):
+            if not queue.Info.TimeEnabled:
                 continue
             if not any(
-                time_set.get("Info", "Enabled") and time_set.get("Info", "Days")
-                for time_set in queue.TimeSet.values()
+                (
+                    time_set.Info.Enabled and time_set.Info.Days
+                    for time_set in queue.TimeSet.values()
+                )
             ):
                 continue
 
@@ -1679,7 +1706,7 @@ class _TaskManager:
             return None
 
         script_config = Config.ScriptConfig[script_uid]
-        script_name = script_config.get("Info", "Name")
+        script_name = script_config.Info.Name
         try:
             user_uid = uuid.UUID(user_id)
         except ValueError as e:
@@ -1689,13 +1716,8 @@ class _TaskManager:
 
         # 与各脚本适配器构建用户列表时的筛选口径保持一致，否则会静默跑出一个空用户列表
         user_config = script_config.UserData[user_uid]
-        if (
-            not user_config.get("Info", "Status")
-            or user_config.get("Info", "RemainedDay") == 0
-        ):
-            raise ValueError(
-                f"用户 {user_config.get('Info', 'Name')} 未启用或代理天数已耗尽"
-            )
+        if not user_config.Info.Status or user_config.Info.RemainedDay == 0:
+            raise ValueError(f"用户 {user_config.Info.Name} 未启用或代理天数已耗尽")
         return user_uid
 
     def _resolve_target_users(
@@ -1725,7 +1747,7 @@ class _TaskManager:
         scope: dict[str, frozenset[str]] = {}
         for script_id, user_ids in queue_user_ids.items():
             if script_id not in queue_script_ids:
-                queue_name = Config.QueueConfig[queue_id].get("Info", "Name")
+                queue_name = Config.QueueConfig[queue_id].Info.Name
                 raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
             if not user_ids:
                 # 空集合是有意义的取值：该托管本次一个用户都不跑。
@@ -1804,13 +1826,13 @@ class _TaskManager:
         if is_cycle:
             if uid not in Config.QueueConfig:
                 raise ValueError(f"循环运行的任务 {uid} 必须是调度队列")
-            if not Config.QueueConfig[uid].get("Info", "CycleEnabled"):
+            if not Config.QueueConfig[uid].Info.CycleEnabled:
                 raise ValueError(
-                    f"队列 {Config.QueueConfig[uid].get('Info', 'Name')} 不是循环队列"
+                    f"队列 {Config.QueueConfig[uid].Info.Name} 不是循环队列"
                 )
             if uid in Config.running_cycle_queue_ids:
                 raise RuntimeError(
-                    f"循环队列 {Config.QueueConfig[uid].get('Info', 'Name')} 已在运行"
+                    f"循环队列 {Config.QueueConfig[uid].Info.Name} 已在运行"
                 )
             # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
             Config.running_cycle_queue_ids.add(uid)
@@ -1882,7 +1904,7 @@ class _TaskManager:
                 root_paths=root_paths,
                 emulator_key=emulator_key,
             ):
-                raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
+                raise RuntimeError(f"任务 {script_config.Info.Name} 已在运行")
             reservation_acquired = True
 
         self._creating_tasks += 1
@@ -2063,11 +2085,11 @@ class _TaskManager:
             logger.info("开始运行启动时任务")
             for uid, queue in Config.QueueConfig.items():
                 # 循环队列启动后会一直跑下去，任务模式与文案都要跟着换
-                is_cycle = bool(queue.get("Info", "CycleEnabled"))
+                is_cycle = bool(queue.Info.CycleEnabled)
                 start_mode = "CycleRun" if is_cycle else "AutoProxy"
                 task_type = "启动时循环" if is_cycle else "启动时代理"
 
-                StartUpMode = queue.get("Info", "StartUpMode")
+                StartUpMode = queue.Info.StartUpMode
                 if StartUpMode == "Always":
                     logger.info(f"启动时需要运行的队列：{uid}")
                     # 单个队列创建失败（脚本被锁/已在运行）不中断其余启动队列；
@@ -2078,7 +2100,7 @@ class _TaskManager:
                             str(uid),
                             new_task_info={
                                 "queueId": str(uid),
-                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskName": f"队列 - {queue.Info.Name}",
                                 "taskType": task_type,
                             },
                             trigger_source="startup_task",
@@ -2086,11 +2108,16 @@ class _TaskManager:
                     except (RuntimeError, ValueError) as error:
                         logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
                         continue
-                    await queue.set("Data", "LastStartupTime", curday)
+                    await queue.update(
+                        type(queue).model_validate(
+                            {"Data": {"LastStartupTime": datetime.now().astimezone()}}
+                        ),
+                        check_visibility=False,
+                    )
 
                 elif StartUpMode == "DailyFirst":
                     # 检查 DailyFirst 模式是否已在今日运行过
-                    if queue.get("Data", "LastStartupTime") == curday:
+                    if queue.Data.LastStartupTime.strftime("%Y-%m-%d") == curday:
                         logger.info(f"队列 {uid} 已在今日运行过，跳过该次运行")
                         continue
 
@@ -2101,7 +2128,7 @@ class _TaskManager:
                             str(uid),
                             new_task_info={
                                 "queueId": str(uid),
-                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskName": f"队列 - {queue.Info.Name}",
                                 "taskType": task_type,
                             },
                             trigger_source="startup_task",
@@ -2109,7 +2136,12 @@ class _TaskManager:
                     except (RuntimeError, ValueError) as error:
                         logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
                         continue
-                    await queue.set("Data", "LastStartupTime", curday)
+                    await queue.update(
+                        type(queue).model_validate(
+                            {"Data": {"LastStartupTime": datetime.now().astimezone()}}
+                        ),
+                        check_visibility=False,
+                    )
 
         finally:
             self._startup_queue_task = None

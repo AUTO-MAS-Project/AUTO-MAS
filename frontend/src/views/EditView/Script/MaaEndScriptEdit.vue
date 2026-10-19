@@ -683,7 +683,7 @@ const formData = reactive({
   get path() {
     return maaEndConfig.Info.Path
   },
-  set path(value: string) {
+  set path(value: string | null) {
     maaEndConfig.Info.Path = value
   },
 })

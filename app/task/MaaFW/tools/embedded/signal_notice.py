@@ -134,7 +134,7 @@ def signal_global_targets() -> list[NotifyTarget]:
     ``push_signal_notices``。
     """
 
-    if Config.get("Notify", "SendTaskResultTime") != "不推送":
+    if Config.setting.Notify.SendTaskResultTime != "不推送":
         return [global_target(include_system=True, system_timeout_seconds=10)]
     return []
 

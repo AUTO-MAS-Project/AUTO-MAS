@@ -226,7 +226,7 @@ class Notification:
             通知持续时间
         """
 
-        if not Config.get("Notify", "IfPushPlyer"):
+        if not Config.setting.Notify.IfPushPlyer:
             return
 
         logger.info(f"推送系统通知: {title}")
@@ -271,14 +271,14 @@ class Notification:
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
-        if Config.get("Notify", "SMTPServerAddress") == "":
+        if Config.setting.Notify.SMTPServerAddress == "":
             raise ValueError("邮件通知的SMTP服务器地址不能为空")
-        if Config.get("Notify", "AuthorizationCode") == "":
+        if Config.setting.Notify.AuthorizationCode == "":
             raise ValueError("邮件通知的授权码不能为空")
         if not bool(
             re.match(
-                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                Config.get("Notify", "FromAddress"),
+                "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+                Config.setting.Notify.FromAddress,
             )
         ):
             raise ValueError("邮件通知的发送邮箱格式错误或为空")
@@ -329,7 +329,7 @@ class Notification:
         message["From"] = formataddr(
             (
                 Header("AUTO-MAS通知服务", "utf-8").encode(),
-                Config.get("Notify", "FromAddress"),
+                Config.setting.Notify.FromAddress,
             )
         )  # 发件人显示的名字
         message["To"] = formataddr(
@@ -342,9 +342,9 @@ class Notification:
             for part in email_images:
                 message.attach(part)
 
-        smtp_server = Config.get("Notify", "SMTPServerAddress")
-        from_address = Config.get("Notify", "FromAddress")
-        authorization_code = Config.get("Notify", "AuthorizationCode")
+        smtp_server = Config.setting.Notify.SMTPServerAddress
+        from_address = Config.setting.Notify.FromAddress
+        authorization_code = Config.setting.Notify.AuthorizationCode
 
         def send() -> None:
             with smtplib.SMTP_SSL(
@@ -457,20 +457,29 @@ class Notification:
         images: Sequence[NotificationImage], optional
             可选图片资源，由 Webhook 协议适配器编码
         """
+        if not isinstance(webhook, WebhookTargetSnapshot):
+            webhook = WebhookTargetSnapshot(
+                name=webhook.Info.Name,
+                enabled=webhook.Info.Enabled,
+                url=webhook.Data.Url,
+                template=webhook.Data.Template,
+                headers=webhook.Data.Headers,
+                method=webhook.Data.Method,
+            )
         image = images[-1] if images else None
         image_base64 = (
             base64.b64encode(image.data).decode("ascii")
             if image is not None and image.data is not None
             else ""
         )
-        if not webhook.get("Info", "Enabled"):
+        if not webhook.enabled:
             return
 
-        if webhook.get("Data", "Url") == "":
+        if webhook.url == "":
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
-        template = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
+        template = webhook.template or DEFAULT_WEBHOOK_TEMPLATE
 
         # 替换模板变量
         try:
@@ -557,12 +566,12 @@ class Notification:
 
         # 准备请求头
         headers = {"Content-Type": "application/json"}
-        headers.update(json.loads(webhook.get("Data", "Headers")))
+        headers.update(json.loads(webhook.headers))
 
-        url = webhook.get("Data", "Url")
+        url = webhook.url
 
         async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
-            if webhook.get("Data", "Method") == "POST":
+            if webhook.method == "POST":
                 if isinstance(data, str):
                     response = await client.post(url=url, content=data, headers=headers)
                 elif data is None:
@@ -572,7 +581,7 @@ class Notification:
                     )
                 else:
                     response = await client.post(url=url, json=data, headers=headers)
-            elif webhook.get("Data", "Method") == "GET":
+            elif webhook.method == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
                     params = {}
@@ -588,21 +597,17 @@ class Notification:
         # 检查响应
         if not response.is_success:
             raise Exception(
-                f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}: {response.text}"
+                f"[{webhook.name}] HTTP {response.status_code}: {response.text}"
             )
         failure = webhook_body_failure(response.text, url)
         if failure is not None:
-            raise Exception(f"[{webhook.get('Info', 'Name')}] 服务端拒绝: {failure}")
-        logger.success(
-            f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
-        )
+            raise Exception(f"[{webhook.name}] 服务端拒绝: {failure}")
+        logger.success(f"自定义Webhook推送成功: {webhook.name} - {title}")
 
         # 企业微信群机器人的文本消息放不下图，失败截图要单独补发一条图片消息；
         # 模板里自己写了 {image_base64} 的说明用户已经处理过图，不再补发。
         if image_base64 and "{image_base64}" not in template and _is_wecom_robot(url):
-            await self._push_wecom_image(
-                url, image_base64, headers, webhook.get("Info", "Name")
-            )
+            await self._push_wecom_image(url, image_base64, headers, webhook.name)
 
     async def _push_wecom_image(
         self, url: str, image_base64: str, headers: dict, name: str

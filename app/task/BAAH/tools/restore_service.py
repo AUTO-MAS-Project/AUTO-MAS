@@ -77,8 +77,7 @@ def _config_name(ctx: RestoreContext) -> str:
     """当前用户的 BAAH 配置文件名（未填时抛错，由服务层转 400）。"""
 
     name = str(
-        ctx.script_config.UserData[uuid.UUID(ctx.user_id)].get("Info", "ConfigName")
-        or ""
+        ctx.script_config.UserData[uuid.UUID(ctx.user_id)].Info.ConfigName or ""
     ).strip()
     if not name:
         raise ValueError("当前用户未填写 BAAH 配置文件名，请先在用户配置中填写")
@@ -94,7 +93,7 @@ def _config_dir_or_none(ctx: RestoreContext) -> str | None:
     恢复回调仍走 :func:`_config_dir`（恢复是显式用户操作，未配置报错合理）。
     """
 
-    raw = str(ctx.script_config.get("Script", "BAAHPath") or "").strip()
+    raw = str(ctx.script_config.Script.BAAHPath or "").strip()
     if not raw:
         return None
     return str(Path(raw).parent / CONFIG_DIR_NAME)
@@ -143,7 +142,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     )
     restored = restore_mas_backup(ctx.script_id, ctx.user_id, ts)
     if restored:
-        await user.update(group_overlay(restored))
+        await user.update(type(user).model_validate(group_overlay(restored)))
         logger.info("用户 {} 的 MAS 字段已恢复备份 {}", ctx.user_id, ts)
 
 
@@ -166,7 +165,7 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
 async def _native_root(ctx: RestoreContext) -> Path | None:
     """归档根按 BAAHPath 派生（按配置目录指纹 + 用户分桶）；未配置返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Script", "BAAHPath") or "").strip()
+    raw = str(ctx.script_config.Script.BAAHPath or "").strip()
     if not raw:
         return None
     return native_backup_root(str(Path(raw).parent / CONFIG_DIR_NAME), ctx.user_id)

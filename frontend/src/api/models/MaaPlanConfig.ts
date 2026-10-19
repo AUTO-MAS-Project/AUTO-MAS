@@ -2,44 +2,24 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaPlanConfig_ALL } from './MaaPlanConfig_ALL';
+import type { MaaPlanConfig_Friday } from './MaaPlanConfig_Friday';
 import type { MaaPlanConfig_Info } from './MaaPlanConfig_Info';
-import type { MaaPlanConfig_Item } from './MaaPlanConfig_Item';
+import type { MaaPlanConfig_Monday } from './MaaPlanConfig_Monday';
+import type { MaaPlanConfig_Saturday } from './MaaPlanConfig_Saturday';
+import type { MaaPlanConfig_Sunday } from './MaaPlanConfig_Sunday';
+import type { MaaPlanConfig_Thursday } from './MaaPlanConfig_Thursday';
+import type { MaaPlanConfig_Tuesday } from './MaaPlanConfig_Tuesday';
+import type { MaaPlanConfig_Wednesday } from './MaaPlanConfig_Wednesday';
 export type MaaPlanConfig = {
-    /**
-     * 基础信息
-     */
+    ALL?: (MaaPlanConfig_ALL | null);
+    Friday?: (MaaPlanConfig_Friday | null);
     Info?: (MaaPlanConfig_Info | null);
-    /**
-     * 全局
-     */
-    ALL?: (MaaPlanConfig_Item | null);
-    /**
-     * 周一
-     */
-    Monday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (MaaPlanConfig_Item | null);
+    Monday?: (MaaPlanConfig_Monday | null);
+    Saturday?: (MaaPlanConfig_Saturday | null);
+    Sunday?: (MaaPlanConfig_Sunday | null);
+    Thursday?: (MaaPlanConfig_Thursday | null);
+    Tuesday?: (MaaPlanConfig_Tuesday | null);
+    Wednesday?: (MaaPlanConfig_Wednesday | null);
 };
 

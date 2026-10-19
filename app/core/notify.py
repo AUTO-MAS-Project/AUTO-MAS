@@ -164,8 +164,9 @@ class TaskCommunitySignNotification:
 
         # 与报告投递共用锁：即使结果在报告发送中到达，也只补发未收到摘要的渠道。
         async with self.lock:
-            if self.task_info.community_summary_consumed or not Config.ToolsConfig.get(
-                "GameSign", "NotifyEnabled"
+            if (
+                self.task_info.community_summary_consumed
+                or not Config.ToolsConfig.GameSign.NotifyEnabled
             ):
                 return
             delivered = set(getattr(self.task_info, "game_sign_summary_delivered", ()))
@@ -217,7 +218,7 @@ def global_target(
         # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
         if channel.key == "system" and not include_system:
             continue
-        for target in channel.targets(Config, scope="global"):
+        for target in channel.targets(Config.setting, scope="global"):
             if channel.key == "system" and system_timeout_seconds is not None:
                 target = replace(target, timeout_seconds=system_timeout_seconds)
             pairs.append((channel, target))
@@ -257,12 +258,12 @@ def should_send_result(message: dict, *, task_info: object | None = None) -> boo
         community_sign = getattr(task_info, "community_sign_notification", None)
         if (
             community_sign is not None
-            and not community_sign.completed.is_set()
-            and Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+            and (not community_sign.completed.is_set())
+            and Config.ToolsConfig.GameSign.NotifyEnabled
         ):
             return True
 
-    result_time = Config.get("Notify", "SendTaskResultTime")
+    result_time = Config.setting.Notify.SendTaskResultTime
     if result_time == "任何时刻":
         return True
 
@@ -274,8 +275,8 @@ def user_statistic_targets(user_config: Any | None) -> list[NotifyTarget]:
 
     if (
         user_config is None
-        or not user_config.get("Notify", "Enabled")
-        or not user_config.get("Notify", "IfSendStatistic")
+        or not user_config.Notify.Enabled
+        or (not user_config.Notify.IfSendStatistic)
     ):
         return []
     return [user_target(user_config)]
@@ -290,7 +291,7 @@ def statistic_targets(
     """返回全局与用户级统计通知目标。"""
 
     targets = []
-    if Config.get("Notify", "IfSendStatistic"):
+    if Config.setting.Notify.IfSendStatistic:
         targets.append(global_target(empty_policy=global_empty_policy))
     targets.extend(user_statistic_targets(user_config))
     if compact_summary:
@@ -539,7 +540,7 @@ async def dispatch_task_report(
 
     async with community_sign.lock:
         community_sign.targets = targets
-        notify_enabled = Config.ToolsConfig.get("GameSign", "NotifyEnabled")
+        notify_enabled = Config.ToolsConfig.GameSign.NotifyEnabled
         if (
             notify_enabled
             and not community_sign.completed.is_set()

@@ -595,12 +595,12 @@ def user_field_patch(user_config) -> dict[str, Any]:
         ("bilibili_account_name", "Game", "BilibiliAccountName"),
         ("platform", "Game", "Platform"),
     ):
-        value = str(user_config.get(section, field) or "").strip()
+        value = str(getattr(getattr(user_config, section), field) or "").strip()
         if value:
             patch[yaml_key] = value
     # 布尔字段原样写入（YAML 布尔而非字符串）：MAS 字段是事实源，False 也下发
-    patch["use_custom_win_title"] = bool(user_config.get("Game", "UseCustomWinTitle"))
-    title = str(user_config.get("Game", "CustomWinTitle") or "").strip()
+    patch["use_custom_win_title"] = bool(user_config.Game.UseCustomWinTitle)
+    title = str(user_config.Game.CustomWinTitle or "").strip()
     if title:
         patch["custom_win_title"] = title
     return patch
@@ -681,14 +681,13 @@ def launch_args_patch(user_config) -> dict[str, Any]:
 
     patch: dict[str, Any] = {}
     for yaml_key, section, field in LAUNCH_ARGS_FIELDS:
-        value = user_config.get(section, field)
+        value = getattr(getattr(user_config, section), field)
         if isinstance(value, bool):
             patch[yaml_key] = bool(value)
         else:
             patch[yaml_key] = str(value or "").strip()
     patch["launch_argument_advance"] = merge_dx12_argument(
-        str(patch["launch_argument_advance"]),
-        bool(user_config.get("Game", "Dx12")),
+        str(patch["launch_argument_advance"]), bool(user_config.Game.Dx12)
     )
     return patch
 

@@ -43,6 +43,7 @@ import time
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import psutil
@@ -177,7 +178,7 @@ def _silence_enabled() -> bool:
     try:
         from app.core import Config
 
-        return bool(Config.get("Function", "IfSilence"))
+        return bool(Config.setting.Function.IfSilence)
     except Exception:  # noqa: BLE001
         return True
 
@@ -487,16 +488,6 @@ host.add_reregister_hook(_logcat_after_reregister)
 # ---- 管理器 ---------------------------------------------------------------
 
 
-class _Settings:
-    """``AppLaunchMixin`` 与门面只读 ``config.get("Info", ...)``；这里不需要完整的配置对象。"""
-
-    def __init__(self, values: dict[str, Any]) -> None:
-        self._values = values
-
-    def get(self, group: str, key: str) -> Any:
-        return self._values[key]
-
-
 class _AvdCore(DeviceBase):
     """只负责开关机与状态，不带应用拉起（由 :class:`AvdManager` 叠上）。"""
 
@@ -505,13 +496,13 @@ class _AvdCore(DeviceBase):
     ) -> None:
         self.emulator_path = Path(manager_exe)
         self.root = root_from_manager_exe(manager_exe)
-        self.config = _Settings(
-            {
-                "MaxWaitTime": int(max_wait_time),
-                "ForceKillOnClose": bool(force_kill_on_close),
-                "Type": "avd",
-                "Path": str(manager_exe),
-            }
+        self.config = SimpleNamespace(
+            Info=SimpleNamespace(
+                MaxWaitTime=int(max_wait_time),
+                ForceKillOnClose=bool(force_kill_on_close),
+                Type="avd",
+                Path=str(manager_exe),
+            )
         )
 
     # ---- 查询 -----------------------------------------------------------
@@ -694,7 +685,7 @@ class _AvdCore(DeviceBase):
         key = _instance_key(self.root, idx)
         _FROZEN.pop(key, None)
         port = console_port(idx)
-        max_wait = float(self.config.get("Info", "MaxWaitTime"))
+        max_wait = float(self.config.Info.MaxWaitTime)
 
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         launched = process is None
@@ -1231,7 +1222,7 @@ class _AvdCore(DeviceBase):
         else:
             logger.warning(f"魔改 AVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
-        if not self.config.get("Info", "ForceKillOnClose"):
+        if not self.config.Info.ForceKillOnClose:
             try:
                 await host.console_command(
                     port, "kill", timeout=CONSOLE_KILL_TIMEOUT_SECONDS
@@ -1533,7 +1524,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             return await host.run_adb(root, *args, serial=serial, timeout=timeout)
 
         await self.stop_background_games(idx, keep=package_name)
-        max_wait = float(self.config.get("Info", "MaxWaitTime"))
+        max_wait = float(self.config.Info.MaxWaitTime)
         return await ensure_app_running(
             run_adb,
             package_name,

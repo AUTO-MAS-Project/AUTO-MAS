@@ -65,7 +65,7 @@ def _mirror_mode() -> str:
     try:
         from app.core.config import Config
 
-        value = str(Config.get("Update", "GitHubMirror") or "").strip()
+        value = str(Config.setting.Update.GitHubMirror or "").strip()
     except Exception:  # noqa: BLE001 - 旧配置文件缺这一项不该挡住更新
         return MIRROR_MODE_AUTO
     return value if value in {MIRROR_MODE_AUTO, MIRROR_MODE_OFF} else MIRROR_MODE_AUTO

@@ -2,44 +2,24 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MSSPlanConfig_ALL } from './MSSPlanConfig_ALL';
+import type { MSSPlanConfig_Friday } from './MSSPlanConfig_Friday';
 import type { MSSPlanConfig_Info } from './MSSPlanConfig_Info';
-import type { MSSPlanConfig_Item } from './MSSPlanConfig_Item';
+import type { MSSPlanConfig_Monday } from './MSSPlanConfig_Monday';
+import type { MSSPlanConfig_Saturday } from './MSSPlanConfig_Saturday';
+import type { MSSPlanConfig_Sunday } from './MSSPlanConfig_Sunday';
+import type { MSSPlanConfig_Thursday } from './MSSPlanConfig_Thursday';
+import type { MSSPlanConfig_Tuesday } from './MSSPlanConfig_Tuesday';
+import type { MSSPlanConfig_Wednesday } from './MSSPlanConfig_Wednesday';
 export type MSSPlanConfig = {
-    /**
-     * 基础信息
-     */
+    ALL?: (MSSPlanConfig_ALL | null);
+    Friday?: (MSSPlanConfig_Friday | null);
     Info?: (MSSPlanConfig_Info | null);
-    /**
-     * 全局
-     */
-    ALL?: (MSSPlanConfig_Item | null);
-    /**
-     * 周一
-     */
-    Monday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (MSSPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (MSSPlanConfig_Item | null);
+    Monday?: (MSSPlanConfig_Monday | null);
+    Saturday?: (MSSPlanConfig_Saturday | null);
+    Sunday?: (MSSPlanConfig_Sunday | null);
+    Thursday?: (MSSPlanConfig_Thursday | null);
+    Tuesday?: (MSSPlanConfig_Tuesday | null);
+    Wednesday?: (MSSPlanConfig_Wednesday | null);
 };
 

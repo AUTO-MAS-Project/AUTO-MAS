@@ -170,7 +170,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         await asyncio.to_thread(
             sanitize_user_task_update, ctx.script_id, ctx.script_config, user, overlay
         )
-        await user.update(overlay)
+        await user.update(type(user).model_validate(overlay))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

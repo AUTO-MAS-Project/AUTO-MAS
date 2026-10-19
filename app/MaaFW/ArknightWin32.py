@@ -98,7 +98,7 @@ class _ArknightWin32Toolkit:
         pyautogui.PAUSE = 0
         pyautogui.FAILSAFE = False
 
-        await self.on_enabled_change(Config.ToolsConfig.get("ArknightsPC", "Enabled"))
+        await self.on_enabled_change(Config.ToolsConfig.ArknightsPC.Enabled)
 
     async def on_enabled_change(self, enabled: bool) -> None:
         """启用状态改变回调"""
@@ -216,7 +216,7 @@ class _ArknightWin32Toolkit:
         else:
             return
 
-        if k == Config.ToolsConfig.get("ArknightsPC", "PauseKey"):
+        if k == Config.ToolsConfig.ArknightsPC.PauseKey:
             logger.info("触发暂停键位")
             Config.ToolsConfig.arknights_pc_running = (
                 not Config.ToolsConfig.arknights_pc_running
@@ -234,19 +234,19 @@ class _ArknightWin32Toolkit:
             logger.warning("未连接到明日方舟客户端，按键操作无效")
             return
 
-        if k == Config.ToolsConfig.get("ArknightsPC", "SelectDeployedKey"):
+        if k == Config.ToolsConfig.ArknightsPC.SelectDeployedKey:
             logger.info("触发选中已部署干员")
             self.tasker.post_task("选中已部署干员[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "UseSkillKey"):
+        elif k == Config.ToolsConfig.ArknightsPC.UseSkillKey:
             logger.info("触发释放技能")
             self.tasker.post_task("释放技能[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "RetreatKey"):
+        elif k == Config.ToolsConfig.ArknightsPC.RetreatKey:
             logger.info("触发撤退干员")
             self.tasker.post_task("撤退干员[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "NextFrameKey"):
+        elif k == Config.ToolsConfig.ArknightsPC.NextFrameKey:
             logger.info("触发下一帧")
             self.tasker.post_task("下一帧[ArknightsPC]")
-        elif k == Config.ToolsConfig.get("ArknightsPC", "AnotherQuitKey"):
+        elif k == Config.ToolsConfig.ArknightsPC.AnotherQuitKey:
             logger.info("触发退出/暂停额外键位")
             asyncio.run_coroutine_threadsafe(self.click_pause_button(), Config.loop)
 

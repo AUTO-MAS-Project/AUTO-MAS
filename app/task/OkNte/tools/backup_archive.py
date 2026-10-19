@@ -121,7 +121,7 @@ def ensure_quick_config_dir(script_id: str, user_id: str, script_config) -> Path
         if not source.is_dir() or not any(source.iterdir()):
             source = mas_config_dir(script_id, "Default")
         if not source.is_dir() or not any(source.iterdir()):
-            raw_path = str(script_config.get("Script", "ConfigPath") or "").strip()
+            raw_path = str(script_config.Script.ConfigPath or "").strip()
             if not raw_path:
                 raise ValueError("请先设置 OK-NTE 配置路径")
             source = Path(raw_path)
@@ -131,7 +131,7 @@ def ensure_quick_config_dir(script_id: str, user_id: str, script_config) -> Path
             swap_in_dir(source, target)
         else:
             raise FileNotFoundError("请先在 OK-NTE 中保存设置")
-    if script_config.get("Script", "ConfigPathMode") == "Folder":
+    if script_config.Script.ConfigPathMode == "Folder":
         ensure_oknte_daily_routine_configs(target)
     return target
 

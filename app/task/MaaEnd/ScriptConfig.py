@@ -1,33 +1,27 @@
+
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -127,7 +121,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: MaaEndConfig,
-        user_config: MultipleConfig[MaaEndUserConfig],
+        user_config: ConfigCollection[MaaEndUserConfig],
         emulator_manager: DeviceBase | None,
         view_only: bool = False,
     ):
@@ -148,7 +142,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.config_base = BASE_SHARED
         if target_user_id != "Default":
             self.config_base = maaend_config_base(
-                self.user_config[uuid.UUID(target_user_id)].get("Info", "Base")
+                self.user_config[uuid.UUID(target_user_id)].Info.Base
             )
         self.use_mas_config = self.config_base != BASE_NATIVE
         self.config_file_path = (
@@ -166,7 +160,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.maaend_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
+        maaend_root_path = self.script_config.Info.Path
+        if maaend_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.maaend_root_path = maaend_root_path
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
 
@@ -256,8 +253,7 @@ class ScriptConfigTask(TaskExecuteBase):
             raise ValueError("MaaEnd 配置文件不是有效对象")
         if self.use_mas_config:
             maaend_set = normalize_maaend_config(
-                maaend_set,
-                self.script_config.get("Game", "ControllerType"),
+                maaend_set, self.script_config.Game.ControllerType
             )
         settings = maaend_set.get("settings")
         if not isinstance(settings, dict):
@@ -292,7 +288,7 @@ class ScriptConfigTask(TaskExecuteBase):
             config_path = self.config_file_path / "mxu-MaaEnd.json"
             maaend_set = read_file(config_path)
             maaend_set = normalize_maaend_config(
-                maaend_set, self.script_config.get("Game", "ControllerType")
+                maaend_set, self.script_config.Game.ControllerType
             )
             write_file(config_path, maaend_set)
             logger.success(f"MaaEnd 配置已保存到: {self.config_file_path}")

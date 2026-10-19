@@ -584,7 +584,7 @@ class WSClientManager:
         """Koishi 系统客户端自动认证（连接/重连时调用）"""
         from app.core import Config
 
-        token = Config.get("Notify", "KoishiToken")
+        token = Config.setting.Notify.KoishiToken
         if token:
             # 稍微延迟以确保连接稳定
             await asyncio.sleep(0.1)
@@ -623,12 +623,12 @@ class WSClientManager:
         from app.core import Config
 
         # 检查是否启用 Koishi 通知
-        if not Config.get("Notify", "IfKoishiSupport"):
+        if not Config.setting.Notify.IfKoishiSupport:
             self._logger.info("Koishi 通知未启用，跳过系统客户端初始化")
             return False
 
         # 获取服务器地址并转换为 WebSocket URL
-        http_url = Config.get("Notify", "KoishiServerAddress")
+        http_url = Config.setting.Notify.KoishiServerAddress
         if not http_url:
             self._logger.warning("Koishi 服务器地址为空，跳过系统客户端初始化")
             return False

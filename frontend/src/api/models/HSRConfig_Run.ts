@@ -4,7 +4,15 @@
 /* eslint-disable */
 export type HSRConfig_Run = {
     /**
-     * 每日代理次数限制
+     * 日常任务超时限制（分钟）
+     */
+    DailyTimeLimit?: (number | null);
+    /**
+     * 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
+     */
+    LowPerformanceMode?: (boolean | null);
+    /**
+     * 代理次数限制
      */
     ProxyTimesLimit?: (number | null);
     /**
@@ -12,16 +20,8 @@ export type HSRConfig_Run = {
      */
     RunTimesLimit?: (number | null);
     /**
-     * 日常任务超时限制（分钟）
-     */
-    DailyTimeLimit?: (number | null);
-    /**
      * 周常任务超时限制（分钟）
      */
     WeeklyTimeLimit?: (number | null);
-    /**
-     * 低性能兼容模式（仅三月七差分宇宙）
-     */
-    LowPerformanceMode?: (boolean | null);
 };
 

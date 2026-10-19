@@ -4,24 +4,24 @@
 /* eslint-disable */
 export type GlobalConfig_Replay = {
     /**
-     * 失败时保存 OBS 回放
+     * 连接已运行的 OBS，在自动代理最终失败时保存回放。
      */
     Enabled?: (boolean | null);
     /**
-     * 本机 OBS WebSocket 端口
+     * MAS 副本的保留数量，不清理 OBS 原文件。
      */
-    Port?: (number | null);
+    MaxReplayCount?: (number | null);
     /**
-     * OBS 密码，仅用于写入；省略时保留
+     * OBS 认证密码按现有敏感配置规则加密落盘。
      */
     Password?: (string | null);
     /**
+     * OBS WebSocket 仅连接本机。
+     */
+    Port?: (number | null);
+    /**
      * OBS 密码是否已配置，只读
      */
-    PasswordConfigured?: (boolean | null);
-    /**
-     * 最多保留的回放副本数
-     */
-    MaxReplayCount?: (number | null);
+    readonly PasswordConfigured?: (boolean | null);
 };
 

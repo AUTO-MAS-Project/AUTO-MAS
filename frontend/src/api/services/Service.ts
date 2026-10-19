@@ -190,13 +190,13 @@ import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
-import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookCreateOut_Webhook_ } from '../models/WebhookCreateOut_Webhook_';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
-import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookGetOut_Webhook_ } from '../models/WebhookGetOut_Webhook_';
 import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
-import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebhookUpdateIn_WebhookInput_ } from '../models/WebhookUpdateIn_WebhookInput_';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { WhimboxTaskCatalogOut } from '../models/WhimboxTaskCatalogOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
@@ -465,6 +465,9 @@ export class Service {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -1067,12 +1070,12 @@ export class Service {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiScriptsWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/get',
@@ -1086,12 +1089,12 @@ export class Service {
     /**
      * 添加webhook项
      * @param requestBody
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static addWebhookApiScriptsWebhookAddPost(
         requestBody: WebhookInBase,
-    ): CancelablePromise<WebhookCreateOut> {
+    ): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/add',
@@ -1109,7 +1112,7 @@ export class Service {
      * @throws ApiError
      */
     public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -3855,12 +3858,12 @@ export class Service {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiSettingWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/get',
@@ -3873,10 +3876,10 @@ export class Service {
     }
     /**
      * 添加webhook项
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
@@ -3889,7 +3892,7 @@ export class Service {
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

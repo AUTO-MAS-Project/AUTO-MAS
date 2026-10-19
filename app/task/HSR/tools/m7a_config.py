@@ -90,7 +90,7 @@ def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
     if user_config is None:
         return {}
     try:
-        raw = user_config.get("Managed", "Options")
+        raw = user_config.Managed.Options
     except (AttributeError, KeyError, TypeError):
         raw = {}
     if isinstance(raw, str):
@@ -351,7 +351,7 @@ def build_m7a_daily_patch(
         )
 
     eow_start_weekday = _echo_of_war_weekday_to_iso(
-        user_config.get("TaskOpt", "EchoOfWarWeekday")
+        user_config.TaskOpt.EchoOfWarWeekday
     )
 
     patch: dict = {
@@ -565,7 +565,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     if script_config is None:
         raise ValueError("缺少 HSR 脚本配置")
     try:
-        raw_root = script_config.get("Info", "M7APath")
+        raw_root = script_config.Info.M7APath
     except (AttributeError, KeyError, TypeError):
         raw_root = ""
     root = str(raw_root or "").strip()
@@ -737,7 +737,7 @@ def build_divergent_universe_patch(
     native_options = resolve_m7a_managed_options(
         script_config, user_config, "DivergentUniverse"
     )
-    low_perf_value = script_config.get("Run", "LowPerformanceMode")
+    low_perf_value = script_config.Run.LowPerformanceMode
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None
@@ -793,7 +793,7 @@ def build_currency_wars_patch(
     """
     if plan is None:
         plan = user_config
-    username = str(user_config.get("Info", "Name") or "").strip()
+    username = str(user_config.Info.Name or "").strip()
     native_options = resolve_m7a_managed_options(script_config, plan, "CurrencyWars")
 
     patch = {

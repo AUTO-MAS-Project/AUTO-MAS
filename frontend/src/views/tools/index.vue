@@ -2,8 +2,8 @@
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import type { ToolsConfig, ToolsConfig_ArknightsPC } from '@/api'
-import { useToolsApi } from '@/composables/useToolsApi'
+import type { ToolsConfig_ArknightsPC } from '@/api'
+import { useToolsApi, type ToolsViewConfig } from '@/composables/useToolsApi'
 import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
@@ -20,7 +20,7 @@ const { loading, getTools, updateTools } = useToolsApi()
 const activeKey = ref('arknightspc')
 
 // 工具数据
-const toolsConfig = reactive<ToolsConfig>({
+const toolsConfig = reactive<ToolsViewConfig>({
   ArknightsPC: {
     Enabled: false,
     PauseKey: 'f10',
@@ -34,7 +34,7 @@ const toolsConfig = reactive<ToolsConfig>({
 })
 
 // 本地编辑状态
-const editingConfig = reactive<ToolsConfig>({
+const editingConfig = reactive<ToolsViewConfig>({
   ArknightsPC: {
     Enabled: false,
     PauseKey: 'f10',

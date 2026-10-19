@@ -267,7 +267,7 @@ def main():
     init_sentry(
         release=Config.VERSION,
         development=development_environment,
-        enabled=is_telemetry_enabled(Path.cwd() / "config" / "Config.json"),
+        enabled=is_telemetry_enabled(Path.cwd() / "config" / "setting.yaml"),
         dist=resolve_sentry_dist(current_dir),
     )
 
@@ -498,6 +498,9 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
+            from app.config import config_manager
+
+            await config_manager.flush()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 

@@ -1,3 +1,4 @@
+import { readBackendDocument } from '../backendConfig'
 /**
  * Runtime 子进程的环境变量覆盖
  *
@@ -15,9 +16,6 @@
  * 的 `configureMainSentry`）读的是同一份配置、同一条「非 false 即视为开启」规则。`dataRoot`
  * 是用户数据根（`getAppRoot()`），不是 `--app-root`：`development` 模式下两者不是同一个目录。
  */
-
-import * as fs from 'fs'
-import * as path from 'path'
 
 import { getLogger } from '../logger'
 import type { RuntimeLaunchMode } from './launchConfig'
@@ -64,10 +62,7 @@ interface BackendConfigShape {
  */
 function readBackendConfig(dataRoot: string): BackendConfigShape {
   try {
-    const configPath = path.join(dataRoot, 'config', 'Config.json')
-    if (!fs.existsSync(configPath)) return {}
-
-    const parsed: unknown = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    const parsed = readBackendDocument(dataRoot, 'setting.yaml', 'Config.json')
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
     return parsed as BackendConfigShape
   } catch (error) {

@@ -25,7 +25,7 @@ export function useMaaFWGamePackage({
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
 
   const syncGamePackageName = async (overwrite: boolean) => {
-    const path = maafwConfig.Info.Path.trim()
+    const path = maafwConfig.Info.Path?.trim() ?? ''
     const resource = resolveResourceName(maafwConfig.Info.Resource)
     if (!path || !resource) return
     if (!overwrite && maafwConfig.Game.PackageName.trim()) return

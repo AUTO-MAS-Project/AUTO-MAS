@@ -1,32 +1,27 @@
+
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
 import asyncio
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -68,7 +63,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: SrcConfig,
-        user_config: MultipleConfig[SrcUserConfig],
+        user_config: ConfigCollection[SrcUserConfig],
         emulator_manager: DeviceBase,
         *,
         src_installation_id: str,
@@ -117,7 +112,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.src_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.src_root_path = Path(self.script_config.get("Info", "Path"))
+        src_root_path = self.script_config.Info.Path
+        if src_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.src_root_path = src_root_path
         self.src_set_path = self.src_root_path / "config"
         self.src_exe_path = self.src_root_path / "src.exe"
         self.src_process_state_path = (

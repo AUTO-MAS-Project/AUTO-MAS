@@ -8,16 +8,16 @@ export type GeneralConfig_Run = {
      */
     HardTimeLimit?: (number | null);
     /**
-     * 每日代理次数限制
+     * 代理次数限制
      */
     ProxyTimesLimit?: (number | null);
     /**
-     * 重试次数限制
-     */
-    RunTimesLimit?: (number | null);
-    /**
-     * 日志超时限制
+     * 运行时间限制（分钟）
      */
     RunTimeLimit?: (number | null);
+    /**
+     * 运行次数限制
+     */
+    RunTimesLimit?: (number | null);
 };
 

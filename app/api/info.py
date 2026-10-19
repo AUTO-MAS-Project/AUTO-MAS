@@ -30,18 +30,74 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    Literal,
+)
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from PIL import Image
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
 from app.core import Config
-from app.models.schema import *
+from app.models.schema import (
+    BlueArchiveActivityIn,
+    ComboBoxItem,
+    ComboBoxOut,
+    EmulatorDeleteIn,
+    OutBase,
+    PlanComboxConsumer,
+)
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
+
+
+class InfoOut(OutBase):
+    data: Dict[str, Any] = Field(..., description="收到的服务器数据")
+
+
+class VersionOut(OutBase):
+    if_need_update: bool = Field(..., description="后端代码是否需要更新")
+    current_time: str = Field(..., description="后端代码当前时间戳")
+    current_hash: str = Field(..., description="后端代码当前哈希值")
+
+
+class NoticeOut(OutBase):
+    if_need_show: bool = Field(..., description="是否需要显示公告")
+    data: Dict[str, str] = Field(
+        ..., description="公告信息, key为公告标题, value为公告内容"
+    )
+
+
+class GetStageIn(BaseModel):
+    type: Literal[
+        "User",
+        "Today",
+        "ALL",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ] = Field(
+        ...,
+        description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
+    )
+
+
+class PlanComboxIn(BaseModel):
+    consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
+
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 logger = get_logger("信息获取 API")
@@ -306,7 +362,10 @@ async def get_notice_info() -> NoticeOut:
 async def confirm_notice() -> OutBase:
 
     try:
-        await Config.set("Data", "IfShowNotice", False)
+        await Config.setting.update(
+            type(Config.setting).model_validate({"Data": {"IfShowNotice": False}}),
+            check_visibility=False,
+        )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"confirm_notice失败: {type(e).__name__}: {e}"

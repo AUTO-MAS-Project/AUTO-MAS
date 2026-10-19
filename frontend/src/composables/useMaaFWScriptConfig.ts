@@ -110,7 +110,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Embedded: {
     SourceVersion: '',
-    ImportedAt: '',
+    ImportedAt: null,
     Report: '{ }',
     FollowSource: false,
   },

@@ -466,7 +466,7 @@ class AppLaunchMixin(DeviceBase):
 
         # 两个上限都取 min：这一步是加在原有启动流程后面的，等不到就该让位给
         # 脚本自己的启动流程，不能按 MaxWaitTime 把整条代理拖住
-        max_wait = float(self.config.get("Info", "MaxWaitTime"))
+        max_wait = float(self.config.Info.MaxWaitTime)
         if launch_timeout is None:
             launch_timeout = min(max_wait, _LAUNCH_TIMEOUT_CAP)
         return await ensure_app_running(

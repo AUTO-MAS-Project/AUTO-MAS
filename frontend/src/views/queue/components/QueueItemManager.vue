@@ -231,7 +231,9 @@ import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import dayjs from 'dayjs'
+import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
+import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/api'
 
 const { t } = useI18n()
@@ -277,6 +279,12 @@ const CYCLE_SCHEDULE_DEFAULTS = {
   NextRunAt: CYCLE_EMPTY_TIME,
 }
 
+// 控件使用固定显示偏移，保存完整日期时间，避免丢失 UTC 载荷的跨日关系。
+const timeOffset = dayjs().utcOffset()
+const parseTimeString = (value: string) => parseConfigTime(value, timeOffset)
+const formatTimeValue = (value: Dayjs | string, original: string) =>
+  serializeConfigTime(value, original, timeOffset)
+
 // 补齐循环配置并派生时间选择器需要的 dayjs 值。
 // savedIntervalMinutes 记录“上次成功保存”的间隔分钟数，用于校验失败时回填，
 // 而不是硬编码默认值 480。
@@ -305,22 +313,11 @@ watch(
   { deep: true }
 )
 
-// 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
-const parseTimeString = (timeString: string) => {
-  const [hours = 0, minutes = 0] = String(timeString || '00:00')
-    .split(':')
-    .map(Number)
-  return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
-}
-
-const formatTimeValue = (timeValue: any) => {
-  if (!timeValue) return '00:00'
-  return dayjs.isDayjs(timeValue) ? timeValue.format('HH:mm') : dayjs(timeValue).format('HH:mm')
-}
-
 // 空值哨兵表示还没推算过，展示成「待排期」而不是 2000 年
 const formatNextRun = (nextRunAt: string) =>
-  !nextRunAt || nextRunAt === CYCLE_EMPTY_TIME ? t('queue.cycle.notScheduled') : nextRunAt
+  !nextRunAt || parseTimeString(nextRunAt)?.format('YYYY-MM-DD HH:mm:ss') === CYCLE_EMPTY_TIME
+    ? t('queue.cycle.notScheduled')
+    : formatBackendDateTime(nextRunAt)
 
 // 保存循环调度配置。这里不 emit refresh：本地 record 已是最新值，
 // 整表刷新反而会把用户正在编辑的输入顶掉。返回是否保存成功，供调用方
@@ -388,14 +385,14 @@ const saveDays = async (record: any) => {
 }
 
 const saveScheduleTime = async (record: any) => {
-  const timeString = formatTimeValue(record.scheduleTimeValue)
+  const timeString = formatTimeValue(record.scheduleTimeValue, record.schedule.Time)
   record.schedule.Time = timeString
   await saveSchedule(record, { Time: timeString })
 }
 
 // 把下次运行时间提到当前，循环下一轮就会挑中它
 const runOnce = async (record: any) => {
-  const nextRunAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  const nextRunAt = dayjs().toISOString()
   record.schedule.NextRunAt = nextRunAt
   await saveSchedule(record, { NextRunAt: nextRunAt })
 }

@@ -77,11 +77,13 @@ const loadAccounts = async () => {
     if (!active) return
     if (response.code !== 200 || !response.data) throw new Error('Account list unavailable')
     const data = response.data as Record<string, unknown>
-    if (!Array.isArray(data.instances)) throw new Error('Account list invalid')
+    if (!Array.isArray(data.order)) throw new Error('Account list invalid')
     // 只保留选择器需要的名称和 UUID，不把账号列表中的明文凭据留在页面状态里。
-    accounts.value = data.instances.flatMap((instance: { uid?: string; type?: string }) => {
+    accounts.value = data.order.flatMap((instance: { uid?: string; type?: string }) => {
       if (instance.type !== 'GameSignAccountGroup' || !instance.uid) return []
-      const config = data[instance.uid] as { GameSignAccount?: { Name?: string } } | undefined
+      const config = (data.data as Record<string, unknown> | undefined)?.[instance.uid] as
+        | { GameSignAccount?: { Name?: string } }
+        | undefined
       return [
         { uid: instance.uid, name: config?.GameSignAccount?.Name || t('gamesign.defaultUserName') },
       ]

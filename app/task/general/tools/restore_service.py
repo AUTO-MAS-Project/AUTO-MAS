@@ -70,14 +70,14 @@ def _user_guard(ctx: RestoreContext) -> None:
 def _native_config_path(ctx: RestoreContext) -> Path | None:
     """脚本原生配置路径（``Script.ConfigPath``）；未配置返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Script", "ConfigPath") or "").strip()
+    raw = str(ctx.script_config.Script.ConfigPath or "").strip()
     return Path(raw) if raw else None
 
 
 def _native_config_mode(ctx: RestoreContext) -> str:
     """配置路径模式（``Script.ConfigPathMode``：Folder / File）。"""
 
-    return str(ctx.script_config.get("Script", "ConfigPathMode") or "Folder")
+    return str(ctx.script_config.Script.ConfigPathMode or "Folder")
 
 
 async def _mas_files(ctx: RestoreContext) -> dict[str, Path] | None:

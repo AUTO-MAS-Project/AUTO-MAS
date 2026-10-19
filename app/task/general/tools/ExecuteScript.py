@@ -30,10 +30,10 @@ from app.utils.platform.process import platform_process
 logger = get_logger("自定义脚本执行工具")
 
 
-async def execute_script_task(script_path: Path, task_name: str) -> bool:
+async def execute_script_task(script_path: Path | None, task_name: str) -> bool:
     """执行脚本任务并等待结束"""
 
-    if not script_path.exists():
+    if script_path is None or not script_path.is_file():
         logger.warning(f"{task_name}脚本不存在")
         return False
 

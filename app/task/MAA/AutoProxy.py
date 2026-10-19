@@ -1,25 +1,18 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import calendar
 import json
@@ -32,6 +25,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import (
@@ -41,7 +35,6 @@ from app.models.config import (
     load_infrast_plans,
     maa_scheme_name,
 )
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
@@ -233,9 +226,9 @@ def _current_week_marker(now: datetime) -> str:
 
 
 def _current_month_marker(now: datetime) -> str:
-    """返回月份标记。"""
+    """按 UTC+4 返回月份标记。"""
 
-    return now.strftime("%Y-%m")
+    return now.astimezone(UTC4).strftime("%Y-%m")
 
 
 def _should_run_annihilation(
@@ -1207,7 +1200,7 @@ def restore_depot_cache(maa_root_path: Path, snapshot_dir: Path) -> None:
     shutil.rmtree(snapshot_dir, ignore_errors=True)
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     """自动代理模式"""
 
     # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
@@ -1225,7 +1218,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self,
         script_info: ScriptItem,
         script_config: MaaConfig,
-        user_config: MultipleConfig[MaaUserConfig],
+        user_config: ConfigCollection[MaaUserConfig],
         emulator_manager: DeviceBase,
         *,
         game_update_result: GameUpdateResult | None = None,
@@ -1301,8 +1294,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ):
             self.pending_res_version = self.game_update_result.resource_version
             self.if_game_hot_update = (
-                self.pending_res_version
-                != self.cur_user_config.get("Data", "LastResVersion")
+                self.pending_res_version != self.cur_user_config.Data.LastResVersion
             )
         self._maa_config_baseline: dict[str, dict] | None = None
         # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
@@ -1316,47 +1308,46 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
         self._missing_task_source_warned: set[str] = set()
 
-        self.maa_root_path = Path(self.script_config.get("Info", "Path"))
+        maa_root_path = self.script_config.Info.Path
+        if maa_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.maa_root_path = maa_root_path
         self.maa_set_path = self.maa_root_path / "config"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
-        quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
+        quick_config = self.cur_user_config.Info.IfQuickConfig
         self.run_book = {
             "GreenTicketStore": not quick_config
-            or not self.cur_user_config.get("Task", "IfGreenTicketStore"),
+            or not self.cur_user_config.Task.IfGreenTicketStore,
             "Annihilation": not quick_config
-            or self.cur_user_config.get("Task", "Annihilation") == "Close",
+            or self.cur_user_config.Task.Annihilation == "Close",
             "Routine": False,
         }
 
         if not self.run_book["GreenTicketStore"]:
-            completed_month = self.cur_user_config.get("Data", "GreenTicketStoreMonth")
+            completed_at = self.cur_user_config.Data.GreenTicketStoreMonth
 
-            if completed_month == _current_month_marker(
-                game_now(self.cur_user_config.get("Info", "Server"))
-            ):
+            if completed_at is not None and _current_month_marker(
+                completed_at
+            ) == _current_month_marker(datetime.now(tz=UTC4)):
                 self.run_book["GreenTicketStore"] = True
                 logger.info(
                     f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
-                    f"本月记录={completed_month}"
+                    f"本月记录={completed_at}"
                 )
 
         if not self.run_book["Annihilation"]:
-            now = game_now(self.cur_user_config.get("Info", "Server"))
-            start_weekday = self.cur_user_config.get("Task", "AnnihilationStartWeekday")
+            now = game_now(self.cur_user_config.Info.Server)
+            start_weekday = self.cur_user_config.Task.AnnihilationStartWeekday
 
             if not _should_run_annihilation(
-                start_weekday,
-                self.cur_user_config.get("Data", "AnnihilationCompletedWeek"),
-                now,
+                start_weekday, self.cur_user_config.Data.AnnihilationCompletedWeek, now
             ):
                 self.run_book["Annihilation"] = True
                 logger.info(
-                    f"用户 {self.cur_user_item.name} 本次跳过剿灭："
-                    f"开始日={start_weekday}，本周记录="
-                    f"{self.cur_user_config.get('Data', 'AnnihilationCompletedWeek')}"
+                    f"用户 {self.cur_user_item.name} 本次跳过剿灭：开始日={start_weekday}，本周记录={self.cur_user_config.Data.AnnihilationCompletedWeek}"
                 )
 
         # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
@@ -1406,12 +1397,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self._event_depot_completed = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
-            if not self.cur_user_config.get("Info", "IfQuickConfig"):
+            if not self.cur_user_config.Info.IfQuickConfig:
                 # 来源队列整体交给 MAA 执行，不从隐藏面板推导任务或拆分阶段。
                 self.task_dict = {}
             elif self.mode == "Routine":
                 self.task_dict = {
-                    task: self.cur_user_config.get("Task", f"If{task}")
+                    task: getattr(self.cur_user_config.Task, f"If{task}")
                     for task in MAA_TASKS
                 }
             elif self.mode == "Annihilation":
@@ -1425,11 +1416,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 任务列表: {list(self.task_dict.values())}"
             )
 
-            for i in range(self.script_config.get("Run", "RunTimesLimit")):
+            for i in range(self.script_config.Run.RunTimesLimit):
                 if self.run_book[self.mode]:
                     break
                 logger.info(
-                    f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                    f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
                 )
                 self.log_start_time = datetime.now()
                 self._cultivate_archive_positions.clear()
@@ -1441,11 +1432,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 try:
                     self.script_info.log = "正在启动模拟器"
                     emulator_info = await self.emulator_manager.open(
-                        self.script_config.get("Emulator", "Index"),
-                        ARKNIGHTS_PACKAGE_NAME[
-                            self.cur_user_config.get("Info", "Server")
-                        ],
-                        # MAA 能用魔改 AVD（截图走假 MuMu 通道，见 _configure_maa_runtime）
+                        self.script_config.Emulator.Index,
+                        ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.Info.Server],
                         **mod_avd_open_kwargs(self.emulator_manager, allowed=True),
                     )
                     self.emulator_info = emulator_info
@@ -1477,16 +1465,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     continue
 
                 logger.info(
-                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 "
-                    f"{self.mode} - 实例 "
-                    f"{self.script_config.get('Emulator', 'Index')} - "
-                    f"ADB {emulator_info.adb_address}"
+                    f"模拟器启动完成: 用户 {self.cur_user_uid} - 模式 {self.mode} - 实例 {self.script_config.Emulator.Index} - ADB {emulator_info.adb_address}"
                 )
 
-                if Config.get("Function", "IfSilence"):
+                if Config.setting.Function.IfSilence:
                     try:
                         await self.emulator_manager.setVisible(
-                            self.script_config.get("Emulator", "Index"), False
+                            self.script_config.Emulator.Index, False
                         )
                     except Exception as e:
                         logger.opt(exception=True).warning(f"模拟器隐藏失败: {e}")
@@ -1532,9 +1517,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                     if self.pending_res_version:
                         # 代理成功说明资源热更新已走完，记录版本供下次比对
-                        await self.cur_user_config.set(
-                            "Data", "LastResVersion", self.pending_res_version
+                        self.cur_user_config.Data.LastResVersion = (
+                            self.pending_res_version
                         )
+                        await self.cur_user_config.commit()
                         self.if_game_hot_update = False
                 else:
                     logger.warning(
@@ -1562,7 +1548,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                             3,
                         )
 
-                if self.cur_user_config.get("Info", "IfQuickConfig"):
+                if self.cur_user_config.Info.IfQuickConfig:
                     self._collect_cultivate_archive(
                         "".join(self.cur_user_log.content), finalizing=True
                     )
@@ -1764,9 +1750,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ):
             return
         try:
-            raw_targets = json.loads(
-                self.cur_user_config.get("Task", "CultivateTargets")
-            )
+            raw_targets = json.loads(self.cur_user_config.Task.CultivateTargets)
             targets = parse_cultivate_targets(raw_targets)
             if not targets:
                 self._cultivate_collected_depot = False
@@ -1781,8 +1765,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 force=auto_raise_injected,
             )
             skland_bound = bool(
-                self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
-                and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+                self.cur_user_config.Task.CultivateSklandAccount.strip()
+                and self.cur_user_config.Task.CultivateSklandUid.strip()
             )
             if skland_bound and not (skland and skland[0]):
                 logger.warning(
@@ -1824,11 +1808,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     updated_targets=updated,
                     deferred_targets=deferred,
                 )
-                await self.cur_user_config.set(
-                    "Task",
-                    "CultivateTargets",
-                    json.dumps(merged_payload, ensure_ascii=False),
+                self.cur_user_config.Task.CultivateTargets = json.dumps(
+                    merged_payload, ensure_ascii=False
                 )
+                await self.cur_user_config.commit()
                 # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
                 # 提示要一并清掉——这条路不经过用户配置写入漏斗
                 if not merged_payload:
@@ -1851,9 +1834,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _set_cultivate_notice(self, notice: str) -> None:
         """写养成状态提示；值未变化时避免重复写盘。"""
 
-        if self.cur_user_config.get("Data", "CultivateNotice") == notice:
+        if self.cur_user_config.Data.CultivateNotice == notice:
             return
-        await self.cur_user_config.set("Data", "CultivateNotice", notice)
+        self.cur_user_config.Data.CultivateNotice = notice
+        await self.cur_user_config.commit()
 
     async def _prepare_cultivate_injection(
         self, source_queue: list[dict], *, skip_this_round: bool = False
@@ -1874,13 +1858,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._cultivate_execution_targets = ()
         raw_targets: object
         try:
-            raw_targets = json.loads(
-                self.cur_user_config.get("Task", "CultivateTargets")
-            )
+            raw_targets = json.loads(self.cur_user_config.Task.CultivateTargets)
         except (TypeError, ValueError):
             raw_targets = []
         notice = takeover_notice_patch_value(
-            self.cur_user_config.get("Task", "IfCultivate"), raw_targets
+            self.cur_user_config.Task.IfCultivate, raw_targets
         )
         if notice is not None:
             await self._set_cultivate_notice(notice)
@@ -1891,8 +1873,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         original_targets = parse_cultivate_targets(raw_targets)
 
         skland_bound = bool(
-            self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
-            and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+            self.cur_user_config.Task.CultivateSklandAccount.strip()
+            and self.cur_user_config.Task.CultivateSklandUid.strip()
         )
         try:
             # 注入前强刷；未绑定时沿用本地识别，绑定失败时暂停本轮养成。
@@ -1964,18 +1946,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if not targets:
                 await self._set_cultivate_notice("")
                 return None, True, None
-            (
-                updated_targets,
-                plan,
-                _,
-            ) = await depot_cultivate_service.prepare_cultivate(
+            updated_targets, plan, _ = await depot_cultivate_service.prepare_cultivate(
                 targets=targets,
-                # 只读用户档案（归属正确）：隔日档案对达成判定只会保守
-                # （练度单调），缺口判定的新鲜度由每轮采集保底（方案决策 31）
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
-                today=game_now(self.cur_user_config.get("Info", "Server")).date(),
+                today=game_now(self.cur_user_config.Info.Server).date(),
                 context=context,
                 require_observations=True,
             )
@@ -2006,11 +1982,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 updated_targets=updated_targets,
                 deferred_targets=deferred,
             )
-            await self.cur_user_config.set(
-                "Task",
-                "CultivateTargets",
-                json.dumps(merged_payload, ensure_ascii=False),
+            self.cur_user_config.Task.CultivateTargets = json.dumps(
+                merged_payload, ensure_ascii=False
             )
+            await self.cur_user_config.commit()
         # 旧接管提示清空；养成不再暂停普通库存。
         await self._set_cultivate_notice("")
         if plan is None or not plan.reservations:
@@ -2039,8 +2014,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """自动培养独立门控；关闭或森空岛同步失败时不查询目录。"""
 
         if self._cultivate_round_paused or not (
-            self.cur_user_config.get("Task", "IfCultivate")
-            and self.cur_user_config.get("Task", "CultivateAutoRaise")
+            self.cur_user_config.Task.IfCultivate
+            and self.cur_user_config.Task.CultivateAutoRaise
         ):
             return None
         targets = self._cultivate_execution_targets
@@ -2139,7 +2114,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await System.kill_process(self.maa_exe_path)
 
         # 哔哩哔哩用户协议
-        if self.cur_user_config.get("Info", "Server") == "Bilibili":
+        if self.cur_user_config.Info.Server == "Bilibili":
             await agree_bilibili(self.maa_tasks_path, True)
         else:
             await agree_bilibili(self.maa_tasks_path, False)
@@ -2151,7 +2126,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
             seed_maa_base_config(archive_dir)
-            if self.cur_user_config.get("Info", "IfQuickConfig"):
+            if self.cur_user_config.Info.IfQuickConfig:
                 archive_gui = read_maa_config_with_fallback(archive_dir, "gui.new.json")
                 capture_maa_legacy_activity_sources(
                     archive_dir,
@@ -2217,12 +2192,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         # 原生来源的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
-        if not self.native_base and self.cur_user_config.get("Info", "IfQuickConfig"):
+        if not self.native_base and self.cur_user_config.Info.IfQuickConfig:
             await self._apply_maa_quick_config(gui_new_set)
 
         # 库存缓存按账号隔离属 overlay 层行为，与上方面板覆写同一个开关：
         # 关闭覆写常规配置时不读不写安装目录那份缓存，原样留给 MAA。
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        if self.cur_user_config.Info.IfQuickConfig:
             self._apply_depot_context(gui_new_set)
 
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
@@ -2273,14 +2248,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.mode == "Routine":
             # 仅恢复上一尝试被时段条件暂停的库存；已执行完的任务不能在重试中再领药石额度。
             if self._stock_skipped_by_condition:
-                self.task_dict["DepotMaintain"] = self.cur_user_config.get(
-                    "Task", "IfDepotMaintain"
+                self.task_dict["DepotMaintain"] = (
+                    self.cur_user_config.Task.IfDepotMaintain
                 )
                 self._stock_skipped_by_condition = False
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
-                "Info",
-                server=self.cur_user_config.get("Info", "Server"),
+                "Info", server=self.cur_user_config.Info.Server
             )
             activity_stages = stage_info.get("Activity", [])
 
@@ -2289,8 +2263,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.mode == "Routine":
             try:
                 activity_open, resource_collection_open = _maa_activity_state(
-                    json.loads(Config.get("Data", "StageData")),
-                    self.cur_user_config.get("Info", "Server"),
+                    json.loads(Config.setting.Data.StageData),
+                    self.cur_user_config.Info.Server,
                     now=datetime.now(timezone.utc),
                 )
             except (KeyError, TypeError, ValueError, AttributeError) as e:
@@ -2308,15 +2282,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 cultivate_plan,
             ) = await self._prepare_cultivate_injection(
                 source_queue,
-                skip_this_round=(
-                    activity_open
-                    and self.cur_user_config.get("Task", "CultivateSkipDuringActivity")
-                )
+                skip_this_round=activity_open
+                and self.cur_user_config.Task.CultivateSkipDuringActivity
                 or (
                     resource_collection_open
-                    and self.cur_user_config.get(
-                        "Task", "CultivateSkipDuringResourceCollection"
-                    )
+                    and self.cur_user_config.Task.CultivateSkipDuringResourceCollection
                 ),
             )
             auto_cultivate_task = await self._prepare_auto_cultivate_injection(
@@ -2326,8 +2296,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 # 更新数据紧跟养成/库存保持注入（方案决策 30），为下一轮
                 # 提供归属正确的识别数据
                 skland_bound = bool(
-                    self.cur_user_config.get("Task", "CultivateSklandAccount").strip()
-                    and self.cur_user_config.get("Task", "CultivateSklandUid").strip()
+                    self.cur_user_config.Task.CultivateSklandAccount.strip()
+                    and self.cur_user_config.Task.CultivateSklandUid.strip()
                 )
                 update_task = _build_data_update_task(
                     _find_task_source(
@@ -2400,7 +2370,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         if "DepotMaintain" in task_set:
             task_set["DepotMaintain"] = _build_depot_maintain_task(
-                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                self.cur_user_config.Task.DepotMaintainPlans,
                 source_task=task_set["DepotMaintain"],
             )
             stock_task = task_set["DepotMaintain"]
@@ -2432,19 +2402,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 cultivate_task = None
 
         # 加载关卡号配置
-        if self.cur_user_config.get("Stage", "StageMode") == "Fixed":
+        if self.cur_user_config.Stage.StageMode == "Fixed":
             plan_data = {
-                stage_key: self.cur_user_config.get("Stage", stage_key)
+                stage_key: getattr(self.cur_user_config.Stage, stage_key)
                 for stage_key in MAA_STAGE_KEY
             }
         else:
-            plan = Config.PlanConfig[
-                uuid.UUID(self.cur_user_config.get("Stage", "StageMode"))
-            ]
+            plan = Config.PlanConfig[self.cur_user_config.Stage.StageMode]
             plan_data = {
                 stage_key: plan.get_current_info(
-                    stage_key, server=self.cur_user_config.get("Info", "Server")
-                ).getValue()
+                    stage_key, server=self.cur_user_config.Info.Server
+                )
                 for stage_key in MAA_STAGE_KEY
             }
 
@@ -2460,8 +2428,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
-            task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
-                "Task", "Annihilation"
+            task_set["Fight"]["AnnihilationStage"] = (
+                self.cur_user_config.Task.Annihilation
             )
 
         elif self.mode == "Routine":
@@ -2500,19 +2468,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 fight_source = deepcopy(task_set["Fight"])
 
             # 基建配置
-            if self.cur_user_config.get("Task", "InfrastMode") == "Custom":
+            if self.cur_user_config.Task.InfrastMode == "Custom":
                 infrast_path = (
                     Path.cwd()
                     / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
                 )
                 infrast_plans, infrast_problem = load_infrast_plans(
-                    self.cur_user_config.get("Data", "CustomInfrast")
+                    self.cur_user_config.Data.CustomInfrast
                 )
                 if infrast_problem is None:
                     infrast_path.parent.mkdir(parents=True, exist_ok=True)
                     infrast_path.write_text(
-                        self.cur_user_config.get("Data", "CustomInfrast"),
-                        encoding="utf-8",
+                        self.cur_user_config.Data.CustomInfrast, encoding="utf-8"
                     )
                     task_set["Infrast"]["Mode"] = "Custom"
                     task_set["Infrast"]["Filename"] = str(infrast_path)
@@ -2535,9 +2502,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         if self._infrast_plan_index is None:
                             self._infrast_plan_count = len(infrast_plans)
                             self._infrast_plan_index = (
-                                int(
-                                    self.cur_user_config.get("Data", "InfrastPlanIndex")
-                                )
+                                int(self.cur_user_config.Data.InfrastPlanIndex)
                                 % self._infrast_plan_count
                             )
                         task_set["Infrast"]["PlanSelect"] = self._infrast_plan_index
@@ -2560,15 +2525,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
-                task_set["Infrast"]["Mode"] = self.cur_user_config.get(
-                    "Task", "InfrastMode"
-                )
+                task_set["Infrast"]["Mode"] = self.cur_user_config.Task.InfrastMode
 
         event_depot_task = None
         if (
             self.mode == "Routine"
-            and not self._event_depot_completed
-            and self.cur_user_config.get("Task", "IfEventDepotMaintain")
+            and (not self._event_depot_completed)
+            and self.cur_user_config.Task.IfEventDepotMaintain
         ):
             event_depot_source = _find_task_source(
                 task_queue=source_queue,
@@ -2580,10 +2543,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 task_type="DepotMaintain",
             )
             event_depot_task, activity_notices = _build_event_depot_maintain_task(
-                self.cur_user_config.get("Task", "EventDepotMaintainPlans"),
+                self.cur_user_config.Task.EventDepotMaintainPlans,
                 activity_stages,
                 source_task=event_depot_source,
-                medicine_count=self.cur_user_config.get("Task", "ActivityMedicineNumb"),
+                medicine_count=self.cur_user_config.Task.ActivityMedicineNumb,
                 priority_source=activity_source or fight_source,
             )
             for notice_key, notice in activity_notices:
@@ -2635,7 +2598,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _resolve_avd_device(self) -> tuple[Path, int] | None:
         """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。"""
         device_ref = resolve_device_ref(
-            self.emulator_manager, self.script_config.get("Emulator", "Index")
+            self.emulator_manager, self.script_config.Emulator.Index
         )
         if device_ref is None or device_ref.emulator_type != "avd":
             return None
@@ -2649,7 +2612,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         server（``scriptAdbServerPort``，默认 20049），不落到 5037；其余模拟器返回 ``None``，
         照旧继承 MAS 的环境。"""
         return await script_process_env(
-            self.emulator_manager, self.script_config.get("Emulator", "Index")
+            self.emulator_manager, self.script_config.Emulator.Index
         )
 
     def _configure_maa_runtime(
@@ -2689,7 +2652,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
         post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
-            self.script_config.get("Run", "TaskTransitionMethod")
+            self.script_config.Run.TaskTransitionMethod
         ]
         default_set["MainFunction.PostActions"] = post_actions
         current_gui["PostActions"] = int(post_actions)
@@ -2717,7 +2680,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if takeover:
             global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
             gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
-        if Config.get("Function", "IfSilence"):
+        if Config.setting.Function.IfSilence:
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
@@ -2732,8 +2695,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             gui_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
             gui_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
 
-        server = self.cur_user_config.get("Info", "Server")
-        account = self.cur_user_config.get("Info", "Id")
+        server = self.cur_user_config.Info.Server
+        account = self.cur_user_config.Info.Id
         default_set["Start.ClientType"] = server
         current_gui["RuntimeSettings"]["ClientType"] = _MAA_CLIENT_TYPE_TO_INT.get(
             server, 0
@@ -2823,15 +2786,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 baseline[name],
                 current,
                 maa_scheme_name(archive_dir, archive),
-                # 旧文件的迁移删除需要回写, 新文件沿用原有增改与队列回写规则。
                 drop_missing_keys=name == "gui.json",
-                # 快速配置的班次与库存目标由 MAS 每轮注入，不把临时执行值写回；
-                # 关着时 MAA 跑存档自己的队列，计划修改与班次推进都要保留
-                ignore_keys=(
-                    _MAA_TASK_KEYS_NOT_MERGED
-                    if self.cur_user_config.get("Info", "IfQuickConfig")
-                    else frozenset()
-                ),
+                ignore_keys=_MAA_TASK_KEYS_NOT_MERGED
+                if self.cur_user_config.Info.IfQuickConfig
+                else frozenset(),
             ):
                 continue
             write_file(archive_dir / name, archive_new)
@@ -2853,13 +2811,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True
                 if not self._annihilation_weekly_completion_recorded:
-                    await self.cur_user_config.set(
-                        "Data",
-                        "AnnihilationCompletedWeek",
-                        _current_week_marker(
-                            game_now(self.cur_user_config.get("Info", "Server"))
-                        ),
+                    self.cur_user_config.Data.AnnihilationCompletedWeek = (
+                        _current_week_marker(game_now(self.cur_user_config.Info.Server))
                     )
+                    await self.cur_user_config.commit()
                     self._annihilation_weekly_completion_recorded = True
                     progress_text = (
                         f"{progress[0]}/{progress[1]}" if progress else "完成任务日志"
@@ -2876,13 +2831,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             and f"完成任务: {MAA_GREEN_TICKET_STORE_TASK['Name']}" in log
         ):
             self.run_book["GreenTicketStore"] = True
-            await self.cur_user_config.set(
-                "Data",
-                "GreenTicketStoreMonth",
-                _current_month_marker(
-                    game_now(self.cur_user_config.get("Info", "Server"))
-                ),
-            )
+            self.cur_user_config.Data.GreenTicketStoreMonth = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
         # 无时段排班表: 基建换班完成即推进用户自己的班次指针, 一轮内只推一次;
@@ -2895,7 +2845,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ):
             self._infrast_plan_advanced = True
             next_index = (self._infrast_plan_index + 1) % self._infrast_plan_count
-            await self.cur_user_config.set("Data", "InfrastPlanIndex", next_index)
+            self.cur_user_config.Data.InfrastPlanIndex = next_index
+            await self.cur_user_config.commit()
             logger.info(
                 f"用户 {self.cur_user_item.name} 基建换班已完成第 "
                 f"{self._infrast_plan_index + 1} 班, 下次从第 {next_index + 1} 班开始"
@@ -2903,7 +2854,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
         # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        if self.cur_user_config.Info.IfQuickConfig:
             self._collect_cultivate_archive(log)
 
         # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，用户 09-26 定「不如不做」）
@@ -3014,15 +2965,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_log.status = "MAA 在完成任务前退出"
         elif self.is_log_stalled(
             latest_time,
-            minutes=(
-                # 本次开始唤醒会触发资源热更新时放宽超时，避免把正常更新误判为卡死
-                max(
-                    self.script_config.get("Run", MAA_MODE_TIME_LIMIT_BOOK[self.mode]),
-                    self.script_config.get("Run", "GameUpdateTimeLimit"),
-                )
-                if self.if_game_hot_update
-                else self.script_config.get("Run", MAA_MODE_TIME_LIMIT_BOOK[self.mode])
-            ),
+            minutes=max(
+                getattr(self.script_config.Run, MAA_MODE_TIME_LIMIT_BOOK[self.mode]),
+                self.script_config.Run.GameUpdateTimeLimit,
+            )
+            if self.if_game_hot_update
+            else getattr(self.script_config.Run, MAA_MODE_TIME_LIMIT_BOOK[self.mode]),
         ):
             self.cur_user_log.status = "MAA 进程超时"
         else:
@@ -3085,9 +3033,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
         current_log = self.cur_user_item.log_record.get(self.log_start_time)
-        if current_log is not None and self.cur_user_config.get(
-            "Info", "IfQuickConfig"
-        ):
+        if current_log is not None and self.cur_user_config.Info.IfQuickConfig:
             self._collect_cultivate_archive(
                 "".join(current_log.content), finalizing=True
             )
@@ -3106,7 +3052,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not if_success and failure_shot is None:
             failure_shot = await self._take_failure_shot()
 
-        if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
+        if self.script_config.Run.TaskTransitionMethod == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
 
@@ -3228,19 +3174,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
+            await self.cur_user_config.commit()
 
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")

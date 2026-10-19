@@ -33,6 +33,8 @@ import importlib
 import time
 from typing import TYPE_CHECKING
 
+from app.config import config_manager
+from app.config.signals import SignalCallback
 from app.core import Config
 from app.utils import get_logger
 
@@ -48,6 +50,7 @@ LOAD_RETRY_SECONDS = 60.0
 _toolkit: "_ArknightWin32Toolkit | None" = None
 _loading: asyncio.Task[None] | None = None
 _bound = False
+_config_receiver: SignalCallback | None = None
 _retry_at = 0.0
 # 这次加载失败要不要提示用户：启动和打开开关时置位，巡检发起的重试不置位。
 # 打开开关时复用了巡检正在跑的那次加载，也靠它把提示补上
@@ -69,9 +72,11 @@ async def _load() -> None:
             importlib.import_module, "app.MaaFW.ArknightWin32"
         )
         toolkit = module.ArknightWin32Toolkit
-        # init 按当时的开关值走一遍 on_enabled_change，且其中没有挂起点：从读开关到
-        # 下面给 _toolkit 赋值之间插不进开关回调，之后的变化都由 _on_enabled_change 转发
-        await toolkit.init()
+        # 独立加载任务不参与启用开关的事务；等提交或回滚完成后再读稳定开关值。
+        # 导入仍在入口外；初始化与发布实例共用入口，避免期间漏掉后续开关变更。
+        async with config_manager.execution_gate():
+            await toolkit.init()
+            _toolkit = toolkit
     except Exception as e:
         _retry_at = time.monotonic() + LOAD_RETRY_SECONDS
         logger.exception(f"明日方舟 PC 工具加载失败: {e}")
@@ -86,7 +91,6 @@ async def _load() -> None:
             )
         return
     _notify_failure = False
-    _toolkit = toolkit
 
 
 def ensure_loading(force: bool = False) -> asyncio.Task[None] | None:
@@ -121,12 +125,18 @@ async def _on_enabled_change(enabled: bool) -> None:
 async def start() -> None:
     """启动期调用：接管启用开关，已启用时在后台发起加载，不等它完成"""
 
-    global _bound
+    global _bound, _config_receiver
 
     if not _bound:
-        Config.ToolsConfig.bind("ArknightsPC", "Enabled", _on_enabled_change)
+
+        async def on_enabled_change(sender, event):
+            await _on_enabled_change(event.value)
+
+        _config_receiver = Config.ToolsConfig.connect(
+            on_enabled_change, phase="runtime", group="ArknightsPC", field="Enabled"
+        )
         _bound = True
-    if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+    if Config.ToolsConfig.ArknightsPC.Enabled:
         # 不等：后台初始化要等所有步骤走完才报 ready，已启用的用户换了新环境，
         # 首次导入一样会拖过监督器的健康预算
         ensure_loading(force=True)

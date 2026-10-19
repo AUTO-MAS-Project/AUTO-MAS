@@ -534,7 +534,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Name: '',
     Status: true,
     Id: '',
-    IfUseMasConfig: true,
     Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
@@ -564,9 +563,9 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     ServerChanKey: '',
   },
   Data: {
-    LastProxyDate: '',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
-    LastProxyStatus: '',
+    LastProxyStatus: '未知',
     LastTaskIndex: 0,
   },
 })

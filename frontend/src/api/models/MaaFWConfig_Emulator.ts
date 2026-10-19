@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type MaaFWConfig_Emulator = {
     /**
-     * 模拟器 ID
+     * 模拟器 ID，ADB controller 留空地址时使用
      */
     Id?: (string | null);
     /**

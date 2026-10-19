@@ -160,11 +160,11 @@ class _GameCalendar:
             if game is None:
                 continue
             for user in script.UserData.values():
-                if not user.get("Info", "Status"):
+                if not user.Info.Status:
                     continue
                 source, label = CALENDAR_GAMES[game]
                 if game == "bluearchive":
-                    server = BAAH_CALENDAR_SERVERS[user.get("Info", "ActivityLineType")]
+                    server = BAAH_CALENDAR_SERVERS[user.Info.ActivityLineType]
                     source, server_label = BLUEARCHIVE_SERVERS[server]
                     label = f"碧蓝档案（{server_label}）"
                 targets[(game, source)] = label

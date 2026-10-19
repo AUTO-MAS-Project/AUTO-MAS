@@ -91,7 +91,7 @@ import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOu
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
-import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookGetOut_Webhook_ } from '../models/WebhookGetOut_Webhook_';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -281,6 +281,9 @@ export class GetService {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -636,12 +639,12 @@ export class GetService {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiScriptsWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/get',
@@ -1069,12 +1072,12 @@ export class GetService {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiSettingWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/get',

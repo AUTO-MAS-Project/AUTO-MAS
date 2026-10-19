@@ -61,14 +61,16 @@ class _MatomoHandler:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    def _build_base_params(self, custom_vars: Optional[Dict[str, Any]] = None):
+    def _build_base_params(
+        self, custom_vars: Optional[Dict[str, Any]] = None
+    ) -> dict[str, str | float | None]:
         """构建基础参数"""
-        params = {
+        params: dict[str, str | float | None] = {
             "idsite": self.site_id,
             "rec": "1",
             "action_name": "AUTO-MAS后端",
-            "_id": Config.get("Data", "UID")[:16],
-            "uid": Config.get("Data", "UID"),
+            "_id": str(Config.setting.Data.UID)[:16],
+            "uid": str(Config.setting.Data.UID),
             "rand": str(uuid.uuid4().int)[:10],
             "apiv": "1",
             "h": time.strftime("%H"),

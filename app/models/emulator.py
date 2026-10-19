@@ -197,8 +197,8 @@ class DeviceBase(ABC):
             return None
         try:
             return DeviceRef(
-                emulator_type=str(config.get("Info", "Type") or ""),
-                manager_path=str(config.get("Info", "Path") or ""),
+                emulator_type=str(config.Info.Type or ""),
+                manager_path=str(config.Info.Path or ""),
                 native_index=str(idx),
             )
         except Exception:  # noqa: BLE001 - 解析不出就当没有专用能力, 不该让调用方炸

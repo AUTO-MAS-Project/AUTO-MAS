@@ -4,44 +4,44 @@
 /* eslint-disable */
 export type GeneralConfig_Game = {
     /**
-     * 游戏/模拟器相关功能是否启用
+     * 游戏启动参数
+     */
+    Arguments?: (string | null);
+    /**
+     * 模拟器 ID
+     */
+    EmulatorId?: (string | null);
+    /**
+     * 模拟器索引
+     */
+    EmulatorIndex?: (string | null);
+    /**
+     * 是否启用游戏
      */
     Enabled?: (boolean | null);
     /**
-     * 类型: 模拟器, PC端, URL协议
+     * 是否强制关闭
      */
-    Type?: ('Emulator' | 'Client' | 'URL' | null);
+    IfForceClose?: (boolean | null);
     /**
-     * 游戏/模拟器程序路径
+     * 游戏路径
      */
     Path?: (string | null);
-    /**
-     * 自定义协议URL
-     */
-    URL?: (string | null);
     /**
      * 游戏进程名称
      */
     ProcessName?: (string | null);
     /**
-     * 游戏/模拟器启动参数
+     * 游戏类型
      */
-    Arguments?: (string | null);
+    Type?: ('Emulator' | 'Client' | 'URL' | null);
     /**
-     * 游戏/模拟器等待启动时间
+     * 自定义协议URL
+     */
+    URL?: (string | null);
+    /**
+     * 等待时间（秒）
      */
     WaitTime?: (number | null);
-    /**
-     * 是否强制关闭游戏/模拟器进程
-     */
-    IfForceClose?: (boolean | null);
-    /**
-     * 模拟器ID
-     */
-    EmulatorId?: (string | null);
-    /**
-     * 模拟器多开实例索引
-     */
-    EmulatorIndex?: (string | null);
 };
 

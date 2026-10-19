@@ -4,21 +4,12 @@
 /* eslint-disable */
 export type BAAHPlanConfig_Info = {
     /**
+     * 计划表模式
+     */
+    Mode?: ('ALL' | 'Weekly' | null);
+    /**
      * 计划表名称
      */
-    Name?: string;
-    /**
-     * 计划表模式
-     */
-    Mode?: BAAHPlanConfig_Info.Mode;
+    Name?: (string | null);
 };
-export namespace BAAHPlanConfig_Info {
-    /**
-     * 计划表模式
-     */
-    export enum Mode {
-        ALL = 'ALL',
-        WEEKLY = 'Weekly',
-    }
-}
 

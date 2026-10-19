@@ -1639,7 +1639,7 @@ const syncGamePathInput = () => {
  */
 const syncResourceWithChannel = async () => {
   const channel = gameClientInfo.value?.channel
-  if (!channel) {
+  if (channel !== '官服' && channel !== 'B服' && channel !== '国际服') {
     message.warning(t('edit.bettergiGameClientUnknownWarning'))
     return
   }

@@ -2,44 +2,24 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BAAHPlanConfig_ALL } from './BAAHPlanConfig_ALL';
+import type { BAAHPlanConfig_Friday } from './BAAHPlanConfig_Friday';
 import type { BAAHPlanConfig_Info } from './BAAHPlanConfig_Info';
-import type { BAAHPlanConfig_Item } from './BAAHPlanConfig_Item';
+import type { BAAHPlanConfig_Monday } from './BAAHPlanConfig_Monday';
+import type { BAAHPlanConfig_Saturday } from './BAAHPlanConfig_Saturday';
+import type { BAAHPlanConfig_Sunday } from './BAAHPlanConfig_Sunday';
+import type { BAAHPlanConfig_Thursday } from './BAAHPlanConfig_Thursday';
+import type { BAAHPlanConfig_Tuesday } from './BAAHPlanConfig_Tuesday';
+import type { BAAHPlanConfig_Wednesday } from './BAAHPlanConfig_Wednesday';
 export type BAAHPlanConfig = {
-    /**
-     * 基础信息
-     */
+    ALL?: (BAAHPlanConfig_ALL | null);
+    Friday?: (BAAHPlanConfig_Friday | null);
     Info?: (BAAHPlanConfig_Info | null);
-    /**
-     * 全局
-     */
-    ALL?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周一
-     */
-    Monday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周二
-     */
-    Tuesday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周三
-     */
-    Wednesday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周四
-     */
-    Thursday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周五
-     */
-    Friday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周六
-     */
-    Saturday?: (BAAHPlanConfig_Item | null);
-    /**
-     * 周日
-     */
-    Sunday?: (BAAHPlanConfig_Item | null);
+    Monday?: (BAAHPlanConfig_Monday | null);
+    Saturday?: (BAAHPlanConfig_Saturday | null);
+    Sunday?: (BAAHPlanConfig_Sunday | null);
+    Thursday?: (BAAHPlanConfig_Thursday | null);
+    Tuesday?: (BAAHPlanConfig_Tuesday | null);
+    Wednesday?: (BAAHPlanConfig_Wednesday | null);
 };
 

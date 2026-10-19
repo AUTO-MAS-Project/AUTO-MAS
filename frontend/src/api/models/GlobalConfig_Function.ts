@@ -4,32 +4,32 @@
 /* eslint-disable */
 export type GlobalConfig_Function = {
     /**
-     * 历史记录保留时间, 0表示永久保存
+     * 历史记录保留时间（天）
      */
     HistoryRetentionTime?: (7 | 15 | 30 | 60 | 90 | 180 | 365 | 0 | null);
     /**
-     * 允许休眠
-     */
-    IfAllowSleep?: (boolean | null);
-    /**
-     * 静默模式
-     */
-    IfSilence?: (boolean | null);
-    /**
-     * 同意哔哩哔哩用户协议
+     * 是否同意 Bilibili 协议
      */
     IfAgreeBilibili?: (boolean | null);
     /**
-     * 屏蔽模拟器广告
+     * 是否允许睡眠
+     */
+    IfAllowSleep?: (boolean | null);
+    /**
+     * 是否屏蔽模拟器广告
      */
     IfBlockAd?: (boolean | null);
     /**
-     * 启用匿名错误与性能遥测
+     * 是否启用匿名遥测
      */
     IfEnableTelemetry?: (boolean | null);
     /**
-     * 个人版 MaaStellaSora 的专属编排（灾变防线）
+     * 个人版 MSS 的专属编排（灾变防线），只对个人版项目生效， 普通版 MSS 与其它脚本都会忽略它。
      */
     IfPersonalMss?: (boolean | null);
+    /**
+     * 是否启用静默模式
+     */
+    IfSilence?: (boolean | null);
 };
 

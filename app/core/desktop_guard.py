@@ -401,7 +401,7 @@ class _DesktopGuard:
             await asyncio.sleep(POLL_INTERVAL)
 
     async def _tick(self, *, confirm: bool) -> None:
-        enabled = bool(Config.get("Display", "IfEnableVirtualDisplay"))
+        enabled = bool(Config.setting.Display.IfEnableVirtualDisplay)
         holding = self.device
 
         has_real = True
@@ -568,7 +568,7 @@ class _DesktopGuard:
             f"{reason}，当前只有系统占位的幻影屏: {await asyncio.to_thread(_describe)}"
         )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
+        mode = parse_mode(Config.setting.Display.VirtualDisplayMode)
         # 挂屏跑在守卫自己的任务里，用 shield 隔开调用方的取消。
         #
         # 任务开跑前的强制巡检是从 `TaskManager` 里 await 的，用户点「停止」会 cancel 掉
@@ -783,7 +783,7 @@ async def check_virtual_display_driver():
                 results=results,
             )
 
-        mode = parse_mode(Config.get("Display", "VirtualDisplayMode"))
+        mode = parse_mode(Config.setting.Display.VirtualDisplayMode)
         display = VirtualDisplay(mode=mode)
         try:
             await asyncio.to_thread(display.__enter__)

@@ -1,25 +1,19 @@
+
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import json
 
@@ -68,17 +62,16 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-        if not (Path(config.get("Info", "Path"))).exists():
-            raise FileNotFoundError(
-                f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
-            )
+        emulator_path = config.Info.Path
+        if emulator_path is None or not emulator_path.exists():
+            raise FileNotFoundError(f"MuMuManager.exe文件不存在: {emulator_path}")
 
-        if config.get("Info", "Type") != "mumu":
+        if config.Info.Type != "mumu":
             raise ValueError("配置的模拟器类型不是mumu")
 
         self.config = config
 
-        self.emulator_path = Path(config.get("Info", "Path"))
+        self.emulator_path = emulator_path
 
         # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
         self._audio_mute_states: dict[str, AudioMuteRecord] = {}
@@ -99,7 +92,7 @@ class MumuManager(DeviceBase):
                 "info",
                 "-pkg",
                 package_name,
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -166,7 +159,7 @@ class MumuManager(DeviceBase):
                     "dumpsys",
                     "activity",
                     "activities",
-                    timeout=self.config.get("Info", "MaxWaitTime"),
+                    timeout=self.config.Info.MaxWaitTime,
                     if_merge_std=True,
                     breakaway=True,
                 )
@@ -217,7 +210,7 @@ class MumuManager(DeviceBase):
                     "launch",
                     "-pkg",
                     package_name,
-                    timeout=self.config.get("Info", "MaxWaitTime"),
+                    timeout=self.config.Info.MaxWaitTime,
                     if_merge_std=True,
                     breakaway=True,
                 )
@@ -256,7 +249,7 @@ class MumuManager(DeviceBase):
                 "-p",
                 package_name,
                 "1",
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -343,7 +336,7 @@ class MumuManager(DeviceBase):
         from app.core import Config
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        deadline = time.monotonic() + self.config.Info.MaxWaitTime
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
@@ -360,7 +353,7 @@ class MumuManager(DeviceBase):
                     f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
                     f"用时: {time.monotonic() - started_at:.3f}秒"
                 )
-                if Config.get("Function", "IfBlockAd"):
+                if Config.setting.Function.IfBlockAd:
                     await self._block_store_overlay_ads(idx)
                 return info
             elif status == DeviceStatus.OFFLINE:
@@ -378,7 +371,7 @@ class MumuManager(DeviceBase):
 
         # 启动前强力清理要放在检查多开器窗口之前：清理会把多开器一起关掉，
         # 之后按「启动前没开多开器」的口径处理启动过程中弹出的窗口
-        if self.config.get("Info", "ForceKillBeforeLaunch"):
+        if self.config.Info.ForceKillBeforeLaunch:
             await self._force_clear_before_launch()
 
         if_close_mumu_nx = await self.find_mumu_nx_window() is None
@@ -395,7 +388,7 @@ class MumuManager(DeviceBase):
             "app_keptlive",
             "-val",
             "false",
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -416,7 +409,7 @@ class MumuManager(DeviceBase):
             idx,
             "launch",
             *(["-pkg", package_name] if package_name else []),
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -430,19 +423,19 @@ class MumuManager(DeviceBase):
             f"{time.monotonic() - launch_started_at:.3f}秒"
         )
         online_started_at = time.monotonic()
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        deadline = time.monotonic() + self.config.Info.MaxWaitTime
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
                 if_close_mumu_nx = not await self.close_mumu_nx_window()
-            if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
+            if Config.setting.Function.IfSilence and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
                 logger.info(
                     f"模拟器已在线: {idx} - {package_name} - 用时: "
                     f"{time.monotonic() - online_started_at:.3f}秒"
                 )
-                if Config.get("Function", "IfBlockAd"):
+                if Config.setting.Function.IfBlockAd:
                     await self._block_store_overlay_ads(idx)
                 if package_name:
                     try:
@@ -452,9 +445,7 @@ class MumuManager(DeviceBase):
                             f"MuMu 应用检查或补启动异常，将继续运行: "
                             f"{idx} - {package_name} - {e}"
                         )
-                    await asyncio.sleep(
-                        30 if self.config.get("Info", "MaxWaitTime") > 60 else 3
-                    )
+                    await asyncio.sleep(30 if self.config.Info.MaxWaitTime > 60 else 3)
                 else:
                     await asyncio.sleep(3)
                 await apply_launch_audio_mute(
@@ -524,7 +515,7 @@ class MumuManager(DeviceBase):
                 "-v",
                 idx,
                 "shutdown",
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -537,7 +528,7 @@ class MumuManager(DeviceBase):
                 f"MuMu 关闭命令已完成: {idx} - 用时: "
                 f"{time.monotonic() - started_at:.3f}秒"
             )
-            deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            deadline = time.monotonic() + self.config.Info.MaxWaitTime
             offline_since: float | None = None
             while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
@@ -560,7 +551,7 @@ class MumuManager(DeviceBase):
                     raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
                 raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
         finally:
-            if self.config.get("Info", "ForceKillOnClose"):
+            if self.config.Info.ForceKillOnClose:
                 self._force_kill_mumu_processes()
 
     async def _list_running_instances(self) -> dict[str, str]:
@@ -601,7 +592,7 @@ class MumuManager(DeviceBase):
                         "-v",
                         index,
                         "shutdown",
-                        timeout=self.config.get("Info", "MaxWaitTime"),
+                        timeout=self.config.Info.MaxWaitTime,
                         if_merge_std=True,
                         breakaway=True,
                     )
@@ -613,7 +604,7 @@ class MumuManager(DeviceBase):
                             f"关闭 MuMu 实例 {index} 失败: {result.stdout.strip()}"
                         )
 
-            deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            deadline = time.monotonic() + self.config.Info.MaxWaitTime
             while time.monotonic() < deadline:
                 # 实例退出过程中 info 偶尔会失败，和 getStatus 一样只记日志继续等
                 try:
@@ -909,7 +900,7 @@ class MumuManager(DeviceBase):
             "-v",
             idx,
             "show_window" if is_visible else "hide_window",
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -924,7 +915,7 @@ class MumuManager(DeviceBase):
             "info",
             "-v",
             idx,
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -940,7 +931,7 @@ class MumuManager(DeviceBase):
             "adb",
             "-v",
             str(idx),
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )

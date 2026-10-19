@@ -20,28 +20,196 @@
 #   Contact: DLmaster_361@163.com
 
 
-from typing import Any, Dict
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
 
 from fastapi import APIRouter, Body
-
-from app.models.schema import (
-    ShareAppearanceCategoryIn,
-    ShareAppearanceCoverIn,
-    ShareAppearanceCoverOut,
-    ShareAppearanceDescriptionIn,
-    ShareAppearanceDescriptionOut,
-    ShareAppearanceMineItem,
-    ShareAppearanceMineOut,
-    ShareAppearanceUploadIn,
-    ShareAppearanceUploadItem,
-    ShareAppearanceUploadOut,
-    ShareAppearanceUploadsOut,
-    ShareAuthStatusOut,
-    ShareTemplateItem,
-    ShareTemplateListIn,
-    ShareTemplateListOut,
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
 )
+
+from app.models.schema import OutBase
 from app.services import ConfigCenter, ConfigCenterError
+
+
+class ShareTemplateListIn(BaseModel):
+    page: int = Field(default=1, ge=1, description="页码, 从 1 开始")
+    pageSize: int = Field(default=20, ge=1, le=100, description="每页条数")
+    keyword: Optional[str] = Field(default=None, description="搜索关键字")
+
+
+class ShareTemplateItem(BaseModel):
+    projectKey: str = Field(..., description="配置中心项目标识")
+    categoryKey: str = Field(..., description="配置中心分类标识")
+    configKey: str = Field(..., description="配置中心配置标识")
+    displayName: str = Field(..., description="配置名称")
+    description: str = Field(default="", description="配置描述")
+    ownerUsername: str = Field(default="", description="分享者用户名")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号"
+    )
+    publishedAt: str = Field(default="", description="发布时间")
+    updatedAt: str = Field(default="", description="更新时间")
+
+
+class ShareTemplateListOut(OutBase):
+    items: List[ShareTemplateItem] = Field(
+        default_factory=list, description="配置模板列表"
+    )
+    page: int = Field(default=1, description="当前页码")
+    pageSize: int = Field(default=20, description="每页条数")
+    total: int = Field(default=0, description="模板总数")
+    hasNext: bool = Field(default=False, description="是否还有下一页")
+
+
+class ShareAuthStatusOut(OutBase):
+    authStatus: Literal["idle", "pending", "authorized", "denied", "expired"] = Field(
+        ..., description="配置中心授权状态"
+    )
+    username: str = Field(default="", description="已授权用户的用户名")
+    displayName: str = Field(default="", description="已授权用户的显示名")
+    userCode: str = Field(default="", description="待用户在浏览器确认的短授权码")
+    verificationUri: str = Field(default="", description="浏览器授权页地址")
+    expiresIn: int = Field(default=0, description="剩余有效秒数")
+    interval: int = Field(default=5, description="建议的轮询间隔秒数")
+
+
+class ShareAppearanceCategoryIn(BaseModel):
+    categoryKey: Literal["theme", "mascot"] = Field(
+        default="theme", description="资源分类: theme 主题, mascot 独立桌宠"
+    )
+
+
+class ShareAppearanceUploadIn(ShareAppearanceCategoryIn):
+    zipPath: str = Field(..., description="本地外观 ZIP 路径")
+    displayName: str = Field(
+        default="", max_length=60, description="外观名称, 只在新建时使用"
+    )
+    description: str = Field(default="", max_length=2000, description="外观描述")
+    changeNote: str = Field(default="", max_length=500, description="变更说明")
+    fileId: Optional[int] = Field(
+        default=None, description="已上传文件的 ID, 非空表示给该文件发新版本"
+    )
+    coverPath: Optional[str] = Field(
+        default=None,
+        description="封面图片路径, coverMode 为 custom 时使用",
+    )
+    coverMode: Optional[Literal["package", "custom", "inherit"]] = Field(
+        default=None,
+        description="封面来源: package 用外观包的 preview, custom 用 coverPath, inherit 沿用分享站上的封面 (只能用于新版本); 为空时有 coverPath 按 custom, 否则按 package",
+    )
+
+    @field_validator("displayName", mode="before")
+    @classmethod
+    def strip_display_name(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def check_target(self) -> "ShareAppearanceUploadIn":
+        if self.fileId is None and not self.displayName:
+            raise ValueError("新建外观时名称不能为空")
+        if self.coverMode == "inherit" and self.fileId is None:
+            raise ValueError("只有发新版本时才能沿用分享站上的封面")
+        if self.coverMode == "custom" and not self.coverPath:
+            raise ValueError("请选择封面图片")
+        return self
+
+
+class ShareAppearanceUploadOut(OutBase):
+    fileId: int = Field(default=0, description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    versionNo: int = Field(default=0, description="本次上传的版本号")
+    reviewStatus: Literal["pending", "approved"] = Field(
+        default="pending", description="审核状态, 管理员上传自动通过"
+    )
+    isNewFile: bool = Field(default=False, description="是否新建了文件")
+    appearanceId: str = Field(default="", description="外观 ID")
+    reason: Optional[
+        Literal["pendingLimit", "conflict", "tooLarge", "categoryMismatch"]
+    ] = Field(
+        default=None,
+        description="上传拒绝的类别: pendingLimit 待审核数超限, conflict 名称被占用或内容未变, tooLarge 超过体积上限, categoryMismatch 更新目标与分类不符",
+    )
+
+
+class ShareAppearanceUploadItem(BaseModel):
+    appearanceId: str = Field(..., description="外观 ID")
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    updatedAt: str = Field(default="", description="最近一次上传时间")
+
+
+class ShareAppearanceUploadsOut(OutBase):
+    data: List[ShareAppearanceUploadItem] = Field(
+        default_factory=list, description="当前登录账号的外观上传记录"
+    )
+
+
+class ShareAppearanceMineItem(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    fileKey: str = Field(default="", description="分享站文件标识")
+    displayName: str = Field(default="", description="外观名称")
+    description: str = Field(default="", description="外观描述")
+    status: str = Field(default="", description="文件状态")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号, 没有已发布版本时为空"
+    )
+    latestVersionNo: int = Field(default=0, description="最新版本号")
+    latestReviewStatus: Optional[Literal["pending", "approved", "rejected"]] = Field(
+        default=None, description="最新版本的审核状态"
+    )
+    latestReviewComment: str = Field(
+        default="", description="最新版本的审核意见, 没有则为空"
+    )
+    latestHasCover: bool = Field(default=False, description="最新版本是否带封面")
+    updatedAt: str = Field(default="", description="最近更新时间")
+
+
+class ShareAppearanceMineOut(OutBase):
+    data: List[ShareAppearanceMineItem] = Field(
+        default_factory=list, description="当前账号在分享站上的全部外观"
+    )
+
+
+class ShareAppearanceCoverIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    versionNo: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="版本号, 为空表示最新版本; inheritable 为真时忽略",
+    )
+    inheritable: bool = Field(
+        default=False,
+        description="为真时取发新版本不带封面时分享站会沿用的那张: 最近一个未被驳回且带封面的版本",
+    )
+
+
+class ShareAppearanceCoverOut(OutBase):
+    dataUrl: str = Field(default="", description="封面图片的 data URL")
+    versionNo: Optional[int] = Field(
+        default=None, description="封面所在的版本号, 取最新版本时为空"
+    )
+
+
+class ShareAppearanceDescriptionIn(BaseModel):
+    fileId: int = Field(..., description="分享站文件 ID")
+    description: str = Field(..., max_length=2000, description="新的外观描述")
+
+
+class ShareAppearanceDescriptionOut(OutBase):
+    data: Optional[ShareAppearanceMineItem] = Field(
+        default=None, description="更新后的外观"
+    )
+
 
 router = APIRouter(prefix="/api/share", tags=["配置中心"])
 

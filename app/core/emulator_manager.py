@@ -25,7 +25,6 @@ import shutil
 import uuid
 from typing import Dict, Literal
 
-from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.models.schema import WSEmulatorOperationData, WSTaskNoticeData
@@ -42,21 +41,16 @@ logger = get_logger("模拟器管理")
 class _EmulatorManager:
     """模拟器实例管理器"""
 
-    async def get_emulator_instance(self, emulator_id: str) -> DeviceBase:
+    async def get_emulator_instance(self, emulator_id: uuid.UUID | str) -> DeviceBase:
 
-        emulator_uid = uuid.UUID(emulator_id)
+        config = Config.EmulatorConfig[emulator_id]
 
-        config = EmulatorConfig()
-        await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
-
-        if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
+        if config.Info.Type in EMULATOR_TYPE_BOOK:
             # 设置模拟器广告, 失败不影响模拟器实例创建, 但要留下原因
             try:
-                if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
-                    ads_paths = EMULATOR_SPLASH_ADS_PATH_BOOK[
-                        config.get("Info", "Type")
-                    ]
-                    if Config.get("Function", "IfBlockAd"):
+                if config.Info.Type in EMULATOR_SPLASH_ADS_PATH_BOOK:
+                    ads_paths = EMULATOR_SPLASH_ADS_PATH_BOOK[config.Info.Type]
+                    if Config.setting.Function.IfBlockAd:
                         for ads_path in ads_paths:
                             if ads_path.is_dir():
                                 await asyncio.to_thread(shutil.rmtree, ads_path)
@@ -69,9 +63,9 @@ class _EmulatorManager:
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
 
-            return EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
+            return EMULATOR_TYPE_BOOK[config.Info.Type](config)
         else:
-            raise ValueError(f"不支持的模拟器类型: {config.get('Info', 'Type')}")
+            raise ValueError(f"不支持的模拟器类型: {config.Info.Type}")
 
     async def operate_emulator(
         self,

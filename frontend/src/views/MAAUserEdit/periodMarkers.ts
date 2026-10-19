@@ -29,7 +29,7 @@ export const currentWeekMarker = (now: Date = new Date(), offsetHours = 4) => {
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
 }
 
-// 对应 _current_month_marker：游戏日时区下的 %Y-%m
+// 按指定偏移取月份；绿票购买完成记录固定使用 UTC+4。
 export const currentMonthMarker = (now: Date = new Date(), offsetHours = 4) => {
   const date = toGameDayDate(now, offsetHours)
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`

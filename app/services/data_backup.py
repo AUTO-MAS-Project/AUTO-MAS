@@ -21,11 +21,14 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import sqlite3
 import tempfile
 import zipfile
 from contextlib import closing
 from pathlib import Path
+
+from app.config import config_manager
 
 # 不进备份包: MaaFW 运行环境池、内嵌副本与共用库 (都可由来源 / 更新重建, 生产可达 GB 级;
 # 副本里的共用库是硬链接, 按路径逐个读会把同一份字节打进去两遍)、更新包下载缓存 (每个
@@ -55,10 +58,43 @@ def _backup_database(source: Path, destination: Path) -> None:
             source_db.backup(destination_db)
 
 
-def create_data_backup(root: Path | None = None) -> Path:
-    """将用户数据、配置与历史记录打包到临时 ZIP 文件。"""
+async def create_data_backup(root: Path | None = None) -> Path:
+    """从内存导出明文配置，并与用户数据、历史记录一起打包。"""
 
     root = Path.cwd() if root is None else root
+    snapshot = tempfile.TemporaryDirectory(prefix="auto-mas-config-export-")
+    config_export = Path(snapshot.name)
+    try:
+        await config_manager.export(config_export)
+    except BaseException:
+        snapshot.cleanup()
+        raise
+
+    def pack() -> Path:
+        # 压缩线程负责临时目录生命周期，取消请求也不能提前删掉其输入。
+        with snapshot:
+            return _create_data_backup(root=root, config_export=config_export)
+
+    task = asyncio.create_task(asyncio.to_thread(pack))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+
+        def discard_result(completed: asyncio.Task[Path]) -> None:
+            if not completed.cancelled() and completed.exception() is None:
+                completed.result().unlink(missing_ok=True)
+
+        task.add_done_callback(discard_result)
+        raise
+
+
+def _create_data_backup(*, root: Path, config_export: Path) -> Path:
+    """配置根使用固定的内存导出文件，其余文件沿用整包备份规则。"""
+    exported_files = {
+        path.relative_to(config_export).as_posix(): path
+        for path in config_export.rglob("*")
+        if path.is_file()
+    }
     temporary = tempfile.NamedTemporaryFile(
         prefix="auto-mas-backup-", suffix=".zip", delete=False
     )
@@ -83,6 +119,11 @@ def create_data_backup(root: Path | None = None) -> Path:
 
                     for path in source_directory.rglob("*"):
                         archive_name = path.relative_to(root).as_posix()
+                        if directory_name == "config" and (
+                            path.relative_to(source_directory).as_posix()
+                            in exported_files
+                        ):
+                            continue
                         if path.is_symlink() or archive_name in _DATABASE_FILES:
                             continue
                         if archive_name in _EXCLUDED_DIRS or any(
@@ -95,6 +136,10 @@ def create_data_backup(root: Path | None = None) -> Path:
                             archive.writestr(f"{archive_name}/", b"")
                         elif path.is_file():
                             archive.write(path, archive_name)
+
+                # 原配置尚未写盘或已从磁盘移除，也必须包含已登记的内存配置。
+                for name, path in exported_files.items():
+                    archive.write(path, f"config/{name}")
 
                 if database_snapshot.exists():
                     archive.write(database_snapshot, "data/data.db")

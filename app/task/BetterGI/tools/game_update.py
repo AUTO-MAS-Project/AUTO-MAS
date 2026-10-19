@@ -108,12 +108,12 @@ async def ensure_game_updated(
         RuntimeError: ``manual=True`` 且无法自动完成时（路径 / 渠道不可用、游戏运行中、
             问不出结论、只能全量更新、更新失败）。
     """
-    if not manual and not script_config.get("Game", "IfAutoUpdate"):
+    if not manual and (not script_config.Game.IfAutoUpdate):
         # 开关没开是常态，什么都不写：否则每次无关任务都要刷一行
         return True
 
-    root_path = Path(str(script_config.get("Info", "RootPath") or "."))
-    user_game_path = str(user_config.get("Switch", "GamePath") or "")
+    root_path = Path(str(script_config.Info.RootPath or "."))
+    user_game_path = str(user_config.Switch.GamePath or "")
     try:
         game_exe = game_info.resolve_game_exe(root_path, user_game_path)
     except Exception as error:  # noqa: BLE001

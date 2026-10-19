@@ -6,8 +6,8 @@
 
 import httpx
 
+from app.config import ConfigEntry
 from app.models.config import MaaConfig, MaaEndConfig, MaaEndUserConfig, MaaUserConfig
-from app.models.ConfigBase import ConfigBase
 from app.services.game_maintenance import GameMaintenance, MaintenanceWindow
 
 
@@ -17,14 +17,14 @@ def get_maintenance_message(script_config: MaaConfig | MaaEndConfig) -> str:
 
 
 async def get_user_maintenance(
-    user_config: ConfigBase, *, proxy: httpx.Proxy | None
+    user_config: ConfigEntry, *, proxy: httpx.Proxy | None
 ) -> MaintenanceWindow | None:
     if isinstance(user_config, MaaUserConfig):
-        if user_config.get("Info", "Server") not in ("Official", "Bilibili"):
+        if user_config.Info.Server not in ("Official", "Bilibili"):
             return None
         game = "arknights"
     elif isinstance(user_config, MaaEndUserConfig):
-        if user_config.get("Info", "Resource") != "官服":
+        if user_config.Info.Resource != "官服":
             return None
         game = "endfield"
     else:

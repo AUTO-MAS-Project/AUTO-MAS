@@ -516,11 +516,6 @@ const maaConfig = reactive<MAAScriptConfig>({
     TakeoverEnabled: false,
     MirrorChyanCDK: '',
   },
-  SubConfigsInfo: {
-    UserData: {
-      instances: [],
-    },
-  },
 })
 
 const rules = {

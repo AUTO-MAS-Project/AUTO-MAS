@@ -411,7 +411,7 @@ def read_community_token(account: object, field: str) -> str:
     """读取凭据字段，兼容旧版本尚未包含新增字段的账号对象。"""
 
     try:
-        value = account.get("GameSignAccount", field)  # type: ignore[attr-defined]
+        value = getattr(account.GameSignAccount, field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return ""
     return value.strip() if isinstance(value, str) else str(value or "").strip()

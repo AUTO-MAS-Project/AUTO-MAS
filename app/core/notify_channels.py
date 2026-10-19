@@ -97,7 +97,7 @@ def _webhook_name(uid: str, webhook: Any) -> str:
     """返回便于定位失败配置的 Webhook 名称。"""
 
     try:
-        return str(webhook.get("Info", "Name") or uid)
+        return str(webhook.Info.Name or uid)
     except (AttributeError, KeyError):
         return uid
 
@@ -133,7 +133,9 @@ class NotifyChannel:
 
         if self.kind == "policy" or scope not in self.scopes:
             return ()
-        if self.enable_field and not bool(config.get(*self.enable_field)):
+        if self.enable_field and not bool(
+            getattr(getattr(config, self.enable_field[0]), self.enable_field[1])
+        ):
             return ()
         return _TARGET_BUILDERS[self.key](config, scope=scope)
 
@@ -442,7 +444,7 @@ async def _system_send(
 
 
 def _mail_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "ToAddress")
+    value = config.Notify.ToAddress
     if value is None:
         return ()
     name = f"{_prefix(scope)}邮件"
@@ -475,7 +477,7 @@ async def _mail_send(
 
 
 def _serverchan_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "ServerChanKey")
+    value = config.Notify.ServerChanKey
     if value is None:
         return ()
     name = f"{_prefix(scope)} ServerChan"
@@ -508,7 +510,7 @@ async def _serverchan_send(
 
 
 def _cmcc_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    value = config.get("Notify", "CMCCNewMsgApiKey")
+    value = config.Notify.CMCCNewMsgApiKey
     if value is None:
         return ()
     name = f"{_prefix(scope)} 中国移动5G短信"
@@ -540,22 +542,22 @@ async def _cmcc_send(
 def _webhook_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     prefix = _prefix(scope)
     targets = []
-    # 顺序按 MultipleConfig.order（items() 的产出顺序），不按 uid。
+    # 顺序按 ConfigCollection.order（items() 的产出顺序），不按 uid。
     for uid, webhook in config.Notify_CustomWebhooks.items():
         snapshot = WebhookTargetSnapshot(
             name=_webhook_name(uid, webhook),
-            enabled=bool(webhook.get("Info", "Enabled")),
-            url=str(webhook.get("Data", "Url") or ""),
-            template=str(webhook.get("Data", "Template") or ""),
-            headers=str(webhook.get("Data", "Headers") or "{ }"),
-            method=webhook.get("Data", "Method"),
+            enabled=bool(webhook.Info.Enabled),
+            url=str(webhook.Data.Url or ""),
+            template=str(webhook.Data.Template or ""),
+            headers=str(webhook.Data.Headers or "{ }"),
+            method=webhook.Data.Method,
         )
         if not snapshot.enabled:
             continue
         targets.append(
             ChannelTarget(
                 id=f"{prefix} Webhook {uid}",
-                label=f"{prefix} Webhook {_webhook_name(uid, snapshot)}",
+                label=f"{prefix} Webhook {snapshot.name}",
                 value=snapshot,
                 capabilities=_webhook_capabilities(snapshot),
             )

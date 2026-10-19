@@ -9,10 +9,12 @@
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
+import type { MaaPlanConfig, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
+
+type MaaPlanConfig_Item = NonNullable<MaaPlanConfig['ALL']>
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
 // 时间维度常量
