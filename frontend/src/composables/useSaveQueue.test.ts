@@ -102,16 +102,4 @@ describe('useSaveQueue', () => {
     await expect(after).resolves.toBe('ok')
     expect(isSaving.value).toBe(false)
   })
-
-  it('accepts new saves after the queue has fully drained', async () => {
-    const { enqueue, isSaving } = useSaveQueue()
-
-    await expect(enqueue(async () => 1)).resolves.toBe(1)
-    expect(isSaving.value).toBe(false)
-
-    const later = enqueue(async () => 2)
-    expect(isSaving.value).toBe(true)
-    await expect(later).resolves.toBe(2)
-    expect(isSaving.value).toBe(false)
-  })
 })

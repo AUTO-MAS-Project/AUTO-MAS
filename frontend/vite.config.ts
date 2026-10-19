@@ -120,7 +120,8 @@ export default defineConfig(({ command }) => {
       clearMocks: false,
       // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
       // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
-      exclude: [...configDefaults.exclude, '**/dist-electron/**'],
+      // debug 是本地日志与临时验证目录，不属于单元测试源。
+      exclude: [...configDefaults.exclude, '**/dist-electron/**', '**/debug/**'],
     },
   }
 })

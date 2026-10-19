@@ -49,7 +49,7 @@ export const SATELLITE_CONFIG = {
  * 轨道：先绕 x 轴倾斜 tiltX，再绕视线（z 轴）转 tiltZ。两条内圈斜着交叉，像原子模型。
  *
  * 每条都斜到在画面上把星核整个圈住：默认视角加上鼠标视差、镜头慢摇的范围内，
- * 卫星都不会从星核前面压过去（orbitClearance.test.ts 钉住）。拖动转视角时仍可能经过，停手转回正面就好。
+ * 卫星都不会从星核前面压过去。拖动转视角时仍可能经过，停手转回正面就好。
  */
 export interface OrbitRing {
   radius: number

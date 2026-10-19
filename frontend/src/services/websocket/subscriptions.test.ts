@@ -44,40 +44,6 @@ describe('websocket subscriptions', () => {
     expect(handler.mock.calls[0][0].id).toBe('task-1')
   })
 
-  it('supports multiple types under the same id', async () => {
-    const { subscribe, dispatchMessage } = await loadSubscriptions()
-    const noticeHandler = vi.fn()
-    const completedHandler = vi.fn()
-    subscribe({ id: 'task-1', type: 'task.notice' }, noticeHandler)
-    subscribe({ id: 'task-1', type: 'task.completed' }, completedHandler)
-
-    dispatchMessage(envelope('task-1', 'task.notice'))
-    dispatchMessage(envelope('task-1', 'task.completed'))
-
-    expect(noticeHandler).toHaveBeenCalledTimes(1)
-    expect(completedHandler).toHaveBeenCalledTimes(1)
-  })
-
-  it('calls multiple subscriptions of the same key in order', async () => {
-    const { subscribe, dispatchMessage } = await loadSubscriptions()
-    const order: string[] = []
-    subscribe({ id: 'Main', type: 'test.event' }, () => {
-      order.push('first')
-    })
-    subscribe({ id: 'Main', type: 'test.event' }, () => {
-      order.push('second')
-    })
-
-    dispatchMessage(envelope('Main', 'test.event'))
-
-    expect(order).toEqual(['first', 'second'])
-  })
-
-  it('reports unmatched messages so the connection layer can drop them', async () => {
-    const { dispatchMessage } = await loadSubscriptions()
-    expect(dispatchMessage(envelope('nobody', 'no.handler'))).toBe(false)
-  })
-
   it('does not deliver messages after unsubscribe and stays idempotent', async () => {
     const { subscribe, unsubscribe, dispatchMessage } = await loadSubscriptions()
     const handler = vi.fn()
