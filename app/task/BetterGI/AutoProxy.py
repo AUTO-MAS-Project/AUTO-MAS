@@ -33,8 +33,10 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
     append_push_log,
     find_pids_by_name,
     push_dispatch_log,
@@ -398,6 +400,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.writes_native_config = self.config_base == CONFIG_BASE_NATIVE and bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
+        # 配置来源决定一条龙编排的落点：「脚本」来源（shared）读写脚本级共享段（所有选它的
+        # 用户共用），其余来源用当前用户自己的配置；per-user 文件副本的 owner 同口径。
+        self.owner_user_id = one_dragon.owner_user_id(
+            self.cur_user_item.user_id, self.config_base
+        )
+        self.owner_config = (
+            self.script_config
+            if self.config_base == CONFIG_BASE_SHARED
+            else self.cur_user_config
+        )
         # 原生配置的运行前快照与本次写入内容（还原前比对，保护运行期间的外部修改）
         self._native_one_dragon_snapshot: dict | None = None
         self._native_one_dragon_written: dict | None = None
@@ -526,16 +538,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         )
         self.one_dragon_groups = (
-            list(self.cur_user_config.get("OneDragon", "Groups") or [])
+            list(self.owner_config.get("OneDragon", "Groups") or [])
             if self.use_mas_config
             else []
         )
         self.use_custom_groups = self.use_mas_config and bool(
-            self.cur_user_config.get("OneDragon", "IfUseCustomGroups")
+            self.owner_config.get("OneDragon", "IfUseCustomGroups")
         )
         self.one_dragon_custom_groups = (
             one_dragon.parse_custom_groups(
-                self.cur_user_config.get("OneDragon", "CustomGroups") or ""
+                self.owner_config.get("OneDragon", "CustomGroups") or ""
             )
             if self.use_mas_config
             else []
@@ -543,12 +555,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 「队伍配置」总开关与队伍表：开启时按「战斗场景」选队（第 1 层优先级）；
         # 关闭时数据保留但除通用队伍外一律不参与匹配（通用队伍照旧生效）。
         self.use_teams = self.use_mas_config and bool(
-            self.cur_user_config.get("OneDragon", "IfUseTeams")
+            self.owner_config.get("OneDragon", "IfUseTeams")
         )
         self.one_dragon_teams = (
-            team_resolver.parse_teams(
-                self.cur_user_config.get("OneDragon", "Teams") or ""
-            )
+            team_resolver.parse_teams(self.owner_config.get("OneDragon", "Teams") or "")
             if self.use_mas_config
             else []
         )
@@ -556,7 +566,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 为空/非法时 write_user_one_dragon 回退旧行为（沿用副本 TaskOrder 相对顺序）
         self.one_dragon_queue = (
             one_dragon.parse_one_dragon_queue(
-                self.cur_user_config.get("OneDragon", "Queue") or ""
+                self.owner_config.get("OneDragon", "Queue") or ""
             )
             if self.use_mas_config
             else []
@@ -565,7 +575,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
         # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背原生来源设计初衷。
         self.use_execution_layer = bool(self.use_mas_config) and bool(
-            self.cur_user_config.get("OneDragon", "UseExecutionLayer")
+            self.owner_config.get("OneDragon", "UseExecutionLayer")
         )
         # 路径 B（自定义项执行层）：队列中 kind ∈ CUSTOM_EXEC_KINDS 的条目与战斗 4 项一起，
         # 由 one_dragon_bridge 按左栏队列顺序切成「段」（MAS-{短id}-执行层段{N}），在**同一次**
@@ -586,7 +596,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 条件比 dev #781 宽一档：原生来源 + 快速配置时**要**算 Plan——那一路由
         # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
         _plan_steps = (
-            parse_one_dragon_plan(self.cur_user_config.get("OneDragon", "Plan") or "")
+            parse_one_dragon_plan(self.owner_config.get("OneDragon", "Plan") or "")
             if (self.use_mas_config or getattr(self, "writes_native_config", False))
             else []
         )
@@ -604,7 +614,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
         # 队伍字段为空时注入，已显式设置的队伍不覆盖。
         _default_party = (
-            str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
+            str(self.owner_config.get("OneDragon", "PartyName") or "").strip()
             if (self.use_mas_config or getattr(self, "writes_native_config", False))
             else ""
         )
@@ -707,7 +717,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 原生来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
             self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
-        party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
+        party_name = str(self.owner_config.get("OneDragon", "PartyName") or "")
         # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
         # 把归执行层负责的战斗组一律从原生副本剔除，使前端开关成为唯一真理源：开 → 执行层
         # 跑（战斗段）；关（Plan.step.enabled=false）→ 原生也不跑，避免「关了还漏跑」。
@@ -744,14 +754,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self._materialized_script_groups = one_dragon.write_user_one_dragon(
             self.script_root_path,
             self.script_info.script_id,
-            self.cur_user_item.user_id,
+            self.owner_user_id,
             self.one_dragon_groups,
             daily_reward_party_name=str(
-                self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
+                self.owner_config.get("OneDragon", "DailyRewardPartyName") or ""
             ),
             party_name=party_name,
             auto_boss_strategy_name=str(
-                self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
+                self.owner_config.get("OneDragon", "AutoBossStrategyName") or ""
             ),
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
@@ -787,7 +797,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
         one_dragon.apply_global_battle_strategy(
             self.script_root_path,
-            str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+            str(self.owner_config.get("OneDragon", "AutoBossStrategyName") or ""),
         )
         # 幽境危战面板设置（刷取战场/树脂策略等）随后物化到 config.json 的
         # autoStygianOnslaughtConfig 段：右栏 fightTeamName/strategyName 非空时覆盖
@@ -795,14 +805,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         one_dragon.apply_user_global_stygian_settings(
             self.script_root_path,
             self.script_info.script_id,
-            self.cur_user_item.user_id,
+            self.owner_user_id,
         )
         # 秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）：有 per-user 副本则物化到
         # BGI config.json 的 autoDomainConfig/autoArtifactSalvageConfig 段（运行结束还原）
         if one_dragon.apply_user_global_domain_settings(
             self.script_root_path,
             self.script_info.script_id,
-            self.cur_user_item.user_id,
+            self.owner_user_id,
         ):
             logger.info(
                 f"已物化用户 {self.cur_user_item.name} 的秘境刷取配置到全局 config.json"
@@ -903,7 +913,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         one_dragon.cleanup_leftover_mas_groups(
             self.script_root_path,
             self.script_info.script_id,
-            self.cur_user_item.user_id,
+            self.owner_user_id,
         )
         # 上一轮被强杀时残留的执行层「段」组一并清理，避免常驻 BGI 配置组列表
         one_dragon_bridge.cleanup_leftover_execution_groups(
@@ -1046,12 +1056,30 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 与 BGI 槽位、覆盖副本内容；指纹去重，失败不阻断运行）。native 池
         # 由 manager.prepare 在任务级一次性归档
         with suppress(Exception):
+            # 共享来源的编排在脚本级段里、不在副本目录，随归档一并存底
+            _shared_od = (
+                (await self.script_config.toDict()).get("OneDragon")
+                if self.owner_config is self.script_config
+                else None
+            )
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 read_overlay_values(self.cur_user_config),
+                owner=self.owner_user_id,
+                shared_one_dragon=(
+                    _shared_od if isinstance(_shared_od, dict) else None
+                ),
             )
         self._write_one_dragon_config()
+        # 自定义项执行层组名由物化结果派生（MAS-{短id}-自定义配置组{N}）；仅当执行层接管时才非空有效。
+        # 必须放在 _write_one_dragon_config 之后——组名在物化阶段才确定。
+        _short = one_dragon._mas_user_short_id(self.owner_user_id)
+        self.custom_exec_groups = [
+            str(p.stem)
+            for p in (self._materialized_script_groups or [])
+            if str(p.stem).startswith(f"MAS-{_short}-自定义配置组")
+        ]
 
         # 路径 B：执行层（战斗段 + 自定义项）在**一次** BGI 进程里按左栏队列顺序跑完，
         # 组名由 _write_one_dragon_config 切段时确定。失败不再中止任务：日常 4 项（领奖类）
