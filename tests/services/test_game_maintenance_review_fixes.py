@@ -1,16 +1,18 @@
-import pytest_asyncio
-from types import SimpleNamespace
-from tests.config_support import activate_config, group_view
+"""维护信息缓存回归：内存更新异常、空 ETag、时钟回拨。"""
 
-"""Sourcery 意见的本地验证：保存异常、空 ETag、时钟回拨。"""
 import json
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
 import httpx
 import pytest
+import pytest_asyncio
+
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
 from app.utils.constants import UTC8
+from tests.config_support import activate_config
 
 
 @pytest_asyncio.fixture
@@ -25,7 +27,9 @@ async def environment(monkeypatch):
         def now(cls, tz=None):
             current = fixed_now + timedelta(seconds=clock[0])
             return (
-                current.replace(tzinfo=None) if tz is None else current.astimezone(tz)
+                current.astimezone().replace(tzinfo=None)
+                if tz is None
+                else current.astimezone(tz)
             )
 
     monkeypatch.setattr(service, "Config", SimpleNamespace(setting=config))
@@ -59,7 +63,9 @@ def transport(monkeypatch, handler):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [200, 304])
-async def test_save_error_fails_open(monkeypatch, environment, tmp_path, status):
+async def test_config_update_error_fails_open(
+    monkeypatch, environment, tmp_path, status
+):
     config, clock = environment
     await config.update(
         type(config).model_validate(
@@ -73,8 +79,8 @@ async def test_save_error_fails_open(monkeypatch, environment, tmp_path, status)
         check_visibility=False,
     )
     await activate_config(config, tmp_path / "GlobalConfig.yaml")
-    save = AsyncMock(side_effect=OSError("simulated save failure"))
-    monkeypatch.setattr(GlobalConfig, "update", save)
+    update = AsyncMock(side_effect=OSError("simulated config update failure"))
+    monkeypatch.setattr(GlobalConfig, "update", update)
     requests = []
 
     def handler(request):
@@ -86,7 +92,7 @@ async def test_save_error_fails_open(monkeypatch, environment, tmp_path, status)
     transport(monkeypatch, handler)
     client = service.GameMaintenanceClient()
     assert await client.get_active("arknights") is None
-    save.assert_awaited_once()
+    update.assert_awaited_once()
     clock[0] = service.RETRY_SECONDS - 1
     assert await client.get_active("arknights") is None
     assert len(requests) == 1

@@ -1136,6 +1136,28 @@ class MaaEndConfig(DomainEntry):
     _loaded_resource: dict = PrivateAttr(default_factory=dict)
     _preload_task: Any = PrivateAttr(default=None)
 
+    async def _activate_from_payload(
+        self, payload: dict[str, Any], *, regenerate_uuids: bool = False
+    ) -> None:
+        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
+        from app.task.MaaEnd.resource_loader import try_load_maaend_options
+
+        payload = type(self).normalize_payload(payload)
+        game = payload.get("Game", {})
+        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
+            root_path = payload.get("Info", {}).get("Path")
+            root = Path(root_path) if root_path else None
+            if root is not None and (root / "interface.json").is_file():
+                options = await asyncio.to_thread(try_load_maaend_options, root)
+                if options is not None:
+                    game["LaunchMode"] = (
+                        "MaaEnd"
+                        if game.get("ControllerType")
+                        in options["launchGameControllers"]
+                        else "MAS"
+                    )
+        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
+
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
         root_path = str(self.Info.Path or "").strip()
@@ -2650,29 +2672,6 @@ class MSSConfig(MaaFWConfig):
     UserData: ConfigCollection[MSSUserConfig] = collection(  # pyright: ignore[reportIncompatibleVariableOverride]
         MSSUserConfig
     )
-
-    async def _activate_from_payload(
-        self, payload, *, regenerate_uuids: bool = False
-    ) -> None:
-        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
-        import asyncio
-
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-        payload = type(self).normalize_payload(payload)
-        game = payload.get("Game", {})
-        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
-            root = Path(str(payload.get("Info", {}).get("Path") or ""))
-            if (root / "interface.json").is_file():
-                options = await asyncio.to_thread(try_load_maaend_options, root)
-                if options is not None:
-                    game["LaunchMode"] = (
-                        "MaaEnd"
-                        if game.get("ControllerType")
-                        in options["launchGameControllers"]
-                        else "MAS"
-                    )
-        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
 
 
 class GeneralUserConfig(DomainEntry):
