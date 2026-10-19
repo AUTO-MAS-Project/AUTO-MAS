@@ -8,7 +8,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from app.models.ConfigBase import ConfigBase
+from app.models.config import MaaConfig, SrcConfig
 from app.models.emulator import DeviceBase, DeviceStatus
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.emulator_core import (
@@ -30,7 +30,7 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         self,
         *,
         script_info: ScriptItem,
-        script_config: ConfigBase,
+        script_config: MaaConfig | SrcConfig,
         emulator_manager: DeviceBase,
         server: str,
         package_name: str,
@@ -42,9 +42,9 @@ class EmulatorGameUpdateTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         # 更新可能早于代理配置锁；清理必须始终指向本次实际启动的设备。
-        self.emulator_index = script_config.get("Emulator", "Index")
-        self.time_limit = script_config.get("Run", "GameUpdateTimeLimit")
-        self.if_auto_install = script_config.get("Run", "IfAutoInstallGameApk")
+        self.emulator_index = script_config.Emulator.Index
+        self.time_limit = script_config.Run.GameUpdateTimeLimit
+        self.if_auto_install = script_config.Run.IfAutoInstallGameApk
         self.emulator_manager = emulator_manager
         self.server = server
         self.package_name = package_name

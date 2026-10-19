@@ -24,44 +24,194 @@
 import asyncio
 import uuid
 from datetime import datetime
+from typing import (
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Union,
+)
 
 from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import (
+    BaseModel,
+    Field,
+)
 from starlette.background import BackgroundTask
 
+import app.models.config as _config_models
+from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
-    GlobalConfig,
-    NotifyChannelFieldOut,
-    NotifyChannelOptionOut,
-    NotifyChannelOut,
-    NotifyChannelsOut,
     ObsReplayCheckOut,
-    ObsReplaySaveOut,
     OutBase,
-    PatternDebugIn,
-    PatternDebugOut,
-    PatternDebugResultItem,
     ReplayRecord,
-    SettingGetOut,
-    SettingUpdateIn,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
-    VirtualDisplayDetachOut,
-    Webhook,
-    WebhookCreateOut,
     WebhookDeleteIn,
     WebhookGetIn,
-    WebhookGetOut,
+    WebhookInBase,
     WebhookIndexItem,
-    WebhookTestIn,
-    WebhookUpdateIn,
+)
+from app.models.schema import (
+    WebhookCreateOut as SharedWebhookCreateOut,
+)
+from app.models.schema import (
+    WebhookGetOut as SharedWebhookGetOut,
+)
+from app.models.schema import (
+    WebhookUpdateIn as SharedWebhookUpdateIn,
 )
 from app.services import Notify
 from app.services.data_backup import create_data_backup
 from app.utils import debug_pattern, get_logger
+
+GlobalConfig = ConfigPayload[_config_models.GlobalConfig]
+GlobalConfigInput = ConfigInput[_config_models.GlobalConfig]
+Webhook = ConfigPayload[_config_models.Webhook]
+WebhookInput = ConfigInput[_config_models.Webhook]
+WebhookGetOut = SharedWebhookGetOut[Webhook]
+WebhookCreateOut = SharedWebhookCreateOut[Webhook]
+WebhookUpdateIn = SharedWebhookUpdateIn[WebhookInput]
+
+
+class VirtualDisplayDetachOut(OutBase):
+    detached: bool = Field(
+        default=False, description="有没有真的拆掉一块屏；没挂着时为 False"
+    )
+
+
+class PushLogPattern(BaseModel):
+    """推送日志采集模式配置（split/regex/multiline 三种模式按 type 区分，各模式使用对应字段）"""
+
+    type: Literal["split", "regex", "multiline"] = Field(..., description="匹配类型")
+    name: Optional[str] = Field(
+        default=None, description="规则标题（供分享站展示/说明）"
+    )
+    enabled: Optional[bool] = Field(
+        default=None, description="单条规则启用/停用开关：停用时保留配置但不参与采集"
+    )
+    logType: Optional[str] = Field(default=None, description="日志类型：普通/失败")
+    match: Optional[str] = Field(default=None, description="split 模式的匹配关键字")
+    head: Optional[str] = Field(default=None, description="split 模式的首部关键字")
+    headInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含首部关键字"
+    )
+    tail: Optional[str] = Field(default=None, description="split 模式的尾部关键字")
+    tailInclude: Optional[bool] = Field(
+        default=None, description="split 模式是否包含尾部关键字"
+    )
+    extract: Optional[str] = Field(
+        default=None, description="regex 模式的提取正则（split/regex 通用）"
+    )
+    start: Optional[str] = Field(default=None, description="multiline 模式的起始行正则")
+    end: Optional[str] = Field(default=None, description="multiline 模式的结束行正则")
+    maxLines: Optional[int] = Field(
+        default=None, description="multiline 模式的最大跨行数"
+    )
+
+
+class NotifyChannelOptionOut(BaseModel):
+    """渠道下拉选项的取值与文案键；取值保持后端配置字面量（含布尔）。"""
+
+    value: Union[bool, str] = Field(..., description="选项值，保持后端配置字面量")
+    labelKey: str = Field(..., description="选项文案的词表键")
+
+
+class NotifyChannelFieldOut(BaseModel):
+    """渠道在某个作用域暴露的一个配置字段描述。"""
+
+    group: str = Field(..., description="配置组，如 Notify")
+    name: str = Field(..., description="配置字段名")
+    labelKey: str = Field(..., description="字段标签词表键")
+    control: str = Field(
+        ..., description="控件类型：bool/text/password/url/select/json"
+    )
+    options: List[NotifyChannelOptionOut] = Field(default=[], description="下拉选项")
+    placeholderKey: str = Field(default="", description="占位文案词表键")
+    tipKey: str = Field(default="", description="提示文案词表键")
+
+
+class NotifyChannelOut(BaseModel):
+    """一个通知渠道的展示元数据；服务无鉴权，负载不得出现任何配置值。"""
+
+    key: str = Field(..., description="渠道标识")
+    nameKey: str = Field(..., description="渠道名称词表键")
+    descKey: str = Field(default="", description="渠道一句话说明词表键")
+    icon: str = Field(default="", description="图标标识，policy 段为空串")
+    group: str = Field(..., description="分组：builtin/custom")
+    order: int = Field(..., description="排序值，与投递顺序一致")
+    docUrl: Optional[str] = Field(default=None, description="使用文档链接")
+    scopes: List[str] = Field(default=[], description="可用作用域：global/user")
+    kind: str = Field(..., description="渲染类型：fields/custom/policy")
+    customBlock: Optional[str] = Field(
+        default=None, description="自定义块标识：claw:qq/webhook_list"
+    )
+    enableField: Optional[List[str]] = Field(
+        default=None, description="启用开关的 [配置组, 字段名]"
+    )
+    summaryKey: Optional[str] = Field(default=None, description="卡片摘要词表键")
+    summaryFields: List[str] = Field(
+        default=[], description="参与摘要插值与空值判定的字段名"
+    )
+    fields: Dict[str, List[NotifyChannelFieldOut]] = Field(
+        default={}, description="按作用域分组的字段列表"
+    )
+
+
+class NotifyChannelsOut(OutBase):
+    """通知渠道描述表。"""
+
+    channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
+
+
+class ObsReplaySaveOut(OutBase):
+    replay: ReplayRecord | None = None
+
+
+class WebhookTestIn(WebhookInBase):
+    data: WebhookInput = Field(..., description="Webhook配置数据")
+
+
+class SettingGetOut(OutBase):
+    data: GlobalConfig = Field(..., description="全局设置数据")
+
+
+class SettingUpdateIn(BaseModel):
+    data: GlobalConfigInput = Field(..., description="全局设置需要更新的数据")
+
+
+class PatternDebugIn(BaseModel):
+    """日志模式调试请求"""
+
+    pattern: PushLogPattern = Field(..., description="待调试的推送日志模式配置")
+    logText: str = Field(default="", description="待调试的多行日志文本")
+
+
+class PatternDebugResultItem(BaseModel):
+    """单行/单窗口调试结果"""
+
+    idx: int = Field(..., description="行号或窗口序号")
+    hit: bool = Field(..., description="是否命中")
+    extracted: str = Field(default="", description="提取后的文本")
+    line: str = Field(default="", description="原始日志行（多行模式为空）")
+    error: Optional[str] = Field(default=None, description="该行/窗口的错误信息")
+
+
+class PatternDebugOut(OutBase):
+    """日志模式调试响应"""
+
+    configError: Optional[str] = Field(
+        default=None, description="配置级错误（正则/表达式语法错误等）"
+    )
+    isMultiline: bool = Field(default=False, description="是否为多行聚合模式")
+    results: List[PatternDebugResultItem] = Field(
+        default_factory=list, description="逐行/逐窗口调试结果"
+    )
+
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
@@ -130,7 +280,7 @@ async def backup_data() -> FileResponse | JSONResponse:
 
     async with backup_lock:
         try:
-            backup_path = await asyncio.to_thread(create_data_backup)
+            backup_path = await create_data_backup()
         except Exception as error:
             logger.exception(f"生成数据备份失败: {error}")
             return JSONResponse(
@@ -362,7 +512,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 async def add_webhook() -> WebhookCreateOut:
     try:
         uid, config = await Config.add_webhook(None, None)
-        data = Webhook(**(await config.toDict()))
+        data = Webhook(**config.model_dump(context={"audience": "api"}))
     except Exception as e:
         logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
@@ -428,8 +578,10 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义Webhook"""
 
     try:
-        webhook_config = WebhookConfig()
-        await webhook_config.load(webhook.data.model_dump())
+        webhook_config = WebhookConfig.build(
+            payload=webhook.data.model_dump(exclude_unset=True)
+        )
+        await webhook_config.activate()
         await Notify.WebhookPush(
             "AUTO-MAS Webhook测试",
             "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",

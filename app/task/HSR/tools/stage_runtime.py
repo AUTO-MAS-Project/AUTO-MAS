@@ -34,7 +34,7 @@ def read_native_stage(
 ) -> dict[str, Any] | None:
     """读取用户配置中保存的脚本原生副本字段。"""
 
-    raw = user_config.get("Stage", field)
+    raw = getattr(user_config.Stage, field)
     if raw is None:
         return None
     if isinstance(raw, dict):
@@ -60,9 +60,7 @@ def read_native_main_stage(
     engine: str | None = None,
 ) -> dict[str, Any] | None:
     return read_native_stage_for_channel(
-        user_config,
-        str(user_config.get("Stage", "Channel") or "CalyxGolden"),
-        engine,
+        user_config, str(user_config.Stage.Channel or "CalyxGolden"), engine
     )
 
 

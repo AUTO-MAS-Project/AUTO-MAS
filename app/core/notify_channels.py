@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Mapping
 
 from app.models.notification_channel import (
@@ -94,7 +95,7 @@ class TargetConfigView:
     def get(self, group: str, name: str) -> Any:
         if group != "Notify":
             raise ValueError("通知渠道只能读取 Notify 配置")
-        return self.__config.get(group, name)
+        return getattr(self.__config.Notify, name)
 
     @property
     def Notify_CustomWebhooks(self) -> Any:
@@ -106,15 +107,25 @@ class RuntimeConfigView:
 
     def __init__(self, config: Any) -> None:
         self.__config = config
+        self.__receivers: list[Any] = []
 
     def get(self, name: str) -> Any:
-        return self.__config.get("Notify", name)
+        return getattr(self.__config.Notify, name)
 
     async def update(self, values: Mapping[str, Any]) -> None:
-        await self.__config.update({"Notify": dict(values)})
+        await self.__config.update(
+            type(self.__config).model_validate({"Notify": dict(values)}),
+            check_visibility=False,
+        )
 
     def bind(self, name: str, callback: Any) -> None:
-        self.__config.bind("Notify", name, callback)
+        async def on_changed(sender, event):
+            result = callback(event.value)
+            if inspect.isawaitable(result):
+                await result
+
+        self.__receivers.append(on_changed)
+        self.__config.connect(on_changed, phase="runtime", group="Notify", field=name)
 
 
 def _get_registry() -> ChannelRegistry:
@@ -204,7 +215,7 @@ def initialize_notification_channels(
         return WSClientManager()
 
     dependencies = ChannelDependencies(
-        config=RuntimeConfigView(Config),
+        config=RuntimeConfigView(Config.setting),
         read_proxy=read_proxy,
         smtp_factory=smtplib.SMTP_SSL,
         http_factory=http_client,

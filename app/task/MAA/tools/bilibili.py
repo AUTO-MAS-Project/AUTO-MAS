@@ -38,7 +38,7 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     except json.JSONDecodeError:
         data = read_file(maa_tasks_path, format=".json5")
     original = copy.deepcopy(data)
-    if if_agree and Config.get("Function", "IfAgreeBilibili"):
+    if if_agree and Config.setting.Function.IfAgreeBilibili:
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
             "action": "ClickSelf",

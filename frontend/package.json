@@ -91,7 +91,8 @@
     "adm-zip": "^0.5.16",
     "axios": "1.15.2",
     "electron-log": "^5.4.3",
-    "form-data": "^4.0.4"
+    "form-data": "^4.0.4",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
     "@ant-design/icons-vue": "^7.0.1",

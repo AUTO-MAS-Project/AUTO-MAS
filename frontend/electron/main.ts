@@ -1,3 +1,4 @@
+import { readBackendDocument } from './services/backendConfig'
 import {
   app,
   BrowserWindow,
@@ -301,10 +302,11 @@ function loadConfig(): AppConfig {
       config = { ...config, ...JSON.parse(configData) }
     }
 
-    const backendConfigPath = path.join(appRoot, 'config', 'Config.json')
-    if (fs.existsSync(backendConfigPath)) {
-      const backendConfig = JSON.parse(fs.readFileSync(backendConfigPath, 'utf8'))
-      const enabled = backendConfig.Function?.IfEnableTelemetry
+    {
+      const backendConfig = readBackendDocument(appRoot, 'setting.yaml', 'Config.json') as
+        | { Function?: { IfEnableTelemetry?: boolean } }
+        | undefined
+      const enabled = backendConfig?.Function?.IfEnableTelemetry
       if (typeof enabled === 'boolean') {
         config.Function = { ...config.Function, IfEnableTelemetry: enabled }
       }

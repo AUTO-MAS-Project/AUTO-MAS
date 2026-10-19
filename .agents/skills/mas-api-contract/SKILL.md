@@ -1,6 +1,6 @@
 ---
 name: mas-api-contract
-description: Define backend API contract standards for FastAPI services. Use when adding or refactoring HTTP/WebSocket endpoints in app/api, designing request/response schemas in app/models/schema.py, standardizing status/error contracts, and maintaining backward compatibility for clients.
+description: Define FastAPI HTTP/WebSocket contracts in app/api and shared app/models/schema.py, including config-derived payloads, partial updates, stable envelopes, errors, and client compatibility.
 ---
 
 # MAS API Contract
@@ -20,7 +20,7 @@ Apply these constraints while using this skill.
 Apply to:
 
 1. HTTP endpoints under `app/api/*`.
-2. Request/response schema models in `app/models/schema.py`.
+2. Endpoint-local request/response models in `app/api/` and shared contracts in `app/models/schema.py`.
 3. WebSocket message contracts used by backend services.
 
 Current `dev` baseline:
@@ -57,8 +57,17 @@ The backend exposes an MCP server derived from the live OpenAPI schema. Know the
 4. Bind endpoint `response_model` explicitly.
 5. Do not return raw untyped dicts if a schema model exists.
 6. When a request needs to choose between known plan/script/config families, model that selector explicitly instead of encoding it in the URL path or handler name.
-7. Define or update request/response data models in `app/models/schema.py` before wiring a new route.
+7. Define endpoint-specific `*In`/`*Out` and private submodels at the top of their owning API module, before route functions. Cross-module or business-layer contracts remain in single-file `app/models/schema.py`; routers do not import other routers for shared models.
 8. Create routes in the corresponding `app/api/` module and keep route handlers as thin transport adapters around schema models and backend calls.
+
+## Config Payload Contracts
+For config endpoints, read [the configuration framework reference](../mas-data-model/references/config-framework.md).
+
+1. Derive fields from the actual config class using `ConfigInput[T]`, `StrictConfigInput[T]`, `ConfigPayload[T]` or `config_contract()` in `app/config/wire.py`; no duplicate config field/group models or `schema_class` registry entries.
+2. Validate requests with pure contracts; request parsing does not activate or persist configs. Convert patches with `model_dump(exclude_unset=True)` so omission and explicit null remain distinct. Do not use a full default-filled dump or `exclude_none=True` for partial updates.
+3. Apply the patch through the existing endpoint's permitted entry/collection operations. Preserve hidden/disabled/virtual-field rules, masked-value retention and business locks. `update()` changes provided Entry fields, not nested collections; batch atomicity requires an explicit transaction.
+4. Output types must describe actual recursive payloads and `order/data` collection structure. JSON paths are strings or null; date/time storage exports UTC with timezone information. Keep existing route paths, envelopes, tags and MCP semantics.
+5. A successful commit is not a disk-save guarantee. `flush()` and manager export run outside transactions; exports read registered stable live configs rather than stale files. Framework UI metadata does not by itself authorize new frontend interactions.
 
 ## Field Naming Rules
 1. Keep external API fields stable and consistent per established style.

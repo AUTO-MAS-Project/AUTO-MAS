@@ -72,14 +72,14 @@ HSR_CLOUD_BROWSER_START_ATTEMPTS = 2
 def _script_path(script_config: Any, engine: str) -> str:
     """Resolve the old-dev engine root from ``Info`` only."""
 
-    return str(script_config.get("Info", f"{engine}Path") or "").strip()
+    return str(getattr(script_config.Info, f"{engine}Path") or "").strip()
 
 
 def resolve_game_platform(script_config: Any) -> HSRGamePlatform:
     """读取脚本的游戏平台；缺字段或非法值按客户端处理。"""
 
     try:
-        value = script_config.get("Game", "Platform")
+        value = script_config.Game.Platform
     except (AttributeError, KeyError, TypeError):
         value = None
     return "Cloud" if value == "Cloud" else "Client"
@@ -105,7 +105,7 @@ def resolve_cloud_profile_dir(script_id: str, user_id: str) -> Path:
 
 def _cloud_int(script_config: Any, key: str, default: int) -> int:
     try:
-        return max(1, int(script_config.get("Cloud", key) or default))
+        return max(1, int(getattr(script_config.Cloud, key) or default))
     except (AttributeError, KeyError, TypeError, ValueError):
         return default
 
@@ -114,7 +114,7 @@ def cloud_use_paid_time(script_config: Any) -> bool:
     """是否允许三月七消耗付费时长走快速排队（花钱的开关，默认关）。"""
 
     try:
-        return bool(script_config.get("Cloud", "UsePaidTime"))
+        return bool(script_config.Cloud.UsePaidTime)
     except (AttributeError, KeyError, TypeError):
         return False
 
@@ -203,7 +203,7 @@ def read_cloud_last_login(script_config: Any) -> dict[str, str]:
     """``Cloud.LastLogin``：user_id → 最近一次确认已登录的 ISO 时间。"""
 
     try:
-        raw = script_config.get("Cloud", "LastLogin")
+        raw = script_config.Cloud.LastLogin
     except (AttributeError, KeyError, TypeError):
         return {}
     if isinstance(raw, str):
@@ -217,13 +217,12 @@ def read_cloud_last_login(script_config: Any) -> dict[str, str]:
 
 
 async def merge_cloud_last_login(script_config: Any, updates: dict[str, str]) -> None:
-    """把若干用户的登录时间合并写回 ``Cloud.LastLogin``（配置须已解锁）。"""
+    """把若干用户的登录时间合并写回 ``Cloud.LastLogin``（须持有配置 X 锁）。"""
 
     merged = read_cloud_last_login(script_config)
     merged.update(updates)
-    await script_config.set(
-        "Cloud", "LastLogin", json.dumps(merged, ensure_ascii=False)
-    )
+    script_config.Cloud.LastLogin = json.dumps(merged, ensure_ascii=False)
+    await script_config.commit()
 
 
 def _cloud_auto_battle_enabled(script_config: Any) -> bool:
@@ -303,27 +302,36 @@ async def cleanup_cloud_leftovers(
 def is_game_management_enabled(script_config: Any) -> bool:
     """读取 MAS 游戏管理开关；旧配置缺少该字段时默认开启。"""
 
-    value = script_config.get("Game", "Enabled")
+    value = script_config.Game.Enabled
     return True if value is None else bool(value)
 
 
 def _user_credential(user_config: Any, key: str) -> str:
     """Read the old-dev account credential from ``Info``."""
 
-    return str(user_config.get("Info", key) or "")
+    return str(getattr(user_config.Info, key) or "")
 
 
 def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
     """检查配置项当前存储值是否能通过自身 validator。"""
 
-    item = user_config._config_item_index[group][key]
-    return item.validator.validate(item.value)
+    from app.config import EncryptedValue
+    from app.utils.security import dpapi_decrypt
+
+    value = getattr(user_config.effective, group).__dict__.get(key)
+    if not isinstance(value, EncryptedValue) or not value.ciphertext():
+        return True
+    try:
+        dpapi_decrypt(value.ciphertext().removeprefix("DPAPI:"))
+    except Exception:
+        return False
+    return True
 
 
 def resolve_game_executable_path(script_config: Any) -> Path:
     """从配置解析实际要启动的 StarRail.exe 路径。"""
 
-    raw_path = str(script_config.get("Game", "Path") or "").strip()
+    raw_path = str(script_config.Game.Path or "").strip()
     path = Path(raw_path) if raw_path else Path(HSR_GAME_PROCESS_NAME)
     if path.suffix.lower() == ".exe":
         return path
@@ -333,7 +341,7 @@ def resolve_game_executable_path(script_config: Any) -> Path:
 def _force_resolution_enabled(script_config: Any) -> bool:
     """读取脚本页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
 
-    return bool(script_config.get("Game", "ForceResolution1920x1080"))
+    return bool(script_config.Game.ForceResolution1920x1080)
 
 
 def prepare_game_resolution_if_needed(
@@ -756,7 +764,7 @@ class HSRAccountSwitcher:
             await self._wait_after_game_process_detected(process_name)
             return
 
-        wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 60))
+        wait_time = max(0, int(self.script_config.Game.WaitTime or 60))
 
         if not game_exe_path.exists():
             raise RuntimeError(f"游戏启动文件不存在：{game_exe_path}")

@@ -15,16 +15,15 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import shutil
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
@@ -60,7 +59,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: OkNteConfig,
-        user_config: MultipleConfig[OkNteUserConfig],
+        user_config: ConfigCollection[OkNteUserConfig],
         game_manager: ProcessManager | None,
         view_only: bool = False,
     ):
@@ -79,13 +78,18 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.oknte_process_manager = OkNteProcessManager(self.script_config)
         self.wait_event: asyncio.Event = asyncio.Event()
-        self.script_root_path: Path = Path(self.script_config.get("Info", "RootPath"))
-        self.script_exe_path: Path = Path(
-            self.script_config.get("Script", "ScriptPath")
-        )
-        self.script_config_path: Path = Path(
-            self.script_config.get("Script", "ConfigPath")
-        )
+        script_root_path = self.script_config.Info.RootPath
+        if script_root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.script_root_path: Path = script_root_path
+        script_exe_path = self.script_config.Script.ScriptPath
+        if script_exe_path is None:
+            raise ValueError("ScriptPath未配置，请检查路径设置")
+        self.script_exe_path: Path = script_exe_path
+        script_config_path = self.script_config.Script.ConfigPath
+        if script_config_path is None:
+            raise ValueError("ConfigPath未配置，请检查路径设置")
+        self.script_config_path: Path = script_config_path
         self.mas_config_dir: Path | None = mas_config_dir(
             self.script_info.script_id, self.cur_user_item.user_id
         )
@@ -152,14 +156,14 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("未找到用户级 OK-NTE 配置，使用脚本当前配置启动 GUI")
             return
 
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             swap_in_dir(self.mas_config_dir, self.script_config_path)
             mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif self.script_config.Script.ConfigPathMode == "File":
             src_file = self.mas_config_dir / self.script_config_path.name
             if src_file.exists():
                 self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +191,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             if not self.script_config_path.exists():
                 raise FileNotFoundError(
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
@@ -195,7 +199,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
             swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif self.script_config.Script.ConfigPathMode == "File":
             if not self.script_config_path.exists():
                 raise FileNotFoundError(
                     "未找到 OK-NTE 配置文件，请在 GUI 中保存后再点击保存配置"

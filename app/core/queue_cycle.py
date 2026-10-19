@@ -5,8 +5,8 @@
 
 这里只做纯粹的时间推算，不碰任何运行状态，方便单独测试。
 
-**时间口径**：下次运行时间是要落盘、跨重启存活的，所以只能用本地墙钟表示，
-不能用单调时钟。代价是系统时钟跳变（夏令时切换、NTP 校时）会让推算结果偏移，
+**时间口径**：内部推算沿用本地墙钟，写入配置时携带本地偏移并统一存为 UTC，
+不能用单调时钟。系统时钟跳变（夏令时切换、NTP 校时）会让推算结果偏移，
 调用方必须按下面两条兜底：
 
 1. 每轮循环都用当前时间重新推算，不要缓存推算结果；
@@ -22,10 +22,10 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Iterable
 
-from app.utils.constants import CYCLE_DATETIME_FORMAT, CYCLE_EMPTY_TIME
+from app.utils.constants import CYCLE_EMPTY_TIME
 
 WEEKDAY_NAMES = (
     "Monday",
@@ -53,16 +53,28 @@ class CycleEntry:
 def format_cycle_time(value: datetime) -> str:
     """把时间格式化为落盘用的字符串。"""
 
-    return value.strftime(CYCLE_DATETIME_FORMAT)
+    # 调度计算继续使用本地墙钟；写入配置前显式携带本地偏移，保留秒与微秒。
+    return value.astimezone().isoformat()
 
 
-def parse_cycle_time(value: str | None) -> datetime | None:
+def parse_cycle_time(value: str | datetime | None) -> datetime | None:
     """解析落盘的时间字符串，无法解析时返回 None。"""
 
     if not value:
         return None
+    if isinstance(value, datetime):
+        return (
+            value.astimezone().replace(tzinfo=None)
+            if value.utcoffset() is not None
+            else value
+        )
     try:
-        return datetime.strptime(value, CYCLE_DATETIME_FORMAT)
+        parsed = datetime.fromisoformat(value)
+        return (
+            parsed.astimezone().replace(tzinfo=None)
+            if parsed.utcoffset() is not None
+            else parsed
+        )
     except (TypeError, ValueError):
         return None
 
@@ -79,11 +91,11 @@ def is_empty_cycle_time(value: datetime | None) -> bool:
 def format_next_run(value: datetime | None) -> str:
     """下次运行时间落盘用：推算不出来（不排期）时写空值哨兵。"""
 
-    return format_cycle_time(value) if value is not None else CYCLE_EMPTY_TIME
+    return format_cycle_time(value or datetime.fromisoformat(CYCLE_EMPTY_TIME))
 
 
 def next_fixed_time(
-    *, days: Iterable[str], hhmm: str, after: datetime
+    *, days: Iterable[str], hhmm: str | time | datetime, after: datetime
 ) -> datetime | None:
     """推算固定时间模式下 ``after`` 之后的第一个执行时刻。
 
@@ -98,7 +110,10 @@ def next_fixed_time(
         return None
 
     try:
-        hour, minute = (int(part) for part in hhmm.split(":"))
+        if isinstance(hhmm, (time, datetime)):
+            hour, minute = hhmm.hour, hhmm.minute
+        else:
+            hour, minute = (int(part) for part in hhmm.split(":"))
     except (AttributeError, TypeError, ValueError):
         hour, minute = 0, 0
 
@@ -119,7 +134,7 @@ def _interval_minutes(queue_item) -> int:
     """取间隔分钟数，兜底为 1 分钟避免忙转。"""
 
     try:
-        return max(1, int(queue_item.get("Schedule", "IntervalMinutes")))
+        return max(1, int(queue_item.Schedule.IntervalMinutes))
     except (TypeError, ValueError):
         return 1
 
@@ -131,15 +146,13 @@ def resolve_next_run(queue_item, now: datetime) -> datetime | None:
     固定时间模式没选星期时返回 None，表示不排期。
     """
 
-    next_run_at = parse_cycle_time(queue_item.get("Schedule", "NextRunAt"))
+    next_run_at = parse_cycle_time(queue_item.Schedule.NextRunAt)
     if not is_empty_cycle_time(next_run_at):
         return next_run_at
 
-    if queue_item.get("Schedule", "Mode") == "fixed_time":
+    if queue_item.Schedule.Mode == "fixed_time":
         return next_fixed_time(
-            days=queue_item.get("Schedule", "Days"),
-            hhmm=queue_item.get("Schedule", "Time"),
-            after=now,
+            days=queue_item.Schedule.Days, hhmm=queue_item.Schedule.Time, after=now
         )
     return now
 
@@ -153,10 +166,10 @@ def next_after_start(
     立刻再来一轮。
     """
 
-    if queue_item.get("Schedule", "Mode") == "fixed_time":
+    if queue_item.Schedule.Mode == "fixed_time":
         return next_fixed_time(
-            days=queue_item.get("Schedule", "Days"),
-            hhmm=queue_item.get("Schedule", "Time"),
+            days=queue_item.Schedule.Days,
+            hhmm=queue_item.Schedule.Time,
             after=after or started_at,
         )
 
@@ -170,10 +183,10 @@ def next_after_start(
 def next_after_finish(queue_item, finished_at: datetime) -> datetime | None:
     """按「上次结束」基准推算下次运行时间。"""
 
-    if queue_item.get("Schedule", "Mode") == "fixed_time":
+    if queue_item.Schedule.Mode == "fixed_time":
         return next_fixed_time(
-            days=queue_item.get("Schedule", "Days"),
-            hhmm=queue_item.get("Schedule", "Time"),
+            days=queue_item.Schedule.Days,
+            hhmm=queue_item.Schedule.Time,
             after=finished_at,
         )
 
@@ -192,7 +205,7 @@ def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntr
     index = -1
 
     for queue_item_id, queue_item in queue.QueueItem.items():
-        script_id = str(queue_item.get("Info", "ScriptId") or "").strip()
+        script_id = str(queue_item.Info.ScriptId or "").strip()
         if not script_id or script_id == "-":
             continue
 
@@ -205,7 +218,7 @@ def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntr
 
         index += 1
 
-        if not queue_item.get("Schedule", "Enabled"):
+        if not queue_item.Schedule.Enabled:
             continue
 
         next_run_at = resolve_next_run(queue_item, now)
@@ -215,7 +228,7 @@ def collect_cycle_entries(queue, script_config, now: datetime) -> list[CycleEntr
             CycleEntry(
                 queue_item_id=str(queue_item_id),
                 script_id=script_id,
-                script_name=script_config[script_uid].get("Info", "Name"),
+                script_name=script_config[script_uid].Info.Name,
                 index=index,
                 next_run_at=next_run_at,
                 is_due=next_run_at <= now,

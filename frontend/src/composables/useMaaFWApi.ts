@@ -23,7 +23,7 @@ const logger = window.electronAPI.getLogger('MaaFW接口')
  * （projection.py 的 `_normalize_ui_asset_path`）同一口径：投影会把这些文件带进副本，
  * 这里拒掉的话图标就显示不出来。
  */
-export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) => {
+export const buildMaaFWAssetUrl = (rootPath?: string | null, rawPath?: string | null) => {
   if (!rawPath || !rootPath) return ''
   const trimmed = rawPath.trim()
   if (/^(https?:|data:image\/)/i.test(trimmed)) return trimmed

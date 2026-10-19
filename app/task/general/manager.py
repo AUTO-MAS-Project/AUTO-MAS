@@ -1,35 +1,28 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.config import GeneralConfig, GeneralUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.config import GeneralConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
@@ -86,75 +79,71 @@ class GeneralManager(ScriptManagerBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
             return "脚本配置类型错误, 不是通用脚本类型"
+        if not Config.ScriptConfig[
+            uuid.UUID(self.script_info.script_id)
+        ].Script.ScriptPath:
+            return "未填写脚本路径, 请检查脚本配置中的脚本路径设置！"
         if (
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Script", "IfTrackProcess"
+            Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Script.IfTrackProcess
+            and (
+                not Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Script.TrackProcessName
             )
-            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Script", "TrackProcessName"
+            and (
+                not Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Script.TrackProcessExe
             )
-            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Script", "TrackProcessExe"
-            )
-            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Script", "TrackProcessCmdline"
+            and (
+                not Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Script.TrackProcessCmdline
             )
         ):
             return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
         # 配置路径为空时 Path("") 等价于 Path(".")，后续的快照与清理会落到
         # 程序自身的工作目录上，必须在任务开始前拦下
-        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Script", "ConfigPath"
-        ):
+        if not Config.ScriptConfig[
+            uuid.UUID(self.script_info.script_id)
+        ].Script.ConfigPath:
             return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
         # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
         # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
-        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Script", "LogPath"
-        ):
+        if not Config.ScriptConfig[
+            uuid.UUID(self.script_info.script_id)
+        ].Script.LogPath:
             return "未填写日志路径, 请检查脚本配置中的日志路径设置！"
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Game", "Enabled"
-        ):
-            if (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
-                == "Emulator"
-            ) and (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "EmulatorId"
-                )
+        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
+            game_path = Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Path
+            if Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Type == "Emulator" and (
+                Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Game.EmulatorId
                 == "-"
-                or Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "EmulatorIndex"
-                )
+                or Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Game.EmulatorIndex
                 in ["", "-"]
             ):
                 return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-            elif (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
-                == "Client"
-            ) and not Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Path"
-                )
-            ).exists():
+            elif Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Type == "Client" and (game_path is None or not game_path.exists()):
                 return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
-            elif (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
-                == "URL"
-            ) and (
-                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "URL"
-                )
-                or not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "ProcessName"
-                )
+            elif Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Type == "URL" and (
+                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.URL
+                or not Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].Game.ProcessName
             ):
                 return "未完成URL配置, 请检查脚本配置中的URL和进程名称设置！"
 
@@ -201,13 +190,13 @@ class GeneralManager(ScriptManagerBase):
         self.external_config_exists = self.script_config_path.exists()
 
         if self.external_config_exists:
-            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if self.script_config.Script.ConfigPathMode == "Folder":
                 commit_native_config_snapshot(
                     self.temp_path,
                     self.script_config_path,
                     script_id=self.script_info.script_id,
                 )
-            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            elif self.script_config.Script.ConfigPathMode == "File":
                 self.temp_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
@@ -226,10 +215,10 @@ class GeneralManager(ScriptManagerBase):
             logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
 
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             # 原子换入: 原生目录要么原样要么完整就位, 不出现半删中间态
             swap_in_dir(self.temp_path, self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif self.script_config.Script.ConfigPathMode == "File":
             # 配置路径被脚本进程占用时只能清掉一部分, 此时仍要把快照覆盖回去,
             # 否则用户目录会停在半删状态
             if not self._remove_script_config():
@@ -257,34 +246,34 @@ class GeneralManager(ScriptManagerBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载用户配置
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
+        self.config_locks[
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].uid
+        ] = await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock_x()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        self.user_config = MultipleConfig([GeneralUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
+        self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, 通用脚本配置提取完成")
 
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        script_config_path = self.script_config.Script.ConfigPath
+        if script_config_path is None:
+            raise ValueError("ConfigPath未配置，请检查路径设置")
+        self.script_config_path = script_config_path
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Game", "Enabled"
-        ):
+        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
             if (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Type
                 == "Emulator"
             ):
                 device_provider = (
                     self._device_provider or EmulatorManager.get_emulator_instance
                 )
                 self.emulator_manager = await device_provider(
-                    self.script_config.get("Game", "EmulatorId")
+                    self.script_config.Game.EmulatorId
                 )
 
-            elif Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Game", "Type"
-            ) in ["Client", "URL"]:
+            elif Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Type in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
 
         # 构建用户列表
@@ -315,7 +304,7 @@ class GeneralManager(ScriptManagerBase):
             archive_native_backup(
                 self.script_info.script_id,
                 self.script_config_path,
-                self.script_config.get("Script", "ConfigPathMode"),
+                self.script_config.Script.ConfigPathMode,
             )
 
     async def main_task(self):
@@ -359,14 +348,12 @@ class GeneralManager(ScriptManagerBase):
                 self.script_config,
                 self.user_config,
                 (
-                    (
-                        self.emulator_manager
-                        if (self.script_config.get("Game", "Type") == "Emulator")
-                        else self.game_process_manager
-                    )
-                    if self.script_config.get("Game", "Enabled")
-                    else None
-                ),
+                    self.emulator_manager
+                    if self.script_config.Game.Type == "Emulator"
+                    else self.game_process_manager
+                )
+                if self.script_config.Game.Enabled
+                else None,
             )
 
             try:
@@ -381,57 +368,57 @@ class GeneralManager(ScriptManagerBase):
 
     async def final_task(self):
         """运行结束后的收尾工作"""
+        try:
+            if self.check_result != "Pass":
+                self.script_info.status = "异常"
+                return self.check_result
 
-        if self.check_result != "Pass":
-            self.script_info.status = "异常"
-            return self.check_result
+            logger.info("通用脚本任务已结束, 开始执行后续操作")
 
-        logger.info("通用脚本任务已结束, 开始执行后续操作")
+            self._restore_external_config()
+            self._cleanup_external_config_snapshot()
 
-        self._restore_external_config()
-        self._cleanup_external_config_snapshot()
+            if self.task_info.mode == "AutoProxy":
+                await config_manager.flush()
 
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
-        logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
+                summary = self.collect_user_results()
 
-        if self.task_info.mode == "AutoProxy":
-            await Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
-
-            summary = self.collect_user_results()
-
-            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            # 按用户交错组装「用户结果行 + 该用户进程信息」：
-            # 多账号任务时各用户信息归属清晰，不再全部平铺。
-            # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
-            # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
-            has_uncompleted = summary.uncompleted_count > 0
-            user_result_text = build_user_result_text(
-                self.script_info.user_list, has_uncompleted
-            )
-            result = self.build_proxy_report(result_text=user_result_text)
-
-            try:
-                await push_notification(
-                    mode="代理结果",
-                    title=title,
-                    message=result,
-                    user_config=None,
-                    task_info=self.task_info,
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                # 按用户交错组装「用户结果行 + 该用户进程信息」：
+                # 多账号任务时各用户信息归属清晰，不再全部平铺。
+                # 「失败」类型条目仅在本次任务存在未完成用户时纳入报告，
+                # 与 SendTaskResultTime 的「仅失败时」推送策略自然配合
+                has_uncompleted = summary.uncompleted_count > 0
+                user_result_text = build_user_result_text(
+                    self.script_info.user_list, has_uncompleted
                 )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="error", message=f"推送代理结果时出现异常: {e}"
-                    ),
-                )
+                result = self.build_proxy_report(result_text=user_result_text)
 
-        self.script_info.status = "完成"
+                try:
+                    await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                    )
+                except Exception as e:
+                    logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error", message=f"推送代理结果时出现异常: {e}"
+                        ),
+                    )
+
+            self.script_info.status = "完成"
+        finally:
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
 

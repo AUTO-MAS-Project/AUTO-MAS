@@ -1,34 +1,27 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import shlex
 import shutil
 import uuid
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -51,7 +44,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: GeneralConfig,
-        user_config: MultipleConfig[GeneralUserConfig],
+        user_config: ConfigCollection[GeneralUserConfig],
         game_manager: ProcessManager | DeviceBase | None,
     ):
         super().__init__()
@@ -68,8 +61,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.config_base = CONFIG_BASE_SHARED
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-            self.config_base = read_config_base(user_config)
+            selected_user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            self.config_base = read_config_base(selected_user)
             # 原生来源=不写；shared/independent 来源都写面板值（见 AutoProxy 同款说明）
             self.use_mas_config = self.config_base != CONFIG_BASE_NATIVE
 
@@ -78,14 +71,17 @@ class ScriptConfigTask(TaskExecuteBase):
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
+        script_path = self.script_config.Script.ScriptPath
+        if script_path is None:
+            raise ValueError("ScriptPath未配置，请检查路径设置")
+        self.script_path = script_path
 
         arguments_list = []
         path_list = []
 
         for argument in [
             part.strip()
-            for part in str(self.script_config.get("Script", "Arguments")).split("|")
+            for part in str(self.script_config.Script.Arguments).split("|")
             if part.strip()
         ]:
             arg_parts = [
@@ -106,7 +102,10 @@ class ScriptConfigTask(TaskExecuteBase):
             path_list[1] if len(path_list) > 1 else self.script_path
         )
         self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        script_config_path = self.script_config.Script.ConfigPath
+        if script_config_path is None:
+            raise ValueError("ConfigPath未配置，请检查路径设置")
+        self.script_config_path = script_config_path
 
     async def main_task(self):
 
@@ -156,7 +155,7 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         if (
-            self.script_config.get("Script", "ConfigPathMode") == "Folder"
+            self.script_config.Script.ConfigPathMode == "Folder"
             and (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
@@ -173,7 +172,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 script_id=self.script_info.script_id,
             )
         elif (
-            self.script_config.get("Script", "ConfigPathMode") == "File"
+            self.script_config.Script.ConfigPathMode == "File"
             and (
                 Path.cwd()
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
@@ -224,7 +223,7 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
         ).mkdir(parents=True, exist_ok=True)
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             shutil.copytree(
                 self.script_config_path,
                 Path.cwd()
@@ -234,7 +233,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success(
                 f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile'}"
             )
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif self.script_config.Script.ConfigPathMode == "File":
             shutil.copy(
                 self.script_config_path,
                 Path.cwd()

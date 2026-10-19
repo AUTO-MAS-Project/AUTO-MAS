@@ -1,19 +1,22 @@
-"""#1297 本地验证：维护数据、缓存与失败放行。"""
+import pytest_asyncio
+from types import SimpleNamespace
+from tests.config_support import activate_config, group_view
 
+"""#1297 本地验证：维护数据、缓存与失败放行。"""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
-
 import httpx
 import pytest
-
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
 
 
-@pytest.fixture(autouse=True)
-def isolated_config(monkeypatch):
-    monkeypatch.setattr(service, "Config", GlobalConfig())
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_config(monkeypatch):
+    config = GlobalConfig.build()
+    await activate_config(config)
+    monkeypatch.setattr(service, "Config", SimpleNamespace(setting=config))
 
 
 def payload(start, end):
@@ -21,10 +24,7 @@ def payload(start, end):
         "schema_version": 1,
         "games": {
             "arknights": {
-                "maintenance": {
-                    "planned_start_at": start,
-                    "planned_end_at": end,
-                }
+                "maintenance": {"planned_start_at": start, "planned_end_at": end}
             }
         },
     }
@@ -65,10 +65,7 @@ def test_unknown_game_does_not_break_supported_records():
         service.parse_maintenance(
             {
                 "schema_version": 1,
-                "games": {
-                    "arknights": {"maintenance": None},
-                    "unknown": "unsupported",
-                },
+                "games": {"arknights": {"maintenance": None}, "unknown": "unsupported"},
             }
         )
         == {}
@@ -119,7 +116,7 @@ async def test_cache_failure_clears_stale_window_and_throttles_retry(
     first, concurrent = await asyncio.gather(
         client.get_active("arknights"), client.get_active("arknights")
     )
-    assert first is not None and concurrent == first and len(requests) == 1
+    assert first is not None and concurrent == first and (len(requests) == 1)
     clock[0] = service.CACHE_SECONDS - 1
     assert await client.get_active("arknights") == first
     clock[0] = service.CACHE_SECONDS

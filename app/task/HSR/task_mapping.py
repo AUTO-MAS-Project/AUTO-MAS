@@ -160,7 +160,7 @@ def resolve_script_assignment(
 
     assigned = None
     if user_config is not None:
-        raw = user_config.get("Managed", "TaskMapping")
+        raw = user_config.Managed.TaskMapping
         if isinstance(raw, str):
             try:
                 raw = json.loads(raw)
@@ -169,7 +169,7 @@ def resolve_script_assignment(
         if isinstance(raw, dict):
             assigned = raw.get(module.key)
     if assigned not in module.supported_scripts:
-        assigned = script_config.get("TaskMapping", module.key)
+        assigned = getattr(script_config.TaskMapping, module.key)
     if assigned not in module.supported_scripts:
         assigned = module.default_script
     if effective_engines and assigned not in effective_engines:

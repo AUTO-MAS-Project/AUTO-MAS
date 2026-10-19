@@ -6,8 +6,8 @@
 
 | 必做 | 位置 |
 |------|------|
-| `XxxConfig` / `XxxUserConfig` + `schema.py` | `app/models/` |
-| `SCRIPT_BOOK`、`USER_BOOK`、`task_manager` 分支 | `app/core/`、`app/models/config.py` |
+| `XxxConfig` / `XxxUserConfig` + 派生接口契约 | `app/models/config/script.py`、`app/config/wire.py`、所属 API 模块；公共契约在 `schema.py` |
+| `SCRIPT_BOOK`、`USER_BOOK`、`task_manager` 分支 | `app/core/`、`app/models/config/__init__.py` |
 | `TYPE_BOOK["XxxConfig"]` → 展示文案 | `app/utils/constants.py`（否则调度 `combox/task` KeyError） |
 | 后端改 schema 后 `yarn openapi` | `frontend/`；**禁止**手改 `src/api/models/*` |
 | OpenAPI 生效 | 重启后端 → `openapi.json` **文本**含新类型名（勿只靠 PowerShell 对象键）→ 确认开发环境端口 36164 为当前 `main.py`（正式版占 36163） |
@@ -68,7 +68,7 @@
 - 脚本级共享配置可提供脚本级入口，用户独立配置可提供用户级入口；先核对真实调用链，不机械隐藏按钮。
 - 新专项一律实现三态；不再新增两态来源。
 
-**历史兼容（非现行规则）**：两态来源「脚本 / 用户」是过渡期的旧形态，旧值「简洁 / 详细 / 自定义」经 `ConfigSourceValidator` 子类的 `legacy_map` 在加载时归一（`简洁`→`脚本`、`详细`/`自定义`→`用户`）——MAA、SRC、Okww、OkNte 用 `OkwwConfigModeValidator`，MaaEnd 用 `MaaEndConfigModeValidator`，其余专项用 `UserDirectConfigModeValidator`；归一结果会**落盘改写**，回滚代码不会撤销已落盘的值。旧版代码把新值当非法值兜底为选项表首项（`OptionsValidator.correct`），排查「用户配置来源意外变成脚本」时先核对是否回滚过代码。上述仅为兼容旧配置与解释存量现象，**不构成新实现的选型依据**。
+**历史输入兼容**：来源旧值的含义由对应配置字段和专项升级规则确定；位置兼容及可选值转换统一声明在 `legacy(group=..., name=..., convert=...)`，文档结构预处理位于一次性升级流程。具体映射按当前字段和历史样本核对。配置加载后的正常修改遵循事务提交及防抖保存，不在专项中恢复一套外置配置校验器。见[配置框架参考](../../mas-data-model/references/config-framework.md)。
 
 ## 5. 架构线选型（实现前只读）
 
@@ -174,19 +174,20 @@ self.task_index: int | None = None
 
 ## 7. Manager 规范（通用）
 
-### 7.1 unlock-then-write 顺序
+### 7.1 X 锁与 live 配置提交
 
-`final_task` / `on_crash` 中**必须先解锁再写回 UserData**（`load()` 在锁定状态下抛异常）：
+任务使用 X 票据保护 live 配置，持票上下文直接按字段赋值并提交；`finally`、`final_task` 或 `on_crash` 按实际生命周期释放原票据。配置状态不建立任务副本，也不在解锁后通过整份文档覆盖集合。业务锁覆盖期和短配置事务分别管理。
 
 ```python
-# final_task()
-if script_cfg.is_locked:
-    await script_cfg.unlock()
-
-# 解锁之后再写回
-if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
-    await script_cfg.UserData.load(await self.user_config.toDict())
+ticket = await user_cfg.lock_x()
+try:
+    user_cfg.Info.Name = "账号名称"
+    await user_cfg.commit()
+finally:
+    await user_cfg.unlock(ticket)
 ```
+
+信号关联修改在同 Task 内直接 await；独立子任务申请自己的事务，父事务内等待它提交可能形成循环等待。外部脚本原生文件的 Temp 快照/恢复属于文件业务，继续遵守该文件的 owner 和冲突保护规则，区别于 MAS 配置工作区回退。
 
 ### 7.2 多用户迭代
 
@@ -257,7 +258,7 @@ else:
 | 配置同步 | `ConfigFile` 目录约定 |
 | 跨类型重构 | 仅当已有多个真实调用者时上提共用逻辑；专项差异保留在所属模块 |
 
-专项 schema 只有在 UI/运行时契约确实不同且需要收窄字段时才独立定义；不要仅为改名复制 General 模型，也不要让 schema 暴露运行时未消费的虚假功能。
+专项配置字段由准确的 `ConfigEntry/ConfigGroup` 声明提供，API 投影从该类派生；只为端点包裹层及非配置业务载荷定义独立模型。具体分组可按专项真实差异继承或覆写，保持运行时消费路径完整。
 
 ---
 
@@ -269,7 +270,7 @@ else:
 - [ ] 原子化 I/O：配置写入用 tmp+rename
 - [ ] DRY：`final_task` / `on_crash` 共用逻辑已提取
 - [ ] try/except：进程清理每操作独立
-- [ ] unlock-then-write：`final_task` 中先解锁再写回
+- [ ] X 票据覆盖任务所需配置，live 字段修改经 commit，收尾释放原票据，无副本整份回写
 - [ ] check() 消息：用户可操作
 - [ ] Manager 多用户迭代
 - [ ] 参数拆分 `_split_args` 已提取为模块级函数

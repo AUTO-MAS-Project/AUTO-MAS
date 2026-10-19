@@ -1,13 +1,12 @@
-"""#1297 本地验证：维护消费排期但不留执行记录、不立即重试。"""
+from tests.config_support import activate_config, group_view
 
+"""#1297 本地验证：维护消费排期但不留执行记录、不立即重试。"""
 import uuid
 from contextlib import nullcontext
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-
 import pytest
-
 from app.core import Config
 from app.core import task_manager as scheduler
 from app.core.queue_cycle import CycleEntry, format_cycle_time
@@ -27,14 +26,42 @@ class FixedDatetime(datetime):
 async def test_cycle_skip_preserves_last_run_and_schedules_future(
     monkeypatch, anchor, mode
 ):
-    queue_id, item_id, script_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    queue_id, item_id, script_id = (uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
     item = QueueItem()
-    await item.set("Schedule", "Mode", mode)
-    await item.set("Schedule", "IntervalAnchor", anchor)
-    await item.set("Schedule", "IntervalMinutes", 60)
-    await item.set("Schedule", "Time", "12:00")
-    await item.set("Data", "LastCycleStartedAt", "2026-10-09 10:00:00")
-    await item.set("Data", "LastCycleFinishedAt", "2026-10-09 10:15:00")
+    await activate_config(item)
+    await item.update(
+        type(item).model_validate({"Schedule": {"Mode": mode}}), check_visibility=False
+    )
+    await item.update(
+        type(item).model_validate({"Schedule": {"IntervalAnchor": anchor}}),
+        check_visibility=False,
+    )
+    await item.update(
+        type(item).model_validate({"Schedule": {"IntervalMinutes": 60}}),
+        check_visibility=False,
+    )
+    await item.update(
+        type(item).model_validate(
+            {"Schedule": {"Time": datetime(2000, 1, 1, 12).astimezone()}}
+        ),
+        check_visibility=False,
+    )
+    await item.update(
+        type(item).model_validate(
+            {"Data": {"LastCycleStartedAt": datetime(2026, 10, 9, 10).astimezone()}}
+        ),
+        check_visibility=False,
+    )
+    await item.update(
+        type(item).model_validate(
+            {
+                "Data": {
+                    "LastCycleFinishedAt": datetime(2026, 10, 9, 10, 15).astimezone()
+                }
+            }
+        ),
+        check_visibility=False,
+    )
     monkeypatch.setattr(
         Config, "QueueConfig", {queue_id: SimpleNamespace(QueueItem={item_id: item})}
     )
@@ -59,10 +86,10 @@ async def test_cycle_skip_preserves_last_run_and_schedules_future(
         str(item_id), str(script_id), "test", 0, FixedDatetime.now(), True
     )
     assert await task._run_cycle_entry(queue_id, entry, [entry]) == "skipped"
-    assert item.get("Data", "LastCycleStartedAt") == "2026-10-09 10:00:00"
-    assert item.get("Data", "LastCycleFinishedAt") == "2026-10-09 10:15:00"
+    assert item.Data.LastCycleStartedAt == datetime(2026, 10, 9, 10).astimezone()
+    assert item.Data.LastCycleFinishedAt == datetime(2026, 10, 9, 10, 15).astimezone()
     expected = datetime(2026, 10, 10, 11 if mode == "interval" else 12)
-    assert item.get("Schedule", "NextRunAt") == format_cycle_time(expected)
+    assert item.Schedule.NextRunAt == expected.astimezone()
     assert task.script_reservations.try_acquire(
         script_id, "next-task", root_paths=(), emulator_key=None
     )

@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type BAAHConfig_Emulator = {
     /**
-     * 模拟器ID
+     * 模拟器 ID
      */
     Id?: (string | null);
     /**
-     * 模拟器多开实例索引
+     * 模拟器索引
      */
     Index?: (string | null);
 };

@@ -4,12 +4,12 @@
 /* eslint-disable */
 export type QueueItem_Data = {
     /**
-     * 上次循环开始时间
-     */
-    LastCycleStartedAt?: (string | null);
-    /**
      * 上次循环结束时间
      */
     LastCycleFinishedAt?: (string | null);
+    /**
+     * 上次循环开始时间
+     */
+    LastCycleStartedAt?: (string | null);
 };
 

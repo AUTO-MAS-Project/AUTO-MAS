@@ -47,6 +47,7 @@ CONTRACT: dict[str, frozenset[str]] = {
             "status",
             "message",
             "log",
+            "logLevel",
             "percent",
             "downloadedBytes",
             "totalBytes",

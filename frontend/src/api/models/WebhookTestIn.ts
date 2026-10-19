@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook } from './Webhook';
+import type { WebhookInput } from './WebhookInput';
 export type WebhookTestIn = {
     /**
      * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
@@ -15,6 +15,6 @@ export type WebhookTestIn = {
     /**
      * Webhook配置数据
      */
-    data: Webhook;
+    data: WebhookInput;
 };
 

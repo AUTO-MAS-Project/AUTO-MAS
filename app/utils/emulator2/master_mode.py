@@ -69,7 +69,7 @@ def is_master_mode_enabled() -> bool:
     try:
         from app.core import Config
 
-        return bool(Config.get("Function", "IfBlockAd"))
+        return bool(Config.setting.Function.IfBlockAd)
     except Exception as e:  # noqa: BLE001 - 配置层的问题不该拖垮启动
         logger.warning(f"读取「大雷主人模式」配置失败，按关闭处理: {e}")
         return False

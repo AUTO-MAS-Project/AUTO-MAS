@@ -415,7 +415,7 @@ def _entry_and_account_readers(
 
 def _get(config: Any, group: str, name: str) -> Any:
     try:
-        return config.get(group, name)
+        return getattr(getattr(config, group), name)
     except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
         return None
 

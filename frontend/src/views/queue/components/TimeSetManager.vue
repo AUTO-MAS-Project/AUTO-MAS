@@ -90,12 +90,12 @@
             </div>
             <div class="row-cell time-cell">
               <a-time-picker
-                v-model:value="record.timeValue"
+                :value="record.timeValue"
                 format="HH:mm"
                 :placeholder="t('queue.time.selectTime')"
                 size="small"
                 :disabled="loading"
-                @change="updateTimeSetTime(record)"
+                @change="updateTimeSetTime(record, $event)"
               />
             </div>
             <div class="row-cell actions-cell">
@@ -132,9 +132,10 @@ import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import dayjs, { type Dayjs } from 'dayjs'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
-import dayjs from 'dayjs'
+import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('定时项管理')
@@ -157,28 +158,10 @@ const loading = ref(false)
 const isDraggingTimeSet = ref(false)
 
 // 时间处理工具函数
-const parseTimeString = (timeStr: string) => {
-  if (!timeStr) return undefined
-  try {
-    const [hours, minutes] = timeStr.split(':').map(Number)
-    if (isNaN(hours) || isNaN(minutes)) return undefined
-    return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
-  } catch {
-    return undefined
-  }
-}
-
-const formatTimeValue = (timeValue: any) => {
-  if (!timeValue) return '00:00'
-  try {
-    if (dayjs.isDayjs(timeValue)) {
-      return timeValue.format('HH:mm')
-    }
-    return dayjs(timeValue).format('HH:mm')
-  } catch {
-    return '00:00'
-  }
-}
+const timeOffset = dayjs().utcOffset()
+const parseTimeString = (value: string) => parseConfigTime(value, timeOffset)
+const formatTimeValue = (value: Dayjs | string, original: string) =>
+  serializeConfigTime(value, original, timeOffset)
 
 // 星期排序工具函数
 type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'
@@ -254,9 +237,24 @@ const addTimeSet = async () => {
 }
 
 // 更新定时项时间
-const updateTimeSetTime = async (timeSet: any) => {
+const updateTimeSetTime = async (
+  timeSet: { id: string; time: string; timeValue?: Dayjs },
+  value: Dayjs | string | null
+) => {
   try {
-    const timeString = formatTimeValue(timeSet.timeValue)
+    // 清空表示显示日期的午夜；控件的 null 不写入页面状态或配置请求。
+    const timeValue =
+      value === null
+        ? parseTimeString(timeSet.time)?.startOf('day')
+        : typeof value === 'string'
+          ? parseTimeString(value)
+          : value
+    if (!timeValue?.isValid()) throw new Error(t('queue.time.selectTime'))
+
+    // 普通编辑保留原小数秒，清空时归零；提交携带控件的显示偏移。
+    const originalTime = value === null ? timeSet.time.replace(/\.\d+/, '') : timeSet.time
+    const timeString = formatTimeValue(timeValue, originalTime)
+    timeSet.timeValue = timeValue
 
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,

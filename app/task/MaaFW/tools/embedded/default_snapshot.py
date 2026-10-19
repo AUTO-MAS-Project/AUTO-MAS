@@ -146,15 +146,15 @@ async def fill_default_task_snapshots(
             str(uid): user
             for uid, user in script_config.UserData.items()
             if (wanted is None or str(uid) in wanted)
-            and is_empty_task_snapshot(user.get("Task", "TaskSnapshot"))
+            and is_empty_task_snapshot(user.Task.TaskSnapshot)
         }
         if not users:
             return
         targets = [
             (
                 user_id,
-                str(user.get("Info", "Name") or user_id),
-                str(user.get("Task", "SelectedPreset") or "").strip() or None,
+                str(user.Info.Name or user_id),
+                str(user.Task.SelectedPreset or "").strip() or None,
             )
             for user_id, user in users.items()
         ]
@@ -178,9 +178,11 @@ async def fill_default_task_snapshots(
             # 或脚本开始运行了：不覆盖、不硬写
             return (
                 not script_config.is_locked
-                and is_empty_task_snapshot(user.get("Task", "TaskSnapshot"))
-                and (str(user.get("Task", "SelectedPreset") or "").strip() or None)
-                == selected_preset
+                and is_empty_task_snapshot(user.Task.TaskSnapshot)
+                and (
+                    (str(user.Task.SelectedPreset or "").strip() or None)
+                    == selected_preset
+                )
             )
 
         try:
@@ -195,9 +197,7 @@ async def fill_default_task_snapshots(
                 continue
             # 任务数按落盘的算：特调写入前会整理（M9A 的启动 / 关闭游戏不进队列）
             logger.info(
-                f"MFW 用户 {user.get('Info', 'Name') or user_id} 的任务队列为空，"
-                f"按{origin}写入默认队列"
-                f"（{_queued_count(user.get('Task', 'TaskSnapshot'))} 个任务）"
+                f"MFW 用户 {user.Info.Name or user_id} 的任务队列为空，按{origin}写入默认队列（{_queued_count(user.Task.TaskSnapshot)} 个任务）"
             )
         except Exception as exc:  # noqa: BLE001 - 这一位写不进去不影响其他人
             logger.opt(exception=True).warning(

@@ -302,7 +302,11 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input :value="formData.Data.LastProxyDate" readonly size="large" />
+                <a-input
+                  :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
+                  readonly
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -372,6 +376,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -448,7 +453,7 @@ const getDefaultBAAHUserData = () => ({
     Tag: '',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
   },
   Notify: {

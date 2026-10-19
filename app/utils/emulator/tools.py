@@ -545,7 +545,7 @@ async def apply_launch_audio_mute(
     try:
         from app.core import Config
 
-        if not Config.get("Function", "IfSilence"):
+        if not Config.setting.Function.IfSilence:
             return
         pids = await resolve_pids()
         if not pids:

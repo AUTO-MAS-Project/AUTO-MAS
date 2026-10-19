@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GameSignAccountDataOut } from './GameSignAccountDataOut';
-import type { GameSignAccountInstanceOut } from './GameSignAccountInstanceOut';
+import type { GameSignAccountCollectionOut } from './GameSignAccountCollectionOut';
 /**
  * 游戏社区账号组列表响应
  */
@@ -23,6 +22,6 @@ export type GameSignAccountsListOut = {
     /**
      * 账号组列表
      */
-    data?: Record<string, (Array<GameSignAccountInstanceOut> | GameSignAccountDataOut)>;
+    data?: GameSignAccountCollectionOut;
 };
 

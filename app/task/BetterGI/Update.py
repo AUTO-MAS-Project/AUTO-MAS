@@ -19,9 +19,9 @@
 import uuid
 from contextlib import suppress
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.task.proxy_helpers import push_dispatch_log
@@ -44,7 +44,7 @@ class BetterGIUpdateTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: BetterGIConfig,
-        user_config: MultipleConfig[BetterGIUserConfig],
+        user_config: ConfigCollection[BetterGIUserConfig],
         user_id: str,
     ):
         super().__init__()

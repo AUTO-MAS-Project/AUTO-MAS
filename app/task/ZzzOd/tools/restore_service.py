@@ -53,7 +53,7 @@ def _mas_user(ctx: RestoreContext):
 def _script_root(ctx: RestoreContext) -> Path | None:
     """一条龙安装根目录（原始路径，不校验哨兵）；未配置返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     return Path(raw) if raw else None
 
 
@@ -61,7 +61,7 @@ def _mas_slot(ctx: RestoreContext) -> int | None:
     """当前用户绑定的槽 idx；未绑定（<=0）返回 ``None``。"""
 
     _, user_cfg = _mas_user(ctx)
-    slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+    slot = int(user_cfg.Info.SlotIdx or -1)
     return slot if slot > 0 else None
 
 

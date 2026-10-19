@@ -83,7 +83,7 @@ async def _set_base(ctx: RestoreContext, base: str) -> None:
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Base": base}})
+    await user.update(type(user).model_validate({"Info": {"Base": base}}))
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
@@ -107,7 +107,7 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
 def _native_config_path(ctx: RestoreContext) -> Path | None:
     """SRC 安装目录 config/；未配置脚本路径返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "Path") or "").strip()
+    raw = str(ctx.script_config.Info.Path or "").strip()
     return Path(raw) / "config" if raw else None
 
 
@@ -186,13 +186,12 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
-        # force 存底标注恢复时点来源（跨来源时 set_base 已切回备份来源）
-        base=str(user.get("Info", "Base") or "").strip() or None,
+        base=str(user.Info.Base or "").strip() or None,
     )
     if restored_overlay:
         # 页面核心字段回填（对齐 ok-ww 模式）：文件回滚的同时把页面关卡
         # 配置回到备份时点，否则旧表单值下次保存会静默覆盖回滚结果
-        await user.update(group_overlay(restored_overlay))
+        await user.update(type(user).model_validate(group_overlay(restored_overlay)))
 
 
 async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:

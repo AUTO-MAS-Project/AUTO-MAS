@@ -519,13 +519,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def check(self) -> str:
         proxy_times = (
-            self.cur_user_config.get("Data", "ProxyTimes")
-            if self.cur_user_config.get("Data", "LastProxyDate") == self.curdate
+            self.cur_user_config.Data.ProxyTimes
+            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d")
+            == self.curdate
             else 0
         )
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and proxy_times >= self.script_config.get("Run", "ProxyTimesLimit"):
+        if (
+            self.script_config.Run.ProxyTimesLimit != 0
+            and proxy_times >= self.script_config.Run.ProxyTimesLimit
+        ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限，跳过该用户"
 
@@ -552,14 +554,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 loop.call_soon_threadsafe(self._append_log, message)
 
             try:
+                # 特调建计划可能提交配置；取消后先等线程结束，不能让它越过 X 锁释放。
+                build_task = asyncio.create_task(
+                    asyncio.to_thread(self._load_run_state_for_check, send_plan_log)
+                )
+                try:
+                    state = await asyncio.shield(build_task)
+                except asyncio.CancelledError:
+                    while not build_task.done():
+                        try:
+                            await asyncio.shield(build_task)
+                        except asyncio.CancelledError:
+                            continue
+                        except Exception:
+                            break
+                    with suppress(Exception):
+                        build_task.result()
+                    raise
                 (
                     self.interface_model,
                     self.base_run_plan,
                     self.run_plan,
                     game_path_error,
-                ) = await asyncio.to_thread(
-                    self._load_run_state_for_check, send_plan_log
-                )
+                ) = state
             except Exception as exc:
                 self.cur_user_item.status = "异常"
                 return f"无法构建 MaaFW 运行计划，请检查项目和任务配置: {exc}"
@@ -578,8 +595,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return MAINTENANCE_SKIP_MESSAGE
 
             if self.run_plan.controllerType == "Adb":
-                emulator_id = self.script_config.get("Emulator", "Id")
-                emulator_index = self.script_config.get("Emulator", "Index")
+                emulator_id = self.script_config.Emulator.Id
+                emulator_index = self.script_config.Emulator.Index
                 if emulator_id == "-" or emulator_index in ("", "-"):
                     self.cur_user_item.status = "异常"
                     return (
@@ -605,7 +622,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 await self._release_project_path()
 
     def _describe_runtime_architecture_mismatch(self) -> str | None:
-        source = str(self.script_config.get("Info", "Path") or "").strip()
+        source = str(self.script_config.Info.Path or "").strip()
         return describe_project_runtime_architecture_mismatch(
             self.project_path, source_path=Path(source) if source else None
         )
@@ -675,7 +692,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理 MaaFW 用户: {self.cur_user_uid}")
         if self.run_plan is not None:
             selected_preset = str(
-                self.cur_user_config.get("Task", "SelectedPreset") or ""
+                self.cur_user_config.Task.SelectedPreset or ""
             ).strip()
             self._append_log(
                 _format_run_overview_log(
@@ -694,10 +711,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 执行任务前脚本（每用户仅一次，重试不重复跑）。
             # 和下面 finally 里的后脚本放进同一个 try，两者严格配对：
             # 跑过前脚本就一定会跑后脚本。
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            if self.cur_user_config.Info.IfScriptBeforeTask:
                 await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
+                    self.cur_user_config.Info.ScriptBeforeTask, "脚本前任务"
                 )
 
             # 上一次尝试的失败摘要与是否重启过客户端：新一次另起日志后界面从头显示，
@@ -711,7 +727,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 上一次失败后 MAS 自己起的游戏 / 模拟器是否已关掉（关的时候报错也算：两个关闭
             # 函数不论成败都清掉 opened_*，下一轮会重新拉起），这时运行前设置要重跑
             client_reset = False
-            for index in range(self.script_config.get("Run", "RunTimesLimit")):
+            for index in range(self.script_config.Run.RunTimesLimit):
                 if self.run_complete:
                     break
 
@@ -721,8 +737,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._start_attempt_log()
 
                 self._append_log(
-                    f"用户 {self.cur_user_item.name} - 尝试次数: "
-                    f"{index + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                    f"用户 {self.cur_user_item.name} - 尝试次数: {index + 1}/{self.script_config.Run.RunTimesLimit}"
                 )
                 if index > 0 and previous_failure:
                     self._append_log(
@@ -866,10 +881,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
             # 位置在清理之前，与 MAA 一致——收尾脚本可能还要用模拟器里的东西。
-            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            if self.cur_user_config.Info.IfScriptAfterTask:
                 await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                    "脚本后任务",
+                    self.cur_user_config.Info.ScriptAfterTask, "脚本后任务"
                 )
 
             await self._shutdown_runner()
@@ -885,9 +899,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.maintenance_skipped:
                 # 维护连带跳过：同样是跳过不是失败，代理次数不动；上次状态、history
                 # 与统计信息都写明原因。
-                await self.cur_user_config.set(
-                    "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
-                )
+                self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
+                await self.cur_user_config.commit()
                 statistic_paths = await self._save_user_logs()
                 await self._push_user_statistics(statistic_paths)
             elif self.project_busy_skipped:
@@ -902,30 +915,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         statistic_paths = await self._save_user_logs()
         if self.run_complete:
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.LastProxyStatus = "成功"
+            await self.cur_user_config.commit()
             self.cur_user_item.status = "完成"
             await self._send_success_notify()
         elif self.run_signal == SERVER_MAINTENANCE:
             # 维护是跳过不是失败：代理次数、剩余天数不动，下次定时照常再跑
-            await self.cur_user_config.set(
-                "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
-            )
+            self.cur_user_config.Data.LastProxyStatus = MAINTENANCE_LAST_STATUS
+            await self.cur_user_config.commit()
             self.cur_user_item.status = "跳过"
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
+            self.cur_user_config.Data.LastProxyStatus = "失败"
+            await self.cur_user_config.commit()
             if self.cur_user_item.status == "运行":
                 self.cur_user_item.status = "异常"
 
@@ -962,17 +974,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         只有两种模式：DirectExe（默认；MAS 启动，结束后一律由 MAS 关闭）与
         AttachOnly（脚本或用户自己启停，MAS 只接管窗口、不启动也不关闭）。
         此前这里根本没读过 LaunchMode，Win32 controller 无论哪种模式都强制索要 exe。
-        旧配置里的 LaunchMode 一定有值（ConfigBase.load 会把默认值写回），这里的兜底
+        配置激活后 LaunchMode 一定有默认值，这里的兜底
         只是防御性的。
         """
 
-        mode = str(self.script_config.get("Game", "LaunchMode") or "DirectExe").strip()
+        mode = str(self.script_config.Game.LaunchMode or "DirectExe").strip()
         return mode != "AttachOnly"
 
     def _resolve_game_launch_path(self) -> Path | None:
         """DirectExe 模式下 MAS 要启动的客户端 exe。"""
 
-        raw = str(self.script_config.get("Game", "LaunchPath") or "").strip()
+        raw = str(self.script_config.Game.LaunchPath or "").strip()
         return Path(raw) if raw else None
 
     def _load_run_state_for_check(
@@ -987,9 +999,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if (
             run_plan.tasks
             and run_plan.controllerType == "Win32"
-            and not _optional_int(self.script_config.get("Device", "HWnd"))
-            and not controller_has_window_rules(
-                _find_controller(interface_model, run_plan.controllerName)
+            and (not _optional_int(self.script_config.Device.HWnd))
+            and (
+                not controller_has_window_rules(
+                    _find_controller(interface_model, run_plan.controllerName)
+                )
             )
         ):
             # 控制器一条窗口匹配规则都没写，又没指定句柄：以前会随便抓桌面上第一个窗口。
@@ -1014,12 +1028,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 不看 Info.IfQuickConfig：MaaFW 没有可退回的原生配置，用户页上配的任务队列就是
         # 唯一的任务来源。开关在界面上已经不提供，这里若还读它，被隐藏的旧值会让页面上
         # 能改、运行时却不生效。
-        task_snapshot = _load_json_dict(
-            self.cur_user_config.get("Task", "TaskSnapshot")
-        )
-        selected_preset = str(
-            self.cur_user_config.get("Task", "SelectedPreset") or ""
-        ).strip()
+        task_snapshot = _load_json_dict(self.cur_user_config.Task.TaskSnapshot)
+        selected_preset = str(self.cur_user_config.Task.SelectedPreset or "").strip()
         controller_name, resource_name = self._select_run_selection(interface_model)
         effective_preset = (
             selected_preset if selected_preset and not task_snapshot else None
@@ -1029,7 +1039,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
         # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
-        script_hotkeys = _load_script_hotkeys(self.script_config.get("Game", "Hotkeys"))
+        script_hotkeys = _load_script_hotkeys(self.script_config.Game.Hotkeys)
         missing_skips: list[MaaFWSkippedTaskPlan] = []
         unselectable_names: list[str] = []
         try:
@@ -1139,11 +1149,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         return resolve_run_selection(
             interface_model,
-            configured_controller=str(
-                self.script_config.get("Info", "Controller") or ""
-            ),
-            emulator_selected=self.script_config.get("Emulator", "Id") != "-",
-            configured_resource=str(self.script_config.get("Info", "Resource") or ""),
+            configured_controller=str(self.script_config.Info.Controller or ""),
+            emulator_selected=self.script_config.Emulator.Id != "-",
+            configured_resource=str(self.script_config.Info.Resource or ""),
         )
 
     async def _build_device_config(
@@ -1178,7 +1186,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 type="Win32",
                 hWnd=await self._resolve_window_handle(controller),
                 screencapMethod=_resolve_win32_method(
-                    self.script_config.get("Device", "Win32ScreencapMethod"),
+                    self.script_config.Device.Win32ScreencapMethod,
                     win32_config.screencap if win32_config else None,
                     _WIN32_SCREENCAP_METHODS,
                     "DXGI_DesktopDup",
@@ -1187,7 +1195,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     combinable=True,
                 ),
                 mouseMethod=_resolve_win32_method(
-                    self.script_config.get("Device", "Win32MouseMethod"),
+                    self.script_config.Device.Win32MouseMethod,
                     mouse,
                     _WIN32_INPUT_METHODS,
                     "Seize",
@@ -1195,7 +1203,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     warn=self._append_log,
                 ),
                 keyboardMethod=_resolve_win32_method(
-                    self.script_config.get("Device", "Win32KeyboardMethod"),
+                    self.script_config.Device.Win32KeyboardMethod,
                     keyboard,
                     _WIN32_INPUT_METHODS,
                     "Seize",
@@ -1215,7 +1223,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         认不出来不是错误——很多项目本来就自己在 pipeline 里开游戏。但要让用户看得见
         为什么没启动，否则「填了没反应」和「没填也没反应」在界面上长得一模一样。
         """
-        manual = str(self.script_config.get("Game", "PackageName") or "").strip()
+        manual = str(self.script_config.Game.PackageName or "").strip()
         if manual:
             self._append_log(f"游戏包名: {manual}（脚本配置）")
             return manual
@@ -1260,7 +1268,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.emulator_manager is None:
             raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
 
-        emulator_index = self.script_config.get("Emulator", "Index")
+        emulator_index = self.script_config.Emulator.Index
         if emulator_index in ("", "-"):
             raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
 
@@ -1281,7 +1289,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         else:
             self.game_started_at = None
             self.game_start_disk_quiet = False
-        if Config.get("Function", "IfSilence"):
+        if Config.setting.Function.IfSilence:
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
         if not device_info.adb_address or device_info.adb_address == "Unknown":
@@ -1299,7 +1307,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     ) -> str | None:
         if self._cached_adb_path is not None:
             return self._cached_adb_path
-        configured_path = str(self.script_config.get("Device", "AdbPath") or "").strip()
+        configured_path = str(self.script_config.Device.AdbPath or "").strip()
         if configured_path and Path(configured_path).exists():
             self._cached_adb_path = configured_path
             self._append_log(f"ADB 路径选择: 脚本配置; 路径={configured_path}")
@@ -1348,7 +1356,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._game_update_checked:
             return
         self._game_update_checked = True
-        mode = str(self.script_config.get("Run", "GameUpdateMode") or "Off")
+        mode = str(self.script_config.Run.GameUpdateMode or "Off")
         hook = resolve_game_update_hook(self.script_config)
         if mode == "Off" or hook is None or self.run_plan is None:
             return
@@ -1380,13 +1388,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise _MaaFWGameUpdateRequired(result.message)
 
     def _derive_adb_path_from_emulator_config(self) -> Path | None:
-        emulator_id = self.script_config.get("Emulator", "Id")
+        emulator_id = self.script_config.Emulator.Id
         if emulator_id == "-":
             return None
 
         # 一条配置可以纳管多个模拟器安装, 那种情况下持久化的 Info.Path 是空的,
         # 得先问管理器这个设备号落在哪条安装上。
-        emulator_index = self.script_config.get("Emulator", "Index")
+        emulator_index = self.script_config.Emulator.Index
         with suppress(Exception):
             resolve_device = getattr(self.emulator_manager, "resolve_device", None)
             if resolve_device is not None and emulator_index not in ("", "-"):
@@ -1398,8 +1406,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     return Path(device_ref.manager_path).parent / "adb.exe"
 
         with suppress(Exception):
-            emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
-            emulator_path = Path(emulator_config.get("Info", "Path"))
+            emulator_config = Config.EmulatorConfig[emulator_id]
+            emulator_path = emulator_config.Info.Path
+            if emulator_path is None:
+                return None
             return emulator_path.parent / "adb.exe"
         return None
 
@@ -1408,8 +1418,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self._cached_adb_profile is not None:
             return self._cached_adb_profile
 
-        emulator_id = self.script_config.get("Emulator", "Id")
-        emulator_index = self.script_config.get("Emulator", "Index")
+        emulator_id = self.script_config.Emulator.Id
+        emulator_index = self.script_config.Emulator.Index
         if emulator_id == "-" or emulator_index in ("", "-"):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
@@ -1436,9 +1446,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_path = Path(device_ref.manager_path)
                 native_index = device_ref.native_index
             else:
-                emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
-                emulator_type = str(emulator_config.get("Info", "Type") or "")
-                emulator_path = Path(emulator_config.get("Info", "Path"))
+                emulator_config = Config.EmulatorConfig[emulator_id]
+                emulator_type = str(emulator_config.Info.Type or "")
+                emulator_path = emulator_config.Info.Path
+                if emulator_path is None:
+                    raise ValueError("Path未配置，请检查路径设置")
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -1525,11 +1537,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """魔改 AVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
         ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
         放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
-        emulator_index = self.script_config.get("Emulator", "Index")
-        if self.script_config.get("Emulator", "Id") == "-" or emulator_index in (
-            "",
-            "-",
-        ):
+        emulator_index = self.script_config.Emulator.Index
+        if self.script_config.Emulator.Id == "-" or emulator_index in ("", "-"):
             return {}
         device_ref = None
         with suppress(Exception):
@@ -1588,7 +1597,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if config is None:
             return None
         try:
-            value = int(config.get("Info", "MaxWaitTime"))
+            value = int(config.Info.MaxWaitTime)
         except Exception:  # noqa: BLE001 - 取不到就交给 runner 兜底
             return None
         return value if value > 0 else None
@@ -1611,12 +1620,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return extra_method
             return _remove_method(default_methods, extra_method, default_methods)
         return _remove_method(
-            int(self.script_config.get("Device", "AdbScreencapMethods")),
+            int(self.script_config.Device.AdbScreencapMethods),
             extra_method,
             _remove_method(
-                _ADB_SCREENCAP_DEFAULT,
-                extra_method,
-                _ADB_SCREENCAP_DEFAULT,
+                _ADB_SCREENCAP_DEFAULT, extra_method, _ADB_SCREENCAP_DEFAULT
             ),
         )
 
@@ -1633,7 +1640,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 魔改 AVD：AVDExtras 没有输入，默认会选中 Maatouch（官方镜像上 minitouch 不可用）
             return _ADB_INPUT_DEFAULT
 
-        configured = int(self.script_config.get("Device", "AdbInputMethods"))
+        configured = int(self.script_config.Device.AdbInputMethods)
         if not profile.input_extra:
             return _remove_method(
                 configured,
@@ -1722,7 +1729,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         }
 
     async def _resolve_window_handle(self, controller: MaaFWController) -> int:
-        configured_hwnd = self.script_config.get("Device", "HWnd")
+        configured_hwnd = self.script_config.Device.HWnd
         parsed_hwnd = _optional_int(configured_hwnd)
         if parsed_hwnd:
             return parsed_hwnd
@@ -1748,7 +1755,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _run_maafw(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
-        limit_minutes = self.script_config.get("Run", "RunTimeLimit")
+        limit_minutes = self.script_config.Run.RunTimeLimit
         timeout = limit_minutes * 60
         task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
             self.script_config
@@ -1835,15 +1842,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     runtime_pool_id=runtime_pool_id,
                     lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
                     lease_ttl_seconds=max(
-                        600,
-                        int(self.script_config.get("Run", "RunTimeLimit") or 120) * 60
-                        + 600,
+                        600, int(self.script_config.Run.RunTimeLimit or 120) * 60 + 600
                     ),
-                    # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
-                    # 找到本仓。这里必须是源码根而不是 Path.cwd()：受 Runtime 监督时
-                    # 工作目录是 <app-root>、源码在 <app-root>/repo/，cwd 下没有 app/ 包。
-                    # 只给代码路径、不给宿主 venv 的 site-packages，隔离 venv 里的
-                    # maafw 因此仍然优先。
                     import_paths=[SOURCE_ROOT],
                     send_log=send_runner_log,
                     cancel_event=prepare_cancel_event,
@@ -2330,15 +2330,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await asyncio.to_thread(_terminate_snapshot, descendants)
 
     def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
-        daily_tasks = set(
-            _load_json_list(self.script_config.get("Run", "DailyOnceTasks"))
-        )
-        weekly_tasks = set(
-            _load_json_list(self.script_config.get("Run", "WeeklyOnceTasks"))
-        )
-        monthly_tasks = set(
-            _load_json_list(self.script_config.get("Run", "MonthlyOnceTasks"))
-        )
+        daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
+        weekly_tasks = set(_load_json_list(self.script_config.Run.WeeklyOnceTasks))
+        monthly_tasks = set(_load_json_list(self.script_config.Run.MonthlyOnceTasks))
         if not daily_tasks and not weekly_tasks and not monthly_tasks:
             return plan
 
@@ -2491,9 +2485,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
     def _load_period_task_records(self) -> dict[str, dict[str, str]]:
-        raw_records = _load_json_dict(
-            self.cur_user_config.get("Data", "PeriodTaskRecords")
-        )
+        raw_records = _load_json_dict(self.cur_user_config.Data.PeriodTaskRecords)
         records: dict[str, dict[str, str]] = {"daily": {}, "weekly": {}, "monthly": {}}
         for period in records:
             raw_period_records = raw_records.get(period, {})
@@ -2507,15 +2499,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _mark_period_tasks_completed(self, completed_tasks: list[str]) -> None:
         if not completed_tasks:
             return
-        daily_tasks = set(
-            _load_json_list(self.script_config.get("Run", "DailyOnceTasks"))
-        )
-        weekly_tasks = set(
-            _load_json_list(self.script_config.get("Run", "WeeklyOnceTasks"))
-        )
-        monthly_tasks = set(
-            _load_json_list(self.script_config.get("Run", "MonthlyOnceTasks"))
-        )
+        daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
+        weekly_tasks = set(_load_json_list(self.script_config.Run.WeeklyOnceTasks))
+        monthly_tasks = set(_load_json_list(self.script_config.Run.MonthlyOnceTasks))
         if not daily_tasks and not weekly_tasks and not monthly_tasks:
             return
 
@@ -2535,17 +2521,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 records["monthly"][task_name] = monthly_key
                 changed = True
         if changed:
-            await self.cur_user_config.set(
-                "Data",
-                "PeriodTaskRecords",
-                json.dumps(records, ensure_ascii=False),
+            self.cur_user_config.Data.PeriodTaskRecords = json.dumps(
+                records, ensure_ascii=False
             )
+            await self.cur_user_config.commit()
 
     async def _mark_run_started(self) -> None:
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
-        await self.cur_user_config.set("Data", "LastProxyStatus", "运行中")
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
+        self.cur_user_config.Data.LastProxyStatus = "运行中"
+        await self.cur_user_config.commit()
 
     async def _close_emulator(self) -> bool:
         """关闭由 MAS 启动的模拟器，返回是否关成（本来就没开过算关成）。"""
@@ -2620,11 +2608,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
 
         game_arguments = shlex.split(
-            str(self.script_config.get("Game", "Arguments") or "").strip()
+            str(self.script_config.Game.Arguments or "").strip()
         )
-        logger.info(
-            f"启动游戏: {game_path} - {self.script_config.get('Game', 'Arguments')}"
-        )
+        logger.info(f"启动游戏: {game_path} - {self.script_config.Game.Arguments}")
         # 注册表必须在进程起来之前改好：Unity 播放器只在启动时读一次这些值
         await self._apply_game_resolution_override(game_path)
         try:
@@ -2651,9 +2637,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _unity_resolution_target(self) -> tuple[int, int] | None:
         """``Game.UnityResolution`` 选了尺寸就返回 (宽, 高)，Off 返回 None。"""
 
-        return parse_resolution_option(
-            self.script_config.get("Game", "UnityResolution")
-        )
+        return parse_resolution_option(self.script_config.Game.UnityResolution)
 
     def _note_resolution_override_skipped(self) -> None:
         """游戏已在运行时不能中途改分辨率，选了尺寸的用户要知道这轮没改。"""
@@ -2664,7 +2648,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
 
-        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        arguments = str(self.script_config.Game.Arguments or "").strip()
         if arguments:
             self._append_log(f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）")
 
@@ -2725,7 +2709,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         一轮才出现的算 True（游戏正在启动）。调用方据此决定要不要再等画面稳定。
         """
 
-        wait_time = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
+        wait_time = max(0, int(self.script_config.Game.WaitTime or 0))
         if wait_time <= 0:
             # 「等待时间」填 0 只表示不等画面稳定；窗口还是要等出来，否则刚拉起的游戏
             # 当场判「窗口未就绪」、被关掉重试，次次如此
@@ -2733,7 +2717,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.run_plan is None or self.interface_model is None:
             raise RuntimeError("MaaFW 运行计划未完成初始化")
 
-        configured_hwnd = self.script_config.get("Device", "HWnd")
+        configured_hwnd = self.script_config.Device.HWnd
         explicit_hwnd = _optional_int(configured_hwnd)
         controller = _find_controller(
             self.interface_model, self.run_plan.controllerName
@@ -2830,7 +2814,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         started_at = self.game_started_at
         if started_at is None:
             return None
-        settle = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
+        settle = max(0, int(self.script_config.Game.WaitTime or 0))
         if settle <= 0:
             return None
         remaining = settle - (time.monotonic() - started_at)
@@ -2895,7 +2879,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         该关的有一个没关成就是 False，下一轮日志开头不写「已重启」。
         """
 
-        if attempt >= self.script_config.get("Run", "RunTimesLimit"):
+        if attempt >= self.script_config.Run.RunTimesLimit:
             return False
         if not self.opened_game and not self.opened_emulator:
             return False
@@ -3004,7 +2988,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return None
 
     def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
-        limit = self.script_config.get("Run", "RunTimeLimit")
+        limit = self.script_config.Run.RunTimeLimit
         total = len(self.run_plan.tasks) if self.run_plan is not None else 0
         stopped_at = ""
         if result.failedTask and self.run_plan is not None:
@@ -3727,13 +3711,11 @@ def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
         (默认单任务时限秒数, {任务名: 时限秒数})，0 表示不限。
     """
 
-    default_seconds = _minutes_to_seconds(config.get("Run", "TaskTimeLimit"))
+    default_seconds = _minutes_to_seconds(config.Run.TaskTimeLimit)
     # 配置系统里 JSON 项存的是字符串（JSONValidator），读出来再解析一次。
     overrides = {
         str(name): _minutes_to_seconds(minutes)
-        for name, minutes in _load_json_dict(
-            config.get("Run", "TaskTimeLimitOverrides")
-        ).items()
+        for name, minutes in _load_json_dict(config.Run.TaskTimeLimitOverrides).items()
     }
     return default_seconds, overrides
 
@@ -3742,7 +3724,7 @@ def loop_guard_from_config(config: Any) -> bool:
     """读 Run.LoopGuard（原地打转检测，实验性，默认关）；读不到或写坏都按关。"""
 
     try:
-        return config.get("Run", "LoopGuard") is True
+        return config.Run.LoopGuard is True
     except Exception:
         return False
 

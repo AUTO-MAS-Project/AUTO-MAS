@@ -346,7 +346,7 @@ const getDefaultGeneralUserData = () => ({
     ServerChanTag: '',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
   },
 })

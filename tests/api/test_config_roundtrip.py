@@ -1,20 +1,18 @@
 """全局设置读写往返回归：部分更新不得丢失未提交字段。
 
 历史 bug（#1217 #1251 #1192）都是「只改一个设置项，其它字段被整份丢弃/覆盖」。
-接缝是 POST /api/setting/update -> Config.update_setting -> ConfigBase.update，
+接缝是 POST /api/setting/update -> Config.update_setting -> ConfigEntry.update，
 以及 POST /api/setting/get -> Config.get_setting。
 
 守的是：
 - 只提交一个深层字段时，同一父对象下的兄弟字段和其它顶层分组保持原值；
-- 缺省字段、显式 null 都不得把已有值清空（SettingUpdateIn.model_dump(exclude_unset=True)
-  与 Config.update_setting 的 None 过滤）；
+- 缺省字段保持原值，Replay 保留其既有显式 null 不变更策略；
 - 改动确实落盘，重新读取仍是新值。
 
 破坏方式：去掉 update_script 里的 exclude_unset=True，未提交字段会以 None
-进入 ConfigBase.update，把兄弟字段改回默认值，本文件的用例随即变红。
+进入 ConfigEntry.update，把兄弟字段改回默认值，本文件的用例随即变红。
 """
 
-import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,6 +21,9 @@ import httpx
 from fastapi import FastAPI
 
 import app.api.setting as setting_api
+from app.config import config_manager
+from tests.config_support import activate_config
+from app.utils.io import read_dict_file
 from app.core.config import AppConfig
 from app.models.config import GlobalConfig as RuntimeGlobalConfig
 
@@ -35,40 +36,42 @@ class _TempConfig(AppConfig):
     """
 
     def __init__(self) -> None:
-        RuntimeGlobalConfig.__init__(self)
+        self.setting = RuntimeGlobalConfig.build()
 
 
 class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._temp_directory = TemporaryDirectory()
-        self.config_file = Path(self._temp_directory.name) / "GlobalConfig.json"
+        self.config_file = Path(self._temp_directory.name) / "setting.yaml"
         self.config = _TempConfig()
-        await self.config.connect(self.config_file)
+        await activate_config(self.config.setting, self.config_file)
 
         # 跨分组的非默认种子值，用来区分「保留原值」与「被默认值覆盖」。
-        await self.config.update(
-            {
-                "Function": {
-                    "IfAllowSleep": True,
-                    "HistoryRetentionTime": 30,
-                    "IfSilence": False,
-                },
-                "Update": {
-                    "Source": "GitHub",
-                    "Channel": "beta",
-                    "GitHubMirror": "Off",
-                },
-                "Notify": {
-                    "SMTPServerAddress": "smtp.seed.example",
-                    "ToAddress": "seed@example.com",
-                },
-                "Replay": {
-                    "Port": 4456,
-                    "MaxReplayCount": 5,
-                    "Password": "seed-secret",
-                },
-                "Display": {"VirtualDisplayMode": "1920x1080@30"},
-            }
+        await self.config.setting.update(
+            RuntimeGlobalConfig.model_validate(
+                {
+                    "Function": {
+                        "IfAllowSleep": True,
+                        "HistoryRetentionTime": 30,
+                        "IfSilence": False,
+                    },
+                    "Update": {
+                        "Source": "GitHub",
+                        "Channel": "beta",
+                        "GitHubMirror": "Off",
+                    },
+                    "Notify": {
+                        "SMTPServerAddress": "smtp.seed.example",
+                        "ToAddress": "seed@example.com",
+                    },
+                    "Replay": {
+                        "Port": 4456,
+                        "MaxReplayCount": 5,
+                        "Password": "seed-secret",
+                    },
+                    "Display": {"VirtualDisplayMode": "1920x1080@30"},
+                }
+            )
         )
 
         self._original_router_config = setting_api.Config
@@ -89,6 +92,7 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["code"], 200, body)
+        await config_manager.flush()
 
     async def _get(self) -> dict:
         response = await self.client.post("/api/setting/get")
@@ -98,7 +102,7 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         return body["data"]
 
     def _on_disk(self) -> dict:
-        return json.loads(self.config_file.read_text(encoding="utf-8"))
+        return read_dict_file(self.config_file)
 
     async def test_partial_update_keeps_siblings_and_other_groups(self) -> None:
         await self._update({"Update": {"Source": "MirrorChyan"}})
@@ -135,7 +139,11 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         await self._update({})
         self.assertEqual(await self._get(), before)
 
-        await self._update({"Replay": {"Password": None, "Port": None}})
+        response = await self.client.post(
+            "/api/setting/update",
+            json={"data": {"Replay": {"Password": None, "Port": None}}},
+        )
+        self.assertEqual(response.json()["code"], 200)
         after_null = await self._get()
         self.assertEqual(after_null["Replay"]["Port"], 4456)
         self.assertTrue(after_null["Replay"]["PasswordConfigured"])
@@ -147,13 +155,13 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         data = await self._get()
         self.assertEqual(data["Replay"]["Port"], 4457)
         self.assertTrue(data["Replay"]["PasswordConfigured"])
-        self.assertEqual(self.config.get("Replay", "Password"), "seed-secret")
+        self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
 
         # PasswordConfigured 是只读回显，写回来不得改变真实密码
         await self._update({"Replay": {"PasswordConfigured": False}})
         data = await self._get()
         self.assertTrue(data["Replay"]["PasswordConfigured"])
-        self.assertEqual(self.config.get("Replay", "Password"), "seed-secret")
+        self.assertEqual(self.config.setting.Replay.Password, "seed-secret")
 
 
 if __name__ == "__main__":

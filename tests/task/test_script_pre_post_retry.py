@@ -71,14 +71,21 @@ def test_before_once_after_once_on_terminal_failure(
 
     calls = _record_scripts(monkeypatch)
     before = tmp_path / "before.bat"
+    before.write_text("@echo off", encoding="utf-8")
     after = tmp_path / "after.bat"
+    after.write_text("@echo off", encoding="utf-8")
 
     async def scenario():
         cfg = getattr(configs, config_name)()
-        await cfg.set("Info", "IfScriptBeforeTask", True)
-        await cfg.set("Info", "ScriptBeforeTask", str(before))
-        await cfg.set("Info", "IfScriptAfterTask", True)
-        await cfg.set("Info", "ScriptAfterTask", str(after))
+        await cfg.activate()
+        cfg.Info.IfScriptBeforeTask = True
+        await cfg.commit()
+        cfg.Info.ScriptBeforeTask = str(before)
+        await cfg.commit()
+        cfg.Info.IfScriptAfterTask = True
+        await cfg.commit()
+        cfg.Info.ScriptAfterTask = str(after)
+        await cfg.commit()
         proxy = Proxy(cfg, retries)
         await _run(proxy)
         return proxy
@@ -99,6 +106,7 @@ def test_after_skipped_when_before_never_ran(tmp_path, monkeypatch):
 
     calls = _record_scripts(monkeypatch)
     after = tmp_path / "after.bat"
+    after.write_text("@echo off", encoding="utf-8")
 
     class NoHookProxy(Proxy):
         async def main_task(self):
@@ -106,8 +114,11 @@ def test_after_skipped_when_before_never_ran(tmp_path, monkeypatch):
 
     async def scenario():
         cfg = configs.GeneralUserConfig()
-        await cfg.set("Info", "IfScriptAfterTask", True)
-        await cfg.set("Info", "ScriptAfterTask", str(after))
+        await cfg.activate()
+        cfg.Info.IfScriptAfterTask = True
+        await cfg.commit()
+        cfg.Info.ScriptAfterTask = str(after)
+        await cfg.commit()
         proxy = NoHookProxy(cfg, 1)
         await _run(proxy)
         return proxy
@@ -188,7 +199,7 @@ def test_before_hook_wired_before_every_retry_loop(adapter):
     ]
 
     exposes_scripts = hasattr(
-        getattr(configs, ADAPTER_CONFIG[adapter])(), "Info_IfScriptBeforeTask"
+        getattr(configs, ADAPTER_CONFIG[adapter])().Info, "IfScriptBeforeTask"
     )
 
     if exposes_scripts:
@@ -213,22 +224,32 @@ def test_hsr_before_after_scripts(tmp_path, monkeypatch):
     )
 
     before = tmp_path / "before.bat"
+    before.write_text("@echo off", encoding="utf-8")
     after = tmp_path / "after.bat"
+    after.write_text("@echo off", encoding="utf-8")
 
     async def scenario():
         from app.models.config import HSRUserConfig
 
         cfg = HSRUserConfig()
-        await cfg.set("Info", "IfScriptBeforeTask", True)
-        await cfg.set("Info", "ScriptBeforeTask", str(before))
-        await cfg.set("Info", "IfScriptAfterTask", True)
-        await cfg.set("Info", "ScriptAfterTask", str(after))
+        await cfg.activate()
+        cfg.Info.IfScriptBeforeTask = True
+        await cfg.commit()
+        cfg.Info.ScriptBeforeTask = str(before)
+        await cfg.commit()
+        cfg.Info.IfScriptAfterTask = True
+        await cfg.commit()
+        cfg.Info.ScriptAfterTask = str(after)
+        await cfg.commit()
         await run_script_before_task(cfg)
         await run_script_after_task(cfg)
 
         off = HSRUserConfig()
-        await off.set("Info", "IfScriptBeforeTask", False)
-        await off.set("Info", "IfScriptAfterTask", False)
+        await off.activate()
+        off.Info.IfScriptBeforeTask = False
+        await off.commit()
+        off.Info.IfScriptAfterTask = False
+        await off.commit()
         await run_script_before_task(off)
         await run_script_after_task(off)
 

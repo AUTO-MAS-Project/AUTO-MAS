@@ -22,26 +22,84 @@
 
 
 import asyncio
+from typing import (
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
 
 from fastapi import APIRouter, Body
-
-from app.core import Config, EmulatorManager
-from app.models.schema import (
-    EmulatorConfig,
-    EmulatorConfigIndexItem,
-    EmulatorCreateOut,
-    EmulatorDeleteIn,
-    EmulatorGetIn,
-    EmulatorGetOut,
-    EmulatorOperateIn,
-    EmulatorSearchOut,
-    EmulatorSearchResult,
-    EmulatorStatusOut,
-    EmulatorUpdateIn,
-    OutBase,
+from pydantic import (
+    BaseModel,
+    Field,
 )
+
+import app.models.config as _config_models
+from app.config.wire import ConfigInput, ConfigPayload
+from app.core import Config, EmulatorManager
+from app.models.schema import DeviceInfo, EmulatorDeleteIn, OutBase
 from app.utils import get_logger
 from app.utils.emulator.tools import search_all_emulators
+
+EmulatorConfig = ConfigPayload[_config_models.EmulatorConfig]
+EmulatorConfigInput = ConfigInput[_config_models.EmulatorConfig]
+
+
+class EmulatorConfigIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
+
+
+class EmulatorGetIn(BaseModel):
+    emulatorId: Optional[str] = Field(
+        default=None, description="模拟器ID, 未携带时表示获取所有模拟器数据"
+    )
+
+
+class EmulatorGetOut(OutBase):
+    index: List[EmulatorConfigIndexItem] = Field(..., description="模拟器索引列表")
+    data: Dict[str, EmulatorConfig] = Field(
+        ..., description="模拟器数据字典, key来自于index列表的uid"
+    )
+
+
+class EmulatorCreateOut(OutBase):
+    emulatorId: str = Field(..., description="新创建的模拟器 ID")
+    data: EmulatorConfig = Field(..., description="模拟器配置数据")
+
+
+class EmulatorUpdateIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器 ID")
+    data: EmulatorConfigInput = Field(..., description="模拟器更新数据")
+
+
+class EmulatorOperateIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器 ID")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
+    index: str = Field(..., description="模拟器索引")
+
+
+class EmulatorStatusOut(OutBase):
+    data: Dict[str, Dict[str, DeviceInfo]] = Field(
+        ...,
+        description="模拟器状态信息, 外层key为模拟器ID, 内层key为设备索引, value为设备信息",
+    )
+
+
+class EmulatorSearchResult(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    name: str = Field(..., description="模拟器名称")
+
+
+class EmulatorSearchOut(OutBase):
+    emulators: List[EmulatorSearchResult] = Field(
+        default_factory=list, description="搜索到的模拟器列表"
+    )
+
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 logger = get_logger("模拟器 API")
@@ -81,7 +139,7 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
 async def add_emulator() -> EmulatorCreateOut:
     try:
         uid, config = await Config.add_emulator()
-        data = EmulatorConfig(**(await config.toDict()))
+        data = EmulatorConfig(**config.model_dump(context={"audience": "api"}))
     except Exception as e:
         logger.opt(exception=True).warning(f"add_emulator失败: {type(e).__name__}: {e}")
         return EmulatorCreateOut(

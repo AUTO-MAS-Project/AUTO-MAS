@@ -4,72 +4,72 @@
 /* eslint-disable */
 export type MSSUserConfig_Info = {
     /**
-     * 用户名称
+     * 账号信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
      */
-    Name?: (string | null);
+    Account?: (string | null);
     /**
-     * 是否启用
-     */
-    Status?: (boolean | null);
-    /**
-     * 剩余天数
-     */
-    RemainedDay?: (number | null);
-    /**
-     * base 来源（independent=独立、native=使用脚本原生配置）
+     * base 来源（shared=共享/independent=独立/native=原生）
      */
     Base?: ('shared' | 'independent' | 'native' | null);
     /**
-     * 是否启用快速配置（与配置来源独立）
+     * MaaFW controller 名称，留空时按 interface 和设备配置自动选择
+     */
+    Controller?: (string | null);
+    /**
+     * 是否启用快速配置（与配置来源独立，按用户保存）
      */
     IfQuickConfig?: (boolean | null);
-    /**
-     * 是否在任务前执行脚本
-     */
-    IfScriptBeforeTask?: (boolean | null);
-    /**
-     * 任务前脚本路径
-     */
-    ScriptBeforeTask?: (string | null);
     /**
      * 是否在任务后执行脚本
      */
     IfScriptAfterTask?: (boolean | null);
     /**
-     * 任务后脚本路径
+     * 是否在任务前执行脚本
      */
-    ScriptAfterTask?: (string | null);
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 用户名称
+     */
+    Name?: (string | null);
     /**
      * 备注
      */
     Notes?: (string | null);
     /**
-     * 用户标签信息
-     */
-    Tag?: (string | null);
-    /**
-     * 账号信息，仅用于 AUTO-MAS 记录
-     */
-    Account?: (string | null);
-    /**
-     * 密码信息，仅用于 AUTO-MAS 记录
+     * 密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
      */
     Password?: (string | null);
     /**
-     * 用户覆盖的 MaaFW controller 名称
+     * 剩余天数
      */
-    Controller?: (string | null);
+    RemainedDay?: (number | null);
     /**
-     * 用户覆盖的 MaaFW resource 名称
+     * MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
      */
     Resource?: (string | null);
     /**
-     * 悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）
+     * 任务后脚本路径
      */
-    PlanMode?: (string | null);
+    ScriptAfterTask?: (string | null);
     /**
-     * 队列里没加活动任务时，是否在活动期间自动加入并排到最前
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否启用
+     */
+    Status?: (boolean | null);
+    /**
+     * 用户标签信息
+     */
+    readonly Tag?: (string | null);
+    /**
+     * 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前
      */
     IfActivityFirst?: (boolean | null);
+    /**
+     * 悬赏试炼关卡来源：Fixed 用任务队列里配的，选了计划表就按当天槽位改
+     */
+    PlanMode?: (string | null);
 };
 

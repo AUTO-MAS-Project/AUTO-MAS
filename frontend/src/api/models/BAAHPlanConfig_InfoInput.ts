@@ -1,0 +1,19 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+export type BAAHPlanConfig_InfoInput = {
+    /**
+     * 多天轮换天数
+     */
+    RotateDays?: (number | null);
+    /**
+     * 计划表模式
+     */
+    Mode?: ('ALL' | 'Weekly' | 'Rotate' | null);
+    /**
+     * 计划表名称
+     */
+    Name?: (string | null);
+};
+

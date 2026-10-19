@@ -93,7 +93,7 @@ class HSRRunResult:
 
 
 def _config_value(config: Any, group: str, key: str, default: Any = None) -> Any:
-    """Read one value from old-dev ConfigBase or a plain mapping."""
+    """Read one value from old-dev ConfigEntry or a plain mapping."""
 
     if config is None:
         return default
@@ -104,7 +104,7 @@ def _config_value(config: Any, group: str, key: str, default: Any = None) -> Any
             return default if value is None else value
         return default
     try:
-        value = config.get(group, key)
+        value = getattr(getattr(config, group), key)
     except (AttributeError, KeyError, TypeError):
         value = default
     return default if value is None else value
@@ -162,7 +162,7 @@ def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
     - ``native``（原生来源）→ ``None``：没有 MAS 计划，原样运行原生配置。
 
     账号密码、剩余天数、完成态（``Data``）与通知恒按用户，不随 owner 变化。
-    非法值由 ``BaseSourceValidator`` 在加载时纠成 ``shared``，这里对空值（如未
+    非法值由 Base 字段声明在加载时纠成 ``shared``，这里对空值（如未
     指定用户的接口调用）同样按 ``shared`` 处理。
     """
 
@@ -180,7 +180,7 @@ def resolve_plan(user_config: Any, script_config: Any) -> Any | None:
     两份计划组名、键名完全相同（``declare_hsr_plan_items``），调用方只需把
     返回值当作「读计划键的对象」传下去：读计划键用它，读 ``Info`` / ``Data`` /
     ``Notify`` / ``Control`` 仍用 ``user_config``——脚本配置上没有这些用户键，
-    ``ConfigBase.get`` 缺项直接抛 ``AttributeError``，两者不能混用。
+    ``ConfigEntry.get`` 缺项直接抛 ``AttributeError``，两者不能混用。
     """
 
     owner = resolve_plan_owner(user_config)

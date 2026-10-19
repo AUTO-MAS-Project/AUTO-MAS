@@ -32,7 +32,10 @@
 """
 
 from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
 from app.core import Config
 from app.models.schema import OutBase

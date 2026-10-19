@@ -64,6 +64,7 @@ from pathlib import Path
 
 import yaml
 
+from app.config import ConfigEntry
 from app.utils import get_logger
 from app.utils.config_archive import (
     OVERLAY_SIDECAR_NAME,
@@ -117,7 +118,7 @@ _PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
 }
 """任务计划段与键：按配置来源从脚本配置（共享计划）或用户配置读写。
 
-两表分开是硬约束：``ConfigBase.get`` 对不存在的项直接抛 ``AttributeError``，
+两表分开是硬约束：配置属性读取对不存在的项直接抛 ``AttributeError``，
 脚本配置上没有 Notify / Control，``Info.Name`` 又是脚本名——绝不能拿脚本
 配置读用户表。侧车内平铺键为 ``组.键``，便于 group_overlay 按段解析。
 """
@@ -204,18 +205,23 @@ _TASKSWITCH_MODULE_LABELS = {
 """TaskSwitch 模块键 → 中文（task_mapping 的模块中文名）"""
 
 
-def read_overlay_values(config, groups: dict[str, tuple[str, ...]]) -> dict:
-    """读取配置对象上 ``groups`` 列出的字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(
+    config: ConfigEntry, groups: dict[str, tuple[str, ...]]
+) -> dict:
+    """按配置分组的 JSON 导出规则读取侧车字段，路径导出为字符串。
 
     ``groups`` 必须与 ``config`` 的类型对应（用户表只配用户配置），否则
-    ``ConfigBase.get`` 会对不存在的项抛 ``AttributeError``。值为 ``None`` 的
+    属性读取会对不存在的分组抛 ``AttributeError``。值为 ``None`` 的
     键不纳入侧车；平铺键为 ``组.键``。
     """
 
     values: dict = {}
     for group, keys in groups.items():
-        for key in keys:
-            if (value := config.get(group, key)) is not None:
+        fields = getattr(config, group).model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
+        for key, value in fields.items():
+            if value is not None:
                 values[f"{group}.{key}"] = value
     return values
 
@@ -333,9 +339,9 @@ async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None
             user_part.setdefault(group, {}).update(values)
         plan_part = {}
     if user_part:
-        await user_config.update(user_part)
+        await user_config.update(type(user_config).model_validate(user_part))
     if plan_part:
-        await plan.update(plan_part)
+        await plan.update(type(plan).model_validate(plan_part))
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:

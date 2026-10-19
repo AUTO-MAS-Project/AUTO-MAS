@@ -52,13 +52,15 @@ class OkNteProcessManager(ProcessManager):
     def __init__(self, config: OkNteConfig):
         super().__init__(reseek_target=True)
         self.config = config
-        self.root = Path(config.get("Info", "RootPath"))
+        self.root = config.Info.RootPath
+        if self.root is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
         self._automatic_target_info: ProcessInfo | None = None
 
     def _custom_target(self) -> ProcessInfo | None:
-        name = str(self.config.get("Script", "TrackProcessName") or "").strip()
-        exe = str(self.config.get("Script", "TrackProcessExe") or "").strip()
-        cmdline = str(self.config.get("Script", "TrackProcessCmdline") or "").strip()
+        name = str(self.config.Script.TrackProcessName or "").strip()
+        exe = str(self.config.Script.TrackProcessExe or "").strip()
+        cmdline = str(self.config.Script.TrackProcessCmdline or "").strip()
         defaults = runtime_executables(self.root)
         if (
             (not name or name in {"pythonw.exe", "ok-nte.exe"})
@@ -74,7 +76,7 @@ class OkNteProcessManager(ProcessManager):
 
     async def open_oknte(self, program: Path | str, *args: str) -> None:
         """启动上游入口，按自定义条件或实际本体接管生命周期。"""
-        track = self.config.get("Script", "IfTrackProcess")
+        track = self.config.Script.IfTrackProcess
         custom = self._custom_target() if track else None
         started = time.time()
         await self.open_process(program, *args, target_process=custom)
@@ -146,7 +148,10 @@ class OkNteProcessManager(ProcessManager):
         return True
 
     def cleanup_executables(self) -> list[Path]:
-        paths = [Path(self.config.get("Script", "ScriptPath"))]
+        script_path = self.config.Script.ScriptPath
+        if script_path is None:
+            raise ValueError("ScriptPath未配置，请检查路径设置")
+        paths = [script_path]
         paths.extend(runtime_executables(self.root))
         custom = self._custom_target()
         if custom is not None and custom.exe:
