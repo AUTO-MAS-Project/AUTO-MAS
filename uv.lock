@@ -58,7 +58,7 @@ wheels = [
 
 [[package]]
 name = "auto-mas"
-version = "5.7.0b5"
+version = "5.7.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },

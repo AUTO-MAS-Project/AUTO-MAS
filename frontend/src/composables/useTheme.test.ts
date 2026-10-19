@@ -309,6 +309,42 @@ describe('useTheme custom appearance persistence', () => {
     expect(theme.isDark.value).toBe(false)
   })
 
+  it('resets a custom appearance and accent together without removing installed packages', async () => {
+    const theme = useTheme()
+    await theme.initTheme({ themeMode: 'dark', themeColor: 'green', appearanceId: 'demo' })
+    saveConfig.mockClear()
+
+    await theme.resetTheme()
+
+    expect(theme.themeMode.value).toBe('system')
+    expect(theme.themeColor.value).toBe('blue')
+    expect(theme.appearanceId.value).toBe(null)
+    expect(theme.activeAppearance.value).toBe(null)
+    expect(theme.isDark.value).toBe(false)
+    expect(theme.appearances.value.map(item => item.id)).toEqual(['demo'])
+    expect(removeAppearance).not.toHaveBeenCalled()
+    expect(saveConfig).toHaveBeenCalledExactlyOnceWith(
+      { themeMode: 'system', themeColor: 'blue', appearanceId: null },
+      expect.any(Object)
+    )
+    expect(rootClassList.remove).toHaveBeenCalledWith('appearance-cursor-custom')
+    expect(rootClassList.remove).toHaveBeenCalledWith('appearance-background-custom')
+  })
+
+  it('restores the whole previous appearance when resetting cannot be saved', async () => {
+    const theme = useTheme()
+    await theme.initTheme({ themeMode: 'dark', themeColor: 'green', appearanceId: 'demo' })
+    saveConfig.mockRejectedValueOnce(new Error('reset write failed'))
+
+    await expect(theme.resetTheme()).rejects.toThrow('reset write failed')
+
+    expect(theme.themeMode.value).toBe('dark')
+    expect(theme.themeColor.value).toBe('green')
+    expect(theme.appearanceId.value).toBe('demo')
+    expect(theme.activeAppearance.value?.id).toBe('demo')
+    expect(theme.isDark.value).toBe(true)
+  })
+
   it('uses the first successful write as the rollback base when the second fails', async () => {
     const theme = useTheme()
     await theme.initTheme({ themeMode: 'light', themeColor: 'blue', appearanceId: null })

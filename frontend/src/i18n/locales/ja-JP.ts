@@ -2059,10 +2059,10 @@ export default {
     baahConfigNamePlaceholder: '通常使用する設定を選択してください',
     baahStageMode: 'ステージプラン',
     baahStageModeHint:
-      'プランに従って日ごとに挑むステージを決めます。「固定」を選ぶと BAAH 側で設定したステージ構成のまま実行します。プランには毎日同じ内容の全体モードと、曜日ごとの週間モードがあります',
+      '全体・週間・複数日ローテーションの計画表でステージを設定します。「固定」はBAAHの設定を使います。イベントステージはBAAH側で設定してください。',
     baahIfEventFirst: 'イベントステージ優先',
     baahIfEventFirstHint:
-      'ブルーアーカイブで開催中のイベントがある間、「イベントステージ」のタスクを先頭に移動して有効にします。イベントがない場合や日程を取得できない場合はタスク順を変更しません',
+      'イベント開催中は計画表を使わず、BAAHで設定したイベントの掃討のみ実行します。イベントがない場合は計画表を使います。他の日課は変更せず、日程を取得できない場合は元の計画を使います。',
     baahActivityLineType: 'イベント日程のサーバー',
     baahActivityLineTypeHint:
       'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください。「イベントステージ優先」もここで選んだサーバーで開催中かどうかを判定します',
@@ -3461,8 +3461,10 @@ export default {
         nine: '九号',
         ten: '十号',
       },
-      unsavedHint: '未保存のパラメータがあります。先に保存するか編集をキャンセルしてください。',
+      unsavedHint:
+        '自動保存に失敗しました。パラメータを変更するか、再試行してから移動してください。',
       savingHint: 'パラメータを保存中です。しばらくお待ちください。',
+      retry: '再試行',
       saveFailed:
         '保存できませんでした。入力したパラメータは保持されています。再試行してください。',
     },
@@ -3961,6 +3963,7 @@ export default {
     categories: { all: 'すべて', theme: 'テーマ', mascot: 'ペット' },
     uploadTheme: 'テーマをアップロード',
     title: 'リソースストア',
+    openDocs: 'ドキュメントを開く',
     account: {
       login: '共有サイトにログイン',
       pending: 'ブラウザで承認してください。確認コード',
@@ -4134,10 +4137,15 @@ export default {
       fx1: 'サウンド1',
       custom: 'カスタム音声',
       customNamed: 'カスタム（{name}）',
+      customPair: 'カスタム（押下＋リリース）',
+      customPairNamed: 'カスタム（{press} / {release}）',
     },
 
     basic: {
       appearance: '外観',
+      resetTheme: 'テーマをリセット',
+      themeReset: 'システム設定に合わせるモードと既定の青色に戻しました',
+      themeResetFailed: 'テーマをリセットできませんでした。もう一度お試しください。',
       themeMode: 'テーマ',
       themeModeTip: '画面全体の外観',
       themeColor: 'アクセントカラー',
@@ -4217,6 +4225,21 @@ export default {
       pressSoundPreset: 'サウンドの種類',
       pressSoundPresetTip: '内蔵サウンドが 2 種類。右のボタンから自分の音声ファイルも読み込めます',
       pressSoundImport: '音声を読み込む',
+      pressSoundImportPress: '押下音を読み込む',
+      pressSoundImportRelease: 'リリース音を読み込む',
+      pressSoundMode: '押下とリリース',
+      pressSoundSame: '同じ音声',
+      pressSoundSeparate: '個別に設定',
+      pressSoundSameTip: '押したときと離したときに同じ音声を再生します。',
+      pressSoundSeparateTip: '押したときと離したときにそれぞれの音声を再生します。',
+      pressSoundPress: '押下',
+      pressSoundRelease: 'リリース',
+      pressSoundFile: '音声',
+      pressSoundNoFile: 'ファイル未選択',
+      pressSoundChooseFile: 'ファイルを選択',
+      pressSoundPreviewFile: '{name}音声を試聴',
+      pressSoundPreviewPair: '両方を試聴',
+      pressSoundFileHint: 'WAV、MP3、OGG、M4A、AAC、FLAC対応。1ファイル最大1 MB。',
       pressSoundVolume: '音量',
       pressSoundVolumeTip: '押下サウンドの再生音量',
       pressSoundPreview: '試聴',
@@ -4546,9 +4569,11 @@ export default {
       pressSoundSaveFailed: '押下サウンドの設定を保存できませんでした',
       pressSoundCustomMissing:
         '音声がまだ読み込まれていません。「音声を読み込む」からファイルを選んでください',
+      pressSoundPairMissing:
+        '音声がまだ読み込まれていません。下のボタンから押下音とリリース音を選んでください',
       pressSoundTooLarge: '音声ファイルが大きすぎます。1 MB 以内のものを選んでください',
       pressSoundReadFailed: '音声ファイルを読み込めませんでした。別のファイルを試してください',
-      pressSoundImported: '音声を読み込んで有効にしました',
+      pressSoundImported: '音声を読み込みました',
       testUnknown: 'テスト通知の結果が不明です',
       testSent: 'テスト通知を送信しました',
       testFailed: 'テスト通知を送信できませんでした',

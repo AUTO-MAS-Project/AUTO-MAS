@@ -26,6 +26,7 @@ import asyncio
 import re
 import traceback
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from email.header import Header
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -44,6 +45,13 @@ from app.models.notification_channel import ChannelDependencies
 
 SMTP_TIMEOUT_SECONDS = 15
 _MAIL_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class MailTransport:
+    smtp_server: str
+    from_address: str
+    authorization_code: str = field(repr=False)
 
 
 def _rewrite_mail_image_sources(
@@ -105,7 +113,12 @@ class Sender:
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
-        transport = self.dependencies.read_mail()
+        config = self.dependencies.config
+        transport = MailTransport(
+            smtp_server=config.get("SMTPServerAddress"),
+            from_address=config.get("FromAddress"),
+            authorization_code=config.get("AuthorizationCode"),
+        )
         try:
             if transport.smtp_server == "":
                 raise ValueError("邮件通知的SMTP服务器地址不能为空")

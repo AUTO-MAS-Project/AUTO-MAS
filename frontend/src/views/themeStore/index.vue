@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { UploadOutlined } from '@ant-design/icons-vue'
+import { FileTextOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import type { MyAppearanceItem } from '@/composables/useShareApi'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 import { useAppearanceSettings } from '@/views/setting/useAppearanceSettings'
+import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
 import AppearanceUploadModal from './components/AppearanceUploadModal.vue'
 import MyAppearanceList from './components/MyAppearanceList.vue'
 import OnlineAppearanceDetail from './components/OnlineAppearanceDetail.vue'
@@ -88,6 +89,16 @@ const openUpload = (fileId: number | null = null, resourceCategory?: AppearanceC
   uploadOpen.value = true
 }
 
+/**
+ * 打开外观包与桌宠包的文档。
+ *
+ * 文档站还没出英文版的外观指南——`/en/docs/advanced-features/appearance.html` 现在落到中文首页，
+ * 所以先固定开中文页，等英文版发布后再接 localizeDocUrl。
+ */
+const openDocs = (): void => {
+  void openExternalUrl(MAS_DOC_URLS.appearance)
+}
+
 const handleUploaded = (): void => {
   invalidateMine()
   if (tab.value !== 'mine' && view.value === 'list')
@@ -153,6 +164,10 @@ onBeforeUnmount(() => {
       <h1 class="page-title">{{ t('themeStore.title') }}</h1>
       <div class="theme-store-actions">
         <ThemeStoreAccount :account="account" />
+        <a-button type="primary" @click="openDocs">
+          <template #icon><FileTextOutlined /></template>
+          {{ t('themeStore.openDocs') }}
+        </a-button>
         <a-button type="primary" @click="openUpload()">
           <template #icon><UploadOutlined /></template>
           {{ t('themeStore.upload.open') }}

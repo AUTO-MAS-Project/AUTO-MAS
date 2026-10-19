@@ -39,7 +39,7 @@ export const baahCellSummary = (
       secondary: t(state === 'off' ? 'plan.baah.skipToday' : 'plan.baah.upstreamSettings'),
     }
   const values = readFieldValues(fields, field)
-  const stage = values[field === 'Event' ? 0 : 1]
+  const stage = values[1]
   const stageLabel =
     stage === -1 ? t('plan.baah.stageHighest') : t('plan.baah.stageNumber', { value: stage })
   let primary = stageLabel
@@ -48,7 +48,7 @@ export const baahCellSummary = (
   if (field === 'Exchange')
     primary = `${t('plan.baah.academyNumber', { value: values[0] })} · ${stageLabel}`
   if (field === 'Hard' || field === 'Normal') primary = `${values[0]}-${stage}`
-  const times = values[field === 'Event' ? 1 : 2]
+  const times = values[2]
   return {
     state,
     primary,

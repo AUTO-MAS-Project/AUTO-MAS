@@ -110,6 +110,7 @@ def _webhook_targets(config: ChannelConfig, *, scope: str) -> tuple[ChannelTarge
                 label=f"{prefix} Webhook {_webhook_name(uid, snapshot)}",
                 value=snapshot,
                 capabilities=_webhook_capabilities(snapshot),
+                compact_summary_policy="preferred",
             )
         )
     return tuple(targets)

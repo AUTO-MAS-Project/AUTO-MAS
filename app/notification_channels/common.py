@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""OpenClaw QQ / 微信两个协议适配器的共享纯函数。"""
+"""通知渠道共享的文本分段与 HTTP 错误。"""
 
 from __future__ import annotations
 
