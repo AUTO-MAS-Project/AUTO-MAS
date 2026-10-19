@@ -123,6 +123,8 @@ class MaaFWRunResult(BaseModel):
     completedTasks: list[str] = Field(default_factory=list)
     failedTask: str | None = None
     errorMessage: str | None = None
+    # 给用户看的完整失败摘要；诊断与环境故障判定仍使用 errorMessage。
+    userMessage: str | None = None
     # 任务失败当刻的画面，按失败先后排列；宿主把它们塞进通知。
     failureScreenshots: list[MaaFWFailureScreenshot] = Field(default_factory=list)
     # 到了 runDeadlineAt 由 worker 自己停下来的：宿主据此在重试前重启游戏/模拟器。
