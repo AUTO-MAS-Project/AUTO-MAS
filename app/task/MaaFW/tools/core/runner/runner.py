@@ -3714,9 +3714,11 @@ class MaaFWRunner:
         details: dict[str, Any],
         focus_text: str | None = None,
     ) -> None:
-        if message.startswith("Node.") and message.endswith(".Succeeded"):
-            # 节点后来又走通了（on_error 恢复后重跑同一节点）：它之前的失败已经过时，
-            # 给用户的原因里不能再用。诊断原文照旧保留全部事件。
+        if message == "Node.Action.Succeeded":
+            # 节点后来又走通了（on_error 恢复后重跑同一节点、动作成功）：它之前的失败
+            # 已经过时，给用户的原因里不能再用。诊断原文照旧保留全部事件。
+            # 只认动作成功：WaitFreezes 等其他 Succeeded 在动作失败后照样会发
+            # （MaaFW 动作失败后仍执行 post_wait_freezes），不代表恢复。
             name = details.get("name") if isinstance(details, dict) else None
             if name:
                 self._failure_event_seq += 1
