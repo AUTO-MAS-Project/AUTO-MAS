@@ -88,24 +88,15 @@ def _translation_candidates(root: Path) -> tuple[list[Path], list[Path]]:
     """按优先级返回 gettext 与 ok-script 框架 .ts 翻译文件候选路径。"""
     app_root = root / "data" / "apps" / "ok-nte"
     gettext_candidates: list[Path] = []
-    for i18n_dir in (
-        root / "i18n",
-        root / "_internal" / "i18n",
-        app_root / "repo" / "i18n",
-        app_root / "working" / "i18n",
-    ):
-        lc_messages = i18n_dir / "zh_CN" / "LC_MESSAGES"
-        gettext_candidates.append(lc_messages / "ok.mo")
-        gettext_candidates.append(lc_messages / "ok.po")
-
-    ts_candidates = [
-        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "repo" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "gui" / "i18n" / "zh_CN.ts",
-        app_root / "working" / "ok" / "ui" / "qt" / "i18n" / "zh_CN.ts",
-    ]
+    ts_candidates: list[Path] = []
+    # 冻结包资源在本体旁和 _internal 中；源码安装保留 repo / working 两处。
+    for base in (root, app_root / "working", app_root / "repo"):
+        for resource_root in (base, base / "_internal"):
+            lc_messages = resource_root / "i18n" / "zh_CN" / "LC_MESSAGES"
+            gettext_candidates.append(lc_messages / "ok.mo")
+            gettext_candidates.append(lc_messages / "ok.po")
+            for framework_dir in ("ok/gui/i18n", "ok/ui/qt/i18n"):
+                ts_candidates.append(resource_root / framework_dir / "zh_CN.ts")
     return gettext_candidates, ts_candidates
 
 

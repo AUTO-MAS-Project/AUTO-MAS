@@ -529,14 +529,16 @@ const handleLaunchModeChange = async (event: RadioChangeEvent) => {
   logger.info(`配置已保存: Game.LaunchMode=${value}`)
 }
 
-const buildAutoPaths = (rootPath: string) => {
+const buildAutoPaths = async (rootPath: string) => {
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
+  // 独立 body 包与启动器安装都使用 EXE 所在运行目录存放配置和日志。
+  const isBody = await window.electronAPI.fileExists(`${norm}/_internal`)
+  const runtimeDir = isBody ? norm : `${norm}/data/apps/ok-nte/working`
   return {
     rootPath: norm,
     scriptPath: `${norm}/ok-nte.exe`,
-    configPath: `${norm}/data/apps/ok-nte/working/configs`,
-    logPath: `${norm}/data/apps/ok-nte/working/logs/ok-script.log`,
-    trackProcessExe: `${norm}/data/apps/ok-nte/python/pythonw.exe`,
+    configPath: `${runtimeDir}/configs`,
+    logPath: `${runtimeDir}/logs/ok-script.log`,
   }
 }
 
@@ -545,38 +547,28 @@ const applyRootPathDefaults = async (rootPath: string) => {
     message.warning(t('edit.pickScriptRootDirectory'))
     return
   }
-  const {
-    rootPath: norm,
-    scriptPath,
-    configPath,
-    logPath,
-    trackProcessExe,
-  } = buildAutoPaths(rootPath)
-  oknteConfig.Info.RootPath = norm
-  oknteConfig.Script.ScriptPath = scriptPath
-  oknteConfig.Script.ConfigPath = configPath
-  oknteConfig.Script.LogPath = logPath
-  oknteConfig.Script.TrackProcessName = 'pythonw.exe'
-  oknteConfig.Script.TrackProcessExe = trackProcessExe
-  oknteConfig.Script.TrackProcessCmdline = ''
-
+  const { rootPath: norm, scriptPath, configPath, logPath } = await buildAutoPaths(rootPath)
+  const scriptDefaults = {
+    ScriptPath: scriptPath,
+    ConfigPathMode: 'Folder' as const,
+    ConfigPath: configPath,
+    UpdateConfigMode: 'Always' as const,
+    LogPath: logPath,
+    LogPathFormat: '',
+    IfTrackProcess: true,
+    // 留空交给后端按实际本体识别，自动更新切换运行方式后无需重新选目录。
+    TrackProcessName: '',
+    TrackProcessExe: '',
+    TrackProcessCmdline: '',
+  }
   await enqueue(async () => {
     const success = await updateScript(scriptId, {
       Info: { RootPath: norm },
-      Script: {
-        ScriptPath: scriptPath,
-        ConfigPathMode: 'Folder',
-        ConfigPath: configPath,
-        UpdateConfigMode: 'Always',
-        LogPath: logPath,
-        LogPathFormat: '',
-        IfTrackProcess: true,
-        TrackProcessName: 'pythonw.exe',
-        TrackProcessExe: trackProcessExe,
-        TrackProcessCmdline: '',
-      },
+      Script: scriptDefaults,
     })
     if (success) {
+      oknteConfig.Info.RootPath = norm
+      Object.assign(oknteConfig.Script, scriptDefaults)
       message.success(t('edit.okNtePathMatched'))
     }
   })
@@ -643,7 +635,6 @@ const selectRootPath = async () => {
     )
     return
   }
-  formData.path = normalized
   await applyRootPathDefaults(normalized)
 }
 
