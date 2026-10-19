@@ -142,10 +142,14 @@ export const normalizeTaskSnapshot = (
           (keepMissing || knownTaskNames.has(resolveMaaFWTaskName(taskId, knownTaskNames)))
       )
     : []
-  const taskChecked: Record<string, boolean> = Object.fromEntries(
-    order.filter(taskId => parsed.taskChecked?.[taskId] !== false).map(taskId => [taskId, true])
+  // 老快照的 false 只是历史未勾选项；只有新队列明确带标记才显示为红灯。
+  const keepUnchecked = parsed.keepUnchecked === true
+  const queuedOrder = order.filter(
+    taskId => keepUnchecked || parsed.taskChecked?.[taskId] !== false
   )
-  const queuedOrder = order.filter(taskId => taskChecked[taskId])
+  const taskChecked: Record<string, boolean> = Object.fromEntries(
+    queuedOrder.map(taskId => [taskId, parsed.taskChecked?.[taskId] !== false])
+  )
   const queuedTaskIds = new Set(queuedOrder)
 
   const globalOptions = migrateMaaFWGlobalOptions(parsed, preview)
@@ -160,6 +164,7 @@ export const normalizeTaskSnapshot = (
     taskOrder: queuedOrder,
     taskChecked,
     taskOptions,
+    ...(keepUnchecked ? { keepUnchecked: true as const } : {}),
     ...(Object.keys(globalOptions).length > 0 ? { globalOptions } : {}),
     ...taskLabelsField(pickMaaFWTaskLabels(parsed.taskLabels, queuedTaskIds)),
   }

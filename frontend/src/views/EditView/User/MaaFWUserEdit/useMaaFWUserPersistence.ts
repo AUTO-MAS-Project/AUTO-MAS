@@ -87,6 +87,14 @@ export function useMaaFWUserPersistence({
   const savePresetAndSnapshot = async (): Promise<boolean> => {
     if (isInitializing.value || !userIdHolder.value) return false
 
+    // 选项、移动、预设等也直接走这里：每次真正保存都进入新队列语义。
+    taskSnapshot.value.keepUnchecked = true
+    taskSnapshot.value.taskChecked = Object.fromEntries(
+      taskSnapshot.value.taskOrder.map(taskId => [
+        taskId,
+        taskSnapshot.value.taskChecked[taskId] !== false,
+      ])
+    )
     const taskSnapshotValue = JSON.stringify(taskSnapshot.value)
     const selectedPreset = formData.Task.SelectedPreset || ''
     // 队列里还有受管任务时，后端保存会按特调规则改写（M9A：只剩一个切换账号就收进「账号」），

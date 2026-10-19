@@ -340,6 +340,8 @@ export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+  /** 新队列显式保留跳过实例；旧快照没有此键时仍隐藏未勾选实例 */
+  keepUnchecked?: true
   /**
    * 全局选项（interface 的 global_option 及其子选项）的值：每个用户一份、所有任务共用，
    * taskOptions 里不再有它们。没设过任何全局选项时可以没有这个键（按默认值）。

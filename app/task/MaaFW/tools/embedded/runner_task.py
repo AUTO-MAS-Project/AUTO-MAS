@@ -61,7 +61,9 @@ from app.task.MaaFW.tools.core.runner.pipeline_override import (
     SECRET_INPUTS_SNAPSHOT_KEY,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
+    ALL_TASKS_SKIPPED_MESSAGE,
     NO_RUNNABLE_TASKS_MESSAGE,
+    QUEUE_SKIPPED_TASK_REASON,
     MaaFWRunPlanError,
     describe_stale_option_values,
     resolve_run_selection,
@@ -1106,11 +1108,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 interface_model,
                 controller_name=controller_name,
                 resource_name=resource_name,
+                # 特调路径把已选任务拆成 task_ids 交给核心；仍带上原始快照，
+                # 让核心把用户显式设为跳过的实例写进 skippedTasks。
+                task_snapshot=task_snapshot,
                 task_ids=task_ids,
                 task_options=task_options,
                 global_options=global_options,
                 script_hotkeys=script_hotkeys,
-                # 走 task_ids 时快照不进建计划：从密文解出来的字段要单独交过去
+                # 从密文解出来的字段单独交过去，保留特调路径的密码处理口径
                 secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
                 # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
@@ -1121,7 +1126,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
         except Exception as exc:
             message = str(exc)
-            if NO_RUNNABLE_TASKS_MESSAGE in message:
+            if (
+                NO_RUNNABLE_TASKS_MESSAGE in message
+                or ALL_TASKS_SKIPPED_MESSAGE in message
+            ):
                 # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
                 # 只剩不可选任务时同理（前面的「已跳过」行在用户日志里，报错里看不到）。
                 # 别的报错（拆用户、找不到 controller……）与它们无关，不附加
@@ -3918,7 +3926,16 @@ def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
 
 def _task_display_name(task: Any) -> str:
     label = getattr(task, "label", None)
-    if isinstance(label, str) and label.strip() and not label.lstrip().startswith("$"):
+    # 红灯记录的 label 已在建计划时解析；用户自己起的名字可以以 $ 开头。
+    queue_skipped = (
+        isinstance(task, MaaFWSkippedTaskPlan)
+        and task.reason == QUEUE_SKIPPED_TASK_REASON
+    )
+    if (
+        isinstance(label, str)
+        and label.strip()
+        and (queue_skipped or not label.lstrip().startswith("$"))
+    ):
         return label.strip()
     return str(getattr(task, "name", ""))
 
