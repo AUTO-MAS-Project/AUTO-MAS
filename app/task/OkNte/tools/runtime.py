@@ -74,10 +74,12 @@ class OkNteProcessManager(ProcessManager):
             cmdline=shlex.split(cmdline, posix=False) if cmdline else None,
         )
 
-    async def open_oknte(self, program: Path | str, *args: str) -> None:
+    async def open_oknte(
+        self, program: Path | str, *args: str, use_custom_target: bool = True
+    ) -> None:
         """启动上游入口，按自定义条件或实际本体接管生命周期。"""
         track = self.config.Script.IfTrackProcess
-        custom = self._custom_target() if track else None
+        custom = self._custom_target() if track and use_custom_target else None
         started = time.time()
         await self.open_process(program, *args, target_process=custom)
         if track and custom is None:
