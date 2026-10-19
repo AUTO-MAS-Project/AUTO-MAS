@@ -30,6 +30,16 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【设置】支持设置主界面自定义背景并调节界面组件透明度 (#1492) by @Craun718
+
+### 变更
+
+- 【设置】配置文件自动升级为 YAML，保留现有账号与运行设置 (#1538) by @DLmaster361
+
 ## [v5.7.0] - 2026-10-19
 
 ### 本次亮点
@@ -544,6 +554,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...dev
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
 [v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
