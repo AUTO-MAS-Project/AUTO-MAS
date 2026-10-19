@@ -81,20 +81,23 @@ async def save_user_history(*, task_info, script_info, user_info, records) -> No
         logger.opt(exception=True).warning(
             "收集用户历史附件失败，继续保存日志与执行结果"
         )
-    for record in records:
-        try:
-            await history_store.save(record)
-        except Exception as error:
-            logger.opt(exception=True).warning(
-                f"保存 {script_info.name}/{user_info.name} 历史失败：{error}"
-            )
+    try:
+        for record in records:
             try:
-                await Publisher.send(
-                    id=task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="warning", message=f"历史记录保存失败：{error}"
-                    ),
+                await history_store.save(record)
+            except Exception as error:
+                logger.opt(exception=True).warning(
+                    f"保存 {script_info.name}/{user_info.name} 历史失败：{error}"
                 )
-            except Exception:
-                logger.opt(exception=True).warning("发送历史保存失败提示时出现异常")
+                try:
+                    await Publisher.send(
+                        id=task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning", message=f"历史记录保存失败：{error}"
+                        ),
+                    )
+                except Exception:
+                    logger.opt(exception=True).warning("发送历史保存失败提示时出现异常")
+    finally:
+        await task_info.discard_user_history_capture(script_info, user_info)

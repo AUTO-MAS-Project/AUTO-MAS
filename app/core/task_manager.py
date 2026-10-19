@@ -330,6 +330,9 @@ class TaskInfo(TaskItem):
     _history_capture_tasks: dict[tuple[str, str], asyncio.Task[Path]] = field(
         default_factory=dict, init=False, repr=False
     )
+    _history_capture_files: dict[tuple[str, str], Path] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def begin_script_run(self, script: ScriptItem) -> None:
         previous = self._replay_runs.get(script.script_id)
@@ -411,6 +414,7 @@ class TaskInfo(TaskItem):
             if self.replay_cancelled or user.status != "异常":
                 await asyncio.to_thread(path.unlink, missing_ok=True)
                 return []
+            self._history_capture_files[key] = path
             return [
                 HistoryAttachmentInput(
                     path=path, kind="video", role="obs_replay", display_name=path.name
@@ -428,26 +432,47 @@ class TaskInfo(TaskItem):
                 )
             return []
 
-    async def discard_history_captures(self) -> None:
-        """异常中断未交给用户历史的采集只能丢弃，不能在队列末尾补挂。"""
+    async def _discard_history_capture_file(self, path: Path) -> bool:
         from app.services.obs_replay import ObsReplay
 
+        try:
+            if (
+                ObsReplay.directory.is_symlink()
+                or ObsReplay.directory.is_junction()
+                or path.is_symlink()
+                or path.parent.resolve() != ObsReplay.directory.resolve()
+            ):
+                logger.warning(f"拒绝清理回放临时目录外的文件：{path}")
+                return False
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+            return True
+        except OSError as error:
+            logger.warning(f"未归档回放临时副本清理失败：{error}")
+            return False
+
+    async def discard_user_history_capture(
+        self, script: ScriptItem, user: UserItem
+    ) -> None:
+        """归档返回后释放本用户的采集副本，包括配额拒收与复制回退留下的源。"""
+        key = (self._replay_runs.get(script.script_id), user.user_id)
+        path = self._history_capture_files.get(key)
+        if path is not None and await self._discard_history_capture_file(path):
+            self._history_capture_files.pop(key, None)
+
+    async def discard_history_captures(self) -> None:
+        """异常中断未交给用户历史的采集只能丢弃，不能在队列末尾补挂。"""
         captures = list(self._history_capture_tasks.values())
         self._history_capture_tasks.clear()
         for capture in captures:
             if not capture.done():
                 capture.cancel()
-        if not captures:
-            return
         results = await asyncio.gather(*captures, return_exceptions=True)
         for result in results:
-            if isinstance(result, Path) and result.resolve().is_relative_to(
-                ObsReplay.directory.resolve()
-            ):
-                try:
-                    await asyncio.to_thread(result.unlink, missing_ok=True)
-                except OSError as error:
-                    logger.warning(f"未归档回放临时副本清理失败：{error}")
+            if isinstance(result, Path):
+                await self._discard_history_capture_file(result)
+        for key, path in list(self._history_capture_files.items()):
+            if await self._discard_history_capture_file(path):
+                self._history_capture_files.pop(key, None)
 
     def _request_unassigned_replay(
         self, script: ScriptItem | None, *, reason: str
