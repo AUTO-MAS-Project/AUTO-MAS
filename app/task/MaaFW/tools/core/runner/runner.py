@@ -354,6 +354,8 @@ class _TaskFailureSummary:
     texts: tuple[str, ...]
     focus: str | None
     diagnostic: str
+    # 记录时的序号：和 _node_success_seq 比，判断这条失败之后节点有没有又走通过
+    seq: int = 0
 
 
 @dataclass(frozen=True)
@@ -882,6 +884,9 @@ class MaaFWRunner:
         self._self_stop_lock: threading.Lock = threading.Lock()
         self._pending_self_stops: int = 0
         self._task_failure_summaries: list[_TaskFailureSummary] = []
+        # 节点最近一次走通（Node.*.Succeeded）时的序号；比它早的同节点失败已被恢复
+        self._failure_event_seq = 0
+        self._node_success_seq: dict[str, int] = {}
         # 当前任务已打出的 focus 文案条数；sink 回调来自框架线程，计数加锁。
         self._focus_log_count: int = 0
         self._focus_lock: threading.Lock = threading.Lock()
@@ -3258,6 +3263,7 @@ class MaaFWRunner:
             self.send_log(_format_task_config_detail_log(task))
             self.send_log(f"正在运行任务: {display_name}")
             self._task_failure_summaries.clear()
+            self._node_success_seq.clear()
             with self._focus_lock:
                 self._focus_log_count = 0
             self._failed_controller_actions.clear()
@@ -3708,11 +3714,20 @@ class MaaFWRunner:
         details: dict[str, Any],
         focus_text: str | None = None,
     ) -> None:
+        if message.startswith("Node.") and message.endswith(".Succeeded"):
+            # 节点后来又走通了（on_error 恢复后重跑同一节点）：它之前的失败已经过时，
+            # 给用户的原因里不能再用。诊断原文照旧保留全部事件。
+            name = details.get("name") if isinstance(details, dict) else None
+            if name:
+                self._failure_event_seq += 1
+                self._node_success_seq[str(name)] = self._failure_event_seq
+            return
         if message not in MAAFW_FAILURE_EVENT_MESSAGES:
             return
         diagnostic = _format_maafw_failure_event(message, details, focus_text)
         if not diagnostic:
             return
+        self._failure_event_seq += 1
         self.send_log(f"{DETAIL_LOG_PREFIX}框架失败事件: {diagnostic}")
         node_details = details.get("node_details")
         summary = _TaskFailureSummary(
@@ -3726,6 +3741,7 @@ class MaaFWRunner:
             texts=tuple(_collect_maafw_detail_texts(details)),
             focus=focus_text,
             diagnostic=diagnostic,
+            seq=self._failure_event_seq,
         )
         for previous in self._task_failure_summaries:
             if previous.diagnostic == diagnostic:
@@ -3762,7 +3778,14 @@ class MaaFWRunner:
         """项目 focus、最后停留节点与画面文字组成的用户失败原因。"""
 
         parts: list[str] = []
-        summaries = self._task_failure_summaries
+        success_seq = self._node_success_seq
+        # 节点在这条失败之后又走通过的（on_error 恢复后重跑），这条已经过时
+        summaries = [
+            item
+            for item in self._task_failure_summaries
+            if item.seq > success_seq.get(item.name, -1)
+            and (not item.node_name or item.seq > success_seq.get(item.node_name, -1))
+        ]
         # Tasker 只是任务级汇总；节点的最后一条才说明停在哪、画面上有什么。
         last = next(
             (
