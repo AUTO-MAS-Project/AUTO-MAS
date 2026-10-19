@@ -3041,7 +3041,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         history_records = []
         if_six_star = False
         for t, log_item in self.cur_user_item.iter_history_logs():
-            if log_item.status == "MAA 正常运行中":
+            if log_item.status == "MAA 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
             data = {}
             try:
@@ -3069,7 +3073,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     status="success"
                     if log_item.status == "Success!"
                     else "cancelled"
-                    if self.stopped_manually and log_item.status == "任务被用户手动中止"
+                    if self.stopped_manually
+                    and log_item is self.cur_user_log
+                    and log_item.status == "任务被用户手动中止"
                     else "error",
                     data=data,
                 )

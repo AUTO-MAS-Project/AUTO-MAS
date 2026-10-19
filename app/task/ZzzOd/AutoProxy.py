@@ -913,6 +913,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._multi_uids: set[str] = set()
         self._multi_succeeded: set[int] = set()
         self._multi_ran = False
+        self._multi_run_status = ""
         self._history_users: dict[str, UserItem] = {}
         self._shutdown_after_success: bool = False
         self.run_book = False
@@ -1565,11 +1566,16 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     await self.kill_managed_process(exe_path=stale_launcher_path)
                     continue
 
+                failure_reason = (
+                    self._multi_run_status
+                    if self._multi_ran
+                    else self.cur_user_log.status
+                )
                 logger.warning(
                     f"用户 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
-                    f"{self.cur_user_log.status}"
+                    f"{failure_reason}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                self.script_info.log = f"{failure_reason}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
                     await Notify.push_plyer(
@@ -1714,9 +1720,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         check_log 已标记的运行级终态（超时等）优先于运行记录 diff——收尾
         阶段卡死超时即使各槽已写出成功记录也不能判成功。致命日志次之：
-        整轮异常时未完成的用户一律标记异常。全部用户完成时
-        cur_user_log.status 置 ``Success!`` 以复用主流程的成功分支；任一用户
-        未完成则进入重试（zzz-od 按运行记录跳过已完成任务）。
+        整轮异常时未完成的用户一律标记异常。整轮结果独立控制重试，
+        用户日志保留各自结论；任一用户未完成则进入
+        重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
         # check_log 已把超时/异常态写入 cur_user_log.status：本轮按运行失败
@@ -1785,15 +1791,15 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self._multi_succeeded.add(slot)
 
         if runtime_failed:
-            self.cur_user_log.status = runtime_status
+            self._multi_run_status = runtime_status
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif fatal is not None:
-            self.cur_user_log.status = fatal
+            self._multi_run_status = fatal
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif all_ok:
-            self.cur_user_log.status = "Success!"
+            self._multi_run_status = "Success!"
             self.script_info.log = "检测到 ZZZ-OD 已完成任务"
         else:
             failed_users = "、".join(
@@ -1801,7 +1807,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for user_item, _ in self._slot_users.values()
                 if user_item.status != "完成"
             )
-            self.cur_user_log.status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self._multi_run_status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self.script_info.log = self._multi_run_status
+
+        if self.cur_user_item.user_id not in self._multi_uids:
+            # 非参与用户只承担本次启动与进度展示，其日志不作为用户历史保存。
+            self.cur_user_log.status = self._multi_run_status
 
         self.run_book = all_ok
         self._multi_ran = True
@@ -1991,11 +2002,17 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         history_records = []
         for t, log_item in self.cur_user_item.iter_history_logs():
-            if log_item.status == "ZZZ-OD 正常运行中":
+            if log_item.status == "ZZZ-OD 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
 
             was_cancelled = (
-                self.stopped_manually and log_item.status == "任务被用户手动中止"
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
             )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]

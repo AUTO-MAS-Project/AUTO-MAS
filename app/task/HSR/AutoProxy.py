@@ -2047,7 +2047,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 # 每用户只配对一次；清理、取消与任务后脚本故障都不丢失历史。
                 if self._extra_scripts_started:
                     self._extra_scripts_started = False
-                    await run_script_after_task(self.cur_user_config)
+                    try:
+                        await run_script_after_task(self.cur_user_config)
+                    except Exception as error:
+                        diagnostic = f"HSR 任务后脚本失败: {error}"
+                        logger.warning(diagnostic)
+                        logs = self.cur_user_item.iter_history_logs()
+                        if logs:
+                            logs[-1][1].content.append(f"\n{diagnostic}\n")
+                        raise
             finally:
                 await save_hsr_user_history(
                     task_info=self.task_info,

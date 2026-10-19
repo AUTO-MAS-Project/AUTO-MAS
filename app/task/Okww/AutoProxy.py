@@ -1040,7 +1040,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 log_item.status = "任务被用户手动中止"
 
             was_cancelled = (
-                self.stopped_manually and log_item.status == "任务被用户手动中止"
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
             )
             if not log_item.content:
                 log_item.content = [log_item.status]

@@ -2723,14 +2723,22 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except OSError as error:
                 logger.warning(f"创建 MaaEnd 节点临时日志目录失败：{error}")
         for index, (t, log_item) in enumerate(self.cur_user_item.iter_history_logs()):
-            if log_item.status == "MaaEnd 正常运行中":
+            if log_item.status == "MaaEnd 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
             was_cancelled = (
-                self.stopped_manually and log_item.status == "任务被用户手动中止"
-            )
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            ) or (log_item.phase == "Update" and log_item.status == "MaaEnd 更新被中止")
+            was_skipped = log_item.phase == "Update" and log_item.status == "跳过更新"
             if not log_item.content:
                 log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                if not was_cancelled and not was_skipped:
+                    log_item.status = "未捕获到日志"
             data = {}
             message = log_item.status
             try:
@@ -2767,6 +2775,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if log_item.status == "Success!"
                 else "cancelled"
                 if was_cancelled
+                else "skipped"
+                if was_skipped
                 else "error",
             )
             history_records.append(record)
