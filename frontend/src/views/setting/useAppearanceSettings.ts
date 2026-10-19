@@ -32,12 +32,14 @@ export function useAppearanceSettings() {
     activeAppearance,
     setThemeMode,
     setThemeColor,
+    resetTheme,
     setAppearance,
     importAppearance,
     installOnlineAppearance,
     removeAppearance,
   } = useTheme()
   const appearanceBusy = ref(false)
+  const themeResetting = ref(false)
   const themeModeOptions = computed(() => [
     { label: t('setting.themeMode.system'), value: 'system' },
     { label: t('setting.themeMode.light'), value: 'light' },
@@ -70,6 +72,19 @@ export function useAppearanceSettings() {
       await setThemeMode(value as ThemeMode)
     } catch {
       message.error(t('setting.basic.appearanceApplyFailed'))
+    }
+  }
+
+  const handleThemeReset = async (): Promise<void> => {
+    if (appearanceBusy.value || themeResetting.value) return
+    themeResetting.value = true
+    try {
+      await resetTheme()
+      message.success(t('setting.basic.themeReset'))
+    } catch {
+      message.error(t('setting.basic.themeResetFailed'))
+    } finally {
+      themeResetting.value = false
     }
   }
 
@@ -263,12 +278,14 @@ export function useAppearanceSettings() {
     activeAppearance,
     modalContextHolder,
     appearanceBusy,
+    themeResetting,
     themeModeOptions,
     appearanceValue,
     appearanceOptions,
     themeColorOptions,
     handleThemeModeChange,
     handleThemeColorChange,
+    handleThemeReset,
     handleAppearanceChange,
     handleAppearanceImport,
     handleAppearanceRemove,
