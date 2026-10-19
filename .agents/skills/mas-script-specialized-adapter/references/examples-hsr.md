@@ -23,9 +23,9 @@ HSR 与其他专项的根本差别：**一个 `ScriptType` 编排两个互相独
 
 ## 配置来源：单轴三态，决定计划 owner
 
-- 唯一的模式轴是 `Info.Mode`。插件版遗留的 `Control.Mode`（managed/direct）已删除，`HSRUserConfig.load()` 读**原始字典**把 `Control.Mode=direct` 迁成「直控」；`Control` 组只剩直控引擎开关 `SRA` / `M7A`。
+- 唯一的模式轴是 `Info.Mode`。历史 `Control.Mode` 等输入的兼容由当前字段声明及升级预处理承接；字段位置与值转换使用统一 `legacy(...)`。`Control` 组表达直控引擎开关 `SRA` / `M7A`，具体字段以 `app/models/config/script.py` 为准。
 - **计划** = `TaskSwitch` / `Stage` / `TaskOpt` / `Managed`，由 `declare_hsr_plan_items` 单点声明，`HSRUserConfig` 与 `HSRConfig` 组名、键名、默认值完全相同。脚本态读脚本配置上的共享计划（本脚本下所有脚本来源用户共用），用户态读用户自己的那份；`Info` / `Data` / `Notify` / `Control` 恒按用户。
-- 运行时用 `native_control.resolve_plan(user_config, script_config)` 取计划对象。**读计划键传 `plan`，读其余键传 `user_cfg`，不混用**：`ConfigBase.get` 对不存在的项抛 `AttributeError`，而 `HSRConfig.Info.Name` 是脚本名——拿脚本配置读用户键要么炸、要么静默读错。混读的函数（队列构建、历战余响开始日、货币战争开拓者名）加 `plan` 参数，不要整个换掉 `user_cfg`。
+- 运行时用 `native_control.resolve_plan(user_config, script_config)` 取计划对象。**读计划键传 `plan`，读其余键传 `user_cfg`**：配置通过准确的分组属性读取，`HSRConfig.Info.Name` 是脚本名，用户信息仍属于用户配置。混读的函数（队列构建、历战余响开始日、货币战争开拓者名）显式接收计划对象，保持 owner 区分。属性、提交和序列化行为见[配置框架参考](../../mas-data-model/references/config-framework.md)。
 - `/hsr/managed-config` 响应的 `plan_owner`（`script` / `user`）告诉前端表单保存到脚本配置还是用户配置；脚本级 `Managed.TaskMapping` 不在 `HSRConfig` schema 里开放。
 
 ## 外部配置接管（最容易出事的一面）

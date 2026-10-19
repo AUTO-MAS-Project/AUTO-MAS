@@ -62,6 +62,15 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 15. Await child task spawning through `await self.spawn(...)`; do not fire child tasks without awaiting unless the owning orchestration has a documented reason.
 16. Use `.cancel()` plus `await .accomplish.wait()` when parent code must wait for nested task shutdown and cleanup to finish.
 
+## Configuration Mutation Flows
+For functions reading or modifying config state, use [the configuration framework reference](../mas-data-model/references/config-framework.md).
+
+1. Stage whole-field assignments or public collection operations, then await commit in the same Task and scope. Copy nested mutable values before editing; `append` or subscript mutation bypasses the framework.
+2. A commit batch is per-op atomic by default. Use an explicit short transaction for related operations; direct signal callbacks and direct awaits share it. Catch rollback-triggering errors outside the outer transaction; external IO is not rolled back.
+3. Independent tasks do not join inherited transactions. A parent holding the global gate cannot await a child that needs config submission; use same-Task calls for associated changes, or start independent work after the transaction.
+4. Use X-lock tickets for a task's protected live writes and release them in `finally`; no detached config copy and end-of-task whole-document writeback. Business locks and transaction lifetimes differ.
+5. Commit, persistence and export have separate return guarantees. `flush()` and manager export occur outside transactions. The framework deliberately holds the execution gate during synchronous atomic writes; ordinary integration refactors do not introduce concurrent save workers or thread offloading into that path.
+
 ## Placement
 1. `api`: parse input, call core/service, map output.
 2. `core`: orchestrate flow and state transitions.

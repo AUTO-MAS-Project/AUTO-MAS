@@ -357,7 +357,7 @@ def main():
 
             async def start_koishi() -> None:
                 # 初始化 Koishi 系统客户端（如果已启用）
-                if not Config.get("Notify", "IfKoishiSupport"):
+                if not Config.setting.Notify.IfKoishiSupport:
                     return
 
                 from app.api.ws_command import execute_ws_command
