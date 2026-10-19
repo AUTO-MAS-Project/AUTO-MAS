@@ -541,8 +541,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        error_detail = f"{error_message}: {e}" if e is not None else error_message
+        self.cur_user_log.content = [f"{error_detail}, 无日志记录"]
+        self.cur_user_log.status = error_detail
 
         await self.kill_managed_process(kill_game=self._game_management_enabled())
 
@@ -879,11 +880,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
             )
 
-            await self.okww_process_manager.open_process(
-                self.script_exe_path,
-                *self.okww_args,
-                target_process=self.script_target_process_info,
-            )
+            try:
+                await self.okww_process_manager.open_process(
+                    self.script_exe_path,
+                    *self.okww_args,
+                    target_process=self.script_target_process_info,
+                )
+            except (OSError, RuntimeError) as e:
+                # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
+                await self.handle_pre_okww_error("OK-WW 启动失败", e=e)
+                if attempt < run_limit:
+                    await self._push_dispatch_log(
+                        f"OK-WW 启动失败，将在稍后重试 ({attempt}/{run_limit})"
+                    )
+                    await asyncio.sleep(10)
+                else:
+                    self.cur_user_item.status = "异常"
+                continue
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
