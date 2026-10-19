@@ -4948,6 +4948,7 @@ export default {
     },
     replay: {
       videoLimit: 'Video storage limit (MiB)',
+      saveVideoLimit: 'Save limit',
       videoLimitTip:
         'History videos share this capacity. The oldest archived videos are reclaimed when full; logs and statistics remain.',
       capturePath: 'Test capture location (managed by OBS)',

@@ -22,6 +22,7 @@
 
 
 from datetime import date
+from mimetypes import guess_type
 from typing import Literal
 
 from fastapi import APIRouter, Body
@@ -119,9 +120,15 @@ async def get_history_attachment(
 ) -> FileResponse | JSONResponse:
     try:
         attachment = await history_store.resolve_attachment(attachment_id=attachment_id)
+        filename = attachment.display_name
+        suffix = attachment.path.suffix
+        if suffix and not filename.lower().endswith(suffix.lower()):
+            filename += suffix
         return FileResponse(
             path=attachment.path,
-            filename=attachment.display_name,
+            filename=filename,
+            media_type=guess_type(attachment.path.name)[0]
+            or "application/octet-stream",
             content_disposition_type="inline"
             if not download and attachment.kind in {"image", "video"}
             else "attachment",

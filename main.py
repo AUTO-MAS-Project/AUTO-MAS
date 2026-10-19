@@ -475,15 +475,14 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            await MainTimer.stop()
-
+            stop_timer = asyncio.create_task(MainTimer.stop())
             stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
             try:
-                # 给正常用户收尾留出短暂宽限；慢盘保存不能挡住历史服务的关闭期限。
-                await asyncio.wait({stop_tasks}, timeout=1)
+                # 定时清理与用户收尾共用宽限；慢盘操作不能挡住历史服务的关闭期限。
+                await asyncio.wait({stop_timer, stop_tasks}, timeout=1)
             finally:
                 await history_store.close()
-            await stop_tasks
+            await asyncio.gather(stop_timer, stop_tasks)
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
             from app.core.desktop_guard import DesktopGuard

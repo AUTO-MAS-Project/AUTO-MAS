@@ -204,12 +204,16 @@ class HistoryStore:
                         await asyncio.shield(future)
                     except asyncio.CancelledError as error:
                         interrupted = error
-                value = future.result()
+                return future.result()
+            except Exception:
                 if interrupted is not None:
-                    raise interrupted
-                return value
+                    logger.opt(exception=True).warning("取消期间历史存储操作失败")
+                raise
             finally:
                 self._workers.pop(future, None)
+                # 即使工作线程失败也继续传播取消，防止定时循环在关闭时恢复运行。
+                if interrupted is not None:
+                    raise interrupted
 
     def _require_ready(self) -> None:
         if not self._initialized:

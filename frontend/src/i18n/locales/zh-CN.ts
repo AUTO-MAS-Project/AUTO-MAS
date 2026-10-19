@@ -4847,6 +4847,7 @@ export default {
     },
     replay: {
       videoLimit: '视频容量上限（MiB）',
+      saveVideoLimit: '保存容量',
       videoLimitTip: '历史视频副本共用此容量，超限时回收最早归档的视频；日志和统计保留。',
       capturePath: '试存文件位置（由 OBS 管理）',
       section: '失败回放',

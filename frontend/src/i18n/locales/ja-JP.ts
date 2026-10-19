@@ -4321,6 +4321,7 @@ export default {
     },
     replay: {
       videoLimit: '動画保存容量の上限（MiB）',
+      saveVideoLimit: '上限を保存',
       videoLimitTip:
         '履歴の動画がこの容量を共有します。上限に達すると古い動画から削除し、ログと統計は保持します。',
       capturePath: 'テスト保存先（OBS が管理）',

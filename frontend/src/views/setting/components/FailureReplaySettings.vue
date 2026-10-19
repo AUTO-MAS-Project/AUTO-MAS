@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
@@ -18,6 +18,7 @@ const replaySettings = computed(() => props.settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
 const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
+const videoStorageLimitDraft = ref<number | null>(videoStorageLimit.value)
 const capturePath = ref<string | null>(null)
 const passwordConfiguredOverride = ref<boolean | null>(null)
 const passwordConfigured = computed(
@@ -28,8 +29,23 @@ const password = ref('')
 const savingPassword = ref(false)
 const checking = ref(false)
 const savingReplay = ref(false)
+const savingVideoStorageLimit = ref(false)
 const checkResult = ref<ObsReplayCheckResult | null>(null)
 const { checkObsReplay, saveObsReplay } = useObsReplayApi()
+
+const canSaveVideoStorageLimit = computed(
+  () =>
+    videoStorageLimitDraft.value !== null &&
+    Number.isInteger(videoStorageLimitDraft.value) &&
+    videoStorageLimitDraft.value >= 1 &&
+    videoStorageLimitDraft.value <= 1048576 &&
+    videoStorageLimitDraft.value !== videoStorageLimit.value
+)
+
+watch(videoStorageLimit, (value, previousValue) => {
+  // 设置刷新只同步未修改的输入，保留尚未保存或保存失败的容量草稿。
+  if (videoStorageLimitDraft.value === previousValue) videoStorageLimitDraft.value = value
+})
 
 const updateReplaySetting = async (key: string, value: unknown) => {
   try {
@@ -39,6 +55,18 @@ const updateReplaySetting = async (key: string, value: unknown) => {
   } catch {
     // 设置页已经展示保存失败；保留当前输入供重试。
     return false
+  }
+}
+
+const saveVideoStorageLimit = async () => {
+  if (savingVideoStorageLimit.value || !canSaveVideoStorageLimit.value) return
+
+  savingVideoStorageLimit.value = true
+  try {
+    // 调整容量会立即回收视频，仅在用户明确保存后提交最终值。
+    await updateReplaySetting('VideoStorageLimitMiB', videoStorageLimitDraft.value)
+  } finally {
+    savingVideoStorageLimit.value = false
   }
 }
 
@@ -175,18 +203,23 @@ const runSaveReplay = async () => {
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-input-number
-            :value="videoStorageLimit"
-            :min="1"
-            :max="1048576"
-            :precision="0"
-            size="large"
-            style="width: 100%"
-            @change="
-              (value: number | null) =>
-                value !== null && updateReplaySetting('VideoStorageLimitMiB', value)
-            "
-          />
+          <a-space-compact size="large" style="width: 100%">
+            <a-input-number
+              v-model:value="videoStorageLimitDraft"
+              :min="1"
+              :max="1048576"
+              :precision="0"
+              :disabled="savingVideoStorageLimit"
+              class="replay-limit-input"
+            />
+            <a-button
+              :disabled="!canSaveVideoStorageLimit"
+              :loading="savingVideoStorageLimit"
+              @click="saveVideoStorageLimit"
+            >
+              {{ t('setting.replay.saveVideoLimit') }}
+            </a-button>
+          </a-space-compact>
         </div>
       </a-col>
     </a-row>
@@ -311,6 +344,11 @@ const runSaveReplay = async () => {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.replay-limit-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .replay-check-result {

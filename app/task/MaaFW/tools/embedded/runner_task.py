@@ -636,7 +636,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
 
     async def prepare(self) -> None:
-        start_time = datetime.now(tz=UTC4)
+        start_time = datetime.now().astimezone()
         self.user_start_time = start_time
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
@@ -2940,7 +2940,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         不再为了文件名冲突顺延时间。
         """
 
-        start_time = datetime.now(tz=UTC4)
+        start_time = datetime.now().astimezone()
         self.cur_user_log_started_at = start_time
         self.cur_user_log = LogRecord()
         self.cur_user_item.add_log_record(start_time, self.cur_user_log)
