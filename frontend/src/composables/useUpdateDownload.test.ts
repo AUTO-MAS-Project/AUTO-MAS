@@ -27,6 +27,13 @@ vi.mock('@/composables/useWebSocket', () => ({
   unsubscribe,
 }))
 
+vi.mock('@/services/websocket/connection', () => ({
+  connectionState: () => ({ value: 'idle' }),
+  onConnected: vi.fn(() => vi.fn()),
+}))
+
+vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
+
 vi.mock('ant-design-vue', () => ({
   Modal: { confirm: vi.fn() },
   message: {
