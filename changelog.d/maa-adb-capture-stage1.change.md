@@ -1,2 +1,2 @@
-project: maa
-失败通知补截改用 MaaFramework，手动停止不再补截画面。
+project: notify
+MAA 与 MaaEnd 失败通知支持补截画面，手动停止不再补截。

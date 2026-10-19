@@ -26,6 +26,7 @@ from pathlib import Path
 from time import time_ns
 
 from app.core import Config, EmulatorManager
+from app.core.maa_capture import capture_adb, capture_win32
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
@@ -446,6 +447,8 @@ class MaaEndManager(ScriptManagerBase):
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
             elif self.task_info.mode == "AutoProxy":
+                kwargs["capture_adb"] = capture_adb
+                kwargs["capture_win32"] = capture_win32
                 kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
