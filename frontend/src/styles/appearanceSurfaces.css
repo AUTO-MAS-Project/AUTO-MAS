@@ -1,6 +1,7 @@
 :root {
   --app-appearance-surface-bg: var(--ant-color-bg-container);
   --app-appearance-elevated-surface-bg: var(--ant-color-bg-elevated);
+  --app-appearance-background-image: none;
 }
 
 /* 仅有背景图片时透出主界面表面。弹窗、抽屉、下拉菜单仍使用不透明 Ant token。 */

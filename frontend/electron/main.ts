@@ -285,6 +285,8 @@ const defaultConfig: AppConfig = {
   Runtime: {
     LaunchMode: 'auto',
   },
+  customBackgroundPath: '',
+  customSurfaceOpacity: 1,
 }
 
 //加载配置
@@ -2025,7 +2027,7 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', (_event, patch, defaults) => {
+ipcMain.handle('save-config', (event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -2039,7 +2041,13 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     if (
       patch &&
       typeof patch === 'object' &&
-      ['themeMode', 'themeColor', 'appearanceId'].some(key => key in patch)
+      [
+        'themeMode',
+        'themeColor',
+        'appearanceId',
+        'customBackgroundPath',
+        'customSurfaceOpacity',
+      ].some(key => key in patch)
     ) {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
@@ -2047,6 +2055,12 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
             themeMode: config.themeMode,
             themeColor: config.themeColor,
             appearanceId: config.appearanceId ?? null,
+            customBackgroundPath: config.customBackgroundPath ?? '',
+            customBackgroundUpdated:
+              'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
+            customSurfaceOpacityUpdated:
+              'customSurfaceOpacity' in patch && window.webContents.id !== event.sender.id,
+            customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
           })
         }
       }

@@ -20,6 +20,7 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
 import MascotSettings from './components/MascotSettings.vue'
+import CustomBackgroundSettings from './components/CustomBackgroundSettings.vue'
 import PressSoundSettings from './components/PressSoundSettings.vue'
 
 interface TabBasicProps {
@@ -236,6 +237,8 @@ const handleLocaleChange = (value: unknown): void => {
         </a-col>
       </a-row>
     </div>
+
+    <CustomBackgroundSettings />
 
     <MascotSettings />
 
