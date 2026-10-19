@@ -454,7 +454,10 @@ class TaskInfo(TaskItem):
         self, script: ScriptItem, user: UserItem
     ) -> None:
         """归档返回后释放本用户的采集副本，包括配额拒收与复制回退留下的源。"""
-        key = (self._replay_runs.get(script.script_id), user.user_id)
+        run = self._replay_runs.get(script.script_id)
+        if run is None:
+            return
+        key = (run, user.user_id)
         path = self._history_capture_files.get(key)
         if path is not None and await self._discard_history_capture_file(path):
             self._history_capture_files.pop(key, None)
