@@ -27,6 +27,7 @@ from typing import Any, Mapping
 
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
+    CommandExecutor,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -100,6 +101,22 @@ class TargetConfigView:
         return self.__config.Notify_CustomWebhooks
 
 
+class RuntimeConfigView:
+    """传输仅能读写原有 Notify 字段；校验、加密和保存仍由配置层处理。"""
+
+    def __init__(self, config: Any) -> None:
+        self.__config = config
+
+    def get(self, name: str) -> Any:
+        return self.__config.get("Notify", name)
+
+    async def update(self, values: Mapping[str, Any]) -> None:
+        await self.__config.update({"Notify": dict(values)})
+
+    def bind(self, name: str, callback: Any) -> None:
+        self.__config.bind("Notify", name, callback)
+
+
 def _get_registry() -> ChannelRegistry:
     global _registry
     if _registry is None:
@@ -133,8 +150,10 @@ def get_notify_channel_failures() -> tuple[str, ...]:
     return tuple(f"通知渠道目录未确认（{key}）" for key in _get_registry().unresolved)
 
 
-def initialize_notification_channels() -> None:
-    """配置就绪后、开放发送入口前装配；连接仍由原管理器持有。"""
+def initialize_notification_channels(
+    *, command_executor: CommandExecutor | None = None
+) -> None:
+    """配置就绪后装配单个渠道实例；连接在后台初始化阶段统一启动。"""
     from app.services.notification import Notify
 
     if Notify.initialized:
@@ -142,7 +161,7 @@ def initialize_notification_channels() -> None:
     import smtplib
 
     from app.core.config import Config
-    from app.models.notification_channel import ChannelDependencies, MailTransport
+    from app.models.notification_channel import ChannelDependencies
     from app.utils import get_logger, resource_path
 
     registry = _get_registry()
@@ -155,13 +174,6 @@ def initialize_notification_channels() -> None:
             system_notify = notification.notify
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
-
-    def read_mail() -> MailTransport:
-        return MailTransport(
-            smtp_server=Config.get("Notify", "SMTPServerAddress"),
-            from_address=Config.get("Notify", "FromAddress"),
-            authorization_code=Config.get("Notify", "AuthorizationCode"),
-        )
 
     def read_proxy() -> Any:
         import httpx
@@ -181,32 +193,33 @@ def initialize_notification_channels() -> None:
 
         return httpx.AsyncClient(**kwargs)
 
-    def get_client(name: str) -> Any:
-        from app.utils.websocket import ws_client_manager
+    def websocket_connect(*args: Any, **kwargs: Any) -> Any:
+        from websockets.asyncio.client import connect
 
-        return ws_client_manager.get_client(name)
+        return connect(*args, **kwargs)
 
-    async def send_qq(**kwargs: Any) -> bool | None:
-        from app.services.openclaw_qq import openclaw_qq_manager
+    def websocket_manager() -> Any:
+        from app.utils.websocket import WSClientManager
 
-        return await openclaw_qq_manager.send(**kwargs)
-
-    async def send_cmcc(**kwargs: Any) -> None:
-        from app.services.cmcc_newmsg import send_cmcc_newmsg
-
-        await send_cmcc_newmsg(**kwargs)
+        return WSClientManager()
 
     dependencies = ChannelDependencies(
-        read_mail=read_mail,
+        config=RuntimeConfigView(Config),
         read_proxy=read_proxy,
-        system_enabled=lambda: bool(Config.get("Notify", "IfPushPlyer")),
         smtp_factory=smtplib.SMTP_SSL,
         http_factory=http_client,
+        websocket_connect=websocket_connect,
+        websocket_manager_factory=websocket_manager,
         system_notify=system_notify,
         system_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
-        get_client=get_client,
-        send_qq=send_qq,
-        send_cmcc=send_cmcc,
         logger=get_logger("通知服务"),
+        command_executor=command_executor,
     )
     Notify.bind(registry.bind(dependencies))
+
+
+def get_channel_sender(key: str) -> Any:
+    """API 与发送链路共用已装配的渠道实例。"""
+    from app.services.notification import Notify
+
+    return Notify.channel_sender(key)

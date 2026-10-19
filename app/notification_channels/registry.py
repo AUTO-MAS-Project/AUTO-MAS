@@ -27,6 +27,7 @@ def validate_channel(channel: NotifyChannel) -> None:
         not isinstance(channel.name_key, str)
         or not channel.name_key
         or type(channel.order) is not int
+        or type(channel.lifecycle_order) is not int
     ):
         raise ValueError("渠道名称或顺序缺失")
     if channel.kind not in {"fields", "custom"} or channel.group not in {
@@ -101,6 +102,11 @@ def validate_channel(channel: NotifyChannel) -> None:
     inspect.signature(channel.target_builder).bind(object(), scope="global")
     inspect.signature(channel.sender_factory).bind(object())
     inspect.signature(channel.send_adapter).bind(object(), object(), object())
+    for adapter in (channel.start_adapter, channel.stop_adapter):
+        if adapter is not None:
+            if not inspect.iscoroutinefunction(adapter):
+                raise ValueError("渠道生命周期入口必须为异步函数")
+            inspect.signature(adapter).bind(object())
 
 
 class ChannelRegistry:
@@ -140,12 +146,53 @@ class ChannelRegistry:
                 dependencies.logger.warning(
                     f"通知渠道 {entry.key} 装配失败: {type(exc).__name__}"
                 )
-        return BoundChannels(senders)
+        return BoundChannels(
+            senders, channels=self.channels, logger=dependencies.logger
+        )
 
 
 class BoundChannels:
-    def __init__(self, senders: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        senders: dict[str, Any],
+        *,
+        channels: tuple[NotifyChannel, ...],
+        logger: Any,
+    ) -> None:
         self._senders = MappingProxyType(senders)
+        self._channels = tuple(
+            sorted(channels, key=lambda c: (c.lifecycle_order, c.key))
+        )
+        self._logger = logger
+        self._started = False
+
+    async def start(self) -> None:
+        """逐渠道启动；单个渠道失败不阻止其他渠道恢复连接。"""
+        if self._started:
+            return
+        self._started = True
+        for channel in self._channels:
+            if channel.start_adapter is None or channel.key not in self._senders:
+                continue
+            try:
+                await channel.start_adapter(self.sender(channel.key))
+            except Exception as exc:
+                self._logger.warning(
+                    f"通知渠道 {channel.key} 启动失败: {type(exc).__name__}"
+                )
+
+    async def stop(self) -> None:
+        """通知任务结束后，逆序释放渠道拥有的连接和后台任务。"""
+        for channel in reversed(self._channels):
+            if channel.stop_adapter is None or channel.key not in self._senders:
+                continue
+            try:
+                await channel.stop_adapter(self.sender(channel.key))
+            except Exception as exc:
+                self._logger.warning(
+                    f"通知渠道 {channel.key} 停止失败: {type(exc).__name__}"
+                )
+        self._started = False
 
     def sender(self, key: str) -> Any:
         try:

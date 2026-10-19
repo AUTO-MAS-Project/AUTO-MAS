@@ -39,6 +39,7 @@ def _system_targets(config: ChannelConfig, *, scope: str) -> tuple[ChannelTarget
     name = f"{_prefix(scope)}系统"
     return (
         ChannelTarget(
+            is_local=True,
             id=name,
             label=name,
             timeout_seconds=5,
