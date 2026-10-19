@@ -155,7 +155,7 @@ class OkNteProcessManager(ProcessManager):
             raise ValueError("ScriptPath未配置，请检查路径设置")
         paths = [script_path]
         paths.extend(runtime_executables(self.root))
-        custom = self._custom_target()
-        if custom is not None and custom.exe:
-            paths.append(Path(custom.exe))
+        track_exe = str(self.config.Script.TrackProcessExe or "").strip()
+        if track_exe:
+            paths.append(Path(track_exe))
         return list(dict.fromkeys(paths))
