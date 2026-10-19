@@ -150,7 +150,7 @@ class OkNteProcessManager(ProcessManager):
     def cleanup_executables(self) -> list[Path]:
         paths = [Path(self.config.get("Script", "ScriptPath"))]
         paths.extend(runtime_executables(self.root))
-        custom = self._custom_target()
-        if custom is not None and custom.exe:
-            paths.append(Path(custom.exe))
+        track_exe = str(self.config.get("Script", "TrackProcessExe") or "").strip()
+        if track_exe:
+            paths.append(Path(track_exe))
         return list(dict.fromkeys(paths))
