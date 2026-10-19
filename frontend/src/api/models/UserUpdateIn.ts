@@ -2,20 +2,20 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { BAAHUserConfig } from './BAAHUserConfig';
-import type { BetterGIUserConfig } from './BetterGIUserConfig';
-import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { HSRUserConfig } from './HSRUserConfig';
-import type { M9AUserConfig } from './M9AUserConfig';
-import type { MaaEndUserConfig } from './MaaEndUserConfig';
-import type { MaaFWUserConfig } from './MaaFWUserConfig';
-import type { MaaUserConfig } from './MaaUserConfig';
-import type { MSSUserConfig } from './MSSUserConfig';
-import type { OkNteUserConfig } from './OkNteUserConfig';
-import type { OkwwUserConfig } from './OkwwUserConfig';
-import type { SrcUserConfig } from './SrcUserConfig';
-import type { WhimboxUserConfig } from './WhimboxUserConfig';
-import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
+import type { BAAHUserConfigInput } from './BAAHUserConfigInput';
+import type { BetterGIUserConfigInput } from './BetterGIUserConfigInput';
+import type { GeneralUserConfigInput } from './GeneralUserConfigInput';
+import type { HSRUserConfigInput } from './HSRUserConfigInput';
+import type { M9AUserConfigInput } from './M9AUserConfigInput';
+import type { MaaEndUserConfigInput } from './MaaEndUserConfigInput';
+import type { MaaFWUserConfigInput } from './MaaFWUserConfigInput';
+import type { MaaUserConfigInput } from './MaaUserConfigInput';
+import type { MSSUserConfigInput } from './MSSUserConfigInput';
+import type { OkNteUserConfigInput } from './OkNteUserConfigInput';
+import type { OkwwUserConfigInput } from './OkwwUserConfigInput';
+import type { SrcUserConfigInput } from './SrcUserConfigInput';
+import type { WhimboxUserConfigInput } from './WhimboxUserConfigInput';
+import type { ZzzOdUserConfigInput } from './ZzzOdUserConfigInput';
 export type UserUpdateIn = {
     /**
      * 所属脚本ID
@@ -28,6 +28,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig);
+    data: (MaaUserConfigInput | SrcUserConfigInput | GeneralUserConfigInput | OkwwUserConfigInput | OkNteUserConfigInput | MaaEndUserConfigInput | M9AUserConfigInput | MaaFWUserConfigInput | HSRUserConfigInput | BetterGIUserConfigInput | ZzzOdUserConfigInput | BAAHUserConfigInput | WhimboxUserConfigInput | MSSUserConfigInput);
 };
 

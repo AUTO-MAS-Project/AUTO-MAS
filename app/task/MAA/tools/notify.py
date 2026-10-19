@@ -107,12 +107,12 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
     """公招六星喜报的推送目标, 全局与用户各有独立开关。"""
 
     targets = []
-    if Config.get("Notify", "IfSendSixStar"):
+    if Config.setting.Notify.IfSendSixStar:
         targets.append(global_target())
     if (
         user_config is not None
-        and user_config.get("Notify", "Enabled")
-        and user_config.get("Notify", "IfSendSixStar")
+        and user_config.Notify.Enabled
+        and user_config.Notify.IfSendSixStar
     ):
         targets.append(user_target(user_config))
     # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。

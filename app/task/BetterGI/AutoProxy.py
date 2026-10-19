@@ -15,7 +15,6 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import re
 import time
@@ -25,10 +24,10 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
@@ -352,14 +351,14 @@ def _merge_one_dragon_reports(*phases: list[dict] | None) -> list[dict] | None:
     return merged
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     """BetterGI 自动代理：拼 `startOneDragon <configName>` 启动并监控日志"""
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: BetterGIConfig,
-        user_config: MultipleConfig[BetterGIUserConfig],
+        user_config: ConfigCollection[BetterGIUserConfig],
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -396,7 +395,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
         # 将来若恢复开关可直接复用。
         self.writes_native_config = self.config_base == CONFIG_BASE_NATIVE and bool(
-            self.cur_user_config.get("Info", "IfQuickConfig")
+            self.cur_user_config.Info.IfQuickConfig
         )
         # 原生配置的运行前快照与本次写入内容（还原前比对，保护运行期间的外部修改）
         self._native_one_dragon_snapshot: dict | None = None
@@ -420,24 +419,26 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成，否则昨日达上限的用户
         # LastProxyDate/ProxyTimes 永不被重置，从次日起被永久跳过（对齐 ZzzOd）。
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
-        root = Path(self.script_config.get("Info", "RootPath"))
-        if not root.is_dir():
+        root = self.script_config.Info.RootPath
+        if root is None or not root.is_dir():
             return "请设置 BetterGI 脚本路径"
         if not (root / _BGI_REL_EXE).is_file():
             return "请设置 BetterGI 脚本路径"
 
-        if self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ) != 0 and self.cur_user_config.get(
-            "Data", "ProxyTimes"
-        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
+        if (
+            self.script_config.Run.ProxyTimesLimit != 0
+            and self.cur_user_config.Data.ProxyTimes
+            >= self.script_config.Run.ProxyTimesLimit
+        ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
-        if self.cur_user_config.get("Info", "RemainedDay") == 0:
+        if self.cur_user_config.Info.RemainedDay == 0:
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
@@ -447,11 +448,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 只校验「填了账号、要执行切号」的用户：未配账号 = 不切号，对任何服务器都是
         # 合法配置（国际服未配账号不应被拦，2026-09-24 复核）。
         method = self._account_switch_method()
-        resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
-        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        resource = str(self.cur_user_config.Switch.Resource or "官服").strip()
+        account = str(self.cur_user_config.Info.Id or "").strip()
         if method == "MAS" and account:
             if resource == "官服":
-                if not str(self.cur_user_config.get("Info", "Password") or ""):
+                if not str(self.cur_user_config.Info.Password or ""):
                     # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
                     # 第三方登录账号没有打码锚点，无法在登录记录中定位
                     if "*" not in account_switch.mask_account(account):
@@ -477,7 +478,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             expected = _RESOURCE_EXPECTED_CHANNEL.get(resource)
             if expected:
                 info = game_info.read_game_info(
-                    root, str(self.cur_user_config.get("Switch", "GamePath") or "")
+                    root, str(self.cur_user_config.Switch.GamePath or "")
                 )
                 if info["channel"] and info["channel"] != expected:
                     self.cur_user_item.status = "异常"
@@ -498,7 +499,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.log_start_time = datetime.now()
 
         # ── 所有 Script 路径从 RootPath 实时派生，不依赖 ConfigItem 存储值 ──
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
+        script_root_path = self.script_config.Info.RootPath
+        if script_root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.script_root_path = script_root_path
         self.script_exe_path = self.script_root_path / _BGI_REL_EXE
 
         self.script_target_process_info = ProcessInfo(
@@ -522,20 +526,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
             one_dragon.launch_slot_name()
             if self.use_mas_config
             else one_dragon.resolve_config_name(
-                str(self.cur_user_config.get("Task", "OneDragonConfigName") or "")
+                str(self.cur_user_config.Task.OneDragonConfigName or "")
             )
         )
         self.one_dragon_groups = (
-            list(self.cur_user_config.get("OneDragon", "Groups") or [])
+            list(self.cur_user_config.OneDragon.Groups or [])
             if self.use_mas_config
             else []
         )
         self.use_custom_groups = self.use_mas_config and bool(
-            self.cur_user_config.get("OneDragon", "IfUseCustomGroups")
+            self.cur_user_config.OneDragon.IfUseCustomGroups
         )
         self.one_dragon_custom_groups = (
             one_dragon.parse_custom_groups(
-                self.cur_user_config.get("OneDragon", "CustomGroups") or ""
+                self.cur_user_config.OneDragon.CustomGroups or ""
             )
             if self.use_mas_config
             else []
@@ -543,12 +547,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 「队伍配置」总开关与队伍表：开启时按「战斗场景」选队（第 1 层优先级）；
         # 关闭时数据保留但除通用队伍外一律不参与匹配（通用队伍照旧生效）。
         self.use_teams = self.use_mas_config and bool(
-            self.cur_user_config.get("OneDragon", "IfUseTeams")
+            self.cur_user_config.OneDragon.IfUseTeams
         )
         self.one_dragon_teams = (
-            team_resolver.parse_teams(
-                self.cur_user_config.get("OneDragon", "Teams") or ""
-            )
+            team_resolver.parse_teams(self.cur_user_config.OneDragon.Teams or "")
             if self.use_mas_config
             else []
         )
@@ -556,7 +558,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 为空/非法时 write_user_one_dragon 回退旧行为（沿用副本 TaskOrder 相对顺序）
         self.one_dragon_queue = (
             one_dragon.parse_one_dragon_queue(
-                self.cur_user_config.get("OneDragon", "Queue") or ""
+                self.cur_user_config.OneDragon.Queue or ""
             )
             if self.use_mas_config
             else []
@@ -565,7 +567,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
         # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背原生来源设计初衷。
         self.use_execution_layer = bool(self.use_mas_config) and bool(
-            self.cur_user_config.get("OneDragon", "UseExecutionLayer")
+            self.cur_user_config.OneDragon.UseExecutionLayer
         )
         # 路径 B（自定义项执行层）：队列中 kind ∈ CUSTOM_EXEC_KINDS 的条目与战斗 4 项一起，
         # 由 one_dragon_bridge 按左栏队列顺序切成「段」（MAS-{短id}-执行层段{N}），在**同一次**
@@ -586,8 +588,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 条件比 dev #781 宽一档：原生来源 + 快速配置时**要**算 Plan——那一路由
         # _write_native_one_dragon 把 Plan 写成原生设置，不算出来就没内容可写。
         _plan_steps = (
-            parse_one_dragon_plan(self.cur_user_config.get("OneDragon", "Plan") or "")
-            if (self.use_mas_config or getattr(self, "writes_native_config", False))
+            parse_one_dragon_plan(self.cur_user_config.OneDragon.Plan or "")
+            if self.use_mas_config or getattr(self, "writes_native_config", False)
             else []
         )
         # 这次实际跑谁：Plan 中启用、且队列行启用、且组开关允许的战斗 4 项（各带自身 settings）。
@@ -604,8 +606,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
         # 队伍字段为空时注入，已显式设置的队伍不覆盖。
         _default_party = (
-            str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
-            if (self.use_mas_config or getattr(self, "writes_native_config", False))
+            str(self.cur_user_config.OneDragon.PartyName or "").strip()
+            if self.use_mas_config or getattr(self, "writes_native_config", False)
             else ""
         )
         if _default_party:
@@ -630,7 +632,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 本次会跑的战斗步骤打开识别（执行层走 Plan.settings），并在运行前把 BGI 全局
         # autoDomainConfig.rewardRecognitionEnabled 置 true（覆盖原生一条龙路径）。
         self.drop_statistics_enabled = bool(
-            self.cur_user_config.get("Notify", "IfSendDropStatistics")
+            self.cur_user_config.Notify.IfSendDropStatistics
         )
         if self.drop_statistics_enabled:
             for _step in self.plan_combat_steps:
@@ -650,7 +652,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # final_task 收尾读取——prepare 在此之前崩溃时读到 UserItem 默认「汇总」，
         # 不会 AttributeError 掩盖原始错误。
         self.cur_user_item.push_log_mode = str(
-            self.cur_user_config.get("Notify", "PushLogMode") or "汇总"
+            self.cur_user_config.Notify.PushLogMode or "汇总"
         )
 
         # 第 1 层（最高优先级）：队伍配置表按「战斗场景」匹配选队，写入独立的
@@ -707,7 +709,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 原生来源：快速配置开启才接管写入，且写的是 BGI 那份原生配置（非 MAS 槽位）
             self._write_native_one_dragon(exclude_task_names=exclude_task_names)
             return
-        party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
+        party_name = str(self.cur_user_config.OneDragon.PartyName or "")
         # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
         # 把归执行层负责的战斗组一律从原生副本剔除，使前端开关成为唯一真理源：开 → 执行层
         # 跑（战斗段）；关（Plan.step.enabled=false）→ 原生也不跑，避免「关了还漏跑」。
@@ -747,19 +749,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.user_id,
             self.one_dragon_groups,
             daily_reward_party_name=str(
-                self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
+                self.cur_user_config.OneDragon.DailyRewardPartyName or ""
             ),
             party_name=party_name,
             auto_boss_strategy_name=str(
-                self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
+                self.cur_user_config.OneDragon.AutoBossStrategyName or ""
             ),
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
             exclude_task_names=sorted(_exclude) or None,
-            # 掉落统计：开启时强制打开首领讨伐的奖励识别（原生路径读槽位顶层字段）
             boss_reward_recognition=True if self.drop_statistics_enabled else None,
-            # 执行层接管时不再逐项物化自定义配置组（避免与「段」重复）
             materialize_custom_groups=not self.custom_exec_enabled,
         )
         # 执行层「段」：按左栏队列顺序切段并写入 BGI 配置组（战斗段 + 自定义项同批），
@@ -787,7 +787,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
         one_dragon.apply_global_battle_strategy(
             self.script_root_path,
-            str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+            str(self.cur_user_config.OneDragon.AutoBossStrategyName or ""),
         )
         # 幽境危战面板设置（刷取战场/树脂策略等）随后物化到 config.json 的
         # autoStygianOnslaughtConfig 段：右栏 fightTeamName/strategyName 非空时覆盖
@@ -829,24 +829,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self._native_one_dragon_snapshot is None:
             # 快照阶段没读到原生配置（文件缺失/非法）：本次不接管，避免写出一份空配置
             return
-        party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
+        party_name = str(self.cur_user_config.OneDragon.PartyName or "")
         written = one_dragon.write_native_one_dragon(
             self.script_root_path,
             self.one_dragon_config,
             self.one_dragon_groups,
             daily_reward_party_name=str(
-                self.cur_user_config.get("OneDragon", "DailyRewardPartyName") or ""
+                self.cur_user_config.OneDragon.DailyRewardPartyName or ""
             ),
             party_name=party_name,
             auto_boss_strategy_name=str(
-                self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""
+                self.cur_user_config.OneDragon.AutoBossStrategyName or ""
             ),
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
             exclude_task_names=exclude_task_names,
-            # 四项战斗组的 per-任务设置（树脂/奖励识别/秘境界/首领名…）：
-            # 原生来源下执行层不跑，Plan 只有这里会落到原生配置
             native_step_settings=plan_steps_to_native_settings(self.plan_combat_steps),
         )
         if written is None:
@@ -857,7 +855,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
         one_dragon.apply_global_battle_strategy(
             self.script_root_path,
-            str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+            str(self.cur_user_config.OneDragon.AutoBossStrategyName or ""),
         )
         one_dragon.apply_user_global_stygian_settings(
             self.script_root_path,
@@ -1092,7 +1090,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self._push_dispatch_log(f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}")
             return
 
-        run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
+        run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
             if self.run_book:
                 break
@@ -1132,8 +1130,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_exe_path,
                 *self.bettergi_args,
                 target_process=self.script_target_process_info,
-                # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+                elevated=self.script_config.Run.UseAdmin and (not IS_ELEVATED),
             )
 
             # 启动日志监控（文件日志）
@@ -1292,7 +1289,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "--startGroups",
                 *group_names,
                 target_process=self.script_target_process_info,
-                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+                elevated=self.script_config.Run.UseAdmin and (not IS_ELEVATED),
             )
             result["started"] = True
             await asyncio.sleep(1)
@@ -1390,7 +1387,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         存量脚本（5.5.0 升级、配置无该键）由 ``BetterGIConfig.load`` 迁移固化
         BGI，正常路径不会缺失；此兜底仅覆盖未走迁移的边缘场景。
         """
-        method = str(self.script_config.get("Run", "AccountSwitchMethod") or "MAS")
+        method = str(self.script_config.Run.AccountSwitchMethod or "MAS")
         return method if method in {"BGI", "MAS"} else "MAS"
 
     async def _switch_account(self) -> bool:
@@ -1412,20 +1409,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 是全局单值，写入会污染其他「跟随全局」的用户（2026-09-23 实机）。
         # 生效方式：MAS 方式自行按用户路径拉起游戏；BGI 脚本方式由 MAS 预拉起
         # 后 BGI attach 运行中的客户端。
-        user_game_path = str(
-            self.cur_user_config.get("Switch", "GamePath") or ""
-        ).strip()
+        user_game_path = str(self.cur_user_config.Switch.GamePath or "").strip()
 
         if self._account_switch_method() == "MAS":
             return await self._switch_account_mas(user_game_path)
 
-        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        account = str(self.cur_user_config.Info.Id or "").strip()
         if not account:
             return True
 
-        resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
-        uid = str(self.cur_user_config.get("Switch", "Uid") or "").strip()
-        password = str(self.cur_user_config.get("Info", "Password") or "")
+        resource = str(self.cur_user_config.Switch.Resource or "官服").strip()
+        uid = str(self.cur_user_config.Switch.Uid or "").strip()
+        password = str(self.cur_user_config.Info.Password or "")
 
         # 切换模式不再单独配置，按密码是否填写推断：
         # 填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」。
@@ -1563,8 +1558,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "--startGroups",
                 account_switch.GROUP_NAME,
                 target_process=self.script_target_process_info,
-                # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
-                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+                elevated=self.script_config.Run.UseAdmin and (not IS_ELEVATED),
             )
             # open_process 内部 search_process 已确认目标进程存在，之后退出才算失败
             switch_result["started"] = True
@@ -1616,11 +1610,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         成功后游戏保持运行，与 BGI 脚本路径的收尾一致，由随后的一条龙接管。
         失败返回 False，由调用方中止任务。
         """
-        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        account = str(self.cur_user_config.Info.Id or "").strip()
         if not account:
             return True
-        password = str(self.cur_user_config.get("Info", "Password") or "")
-        resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
+        password = str(self.cur_user_config.Info.Password or "")
+        resource = str(self.cur_user_config.Switch.Resource or "官服").strip()
 
         # MAS 托管游戏启动（同 OK-NTE 语义）：已运行跳过，未运行按用户级路径
         # （留空跟随 BGI 全局）拉起；游戏起不来切号无从执行，直接失败中止
@@ -1763,7 +1757,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     )
                     user_item_status = "异常"
                 elif self.is_log_stalled(
-                    latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+                    latest_time, minutes=self.script_config.Run.RunTimeLimit
                 ):
                     log_status = "BetterGI 运行超时"
                     user_item_status = "异常"
@@ -1940,27 +1934,27 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if self.run_book:
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.LastProxyStatus = "成功"
+            await self.cur_user_config.commit()
             # 部分失败仍算成功（不判负、照常计次），但状态要能看到，不能显示成「完成」
             self.cur_user_item.status = (
                 "部分失败" if self.partial_failed_steps else "完成"
             )
             logger.success(f"用户 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成")
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
+            self.cur_user_config.Data.LastProxyStatus = "失败"
+            await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
                 self.cur_user_item.status = "异常"
 
@@ -2045,7 +2039,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         taskkill 非零返回（拒绝访问/进程不存在）必须落日志，否则关闭失败
         在收尾里完全无痕、无法排查。
         """
-        if not self.script_config.get("Game", "CloseOnFinish"):
+        if not self.script_config.Game.CloseOnFinish:
             return
 
         await self._push_dispatch_log("任务结束，正在关闭游戏进程")
@@ -2059,7 +2053,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         关闭请求后进程仍可能短暂可见，须等其退出后再做下一用户的启动检测；
         检查范围与收尾关闭的客户端一致，含云原神。不关游戏的配置不等待。
         """
-        if not self.script_config.get("Game", "CloseOnFinish"):
+        if not self.script_config.Game.CloseOnFinish:
             return
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:

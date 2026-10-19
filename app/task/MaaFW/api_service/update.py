@@ -297,7 +297,7 @@ async def _heal_projection(
             proxy=proxy,
             proxy_url=proxy_url,
             shell_hint=shell_hint,
-            script_name=str(script_config.get("Info", "Name") or script_id[:8]),
+            script_name=str(script_config.Info.Name or script_id[:8]),
             lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
         )
     finally:
@@ -600,7 +600,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
             400, describe_update_busy(root_path, script_running=False)
         )
     precheck_failure: dict[str, Any] = {}
-    script_name = str(script_config.get("Info", "Name") or script_id[:8])
+    script_name = str(script_config.Info.Name or script_id[:8])
     # 整段登记为「正在更新」（含切换后的环境确认），这期间再点更新说的是「正在更新」。
     updating_key = begin_project_updating(root_path)
     try:

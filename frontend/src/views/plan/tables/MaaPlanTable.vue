@@ -162,6 +162,7 @@ import {
   planAllDayKeys,
   planColumnKeys,
   planColumnPath,
+  planColumnGroup,
   planDayLabel,
   readPlanColumn,
   type PlanMode,
@@ -263,17 +264,17 @@ const simpleColumns = computed(() => [
 ])
 
 /**
- * 整份天配置的写入路径：ALL 仍在顶层，其余天整体挂在 Days 下。
+ * 整份天配置直接写入对应配置分组。
  * 契约里的 planColumnPath 拼的是「某一天的某个字段」，整份配置没有字段名，所以在外面拼这一段。
  */
-const dayConfigPath = (key: string) => (key === 'ALL' ? 'ALL' : `Days.${key}`)
+const dayConfigPath = planColumnGroup
 
 // 更新配置数据 - 直接调用父组件的保存函数
 const updateConfigValue = async (rowKey: string, timeKey: string, value: any) => {
   // 更新本地状态
   coordinator.updateConfig(timeKey, rowKey, value)
 
-  // 构建后端 API 路径，例如 "ALL.Stage" 或 "Days.Monday.MedicineNumb"
+  // 构建后端 API 路径，例如 "ALL.Stage" 或 "Monday.MedicineNumb"
   const apiPath = planColumnPath(timeKey, rowKey)
   await props.handlePlanChange(apiPath, value)
 }

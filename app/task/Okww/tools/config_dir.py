@@ -87,7 +87,10 @@ async def ensure_user_config_dir(script_id: str, user_id: str, base: str) -> Pat
     ):
         return target_config_dir
 
-    script_root = Path(script_config.get("Info", "RootPath")).expanduser()
+    script_root = script_config.Info.RootPath
+    if script_root is None:
+        raise ValueError("RootPath未配置，请检查路径设置")
+    script_root = script_root.expanduser()
     source_config_dir = script_root / _OKWW_REL_CONFIG_DIR
     if not source_config_dir.is_dir() or not any(
         item.is_file() for item in source_config_dir.rglob("*")
@@ -147,11 +150,11 @@ async def import_script_config_dir(script_id: str, user_id: str) -> Path:
 
     user_id = str(user_uuid)
     user_config = script_config.UserData[user_uuid]
-    base = _okww_config_base(user_config.get("Info", "Base"))
+    base = _okww_config_base(user_config.Info.Base)
     if base == BASE_NATIVE:
         raise ValueError("原生来源直接使用 OK-WW 原有配置，不支持导入")
 
-    root_path = str(script_config.get("Info", "RootPath") or "").strip()
+    root_path = str(script_config.Info.RootPath or "").strip()
     if not root_path:
         raise ValueError("请先设置 OK-WW 脚本路径")
     source_config_dir = Path(root_path).expanduser() / _OKWW_REL_CONFIG_DIR

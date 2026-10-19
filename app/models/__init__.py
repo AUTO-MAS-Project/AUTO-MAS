@@ -21,10 +21,11 @@
 #   Contact: DLmaster_361@163.com
 
 
+from app.config import *
+
 from .config import *
-from .ConfigBase import *
 from .emulator import *
 from .schema import *
 from .task import *
 
-__all__ = ["ConfigBase", "config", "schema", "emulator", "task"]
+__all__ = ["ConfigEntry", "config", "schema", "emulator", "task"]

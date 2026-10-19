@@ -2,24 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * MaaFW 选择项的 API DTO。
- *
- * ConfigBase 将这三个列表以 JSON 字符串保存；API 同时接受已解析的
- * 字符串列表，便于后续编辑页直接提交结构化值。
- */
 export type MaaFWConfig_Selection = {
     /**
-     * 选中的 controller 名称 JSON 字符串或列表
+     * 当前阶段保留：manager.py 仍从 Selection.* 读取运行范围， 字段迁移到 Info.* / 用户任务配置属于后续 P3 前端回收。 选中的 controller 列表
      */
-    Controller?: (string | Array<string> | null);
+    Controller?: (string | null);
     /**
-     * 选中的 resource 名称 JSON 字符串或列表
+     * 选中的 resource 列表
      */
-    Resource?: (string | Array<string> | null);
+    Resource?: (string | null);
     /**
-     * 选中的 task 名称 JSON 字符串或列表
+     * 选中的 task 列表
      */
-    Tasks?: (string | Array<string> | null);
+    Tasks?: (string | null);
 };
 

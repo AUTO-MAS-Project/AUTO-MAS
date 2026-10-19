@@ -83,7 +83,7 @@ async def _set_base(ctx: RestoreContext, base: str) -> None:
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Base": base}})
+    await user.update(type(user).model_validate({"Info": {"Base": base}}))
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
@@ -108,7 +108,7 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
 def _native_config_path(ctx: RestoreContext) -> Path | None:
     """MAA 安装目录 config/；未配置脚本路径返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "Path") or "").strip()
+    raw = str(ctx.script_config.Info.Path or "").strip()
     return Path(raw) / "config" if raw else None
 
 
@@ -231,7 +231,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
             task.setdefault("IfDepotMaintain", False)
             task.setdefault("DepotMaintainPlans", "[]")
             restored, _ = migrate_maa_stamina_pipeline(restored)
-        await user.update(restored)
+        await user.update(type(user).model_validate(restored))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

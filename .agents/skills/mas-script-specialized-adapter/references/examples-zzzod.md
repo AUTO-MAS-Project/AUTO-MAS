@@ -1,6 +1,6 @@
 # 案例：ZzzOd（绝区零 / zzz-od）
 
-ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段化**（ConfigItem 字段为事实源，web 直接编辑），但运行方式是 **注入式**：运行时由用户字段生成 zzz-od YAML 写入绑定实例槽，zzz-od 原生一条龙负责执行与游戏内切账号。不要把 zzz-od 的实例槽当 MAS 配置目录（两者结构同构但 owner 不同），其物理布局可不同，但仍遵循统一的脚本 / 用户 / 直控三态来源与独立用户级快速配置语义。
+ZzzOd 基于 `one-dragon` 框架家族，用户级配置采用 **MaaEnd 式字段化**（`app/models/config/script.py` 中的分组字段为事实源，接口由配置类派生），运行方式是 **注入式**：运行时由用户字段生成 zzz-od YAML 写入绑定实例槽，zzz-od 原生一条龙负责执行与游戏内切账号。不要把 zzz-od 的实例槽当 MAS 配置目录（两者结构同构但 owner 不同），其物理布局可不同，但仍遵循统一的脚本 / 用户 / 直控三态来源与独立用户级快速配置语义。
 
 具体字段、路径、函数名现场读 `app/task/ZzzOd/` 确认。本文件只记推不出来的部分。
 
@@ -11,7 +11,7 @@ ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段�
 - 任务编排 `OneDragon.AppList` 是 JSON 字符串字段（顺序即执行顺序），前端开关=加入/移出、拖拽=调序；不做 zzz-od 式逐任务子配置页。
 - **任务卡片 ⚙ 走数据驱动元数据表**（`app/task/ZzzOd/tools/app_options.py` 的 `TASK_APP_FIELDS`，加任务=加表项）：字段类型 select/bool/number/plan_list 决定前端渲染（plan_list 或字段多走弹窗，少量字段走弹层）；复杂配置不进 MAS 的任务在 `TASK_APP_JUMPS` 注册（式舆防卫战/迷失之地/枯萎之都），卡片显示跳转按钮引导进一条龙主界面；随便观已字段化进 `TASK_APP_FIELDS`，兑换码无配置字段（两表均不进）。
 - **动态选项与一条龙原生 GUI 同源，全部静态读取**（`tools/compendium.py`，勿写死）：副本级联与图层=安装目录 `assets/game_data/compendium_data.yml`；咖啡= `coffee_data.yml` 排程；代理人名=`assets/game_data/agent/*.yml`；配队方案/挑战配置/锄大地路线名单=扫描 `config/auto_battle`、`config/{lost_void,hollow_zero}_challenge`、`config/world_patrol_route_list`（与上游列表函数同规则）。**唯一随槽而异的源是 `predefined_teams`**（`zzz_od_config.predefined_team_options` 读目标槽 `team.yml`，「游戏内配队」(-1) 前置，须给 `resolve_field_options` 传 `config_dir`）；`team` 类型字段/列展示同 select、保存转 int 下标（上游按 int 消费，写 str 会破坏 `-1` 判断）。字段静态 `options` 会前置合并到动态源之前（如「随机」「全部」）；`show_when` 支持条件列表与 `not` 取反（配队方案与游戏内配队互斥、合成电池隐藏，对齐上游体力计划 GUI）。
-- **上游取值三态要核对**：部分枚举存 enum name 而非 value（随便观游历任务/邦布价格存 `HOUR_20`/`S4` 这类 name），锄大地的界面消失/重试处理存英文常量，体力计划等级等存中文 value——照抄 config 的 `get` 默认值与 GUI 的 ConfigItem 定义，不要凭惯例猜。
+- **上游取值三态要核对**：部分枚举存 enum name 而非 value（随便观游历任务/邦布价格存 `HOUR_20`/`S4` 这类 name），锄大地的界面消失/重试处理存英文常量，体力计划等级等存中文 value——按上游 config 的 `get` 默认值与 GUI 的 `ConfigItem` 定义核对；这里的名称指上游模型，MAS 自身字段使用 `ConfigEntry/ConfigGroup` 声明。
 - **`plan_list` 保存按 plan_id 保留既有 `run_times`**（`merge_plan_list`）：MAS 只改计划内容、不重置一条龙运行计数，新行补 uuid（对齐上游 `ChargePlanItem.__post_init__`）；行内字段白名单=columns+隐藏持久字段（tab_name/run_times/plan_id）。
 - **预备编队（前端独立组件 `ZzzOdPredefinedTeams.vue` + `/zzzod/teams(/save)` 端点）**：
   - 数据源是实例槽的 `config/{idx:02d}/team.yml`（上游 `TeamConfig`），**固定 20 个编队**：读取侧 `expand_team_list` 与上游 `team_list` 属性同规则补「编队N/全配队通用」默认项；保存整表写回，成员 `agent_id_list` 按行保留（优先传入行 > 既有行同下标 > unknown×3）
@@ -70,7 +70,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - **合成注册表视图**：zzz-od 的 `instance_list` 是安装级全局命名空间，持久注册会让 MAS 实例混进原生世界（GUI 混排、跨脚本槽串号、「仅运行当前」误跑）。MAS **零持久写入注册表**：运行/配置会话窗口内把 `one_dragon.yml` 临时替换为「仅本脚本用户槽」的合成视图（`write_instance_view`，active_in_od=True、instance_run 多槽=全部实例/单槽=仅运行当前），窗口结束 `restore_instance_view` 恢复原生内容。`one_dragon.yml` 进程启动读一次、之后纯内存，替换窗口对启动器安全；闪退自愈靠 sidecar（`one_dragon.yml.mas-view.bak`）确定性恢复，每次窗口开始前先 restore。
 - **会话/运行窗口内「只见 MAS 槽」是刻意的场景隔离，不是 bug**：视图只注册本场景的槽（配置会话=唯一槽、内置切换=全部注入槽），`--instance` 只认视图注册表内的 idx（未注册的静默丢弃）——目的是配置态不误碰/误跑原生实例、隔离跨脚本槽，与"文件层面只增量加槽目录"不冲突。要看原生实例：等窗口结束注册表还原后由一条龙自己打开（在一条龙内配置/查询会话天然只呈现 MAS 世界）；直控模式则在同一原生世界里选实例直接编辑（读的就是原生注册表）。
 - **槽目录持久**：配队等复杂配置持久保留在 `config/{idx:02d}`；运行恢复只还原 MAS 注入的字段（备份内容），不删目录。
-- **绑定持久在用户配置**（`Info.SlotIdx`，上限 9999 与 `RangeValidator` 一致），idx 分配全局查重：原生实例 idx ∪ 盘上 `config/NN` ∪ 所有 ZzzOd 脚本用户 SlotIdx（`collect_used_slot_idxs`，排除本次注入/会话用户），且只在 MAS 高位段 `[MAS_SLOT_BASE, MAS_SLOT_MAX]=[1001, 9999]` 内找号（号段用满显式报错；原生实例分配不设限，对齐一条龙升序无上限）——槽目录跨脚本共享，idx 不唯一会互相覆盖。绑定有效性要求 idx 不与原生实例/其他用户冲突（无注册表可查名字，旧版 MAS- 前缀校验随持久注册一起废弃）。
+- **绑定持久在用户配置**（`Info.SlotIdx`，当前 `Field(ge=-1, le=9999)`），idx 分配全局查重：原生实例 idx ∪ 盘上 `config/NN` ∪ 所有 ZzzOd 脚本用户 SlotIdx（`collect_used_slot_idxs`，排除本次注入/会话用户），且只在 MAS 高位段 `[MAS_SLOT_BASE, MAS_SLOT_MAX]=[1001, 9999]` 内找号（号段用满显式报错；原生实例分配不设限，对齐一条龙升序无上限）——槽目录跨脚本共享，idx 不唯一会互相覆盖。绑定有效性要求 idx 不与原生实例/其他用户冲突（无注册表可查名字，旧版 MAS- 前缀校验随持久注册一起废弃）。
 - **同脚本用户名唯一**（前端改名查重 + `check()` 兜底）：视图内槽名 `MAS-{用户名}`，重名会混；跨脚本重名由视图天然隔离。
 - 有效根目录哨兵：`find_launcher_exe` 按序找 `OneDragon-RuntimeLauncher.exe` / `OneDragon-Launcher.exe`（`.bak` 不算）；离线校验另见 `tools.zzz_od_config.validate_root`（src + config/one_dragon.yml）。
 - **启动器选择（用户字段 `Info.LauncherMode`，直控/用户模式通用）**：标签映射——集成=`OneDragon-RuntimeLauncher.exe`（WithRuntime 打包）、原始=`OneDragon-Launcher.exe`（旧安装器，外部 uv 拉起）。**自动**=优先 `Data.LauncherLastGood`（上次成功项），失败换另一个重试并记住下次成功的那个；原始/集成=固定（所选 exe 未安装回退默认顺序并告警）。**启动级失败靠日志证据判定**：两种启动器的一条龙运行日志都汇聚 `.log/log.txt`，启动器自身没起来（uv 缺失/同步失败早退）时该文件无应用层条目——以 `[application_launcher.py`/`[one_dragon_context.py`/`[application_factory_manager.py` 任一出现或运行记录有变化为「已启动」，避免把功能级失败误判成启动失败。原始启动器的框架日志另写 `python_launcher_framework.log`，不进 log.txt。
@@ -155,9 +155,9 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
 - **配置会话必须双向联动**：只激活槽不注入基线 → GUI 与本页配置不一致；只注入不回读 → GUI 内改动下次运行被 MAS 字段覆盖（用户改动静默丢失）。回读时账号/密码非空才读，否则「留空沿用登录态」语义被破坏。
 - **重试重判的幂等**：重试带着同一全零基准重判，推送条目按用户整体重建（clear 后重采），统计只在状态变化时写——否则 ProxyTimes 多次自增、推送重复。
 - **instance_run 随视图恢复**；注册表零持久写入是设计核心，勿把合成视图改成持久注册（会重新引入 GUI 混排/跨脚本串号）。
-- **`RangeValidator` 对越界值是静默夹取不是报错**：写 10000 进 `Info.SlotIdx` 会变 9999，槽目录名与绑定号错位——凡是要写进 SlotIdx 的号（分配、认领、恢复）都必须先确认在 `[MAS_SLOT_BASE, MAS_SLOT_MAX]` 内；台账是删除白名单，同样要拒收 bool/越界/脏值。
+- **配置范围与号段业务约束分开**：`Info.SlotIdx` 的 Pydantic 范围约束拒绝越界值，热态校验在 commit 内执行，不做静默夹取。分配、认领、恢复仍需核对 `[MAS_SLOT_BASE, MAS_SLOT_MAX]`、重复占用及台账白名单；这类业务不变量不能仅凭字段上限推断成立。
 - 直控模式不需要注入但仍校验**运行目标**：目标选取（`_direct_run_targets`）与上游 `handle_init` 同口径——全部实例=所有 `active_in_od` 实例，其余（含 null / 空串等非法值）=活跃实例，目标为空回落活跃。**只有键缺失才按上游默认取「全部实例」**，故判定走 `instance_run_is_all`（镜像上游 `data.get('instance_run', 默认值)` 的 `== 全部实例`）而非 `read_instance_run`——后者返回原值，键缺失与值为 null 都是 `None`，区分不了；**仅目标为空才拦「没有可运行的实例」**——上游对「有参与实例但无活跃」会自行切到首个参与实例运行，且 context 初始化对无活跃会自动新建实例，不以有无活跃实例误拦。目标非空后按实例校验游戏路径（缺失时一条龙只报「未配置游戏路径」整体失败、用户难自诊，故提前指明实例名）；**校验前先 `restore_instance_view` 自愈**——上次用户模式运行崩溃残留的视图只含 MAS 槽，不还原会把 MAS 槽当运行目标、误报未配置路径（`_restore_injection` 只在运行结束还原，直控裸跑前必须自己补一次，无 sidecar 时 no-op）；用户态不需要（绑定槽自动注册，且 `_prepare_injection` 开头已自愈）。
-- manager `final_task` **所有模式**都写回 UserData（ScriptConfig 会话也会产生 SlotIdx 落盘）。
+- manager 在实际 SlotIdx 等字段变化处对持有的 live 用户配置赋值并 commit，任务以 X 票据保护并在收尾释放；ScriptConfig 会话同样提交真实字段修改，不在 final_task 整份覆盖 UserData。详见[配置框架参考](../../mas-data-model/references/config-framework.md)。
 - schema 变更后离线导出再生成（`PYTHONPATH=. python .dev/export_openapi.py` → `npx openapi --input ../.dev/openapi.json`），禁止手改生成文件。
 - **openapi-typescript-codegen 三个坑**（0.29.0 实测）：① 请求模型用中文 `Literal[...]` 会生成重复 `_` 标识符导致 TS 编译失败——枚举校验放后端原语（如白名单校验），schema 用 `str`；② **路径前缀重叠的端点会被静默丢弃**（`/instances/active` 被 `/instances/active-in-od` 吞掉，无任何报错）——端点命名避免互为前缀（用 `set-active` 不用 `active`）；③ 生成器 `--output ./src/api` 是相对 cwd 的——必须在 `frontend/` 目录下执行，曾误生成整套到仓库根 `src/api`。
 

@@ -43,7 +43,7 @@ export type BetterGIScriptDirsOut = {
      */
     keyMouseScriptDir?: (string | null);
     /**
-     * 自动战斗策略目录（User/AutoFight，*.txt 即一份策略）
+     * 自动战斗策略目录（User/AutoFight，*.txt / *.json 各算一份策略）
      */
     autoFightDir?: (string | null);
     /**

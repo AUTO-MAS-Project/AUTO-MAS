@@ -392,7 +392,7 @@ async def _default_current_base(ctx: RestoreContext) -> str | None:
 
     try:
         user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-        base = user.get("Info", "Base")
+        base = user.Info.Base
         return str(base) if base else None
     except Exception:
         return None

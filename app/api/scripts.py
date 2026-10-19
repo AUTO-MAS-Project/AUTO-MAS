@@ -2,32 +2,39 @@
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import uuid
 from pathlib import Path
-from typing import Any, Literal
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Union,
+)
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+)
 
+import app.models.config as _config_models
+from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
@@ -35,7 +42,39 @@ from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
-from app.models.schema import *
+from app.models.schema import (
+    ComboBoxItem,
+    ComboBoxOut,
+    HSRCapabilitiesData,
+    HSRCloudLoginData,
+    HSRManagedConfigData,
+    HSRSRAProfilesData,
+    HSRStageOptionsData,
+    HSRUpdateData,
+    MaaFWAgentEnvPrepareData,
+    MaaFWEmbeddedSourceItem,
+    MaaFWEmbeddedStatusData,
+    MaaFWGamePackageData,
+    MaaFWInterfacePreviewData,
+    MaaFWMirrorCdkData,
+    MaaFWProjectUpdateData,
+    MaaFWShellInstanceImportItem,
+    MaaFWShellInstanceItem,
+    OutBase,
+    WebhookDeleteIn,
+    WebhookGetIn,
+    WebhookInBase,
+    WebhookIndexItem,
+)
+from app.models.schema import (
+    WebhookCreateOut as SharedWebhookCreateOut,
+)
+from app.models.schema import (
+    WebhookGetOut as SharedWebhookGetOut,
+)
+from app.models.schema import (
+    WebhookUpdateIn as SharedWebhookUpdateIn,
+)
 from app.services import ConfigCenterError
 from app.services.endfield_launcher import discover_launcher_exe
 from app.services.wuthering_waves import resolve_wuthering_waves_process_path
@@ -49,6 +88,1639 @@ from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
 from app.utils.emulator2 import service as emulator2_service
 from app.utils.io import ConfigCorruptedError
+
+BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
+BAAHConfigInput = ConfigInput[_config_models.BAAHConfig]
+BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
+BAAHUserConfigInput = ConfigInput[_config_models.BAAHUserConfig]
+BetterGIConfig = ConfigPayload[_config_models.BetterGIConfig]
+BetterGIConfigInput = ConfigInput[_config_models.BetterGIConfig]
+BetterGIUserConfig = ConfigPayload[_config_models.BetterGIUserConfig]
+BetterGIUserConfigInput = ConfigInput[_config_models.BetterGIUserConfig]
+GeneralConfig = ConfigPayload[_config_models.GeneralConfig]
+GeneralConfigInput = ConfigInput[_config_models.GeneralConfig]
+GeneralUserConfig = ConfigPayload[_config_models.GeneralUserConfig]
+GeneralUserConfigInput = ConfigInput[_config_models.GeneralUserConfig]
+HSRConfig = ConfigPayload[_config_models.HSRConfig]
+HSRConfigInput = ConfigInput[_config_models.HSRConfig]
+HSRUserConfig = ConfigPayload[_config_models.HSRUserConfig]
+HSRUserConfigInput = ConfigInput[_config_models.HSRUserConfig]
+M9AConfig = ConfigPayload[_config_models.M9AConfig]
+M9AConfigInput = ConfigInput[_config_models.M9AConfig]
+M9AUserConfig = ConfigPayload[_config_models.M9AUserConfig]
+M9AUserConfigInput = ConfigInput[_config_models.M9AUserConfig]
+MSSConfig = ConfigPayload[_config_models.MSSConfig]
+MSSConfigInput = ConfigInput[_config_models.MSSConfig]
+MSSUserConfig = ConfigPayload[_config_models.MSSUserConfig]
+MSSUserConfigInput = ConfigInput[_config_models.MSSUserConfig]
+MaaConfig = ConfigPayload[_config_models.MaaConfig]
+MaaConfigInput = ConfigInput[_config_models.MaaConfig]
+MaaEndConfig = ConfigPayload[_config_models.MaaEndConfig]
+MaaEndConfigInput = ConfigInput[_config_models.MaaEndConfig]
+MaaEndUserConfig = ConfigPayload[_config_models.MaaEndUserConfig]
+MaaEndUserConfigInput = ConfigInput[_config_models.MaaEndUserConfig]
+MaaFWConfig = ConfigPayload[_config_models.MaaFWConfig]
+MaaFWConfigInput = ConfigInput[_config_models.MaaFWConfig]
+MaaFWUserConfig = ConfigPayload[_config_models.MaaFWUserConfig]
+MaaFWUserConfigInput = ConfigInput[_config_models.MaaFWUserConfig]
+MaaUserConfig = ConfigPayload[_config_models.MaaUserConfig]
+MaaUserConfigInput = ConfigInput[_config_models.MaaUserConfig]
+OkNteConfig = ConfigPayload[_config_models.OkNteConfig]
+OkNteConfigInput = ConfigInput[_config_models.OkNteConfig]
+OkNteUserConfig = ConfigPayload[_config_models.OkNteUserConfig]
+OkNteUserConfigInput = ConfigInput[_config_models.OkNteUserConfig]
+OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
+OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
+OkwwUserConfig = ConfigPayload[_config_models.OkwwUserConfig]
+OkwwUserConfigInput = ConfigInput[_config_models.OkwwUserConfig]
+SrcConfig = ConfigPayload[_config_models.SrcConfig]
+SrcConfigInput = ConfigInput[_config_models.SrcConfig]
+SrcUserConfig = ConfigPayload[_config_models.SrcUserConfig]
+SrcUserConfigInput = ConfigInput[_config_models.SrcUserConfig]
+Webhook = ConfigPayload[_config_models.Webhook]
+WebhookInput = ConfigInput[_config_models.Webhook]
+WebhookGetOut = SharedWebhookGetOut[Webhook]
+WebhookCreateOut = SharedWebhookCreateOut[Webhook]
+WebhookUpdateIn = SharedWebhookUpdateIn[WebhookInput]
+
+WhimboxConfig = ConfigPayload[_config_models.WhimboxConfig]
+WhimboxConfigInput = ConfigInput[_config_models.WhimboxConfig]
+WhimboxUserConfig = ConfigPayload[_config_models.WhimboxUserConfig]
+WhimboxUserConfigInput = ConfigInput[_config_models.WhimboxUserConfig]
+ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
+ZzzOdConfigInput = ConfigInput[_config_models.ZzzOdConfig]
+ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
+ZzzOdUserConfigInput = ConfigInput[_config_models.ZzzOdUserConfig]
+
+
+class CultivatePreviewIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    userId: str = Field(..., description="用户ID")
+    targets: str = Field(
+        ..., description="养成目标 JSON（与 Task.CultivateTargets 同构）"
+    )
+
+
+class CultivatePreviewItem(BaseModel):
+    itemId: str = Field(..., description="物品ID")
+    name: str = Field(..., description="物品名称")
+    count: int = Field(..., description="需求数量（保有量目标）")
+    stage: Optional[str] = Field(
+        default=None, description="推荐关卡；刷取计划条目有值，材料需求/不可获取类为空"
+    )
+    expectedSanity: Optional[float] = Field(
+        default=None,
+        description="刷取该条目到保有量目标的期望理智；固定产出关不可估算，为空",
+    )
+
+
+class CultivateOperatorProgression(BaseModel):
+    """单个目标干员的当前练度（编辑器"当前等级 → 目标等级"展示用）。"""
+
+    operatorId: str = Field(..., description="干员 ID")
+    source: str = Field(
+        ..., description="练度来源（skland/local/manual）；default 表示无实测数据"
+    )
+    elite: int = Field(..., description="当前精英化阶段 0-2")
+    level: int = Field(..., description="当前干员等级")
+    skillLevel: Optional[int] = Field(
+        default=None, description="当前普通技能等级 1-7；未观测时为空"
+    )
+    masteries: Dict[str, int] = Field(
+        default_factory=dict, description="当前专精等级（skillId → 0-3）"
+    )
+    modules: Dict[str, int] = Field(
+        default_factory=dict, description="当前模组等级（uniEquipId → 0-3）"
+    )
+
+
+class CultivatePreviewOut(OutBase):
+    stages: List[CultivatePreviewItem] = Field(
+        ..., description="刷取计划（按推荐关执行的材料条目）"
+    )
+    demands: List[CultivatePreviewItem] = Field(
+        ..., description="全量材料需求（已含合成折算）"
+    )
+    unobtainable: List[CultivatePreviewItem] = Field(
+        ..., description="不可获取材料（需游戏内另行获取）"
+    )
+    totalExpectedSanity: Optional[float] = Field(
+        default=None,
+        description="可估算刷取条目的期望理智合计（不含固定产出关）；无可估算条目时为空",
+    )
+    hasProgression: bool = Field(
+        ..., description="练度数据是否可用（本地识别档案或森空岛快照）"
+    )
+    progressions: List[CultivateOperatorProgression] = Field(
+        default_factory=list,
+        description="目标干员当前练度；source=default 表示无实测数据（按 0 估算）",
+    )
+    hasInventory: bool = Field(..., description="是否存在仓库识别档案")
+
+
+class MssDefenseStatusIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MSS 脚本 ID")
+    userId: str = Field(..., min_length=1, description="用户 ID")
+
+
+class MssDefenseStatusData(BaseModel):
+    """个人版「灾变防线」这一期的状态：用户页拿它显示「本期未打 / 已打」。"""
+
+    enabled: bool = Field(
+        default=False,
+        description="个人版总开关（Function.IfPersonalMss）开着吗；没开时用户页连这一块都不渲染",
+    )
+    period: str = Field(
+        default="", description="当前这一期的开始时刻；取不到官网公告时为空"
+    )
+    known: bool = Field(
+        default=False, description="这一期认得出来吗（取不到官网公告时为 false）"
+    )
+    done: bool = Field(default=False, description="这一期已经打过")
+    armed: bool = Field(default=False, description="已经排进队列、在等这一轮的结果")
+    failedDays: List[str] = Field(
+        default_factory=list, description="这一期编排过但没跑成的日子"
+    )
+    givenUp: bool = Field(default=False, description="失败日攒够了，这一期不再自动编排")
+
+
+class MssDefenseStatusOut(OutBase):
+    data: MssDefenseStatusData = Field(default_factory=MssDefenseStatusData)
+
+
+class MaaDepotInventoryOut(OutBase):
+    data: List[ComboBoxItem] = Field(
+        ..., description="库存选项（label=数量字符串，value=物品ID）"
+    )
+    recognizedAt: Optional[str] = Field(
+        None, description="最近识别时间（本地 ISO 格式）；无法确定识别时间时为 None"
+    )
+
+
+class MaaCultivateGoalOptionItem(BaseModel):
+    value: str = Field(..., description="目标 ID（专精=skillId，模组=uniEquipId）")
+    label: str = Field(..., description="目标名称（模组带分支码）")
+    maxLevel: int = Field(default=0, description="可达档位上限（按非空消耗档数）")
+    skillIndex: Optional[int] = Field(
+        default=None, description="技能原始序号；模组为空"
+    )
+
+
+class MaaCultivateOperatorOptionItem(BaseModel):
+    value: str = Field(..., description="干员 ID")
+    label: str = Field(..., description="干员名")
+    rarity: int = Field(default=0, description="稀有度")
+    profession: str = Field(default="", description="职业")
+    maxElite: int = Field(
+        default=0, description="精英化可达档位上限（1/2/3★ 与上游缺数据者恒 0）"
+    )
+    maxSkillLevel: int = Field(
+        default=0, description="普通技能可达等级上限；0 表示无消耗数据"
+    )
+    dataMissing: bool = Field(
+        default=False,
+        description="有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）",
+    )
+    skills: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="专精目标选项（value=skillId，label=技能名）",
+    )
+    modules: List[MaaCultivateGoalOptionItem] = Field(
+        default_factory=list,
+        description="模组目标选项（value=uniEquipId，label=模组名（分支））",
+    )
+
+
+class MaaCultivateOperatorsOut(OutBase):
+    data: List[MaaCultivateOperatorOptionItem] = Field(
+        default_factory=list, description="干员目录（含目标编辑用名称目录）"
+    )
+
+
+class MaaCultivateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    content: str = Field(..., description="明日方舟工具箱导出至 MAA 的养成目标 JSON")
+
+
+class MaaCultivateImportSkippedItem(BaseModel):
+    error: Literal[
+        "format",
+        "empty",
+        "operator",
+        "ambiguous",
+        "elite",
+        "skill",
+        "mastery",
+        "unsupported",
+    ] = Field(..., description="可本地化的导入错误类型")
+    index: int = Field(..., description="跳过条目的序号，从 1 开始")
+    name: str = Field(default="", description="跳过条目的干员名称")
+
+
+class MaaCultivateImportOut(MaaCultivateOperatorsOut):
+    targets: str = Field(default="[]", description="转换后的现有养成目标 JSON，不落库")
+    skipped: List[MaaCultivateImportSkippedItem] = Field(
+        default_factory=list, description="无法导入而跳过的条目，不影响其余目标"
+    )
+    error: Optional[str] = Field(default=None, description="可本地化的导入错误类型")
+    index: Optional[int] = Field(default=None, description="出错条目的序号，从 1 开始")
+    name: str = Field(default="", description="出错条目的干员名称")
+
+
+class BetterGICustomGroupOut(BaseModel):
+    """BetterGI 一条龙自定义配置组（非内置 8 组）"""
+
+    name: str = Field(..., description="配置组名称")
+    enabled: bool = Field(..., description="启用状态")
+
+
+class BetterGICustomGroupsOut(OutBase):
+    data: List[BetterGICustomGroupOut] = Field(
+        default_factory=list, description="一条龙自定义配置组列表"
+    )
+
+
+class BetterGIOneDragonSettingsOut(OutBase):
+    """BetterGI 一条龙设置项（右栏按任务分组展示/编辑）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="一条龙设置项键值（camelCase，与 BGI 一条龙 JSON 顶层一致）",
+    )
+
+
+class BetterGIOneDragonSettingsIn(BaseModel):
+    """BetterGI 一条龙设置项写入请求"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    configName: str = Field(..., description="一条龙配置名")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的内置任务组名（战斗4项 Plan 路由用；空或非战斗组时不做 Plan 路由）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的设置项（camelCase 键）"
+    )
+
+
+class BetterGIGlobalDomainSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「秘境刷取配置」段（autoDomainConfig/autoArtifactSalvageConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "秘境刷取配置键值（camelCase 扁平键：specifyResinUse/originalResinUseCount/"
+            "condensedResinUseCount/transientResinUseCount/fragileResinUseCount/"
+            "autoArtifactSalvage/maxArtifactStar/rewardRecognitionEnabled）"
+        ),
+    )
+
+
+class BetterGIGlobalDomainSettingsIn(BaseModel):
+    """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(
+        default="", description="所属用户ID（空=写 BGI 全局实配）"
+    )
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动秘境-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="要覆盖写入的秘境刷取配置键值（camelCase 扁平键）",
+    )
+
+
+class BetterGIGlobalStygianSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「自动幽境危战」段（autoStygianOnslaughtConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "幽境危战设置键值（camelCase 扁平键：bossNum/fightTeamName/strategyName/"
+            "specifyResinUse/originalResinUseCount/condensedResinUseCount/"
+            "transientResinUseCount/fragileResinUseCount/autoArtifactSalvage）"
+        ),
+    )
+
+
+class BetterGIGlobalStygianSettingsIn(BaseModel):
+    """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时原生来源 BGI 全局 config.json）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(
+        default="", description="所属用户ID（空=写 BGI 全局实配）"
+    )
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动幽境危战-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="要覆盖写入的幽境危战设置键值（camelCase 扁平键）",
+    )
+
+
+class BetterGIDomainCatalogItem(BaseModel):
+    """BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json，唯一数据源）"""
+
+    name: str = Field(
+        ..., description="秘境名称（与 BGI 传送点/每周秘境 DomainName 一致）"
+    )
+    region: str = Field(default="", description="所在地区")
+    category: str = Field(
+        default="",
+        description="tp.json 的 domain type（BlessDomain/ForgeryDomain/MasteryDomain）",
+    )
+    rewards: List[str] = Field(
+        default_factory=list,
+        description="三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；圣遗物秘境为套装两件）",
+    )
+
+
+class BetterGIDomainCatalogOut(OutBase):
+    """BetterGI 每周秘境秘境候选 + 每秘境三档奖励物"""
+
+    data: List[BetterGIDomainCatalogItem] = Field(
+        default_factory=list, description="秘境目录列表"
+    )
+    source: Optional[str] = Field(
+        default=None, description="数据来源文件绝对路径（缺省为空）"
+    )
+
+
+class BetterGIScriptGroupDetailOut(OutBase):
+    """BetterGI 配置组 json 详情（per-user 副本 → BGI 实配）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="配置组 json 内容（含 name/index/config/projects，projects 为执行顺序）",
+    )
+
+
+class BetterGIScriptGroupSaveIn(BaseModel):
+    """BetterGI 配置组 json 写入请求（保存到 per-user 副本，不触碰 BGI 同名实配）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    name: str = Field(..., description="配置组名（文件名）")
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="要保存的完整配置组 json（projects 数组为新顺序与各项目设置）",
+    )
+
+
+class BetterGIScriptSettingsUiOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录 settings.json 的 UI 定义（双击项目设置弹窗渲染用）"""
+
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="settings.json UI 定义数组（name/type/label/options/default）",
+    )
+
+
+class BetterGIScriptReadmeOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录的 README 内容（双击弹窗「脚本说明」标签展示用）"""
+
+    data: str = Field(default="", description="README 纯文本内容（缺失时为空字符串）")
+
+
+class BetterGIPathingNode(BaseModel):
+    """BetterGI AutoPathing 目录树节点"""
+
+    name: str = Field(..., description="目录名")
+    dirs: List["BetterGIPathingNode"] = Field(
+        default_factory=list, description="子目录"
+    )
+    files: List[str] = Field(
+        default_factory=list, description="该目录下路径文件名(不含 .json)"
+    )
+
+
+class BetterGIPathingTreeOut(OutBase):
+    """BetterGI 地图追踪目录树（{RootPath}/User/AutoPathing 的递归结构）"""
+
+    root: Optional[str] = Field(default=None, description="AutoPathing 绝对目录")
+    dirs: List[BetterGIPathingNode] = Field(
+        default_factory=list, description="顶层目录树"
+    )
+
+
+class BetterGIScriptDirsOut(OutBase):
+    """BetterGI 常用目录与可执行文件绝对路径"""
+
+    repoDir: Optional[str] = Field(default=None, description="脚本仓库检出目录")
+    jsScriptDir: Optional[str] = Field(default=None, description="JS 脚本目录")
+    autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
+    oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
+    scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    keyMouseScriptDir: Optional[str] = Field(
+        default=None, description="键鼠脚本（录制）目录"
+    )
+    autoFightDir: Optional[str] = Field(
+        default=None,
+        description="自动战斗策略目录（User/AutoFight，*.txt / *.json 各算一份策略）",
+    )
+    exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
+
+
+class ZzzOdInstanceOut(BaseModel):
+    """zzz-od 实例（账号）信息"""
+
+    idx: int = Field(..., description="实例下标（config/{idx:02d} 目录）")
+    name: str = Field(..., description="实例名称")
+    active: bool = Field(..., description="是否为当前活跃实例")
+    active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
+    force_login_before_run: bool = Field(
+        default=False,
+        description="运行前切换账号（一条龙原生能力：运行到该实例前强制登录其账号）",
+    )
+
+
+class ZzzOdInstancesOut(OutBase):
+    data: List[ZzzOdInstanceOut] = Field(..., description="实例列表")
+
+
+class ZzzOdInstanceAddIn(BaseModel):
+    """直控：新建一条龙实例（分配最小空闲槽并注册）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    name: str = Field(..., description="实例名称（必填，创建后可在重命名中修改）")
+
+
+class ZzzOdInstanceRenameIn(BaseModel):
+    """直控：重命名实例（只改注册表 name，实例目录不变）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    name: str = Field(..., description="新实例名称")
+
+
+class ZzzOdInstanceFlagIn(BaseModel):
+    """直控：切换实例是否参与「全部实例」运行模式（active_in_od）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    activeInOd: bool = Field(..., description="是否参与「全部实例」模式")
+
+
+class ZzzOdInstanceActiveIn(BaseModel):
+    """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+
+
+class ZzzOdInstanceForceLoginIn(BaseModel):
+    """直控：切换实例「运行前切换账号」（一条龙原生能力，MAS 不干涉）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    forceLogin: bool = Field(..., description="是否开启运行前切换账号")
+
+
+class ZzzOdInstanceRunModeIn(BaseModel):
+    """直控：设置运行实例（one_dragon.yml 全局 instance_run，与编辑所选实例无关）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceRun: str = Field(
+        ...,
+        description="运行实例取值（仅运行当前/全部实例；后端白名单校验，非法取值拒绝）",
+    )
+
+
+class ZzzOdInstanceDeleteIn(BaseModel):
+    """直控：删除实例（注册表条目 + 实例目录，受 MAS 绑定槽保护）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+
+
+class ZzzOdSlotOwnerOut(BaseModel):
+    """实例槽的 MAS 归属（哪个脚本的哪个用户占着这个号）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="用户ID（恢复槽时用它指认目标用户）")
+    scriptName: str = Field(..., description="所属脚本名称")
+    userName: str = Field(..., description="用户名称")
+    base: str = Field(
+        ..., description="该用户的 base 来源（shared/independent/native）"
+    )
+
+
+class ZzzOdSlotOut(BaseModel):
+    """实例槽总览行（原生实例 / MAS 绑定槽 / 无主残留）"""
+
+    idx: int = Field(..., description="槽下标（config/{idx:02d}）")
+    kind: Literal["native", "mas", "orphan"] = Field(
+        ...,
+        description="槽类别（native=一条龙原生实例 / mas=有 MAS 用户绑定 / orphan=无主残留）",
+    )
+    has_dir: bool = Field(
+        ..., description="盘上是否已有该槽目录（只配了用户没跑过的槽没有目录）"
+    )
+    size: int = Field(default=0, description="槽目录占用字节数（无目录为 0）")
+    owners: List[ZzzOdSlotOwnerOut] = Field(
+        default_factory=list, description="绑定该槽的 MAS 用户（可为多个脚本）"
+    )
+
+
+class ZzzOdSlotsOut(OutBase):
+    data: List[ZzzOdSlotOut] = Field(..., description="实例槽总览")
+
+
+class ZzzOdSlotCleanIn(BaseModel):
+    """手动清理无主实例槽（先归档进回收池再删目录）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdSlotCleanOut(OutBase):
+    data: List[int] = Field(..., description="实际回收的槽下标")
+
+
+class ZzzOdRecycleEntryOut(BaseModel):
+    """回收池条目（槽内容或该槽 MAS 备份池的一份快照）"""
+
+    slot: int = Field(..., description="槽下标")
+    kind: Literal["slot", "mas"] = Field(
+        ..., description="条目类别（slot=槽目录快照 / mas=MAS 备份池快照）"
+    )
+    ts: str = Field(..., description="快照时间戳（归档目录名）")
+    files: int = Field(..., description="快照内文件数")
+    size: int = Field(..., description="快照占用字节数")
+    path: str = Field(..., description="归档目录的绝对路径（可在文件管理器打开）")
+
+
+class ZzzOdRecycleOut(OutBase):
+    data: List[ZzzOdRecycleEntryOut] = Field(..., description="回收池条目")
+
+
+class ZzzOdRecycleClearIn(BaseModel):
+    """清空实例槽回收池（只清 recycle 池，不碰配置恢复池）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ZzzOdRecycleClearOut(OutBase):
+    data: int = Field(..., description="删除的条目数")
+
+
+class ZzzOdRecycleRestoreIn(BaseModel):
+    """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    slot: int = Field(..., description="快照所属槽下标（回收条目的槽号）")
+    ts: str = Field(..., description="快照时间戳")
+    targetUser: str | None = Field(
+        default=None, description="恢复给该用户的绑定槽（现有用户 uid）"
+    )
+    newUserName: str | None = Field(
+        default=None, description="新建一个用户并把内容恢复到它的槽（用户名称）"
+    )
+
+
+class ZzzOdCatalogItemOut(BaseModel):
+    """一条龙任务目录项（静态解析应用注册信息）"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    default_group: bool = Field(..., description="是否为 zzz-od 默认一条龙任务")
+    configurable: bool = Field(
+        default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
+    )
+    jump: bool = Field(
+        default=False,
+        description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）",
+    )
+    priority: int = Field(..., description="原生排序权重（小者在前）")
+
+
+class ZzzOdCatalogOut(OutBase):
+    data: List[ZzzOdCatalogItemOut] = Field(..., description="任务目录")
+
+
+class ZzzOdAppConfigFieldOut(BaseModel):
+    """任务级配置字段（元数据 + 当前值）
+
+    type 决定前端渲染方式：select 下拉 / bool 开关 / number 数字 /
+    plan_list 计划列表（columns 行内字段元数据 + newItem 新增行默认值）。
+    """
+
+    field: str = Field(..., description="配置字段名（app yml 中的键）")
+    title: str = Field(..., description="展示标题")
+    type: str = Field(
+        default="select", description="字段类型：select/bool/number/team/plan_list"
+    )
+    value: Optional[Any] = Field(
+        default=None, description="当前值（plan_list 为计划列表）"
+    )
+    options: List[ComboBoxItem] = Field(default_factory=list, description="可选项列表")
+    columns: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="plan_list 行内字段元数据（field/title/type/options/showWhen；showWhen 为条件 dict 或条件列表，条件含 not 取反）",
+    )
+    newItem: Optional[Dict[str, Any]] = Field(
+        default=None, description="plan_list 新增行的默认值"
+    )
+
+
+class ZzzOdAppConfigOut(OutBase):
+    appId: str = Field(..., description="应用ID")
+    fields: List[ZzzOdAppConfigFieldOut] = Field(..., description="配置字段列表")
+
+
+class ZzzOdMissionNameOut(BaseModel):
+    """副本字典关卡项"""
+
+    name: str = Field(..., description="关卡名（配置取值）")
+    display: str = Field(..., description="关卡展示名")
+
+
+class ZzzOdMissionTypeOut(BaseModel):
+    """副本字典类型项"""
+
+    name: str = Field(..., description="类型名（配置取值）")
+    display: str = Field(..., description="类型展示名")
+    missions: List[ZzzOdMissionNameOut] = Field(
+        default_factory=list, description="关卡列表"
+    )
+
+
+class ZzzOdTrainCategoryOut(BaseModel):
+    """「训练」tab 副本分类（体力刷本/恶名狩猎级联选项）"""
+
+    name: str = Field(..., description="分类名（配置取值）")
+    label: str = Field(..., description="分类展示名")
+    mission_types: List[ZzzOdMissionTypeOut] = Field(
+        default_factory=list, description="类型列表"
+    )
+
+
+class ZzzOdTaskOptionsOut(OutBase):
+    """任务计划的动态选项（静态读取安装目录，与一条龙原生 GUI 同源）"""
+
+    appId: str = Field(..., description="应用ID")
+    trainCategories: List[ZzzOdTrainCategoryOut] = Field(
+        default_factory=list, description="「训练」tab 副本级联树"
+    )
+    lostVoidMissions: List[str] = Field(
+        default_factory=list, description="迷失之地图层列表"
+    )
+    autoBattle: List[ComboBoxItem] = Field(
+        default_factory=list, description="配队方案选项"
+    )
+    challenge: List[ComboBoxItem] = Field(
+        default_factory=list, description="迷失之地挑战配置选项"
+    )
+
+
+class ZzzOdAppConfigSaveIn(BaseModel):
+    """保存任务级配置（字段白名单校验后写入绑定槽；直控可指定原生实例）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    appId: str = Field(..., description="应用ID")
+    values: Dict[str, Any] = Field(
+        ..., description="字段名 → 值（plan_list 为计划列表）"
+    )
+    instanceIdx: Optional[int] = Field(
+        default=None,
+        description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
+    )
+
+
+class ZzzOdTeamItemOut(BaseModel):
+    """预备编队条目（team.yml；成员为游戏内识别结果，MAS 不编辑）"""
+
+    idx: int = Field(..., description="编队在列表中的下标")
+    name: str = Field(..., description="编队名称（与游戏内编队名一致）")
+    autoBattle: str = Field(..., description="绑定的配队方案（自动战斗配置名）")
+    agents: List[str] = Field(default_factory=list, description="成员代理人ID列表")
+
+
+class ZzzOdTeamsOut(OutBase):
+    """预备编队列表 + 配队方案/代理人选项"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表（固定 20 个）")
+    autoBattle: List[ComboBoxItem] = Field(..., description="配队方案选项")
+    agentOptions: List[ComboBoxItem] = Field(
+        default_factory=list, description="代理人选项（label=名称，value=agent_id）"
+    )
+
+
+class ZzzOdTeamsSaveIn(BaseModel):
+    """整表保存预备编队（名称 + 绑定配队方案 + 成员 agent_id_list）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    teams: List[Dict[str, Any]] = Field(
+        ..., description="编队列表（name/autoBattle/agent_id_list）"
+    )
+    instanceIdx: Optional[int] = Field(
+        default=None,
+        description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
+    )
+
+
+class ZzzOdTeamsSaveOut(OutBase):
+    """保存后的编队列表"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表")
+
+
+class ConfigBackupItemOut(BaseModel):
+    """配置备份条目"""
+
+    time: str = Field(..., description="备份时间戳（目录名，如 20260910-104500）")
+    base: Optional[str] = Field(
+        default=None,
+        description="备份时点的 base 来源（shared/independent/native）；无标注（旧版备份或未声明来源）为 null",
+    )
+
+
+class ConfigBackupListOut(OutBase):
+    data: List[ConfigBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+    base: Optional[str] = Field(
+        default=None,
+        description="当前 base 来源（shared/independent/native）；无来源概念（非 base 专项）为 null",
+    )
+
+
+class ConfigBackupRestoreIn(BaseModel):
+    """把指定备份恢复到目标位置（target 取值由专项池定义）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(
+        ...,
+        description="恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400",
+    )
+    force: bool = Field(
+        default=False,
+        description="源配置损坏时是否强制恢复（False 时返回 409 由前端二次确认，True 跳过损坏文件相关的保护步骤）",
+    )
+
+
+class ConfigBackupRestoreOut(OutBase):
+    target: str = Field(..., description="实际执行的恢复目标")
+
+
+class ConfigBackupEnsureIn(BaseModel):
+    """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    target: str = Field(..., description="归档目标（取值由专项池定义）")
+
+
+class ConfigBackupEnsureOut(OutBase):
+    created: bool = Field(
+        ..., description="本次是否新建了归档（False=指纹无变化跳过或无可归档内容）"
+    )
+    time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
+
+
+class ConfigBackupPreviewOut(OutBase):
+    """备份配置摘要（预览用，纯读不恢复；载荷结构由专项定义）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    data: dict = Field(
+        ...,
+        description="专项预览载荷（如 zzz-od 的 info/account/tasks/instances 或 ok-nte 的 files）",
+    )
+
+
+class ConfigBackupFileOut(OutBase):
+    """备份内文本文件内容（只读；路径限归档内相对路径，防穿越）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: str = Field(..., description="备份类别")
+    path: str = Field(..., description="归档内相对路径（如 M7A/config.yaml）")
+    size: int = Field(..., description="文件字节数")
+    content: str = Field(
+        ...,
+        description="文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）",
+    )
+
+
+class ZzzOdNativeAccountField(BaseModel):
+    """直控编辑的账号字段（强绑定 zzz-od 原生 game_account.yml）。"""
+
+    key: str = Field(..., description="game_account.yml 字段名")
+    title: str = Field(..., description="展示标题")
+    value: Optional[str] = Field(default=None, description="当前值（读自实例原生配置）")
+    options: List[ComboBoxItem] = Field(
+        default_factory=list, description="可选项列表（空=自由输入）"
+    )
+
+
+class ZzzOdNativeLaunchArgs(BaseModel):
+    """直控编辑的一条龙游戏启动参数（强绑定 zzz-od 原生 game.yml）。"""
+
+    launch_argument: bool = Field(
+        ..., description="启动参数总开关（关闭时一条龙启动游戏不带任何参数）"
+    )
+    screen_size: Literal["1920x1080", "2560x1440", "3840x2160"] = Field(
+        ..., description="窗口尺寸"
+    )
+    full_screen: Literal["0", "1"] = Field(..., description="全屏模式：0=窗口化 1=全屏")
+    popup_window: bool = Field(..., description="无边框窗口（-popupwindow）")
+    dx12: bool = Field(
+        ..., description="DX12 启动（写回时把 -use-d3d12 合并进高级参数）"
+    )
+    monitor: Literal["1", "2", "3", "4"] = Field(..., description="显示器序号")
+    launch_argument_advance: str = Field(
+        ..., description="高级参数（原样透传给一条龙拼接，上游不解析）"
+    )
+
+
+class ZzzOdNativeTaskOut(BaseModel):
+    """原生来源任务编排条目（原生 app_list 与目录合并后的可选项）。"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    enabled: bool = Field(..., description="是否启用（原生编排状态）")
+    default_group: bool = Field(..., description="是否为 zzz-od 默认一条龙任务")
+    configurable: bool = Field(
+        default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
+    )
+    jump: bool = Field(
+        default=False,
+        description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）",
+    )
+    priority: int = Field(..., description="原生排序权重（小者在前）")
+
+
+class ZzzOdNativeConfigOut(OutBase):
+    """直控模式：所选实例的完整原生配置（账号字段 + 任务编排 + 运行实例）。"""
+
+    instanceIdx: int = Field(..., description="当前选择的实例下标")
+    instanceName: str = Field(..., description="实例名称")
+    account: List[ZzzOdNativeAccountField] = Field(
+        ..., description="账号配置字段（game_account.yml）"
+    )
+    tasks: List[ZzzOdNativeTaskOut] = Field(
+        ..., description="任务编排（app_id/enabled/顺序，与目录合并后的可选项）"
+    )
+    instanceRun: str = Field(
+        ...,
+        description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）",
+    )
+    afterDone: str = Field(
+        ...,
+        description="游戏结束后操作（one_dragon.yml after_done 原值：无/关闭游戏/关机）",
+    )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（game.yml，缺失字段合并上游默认值）"
+    )
+
+
+class ZzzOdNativeTaskIn(BaseModel):
+    """原生来源任务编排条目（保存用：app_id + 启用状态）。"""
+
+    app_id: str = Field(..., description="应用ID")
+    enabled: bool = Field(..., description="是否启用")
+
+
+class ZzzOdNativeConfigIn(BaseModel):
+    """直控模式：保存所选实例的原生配置（可选增量，缺省字段不写回）。"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标（写入其原生配置）")
+    account: Optional[Dict[str, str]] = Field(
+        default=None, description="账号字段名 → 值（白名单过滤；缺省不写回）"
+    )
+    tasks: Optional[List[ZzzOdNativeTaskIn]] = Field(
+        default=None,
+        description="任务编排（顺序即执行顺序；缺省不写回）",
+    )
+    instanceRun: Optional[str] = Field(
+        default=None,
+        description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    afterDone: Optional[str] = Field(
+        default=None,
+        description="游戏结束后操作（无/关闭游戏/关机，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+    launchArgs: Optional[ZzzOdNativeLaunchArgs] = Field(
+        default=None, description="游戏启动参数（缺省不写回）"
+    )
+
+
+class ZzzOdLauncherOut(OutBase):
+    """ZZZ-OD 启动器可用性（独立配置侧切换原始/集成启动器用）"""
+
+    original_available: bool = Field(
+        ..., description="原始启动器（OneDragon-Launcher.exe）是否已安装"
+    )
+    integrated_available: bool = Field(
+        ..., description="集成启动器（OneDragon-RuntimeLauncher.exe）是否已安装"
+    )
+
+
+class ZzzOdImportIn(BaseModel):
+    """基于一条龙已有实例快速生成当前用户配置（覆盖本用户账号与任务编排）。"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID（独立的用户级配置）")
+    instanceIdx: int = Field(
+        ..., description="来源母版实例下标（读取该实例的账号信息与已启用任务编排）"
+    )
+
+
+class ZzzOdImportOut(OutBase):
+    """导入结果：来源实例的账号字段与已启用任务编排已写入本用户，前端随后重新拉取用户数据。"""
+
+    instanceIdx: int = Field(..., description="来源实例下标（失败为 -1）")
+    instanceName: str = Field(..., description="来源实例名称")
+    importedAccountCount: int = Field(
+        ..., description="本次回填的账号字段数（仅非空值）"
+    )
+    importedTaskCount: int = Field(..., description="本次导入的已启用任务数")
+    slot: int = Field(
+        ..., description="用户绑定槽 idx（未绑定时 -1，此时无槽内容可备份）"
+    )
+
+
+class MaaEndEssenceTargetGroup(BaseModel):
+    value: str = Field(..., description="武器类型标识")
+    label: str = Field(..., description="武器类型展示名")
+    options: List[ComboBoxItem] = Field(..., description="该类型可选武器")
+
+
+class MaaEndAutoCollectGroup(BaseModel):
+    value: str = Field(..., description="上游路线选项名")
+    label: str = Field(..., description="采集分类展示名")
+    region: str = Field(..., description="上游地区开关名，旧版为空")
+    regionLabel: str = Field(..., description="地区展示名")
+    configKey: Literal["AutoCollectRoutes", "AutoCollectCommonRoutes"] = Field(
+        ..., description="用户路线配置字段"
+    )
+    options: List[ComboBoxItem] = Field(..., description="该分类的动态路线")
+    defaultCases: list[str] = Field(..., description="上游默认路线")
+
+
+class MaaEndLauncherPathOut(OutBase):
+    """MaaEnd 启动器路径识别结果（供前端自动识别与落盘）"""
+
+    launcher_path: str = Field(
+        ..., description="由游戏客户端路径识别到的启动器 Launcher.exe 完整路径"
+    )
+
+
+class MaaEndOptionsOut(OutBase):
+    launchGameControllers: list[str] = Field(
+        default_factory=list, description="支持 MaaEnd 原生启动的控制器"
+    )
+    gameSettingControllers: list[str] = Field(
+        default_factory=list, description="支持独立游戏显示设置的控制器"
+    )
+    projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
+    projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
+    autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
+        default_factory=list, description="MaaEnd 自动采集地区与分类"
+    )
+    originalResolution: Optional[str] = Field(
+        default=None, description="从游戏 Unity 注册表读取的原始分辨率"
+    )
+    originalDisplayType: Optional[Literal["Window", "Fullscreen"]] = Field(
+        default=None, description="从游戏注册表读取的原始显示模式"
+    )
+    controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
+    controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
+    essenceLocations: List[ComboBoxItem] = Field(
+        ..., description="MaaEnd 基质刷取地点选项"
+    )
+    essenceMenus: List[ComboBoxItem] = Field(..., description="MaaEnd 基质刷取模式选项")
+    essenceTargetWeaponGroups: List[MaaEndEssenceTargetGroup] = Field(
+        ..., description="MaaEnd 基质目标武器分组"
+    )
+
+
+class ScriptIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal[
+        "MaaConfig",
+        "GeneralConfig",
+        "OkwwConfig",
+        "OkNteConfig",
+        "SrcConfig",
+        "MaaEndConfig",
+        "M9AConfig",
+        "MaaFWConfig",
+        "HSRConfig",
+        "BetterGIConfig",
+        "ZzzOdConfig",
+        "BAAHConfig",
+        "WhimboxConfig",
+        "MSSConfig",
+    ] = Field(..., description="配置类型")
+
+    activityGame: str | None = Field(
+        default=None, description="对应的游戏活动标识，无游戏归属时为空"
+    )
+
+
+class UserIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal[
+        "MaaUserConfig",
+        "GeneralUserConfig",
+        "OkwwUserConfig",
+        "OkNteUserConfig",
+        "SrcUserConfig",
+        "MaaEndUserConfig",
+        "M9AUserConfig",
+        "MaaFWUserConfig",
+        "HSRUserConfig",
+        "BetterGIUserConfig",
+        "ZzzOdUserConfig",
+        "BAAHUserConfig",
+        "WhimboxUserConfig",
+        "MSSUserConfig",
+    ] = Field(..., description="配置类型")
+
+
+class BetterGIGameInfoOut(OutBase):
+    """BetterGI 游戏客户端信息（用户页透传展示）"""
+
+    installPath: Optional[str] = Field(
+        default=None, description="生效游戏路径（用户级优先，否则 BGI 全局配置）"
+    )
+    globalPath: Optional[str] = Field(
+        default=None, description="BetterGI 全局配置的游戏路径原值"
+    )
+    channel: Optional[Literal["官服", "B服", "国际服"]] = Field(
+        default=None, description="识别到的客户端渠道，无法识别为 null"
+    )
+    source: Optional[Literal["用户", "全局"]] = Field(
+        default=None, description="生效路径来源"
+    )
+
+
+class OkwwClientPathOut(OutBase):
+    """OK-WW 客户端路径解码结果（仅用于前端展示）"""
+
+    client_path: str = Field(..., description="解码得到的鸣潮客户端 exe 完整路径")
+
+
+class WhimboxTaskCatalogItem(BaseModel):
+    """任务目录条目：一条龙步骤开关（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+
+
+class WhimboxOptionCatalogItem(BaseModel):
+    """任务目录条目：一条龙目标/参数字段（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+    field_type: str = Field(
+        default=..., description="控件类型：bool/int/select/multi_select/text"
+    )
+    options: List[str] = Field(default_factory=list, description="值域候选")
+    default: Optional[Union[bool, int, float, str, List[str]]] = Field(
+        default=None, description="上游模板默认值（布尔语义已归一为 bool）"
+    )
+
+
+class WhimboxTaskCatalogData(BaseModel):
+    """任务目录数据：步骤开关 + 参数字段 + 上游版本提示"""
+
+    steps: List[WhimboxTaskCatalogItem] = Field(
+        default_factory=list, description="一条龙步骤开关（键集与顺序来自上游模板）"
+    )
+    options: List[WhimboxOptionCatalogItem] = Field(
+        default_factory=list, description="一条龙目标/参数字段"
+    )
+    upstream_version: str = Field(default="", description="奇想盒后端版本（dist-info）")
+
+
+class WhimboxTaskCatalogOut(OutBase):
+    """任务目录响应"""
+
+    data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
+
+
+class HSRStageOptionsOut(OutBase):
+    data: Optional[HSRStageOptionsData] = Field(
+        default=None, description="HSR 体力副本动态选项"
+    )
+
+
+class HSRCapabilitiesOut(OutBase):
+    data: Optional[HSRCapabilitiesData] = Field(default=None, description="HSR 能力")
+
+
+class HSRUpdateIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    engine: Literal["M7A", "SRA"] = Field(..., description="要操作的外部脚本引擎")
+    action: Literal["check", "apply"] = Field(
+        default="check", description="check 只查版本；apply 查完就装"
+    )
+
+
+class HSRUpdateOut(OutBase):
+    data: Optional[HSRUpdateData] = Field(default=None, description="更新结果")
+
+
+class HSRCloudLoginIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    userId: str = Field(..., description="要登录云·星穹铁道的用户 ID")
+
+
+class HSRCloudLoginOut(OutBase):
+    data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
+
+
+class HSRManagedConfigOut(OutBase):
+    data: Optional[HSRManagedConfigData] = Field(default=None, description="托管配置")
+
+
+class HSRSRAProfilesOut(OutBase):
+    data: Optional[HSRSRAProfilesData] = Field(
+        default=None, description="SRA 配置档案列表"
+    )
+
+
+class MaaFWInterfacePreviewIn(BaseModel):
+    path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="给了脚本 ID 就按脚本解析有效根（内嵌副本优先），忽略 path",
+    )
+
+
+class MaaFWGamePackageIn(BaseModel):
+    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+    resource: str = Field(..., description="要按哪个 resource 的 pipeline 推断包名")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="MaaFW 脚本 ID；给出时按脚本解析有效根（内嵌脚本读副本），path 只兜底",
+    )
+
+
+class MaaFWGamePackageOut(OutBase):
+    data: Optional[MaaFWGamePackageData] = Field(
+        default=None, description="包名推断结果"
+    )
+
+
+class MaaFWInterfacePreviewOut(OutBase):
+    data: Optional[MaaFWInterfacePreviewData] = Field(
+        default=None, description="MaaFW interface 预览数据"
+    )
+
+
+class MaaFWEmbeddedIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+
+
+class MaaFWEmbeddedReimportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    sourcePath: str = Field(
+        ..., min_length=1, description="新的来源目录，会写入 Info.Path"
+    )
+
+
+class MaaFWEmbeddedCloneIn(BaseModel):
+    scriptId: str = Field(
+        ..., min_length=1, description="要建副本的 MFW 脚本 ID（新脚本）"
+    )
+    sourceScriptId: str = Field(
+        ...,
+        min_length=1,
+        description="从这个 MFW 脚本的副本克隆（同一项目再建一个脚本）",
+    )
+
+
+class MaaFWEmbeddedSourcesIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="要排除的脚本 ID（给已有脚本列候选时传；新建脚本对话框里还没有脚本，不传）",
+    )
+
+
+class MaaFWEmbeddedSourcesOut(OutBase):
+    data: List[MaaFWEmbeddedSourceItem] = Field(
+        default_factory=list, description="有健康副本的其它 MFW 脚本"
+    )
+
+
+class MaaFWEmbeddedStatusOut(OutBase):
+    data: Optional[MaaFWEmbeddedStatusData] = Field(
+        default=None, description="内嵌状态"
+    )
+
+
+class MaaFWShellInstancesIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    path: Optional[str] = Field(
+        default=None,
+        description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
+    )
+
+
+class MaaFWShellInstancesOut(OutBase):
+    data: List[MaaFWShellInstanceItem] = Field(
+        default_factory=list, description="项目目录里找到的外壳配置实例"
+    )
+
+
+class MaaFWShellInstanceImportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    instanceIds: List[str] = Field(
+        ..., min_length=1, description="要导入的实例 ID，每个建一个用户"
+    )
+
+
+class MaaFWShellInstanceApplyIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    userId: str = Field(..., min_length=1, description="要覆盖任务队列的用户 ID")
+    instanceId: str = Field(..., min_length=1, description="从哪份外壳实例导入")
+    path: Optional[str] = Field(
+        default=None,
+        description="实例从哪个目录列出来的就传哪个（弹窗「选择其他目录」选的）；不传时先来源目录再内嵌副本，与列表同一口径",
+    )
+
+
+class MaaFWShellInstanceImportOut(OutBase):
+    data: List[MaaFWShellInstanceImportItem] = Field(
+        default_factory=list, description="逐个实例的导入结果，顺序同请求"
+    )
+
+
+class MaaFWShellInstanceApplyData(BaseModel):
+    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带实际写进用户配置的任务快照。
+
+    界面直接拿它刷新本地状态，不用再回头拉一次用户配置——那样会把用户还没保存的其它改动
+    一起冲掉。快照与 ``info`` 都是写入漏斗处理之后的样子（特调整理、密码加密），与读用户配置
+    拿到的一致。
+    """
+
+    result: Optional[MaaFWShellInstanceImportItem] = Field(
+        default=None,
+        description="这次覆盖的结果；失败原因在 result.error 里，连结果是空的（找不到用户 / 实例）时为 null",
+    )
+    snapshot: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="实际写进用户配置的任务快照；失败时为空",
+    )
+    info: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="写入时特调一并改掉的用户信息字段（如 M9A 把切换账号收进 Account）；没有为空",
+    )
+
+
+class MaaFWShellInstanceApplyOut(OutBase):
+    data: MaaFWShellInstanceApplyData = Field(
+        default_factory=MaaFWShellInstanceApplyData,
+        description="覆盖结果与任务快照",
+    )
+
+
+class MaaFWProjectUpdateIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    action: Literal["check", "apply"] = Field(
+        default="check",
+        description="check 仅检查是否有新版本；apply 触发实际更新",
+    )
+
+
+class MaaFWProjectUpdateOut(OutBase):
+    data: Optional[MaaFWProjectUpdateData] = Field(
+        default=None, description="MaaFW 项目更新结果"
+    )
+
+
+class MaaFWMirrorCdkIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
+    cdk: str = Field(
+        default="",
+        description="要查询的 Mirror 酱 CDK（编辑页输入框当前值，可能还没落盘）；只走请求体，不进日志",
+    )
+
+
+class MaaFWMirrorCdkOut(OutBase):
+    data: Optional[MaaFWMirrorCdkData] = Field(
+        default=None, description="Mirror 酱 CDK 状态"
+    )
+
+
+class MaaFWAgentEnvPrepareIn(BaseModel):
+    path: str = Field(default="", description="MFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空",
+    )
+    force: bool = Field(
+        default=False,
+        description="忽略指纹缓存强制重新准备，供用户手动重试使用",
+    )
+
+
+class MaaFWAgentEnvPrepareOut(OutBase):
+    data: Optional[MaaFWAgentEnvPrepareData] = Field(
+        default=None, description="MFW 运行环境准备结果"
+    )
+
+
+class ScriptCreateIn(BaseModel):
+    type: Literal[
+        "MAA",
+        "SRC",
+        "General",
+        "Okww",
+        "OkNte",
+        "MaaEnd",
+        "M9A",
+        "MaaFW",
+        "HSR",
+        "BetterGI",
+        "ZzzOd",
+        "BAAH",
+        "Whimbox",
+        "MSS",
+    ] = Field(
+        ...,
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
+    )
+    scriptId: str | None = Field(
+        default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
+    )
+
+
+class ScriptCreateOut(OutBase):
+    scriptId: str = Field(..., description="新创建的脚本ID")
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkNteConfig,
+        MaaEndConfig,
+        M9AConfig,
+        MaaFWConfig,
+        HSRConfig,
+        BetterGIConfig,
+        ZzzOdConfig,
+        BAAHConfig,
+        WhimboxConfig,
+        MSSConfig,
+    ] = Field(..., description="脚本配置数据")
+
+
+class ScriptGetIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None, description="脚本ID, 未携带时表示获取所有脚本数据"
+    )
+
+
+class ScriptGetOut(OutBase):
+    index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
+    data: Dict[
+        str,
+        Union[
+            MaaConfig,
+            SrcConfig,
+            GeneralConfig,
+            OkwwConfig,
+            OkNteConfig,
+            MaaEndConfig,
+            M9AConfig,
+            MaaFWConfig,
+            HSRConfig,
+            BetterGIConfig,
+            ZzzOdConfig,
+            BAAHConfig,
+            WhimboxConfig,
+            MSSConfig,
+        ],
+    ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
+
+
+class ScriptUpdateIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    data: Union[
+        MaaConfigInput,
+        SrcConfigInput,
+        GeneralConfigInput,
+        OkwwConfigInput,
+        OkNteConfigInput,
+        MaaEndConfigInput,
+        M9AConfigInput,
+        MaaFWConfigInput,
+        HSRConfigInput,
+        BetterGIConfigInput,
+        ZzzOdConfigInput,
+        BAAHConfigInput,
+        WhimboxConfigInput,
+        MSSConfigInput,
+    ] = Field(..., description="脚本更新数据")
+
+    @model_validator(mode="before")
+    @classmethod
+    def select_config_contract(cls, value):
+        """按目标配置选输入类型，避免联合类型丢弃其他专项的同组字段。"""
+        if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
+            return value
+        try:
+            target = Config.ScriptConfig[value["scriptId"]]
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return value
+        payload = config_contract(type(target), mode="input").model_validate(
+            value["data"]
+        )
+        return {**value, "data": payload}
+
+
+class ScriptDeleteIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+
+
+class ScriptReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
+
+
+class ScriptShareInspectIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+
+
+class ScriptTemplateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    configKey: str = Field(..., description="配置中心配置标识")
+    versionNo: Optional[int] = Field(
+        default=None, ge=1, description="版本号, 为空表示已发布的最新版本"
+    )
+
+
+class ScriptUploadIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+    description: str = Field(..., min_length=1, max_length=500, description="描述")
+    acknowledged: bool = Field(
+        default=False, description="是否已确认分享前检查出的隐私风险项"
+    )
+
+
+class ShareRiskItem(BaseModel):
+    field: str = Field(..., description="存在风险的配置项")
+    reason: str = Field(..., description="风险说明")
+
+
+class ShareInspectOut(OutBase):
+    risks: List[ShareRiskItem] = Field(
+        default_factory=list, description="分享前检查出的隐私风险项"
+    )
+
+
+class UserInBase(BaseModel):
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ScriptConfigImportIn(UserInBase):
+    userId: Optional[str] = Field(
+        default=None, description="用户ID, 未携带时导入到脚本级配置文件"
+    )
+
+
+class UserConfigDirIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
+class UserConfigDirOut(OutBase):
+    path: Optional[str] = Field(default=None, description="用户配置目录绝对路径")
+
+
+class UserGetIn(UserInBase):
+    userId: Optional[str] = Field(
+        default=None, description="用户ID, 未携带时表示获取所有用户数据"
+    )
+
+
+class UserGetOut(OutBase):
+    index: List[UserIndexItem] = Field(..., description="用户索引列表")
+    data: Dict[
+        str,
+        Union[
+            MaaUserConfig,
+            SrcUserConfig,
+            GeneralUserConfig,
+            OkwwUserConfig,
+            OkNteUserConfig,
+            MaaEndUserConfig,
+            M9AUserConfig,
+            MaaFWUserConfig,
+            HSRUserConfig,
+            BetterGIUserConfig,
+            ZzzOdUserConfig,
+            BAAHUserConfig,
+            WhimboxUserConfig,
+            MSSUserConfig,
+        ],
+    ] = Field(..., description="用户数据字典, key来自于index列表的uid")
+
+
+class UserCreateOut(OutBase):
+    userId: str = Field(..., description="新创建的用户ID")
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        OkNteUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+        MaaFWUserConfig,
+        HSRUserConfig,
+        BetterGIUserConfig,
+        ZzzOdUserConfig,
+        BAAHUserConfig,
+        WhimboxUserConfig,
+        MSSUserConfig,
+    ] = Field(..., description="用户配置数据")
+
+
+class UserUpdateIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+    data: Union[
+        MaaUserConfigInput,
+        SrcUserConfigInput,
+        GeneralUserConfigInput,
+        OkwwUserConfigInput,
+        OkNteUserConfigInput,
+        MaaEndUserConfigInput,
+        M9AUserConfigInput,
+        MaaFWUserConfigInput,
+        HSRUserConfigInput,
+        BetterGIUserConfigInput,
+        ZzzOdUserConfigInput,
+        BAAHUserConfigInput,
+        WhimboxUserConfigInput,
+        MSSUserConfigInput,
+    ] = Field(..., description="用户更新数据")
+
+    @model_validator(mode="before")
+    @classmethod
+    def select_config_contract(cls, value):
+        """按目标配置选输入类型，避免联合类型丢弃其他专项的同组字段。"""
+        if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
+            return value
+        try:
+            target = Config.ScriptConfig[value["scriptId"]].UserData[value["userId"]]
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return value
+        payload = config_contract(type(target), mode="input").model_validate(
+            value["data"]
+        )
+        return {**value, "data": payload}
+
+
+class UserDeleteIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
+class UserReorderIn(UserInBase):
+    indexList: List[str] = Field(..., description="用户ID列表, 按新顺序排列")
+
+
+class UserSetIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+    jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class UserInfrastPlanSelectIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    userId: str = Field(..., description="用户ID")
+    index: int = Field(default=-1, ge=-1, description="基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanSelectOut(OutBase):
+    index: int = Field(..., description="当前基建班次索引（-1=按时段自动）")
+
+
+class UserInfrastPlanComboxItem(BaseModel):
+    label: str = Field(..., description="班次展示名")
+    value: str = Field(..., description="班次索引, 即 MAA PlanSelect 值")
+    period: Optional[str] = Field(default=None, description="时段文本, 无时段为 None")
+
+
+class UserInfrastPlanComboxOut(OutBase):
+    state: Literal["period", "rotate", "mixed", "empty"] = Field(
+        ..., description="排班表时段形态（mixed=时段不一致不可用）"
+    )
+    data: List[UserInfrastPlanComboxItem] = Field(..., description="班次选项")
+
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
@@ -70,6 +1742,14 @@ def _bettergi_user_id(script_config: RuntimeBetterGIConfig, user_id: str):
         script_config.UserData[uuid.UUID(user_id)]
     except KeyError:
         raise ValueError("用户不存在或无权访问该配置")
+
+
+def _bettergi_root(script_config: RuntimeBetterGIConfig) -> Path:
+    """目录选项查询需要已配置的安装目录。"""
+    root = script_config.Info.RootPath
+    if root is None:
+        raise ValueError("请先设置 BetterGI 脚本安装目录")
+    return root
 
 
 def _bettergi_user_config(script_config: RuntimeBetterGIConfig, user_id: str):
@@ -101,7 +1781,7 @@ def _read_combat_from_plan(
     if not mapping:
         return data
     user_config = _bettergi_user_config(script_config, user_id)
-    plan_json = user_config.get("OneDragon", "Plan") or ""
+    plan_json = user_config.OneDragon.Plan or ""
     data.update(
         one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {}
     )
@@ -150,7 +1830,7 @@ def _route_combat_to_plan(
     if not plan_settings and not extra:
         return settings, None
     user_config = _bettergi_user_config(script_config, user_id)
-    plan_json = user_config.get("OneDragon", "Plan") or ""
+    plan_json = user_config.OneDragon.Plan or ""
     new_plan = one_dragon_plan.merge_rightbar_into_plan(
         plan_json, target_group, plan_settings, extra=extra or None
     )
@@ -246,7 +1926,9 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 
     try:
         uid, config = await Config.add_script(script.type, script.scriptId)
-        data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
+        data = SCRIPT_BOOK[type(config).__name__](
+            **config.model_dump(context={"audience": "api"})
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_script失败: {type(e).__name__}: {e}")
         return ScriptCreateOut(
@@ -338,7 +2020,7 @@ async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
         script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
         if not isinstance(script_config, RuntimeOkwwConfig):
             raise TypeError("脚本配置类型错误, 不是 OK-WW 类型")
-        launcher_path = Path(str(script_config.get("Game", "Path") or "").strip())
+        launcher_path = Path(str(script_config.Game.Path or "").strip())
         client_path = resolve_wuthering_waves_process_path(launcher_path)
         return OkwwClientPathOut(
             code=200,
@@ -381,7 +2063,7 @@ async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, RuntimeMaaEndConfig):
             raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
-        client_exe = Path(str(script_config.get("Game", "Path") or "").strip())
+        client_exe = Path(str(script_config.Game.Path or "").strip())
         if not client_exe.is_file():
             raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
         launcher_path = discover_launcher_exe(client_exe)
@@ -673,7 +2355,7 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     try:
         uid, config = await Config.add_user(user.scriptId)
         data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
-            **(await config.toDict())
+            **config.model_dump(context={"audience": "api"})
         )
     except FileNotFoundError as e:
         return UserCreateOut(
@@ -715,8 +2397,8 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
             script_cfg = Config.ScriptConfig[uuid.UUID(user.scriptId)]
             uc = script_cfg.UserData[uuid.UUID(user.userId)]
-            plan = uc.get("OneDragon", "Plan") or ""
-            groups = uc.get("OneDragon", "Groups") or []
+            plan = uc.OneDragon.Plan or ""
+            groups = uc.OneDragon.Groups or []
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
             if new_plan != plan:
                 od["Plan"] = new_plan
@@ -725,7 +2407,7 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             try:
                 from app.task.BetterGI.tools import one_dragon as _od
 
-                _root = Path(str(script_cfg.get("Info", "RootPath"))).expanduser()
+                _root = Path(str(script_cfg.Info.RootPath or "")).expanduser()
                 _queue = _od.parse_one_dragon_queue(od["Queue"])
                 _od.ensure_keymouse_groups(
                     _root,
@@ -1133,7 +2815,7 @@ async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
 
     try:
         uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
-        data = Webhook(**(await config.toDict()))
+        data = Webhook(**config.model_dump(context={"audience": "api"}))
     except Exception as e:
         logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
@@ -1516,7 +3198,7 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         names = one_dragon.list_auto_boss_strategies(root)
@@ -1560,7 +3242,7 @@ async def get_bettergi_custom_groups_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         if useMasConfig:
@@ -1642,7 +3324,7 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         names = one_dragon.list_one_dragon_configs(root)
@@ -1685,7 +3367,7 @@ async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         items = one_dragon.list_js_scripts(root)
@@ -1726,7 +3408,7 @@ async def get_bettergi_key_mouse_scripts_api(scriptId: str) -> ComboBoxOut:
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         names = one_dragon.list_key_mouse_scripts(root)
@@ -1771,7 +3453,7 @@ async def get_bettergi_script_groups_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         names = one_dragon.list_script_groups(root)
@@ -1823,7 +3505,7 @@ async def get_bettergi_script_group_detail_api(
     try:
         script_config = _bettergi_script_config(scriptId)
         _bettergi_user_id(script_config, userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         data = one_dragon.read_user_script_group(root, scriptId, userId, name)
@@ -1871,7 +3553,7 @@ async def get_bettergi_script_settings_ui_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         ui = one_dragon.list_script_settings_ui(root, folder)
@@ -1912,7 +3594,7 @@ async def get_bettergi_script_readme_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         text = one_dragon.read_script_readme(root, folder)
@@ -1948,7 +3630,7 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         dirs = one_dragon.resolve_script_dirs(root)
@@ -2002,7 +3684,7 @@ async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTr
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         root_dir, tree = one_dragon.build_auto_pathing_tree(root)
@@ -2048,7 +3730,7 @@ async def get_bettergi_one_dragon_settings_api(
     try:
         script_config = _bettergi_script_config(scriptId)
         _bettergi_user_id(script_config, userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         data = one_dragon.read_user_one_dragon_settings(
@@ -2092,7 +3774,7 @@ async def save_bettergi_one_dragon_settings_api(
     try:
         script_config = _bettergi_script_config(req.scriptId)
         _bettergi_user_id(script_config, req.userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         # 战斗4项：可映射字段仅写 Plan，不可映射字段（如每周秘境表）仍落原生副本。
@@ -2105,7 +3787,10 @@ async def save_bettergi_one_dragon_settings_api(
         )
         if new_plan is not None:
             user_config = _bettergi_user_config(script_config, req.userId)
-            await user_config.set("OneDragon", "Plan", new_plan)
+            await user_config.update(
+                type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
+                check_visibility=False,
+            )
         if native_leftover:
             one_dragon.write_user_one_dragon_settings(
                 root, req.scriptId, req.userId, req.configName, native_leftover
@@ -2158,9 +3843,7 @@ async def set_one_dragon_plan_step_enabled(
         script_config = _bettergi_script_config(scriptId)
         _bettergi_user_id(script_config, userId)
         user_config = _bettergi_user_config(script_config, userId)
-        plan = one_dragon_plan.parse_one_dragon_plan(
-            user_config.get("OneDragon", "Plan") or ""
-        )
+        plan = one_dragon_plan.parse_one_dragon_plan(user_config.OneDragon.Plan or "")
         target = next((s for s in plan if s.get("name") == name), None)
         if target is None:
             plan.append(
@@ -2174,7 +3857,12 @@ async def set_one_dragon_plan_step_enabled(
             )
         else:
             target["enabled"] = enabled
-        await user_config.set("OneDragon", "Plan", one_dragon_plan.plan_to_json(plan))
+        await user_config.update(
+            type(user_config).model_validate(
+                {"OneDragon": {"Plan": one_dragon_plan.plan_to_json(plan)}}
+            ),
+            check_visibility=False,
+        )
         return OutBase(
             code=200,
             status="success",
@@ -2214,7 +3902,7 @@ async def get_bettergi_global_domain_settings_api(
         script_config = _bettergi_script_config(scriptId)
         if userId:
             _bettergi_user_id(script_config, userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         data = (
@@ -2261,7 +3949,7 @@ async def save_bettergi_global_domain_settings_api(
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         if req.userId:
@@ -2272,7 +3960,10 @@ async def save_bettergi_global_domain_settings_api(
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)
-                await user_config.set("OneDragon", "Plan", new_plan)
+                await user_config.update(
+                    type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
+                    check_visibility=False,
+                )
             if native_leftover:
                 one_dragon.write_user_global_domain_settings(
                     req.scriptId, req.userId, native_leftover
@@ -2318,7 +4009,7 @@ async def get_bettergi_global_stygian_settings_api(
         script_config = _bettergi_script_config(scriptId)
         if userId:
             _bettergi_user_id(script_config, userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         data = (
@@ -2365,7 +4056,7 @@ async def save_bettergi_global_stygian_settings_api(
 
     try:
         script_config = _bettergi_script_config(req.scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         if req.userId:
@@ -2376,7 +4067,10 @@ async def save_bettergi_global_stygian_settings_api(
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)
-                await user_config.set("OneDragon", "Plan", new_plan)
+                await user_config.update(
+                    type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
+                    check_visibility=False,
+                )
             if native_leftover:
                 one_dragon.write_user_global_stygian_settings(
                     req.scriptId, req.userId, native_leftover
@@ -2420,7 +4114,7 @@ async def get_bettergi_domain_catalog_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         source, items = one_dragon.scan_domain_catalog(root)
@@ -2465,7 +4159,7 @@ async def save_bettergi_script_group_api(
     try:
         script_config = _bettergi_script_config(req.scriptId)
         _bettergi_user_id(script_config, req.userId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import one_dragon
 
         projects = (req.data or {}).get("projects")
@@ -3172,7 +4866,7 @@ async def get_bettergi_game_info_api(
 
     try:
         script_config = _bettergi_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        root = _bettergi_root(script_config)
         from app.task.BetterGI.tools import game_info
 
         data = game_info.read_game_info(root, detectPath)
@@ -3478,9 +5172,7 @@ async def get_whimbox_task_catalog_api(
                 code=400, status="error", message="缺少 scriptId"
             )
         script_config = _whimbox_script_config(scriptId)
-        surface = WheelAssetsConfigSurface(
-            Path(str(script_config.get("Info", "RootPath") or ""))
-        )
+        surface = WheelAssetsConfigSurface(Path(str(script_config.Info.RootPath or "")))
         install_error = surface.check_install()
         if install_error:
             return WhimboxTaskCatalogOut(
@@ -3552,15 +5244,18 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
         _, script_config = _oknte_script_config(script_id)
 
         # 从 ok-nte 安装目录加载翻译 → option_labels
-        root_path = script_config.get("Info", "RootPath")
+        root_path = script_config.Info.RootPath
         option_labels = load_oknte_option_labels(root_path) if root_path else {}
 
         # 面板与来源分别保存；切换来源不重置面板。
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
 
         configs_info = get_all_config_info()
-        if script_config.get("Script", "ConfigPathMode") == "File":
-            filename = Path(script_config.get("Script", "ConfigPath")).name
+        if script_config.Script.ConfigPathMode == "File":
+            config_path = script_config.Script.ConfigPath
+            if config_path is None:
+                raise ValueError("ConfigPath未配置，请检查路径设置")
+            filename = config_path.name
             configs_info = [
                 info for info in configs_info if info["filename"] == filename
             ]
@@ -3642,8 +5337,11 @@ async def batch_update_oknte_configs(
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
         _, script_config = _oknte_script_config(script_id)
-        if script_config.get("Script", "ConfigPathMode") == "File":
-            filename = Path(script_config.get("Script", "ConfigPath")).name
+        if script_config.Script.ConfigPathMode == "File":
+            config_path = script_config.Script.ConfigPath
+            if config_path is None:
+                raise ValueError("ConfigPath未配置，请检查路径设置")
+            filename = config_path.name
             if set(configs) - {filename}:
                 raise ValueError("单文件模式只能编辑所选配置文件")
 

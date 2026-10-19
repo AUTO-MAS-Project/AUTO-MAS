@@ -4,26 +4,16 @@
 /* eslint-disable */
 export type MaaEndPlanConfig_Info = {
     /**
+     * 多天轮换天数
+     */
+    RotateDays?: (number | null);
+    /**
+     * 计划表模式
+     */
+    Mode?: ('ALL' | 'Weekly' | 'Rotate' | null);
+    /**
      * 计划表名称
      */
-    Name?: string;
-    /**
-     * 计划表模式
-     */
-    Mode?: MaaEndPlanConfig_Info.Mode;
-    /**
-     * 多天轮换的天数，仅 Rotate 模式使用
-     */
-    RotateDays?: number;
+    Name?: (string | null);
 };
-export namespace MaaEndPlanConfig_Info {
-    /**
-     * 计划表模式
-     */
-    export enum Mode {
-        ALL = 'ALL',
-        WEEKLY = 'Weekly',
-        ROTATE = 'Rotate',
-    }
-}
 

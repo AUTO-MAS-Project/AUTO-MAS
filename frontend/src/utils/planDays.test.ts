@@ -76,43 +76,45 @@ describe('planDayLabel', () => {
 describe('readPlanColumn 与 planColumnPath', () => {
   const tableData = {
     ALL: { Key: { Wanted: [1, -1, 1] } },
-    Days: { Monday: { Key: { Wanted: [2, -1, 3] } } },
+    Monday: { Key: { Wanted: [2, -1, 3] } },
   }
 
-  it('ALL 在接口顶层，每天在 Days 里', () => {
+  it('直接读取对应配置分组', () => {
     expect(readPlanColumn(tableData, 'ALL')).toEqual({ Key: { Wanted: [1, -1, 1] } })
     expect(readPlanColumn(tableData, 'Monday')).toEqual({ Key: { Wanted: [2, -1, 3] } })
     expect(readPlanColumn(tableData, 'Tuesday')).toBeUndefined()
     expect(readPlanColumn(null, 'ALL')).toBeUndefined()
   })
 
-  it('写路径同样是两级', () => {
+  it('写路径指向配置分组字段', () => {
     expect(planColumnPath('ALL', 'Key')).toBe('ALL.Key')
-    expect(planColumnPath('Monday', 'Stage')).toBe('Days.Monday.Stage')
+    expect(planColumnPath('Monday', 'Stage')).toBe('Monday.Stage')
   })
 })
 
 describe('planAllDayKeys 与 mergePlanData', () => {
   const full = {
     ALL: { Stage: '1-7' },
-    Days: { Monday: { Stage: '1-7' }, '1': { Stage: 'CE-5' } },
+    Monday: { Stage: '1-7' },
+    Day1: { Stage: 'CE-5' },
   }
 
-  it('全部天键是 ALL 加 Days 里的每一个', () => {
-    // JS 把整数键排在字符串键前面，所以轮换天会排在星期名之前
-    expect(planAllDayKeys(full)).toEqual(['ALL', '1', 'Monday'])
+  it('全部天键来自星期及轮换配置分组', () => {
+    // 分组顺序保持后端配置声明的顺序。
+    expect(planAllDayKeys(full)).toEqual(['ALL', 'Monday', '1'])
     expect(planAllDayKeys(null)).toEqual(['ALL'])
   })
 
   it('合并以 override 为准，其余槽位用 base 补齐', () => {
-    const merged = mergePlanData(full, { Days: { '2': { Stage: 'CE-6' } } })
+    const merged = mergePlanData(full, { Day2: { Stage: 'CE-6' } })
     expect(merged.ALL).toEqual({ Stage: '1-7' })
-    expect(Object.keys(merged.Days).sort()).toEqual(['1', '2', 'Monday'])
-    expect(merged.Days['2']).toEqual({ Stage: 'CE-6' })
+    expect(merged.Monday).toEqual({ Stage: '1-7' })
+    expect(merged.Day1).toEqual({ Stage: 'CE-5' })
+    expect(merged.Day2).toEqual({ Stage: 'CE-6' })
   })
 
   it('override 没给 ALL 时沿用 base 的', () => {
-    expect(mergePlanData(full, { Days: {} }).ALL).toEqual({ Stage: '1-7' })
+    expect(mergePlanData(full, {}).ALL).toEqual({ Stage: '1-7' })
     expect(mergePlanData(full, { ALL: { Stage: 'X' } }).ALL).toEqual({ Stage: 'X' })
   })
 })

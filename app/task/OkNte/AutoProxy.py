@@ -15,7 +15,6 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import ast
 import asyncio
 import json
@@ -28,11 +27,11 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogType, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
@@ -270,14 +269,14 @@ def _oknte_daily_task_success_error(
     return None
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     """OK-NTE 自动代理：拼 `-t N -e` 启动参数并监控日志"""
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: OkNteConfig,
-        user_config: MultipleConfig[OkNteUserConfig],
+        user_config: ConfigCollection[OkNteUserConfig],
         game_manager: ProcessManager | None,
     ):
         super().__init__()
@@ -307,27 +306,37 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def _reset_daily_proxy_count(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
     async def check(self) -> str:
-        if not Path(self.script_config.get("Info", "RootPath")).is_dir():
+        if (
+            not self.script_config.Info.RootPath
+            or not self.script_config.Info.RootPath.is_dir()
+        ):
             return "请设置 OK-NTE 脚本路径"
-        if not Path(self.script_config.get("Script", "ScriptPath")).is_file():
+        if (
+            not self.script_config.Script.ScriptPath
+            or not self.script_config.Script.ScriptPath.is_file()
+        ):
             return "请设置 OK-NTE 脚本路径"
 
         await self._reset_daily_proxy_count()
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
-            and self.script_config.get("Run", "ProxyTimesLimit") != 0
-            and self.cur_user_config.get("Data", "ProxyTimes")
-            >= self.script_config.get("Run", "ProxyTimesLimit")
+            and self.script_config.Run.ProxyTimesLimit != 0
+            and (
+                self.cur_user_config.Data.ProxyTimes
+                >= self.script_config.Run.ProxyTimesLimit
+            )
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
-        if self.cur_user_config.get("Info", "RemainedDay") == 0:
+        if self.cur_user_config.Info.RemainedDay == 0:
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
@@ -337,19 +346,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return "未找到 OK-NTE 脚本原有配置，请先在 OK-NTE 中保存设置"
 
         if (
-            self.script_config.get("Game", "Enabled")
-            and self.script_config.get("Game", "Type") == "Client"
-            and not Path(self.script_config.get("Game", "Path")).is_file()
+            self.script_config.Game.Enabled
+            and self.script_config.Game.Type == "Client"
+            and (
+                not self.script_config.Game.Path
+                or not self.script_config.Game.Path.is_file()
+            )
         ):
             return "请设置异环启动器路径"
         if (
-            self.script_config.get("Game", "Enabled")
-            and self.script_config.get("Game", "Type") == "URL"
-            and self.script_config.get("Game", "LaunchBeforeTask")
+            self.script_config.Game.Enabled
+            and self.script_config.Game.Type == "URL"
+            and self.script_config.Game.LaunchBeforeTask
         ):
-            if not str(self.script_config.get("Game", "URL") or "").strip():
+            if not str(self.script_config.Game.URL or "").strip():
                 return "请设置异环游戏 URL"
-            if not str(self.script_config.get("Game", "ProcessName") or "").strip():
+            if not str(self.script_config.Game.ProcessName or "").strip():
                 return "请设置异环游戏进程名称"
         return "Pass"
 
@@ -360,22 +372,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
 
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
-        self.script_exe_path = Path(self.script_config.get("Script", "ScriptPath"))
+        script_root_path = self.script_config.Info.RootPath
+        if script_root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.script_root_path = script_root_path
+        script_exe_path = self.script_config.Script.ScriptPath
+        if script_exe_path is None:
+            raise ValueError("ScriptPath未配置，请检查路径设置")
+        self.script_exe_path = script_exe_path
         self.script_target_process_info: ProcessInfo | None = None
-        if self.script_config.get("Script", "IfTrackProcess"):
-            track_name = (
-                self.script_config.get("Script", "TrackProcessName") or "pythonw.exe"
-            )
-            track_exe = self.script_config.get("Script", "TrackProcessExe") or ""
+        if self.script_config.Script.IfTrackProcess:
+            track_name = self.script_config.Script.TrackProcessName or "pythonw.exe"
+            track_exe = self.script_config.Script.TrackProcessExe or ""
             if not track_exe:
                 track_exe = str(
                     self.script_root_path / "data/apps/ok-nte/python/pythonw.exe"
                 )
             track_cmdline = (
-                shlex.split(
-                    self.script_config.get("Script", "TrackProcessCmdline"), posix=False
-                )
+                shlex.split(self.script_config.Script.TrackProcessCmdline, posix=False)
                 or None
             )
             self.script_target_process_info = ProcessInfo(
@@ -384,8 +398,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 cmdline=track_cmdline,
             )
 
-        self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
-        self.log_format = self.script_config.get("Script", "LogPathFormat") or ""
+        script_log_path = self.script_config.Script.LogPath
+        if script_log_path is None:
+            raise ValueError("LogPath未配置，请检查路径设置")
+        self.script_log_path = script_log_path
+        self.log_format = self.script_config.Script.LogPathFormat or ""
         if self.log_format:
             with suppress(ValueError):
                 datetime.strptime(self.script_log_path.stem, self.log_format)
@@ -394,10 +411,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.log_format = self.script_log_path.name
 
         self.log_time_range = (
-            self.script_config.get("Script", "LogTimeStart") - 1,
-            self.script_config.get("Script", "LogTimeEnd"),
+            self.script_config.Script.LogTimeStart - 1,
+            self.script_config.Script.LogTimeEnd,
         )
-        self.log_time_format = self.script_config.get("Script", "LogTimeFormat")
+        self.log_time_format = self.script_config.Script.LogTimeFormat
         self.log_monitor = LogMonitor(
             self.log_time_range,
             self.log_time_format,
@@ -406,12 +423,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 成功/失败标志：按显式模式编译，Split 为存量「|」分隔关键字子串包含，
         # Regex 为整条正则；非法正则视为已配置但永不命中，不中断任务执行
         self.success_log = compile_log_signs(
-            self.script_config.get("Script", "SuccessLog"),
-            self.script_config.get("Script", "SuccessLogMode"),
+            self.script_config.Script.SuccessLog,
+            self.script_config.Script.SuccessLogMode,
         )
         self.error_log = compile_log_signs(
-            self.script_config.get("Script", "ErrorLog"),
-            self.script_config.get("Script", "ErrorLogMode"),
+            self.script_config.Script.ErrorLog, self.script_config.Script.ErrorLogMode
         )
         for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
             if matcher.invalid:
@@ -419,7 +435,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not self.error_log.configured:
             # 回退到 OkNteConfig 的 ErrorLog 默认串（唯一来源，不在此另抄一份）
             self.error_log = compile_log_signs(
-                OkNteConfig().get("Script", "ErrorLog"), SIGN_MODE_SPLIT
+                OkNteConfig().Script.ErrorLog, SIGN_MODE_SPLIT
             )
             logger.warning(
                 "OK-NTE ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
@@ -429,10 +445,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 受用户级「节点详情推送模式」开关控制：关闭时不创建（不读日志、不匹配、
         # 不处理），该用户 push_log 保持为空，报告聚合时自然不含其节点详情。
         # ok-nte 日志文本已是中文，无需前置翻译；open() 记录起始偏移，只采会话内新增。
-        self.cur_user_item.push_log_mode = self.cur_user_config.get(
-            "Notify", "PushLogMode"
-        )
-        if self.cur_user_config.get("Notify", "PushLogMode") != "关闭":
+        self.cur_user_item.push_log_mode = self.cur_user_config.Notify.PushLogMode
+        if self.cur_user_config.Notify.PushLogMode != "关闭":
             self.log_collect = log_box.get_collect(
                 paths=[self._resolve_log_file_path()],
                 sink=self._append_push_log,
@@ -450,10 +464,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         # 当前用户配置
 
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        self.exit_on_finish = bool(self.cur_user_config.get("Task", "ExitOnFinish"))
+        self.task_index = int(self.cur_user_config.Task.TaskIndex)
+        self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
 
-        extra_args = split_args(self.script_config.get("Script", "Arguments"))
+        extra_args = split_args(self.script_config.Script.Arguments)
 
         self.oknte_args = ["-t", str(self.task_index)]
         if self.exit_on_finish:
@@ -461,9 +475,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.oknte_args.extend(extra_args)
 
         # 游戏配置（对齐通用脚本逻辑）；启动器路径在启动时经 _resolve_launcher_path 解析
-        self.game_url = self.script_config.get("Game", "URL")
-        self.game_process_name = self.script_config.get("Game", "ProcessName")
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        self.game_url = self.script_config.Game.URL
+        self.game_process_name = self.script_config.Game.ProcessName
+        script_config_path = self.script_config.Script.ConfigPath
+        if script_config_path is None:
+            raise ValueError("ConfigPath未配置，请检查路径设置")
+        self.script_config_path = script_config_path
 
         self.run_book = False
 
@@ -479,8 +496,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         prepare()，此时 self.script_config_path 尚未赋值。
         """
 
-        target = Path(self.script_config.get("Script", "ConfigPath"))
-        if self.script_config.get("Script", "ConfigPathMode") == "File":
+        target = self.script_config.Script.ConfigPath
+        if target is None:
+            return False
+        if self.script_config.Script.ConfigPathMode == "File":
             return target.is_file()
         with suppress(OSError):
             return target.is_dir() and any(target.iterdir())
@@ -517,7 +536,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return mas_config_dir
 
         mas_config_dir.mkdir(parents=True, exist_ok=True)
-        if self.script_config.get("Script", "ConfigPathMode") == "File":
+        if self.script_config.Script.ConfigPathMode == "File":
             native = Path.cwd() / f"data/{self.script_info.script_id}/Temp/config.temp"
             source = native if native.is_file() else self.script_config_path
             if not source.is_file():
@@ -542,7 +561,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         await System.kill_process(self.script_exe_path)
 
         temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
-        folder_mode = self.script_config.get("Script", "ConfigPathMode") == "Folder"
+        folder_mode = self.script_config.Script.ConfigPathMode == "Folder"
         if not self.native_base or user_uses_quick_config(self.cur_user_config):
             archive_mas_runtime_backup(
                 self.script_info.script_id, str(self.cur_user_uid)
@@ -580,7 +599,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         source = ensure_quick_config_dir(
             self.script_info.script_id, str(self.cur_user_uid), self.script_config
         )
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             for info in get_all_config_info():
                 src = source / info["filename"]
                 if not src.is_file():
@@ -613,9 +632,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             else self._oknte_mas_config_dir()
         )
         mas_config_dir.mkdir(parents=True, exist_ok=True)
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+        if self.script_config.Script.ConfigPathMode == "Folder":
             shutil.copytree(self.script_config_path, mas_config_dir, dirs_exist_ok=True)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+        elif self.script_config.Script.ConfigPathMode == "File":
             shutil.copy(
                 self.script_config_path,
                 mas_config_dir / self.script_config_path.name,
@@ -625,15 +644,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _game_config_summary_lines(self) -> list[str]:
         """游戏配置摘要行（调度台展示用）。"""
 
-        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
-        launch_mode = str(
-            self.script_config.get("Game", "LaunchMode") or "Autoplay"
-        ).strip()
+        game_args = str(self.script_config.Game.Arguments or "").strip()
+        launch_mode = str(self.script_config.Game.LaunchMode or "Autoplay").strip()
         return [
             f"[游戏配置] 用户: {self.cur_user_item.name}",
-            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
-            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
-            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
+            f"  启用游戏配置: {_yes_no(bool(self.script_config.Game.Enabled))}",
+            f"  任务前启动游戏: {_yes_no(bool(self.script_config.Game.LaunchBeforeTask))}",
+            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.Game.CloseOnFinish))}",
             f"  启动方式: {_LAUNCH_MODE_LABELS.get(launch_mode, _LAUNCH_MODE_LABELS['Autoplay'])}",
             f"  启动参数: {game_args or '（无）'}",
         ]
@@ -661,8 +678,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         <安装根>\\Client\\... 反推 <安装根>\\NTELauncher\\<启动器>。都没有时
         回退 ok-nte 自己的 LauncherTask.json（其注册表回退由 ok-nte 维护）。
         """
-        game_path = Path(self.script_config.get("Game", "Path"))
-        if game_path.is_file():
+        game_path = self.script_config.Game.Path
+        if game_path is not None and game_path.is_file():
             if game_path.name.casefold() in _NTE_LAUNCHER_EXES_CASEFOLD:
                 return game_path
             for ancestor in game_path.parents:
@@ -677,7 +694,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
 
-        game_type = self.script_config.get("Game", "Type")
+        game_type = self.script_config.Game.Type
         await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
         if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
@@ -700,9 +717,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 后台拉起，无需点击「开始游戏」）；LauncherUi = 启动器界面启动（打开启动器
             # 界面，由 launcher_start 的 OCR 交互点击「开始游戏」）。空值与非法值都按
             # Autoplay 处理，即保持现状行为。
-            launch_mode = str(
-                self.script_config.get("Game", "LaunchMode") or "Autoplay"
-            ).strip()
+            launch_mode = str(self.script_config.Game.LaunchMode or "Autoplay").strip()
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
             # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
             # 调度回事件循环（与账号切换的 _push_switch_log 同理）。
@@ -778,7 +793,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         f"{AUTOPLAY_ARG} 静默启动未出现游戏窗口（超时），"
                         "请人工确认启动器状态"
                     )
-            wait_time = int(self.script_config.get("Game", "WaitTime"))
+            wait_time = int(self.script_config.Game.WaitTime)
             await self._push_dispatch_log(
                 f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）..."
                 if window_ready
@@ -830,7 +845,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
 
-        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        arguments = str(self.script_config.Game.Arguments or "").strip()
         if arguments:
             message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
             logger.info(message)
@@ -882,7 +897,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
+        run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
             if self.run_book:
                 break
@@ -898,9 +913,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             # 总开关开启且勾选「任务前启动」时由 MAS 拉起游戏
             if (
-                self.script_config.get("Game", "Enabled")
-                and self.script_config.get("Game", "LaunchBeforeTask")
-                and self.game_manager is not None
+                self.script_config.Game.Enabled
+                and self.script_config.Game.LaunchBeforeTask
+                and (self.game_manager is not None)
             ):
                 try:
                     await self._mas_launch_game_before_task()
@@ -946,12 +961,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 开关在游戏配置区，依赖 Game.Enabled 且需开启「任务前启动游戏」（否则游戏非
             # MAS 拉起、无窗口可切）；用户未填写手机号时跳过不切换。
             if (
-                self.script_config.get("Game", "AccountSwitch")
-                and self.script_config.get("Game", "Enabled")
-                and self.script_config.get("Game", "LaunchBeforeTask")
-                and self.game_manager is not None
+                self.script_config.Game.AccountSwitch
+                and self.script_config.Game.Enabled
+                and self.script_config.Game.LaunchBeforeTask
+                and (self.game_manager is not None)
             ):
-                account_id = (self.cur_user_config.get("Info", "Id") or "").strip()
+                account_id = (self.cur_user_config.Info.Id or "").strip()
                 if not account_id:
                     await self._push_dispatch_log("未配置账号，跳过账号切换")
                 else:
@@ -1043,10 +1058,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = "检测到 OK-NTE 已完成任务\n正在等待相关进程结束"
                 # 对齐 MaaEnd：成功时先只结束 OK-NTE；是否关游戏由 Game.CloseOnFinish 在 final_task 决定
                 await self._kill_oknte_process()
-                if self.script_config.get("Script", "UpdateConfigMode") in (
-                    "Success",
-                    "Always",
-                ):
+                if self.script_config.Script.UpdateConfigMode in ("Success", "Always"):
                     await self.update_config()
                 await asyncio.sleep(3)
                 break
@@ -1067,28 +1079,25 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
             except Exception:
                 pass
-            if self.script_config.get("Script", "UpdateConfigMode") in (
-                "Failure",
-                "Always",
-            ):
+            if self.script_config.Script.UpdateConfigMode in ("Failure", "Always"):
                 await self.update_config()
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
 
     def _game_management_enabled(self) -> bool:
-        return bool(self.script_config.get("Game", "Enabled"))
+        return bool(self.script_config.Game.Enabled)
 
     def _mas_should_close_game_after_success(self) -> bool:
         return self._game_management_enabled() and bool(
-            self.script_config.get("Game", "CloseOnFinish")
+            self.script_config.Game.CloseOnFinish
         )
 
     def _mas_should_close_game_on_retry(self) -> bool:
         """失败/重试/启动游戏失败：总开关开启且任一生周期子项启用时结束游戏"""
         return self._game_management_enabled() and bool(
-            self.script_config.get("Game", "LaunchBeforeTask")
-            or self.script_config.get("Game", "CloseOnFinish")
+            self.script_config.Game.LaunchBeforeTask
+            or self.script_config.Game.CloseOnFinish
         )
 
     def _resolve_log_file_path(self) -> Path:
@@ -1144,7 +1153,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 log_status = "OK-NTE 在完成任务前退出"
                 user_item_status = "异常"
             elif self.is_log_stalled(
-                latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+                latest_time, minutes=self.script_config.Run.RunTimeLimit
             ):
                 log_status = "OK-NTE 运行超时"
                 user_item_status = "异常"
@@ -1253,36 +1262,33 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return
         self.user_run_result_persisted = True
 
-        await self.cur_user_config.set(
-            "Data", "LastTaskIndex", getattr(self, "task_index", 0)
-        )
+        self.cur_user_config.Data.LastTaskIndex = getattr(self, "task_index", 0)
+        await self.cur_user_config.commit()
         if self.run_book:
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.LastProxyStatus = "成功"
+            await self.cur_user_config.commit()
             if self.cur_user_item.status != "异常":
                 self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的 OK-NTE 自动代理任务已完成")
         else:
             maintenance_skipped = self.cur_user_item.maintenance_skipped
-            # 维护跳过不是失败：上次代理状态记「维护中」，用户状态保持「跳过」
-            await self.cur_user_config.set(
-                "Data",
-                "LastProxyStatus",
-                "维护中" if maintenance_skipped else "失败",
+            # 维护跳过不是失败：保留「跳过」状态并记录维护结果。
+            self.cur_user_config.Data.LastProxyStatus = (
+                "维护中" if maintenance_skipped else "失败"
             )
+            await self.cur_user_config.commit()
             if maintenance_skipped:
                 if self.cur_user_item.status not in ("完成", "跳过"):
                     self.cur_user_item.status = "异常"
@@ -1335,9 +1341,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await System.kill_process(self.script_exe_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"中止 OK-NTE 主进程失败: {e}")
-        track_exe = str(
-            self.script_config.get("Script", "TrackProcessExe") or ""
-        ).strip()
+        track_exe = str(self.script_config.Script.TrackProcessExe or "").strip()
         if not track_exe:
             track_exe = str(
                 self.script_root_path / "data/apps/ok-nte/python/pythonw.exe"
@@ -1358,7 +1362,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
-        game_type = self.script_config.get("Game", "Type")
+        game_type = self.script_config.Game.Type
         if isinstance(self.game_manager, ProcessManager):
             try:
                 await self.game_manager.kill()
@@ -1405,8 +1409,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return
         process_name = (
             _NTE_CLIENT_PROCESS
-            if self.script_config.get("Game", "Type") == "Client"
-            else str(self.script_config.get("Game", "ProcessName") or "").strip()
+            if self.script_config.Game.Type == "Client"
+            else str(self.script_config.Game.ProcessName or "").strip()
         )
         if not process_name:
             return

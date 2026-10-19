@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import asyncio
 import inspect
 from unittest.mock import AsyncMock, patch
@@ -21,6 +23,16 @@ class _Webhook:
     def __init__(self, enabled: bool = True, name: str = "值班群") -> None:
         self._enabled = enabled
         self._name = name
+        self.Data = SimpleNamespace(
+            Url="https://example.com/webhook",
+            Template='{"title": "{title}", "content": "{content}"}',
+            Headers="{}",
+            Method="POST",
+        )
+
+    @property
+    def Info(self):
+        return SimpleNamespace(Name=self._name, Enabled=self._enabled)
 
     def get(self, group: str, key: str) -> str | bool:
         values = {
@@ -65,13 +77,24 @@ _TEXTS = {
 }
 
 
+class _NotifyFields:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def __getattr__(self, name):
+        self.owner.reads += 1
+        return self.owner._values[name]
+
+
 class _Config:
-    """同时提供 .get(group, name) 与 .Notify_CustomWebhooks.items() 的鸭子配置。"""
+    """提供通知分组与 Webhook 集合的配置替身。"""
 
     def __init__(self, values: dict | None = None, webhooks=()) -> None:
         self._values = {**_SWITCHES, **_TEXTS, **(values or {})}
         self.Notify_CustomWebhooks = _Webhooks(webhooks)
         self.reads = 0
+        self.Notify = _NotifyFields(self)
+        self.setting = self
 
     def get(self, group: str, name: str):
         assert group == "Notify"
@@ -579,16 +602,27 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
 def test_descriptor_fields_exist_in_config_and_schema() -> None:
     """描述表字段名两个方向都查：配置类里真的存在，且在下发模型里不会被静默丢弃。"""
 
+    from typing import get_args
+
+    from app.config.wire import config_contract
     from app.core.config import Config
-    from app.models.schema import GlobalConfig_Notify
+    from app.models.config import GlobalConfig
+
+    notify_contract = config_contract(GlobalConfig).model_fields["Notify"].annotation
+    GlobalConfig_Notify = next(
+        item for item in get_args(notify_contract) if item is not type(None)
+    )
 
     for channel in get_notify_channels():
         for items in channel.fields.values():
             for item in items:
-                Config.get(item.group, item.name)
+                getattr(getattr(Config.setting, item.group), item.name)
                 assert item.name in GlobalConfig_Notify.model_fields, item.name
         if channel.enable_field:
-            Config.get(*channel.enable_field)
+            getattr(
+                getattr(Config.setting, channel.enable_field[0]),
+                channel.enable_field[1],
+            )
             assert channel.enable_field[1] in GlobalConfig_Notify.model_fields
 
 

@@ -282,7 +282,7 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 def _script_channel(script_config: Any) -> str:
     try:
-        value = str(script_config.get("Update", "Channel") or "").strip()
+        value = str(script_config.Update.Channel or "").strip()
     except Exception:  # noqa: BLE001 - 配置桩 / 老配置读不出就按默认渠道
         value = ""
     return value or DEFAULT_CHANNEL
@@ -310,7 +310,7 @@ def _embedded_report(script_config: Any) -> dict[str, Any]:
     """``Embedded.Report``（JSON 文本或 dict）；读不出为空。"""
 
     try:
-        raw = script_config.get("Embedded", "Report")
+        raw = script_config.Embedded.Report
     except Exception:  # noqa: BLE001 - 配置桩 / 老配置
         return {}
     if isinstance(raw, str):
@@ -338,7 +338,7 @@ def follow_source_switch_on(script_config: Any) -> bool:
     """
 
     try:
-        return bool(script_config.get("Embedded", "FollowSource"))
+        return bool(script_config.Embedded.FollowSource)
     except Exception:  # noqa: BLE001 - 配置桩 / 老配置没有这一项就是没开
         return False
 
@@ -2167,8 +2167,8 @@ def embedded_status(
     """
 
     copy_dir = embedded_project_dir(script_id, base)
-    source = str(script_config.get("Info", "Path") or "").strip()
-    raw_report = script_config.get("Embedded", "Report")
+    source = str(script_config.Info.Path or "").strip()
+    raw_report = script_config.Embedded.Report
     report: dict[str, Any] = {}
     if isinstance(raw_report, dict):
         report = raw_report
@@ -2195,19 +2195,21 @@ def embedded_status(
         "copyHealthy": copy_is_healthy(copy_dir),
         "sourcePath": source,
         "sourceExists": bool(source) and Path(source).is_dir(),
-        "sourceVersion": str(script_config.get("Embedded", "SourceVersion") or ""),
-        "importedAt": str(script_config.get("Embedded", "ImportedAt") or ""),
+        "sourceVersion": str(script_config.Embedded.SourceVersion or ""),
+        "importedAt": (
+            script_config.Embedded.ImportedAt.isoformat()
+            if script_config.Embedded.ImportedAt is not None
+            else ""
+        ),
         "report": report,
         "lineage": lineage,
         "payloadId": payload_id,
         "version": str((marker or {}).get("version") or "")
         or read_interface_version(copy_dir),
         "siblingCount": sibling_count,
-        # 开发者模式下视图上次从来源目录同步的时间（标记里的 followSource）；没同步过为空。
         "followSourceSyncedAt": str(
             (follow_source_record(marker) or {}).get("syncedAt") or ""
         ),
-        # 源码形态（导入报告的 sourceForm）：始终跟随来源目录、不做项目更新。
         "sourceForm": bool(report.get("sourceForm")),
     }
 
@@ -2215,7 +2217,7 @@ def embedded_status(
 def imported_source_path(script_config: Any) -> str:
     """导入报告里记的来源目录；没导入过（老脚本）时为空。"""
 
-    raw = script_config.get("Embedded", "Report")
+    raw = script_config.Embedded.Report
     report: Any = raw
     if isinstance(raw, str):
         try:
@@ -2270,7 +2272,7 @@ def inherit_embedded_record(
     判断要不要重导）。"""
 
     target_dir = embedded_project_dir(target_script_id, base)
-    raw = source_config.get("Embedded", "Report")
+    raw = source_config.Embedded.Report
     report: Any = {}
     if isinstance(raw, str):
         try:
@@ -2284,7 +2286,7 @@ def inherit_embedded_record(
     report["copyPath"] = str(target_dir)
     return {
         "report": report,
-        "sourceVersion": str(source_config.get("Embedded", "SourceVersion") or "")
+        "sourceVersion": str(source_config.Embedded.SourceVersion or "")
         or read_interface_version(target_dir),
         "importedAt": _now_text(),
         "copyPath": str(target_dir),
@@ -2350,7 +2352,7 @@ def _rebuild_from_group(
         if other_id == script_id:
             continue
         other_source = imported_source_path(other_config) or str(
-            other_config.get("Info", "Path") or ""
+            other_config.Info.Path or ""
         )
         if not other_source or not _same_directory(source, other_source):
             continue
@@ -2380,7 +2382,7 @@ def _rebuild_from_group(
                     continue
             finally:
                 release_project_path_sync(key)
-        other_name = str(other_config.get("Info", "Name") or other_id[:8])
+        other_name = str(other_config.Info.Name or other_id[:8])
         message = f"[MFW 内嵌] 来源目录已不存在，已从脚本「{other_name}」的项目重建"
         logger.info(message)
         if send_log is not None:
@@ -2464,7 +2466,7 @@ def _adopt_or_raise(
             script_id,
             channel=effective_channel(script_id, script_config),
             source=imported_source_path(script_config)
-            or str(script_config.get("Info", "Path") or ""),
+            or str(script_config.Info.Path or ""),
             base=base,
         )
         # 同版本已有别的副本登记过：谁当 latest 按确定规则定，不看谁先来。只动本谱系。
@@ -2501,7 +2503,7 @@ def _readopt_lost_payload(
             script_id,
             channel=effective_channel(script_id, script_config),
             source=imported_source_path(script_config)
-            or str(script_config.get("Info", "Path") or ""),
+            or str(script_config.Info.Path or ""),
             base=base,
             replace_lost=True,
         )
@@ -2704,7 +2706,7 @@ def ensure_embedded_copy(
 
     copy_dir = embedded_project_dir(script_id, base)
     healthy = copy_is_healthy(copy_dir)
-    source = str(script_config.get("Info", "Path") or "").strip()
+    source = str(script_config.Info.Path or "").strip()
     follow = follow_source_enabled(script_config)
     if follow_source_check and healthy:
         if follow:
@@ -3212,7 +3214,7 @@ def propagate_payload(
 def shell_hint_from_report(script_config: Any) -> str:
     """副本里没有 MFW.exe 可扫，外壳家族只能从导入报告取。"""
 
-    raw = script_config.get("Embedded", "Report")
+    raw = script_config.Embedded.Report
     report: Any = raw
     if isinstance(raw, str):
         try:

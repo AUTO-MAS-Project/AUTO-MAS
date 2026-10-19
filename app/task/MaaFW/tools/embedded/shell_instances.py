@@ -62,7 +62,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from app.models.ConfigBase import UserNameValidator
+from pydantic import TypeAdapter
+
+from app.config import WindowsNameString
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     MaaFWOption,
@@ -419,11 +421,11 @@ def assign_user_names(names: Sequence[str], existing: Iterable[str]) -> list[str
     实例名先按用户名规则修正（去掉文件名非法字符等），比较不分大小写。
     """
 
-    validator = UserNameValidator()
+    names_adapter = TypeAdapter(WindowsNameString)
     taken = {str(name).casefold() for name in existing}
     assigned: list[str] = []
     for raw in names:
-        base = raw if validator.validate(raw) else validator.correct(raw)
+        base = names_adapter.validate_python(raw)
         candidate = base
         suffix = 2
         while candidate.casefold() in taken:

@@ -195,7 +195,7 @@ def personal_mss_enabled() -> bool:
     from app.core.config import Config
 
     try:
-        return bool(Config.get("Function", "IfPersonalMss"))
+        return bool(Config.setting.Function.IfPersonalMss)
     except AttributeError:
         ## 配置对象里还没有这一项（旧配置遇上热更新）：当作没开，不动队列
         return False
@@ -593,26 +593,25 @@ def _load_defense_record(user_config: Any) -> dict[str, Any]:
 
 def _as_text(value: Any) -> str:
     """配置项可能给 None 或数字，比较两轮状态前统一成字符串。"""
+    if isinstance(value, datetime):
+        # 周期记录只比较游戏日期；保留旧 seen_date 的语义和历史记录。
+        return value.strftime("%Y-%m-%d")
 
     return "" if value is None else str(value)
 
 
 def _save_defense_record(user_config: Any, record: dict[str, Any]) -> Exception | None:
-    """写回 ``Data.PersonalMssDefense``；成功返回 None，失败返回那个异常。
+    """从建计划的工作线程提交周期记录，沿用任务持有的 X 锁上下文。"""
+    from app.core import Config
 
-    这里在工作线程里跑（``check()`` 经 ``asyncio.to_thread`` 建计划），没有事件循环可 await，
-    自己起一个跑完就收。配置写盘失败只影响这一轮，不能让整份运行计划建不出来。
-    """
+    async def save() -> None:
+        user_config.Data.PersonalMssDefense = json.dumps(record, ensure_ascii=False)
+        await user_config.commit()
 
     try:
-        asyncio.run(
-            user_config.set(
-                "Data",
-                "PersonalMssDefense",
-                json.dumps(record, ensure_ascii=False),
-            )
-        )
-    except Exception as exc:  # noqa: BLE001 - 配置锁了 / 写盘失败都退回「按队列原样」
+        loop = Config.loop
+        asyncio.run_coroutine_threadsafe(save(), loop).result()
+    except Exception as exc:  # noqa: BLE001 - 保存失败时仍沿用原队列
         return exc
     return None
 
@@ -652,7 +651,7 @@ def _insert_before_climb(
 
 def _get(config: Any, group: str, name: str) -> Any:
     try:
-        return config.get(group, name)
+        return getattr(getattr(config, group), name)
     except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
         return None
 

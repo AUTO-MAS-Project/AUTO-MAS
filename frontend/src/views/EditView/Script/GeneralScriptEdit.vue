@@ -1193,7 +1193,7 @@ const pathUtils = {
 const appDataPath = ref('')
 
 // 路径验证函数
-const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
+const validatePath = (rootPath: string | null, targetPath: string, pathName: string): boolean => {
   if (!targetPath || targetPath === '.') return true
   if (!rootPath || rootPath === '.') {
     message.warning(t('edit.setScriptRootDirectory', { p0: pathName }))
@@ -1413,11 +1413,6 @@ const generalConfig = reactive<GeneralScriptConfig>({
     PushLogEnabled: false,
     PushLogPatterns: '',
     UpdateConfigMode: 'Never',
-  },
-  SubConfigsInfo: {
-    UserData: {
-      instances: [],
-    },
   },
 })
 

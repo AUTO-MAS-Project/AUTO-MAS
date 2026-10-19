@@ -381,7 +381,7 @@ def sanitize_user_task_update(
 
 def _config_value(config: Any, group: str, name: str) -> Any:
     try:
-        return config.get(group, name)
+        return getattr(getattr(config, group), name)
     except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
         return None
 
@@ -421,7 +421,7 @@ def decide_project_config_class(interface_model: MaaFWInterface) -> type:
 
 
 def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
-    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
+    """``ConfigCollection.replace_type`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
 
     顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
     （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
@@ -432,10 +432,9 @@ def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
     default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
 
     def transform(payload: dict) -> dict:
-        # ConfigBase.toDict 把子配置放在 SubConfigsInfo 下，用户表是其中的 UserData。
-        user_data = (payload.get("SubConfigsInfo") or {}).get("UserData")
+        user_data = payload.get("UserData")
         if isinstance(user_data, dict):
-            for instance in user_data.get("instances") or []:
+            for instance in user_data.get("order") or []:
                 if isinstance(instance, dict):
                     instance["type"] = user_type_name
         run = payload.get("Run")

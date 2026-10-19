@@ -176,7 +176,7 @@ async def capture_baselines(emulator_id: str) -> dict:
 async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
     """用户刚保存的设置就是新的基准——否则守卫会把他刚改的值又还原回去。"""
     manager = await build_manager(emulator_id)
-    if not manager.config.get("Info", "ConfigGuard"):
+    if not manager.config.Info.ConfigGuard:
         return
     baselines = dict(manager.baselines)
     merged = dict(baselines.get(str(slot), {}))
@@ -187,11 +187,7 @@ async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
 
 async def build_manager(emulator_id: str) -> Emulator2Manager:
     """按配置 id 构造门面。"""
-    from app.models.config import EmulatorConfig
-
-    config = EmulatorConfig()
-    await config.load(await _emulator_config(emulator_id).toDict())
-    return Emulator2Manager(config)
+    return Emulator2Manager(_emulator_config(emulator_id))
 
 
 def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedScript]:
@@ -207,8 +203,8 @@ def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedSc
     for script_id, script in Config.ScriptConfig.items():
         for group, id_field, index_field in _BINDING_FIELDS:
             try:
-                bound_id = script.get(group, id_field)
-                bound_index = script.get(group, index_field)
+                bound_id = getattr(getattr(script, group), id_field)
+                bound_index = getattr(getattr(script, group), index_field)
             except Exception:  # noqa: BLE001 - 脚本类型没有这组字段就跳过
                 continue
             if str(bound_id) != str(emulator_id):
@@ -218,7 +214,7 @@ def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedSc
             affected.append(
                 AffectedScript(
                     script_id=str(script_id),
-                    name=str(script.get("Info", "Name")),
+                    name=str(script.Info.Name),
                     slot=str(bound_index),
                     running=bool(getattr(script, "is_locked", False)),
                 )
@@ -266,8 +262,12 @@ async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
         if not isinstance(changes, dict) or index_field not in changes:
             continue
         try:
-            emulator_id = changes.get(id_field, script.get(group, id_field))
-            index = changes.get(index_field, script.get(group, index_field))
+            emulator_id = changes.get(
+                id_field, getattr(getattr(script, group), id_field)
+            )
+            index = changes.get(
+                index_field, getattr(getattr(script, group), index_field)
+            )
         except Exception:  # noqa: BLE001 - 脚本类型没有这组字段
             continue
         if await is_mod_avd_device(emulator_id, index) and not script_supports_mod_avd(

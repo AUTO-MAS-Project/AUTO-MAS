@@ -140,9 +140,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         follow = False
         channel = "stable"
     try:
-        script_name = str(
-            maafw_script_config(script_id).get("Info", "Name") or script_id[:8]
-        )
+        script_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
     except (KeyError, ValueError, TypeError):
         script_name = script_id[:8]
 
@@ -214,9 +212,7 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
     # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞 dict changed size）
     members = maafw_group_members(script_id)
     try:
-        source_name = str(
-            maafw_script_config(script_id).get("Info", "Name") or script_id[:8]
-        )
+        source_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
     except (KeyError, ValueError, TypeError):
         source_name = script_id[:8]
     # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境，别把 isolated_venv 的
@@ -301,7 +297,7 @@ async def _apply_project_flavor(script_id: str) -> None:
     """导入完成后按项目决定脚本类型：特调项目 → 特调类型，否则通用 MaaFW；uid 不变。
 
     类型由项目决定、双向自动：M9A 目录导进通用 MaaFW 脚本会变成 M9A，M9A 脚本换成别的项目
-    会变回 MaaFW。数据一个字段不动（两类同形），只换 ``instances[].type``。
+    会变回 MaaFW。保留脚本身份与共有配置，用户类型及专项默认值沿用既有转换规则。
     """
 
     try:
@@ -323,14 +319,18 @@ async def _apply_project_flavor(script_id: str) -> None:
         return
     previous_flavor = resolve_flavor(script_config)
     try:
-        await Config.ScriptConfig.retype(
-            script_uid, target, user_config_type_transform(target)
+        Config.ScriptConfig.replace_type(
+            script_uid,
+            target,
+            payload=user_config_type_transform(target)(await script_config.to_dict()),
         )
+        await Config.ScriptConfig.commit()
+        script_config = Config.ScriptConfig[script_uid]
     except Exception as exc:  # noqa: BLE001 - 换类型失败不该让导入失败
         logger.warning(f"按项目切换脚本类型失败，保持原类型：{exc}")
         return
     logger.info(f"脚本 {script_id} 按项目识别为 {target.__name__}，已原地切换类型")
-    script_name = str(script_config.get("Info", "Name") or str(script_id)[:8])
+    script_name = str(script_config.Info.Name or str(script_id)[:8])
     has_users = len(script_config.UserData) > 0
     # 各特调的行为说明由特调自己给（retype_notice_lines），引擎不写专项语义
     target_flavor = flavor_for_project(interface)
@@ -379,7 +379,7 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
     # 「导入失败：」去掉（见 _import_failure_reason）
     failure_prefix = (
         "重新导入失败："
-        if str(script_config.get("Embedded", "ImportedAt") or "").strip()
+        if str(script_config.Embedded.ImportedAt or "").strip()
         else "导入失败："
     )
     # 来源最后要写进 Info.Path，先按它的校验器过一遍（系统目录、AUTO-MAS 自己的目录不收）：
@@ -426,7 +426,7 @@ async def sync_embedded(script_id: str) -> MaaFWApiReply:
         return MaaFWApiReply.error(400, EMBEDDED_SYNC_NOT_FOLLOWING)
     if getattr(script_config, "is_locked", False):
         return MaaFWApiReply.error(400, EMBEDDED_SYNC_RUNNING)
-    source = str(script_config.get("Info", "Path") or "").strip()
+    source = str(script_config.Info.Path or "").strip()
     if not source or not await asyncio.to_thread(lambda: Path(source).is_dir()):
         return MaaFWApiReply.error(
             400, f"来源目录不在：{source or '（未设置）'}，无法同步"
@@ -494,7 +494,9 @@ def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | 
     """这个来源能不能写进 Info.Path；不能就说清楚为什么、该怎么改。"""
 
     try:
-        script_config.Info_Path.validator.correct(source)
+        validated = type(script_config.Info).model_validate({"Path": source})
+        if validated.Path is None:
+            return "来源路径无效，请重新选择项目目录"
     # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
     except (ValueError, RuntimeError) as exc:
         return _describe_source_path_error(source, str(exc))
@@ -714,7 +716,7 @@ async def list_embedded_sources(excluded_script_id: str | None) -> MaaFWApiReply
     candidates = [
         (
             str(uid),
-            str(config.get("Info", "Name") or ""),
+            str(config.Info.Name or ""),
             type(config).__name__.removesuffix("Config"),
             bool(getattr(config, "is_locked", False)),
         )
@@ -763,7 +765,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
         return MaaFWApiReply.error(400, "不能复用脚本自己的项目")
     if busy := _embedded_busy_reason(script_config):
         return MaaFWApiReply.error(400, busy)
-    source_channel = str(source_config.get("Update", "Channel") or "stable")
+    source_channel = str(source_config.Update.Channel or "stable")
 
     target_dir = embedded_project_dir(script_id)
     # 老脚本换项目：目标原有副本钉定的版本在克隆后可能就没人用了
@@ -773,7 +775,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     target_reservation = await try_reserve_project_path(target_dir)
     if target_reservation is None:
         return MaaFWApiReply.error(400, EMBEDDED_COPY_BUSY)
-    source_path = str(source_config.get("Info", "Path") or "").strip()
+    source_path = str(source_config.Info.Path or "").strip()
     imported: dict[str, Any] | None = None
     try:
         # 目标已有视图（老脚本换项目）在新视图建好后原子换掉，失败时原样不动。源开着开发者
@@ -836,13 +838,12 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     await Config.update_script(
         script_id,
         {
-            "Info": {"Path": str(source_config.get("Info", "Path") or "")},
+            "Info": {"Path": str(source_config.Info.Path or "")},
             "Embedded": {
                 "Report": json.dumps(inherited["report"], ensure_ascii=False),
                 "SourceVersion": inherited["sourceVersion"],
                 "ImportedAt": inherited["importedAt"],
             },
-            # 复用的是源那一版：渠道不跟着走，第一次运行前的组同步会把它切到默认渠道的版本
             "Update": {"Channel": source_channel},
         },
     )
@@ -850,7 +851,7 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
     # 放在 retype 之后：权威集合在调用线程上按当前脚本表算，要看到换过类型的配置
     _reconcile_pool_after_copy_change("clone", target_dir, previous_version)
     data = await embedded_status_data(script_id, maafw_script_config(script_id))
-    source_name = str(source_config.get("Info", "Name") or source_script_id[:8])
+    source_name = str(source_config.Info.Name or source_script_id[:8])
     if imported is not None:
         if (imported.get("report") or {}).get("sourceForm"):
             message = (

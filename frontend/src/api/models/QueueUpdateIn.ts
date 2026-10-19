@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig } from './QueueConfig';
+import type { QueueConfigInput } from './QueueConfigInput';
 export type QueueUpdateIn = {
     /**
      * 队列ID
@@ -11,6 +11,6 @@ export type QueueUpdateIn = {
     /**
      * 队列更新数据
      */
-    data: QueueConfig;
+    data: QueueConfigInput;
 };
 

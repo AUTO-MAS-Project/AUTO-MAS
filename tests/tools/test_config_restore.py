@@ -1,20 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2025-2026 AUTO-MAS Team
-#
-#   This file is part of AUTO-MAS.
-#
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-#
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-#
-#   You should have received a copy of the GNU Affero General Public
-#   License along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+from tests.config_support import activate_config, group_view
 
 """配置恢复基座的最小回归测试：池声明的上下文绑定与按 key 分发。
 
@@ -22,14 +6,11 @@
 ``build_restore_service`` 是唯一的闭包绑定处——本文件验证绑定语义
 （上下文透传、参数转发、kind 校验）与 Target 缺省能力的行为。
 """
-
 import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-
 import pytest
-
 from app.utils.config_archive import archive_files, get_backup_dir, read_backup_base
 from app.utils.config_restore import (
     ConfigRestorePool,
@@ -69,16 +50,12 @@ POOLS = [
 
 def _ctx() -> RestoreContext:
     return RestoreContext(
-        config=None,
-        script_config={"marker": "s1"},
-        script_id="s1",
-        user_id="u1",
+        config=None, script_config={"marker": "s1"}, script_id="s1", user_id="u1"
     )
 
 
 def test_build_validates_table() -> None:
     """空池表与非法 kind 都在构建期拒绝。"""
-
     with pytest.raises(ValueError):
         build_restore_service(_ctx(), [])
     bad = [ConfigRestorePool(key="x", kind="other", list_backups=_list)]
@@ -88,26 +65,17 @@ def test_build_validates_table() -> None:
 
 def test_binding_and_dispatch() -> None:
     """绑定语义：ctx 透传、位置参数转发、按 key 分发、顺序即池表顺序。"""
-
     service = build_restore_service(_ctx(), POOLS)
     assert service.target_keys == ["mas", "native"]
-    # list 项为 dict（time + 三态 base 标注；未声明三态 base=None）
-    assert [item["time"] for item in asyncio.run(service.list("mas"))] == [
-        "t2",
-        "t1",
-    ]
+    assert [item["time"] for item in asyncio.run(service.list("mas"))] == ["t2", "t1"]
     assert [item["base"] for item in asyncio.run(service.list("mas"))] == [None, None]
-    assert asyncio.run(service.preview("mas", "t1")) == {
-        "time": "t1",
-        "marker": "s1",
-    }
+    assert asyncio.run(service.preview("mas", "t1")) == {"time": "t1", "marker": "s1"}
     asyncio.run(service.restore("mas", "t1"))
     assert asyncio.run(service.ensure("mas")) == {"created": True, "time": "t2"}
 
 
 def test_dispatch_rejects_unknown_and_missing() -> None:
     """未知 target 与未声明的能力统一抛 ValueError（HTTP 层转 400）。"""
-
     service = build_restore_service(_ctx(), POOLS)
     with pytest.raises(ValueError):
         service.get_target("nope")
@@ -132,27 +100,20 @@ async def _decl_root(ctx) -> Path | None:
 
 
 DECL_POOL = ConfigRestorePool(
-    key="decl",
-    kind="user",
-    files=_decl_files,
-    backup_root=_decl_root,
-    restore=_restore,
+    key="decl", kind="user", files=_decl_files, backup_root=_decl_root, restore=_restore
 )
 
 
 def test_declarative_derivation(tmp_path, monkeypatch) -> None:
     """声明式派生：files+backup_root → list/snapshot/read_file/files 兜底注入。"""
-
     monkeypatch.chdir(tmp_path)
     ctx = _ctx()
     service = build_restore_service(ctx, [DECL_POOL])
-
-    # snapshot 落盘 → list 出现 → preview 注入标准 files → read_file 可读
     created = asyncio.run(service.ensure("decl"))
     assert created["created"] is True and created["time"]
     items = asyncio.run(service.list("decl"))
     assert [item["time"] for item in items] == [created["time"]]
-    assert items[0]["base"] is None  # 未声明三态：无 base 标注
+    assert items[0]["base"] is None
     payload = asyncio.run(service.preview("decl", created["time"]))
     assert payload["files"] == [
         {
@@ -164,8 +125,6 @@ def test_declarative_derivation(tmp_path, monkeypatch) -> None:
         service.read_backup_file("decl", created["time"], "_mas_overlay.json")
     )
     assert '"Base"' in content["content"]
-
-    # 无可归档内容：snapshot 报无变化（不产生条目）
     no_content = build_restore_service(
         RestoreContext(ctx.config, ctx.script_config, "no-content", ctx.user_id),
         [DECL_POOL],
@@ -176,7 +135,6 @@ def test_declarative_derivation(tmp_path, monkeypatch) -> None:
 def test_declarative_none_root_is_silent(tmp_path, monkeypatch) -> None:
     """backup_root 返回 None（如脚本路径未配置）：list 空 / snapshot 无变化 /
     preview 不注入不炸 / read_file 报无可读——而不是 TypeError。"""
-
     monkeypatch.chdir(tmp_path)
     no_root = build_restore_service(
         RestoreContext(_ctx().config, _ctx().script_config, "no-root", "u1"),
@@ -187,18 +145,19 @@ def test_declarative_none_root_is_silent(tmp_path, monkeypatch) -> None:
     assert asyncio.run(no_root.preview("decl", "whatever")) == {}
     with pytest.raises(ValueError):
         asyncio.run(no_root.read_backup_file("decl", "whatever", "x.json"))
-    # restore 是显式回调（专项语义），不依赖声明式 root，正常执行
     asyncio.run(no_root.restore("decl", "whatever"))
 
 
-# ═══════════════ 三态增强回归（mas_base 标注 / 指纹去重 / 跨来源校验） ═══════════════
-
-
 class _BaseUser:
+    @classmethod
+    def model_validate(cls, value):
+        return value
+
     """三态桩用户：支持 ``get("Info", "Base")`` 与 ``async update``（记录写回）。"""
 
     def __init__(self, base: str):
         self._base = base
+        self.Info = group_view(self, "Info")
         self.updated: list[dict] = []
 
     def get(self, group: str, key: str):
@@ -225,7 +184,6 @@ async def _tri_root(ctx: RestoreContext) -> Path:
 
 def _tri_ctx(script_id: str, base: str) -> tuple[RestoreContext, _BaseUser]:
     """构造 tri_state 上下文：UserData 支持 ``get("Info", "Base")`` 与写回。"""
-
     uid = uuid.uuid4()
     user = _BaseUser(base)
     script_config = SimpleNamespace(UserData={uid: user})
@@ -250,7 +208,7 @@ def _tri_pool(recorder: dict) -> ConfigRestorePool:
     async def set_base(ctx: RestoreContext, base: str) -> None:
         recorder["set_bases"].append(base)
         user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-        await user.update({"Info": {"Base": base}})
+        await user.update(type(user).model_validate({"Info": {"Base": base}}))
 
     return ConfigRestorePool(
         key="tri",
@@ -302,10 +260,7 @@ def test_tristate_backup_base_annotation(
 ) -> None:
     """三态标注：ensure 归档后写 _mas_base（tri_state=Info.Base 值 / user_only=恒
     独立来源 / sidecar_only=实际 base / 未声明=None），``service.list`` 项带 base。"""
-
     monkeypatch.chdir(tmp_path)
-
-    # tri_state：备份时点 base = UserData.Info.Base
     ctx, _ = _tri_ctx("tri-anno-a", "shared")
     service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_bases": []})])
     created = asyncio.run(service.ensure("tri"))
@@ -315,8 +270,6 @@ def test_tristate_backup_base_annotation(
     assert read_backup_base(backup_dir) == "shared"
     item = asyncio.run(service.list("tri"))[0]
     assert item["time"] == created["time"] and item["base"] == "shared"
-
-    # user_only：恒标注独立来源，与 Info.Base 无关
     ctx_u, _ = _tri_ctx("tri-anno-b", "native")
     only = build_restore_service(ctx_u, [_user_only_pool({"restored": []})])
     created_u = asyncio.run(only.ensure("tri"))
@@ -324,8 +277,6 @@ def test_tristate_backup_base_annotation(
     assert backup_dir_u is not None
     assert read_backup_base(backup_dir_u) == "independent"
     assert asyncio.run(only.list("tri"))[0]["base"] == "independent"
-
-    # sidecar_only：标注实际 base（纯字段侧车，无目录语义，原生来源同样标注）
     ctx_s, _ = _tri_ctx("tri-anno-d", "native")
     side = build_restore_service(ctx_s, [_sidecar_only_pool({"restored": []})])
     created_s = asyncio.run(side.ensure("tri"))
@@ -333,8 +284,6 @@ def test_tristate_backup_base_annotation(
     assert backup_dir_s is not None
     assert read_backup_base(backup_dir_s) == "native"
     assert asyncio.run(side.list("tri"))[0]["base"] == "native"
-
-    # 未声明三态：不写 _mas_base，list 项 base=None
     ctx_p, _ = _tri_ctx("tri-anno-c", "shared")
     plain = build_restore_service(ctx_p, [DECL_POOL])
     created_p = asyncio.run(plain.ensure("decl"))
@@ -350,14 +299,13 @@ def test_tristate_ensure_dedup_ignores_base_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """指纹去重：_mas_base 是归档后元数据，不破坏同内容二次 ensure 的去重。"""
-
     monkeypatch.chdir(tmp_path)
     ctx, _ = _tri_ctx("tri-dedup", "independent")
     service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_bases": []})])
     first = asyncio.run(service.ensure("tri"))
     assert first["created"] is True
     second = asyncio.run(service.ensure("tri"))
-    assert second["created"] is False  # 内容一致 → 去重，不新建条目
+    assert second["created"] is False
     assert second["time"] == first["time"]
     assert len(asyncio.run(service.list("tri"))) == 1
 
@@ -368,10 +316,7 @@ def test_tristate_cross_source_restore_switches_base(
     """跨来源恢复：备份 base ≠ 当前 base 时自动 set_base 切回备份时点再执行；
     同 base / user_only / sidecar_only / 旧备份（无 _mas_base）直接执行。
     ``service.current_base`` 只在 tri_state 池返回当前来源（前端比对用）。"""
-
     monkeypatch.chdir(tmp_path)
-
-    # 备份时点 base=shared；随后用户切到 independent 态
     ctx, user = _tri_ctx("tri-cross", "shared")
     recorder = {"restored": [], "set_bases": []}
     service = build_restore_service(ctx, [_tri_pool(recorder)])
@@ -383,19 +328,13 @@ def test_tristate_cross_source_restore_switches_base(
     assert asyncio.run(service.current_base("tri")) == "shared"
     user._base = "independent"
     assert asyncio.run(service.current_base("tri")) == "independent"
-
-    # 跨来源（shared→independent）：先 set_base 写回备份时点，再执行专项 restore
     asyncio.run(service.restore("tri", created["time"]))
     assert recorder["set_bases"] == ["shared"]
-    assert user.updated[-1] == {"Info": {"Base": "shared"}}  # 桩记录 base 已写回
+    assert user.updated[-1] == {"Info": {"Base": "shared"}}
     assert recorder["restored"] == [created["time"]]
-
-    # 同 base：不再重复 set_base，直接执行
     asyncio.run(service.restore("tri", created["time"]))
     assert recorder["set_bases"] == ["shared"]
     assert recorder["restored"] == [created["time"], created["time"]]
-
-    # user_only 池跨 base：无来源概念，current_base 为 None、直接执行
     ctx_u, _ = _tri_ctx("tri-cross-u", "shared")
     rec_u = {"restored": []}
     only = build_restore_service(ctx_u, [_user_only_pool(rec_u)])
@@ -407,8 +346,6 @@ def test_tristate_cross_source_restore_switches_base(
     assert asyncio.run(only.current_base("tri")) is None
     asyncio.run(only.restore("tri", created_u["time"]))
     assert rec_u["restored"] == [created_u["time"]]
-
-    # sidecar_only 池跨 base：纯字段回填、无目录迁移，同样直接执行
     ctx_s, user_s = _tri_ctx("tri-cross-s", "shared")
     rec_s = {"restored": []}
     side = build_restore_service(ctx_s, [_sidecar_only_pool(rec_s)])
@@ -417,17 +354,13 @@ def test_tristate_cross_source_restore_switches_base(
     assert asyncio.run(side.current_base("tri")) is None
     asyncio.run(side.restore("tri", created_s["time"]))
     assert rec_s["restored"] == [created_s["time"]]
-
-    # 旧备份（无 _mas_base）：读不到标注 → 无来源切换，直接执行
     ctx_old, _ = _tri_ctx("tri-cross-old", "independent")
     rec_old = {"restored": []}
     old_service = build_restore_service(ctx_old, [_tri_pool(rec_old)])
     legacy = archive_files(asyncio.run(_tri_files(ctx_old)), _tri_root_path(ctx_old))
     assert legacy is not None
-    assert read_backup_base(legacy) is None  # 未写 _mas_base 的旧备份
+    assert read_backup_base(legacy) is None
     asyncio.run(old_service.restore("tri", legacy.name))
     assert rec_old["restored"] == [legacy.name]
-
-    # 声明式池（未声明三态）：current_base 为 None（不参与跨来源比对）
     plain = build_restore_service(_ctx(), [DECL_POOL])
     assert asyncio.run(plain.current_base("decl")) is None

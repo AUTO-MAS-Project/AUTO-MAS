@@ -443,7 +443,7 @@ const checkUpdate = async () => {
 
   // 手动检查立即恢复：先终止暂停、清空截止日期，再做完整检查
   if (settings.Update?.PauseUntil) {
-    await handleSettingChange('Update', 'PauseUntil', '')
+    await handleSettingChange('Update', 'PauseUntil', null)
   }
 
   logger.info(`检查前状态:{

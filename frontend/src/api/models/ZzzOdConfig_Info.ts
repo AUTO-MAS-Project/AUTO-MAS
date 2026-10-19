@@ -2,16 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * ZZZ-OD 脚本基础信息（复用通用字段）
- */
 export type ZzzOdConfig_Info = {
     /**
      * 脚本名称
      */
     Name?: (string | null);
     /**
-     * 脚本根目录
+     * zzz-od 安装根目录（含 OneDragon 启动器、src 与 config）
      */
     RootPath?: (string | null);
 };

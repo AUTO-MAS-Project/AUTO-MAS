@@ -1,5 +1,6 @@
 /** 暂停更新：纯逻辑辅助（判停 / 格式化 / 日期选择器禁选范围） */
 import type { Dayjs } from 'dayjs'
+import { formatConfigDate } from '../utils/configDateTime'
 
 /** 最短暂停 1 天（截止日期最早为明天） */
 export const PAUSE_MIN_DAYS = 1
@@ -32,13 +33,14 @@ function isValidDateString(value: string): boolean {
  * 每次求值都以当前系统日期为准，时钟越过截止日的下次求值自动恢复。
  */
 export function isUpdatePaused(pauseUntil?: string | null, today: Date = new Date()): boolean {
-  if (!pauseUntil || !isValidDateString(pauseUntil)) return false
-  return toLocalDateString(today) < pauseUntil
+  const deadline = formatConfigDate(pauseUntil)
+  if (!deadline || !isValidDateString(deadline)) return false
+  return toLocalDateString(today) < deadline
 }
 
 /** 截止日期展示格式：YYYY-MM-DD → YYYY/MM/DD（状态文案 "直到xxxx/xx/xx为止"） */
 export function formatPauseUntil(pauseUntil: string): string {
-  return pauseUntil.replace(/-/g, '/')
+  return formatConfigDate(pauseUntil).replace(/-/g, '/')
 }
 
 /** 供 a-date-picker 的 disabledDate：禁用今天及以前（< 明天）与第 36 天以后（> 今天+35） */

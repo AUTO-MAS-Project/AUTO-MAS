@@ -53,7 +53,7 @@ logger = get_logger("游戏社区活动")
 
 def _account_value(account: object, name: str, default: object = "") -> object:
     try:
-        return account.get("GameSignAccount", name)  # type: ignore[attr-defined]
+        return getattr(account.GameSignAccount, name)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return default
 

@@ -332,6 +332,7 @@ class TaskExecuteBase(ABC):
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
+    config_locks: dict = field(default_factory=dict)
 
     # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
     # 不加类型注解，避免被 @dataclass 收作字段。

@@ -23,10 +23,16 @@
 
 import base64
 from io import BytesIO
-from typing import TYPE_CHECKING, Optional
+from typing import (
+    TYPE_CHECKING,
+    Optional,
+)
 
 from fastapi import APIRouter, Body
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
 from app.models.schema import OutBase
 from app.utils import get_logger

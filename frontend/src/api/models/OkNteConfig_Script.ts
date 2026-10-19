@@ -2,34 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * OK-NTE 脚本配置（仅暴露运行期存在的字段；LogHook/PushLog 等通用脚本字段不适用于 OK-NTE）
- */
 export type OkNteConfig_Script = {
     /**
-     * 脚本可执行文件路径
-     */
-    ScriptPath?: (string | null);
-    /**
-     * 脚本启动附加命令参数
+     * OkNte 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
      */
     Arguments?: (string | null);
-    /**
-     * 是否追踪脚本子进程
-     */
-    IfTrackProcess?: (boolean | null);
-    /**
-     * 追踪进程名称
-     */
-    TrackProcessName?: (string | null);
-    /**
-     * 追踪进程文件路径
-     */
-    TrackProcessExe?: (string | null);
-    /**
-     * 追踪进程启动命令行参数
-     */
-    TrackProcessCmdline?: (string | null);
     /**
      * 配置文件路径
      */
@@ -39,9 +16,17 @@ export type OkNteConfig_Script = {
      */
     ConfigPathMode?: ('File' | 'Folder' | null);
     /**
-     * 更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时
+     * 错误时日志
      */
-    UpdateConfigMode?: ('Never' | 'Success' | 'Failure' | 'Always' | null);
+    ErrorLog?: (string | null);
+    /**
+     * 错误时日志匹配模式: 关键字子串包含, 正则表达式
+     */
+    ErrorLogMode?: ('Split' | 'Regex' | null);
+    /**
+     * 是否追踪脚本子进程
+     */
+    IfTrackProcess?: (boolean | null);
     /**
      * 日志文件路径
      */
@@ -51,10 +36,6 @@ export type OkNteConfig_Script = {
      */
     LogPathFormat?: (string | null);
     /**
-     * 日志时间戳开始位置
-     */
-    LogTimeStart?: (number | null);
-    /**
      * 日志时间戳结束位置
      */
     LogTimeEnd?: (number | null);
@@ -62,6 +43,14 @@ export type OkNteConfig_Script = {
      * 日志时间戳格式
      */
     LogTimeFormat?: (string | null);
+    /**
+     * 日志时间戳开始位置
+     */
+    LogTimeStart?: (number | null);
+    /**
+     * 脚本可执行文件路径
+     */
+    ScriptPath?: (string | null);
     /**
      * 成功时日志
      */
@@ -71,12 +60,20 @@ export type OkNteConfig_Script = {
      */
     SuccessLogMode?: ('Split' | 'Regex' | null);
     /**
-     * 错误时日志
+     * 追踪进程启动命令行参数
      */
-    ErrorLog?: (string | null);
+    TrackProcessCmdline?: (string | null);
     /**
-     * 错误时日志匹配模式: 关键字子串包含, 正则表达式
+     * 追踪进程文件路径
      */
-    ErrorLogMode?: ('Split' | 'Regex' | null);
+    TrackProcessExe?: (string | null);
+    /**
+     * 追踪进程名称
+     */
+    TrackProcessName?: (string | null);
+    /**
+     * 更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时
+     */
+    UpdateConfigMode?: ('Never' | 'Success' | 'Failure' | 'Always' | null);
 };
 

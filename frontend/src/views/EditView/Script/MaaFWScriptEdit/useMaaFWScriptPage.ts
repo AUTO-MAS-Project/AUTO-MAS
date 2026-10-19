@@ -153,7 +153,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   const previewError = ref('')
 
   const runPreview = async (options: { forceEnv?: boolean } = {}) => {
-    const path = maafwConfig.Info.Path.trim()
+    const path = maafwConfig.Info.Path?.trim() ?? ''
     if (!path) {
       previewData.value = null
       previewError.value = ''

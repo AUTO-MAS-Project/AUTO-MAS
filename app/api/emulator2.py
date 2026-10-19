@@ -24,41 +24,422 @@
 增删合一就没法分类。移除前另给一个只读的预览接口，供确认页列出受影响的脚本。
 """
 
-from fastapi import APIRouter, Body
-
-from app.models.schema import (
-    Emulator2AvdApkInstallIn,
-    Emulator2AvdApkInstallOut,
-    Emulator2AvdInstanceIn,
-    Emulator2AvdInstanceOptionsOut,
-    Emulator2AvdStatusIn,
-    Emulator2AvdStatusOut,
-    Emulator2DevicesIn,
-    Emulator2DevicesOut,
-    Emulator2GuardCaptureOut,
-    Emulator2InstanceCreateIn,
-    Emulator2InstanceCreateOut,
-    Emulator2InstanceDeleteIn,
-    Emulator2InstanceDeleteOut,
-    Emulator2InstanceDeletePreviewOut,
-    Emulator2PathAddIn,
-    Emulator2PathAddOut,
-    Emulator2PathRemoveIn,
-    Emulator2PathRemoveOut,
-    Emulator2PathRemovePreviewOut,
-    Emulator2SearchIn,
-    Emulator2SearchOut,
-    Emulator2SettingsApplyAllIn,
-    Emulator2SettingsApplyAllOut,
-    Emulator2SettingsApplyIn,
-    Emulator2SettingsApplyOut,
-    Emulator2StableModeIn,
-    Emulator2StoreOpenIn,
-    Emulator2StoreOpenOut,
+from typing import (
+    Dict,
+    List,
+    Optional,
 )
+
+from fastapi import APIRouter, Body
+from pydantic import (
+    BaseModel,
+    Field,
+)
+
+from app.models.schema import OutBase
 from app.utils import get_logger
 from app.utils.emulator2 import service
 from app.utils.emulator2.avd import service as avd_service
+
+
+class Emulator2SearchIn(BaseModel):
+    emulatorId: Optional[str] = Field(
+        default=None, description="配置ID, 携带时会标出已添加过的路径"
+    )
+
+
+class Emulator2SearchItem(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名, 默认取目录名")
+    supported: bool = Field(..., description="能否加入 Emulator 2.0")
+    reason: str = Field(
+        ...,
+        description=(
+            "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
+            "unsupported 暂不支持 / already_added 已添加 / "
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
+            "components_missing 魔改 AVD 根目录里组件不全 (要用完整的模拟器内测包) / "
+            "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版 / "
+            "test_package_outdated 魔改 AVD 内测包编号太旧或读不到, 要换新包"
+        ),
+    )
+    instanceCount: Optional[int] = Field(default=None, description="实例数量")
+
+
+class Emulator2SearchOut(OutBase):
+    emulators: List[Emulator2SearchItem] = Field(
+        default_factory=list, description="搜索结果, 不可添加的也会列出并说明原因"
+    )
+
+
+class Emulator2DevicesIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    withSettings: bool = Field(
+        default=True,
+        description="是否连四项设置与稳定模式一起读; 状态轮询传 false, 只取在线状态与 ADB 地址",
+    )
+
+
+class Emulator2PathAddIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    installPath: str = Field(..., description="模拟器安装目录")
+    alias: Optional[str] = Field(default=None, description="安装别名")
+
+
+class Emulator2SlotAssignment(BaseModel):
+    slot: str = Field(..., description="设备号")
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+
+
+class Emulator2PathAddOut(OutBase):
+    ok: bool = Field(default=False, description="是否添加成功")
+    reason: str = Field(default="", description="失败原因枚举, 与搜索结果同一套")
+    pathId: str = Field(default="", description="路径标识, 由安装目录派生")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    assignedSlots: List[Emulator2SlotAssignment] = Field(
+        default_factory=list, description="本次新分配的设备号"
+    )
+    revivedSlots: List[str] = Field(
+        default_factory=list, description="重新添加同一路径时沿用的原设备号"
+    )
+
+
+class Emulator2PathRemoveIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="路径标识")
+
+
+class Emulator2AffectedScript(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    name: str = Field(..., description="脚本名称")
+    slot: str = Field(..., description="绑定的设备号")
+    running: bool = Field(default=False, description="是否正在运行")
+
+
+class Emulator2PathRemovePreviewOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="将会失效的设备号")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2PathRemoveOut(OutBase):
+    ok: bool = Field(default=False, description="是否移除成功")
+    tombstonedSlots: List[str] = Field(
+        default_factory=list,
+        description="已失效并保留的设备号, 不会再分配给其他设备",
+    )
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2InstanceCreateIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="在哪条模拟器安装下新建")
+    name: Optional[str] = Field(
+        default=None, description="新实例名称, 留空由模拟器自己命名"
+    )
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
+    )
+    cpu: Optional[int] = Field(
+        default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
+    )
+    fps: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+    )
+    dataPartitionGb: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+    )
+
+
+class Emulator2InstanceCreateOut(OutBase):
+    ok: bool = Field(default=False, description="是否新建成功")
+    reason: str = Field(default="", description="失败原因枚举")
+    slot: str = Field(default="", description="新实例分到的设备号")
+    nativeIndex: str = Field(default="", description="模拟器自己的实例索引")
+
+
+class Emulator2InstanceDeleteIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要删除的设备号")
+
+
+class Emulator2StoreOpenIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要打开游戏中心的设备号")
+
+
+class Emulator2StoreOpenOut(OutBase):
+    ok: bool = Field(default=False, description="游戏中心是否已在前台")
+    reason: str = Field(
+        default="",
+        description=(
+            "结局原因码: launched / already-running / no-store / not-installed"
+            " / no-adb / boot-timeout / launch-timeout"
+        ),
+    )
+
+
+class Emulator2InstanceDeletePreviewOut(OutBase):
+    ok: bool = Field(default=False, description="设备号是否有效")
+    reason: str = Field(default="", description="失败原因枚举")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="绑定了该设备号的脚本"
+    )
+
+
+class Emulator2InstanceDeleteOut(OutBase):
+    ok: bool = Field(default=False, description="是否删除成功")
+    reason: str = Field(default="", description="失败原因枚举")
+
+
+class Emulator2SettingField(BaseModel):
+    """一个设置项的值和它的来历。
+
+    ``state`` 必须四态分开：``.config`` 里没有 ``cpuCount`` 的实例照样跑在雷电默认的
+    6 核上，把「默认值」显示成「已保存」就是在声称用户设过一个他没设过的值。
+    """
+
+    value: Optional[int] = Field(default=None, description="当前值, 未设置时为 null")
+    state: str = Field(
+        default="unset",
+        description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
+    )
+
+
+class Emulator2SettingsApplyIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slot: str = Field(..., description="设备号")
+    changes: Dict[str, int] = Field(
+        ..., description="要写入的字段; 只提交用户改过的, 其余键原样保留"
+    )
+    expected: Dict[str, Optional[int]] = Field(
+        default_factory=dict,
+        description="表单打开时看到的值; 对不上说明文件被改过, 拒绝覆盖",
+    )
+
+
+class Emulator2SettingsApplyOut(OutBase):
+    ok: bool = Field(default=False, description="是否写入成功")
+    conflicts: List[str] = Field(
+        default_factory=list, description="编辑期间被改动的字段名"
+    )
+    applied: Dict[str, int] = Field(default_factory=dict, description="真正落盘的字段")
+
+
+class Emulator2GuardCaptureOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="记下基准的设备号")
+    count: int = Field(default=0, description="记下基准的设备台数")
+
+
+class Emulator2StableModeIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slots: List[str] = Field(
+        default_factory=list, description="要处理的设备号; 留空表示全部"
+    )
+
+
+class Emulator2SettingsApplyAllIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    changes: Dict[str, int] = Field(..., description="要写到全部实例上的字段")
+
+
+class Emulator2BatchResult(BaseModel):
+    slot: str = Field(..., description="设备号")
+    ok: bool = Field(default=False, description="该设备是否写入成功")
+    message: str = Field(default="", description="失败原因")
+
+
+class Emulator2SettingsApplyAllOut(OutBase):
+    results: List[Emulator2BatchResult] = Field(
+        default_factory=list, description="逐台结果"
+    )
+    okCount: int = Field(default=0, description="成功台数")
+    failCount: int = Field(default=0, description="失败台数")
+
+
+class Emulator2PathItem(BaseModel):
+    pathId: str = Field(..., description="路径标识")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="版本号")
+    slots: List[str] = Field(default_factory=list, description="该路径占用的设备号")
+
+
+class Emulator2DeviceItem(BaseModel):
+    slot: str = Field(..., description="设备号, 脚本绑定用它")
+    pathId: str = Field(..., description="所属路径标识")
+    alias: str = Field(default="", description="所属安装的别名")
+    realType: str = Field(
+        default="", description="设备的真实模拟器类型, 不是配置的类型"
+    )
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+    availability: str = Field(
+        default="ok",
+        description="ok 正常 / missing 这次没枚举到 / unavailable 该安装暂时不可达",
+    )
+    title: str = Field(default="", description="实例名称")
+    status: int = Field(default=5, description="设备状态码")
+    adbAddress: str = Field(default="", description="ADB 地址")
+    settings: Dict[str, Emulator2SettingField] = Field(
+        default_factory=dict,
+        description="已保存设置, 下次启动使用; 不是运行中实例的当前配置",
+    )
+    stableMode: bool = Field(
+        default=False, description="稳定模式是否已生效(所有干扰项都处在安全状态)"
+    )
+    stableUnsafe: List[str] = Field(
+        default_factory=list, description="还没进入安全状态的项"
+    )
+
+
+class Emulator2DevicesOut(OutBase):
+    paths: List[Emulator2PathItem] = Field(
+        default_factory=list, description="已纳管的模拟器路径"
+    )
+    devices: List[Emulator2DeviceItem] = Field(
+        default_factory=list, description="合并后的设备列表"
+    )
+
+
+class Emulator2AvdRootIn(BaseModel):
+    root: str = Field(..., description="魔改 AVD 根目录 (解压好的模拟器内测包)")
+
+
+class Emulator2AvdStatusIn(Emulator2AvdRootIn):
+    refresh: bool = Field(
+        default=False,
+        description="跳过硬件加速与 Vulkan 检查的缓存重新查; 用户点「检查」时传 true",
+    )
+
+
+class Emulator2AvdComponentItem(BaseModel):
+    id: str = Field(
+        ...,
+        description="组件标识: platform-tools / emulator / system-image / launcher",
+    )
+    name: str = Field(..., description="组件名称")
+    version: str = Field(default="", description="装着的版本; 没装为空")
+    installed: bool = Field(default=False, description="是否已就绪")
+    optional: bool = Field(
+        default=False, description="是否可选组件 (轻量桌面), 可选组件缺失不影响添加"
+    )
+    localSdk: bool = Field(
+        default=False,
+        description="是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK",
+    )
+    testPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪",
+    )
+    needsTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里没有模拟器、不是自编版或内测包太旧",
+    )
+    build: Optional[str] = Field(
+        default=None,
+        description="仅 Android 模拟器: 内测包编号 (source.properties 的 Pkg.BuildId, 如 mas-19); 不是自编版或读不到为 null",
+    )
+    outdatedTestPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 是自编版, 但内测包编号低于最低要求或读不到, 要换新包",
+    )
+
+
+class Emulator2AvdPrecheckItem(BaseModel):
+    """魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
+
+    id: str = Field(
+        ...,
+        description="检查项: path / components / emulator / acceleration / vulkan / disk / memory",
+    )
+    title: str = Field(..., description="检查项名称")
+    ok: Optional[bool] = Field(
+        default=None, description="是否满足; null 表示现在查不了 (如模拟器组件还没装)"
+    )
+    blocking: bool = Field(
+        default=True, description="不满足时是否拒绝开机; 显卡 Vulkan 只提示不拦截"
+    )
+    reason: str = Field(default="", description="检查结果或不满足的原因")
+    advice: str = Field(default="", description="不满足时给用户的处理建议")
+
+
+class Emulator2AvdStatusOut(OutBase):
+    root: str = Field(default="", description="根目录")
+    ready: bool = Field(default=False, description="必需组件是否齐全, 齐了才能添加")
+    components: List[Emulator2AvdComponentItem] = Field(
+        default_factory=list, description="组件清单"
+    )
+    missing: List[str] = Field(
+        default_factory=list,
+        description="缺着的必需组件名称 (含不合格的模拟器); 要用完整的模拟器内测包",
+    )
+    accelerationOk: Optional[bool] = Field(
+        default=None, description="硬件加速 (WHPX) 是否可用; null 表示还查不了"
+    )
+    accelerationDetail: str = Field(
+        default="", description="硬件加速检查结果或不可用的原因与建议"
+    )
+    prechecks: List[Emulator2AvdPrecheckItem] = Field(
+        default_factory=list,
+        description=(
+            "开机前电脑检查: 目录路径、组件、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), "
+            "每项给 ok、原因、建议"
+        ),
+    )
+
+
+class Emulator2AvdInstanceIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2AvdInstanceOptionsOut(OutBase):
+    memoryMb: Optional[int] = Field(
+        default=None, description="内存 MB, 每次开机用 -memory 传"
+    )
+    cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    fps: Optional[int] = Field(
+        default=None, description="帧率 (hw.lcd.vsync), 下次开机生效"
+    )
+    dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
+    initialized: bool = Field(
+        default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
+    )
+    launcher: str = Field(default="", description="当前桌面包名, pixel 为原生桌面")
+    renderer: str = Field(default="", description="首次开机记录的渲染器 (GLES 行)")
+    softwareRenderer: bool = Field(
+        default=False,
+        description="是否在用软件渲染 (SwiftShader); 为 true 时应提示用户更新显卡驱动",
+    )
+    consolePort: int = Field(default=0, description="控制台端口")
+    adbPort: int = Field(default=0, description="adb 端口")
+    grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
+
+
+class Emulator2AvdApkInstallIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号, 实例必须已开机")
+    apkPath: str = Field(
+        ..., description="本机 .apk 文件的完整路径; .xapk / 拆分安装包不支持"
+    )
+
+
+class Emulator2AvdApkInstallOut(OutBase):
+    ok: bool = Field(default=False, description="是否安装成功")
+    reason: str = Field(default="", description="ok 安装成功")
+    result: str = Field(default="", description="adb install 的结果行 (Success)")
+
 
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
 logger = get_logger("Emulator 2.0 API")

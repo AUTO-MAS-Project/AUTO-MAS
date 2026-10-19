@@ -1,6 +1,5 @@
 // 计划表「按天」的公共约定：周计划是周一~周日，多天轮换是第 1~N 天。两者在接口里都是
-// Days 字典的键（星期名或 "1"~"N"），换算规则与后端 app/models/config.py 的
-// PlanDaysConfig 一一对应，改一处要改两处。
+// 配置分组名：星期名保持原样，轮换天为 Day1~Day31，与后端 config/plan.py 一致。
 
 export type PlanMode = 'ALL' | 'Weekly' | 'Rotate'
 
@@ -49,18 +48,24 @@ export const planColumnKeys = (mode: string | undefined, rotateDays: unknown): s
   return mode === 'Rotate' ? days : ['ALL', ...days]
 }
 
-/** 读某一列的数据：ALL 在接口顶层，每天在 Days 里 */
+/** 计划列对应的配置分组。 */
+export const planColumnGroup = (key: string): string =>
+  key === 'ALL' || isWeekdayKey(key) ? key : `Day${key}`
+
+/** 直接读取派生契约中的配置分组。 */
 export const readPlanColumn = (tableData: Record<string, any> | null, key: string): unknown =>
-  key === 'ALL' ? tableData?.ALL : tableData?.Days?.[key]
+  tableData?.[planColumnGroup(key)]
 
-/** 写某一列的接口路径：ALL 在顶层，每天在 Days 里 */
+/** 写某一列的配置字段路径。 */
 export const planColumnPath = (key: string, field: string): string =>
-  key === 'ALL' ? `${key}.${field}` : `Days.${key}.${field}`
+  `${planColumnGroup(key)}.${field}`
 
-/** 计划数据里的全部天键：ALL 加 Days 里的每一个 */
+/** 全部已声明的计划列，包括当前未显示的轮换天。 */
 export const planAllDayKeys = (planData: Record<string, any> | null | undefined): string[] => [
   'ALL',
-  ...Object.keys((planData?.Days ?? {}) as Record<string, unknown>),
+  ...Object.keys(planData ?? {}).flatMap(group =>
+    isWeekdayKey(group) ? [group] : /^Day\d+$/.test(group) ? [group.slice(3)] : []
+  ),
 ]
 
 /**
@@ -76,8 +81,4 @@ export const mergePlanData = (
   ...(base ?? {}),
   ...override,
   ALL: override.ALL ?? base?.ALL,
-  Days: {
-    ...((base?.Days ?? {}) as Record<string, any>),
-    ...((override?.Days ?? {}) as Record<string, any>),
-  },
 })

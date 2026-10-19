@@ -4,20 +4,20 @@
 /* eslint-disable */
 export type Webhook_Data = {
     /**
-     * Webhook URL
-     */
-    Url?: (string | null);
-    /**
-     * 消息模板
-     */
-    Template?: (string | null);
-    /**
-     * 自定义请求头
+     * 请求头
      */
     Headers?: (string | null);
     /**
      * 请求方法
      */
     Method?: ('POST' | 'GET' | null);
+    /**
+     * 消息模板
+     */
+    Template?: (string | null);
+    /**
+     * Webhook URL 地址
+     */
+    Url?: (string | null);
 };
 

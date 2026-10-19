@@ -65,15 +65,13 @@ class EndfieldUpdateTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         self.cur_user_item.status = "运行"
-        game_exe = Path(str(self.script_config.get("Game", "Path") or "").strip())
+        game_exe = Path(str(self.script_config.Game.Path or "").strip())
 
         # 不看 Game.IfAutoUpdate：那是自动门的开关，用户当面点下按钮即为授权。
         try:
             result = await ensure_game_updated(
                 game_exe,
-                time_limit_minutes=int(
-                    self.script_config.get("Game", "UpdateTimeLimit")
-                ),
+                time_limit_minutes=int(self.script_config.Game.UpdateTimeLimit),
                 progress=self._push_dispatch_log,
                 entry="手动",
             )

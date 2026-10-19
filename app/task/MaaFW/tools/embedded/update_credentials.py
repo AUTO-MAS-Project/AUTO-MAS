@@ -84,7 +84,7 @@ def _read_text(config: Any, group: str, name: str) -> str:
     """读一个字符串配置项；配置项不存在或读取失败一律当空串。"""
 
     try:
-        return str(config.get(group, name) or "").strip()
+        return str(getattr(getattr(config, group), name) or "").strip()
     except Exception:  # noqa: BLE001 - 旧配置对象缺项不该挡住运行
         return ""
 

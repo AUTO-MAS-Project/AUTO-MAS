@@ -44,7 +44,7 @@ export type ScriptType =
 export interface MAAScriptConfig {
   Info: {
     Name: string
-    Path: string
+    Path: string | null
   }
   Run: {
     HardTimeLimit: number
@@ -66,11 +66,6 @@ export interface MAAScriptConfig {
     TakeoverEnabled: boolean
     MirrorChyanCDK: string
   }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
-  }
 }
 
 // 通用脚本配置
@@ -79,7 +74,7 @@ export interface GeneralScriptConfig {
     Arguments: string
     Enabled: boolean
     IfForceClose: boolean
-    Path: string
+    Path: string | null
     Type: string
     WaitTime: number
     EmulatorId: string
@@ -89,7 +84,7 @@ export interface GeneralScriptConfig {
   }
   Info: {
     Name: string
-    RootPath: string
+    RootPath: string | null
   }
   Run: {
     HardTimeLimit: number
@@ -99,14 +94,14 @@ export interface GeneralScriptConfig {
   }
   Script: {
     Arguments: string
-    ConfigPath: string
+    ConfigPath: string | null
     ConfigPathMode: string
     ErrorLog: string
     IfTrackProcess: boolean
     TrackProcessName: string
     TrackProcessExe: string
     TrackProcessCmdline: string
-    LogPath: string
+    LogPath: string | null
     LogPathFormat: string
     LogTimeEnd: number
     LogTimeStart: number
@@ -115,16 +110,11 @@ export interface GeneralScriptConfig {
     LogHookRules: string
     PushLogEnabled: boolean
     PushLogPatterns: string
-    ScriptPath: string
+    ScriptPath: string | null
     SuccessLog: string
     SuccessLogMode: string
     ErrorLogMode: string
     UpdateConfigMode: string
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
   }
 }
 
@@ -132,7 +122,7 @@ export interface GeneralScriptConfig {
 export interface SRCScriptConfig {
   Info: {
     Name: string
-    Path: string
+    Path: string | null
   }
   Run: {
     HardTimeLimit: number
@@ -175,7 +165,7 @@ export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
 export interface MaaEndScriptConfig {
   Info: {
     Name: string
-    Path: string
+    Path: string | null
   }
   Run: {
     HardTimeLimit: number
@@ -188,8 +178,8 @@ export interface MaaEndScriptConfig {
   Game: {
     ControllerType: string | null
     LaunchMode: 'Client' | 'Launcher' | 'MAS' | 'MaaEnd'
-    Path: string
-    LauncherPath: string
+    Path: string | null
+    LauncherPath: string | null
     Arguments: string
     WaitTime: number
     EmulatorId: string
@@ -231,7 +221,7 @@ export interface MaaFWScriptConfig {
   Info: {
     Name: string
     ProjectLabel?: string
-    Path: string
+    Path: string | null
     Controller: string
     Resource: string
   }
@@ -240,7 +230,7 @@ export interface MaaFWScriptConfig {
     Index: string
   }
   Device: {
-    AdbPath: string
+    AdbPath: string | null
     AdbAddress: string
     AdbScreencapMethods: number
     AdbInputMethods: number
@@ -255,7 +245,7 @@ export interface MaaFWScriptConfig {
   Game: {
     /** DirectExe：MAS 启动并在结束后关闭（默认）；AttachOnly：其他方式启停，MAS 只接管。 */
     LaunchMode: MaaFWLaunchMode
-    LaunchPath: string
+    LaunchPath: string | null
     /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
     PackageName: string
     Arguments: string
@@ -297,7 +287,7 @@ export interface MaaFWScriptConfig {
     /** 导入时来源的 interface 版本，仅展示。 */
     SourceVersion: string
     /** 导入时间，仅展示。 */
-    ImportedAt: string
+    ImportedAt: string | null
     /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
     Report: string
     /**
@@ -394,9 +384,9 @@ export interface MaaFWUserConfig {
     Status: boolean
     RemainedDay: number
     IfScriptBeforeTask: boolean
-    ScriptBeforeTask: string
+    ScriptBeforeTask: string | null
     IfScriptAfterTask: boolean
-    ScriptAfterTask: string
+    ScriptAfterTask: string | null
     Notes: string
     Tag?: string | null
     Account: string

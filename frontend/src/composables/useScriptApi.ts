@@ -337,7 +337,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
@@ -438,7 +438,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           srcUserData.Data?.LastProxyDate !== undefined
                             ? srcUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           srcUserData.Data?.ProxyTimes !== undefined
                             ? srcUserData.Data.ProxyTimes
@@ -520,7 +520,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           generalUserData.Data?.LastProxyDate !== undefined
                             ? generalUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           generalUserData.Data?.ProxyTimes !== undefined
                             ? generalUserData.Data.ProxyTimes
@@ -727,7 +727,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           maaEndUserData.Data?.LastProxyDate !== undefined
                             ? maaEndUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           maaEndUserData.Data?.ProxyTimes !== undefined
                             ? maaEndUserData.Data.ProxyTimes
@@ -836,7 +836,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           okwwUserData.Data?.LastProxyDate !== undefined
                             ? okwwUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           okwwUserData.Data?.ProxyTimes !== undefined
                             ? okwwUserData.Data.ProxyTimes
@@ -863,7 +863,8 @@ export function useScriptApi() {
                       Task: maafwUserData.Task ?? {},
                       Notify: maafwUserData.Notify ?? {},
                       Data: {
-                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '2000-01-01',
+                        LastProxyDate:
+                          maafwUserData.Data?.LastProxyDate ?? '2000-01-01T00:00:00+04:00',
                         ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
                         IfPassCheck: maafwUserData.Data?.IfPassCheck ?? true,
                       },
@@ -962,7 +963,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           hsrUserData.Data?.LastProxyDate !== undefined
                             ? hsrUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
@@ -1057,7 +1058,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           bettergiUserData.Data?.LastProxyDate !== undefined
                             ? bettergiUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           bettergiUserData.Data?.ProxyTimes !== undefined
                             ? bettergiUserData.Data.ProxyTimes
@@ -1157,7 +1158,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           whimboxUserData.Data?.LastProxyDate !== undefined
                             ? whimboxUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           whimboxUserData.Data?.ProxyTimes !== undefined
                             ? whimboxUserData.Data.ProxyTimes
@@ -1276,7 +1277,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           zzzodUserData.Data?.LastProxyDate !== undefined
                             ? zzzodUserData.Data.LastProxyDate
-                            : '2000-01-01',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           zzzodUserData.Data?.ProxyTimes !== undefined
                             ? zzzodUserData.Data.ProxyTimes
@@ -1345,7 +1346,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           baahUserData.Data?.LastProxyDate !== undefined
                             ? baahUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01T00:00:00+04:00',
                         ProxyTimes:
                           baahUserData.Data?.ProxyTimes !== undefined
                             ? baahUserData.Data.ProxyTimes
@@ -1567,9 +1568,11 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      // 创建数据副本并移除 SubConfigsInfo 字段
-      const dataToSend = { ...data }
-      delete dataToSend.SubConfigsInfo
+      // 脚本保存只提交字段，嵌套用户和通知配置由各自接口维护。
+      const dataToSend: Record<string, unknown> = { ...data }
+      delete dataToSend.UserData
+      delete dataToSend.Notify_CustomWebhooks
+      delete dataToSend.ui
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,

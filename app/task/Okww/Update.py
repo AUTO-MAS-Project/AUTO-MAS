@@ -60,7 +60,7 @@ class WuwaUpdateTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         self.cur_user_item.status = "运行"
-        launcher = Path(str(self.script_config.get("Game", "Path") or "").strip())
+        launcher = Path(str(self.script_config.Game.Path or "").strip())
         if not launcher.is_file():
             raise RuntimeError("请先在脚本配置中导入有效的鸣潮官方启动器")
 
@@ -81,7 +81,7 @@ class WuwaUpdateTask(TaskExecuteBase):
             f"鸣潮需更新: {update_info.current_version}"
             f" -> {update_info.release_version}"
         )
-        limit_gb = int(self.script_config.get("Game", "UpdateFullSyncLimit") or 0)
+        limit_gb = int(self.script_config.Game.UpdateFullSyncLimit or 0)
         await update_wuthering_waves(
             update_info.install_dir,
             self.resource,

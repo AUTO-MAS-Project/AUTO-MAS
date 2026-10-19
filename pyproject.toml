@@ -43,6 +43,7 @@ dependencies = [
     "tzdata==2026.3",
     "zstandard==0.25.0",
     "pyzipper==0.4.0",
+    "blinker>=1.9.0",
 ]
 
 [project.urls]

@@ -140,7 +140,7 @@ def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) 
 # 任何来源下都可开关。开启时把该用户面板值覆盖到所选 base，关闭时保留 base 配置；
 # 必要的启动、模拟器与恢复流程不属于快速配置。写入和恢复仍由各专项按自身架构负责。
 # （旧字面量 脚本/用户/直控 与更早的「简洁/详细/自定义」由模型层
-# BaseSourceValidator 加载时归一，见 app/models/config.py。）
+# Base 字段声明加载时归一，见 app/models/config/script.py。）
 #
 # 例外：BetterGI 用户页已隐藏该开关，改由 Info.Base 派生（native=关，
 # shared/independent=开），见 app/models/config.py 的 BetterGIUserConfig.load。
@@ -162,7 +162,7 @@ def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> 
     if config is None:
         return default
     try:
-        raw = config.get("Info", "Base")  # type: ignore[attr-defined]
+        raw = config.Info.Base  # type: ignore[attr-defined]
     except (AttributeError, KeyError, TypeError):
         return default
     # 存量配置里可能还是旧来源字面量（脚本/用户/直控），一并归一
@@ -197,7 +197,7 @@ def user_uses_quick_config(config: object, default: bool = True) -> bool:
     if config is None:
         return default
     try:
-        raw = config.get("Info", "IfQuickConfig")  # type: ignore[attr-defined]
+        raw = config.Info.IfQuickConfig  # type: ignore[attr-defined]
     except (AttributeError, KeyError, TypeError):
         return default
     return bool(raw) if raw is not None else default

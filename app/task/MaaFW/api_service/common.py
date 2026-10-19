@@ -109,10 +109,9 @@ def maafw_group_members(script_id: str) -> list[GroupMember]:
         members.append(
             GroupMember(
                 script_id=str(uid),
-                # 各自所在的组：开发者模式的脚本是它的私有渠道，别人的导入 / 更新切不到它
                 channel=effective_channel(str(uid), config),
                 busy=bool(getattr(config, "is_locked", False)),
-                name=str(config.get("Info", "Name") or ""),
+                name=str(config.Info.Name or ""),
                 proxy_url=resolve_update_proxy_url(config) or None,
             )
         )
@@ -151,8 +150,7 @@ async def maafw_effective_root(
             logger.warning(
                 mask_home_path(
                     redact_text(
-                        f"MFW 脚本 {script_id} 准备副本失败"
-                        f"（来源 {script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                        f"MFW 脚本 {script_id} 准备副本失败（来源 {script_config.Info.Path or '未设置'}）：{exc}"
                     )
                 )
             )
@@ -161,8 +159,7 @@ async def maafw_effective_root(
             logger.opt(exception=True).warning(
                 mask_home_path(
                     redact_text(
-                        f"MFW 项目导入失败（{script_id}，来源 "
-                        f"{script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                        f"MFW 项目导入失败（{script_id}，来源 {script_config.Info.Path or '未设置'}）：{exc}"
                     )
                 )
             )

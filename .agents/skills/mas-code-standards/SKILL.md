@@ -52,7 +52,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 16. Use Conventional Commits for commit messages: `<type>(<scope>): <subject>`, with documented types such as `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `build`, and `ci`.
 17. Choose commit scope from the touched file name when one file changes, or from the parent folder name when multiple related files change.
 18. For backend docstrings, use Google-style sections for summary, `Args`, `Returns`, and `Raises` when a function needs explanation.
-19. For `ConfigBase` subclasses, comment every `ConfigItem` and group config items by clear section markers before `super().__init__()`.
+19. Config fields use exact Pydantic types, defaults and Chinese `Field(description=...)` within semantic `ConfigGroup` blocks on `ConfigEntry`. Config behavior follows [the configuration framework reference](../mas-data-model/references/config-framework.md); historical style samples do not override current framework contracts.
 
 ## Comment Preservation
 Do not treat cleanup as permission to strip comments. Preserve comments that explain business intent, operational steps, compatibility decisions, non-obvious invariants, maintainer context, or config-field meaning.
@@ -60,7 +60,7 @@ Do not treat cleanup as permission to strip comments. Preserve comments that exp
 Only remove or rewrite a comment when it is stale, misleading, mechanically restates the next token of code, or refers to code that is being deleted in the same edit. When rewriting, keep the useful intent and make it shorter or more accurate instead of dropping it.
 
 Protect these comments especially:
-1. `ConfigItem` comments and section markers in `ConfigBase` subclasses.
+1. Config field descriptions, semantic group boundaries and comments explaining compatibility or non-obvious field behavior.
 2. Ordered workflow comments such as "第一步" and "第二步" in long service flows.
 3. Task-injection, config-swap, log-monitoring, and compatibility notes in runtime code.
 4. Frontend section comments that help scan large edit pages or distinguish type-specific logic.
@@ -71,7 +71,7 @@ Protect these comments especially:
 3. Do not switch comment or logging language inconsistently inside a file.
 4. Do not turn a small fix into a broad refactor for stylistic purity.
 5. Do not confuse "explicit" with "verbose".
-6. Do not modify OpenAPI-generated files. Ask the developer to regenerate them manually when updates are required.
+6. Update OpenAPI-generated files through the project generator, never by hand. Complete authorized regeneration when the local prerequisites are available; report blockers precisely.
 7. Do not split equivalent behavior into multiple methods or API routes when a dict selector or type field represents the difference directly.
 8. Do not leave dead support paths for future detailed/raw config when there is no complete UI-to-runtime path yet.
 9. Do not add maintainer-facing "safety" code that only repeats guarantees already enforced by base classes or validators.

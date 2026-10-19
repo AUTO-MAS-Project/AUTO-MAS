@@ -234,6 +234,9 @@ class ConfigCenterClient:
 
         # 分享站上的文件可能是从网页端手工上传的，里面还带着用户数据，导入时一律丢掉
         data.pop("SubConfigsInfo", None)
+        data.pop("UserData", None)
+        data.pop("Notify_CustomWebhooks", None)
+        data.pop("ui", None)
 
         return data
 
@@ -1023,7 +1026,7 @@ class ConfigCenterClient:
         """读取本机外观上传记录, 损坏时按空处理。"""
 
         try:
-            data = json.loads(Config.get("Data", "ShareAppearanceUploads"))
+            data = json.loads(Config.setting.Data.ShareAppearanceUploads)
         except Exception as e:
             logger.warning(f"读取外观上传记录失败, 按空记录处理: {e}")
             return {}
@@ -1049,10 +1052,17 @@ class ConfigCenterClient:
         data = self._load_appearance_uploads()
         data.setdefault(username, {})[appearance_id] = record
         try:
-            await Config.set(
-                "Data",
-                "ShareAppearanceUploads",
-                json.dumps(data, ensure_ascii=False),
+            await Config.setting.update(
+                type(Config.setting).model_validate(
+                    {
+                        "Data": {
+                            "ShareAppearanceUploads": json.dumps(
+                                data, ensure_ascii=False
+                            )
+                        }
+                    }
+                ),
+                check_visibility=False,
             )
         except Exception as e:
             logger.warning(f"保存外观上传记录失败: {appearance_id}, {e}")
@@ -1072,10 +1082,17 @@ class ConfigCenterClient:
         for appearance_id in stale:
             del records[appearance_id]
         try:
-            await Config.set(
-                "Data",
-                "ShareAppearanceUploads",
-                json.dumps(data, ensure_ascii=False),
+            await Config.setting.update(
+                type(Config.setting).model_validate(
+                    {
+                        "Data": {
+                            "ShareAppearanceUploads": json.dumps(
+                                data, ensure_ascii=False
+                            )
+                        }
+                    }
+                ),
+                check_visibility=False,
             )
             logger.info(f"分享站上已没有文件 {file_id}, 删除本机上传记录: {stale}")
         except Exception as e:

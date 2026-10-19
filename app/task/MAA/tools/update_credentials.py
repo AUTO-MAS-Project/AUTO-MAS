@@ -26,9 +26,9 @@ from app.models.config import MaaConfig
 
 def resolve_takeover_credentials(config: MaaConfig) -> tuple[bool, str | None]:
     """脚本开启接管且有生效 CDK 才启用；脚本 CDK 留空时回退全局配置。"""
-    if not config.get("Update", "TakeoverEnabled"):
+    if not config.Update.TakeoverEnabled:
         return False, None
-    cdk = str(config.get("Update", "MirrorChyanCDK") or "").strip()
+    cdk = str(config.Update.MirrorChyanCDK or "").strip()
     if not cdk:
-        cdk = str(Config.get("Update", "MirrorChyanCDK") or "").strip()
+        cdk = str(Config.setting.Update.MirrorChyanCDK or "").strip()
     return bool(cdk), cdk or None

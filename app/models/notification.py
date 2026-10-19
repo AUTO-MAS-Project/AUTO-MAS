@@ -136,19 +136,3 @@ class WebhookTargetSnapshot:
     template: str
     headers: str
     method: Literal["GET", "POST"]
-
-    def get(self, group: str, name: str) -> str | bool:
-        """提供与配置对象一致的只读字段访问，供渠道服务组装请求。"""
-
-        values = {
-            ("Info", "Name"): self.name,
-            ("Info", "Enabled"): self.enabled,
-            ("Data", "Url"): self.url,
-            ("Data", "Template"): self.template,
-            ("Data", "Headers"): self.headers,
-            ("Data", "Method"): self.method,
-        }
-        try:
-            return values[(group, name)]
-        except KeyError as exc:
-            raise AttributeError(f"Webhook 配置项 '{group}.{name}' 不存在") from exc

@@ -204,7 +204,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         """
         from app.core import Config
 
-        if not IS_WINDOWS or not Config.get("Function", "IfSilence"):
+        if not IS_WINDOWS or not Config.setting.Function.IfSilence:
             return await super().open(idx, package_name)
         if await self.getStatus(idx) == DeviceStatus.ONLINE:
             info = await super().open(idx, package_name)
@@ -485,7 +485,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
                 "quit",
                 "--index",
                 idx,
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -540,7 +540,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             idx,
             "--packagename",
             package_name,
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -908,7 +908,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             self.emulator_path,
             "add",
             *(["--name", name] if name else []),
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self.config.Info.MaxWaitTime,
             if_merge_std=True,
             breakaway=True,
         )
@@ -946,7 +946,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
                 "remove",
                 "--index",
                 native_index,
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -977,7 +977,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             result = await ProcessRunner.run_process(
                 self.emulator_path,
                 *ldplayer_clean_mode_args(enabled),
-                timeout=self.config.get("Info", "MaxWaitTime"),
+                timeout=self.config.Info.MaxWaitTime,
                 if_merge_std=True,
                 breakaway=True,
             )
@@ -1029,7 +1029,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
 
         device = (await self.get_device_info(idx))[idx]
 
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        deadline = time.monotonic() + self.config.Info.MaxWaitTime
         while time.monotonic() < deadline:
             hwnd = device.top_hwnd
             if hwnd <= 0 or not win32gui.IsWindow(hwnd):
@@ -1073,9 +1073,8 @@ async def build_manager(
 
     ``manager_exe`` 必须是该安装的 ``ldconsole.exe``——实例锁的键靠它。
     """
-    config = EmulatorConfig()
-    await config.load(
-        {
+    config = EmulatorConfig.build(
+        payload={
             "Info": {
                 "Name": Path(manager_exe).parent.name,
                 "Type": "ldplayer",
@@ -1085,4 +1084,5 @@ async def build_manager(
             }
         }
     )
+    await config.activate()
     return LDPlayer14Manager(config)

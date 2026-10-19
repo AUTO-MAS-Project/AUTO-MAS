@@ -23,9 +23,9 @@
 """社区工具调度策略，明确隔离签到和日常查询的执行边界。"""
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Literal, Protocol
 
 CommunityTriggerSource = Literal[
     "scheduled",
@@ -36,6 +36,10 @@ CommunityTriggerSource = Literal[
 ]
 TASK_COMMUNITY_SOURCES = frozenset({"task_scheduled", "task_manual", "task_startup"})
 AccountCredentialChecker = Callable[[object], bool]
+
+
+class CommunityAccounts(Protocol):
+    def items(self) -> Iterable[tuple[object, object]]: ...
 
 
 def _default_credential_checker(account: object) -> bool:
@@ -52,16 +56,16 @@ def has_pending_community_account(
 ) -> bool:
     """判断账号是否启用、配置凭据且尚未完成今日社区签到。"""
 
-    if not account.get("GameSignAccount", "Enabled"):  # type: ignore[attr-defined]
+    if not account.GameSignAccount.Enabled:  # type: ignore[attr-defined]
         return False
     checker = has_credentials or _default_credential_checker
     if not checker(account):
         return False
-    return account.get("GameSignAccount", "LastSignDate") != today  # type: ignore[attr-defined]
+    return account.GameSignAccount.LastSignDate.strftime("%Y-%m-%d") != today  # type: ignore[attr-defined]
 
 
 def all_community_accounts_signed(
-    accounts: Mapping[object, object],
+    accounts: CommunityAccounts,
     today: str,
     *,
     has_credentials: AccountCredentialChecker | None = None,

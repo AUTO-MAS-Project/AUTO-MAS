@@ -1,24 +1,18 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
 import asyncio
 import json
 import shutil
@@ -27,9 +21,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Literal
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskConfigDiscardedData, WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
@@ -196,7 +190,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: MaaConfig,
-        user_config: MultipleConfig[MaaUserConfig],
+        user_config: ConfigCollection[MaaUserConfig],
         emulator_manager: DeviceBase,
         view_only: bool = False,
     ):
@@ -218,7 +212,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.maa_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.maa_root_path = Path(self.script_config.get("Info", "Path"))
+        maa_root_path = self.script_config.Info.Path
+        if maa_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        self.maa_root_path = maa_root_path
         self.maa_set_path = self.maa_root_path / "config"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
 
@@ -255,8 +252,9 @@ class ScriptConfigTask(TaskExecuteBase):
         """仅脚本预设和启用快速配置的用户使用三段托管队列。"""
 
         user_id = self.cur_user_item.user_id
-        return user_id == "Default" or self.user_config[uuid.UUID(user_id)].get(
-            "Info", "IfQuickConfig"
+        return (
+            user_id == "Default"
+            or self.user_config[uuid.UUID(user_id)].Info.IfQuickConfig
         )
 
     async def set_maa(self):

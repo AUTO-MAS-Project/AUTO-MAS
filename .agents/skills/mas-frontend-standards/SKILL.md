@@ -68,6 +68,16 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 10. Generated services throw `ApiError` on non-2xx responses. Read the backend's message from `error.body` after narrowing it (`instanceof ApiError`, object check, `typeof message === 'string'`), then rethrow as `Error`. Wanting `AxiosError.response.data` is not a reason to skip the generated client. `useMaaFWUpdateApi.ts` and `useHSRPluginApi.ts` are the reference.
 11. Pass generated enums (e.g. `MaaFWProjectUpdateIn.action.CHECK`) instead of string literals cast to the request type.
 
+## Backend Config Payloads
+
+Config integration follows [the configuration framework reference](../mas-data-model/references/config-framework.md). Backend config fields are the single contract source; use generated `ConfigInput`/`ConfigPayload` projections through the actual generated client types.
+
+1. Keep omission and explicit `null` distinct in patches. Omitted fields preserve values; null is validated by the backend field. Paths are strings or null, not empty-string sentinels. Preserve masked placeholders as retention values and avoid logging decrypted credentials.
+2. Collections use typed `order` items (`uid/type`) and `data` keyed by UUID; collection structural changes use their existing APIs rather than an Entry update or a filtered list passed as complete order.
+3. Config date/time state and requests carry full ISO values with timezone offsets. Reuse `src/utils/configDateTime.ts`; non-null clock fields clear to a full timestamp for 00:00 under the field's offset. Nullable date fields retain their own clearing semantics. Fixed-offset/DST boundaries remain documented follow-up work.
+4. Metadata support is not authorization to add dynamic forms, trigger controls or new UI flows. Scope those features to explicit requirements; current pages own component selection and field mapping.
+5. Electron direct config reads use the shared backend-config reader and YAML shape. JSON fallback belongs only to the pre-upgrade startup path; normal YAML operation does not re-import reintroduced JSON.
+
 ## Routing, State, Config
 
 1. Route paths use lowercase kebab-case; route names use PascalCase.

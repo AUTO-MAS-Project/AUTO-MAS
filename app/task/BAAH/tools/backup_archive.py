@@ -85,7 +85,7 @@ def read_overlay_values(config) -> dict:
 
     values: dict = {}
     for key in _OVERLAY_INFO_KEYS:
-        if (value := config.get("Info", key)) is not None:
+        if (value := getattr(config.Info, key)) is not None:
             values[key] = value
     return values
 
