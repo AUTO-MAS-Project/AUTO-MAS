@@ -18,18 +18,18 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""各专项通知工具共用的核心原语：代理结果推送 + 失败截图资源转换。
+"""各专项通知工具共用的核心原语：模式分发、报告投递与失败截图资源转换。
 
-SRC / HSR / MaaEnd / OkNte / general / Okww / MAA / M9A / MaaFW / BetterGI 的
-代理结果分支原本逐字重复，仅模板名、签名分隔符与跳过日志存在授权差异，统一
-收敛到本模块。各专项的统计信息分支差异较大，保留在各自 notify 模块内。
+「代理结果」报告全专项统一走 ``push_proxy_result``；「统计信息」报告的投递
+（模板渲染 + ``statistic_targets``）由 ``push_task_notice`` 统一负责，专项侧
+只留下自己的结果文本——字段形状由各上游的结果结构决定，属于专项特色。
 
 失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
 ``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
 """
 
 import io
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -37,9 +37,11 @@ from typing import Any
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
+    dispatch,
     dispatch_task_report,
     global_target,
     should_send_result,
+    statistic_targets,
 )
 from app.models.notification import (
     NotificationImage,
@@ -51,6 +53,47 @@ from app.tools.community_notify import get_task_community_summary
 from app.utils import get_logger
 
 logger = get_logger("任务通知核心")
+
+
+async def push_task_notice(
+    mode: str,
+    title: str,
+    message: dict,
+    user_config: Any | None,
+    task_info: object | None = None,
+    *,
+    statistics_text: Callable[[], str],
+    statistics_template: str = "general_statistics.html",
+) -> DispatchResult:
+    """按 ``mode`` 分发任务报告；未识别的模式返回空结果。
+
+    各专项的 ``notify`` 模块只声明统计信息的正文与模板，模式分发、模板渲染与
+    投递目标（全局渠道 + 用户独立渠道）都在这里统一，免得每个专项各写一份。
+
+    Args:
+        mode: ``"代理结果"``（任务级）或 ``"统计信息"``（用户级）。
+        title: 通知标题。
+        message: 各模式所需字段；代理结果见 ``push_proxy_result``。
+        user_config: 统计信息的用户通知配置，决定用户独立渠道。
+        task_info: 任务信息，代理结果模式用于签到汇总。
+        statistics_text: 统计信息的纯文本正文。只在统计信息模式下调用，
+            代理结果的消息缺少这些字段也不会触发。
+        statistics_template: 统计信息的 HTML 模板，少数专项有自己的模板。
+    """
+
+    if mode == "代理结果":
+        return await push_proxy_result(
+            title=title, message=message, task_info=task_info
+        )
+
+    if mode != "统计信息":
+        return DispatchResult()
+
+    message_html = Config.notify_env.get_template(statistics_template).render(message)
+    return await dispatch(
+        NotifyPayload(title=title, text=statistics_text(), html=message_html),
+        statistic_targets(user_config),
+    )
 
 
 async def push_proxy_result(
