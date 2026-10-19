@@ -257,11 +257,14 @@ def main():
         )
 
     from app.core import Config
+    from app.core.restore_bindings import resolve_restore_pools
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+
+    Config.set_restore_pool_resolver(resolve_restore_pools)
 
     # 开发环境不上报遥测数据
     init_sentry(
