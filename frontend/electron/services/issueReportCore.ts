@@ -801,7 +801,7 @@ export function readReportHistory(
   try {
     return readHistoryRecords(dataRoot)
   } catch (error) {
-    const message = `历史数据库读取失败: ${String(error)}`
+    const message = sanitizeText(`历史数据库读取失败: ${String(error)}`)
     addSkippedEntry(state, `${archiveRoot}/index`, 0, message)
     // 部分专项没有整包清单，也要把此处的失败原因随现有证据导出。
     addReportManifest(state, `${archiveRoot}/manifest.json`, { report: 'history', error: message })
@@ -852,7 +852,7 @@ export function addReportHistoryLog(
     addDiagnosticText(state, text, archivePath)
     return state.entries.at(-1)?.path
   } catch (error) {
-    const message = `历史日志读取失败: ${String(error)}`
+    const message = sanitizeText(`历史日志读取失败: ${String(error)}`)
     addSkippedEntry(state, archivePath, 0, message)
     addReportManifest(state, `${archivePath}.manifest.json`, {
       report: 'history-log',
@@ -870,7 +870,7 @@ export function addReportHistoryJson(
   try {
     addSanitizedJsonValue(state, historyRecordJson(record), archivePath)
   } catch (error) {
-    const message = `历史记录解析失败: ${String(error)}`
+    const message = sanitizeText(`历史记录解析失败: ${String(error)}`)
     addSkippedEntry(state, archivePath, 0, message)
     addReportManifest(state, `${archivePath}.manifest.json`, {
       report: 'history-record',

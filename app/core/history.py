@@ -215,9 +215,13 @@ class HistoryStore:
         if not self._initialized:
             raise HistoryStorageError("历史服务尚未初始化")
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, cancel: threading.Event) -> sqlite3.Connection:
+        _check_cancel(cancel)
         connection = sqlite3.connect(self.database, timeout=1)
         connection.row_factory = sqlite3.Row
+        # 取消可能发生在 Python 最后一次检查与 SQLite 真正提交之间。
+        # 每条指令都检查关闭信号，阻止已废弃的事务随后继续提交。
+        connection.set_progress_handler(lambda: int(cancel.is_set()), 1)
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA synchronous=FULL")
         return connection
@@ -299,7 +303,7 @@ class HistoryStore:
         if state == "ready" and not self.database.is_file():
             raise HistoryStorageError("已初始化的历史数据库缺失，请恢复备份")
         self.root.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as connection:
+        with closing(self._connect(cancel)) as connection:
             if state == "initializing":
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
                 if version not in (0, _VERSION):
@@ -374,7 +378,7 @@ class HistoryStore:
             connection.commit()
         self._write_marker("ready", cancel)
         self._video_limit = limit
-        with closing(self._connect()) as connection:
+        with closing(self._connect(cancel)) as connection:
             report = self._enforce_quota(connection, cancel=cancel)
             if report.errors:
                 logger.warning(f"启动清理历史视频失败：{len(report.errors)} 项")
@@ -425,7 +429,7 @@ class HistoryStore:
         errors: list[HistoryStorageIssue] = []
         record_id = None
         try:
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 record_id, attachment_id = self._reserve_ids(
                     connection, len(record.attachments), cancel
                 )
@@ -738,7 +742,7 @@ class HistoryStore:
         self._require_ready()
 
         def read(cancel):
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 return [self._index(row) for row in self._select(connection, query)]
 
         return await self._run(read)
@@ -747,7 +751,7 @@ class HistoryStore:
         self._require_ready()
 
         def read(cancel):
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 record = self._record(connection, record_id)
                 detail = HistoryDetail(**record.model_dump())
                 reason = None
@@ -781,7 +785,7 @@ class HistoryStore:
         self._require_ready()
 
         def read(cancel):
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 row = connection.execute(
                     "SELECT * FROM attachments WHERE id=?", (attachment_id,)
                 ).fetchone()
@@ -808,7 +812,7 @@ class HistoryStore:
 
         def read(cancel):
             groups = {}
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 rows = self._select(
                     connection,
                     HistoryRecordQuery(start_date=start_date, end_date=end_date),
@@ -852,7 +856,7 @@ class HistoryStore:
         self._require_ready()
 
         def read(cancel):
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 result = {}
                 for row in self._select(
                     connection,
@@ -975,7 +979,7 @@ class HistoryStore:
 
         def maintain(cancel):
             self._video_limit = limit_bytes
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 return self._enforce_quota(connection, cancel=cancel)
 
         return await self._run(maintain)
@@ -990,7 +994,7 @@ class HistoryStore:
             if retention_days == 0:
                 return report
             cutoff = (today - timedelta(days=retention_days)).isoformat()
-            with closing(self._connect()) as connection:
+            with closing(self._connect(cancel)) as connection:
                 for row in connection.execute(
                     "SELECT id, date FROM records WHERE date < ?", (cutoff,)
                 ).fetchall():
@@ -1037,7 +1041,7 @@ class HistoryStore:
                 raise HistoryStorageError("历史快照目标已存在")
             history.mkdir()
             with (
-                closing(self._connect()) as source,
+                closing(self._connect(cancel)) as source,
                 closing(sqlite3.connect(database)) as target,
             ):
                 source.backup(
