@@ -138,13 +138,15 @@ If a command cannot run, state the exact command and the reason. Never claim "co
 
 ## Frontend Tests
 
-Vitest runs with **no config file and no DOM environment**. There is no `vitest.config.ts`, no `jsdom`, and no `@vue/test-utils`. Tests execute in the default node environment and are colocated next to their subject as `*.test.ts`.
+Vite Plus runs tests in the default node environment, configured by `frontend/vite.config.ts`. There is no DOM environment, `jsdom`, or `@vue/test-utils`. Tests are colocated next to their subject as `*.test.ts`.
+
+The permanent suite is intentionally small. Follow [frontend/TESTING.md](../../../frontend/TESTING.md): retain only inexpensive shared infrastructure checks whose failure would break multiple flows, lose configuration, prevent startup/shutdown, install an untrusted update, or expose secrets. Feature-specific regression tests remain local verification artifacts, even when they have some value; do not add them to the permanent suite by default. Do not retain tests just because the subject is a pure function.
 
 Three established patterns, in order of preference:
 
-1. **Pure logic** — extract the logic out of the `.vue` file into a sibling `.ts`, then import and test it directly. `views/scripts/scriptSearch.ts` with `scriptSearch.test.ts` is the reference. This is the main reason to extract logic from a component: testability.
-2. **Composables** — test in node with `vi.mock()` for boundaries. Mock `@/api` (the generated `Service`) and `ant-design-vue` (`message`) rather than reaching for a DOM. See `composables/useEmulatorDeviceOptions.test.ts`.
-3. **Component rendering** — when what a component shows for given props or state is the behavior under test, render it with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so the assertion covers this component's decisions, not antd's markup. See `views/Initialization/components/LaunchFailure.test.ts` and `views/EditView/MaaFWFlavor/MaaFWFlavorSlot.test.ts`.
+1. **Pure logic** — import existing shared logic directly. `electron/services/runtime/ndjson.test.ts` is a reference. Do not extract a module merely to test a simple expression or mapping.
+2. **Composables** — test in node with `vi.mock()` for boundaries. Mock generated services and Electron IPC rather than reaching for a DOM. See `composables/useSaveQueue.test.ts` and `composables/useTaskRuntimeState.test.ts`.
+3. **Component rendering** — for local feature verification, render with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so assertions cover the component's decisions. These tests are not permanent by default.
 
 Do not introduce `mount()`, `jsdom`, `happy-dom`, or `@vue/test-utils` for a routine change; that is a project-wide testing-stack decision, not a task-level one. If a behavior genuinely cannot be covered by these three patterns, say so in your result instead of adding a test dependency.
 
@@ -154,7 +156,7 @@ Do not write tests that `readFileSync` a `.vue`, `.ts`, or `.css` file and asser
 
 Reading source text is acceptable only when nothing importable exists:
 
-1. **Cross-language contracts** — a frontend constant that must mirror a Python backend value. See `utils/maafwTaskInstance.test.ts` and `views/setting/notifyChannelsI18n.test.ts`.
+1. **Cross-language contracts** — a shared protocol value that must mirror the backend and has no importable contract; it must also meet the permanent-suite criteria above.
 2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`. See `i18n/locales.test.ts`.
 
 When an existing source-text test fails because you refactored the code it greps, and it guards neither kind of contract, delete it rather than re-pinning the new string.
