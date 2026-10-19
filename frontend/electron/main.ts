@@ -40,6 +40,7 @@ import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import { registerMysteryHandlers } from './ipc/mysteryHandlers'
 import {
   canElectronExitImmediately,
   canRequestRendererClose,
@@ -2161,7 +2162,7 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
   }
 })
 
-ipcMain.handle('load-config', async () => {
+ipcMain.handle('load-config', async (_event, strict?: boolean) => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
@@ -2173,8 +2174,9 @@ ipcMain.handle('load-config', async () => {
     }
 
     return null
-  } catch {
+  } catch (error) {
     logger.error('加载配置文件失败')
+    if (strict === true) throw error
     return null
   }
 })
@@ -2318,6 +2320,7 @@ app.whenReady().then(async () => {
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
+  registerMysteryHandlers()
   logger.info('OK-WW 路径发现处理器已注册')
 
   registerStopAllTasksShortcut()

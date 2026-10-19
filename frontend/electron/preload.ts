@@ -18,6 +18,8 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   isMacOS: process.platform === 'darwin',
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
+  verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
+    ipcRenderer.invoke('mystery:verify', accessCode, context),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
@@ -133,7 +135,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置文件操作
   saveConfig: (config: unknown, defaults?: unknown) =>
     ipcRenderer.invoke('save-config', config, defaults),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
+  loadConfig: (strict?: boolean) =>
+    strict === true ? ipcRenderer.invoke('load-config', true) : ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 应用初始化版本（保存前端版本号用于比对）

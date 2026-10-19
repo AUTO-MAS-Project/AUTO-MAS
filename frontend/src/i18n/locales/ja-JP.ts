@@ -8,6 +8,17 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  mystery: {
+    loadFailed: '解除状態を読み込めませんでした。再試行してください。',
+    retry: '再試行',
+    saveFailed: '解除状態を保存できませんでした。再試行してください。',
+    accessCodePlaceholder: '8 文字のキーを入力（大文字・小文字を区別）',
+    accessCodeInvalid: 'キーが正しくないか、有効期限が切れています',
+    accessCodeHint:
+      'キーは大文字・小文字を区別し、発行後 30 分間、この端末の現在のバージョンでのみ使用できます。',
+    deviceUnavailable: '有効な端末識別子を取得できません。システムを確認して再試行してください。',
+    backendUnavailable: '現在のプログラムファイルを読み取れません。修復後に再試行してください。',
+  },
   eventDepotPreview: {
     runtimeUnresolved:
       '一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。',
