@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     dispatch,
@@ -27,7 +26,7 @@ from app.core.notify import (
 )
 from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
-from app.task.notify_core import push_proxy_result
+from app.task.notify_core import push_task_notice
 from app.utils import get_logger
 
 logger = get_logger("HSR 通知工具")
@@ -44,26 +43,6 @@ async def push_notification(
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "代理结果":
-        return await push_proxy_result(
-            title=title, message=message, task_info=task_info
-        )
-
-    if mode == "统计信息":
-        message_text = (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"HSR执行结果: {message['user_result']}\n\n"
-        )
-        message_html = Config.notify_env.get_template("general_statistics.html").render(
-            message
-        )
-
-        return await dispatch(
-            NotifyPayload(title=title, text=message_text, html=message_html),
-            statistic_targets(user_config),
-        )
-
     if mode == "云登录提醒":
         # 需人工介入的即时提醒：用户不在电脑前时靠它知道要去扫码/登录。
         return await dispatch(
@@ -71,4 +50,15 @@ async def push_notification(
             statistic_targets(user_config),
         )
 
-    return DispatchResult()
+    return await push_task_notice(
+        mode,
+        title,
+        message,
+        user_config,
+        task_info,
+        statistics_text=lambda: (
+            f"开始时间: {message['start_time']}\n"
+            f"结束时间: {message['end_time']}\n"
+            f"HSR执行结果: {message['user_result']}\n\n"
+        ),
+    )

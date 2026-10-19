@@ -19,15 +19,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-from app.core import Config
-from app.core.notify import (
-    DispatchResult,
-    dispatch,
-    statistic_targets,
-)
+from app.core.notify import DispatchResult
 from app.models.config import SrcUserConfig
-from app.models.notification import NotifyPayload
-from app.task.notify_core import push_proxy_result
+from app.task.notify_core import push_task_notice
 from app.utils import get_logger
 
 logger = get_logger("SRC通知工具")
@@ -44,26 +38,15 @@ async def push_notification(
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "代理结果":
-        return await push_proxy_result(
-            title=title, message=message, task_info=task_info
-        )
-
-    if mode == "统计信息":
-        message_text = (
+    return await push_task_notice(
+        mode,
+        title,
+        message,
+        user_config,
+        task_info,
+        statistics_text=lambda: (
             f"开始时间: {message['start_time']}\n"
             f"结束时间: {message['end_time']}\n"
             f"SRC脚本执行结果: {message['user_result']}\n\n"
-        )
-        template = Config.notify_env.get_template("general_statistics.html")
-
-        return await dispatch(
-            NotifyPayload(
-                title=title,
-                text=message_text,
-                html=template.render(message),
-            ),
-            statistic_targets(user_config),
-        )
-
-    return DispatchResult()
+        ),
+    )
