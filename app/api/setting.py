@@ -42,6 +42,7 @@ from starlette.background import BackgroundTask
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
+from app.core.data_backup import create_data_backup
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
@@ -64,7 +65,6 @@ from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
 from app.services import Notify
-from app.services.data_backup import create_data_backup
 from app.utils import debug_pattern, get_logger
 
 GlobalConfig = ConfigPayload[_config_models.GlobalConfig]

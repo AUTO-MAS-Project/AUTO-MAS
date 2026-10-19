@@ -401,7 +401,7 @@ class HistoryStore:
         self._initialized = False
 
     def _reserve_ids(
-        self, connection: sqlite3.Connection, count: int, cancel: threading.Event
+        self, *, connection: sqlite3.Connection, count: int, cancel: threading.Event
     ):
         _check_cancel(cancel)
         # 独立提交序号，最终记录事务回滚也不会重新使用已搬移文件的编号。
@@ -431,13 +431,15 @@ class HistoryStore:
         try:
             with closing(self._connect(cancel)) as connection:
                 record_id, attachment_id = self._reserve_ids(
-                    connection, len(record.attachments), cancel
+                    connection=connection, count=len(record.attachments), cancel=cancel
                 )
                 relative = f"{record.time.date().isoformat()}/{record_id}"
                 directory = self._path(relative)
                 while directory.exists():
                     record_id, attachment_id = self._reserve_ids(
-                        connection, len(record.attachments), cancel
+                        connection=connection,
+                        count=len(record.attachments),
+                        cancel=cancel,
                     )
                     relative = f"{record.time.date().isoformat()}/{record_id}"
                     directory = self._path(relative)
@@ -529,7 +531,12 @@ class HistoryStore:
                                 )
                                 continue
                         self._archive(
-                            source.path, target, attachment, errors, index, cancel
+                            source=source.path,
+                            target=target,
+                            attachment=attachment,
+                            errors=errors,
+                            index=index,
+                            cancel=cancel,
                         )
                     except OSError as error:
                         errors.append(
@@ -636,7 +643,7 @@ class HistoryStore:
         except OSError as error:
             errors.append(_issue("cleanup", error, index=index, target=path))
 
-    def _archive(self, source, target, attachment, errors, index, cancel):
+    def _archive(self, *, source, target, attachment, errors, index, cancel):
         try:
             _check_cancel(cancel)
             if target.exists():

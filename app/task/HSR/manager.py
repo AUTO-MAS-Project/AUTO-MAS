@@ -128,7 +128,7 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
 class _DirectUserFinalizer(TaskExecuteBase):
     """原生运行复用任务基座的取消保护，收尾结束后才允许下一用户。"""
 
-    def __init__(self, manager, user_item, user_config):
+    def __init__(self, *, manager, user_item, user_config):
         super().__init__()
         self.manager = manager
         self.user_item = user_item
@@ -1249,7 +1249,9 @@ class HSRManager(TaskExecuteBase):
                 user_item,
                 failed=user_item.status == "异常" and not self.stopped_manually,
             )
-            finalizer = _DirectUserFinalizer(self, user_item, user_config)
+            finalizer = _DirectUserFinalizer(
+                manager=self, user_item=user_item, user_config=user_config
+            )
             try:
                 await finalizer._run_final_task()
             finally:
