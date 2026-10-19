@@ -71,7 +71,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
     switch_or_confirm_in_progress,
 )
-from app.task.MaaFW.tools.embedded.history_paths import maafw_history_log_path
 from app.task.MaaFW.tools.embedded.project_path import (
     is_project_updating,
     release_project_path,
@@ -393,7 +392,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._inner_finalized = True
         self._report_finalized = False
         # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
-        self._failure_screenshots: list[tuple[str, Path]] = []
+        self._failure_screenshots: list[tuple[str, bytes]] = []
         # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
         self._missing_task_notices: list[str] = []
         self._missing_task_user_ids: set[str] = set()
@@ -1694,6 +1693,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self._inner_finalized = False
             try:
                 await self.inner_task.main_task()
+            except asyncio.CancelledError:
+                self.stopped_manually = True
+                raise
             # 只截 Exception：CancelledError 属 BaseException，必须继续外抛，
             # 否则基类的取消路径与下面的收尾保证一起失效。
             except Exception as exc:  # noqa: BLE001
@@ -1715,38 +1717,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if not logs or user_item is None or getattr(user_item, "log_record", None):
             return
         self.project_update_logs = logs + self.project_update_logs
-
-    async def _save_after_run_update_logs(self) -> None:
-        """运行后更新的日志（过程、失败原因、CDK 预警）追加进本轮最后一位留下日志的用户，
-        重写它那次的 history：与运行前更新并入用户日志同一口径，事后在历史记录里查得到。
-
-        那时各用户都已收尾、history 已写过，只能追加到最后一次尝试那份上重写。没有哪位
-        用户留下日志（全被跳过）时这批记录只在后端日志里。"""
-
-        logs = self._take_project_update_logs()
-        if not logs:
-            return
-        user_item = next(
-            (user for user in reversed(self.script_info.user_list) if user.log_record),
-            None,
-        )
-        if user_item is None:
-            return
-        started_at = max(user_item.log_record)
-        log_item = user_item.log_record[started_at]
-        log_item.content.extend(logs)
-        try:
-            await Config.save_general_log(
-                maafw_history_log_path(
-                    user_item.name, started_at, self.script_info.name
-                ),
-                log_item.content,
-                log_item.status,
-            )
-        except Exception as exc:  # noqa: BLE001 - 没写进 history 不影响收尾
-            logger.opt(exception=True).warning(
-                f"MFW 运行后更新日志写入用户 {user_item.name} 的 history 失败：{exc}"
-            )
 
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
@@ -1782,18 +1752,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if self.inner_task is None or self._inner_finalized:
             return
         self._inner_finalized = True
+        self.inner_task.stopped_manually = self.stopped_manually
         try:
-            await self.inner_task.final_task()
+            await self.inner_task._run_final_task()
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
-        with suppress(Exception):
-            self._failure_screenshots.extend(self.inner_task.report_screenshots())
-        with suppress(Exception):
-            notice = self.inner_task.missing_task_notice()
-            if notice:
-                user_item = self.inner_task.cur_user_item
-                self._missing_task_notices.append(f"{user_item.name}: {notice}")
-                self._missing_task_user_ids.add(user_item.user_id)
+        finally:
+            # 基座会在收尾完成后重新抛出取消；已冻结的用户报告仍须归入脚本报告。
+            with suppress(Exception):
+                self._failure_screenshots.extend(self.inner_task.report_screenshots())
+            with suppress(Exception):
+                notice = self.inner_task.missing_task_notice()
+                if notice:
+                    user_item = self.inner_task.cur_user_item
+                    self._missing_task_notices.append(f"{user_item.name}: {notice}")
+                    self._missing_task_user_ids.add(user_item.user_id)
 
     async def _commit_user_data(self) -> None:
         """保存已提交的运行状态，并在异常或取消时也释放 X 锁。"""
@@ -1898,7 +1871,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
                 await self._ensure_project_environment("AfterRun")
             # 中途停止也照样落盘：「正在中止更新」那几行同样要查得到
-            await self._save_after_run_update_logs()
+            for line in self._take_project_update_logs():
+                logger.info(line.rstrip())
         elif self._post_run_env_confirm:
             # 收尾组同步切了版本（兄弟脚本在本轮期间更新了）：报告已经发出，再确认环境。
             await self._ensure_project_environment("AfterRun")

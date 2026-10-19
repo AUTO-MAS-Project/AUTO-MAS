@@ -17,6 +17,7 @@ import json
 import re
 import shlex
 import sys
+import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -35,6 +36,12 @@ from app.services import Notify, System
 from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
+from app.task.history import (
+    aggregate_statistics,
+    build_record,
+    save_user_history,
+    statistic,
+)
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -89,6 +96,7 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
 )
+from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -1005,7 +1013,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.game_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
         # ── 推送详情开关（在专项侧，不在 log_box）：关闭时不创建采集会话 ──
         # 该用户 push_log 保持为空，报告聚合自然只有结果行
@@ -1356,7 +1364,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             nonlocal update_log
             if update_log is None:
                 update_log = LogRecord(phase="Update", status="MaaEnd 正在更新")
-                self.cur_user_item.log_record[datetime.now()] = update_log
+                self.cur_user_item.add_log_record(
+                    datetime.now().astimezone(), update_log
+                )
             update_log.content.append(message + "\n")
             self.script_info.log = message
 
@@ -1406,8 +1416,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            self.cur_user_item.log_record[datetime.now()] = LogRecord(
-                status=self.check_result
+            self.cur_user_item.add_log_record(
+                datetime.now().astimezone(), LogRecord(status=self.check_result)
             )
             message = f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
             self.script_info.log = message
@@ -1460,11 +1470,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 f"用户 {self.cur_user_item.name} - {stage_label}"
                 f"阶段尝试次数: {i}/{run_times_limit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.cur_user_log = LogRecord(
                 phase=self.mode if if_quick_config else "Source"
             )
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
+            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
 
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
@@ -2673,20 +2683,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     async def final_task(self):
 
         if self.check_result != "Pass":
-            if self.cur_user_item.status == "异常":
-                # 检查失败时尚未初始化进程和日志监控，仅归档检查原因。
-                for log_time, log_item in self.cur_user_item.log_record.items():
-                    log_path = Config.build_history_log_path(
-                        script_name=self.script_info.name,
-                        user_name=self.cur_user_item.name,
-                        log_time=log_time.astimezone(UTC4),
-                    )
-                    await Config.save_maaend_log(
-                        log_path=log_path,
-                        logs=[log_item.status],
-                        maaend_result=log_item.status,
-                    )
             return
+
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not (all(self.run_book.values()) and not self.update_failed)
+            and not self.stopped_manually,
+        )
 
         completed = all(self.run_book.values()) and not self.update_failed
         await self.maaend_log_monitor.stop()
@@ -2705,38 +2710,80 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 开发与生产使用一致的停止清理流程，便于实机验证。
             await self.kill_managed_process(kill_game=True)
 
-        user_logs_list = []
-        stage_log_paths = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self.run_user_scripts_after()
 
+        history_records = []
+        stage_log_paths = []
+        stage_directory = None
+        if self.push_log_enabled:
+            try:
+                stage_directory = tempfile.TemporaryDirectory(
+                    prefix="mas-maaend-stage-"
+                )
+            except OSError as error:
+                logger.warning(f"创建 MaaEnd 节点临时日志目录失败：{error}")
+        for index, (t, log_item) in enumerate(self.cur_user_item.iter_history_logs()):
             if log_item.status == "MaaEnd 正常运行中":
                 log_item.status = "任务被用户手动中止"
-
-            if len(log_item.content) == 0:
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
+            if not log_item.content:
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
-
-            await Config.save_maaend_log(
-                log_path,
-                log_item.content,
-                log_item.status,
-                phase_label=(
-                    "更新"
-                    if log_item.phase == "Update"
-                    else MAAEND_RUN_MOOD_BOOK.get(log_item.phase, "")
-                ),
+            data = {}
+            message = log_item.status
+            try:
+                parsed = parse_maaend_statistics(log_item.content)
+                data = {
+                    key: statistic(
+                        "keyed_snapshot" if key == "matrix_statistics" else "snapshot",
+                        value,
+                    )
+                    for key, value in parsed.items()
+                }
+                failed_tasks = parse_maaend_failed_tasks(log_item.content)
+                if message == "MaaEnd 部分任务执行失败" and failed_tasks:
+                    message += f": {'、'.join(failed_tasks)}"
+            except Exception as error:
+                diagnostic = f"MaaEnd 统计解析失败：{error}"
+                logger.opt(exception=True).warning(diagnostic)
+                log_item.content.append(f"\n{diagnostic}\n")
+            phase = (
+                "更新"
+                if log_item.phase == "Update"
+                else MAAEND_RUN_MOOD_BOOK.get(log_item.phase, "")
             )
-            user_logs_list.append(log_path.with_suffix(".json"))
-            stage_log_paths.append(log_path.with_suffix(".log"))
+            if phase:
+                message = f"[{phase}] {message}"
+            record = build_record(
+                script_info=self.script_info,
+                user_info=self.cur_user_item,
+                started_at=t,
+                log_item=log_item,
+                message=message,
+                data=data,
+                status="success"
+                if log_item.status == "Success!"
+                else "cancelled"
+                if was_cancelled
+                else "error",
+            )
+            history_records.append(record)
+            if stage_directory is not None:
+                log_path = Path(stage_directory.name) / f"{index}.log"
+                try:
+                    await asyncio.to_thread(
+                        log_path.write_text, record.logs, encoding="utf-8"
+                    )
+                    stage_log_paths.append(log_path)
+                except OSError as error:
+                    diagnostic = f"写入 MaaEnd 节点临时日志失败：{error}"
+                    logger.warning(diagnostic)
+                    record.logs += f"\n{diagnostic}\n"
 
-        # ── log_box：节点采集推送（源 = 本次各阶段历史日志全文）──
-        # MaaEnd 的任务级进度行只在 stdout，不落上游文件；历史日志即 stdout
+        # ── log_box：节点采集推送（源 = 本次各阶段任务临时日志全文）──
+        # MaaEnd 的任务级进度行只在 stdout，不落上游文件；任务临时日志即 stdout
         # 全文落盘产物，直接作为采集源（start_from_end=False 全文采集）。
         # 开关关闭时不创建采集会话；on_crash 后 final_task 仍会收尾落盘并
         # 采集，部分日志中的开始标记聚为失败节点；仅 check 未通过的提前返回
@@ -2756,7 +2803,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"MaaEnd 节点采集推送失败: {e}")
 
-        statistics = await Config.merge_statistic_info(user_logs_list)
+        if stage_directory is not None:
+            try:
+                stage_directory.cleanup()
+            except OSError as error:
+                logger.warning(f"清理 MaaEnd 节点临时日志失败：{error}")
+        statistics = aggregate_statistics(history_records)
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2765,24 +2817,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
         success_symbol = "√" if completed else "X"
-
-        if user_logs_list:
-            try:
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(
-                        level="error", message=f"推送通知时出现异常: {e}"
-                    ),
-                )
 
         if completed:
             if (
@@ -2801,17 +2835,44 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await self.cur_user_config.commit()
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+        else:
+            self.cur_user_config.Data.LastProxyStatus = "失败"
+            await self.cur_user_config.commit()
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            self.cur_user_item.status = "异常"
+
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
+
+        if completed:
             await Notify.push_plyer(
                 "成功完成一个自动代理任务！",
                 f"已完成用户 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
                 f"已完成 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
                 3,
             )
-        else:
-            self.cur_user_config.Data.LastProxyStatus = "失败"
-            await self.cur_user_config.commit()
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
+
+        if history_records:
+            try:
+                await push_notification(
+                    "统计信息",
+                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    statistics,
+                    self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送通知时出现异常: {e}"
+                    ),
+                )
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

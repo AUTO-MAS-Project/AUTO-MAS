@@ -25,13 +25,18 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.history import (
+    aggregate_statistics,
+    build_record,
+    save_user_history,
+    statistic,
+)
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -496,7 +501,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
         # ── 所有 Script 路径从 RootPath 实时派生，不依赖 ConfigItem 存储值 ──
         script_root_path = self.script_config.Info.RootPath
@@ -1098,8 +1103,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
-            self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+            self.log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
@@ -1196,8 +1201,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 任何记录（结果列落到「未开始运行」、不写历史日志、不发统计通知、分步报告与
         # 掉落统计无数据可解析）。原生一条龙随后会另开一条记录，结果形如「执行层 | 一条龙」。
         exec_log = LogRecord()
-        self.log_start_time = datetime.now()
-        self.cur_user_item.log_record[self.log_start_time] = exec_log
+        self.log_start_time = datetime.now().astimezone()
+        self.cur_user_item.add_log_record(self.log_start_time, exec_log)
         # 同步为「当前记录」：on_crash 与收尾的「运行异常」通知都读 self.cur_user_log
         self.cur_user_log = exec_log
 
@@ -1772,6 +1777,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理进程与监控
         if self.log_monitor is not None:
             with suppress(Exception):
@@ -1782,24 +1795,46 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         await self._close_game()
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self.run_user_scripts_after()
 
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status == "BetterGI 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            data = {}
+            if self.drop_statistics_enabled:
+                try:
+                    drops = parse_drop_lines(log_item.content)
+                    if drops:
+                        data["drop_statistics"] = statistic("counter", drops)
+                except Exception as error:
+                    diagnostic = f"BetterGI 掉落统计解析失败：{error}"
+                    logger.opt(exception=True).warning(diagnostic)
+                    log_item.content.append(f"\n{diagnostic}\n")
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    data=data,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                )
+            )
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
         # 一次任务最多两相（执行层 → 原生一条龙），两相**都要进表**：只取一相会让后跑的
@@ -1807,7 +1842,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 领取每日奖励」，执行层的幽境危战/地脉花/首领讨伐/秘境全看不见）。
         # 同一相的多轮日志只可能是重试，故每相只取一轮：成功轮优先，无成功轮时取最后一轮
         # 能解析出步骤的（末轮可能在打出标记前就失败）。全部相都无步骤时整块省略。
-        runs = list(self.cur_user_item.log_record.values())
+        runs = [item for _, item in self.cur_user_item.iter_history_logs()]
         # 原生一条龙的进度行只有序号、日志里没有任务名：按本次启动的那份配置给出名字表，
         # 供解析器按序号还原（长度对不上时解析器自行退回日志推断，见 one_dragon_report）。
         native_task_names = self._native_one_dragon_task_names()
@@ -1867,26 +1902,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，
         # 因此不挑轮次；识别未开启或日志里没有该行时结果为空表，通知里整块省略。
-        drop_statistics: dict[str, int] = {}
-        if self.drop_statistics_enabled:
-            drop_lines: list[str] = []
-            for item in runs:
-                drop_lines.extend(item.content)
-            drop_statistics = parse_drop_lines(drop_lines)
-            # 必须留痕：这一块此前完全静默，出问题时无从判断是「开关没读到」「日志里没有
-            # 识别行」还是「解析为空」，只能靠翻历史日志手工复现（2026-09-16 实机排障）
-            logger.info(
-                f"用户 {self.cur_user_item.name} 掉落统计：合并 {len(runs)} 轮日志 "
-                f"{len(drop_lines)} 行，解析到 {len(drop_statistics)} 项物品"
-            )
-        else:
-            logger.info(
-                f"用户 {self.cur_user_item.name} 未开启「统计掉落物品」，跳过掉落解析"
-            )
+        drop_statistics = aggregate_statistics(history_records).get(
+            "drop_statistics", {}
+        )
 
-        if statistic_paths:
+        await self._persist_user_run_result()
+        self._restore_one_dragon_config()
+
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = aggregate_statistics(history_records)
                 if one_dragon_report:
                     statistics["one_dragon_steps"] = one_dragon_report
                 if drop_statistics:
@@ -1922,11 +1954,6 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 logger.opt(exception=True).error(
                     f"推送 BetterGI 用户统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 用户独立配置：任务配置以 MAS 前端为准，不回读 BGI；仅还原现场（删物化组/槽位）
-        self._restore_one_dragon_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:

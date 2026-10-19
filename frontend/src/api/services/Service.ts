@@ -130,7 +130,6 @@ import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
-import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
@@ -3594,18 +3593,7 @@ export class Service {
         });
     }
     /**
-     * 查询保留的失败回放
-     * @returns ReplayListOut Successful Response
-     * @throws ApiError
-     */
-    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/history/replays',
-        });
-    }
-    /**
-     * 搜索历史记录总览信息
+     * 搜索历史记录及类型化统计
      * @param requestBody
      * @returns HistorySearchOut Successful Response
      * @throws ApiError
@@ -3624,7 +3612,7 @@ export class Service {
         });
     }
     /**
-     * 从指定文件内获取历史记录数据
+     * 按记录编号获取执行结果、日志和附件
      * @param requestBody
      * @returns HistoryDataGetOut Successful Response
      * @throws ApiError
@@ -3637,6 +3625,31 @@ export class Service {
             url: '/api/history/data',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按附件编号读取图片、文件或视频
+     * @param attachmentId
+     * @param download
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryAttachmentApiHistoryAttachmentsAttachmentIdGet(
+        attachmentId: number,
+        download: boolean = false,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/attachments/{attachment_id}',
+            path: {
+                'attachment_id': attachmentId,
+            },
+            query: {
+                'download': download,
+            },
             errors: {
                 422: `Validation Error`,
             },

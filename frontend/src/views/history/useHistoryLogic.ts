@@ -1,4 +1,10 @@
-import { type HistoryData, HistorySearchIn } from '@/api'
+import {
+  type HistoryBucket,
+  type HistoryDetail,
+  type HistoryIndexItem,
+  HistorySearchIn,
+  ApiError,
+} from '@/api'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api/services/Service'
 import { useLogHighlight } from '@/composables/useLogHighlight'
@@ -11,7 +17,7 @@ const logger = window.electronAPI.getLogger('历史记录')
 // 历史记录日期分组接口
 export interface HistoryDateGroup {
   date: string
-  users: Record<string, HistoryData>
+  users: Record<string, HistoryBucket>
 }
 
 // 快捷时间预设。label 仅为代码内可读标识，界面显示走 history.preset.<key>
@@ -87,10 +93,10 @@ export function useHistoryLogic() {
 
   // 选中的用户相关数据
   const selectedUser = ref('')
-  const selectedUserData = ref<HistoryData | null>(null)
+  const selectedUserData = ref<HistoryBucket | null>(null)
   const selectedRecordIndex = ref(-1)
-  const currentDetail = ref<HistoryData | null>(null)
-  const currentJsonFile = ref('')
+  const currentDetail = ref<HistoryDetail | null>(null)
+  const currentRecordId = ref<number | null>(null)
 
   // 搜索表单
   const searchForm = reactive({
@@ -120,6 +126,10 @@ export function useHistoryLogic() {
       if (!isMounted) return
 
       if (response.code === 200) {
+        selectedUser.value = ''
+        selectedUserData.value = null
+        currentRecordId.value = null
+        currentDetail.value = null
         // 记录条目按时间倒序：点进日志时最先看到的应该是最近一次
         historyData.value = Object.entries(response.data)
           .map(([date, users]) => ({
@@ -145,7 +155,12 @@ export function useHistoryLogic() {
       }
     } catch (error) {
       if (!isMounted) return
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorMsg =
+        error instanceof ApiError && typeof error.body?.message === 'string'
+          ? error.body.message
+          : error instanceof Error
+            ? error.message
+            : String(error)
       logger.error(`搜索历史记录失败: ${errorMsg}`)
       message.error(t('history.toast.searchHistoryFailed'))
     } finally {
@@ -164,7 +179,7 @@ export function useHistoryLogic() {
     selectedUserData.value = null
     selectedRecordIndex.value = -1
     currentDetail.value = null
-    currentJsonFile.value = ''
+    currentRecordId.value = null
     currentPreset.value = 'week'
   }
 
@@ -182,29 +197,30 @@ export function useHistoryLogic() {
     currentPreset.value = ''
   }
 
-  // 选择用户处理（key 由侧栏给出：日期-托管名-账号名）
-  const handleSelectUser = async (key: string, userData: HistoryData) => {
+  // 选择用户处理（key 由侧栏给出：日期与用户名）
+  const handleSelectUser = async (key: string, userData: HistoryBucket) => {
     selectedUser.value = key
     selectedUserData.value = userData
     selectedRecordIndex.value = -1
     currentDetail.value = null
-    currentJsonFile.value = ''
+    currentRecordId.value = null
   }
 
   // 选择记录处理
-  const handleSelectRecord = async (index: number, record: any) => {
+  const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
     selectedRecordIndex.value = index
-    currentJsonFile.value = record.jsonFile
-    await loadUserLog(record.jsonFile)
+    currentRecordId.value = record.id
+    currentDetail.value = null
+    await loadUserLog(record.id)
   }
 
   // 加载用户日志
-  const loadUserLog = async (jsonFile: string) => {
+  const loadUserLog = async (recordId: number) => {
     try {
       detailLoading.value = true
-      const response = await Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile })
+      const response = await Service.getHistoryDataApiHistoryDataPost({ recordId })
 
-      if (!isMounted) return
+      if (!isMounted || currentRecordId.value !== recordId) return
 
       if (response.code === 200) {
         currentDetail.value = response.data
@@ -213,63 +229,32 @@ export function useHistoryLogic() {
         currentDetail.value = null
       }
     } catch (error) {
-      if (!isMounted) return
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      if (!isMounted || currentRecordId.value !== recordId) return
+      const errorMsg =
+        error instanceof ApiError && typeof error.body?.message === 'string'
+          ? error.body.message
+          : error instanceof Error
+            ? error.message
+            : String(error)
       logger.error(`获取历史记录详情失败: ${errorMsg}`)
       message.error(t('history.toast.fetchDetailFailed'))
       currentDetail.value = null
     } finally {
-      if (isMounted) detailLoading.value = false
+      if (isMounted && currentRecordId.value === recordId) detailLoading.value = false
     }
   }
 
-  // 打开日志文件
-  const handleOpenLogFile = async () => {
-    if (!currentJsonFile.value) {
-      message.warning(t('history.toast.needRecord'))
-      return
-    }
-
-    try {
-      const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && window.electronAPI.openFile) {
-        const result = await window.electronAPI.openFile(logFilePath)
-        if (result.success) {
-          message.success(t('history.toast.logOpened'))
-        } else {
-          logger.error(`打开日志文件失败: ${result.error}`)
-          message.error(t('history.toast.openFileFailed', { error: result.error ?? '' }))
-        }
-      } else {
-        message.error(t('history.toast.openFileUnsupported'))
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`打开日志文件失败: ${errorMsg}`)
-      message.error(t('history.toast.openFileFailed', { error: errorMsg }))
-    }
-  }
-
-  // 打开日志文件所在目录
-  const handleOpenLogDirectory = async () => {
-    if (!currentJsonFile.value) {
-      message.warning(t('history.toast.needRecord'))
-      return
-    }
-
-    try {
-      const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && window.electronAPI.showItemInFolder) {
-        await window.electronAPI.showItemInFolder(logFilePath)
-        message.success(t('history.toast.dirOpened'))
-      } else {
-        message.error(t('history.toast.openDirUnsupported'))
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`打开日志文件目录失败: ${errorMsg}`)
-      message.error(t('history.toast.openDirFailed', { error: errorMsg }))
-    }
+  // 完整日志可能仅存在数据库中，下载详情内容不依赖本机归档路径。
+  const handleOpenLogFile = () => {
+    if (currentDetail.value?.log_content == null) return
+    const url = URL.createObjectURL(
+      new Blob([currentDetail.value.log_content], { type: 'text/plain;charset=utf-8' })
+    )
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `history-${currentRecordId.value}.log`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   // Monaco Editor 配置
@@ -314,7 +299,7 @@ export function useHistoryLogic() {
     selectedUserData,
     selectedRecordIndex,
     currentDetail,
-    currentJsonFile,
+    currentRecordId,
     searchForm,
     historyData,
 
@@ -332,7 +317,6 @@ export function useHistoryLogic() {
     handleSelectUser,
     handleSelectRecord,
     handleOpenLogFile,
-    handleOpenLogDirectory,
     registerLogLanguage,
     setEditorConfig,
   }

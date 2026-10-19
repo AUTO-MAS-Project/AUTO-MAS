@@ -72,8 +72,9 @@ MCP_INCLUDED_OPERATIONS = (
     "get_task_status_api_dispatch_task__task_id__get",
     "add_task_api_dispatch_start_post",
     "stop_task_api_dispatch_stop_post",
-    # 只读历史索引，用于核对已结束的运行；不开放接受文件路径的历史详情。
+    # 只读历史记录与编号详情，用于核对已结束的运行。
     "search_history_api_history_search_post",
+    "get_history_data_api_history_data_post",
     # MAA 基建选项
     "get_user_combox_infrastructure_api_scripts_user_combox_infrastructure_post",
     "get_infrast_plan_select_api_scripts_user_infrastructure_plan_select_get_post",
@@ -243,8 +244,8 @@ async def mount_mcp(app: FastAPI) -> None:
             elif tool.name == "search_history_api_history_search_post":
                 tool.description += (
                     "\n\n用于查询已结束运行的结果，建议按运行日期使用 DAILY 模式。"
-                    "按用户和记录时间核对 index 中的 status（DONE/ERROR）与 result。"
-                    "该接口不按 taskId 精确检索，按 taskId 取终态请用任务状态查询；"
+                    "按用户、托管名称、记录编号及带偏移的时间核对 index 中的 status 与 message。"
+                    "success 表示成功，error 表示执行失败，skipped/cancelled 分别表示跳过/取消；存储错误不改变执行结论。可用 recordId 获取详情；该接口不按 taskId 精确检索，按 taskId 取终态请用任务状态查询；"
                     "记录缺失或无法唯一对应时，结果仍未知，"
                     "不能把任务从运行快照消失视为成功。"
                 )

@@ -151,7 +151,9 @@ class ScriptManagerBase(TaskExecuteBase):
         self, user: UserItem, *, status: Literal["跳过", "异常"], reason: str
     ) -> None:
         user.status = status
-        user.log_record[datetime.now()] = LogRecord(status=reason, content=[reason])
+        user.add_log_record(
+            datetime.now().astimezone(), LogRecord(status=reason, content=[reason])
+        )
         line = f"{self.script_info.name} - {user.name}: {reason}"
         self.script_info.log = (
             f"{self.script_info.log}\n{line}" if self.script_info.log else line

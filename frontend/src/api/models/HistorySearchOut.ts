@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HistoryData } from './HistoryData';
+import type { HistoryBucket } from './HistoryBucket';
 export type HistorySearchOut = {
     /**
      * 状态码
@@ -17,8 +17,8 @@ export type HistorySearchOut = {
      */
     message?: string;
     /**
-     * 历史记录索引数据字典, 格式为 { '日期': { '用户名': [历史记录信息] } }
+     * 日期 → 用户名 → 记录与统计
      */
-    data: Record<string, Record<string, HistoryData>>;
+    data: Record<string, Record<string, HistoryBucket>>;
 };
 

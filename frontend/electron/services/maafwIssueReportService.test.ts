@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { DatabaseSync } from 'node:sqlite'
 import AdmZip = require('adm-zip')
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
@@ -24,7 +25,6 @@ const SCRIPT_ID = '0123456789ab4cdef0123456789abcde'
 const VIEW = '0123456789ab'
 const USER = '用户A'
 const DATE = '2026-09-28'
-const STAMP = '12-00-00'
 
 let root: string
 
@@ -48,14 +48,40 @@ function setUp(interfaceJson: object, workerLogHead: string): void {
     })
   )
   write(`data/mfw/${VIEW}/interface.json`, JSON.stringify(interfaceJson))
-  const history = `history/${DATE}/${USER}/${STAMP}`
-  write(`${history}.json`, JSON.stringify({ general_result: 'Success!' }))
-  write(`${history}.log`, 'MaaFW 运行\n')
+  const history = `history/${DATE}/1`
+  write(`${history}/0.log`, 'MaaFW 运行\n')
   write(
-    `${history}.worker.log`,
+    `${history}/1.log`,
     `${workerLogHead}\n资源路径 D:\\AUTO-MAS\\data\\mfw\\${VIEW}\\resource\n`
   )
-  write(`${history}.project.log`, '===== debug/go-service.log（本次新增 7 B）=====\nnew go\n')
+  write(`${history}/2.log`, '===== debug/go-service.log（本次新增 7 B）=====\nnew go\n')
+  const db = new DatabaseSync(path.join(root, 'data', 'history.db'))
+  try {
+    db.exec(`CREATE TABLE records(id INTEGER PRIMARY KEY, time TEXT, timestamp REAL, date TEXT,
+      username TEXT, script_name TEXT, status TEXT, message TEXT, data TEXT, log_path TEXT,
+      log_text_fallback TEXT, storage_errors TEXT);
+      CREATE TABLE attachments(id INTEGER PRIMARY KEY, record_id INTEGER, kind TEXT, role TEXT,
+      display_name TEXT, relative_path TEXT, byte_size INTEGER, available INTEGER, unavailable_reason TEXT);`)
+    db.prepare('INSERT INTO records VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
+      1,
+      `${DATE}T12:00:00+04:00`,
+      Date.parse(`${DATE}T12:00:00+04:00`) / 1000,
+      DATE,
+      USER,
+      'Demo',
+      'success',
+      'Success!',
+      '{}',
+      `${DATE}/1/0.log`,
+      null,
+      '[]'
+    )
+    const insert = db.prepare('INSERT INTO attachments VALUES (?,?,?,?,?,?,?,?,?)')
+    insert.run(1, 1, 'log', 'worker_log', 'worker.log', `${DATE}/1/1.log`, 100, 1, null)
+    insert.run(2, 1, 'log', 'project_log', 'project.log', `${DATE}/1/2.log`, 100, 1, null)
+  } finally {
+    db.close()
+  }
 }
 
 async function entries(): Promise<string[]> {
@@ -65,7 +91,7 @@ async function entries(): Promise<string[]> {
   return new AdmZip(zipPath).getEntries().map(entry => entry.entryName)
 }
 
-describe('MFW 问题包收 history 里的 .project.log', () => {
+describe('MFW 问题包按 SQLite 附件用途收项目日志', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'mfw-issue-'))
   })
@@ -74,12 +100,10 @@ describe('MFW 问题包收 history 里的 .project.log', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  it('按后缀认出 .project.log 并放进包里', async () => {
+  it('按附件用途认出项目日志并放进包里', async () => {
     setUp({ name: 'Demo' }, 'runner 启动')
 
-    expect(await entries()).toContain(
-      `scripts/${VIEW}/history/${DATE}/${USER}/${STAMP}.project.log`
-    )
+    expect(await entries()).toContain(`scripts/${VIEW}/history/${DATE}/1/2.log`)
   })
 
   it('有密码输入框、.worker.log 没有打码说明时与 .worker.log 一样不收', async () => {
@@ -89,8 +113,8 @@ describe('MFW 问题包收 history 里的 .project.log', () => {
     )
 
     const names = await entries()
-    expect(names).not.toContain(`scripts/${VIEW}/history/${DATE}/${USER}/${STAMP}.project.log`)
-    expect(names).not.toContain(`scripts/${VIEW}/history/${DATE}/${USER}/${STAMP}.worker.log`)
+    expect(names).not.toContain(`scripts/${VIEW}/history/${DATE}/1/2.log`)
+    expect(names).not.toContain(`scripts/${VIEW}/history/${DATE}/1/1.log`)
   })
 
   it('有密码输入框、.worker.log 带打码说明时照收', async () => {
@@ -99,8 +123,6 @@ describe('MFW 问题包收 history 里的 .project.log', () => {
       '[MAS 日志打码] 本次的 .worker.log 与 .maafw.log 已把 1 个密码值换成「<已隐藏>」'
     )
 
-    expect(await entries()).toContain(
-      `scripts/${VIEW}/history/${DATE}/${USER}/${STAMP}.project.log`
-    )
+    expect(await entries()).toContain(`scripts/${VIEW}/history/${DATE}/1/2.log`)
   })
 })

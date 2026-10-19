@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
 import type { ObsReplayCheckResult } from '@/types/replay'
@@ -17,7 +17,8 @@ const props = defineProps<{
 const replaySettings = computed(() => props.settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
-const maxReplayCount = computed(() => replaySettings.value?.MaxReplayCount ?? 3)
+const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
+const capturePath = ref<string | null>(null)
 const passwordConfiguredOverride = ref<boolean | null>(null)
 const passwordConfigured = computed(
   () => passwordConfiguredOverride.value ?? replaySettings.value?.PasswordConfigured ?? false
@@ -28,7 +29,7 @@ const savingPassword = ref(false)
 const checking = ref(false)
 const savingReplay = ref(false)
 const checkResult = ref<ObsReplayCheckResult | null>(null)
-const { checkObsReplay, saveObsReplay, listObsReplays } = useObsReplayApi()
+const { checkObsReplay, saveObsReplay } = useObsReplayApi()
 
 const updateReplaySetting = async (key: string, value: unknown) => {
   try {
@@ -96,8 +97,10 @@ const runConnectionCheck = async () => {
 const runSaveReplay = async () => {
   savingReplay.value = true
   try {
+    capturePath.value = null
     const response = await saveObsReplay()
-    if (response.replay) {
+    capturePath.value = response.capture_path ?? null
+    if (response.capture_path) {
       message.success(t('setting.replay.saveDone'))
     } else {
       message.warning(t('setting.replay.saveEmpty'))
@@ -106,21 +109,6 @@ const runSaveReplay = async () => {
     message.error(error instanceof Error ? error.message : t('setting.replay.saveFailed'))
   } finally {
     savingReplay.value = false
-  }
-}
-
-const openReplayDirectory = async () => {
-  try {
-    if (!window.electronAPI?.openFile) {
-      message.error(t('history.replays.openDirectoryUnsupported'))
-      return
-    }
-    const directory = checkResult.value?.directory || (await listObsReplays()).directory
-    if (!directory) throw new Error(t('setting.replay.directoryUnavailable'))
-    const result = await window.electronAPI.openFile(directory)
-    if (!result.success) message.error(result.error || t('setting.replay.openDirectoryFailed'))
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('setting.replay.openDirectoryFailed'))
   }
 }
 </script>
@@ -182,22 +170,21 @@ const openReplayDirectory = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.maxCount') }}</span>
-            <a-tooltip :title="t('setting.replay.maxCountTip')">
+            <span class="form-label">{{ t('setting.replay.videoLimit') }}</span>
+            <a-tooltip :title="t('setting.replay.videoLimitTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
           <a-input-number
-            :value="maxReplayCount"
+            :value="videoStorageLimit"
             :min="1"
-            :max="20"
+            :max="1048576"
             :precision="0"
-            :disabled="!replayEnabled"
             size="large"
             style="width: 100%"
             @change="
               (value: number | null) =>
-                value !== null && updateReplaySetting('MaxReplayCount', value)
+                value !== null && updateReplaySetting('VideoStorageLimitMiB', value)
             "
           />
         </div>
@@ -262,15 +249,19 @@ const openReplayDirectory = async () => {
             <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
               {{ t('setting.replay.saveTest') }}
             </a-button>
-            <a-button @click="openReplayDirectory">
-              <template #icon><FolderOpenOutlined /></template>
-              {{ t('setting.replay.openDirectory') }}
-            </a-button>
           </a-space>
         </div>
       </a-col>
     </a-row>
 
+    <a-alert
+      v-if="capturePath"
+      type="info"
+      show-icon
+      class="replay-check-result"
+      :message="t('setting.replay.capturePath')"
+      :description="capturePath"
+    />
     <a-alert
       v-if="checkResult"
       :type="checkResult.connected && checkResult.replayActive ? 'success' : 'warning'"

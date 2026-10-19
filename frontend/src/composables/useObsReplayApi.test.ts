@@ -2,13 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const checkObsReplayMock = vi.fn()
 const saveObsReplayMock = vi.fn()
-const listObsReplaysMock = vi.fn()
 
 vi.mock('@/api', () => ({
   ApiError: class extends Error {},
   GetService: {
     checkObsReplayApiSettingObsCheckPost: checkObsReplayMock,
-    getObsReplaysApiHistoryReplaysGet: listObsReplaysMock,
   },
   ActionService: {
     saveObsReplayApiSettingObsSavePost: saveObsReplayMock,
@@ -47,24 +45,15 @@ describe('useObsReplayApi', () => {
     expect(checkObsReplayMock).toHaveBeenCalledOnce()
   })
 
-  it('returns saved and listed replay data', async () => {
-    saveObsReplayMock.mockResolvedValueOnce({
-      code: 200,
-      replay: { replayId: 'r1', failedAt: '2026-10-04T10:00:00', reason: 'failed' },
-    })
-    listObsReplaysMock.mockResolvedValueOnce({
-      code: 200,
-      replays: [{ replayId: 'r1', failedAt: '2026-10-04T10:00:00', reason: 'failed' }],
-      directory: 'C:\\replays',
-    })
-
+  it('returns the OBS capture path without creating a history identifier', async () => {
+    saveObsReplayMock.mockResolvedValueOnce({ code: 200, capture_path: 'C:\\OBS\\capture.mp4' })
     const { useObsReplayApi } = await import('./useObsReplayApi')
     const api = useObsReplayApi()
-
-    await expect(api.saveObsReplay()).resolves.toMatchObject({ replay: { replayId: 'r1' } })
-    await expect(api.listObsReplays()).resolves.toMatchObject({ directory: 'C:\\replays' })
+    await expect(api.saveObsReplay()).resolves.toEqual({
+      code: 200,
+      capture_path: 'C:\\OBS\\capture.mp4',
+    })
     expect(saveObsReplayMock).toHaveBeenCalledOnce()
-    expect(listObsReplaysMock).toHaveBeenCalledOnce()
   })
 
   it('normalizes unsuccessful responses and transport errors', async () => {

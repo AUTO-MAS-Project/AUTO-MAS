@@ -115,10 +115,17 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
             return
         self._user_scripts_started = False
         if getattr(self.cur_user_config.Info, "IfScriptAfterTask", False):
-            await execute_script_task(
-                getattr(self.cur_user_config.Info, "ScriptAfterTask", None),
-                "脚本后任务",
-            )
+            try:
+                await execute_script_task(
+                    getattr(self.cur_user_config.Info, "ScriptAfterTask", None),
+                    "脚本后任务",
+                )
+            except Exception as error:
+                message = f"用户任务后脚本执行失败：{error}"
+                logger.opt(exception=True).warning(message)
+                logs = self.cur_user_item.iter_history_logs()
+                if logs:
+                    logs[-1][1].content.append(message + "\n")
 
     async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
         """游戏画面维护检测：命中维护弹窗文本则把当前用户记为维护跳过。
@@ -265,7 +272,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 record = user.log_record[max(user.log_record)]
             else:
                 record = LogRecord()
-                user.log_record[datetime.now()] = record
+                user.add_log_record(datetime.now().astimezone(), record)
             record.status = message
             record.content.append(message)
             self.script_info.log = f"{message}\n正在中止相关程序"

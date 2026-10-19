@@ -4,8 +4,8 @@
 /* eslint-disable */
 export type HistoryDataGetIn = {
     /**
-     * 需要提取数据的历史记录JSON文件
+     * 历史记录编号
      */
-    jsonPath: string;
+    recordId: number;
 };
 

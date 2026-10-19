@@ -42,13 +42,13 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
+from app.task.history import aggregate_statistics, build_record, save_user_history
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     push_dispatch_log,
@@ -281,8 +281,8 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
             )
             self.cur_user_item.status = "运行"
             self.last_verdict_status = None
-            log_start_time = datetime.now()
-            self.cur_user_item.log_record[log_start_time] = LogRecord()
+            log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[log_start_time]
             self.script_info.log = ""
             self._dispatch_pushed_lines = 0
@@ -555,33 +555,62 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 await self.feed.stop()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理监控、看门狗与进程
         await self._stop_monitoring()
         await self.launcher.terminate()
 
         # 写入历史记录（对齐 General/BetterGI 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
+        self._restore_config()
 
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status == "奇想盒正常运行中":
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                )
+            )
 
-        if statistic_paths:
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = aggregate_statistics(history_records)
                 if self.result_block:
                     # 上游「任务结果如下」块原样透传（多账号天然按「账号N：」分组）
                     statistics["result_block"] = self.result_block
@@ -609,11 +638,6 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                 logger.opt(exception=True).error(
                     f"推送奇想盒用户统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 还原运行前配置（异常路径同样覆盖，见 on_crash）
-        self._restore_config()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:

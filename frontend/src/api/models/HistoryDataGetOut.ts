@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HistoryData } from './HistoryData';
+import type { HistoryDetail } from './HistoryDetail';
 export type HistoryDataGetOut = {
     /**
      * 状态码
@@ -16,9 +16,6 @@ export type HistoryDataGetOut = {
      * 操作消息
      */
     message?: string;
-    /**
-     * 历史记录数据
-     */
-    data: HistoryData;
+    data: HistoryDetail;
 };
 

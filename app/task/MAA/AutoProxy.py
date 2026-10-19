@@ -18,6 +18,7 @@ import calendar
 import json
 import re
 import shutil
+import tempfile
 import time
 import uuid
 from collections.abc import Sequence
@@ -37,7 +38,7 @@ from app.models.config import (
 )
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import NotificationImage
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import HistoryAttachmentInput, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
@@ -47,6 +48,12 @@ from app.task.emulator_core import (
     resolve_device_ref,
     resolve_host_adb,
     script_process_env,
+)
+from app.task.history import (
+    aggregate_statistics,
+    build_record,
+    save_user_history,
+    statistic,
 )
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
@@ -1213,7 +1220,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.if_game_hot_update = False
         self.pending_res_version = ""
         # 更新阶段只提供资源版本信号；资源热更新仍由 MAA 原生开始唤醒执行。
@@ -1351,12 +1358,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.info(
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
                 )
-                self.log_start_time = datetime.now()
+                self.log_start_time = datetime.now().astimezone()
                 self._cultivate_archive_positions.clear()
                 self._cultivate_archive_versions.clear()
-                self.cur_user_item.log_record[self.log_start_time] = (
-                    self.cur_user_log
-                ) = LogRecord()
+                self.cur_user_log = LogRecord()
+                self.cur_user_item.add_log_record(
+                    self.log_start_time, self.cur_user_log
+                )
 
                 try:
                     self.script_info.log = "正在启动模拟器"
@@ -1547,7 +1555,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         挂在 _finalize_task（收尾主体，由 _run_final_task 放进屏蔽取消的
         独立任务里执行）上，而不是 final_task：收尾被取消或异常中断时它仍会
-        执行（wait_for_finalizer_on_cancel）；super() 已跑完后置脚本。
+        执行（wait_for_finalizer_on_cancel）。正常路径在后置脚本后、保存前已还原，
+        此处幂等兜底仅覆盖提前异常退出。
         """
 
         try:
@@ -2975,6 +2984,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
             return
 
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not (self.run_book["Annihilation"] and self.run_book["Routine"])
+            and not self.stopped_manually,
+        )
+
         started_at = time.monotonic()
 
         logger.info("MAA 收尾: 停止日志监控")
@@ -3012,33 +3029,53 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
 
-        user_logs_list = []
+        await self.run_user_scripts_after()
+
+        if self.maa_root_path is not None:
+            await asyncio.to_thread(
+                restore_depot_cache,
+                self.maa_root_path,
+                depot_cache_snapshot_dir(self.script_info.script_id),
+            )
+
+        history_records = []
         if_six_star = False
-        for t, log_item in self.cur_user_item.log_record.items():
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
-
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+            data = {}
             try:
-                if await log_statistics.save_maa_log(
-                    log_path=log_path,
-                    logs=log_item.content,
-                    maa_result=log_item.status,
-                ):
-                    if_six_star = True
-            except Exception as e:
-                logger.opt(exception=True).warning(
-                    f"保存 MAA 历史记录失败: {log_path}: {e}"
+                parsed, six_star = log_statistics.parse_maa_statistics(log_item.content)
+                if_six_star = if_six_star or six_star
+                data = {
+                    key: statistic(
+                        "counter"
+                        if key in {"recruit_statistics", "drop_statistics"}
+                        else "snapshot",
+                        value,
+                    )
+                    for key, value in parsed.items()
+                }
+            except Exception as error:
+                diagnostic = f"MAA 统计解析失败：{error}"
+                logger.opt(exception=True).warning(diagnostic)
+                log_item.content.append(f"\n{diagnostic}\n")
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    status="success"
+                    if log_item.status == "Success!"
+                    else "cancelled"
+                    if self.stopped_manually and log_item.status == "任务被用户手动中止"
+                    else "error",
+                    data=data,
                 )
-                continue
-            user_logs_list.append(log_path.with_suffix(".json"))
+            )
 
-        statistics = await Config.merge_statistic_info(user_logs_list)
+        statistics = aggregate_statistics(history_records)
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -3050,7 +3087,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 培养步骤以 MAA 成功日志为准，练度刷新延迟也不漏掉本轮的阶段结果。
         cultivate_progress = log_statistics.parse_cultivate_progress(
             line
-            for log_item in self.cur_user_item.log_record.values()
+            for _, log_item in self.cur_user_item.iter_history_logs()
             for line in log_item.content
         )
         if cultivate_progress:
@@ -3084,11 +3121,80 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             except Exception as e:
                 logger.warning(f"失败画面转码失败，通知不带图: {e}")
                 images = []
+        if self.run_book["Annihilation"] and self.run_book["Routine"]:
+            if (
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
+            ):
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
+                )
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
+            )
+            await self.cur_user_config.commit()
+
+            self.cur_user_item.status = "完成"
+            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+        else:
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            self.cur_user_item.status = "异常"
+
+        snapshot_directory = None
+        if failure_shot is not None and history_records:
+            try:
+                snapshot_directory = tempfile.TemporaryDirectory(
+                    prefix="mas-history-maa-"
+                )
+                snapshot = Path(snapshot_directory.name) / failure_shot.name
+                try:
+                    await asyncio.to_thread(shutil.copy2, failure_shot, snapshot)
+                    history_records[-1].attachments.append(
+                        HistoryAttachmentInput(
+                            path=snapshot,
+                            kind="image",
+                            role="failure_screenshot",
+                            display_name="失败截图",
+                        )
+                    )
+                except OSError as error:
+                    diagnostic = f"失败截图快照失败：{error}"
+                    logger.warning(diagnostic)
+                    history_records[-1].logs += f"\n{diagnostic}\n"
+            except OSError as error:
+                diagnostic = f"创建失败截图快照目录失败：{error}"
+                logger.warning(diagnostic)
+                history_records[-1].logs += f"\n{diagnostic}\n"
+        try:
+            await save_user_history(
+                task_info=self.task_info,
+                script_info=self.script_info,
+                user_info=self.cur_user_item,
+                records=history_records,
+            )
+        finally:
+            if snapshot_directory is not None:
+                try:
+                    snapshot_directory.cleanup()
+                except OSError as error:
+                    logger.warning(f"清理失败截图快照目录失败：{error}")
+
+        if self.run_book["Annihilation"] and self.run_book["Routine"]:
+            await Notify.push_plyer(
+                "成功完成一个自动代理任务！",
+                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                3,
+            )
+
         should_send_statistics = (
             if_success
             or bool(images)
             or bool(cultivate_progress)
-            or _has_completed_sanity_task(list(self.cur_user_item.log_record.values()))
+            or _has_completed_sanity_task(
+                [item for _, item in self.cur_user_item.iter_history_logs()]
+            )
         )
         if should_send_statistics:
             try:
@@ -3127,32 +3233,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         level="error", message=f"推送六星通知时出现异常: {e}"
                     ),
                 )
-
-        if self.run_book["Annihilation"] and self.run_book["Routine"]:
-            if (
-                self.cur_user_config.Data.ProxyTimes == 0
-                and self.cur_user_config.Info.RemainedDay != -1
-            ):
-                self.cur_user_config.Info.RemainedDay = (
-                    self.cur_user_config.Info.RemainedDay - 1
-                )
-                await self.cur_user_config.commit()
-            self.cur_user_config.Data.ProxyTimes = (
-                self.cur_user_config.Data.ProxyTimes + 1
-            )
-            await self.cur_user_config.commit()
-
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
-            )
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
 
         logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 

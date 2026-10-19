@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Optional
 
 from app.config import ConfigCollection
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box.hooks import make_line_hook
 from app.log_box.markers import parse_marker
@@ -35,6 +34,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.history import aggregate_statistics, build_record, save_user_history
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LogMonitor,
@@ -167,7 +167,7 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
         script_path = self.script_config.Script.ScriptPath
@@ -334,11 +334,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
             logger.info(
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
-            )
+            self.cur_user_log = LogRecord()
+            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
             # 重置推送日志采集状态：每次重试只保留当次尝试采集的进程信息
             self.push_log_buffer.clear()
             self._push_log_processed = 0
@@ -831,30 +830,68 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         if self.check_result != "Pass":
             return
 
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         # 结束各子任务
         await self.general_log_monitor.stop()
         await self.kill_managed_process()
         del self.general_process_manager
         del self.general_log_monitor
 
-        user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
+        if self.run_book:
+            if (
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
+            ):
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
+                )
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
-            user_logs_list.append(log_path.with_suffix(".json"))
+            await self.cur_user_config.commit()
+            self.cur_user_item.status = "完成"
+            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+        else:
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            self.cur_user_item.status = "异常"
 
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status == "通用脚本正常运行中":
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                )
+            )
 
         # 日志处理结束：强制关闭多行聚合等有状态匹配器的残留窗口，逐条追加
         if self.push_log_enabled and self.push_log_patterns_compiled:
@@ -873,7 +910,22 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
         # 将本次采集的推送日志回写到用户项，供调度器聚合到推送报告
         self.cur_user_item.push_log = self.push_log_buffer
 
-        statistics = await Config.merge_statistic_info(user_logs_list)
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
+
+        if self.run_book:
+            await Notify.push_plyer(
+                "成功完成一个自动代理任务！",
+                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                3,
+            )
+
+        statistics = aggregate_statistics(history_records)
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -900,31 +952,6 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     level="error", message=f"推送通知时出现异常: {e}"
                 ),
             )
-
-        if self.run_book:
-            if (
-                self.cur_user_config.Data.ProxyTimes == 0
-                and self.cur_user_config.Info.RemainedDay != -1
-            ):
-                self.cur_user_config.Info.RemainedDay = (
-                    self.cur_user_config.Info.RemainedDay - 1
-                )
-                await self.cur_user_config.commit()
-            self.cur_user_config.Data.ProxyTimes = (
-                self.cur_user_config.Data.ProxyTimes + 1
-            )
-            await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
-            )
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -45,6 +45,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.history import build_record, save_user_history
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
@@ -323,7 +324,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
         ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
@@ -388,11 +389,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             logger.info(
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
-            )
+            self.cur_user_log = LogRecord()
+            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
 
             await self.run_once()
 
@@ -901,28 +901,20 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.cur_user_item.status = "异常"
             return
 
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         if self.log_monitor is not None:
             await self.log_monitor.stop()
 
         await self.kill_managed_process()
 
         await self._restore_managed_config()
-
-        for t, log_item in self.cur_user_item.log_record.items():
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=t.astimezone(UTC4),
-            )
-
-            if log_item.status == "BAAH 正常运行中":
-                log_item.status = "任务被用户手动中止"
-
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
-
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
 
         if self.run_book:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
@@ -939,6 +931,43 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 self.cur_user_config.Data.ProxyTimes + 1
             )
             await self.cur_user_config.commit()
+
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "BAAH 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
+
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                )
+            )
+
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
 
         await self._push_statistic()
 

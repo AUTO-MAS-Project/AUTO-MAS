@@ -24,7 +24,6 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
@@ -39,6 +38,7 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.history import aggregate_statistics, build_record, save_user_history
 from app.task.proxy_helpers import (
     append_push_log,
     kill_pids,
@@ -363,7 +363,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
         # ── 所有 Script 路径从 RootPath 实时派生，不依赖 ConfigItem 存储值 ──
         script_root_path = self.script_config.Info.RootPath
@@ -773,8 +773,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
-            self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+            self.log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
@@ -996,6 +996,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.cur_user_item.maintenance_skipped
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理进程与监控；任务结束后始终关闭游戏（由 Game.Enabled 总开关控制）
         if self.log_monitor is not None:
             with suppress(Exception):
@@ -1020,27 +1029,53 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
+        await self._wait_game_exit_before_next_user()
 
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
             if log_item.status in {"未开始监看日志", "OK-WW 正常运行中"}:
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually and log_item.status == "任务被用户手动中止"
+            )
             if not log_item.content:
                 log_item.content = [log_item.status]
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                build_record(
+                    script_info=self.script_info,
+                    user_info=self.cur_user_item,
+                    started_at=t,
+                    log_item=log_item,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "skipped"
+                        if (
+                            log_item is self.cur_user_log
+                            and self.cur_user_item.maintenance_skipped
+                        )
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                )
+            )
 
-        if statistic_paths:
+        await save_user_history(
+            task_info=self.task_info,
+            script_info=self.script_info,
+            user_info=self.cur_user_item,
+            records=history_records,
+        )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = aggregate_statistics(history_records)
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1067,11 +1102,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 logger.opt(exception=True).warning(
                     f"推送 OK-WW 用户统计通知时出现异常: {e}"
                 )
-
-        await self._persist_user_run_result()
-
-        # 多用户切换：等上一用户游戏完全退出（见 _wait_game_exit_before_next_user）
-        await self._wait_game_exit_before_next_user()
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:

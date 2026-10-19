@@ -60,7 +60,6 @@ import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
 import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
-import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
@@ -1010,18 +1009,7 @@ export class GetService {
         });
     }
     /**
-     * 查询保留的失败回放
-     * @returns ReplayListOut Successful Response
-     * @throws ApiError
-     */
-    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/history/replays',
-        });
-    }
-    /**
-     * 搜索历史记录总览信息
+     * 搜索历史记录及类型化统计
      * @param requestBody
      * @returns HistorySearchOut Successful Response
      * @throws ApiError
@@ -1040,7 +1028,7 @@ export class GetService {
         });
     }
     /**
-     * 从指定文件内获取历史记录数据
+     * 按记录编号获取执行结果、日志和附件
      * @param requestBody
      * @returns HistoryDataGetOut Successful Response
      * @throws ApiError
@@ -1053,6 +1041,31 @@ export class GetService {
             url: '/api/history/data',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按附件编号读取图片、文件或视频
+     * @param attachmentId
+     * @param download
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryAttachmentApiHistoryAttachmentsAttachmentIdGet(
+        attachmentId: number,
+        download: boolean = false,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/attachments/{attachment_id}',
+            path: {
+                'attachment_id': attachmentId,
+            },
+            query: {
+                'download': download,
+            },
             errors: {
                 422: `Validation Error`,
             },

@@ -78,6 +78,19 @@ class UserItem:
                     ti.on_status_changed(self, previous, value)
                 ti.schedule_on_change()
 
+    _history_log_records: list[tuple[datetime, LogRecord]] = field(
+        default_factory=list, repr=False
+    )
+
+    def add_log_record(self, started_at: datetime, record: LogRecord) -> None:
+        """每次尝试保留实际开始时刻，同一时刻也不能覆盖此前一轮。"""
+        self._history_log_records.append((started_at, record))
+        self.log_record[started_at] = record
+
+    def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
+        """返回本轮各次尝试；未使用追加入口的现有日志仍可正常读取。"""
+        return list(self._history_log_records or self.log_record.items())
+
     @property
     def result(self) -> str:
         """用户代理情况的简要结果"""
@@ -86,7 +99,7 @@ class UserItem:
         return " | ".join(
             [
                 f"{t.strftime('%H:%M')} - {log.status}"
-                for t, log in self.log_record.items()
+                for t, log in self.iter_history_logs()
             ]
         )
 
@@ -219,12 +232,6 @@ class TaskItem(ABC):
         self, item: UserItem | ScriptItem, previous: str | None, status: str
     ) -> None:
         """同步报告状态变化；副作用由宿主调度层实现。"""
-
-    def on_user_execution_started(self, script: ScriptItem) -> None:
-        """账号执行开始，区分重试中的状态与最终结果。"""
-
-    def on_user_execution_finished(self, script: ScriptItem) -> None:
-        """账号执行及收尾完成。"""
 
     def schedule_on_change(self) -> None:
         """合并高频字段变化，并由应用任务注册表持有异步通知。"""
@@ -459,22 +466,7 @@ class TaskExecuteBase(ABC):
     def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
-        # 脚本管理器的子任务是账号执行；根调度器的子任务是脚本管理器。
-        # 在真正收尾后报告终态，避免把重试期间临时的「异常」当作最终失败。
-        script = getattr(self, "script_info", None)
-        owner = script.task_info if isinstance(script, ScriptItem) else None
-        if owner is not None:
-            owner.on_user_execution_started(script)
-        task_group = self._task_group
-
-        async def run_child() -> None:
-            try:
-                await child._execute_task(task_group)
-            finally:
-                if owner is not None:
-                    owner.on_user_execution_finished(script)
-
-        return task_group.create_task(run_child())
+        return self._task_group.create_task(child._execute_task(self._task_group))
 
     def execute(self):
         if self.task is not None and not self.task.done():

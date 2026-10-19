@@ -22,7 +22,6 @@
 
 
 import asyncio
-import uuid
 from datetime import datetime
 from typing import (
     Dict,
@@ -48,7 +47,6 @@ from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
     ObsReplayCheckOut,
     OutBase,
-    ReplayRecord,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
     WebhookDeleteIn,
@@ -169,7 +167,7 @@ class NotifyChannelsOut(OutBase):
 
 
 class ObsReplaySaveOut(OutBase):
-    replay: ReplayRecord | None = None
+    capture_path: str | None = None
 
 
 class WebhookTestIn(WebhookInBase):
@@ -250,14 +248,10 @@ async def save_obs_replay() -> ObsReplaySaveOut:
     from app.services.obs_replay import ObsReplay
 
     try:
-        record = ReplayRecord(
-            replayId=str(uuid.uuid4()),
-            scriptName="手动测试",
-            failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            reason="试存 OBS 回放",
+        path = await ObsReplay.capture(
+            Config.obs_replay_options(), temporary_copy=False
         )
-        replay = await ObsReplay.save(Config.obs_replay_options(), record)
-        return ObsReplaySaveOut(replay=replay)
+        return ObsReplaySaveOut(capture_path=str(path))
     except Exception as error:
         return ObsReplaySaveOut(code=500, status="error", message=str(error))
 
