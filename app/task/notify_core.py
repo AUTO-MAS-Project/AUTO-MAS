@@ -34,7 +34,6 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     dispatch,
@@ -51,6 +50,7 @@ from app.models.notification import (
 )
 from app.tools.community_notify import get_task_community_summary
 from app.utils import get_logger
+from app.utils.notification_template import get_notification_template
 
 logger = get_logger("任务通知核心")
 
@@ -87,9 +87,7 @@ async def push_task_notice(
     if mode != "统计信息":
         return DispatchResult()
 
-    message_html = Config.notify_env.get_template("general_statistics.html").render(
-        message
-    )
+    message_html = get_notification_template("general_statistics.html").render(message)
     return await dispatch(
         NotifyPayload(title=title, text=statistics_text(), html=message_html),
         statistic_targets(user_config),
@@ -134,7 +132,7 @@ async def push_proxy_result(
         f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
         f"{message['result']}"
     )
-    template = Config.notify_env.get_template(result_template)
+    template = get_notification_template(result_template)
     counts = (
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"

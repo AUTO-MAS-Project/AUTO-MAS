@@ -18,7 +18,6 @@
 
 from datetime import datetime
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     dispatch,
@@ -28,6 +27,7 @@ from app.models.config import BetterGIUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
+from app.utils.notification_template import get_notification_template
 
 from .drop_statistics import format_drop_statistics
 
@@ -108,7 +108,7 @@ async def push_notification(
         )
         # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
         message_text_full = f"{message_text}{steps_text}{drops_text}"
-        message_html = Config.notify_env.get_template("general_statistics.html").render(
+        message_html = get_notification_template("general_statistics.html").render(
             message
         )
 
