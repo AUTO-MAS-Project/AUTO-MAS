@@ -24,7 +24,7 @@ from blinker import ANY, Signal
 from blinker.base import ANY_ID
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from app.utils.io import read_file
+from app.utils.io import read_dict_file
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import (
@@ -659,9 +659,8 @@ class ConfigNode(BaseModel):
         if self._pending_payload is not None:
             payload: dict[str, Any] = self._pending_payload
         elif self.persist_path is not None:
-            loaded = read_file(self.persist_path)
-            # 配置根约定 YAML mapping；未知后缀时 read_file 可能返回 str
-            payload = loaded if isinstance(loaded, dict) else {}
+            # 缺失及真正空文档可初始化；错误根类型须在激活前报错，保留原件。
+            payload = read_dict_file(self.persist_path, allow_empty=True)
         else:
             # 无 payload/file：用当前冷态字段作载荷（含默认值）→ 官方 model_dump
             # persist：无响应式；加密字段以密文进入 activate（encrypted 解析器可接受）

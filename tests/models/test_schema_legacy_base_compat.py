@@ -9,13 +9,14 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.models.schema import (
-    GeneralUserConfig_Info,
-    HSRUserConfig_Info,
-    MaaFWUserConfig_Info,
-    MaaUserConfig_Info,
-    UserUpdateIn,
-)
+from app.api.scripts import UserUpdateIn
+from app.config.wire import config_contract
+from app.models.config import GeneralUserConfig, HSRUserConfig, MaaFWUserConfig, MaaUserConfig
+
+GeneralUserConfig_Input = config_contract(GeneralUserConfig, mode="input")
+HSRUserConfig_Input = config_contract(HSRUserConfig, mode="input")
+MaaFWUserConfig_Input = config_contract(MaaFWUserConfig, mode="input")
+MaaUserConfig_Input = config_contract(MaaUserConfig, mode="input")
 
 
 class LegacyInfoModeCompatTest(unittest.TestCase):
@@ -30,25 +31,29 @@ class LegacyInfoModeCompatTest(unittest.TestCase):
             "详细": "independent",
             "自定义": "independent",
         }
-        for info_cls in (
-            MaaUserConfig_Info,
-            GeneralUserConfig_Info,
-            HSRUserConfig_Info,
-            MaaFWUserConfig_Info,
+        for entry_cls in (
+            MaaUserConfig_Input,
+            GeneralUserConfig_Input,
+            HSRUserConfig_Input,
+            MaaFWUserConfig_Input,
         ):
             for legacy, base in expected.items():
-                self.assertEqual(info_cls.model_validate({"Mode": legacy}).Base, base)
+                self.assertEqual(
+                    entry_cls.model_validate({"Info": {"Mode": legacy}}).Info.Base,
+                    base,
+                )
 
     def test_explicit_base_wins_and_unknown_mode_rejected(self) -> None:
         """显式 Base 优先；未知 Mode 与旧 Literal 语义一致地拒绝。"""
 
         self.assertEqual(
-            MaaUserConfig_Info.model_validate({"Mode": "脚本", "Base": "native"}).Base,
+            MaaUserConfig_Input.model_validate({"Info": {"Mode": "脚本", "Base": "native"}}).Info.Base,
             "native",
         )
-        self.assertIsNone(MaaUserConfig_Info.model_validate({"Mode": None}).Base)
         with self.assertRaises(ValidationError):
-            MaaUserConfig_Info.model_validate({"Mode": "乱码"})
+            MaaUserConfig_Input.model_validate({"Info": {"Mode": None}})
+        with self.assertRaises(ValidationError):
+            MaaUserConfig_Input.model_validate({"Info": {"Mode": "乱码"}})
 
     def test_update_user_request_keeps_legacy_source(self) -> None:
         """update_user 请求体里的旧 Info.Mode 能落到 Base。"""

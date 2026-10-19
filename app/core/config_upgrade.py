@@ -127,8 +127,10 @@ def convert_legacy(
                                         ("QueueItem", "Schedule", "Time"),
                                     }:
                                         raise
+                                    # 旧 %H:%M 校验允许小时、分钟未补零，迁移沿用其解析范围。
                                     parsed = datetime.combine(
-                                        date(2000, 1, 1), time.fromisoformat(value)
+                                        date(2000, 1, 1),
+                                        datetime.strptime(value, "%H:%M").time(),
                                     )
                         else:
                             raise TypeError("旧日期时间必须为字符串或日期对象")
@@ -191,18 +193,30 @@ def _digest(path: Path) -> str:
 
 
 def preserve_pre_upgrade(config_path: Path) -> None:
-    """在既有历史升级修改文件前保留原始配置，重试不覆盖已有备份。"""
+    """按固定 JSON 白名单留存升级原件，重试不覆盖已有备份。"""
     backup = config_path / "legacy-json" / "pre-upgrade"
     backup.mkdir(parents=True, exist_ok=True)
-    for source in config_path.iterdir():
-        if source.name == "legacy-json" or source.name == MIGRATION_RECORD:
-            continue
-        target = backup / source.name
-        if target.exists() or source.suffix in (".yaml", ".yml"):
-            continue
-        if source.is_dir():
-            shutil.copytree(source, target)
-        elif source.suffix == ".json" or ".json." in source.name:
+    # 七个聚合文件及早期升级实际涉及的 JSON；保留相对路径，不复制目录内容。
+    for pattern in (
+        *(old for old, _new, _key in CONFIG_FILES),
+        "config.json",
+        "QueueConfig/*.json",
+        "MaaPlanConfig/*/config.json",
+        "MaaConfig/*/config.json",
+        "MaaConfig/*/Default/gui.json",
+        "MaaConfig/*/UserData/*/config.json",
+        "MaaConfig/*/UserData/*/Routine/gui.json",
+        "MaaConfig/*/UserData/*/Infrastructure/infrastructure.json",
+        "GeneralConfig/*/config.json",
+        "GeneralConfig/*/SubData/*/config.json",
+    ):
+        for source in config_path.glob(pattern):
+            if not source.is_file():
+                continue
+            target = backup / source.relative_to(config_path)
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
 
 
