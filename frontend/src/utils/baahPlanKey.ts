@@ -1,7 +1,7 @@
-// BAAH 计划表 key 的前端契约：六类关卡每一位的含义、缺席 / 空 / 有值三态的读法与换算。
+// BAAH 计划表 key 的前端契约：五类关卡每一位的含义、缺席 / 空 / 有值三态的读法与换算。
 // 取值规则与后端 app/models/config.py 的 BAAH_PLAN_KEY_SHAPE 一一对应，改一处要改两处。
 
-export type BAAHKeyFieldName = 'Event' | 'Wanted' | 'Special' | 'Exchange' | 'Hard' | 'Normal'
+export type BAAHKeyFieldName = 'Wanted' | 'Special' | 'Exchange' | 'Hard' | 'Normal'
 
 /** 参数里的一位：词表 key 说明这一位是什么，min 是允许的最小值（-1 = 最高关或最大次数） */
 export interface BAAHKeyPart {
@@ -20,24 +20,14 @@ export interface BAAHKeyField {
   parts: BAAHKeyPart[]
 }
 
-// 六类关卡的参数都是「… / 关卡 / 次数」收尾：悬赏通缉、特殊任务、学园交流会前面是
-// 地区或学院，困难图与普通图前面是章节，活动关卡没有前面那位。关卡位只有悬赏通缉、
+// 五类关卡的参数都是「… / 关卡 / 次数」收尾：悬赏通缉、特别委托、学园交流会前面是
+// 地区或学院，困难图与普通图前面是章节。关卡位只有悬赏通缉、
 // 特殊任务、学园交流会能填 -1（最高关），困难图与普通图走上游的滚动选择，只能从 1 起。
 export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
-    field: 'Event',
-    labelKey: 'plan.baah.event',
-    defaultValue: [1, 1],
-    maxLength: 3,
-    parts: [
-      { hintKey: 'plan.baah.partStageIndex', min: 1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
-    ],
-  },
-  {
     field: 'Wanted',
     labelKey: 'plan.baah.wanted',
-    defaultValue: [1, -1, 1],
+    defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
       { hintKey: 'plan.baah.partRegion', min: 1 },
@@ -48,7 +38,7 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Special',
     labelKey: 'plan.baah.special',
-    defaultValue: [1, -1, 1],
+    defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
       { hintKey: 'plan.baah.partRegion', min: 1 },
@@ -59,7 +49,7 @@ export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Exchange',
     labelKey: 'plan.baah.exchange',
-    defaultValue: [1, -1, 1],
+    defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
       { hintKey: 'plan.baah.partAcademy', min: 1 },
@@ -95,7 +85,7 @@ export const BAAH_KEY_FIELD_BY_NAME = Object.fromEntries(
   BAAH_PLAN_KEY_FIELDS.map(field => [field.field, field])
 ) as Record<BAAHKeyFieldName, BAAHKeyField>
 
-/** 多类混打要的六类齐全形态 */
+/** 多类混打要的五类齐全形态 */
 export type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
 
 /**
@@ -108,9 +98,10 @@ export type BAAHDayFields = Partial<Record<BAAHKeyFieldName, number[]>>
  * 每一位在下拉里能选到几：次数最少，章节最多，地区与学院居中，其余按关卡给。
  * -1（倒数第一个可扫荡关卡 / 最大次数）不在这里，由各位自己的 min 决定要不要列。
  */
-export const partOptionMax = (hintKey: string): number => {
+export const partOptionMax = (hintKey: string, field?: BAAHKeyFieldName): number => {
   if (hintKey === 'plan.baah.partTimes') return 10
-  if (hintKey === 'plan.baah.partRegion' || hintKey === 'plan.baah.partAcademy') return 10
+  if (hintKey === 'plan.baah.partRegion') return field === 'Special' ? 2 : 3
+  if (hintKey === 'plan.baah.partAcademy') return 3
   if (hintKey === 'plan.baah.partChapter') return 30
   return 15
 }

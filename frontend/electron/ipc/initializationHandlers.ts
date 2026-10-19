@@ -258,7 +258,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PythonInstaller } = await import('../services/environmentService')
+    const { PythonInstaller } = await import('../services/environmentService.js')
     const installer = new PythonInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -292,7 +292,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PipInstaller } = await import('../services/environmentService')
+    const { PipInstaller } = await import('../services/environmentService.js')
     const installer = new PipInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -326,7 +326,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { GitInstaller } = await import('../services/environmentService')
+    const { GitInstaller } = await import('../services/environmentService.js')
     const installer = new GitInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -363,7 +363,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const initService = getInitService(targetBranch)
       const mirrorService = initService.getMirrorService()
 
-      const { RepositoryService } = await import('../services/repositoryService')
+      const { RepositoryService } = await import('../services/repositoryService.js')
       const repoService = new RepositoryService(appRoot, mirrorService, targetBranch)
 
       const result = await repoService.pullRepository(progress => {
@@ -400,7 +400,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const initService = getInitService()
       const mirrorService = initService.getMirrorService()
 
-      const { DependencyService } = await import('../services/dependencyService')
+      const { DependencyService } = await import('../services/dependencyService.js')
       const depService = new DependencyService(appRoot, mirrorService)
 
       const result = await depService.installDependencies(progress => {

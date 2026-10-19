@@ -132,4 +132,7 @@ def register() -> NotifyChannel:
         target_builder=_koishi_targets,
         send_adapter=_koishi_send,
         sender_factory=Sender,
+        start_adapter=Sender.start,
+        stop_adapter=Sender.stop,
+        lifecycle_order=10,
     )

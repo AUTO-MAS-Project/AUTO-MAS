@@ -81,4 +81,7 @@ def register() -> NotifyChannel:
         target_builder=_openclaw_qq_targets,
         send_adapter=_openclaw_qq_send,
         sender_factory=Sender,
+        start_adapter=Sender.start,
+        stop_adapter=Sender.stop,
+        lifecycle_order=0,
     )

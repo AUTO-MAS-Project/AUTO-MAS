@@ -16,6 +16,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  isMacOS: process.platform === 'darwin',
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
@@ -85,6 +86,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appWaitForQuitConfirmation: () => ipcRenderer.invoke('app-wait-for-quit-confirmation'),
   appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
   appCancelQuit: (token?: number) => ipcRenderer.invoke('app-cancel-quit', token),
@@ -97,8 +99,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('system-resumed', listener)
     return () => ipcRenderer.removeListener('system-resumed', listener)
   },
-  onAppCloseRequested: (callback: () => void) => {
-    const listener = () => callback()
+  onAppCloseRequested: (callback: (confirmRunningTasks: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, confirmRunningTasks: boolean) =>
+      callback(confirmRunningTasks)
     ipcRenderer.on('app-close-requested', listener)
     return () => ipcRenderer.removeListener('app-close-requested', listener)
   },

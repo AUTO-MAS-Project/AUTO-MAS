@@ -20,6 +20,8 @@ let pressElement: HTMLAudioElement | null = null
 let releaseElement: HTMLAudioElement | null = null
 /** 松手时按压音还没放完，就把「接在它后面播」这个动作挂在这里 */
 let pendingRelease: (() => void) | null = null
+let preparingPress: Promise<void> = Promise.resolve()
+let pressRequest = 0
 
 const logger = window.electronAPI.getLogger('按压音效')
 
@@ -119,68 +121,130 @@ function stopRelease(): void {
   }
 }
 
-/** 播一次按压音效；真实按压与设置页的「试听」共用这一条路径 */
-export async function playPressSound(
-  preset: PressSoundPreset,
-  volume: number,
-  customPath: string,
-  phase: PressSoundPhase = 'press',
+export interface PressSoundPlayOptions {
+  preset: PressSoundPreset
+  volume: number
+  /** 自定义音效的「按下」文件；custom 与 customPair 都用它 */
+  customPath?: string
+  /** 自定义两个文件时「松开」的文件，只有 customPair 用 */
+  customReleasePath?: string
+  phase?: PressSoundPhase
   /** 自定义音效要等主进程把文件读回来，这中间状态可能已经变了（切后台 / 开低性能） */
-  shouldPlay: () => boolean = () => true
-): Promise<void> {
-  if (isBuiltinPressSound(preset)) {
-    const builtin = BUILTIN_PRESS_SOUNDS.find(item => item.value === preset)
-    if (!builtin) {
-      return
-    }
+  shouldPlay?: () => boolean
+}
 
-    if (phase === 'press') {
-      dropPendingRelease()
-      stopRelease()
-      pressElement = elementFor(builtinUrl(builtin.press))
-      releaseElement = elementFor(builtinUrl(builtin.release))
-      playFromStart(pressElement, volume)
-      return
-    }
+/**
+ * 播一次按压音效；真实按压与设置页的「试听」共用这一条路径。
+ *
+ * 按下和松开各要一个音源：内置音效是两个文件；自定义「单个」时两个阶段共用同一个文件，
+ * 自定义「两个文件」时按下的响一下、松开的响另一下。
+ */
+export function playPressSound(options: PressSoundPlayOptions): Promise<void> {
+  const phase = options.phase ?? 'press'
+  const request = phase === 'press' ? ++pressRequest : pressRequest
+  const allowed = options.shouldPlay ?? (() => true)
+  const currentOptions = {
+    ...options,
+    shouldPlay: () => request === pressRequest && allowed(),
+  }
 
-    if (!releaseElement) {
-      return
-    }
+  if (phase === 'press') {
+    dropPendingRelease()
+    stopRelease()
+    pressElement = null
+    releaseElement = null
+    preparingPress = playPressSoundPhase(currentOptions)
+    return preparingPress
+  }
 
-    // 手快的时候按压音还没放完：等它播完再接松开音，两声不会叠在一起
-    if (pressElement && !pressElement.paused && !pressElement.ended) {
-      dropPendingRelease()
-      const element = releaseElement
-      const fire = (): void => {
-        pendingRelease = null
-        // 排队这一小会儿里可能切了后台或开了低性能，真播之前再看一眼
-        if (!shouldPlay()) {
-          return
-        }
-        playFromStart(element, volume)
+  // 自定义文件首次读取是异步的，快点松手也要等这一轮音源准备好。
+  return preparingPress.then(() => {
+    if (request === pressRequest) {
+      return playPressSoundPhase(currentOptions)
+    }
+  })
+}
+
+/** 整组试听只续接原来的按下请求，新的试听或真实按压会使它失效。 */
+export async function previewPressSound(options: PressSoundPlayOptions): Promise<void> {
+  const preparing = playPressSound({ ...options, phase: 'press' })
+  const request = pressRequest
+  await preparing
+  if (request === pressRequest) {
+    await playPressSound({ ...options, phase: 'release' })
+  }
+}
+
+async function playPressSoundPhase(options: PressSoundPlayOptions): Promise<void> {
+  const {
+    preset,
+    volume,
+    customPath = '',
+    customReleasePath = '',
+    phase = 'press',
+    shouldPlay = () => true,
+  } = options
+
+  if (phase === 'press') {
+    let pressUrl: string | null = null
+    let releaseUrl: string | null = null
+
+    if (isBuiltinPressSound(preset)) {
+      const builtin = BUILTIN_PRESS_SOUNDS.find(item => item.value === preset)
+      if (!builtin) {
+        return
       }
-      pendingRelease = fire
-      pressElement.addEventListener('ended', fire, { once: true })
+      pressUrl = builtinUrl(builtin.press)
+      releaseUrl = builtinUrl(builtin.release)
+    } else {
+      pressUrl = await resolveCustomUrl(customPath)
+      if (!pressUrl) {
+        return
+      }
+      // 单个文件时按下、松开用同一个；两个文件时松开单独读，缺文件就不响
+      releaseUrl = preset === 'customPair' ? await resolveCustomUrl(customReleasePath) : pressUrl
+      if (!releaseUrl) {
+        return
+      }
+    }
+
+    if (!shouldPlay()) {
       return
     }
 
     dropPendingRelease()
-    playFromStart(releaseElement, volume)
+    stopRelease()
+    pressElement = elementFor(pressUrl)
+    releaseElement = elementFor(releaseUrl)
+    playFromStart(pressElement, volume)
     return
   }
 
-  // 自定义音效只导入了一个文件，松开时不再重复响一次
-  if (phase === 'release' || !customPath) {
+  // 松开：没在中心图标上按过就没有松开音
+  if (!releaseElement) {
     return
   }
 
-  const url = await resolveCustomUrl(customPath)
-  if (!url || !shouldPlay()) {
+  // 手快的时候按压音还没放完：等它播完再接松开音，两声不会叠在一起
+  if (pressElement && !pressElement.paused && !pressElement.ended) {
+    dropPendingRelease()
+    const element = releaseElement
+    const fire = (): void => {
+      pendingRelease = null
+      // 排队这一小会儿里可能切了后台或开了低性能，真播之前再看一眼
+      if (!shouldPlay()) {
+        return
+      }
+      playFromStart(element, volume)
+    }
+    pendingRelease = fire
+    pressElement.addEventListener('ended', fire, { once: true })
     return
   }
 
   dropPendingRelease()
-  pressElement = null
-  stopRelease()
-  playFromStart(elementFor(url), volume)
+  if (!shouldPlay()) {
+    return
+  }
+  playFromStart(releaseElement, volume)
 }

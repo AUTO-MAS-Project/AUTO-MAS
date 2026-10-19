@@ -102,18 +102,30 @@ const spriteStyle = computed(() => {
 
 const noticeStyle = computed(() => {
   if (!data.value) return {}
-  const { width, height, offsetX, offsetY, noticeBelow, colors } = data.value
+  const {
+    width,
+    height,
+    offsetX,
+    offsetY,
+    noticeBelow,
+    noticeWidth: maxNoticeWidth,
+    noticeHeight,
+    colors,
+  } = data.value
   const anchor = offsetX + width / 2
-  const boxWidth = noticeWidth.value || viewportWidth.value
+  const boxWidth = noticeWidth.value || maxNoticeWidth
   const left = Math.max(0, Math.min(anchor - boxWidth / 2, viewportWidth.value - boxWidth))
   const arrow = anchor - left
   const leftRadius = Math.max(0, Math.min(colors.radius, arrow - 5))
   const rightRadius = Math.max(0, Math.min(colors.radius, boxWidth - arrow - 5))
   return {
     left: `${left}px`,
+    maxWidth: `${maxNoticeWidth}px`,
+    maxHeight: `${Math.max(0, noticeHeight - 12)}px`,
     '--mascot-notice-arrow-x': `${arrow - 1}px`,
     top: noticeBelow ? `${offsetY + height + 12}px` : undefined,
     bottom: noticeBelow ? undefined : `${height + 12}px`,
+    '--mascot-notice-content-height': `${Math.max(0, noticeHeight - 38 - (isIdleMessage.value && data.value.idleMessage?.author && noticeHeight >= 78 ? 20 : 0))}px`,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
@@ -249,7 +261,7 @@ function hover(): void {
 async function startDrag(event: PointerEvent): Promise<void> {
   if (event.button !== 0 || activePointerId !== null) return
   const api = window.desktopMascotAPI
-  if (!api) return
+  if (!api || !data.value) return
   event.preventDefault()
   const target = event.currentTarget as HTMLElement
   const bounds = target.getBoundingClientRect()
@@ -262,6 +274,7 @@ async function startDrag(event: PointerEvent): Promise<void> {
       x: event.clientX - bounds.left,
       y: event.clientY - bounds.top,
       session: revision,
+      revision: data.value.revision,
     })
     if (revision !== dragRevision) return
     if (!accepted) {
@@ -298,7 +311,7 @@ function endDrag(event?: PointerEvent): void {
 <template>
   <div v-if="data" class="desktop-mascot" @mousemove="hover" @mouseleave="hover">
     <div
-      v-if="noticeText"
+      v-if="noticeText && data.noticeHeight >= 58"
       ref="noticeElement"
       class="mascot-notice"
       :class="{ 'idle-message': isIdleMessage, 'notice-below': data.noticeBelow }"
@@ -306,7 +319,9 @@ function endDrag(event?: PointerEvent): void {
       role="status"
     >
       <span>{{ noticeText }}</span>
-      <small v-if="isIdleMessage && data.idleMessage?.author" class="mascot-notice-author"
+      <small
+        v-if="isIdleMessage && data.idleMessage?.author && data.noticeHeight >= 78"
+        class="mascot-notice-author"
         >—— {{ data.idleMessage.author }}</small
       >
     </div>
@@ -438,6 +453,7 @@ function endDrag(event?: PointerEvent): void {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  max-height: var(--mascot-notice-content-height);
   overflow: hidden;
 }
 

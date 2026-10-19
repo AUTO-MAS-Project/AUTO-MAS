@@ -21,13 +21,14 @@ export function usePressSound() {
       return
     }
 
-    void playPressSound(
-      pressSoundStore.preset,
-      pressSoundStore.volume,
-      pressSoundStore.customPath,
+    void playPressSound({
+      preset: pressSoundStore.preset,
+      volume: pressSoundStore.volume,
+      customPath: pressSoundStore.customPath,
+      customReleasePath: pressSoundStore.customReleasePath,
       phase,
-      () => pressSoundStore.enabled && !performanceStore.isLowPower
-    )
+      shouldPlay: () => pressSoundStore.enabled && !performanceStore.isLowPower,
+    })
   }
 
   // 松开音排在按压音后面播：等待期间关了开关、切了后台或开了低性能，就把它作废

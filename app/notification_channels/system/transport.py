@@ -77,7 +77,7 @@ class Sender:
             通知持续时间
         """
 
-        if not self.dependencies.system_enabled():
+        if not self.dependencies.config.get("IfPushPlyer"):
             return
 
         self.dependencies.logger.info(f"推送系统通知: {title}")
