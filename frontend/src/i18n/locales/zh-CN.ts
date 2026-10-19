@@ -2306,10 +2306,10 @@ export default {
     baahConfigNamePlaceholder: '请选择平时使用的配置',
     baahStageMode: '关卡计划表',
     baahStageModeHint:
-      '按计划表安排每天打哪些关卡；选「固定」则照 BAAH 里自己的关卡配置运行。计划表分全局（每天都用）与周计划（按星期几）两种模式',
+      '按计划表安排每天打哪些关卡；选「固定」则照 BAAH 里自己的关卡配置运行。支持全局、周计划和多天轮换；活动关卡在 BAAH 中配置',
     baahIfEventFirst: '活动关优先',
     baahIfEventFirstHint:
-      '碧蓝档案有进行中的活动时，把「活动关卡」任务排到最前并打开；没有活动、或取不到排期时不动你的任务顺序',
+      '有活动时跳过计划表，只刷 BAAH 中配置的活动关卡，关闭其他扫荡任务；无活动时使用计划表。咖啡馆、签到等日常任务不变；取不到排期时沿用原计划',
     baahActivityLineType: '活动排期服务器',
     baahActivityLineTypeHint:
       '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服。「活动关优先」也按这里选的服判断活动是否进行中',
@@ -3942,7 +3942,7 @@ export default {
     baah: {
       event: '活动关卡',
       wanted: '悬赏通缉',
-      special: '特殊任务',
+      special: '特别委托',
       exchange: '学园交流会',
       hard: '困难关卡',
       normal: '普通关卡',
@@ -3984,9 +3984,10 @@ export default {
         nine: '九号',
         ten: '十号',
       },
-      unsavedHint: '参数尚未保存，请先保存或取消编辑',
+      unsavedHint: '自动保存失败，请修改参数或重试后再离开',
       savingHint: '正在保存参数，请稍候',
       saveFailed: '保存失败，已保留填写的参数，请重试',
+      retry: '重试',
     },
     toast: {
       created: '已创建新的{type}：「{name}」，建议你修改为更有意义的名称',
