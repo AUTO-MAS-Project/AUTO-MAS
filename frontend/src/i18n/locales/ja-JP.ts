@@ -3963,6 +3963,7 @@ export default {
     categories: { all: 'すべて', theme: 'テーマ', mascot: 'ペット' },
     uploadTheme: 'テーマをアップロード',
     title: 'リソースストア',
+    openDocs: 'ドキュメントを開く',
     account: {
       login: '共有サイトにログイン',
       pending: 'ブラウザで承認してください。確認コード',

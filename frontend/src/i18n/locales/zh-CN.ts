@@ -4503,6 +4503,7 @@ export default {
     categories: { all: '全部', theme: '主题', mascot: '桌宠' },
     uploadTheme: '上传主题',
     title: '资源商店',
+    openDocs: '打开文档',
     account: {
       login: '登录分享站',
       pending: '请在浏览器中确认授权，确认码',
