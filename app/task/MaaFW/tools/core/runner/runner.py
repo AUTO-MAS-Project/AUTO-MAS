@@ -3302,11 +3302,15 @@ class MaaFWRunner:
                     time.sleep(0.1)
                     continue
                 message = str(exc)
-                reason = (
-                    exc.user_message or ""
-                    if isinstance(exc, MaaFWTaskError)
-                    else message
-                )
+                if isinstance(exc, MaaFWTaskError) and exc.user_message:
+                    reason = exc.user_message
+                else:
+                    # 诊断原文可能是多行（Python 异常、原生 backtrace）：给人看的只取首个
+                    # 非空行，否则多任务失败那句的括号会被换行截断。
+                    reason = next(
+                        (line.strip() for line in message.splitlines() if line.strip()),
+                        "MaaFramework 未给出失败原因",
+                    )
                 if not task.nonFatalMessage:
                     self._failed_task_errors.append(
                         _FailedTask(name=task.name, diagnostic=message, reason=reason)

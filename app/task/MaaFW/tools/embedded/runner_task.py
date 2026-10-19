@@ -3580,7 +3580,8 @@ def _pretask_failure_reason(output: str) -> str:
         elif value.startswith("'"):
             value = value[1:-1]
         if value:
-            reason += f"（{value}）"
+            # 只有字段没有正文时，error 的值本身就是原因，不再套括号
+            reason = f"{reason}（{value}）" if reason else value
     return reason or line
 
 
