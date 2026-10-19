@@ -35,6 +35,7 @@
     "e2e:settings": "node e2e/run.mjs --grep @settings",
     "e2e:history": "node e2e/run.mjs --grep @history",
     "e2e:recovery": "node e2e/run.mjs --grep @recovery",
+    "e2e:notify": "node e2e/run.mjs --grep @notify",
     "e2e:real": "pwsh -NoProfile -File ./e2e/run-real.ps1",
     "e2e:real:local": "pwsh -NoProfile -File ./e2e/run-real.ps1",
     "e2e:real:all": "node e2e/real-batch.mjs",
