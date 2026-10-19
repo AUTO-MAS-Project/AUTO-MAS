@@ -50,7 +50,7 @@ import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
-import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
@@ -221,6 +221,7 @@ let tray: Tray | null = null
 let coordinatedQuit = false
 let forceQuitInProgress = false
 let quitRequestInFlight = false
+let quitConfirmationPending = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 let quitPreparationSequence = 0
@@ -505,6 +506,7 @@ function cancelQuitRequest(token?: number): void {
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
   activeQuitPreparation = null
+  quitConfirmationPending = false
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
@@ -582,7 +584,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   }
 }
 
-function requestRendererClose(reason: string): void {
+function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
   const win = mainWindow
@@ -596,7 +598,7 @@ function requestRendererClose(reason: string): void {
   win.setSkipTaskbar(true)
   win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
-  win.webContents.send('app-close-requested')
+  win.webContents.send('app-close-requested', confirmRunningTasks)
   quitFallbackTimer = setTimeout(() => {
     void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
   }, RENDERER_QUIT_FALLBACK_MS)
@@ -826,12 +828,18 @@ function createWindow() {
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
 
+  // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
+  win.webContents.on('did-navigate', () => {
+    if (quitConfirmationPending) cancelQuitRequest()
+  })
+
   // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
-    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
-    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+    if (quitConfirmationPending) cancelQuitRequest()
+    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1011,7 +1019,7 @@ function createWindow() {
         updateTrayVisibility(currentConfig)
         logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
       } else {
-        requestRendererClose('窗口关闭')
+        requestRendererClose('窗口关闭', process.platform === 'darwin')
       }
     } else {
       // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
@@ -1392,22 +1400,35 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('log:export', async () => {
+ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
   try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    if (!mainWindow)
+      return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
+    const dialogLabels =
+      rawDialogLabels && typeof rawDialogLabels === 'object'
+        ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+        : undefined
     const appRoot = getAppRoot()
     const debugDir = path.join(appRoot, 'debug')
 
     if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在' }
+      return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
     }
 
     // 选择保存位置
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出日志',
+      title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
       defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      filters: [
+        {
+          name:
+            typeof dialogLabels?.zipFilterName === 'string'
+              ? dialogLabels.zipFilterName
+              : 'ZIP文件',
+          extensions: ['zip'],
+        },
+      ],
     })
 
     if (result.canceled || !result.filePath) {
@@ -1426,23 +1447,12 @@ ipcMain.handle('log:export', async () => {
       maxArchiveBytes: Number.POSITIVE_INFINITY,
     }
 
-    // 读取 debug 目录下的所有文件
-    const files = fs.readdirSync(debugDir)
-
-    if (files.length === 0) {
-      return { success: false, error: '日志目录为空，没有可导出的文件' }
-    }
-
-    // 将所有日志文件添加到 ZIP
-    for (const file of files) {
-      const filePath = path.join(debugDir, file)
-      const stat = fs.statSync(filePath)
-
-      if (stat.isFile()) {
-        addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
-        addDirectory(state, filePath, file)
-      }
+    // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+    const hasFiles = addDirectory(state, debugDir, '', {
+      includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+    })
+    if (!hasFiles) {
+      return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
     }
 
     // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
@@ -1465,6 +1475,7 @@ ipcMain.handle('log:export', async () => {
         skipped.length > 0
           ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
           : '日志压缩包导出成功',
+      skippedPaths: skipped.map(entry => entry.path),
       zipPath: zipPath,
     }
   } catch (error) {
@@ -1805,10 +1816,25 @@ ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
+// renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
+ipcMain.handle('app-wait-for-quit-confirmation', () => {
+  if (
+    !quitRequestInFlight ||
+    activeQuitPreparation !== null ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  clearQuitFallback()
+  quitConfirmationPending = true
+  return true
+})
+
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
   clearQuitFallback()
+  quitConfirmationPending = false
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
@@ -1848,7 +1874,7 @@ ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
-    const { getRelatedProcesses } = await import('./utils/processManager')
+    const { getRelatedProcesses } = await import('./utils/processManager.js')
     return await getRelatedProcesses()
   } catch {
     logger.error('获取进程信息失败')
@@ -2001,7 +2027,7 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', (_event, patch, defaults) => {
+ipcMain.handle('save-config', (event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -2030,6 +2056,8 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
             themeColor: config.themeColor,
             appearanceId: config.appearanceId ?? null,
             customBackgroundPath: config.customBackgroundPath ?? '',
+            customBackgroundUpdated:
+              'customBackgroundPath' in patch && window.webContents.id !== event.sender.id,
             customSurfaceOpacity: config.customSurfaceOpacity ?? 1,
           })
         }

@@ -25,6 +25,7 @@ import re
 import shlex
 import sys
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -405,6 +406,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         script_config: MaaEndConfig,
         user_config: MultipleConfig[MaaEndUserConfig],
         emulator_manager: DeviceBase | None,
+        *,
+        on_error_screenshot: Callable[[Path], None] | None = None,
     ):
         super().__init__()
 
@@ -416,6 +419,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.on_error_screenshot = on_error_screenshot
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -765,7 +769,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
 
             if not await async_start_game_via_launcher(
-                launcher_path, on_log=_push_launch_log
+                launcher_path,
+                on_log=_push_launch_log,
+                on_error_screenshot=self.on_error_screenshot,
             ):
                 raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
             wait_time = int(self.script_config.get("Game", "WaitTime"))
@@ -1507,6 +1513,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         account_id,
                         emulator_info,
                         restart_game=self._restart_game_after_update,
+                        on_error_screenshot=self.on_error_screenshot,
                     )
                 except Exception as error:
                     keep_game_for_login_retry = (

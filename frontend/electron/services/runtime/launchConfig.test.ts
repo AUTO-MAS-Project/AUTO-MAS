@@ -280,7 +280,7 @@ describe('resolveRuntimeExecutable', () => {
       expect(resolveRuntimeExecutable()).toBe(bundled)
     })
 
-    it('exe 缺失但随本体更新留下的备份还在时，先把备份改回来再用', () => {
+    it('exe 缺失但上次更新 Runtime 留下的备份还在时，先把备份改回来再用', () => {
       const bundled = path.join(appRoot, 'resources', RUNTIME_EXECUTABLE_NAME)
       fs.writeFileSync(`${bundled}${RUNTIME_BACKUP_SUFFIX}`, 'previous', 'utf8')
 

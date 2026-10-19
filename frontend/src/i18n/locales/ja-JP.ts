@@ -3086,7 +3086,26 @@ export default {
       noActivity: 'イベントはありません',
       unavailable: 'アークナイツのイベント情報を取得できません',
     },
+    activity: {
+      startsAt: '{time} 開始',
+      endsAt: '{time} 終了',
+      schedule: 'イベント日程',
+      refresh: 'イベント日程を更新',
+      permanentGameplay: '常設コンテンツ',
+      running: '開催中',
+      upcoming: '開催前',
+      completed: '完了済み',
+      markCompleted: '「{name}」を完了済みにして通知を停止',
+      undoCompletion: '「{name}」の完了を取り消して通知を再開',
+      completionUnavailable: '完了状態を取得できません。イベント情報は表示できます。',
+      completionSaveFailed: 'イベントの完了状態を保存できませんでした。再試行してください。',
+      retryCompletion: '再試行',
+    },
     endfield: {
+      pools: 'スカウト',
+      noPools: '開催中のスカウトはありません',
+      poolStaleMessage: '前回取得したスカウト情報を表示しています',
+      poolUnavailable: 'スカウト情報を取得できません。イベント情報は引き続き表示できます。',
       stale: 'キャッシュ',
       staleMessage: '前回取得したイベント情報を表示しています',
       unavailable: 'エンドフィールドのイベント情報を一時的に取得できません',
@@ -3206,6 +3225,9 @@ export default {
       internalErrorNotice:
         'これはプログラム内部の問題で、再試行しても解決しません。ログを添えて報告してください',
       contactSupportNotice: 'この問題はログを添えて開発者に報告してください',
+      exportLogsHint:
+        '解決しない場合は、debug フォルダーを ZIP にまとめて QQ グループで共有し、調査を依頼できます。',
+      joinGroup: 'QQ グループで相談',
       openLogFailed: 'ログを開けませんでした: {error}',
       doctorEmpty: '確認できた項目がありません',
       doctorFailed: '実行環境の確認に失敗しました: {error}',
@@ -3597,6 +3619,11 @@ export default {
     toast: {
       packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
       packageExported: 'ログのアーカイブを書き出しました',
+      packageIncomplete:
+        'ログのアーカイブを書き出しました。次のファイルは書き出せませんでした: {paths}',
+      windowUnavailable: 'ウィンドウが初期化されていないため、ログを書き出せません',
+      directoryMissing: 'ログフォルダーが存在しません',
+      noFiles: 'ログフォルダーが空のため、書き出せるファイルがありません',
       packageFailed: 'ログの書き出しに失敗しました',
       packageError: 'ログの書き出しでエラーが発生しました: {error}',
       openFolderFailed: 'アーカイブの保存先フォルダーを開けませんでした',

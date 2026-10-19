@@ -25,17 +25,19 @@ export interface MascotDefinition {
   opacity?: number
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
   menu?: MascotMenuDefinition
-  /** 两行等宽精灵图：第一行待机，第二行工作。 */
+  /** 等宽精灵图：上半部分待机，下半部分工作，各动作按行排列。 */
   animation?: {
     path: string
     columns: number
+    /** 每个动作的帧数，最多 120；省略时等于 columns，兼容旧包。 */
+    frameCount?: number
     idleFps?: number
     workingFps?: number
     /** 3×3 视线图，按左上到右下排列。 */
     lookPath?: string
-    /** 两行结果动画：第一行失败，第二行成功。 */
+    /** 结果动画：上半部分失败，下半部分成功，排布与主动画一致。 */
     resultPath?: string
-    /** 单行拖拽动画，列数与主动画一致。 */
+    /** 拖拽动画，列数和帧数与主动画一致，仅含一个动作。 */
     dragPath?: string
   }
 }

@@ -35,6 +35,7 @@ from typing import (
 )
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -261,6 +262,53 @@ class BlueArchiveActivityIn(BaseModel):
     page_size: int = Field(default=50, ge=1, le=100, description="每页条数")
 
 
+class GameCalendarActivityInfo(BaseModel):
+    name: str = Field(..., min_length=1, max_length=500, description="活动名称")
+    startTime: AwareDatetime = Field(..., description="活动开始时间，包含时区")
+    endTime: AwareDatetime = Field(..., description="活动结束时间，包含时区")
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if not self.name.strip() or self.endTime <= self.startTime:
+            raise ValueError("活动名称不能为空，结束时间必须晚于开始时间")
+        return self
+
+
+class GameCalendarActivityUpdateIn(GameCalendarActivityInfo):
+    completed: bool = Field(..., description="是否由用户标记为已完成")
+
+
+class GameCalendarActivityScopeIn(BaseModel):
+    game: Literal[
+        "endfield",
+        "starrail",
+        "genshin",
+        "zenless",
+        "wutheringwaves",
+        "nte",
+        "reverse1999",
+        "bluearchive",
+        "arknights",
+        "stellasora",
+        "infinitynikki",
+    ] = Field(..., description="首页游戏标识")
+    server: Literal["cn", "jp", "global"] = Field(
+        default="cn", description="碧蓝档案服务器，其它游戏忽略此字段"
+    )
+
+
+class GameCalendarActivityCompletionIn(
+    GameCalendarActivityScopeIn, GameCalendarActivityUpdateIn
+):
+    pass
+
+
+class GameCalendarActivitiesOut(OutBase):
+    data: list[GameCalendarActivityInfo] = Field(
+        default_factory=list, description="用户已完成且未过期的活动"
+    )
+
+
 class BetterGICustomGroupOut(BaseModel):
     """BetterGI 一条龙自定义配置组（非内置 8 组）"""
 
@@ -458,7 +506,8 @@ class BetterGIScriptDirsOut(OutBase):
         default=None, description="键鼠脚本（录制）目录"
     )
     autoFightDir: Optional[str] = Field(
-        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+        default=None,
+        description="自动战斗策略目录（User/AutoFight，*.txt / *.json 各算一份策略）",
     )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 
@@ -6831,6 +6880,10 @@ class WSMaaFWProjectUpdateProgressData(BaseModel):
     status: str = Field(..., description="running / success / failed")
     message: str = Field(default="", description="当前阶段的用户可读描述")
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    logLevel: Optional[str] = Field(
+        default=None,
+        description="新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null",
+    )
     percent: Optional[float] = Field(
         default=None,
         description="当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null",

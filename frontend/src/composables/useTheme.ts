@@ -852,7 +852,9 @@ export function useTheme() {
       if (rawConfig === null || typeof rawConfig !== 'object') return
       themeRevision += 1
       configRevision += 1
-      const config = rawConfig as Partial<FrontendConfig>
+      const config = rawConfig as Partial<FrontendConfig> & {
+        customBackgroundUpdated?: boolean
+      }
       if (
         config.themeMode === 'system' ||
         config.themeMode === 'light' ||
@@ -872,14 +874,12 @@ export function useTheme() {
         : null
       if (
         config.customBackgroundPath !== undefined &&
-        config.customBackgroundPath !== customBackgroundPath.value
+        (config.customBackgroundPath !== customBackgroundPath.value ||
+          config.customBackgroundUpdated === true)
       ) {
-        const revision = ++customBackgroundRevision
+        ++customBackgroundRevision
         customBackgroundPath.value = config.customBackgroundPath
         customBackgroundUrl.value = ''
-        if (config.customBackgroundPath && !cached?.backgroundUrl) {
-          void readCustomBackground(config.customBackgroundPath, revision)
-        }
       }
       if (config.customSurfaceOpacity !== undefined) {
         customSurfaceOpacity.value = clampCustomSurfaceOpacity(config.customSurfaceOpacity)

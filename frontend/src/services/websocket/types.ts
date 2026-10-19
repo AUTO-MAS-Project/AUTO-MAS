@@ -190,6 +190,8 @@ export interface WSMaaFWProjectUpdateProgressData {
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
+  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
+  logLevel?: string | null
   /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null

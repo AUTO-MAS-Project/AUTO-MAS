@@ -52,6 +52,9 @@ STATUS_FAILED = "failed"
 PACKAGE_KIND_FULL = "full"
 PACKAGE_KIND_INCREMENTAL = "incremental"
 
+# 日志行级别：要用户留意的行（如项目发错版本号），面板整行标红；普通行不带级别。
+LOG_LEVEL_ALERT = "alert"
+
 _FINAL_STAGES = frozenset({"completed", "failed"})
 # 核心包以 ``completed`` 收尾、但其实没装上也没法确认已是最新的子状态：点了「更新」却
 # 取不到可安装的包（CDK 过期 / 额度用尽、GitHub 查不到）、项目没接入 Mirror 酱没法检查、
@@ -267,11 +270,15 @@ class MaaFWUpdateProgressTracker:
 
     # ------------------------------------------------------------------ 入口
 
-    def log(self, line: str) -> WSMaaFWProjectUpdateProgressData:
-        """一行更新日志；调用方已打码也无妨，这里再过一遍。"""
+    def log(
+        self, line: str, *, alert: bool = False
+    ) -> WSMaaFWProjectUpdateProgressData:
+        """一行更新日志；调用方已打码也无妨，这里再过一遍。``alert``：面板里整行标红。"""
 
         text = sanitize_log_message(str(line))
-        return self._data("log", message=text, log=text)
+        return self._data(
+            "log", message=text, log=text, logLevel=LOG_LEVEL_ALERT if alert else None
+        )
 
     def checking(self, message: str = "") -> WSMaaFWProjectUpdateProgressData:
         return self._data("checking", message=message or _STAGE_MESSAGES["checking"])

@@ -87,36 +87,52 @@ export {
   toRuntimeVersion,
 } from './runtimeInitializationService'
 
-// Runtime 可执行文件随本体钉扎更新
+// Runtime 线上最新版本解析
+export {
+  RUNTIME_RELEASE_CACHE_TTL_MS,
+  RUNTIME_RELEASE_FETCH_TIMEOUT_MS,
+  RUNTIME_RELEASE_REPO,
+  RUNTIME_VERSION_PATTERN,
+  LatestRuntimeVersionLookup,
+  ResolveLatestRuntimeVersionOptions,
+  RuntimeReleaseChannel,
+  RuntimeReleaseFetcher,
+  RuntimeReleaseSource,
+  buildRuntimeReleaseSources,
+  isNewerRuntimeVersion,
+  parseRuntimeReleaseList,
+  resetLatestRuntimeVersionCache,
+  resolveLatestRuntimeVersion,
+  resolveLatestRuntimeVersionCached,
+  resolveRuntimeReleaseChannel,
+  selectLatestRuntimeVersion,
+} from './runtimeReleaseService'
+
+// Runtime 可执行文件对齐到线上最新版
 export {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_RELATIVE_PATH,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_TEXT_FETCH_TIMEOUT_MS,
-  RemoteRuntimePinLookup,
+  LatestRuntimeVersionResolver,
   RuntimeBinaryAlignOptions,
   RuntimeBinaryAlignResult,
   RuntimeBinaryAlignStatus,
-  RuntimeBinaryPin,
   RuntimeBinarySource,
   RuntimeBinarySyncOptions,
   RuntimeBinarySyncProgress,
   RuntimeBinarySyncResult,
   RuntimeBinarySyncStatus,
+  RuntimeBinaryTarget,
   RuntimeTextSource,
   TrustedRuntimeHashLookup,
-  alignRuntimeBinaryWithVersion,
+  alignRuntimeBinaryWithLatest,
   buildRuntimeBinarySources,
-  buildRuntimePinSources,
   buildRuntimeSumsSources,
-  fetchRemoteRuntimeBinaryPin,
   fetchTrustedRuntimeHash,
   hashFileSha256,
-  readRuntimeBinaryPin,
-  runtimeReleaseBranch,
   syncRuntimeBinary,
 } from './runtimeBinaryService'
 

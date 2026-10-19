@@ -8,6 +8,7 @@ import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
+import type { RuntimeBinaryAlignResult } from '../services/runtimeBinaryService'
 import type { ApiEndpoints, MirrorConfig } from '../services/mirrorService'
 import type { RuntimeLaunchMode } from '../services/runtime'
 import { resolveRuntimeLaunchConfig, resolveRuntimeLaunchMode } from '../services/runtime'
@@ -61,6 +62,7 @@ const isRetryAction = (value: unknown): value is RuntimeUpdateRetryAction =>
 // 全局实例
 let initService: InitializationService | null = null
 let backendService: BackendService | null = null
+let runtimeBinaryUpdating = false
 
 /**
  * 向发起 IPC 调用的渲染进程回推事件。
@@ -256,7 +258,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PythonInstaller } = await import('../services/environmentService')
+    const { PythonInstaller } = await import('../services/environmentService.js')
     const installer = new PythonInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -290,7 +292,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { PipInstaller } = await import('../services/environmentService')
+    const { PipInstaller } = await import('../services/environmentService.js')
     const installer = new PipInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -324,7 +326,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
-    const { GitInstaller } = await import('../services/environmentService')
+    const { GitInstaller } = await import('../services/environmentService.js')
     const installer = new GitInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
@@ -361,7 +363,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const initService = getInitService(targetBranch)
       const mirrorService = initService.getMirrorService()
 
-      const { RepositoryService } = await import('../services/repositoryService')
+      const { RepositoryService } = await import('../services/repositoryService.js')
       const repoService = new RepositoryService(appRoot, mirrorService, targetBranch)
 
       const result = await repoService.pullRepository(progress => {
@@ -398,7 +400,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const initService = getInitService()
       const mirrorService = initService.getMirrorService()
 
-      const { DependencyService } = await import('../services/dependencyService')
+      const { DependencyService } = await import('../services/dependencyService.js')
       const depService = new DependencyService(appRoot, mirrorService)
 
       const result = await depService.installDependencies(progress => {
@@ -466,6 +468,44 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   )
 
   // ==================== 仅更新模式 ====================
+
+  ipcMain.handle('check-runtime-binary-update', async () => {
+    const runtime = getInitService().getRuntimeService()
+    return runtime ? runtime.checkRuntimeBinaryUpdate() : { status: 'skipped' }
+  })
+
+  ipcMain.handle('update-runtime-binary', async (event): Promise<RuntimeBinaryAlignResult> => {
+    const init = getInitService()
+    const runtime = init.getRuntimeService()
+    if (!runtime || runtime.launchConfig.mode !== 'managed') {
+      return { status: 'failed', error: '当前运行模式不支持更新 Runtime。' }
+    }
+    if (runtimeBinaryUpdating || runtime.isBusy) {
+      return { status: 'failed', error: '运行环境操作尚未结束，请稍后再试。' }
+    }
+
+    runtimeBinaryUpdating = true
+    try {
+      return await runtime.updateRuntimeBinary(
+        progress => sendToSender(event, 'runtime-binary-progress', progress),
+        async () => {
+          // 先占用 Runtime 操作，再停止残留后端，避免等待退出时又开始 bootstrap。
+          for (const backend of new Set([getBackendService(), init.getBackendService()])) {
+            const result = await backend.stopBackend()
+            if (!result.success) {
+              throw new Error(result.error || '无法停止后端，请重启程序后重试。')
+            }
+          }
+        }
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`更新 Runtime 失败: ${message}`)
+      return { status: 'failed', error: message }
+    } finally {
+      runtimeBinaryUpdating = false
+    }
+  })
 
   // ==================== 后端服务管理 ====================
 

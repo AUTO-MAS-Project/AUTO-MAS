@@ -60,9 +60,25 @@ class CalendarReminder:
     delivered: tuple[str, ...] = ()
     completed: bool = False
     next_attempt_at: AwareDatetime | None = None
+    activity_key: str = ""
+
+
+@dataclass
+class CalendarActivityCompletion:
+    game: str
+    source: str
+    name: str
+    start_at: AwareDatetime
+    end_at: AwareDatetime
 
 
 _SCHEDULE_ADAPTER = TypeAdapter(list[CalendarReminder])
+_COMPLETIONS_ADAPTER = TypeAdapter(list[CalendarActivityCompletion])
+
+
+def _activity_key(*, source: str, name: str, start: datetime) -> str:
+    identity = [source, name.strip(), start.astimezone(UTC8).isoformat()]
+    return hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
 
 
 def _activity_time(value: object) -> datetime | None:
@@ -123,6 +139,9 @@ def calendar_reminders(
                 source=source,
                 due_at=due_at,
                 expires_at=expires_at,
+                activity_key=_activity_key(
+                    source=source or game, name=name, start=start
+                ),
                 payload=NotifyPayload(
                     title=f"{label}活动提醒：{reason}",
                     body_title=f"【{label}活动提醒】",
@@ -137,6 +156,7 @@ class _GameCalendar:
         self._lock = asyncio.Lock()
         self._loaded = False
         self._reminders: dict[str, CalendarReminder] = {}
+        self._completions: dict[str, CalendarActivityCompletion] = {}
         self._dirty = False
         self._save_retry_at: datetime | None = None
 
@@ -150,7 +170,91 @@ class _GameCalendar:
             data = json.loads(path.read_text(encoding="utf-8"))
             reminders = _SCHEDULE_ADAPTER.validate_python(data["reminders"])
             self._reminders = {reminder.key: reminder for reminder in reminders}
+            completions = _COMPLETIONS_ADAPTER.validate_python(
+                data.get("completed_activities", [])
+            )
+            self._completions = {
+                _activity_key(
+                    source=item.source, name=item.name, start=item.start_at
+                ): item
+                for item in completions
+                if item.end_at > datetime.now(tz=UTC8)
+            }
         self._loaded = True
+
+    async def completed_activities(
+        self, *, game: str, server: str = "cn"
+    ) -> list[CalendarActivityCompletion]:
+        """读取用户完成记录；通知渠道的送达记录不代表活动已完成。"""
+        self._load_schedule()
+        source = self._activity_source(game=game, server=server)
+        async with self._lock:
+            now = datetime.now(tz=UTC8)
+            return [
+                item
+                for item in self._completions.values()
+                if item.game == game and item.source == source and item.end_at > now
+            ]
+
+    async def set_activity_completed(
+        self,
+        *,
+        game: str,
+        name: str,
+        start: datetime,
+        end: datetime,
+        completed: bool,
+        server: str = "cn",
+    ) -> None:
+        """保存用户手动标记，与通知派发共用日程锁。"""
+        self._load_schedule()
+        source = self._activity_source(game=game, server=server)
+        key = _activity_key(source=source, name=name, start=start)
+        async with self._lock:
+            previous = self._completions.get(key)
+            if completed:
+                now = datetime.now(tz=UTC8)
+                if not start <= now < end:
+                    raise ValueError("只能完成进行中的活动")
+                self._completions[key] = CalendarActivityCompletion(
+                    game=game,
+                    source=source,
+                    name=name.strip(),
+                    start_at=start.astimezone(UTC8),
+                    end_at=end.astimezone(UTC8),
+                )
+            else:
+                self._completions.pop(key, None)
+            try:
+                self._save_schedule()
+            except (OSError, TypeError, ValueError):
+                if previous is None:
+                    self._completions.pop(key, None)
+                else:
+                    self._completions[key] = previous
+                raise
+
+    @staticmethod
+    def _activity_source(*, game: str, server: str) -> str:
+        if game == "bluearchive":
+            return BLUEARCHIVE_SERVERS[server][0]
+        return CALENDAR_GAMES[game][0] or game
+
+    def _activity_completed(self, reminder: CalendarReminder) -> bool:
+        if reminder.activity_key:
+            item = self._completions.get(reminder.activity_key)
+            return item is not None and item.end_at > datetime.now(tz=UTC8)
+        # 旧日程没有活动键，按来源、名称及本场时间范围匹配，离线时也能停止提醒。
+        name = reminder.payload.text.split("\n开始时间：", 1)[0].rsplit("：", 1)[0]
+        return any(
+            item.game == reminder.game
+            and item.source == (reminder.source or reminder.game)
+            and item.name == name
+            and datetime.combine(item.start_at.date(), time.min, tzinfo=UTC8)
+            <= reminder.due_at
+            < item.end_at
+            for item in self._completions.values()
+        )
 
     @staticmethod
     def _notification_games() -> dict[tuple[str, str], str]:
@@ -212,6 +316,7 @@ class _GameCalendar:
             return self._save_retry_at is None or now >= self._save_retry_at
         return any(
             not reminder.completed
+            and not self._activity_completed(reminder)
             and (reminder.next_attempt_at or reminder.due_at)
             <= now
             < reminder.expires_at
@@ -231,10 +336,14 @@ class _GameCalendar:
             now = datetime.now(tz=UTC8)
             reminders: list[CalendarReminder] = []
             for reminder in self._reminders.values():
-                if reminder.completed or not (
-                    (reminder.next_attempt_at or reminder.due_at)
-                    <= now
-                    < reminder.expires_at
+                if (
+                    reminder.completed
+                    or self._activity_completed(reminder)
+                    or not (
+                        (reminder.next_attempt_at or reminder.due_at)
+                        <= now
+                        < reminder.expires_at
+                    )
                 ):
                     continue
                 if (reminder.game, reminder.source) not in games or not target_ids:
@@ -313,13 +422,20 @@ class _GameCalendar:
 
     def _save_schedule(self) -> None:
         self._dirty = True
+        now = datetime.now(tz=UTC8)
+        self._completions = {
+            key: item for key, item in self._completions.items() if item.end_at > now
+        }
         try:
             write_file(
                 Config.config_path / "GameCalendarSchedule.json",
                 {
                     "reminders": _SCHEDULE_ADAPTER.dump_python(
                         list(self._reminders.values()), mode="json"
-                    )
+                    ),
+                    "completed_activities": _COMPLETIONS_ADAPTER.dump_python(
+                        list(self._completions.values()), mode="json"
+                    ),
                 },
             )
         except (OSError, TypeError, ValueError):

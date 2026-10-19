@@ -93,6 +93,7 @@ export async function getInitializationDecision(): Promise<InitializationDecisio
  * `contact-support` 本身不是按钮，它带出的是一段提示加一个「打开日志」。
  */
 export type FailureActionKind =
+  | 'restore-workspace'
   | 'retry'
   | 'retry-other-mirror'
   | 'rebuild-environment'
@@ -159,6 +160,7 @@ const RETRY_KINDS = new Set<FailureActionKind>([
 ])
 
 const ACTION_LABEL_KEYS: Readonly<Record<FailureActionKind, string>> = {
+  'restore-workspace': 'init.failure.restoreWorkspace',
   retry: 'init.step.retry',
   'retry-other-mirror': 'init.failure.retryOtherMirror',
   'rebuild-environment': 'init.failure.rebuildEnvironment',
@@ -195,13 +197,22 @@ function legacyPlan(): FailureActionPlan {
  *
  * 纯函数，不碰 DOM 也不读全局状态，界面只负责渲染返回的动作列表并把点击接回对应通道。
  * 三条硬规则：
- * - `retryable === false` 不出任何重试类按钮，哪怕 remediation 里写了；
+ * - `retryable === false` 不出普通重试按钮；受管源码可独立执行完整恢复；
  * - `INTERNAL_ERROR` 一律按不可重试处理，只给日志和一句「请携带日志反馈」；
  * - 认不出来的 remediation 按协议要求忽略，一条都认不出来时退回旧链路的现有行为。
  * 日志是界面兜底：等待态始终有「查看日志」，失败态不能因为这个错误码没声明
  * `open-log` 就把入口收走。
  */
 export function decideFailureActions(context: FailureContext): FailureActionPlan {
+  // 源码恢复会先重新校验 Runtime 并执行完整 bootstrap，不是重跑失败的依赖命令。
+  if (context.runtimeMode === 'managed' && canRestoreWorkspace(context.code)) {
+    return {
+      actions: [toAction('restore-workspace'), toAction('open-log')],
+      showMirrorSelection: false,
+      notice: null,
+      legacy: false,
+    }
+  }
   const remediation = context.remediation ?? []
 
   // 旧链路：既没有结果码也没有处置动作，退回原有的换源恢复方式。
@@ -261,6 +272,23 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
     notice,
     legacy: false,
   }
+}
+
+const WORKSPACE_RECOVERY_CODES = new Set([
+  'LOCKFILE_MISSING',
+  'LOCKFILE_OUTDATED',
+  'LOCKFILE_INVALID',
+  'LOCKFILE_CHECK_FAILED',
+  'WORKSPACE_RESTORE_FAILED',
+  'GIT_REPOSITORY_INVALID',
+  'BACKEND_ENTRY_NOT_FOUND',
+  'PYTHON_VERSION_FILE_MISSING',
+  'PYTHON_VERSION_INVALID',
+])
+
+/** canRestoreWorkspace 标记能通过完整 bootstrap 恢复受管源码的错误。 */
+export function canRestoreWorkspace(code: string | undefined): boolean {
+  return code !== undefined && WORKSPACE_RECOVERY_CODES.has(code)
 }
 
 /**

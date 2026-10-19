@@ -63,7 +63,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
   自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
   新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
-  能加载的」，见 `payloads._replaces_older_projection_latest`）。开发者模式的脚本例外：它的组是
+  能加载的」，见 `payloads._replaces_older_projection_latest`）。「只前进」另有一个例外：手动更新
+  把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
+  `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
+  开发者模式的脚本例外：它的组是
   谱系 + 私有渠道 `dev:<视图名>`，见下一条。
   谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
   `Embedded.FollowSource`。

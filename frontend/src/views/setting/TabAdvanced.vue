@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
 import type { ScriptType } from '@/types/script'
 
+import { useLogExport } from '@/composables/useLogExport'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useMaaIssueReport } from '@/composables/useMaaIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
@@ -30,7 +31,7 @@ const { openDevTools } = defineProps<{
 }>()
 
 const logger = window.electronAPI.getLogger('日志管理')
-const exportingLogs = ref(false)
+const { exportingLogs, packageLogs: exportLogsZip } = useLogExport()
 const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 const { exporting: exportingMaaLogs, exportMaaIssueReport } = useMaaIssueReport(logger)
@@ -161,33 +162,6 @@ onMounted(() => {
   void loadMaaFWReportScripts()
   void loadAddedScriptTypes()
 })
-
-const exportLogsZip = async () => {
-  exportingLogs.value = true
-  try {
-    const result = await window.electronAPI?.exportLogs?.()
-    if (!result) {
-      message.error(t('setting.toast.exportNoResponse'))
-      logger.error('导出日志失败: 未收到响应')
-      return
-    }
-    if (result.success) {
-      message.success(result.message || t('setting.toast.logExported'))
-      logger.info(`日志导出成功: ${result.zipPath}`)
-      if (result.zipPath) await window.electronAPI?.showItemInFolder?.(result.zipPath)
-    } else {
-      const errorMsg = result.error || t('setting.toast.logExportFailed')
-      logger.error(`导出日志失败: ${errorMsg}`)
-      message.error(errorMsg)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`导出日志失败: ${errorMsg}`)
-    message.error(t('setting.toast.logExportError', { error: errorMsg }))
-  } finally {
-    exportingLogs.value = false
-  }
-}
 
 const exportDataBackup = async () => {
   exportingDataBackup.value = true

@@ -540,7 +540,11 @@ def dismiss_screensaver(*, stop_event: Event | None = None) -> None:
             pyautogui.moveTo(*original_position)
 
 
-def _save_error_screenshot(launcher_path: Path) -> None:
+def _save_error_screenshot(
+    launcher_path: Path,
+    *,
+    on_error_screenshot: Callable[[Path], None] | None = None,
+) -> None:
     """保存启动失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
         target = _find_launcher_hwnd(launcher_path)
@@ -548,11 +552,13 @@ def _save_error_screenshot(launcher_path: Path) -> None:
             target = _find_game_hwnd()
         if target is None:
             return
-        save_error_screenshot(
+        screenshot_path = save_error_screenshot(
             _capture_window_image(target, activate=False),
             "maaend-launcher-start",
             "launcher-error",
         )
+        if screenshot_path is not None and on_error_screenshot is not None:
+            on_error_screenshot(screenshot_path)
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始启动异常
         logger.warning(f"启动器启动错误截图保存失败: {error}")
@@ -565,6 +571,7 @@ def start_game_via_launcher(
     launcher_path: Path,
     *,
     on_log: Callable[[str], None] | None = None,
+    on_error_screenshot: Callable[[Path], None] | None = None,
     stop_event: Event | None = None,
 ) -> bool:
     """通过官方启动器拉起终末地，直到 Endfield.exe 窗口出现（停在标题界面）。
@@ -585,6 +592,7 @@ def start_game_via_launcher(
     Args:
         launcher_path: 自动识别或手动指定的启动器 exe 路径。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
+        on_error_screenshot: 将本次保存的失败截图交给任务报告。
         stop_event: 异步任务取消时置位，交互线程在下一次操作前退出。
 
     Returns:
@@ -979,20 +987,27 @@ def start_game_via_launcher(
     except Exception as error:
         _write_diagnostic(f"启动失败: {type(error).__name__}: {error}")
         # 失败留启动器/游戏原图，供排查 OCR 文本漂移
-        _save_error_screenshot(launcher_path)
+        _save_error_screenshot(launcher_path, on_error_screenshot=on_error_screenshot)
         raise
     finally:
         pyautogui.FAILSAFE = previous_failsafe
 
 
 async def async_start_game_via_launcher(
-    launcher_path: Path, *, on_log: Callable[[str], None] | None = None
+    launcher_path: Path,
+    *,
+    on_log: Callable[[str], None] | None = None,
+    on_error_screenshot: Callable[[Path], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
     stop_event = Event()
     worker = asyncio.create_task(
         asyncio.to_thread(
-            start_game_via_launcher, launcher_path, on_log=on_log, stop_event=stop_event
+            start_game_via_launcher,
+            launcher_path,
+            on_log=on_log,
+            on_error_screenshot=on_error_screenshot,
+            stop_event=stop_event,
         )
     )
     try:
