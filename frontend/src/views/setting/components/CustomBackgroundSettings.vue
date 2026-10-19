@@ -134,11 +134,7 @@ const handleRetry = async (): Promise<void> => {
             </a-tooltip>
           </div>
           <div class="background-controls">
-            <a-button
-              :loading="importing"
-              :disabled="importing || clearing"
-              @click="handleImport"
-            >
+            <a-button :loading="importing" :disabled="importing || clearing" @click="handleImport">
               <template #icon><UploadOutlined /></template>
               {{ t('setting.basic.customBackgroundSelect') }}
             </a-button>

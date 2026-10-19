@@ -894,10 +894,7 @@ export function useTheme() {
       if (config.customBackgroundPath !== undefined) {
         const nextPath =
           typeof config.customBackgroundPath === 'string' ? config.customBackgroundPath : ''
-        if (
-          nextPath !== customBackgroundPath.value ||
-          config.customBackgroundUpdated === true
-        ) {
+        if (nextPath !== customBackgroundPath.value || config.customBackgroundUpdated === true) {
           ++customBackgroundRevision
           customBackgroundPath.value = nextPath
           customBackgroundUrl.value = ''
